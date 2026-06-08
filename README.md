@@ -1,4 +1,4 @@
-# 🚛 Multideck
+# Multideck
 
 A freight forwarding system with a .NET server and web client.
 
