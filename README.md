@@ -1,6 +1,6 @@
-# 🃏 Multideck
+# 🚛 Multideck
 
-A multiplayer card game platform with a .NET server and web client.
+A freight forwarding system with a .NET server and web client.
 
 ## Project Structure
 
