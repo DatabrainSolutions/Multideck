@@ -7,7 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
-import { activityItems, cityQueues, customerFilters, customers, customsQueue, galleryComponents, galleryIcons, liveShipments, marlowContacts, metricCards, shipmentFilters, shipmentMetrics } from "@/data/multideck-data"
+import { activityItems, cityQueues, customerFilters, customers, customsQueue, galleryComponents, galleryIcons, generatedReports, liveShipments, marlowContacts, metricCards, reportTemplates, shipmentFilters, shipmentMetrics } from "@/data/multideck-data"
 import { AnimatedList } from "@/components/multideck/animated-list"
 import { CommandInput } from "@/components/multideck/command-input"
 import { SidebarNavItem } from "@/components/multideck/app-sidebar"
@@ -30,6 +30,7 @@ import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
 import { CodeInput, FreightNarrative, SignInPanel, SignedOutPanel, VerifyPanel } from "@/components/multideck/auth-flow"
 import { ShipmentArrivalCard, ShipmentAskPanel, ShipmentExceptionPanel, ShipmentMetricCard, ShipmentResolutionChecklist } from "@/components/multideck/shipment-components"
+import { GeneratedReportsTable, NewReportTemplateCard, ReportTemplateCard } from "@/components/multideck/report-components"
 import {
   SettingsChoiceGroup,
   SettingsFieldRow,
@@ -620,6 +621,27 @@ function ComponentPreview({ id }: { id: string }) {
           {shipmentMetrics.slice(0, 3).map((metric) => (
             <ShipmentMetricCard key={metric.label} {...metric} />
           ))}
+        </div>
+      ) : null}
+
+      {id === "report-template-card" ? (
+        <div className="grid w-full max-w-[860px] gap-4 md:grid-cols-2">
+          <ReportTemplateCard
+            template={reportTemplates[0]}
+            onRun={(template) => toast.success(`${template.title} started`)}
+            onEdit={(template) => toast.success(`${template.title} opened`)}
+          />
+          <NewReportTemplateCard onCreate={() => toast.success("Blank template created")} />
+        </div>
+      ) : null}
+
+      {id === "generated-report-table" ? (
+        <div className="w-full max-w-[1120px]">
+          <GeneratedReportsTable
+            reports={generatedReports.slice(0, 4)}
+            onView={(report) => toast.success(`${report.title} opened`)}
+            onDownload={(report) => toast.success(`${report.title} prepared`)}
+          />
         </div>
       ) : null}
 

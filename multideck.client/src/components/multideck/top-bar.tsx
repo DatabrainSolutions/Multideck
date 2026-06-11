@@ -16,6 +16,7 @@ export function TopBar({
   const isCustomerList = route === "/customers"
   const isCustomerDetail = route.startsWith("/customers/")
   const isShipmentList = route === "/shipments"
+  const isReports = route === "/reports"
 
   return (
     <header className="sticky top-0 z-10 -mx-[var(--md-page-pad)] mb-8 flex min-h-[56px] items-center gap-4 border-b border-[rgba(11,20,19,0.06)] bg-[rgba(223,234,231,0.9)] px-[var(--md-page-pad)] py-2 backdrop-blur-xl">
@@ -73,9 +74,9 @@ export function TopBar({
         </>
       ) : (
         <>
-          <p className="hidden min-w-[210px] text-[15px] font-medium text-[var(--md-text)] md:block">{isShipmentList ? "Shipments" : isCustomerList ? "Customers" : "Today - Tue 26 May"}</p>
+          <p className="hidden min-w-[210px] text-[15px] font-medium text-[var(--md-text)] md:block">{isShipmentList ? "Shipments" : isCustomerList ? "Customers" : isReports ? "Reports" : "Today - Tue 26 May"}</p>
           <div className="ml-auto min-w-0 flex-1 md:max-w-[560px]">
-            <CommandInput placeholder={isShipmentList ? "ID, container, customer, BoL, HS code..." : isCustomerList ? "Search customers, contacts, or shipments..." : "Ask Multideck or jump to anything..."} />
+            <CommandInput placeholder={isShipmentList ? "ID, container, customer, BoL, HS code..." : isCustomerList ? "Search customers, contacts, or shipments..." : isReports ? "Report name, template, customer..." : "Ask Multideck or jump to anything..."} />
           </div>
           {isShipmentList ? (
             <>
@@ -111,6 +112,31 @@ export function TopBar({
               >
                 <Plus data-icon="inline-start" strokeWidth={1.2} />
                 <span className="hidden sm:inline">New customer</span>
+              </Button>
+            </>
+          ) : isReports ? (
+            <>
+              <Button
+                variant="ghost"
+                className="hidden h-10 rounded-[var(--md-radius-lg)] bg-white/35 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/65 sm:inline-flex"
+                onClick={() =>
+                  toast.success("Report schedules opened", {
+                    description: "Review cadence, recipients, and upcoming runs.",
+                  })
+                }
+              >
+                Schedules
+              </Button>
+              <Button
+                className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]"
+                onClick={() =>
+                  toast.success("New report draft created", {
+                    description: "Choose a template, customer scope, and output format next.",
+                  })
+                }
+              >
+                <Plus data-icon="inline-start" strokeWidth={1.2} />
+                <span className="hidden sm:inline">New report</span>
               </Button>
             </>
           ) : (

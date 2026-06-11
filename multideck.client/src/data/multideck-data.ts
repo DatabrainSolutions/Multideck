@@ -48,7 +48,7 @@ export const sidebarPrimary: NavItem[] = [
 export const sidebarSecondary: NavItem[] = [
   { label: "Quotes", icon: ReceiptText },
   { label: "Customs", icon: ClipboardCheck },
-  { label: "Reports", icon: BarChart3 },
+  { label: "Reports", icon: BarChart3, route: "/reports" },
   { label: "Components", icon: Component, route: "/components" },
 ]
 
@@ -171,6 +171,134 @@ export const shipmentTimeline = [
   { time: "May 24 11:30 · Yong Hua", text: "Container gated in at terminal SH-Waigaoqiao.", tone: "neutral" as StatusTone },
   { time: "May 22 09:15 · Elena Moreno", text: "Booking confirmed · vessel \"Ever Given\" voyage 4421E.", tone: "neutral" as StatusTone },
 ]
+
+export type ReportTemplateChart = "kpi" | "line" | "donut" | "bars"
+
+export type ReportTemplate = {
+  id: string
+  title: string
+  description: string
+  cadence: string
+  format: string
+  chart: ReportTemplateChart
+  metric?: string
+  series?: number[]
+  bars?: number[][]
+}
+
+export type GeneratedReportStatus = "Ready" | "Generating" | "Scheduled"
+
+export type GeneratedReport = {
+  id: string
+  title: string
+  subtitle: string
+  scope: string
+  period: string
+  created: string
+  status: GeneratedReportStatus
+}
+
+export const reportTemplates: ReportTemplate[] = [
+  {
+    id: "monthly-client-review",
+    title: "Monthly client review",
+    description: "KPIs, shipments, exceptions & spend for one customer",
+    cadence: "Monthly · 1st",
+    format: "PDF",
+    chart: "kpi",
+    metric: "94%",
+    series: [18, 22, 29, 27, 31, 37, 36, 44],
+  },
+  {
+    id: "carrier-performance",
+    title: "Carrier performance",
+    description: "On-time, dwell and rate trends across carriers",
+    cadence: "Quarterly",
+    format: "PDF + XLSX",
+    chart: "line",
+    series: [18, 21, 26, 31, 34, 33, 35, 39, 45, 51],
+  },
+  {
+    id: "customs-compliance",
+    title: "Customs & compliance",
+    description: "Declarations, HS-code audit trail, duty paid",
+    cadence: "Monthly · 5th",
+    format: "PDF",
+    chart: "donut",
+  },
+  {
+    id: "spend-summary",
+    title: "Spend summary",
+    description: "Billed vs quoted, surcharges, currency exposure",
+    cadence: "Weekly · Mon",
+    format: "XLSX",
+    chart: "bars",
+    bars: [
+      [88, 40, 28],
+      [62, 54, 34],
+      [80, 42, 26],
+    ],
+  },
+]
+
+export const generatedReports: GeneratedReport[] = [
+  {
+    id: "rpt-marlow-may-review",
+    title: "Marlow Apparel — May review",
+    subtitle: "Monthly client review · 2.4 MB",
+    scope: "Marlow Apparel Ltd",
+    period: "May 2026",
+    created: "Jun 01, 06:00",
+    status: "Ready",
+  },
+  {
+    id: "rpt-carrier-q2",
+    title: "Carrier performance — Q2 to date",
+    subtitle: "Carrier performance · 1.1 MB",
+    scope: "All carriers",
+    period: "Apr – Jun 2026",
+    created: "Jun 09, 07:15",
+    status: "Ready",
+  },
+  {
+    id: "rpt-bauhaus-may-review",
+    title: "Bauhaus Importe — May review",
+    subtitle: "Monthly client review · 1.9 MB",
+    scope: "Bauhaus Importe GmbH",
+    period: "May 2026",
+    created: "Jun 01, 06:00",
+    status: "Ready",
+  },
+  {
+    id: "rpt-customs-audit-may",
+    title: "Customs audit — May",
+    subtitle: "Customs & compliance · 4.2 MB",
+    scope: "EU + UK lanes",
+    period: "May 2026",
+    created: "Jun 05, 06:30",
+    status: "Ready",
+  },
+  {
+    id: "rpt-spend-week-24",
+    title: "Spend summary — week 24",
+    subtitle: "Spend summary · —",
+    scope: "All customers",
+    period: "Jun 08 – 14",
+    created: "Generating now",
+    status: "Generating",
+  },
+  {
+    id: "rpt-northwind-june-review",
+    title: "Northwind GmbH — June review",
+    subtitle: "Monthly client review · —",
+    scope: "Northwind GmbH",
+    period: "Jun 2026",
+    created: "Scheduled · Jul 01",
+    status: "Scheduled",
+  },
+]
+
+export const reportFilters = ["All", "Ready", "Scheduled", "Client reviews"] as const
 
 export const digestItems = [
   "MD-22455 is on customs hold. Missing CN export licence. Reach out to Yong Hua Logistics?",
@@ -607,7 +735,7 @@ export const galleryComponents = [
     category: "Design System",
     description: "The Multideck colour tokens for shell backgrounds, product surfaces, text, accents, and operational status.",
     details: "Use tokens from `src/styles.css` instead of one-off colour values. Colours should support calm scanning, not decoration.",
-    foundOn: [{ label: "Overview", route: "/" }, { label: "Shipments", route: "/shipments" }, { label: "Shipment detail", route: "/shipments/md-22455" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Overview", route: "/" }, { label: "Shipments", route: "/shipments" }, { label: "Shipment detail", route: "/shipments/md-22455" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
     componentCode: `:root {\n  --md-ink: #0b1413;\n  --md-text: #5a6764;\n  --md-subtle: #94a09c;\n  --md-bg: #dfeae7;\n  --md-bg-strong: #d5e4e1;\n  --md-sidebar-bg: #f6fbfa;\n  --md-surface: #fbfdfd;\n  --md-surface-soft: #f3f8f7;\n  --md-surface-tint: #e9f2f0;\n  --md-accent: #0e7d74;\n  --md-green: #2e8e60;\n  --md-amber: #dd8a2b;\n  --md-red: #d14e4e;\n  --md-blue: #4a7d9c;\n}`,
     usageCode: `<Surface className="bg-[var(--md-surface)] text-[var(--md-ink)]">\n  <StatusPill tone="teal">AI prepared</StatusPill>\n  <p className="text-[var(--md-text)]">Use token colours for calm operational hierarchy.</p>\n</Surface>`,
   },
@@ -617,7 +745,7 @@ export const galleryComponents = [
     category: "Design System",
     description: "The Multideck type scale for dense freight software: calm, compact, readable, and mostly medium weight.",
     details: "Use 11px and 12px for metadata, 13px for standard UI, 14px for section headings, 18px for subheads, and 24px for main page headings.",
-    foundOn: [{ label: "Overview", route: "/" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Overview", route: "/" }, { label: "Reports", route: "/reports" }, { label: "Components", route: "/components" }],
     componentCode: `@theme inline {\n  --font-sans: "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;\n  --font-mono: "SF Mono", "SFMono-Regular", ui-monospace, "Cascadia Code", monospace;\n}\n\n.type-page-title {\n  font-size: 24px;\n  font-weight: 500;\n  line-height: 1.15;\n}\n\n.type-section-title {\n  font-size: 14px;\n  font-weight: 500;\n}\n\n.type-body {\n  font-size: 13px;\n  font-weight: 400;\n  line-height: 1.55;\n}`,
     usageCode: `<h1 className="text-[24px] font-medium leading-tight text-[var(--md-ink)]">Overview</h1>\n<h2 className="text-[14px] font-medium text-[var(--md-ink)]">Live shipments</h2>\n<p className="text-[13px] leading-6 text-[var(--md-text)]">Use compact type for operational scanning.</p>\n<p className="text-[12px] text-[var(--md-subtle)]">Updated 41s ago</p>`,
   },
@@ -637,7 +765,7 @@ export const galleryComponents = [
     category: "Feedback",
     description: "Compact status language for freight workflows, exceptions, and document states.",
     details: "Use green for good, amber for review, red for action, blue for information, teal for AI or customs flow.",
-    foundOn: [{ label: "Overview", route: "/" }, { label: "Shipments", route: "/shipments" }, { label: "Shipment detail", route: "/shipments/md-22455" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Overview", route: "/" }, { label: "Shipments", route: "/shipments" }, { label: "Shipment detail", route: "/shipments/md-22455" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
     componentCode: `export function StatusPill({ tone = "neutral", children, className }) {\n  return (\n    <Badge\n      variant="secondary"\n      className={cn("h-[21px] rounded-full px-[9px] text-[11.5px] font-medium leading-none", toneClass[tone], className)}\n    >\n      {children}\n    </Badge>\n  )\n}`,
     usageCode: `<StatusPill tone="amber">Under review</StatusPill>\n<StatusPill tone="red">Action req.</StatusPill>`,
   },
@@ -657,7 +785,7 @@ export const galleryComponents = [
     category: "Feedback",
     description: "A floating bottom-middle notification for short confirmations that need to be readable without stealing the workflow.",
     details: "Use for save, export, copy, and lightweight route feedback. Keep the title direct, add one short supporting line only when it helps the operator understand what happened.",
-    foundOn: [{ label: "Customers", route: "/customers" }, { label: "Shipments", route: "/shipments" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Customers", route: "/customers" }, { label: "Shipments", route: "/shipments" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
     componentCode: `export function Toaster(props) {\n  return (\n    <Sonner\n      position="bottom-center"\n      className="toaster group md-toaster"\n      style={{\n        "--normal-bg": "rgba(251, 253, 253, 0.92)",\n        "--normal-text": "var(--md-ink)",\n        "--normal-border": "transparent",\n        "--border-radius": "var(--md-radius-xl)",\n        "--width": "min(520px, calc(100vw - 32px))",\n      }}\n      toastOptions={{\n        classNames: {\n          toast: "cn-toast md-toast",\n          icon: "md-toast-icon",\n          title: "md-toast-title",\n          description: "md-toast-description",\n        },\n      }}\n      {...props}\n    />\n  )\n}`,
     usageCode: `<Toaster />\n\ntoast.success("Customer CSV prepared", {\n  description: "The export is ready for Northwind Forwarding.",\n})`,
   },
@@ -687,7 +815,7 @@ export const galleryComponents = [
     category: "Operations",
     description: "A real map layer for live route tracking, shipment markers, and selected-route context.",
     details: "Use where operators need geography, not decoration. Keep route data in shared shipment records and let cards select the matching route.",
-    foundOn: [{ label: "Overview", route: "/" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Overview", route: "/" }, { label: "Reports", route: "/reports" }, { label: "Components", route: "/components" }],
     componentCode: `export function InteractiveShipmentMap() {\n  const [selectedId, setSelectedId] = useState(liveShipments[0].id)\n\n  return (\n    <>\n      <MapContainer className="md-shipment-map h-full w-full" zoomControl={false}>\n        <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />\n        <ZoomControl position="bottomright" />\n        {liveShipments.map((shipment) => (\n          <ShipmentRoute key={shipment.id} shipment={shipment} selected={shipment.id === selectedId} onSelect={setSelectedId} />\n        ))}\n      </MapContainer>\n      <ShipmentMapCards selectedId={selectedId} onSelect={setSelectedId} />\n    </>\n  )\n}`,
     usageCode: `<Suspense fallback={<div className="h-[310px] bg-[var(--md-bg-strong)]" />}>\n  <InteractiveShipmentMap />\n</Suspense>`,
   },
@@ -697,7 +825,7 @@ export const galleryComponents = [
     category: "Navigation",
     description: "The search and jump control that lets operators move quickly without hunting through menus.",
     details: "Use in the app header. Keep placeholder text action-led and include the keyboard hint.",
-    foundOn: [{ label: "Overview", route: "/" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Overview", route: "/" }, { label: "Reports", route: "/reports" }, { label: "Components", route: "/components" }],
     componentCode: `export function CommandInput({ placeholder = "Ask Multideck or jump to anything...", className }) {\n  return (\n    <div className={cn("relative w-full", className)}>\n      <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.2} />\n      <Input\n        aria-label="Search Multideck"\n        className="h-9 rounded-[var(--md-radius-lg)] border-0 bg-white/70 pl-9 pr-16 text-[13px] shadow-[var(--md-shadow-line)]"\n        placeholder={placeholder}\n      />\n      <span className="absolute right-2 top-1/2 -translate-y-1/2 rounded-[var(--md-radius-sm)] bg-[var(--md-surface-tint)] px-2 py-1 text-[11px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)]">\n        Cmd K\n      </span>\n    </div>\n  )\n}`,
     usageCode: `<CommandInput placeholder="Ask Multideck or jump to anything..." />`,
   },
@@ -840,6 +968,26 @@ export const galleryComponents = [
     foundOn: [{ label: "Shipments", route: "/shipments" }, { label: "Components", route: "/components" }],
     componentCode: `export function ShipmentMetricCard({ label, value, tone }) {\n  return (\n    <Surface padding="md" className="min-h-[92px] rounded-[var(--md-radius-xl)]">\n      <p className="text-[13px] font-medium text-[var(--md-text)]">{label}</p>\n      <strong\n        className={cn("mt-2 block text-[30px] font-medium leading-none", tone === "neutral" && "text-[var(--md-ink)]")}\n        style={{ color: tone === "neutral" ? undefined : toneToVar(tone) }}\n      >\n        {value}\n      </strong>\n    </Surface>\n  )\n}`,
     usageCode: `<ShipmentMetricCard\n  label="In transit"\n  value="23"\n  tone="teal"\n/>`,
+  },
+  {
+    id: "report-template-card",
+    name: "Report Template Card",
+    category: "Data",
+    description: "A reusable report-starting point for saved layouts, cadence, output format, and a quick data preview.",
+    details: "Use in report libraries where operators need to pick, run, or edit a reusable report layout. Pair it with the new-template card when creation belongs in the same grid.",
+    foundOn: [{ label: "Reports", route: "/reports" }, { label: "Components", route: "/components" }],
+    componentCode: `export function ReportTemplateCard({ template, onRun, onEdit }) {\n  return (\n    <Surface padding="none" className="flex min-h-[336px] flex-col rounded-[var(--md-radius-xl)] p-4">\n      <ReportPreviewGraphic template={template} />\n      <div className="mt-4 flex flex-1 flex-col">\n        <h3>{template.title}</h3>\n        <p>{template.description}</p>\n        <div>\n          <span>{template.cadence}</span>\n          <span>{template.format}</span>\n        </div>\n      </div>\n      <div className="mt-4 flex items-center justify-between border-t border-[rgba(11,20,19,0.06)] pt-4">\n        <button onClick={() => onRun?.(template)}>Run now</button>\n        <button onClick={() => onEdit?.(template)}>Edit</button>\n      </div>\n    </Surface>\n  )\n}`,
+    usageCode: `<ReportTemplateCard\n  template={reportTemplates[0]}\n  onRun={runTemplate}\n  onEdit={editTemplate}\n/>\n\n<NewReportTemplateCard onCreate={createTemplate} />`,
+  },
+  {
+    id: "generated-report-table",
+    name: "Generated Report Table",
+    category: "Data",
+    description: "A dense report history table for scope, period, creation state, and ready/download actions.",
+    details: "Use for generated report libraries. Keep disabled actions visible for generating or scheduled reports so operators understand what is coming next.",
+    foundOn: [{ label: "Reports", route: "/reports" }, { label: "Components", route: "/components" }],
+    componentCode: `export function GeneratedReportsTable({ reports, onView, onDownload }) {\n  return (\n    <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">\n      <Table>\n        <TableHeader>\n          <TableRow>\n            <TableHead>Report</TableHead>\n            <TableHead>Scope</TableHead>\n            <TableHead>Period</TableHead>\n            <TableHead>Created</TableHead>\n            <TableHead>Status</TableHead>\n            <TableHead>Actions</TableHead>\n          </TableRow>\n        </TableHeader>\n        <TableBody>\n          {reports.map((report) => <GeneratedReportRow key={report.id} report={report} />)}\n        </TableBody>\n      </Table>\n    </Surface>\n  )\n}`,
+    usageCode: `<GeneratedReportsTable\n  reports={visibleReports}\n  onView={viewReport}\n  onDownload={downloadReport}\n/>`,
   },
   {
     id: "shipment-arrival-card",
@@ -1020,6 +1168,8 @@ export const galleryIcons = {
   tabs: LayoutDashboard,
   "active-shipments-panel": Ship,
   "shipment-metric-card": BarChart3,
+  "report-template-card": BarChart3,
+  "generated-report-table": FileText,
   "shipment-arrival-card": Clock3,
   "shipment-exception-panel": TriangleAlert,
   "shipment-checklist": ClipboardCheck,
