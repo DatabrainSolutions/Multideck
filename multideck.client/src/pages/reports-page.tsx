@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
 import { GeneratedReportsTable, NewReportTemplateCard, ReportTemplateCard } from "@/components/multideck/report-components"
+import { FilterChips } from "@/components/multideck/workflow-components"
 import { generatedReports, reportFilters, reportTemplates, type GeneratedReport, type ReportTemplate } from "@/data/multideck-data"
-import { cn } from "@/lib/utils"
 
 type ReportFilter = (typeof reportFilters)[number]
 
@@ -66,24 +66,11 @@ export function ReportsPage() {
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex flex-col gap-3 md:flex-row md:items-center">
             <h2 className="text-[18px] font-medium leading-7 text-[var(--md-ink)]">Generated reports</h2>
-            <div className="flex flex-wrap items-center gap-2">
-              {reportFilters.map((filter) => (
-                <button
-                  key={filter}
-                  type="button"
-                  aria-pressed={activeFilter === filter}
-                  className={cn(
-                    "h-9 rounded-full px-4 text-[13px] font-medium shadow-[var(--md-shadow-line)] transition-all",
-                    activeFilter === filter
-                      ? "bg-[var(--md-ink)] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12),0_0_0_3px_rgba(11,20,19,0.06)]"
-                      : "bg-white/25 text-[var(--md-text)] hover:bg-white/50 hover:text-[var(--md-ink)]",
-                  )}
-                  onClick={() => setActiveFilter(filter)}
-                >
-                  {filter}
-                </button>
-              ))}
-            </div>
+            <FilterChips
+              options={reportFilters}
+              activeOption={activeFilter}
+              onChange={(filter) => setActiveFilter(filter as ReportFilter)}
+            />
           </div>
           <p className="text-[13px] font-medium text-[var(--md-text)]">Last 30 days · 14 reports</p>
         </div>
