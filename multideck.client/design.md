@@ -86,6 +86,8 @@ Current Multideck components:
 - `StatusPill`: compact status treatment.
 - `AIEdgeGlow`: animated Artie working-state edge treatment for AI-active screens or workflow areas.
 - `MetricCard`: overview KPI component.
+- `LineChartCard`, `AreaChartCard`, `BarChartCard`, `StackedBarChartCard`, `DonutChartCard`, `FunnelChartCard`, `HeatmapChartCard`, `RadialGoalChartCard`, `ScatterChartCard`, and `MixedChartCard`: reusable report-ready visualization components.
+- `ReportVisualizationBlock`: report-builder adapter for chart variants such as single bars, comparison bars, pie charts with or without keys, and variable-step funnels.
 - `CommandInput`: search and jump entry point.
 - `SegmentedControl`: generic mutually-exclusive mode switch.
 - `FilterChips`: generic filter chip row with clear selected state.
@@ -136,6 +138,12 @@ Component gallery:
 - Middle: component title, live preview, code, and usage detail.
 - Right: on-page anchors and compact component contract notes.
 - Every component should show why it exists, how to use it, and a code snippet.
+- Visualization components should show meaningful variants in the preview, not only the default state. Bar charts should show single-series and comparison variants, pie charts should show legend and no-legend states, and funnels should show different step counts.
+
+Report builder:
+
+- Chart widgets should use the shared visualization components rather than custom report-only drawings.
+- Report chart blocks should carry their variant choices with the block, so templates can support single bars, comparison bars, pie/donut charts, and custom funnel step counts without duplicating components.
 
 ## Interaction Rules
 

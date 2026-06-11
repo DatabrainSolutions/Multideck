@@ -74,4 +74,31 @@ Checks:
 - The settings forms are prototype-local controls. They provide realistic interaction and save feedback, but they are not connected to a backend persistence layer yet.
 - The report controls are prototype-local controls. They provide realistic interaction and feedback, but they are not connected to a backend report-generation service yet.
 
+## Additional Scope - Report Viewer And Template Builder
+
+Reference images:
+
+- `/Users/harryphillips/Downloads/Report viewer _ download.png`
+- `/Users/harryphillips/Downloads/Template editor _ monthly client review.png`
+
+Implemented routes:
+
+- `/reports/rpt-marlow-may-review`
+- `/reports/templates/monthly-client-review`
+- `/components?component=report-document-page`
+- `/components?component=report-thumbnail-rail`
+- `/components?component=report-widget-palette`
+
+Checks:
+
+- Report viewer route matches the supplied direction: focused report header, generated-report status, share/XLSX/PDF actions, thumbnail rail, and central A4-style report canvas.
+- Template builder route matches the supplied direction: full-screen editor header, selected page outline, report page canvas, right-side widget palette, search, and widget categories.
+- The report canvas is block-based rather than one flat image, so mock content can later be replaced by real PDF page rendering or real report data without rebuilding the workspace.
+- Interactions passed: page thumbnails switch pages, viewer page controls move between pages, widget clicks add a new block to the active template page, and generated-report table View opens the report detail route.
+- Components page documents the new reusable report parts instead of treating the full viewer or template builder as one component.
+- Existing Multideck tokens, shadows, radius, typography, buttons, inputs, status pills, and toast feedback are reused.
+- Desktop captures passed for viewer and template builder at `1600 x 1000`.
+- Route health passed with `200 OK` for both new routes.
+- Build passed with `npm run build`.
+
 final result: passed

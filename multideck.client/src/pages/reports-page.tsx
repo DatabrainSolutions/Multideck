@@ -6,7 +6,7 @@ import { generatedReports, reportFilters, reportTemplates, type GeneratedReport,
 
 type ReportFilter = (typeof reportFilters)[number]
 
-export function ReportsPage() {
+export function ReportsPage({ navigate }: { navigate: (path: string) => void }) {
   const [activeFilter, setActiveFilter] = useState<ReportFilter>("All")
 
   const visibleReports = useMemo(() => {
@@ -23,15 +23,11 @@ export function ReportsPage() {
   }
 
   function editTemplate(template: ReportTemplate) {
-    toast.success(`${template.title} opened`, {
-      description: "Template rules, recipients, and output format are ready to edit.",
-    })
+    navigate(`/reports/templates/${template.id}`)
   }
 
   function viewReport(report: GeneratedReport) {
-    toast.success(`${report.title} opened`, {
-      description: "The report preview is ready.",
-    })
+    navigate(`/reports/${report.id}`)
   }
 
   function downloadReport(report: GeneratedReport) {
@@ -54,9 +50,7 @@ export function ReportsPage() {
           ))}
           <NewReportTemplateCard
             onCreate={() =>
-              toast.success("Blank template created", {
-                description: "Choose sections, schedule, and output format next.",
-              })
+              navigate("/reports/templates/monthly-client-review")
             }
           />
         </div>

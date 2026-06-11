@@ -35,6 +35,7 @@ type AnimatedListProps<T> = {
   listClassName?: string
   itemClassName?: string
   displayScrollbar?: boolean
+  fadeColor?: string
   initialSelectedIndex?: number
   maxHeight?: number | string
   ariaLabel?: string
@@ -110,6 +111,7 @@ export function AnimatedList<T = string>({
   listClassName,
   itemClassName,
   displayScrollbar = true,
+  fadeColor = "var(--md-surface)",
   initialSelectedIndex = -1,
   maxHeight = 400,
   ariaLabel = "Scrollable list",
@@ -207,9 +209,12 @@ export function AnimatedList<T = string>({
   const listStyle: CSSProperties = {
     maxHeight: typeof maxHeight === "number" ? `${maxHeight}px` : maxHeight,
   }
+  const rootStyle = {
+    "--md-animated-list-fade": fadeColor,
+  } as CSSProperties
 
   return (
-    <div className={cn("relative w-full overflow-hidden rounded-[var(--md-radius-xl)]", className)}>
+    <div className={cn("relative w-full overflow-hidden rounded-[var(--md-radius-xl)]", className)} style={rootStyle}>
       <div
         ref={listRef}
         role="listbox"
@@ -257,11 +262,11 @@ export function AnimatedList<T = string>({
       {showGradients && isScrollable ? (
         <>
           <div
-            className="pointer-events-none absolute inset-x-0 top-0 h-12 bg-gradient-to-b from-[var(--md-surface)] to-transparent transition-opacity duration-200"
+            className="pointer-events-none absolute inset-x-0 top-0 h-12 bg-gradient-to-b from-[var(--md-animated-list-fade)] to-transparent transition-opacity duration-200"
             style={{ opacity: topGradientOpacity }}
           />
           <div
-            className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[var(--md-surface)] to-transparent transition-opacity duration-200"
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[var(--md-animated-list-fade)] to-transparent transition-opacity duration-200"
             style={{ opacity: bottomGradientOpacity }}
           />
         </>
