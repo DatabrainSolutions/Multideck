@@ -45,8 +45,33 @@ Checks:
 - Follow-up pass made the animation faster and more obvious while keeping the streak-free edge treatment.
 - Build passed with `npm run build`.
 
+## Additional Scope - Reports
+
+Reference image:
+
+- `/Users/harryphillips/Downloads/Reports home _ templates _ generated.png`
+
+Implemented routes:
+
+- `/reports`
+- `/components?component=report-template-card`
+- `/components?component=generated-report-table`
+
+Checks:
+
+- Reports route matches the supplied direction: report-specific top bar, template grid, new-template slot, generated-report filters, report history table, status pills, and ready/download actions.
+- The Reports sidebar item is now routed and shows the active state when selected.
+- Report controls are functional: template run/edit, new report/new template, schedules, filter chips, view, and PDF actions provide realistic feedback.
+- Components page documents the reusable report parts instead of treating the full reports workspace as one component.
+- Existing Multideck tokens, shadows, radius, typography, buttons, command input, status pills, table, and toast feedback are reused.
+- Responsive check passed: mobile stacks templates cleanly and keeps the generated-report table inside the same horizontal-scroll pattern as other dense product tables.
+- Desktop capture passed with no horizontal overflow at `2160 x 1350`.
+- Mobile capture passed with no page-level horizontal overflow at `390 x 900`.
+- Build passed with `npm run build`.
+
 ## Remaining Notes
 
 - The settings forms are prototype-local controls. They provide realistic interaction and save feedback, but they are not connected to a backend persistence layer yet.
+- The report controls are prototype-local controls. They provide realistic interaction and feedback, but they are not connected to a backend report-generation service yet.
 
 final result: passed

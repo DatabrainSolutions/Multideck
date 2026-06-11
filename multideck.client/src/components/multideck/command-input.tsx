@@ -18,7 +18,7 @@ export function CommandInput({
         placeholder={placeholder}
       />
       <span className="absolute right-2 top-1/2 -translate-y-1/2 rounded-[var(--md-radius-sm)] bg-[var(--md-surface-tint)] px-2 py-1 text-[11px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
-        Cmd K
+        ⌘ K
       </span>
     </div>
   )
