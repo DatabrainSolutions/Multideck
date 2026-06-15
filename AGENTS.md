@@ -32,7 +32,7 @@ Use the existing structure:
 - `src/components/multideck` for Multideck-specific product components.
 - `src/pages/components-gallery-page.tsx` for the components page.
 - `src/data/multideck-data.ts` for component-gallery metadata.
-- `design.md` for the current design system direction.
+- Root `design.md` for the current design system direction.
 
 Do not place client components, design docs, or frontend config in the server folder.
 

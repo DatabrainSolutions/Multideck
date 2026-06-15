@@ -1,6 +1,6 @@
 # Multideck Client Design System
 
-This file documents the UI direction for the Multideck client. The current source of truth is the overview mockup at `/Users/harryphillips/Downloads/Overview.html`, translated into reusable React components inside this client folder.
+This file documents the UI direction for the Multideck client. The current source of truth is the overview mockup at `/Users/harryphillips/Downloads/Overview.html`, translated into reusable React components inside `multideck.client`.
 
 ## Product Feeling
 

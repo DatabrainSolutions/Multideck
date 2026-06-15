@@ -5,8 +5,11 @@ A freight forwarding system with a .NET server and web client.
 ## Project Structure
 
 ```
-multideck.client/   → Web client (index.html — just a placeholder for now)
+multideck.client/   → Web client
 multideck.server/   → .NET 10 Web API backend
+AGENTS.md           → AI working instructions
+design.md           → Multideck design system direction
+README.md           → Project overview and run notes
 ```
 
 ## Running the Server
