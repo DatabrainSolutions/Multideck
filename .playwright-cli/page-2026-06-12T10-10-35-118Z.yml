@@ -1,0 +1,147 @@
+- generic [ref=e2]:
+  - generic [ref=e4]:
+    - complementary [ref=e5]:
+      - img "Multideck" [ref=e7]
+      - button "Back" [ref=e9] [cursor=pointer]:
+        - img
+        - text: Back
+      - generic [ref=e10]:
+        - paragraph [ref=e11]: Workspace
+        - heading "CRM" [level=2] [ref=e12]
+        - paragraph [ref=e13]: Leads, contacts, deals, and activity.
+      - navigation [ref=e14]:
+        - button "CRM overview Live" [ref=e15] [cursor=pointer]:
+          - img
+          - generic [ref=e16]: CRM overview
+          - generic [ref=e17]: Live
+        - button "Leads 39" [ref=e18] [cursor=pointer]:
+          - img
+          - generic [ref=e19]: Leads
+          - generic [ref=e20]: "39"
+        - button "Contacts 112" [ref=e21] [cursor=pointer]:
+          - img
+          - generic [ref=e22]: Contacts
+          - generic [ref=e23]: "112"
+        - button "Deals 12" [ref=e24] [cursor=pointer]:
+          - img
+          - generic [ref=e25]: Deals
+          - generic [ref=e26]: "12"
+        - button "Activity 24h" [ref=e27] [cursor=pointer]:
+          - img
+          - generic [ref=e28]: Activity
+          - generic [ref=e29]: 24h
+      - button "EM Elena Moreno Northwind Forwarding" [ref=e31] [cursor=pointer]:
+        - generic [ref=e33]: EM
+        - generic [ref=e34]:
+          - paragraph [ref=e35]: Elena Moreno
+          - paragraph [ref=e36]: Northwind Forwarding
+    - main [ref=e37]:
+      - generic [ref=e38]:
+        - paragraph [ref=e39]: Lead detail
+        - generic [ref=e41]:
+          - img
+          - textbox "Search Multideck" [ref=e42]:
+            - /placeholder: Search leads, contacts, deals, or activity...
+          - generic [ref=e43]: ⌘ K
+        - button "Import" [ref=e44] [cursor=pointer]:
+          - img
+          - text: Import
+        - button "New CRM record" [ref=e45] [cursor=pointer]:
+          - img
+          - generic [ref=e46]: New CRM record
+      - generic [ref=e764]:
+        - button "Back to leads" [ref=e765] [cursor=pointer]:
+          - img [ref=e766]
+          - text: Back to leads
+        - generic [ref=e768]:
+          - generic [ref=e769]:
+            - paragraph [ref=e770]: CRM
+            - heading "Bauhaus Importe GmbH" [level=1] [ref=e771]
+            - paragraph [ref=e772]: A dedicated CRM lead view for qualification, service context, and the customer handoff.
+            - paragraph [ref=e773]: Hamburg, DE · Furniture & home · owned by EM
+          - generic [ref=e774]:
+            - button "Open in Customers" [ref=e775] [cursor=pointer]
+            - button "Turn into customer" [ref=e776] [cursor=pointer]:
+              - img
+              - text: Turn into customer
+        - generic [ref=e777]:
+          - generic [ref=e778]:
+            - generic [ref=e781]:
+              - heading "Lead detail" [level=2] [ref=e782]
+              - paragraph [ref=e783]: conversion handoff
+            - generic [ref=e784]:
+              - generic [ref=e785]:
+                - generic [ref=e786]: BI
+                - generic [ref=e787]:
+                  - generic [ref=e788]:
+                    - heading "Bauhaus Importe GmbH" [level=2] [ref=e789]
+                    - generic [ref=e790]: Standard
+                  - paragraph [ref=e791]: Hamburg, DE
+                  - paragraph [ref=e792]: Lead record is ready to connect back into the main Multideck customer workspace when the commercial handoff is approved.
+              - img [ref=e793]
+            - generic [ref=e797]:
+              - generic [ref=e798]:
+                - paragraph [ref=e799]: Active work
+                - paragraph [ref=e800]: "4"
+              - generic [ref=e801]:
+                - paragraph [ref=e802]: Billed YTD
+                - paragraph [ref=e803]: €2.8M
+              - generic [ref=e804]:
+                - paragraph [ref=e805]: On-time
+                - paragraph [ref=e806]: 94%
+            - generic [ref=e807]:
+              - img [ref=e808]
+              - generic [ref=e811]:
+                - button "Open in Customers" [ref=e812] [cursor=pointer]
+                - button "Turn into customer" [ref=e813] [cursor=pointer]
+          - generic [ref=e814]:
+            - generic [ref=e815]:
+              - generic [ref=e818]:
+                - heading "Lead signals" [level=2] [ref=e819]
+                - paragraph [ref=e820]: ranked by commercial impact
+              - generic [ref=e821]:
+                - button "MA Marlow Apparel Ltd AW26 forecast is 20% above baseline Capacity conversation should happen before September allocations lock. Expansion €4.2M YTD" [ref=e822] [cursor=pointer]:
+                  - generic [ref=e823]: MA
+                  - generic [ref=e824]:
+                    - generic [ref=e825]: Marlow Apparel Ltd
+                    - generic [ref=e826]: AW26 forecast is 20% above baseline
+                    - generic [ref=e827]: Capacity conversation should happen before September allocations lock.
+                  - generic [ref=e828]:
+                    - generic [ref=e829]: Expansion
+                    - generic [ref=e830]: €4.2M YTD
+                - button "PG Pacific Goods Co Air quote response time is slipping Commercial opportunity is good, but customer confidence needs tighter reply rhythm. Watch 89% on-time" [ref=e831] [cursor=pointer]:
+                  - generic [ref=e832]: PG
+                  - generic [ref=e833]:
+                    - generic [ref=e834]: Pacific Goods Co
+                    - generic [ref=e835]: Air quote response time is slipping
+                    - generic [ref=e836]: Commercial opportunity is good, but customer confidence needs tighter reply rhythm.
+                  - generic [ref=e837]:
+                    - generic [ref=e838]: Watch
+                    - generic [ref=e839]: 89% on-time
+                - button "AS Aldridge & Sons Trial account has one customs exception Resolve the open hold and turn the trial into a cleaner retained account. Risk €410k YTD" [ref=e840] [cursor=pointer]:
+                  - generic [ref=e841]: AS
+                  - generic [ref=e842]:
+                    - generic [ref=e843]: Aldridge & Sons
+                    - generic [ref=e844]: Trial account has one customs exception
+                    - generic [ref=e845]: Resolve the open hold and turn the trial into a cleaner retained account.
+                  - generic [ref=e846]:
+                    - generic [ref=e847]: Risk
+                    - generic [ref=e848]: €410k YTD
+            - generic [ref=e849]:
+              - generic [ref=e851]:
+                - heading "Lead context" [level=2] [ref=e852]
+                - paragraph [ref=e853]: commercial and service snapshot
+              - generic [ref=e854]:
+                - generic [ref=e855]:
+                  - generic [ref=e856]: Status
+                  - generic [ref=e857]: Standard
+                - generic [ref=e858]:
+                  - generic [ref=e859]: Active work
+                  - generic [ref=e860]: "4"
+                - generic [ref=e861]:
+                  - generic [ref=e862]: Billed YTD
+                  - generic [ref=e863]: €2.8M
+                - generic [ref=e864]:
+                  - generic [ref=e865]: On-time
+                  - generic [ref=e866]: 94%
+  - region "Notifications alt+T"

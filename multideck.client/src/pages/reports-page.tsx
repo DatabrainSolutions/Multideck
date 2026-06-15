@@ -37,14 +37,14 @@ export function ReportsPage({ navigate }: { navigate: (path: string) => void }) 
   }
 
   return (
-    <div className="pb-8">
-      <section>
+    <div className="md-page md-page-sections">
+      <section className="md-section-stack">
         <div className="flex flex-col gap-1.5 sm:flex-row sm:items-baseline sm:gap-4">
           <h1 className="text-[18px] font-medium leading-7 text-[var(--md-ink)]">Templates</h1>
           <p className="text-[14px] text-[var(--md-text)]">Reusable layouts — every report starts from one</p>
         </div>
 
-        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <div className="grid gap-[var(--md-gap-lg)] md:grid-cols-2 xl:grid-cols-5">
           {reportTemplates.map((template) => (
             <ReportTemplateCard key={template.id} template={template} onRun={runTemplate} onEdit={editTemplate} />
           ))}
@@ -56,7 +56,7 @@ export function ReportsPage({ navigate }: { navigate: (path: string) => void }) 
         </div>
       </section>
 
-      <section className="mt-10">
+      <section className="md-section-stack">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex flex-col gap-3 md:flex-row md:items-center">
             <h2 className="text-[18px] font-medium leading-7 text-[var(--md-ink)]">Generated reports</h2>
@@ -69,7 +69,7 @@ export function ReportsPage({ navigate }: { navigate: (path: string) => void }) 
           <p className="text-[13px] font-medium text-[var(--md-text)]">Last 30 days · 14 reports</p>
         </div>
 
-        <GeneratedReportsTable className="mt-4" reports={visibleReports} onView={viewReport} onDownload={downloadReport} />
+        <GeneratedReportsTable reports={visibleReports} onView={viewReport} onDownload={downloadReport} />
       </section>
     </div>
   )

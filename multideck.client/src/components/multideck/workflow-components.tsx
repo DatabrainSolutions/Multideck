@@ -24,7 +24,7 @@ export function SegmentedControl<T extends string>({
           key={option}
           type="button"
           className={cn(
-            "h-8 rounded-[var(--md-radius-md)] px-4 text-[13px] font-medium text-[var(--md-text)] transition-all",
+            "h-8 rounded-[var(--md-radius-md)] px-4 text-[13px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,opacity,transform]",
             value === option && "bg-[var(--md-sidebar-bg)] text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
           )}
           onClick={() => onChange(option)}
@@ -57,7 +57,7 @@ export function FilterChips({
           type="button"
           aria-pressed={activeOption === option}
           className={cn(
-            "inline-flex h-9 items-center gap-2 rounded-full px-4 text-[13px] font-medium shadow-[var(--md-shadow-line)] transition-all",
+            "inline-flex h-9 items-center gap-2 rounded-full px-4 text-[13px] font-medium shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform]",
             activeOption === option
               ? "bg-[var(--md-accent)] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_0_0_3px_rgba(14,125,116,0.13)]"
               : "bg-white/25 text-[var(--md-text)] hover:bg-white/50",
@@ -71,7 +71,7 @@ export function FilterChips({
       ))}
       {auxiliaryOptions.length ? <span className="mx-2 hidden h-7 w-px bg-[rgba(11,20,19,0.08)] sm:block" /> : null}
       {auxiliaryOptions.map((option) => (
-        <button key={option} type="button" className="h-9 rounded-full bg-white/25 px-4 text-[13px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-all hover:bg-white/50">
+        <button key={option} type="button" className="h-9 rounded-full bg-white/25 px-4 text-[13px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white/50">
           {option}
         </button>
       ))}
@@ -91,13 +91,13 @@ export function TabsRail({
   className?: string
 }) {
   return (
-    <div className={cn("flex gap-6 overflow-x-auto border-b border-[rgba(11,20,19,0.08)] md-scrollbar", className)}>
+    <div className={cn("flex gap-[var(--md-page-stack-gap)] overflow-x-auto border-b border-[rgba(11,20,19,0.08)] md-scrollbar", className)}>
       {tabs.map((tab) => (
         <button
           key={tab.label}
           type="button"
           className={cn(
-            "relative flex h-12 shrink-0 items-center gap-2 text-[14px] font-medium text-[var(--md-text)] transition-all hover:text-[var(--md-ink)]",
+            "relative flex h-12 shrink-0 items-center gap-2 text-[14px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,opacity,transform] hover:text-[var(--md-ink)]",
             activeTab === tab.label && "text-[var(--md-ink)] after:absolute after:bottom-[-1px] after:left-0 after:h-0.5 after:w-full after:rounded-full after:bg-[var(--md-accent)]",
           )}
           onClick={() => onChange(tab.label)}

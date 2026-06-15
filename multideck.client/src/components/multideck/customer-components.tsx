@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils"
 import {
   customers,
   customerFilters,
+  customerScopeTabs,
   marlowAccount,
   marlowActiveShipments,
   marlowActivity,
@@ -26,10 +27,10 @@ export const customerViewModes = ["List", "Cards", "Map"] as const
 export type CustomerViewMode = (typeof customerViewModes)[number]
 
 const avatarToneClass: Record<string, string> = {
-  olive: "bg-[#dce1d6] text-[#786b37]",
-  blue: "bg-[rgba(74,125,156,0.14)] text-[var(--md-blue)]",
-  cream: "bg-[rgba(221,138,43,0.12)] text-[var(--md-amber)]",
-  teal: "bg-[rgba(14,125,116,0.12)] text-[var(--md-accent)]",
+  olive: "bg-[#dce1d6] text-[#786b37] dark:bg-[rgba(232,241,235,0.1)] dark:text-[var(--md-text)]",
+  blue: "bg-[rgba(74,125,156,0.14)] text-[var(--md-blue)] dark:bg-[rgba(127,176,207,0.14)]",
+  cream: "bg-[rgba(221,138,43,0.12)] text-[var(--md-amber)] dark:bg-[rgba(229,163,76,0.14)]",
+  teal: "bg-[rgba(14,125,116,0.12)] text-[var(--md-accent)] dark:bg-[rgba(104,199,184,0.14)]",
 }
 
 const statusTone: Record<CustomerStatus, StatusTone> = {
@@ -138,14 +139,22 @@ export function CustomerRow({
   onOpen: () => void
 }) {
   return (
-    <TableRow className="h-[72px] cursor-pointer border-[rgba(11,20,19,0.04)] hover:bg-white/35" onClick={onOpen}>
-      <TableCell className="w-12 pl-0">
+    <TableRow
+      data-state={selected ? "selected" : undefined}
+      className={cn(
+        "h-[72px] cursor-pointer border-[rgba(11,20,19,0.045)] bg-[color-mix(in_srgb,var(--md-surface)_72%,transparent)] shadow-[inset_0_1px_0_rgba(255,255,255,0.58)] hover:bg-[color-mix(in_srgb,var(--md-surface)_86%,transparent)]",
+        selected && "bg-[color-mix(in_srgb,var(--md-surface)_94%,transparent)] shadow-[inset_3px_0_0_var(--md-accent),inset_0_1px_0_rgba(255,255,255,0.92),inset_0_-1px_0_rgba(11,20,19,0.04)] hover:bg-[color-mix(in_srgb,var(--md-surface)_96%,transparent)]",
+      )}
+      style={selected ? ({ backgroundColor: "color-mix(in srgb, var(--md-surface) 94%, transparent)" } satisfies CSSProperties) : undefined}
+      onClick={onOpen}
+    >
+      <TableCell className="w-12 pl-4 pr-2">
         <button
           type="button"
           aria-label={`Select ${customer.name}`}
           aria-pressed={selected}
           className={cn(
-            "grid size-[18px] place-items-center rounded-[var(--md-radius-sm)] bg-white shadow-[var(--md-shadow-line)] transition-all",
+            "grid size-[18px] place-items-center rounded-[var(--md-radius-sm)] bg-white shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform]",
             selected && "bg-[var(--md-accent)] shadow-[0_0_0_3px_rgba(14,125,116,0.12)]",
           )}
           onClick={(event) => {
@@ -185,7 +194,7 @@ export function CustomerRow({
 
 export function CustomerCard({ customer, onOpen }: { customer: Customer; onOpen: () => void }) {
   return (
-    <button type="button" className="rounded-[var(--md-radius-xl)] bg-white/65 p-4 text-left shadow-[var(--md-shadow-line)] transition-all hover:bg-white" onClick={onOpen}>
+    <button type="button" className="rounded-[var(--md-radius-xl)] bg-white/65 p-4 text-left shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white" onClick={onOpen}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <CustomerAvatar initials={customer.initials} tone={customer.avatarTone} />
@@ -196,7 +205,7 @@ export function CustomerCard({ customer, onOpen }: { customer: Customer; onOpen:
         </div>
         <CustomerStatusPill status={customer.status} />
       </div>
-      <div className="mt-5 grid grid-cols-3 gap-3 text-[12px] text-[var(--md-text)]">
+      <div className="mt-[var(--md-page-stack-gap)] grid grid-cols-3 gap-[var(--md-gap-md)] text-[12px] text-[var(--md-text)]">
         <div>
           <p>Billed</p>
           <p className="mt-1 text-[16px] font-medium text-[var(--md-ink)]">{customer.billedYtd}</p>
@@ -217,15 +226,19 @@ export function CustomerCard({ customer, onOpen }: { customer: Customer; onOpen:
 
 export function CustomerListHeader({
   onExport,
+  scope,
+  onScopeChange,
   viewMode,
   onViewModeChange,
 }: {
   onExport: () => void
+  scope: (typeof customerScopeTabs)[number]
+  onScopeChange: (scope: (typeof customerScopeTabs)[number]) => void
   viewMode: CustomerViewMode
   onViewModeChange: (mode: CustomerViewMode) => void
 }) {
   return (
-    <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+    <div className="flex flex-col gap-[var(--md-gap-lg)] xl:flex-row xl:items-end xl:justify-between">
       <div>
         <h1 className="text-[32px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">Customers</h1>
         <p className="mt-2 text-[15px] leading-6 text-[var(--md-text)]">
@@ -234,6 +247,8 @@ export function CustomerListHeader({
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
+        <SegmentedControl options={customerScopeTabs} value={scope} onChange={onScopeChange} />
+        <CustomerViewModeSwitch viewMode={viewMode} onViewModeChange={onViewModeChange} />
         <Button
           variant="ghost"
           className="h-10 rounded-[var(--md-radius-lg)] bg-white/35 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/65"
@@ -242,7 +257,6 @@ export function CustomerListHeader({
           <Download data-icon="inline-start" strokeWidth={1.2} />
           Export CSV
         </Button>
-        <CustomerViewModeSwitch viewMode={viewMode} onViewModeChange={onViewModeChange} />
       </div>
     </div>
   )
@@ -268,7 +282,7 @@ export function CustomerFilterBar({
   onFilterChange: (filter: string) => void
 }) {
   return (
-    <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+    <div className="flex flex-col gap-[var(--md-gap-lg)] xl:flex-row xl:items-center xl:justify-between">
       <FilterChips
         options={customerFilters}
         activeOption={activeFilter}
@@ -292,11 +306,11 @@ export function CustomerListTable({
   onOpenCustomer: (customer: Customer) => void
 }) {
   return (
-    <div className="overflow-hidden rounded-[var(--md-radius-xl)] bg-transparent">
+    <div className="overflow-hidden rounded-[var(--md-radius-xl)] bg-[color-mix(in_srgb,var(--md-surface)_42%,transparent)] shadow-[var(--md-shadow-line)]">
       <Table className="min-w-[1180px]">
         <TableHeader>
           <TableRow className="border-[rgba(11,20,19,0.05)] hover:bg-transparent">
-            <TableHead className="w-12 pl-0" />
+            <TableHead className="w-12 pl-4 pr-2" />
             <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Customer</TableHead>
             <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Industry</TableHead>
             <TableHead className="text-right text-[12px] font-medium text-[var(--md-text)]">Contacts</TableHead>
@@ -373,7 +387,7 @@ export function CustomerFootprintMap({
               <button
                 key={city}
                 type="button"
-                className="absolute grid size-10 place-items-center rounded-full bg-white/85 text-[12px] font-medium text-[var(--md-accent)] shadow-[var(--md-shadow-lift)] transition-all hover:scale-[1.04]"
+                className="absolute grid size-10 place-items-center rounded-full bg-white/85 text-[12px] font-medium text-[var(--md-accent)] shadow-[var(--md-shadow-lift)] transition-[background,color,box-shadow,opacity,transform] hover:scale-[1.04]"
                 style={{ left, top }}
                 onClick={() => onOpenCustomer(matchingCustomer)}
               >
@@ -431,7 +445,7 @@ export function ContactRow({
       role={interactive ? "button" : undefined}
       tabIndex={interactive ? 0 : undefined}
       className={cn(
-        "grid grid-cols-[44px_1fr_auto] items-center gap-4 border-t border-[rgba(11,20,19,0.06)] px-5 py-4 transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
+        "grid grid-cols-[44px_1fr_auto] items-center gap-4 border-t border-[rgba(11,20,19,0.06)] px-5 py-4 transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
         interactive && "cursor-pointer hover:bg-white/45 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.12)]",
         selected && "bg-white/60",
       )}
@@ -547,11 +561,11 @@ export function ContactProfileModule({
             <p className="text-[12px] font-medium text-[var(--md-subtle)]">Next step</p>
             <p className="mt-2 text-[14px] font-medium leading-6 text-[var(--md-ink)]">{contact.nextStep}</p>
           </div>
-          <div className="mt-5">
+          <div className="mt-[var(--md-page-stack-gap)]">
             <p className="text-[12px] font-medium text-[var(--md-subtle)]">Last touch</p>
             <p className="mt-2 text-[13px] leading-5 text-[var(--md-text)]">{contact.lastTouch}</p>
           </div>
-          <div className="mt-5">
+          <div className="mt-[var(--md-page-stack-gap)]">
             <p className="text-[12px] font-medium text-[var(--md-subtle)]">Open items</p>
             <div className="mt-2 flex flex-col gap-2">
               {contact.openItems.map((item) => (
@@ -561,7 +575,7 @@ export function ContactProfileModule({
               ))}
             </div>
           </div>
-          <div className="mt-5">
+          <div className="mt-[var(--md-page-stack-gap)]">
             <p className="text-[12px] font-medium text-[var(--md-subtle)]">Linked work</p>
             <div className="mt-2 flex flex-wrap gap-2">
               {contact.linkedShipments.map((shipment) => (
@@ -569,7 +583,7 @@ export function ContactProfileModule({
               ))}
             </div>
           </div>
-          <p className="mt-5 border-t border-[rgba(11,20,19,0.06)] pt-4 text-[13px] leading-6 text-[var(--md-text)]">{contact.notes}</p>
+          <p className="mt-[var(--md-page-stack-gap)] border-t border-[rgba(11,20,19,0.06)] pt-[var(--md-gap-lg)] text-[13px] leading-6 text-[var(--md-text)]">{contact.notes}</p>
         </div>
       </div>
     </Surface>
@@ -621,7 +635,7 @@ export function CustomerPanelHeader({
 
 export function AddContactButton() {
   return (
-    <button type="button" className="mx-5 mb-5 mt-4 flex h-10 items-center justify-center gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] transition-all hover:bg-white/70 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.12)]">
+    <button type="button" className="mx-[var(--md-page-stack-gap)] mb-[var(--md-page-stack-gap)] mt-[var(--md-gap-lg)] flex h-10 items-center justify-center gap-[var(--md-gap-sm)] rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white/70 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.12)]">
       <Plus className="size-4" strokeWidth={1.3} />
       Add contact
     </button>
@@ -639,8 +653,8 @@ export function ArrowTextButton({ children }: { children: ReactNode }) {
 
 export function CustomerDetailHero() {
   return (
-    <section className="mb-6 flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
-      <div className="flex flex-col gap-5 md:flex-row md:items-center">
+    <section className="flex flex-col gap-[var(--md-page-stack-gap)] xl:flex-row xl:items-center xl:justify-between">
+      <div className="flex flex-col gap-[var(--md-page-stack-gap)] md:flex-row md:items-center">
         <CustomerAvatar initials="MA" tone="olive" size="lg" />
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-3">
@@ -721,15 +735,15 @@ export function PrimaryContactsPanel({
 
 export function ArtiePulsePanel() {
   return (
-    <section className="rounded-[var(--md-radius-xl)] bg-[rgba(14,125,116,0.12)] p-5 shadow-[inset_0_0_0_1px_rgba(14,125,116,0.22)]">
+    <section className="rounded-[var(--md-radius-xl)] bg-[rgba(14,125,116,0.12)] p-[var(--md-page-stack-gap)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.22)]">
       <div className="flex items-center gap-3">
         <Sparkles className="size-4 text-[var(--md-accent)]" strokeWidth={1.2} />
         <h2 className="text-[15px] font-medium text-[var(--md-ink)]">Artie · customer pulse</h2>
       </div>
-      <p className="mt-5 text-[15px] leading-7 text-[var(--md-ink)]">
+      <p className="mt-[var(--md-page-stack-gap)] text-[15px] leading-7 text-[var(--md-ink)]">
         Healthy and growing. Sandra mentioned in last week's email that volumes for AW26 may run 20% above forecast — worth touching base on capacity before September. One open hold; everything else on track.
       </p>
-      <div className="mt-5 flex flex-wrap gap-2">
+      <div className="mt-[var(--md-page-stack-gap)] flex flex-wrap gap-[var(--md-gap-sm)]">
         <Button variant="ghost" className="h-9 rounded-[var(--md-radius-md)] bg-white/35 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]">
           Draft capacity check-in
         </Button>
@@ -803,7 +817,7 @@ export function CustomerSimpleTabPanel({ tab }: { tab: string }) {
     <Surface className="rounded-[var(--md-radius-xl)]" padding="lg">
       <h2 className="text-[18px] font-medium text-[var(--md-ink)]">{tab}</h2>
       <p className="mt-3 max-w-[720px] text-[14px] leading-7 text-[var(--md-text)]">{message}</p>
-      <div className="mt-6 grid gap-3 md:grid-cols-3">
+      <div className="mt-[var(--md-gap-xl)] grid gap-[var(--md-gap-md)] md:grid-cols-3">
         {marlowMetrics.slice(0, 3).map((metric) => (
           <CustomerMetricCard key={metric.label} {...metric} />
         ))}

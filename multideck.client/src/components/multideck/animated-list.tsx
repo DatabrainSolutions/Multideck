@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode, type RefObject } from "react"
 import { motion, useInView, useReducedMotion } from "motion/react"
 import { cn } from "@/lib/utils"
+import { mdEase } from "@/lib/motion"
 
 const defaultAnimatedListItems = [
   "Item 1",
@@ -85,9 +86,10 @@ function AnimatedListItem({
       data-index={index}
       onMouseEnter={onMouseEnter}
       onClick={onClick}
-      initial={shouldAnimate ? { opacity: 0, scale: 0.985, y: 5 } : false}
-      animate={!shouldAnimate || inView ? { opacity: 1, scale: 1, y: 0 } : { opacity: 0, scale: 0.985, y: 5 }}
-      transition={{ duration: 0.22, delay: shouldAnimate ? Math.min(index * 0.015, 0.12) : 0, ease: [0.22, 1, 0.36, 1] }}
+      initial={shouldAnimate ? { opacity: 0, y: 4 } : false}
+      animate={!shouldAnimate || inView ? { opacity: 1, y: 0 } : { opacity: 0, y: 4 }}
+      transition={{ duration: 0.18, delay: shouldAnimate ? Math.min(index * 0.012, 0.08) : 0, ease: mdEase }}
+      style={{ willChange: shouldAnimate ? "transform, opacity" : undefined }}
       className={cn(
         "w-full rounded-[var(--md-radius-lg)] px-3 py-3 text-left transition-[background,box-shadow,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
         "hover:bg-white/55 hover:shadow-[var(--md-shadow-line)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(14,125,116,0.18)]",
@@ -120,6 +122,8 @@ export function AnimatedList<T = string>({
 }: AnimatedListProps<T>) {
   const generatedId = useId()
   const listRef = useRef<HTMLDivElement | null>(null)
+  const scrollFrameRef = useRef<number | null>(null)
+  const gradientStateRef = useRef({ isScrollable: false, top: 0, bottom: 0 })
   const resolvedItems = (items ?? defaultAnimatedListItems) as T[]
   const [selectedIndex, setSelectedIndex] = useState(initialSelectedIndex)
   const [keyboardNav, setKeyboardNav] = useState(false)
@@ -131,11 +135,36 @@ export function AnimatedList<T = string>({
     const { scrollTop, scrollHeight, clientHeight } = container
     const bottomDistance = scrollHeight - (scrollTop + clientHeight)
     const nextIsScrollable = scrollHeight > clientHeight + 1
+    const nextTopOpacity = Number(Math.min(scrollTop / 44, 1).toFixed(2))
+    const nextBottomOpacity = Number((nextIsScrollable ? Math.min(bottomDistance / 44, 1) : 0).toFixed(2))
+    const current = gradientStateRef.current
+
+    if (current.isScrollable === nextIsScrollable && current.top === nextTopOpacity && current.bottom === nextBottomOpacity) {
+      return
+    }
+
+    gradientStateRef.current = {
+      isScrollable: nextIsScrollable,
+      top: nextTopOpacity,
+      bottom: nextBottomOpacity,
+    }
 
     setIsScrollable(nextIsScrollable)
-    setTopGradientOpacity(Math.min(scrollTop / 44, 1))
-    setBottomGradientOpacity(nextIsScrollable ? Math.min(bottomDistance / 44, 1) : 0)
+    setTopGradientOpacity(nextTopOpacity)
+    setBottomGradientOpacity(nextBottomOpacity)
   }, [])
+
+  const requestGradientState = useCallback(
+    (container: HTMLDivElement) => {
+      if (scrollFrameRef.current !== null) return
+
+      scrollFrameRef.current = window.requestAnimationFrame(() => {
+        scrollFrameRef.current = null
+        updateGradientState(container)
+      })
+    },
+    [updateGradientState],
+  )
 
   const handleItemSelect = useCallback(
     (item: T, index: number) => {
@@ -179,7 +208,13 @@ export function AnimatedList<T = string>({
     const observer = new ResizeObserver(() => updateGradientState(container))
 
     observer.observe(container)
-    return () => observer.disconnect()
+    return () => {
+      observer.disconnect()
+      if (scrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(scrollFrameRef.current)
+        scrollFrameRef.current = null
+      }
+    }
   }, [updateGradientState])
 
   useEffect(() => {
@@ -227,7 +262,7 @@ export function AnimatedList<T = string>({
           listClassName,
         )}
         style={listStyle}
-        onScroll={(event) => updateGradientState(event.currentTarget)}
+        onScroll={(event) => requestGradientState(event.currentTarget)}
         onKeyDown={handleKeyDown}
       >
         {resolvedItems.map((item, index) => {

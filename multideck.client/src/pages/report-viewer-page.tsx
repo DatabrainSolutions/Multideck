@@ -3,28 +3,75 @@ import { ArrowLeft, Download, Share2 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { StatusPill } from "@/components/multideck/status-pill"
+import { ThemeToggle } from "@/components/multideck/theme-toggle"
 import {
+  createReportBlockFromWidget,
   monthlyReviewPages,
+  ReportBlockDataEditorDialog,
   ReportDocumentPage,
   ReportPageControls,
   ReportPageThumbnailRail,
+  reportWidgets,
+  ReportWidgetPalette,
+  type ReportBlock,
+  type ReportPage,
+  type ReportWidget,
 } from "@/components/multideck/report-components"
 import { generatedReports } from "@/data/multideck-data"
 
 export function ReportViewerPage({ navigate, reportId }: { navigate: (path: string) => void; reportId: string }) {
-  const [activePageId, setActivePageId] = useState(monthlyReviewPages[0].id)
-  const activePageIndex = useMemo(() => monthlyReviewPages.findIndex((page) => page.id === activePageId), [activePageId])
-  const activePage = monthlyReviewPages[Math.max(activePageIndex, 0)] ?? monthlyReviewPages[0]
+  const [pages, setPages] = useState<ReportPage[]>(monthlyReviewPages)
+  const [activePageId, setActivePageId] = useState(pages[0].id)
+  const [selectedBlockId, setSelectedBlockId] = useState<string>()
+  const [editingBlock, setEditingBlock] = useState<ReportBlock>()
+  const [activeWidgetId, setActiveWidgetId] = useState<string>()
+  const [query, setQuery] = useState("")
+  const activePageIndex = useMemo(() => pages.findIndex((page) => page.id === activePageId), [activePageId, pages])
+  const activePage = pages[Math.max(activePageIndex, 0)] ?? pages[0]
   const report = generatedReports.find((item) => item.id === reportId) ?? generatedReports[0]
 
   function movePage(direction: -1 | 1) {
-    const nextIndex = Math.min(Math.max(activePageIndex + direction, 0), monthlyReviewPages.length - 1)
-    setActivePageId(monthlyReviewPages[nextIndex].id)
+    const nextIndex = Math.min(Math.max(activePageIndex + direction, 0), pages.length - 1)
+    setActivePageId(pages[nextIndex].id)
+  }
+
+  function addWidget(widget: ReportWidget, targetPageId = activePageId) {
+    const newBlock = createReportBlockFromWidget(widget, pages.flatMap((page) => page.blocks).length)
+    setPages((currentPages) =>
+      currentPages.map((page) => (page.id === targetPageId ? { ...page, blocks: [...page.blocks, newBlock] } : page)),
+    )
+    setActivePageId(targetPageId)
+    setSelectedBlockId(newBlock.id)
+    setActiveWidgetId(widget.id)
+    toast.success(`${widget.title} added`, { description: "Click it to choose the data it should show." })
+  }
+
+  function addWidgetById(widgetId: string, targetPageId: string) {
+    const widget = reportWidgets.find((item) => item.id === widgetId)
+    if (widget) addWidget(widget, targetPageId)
+  }
+
+  function selectBlock(block: ReportBlock) {
+    setSelectedBlockId(block.id)
+    setActiveWidgetId(undefined)
+    setEditingBlock(block)
+  }
+
+  function saveBlock(nextBlock: ReportBlock) {
+    setPages((currentPages) =>
+      currentPages.map((page) => ({
+        ...page,
+        blocks: page.blocks.map((block) => (block.id === nextBlock.id ? nextBlock : block)),
+      })),
+    )
+    setSelectedBlockId(nextBlock.id)
+    setEditingBlock(nextBlock)
+    toast.success("Report data updated", { description: `${nextBlock.title} now uses the selected report data.` })
   }
 
   return (
     <div className="min-h-screen bg-[var(--md-bg)] text-[var(--md-ink)]">
-      <header className="sticky top-0 z-30 flex h-[76px] items-center justify-between gap-4 bg-[rgba(251,253,253,0.88)] px-4 shadow-[inset_0_-1px_0_rgba(11,20,19,0.06)] backdrop-blur-xl sm:px-8">
+      <header className="sticky top-0 z-30 flex h-[76px] items-center justify-between gap-[var(--md-gap-lg)] bg-[var(--md-topbar-bg)] px-[var(--md-page-pad)] shadow-[inset_0_-1px_0_var(--md-line)] backdrop-blur-xl">
         <div className="flex min-w-0 items-center gap-4">
           <button type="button" className="flex shrink-0 items-center gap-2 text-[14px] font-medium text-[var(--md-text)] transition-colors hover:text-[var(--md-ink)]" onClick={() => navigate("/reports")}>
             <ArrowLeft className="size-4" strokeWidth={1.4} />
@@ -39,7 +86,8 @@ export function ReportViewerPage({ navigate, reportId }: { navigate: (path: stri
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          <ReportPageControls page={activePage.pageNumber} totalPages={monthlyReviewPages.length} onPrevious={() => movePage(-1)} onNext={() => movePage(1)} />
+          <ReportPageControls page={activePage.pageNumber} totalPages={pages.length} onPrevious={() => movePage(-1)} onNext={() => movePage(1)} />
+          <ThemeToggle compact className="hidden bg-[var(--md-glass)] md:flex" />
           <Button
             type="button"
             variant="ghost"
@@ -69,12 +117,29 @@ export function ReportViewerPage({ navigate, reportId }: { navigate: (path: stri
         </div>
       </header>
 
-      <main className="grid lg:grid-cols-[206px_minmax(0,1fr)]">
-        <ReportPageThumbnailRail pages={monthlyReviewPages} activePageId={activePageId} onChange={setActivePageId} />
-        <div className="min-h-[calc(100vh-76px)] overflow-auto px-5 py-10 md:px-10">
-          <ReportDocumentPage page={activePage} totalPages={monthlyReviewPages.length} />
+      <main className="grid lg:grid-cols-[206px_minmax(0,1fr)] xl:grid-cols-[206px_minmax(0,1fr)_420px]">
+        <ReportPageThumbnailRail pages={pages} activePageId={activePageId} onChange={setActivePageId} />
+        <div className="min-h-[calc(100vh-76px)] overflow-auto px-[var(--md-page-pad)] py-[var(--md-workspace-pad-y)]">
+          <ReportDocumentPage
+            page={activePage}
+            totalPages={pages.length}
+            editable
+            selectedBlockId={selectedBlockId}
+            onSelectBlock={selectBlock}
+            onDropWidget={addWidgetById}
+          />
         </div>
+        <ReportWidgetPalette widgets={reportWidgets} query={query} onQueryChange={setQuery} activeWidgetId={activeWidgetId} onAddWidget={addWidget} className="hidden xl:flex xl:sticky xl:top-[76px] xl:h-[calc(100vh-76px)]" />
       </main>
+
+      <ReportBlockDataEditorDialog
+        block={editingBlock}
+        open={Boolean(editingBlock)}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) setEditingBlock(undefined)
+        }}
+        onSave={saveBlock}
+      />
     </div>
   )
 }

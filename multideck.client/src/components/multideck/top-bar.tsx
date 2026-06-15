@@ -5,6 +5,7 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { CommandInput } from "./command-input"
 import { AppSidebar } from "./app-sidebar"
+import { customers } from "@/data/multideck-data"
 
 export function TopBar({
   route,
@@ -15,14 +16,29 @@ export function TopBar({
 }) {
   const isCustomerList = route === "/customers"
   const isCustomerDetail = route.startsWith("/customers/")
+  const isCrmRoute = route.startsWith("/crm")
+  const isCrmLeadDetail = /^\/crm\/leads\/[^/]+$/.test(route)
   const isShipmentList = route === "/shipments"
   const isReports = route === "/reports"
+  const crmRouteLabel: Record<string, string> = {
+    "/crm": "CRM",
+    "/crm/accounts": "Leads",
+    "/crm/leads": "Leads",
+    "/crm/contacts": "Contacts",
+    "/crm/deals": "Deals",
+    "/crm/emails": "Emails",
+    "/crm/lists": "Lists",
+    "/crm/marketing": "Marketing",
+    "/crm/activity": "Activity",
+    "/crm/settings": "CRM settings",
+  }
+  const currentLead = isCrmLeadDetail ? customers.find((customer) => customer.id === route.split("/").at(-1)) : undefined
 
   return (
-    <header className="sticky top-0 z-10 -mx-[var(--md-page-pad)] mb-8 flex min-h-[56px] items-center gap-4 border-b border-[rgba(11,20,19,0.06)] bg-[rgba(223,234,231,0.9)] px-[var(--md-page-pad)] py-2 backdrop-blur-xl">
+    <header className="sticky top-0 z-10 -mx-[var(--md-page-pad)] mb-[var(--md-page-stack-gap)] flex min-h-[56px] items-center gap-[var(--md-gap-lg)] border-b border-[var(--md-line)] bg-[var(--md-topbar-bg)] px-[var(--md-page-pad)] py-[var(--md-gap-sm)] backdrop-blur-xl">
       <Sheet>
         <SheetTrigger asChild>
-          <Button variant="ghost" size="icon" className="rounded-[var(--md-radius-md)] bg-white/50 shadow-[var(--md-shadow-line)] lg:hidden">
+          <Button variant="ghost" size="icon" className="rounded-[var(--md-radius-md)] bg-[var(--md-glass-strong)] shadow-[var(--md-shadow-line)] lg:hidden">
             <Menu data-icon="inline-start" strokeWidth={1.2} />
           </Button>
         </SheetTrigger>
@@ -72,11 +88,38 @@ export function TopBar({
             </Button>
           </div>
         </>
+      ) : isCrmLeadDetail ? (
+        <>
+          <button type="button" className="flex min-w-0 items-center gap-3 text-[14px] font-medium text-[var(--md-text)]" onClick={() => navigate("/crm/leads")}>
+            <ArrowLeft className="size-4" strokeWidth={1.2} />
+            <span>Leads</span>
+          </button>
+          <span className="hidden text-[var(--md-subtle)] md:inline">/</span>
+          <p className="hidden truncate text-[14px] font-medium text-[var(--md-ink)] md:block">{currentLead?.name ?? "Lead detail"}</p>
+          <div className="ml-auto flex items-center gap-2">
+            <Button
+              variant="ghost"
+              className="h-10 rounded-[var(--md-radius-lg)] bg-white/35 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/65"
+              onClick={() => toast.success("Activity logged", { description: `${currentLead?.name ?? "Lead"} has a new CRM note.` })}
+            >
+              Log activity
+            </Button>
+            <Button variant="ghost" size="icon" aria-label="More lead actions" className="rounded-[var(--md-radius-md)] bg-white/35 shadow-[var(--md-shadow-line)]">
+              <MoreHorizontal data-icon="inline-start" strokeWidth={1.2} />
+            </Button>
+            <Button
+              className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]"
+              onClick={() => toast.success("Deal draft created", { description: `${currentLead?.name ?? "Lead"} is ready for quote and pricing setup.` })}
+            >
+              Convert to deal
+            </Button>
+          </div>
+        </>
       ) : (
         <>
-          <p className="hidden min-w-[210px] text-[15px] font-medium text-[var(--md-text)] md:block">{isShipmentList ? "Shipments" : isCustomerList ? "Customers" : isReports ? "Reports" : "Today - Tue 26 May"}</p>
+          <p className="hidden min-w-[210px] text-[15px] font-medium text-[var(--md-text)] md:block">{isShipmentList ? "Shipments" : isCustomerList ? "Customers" : isCrmRoute ? crmRouteLabel[route] ?? (route.startsWith("/crm/leads/") ? "Lead detail" : route.startsWith("/crm/lists/") ? "List detail" : route.includes("/stats") ? "Email statistics" : route.includes("/edit") ? "Email editor" : "CRM") : isReports ? "Reports" : "Today - Tue 26 May"}</p>
           <div className="ml-auto min-w-0 flex-1 md:max-w-[560px]">
-            <CommandInput placeholder={isShipmentList ? "ID, container, customer, BoL, HS code..." : isCustomerList ? "Search customers, contacts, or shipments..." : isReports ? "Report name, template, customer..." : "Ask Multideck or jump to anything..."} />
+            <CommandInput placeholder={isShipmentList ? "ID, container, customer, BoL, HS code..." : isCustomerList ? "Search customers, contacts, or shipments..." : isCrmRoute ? "Search leads, contacts, deals, emails, lists, or marketing..." : isReports ? "Report name, template, customer..." : "Ask Multideck or jump to anything..."} />
           </div>
           {isShipmentList ? (
             <>
@@ -112,6 +155,33 @@ export function TopBar({
               >
                 <Plus data-icon="inline-start" strokeWidth={1.2} />
                 <span className="hidden sm:inline">New customer</span>
+              </Button>
+            </>
+          ) : isCrmRoute ? (
+            <>
+              <Button
+                variant="ghost"
+                className="hidden h-10 rounded-[var(--md-radius-lg)] bg-white/35 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/65 sm:inline-flex"
+                onClick={() =>
+                  toast.success("CRM import opened", {
+                    description: "Add leads, contacts, deals, or relationship notes.",
+                  })
+                }
+              >
+                <Upload data-icon="inline-start" strokeWidth={1.2} />
+                Import
+              </Button>
+              <Button
+                className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]"
+                onClick={() =>
+                  toast.success("CRM record draft created", {
+                    description: "Choose lead, contact, deal, or note next.",
+                  })
+                }
+              >
+                <Plus data-icon="inline-start" strokeWidth={1.2} />
+                <span className="hidden sm:inline">New CRM record</span>
+                <span className="sm:hidden">New</span>
               </Button>
             </>
           ) : isReports ? (

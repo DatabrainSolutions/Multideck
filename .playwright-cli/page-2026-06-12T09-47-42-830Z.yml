@@ -1,0 +1,688 @@
+- generic [ref=e2]:
+  - generic [ref=e4]:
+    - complementary [ref=e5]:
+      - img "Multideck" [ref=e7]
+      - button "Back" [ref=e9] [cursor=pointer]:
+        - img
+        - text: Back
+      - generic [ref=e10]:
+        - paragraph [ref=e11]: Workspace
+        - heading "CRM" [level=2] [ref=e12]
+        - paragraph [ref=e13]: Leads, contacts, deals, and activity.
+      - navigation [ref=e14]:
+        - button "CRM overview Live" [ref=e15] [cursor=pointer]:
+          - img
+          - generic [ref=e16]: CRM overview
+          - generic [ref=e17]: Live
+        - button "Leads 39" [ref=e18] [cursor=pointer]:
+          - img
+          - generic [ref=e19]: Leads
+          - generic [ref=e20]: "39"
+        - button "Contacts 112" [ref=e21] [cursor=pointer]:
+          - img
+          - generic [ref=e22]: Contacts
+          - generic [ref=e23]: "112"
+        - button "Deals 12" [ref=e24] [cursor=pointer]:
+          - img
+          - generic [ref=e25]: Deals
+          - generic [ref=e26]: "12"
+        - button "Activity 24h" [ref=e27] [cursor=pointer]:
+          - img
+          - generic [ref=e28]: Activity
+          - generic [ref=e29]: 24h
+      - button "EM Elena Moreno Northwind Forwarding" [ref=e31] [cursor=pointer]:
+        - generic [ref=e33]: EM
+        - generic [ref=e34]:
+          - paragraph [ref=e35]: Elena Moreno
+          - paragraph [ref=e36]: Northwind Forwarding
+    - main [ref=e37]:
+      - generic [ref=e38]:
+        - paragraph [ref=e39]: Leads
+        - generic [ref=e41]:
+          - img
+          - textbox "Search Multideck" [ref=e42]:
+            - /placeholder: Search leads, contacts, deals, or activity...
+          - generic [ref=e43]: ⌘ K
+        - button "Import" [ref=e44] [cursor=pointer]:
+          - img
+          - text: Import
+        - button "New CRM record" [ref=e45] [cursor=pointer]:
+          - img
+          - generic [ref=e46]: New CRM record
+      - generic [ref=e47]:
+        - generic [ref=e48]:
+          - generic [ref=e49]:
+            - paragraph [ref=e50]: CRM
+            - heading "Leads" [level=1] [ref=e51]
+            - paragraph [ref=e52]: CRM leads reuse the customer system, with commercial context close to live shipments and service health.
+            - paragraph [ref=e53]: 39 leads · 14 owned by Elena Moreno
+          - generic [ref=e54]:
+            - button "Export" [ref=e55] [cursor=pointer]:
+              - img
+              - text: Export
+            - button "New lead" [ref=e56] [cursor=pointer]:
+              - img
+              - text: New lead
+        - generic [ref=e57]:
+          - generic [ref=e58]:
+            - generic [ref=e59]:
+              - generic [ref=e60]:
+                - button "All · 39" [pressed] [ref=e61] [cursor=pointer]:
+                  - img [ref=e62]
+                  - text: All · 39
+                - button "Premium · 10" [ref=e64] [cursor=pointer]
+                - button "Standard · 22" [ref=e65] [cursor=pointer]
+                - button "Trial · 4 !" [ref=e66] [cursor=pointer]
+                - button "New · 3" [ref=e67] [cursor=pointer]
+                - button "+ Owner" [ref=e69] [cursor=pointer]
+                - button "+ Region" [ref=e70] [cursor=pointer]
+                - button "+ Industry" [ref=e71] [cursor=pointer]
+              - paragraph [ref=e72]: Sort · YTD volume ↓
+            - generic [ref=e73]:
+              - generic [ref=e76]:
+                - heading "Lead list" [level=2] [ref=e77]
+                - paragraph [ref=e78]: click a row to inspect the CRM lead detail
+              - table [ref=e82]:
+                - rowgroup [ref=e83]:
+                  - row "Customer Industry Contacts Active 30d shipments Billed YTD On-time Status Owner" [ref=e84]:
+                    - columnheader [ref=e85]
+                    - columnheader "Customer" [ref=e86]
+                    - columnheader "Industry" [ref=e87]
+                    - columnheader "Contacts" [ref=e88]
+                    - columnheader "Active" [ref=e89]
+                    - columnheader "30d shipments" [ref=e90]
+                    - columnheader "Billed YTD" [ref=e91]
+                    - columnheader "On-time" [ref=e92]
+                    - columnheader "Status" [ref=e93]
+                    - columnheader "Owner" [ref=e94]
+                - rowgroup [ref=e95]:
+                  - row "Select Marlow Apparel Ltd MA Marlow Apparel Ltd London, UK Apparel & textiles 4 6 · 1! €4.2M 96% Premium EM" [ref=e96] [cursor=pointer]:
+                    - cell "Select Marlow Apparel Ltd" [ref=e97]:
+                      - button "Select Marlow Apparel Ltd" [pressed] [ref=e98]
+                    - cell "MA Marlow Apparel Ltd London, UK" [ref=e100]:
+                      - generic [ref=e101]:
+                        - generic [ref=e102]: MA
+                        - generic [ref=e103]:
+                          - paragraph [ref=e104]: Marlow Apparel Ltd
+                          - paragraph [ref=e105]: London, UK
+                    - cell "Apparel & textiles" [ref=e106]
+                    - cell "4" [ref=e107]
+                    - cell "6 · 1!" [ref=e108]
+                    - cell [ref=e109]:
+                      - img [ref=e110]
+                    - cell "€4.2M" [ref=e113]
+                    - cell "96%" [ref=e114]
+                    - cell "Premium" [ref=e115]:
+                      - generic [ref=e116]: Premium
+                    - cell "EM" [ref=e117]:
+                      - generic [ref=e118]: EM
+                  - row "Select Bauhaus Importe GmbH BI Bauhaus Importe GmbH Hamburg, DE Furniture & home 3 4 €2.8M 94% Standard EM" [ref=e119] [cursor=pointer]:
+                    - cell "Select Bauhaus Importe GmbH" [ref=e120]:
+                      - button "Select Bauhaus Importe GmbH" [ref=e121]
+                    - cell "BI Bauhaus Importe GmbH Hamburg, DE" [ref=e123]:
+                      - generic [ref=e124]:
+                        - generic [ref=e125]: BI
+                        - generic [ref=e126]:
+                          - paragraph [ref=e127]: Bauhaus Importe GmbH
+                          - paragraph [ref=e128]: Hamburg, DE
+                    - cell "Furniture & home" [ref=e129]
+                    - cell "3" [ref=e130]
+                    - cell "4" [ref=e131]
+                    - cell [ref=e132]:
+                      - img [ref=e133]
+                    - cell "€2.8M" [ref=e136]
+                    - cell "94%" [ref=e137]
+                    - cell "Standard" [ref=e138]:
+                      - generic [ref=e139]: Standard
+                    - cell "EM" [ref=e140]:
+                      - generic [ref=e141]: EM
+                  - row "Select Black Forest Foods BF Black Forest Foods Stuttgart, DE Food & beverage 5 9 · 1! €2.1M 91% Premium JL" [ref=e142] [cursor=pointer]:
+                    - cell "Select Black Forest Foods" [ref=e143]:
+                      - button "Select Black Forest Foods" [ref=e144]
+                    - cell "BF Black Forest Foods Stuttgart, DE" [ref=e146]:
+                      - generic [ref=e147]:
+                        - generic [ref=e148]: BF
+                        - generic [ref=e149]:
+                          - paragraph [ref=e150]: Black Forest Foods
+                          - paragraph [ref=e151]: Stuttgart, DE
+                    - cell "Food & beverage" [ref=e152]
+                    - cell "5" [ref=e153]
+                    - cell "9 · 1!" [ref=e154]
+                    - cell [ref=e155]:
+                      - img [ref=e156]
+                    - cell "€2.1M" [ref=e159]
+                    - cell "91%" [ref=e160]
+                    - cell "Premium" [ref=e161]:
+                      - generic [ref=e162]: Premium
+                    - cell "JL" [ref=e163]:
+                      - generic [ref=e164]: JL
+                  - row "Select Pacific Goods Co PG Pacific Goods Co Oakland, US Consumer electronics 2 5 €1.9M 89% Standard EM" [ref=e165] [cursor=pointer]:
+                    - cell "Select Pacific Goods Co" [ref=e166]:
+                      - button "Select Pacific Goods Co" [ref=e167]
+                    - cell "PG Pacific Goods Co Oakland, US" [ref=e169]:
+                      - generic [ref=e170]:
+                        - generic [ref=e171]: PG
+                        - generic [ref=e172]:
+                          - paragraph [ref=e173]: Pacific Goods Co
+                          - paragraph [ref=e174]: Oakland, US
+                    - cell "Consumer electronics" [ref=e175]
+                    - cell "2" [ref=e176]
+                    - cell "5" [ref=e177]
+                    - cell [ref=e178]:
+                      - img [ref=e179]
+                    - cell "€1.9M" [ref=e182]
+                    - cell "89%" [ref=e183]
+                    - cell "Standard" [ref=e184]:
+                      - generic [ref=e185]: Standard
+                    - cell "EM" [ref=e186]:
+                      - generic [ref=e187]: EM
+                  - row "Select Mediterranean Spice Trading MS Mediterranean Spice Trading Athens, GR Specialty foods 3 7 €1.4M 93% Premium WC" [ref=e188] [cursor=pointer]:
+                    - cell "Select Mediterranean Spice Trading" [ref=e189]:
+                      - button "Select Mediterranean Spice Trading" [ref=e190]
+                    - cell "MS Mediterranean Spice Trading Athens, GR" [ref=e192]:
+                      - generic [ref=e193]:
+                        - generic [ref=e194]: MS
+                        - generic [ref=e195]:
+                          - paragraph [ref=e196]: Mediterranean Spice Trading
+                          - paragraph [ref=e197]: Athens, GR
+                    - cell "Specialty foods" [ref=e198]
+                    - cell "3" [ref=e199]
+                    - cell "7" [ref=e200]
+                    - cell [ref=e201]:
+                      - img [ref=e202]
+                    - cell "€1.4M" [ref=e205]
+                    - cell "93%" [ref=e206]
+                    - cell "Premium" [ref=e207]:
+                      - generic [ref=e208]: Premium
+                    - cell "WC" [ref=e209]:
+                      - generic [ref=e210]: WC
+                  - row "Select Atlas Office Supply AO Atlas Office Supply Berlin, DE B2B office 2 3 €620k 97% Standard JL" [ref=e211] [cursor=pointer]:
+                    - cell "Select Atlas Office Supply" [ref=e212]:
+                      - button "Select Atlas Office Supply" [ref=e213]
+                    - cell "AO Atlas Office Supply Berlin, DE" [ref=e215]:
+                      - generic [ref=e216]:
+                        - generic [ref=e217]: AO
+                        - generic [ref=e218]:
+                          - paragraph [ref=e219]: Atlas Office Supply
+                          - paragraph [ref=e220]: Berlin, DE
+                    - cell "B2B office" [ref=e221]
+                    - cell "2" [ref=e222]
+                    - cell "3" [ref=e223]
+                    - cell [ref=e224]:
+                      - img [ref=e225]
+                    - cell "€620k" [ref=e228]
+                    - cell "97%" [ref=e229]
+                    - cell "Standard" [ref=e230]:
+                      - generic [ref=e231]: Standard
+                    - cell "JL" [ref=e232]:
+                      - generic [ref=e233]: JL
+                  - row "Select Aldridge & Sons AS Aldridge & Sons Manchester, UK Industrial parts 2 2 · 1! €410k 88% Trial EM" [ref=e234] [cursor=pointer]:
+                    - cell "Select Aldridge & Sons" [ref=e235]:
+                      - button "Select Aldridge & Sons" [ref=e236]
+                    - cell "AS Aldridge & Sons Manchester, UK" [ref=e238]:
+                      - generic [ref=e239]:
+                        - generic [ref=e240]: AS
+                        - generic [ref=e241]:
+                          - paragraph [ref=e242]: Aldridge & Sons
+                          - paragraph [ref=e243]: Manchester, UK
+                    - cell "Industrial parts" [ref=e244]
+                    - cell "2" [ref=e245]
+                    - cell "2 · 1!" [ref=e246]
+                    - cell [ref=e247]:
+                      - img [ref=e248]
+                    - cell "€410k" [ref=e251]
+                    - cell "88%" [ref=e252]
+                    - cell "Trial" [ref=e253]:
+                      - generic [ref=e254]: Trial
+                    - cell "EM" [ref=e255]:
+                      - generic [ref=e256]: EM
+                  - row "Select Kessler & Söhne KG KS Kessler & Söhne KG Munich, DE Precision mechanical 3 3 €890k 99% Standard WC" [ref=e257] [cursor=pointer]:
+                    - cell "Select Kessler & Söhne KG" [ref=e258]:
+                      - button "Select Kessler & Söhne KG" [ref=e259]
+                    - cell "KS Kessler & Söhne KG Munich, DE" [ref=e261]:
+                      - generic [ref=e262]:
+                        - generic [ref=e263]: KS
+                        - generic [ref=e264]:
+                          - paragraph [ref=e265]: Kessler & Söhne KG
+                          - paragraph [ref=e266]: Munich, DE
+                    - cell "Precision mechanical" [ref=e267]
+                    - cell "3" [ref=e268]
+                    - cell "3" [ref=e269]
+                    - cell [ref=e270]:
+                      - img [ref=e271]
+                    - cell "€890k" [ref=e274]
+                    - cell "99%" [ref=e275]
+                    - cell "Standard" [ref=e276]:
+                      - generic [ref=e277]: Standard
+                    - cell "WC" [ref=e278]:
+                      - generic [ref=e279]: WC
+                  - row "Select Helsinki Marine Equipment HM Helsinki Marine Equipment Helsinki, FI Marine & offshore 1 1 €180k 100% New JL" [ref=e280] [cursor=pointer]:
+                    - cell "Select Helsinki Marine Equipment" [ref=e281]:
+                      - button "Select Helsinki Marine Equipment" [ref=e282]
+                    - cell "HM Helsinki Marine Equipment Helsinki, FI" [ref=e284]:
+                      - generic [ref=e285]:
+                        - generic [ref=e286]: HM
+                        - generic [ref=e287]:
+                          - paragraph [ref=e288]: Helsinki Marine Equipment
+                          - paragraph [ref=e289]: Helsinki, FI
+                    - cell "Marine & offshore" [ref=e290]
+                    - cell "1" [ref=e291]
+                    - cell "1" [ref=e292]
+                    - cell [ref=e293]:
+                      - img [ref=e294]
+                    - cell "€180k" [ref=e297]
+                    - cell "100%" [ref=e298]
+                    - cell "New" [ref=e299]:
+                      - generic [ref=e300]: New
+                    - cell "JL" [ref=e301]:
+                      - generic [ref=e302]: JL
+                  - row "Select Nordic Homeware AB NH Nordic Homeware AB Stockholm, SE Furniture & home 1 2 €1.1M 88% Premium EM" [ref=e303] [cursor=pointer]:
+                    - cell "Select Nordic Homeware AB" [ref=e304]:
+                      - button "Select Nordic Homeware AB" [ref=e305]
+                    - cell "NH Nordic Homeware AB Stockholm, SE" [ref=e307]:
+                      - generic [ref=e308]:
+                        - generic [ref=e309]: NH
+                        - generic [ref=e310]:
+                          - paragraph [ref=e311]: Nordic Homeware AB
+                          - paragraph [ref=e312]: Stockholm, SE
+                    - cell "Furniture & home" [ref=e313]
+                    - cell "1" [ref=e314]
+                    - cell "2" [ref=e315]
+                    - cell [ref=e316]:
+                      - img [ref=e317]
+                    - cell "€1.1M" [ref=e320]
+                    - cell "88%" [ref=e321]
+                    - cell "Premium" [ref=e322]:
+                      - generic [ref=e323]: Premium
+                    - cell "EM" [ref=e324]:
+                      - generic [ref=e325]: EM
+                  - row "Select Meridian Medical Supplies MM Meridian Medical Supplies Leeds, UK Healthcare supplies 2 3 €1.3M 89% Standard JL" [ref=e326] [cursor=pointer]:
+                    - cell "Select Meridian Medical Supplies" [ref=e327]:
+                      - button "Select Meridian Medical Supplies" [ref=e328]
+                    - cell "MM Meridian Medical Supplies Leeds, UK" [ref=e330]:
+                      - generic [ref=e331]:
+                        - generic [ref=e332]: MM
+                        - generic [ref=e333]:
+                          - paragraph [ref=e334]: Meridian Medical Supplies
+                          - paragraph [ref=e335]: Leeds, UK
+                    - cell "Healthcare supplies" [ref=e336]
+                    - cell "2" [ref=e337]
+                    - cell "3" [ref=e338]
+                    - cell [ref=e339]:
+                      - img [ref=e340]
+                    - cell "€1.3M" [ref=e343]
+                    - cell "89%" [ref=e344]
+                    - cell "Standard" [ref=e345]:
+                      - generic [ref=e346]: Standard
+                    - cell "JL" [ref=e347]:
+                      - generic [ref=e348]: JL
+                  - row "Select Rhein Auto Parts GmbH RA Rhein Auto Parts GmbH Cologne, DE Automotive parts 3 4 €1.5M 90% Standard WC" [ref=e349] [cursor=pointer]:
+                    - cell "Select Rhein Auto Parts GmbH" [ref=e350]:
+                      - button "Select Rhein Auto Parts GmbH" [ref=e351]
+                    - cell "RA Rhein Auto Parts GmbH Cologne, DE" [ref=e353]:
+                      - generic [ref=e354]:
+                        - generic [ref=e355]: RA
+                        - generic [ref=e356]:
+                          - paragraph [ref=e357]: Rhein Auto Parts GmbH
+                          - paragraph [ref=e358]: Cologne, DE
+                    - cell "Automotive parts" [ref=e359]
+                    - cell "3" [ref=e360]
+                    - cell "4" [ref=e361]
+                    - cell [ref=e362]:
+                      - img [ref=e363]
+                    - cell "€1.5M" [ref=e366]
+                    - cell "90%" [ref=e367]
+                    - cell "Standard" [ref=e368]:
+                      - generic [ref=e369]: Standard
+                    - cell "WC" [ref=e370]:
+                      - generic [ref=e371]: WC
+                  - row "Select Cobalt Cycleworks CC Cobalt Cycleworks Bristol, UK Sports equipment 4 5 · 1! €1.8M 91% Trial EM" [ref=e372] [cursor=pointer]:
+                    - cell "Select Cobalt Cycleworks" [ref=e373]:
+                      - button "Select Cobalt Cycleworks" [ref=e374]
+                    - cell "CC Cobalt Cycleworks Bristol, UK" [ref=e376]:
+                      - generic [ref=e377]:
+                        - generic [ref=e378]: CC
+                        - generic [ref=e379]:
+                          - paragraph [ref=e380]: Cobalt Cycleworks
+                          - paragraph [ref=e381]: Bristol, UK
+                    - cell "Sports equipment" [ref=e382]
+                    - cell "4" [ref=e383]
+                    - cell "5 · 1!" [ref=e384]
+                    - cell [ref=e385]:
+                      - img [ref=e386]
+                    - cell "€1.8M" [ref=e389]
+                    - cell "91%" [ref=e390]
+                    - cell "Trial" [ref=e391]:
+                      - generic [ref=e392]: Trial
+                    - cell "EM" [ref=e393]:
+                      - generic [ref=e394]: EM
+                  - row "Select Lisbon Lighting Co LL Lisbon Lighting Co Lisbon, PT Lighting & fixtures 5 6 €2.0M 92% Premium JL" [ref=e395] [cursor=pointer]:
+                    - cell "Select Lisbon Lighting Co" [ref=e396]:
+                      - button "Select Lisbon Lighting Co" [ref=e397]
+                    - cell "LL Lisbon Lighting Co Lisbon, PT" [ref=e399]:
+                      - generic [ref=e400]:
+                        - generic [ref=e401]: LL
+                        - generic [ref=e402]:
+                          - paragraph [ref=e403]: Lisbon Lighting Co
+                          - paragraph [ref=e404]: Lisbon, PT
+                    - cell "Lighting & fixtures" [ref=e405]
+                    - cell "5" [ref=e406]
+                    - cell "6" [ref=e407]
+                    - cell [ref=e408]:
+                      - img [ref=e409]
+                    - cell "€2.0M" [ref=e412]
+                    - cell "92%" [ref=e413]
+                    - cell "Premium" [ref=e414]:
+                      - generic [ref=e415]: Premium
+                    - cell "JL" [ref=e416]:
+                      - generic [ref=e417]: JL
+                  - row "Select Valencia Textiles SL VT Valencia Textiles SL Valencia, ES Apparel & textiles 1 7 €2.2M 93% Standard WC" [ref=e418] [cursor=pointer]:
+                    - cell "Select Valencia Textiles SL" [ref=e419]:
+                      - button "Select Valencia Textiles SL" [ref=e420]
+                    - cell "VT Valencia Textiles SL Valencia, ES" [ref=e422]:
+                      - generic [ref=e423]:
+                        - generic [ref=e424]: VT
+                        - generic [ref=e425]:
+                          - paragraph [ref=e426]: Valencia Textiles SL
+                          - paragraph [ref=e427]: Valencia, ES
+                    - cell "Apparel & textiles" [ref=e428]
+                    - cell "1" [ref=e429]
+                    - cell "7" [ref=e430]
+                    - cell [ref=e431]:
+                      - img [ref=e432]
+                    - cell "€2.2M" [ref=e435]
+                    - cell "93%" [ref=e436]
+                    - cell "Standard" [ref=e437]:
+                      - generic [ref=e438]: Standard
+                    - cell "WC" [ref=e439]:
+                      - generic [ref=e440]: WC
+                  - row "Select Copenhagen Kidswear CK Copenhagen Kidswear Copenhagen, DK Childrenswear 2 8 €2.4M 94% Standard EM" [ref=e441] [cursor=pointer]:
+                    - cell "Select Copenhagen Kidswear" [ref=e442]:
+                      - button "Select Copenhagen Kidswear" [ref=e443]
+                    - cell "CK Copenhagen Kidswear Copenhagen, DK" [ref=e445]:
+                      - generic [ref=e446]:
+                        - generic [ref=e447]: CK
+                        - generic [ref=e448]:
+                          - paragraph [ref=e449]: Copenhagen Kidswear
+                          - paragraph [ref=e450]: Copenhagen, DK
+                    - cell "Childrenswear" [ref=e451]
+                    - cell "2" [ref=e452]
+                    - cell "8" [ref=e453]
+                    - cell [ref=e454]:
+                      - img [ref=e455]
+                    - cell "€2.4M" [ref=e458]
+                    - cell "94%" [ref=e459]
+                    - cell "Standard" [ref=e460]:
+                      - generic [ref=e461]: Standard
+                    - cell "EM" [ref=e462]:
+                      - generic [ref=e463]: EM
+                  - row "Select Baltic Brewery Group BB Baltic Brewery Group Gdansk, PL Food & beverage 3 9 €2.6M 95% Premium JL" [ref=e464] [cursor=pointer]:
+                    - cell "Select Baltic Brewery Group" [ref=e465]:
+                      - button "Select Baltic Brewery Group" [ref=e466]
+                    - cell "BB Baltic Brewery Group Gdansk, PL" [ref=e468]:
+                      - generic [ref=e469]:
+                        - generic [ref=e470]: BB
+                        - generic [ref=e471]:
+                          - paragraph [ref=e472]: Baltic Brewery Group
+                          - paragraph [ref=e473]: Gdansk, PL
+                    - cell "Food & beverage" [ref=e474]
+                    - cell "3" [ref=e475]
+                    - cell "9" [ref=e476]
+                    - cell [ref=e477]:
+                      - img [ref=e478]
+                    - cell "€2.6M" [ref=e481]
+                    - cell "95%" [ref=e482]
+                    - cell "Premium" [ref=e483]:
+                      - generic [ref=e484]: Premium
+                    - cell "JL" [ref=e485]:
+                      - generic [ref=e486]: JL
+                  - row "Select Terra Garden Imports TG Terra Garden Imports Milan, IT Garden & outdoor 4 2 €700k 96% Standard WC" [ref=e487] [cursor=pointer]:
+                    - cell "Select Terra Garden Imports" [ref=e488]:
+                      - button "Select Terra Garden Imports" [ref=e489]
+                    - cell "TG Terra Garden Imports Milan, IT" [ref=e491]:
+                      - generic [ref=e492]:
+                        - generic [ref=e493]: TG
+                        - generic [ref=e494]:
+                          - paragraph [ref=e495]: Terra Garden Imports
+                          - paragraph [ref=e496]: Milan, IT
+                    - cell "Garden & outdoor" [ref=e497]
+                    - cell "4" [ref=e498]
+                    - cell "2" [ref=e499]
+                    - cell [ref=e500]:
+                      - img [ref=e501]
+                    - cell "€700k" [ref=e504]
+                    - cell "96%" [ref=e505]
+                    - cell "Standard" [ref=e506]:
+                      - generic [ref=e507]: Standard
+                    - cell "WC" [ref=e508]:
+                      - generic [ref=e509]: WC
+                  - row "Select Bristol Bathware Ltd BW Bristol Bathware Ltd Bristol, UK Bathroom fixtures 5 3 €735k 97% New EM" [ref=e510] [cursor=pointer]:
+                    - cell "Select Bristol Bathware Ltd" [ref=e511]:
+                      - button "Select Bristol Bathware Ltd" [ref=e512]
+                    - cell "BW Bristol Bathware Ltd Bristol, UK" [ref=e514]:
+                      - generic [ref=e515]:
+                        - generic [ref=e516]: BW
+                        - generic [ref=e517]:
+                          - paragraph [ref=e518]: Bristol Bathware Ltd
+                          - paragraph [ref=e519]: Bristol, UK
+                    - cell "Bathroom fixtures" [ref=e520]
+                    - cell "5" [ref=e521]
+                    - cell "3" [ref=e522]
+                    - cell [ref=e523]:
+                      - img [ref=e524]
+                    - cell "€735k" [ref=e527]
+                    - cell "97%" [ref=e528]
+                    - cell "New" [ref=e529]:
+                      - generic [ref=e530]: New
+                    - cell "EM" [ref=e531]:
+                      - generic [ref=e532]: EM
+                  - row "Select Hanseatic Tools GmbH HT Hanseatic Tools GmbH Bremen, DE Industrial tools 1 4 €770k 98% Standard JL" [ref=e533] [cursor=pointer]:
+                    - cell "Select Hanseatic Tools GmbH" [ref=e534]:
+                      - button "Select Hanseatic Tools GmbH" [ref=e535]
+                    - cell "HT Hanseatic Tools GmbH Bremen, DE" [ref=e537]:
+                      - generic [ref=e538]:
+                        - generic [ref=e539]: HT
+                        - generic [ref=e540]:
+                          - paragraph [ref=e541]: Hanseatic Tools GmbH
+                          - paragraph [ref=e542]: Bremen, DE
+                    - cell "Industrial tools" [ref=e543]
+                    - cell "1" [ref=e544]
+                    - cell "4" [ref=e545]
+                    - cell [ref=e546]:
+                      - img [ref=e547]
+                    - cell "€770k" [ref=e550]
+                    - cell "98%" [ref=e551]
+                    - cell "Standard" [ref=e552]:
+                      - generic [ref=e553]: Standard
+                    - cell "JL" [ref=e554]:
+                      - generic [ref=e555]: JL
+            - navigation "leads pagination" [ref=e556]:
+              - generic [ref=e557]:
+                - paragraph [ref=e558]:
+                  - text: Showing
+                  - generic [ref=e559]: 1-20
+                  - text: of 39 leads
+                - generic [ref=e560]:
+                  - generic [ref=e561]: Rows
+                  - combobox "Rows per page" [ref=e562] [cursor=pointer]:
+                    - generic: "20"
+                    - img
+              - generic [ref=e563]:
+                - button "Previous page" [disabled]:
+                  - img
+                - button "1" [ref=e565] [cursor=pointer]
+                - button "2" [ref=e567] [cursor=pointer]
+                - button "Next page" [ref=e568] [cursor=pointer]:
+                  - img [ref=e569]
+          - generic [ref=e571]:
+            - generic [ref=e572]:
+              - generic [ref=e575]:
+                - heading "Lead detail" [level=2] [ref=e576]
+                - paragraph [ref=e577]: conversion handoff
+              - generic [ref=e578]:
+                - generic [ref=e579]:
+                  - generic [ref=e580]: MA
+                  - generic [ref=e581]:
+                    - generic [ref=e582]:
+                      - heading "Marlow Apparel Ltd" [level=2] [ref=e583]
+                      - generic [ref=e584]: Premium
+                    - paragraph [ref=e585]: London, UK
+                    - paragraph [ref=e586]: Lead record is ready to connect back into the main Multideck customer workspace when the commercial handoff is approved.
+                - img [ref=e587]
+              - generic [ref=e591]:
+                - generic [ref=e592]:
+                  - paragraph [ref=e593]: Active work
+                  - paragraph [ref=e594]: 6 · 1!
+                - generic [ref=e595]:
+                  - paragraph [ref=e596]: Billed YTD
+                  - paragraph [ref=e597]: €4.2M
+                - generic [ref=e598]:
+                  - paragraph [ref=e599]: On-time
+                  - paragraph [ref=e600]: 96%
+              - generic [ref=e601]:
+                - img [ref=e602]
+                - generic [ref=e605]:
+                  - button "Open in Customers" [ref=e606] [cursor=pointer]
+                  - button "Turn into customer" [ref=e607] [cursor=pointer]
+            - generic [ref=e608]:
+              - generic [ref=e611]:
+                - heading "Lead signals" [level=2] [ref=e612]
+                - paragraph [ref=e613]: ranked by commercial impact
+              - generic [ref=e614]:
+                - button "MA Marlow Apparel Ltd AW26 forecast is 20% above baseline Capacity conversation should happen before September allocations lock. Expansion €4.2M YTD" [ref=e615] [cursor=pointer]:
+                  - generic [ref=e616]: MA
+                  - generic [ref=e617]:
+                    - generic [ref=e618]: Marlow Apparel Ltd
+                    - generic [ref=e619]: AW26 forecast is 20% above baseline
+                    - generic [ref=e620]: Capacity conversation should happen before September allocations lock.
+                  - generic [ref=e621]:
+                    - generic [ref=e622]: Expansion
+                    - generic [ref=e623]: €4.2M YTD
+                - button "PG Pacific Goods Co Air quote response time is slipping Commercial opportunity is good, but customer confidence needs tighter reply rhythm. Watch 89% on-time" [ref=e624] [cursor=pointer]:
+                  - generic [ref=e625]: PG
+                  - generic [ref=e626]:
+                    - generic [ref=e627]: Pacific Goods Co
+                    - generic [ref=e628]: Air quote response time is slipping
+                    - generic [ref=e629]: Commercial opportunity is good, but customer confidence needs tighter reply rhythm.
+                  - generic [ref=e630]:
+                    - generic [ref=e631]: Watch
+                    - generic [ref=e632]: 89% on-time
+                - button "AS Aldridge & Sons Trial account has one customs exception Resolve the open hold and turn the trial into a cleaner retained account. Risk €410k YTD" [ref=e633] [cursor=pointer]:
+                  - generic [ref=e634]: AS
+                  - generic [ref=e635]:
+                    - generic [ref=e636]: Aldridge & Sons
+                    - generic [ref=e637]: Trial account has one customs exception
+                    - generic [ref=e638]: Resolve the open hold and turn the trial into a cleaner retained account.
+                  - generic [ref=e639]:
+                    - generic [ref=e640]: Risk
+                    - generic [ref=e641]: €410k YTD
+        - generic [ref=e643]:
+          - generic [ref=e644]:
+            - generic [ref=e645]:
+              - heading "Customer footprint" [level=2] [ref=e646]
+              - paragraph [ref=e647]: Grouped by commercial region and active shipment volume.
+            - img [ref=e648]
+          - generic [ref=e651]:
+            - generic [ref=e652]:
+              - button "MA" [ref=e653] [cursor=pointer]
+              - button "BI" [ref=e654] [cursor=pointer]
+              - button "PG" [ref=e655] [cursor=pointer]
+              - button "MS" [ref=e656] [cursor=pointer]
+              - button "HM" [ref=e657] [cursor=pointer]
+            - generic [ref=e658]:
+              - button "MA Marlow Apparel Ltd London, UK Premium Billed €4.2M On-time 96% Active 6 · 1!" [ref=e659] [cursor=pointer]:
+                - generic [ref=e660]:
+                  - generic [ref=e661]:
+                    - generic [ref=e662]: MA
+                    - generic [ref=e663]:
+                      - paragraph [ref=e664]: Marlow Apparel Ltd
+                      - paragraph [ref=e665]: London, UK
+                  - generic [ref=e666]: Premium
+                - generic [ref=e667]:
+                  - generic [ref=e668]:
+                    - paragraph [ref=e669]: Billed
+                    - paragraph [ref=e670]: €4.2M
+                  - generic [ref=e671]:
+                    - paragraph [ref=e672]: On-time
+                    - paragraph [ref=e673]: 96%
+                  - generic [ref=e674]:
+                    - paragraph [ref=e675]: Active
+                    - paragraph [ref=e676]: 6 · 1!
+                - img [ref=e677]
+              - button "BI Bauhaus Importe GmbH Hamburg, DE Standard Billed €2.8M On-time 94% Active 4" [ref=e680] [cursor=pointer]:
+                - generic [ref=e681]:
+                  - generic [ref=e682]:
+                    - generic [ref=e683]: BI
+                    - generic [ref=e684]:
+                      - paragraph [ref=e685]: Bauhaus Importe GmbH
+                      - paragraph [ref=e686]: Hamburg, DE
+                  - generic [ref=e687]: Standard
+                - generic [ref=e688]:
+                  - generic [ref=e689]:
+                    - paragraph [ref=e690]: Billed
+                    - paragraph [ref=e691]: €2.8M
+                  - generic [ref=e692]:
+                    - paragraph [ref=e693]: On-time
+                    - paragraph [ref=e694]: 94%
+                  - generic [ref=e695]:
+                    - paragraph [ref=e696]: Active
+                    - paragraph [ref=e697]: "4"
+                - img [ref=e698]
+              - button "BF Black Forest Foods Stuttgart, DE Premium Billed €2.1M On-time 91% Active 9 · 1!" [ref=e701] [cursor=pointer]:
+                - generic [ref=e702]:
+                  - generic [ref=e703]:
+                    - generic [ref=e704]: BF
+                    - generic [ref=e705]:
+                      - paragraph [ref=e706]: Black Forest Foods
+                      - paragraph [ref=e707]: Stuttgart, DE
+                  - generic [ref=e708]: Premium
+                - generic [ref=e709]:
+                  - generic [ref=e710]:
+                    - paragraph [ref=e711]: Billed
+                    - paragraph [ref=e712]: €2.1M
+                  - generic [ref=e713]:
+                    - paragraph [ref=e714]: On-time
+                    - paragraph [ref=e715]: 91%
+                  - generic [ref=e716]:
+                    - paragraph [ref=e717]: Active
+                    - paragraph [ref=e718]: 9 · 1!
+                - img [ref=e719]
+              - button "PG Pacific Goods Co Oakland, US Standard Billed €1.9M On-time 89% Active 5" [ref=e722] [cursor=pointer]:
+                - generic [ref=e723]:
+                  - generic [ref=e724]:
+                    - generic [ref=e725]: PG
+                    - generic [ref=e726]:
+                      - paragraph [ref=e727]: Pacific Goods Co
+                      - paragraph [ref=e728]: Oakland, US
+                  - generic [ref=e729]: Standard
+                - generic [ref=e730]:
+                  - generic [ref=e731]:
+                    - paragraph [ref=e732]: Billed
+                    - paragraph [ref=e733]: €1.9M
+                  - generic [ref=e734]:
+                    - paragraph [ref=e735]: On-time
+                    - paragraph [ref=e736]: 89%
+                  - generic [ref=e737]:
+                    - paragraph [ref=e738]: Active
+                    - paragraph [ref=e739]: "5"
+                - img [ref=e740]
+              - button "MS Mediterranean Spice Trading Athens, GR Premium Billed €1.4M On-time 93% Active 7" [ref=e743] [cursor=pointer]:
+                - generic [ref=e744]:
+                  - generic [ref=e745]:
+                    - generic [ref=e746]: MS
+                    - generic [ref=e747]:
+                      - paragraph [ref=e748]: Mediterranean Spice Trading
+                      - paragraph [ref=e749]: Athens, GR
+                  - generic [ref=e750]: Premium
+                - generic [ref=e751]:
+                  - generic [ref=e752]:
+                    - paragraph [ref=e753]: Billed
+                    - paragraph [ref=e754]: €1.4M
+                  - generic [ref=e755]:
+                    - paragraph [ref=e756]: On-time
+                    - paragraph [ref=e757]: 93%
+                  - generic [ref=e758]:
+                    - paragraph [ref=e759]: Active
+                    - paragraph [ref=e760]: "7"
+                - img [ref=e761]
+  - region "Notifications alt+T"

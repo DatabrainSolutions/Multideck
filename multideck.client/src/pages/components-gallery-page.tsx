@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from "react"
-import { ArrowLeft, ArrowRight, Bell, Check, Clipboard, KeyRound, Search, Ship, Sparkles, UserRound } from "lucide-react"
+import { ArrowLeft, ArrowRight, Bell, Check, Clipboard, Cloud, FileText, Folder, Image, KeyRound, Mail, Search, Ship, Sparkles, UserRound } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -7,13 +7,13 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
-import { activityItems, cityQueues, customerFilters, customers, customsQueue, galleryComponents, galleryIcons, generatedReports, liveShipments, marlowContacts, marlowMetrics, metricCards, reportTemplates, shipmentFilters, shipmentMetrics, shipments } from "@/data/multideck-data"
+import { activityItems, cityQueues, crmAccountSignals, crmActivities, crmContacts, crmPipelineStages, crmSummaryMetrics, customerFilters, customers, customsQueue, galleryComponents, galleryIcons, generatedReports, initialFavouriteShipmentIds, liveShipments, marlowContacts, marlowMetrics, metricCards, reportTemplates, shipmentFilters, shipmentMetrics, shipments } from "@/data/multideck-data"
 import { AnimatedList } from "@/components/multideck/animated-list"
 import { CommandInput } from "@/components/multideck/command-input"
 import { SidebarNavItem } from "@/components/multideck/app-sidebar"
 import { MetricCard } from "@/components/multideck/metric-card"
 import { Pagination } from "@/components/multideck/pagination"
-import { QueueRow, ShipmentRow, WorldClockCell, useLiveNow } from "@/components/multideck/overview-panels"
+import { QueueRow, ShipmentRow, TimezoneFocusPanel, WorldClockCell, useLiveNow } from "@/components/multideck/overview-panels"
 import {
   AccountPanel,
   ActiveShipmentsPanel,
@@ -29,11 +29,27 @@ import {
   LaneMixPanel,
   PrimaryContactsPanel,
 } from "@/components/multideck/customer-components"
+import { CrmActivityTimeline, CrmAssetFolderCard, CrmAssetRow, CrmContactTable, CrmLeadDetailPanel, CrmLeadSignalList, CrmMetricsGrid, CrmPipelineBoard, CrmSettingsBuilder } from "@/components/multideck/crm-components"
 import { FilterChips, SegmentedControl, TabsRail } from "@/components/multideck/workflow-components"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
 import { CodeInput, FreightNarrative, SignInPanel, SignedOutPanel, VerifyPanel } from "@/components/multideck/auth-flow"
-import { ShipmentArrivalCard, ShipmentAskPanel, ShipmentBoardPreview, ShipmentExceptionPanel, ShipmentMetricCard, ShipmentResolutionChecklist, ShipmentsTable } from "@/components/multideck/shipment-components"
+import { ShipmentAdvancedSearch, ShipmentArrivalCard, ShipmentAskPanel, ShipmentBoardPreview, ShipmentExceptionPanel, ShipmentMetricCard, ShipmentResolutionChecklist, ShipmentsTable, YourJobsPanel, shipmentViewModes, type ShipmentSearchCriterion, type ShipmentViewMode } from "@/components/multideck/shipment-components"
+import {
+  ArtieAttachmentPalette,
+  ArtieChecklistCard,
+  ArtieCustomerSnapshot,
+  ArtieHistoryList,
+  ArtieMonitorCard,
+  ArtieMonitorDetailSheet,
+  ArtiePromptComposer,
+  ArtieRiskTable,
+  ArtieSpecialistMenu,
+  ArtieSpecialistPicker,
+  defaultArtieAttachments,
+  defaultArtieSpecialists,
+  type ArtieSpecialistId,
+} from "@/components/multideck/agent-artie-components"
 import {
   AreaChartCard,
   BarChartCard,
@@ -49,6 +65,7 @@ import {
 import {
   GeneratedReportsTable,
   monthlyReviewPages,
+  ReportBlockDataEditorDialog,
   ReportDocumentPage,
   ReportPageControls,
   ReportPageThumbnailRail,
@@ -61,6 +78,7 @@ import {
   SettingsChoiceGroup,
   SettingsFieldRow,
   SettingsInput,
+  SettingsIntegrationRow,
   SettingsOptionCard,
   SettingsPanel,
   SettingsRail,
@@ -70,6 +88,8 @@ import {
 import { Table, TableBody } from "@/components/ui/table"
 import multideckFullLogo from "@/assets/brand/multideck-full-logo.svg"
 import { AIEdgeGlow } from "@/components/multideck/ai-edge-glow"
+import { DashboardCustomisePanel } from "@/components/multideck/dashboard-customise-panel"
+import { ThemeToggle } from "@/components/multideck/theme-toggle"
 
 type GalleryIconKey = keyof typeof galleryIcons
 
@@ -98,7 +118,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Button & control components",
     helper: "Navigation and input controls",
-    ids: ["command", "sidebar", "segmented-control", "filter-chips", "tabs", "pagination", "settings-controls", "settings-option-card"],
+    ids: ["command", "sidebar", "theme-toggle", "segmented-control", "filter-chips", "tabs", "pagination", "settings-controls", "settings-option-card"],
   },
   {
     label: "Auth components",
@@ -108,12 +128,22 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Reports",
     helper: "Templates, pages, widgets",
-    ids: ["report-template-card", "generated-report-table", "report-document-page", "report-thumbnail-rail", "report-page-controls", "report-widget-palette"],
+    ids: ["report-template-card", "generated-report-table", "report-document-page", "report-thumbnail-rail", "report-page-controls", "report-widget-palette", "report-data-editor"],
   },
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["shipment-row", "interactive-map", "animated-list", "world-clock", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "geo-panel", "record-header", "active-shipments-panel", "lane-mix-panel", "shipment-metric-card", "shipments-table", "shipment-board-preview", "shipment-arrival-card", "shipment-exception-panel", "shipment-checklist", "shipment-ask-panel", "side-panels"],
+    ids: ["shipment-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "geo-panel", "record-header", "active-shipments-panel", "your-jobs-panel", "lane-mix-panel", "shipment-metric-card", "shipment-advanced-search", "shipments-table", "shipment-board-preview", "shipment-arrival-card", "shipment-exception-panel", "shipment-checklist", "shipment-ask-panel", "side-panels"],
+  },
+  {
+    label: "CRM",
+    helper: "Leads, contacts, deals, activity, marketing, settings",
+    ids: ["crm-metrics-grid", "crm-pipeline-board", "crm-asset-folder-card", "crm-asset-row", "crm-lead-detail-panel", "crm-contact-table", "crm-activity-timeline", "crm-lead-signals", "crm-settings-builder"],
+  },
+  {
+    label: "Agent Artie",
+    helper: "Prompt, context, specialists, answers",
+    ids: ["dashboard-customise-panel", "artie-prompt-composer", "artie-specialist-picker", "artie-specialist-menu", "artie-attachment-palette", "artie-history-list", "artie-monitor-card", "artie-monitor-detail", "artie-response-blocks"],
   },
   {
     label: "Feedback",
@@ -123,7 +153,82 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Settings",
     helper: "Configuration surfaces",
-    ids: ["settings-rail", "settings-panel-row", "settings-summary-card"],
+    ids: ["settings-rail", "settings-panel-row", "settings-integration-row", "settings-summary-card"],
+  },
+]
+
+const previewMarketingFolders = [
+  {
+    id: "brand-logos",
+    name: "Brand logos",
+    description: "Primary marks, partner lockups, favicon exports, and approved logo variations.",
+    itemCount: 9,
+    size: "48 MB",
+    updated: "Updated today",
+    owner: "Elena",
+    tone: "green" as const,
+    icon: Folder,
+  },
+  {
+    id: "graphics",
+    name: "Graphics",
+    description: "Lane visuals, customer education graphics, hero images, and social-ready artwork.",
+    itemCount: 14,
+    size: "312 MB",
+    updated: "Updated Tue",
+    owner: "Will",
+    tone: "green" as const,
+    icon: Image,
+  },
+  {
+    id: "sales-collateral",
+    name: "Sales collateral",
+    description: "One-pagers, trade-lane explainers, customer report inserts, and proposal assets.",
+    itemCount: 11,
+    size: "186 MB",
+    updated: "Updated Jun 7",
+    owner: "Mina",
+    tone: "green" as const,
+    icon: FileText,
+  },
+]
+
+const previewMarketingAssets = [
+  {
+    id: "md-primary-logo-svg",
+    folderId: "brand-logos",
+    name: "multideck-primary-logo.svg",
+    type: "SVG",
+    size: "124 KB",
+    updated: "Today",
+    owner: "Elena",
+    usage: "Approved primary logo for light surfaces",
+    tone: "green" as const,
+    icon: FileText,
+  },
+  {
+    id: "peak-season-hero",
+    folderId: "graphics",
+    name: "peak-season-capacity-hero.png",
+    type: "PNG",
+    size: "18.6 MB",
+    updated: "Tue",
+    owner: "Will",
+    usage: "Hero graphic for peak-season advisory",
+    tone: "green" as const,
+    icon: Image,
+  },
+  {
+    id: "monthly-rates-html",
+    folderId: "email-templates",
+    name: "monthly-rates-newsletter.html",
+    type: "HTML",
+    size: "86 KB",
+    updated: "Jun 10",
+    owner: "Jamie",
+    usage: "Reusable rates newsletter shell",
+    tone: "green" as const,
+    icon: Mail,
   },
 ]
 
@@ -174,12 +279,12 @@ const colourTokens = [
   ["Ink", "--md-ink", "#0b1413"],
   ["Text", "--md-text", "#5a6764"],
   ["Subtle", "--md-subtle", "#94a09c"],
-  ["Background", "--md-bg", "#dfeae7"],
-  ["Strong bg", "--md-bg-strong", "#d5e4e1"],
-  ["Surface", "--md-surface", "#fbfdfd"],
-  ["Tint", "--md-surface-tint", "#e9f2f0"],
+  ["Background", "--md-bg", "#c9ddd8"],
+  ["Strong bg", "--md-bg-strong", "#aec9c1"],
+  ["Surface", "--md-surface", "#ffffff"],
+  ["Tint", "--md-surface-tint", "#d7e9e4"],
   ["Accent", "--md-accent", "#0e7d74"],
-  ["Green", "--md-green", "#2e8e60"],
+  ["Green", "--md-green", "#0e7d74"],
   ["Amber", "--md-amber", "#dd8a2b"],
   ["Red", "--md-red", "#d14e4e"],
   ["Blue", "--md-blue", "#4a7d9c"],
@@ -312,7 +417,7 @@ function CodeBlock({ code }: { code: string }) {
     <div className="relative overflow-hidden rounded-[var(--md-radius-lg)] bg-[#07100f] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]">
       <pre
         className={cn(
-          "overflow-auto p-5 font-mono text-[12px] leading-6 text-[#d8e2df] md-scrollbar transition-[max-height] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
+          "overflow-auto p-[var(--md-page-stack-gap)] font-mono text-[12px] leading-6 text-[#d8e2df] md-scrollbar transition-[max-height] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
           canExpand && "pb-16",
           canExpand ? (expanded ? "max-h-[1100px]" : "max-h-[320px]") : "max-h-none",
         )}
@@ -338,13 +443,13 @@ function CodeBlock({ code }: { code: string }) {
 
 function FoundOnLinks({ links }: { links: (typeof galleryComponents)[number]["foundOn"] }) {
   return (
-    <div className="mt-5 flex flex-wrap items-center gap-2">
+    <div className="mt-[var(--md-page-stack-gap)] flex flex-wrap items-center gap-[var(--md-gap-sm)]">
       <span className="text-[12px] font-medium text-[var(--md-subtle)]">Found on</span>
       {links.map((link) => (
         <a
           key={`${link.label}-${link.route}`}
           href={link.route}
-          className="inline-flex h-8 items-center gap-1.5 rounded-[var(--md-radius-md)] bg-white/55 px-3 text-[12px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-all duration-200 hover:bg-white/80 hover:text-[var(--md-ink)]"
+          className="inline-flex h-8 items-center gap-1.5 rounded-[var(--md-radius-md)] bg-white/55 px-3 text-[12px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 hover:bg-white/80 hover:text-[var(--md-ink)]"
         >
           {link.label}
           <ArrowRight className="size-3 text-[var(--md-subtle)]" strokeWidth={1.2} />
@@ -358,7 +463,7 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewPage, setPreviewPage] = useState(1)
   const [previewPageSize, setPreviewPageSize] = useState(20)
   const [previewShipmentFilter, setPreviewShipmentFilter] = useState<string>(shipmentFilters[0])
-  const [previewShipmentView, setPreviewShipmentView] = useState<"Table" | "Board" | "Map" | "Timeline">("Table")
+  const [previewShipmentView, setPreviewShipmentView] = useState<ShipmentViewMode>("Table")
   const [previewSelectedIds, setPreviewSelectedIds] = useState<Set<string>>(new Set(["marlow-apparel"]))
   const [previewCustomerTab, setPreviewCustomerTab] = useState("Overview")
   const [previewAuthEmail, setPreviewAuthEmail] = useState("emma@northwind-fwd.com")
@@ -371,9 +476,83 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewReportControlPage, setPreviewReportControlPage] = useState(1)
   const [previewWidgetQuery, setPreviewWidgetQuery] = useState("")
   const [previewWidgetId, setPreviewWidgetId] = useState(reportWidgets[0].id)
+  const [previewDataEditorOpen, setPreviewDataEditorOpen] = useState(false)
   const [previewShipmentSelectedIds, setPreviewShipmentSelectedIds] = useState<Set<string>>(new Set(["MD-22455"]))
+  const [previewFavouriteShipmentIds, setPreviewFavouriteShipmentIds] = useState<Set<string>>(() => new Set(initialFavouriteShipmentIds))
+  const [previewShipmentSearchCriteria, setPreviewShipmentSearchCriteria] = useState<ShipmentSearchCriterion[]>([
+    { id: "preview-shipment-search-invoice", field: "invoice", groupId: "preview-search-main", value: "INV-MAR", valueTo: "" },
+    { id: "preview-shipment-search-destination", connector: "and", field: "destination", groupId: "preview-search-main", value: "Felixstowe", valueTo: "" },
+    { id: "preview-shipment-search-vin", field: "vin", groupConnector: "or", groupId: "preview-search-vin", value: "WVW", valueTo: "" },
+  ])
   const [previewContactEmail, setPreviewContactEmail] = useState(marlowContacts[0].email)
+  const [previewArtiePrompt, setPreviewArtiePrompt] = useState("Prep Marlow's QBR and attach the latest open shipment context.")
+  const [previewArtieSpecialistId, setPreviewArtieSpecialistId] = useState<ArtieSpecialistId>("auto")
+  const [previewArtieAttachmentQuery, setPreviewArtieAttachmentQuery] = useState("")
+  const [previewArtieAttachmentIds, setPreviewArtieAttachmentIds] = useState<Set<string>>(new Set(["marlow", "md-22414"]))
+  const [previewCrmDealId, setPreviewCrmDealId] = useState(crmPipelineStages[0].deals[0].id)
+  const [previewCrmLeadId, setPreviewCrmLeadId] = useState(customers[0].id)
+  const [previewCrmContactEmail, setPreviewCrmContactEmail] = useState(crmContacts[0].email)
+  const [previewMarketingFolderId, setPreviewMarketingFolderId] = useState(previewMarketingFolders[0].id)
   const previewNow = useLiveNow()
+  const previewShipmentSearchCount = useMemo(() => {
+    function matchesCriterion(shipment: (typeof shipments)[number], criterion: ShipmentSearchCriterion) {
+      const query = criterion.value.trim().toLowerCase()
+      const queryTo = criterion.valueTo?.trim()
+      if (!query && !queryTo) return true
+      if (criterion.field === "date") {
+        return [shipment.departureDate, shipment.arrivalDate].some((date) => date >= (criterion.value || queryTo || "") && date <= (queryTo || criterion.value || "9999-12-31"))
+      }
+      if (criterion.field === "departure") return shipment.departureDate >= (criterion.value || queryTo || "") && shipment.departureDate <= (queryTo || criterion.value || "9999-12-31")
+      if (criterion.field === "arrival") return shipment.arrivalDate >= (criterion.value || queryTo || "") && shipment.arrivalDate <= (queryTo || criterion.value || "9999-12-31")
+
+      const customFields = shipment.customFields.flatMap((field) => [field.label, field.value, `${field.label} ${field.value}`])
+      const valuesByField: Record<Exclude<ShipmentSearchCriterion["field"], "date" | "departure" | "arrival">, string[]> = {
+        any: [shipment.id, shipment.customer, shipment.route, shipment.carrier, shipment.container, shipment.invoice, shipment.jobRef, shipment.customerRef, shipment.supplierRef, shipment.origin, shipment.destination, shipment.vessel, shipment.vin, ...customFields],
+        invoice: [shipment.invoice],
+        jobRef: [shipment.jobRef],
+        customerRef: [shipment.customerRef],
+        supplierRef: [shipment.supplierRef],
+        destination: [shipment.destination, shipment.route],
+        origin: [shipment.origin, shipment.route],
+        vessel: [shipment.vessel, shipment.carrier],
+        vin: [shipment.vin],
+        customFields,
+      }
+
+      return valuesByField[criterion.field].some((value) => value.toLowerCase().includes(query))
+    }
+
+    const groups = previewShipmentSearchCriteria.reduce<Array<{ id: string; connector: "and" | "or"; criteria: ShipmentSearchCriterion[] }>>((currentGroups, criterion, index) => {
+      if (!criterion.value.trim() && !criterion.valueTo?.trim()) return currentGroups
+      const groupId = criterion.groupId ?? "preview-search-main"
+      const existingGroup = currentGroups.find((group) => group.id === groupId)
+      if (existingGroup) {
+        existingGroup.criteria.push(criterion)
+        return currentGroups
+      }
+
+      currentGroups.push({
+        id: groupId,
+        connector: criterion.groupConnector ?? (index === 0 ? "and" : "or"),
+        criteria: [criterion],
+      })
+      return currentGroups
+    }, [])
+
+    return shipments.filter((shipment) => {
+      if (!groups.length) return true
+      return groups.reduce<boolean>((searchMatches, group, groupIndex) => {
+        const groupMatches = group.criteria.reduce<boolean>((matches, criterion, criterionIndex) => {
+          const criterionMatches = matchesCriterion(shipment, criterion)
+          if (criterionIndex === 0) return criterionMatches
+          return (criterion.connector ?? "and") === "or" ? matches || criterionMatches : matches && criterionMatches
+        }, true)
+
+        if (groupIndex === 0) return groupMatches
+        return group.connector === "or" ? searchMatches || groupMatches : searchMatches && groupMatches
+      }, true)
+    }).length
+  }, [previewShipmentSearchCriteria])
 
   useEffect(() => {
     if (!previewScreenGlow) return undefined
@@ -400,8 +579,30 @@ function ComponentPreview({ id }: { id: string }) {
     })
   }
 
+  function togglePreviewFavouriteShipment(id: string) {
+    setPreviewFavouriteShipmentIds((current) => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function togglePreviewArtieAttachment(id: string) {
+    setPreviewArtieAttachmentIds((current) => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const previewArtieSpecialist = defaultArtieSpecialists.find((specialist) => specialist.id === previewArtieSpecialistId) ?? defaultArtieSpecialists[0]
+  const previewArtieAttachments = defaultArtieAttachments.filter((attachment) => previewArtieAttachmentIds.has(attachment.id))
+  const previewCrmLead = customers.find((customer) => customer.id === previewCrmLeadId) ?? customers[0]
+
   return (
-    <div className="grid min-h-[430px] min-w-0 place-items-center overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-bg-strong)] p-7">
+    <div className="grid min-h-[430px] min-w-0 place-items-center overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-bg-strong)] p-[var(--md-gap-xl)]">
       {previewScreenGlow ? (
         <div className="pointer-events-none fixed inset-0 z-[9999]" aria-hidden>
           <AIEdgeGlow active variant="screen" className="h-screen w-screen rounded-none" />
@@ -426,8 +627,8 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "typography" ? (
-        <div className="w-full max-w-[720px] rounded-[var(--md-radius-xl)] bg-white/60 p-6 shadow-[var(--md-shadow-line)]">
-          <div className="flex flex-col gap-5">
+        <div className="w-full max-w-[720px] rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          <div className="flex flex-col gap-[var(--md-page-stack-gap)]">
             {typographyRows.map(([spec, use, sample], index) => (
               <div key={spec} className="grid gap-3 border-b border-[rgba(11,20,19,0.06)] pb-5 last:border-b-0 last:pb-0 md:grid-cols-[150px_1fr]">
                 <div>
@@ -456,7 +657,7 @@ function ComponentPreview({ id }: { id: string }) {
       {id === "surface" ? (
         <Surface className="w-full max-w-[620px]" padding="lg">
           <SectionHeader title="Live shipments" meta="A production panel built from shared tokens." />
-          <div className="mt-5 divide-y divide-[rgba(11,20,19,0.05)]">
+          <div className="mt-[var(--md-page-stack-gap)] divide-y divide-[rgba(11,20,19,0.05)]">
             {liveShipments.slice(0, 3).map((shipment) => (
               <ShipmentRow key={shipment.id} shipment={shipment} />
             ))}
@@ -465,7 +666,7 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "status-pill" ? (
-        <div className="flex w-full max-w-[560px] flex-wrap gap-3 rounded-[var(--md-radius-xl)] bg-white/60 p-6 shadow-[var(--md-shadow-line)]">
+        <div className="flex w-full max-w-[560px] flex-wrap gap-[var(--md-gap-md)] rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
           <StatusPill tone="green">Cleared</StatusPill>
           <StatusPill tone="amber">Under review</StatusPill>
           <StatusPill tone="red">Action req.</StatusPill>
@@ -488,8 +689,8 @@ function ComponentPreview({ id }: { id: string }) {
             </Button>
           </div>
 
-          <AIEdgeGlow className="min-h-[430px] w-full" contentClassName="p-4 sm:p-6">
-            <div className="flex h-full flex-col justify-between rounded-[var(--md-radius-lg)] bg-white/28 p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.38)] backdrop-blur-[2px] sm:p-5">
+          <AIEdgeGlow className="min-h-[430px] w-full" contentClassName="p-[var(--md-gap-lg)] sm:p-[var(--md-page-stack-gap)]">
+            <div className="flex h-full flex-col justify-between rounded-[var(--md-radius-lg)] bg-white/28 p-[var(--md-gap-lg)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.38)] backdrop-blur-[2px] sm:p-[var(--md-page-stack-gap)]">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
                   <span className="size-8 rounded-[var(--md-radius-md)] bg-white/40 shadow-[var(--md-shadow-line)]" />
@@ -521,8 +722,14 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "dashboard-customise-panel" ? (
+        <div className="grid w-full max-w-[760px] place-items-center">
+          <DashboardCustomisePanel open onOpenChange={() => undefined} presentation="preview" />
+        </div>
+      ) : null}
+
       {id === "toast" ? (
-        <div className="relative flex min-h-[340px] w-full max-w-[760px] items-center justify-center overflow-hidden rounded-[var(--md-radius-xl)] bg-[linear-gradient(135deg,rgba(251,253,253,0.72),rgba(233,242,240,0.72))] p-6 shadow-[var(--md-shadow-line)]">
+        <div className="relative flex min-h-[340px] w-full max-w-[760px] items-center justify-center overflow-hidden rounded-[var(--md-radius-xl)] bg-[linear-gradient(135deg,rgba(251,253,253,0.72),rgba(233,242,240,0.72))] p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
           <Button
             type="button"
             variant="ghost"
@@ -651,15 +858,22 @@ function ComponentPreview({ id }: { id: string }) {
 
       {id === "sidebar" ? (
         <div className="w-full max-w-[300px] rounded-[var(--md-radius-xl)] bg-[var(--md-sidebar-bg)] p-4 shadow-[var(--md-shadow-line)]">
-          <div className="mb-6 flex h-10 items-center px-1">
+          <div className="mb-[var(--md-gap-xl)] flex h-10 items-center px-1">
             <img
               src={multideckFullLogo}
               alt="Multideck"
-              className="h-[34px] w-auto max-w-[172px] object-contain"
+              className="h-[34px] w-auto max-w-[172px] object-contain transition-[filter,opacity] duration-200 dark:brightness-0 dark:invert"
             />
           </div>
           <SidebarNavItem item={{ label: "Shipments", value: "7", icon: Ship }} isActive />
+          <SidebarNavItem item={{ label: "CRM", value: "6", icon: galleryIcons["crm-pipeline-board"] }} />
           <SidebarNavItem item={{ label: "Components", icon: galleryIcons.sidebar }} />
+        </div>
+      ) : null}
+
+      {id === "theme-toggle" ? (
+        <div className="w-full max-w-[300px] rounded-[var(--md-radius-xl)] bg-[var(--md-sidebar-bg)] p-4 shadow-[var(--md-shadow-line)]">
+          <ThemeToggle className="bg-[var(--md-glass)]" />
         </div>
       ) : null}
 
@@ -720,10 +934,23 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "world-clock" ? (
-        <div className="grid w-full max-w-[720px] gap-0 overflow-hidden rounded-[var(--md-radius-xl)] bg-white/60 shadow-[var(--md-shadow-line)] sm:grid-cols-4">
-          {cityQueues.slice(0, 4).map((city, index) => (
-            <WorldClockCell key={city.code} city={city} selected={index === 0} onSelect={() => undefined} now={previewNow} />
-          ))}
+        <div className="grid w-full max-w-[760px] gap-3">
+          <div className="grid gap-0 overflow-hidden rounded-[var(--md-radius-xl)] bg-white/60 shadow-[var(--md-shadow-line)] sm:grid-cols-4">
+            {cityQueues.slice(0, 4).map((city, index) => (
+              <WorldClockCell key={city.code} city={city} selected={index === 0} onSelect={() => undefined} now={previewNow} />
+            ))}
+          </div>
+          <div className="grid gap-0 overflow-hidden rounded-[var(--md-radius-xl)] bg-white/60 shadow-[var(--md-shadow-line)] sm:grid-cols-2">
+            {cityQueues.slice(4, 8).map((city, index) => (
+              <WorldClockCell key={city.code} city={city} selected={index === 0} onSelect={() => undefined} now={previewNow} displayMode="analogue" />
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {id === "timezone-work-queue" ? (
+        <div className="w-full max-w-[1180px]">
+          <TimezoneFocusPanel selectedCode="SHA" />
         </div>
       ) : null}
 
@@ -740,7 +967,7 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "customer-avatar" ? (
-        <div className="flex w-full max-w-[680px] items-end justify-center gap-6 rounded-[var(--md-radius-xl)] bg-white/55 p-8 shadow-[var(--md-shadow-line)]">
+        <div className="flex w-full max-w-[680px] items-end justify-center gap-[var(--md-gap-xl)] rounded-[var(--md-radius-xl)] bg-white/55 p-[var(--md-page-section-gap)] shadow-[var(--md-shadow-line)]">
           <CustomerAvatar initials="MA" tone="olive" size="lg" />
           <CustomerAvatar initials="BI" tone="blue" />
           <CustomerAvatar initials="PG" tone="teal" />
@@ -772,8 +999,8 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "segmented-control" ? (
-        <div className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] bg-white/50 p-6 shadow-[var(--md-shadow-line)]">
-          <SegmentedControl options={["Table", "Board", "Map", "Timeline"] as const} value={previewShipmentView} onChange={setPreviewShipmentView} />
+        <div className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] bg-white/50 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          <SegmentedControl options={shipmentViewModes} value={previewShipmentView} onChange={setPreviewShipmentView} />
         </div>
       ) : null}
 
@@ -806,14 +1033,14 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "record-header" ? (
-        <div className="w-full max-w-[980px] rounded-[var(--md-radius-xl)] bg-[var(--md-bg)] p-6 shadow-[var(--md-shadow-line)]">
+        <div className="w-full max-w-[980px] rounded-[var(--md-radius-xl)] bg-[var(--md-bg)] p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
           <CustomerDetailHero />
           <CustomerMetricsGrid />
         </div>
       ) : null}
 
       {id === "tabs" ? (
-        <div className="w-full max-w-[920px] rounded-[var(--md-radius-xl)] bg-white/55 p-6 shadow-[var(--md-shadow-line)]">
+        <div className="w-full max-w-[920px] rounded-[var(--md-radius-xl)] bg-white/55 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
           <TabsRail
             tabs={[
               { label: "Overview" },
@@ -848,12 +1075,36 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "your-jobs-panel" ? (
+        <div className="w-full max-w-[1120px]">
+          <YourJobsPanel
+            favouriteIds={previewFavouriteShipmentIds}
+            onToggleFavourite={togglePreviewFavouriteShipment}
+            onOpenJobDrilldown={(jobId) => toast.success(`${jobId} opened`)}
+            animated
+          />
+        </div>
+      ) : null}
+
+      {id === "shipment-advanced-search" ? (
+        <div className="w-full max-w-[1120px]">
+          <ShipmentAdvancedSearch
+            criteria={previewShipmentSearchCriteria}
+            onCriteriaChange={setPreviewShipmentSearchCriteria}
+            resultCount={previewShipmentSearchCount}
+            totalCount={shipments.length}
+          />
+        </div>
+      ) : null}
+
       {id === "shipments-table" ? (
         <div className="w-full max-w-[1120px] overflow-x-auto md-scrollbar">
           <ShipmentsTable
             rows={shipments.slice(0, 4)}
             selectedIds={previewShipmentSelectedIds}
+            favouriteIds={previewFavouriteShipmentIds}
             onToggleShipment={togglePreviewShipment}
+            onToggleFavourite={togglePreviewFavouriteShipment}
             onOpenShipment={(shipment) => toast.success(`${shipment.id} opened`)}
           />
         </div>
@@ -899,7 +1150,7 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "report-page-controls" ? (
-        <div className="flex w-full max-w-[620px] items-center justify-center rounded-[var(--md-radius-xl)] bg-white/55 p-8 shadow-[var(--md-shadow-line)]">
+        <div className="flex w-full max-w-[620px] items-center justify-center rounded-[var(--md-radius-xl)] bg-white/55 p-[var(--md-page-section-gap)] shadow-[var(--md-shadow-line)]">
           <ReportPageControls
             page={previewReportControlPage}
             totalPages={monthlyReviewPages.length}
@@ -920,6 +1171,24 @@ function ComponentPreview({ id }: { id: string }) {
               setPreviewWidgetId(widget.id)
               toast.success(`${widget.title} selected`)
             }}
+          />
+        </div>
+      ) : null}
+
+      {id === "report-data-editor" ? (
+        <div className="grid w-full max-w-[620px] place-items-center rounded-[var(--md-radius-xl)] bg-white/45 p-[var(--md-page-section-gap)] shadow-[var(--md-shadow-line)]">
+          <div className="w-full max-w-[420px] rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-4 shadow-[var(--md-shadow-line)]">
+            <p className="text-[14px] font-medium text-[var(--md-ink)]">Graph data picker</p>
+            <p className="mt-2 text-[13px] leading-5 text-[var(--md-text)]">Used after a graph is dropped into a report or manual dashboard.</p>
+            <Button type="button" className="mt-4 h-10 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white hover:bg-[var(--md-accent)]/88" onClick={() => setPreviewDataEditorOpen(true)}>
+              Open data editor
+            </Button>
+          </div>
+          <ReportBlockDataEditorDialog
+            block={monthlyReviewPages[1].blocks[1]}
+            open={previewDataEditorOpen}
+            onOpenChange={setPreviewDataEditorOpen}
+            onSave={(block) => toast.success(`${block.title} preview updated`)}
           />
         </div>
       ) : null}
@@ -948,15 +1217,236 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "artie-prompt-composer" ? (
+        <div className="w-full max-w-[760px]">
+          <ArtiePromptComposer
+            value={previewArtiePrompt}
+            selectedSpecialist={previewArtieSpecialist}
+            attachments={previewArtieAttachments}
+            onChange={setPreviewArtiePrompt}
+            onOpenAttachments={() => toast.success("Attachment palette opened")}
+            onOpenSpecialists={() => toast.success("Specialist picker opened")}
+            onRemoveAttachment={togglePreviewArtieAttachment}
+            onSend={() => toast.success("Artie conversation started")}
+          />
+        </div>
+      ) : null}
+
+      {id === "artie-specialist-picker" ? (
+        <div className="w-full max-w-[760px]">
+          <ArtieSpecialistPicker
+            specialists={defaultArtieSpecialists}
+            selectedId={previewArtieSpecialistId}
+            onSelect={setPreviewArtieSpecialistId}
+          />
+        </div>
+      ) : null}
+
+      {id === "artie-specialist-menu" ? (
+        <div className="w-full max-w-[760px] rounded-[var(--md-radius-xl)] bg-[rgba(11,20,19,0.16)] p-[var(--md-page-section-gap)] shadow-[var(--md-shadow-line)] backdrop-blur-md">
+          <ArtieSpecialistMenu
+            specialists={defaultArtieSpecialists}
+            selectedId={previewArtieSpecialistId}
+            onSelect={setPreviewArtieSpecialistId}
+          />
+        </div>
+      ) : null}
+
+      {id === "artie-attachment-palette" ? (
+        <div className="w-full max-w-[860px]">
+          <ArtieAttachmentPalette
+            query={previewArtieAttachmentQuery}
+            items={defaultArtieAttachments}
+            selectedIds={previewArtieAttachmentIds}
+            recommendedIds={["marlow", "md-22414", "ci-rev2"]}
+            onQueryChange={setPreviewArtieAttachmentQuery}
+            onToggle={togglePreviewArtieAttachment}
+          />
+        </div>
+      ) : null}
+
+      {id === "artie-history-list" ? (
+        <div className="h-[560px] w-full max-w-[340px] overflow-hidden rounded-[var(--md-radius-xl)] shadow-[var(--md-shadow-line)]">
+          <ArtieHistoryList
+            items={[
+              { id: "customs-risk", title: "At-risk customs this week", summary: "4 flagged - drafts ready for review", time: "11:42" },
+              { id: "marlow-qbr", title: "Marlow Apparel - QBR prep", summary: "Snapshot, talking points, agenda draft", time: "10:05" },
+              { id: "daily", title: "Daily briefing - 11 Jun", summary: "Quiet night. 23 in transit, 2 need you.", time: "07:00" },
+            ]}
+            activeId="customs-risk"
+            onSelect={(itemId) => toast.success(`${itemId} opened`)}
+            onNew={() => toast.success("New Artie thread")}
+          />
+        </div>
+      ) : null}
+
+      {id === "artie-monitor-card" ? (
+        <div className="w-full max-w-[420px]">
+          <ArtieMonitorCard
+            monitor={{
+              title: "Berth queue - MD-22479",
+              body: "Watching Rotterdam congestion. Re-pings if ETA shifts more than 6h.",
+              meta: "since Wed 09:18",
+              detail: "last ping 36 min ago",
+              tone: "amber",
+            }}
+          />
+        </div>
+      ) : null}
+
+      {id === "artie-monitor-detail" ? (
+        <div className="relative h-[720px] w-full max-w-[980px] overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-bg)] shadow-[var(--md-shadow-line)]">
+          <div className="absolute inset-0 grid place-items-center bg-[rgba(11,20,19,0.2)] text-[13px] text-white backdrop-blur-[6px]">
+            Thread content blurred behind the drawer
+          </div>
+          <div className="absolute inset-y-0 right-0 w-[min(580px,100%)]">
+            <ArtieMonitorDetailSheet
+              monitor={{
+                title: "Berth queue - MD-22479",
+                body: "Watching Rotterdam congestion. Re-pings if ETA shifts more than 6h.",
+                meta: "since Wed 09:18",
+                detail: "last ping 36 min ago",
+                tone: "amber",
+              }}
+              floating={false}
+              onClose={() => toast.success("Monitor detail closed")}
+            />
+          </div>
+        </div>
+      ) : null}
+
+      {id === "artie-response-blocks" ? (
+        <div className="grid w-full max-w-[980px] gap-4 lg:grid-cols-2">
+          <div className="grid gap-4">
+            <ArtieCustomerSnapshot />
+            <ArtieChecklistCard
+              items={[
+                { label: "Pull open shipments arriving this week - 23 found.", done: true },
+                { label: "Cross-check HS codes against active regulations.", done: true },
+                { label: "Draft notifications for approval." },
+              ]}
+            />
+          </div>
+          <ArtieRiskTable />
+        </div>
+      ) : null}
+
       {id === "side-panels" ? (
-        <div className="grid w-full max-w-[980px] gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="flex flex-col gap-5">
+        <div className="grid w-full max-w-[980px] gap-[var(--md-page-stack-gap)] lg:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="flex flex-col gap-[var(--md-page-stack-gap)]">
             <CustomerActivityPanel />
           </div>
-          <div className="flex flex-col gap-5">
+          <div className="flex flex-col gap-[var(--md-page-stack-gap)]">
             <ArtiePulsePanel />
             <AccountPanel />
           </div>
+        </div>
+      ) : null}
+
+      {id === "crm-metrics-grid" ? (
+        <div className="w-full max-w-[980px]">
+          <CrmMetricsGrid metrics={crmSummaryMetrics} />
+        </div>
+      ) : null}
+
+      {id === "crm-pipeline-board" ? (
+        <div className="w-full max-w-[1180px]">
+          <CrmPipelineBoard
+            selectedDealId={previewCrmDealId}
+            onSelectDeal={(deal) => setPreviewCrmDealId(deal.id)}
+          />
+        </div>
+      ) : null}
+
+      {id === "crm-asset-folder-card" ? (
+        <div className="grid w-full max-w-[980px] gap-3 md:grid-cols-3">
+          {previewMarketingFolders.map((folder) => (
+            <CrmAssetFolderCard
+              key={folder.id}
+              folder={folder}
+              selected={folder.id === previewMarketingFolderId}
+              onSelect={(nextFolder) => setPreviewMarketingFolderId(nextFolder.id)}
+            />
+          ))}
+        </div>
+      ) : null}
+
+      {id === "crm-asset-row" ? (
+        <div className="w-full max-w-[920px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-3 shadow-[var(--md-shadow-line)]">
+          <div className="grid gap-1 rounded-[var(--md-radius-lg)] bg-white/62 p-1 shadow-[var(--md-shadow-line)]">
+            {previewMarketingAssets.map((asset) => (
+              <CrmAssetRow
+                key={asset.id}
+                asset={asset}
+                onOpen={(selectedAsset) => toast.success(`${selectedAsset.name} opened`)}
+              />
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {id === "crm-contact-table" ? (
+        <div className="w-full max-w-[1120px]">
+          <CrmContactTable
+            contacts={crmContacts}
+            selectedEmail={previewCrmContactEmail}
+            onSelectContact={(contact) => setPreviewCrmContactEmail(contact.email)}
+          />
+        </div>
+      ) : null}
+
+      {id === "crm-lead-detail-panel" ? (
+        <div className="grid w-full max-w-[980px] gap-4 xl:grid-cols-[minmax(0,1fr)_390px]">
+          <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
+            <div className="px-5 py-4">
+              <SectionHeader title="Lead selector" meta="pick a lead to inspect the detail panel" />
+            </div>
+            <div className="px-5 pb-5">
+              <div className="grid gap-2">
+                {customers.slice(0, 4).map((customer) => (
+                  <button
+                    key={customer.id}
+                    type="button"
+                    className={cn(
+                      "grid grid-cols-[44px_1fr_auto] items-center gap-3 rounded-[var(--md-radius-lg)] bg-white/55 px-3 py-3 text-left shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white/80",
+                      previewCrmLeadId === customer.id && "bg-white shadow-[inset_0_0_0_1px_rgba(14,125,116,0.24),0_0_0_3px_rgba(14,125,116,0.08)]",
+                    )}
+                    onClick={() => setPreviewCrmLeadId(customer.id)}
+                  >
+                    <CustomerAvatar initials={customer.initials} tone={customer.avatarTone} />
+                    <span className="min-w-0">
+                      <span className="block truncate text-[14px] font-medium text-[var(--md-ink)]">{customer.name}</span>
+                      <span className="block truncate text-[12px] text-[var(--md-text)]">{customer.location}</span>
+                    </span>
+                    <StatusPill tone={customer.status === "Premium" ? "teal" : customer.status === "Trial" ? "amber" : "neutral"}>{customer.status}</StatusPill>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </Surface>
+          <CrmLeadDetailPanel
+            lead={previewCrmLead}
+            onOpenCustomer={(lead) => toast.success(`${lead.name} opened in Customers`)}
+            onConvertToCustomer={(lead) => toast.success(`${lead.name} moved to Customers`)}
+          />
+        </div>
+      ) : null}
+
+      {id === "crm-activity-timeline" ? (
+        <div className="w-full max-w-[860px]">
+          <CrmActivityTimeline activities={crmActivities} />
+        </div>
+      ) : null}
+
+      {id === "crm-lead-signals" ? (
+        <div className="w-full max-w-[760px]">
+          <CrmLeadSignalList signals={crmAccountSignals} onOpenLead={(signal) => toast.success(`${signal.account} opened`)} />
+        </div>
+      ) : null}
+
+      {id === "crm-settings-builder" ? (
+        <div className="w-full max-w-[1180px]">
+          <CrmSettingsBuilder />
         </div>
       ) : null}
 
@@ -985,6 +1475,31 @@ function ComponentPreview({ id }: { id: string }) {
                 <SettingsInput value="18:30" readOnly />
               </div>
             </SettingsFieldRow>
+          </SettingsPanel>
+        </div>
+      ) : null}
+
+      {id === "settings-integration-row" ? (
+        <div className="w-full max-w-[820px]">
+          <SettingsPanel title="Connected tools" description="Personal accounts Multideck can use for drafts, reminders, files, and approved updates.">
+            <SettingsIntegrationRow
+              icon={Mail}
+              title="Gmail"
+              description="Connect your Google inbox for customer replies, quote follow-ups, and approved Artie drafts."
+              status="Ready"
+              statusTone="ready"
+              actionLabel="Connect"
+              onAction={() => toast.success("Gmail connection flow opened")}
+            />
+            <SettingsIntegrationRow
+              icon={Cloud}
+              title="Google Drive"
+              description="Attach folders for invoices, packing lists, customer reports, and onboarding documents."
+              status="Connected"
+              statusTone="connected"
+              actionLabel="Manage"
+              onAction={() => toast.success("Google Drive settings opened")}
+            />
           </SettingsPanel>
         </div>
       ) : null}
@@ -1049,7 +1564,7 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "auth-sign-in-panel" ? (
-        <div className="w-full max-w-[620px] rounded-[var(--md-radius-xl)] bg-[var(--md-bg)] p-10 shadow-[var(--md-shadow-line)]">
+        <div className="w-full max-w-[620px] rounded-[var(--md-radius-xl)] bg-[var(--md-bg)] p-[var(--md-page-section-gap)] shadow-[var(--md-shadow-line)]">
           <SignInPanel
             email={previewAuthEmail}
             onEmailChange={setPreviewAuthEmail}
@@ -1059,7 +1574,7 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "auth-verification-panel" ? (
-        <div className="w-full max-w-[680px] rounded-[var(--md-radius-xl)] bg-[var(--md-bg)] p-10 shadow-[var(--md-shadow-line)]">
+        <div className="w-full max-w-[680px] rounded-[var(--md-radius-xl)] bg-[var(--md-bg)] p-[var(--md-page-section-gap)] shadow-[var(--md-shadow-line)]">
           <VerifyPanel
             email={previewAuthEmail}
             code={previewAuthCode}
@@ -1071,13 +1586,13 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "auth-code-input" ? (
-        <div className="w-full max-w-[620px] rounded-[var(--md-radius-xl)] bg-[var(--md-bg)] p-10 shadow-[var(--md-shadow-line)]">
+        <div className="w-full max-w-[620px] rounded-[var(--md-radius-xl)] bg-[var(--md-bg)] p-[var(--md-page-section-gap)] shadow-[var(--md-shadow-line)]">
           <CodeInput code={previewAuthCode} onCodeChange={setPreviewAuthCode} onComplete={() => undefined} />
         </div>
       ) : null}
 
       {id === "auth-signed-out-panel" ? (
-        <div className="w-full max-w-[620px] rounded-[var(--md-radius-xl)] bg-[var(--md-bg)] p-10 shadow-[var(--md-shadow-line)]">
+        <div className="w-full max-w-[620px] rounded-[var(--md-radius-xl)] bg-[var(--md-bg)] p-[var(--md-page-section-gap)] shadow-[var(--md-shadow-line)]">
           <SignedOutPanel onSignBackIn={() => undefined} onSwitchAccount={() => setPreviewAuthEmail("")} />
         </div>
       ) : null}
@@ -1107,7 +1622,7 @@ function GallerySidebar({
   return (
     <aside className="sticky top-[84px] hidden h-[calc(100vh-108px)] min-h-0 lg:block">
       <ScrollArea className="h-full pr-4">
-        <div className="flex flex-col gap-8">
+        <div className="flex flex-col gap-[var(--md-page-section-gap)]">
           <div>
             <p className="px-2 text-[12px] font-medium text-[var(--md-subtle)]">Sections</p>
             <nav className="mt-3 flex flex-col gap-1">
@@ -1116,7 +1631,7 @@ function GallerySidebar({
                   key={item}
                   type="button"
                   className={cn(
-                    "h-8 rounded-[var(--md-radius-md)] px-2 text-left text-[13px] font-medium text-[var(--md-text)] transition-all hover:bg-white/45 hover:text-[var(--md-ink)]",
+                    "h-8 rounded-[var(--md-radius-md)] px-2 text-left text-[13px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white/45 hover:text-[var(--md-ink)]",
                     activeSection === item && "bg-white/70 text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
                   )}
                   onClick={() => setActiveSection(item)}
@@ -1138,7 +1653,7 @@ function GallerySidebar({
                 className="h-9 rounded-[var(--md-radius-md)] border-0 bg-white/60 pl-9 text-[13px] shadow-[var(--md-shadow-line)]"
               />
             </div>
-            <nav className="mt-4 flex flex-col gap-5" aria-label="Component groups">
+            <nav className="mt-[var(--md-gap-md)] flex flex-col gap-[var(--md-page-stack-gap)]" aria-label="Component groups">
               {groupedComponents.length > 0 ? (
                 groupedComponents.map((group, groupIndex) => (
                   <section key={group.label} className={cn("border-t border-[rgba(11,20,19,0.07)] pt-4", groupIndex === 0 && "border-t-0 pt-0")}>
@@ -1157,7 +1672,7 @@ function GallerySidebar({
                             key={component.id}
                             type="button"
                             className={cn(
-                              "flex h-9 items-center gap-2 rounded-[var(--md-radius-md)] px-2 text-left text-[13px] font-medium text-[var(--md-text)] transition-all hover:bg-white/45 hover:text-[var(--md-ink)]",
+                              "flex h-9 items-center gap-2 rounded-[var(--md-radius-md)] px-2 text-left text-[13px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white/45 hover:text-[var(--md-ink)]",
                               selectedId === component.id && "bg-white/70 text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
                             )}
                             onClick={() => {
@@ -1190,7 +1705,7 @@ function RightRail({ selected }: { selected: (typeof galleryComponents)[number] 
   return (
     <aside className="sticky top-[84px] hidden h-[calc(100vh-108px)] min-h-0 xl:block">
       <ScrollArea className="h-full pl-4">
-        <div className="flex flex-col gap-8">
+        <div className="flex flex-col gap-[var(--md-page-section-gap)]">
           <div>
             <p className="text-[12px] font-medium text-[var(--md-text)]">On This Page</p>
             <nav className="mt-4 flex flex-col gap-3">
@@ -1207,7 +1722,7 @@ function RightRail({ selected }: { selected: (typeof galleryComponents)[number] 
             <p className="mt-3 text-[13px] leading-6 text-[var(--md-text)]">
               {selected.name} should stay token-led, composable, and usable inside dense operational screens.
             </p>
-            <Button variant="ghost" className="mt-5 h-9 rounded-[var(--md-radius-md)] bg-white/50 px-3 text-[13px] shadow-[var(--md-shadow-line)]">
+            <Button variant="ghost" className="mt-[var(--md-page-stack-gap)] h-9 rounded-[var(--md-radius-md)] bg-white/50 px-3 text-[13px] shadow-[var(--md-shadow-line)]">
               View source
             </Button>
           </Surface>
@@ -1235,7 +1750,7 @@ export function ComponentsGalleryPage() {
   }
 
   return (
-    <div className="grid gap-8 lg:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[220px_minmax(0,880px)_260px]">
+    <div className="grid gap-[var(--md-page-section-gap)] lg:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[220px_minmax(0,880px)_260px]">
       <GallerySidebar
         query={query}
         setQuery={setQuery}
@@ -1246,7 +1761,7 @@ export function ComponentsGalleryPage() {
         filtered={filtered}
       />
 
-      <main className="min-w-0 overflow-hidden pb-10">
+      <main className="min-w-0 overflow-hidden pb-[var(--md-page-bottom-pad)]">
         {activeSection === "Introduction" ? (
           <section id="introduction">
             <div className="max-w-[760px]">
@@ -1257,8 +1772,8 @@ export function ComponentsGalleryPage() {
               </p>
             </div>
 
-            <Surface padding="lg" className="mt-6 rounded-[var(--md-radius-xl)]">
-              <div className="grid gap-6 md:grid-cols-3">
+            <Surface padding="lg" className="mt-[var(--md-page-stack-gap)] rounded-[var(--md-radius-xl)]">
+              <div className="grid gap-[var(--md-page-stack-gap)] md:grid-cols-3">
                 {introNotes.map((item) => (
                   <div key={item.title}>
                     <p className="text-[13px] font-medium text-[var(--md-ink)]">{item.title}</p>
@@ -1294,7 +1809,7 @@ export function ComponentsGalleryPage() {
               </div>
             </div>
 
-            <Tabs defaultValue="preview" className="mt-9">
+            <Tabs defaultValue="preview" className="mt-[var(--md-page-section-gap)]">
               <TabsList variant="line" className="h-10 rounded-none bg-transparent p-0">
                 <TabsTrigger value="preview" className={galleryTabTriggerClass}>
                   Preview
@@ -1307,36 +1822,36 @@ export function ComponentsGalleryPage() {
                 </TabsTrigger>
               </TabsList>
 
-              <TabsContent value="preview" id="preview" className="mt-6">
+              <TabsContent value="preview" id="preview" className="mt-[var(--md-page-stack-gap)]">
                 <Surface padding="lg" className="min-w-0 overflow-hidden rounded-[var(--md-radius-xl)]">
                   <ComponentPreview id={selected.id} />
                 </Surface>
               </TabsContent>
 
-              <TabsContent value="code" id="code" className="mt-6">
+              <TabsContent value="code" id="code" className="mt-[var(--md-page-stack-gap)]">
                 <Surface padding="lg" className="rounded-[var(--md-radius-xl)]">
                   <CodeBlock code={selected.componentCode} />
                 </Surface>
               </TabsContent>
 
-              <TabsContent value="usage" id="usage" className="mt-6">
+              <TabsContent value="usage" id="usage" className="mt-[var(--md-page-stack-gap)]">
                 <Surface padding="lg" className="rounded-[var(--md-radius-xl)]">
                   <CodeBlock code={selected.usageCode} />
                 </Surface>
               </TabsContent>
             </Tabs>
 
-            <section id="purpose" className="mt-10">
+            <section id="purpose" className="mt-[var(--md-page-section-gap)]">
               <h2 className="text-[18px] font-medium text-[var(--md-ink)]">Purpose</h2>
               <p className="mt-3 text-[14px] leading-7 text-[var(--md-text)]">{selected.description}</p>
             </section>
 
-            <section id="usage" className="mt-8">
+            <section id="usage" className="mt-[var(--md-page-section-gap)]">
               <h2 className="text-[18px] font-medium text-[var(--md-ink)]">Usage</h2>
               <p className="mt-3 text-[14px] leading-7 text-[var(--md-text)]">{selected.details}</p>
             </section>
 
-            <section id="token-dependency" className="mt-8">
+            <section id="token-dependency" className="mt-[var(--md-page-section-gap)]">
               <h2 className="text-[18px] font-medium text-[var(--md-ink)]">Token dependency</h2>
               <p className="mt-3 text-[14px] leading-7 text-[var(--md-text)]">
                 Uses shared Multideck color, radius, motion, spacing, and depth variables from `src/styles.css`.

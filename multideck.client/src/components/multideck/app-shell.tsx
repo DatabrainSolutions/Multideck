@@ -13,13 +13,20 @@ export function AppShell({
   children: ReactNode
 }) {
   const isSettingsRoute = route === "/settings"
+  const isAgentRoute = route === "/agent-artie"
 
   return (
-    <div className="min-h-screen bg-[var(--md-bg)] text-[var(--md-ink)]">
-      <div className="flex min-h-screen">
-        <AppSidebar route={route} navigate={navigate} className="sticky top-0 hidden h-screen lg:flex" />
-        <main className={cn("min-w-0 flex-1", !isSettingsRoute && "px-[var(--md-page-pad)] pb-[var(--md-page-pad)]")}>
-          {isSettingsRoute ? null : <TopBar route={route} navigate={navigate} />}
+    <div className="h-screen overflow-hidden bg-[var(--md-bg)] text-[var(--md-ink)]">
+      <div className="flex h-screen min-h-0">
+        <AppSidebar route={route} navigate={navigate} className="hidden h-screen min-h-0 lg:flex" />
+        <main
+          className={cn(
+            "min-h-0 min-w-0 flex-1",
+            isAgentRoute ? "overflow-hidden" : "overflow-y-auto md-scrollbar",
+            !isSettingsRoute && !isAgentRoute && "px-[var(--md-page-pad)] pb-[var(--md-page-pad)]",
+          )}
+        >
+          {isSettingsRoute || isAgentRoute ? null : <TopBar route={route} navigate={navigate} />}
           {children}
         </main>
       </div>

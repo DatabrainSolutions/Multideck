@@ -81,7 +81,7 @@ export function Pagination({
           type="button"
           aria-label="Previous page"
           disabled={currentPage === 1}
-          className="grid size-8 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-text)] transition-all duration-200 hover:bg-white/70 hover:text-[var(--md-ink)] disabled:pointer-events-none disabled:opacity-35"
+          className="grid size-8 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-text)] transition-[background,color,box-shadow,opacity,transform] duration-200 hover:bg-white/70 hover:text-[var(--md-ink)] disabled:pointer-events-none disabled:opacity-35"
           onClick={() => onPageChange(currentPage - 1)}
         >
           <ChevronLeft className="size-4" strokeWidth={1.2} />
@@ -98,7 +98,7 @@ export function Pagination({
                 type="button"
                 aria-current={pageNumber === currentPage ? "page" : undefined}
                 className={cn(
-                  "h-8 min-w-8 rounded-[var(--md-radius-md)] px-2 text-[13px] font-medium text-[var(--md-text)] transition-all duration-200 hover:bg-white/70 hover:text-[var(--md-ink)]",
+                  "h-8 min-w-8 rounded-[var(--md-radius-md)] px-2 text-[13px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,opacity,transform] duration-200 hover:bg-white/70 hover:text-[var(--md-ink)]",
                   pageNumber === currentPage && "bg-[var(--md-sidebar-bg)] text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
                 )}
                 onClick={() => onPageChange(pageNumber)}
@@ -113,7 +113,7 @@ export function Pagination({
           type="button"
           aria-label="Next page"
           disabled={currentPage === safePageCount}
-          className="grid size-8 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-text)] transition-all duration-200 hover:bg-white/70 hover:text-[var(--md-ink)] disabled:pointer-events-none disabled:opacity-35"
+          className="grid size-8 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-text)] transition-[background,color,box-shadow,opacity,transform] duration-200 hover:bg-white/70 hover:text-[var(--md-ink)] disabled:pointer-events-none disabled:opacity-35"
           onClick={() => onPageChange(currentPage + 1)}
         >
           <ChevronRight className="size-4" strokeWidth={1.2} />

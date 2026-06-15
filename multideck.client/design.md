@@ -18,8 +18,9 @@ The first screen should answer:
 
 The design uses a soft freight operations palette:
 
-- `--md-bg`: soft green shell background.
-- `--md-surface`: near-white product panels.
+- `--md-bg`: soft green shell background with enough depth for white panels to read clearly.
+- `--md-bg-strong`: deeper green for selected states and nested operational surfaces.
+- `--md-surface`: white product panels with layered shadow separation.
 - `--md-ink`: primary readable text.
 - `--md-text`: secondary labels and metadata.
 - `--md-subtle`: quiet supporting information.
@@ -46,6 +47,26 @@ Use these sizes by default:
 
 Keep font weights mostly regular and medium. Avoid heavy typography.
 
+## Spacing Rhythm
+
+Use the shared spacing variables in `src/styles.css` before adding one-off margins or padding.
+
+- `--md-page-pad`: outer page gutters and full-screen workspace headers.
+- `--md-page-bottom-pad`: bottom breathing room for normal product pages.
+- `--md-page-stack-gap`: standard spacing between page-level modules.
+- `--md-page-stack-gap-compact`: dense dashboard spacing where operators need fast scanning.
+- `--md-page-section-gap`: larger separation between major sections such as reports, gallery documentation, and document canvases.
+- `--md-workspace-pad-y`: vertical padding for document/editor workspaces.
+- `--md-gap-xs` through `--md-gap-xl`: internal component spacing.
+
+Use the shared utility classes when composing pages:
+
+- `md-page md-page-stack` for normal list/detail/product pages.
+- `md-page md-page-sections` for larger documentation or report surfaces.
+- `md-panel-grid` and `md-panel-column` for repeated panel layouts.
+
+Small internal label spacing can stay local when it improves readability, but page-level spacing should come from the shared rhythm.
+
 ## Radius And Depth
 
 Radius tokens are defined in `src/styles.css`:
@@ -58,12 +79,12 @@ Radius tokens are defined in `src/styles.css`:
 
 Use nested radius intentionally. If a parent has 10px radius and 4px internal padding, inner elements should usually be 6px.
 
-Use layered shadows instead of flat borders:
+Use layered shadows instead of flat borders. Panel shadows should be visible enough to separate white elements from the green shell without making the UI feel heavy:
 
 ```css
---md-shadow-line: inset 0 0 0 1px rgba(255,255,255,0.7), 0 0 0 1px rgba(11,20,19,0.04);
---md-shadow-soft: inset 0 0 0 1px rgba(255,255,255,0.85), 0 1px 2px rgba(11,20,19,0.04);
---md-shadow-lift: inset 0 0 0 1px rgba(255,255,255,0.9), 0 12px 30px rgba(42,52,50,0.08);
+--md-shadow-line: inset 0 0 0 1px rgba(255,255,255,0.88), 0 0 0 1px rgba(11,20,19,0.10), 0 8px 18px rgba(42,52,50,0.06);
+--md-shadow-soft: inset 0 0 0 1px rgba(255,255,255,0.92), 0 0 0 1px rgba(11,20,19,0.09), 0 12px 28px rgba(42,52,50,0.08);
+--md-shadow-lift: inset 0 0 0 1px rgba(255,255,255,0.94), 0 0 0 1px rgba(11,20,19,0.11), 0 18px 38px rgba(42,52,50,0.14);
 ```
 
 ## Component Architecture
@@ -111,6 +132,17 @@ Component naming rule:
 - Gallery entries should describe reusable primitives or patterns, not one-off screen labels. Use `Tabs`, `Filter Chips`, `Segmented Control`, `Data Table`, `Record Header`, and `Side Panels` instead of names like `Customer Tabs`.
 - Screen-specific components are allowed only when the content is genuinely domain-specific, such as `CustomerDetailHero`, `ActiveShipmentsPanel`, or `PrimaryContactsPanel`.
 - Customer screens should pass customer data into generic primitives rather than creating parallel customer-only controls.
+
+## Language And Direction
+
+Multideck must treat language support as a product-system requirement, not a later pass.
+
+- New screens and reusable components should work with the app-wide language system from the start.
+- User-facing copy should be localisable rather than trapped inside one-off hardcoded strings.
+- Layouts should remain calm and readable when text length changes between languages.
+- Arabic and other right-to-left languages must flip reading direction cleanly for navigation, sidebars, tables, forms, rows, and directional controls.
+- Inputs that contain emails, URLs, shipment IDs, codes, tracking numbers, or phone numbers should stay readable with direction-safe handling.
+- Any component added to the gallery should be checked in a non-English language, and in right-to-left mode when it has direction-sensitive layout.
 
 ## Page Rules
 

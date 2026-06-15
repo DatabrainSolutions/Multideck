@@ -185,12 +185,12 @@ function toChartConfig(series: ChartSeries[], extra?: ChartConfig): ChartConfig 
 }
 
 function chartHeight(compact?: boolean) {
-  return compact ? "h-[155px]" : "h-[250px]"
+  return compact ? "md-chart-container h-[155px] min-w-0 max-w-full overflow-hidden" : "md-chart-container h-[250px] min-w-0 max-w-full overflow-hidden"
 }
 
 function ChartCanvas({ compact, children }: { compact?: boolean; children: ReactNode }) {
   return (
-    <div className={cn("rounded-[var(--md-radius-lg)] bg-white/54 p-3 shadow-[var(--md-shadow-line)]", compact && "rounded-[var(--md-radius-md)] p-2")}>
+    <div className={cn("md-chart-canvas min-w-0 overflow-hidden rounded-[var(--md-radius-lg)] bg-white/54 p-3 shadow-[var(--md-shadow-line)]", compact && "rounded-[var(--md-radius-md)] p-2")}>
       {children}
     </div>
   )
@@ -213,21 +213,21 @@ function VisualizationShell({
 }) {
   const content = (
     <>
-      <div className="flex items-start justify-between gap-3">
+      <div className="md-chart-header flex items-start justify-between gap-3">
         <SectionHeader title={title} meta={subtitle} />
         {!compact ? <StatusPill tone="teal">Report-ready</StatusPill> : null}
       </div>
-      <div className="mt-4">{children}</div>
-      {footer ? <div className="mt-4">{footer}</div> : null}
+      <div className="md-chart-body mt-4">{children}</div>
+      {footer ? <div className="md-chart-footer mt-4">{footer}</div> : null}
     </>
   )
 
   if (compact) {
-    return <div className={cn("rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-4", className)}>{content}</div>
+    return <div className={cn("md-chart-visualization-shell rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-4", className)}>{content}</div>
   }
 
   return (
-    <Surface padding="md" className={cn("rounded-[var(--md-radius-xl)]", className)}>
+    <Surface padding="md" className={cn("md-chart-visualization-shell rounded-[var(--md-radius-xl)]", className)}>
       {content}
     </Surface>
   )
@@ -235,7 +235,7 @@ function VisualizationShell({
 
 function LegendRow({ items }: { items: Array<{ label: string; color: string }> }) {
   return (
-    <div className="flex flex-wrap items-center gap-3">
+    <div className="md-chart-legend flex flex-wrap items-center gap-3">
       {items.map((item) => (
         <span key={item.label} className="inline-flex items-center gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
           <span className="size-2 rounded-full" style={{ background: item.color }} />
@@ -448,7 +448,7 @@ export function DonutChartCard({
       }
     >
       <ChartCanvas compact={compact}>
-        <div className={cn("mx-auto grid w-full max-w-[280px] place-items-center", compact ? "h-[170px]" : "h-[250px]")}>
+        <div className={cn("md-chart-pie-canvas mx-auto grid w-full max-w-[280px] place-items-center", compact ? "h-[170px]" : "h-[250px]")}>
           <svg viewBox="0 0 240 240" role="img" aria-label={title} className="size-full max-h-[240px] max-w-[240px] overflow-visible">
             {data.map((entry, index) => {
               const value = Number(entry[valueKey] ?? 0)
@@ -526,7 +526,7 @@ export function FunnelChartCard({
         </ChartContainer>
       </ChartCanvas>
       {showSummary ? (
-        <div className={cn("mt-3 grid gap-2", compact ? "grid-cols-2" : "grid-cols-4")}>
+        <div className={cn("md-chart-summary-grid mt-3 grid gap-2", compact ? "grid-cols-2" : "grid-cols-4")}>
           {data.map((item) => (
             <div key={item.stage} className="rounded-[var(--md-radius-md)] bg-white/48 px-3 py-2 shadow-[var(--md-shadow-line)]">
               <p className="truncate text-[11px] font-medium text-[var(--md-text)]">{item.stage}</p>
@@ -556,7 +556,7 @@ export function HeatmapChartCard({
 
   return (
     <VisualizationShell title={title} subtitle={subtitle} compact={compact} className={className}>
-      <div className={cn("overflow-x-auto rounded-[var(--md-radius-lg)] bg-white/54 p-3 shadow-[var(--md-shadow-line)] md-scrollbar", compact && "rounded-[var(--md-radius-md)] p-2")}>
+      <div className={cn("md-chart-heatmap overflow-x-auto rounded-[var(--md-radius-lg)] bg-white/54 p-3 shadow-[var(--md-shadow-line)] md-scrollbar", compact && "rounded-[var(--md-radius-md)] p-2")}>
         <div className="grid min-w-[460px] gap-2" style={{ gridTemplateColumns: `88px repeat(${columns.length}, minmax(0, 1fr))` }}>
           <span />
           {columns.map((column) => (
@@ -716,23 +716,26 @@ export function MixedChartCard({
 export function ReportVisualizationBlock({
   kind = "line",
   title,
+  subtitle,
   compact = true,
   className,
   options,
 }: {
   kind?: VisualizationKind
   title?: string
+  subtitle?: string
   compact?: boolean
   className?: string
   options?: ReportVisualizationOptions
 }) {
-  if (kind === "area") return <AreaChartCard title={title} compact={compact} className={className} data={options?.data} series={options?.series} xKey={options?.xKey} showLegend={options?.showLegend} />
-  if (kind === "bar") return <BarChartCard title={title} compact={compact} className={className} data={options?.data} series={options?.series} xKey={options?.xKey} variant={options?.barVariant} showLegend={options?.showLegend} />
-  if (kind === "stacked-bar") return <StackedBarChartCard title={title} compact={compact} className={className} data={options?.data} series={options?.series} xKey={options?.xKey} showLegend={options?.showLegend} />
+  if (kind === "area") return <AreaChartCard title={title} subtitle={subtitle} compact={compact} className={className} data={options?.data} series={options?.series} xKey={options?.xKey} showLegend={options?.showLegend} />
+  if (kind === "bar") return <BarChartCard title={title} subtitle={subtitle} compact={compact} className={className} data={options?.data} series={options?.series} xKey={options?.xKey} variant={options?.barVariant} showLegend={options?.showLegend} />
+  if (kind === "stacked-bar") return <StackedBarChartCard title={title} subtitle={subtitle} compact={compact} className={className} data={options?.data} series={options?.series} xKey={options?.xKey} showLegend={options?.showLegend} />
   if (kind === "pie") {
     return (
       <DonutChartCard
         title={title}
+        subtitle={subtitle}
         compact={compact}
         className={className}
         data={options?.pieData}
@@ -746,10 +749,10 @@ export function ReportVisualizationBlock({
       />
     )
   }
-  if (kind === "funnel") return <FunnelChartCard title={title} compact={compact} className={className} data={options?.funnelData} showSummary={options?.funnelShowSummary} />
-  if (kind === "heatmap") return <HeatmapChartCard title={title} compact={compact} className={className} rows={options?.heatmapRows} columns={options?.heatmapColumns} valueFormatter={options?.heatmapValueFormatter} />
-  if (kind === "radial") return <RadialGoalChartCard title={title} compact={compact} className={className} value={options?.radialValue} max={options?.radialMax} label={options?.radialLabel} color={options?.radialColor} />
-  if (kind === "scatter") return <ScatterChartCard title={title} compact={compact} className={className} data={options?.scatterData} xKey={options?.scatterXKey} yKey={options?.scatterYKey} zKey={options?.scatterZKey} color={options?.scatterColor} />
-  if (kind === "mixed") return <MixedChartCard title={title} compact={compact} className={className} data={options?.data} bars={options?.bars} lines={options?.lines} xKey={options?.xKey} showLegend={options?.showLegend} />
-  return <LineChartCard title={title} compact={compact} className={className} data={options?.data} series={options?.series} xKey={options?.xKey} showLegend={options?.showLegend} />
+  if (kind === "funnel") return <FunnelChartCard title={title} subtitle={subtitle} compact={compact} className={className} data={options?.funnelData} showSummary={options?.funnelShowSummary} />
+  if (kind === "heatmap") return <HeatmapChartCard title={title} subtitle={subtitle} compact={compact} className={className} rows={options?.heatmapRows} columns={options?.heatmapColumns} valueFormatter={options?.heatmapValueFormatter} />
+  if (kind === "radial") return <RadialGoalChartCard title={title} subtitle={subtitle} compact={compact} className={className} value={options?.radialValue} max={options?.radialMax} label={options?.radialLabel} color={options?.radialColor} />
+  if (kind === "scatter") return <ScatterChartCard title={title} subtitle={subtitle} compact={compact} className={className} data={options?.scatterData} xKey={options?.scatterXKey} yKey={options?.scatterYKey} zKey={options?.scatterZKey} color={options?.scatterColor} />
+  if (kind === "mixed") return <MixedChartCard title={title} subtitle={subtitle} compact={compact} className={className} data={options?.data} bars={options?.bars} lines={options?.lines} xKey={options?.xKey} showLegend={options?.showLegend} />
+  return <LineChartCard title={title} subtitle={subtitle} compact={compact} className={className} data={options?.data} series={options?.series} xKey={options?.xKey} showLegend={options?.showLegend} />
 }

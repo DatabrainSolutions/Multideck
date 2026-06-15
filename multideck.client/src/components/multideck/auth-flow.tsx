@@ -88,16 +88,16 @@ function FreightNarrative({
       >
         <BrandLockup inverted />
 
-        <div className="mt-auto max-w-[570px] pb-12 pt-20 lg:pt-0">
+        <div className="mt-auto max-w-[570px] pb-[var(--md-page-bottom-pad)] pt-20 lg:pt-0">
           <h1 className="whitespace-pre-line text-[clamp(38px,4.2vw,66px)] font-medium leading-[1.08] tracking-normal">{copy.title}</h1>
-          <p className="mt-9 max-w-[540px] text-[22px] leading-[1.55] text-white/58">{copy.body}</p>
+          <p className="mt-[var(--md-page-section-gap)] max-w-[540px] text-[22px] leading-[1.55] text-white/58">{copy.body}</p>
 
           <div className="mt-[clamp(48px,6.2vw,86px)] flex max-w-[690px] flex-col gap-4">
             {authShipments.map((shipment, index) => (
               <div
                 key={shipment.id}
                 className={cn(
-                  "grid h-[84px] w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 rounded-[20px] px-5 text-[16px] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08),0_22px_44px_rgba(0,0,0,0.12)] transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] sm:h-[92px] sm:w-[86%] sm:gap-5 sm:px-8 sm:text-[18px]",
+                  "grid h-[84px] w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 rounded-[20px] px-5 text-[16px] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08),0_22px_44px_rgba(0,0,0,0.12)] transition-[background,color,box-shadow,opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] sm:h-[92px] sm:w-[86%] sm:gap-5 sm:px-8 sm:text-[18px]",
                   index === 0 && "bg-white/[0.055]",
                   index === 1 && "bg-white/[0.09] sm:ml-[44px]",
                   index === 2 && "bg-[var(--md-accent)] sm:ml-[88px]",
@@ -112,7 +112,7 @@ function FreightNarrative({
                     shipment.tone === "teal" && "bg-[#8ed2cb]",
                   )}
                 />
-                <div className="flex min-w-0 items-center gap-5">
+                <div className="flex min-w-0 items-center gap-[var(--md-page-stack-gap)]">
                   <strong className="shrink-0 font-medium text-white">{shipment.id}</strong>
                   <span className="hidden truncate text-white/52 sm:block">{shipment.route}</span>
                 </div>
@@ -153,7 +153,7 @@ function AuthField({
 }) {
   return (
     <form
-      className="mt-10"
+      className="mt-[var(--md-page-section-gap)]"
       onSubmit={(event) => {
         event.preventDefault()
         onSubmit()
@@ -168,7 +168,7 @@ function AuthField({
         onChange={(event) => onChange(event.target.value)}
         className="mt-3 h-[64px] rounded-[14px] border-0 bg-white px-5 text-[21px] text-[var(--md-ink)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.42),0_0_0_4px_rgba(14,125,116,0.16)] focus-visible:ring-0"
       />
-      <Button type="submit" className="mt-5 h-[64px] w-full rounded-[14px] bg-[var(--md-accent)] text-[18px] font-medium text-white hover:bg-[#0b6f67]">
+      <Button type="submit" className="mt-[var(--md-page-stack-gap)] h-[64px] w-full rounded-[14px] bg-[var(--md-accent)] text-[18px] font-medium text-white hover:bg-[#0b6f67]">
         Continue
         <ArrowRight data-icon="inline-end" className="ml-2 size-5" strokeWidth={1.4} />
       </Button>
@@ -181,7 +181,7 @@ function ProviderButton({ label, icon, onClick }: { label: string; icon: "google
     <Button
       type="button"
       variant="ghost"
-      className="h-[60px] rounded-[13px] bg-white px-7 text-[18px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/82"
+      className="h-[60px] rounded-[13px] bg-white px-[var(--md-gap-xl)] text-[18px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/82"
       onClick={onClick}
     >
       {icon === "google" ? <span className="text-[22px] font-medium text-[#4285f4]">G</span> : null}
@@ -217,9 +217,9 @@ function SignInPanel({
 
       <AuthField label="Work email" value={email} onChange={onEmailChange} onSubmit={onContinue} />
 
-      <p className="mt-6 px-5 text-center text-[16px] leading-6 text-[var(--md-text)]">We'll email you a one-time link. No password to remember.</p>
+      <p className="mt-[var(--md-gap-xl)] px-[var(--md-page-stack-gap)] text-center text-[16px] leading-6 text-[var(--md-text)]">We'll email you a one-time link. No password to remember.</p>
 
-      <div className="my-10 grid grid-cols-[1fr_auto_1fr] items-center gap-5 text-[15px] text-[var(--md-subtle)]">
+      <div className="my-[var(--md-page-section-gap)] grid grid-cols-[1fr_auto_1fr] items-center gap-[var(--md-page-stack-gap)] text-[15px] text-[var(--md-subtle)]">
         <span className="h-px bg-[rgba(11,20,19,0.08)]" />
         or
         <span className="h-px bg-[rgba(11,20,19,0.08)]" />
@@ -231,7 +231,7 @@ function SignInPanel({
         <ProviderButton label="SSO" icon="sso" onClick={onContinue} />
       </div>
 
-      <p className="mt-12 text-[17px] leading-7 text-[var(--md-text)]">
+      <p className="mt-[var(--md-page-section-gap)] text-[17px] leading-7 text-[var(--md-text)]">
         New to Multideck? <button type="button" className="font-medium text-[var(--md-accent)]">Talk to our team</button> - workspaces are set up with you, not by a form.
       </p>
     </div>
@@ -258,7 +258,7 @@ function CodeInput({
   }
 
   return (
-    <div className="mt-12 flex gap-4">
+    <div className="mt-[var(--md-page-section-gap)] flex gap-[var(--md-gap-lg)]">
       {digits.map((digit, index) => (
         <Input
           // eslint-disable-next-line react/no-array-index-key
@@ -297,21 +297,21 @@ function VerifyPanel({
         <Mail className="size-7" strokeWidth={1.4} />
       </div>
 
-      <h2 className="mt-9 text-[36px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">Check your inbox</h2>
+      <h2 className="mt-[var(--md-page-section-gap)] text-[36px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">Check your inbox</h2>
       <p className="mt-4 text-[18px] leading-7 text-[var(--md-text)]">
         We sent a code to <span className="font-medium text-[var(--md-ink)]">{email}</span>
       </p>
 
       <CodeInput code={code} onCodeChange={onCodeChange} onComplete={onComplete} />
 
-      <div className="mt-10 flex flex-wrap items-center gap-3 text-[17px] text-[var(--md-text)]">
+      <div className="mt-[var(--md-page-section-gap)] flex flex-wrap items-center gap-[var(--md-gap-md)] text-[17px] text-[var(--md-text)]">
         <span>Didn't get it?</span>
         <button type="button" className="font-medium text-[var(--md-accent)]" onClick={() => onCodeChange("742")}>Resend</button>
         <span className="text-[var(--md-subtle)]">·</span>
         <button type="button" className="font-medium text-[var(--md-accent)]" onClick={onBack}>Use a different email</button>
       </div>
 
-      <div className="mt-14 flex gap-4 rounded-[14px] bg-white/52 px-6 py-5 text-[16px] leading-7 text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
+      <div className="mt-[calc(var(--md-page-section-gap)+var(--md-gap-lg))] flex gap-[var(--md-gap-lg)] rounded-[14px] bg-white/52 px-[var(--md-gap-xl)] py-[var(--md-page-stack-gap)] text-[16px] leading-7 text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
         <Clock3 className="mt-1 size-5 shrink-0 text-[var(--md-subtle)]" strokeWidth={1.4} />
         <p>Your session stays signed in on this device for 30 days. Admins can shorten this in workspace settings.</p>
       </div>
@@ -323,19 +323,19 @@ function SignedOutPanel({ onSignBackIn, onSwitchAccount }: { onSignBackIn: () =>
   return (
     <div className="w-full max-w-[560px]">
       <BrandLockup />
-      <h2 className="mt-16 text-[34px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">You're signed out</h2>
-      <p className="mt-5 text-[18px] text-[var(--md-text)]">Nice work today, Emma.</p>
+      <h2 className="mt-[calc(var(--md-page-section-gap)*2)] text-[34px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">You're signed out</h2>
+      <p className="mt-[var(--md-page-stack-gap)] text-[18px] text-[var(--md-text)]">Nice work today, Emma.</p>
 
       <div className="mt-11 overflow-hidden rounded-[16px] bg-white/88 shadow-[var(--md-shadow-line)]">
         {signedOutStats.map(([value, label]) => (
-          <div key={label} className="grid grid-cols-[64px_1fr] items-center gap-4 px-7 py-5 shadow-[inset_0_-1px_0_rgba(11,20,19,0.08)] last:shadow-none">
+          <div key={label} className="grid grid-cols-[64px_1fr] items-center gap-[var(--md-gap-lg)] px-[var(--md-gap-xl)] py-[var(--md-page-stack-gap)] shadow-[inset_0_-1px_0_rgba(11,20,19,0.08)] last:shadow-none">
             <strong className="text-[30px] font-medium leading-none text-[var(--md-ink)]">{value}</strong>
             <span className="text-[18px] text-[var(--md-text)]">{label}</span>
           </div>
         ))}
       </div>
 
-      <Button type="button" className="mt-10 h-[64px] w-full rounded-[14px] bg-[var(--md-accent)] text-[18px] font-medium text-white hover:bg-[#0b6f67]" onClick={onSignBackIn}>
+      <Button type="button" className="mt-[var(--md-page-section-gap)] h-[64px] w-full rounded-[14px] bg-[var(--md-accent)] text-[18px] font-medium text-white hover:bg-[#0b6f67]" onClick={onSignBackIn}>
         Sign back in
       </Button>
       <Button
@@ -375,7 +375,7 @@ export function AuthFlow({
       )}
     >
       <FreightNarrative step={step} className={galleryMode ? "min-h-[720px]" : undefined} />
-      <main className="grid min-h-[720px] place-items-center px-[clamp(24px,6vw,120px)] py-16 lg:min-h-screen">
+      <main className="grid min-h-[720px] place-items-center px-[clamp(var(--md-gap-xl),6vw,120px)] py-[calc(var(--md-page-section-gap)*2)] lg:min-h-screen">
         {step === "signin" ? <SignInPanel email={email} onEmailChange={setEmail} onContinue={() => setStep("verify")} /> : null}
         {step === "verify" ? (
           <VerifyPanel

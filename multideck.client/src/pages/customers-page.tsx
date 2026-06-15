@@ -10,11 +10,13 @@ import {
   type CustomerViewMode,
 } from "@/components/multideck/customer-components"
 import { Pagination } from "@/components/multideck/pagination"
-import { customers, customerFilters } from "@/data/multideck-data"
+import { currentOperator, customers, customerFilters, customerScopeTabs } from "@/data/multideck-data"
 
 const rowsPerPageOptions = [10, 20, 30, 50]
+type CustomerScope = (typeof customerScopeTabs)[number]
 
 export function CustomersPage({ navigate }: { navigate: (path: string) => void }) {
+  const [scope, setScope] = useState<CustomerScope>("All customers")
   const [activeFilter, setActiveFilter] = useState(customerFilters[0])
   const [viewMode, setViewMode] = useState<CustomerViewMode>(customerViewModes[0])
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -23,16 +25,17 @@ export function CustomersPage({ navigate }: { navigate: (path: string) => void }
 
   const visibleCustomers = useMemo(() => {
     const filter = activeFilter.split(" · ")[0]
-    if (filter === "All") return customers
-    return customers.filter((customer) => customer.status === filter)
-  }, [activeFilter])
+    const scopedCustomers = scope === "My customers" ? customers.filter((customer) => customer.owner === currentOperator.initials) : customers
+    if (filter === "All") return scopedCustomers
+    return scopedCustomers.filter((customer) => customer.status === filter)
+  }, [activeFilter, scope])
 
   const pageCount = Math.max(Math.ceil(visibleCustomers.length / rowsPerPage), 1)
   const paginatedCustomers = visibleCustomers.slice((page - 1) * rowsPerPage, page * rowsPerPage)
 
   useEffect(() => {
     setPage(1)
-  }, [activeFilter, viewMode])
+  }, [activeFilter, scope, viewMode])
 
   useEffect(() => {
     if (page > pageCount) setPage(pageCount)
@@ -52,8 +55,10 @@ export function CustomersPage({ navigate }: { navigate: (path: string) => void }
   }
 
   return (
-    <div className="pb-8">
+    <div className="md-page md-page-stack">
       <CustomerListHeader
+        scope={scope}
+        onScopeChange={setScope}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         onExport={() => toast.success("Customer CSV prepared")}
@@ -79,7 +84,6 @@ export function CustomersPage({ navigate }: { navigate: (path: string) => void }
       ) : null}
 
       <Pagination
-        className="mt-4"
         page={page}
         pageCount={pageCount}
         totalItems={visibleCustomers.length}

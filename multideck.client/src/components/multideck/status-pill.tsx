@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils"
 import type { StatusTone } from "@/data/multideck-data"
 
 const toneClass: Record<StatusTone, string> = {
-  green: "bg-[rgba(46,142,96,0.1)] text-[var(--md-green)] shadow-[0_0_0_1px_rgba(46,142,96,0.1)]",
+  green: "bg-[rgba(14,125,116,0.1)] text-[var(--md-green)] shadow-[0_0_0_1px_rgba(14,125,116,0.1)]",
   amber: "bg-[rgba(221,138,43,0.1)] text-[var(--md-amber)] shadow-[0_0_0_1px_rgba(221,138,43,0.1)]",
   red: "bg-[rgba(209,78,78,0.1)] text-[var(--md-red)] shadow-[0_0_0_1px_rgba(209,78,78,0.1)]",
   blue: "bg-[rgba(74,125,156,0.1)] text-[var(--md-blue)] shadow-[0_0_0_1px_rgba(74,125,156,0.1)]",

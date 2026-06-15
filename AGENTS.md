@@ -49,6 +49,20 @@ When adding any new section, screen, panel, workflow, or UI feature:
 
 If a new product component is needed, add it in `multideck.client/src/components/multideck`.
 
+## Language Support Rule
+
+Every new screen, component, panel, workflow, setting, and visible UI state must support the app-wide language system from the start.
+
+When adding new UI:
+- Make visible text localisable through the existing language layer.
+- Avoid hardcoding user-facing copy in a way that cannot be translated.
+- Check that the UI still works when the app is switched away from English.
+- Check Arabic or another right-to-left language when the layout includes navigation, rows, sidebars, forms, icons, or directional controls.
+- Use direction-safe layout patterns and avoid assumptions that the interface is always left-to-right.
+- Keep form inputs, emails, URLs, codes, tracking numbers, and phone numbers readable in both left-to-right and right-to-left modes.
+
+Language support is part of the definition of done. A new reusable component or product screen is not complete if it only works properly in English.
+
 ## Components Page Rule
 
 Any new reusable component must also be added to the components page.
@@ -152,6 +166,8 @@ When opening or testing in a browser, assume Atlas unless the user explicitly as
 
 Before saying the work is done:
 - Confirm the UI uses existing components where possible.
+- Confirm new user-facing text supports the app-wide language system.
+- Confirm any direction-sensitive UI works in Arabic / right-to-left mode when relevant.
 - Confirm any new reusable component appears on the components page.
 - Check that the result still feels calm, premium, and believable.
 - Check that nested corners follow the radius rule.

@@ -38,10 +38,12 @@ import { toast } from "sonner"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { StatusPill } from "@/components/multideck/status-pill"
+import { ThemeToggle } from "@/components/multideck/theme-toggle"
 import {
   SettingsChoiceGroup,
   SettingsFieldRow,
   SettingsInput,
+  SettingsIntegrationRow,
   SettingsOptionCard,
   SettingsPageHeader,
   SettingsPanel,
@@ -52,6 +54,9 @@ import {
   SettingsTextarea,
   SettingsToggleRow,
 } from "@/components/multideck/settings-components"
+import { languageOptions, getLanguageOption } from "@/i18n/languages"
+import { useLanguage } from "@/i18n/language-provider"
+import { clockDisplayLabelFromMode, clockDisplayLabels, clockDisplayModeFromLabel, readClockDisplayMode, writeClockDisplayMode } from "@/lib/user-preferences"
 import { cn } from "@/lib/utils"
 
 const settingsGroups: SettingsTabGroup[] = [
@@ -193,6 +198,49 @@ function ChoiceSetting({
   return <SettingsChoiceGroup options={options} value={value} onChange={setValue} />
 }
 
+function ClockDisplaySetting() {
+  const [value, setValue] = useState(clockDisplayLabelFromMode(readClockDisplayMode()))
+
+  function changeValue(nextValue: string) {
+    setValue(nextValue)
+    writeClockDisplayMode(clockDisplayModeFromLabel(nextValue))
+  }
+
+  return <SettingsChoiceGroup options={[...clockDisplayLabels]} value={value} onChange={changeValue} />
+}
+
+function LanguageSettingField({
+  label = "Language",
+  description = "This changes every Multideck screen and flips layout direction for right-to-left languages.",
+}: {
+  label?: string
+  description?: string
+}) {
+  const { language, setLanguage, direction } = useLanguage()
+  const selectedLanguage = getLanguageOption(language)
+  const languageLabels = languageOptions.map((option) => `${option.label} - ${option.nativeLabel}`)
+  const selectedLabel = `${selectedLanguage.label} - ${selectedLanguage.nativeLabel}`
+
+  return (
+    <SettingsFieldRow label={label} description={description}>
+      <div className="grid gap-2">
+        <SettingsSelect
+          value={selectedLabel}
+          options={languageLabels}
+          ariaLabel="App language"
+          onChange={(nextLabel) => {
+            const nextLanguage = languageOptions.find((option) => nextLabel.startsWith(option.label))
+            if (nextLanguage) setLanguage(nextLanguage.code)
+          }}
+        />
+        <p className="text-[12px] leading-5 text-[var(--md-text)]">
+          {direction === "rtl" ? "Right-to-left layout is active." : "Left-to-right layout is active."}
+        </p>
+      </div>
+    </SettingsFieldRow>
+  )
+}
+
 function OptionCards({
   options,
   initialValue,
@@ -243,6 +291,88 @@ function IconRow({
 }
 
 function ProfileTab() {
+  const personalConnectors: Array<{
+    icon: LucideIcon
+    title: string
+    description: string
+    status: string
+    statusTone: "connected" | "ready" | "review" | "workspace"
+    actionLabel: string
+  }> = [
+    {
+      icon: Mail,
+      title: "Gmail",
+      description: "Connect your Google inbox for customer replies, quote follow-ups, and approved Artie drafts.",
+      status: "Ready",
+      statusTone: "ready",
+      actionLabel: "Connect",
+    },
+    {
+      icon: Mail,
+      title: "Outlook Mail",
+      description: "Connect Outlook for shared inboxes, finance threads, and Microsoft 365 customer comms.",
+      status: "Ready",
+      statusTone: "ready",
+      actionLabel: "Connect",
+    },
+    {
+      icon: CalendarClock,
+      title: "Google Calendar",
+      description: "Let Multideck schedule customer check-ins, handover reminders, and daily operations digests.",
+      status: "Ready",
+      statusTone: "ready",
+      actionLabel: "Connect",
+    },
+    {
+      icon: CalendarClock,
+      title: "Outlook Calendar",
+      description: "Use Microsoft calendar availability for account reviews, escalation windows, and internal follow-ups.",
+      status: "Ready",
+      statusTone: "ready",
+      actionLabel: "Connect",
+    },
+    {
+      icon: Cloud,
+      title: "Google Drive",
+      description: "Attach folders for invoices, packing lists, customer reports, and onboarding documents.",
+      status: "Connected",
+      statusTone: "connected",
+      actionLabel: "Manage",
+    },
+    {
+      icon: Cloud,
+      title: "OneDrive / SharePoint",
+      description: "Bring Microsoft files into shipment records without asking operators to download and reupload.",
+      status: "Ready",
+      statusTone: "ready",
+      actionLabel: "Connect",
+    },
+    {
+      icon: MessageCircle,
+      title: "Slack",
+      description: "Send approved exception alerts and handover notes to the right ops channels.",
+      status: "Connected",
+      statusTone: "connected",
+      actionLabel: "Manage",
+    },
+    {
+      icon: MessageCircle,
+      title: "Microsoft Teams",
+      description: "Route approval requests and customer-risk updates to teams already working in Microsoft 365.",
+      status: "Ready",
+      statusTone: "ready",
+      actionLabel: "Connect",
+    },
+    {
+      icon: BriefcaseBusiness,
+      title: "Project tools",
+      description: "Connect ClickUp, Linear, or Asana so customer follow-ups and launch tasks stay visible.",
+      status: "Optional",
+      statusTone: "workspace",
+      actionLabel: "Choose",
+    },
+  ]
+
   return (
     <>
       <SettingsPageHeader
@@ -257,7 +387,7 @@ function ProfileTab() {
         }
       />
 
-      <div className="mt-7 grid gap-5 xl:grid-cols-[minmax(0,1fr)_310px]">
+      <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1fr)_310px]">
         <SettingsPanel title="Photo" description="JPG, PNG, or SVG. Recommended 256x256.">
           <SettingsFieldRow label="Avatar" description="Used in comments, assignment logs, and customer replies.">
             <div className="flex flex-wrap items-center gap-4">
@@ -309,7 +439,7 @@ function ProfileTab() {
         />
       </div>
 
-      <div className="mt-5 space-y-5">
+      <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
         <SettingsPanel title="Working schedule" description="Used to schedule notifications, AI digest delivery, and out-of-hours escalation.">
           <SettingsFieldRow label="Time zone">
             <SettingsSelect value="Europe/Berlin - UTC+1" options={["Europe/Berlin - UTC+1", "Europe/London - UTC+0", "America/New York - UTC-5", "Asia/Singapore - UTC+8"]} />
@@ -325,9 +455,7 @@ function ProfileTab() {
           <SettingsFieldRow label="Date & number format">
             <SettingsSelect value="DD MMM YYYY - metric - EUR" options={["DD MMM YYYY - metric - EUR", "MMM DD, YYYY - imperial - USD", "YYYY-MM-DD - metric - GBP"]} />
           </SettingsFieldRow>
-          <SettingsFieldRow label="Language">
-            <SettingsSelect value="English (UK)" options={["English (UK)", "English (US)", "German", "French"]} />
-          </SettingsFieldRow>
+          <LanguageSettingField />
         </SettingsPanel>
 
         <SettingsPanel title="Public profile" description="Shown to customers on shared tracking pages and quotes.">
@@ -337,6 +465,24 @@ function ProfileTab() {
           <SettingsFieldRow label="About" align="start">
             <SettingsTextarea defaultValue="Operations manager at Northwind. Twelve years moving cargo across Asia-Europe lanes. I read every PoD and personally chase every customs hold." />
           </SettingsFieldRow>
+        </SettingsPanel>
+
+        <SettingsPanel
+          title="Connected tools"
+          description="Personal accounts Multideck can use for drafts, reminders, files, and approved updates. Workspace systems still live under Organisation / Integrations."
+        >
+          {personalConnectors.map((connector) => (
+            <SettingsIntegrationRow
+              key={connector.title}
+              icon={connector.icon}
+              title={connector.title}
+              description={connector.description}
+              status={connector.status}
+              statusTone={connector.statusTone}
+              actionLabel={connector.actionLabel}
+              onAction={() => toast.success(`${connector.title} ${connector.actionLabel.toLowerCase()} flow opened`)}
+            />
+          ))}
         </SettingsPanel>
 
         <SettingsPanel title="Danger zone" className="shadow-[inset_0_0_0_1px_rgba(209,78,78,0.16),0_0_0_1px_rgba(209,78,78,0.08)]">
@@ -367,7 +513,7 @@ function SecurityTab() {
         description="Protect your account and choose how sensitive freight actions are verified."
         actions={primaryAction("Save security", () => toast.success("Security settings saved"))}
       />
-      <div className="mt-7 space-y-5">
+      <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
         <SettingsPanel title="Sign-in methods" description="Keep at least two recovery routes active for operational continuity.">
           <IconRow icon={LockKeyhole} title="Password" description="Last changed 32 days ago. Strong enough for admin access." right={compactAction("Change")} />
           <ToggleSetting title="Two-factor authentication" description="Require a code for new devices, billing changes, and API key creation." initialChecked />
@@ -404,7 +550,7 @@ function SessionsTab() {
         description="Review signed-in devices and remove anything that should not have access to live shipment data."
         actions={compactAction("Sign out all others", () => toast.success("Other sessions signed out"))}
       />
-      <div className="mt-7 space-y-5">
+      <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
         <SettingsPanel title="Devices" description="Active user sessions across web and mobile.">
           {sessions.map(([device, detail, status]) => (
             <IconRow
@@ -440,13 +586,22 @@ function PreferencesTab() {
         description="Set the defaults that make the workspace faster for operators handling live freight."
         actions={primaryAction("Save preferences", () => toast.success("Preferences saved"))}
       />
-      <div className="mt-7 space-y-5">
+      <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
         <SettingsPanel title="Workspace defaults" description="These affect new boards, lists, and shipment views for your account.">
+          <LanguageSettingField label="App language" />
+          <SettingsFieldRow label="Appearance" description="Choose the workspace colour mode for this browser.">
+            <div className="max-w-[300px]">
+              <ThemeToggle className="bg-[var(--md-glass)]" />
+            </div>
+          </SettingsFieldRow>
           <SettingsFieldRow label="Start page">
             <SettingsSelect value="Overview - Today Ops" options={["Overview - Today Ops", "Shipments - Open", "Customers", "Agent Artie"]} />
           </SettingsFieldRow>
           <SettingsFieldRow label="Default shipment view">
-            <ChoiceSetting options={["Table", "Board", "Map", "Timeline"]} initialValue="Table" />
+            <ChoiceSetting options={["Table", "Board"]} initialValue="Table" />
+          </SettingsFieldRow>
+          <SettingsFieldRow label="World clock display" description="Digital is the default. Analogue switches dashboard city times to clock faces.">
+            <ClockDisplaySetting />
           </SettingsFieldRow>
           <SettingsFieldRow label="Table density">
             <ChoiceSetting options={["Compact", "Comfortable", "Roomy"]} initialValue="Comfortable" />
@@ -478,8 +633,8 @@ function NotificationsTab() {
         description="Choose when Multideck should interrupt you, and which updates should roll into a calmer digest."
         actions={primaryAction("Save notifications", () => toast.success("Notification settings saved"))}
       />
-      <div className="mt-7 grid gap-5 xl:grid-cols-[minmax(0,1fr)_310px]">
-        <div className="space-y-5">
+      <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1fr)_310px]">
+        <div className="space-y-[var(--md-page-stack-gap)]">
           <SettingsPanel title="Urgent alerts" description="These can break quiet hours when customer risk is high.">
             <ToggleSetting title="Customs holds" description="Ping immediately when a hold is raised or a licence is missing." initialChecked meta={<StatusPill tone="amber">3 pending</StatusPill>} />
             <ToggleSetting title="ETA slips over 6 hours" description="Notify the owner before Artie drafts the customer update." initialChecked />
@@ -527,7 +682,7 @@ function AgentArtieTab() {
           </>
         }
       />
-      <div className="mt-7 space-y-5">
+      <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
         <SettingsPanel
           title="Autonomy level"
           description="Pick how much Artie does on its own. You can always override per-task by setting an approval rule below."
@@ -590,7 +745,7 @@ function TeamTab() {
         description="Control who can see shipment data, approve Artie actions, and manage customer-facing changes."
         actions={primaryAction("Invite teammate", () => toast.success("Invite link copied"))}
       />
-      <div className="mt-7 space-y-5">
+      <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
         <SettingsPanel title="Team members" description="Active people in Northwind Forwarding.">
           {members.map(([name, role, detail, initials]) => (
             <div key={name} className="grid gap-3 px-5 py-4 sm:grid-cols-[40px_minmax(0,1fr)_auto] sm:items-center">
@@ -637,7 +792,7 @@ function IntegrationsTab() {
         description="Connect the systems operators already use so Multideck can pull context and push approved updates."
         actions={primaryAction("Add integration", () => toast.success("Integration picker opened"))}
       />
-      <div className="mt-7 grid gap-5 xl:grid-cols-2">
+      <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-page-stack-gap)] xl:grid-cols-2">
         {integrations.map(([icon, title, description, status]) => (
           <SettingsPanel
             key={title}
@@ -662,7 +817,7 @@ function ApiTab() {
         description="Manage technical access without making operators leave the product or guess what is connected."
         actions={primaryAction("Create API key", () => toast.success("API key draft created"))}
       />
-      <div className="mt-7 space-y-5">
+      <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
         <SettingsPanel title="API keys" description="Keys are shown once. Use scoped keys for customer portals and broker automations.">
           <IconRow icon={KeyRound} title="Production sync key" description="Read shipments, write milestones. Last used 8 minutes ago." right={<StatusPill tone="teal">Active</StatusPill>} />
           <IconRow icon={Braces} title="Customer portal key" description="Read tracking pages and quotes only. Last used today 05:41." right={<StatusPill tone="teal">Active</StatusPill>} />
@@ -693,8 +848,8 @@ function BillingTab() {
         description="Understand plan limits, Artie usage, and the workspace costs that affect operating margin."
         actions={compactAction("Download invoices", () => toast.success("Invoices prepared"))}
       />
-      <div className="mt-7 grid gap-5 xl:grid-cols-[minmax(0,1fr)_310px]">
-        <div className="space-y-5">
+      <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1fr)_310px]">
+        <div className="space-y-[var(--md-page-stack-gap)]">
           <SettingsPanel title="Plan" description="Northwind Forwarding is on the Operations plan.">
             <SettingsFieldRow label="Seats">
               <div className="grid gap-3 sm:grid-cols-3">
@@ -740,7 +895,7 @@ function BrandingTab() {
         description="Set the customer-facing identity for shared tracking pages, quote links, and automated updates."
         actions={primaryAction("Save branding", () => toast.success("Brand settings saved"))}
       />
-      <div className="mt-7 space-y-5">
+      <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
         <SettingsPanel title="Identity" description="Used on customer-facing surfaces.">
           <SettingsFieldRow label="Workspace name">
             <SettingsInput defaultValue="Northwind Forwarding" />
@@ -786,7 +941,7 @@ function WhatsNewTab() {
         title="What's new"
         description="Recent product changes that matter to freight operators and workspace admins."
       />
-      <div className="mt-7 space-y-5">
+      <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
         <SettingsPanel title="June release" description="Focused on safer AI action, clearer customer pages, and faster exception review.">
           {notes.map(([title, description, tag]) => (
             <IconRow key={title} icon={Zap} title={title} description={description} right={<StatusPill tone={tag === "New" ? "teal" : "blue"}>{tag}</StatusPill>} />
@@ -805,7 +960,7 @@ function DocsTab() {
         title="Docs & shortcuts"
         description="Fast access to the operational references and keyboard shortcuts your team uses most."
       />
-      <div className="mt-7 grid gap-5 xl:grid-cols-2">
+      <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-page-stack-gap)] xl:grid-cols-2">
         <SettingsPanel title="Guides" description="Short docs for common operational setup.">
           <IconRow icon={BookOpen} title="Build a customs hold workflow" description="Set watchers, approvals, broker sync, and owner notifications." right={compactAction("Open")} />
           <IconRow icon={BookOpen} title="Customer tracking pages" description="Share shipment status safely without exposing internal comments." right={compactAction("Open")} />
@@ -839,7 +994,7 @@ function SupportTab() {
         description="Send the Multideck team enough operational context to help without slowing your day down."
         actions={primaryAction("Send request", () => toast.success("Support request sent"))}
       />
-      <div className="mt-7 grid gap-5 xl:grid-cols-[minmax(0,1fr)_310px]">
+      <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1fr)_310px]">
         <SettingsPanel title="Request details" description="Include a shipment ID or customer name when the issue is workflow-specific.">
           <SettingsFieldRow label="Topic">
             <SettingsSelect value="Artie action review" options={["Artie action review", "Shipment sync issue", "Billing question", "Security concern", "Product feedback"]} />
@@ -933,8 +1088,8 @@ export function SettingsPage({ navigate }: { navigate: (path: string) => void })
           onBack={() => navigate("/")}
           className="hidden lg:flex"
         />
-        <main className="min-w-0 px-[var(--md-page-pad)] py-8 lg:py-9">
-          <div className="mx-auto max-w-[1120px] pb-12">
+        <main className="min-w-0 px-[var(--md-page-pad)] py-[var(--md-page-pad)]">
+          <div className="mx-auto max-w-[1120px] pb-[var(--md-page-bottom-pad)]">
             <TabContent activeTab={activeItem.id} />
           </div>
         </main>

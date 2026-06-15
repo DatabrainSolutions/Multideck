@@ -20,15 +20,15 @@ export function CustomerDetailPage() {
   const selectedContact = marlowContacts.find((contact) => contact.email === selectedContactEmail) ?? null
 
   return (
-    <div className="pb-10">
+    <div className="md-page md-page-stack">
       <CustomerDetailHero />
       <CustomerMetricsGrid />
 
-      <TabsRail tabs={marlowTabs} activeTab={activeTab} onChange={setActiveTab} className="mt-8" />
+      <TabsRail tabs={marlowTabs} activeTab={activeTab} onChange={setActiveTab} />
 
       {activeTab === "Overview" ? (
-        <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
-          <div className="flex min-w-0 flex-col gap-5">
+        <div className="md-panel-grid xl:grid-cols-[minmax(0,1fr)_380px]">
+          <div className="md-panel-column">
             {selectedContact ? (
               <ContactProfileModule
                 contact={selectedContact}
@@ -39,7 +39,7 @@ export function CustomerDetailPage() {
             <LaneMixPanel />
             <CustomerActivityPanel />
           </div>
-          <div className="flex min-w-0 flex-col gap-5">
+          <div className="md-panel-column">
             <PrimaryContactsPanel
               selectedContact={selectedContact}
               onSelectContact={(contact) => setSelectedContactEmail(contact.email)}
@@ -49,7 +49,7 @@ export function CustomerDetailPage() {
           </div>
         </div>
       ) : (
-        <div className="mt-6">
+        <div>
           <CustomerSimpleTabPanel tab={activeTab} />
         </div>
       )}
