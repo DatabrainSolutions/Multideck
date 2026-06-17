@@ -25,7 +25,7 @@ const authCopyByStep: Record<AuthFlowStep, AuthCopy> = {
     footnote: "Codes expire after 10 minutes",
   },
   "signed-out": {
-    title: "Lights off.\nArtie keeps watch.",
+    title: "Lights off.\nDexter keeps watch.",
     body: "Exceptions, ETA changes, and new documents are monitored overnight. Anything urgent will be waiting at the top of your morning digest.",
     footnote: "Monitoring 248 shipments while you're away",
   },
@@ -40,7 +40,7 @@ const authShipments = [
 const signedOutStats = [
   ["12", "shipments you touched today"],
   ["3", "exceptions cleared"],
-  ["6", "customer updates Artie sent for you"],
+  ["6", "customer updates Dexter sent for you"],
 ]
 
 function BrandLockup({ inverted = false, centered = false }: { inverted?: boolean; centered?: boolean }) {

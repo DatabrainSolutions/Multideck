@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from "react"
-import { ArrowLeft, ArrowRight, Bell, Check, Clipboard, Cloud, FileText, Folder, Image, KeyRound, Mail, Search, Ship, Sparkles, UserRound } from "lucide-react"
+import { ArrowLeft, ArrowRight, Bell, Check, Clipboard, Cloud, Component, Download, FileText, Folder, Image, KeyRound, Mail, Search, Ship, Sparkles, UserRound } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -7,7 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
-import { activityItems, cityQueues, crmAccountSignals, crmActivities, crmContacts, crmPipelineStages, crmSummaryMetrics, customerFilters, customers, customsQueue, galleryComponents, galleryIcons, generatedReports, initialFavouriteShipmentIds, liveShipments, marlowContacts, marlowMetrics, metricCards, reportTemplates, shipmentFilters, shipmentMetrics, shipments } from "@/data/multideck-data"
+import { activityItems, cityQueues, crmAccountSignals, crmActivities, crmContacts, crmPipelineStages, crmSummaryMetrics, customerFilters, customerScopeTabs, customers, customsQueue, galleryComponents, galleryIcons, generatedReports, initialFavouriteShipmentIds, liveShipments, marlowContacts, marlowMetrics, metricCards, reportTemplates, shipmentFilters, shipmentMetrics, shipments } from "@/data/multideck-data"
 import { AnimatedList } from "@/components/multideck/animated-list"
 import { CommandInput } from "@/components/multideck/command-input"
 import { SidebarNavItem } from "@/components/multideck/app-sidebar"
@@ -17,7 +17,7 @@ import { QueueRow, ShipmentRow, TimezoneFocusPanel, WorldClockCell, useLiveNow }
 import {
   AccountPanel,
   ActiveShipmentsPanel,
-  ArtiePulsePanel,
+  DexterPulsePanel,
   ContactProfileModule,
   CustomerAvatar,
   CustomerActivityPanel,
@@ -26,6 +26,8 @@ import {
   CustomerListTable,
   CustomerMetricCard,
   CustomerMetricsGrid,
+  customerViewOptions,
+  type CustomerViewMode,
   LaneMixPanel,
   PrimaryContactsPanel,
 } from "@/components/multideck/customer-components"
@@ -34,22 +36,22 @@ import { FilterChips, SegmentedControl, TabsRail } from "@/components/multideck/
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
 import { CodeInput, FreightNarrative, SignInPanel, SignedOutPanel, VerifyPanel } from "@/components/multideck/auth-flow"
-import { ShipmentAdvancedSearch, ShipmentArrivalCard, ShipmentAskPanel, ShipmentBoardPreview, ShipmentExceptionPanel, ShipmentMetricCard, ShipmentResolutionChecklist, ShipmentsTable, YourJobsPanel, shipmentViewModes, type ShipmentSearchCriterion, type ShipmentViewMode } from "@/components/multideck/shipment-components"
+import { ShipmentAdvancedSearch, ShipmentArrivalCard, ShipmentAskPanel, ShipmentBoardPreview, ShipmentExceptionPanel, ShipmentMetricCard, ShipmentResolutionChecklist, ShipmentsTable, YourJobsPanel, shipmentViewModes, shipmentViewOptions, type ShipmentSearchCriterion, type ShipmentViewMode } from "@/components/multideck/shipment-components"
 import {
-  ArtieAttachmentPalette,
-  ArtieChecklistCard,
-  ArtieCustomerSnapshot,
-  ArtieHistoryList,
-  ArtieMonitorCard,
-  ArtieMonitorDetailSheet,
-  ArtiePromptComposer,
-  ArtieRiskTable,
-  ArtieSpecialistMenu,
-  ArtieSpecialistPicker,
-  defaultArtieAttachments,
-  defaultArtieSpecialists,
-  type ArtieSpecialistId,
-} from "@/components/multideck/agent-artie-components"
+  DexterAttachmentPalette,
+  DexterChecklistCard,
+  DexterCustomerSnapshot,
+  DexterHistoryList,
+  DexterMonitorCard,
+  DexterMonitorDetailSheet,
+  DexterPromptComposer,
+  DexterRiskTable,
+  DexterSpecialistMenu,
+  DexterSpecialistPicker,
+  defaultDexterAttachments,
+  defaultDexterSpecialists,
+  type DexterSpecialistId,
+} from "@/components/multideck/agent-dexter-components"
 import {
   AreaChartCard,
   BarChartCard,
@@ -90,6 +92,9 @@ import multideckFullLogo from "@/assets/brand/multideck-full-logo.svg"
 import { AIEdgeGlow } from "@/components/multideck/ai-edge-glow"
 import { DashboardCustomisePanel } from "@/components/multideck/dashboard-customise-panel"
 import { ThemeToggle } from "@/components/multideck/theme-toggle"
+import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
+import { DexterCompanionSidebar } from "@/components/multideck/dexter-companion-sidebar"
+import { PageSettingsMenu } from "@/components/multideck/page-settings-menu"
 
 type GalleryIconKey = keyof typeof galleryIcons
 
@@ -118,7 +123,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Button & control components",
     helper: "Navigation and input controls",
-    ids: ["command", "sidebar", "theme-toggle", "segmented-control", "filter-chips", "tabs", "pagination", "settings-controls", "settings-option-card"],
+    ids: ["command", "sidebar", "theme-toggle", "page-settings-menu", "segmented-control", "filter-chips", "tabs", "pagination", "settings-controls", "settings-option-card"],
   },
   {
     label: "Auth components",
@@ -141,9 +146,9 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
     ids: ["crm-metrics-grid", "crm-pipeline-board", "crm-asset-folder-card", "crm-asset-row", "crm-lead-detail-panel", "crm-contact-table", "crm-activity-timeline", "crm-lead-signals", "crm-settings-builder"],
   },
   {
-    label: "Agent Artie",
+    label: "Agent Dexter",
     helper: "Prompt, context, specialists, answers",
-    ids: ["dashboard-customise-panel", "artie-prompt-composer", "artie-specialist-picker", "artie-specialist-menu", "artie-attachment-palette", "artie-history-list", "artie-monitor-card", "artie-monitor-detail", "artie-response-blocks"],
+    ids: ["dashboard-customise-panel", "dexter-action-pill", "dexter-companion-sidebar", "dexter-prompt-composer", "dexter-specialist-picker", "dexter-specialist-menu", "dexter-attachment-palette", "dexter-history-list", "dexter-monitor-card", "dexter-monitor-detail", "dexter-response-blocks"],
   },
   {
     label: "Feedback",
@@ -309,7 +314,7 @@ const settingsPreviewGroups: SettingsTabGroup[] = [
     label: "Workspace",
     items: [
       { id: "notifications", label: "Notifications", badge: "3", icon: Bell },
-      { id: "agent-artie", label: "Agent Artie", icon: Sparkles },
+      { id: "agent-dexter", label: "Agent Dexter", icon: Sparkles },
     ],
   },
 ]
@@ -464,6 +469,7 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewPageSize, setPreviewPageSize] = useState(20)
   const [previewShipmentFilter, setPreviewShipmentFilter] = useState<string>(shipmentFilters[0])
   const [previewShipmentView, setPreviewShipmentView] = useState<ShipmentViewMode>("Table")
+  const [previewCustomerView, setPreviewCustomerView] = useState<CustomerViewMode>("List")
   const [previewSelectedIds, setPreviewSelectedIds] = useState<Set<string>>(new Set(["marlow-apparel"]))
   const [previewCustomerTab, setPreviewCustomerTab] = useState("Overview")
   const [previewAuthEmail, setPreviewAuthEmail] = useState("emma@northwind-fwd.com")
@@ -485,10 +491,10 @@ function ComponentPreview({ id }: { id: string }) {
     { id: "preview-shipment-search-vin", field: "vin", groupConnector: "or", groupId: "preview-search-vin", value: "WVW", valueTo: "" },
   ])
   const [previewContactEmail, setPreviewContactEmail] = useState(marlowContacts[0].email)
-  const [previewArtiePrompt, setPreviewArtiePrompt] = useState("Prep Marlow's QBR and attach the latest open shipment context.")
-  const [previewArtieSpecialistId, setPreviewArtieSpecialistId] = useState<ArtieSpecialistId>("auto")
-  const [previewArtieAttachmentQuery, setPreviewArtieAttachmentQuery] = useState("")
-  const [previewArtieAttachmentIds, setPreviewArtieAttachmentIds] = useState<Set<string>>(new Set(["marlow", "md-22414"]))
+  const [previewDexterPrompt, setPreviewDexterPrompt] = useState("Prep Marlow's QBR and attach the latest open shipment context.")
+  const [previewDexterSpecialistId, setPreviewDexterSpecialistId] = useState<DexterSpecialistId>("auto")
+  const [previewDexterAttachmentQuery, setPreviewDexterAttachmentQuery] = useState("")
+  const [previewDexterAttachmentIds, setPreviewDexterAttachmentIds] = useState<Set<string>>(new Set(["marlow", "md-22414"]))
   const [previewCrmDealId, setPreviewCrmDealId] = useState(crmPipelineStages[0].deals[0].id)
   const [previewCrmLeadId, setPreviewCrmLeadId] = useState(customers[0].id)
   const [previewCrmContactEmail, setPreviewCrmContactEmail] = useState(crmContacts[0].email)
@@ -588,8 +594,8 @@ function ComponentPreview({ id }: { id: string }) {
     })
   }
 
-  function togglePreviewArtieAttachment(id: string) {
-    setPreviewArtieAttachmentIds((current) => {
+  function togglePreviewDexterAttachment(id: string) {
+    setPreviewDexterAttachmentIds((current) => {
       const next = new Set(current)
       if (next.has(id)) next.delete(id)
       else next.add(id)
@@ -597,8 +603,8 @@ function ComponentPreview({ id }: { id: string }) {
     })
   }
 
-  const previewArtieSpecialist = defaultArtieSpecialists.find((specialist) => specialist.id === previewArtieSpecialistId) ?? defaultArtieSpecialists[0]
-  const previewArtieAttachments = defaultArtieAttachments.filter((attachment) => previewArtieAttachmentIds.has(attachment.id))
+  const previewDexterSpecialist = defaultDexterSpecialists.find((specialist) => specialist.id === previewDexterSpecialistId) ?? defaultDexterSpecialists[0]
+  const previewDexterAttachments = defaultDexterAttachments.filter((attachment) => previewDexterAttachmentIds.has(attachment.id))
   const previewCrmLead = customers.find((customer) => customer.id === previewCrmLeadId) ?? customers[0]
 
   return (
@@ -728,6 +734,31 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "dexter-action-pill" ? (
+        <div className="flex w-full max-w-[720px] flex-wrap items-center gap-2 rounded-[var(--md-radius-xl)] bg-white/54 p-3 shadow-[var(--md-shadow-line)]">
+          <SegmentedControl options={customerScopeTabs} value="All customers" onChange={() => undefined} />
+          <DexterActionPill
+            onClick={() =>
+              toast.success("Dexter opened", {
+                description: "Starting a new conversation.",
+              })
+            }
+          />
+          <PageSettingsMenu
+            viewOptions={customerViewOptions}
+            value={previewCustomerView}
+            onViewChange={setPreviewCustomerView}
+            actions={[{ id: "preview-export-customers", label: "Export CSV", icon: Download, onSelect: () => toast.success("Customer CSV prepared") }]}
+          />
+        </div>
+      ) : null}
+
+      {id === "dexter-companion-sidebar" ? (
+        <div className="w-full max-w-[900px]">
+          <DexterCompanionSidebar open onClose={() => undefined} contextLabel="Customers" presentation="preview" />
+        </div>
+      ) : null}
+
       {id === "toast" ? (
         <div className="relative flex min-h-[340px] w-full max-w-[760px] items-center justify-center overflow-hidden rounded-[var(--md-radius-xl)] bg-[linear-gradient(135deg,rgba(251,253,253,0.72),rgba(233,242,240,0.72))] p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
           <Button
@@ -743,7 +774,7 @@ function ComponentPreview({ id }: { id: string }) {
             Trigger toast
           </Button>
 
-          <div className="pointer-events-none absolute bottom-6 left-1/2 w-[min(520px,calc(100%-32px))] -translate-x-1/2">
+          <div className="pointer-events-none absolute bottom-6 right-6 w-[min(520px,calc(100%-48px))]">
             <div data-type="success" className="md-toast flex items-start">
               <div className="md-toast-icon shrink-0">
                 <Check className="size-4.5" strokeWidth={1.5} />
@@ -1004,6 +1035,25 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "page-settings-menu" ? (
+        <div className="flex w-full max-w-[720px] flex-wrap items-center justify-between gap-3 rounded-[var(--md-radius-xl)] bg-white/54 p-3 shadow-[var(--md-shadow-line)]">
+          <SegmentedControl options={customerScopeTabs} value="All customers" onChange={() => undefined} />
+          <div className="flex items-center gap-2">
+            <PageSettingsMenu
+              viewOptions={customerViewOptions}
+              value={previewCustomerView}
+              onViewChange={setPreviewCustomerView}
+              actions={[{ id: "preview-export-customers", label: "Export CSV", icon: Download, onSelect: () => toast.success("Customer CSV prepared") }]}
+            />
+            <PageSettingsMenu
+              viewOptions={shipmentViewOptions}
+              value={previewShipmentView}
+              onViewChange={setPreviewShipmentView}
+            />
+          </div>
+        </div>
+      ) : null}
+
       {id === "filter-chips" ? (
         <div className="w-full max-w-[980px]">
           <FilterChips
@@ -1217,57 +1267,57 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
-      {id === "artie-prompt-composer" ? (
+      {id === "dexter-prompt-composer" ? (
         <div className="w-full max-w-[760px]">
-          <ArtiePromptComposer
-            value={previewArtiePrompt}
-            selectedSpecialist={previewArtieSpecialist}
-            attachments={previewArtieAttachments}
-            onChange={setPreviewArtiePrompt}
+          <DexterPromptComposer
+            value={previewDexterPrompt}
+            selectedSpecialist={previewDexterSpecialist}
+            attachments={previewDexterAttachments}
+            onChange={setPreviewDexterPrompt}
             onOpenAttachments={() => toast.success("Attachment palette opened")}
             onOpenSpecialists={() => toast.success("Specialist picker opened")}
-            onRemoveAttachment={togglePreviewArtieAttachment}
-            onSend={() => toast.success("Artie conversation started")}
+            onRemoveAttachment={togglePreviewDexterAttachment}
+            onSend={() => toast.success("Dexter conversation started")}
           />
         </div>
       ) : null}
 
-      {id === "artie-specialist-picker" ? (
+      {id === "dexter-specialist-picker" ? (
         <div className="w-full max-w-[760px]">
-          <ArtieSpecialistPicker
-            specialists={defaultArtieSpecialists}
-            selectedId={previewArtieSpecialistId}
-            onSelect={setPreviewArtieSpecialistId}
+          <DexterSpecialistPicker
+            specialists={defaultDexterSpecialists}
+            selectedId={previewDexterSpecialistId}
+            onSelect={setPreviewDexterSpecialistId}
           />
         </div>
       ) : null}
 
-      {id === "artie-specialist-menu" ? (
+      {id === "dexter-specialist-menu" ? (
         <div className="w-full max-w-[760px] rounded-[var(--md-radius-xl)] bg-[rgba(11,20,19,0.16)] p-[var(--md-page-section-gap)] shadow-[var(--md-shadow-line)] backdrop-blur-md">
-          <ArtieSpecialistMenu
-            specialists={defaultArtieSpecialists}
-            selectedId={previewArtieSpecialistId}
-            onSelect={setPreviewArtieSpecialistId}
+          <DexterSpecialistMenu
+            specialists={defaultDexterSpecialists}
+            selectedId={previewDexterSpecialistId}
+            onSelect={setPreviewDexterSpecialistId}
           />
         </div>
       ) : null}
 
-      {id === "artie-attachment-palette" ? (
+      {id === "dexter-attachment-palette" ? (
         <div className="w-full max-w-[860px]">
-          <ArtieAttachmentPalette
-            query={previewArtieAttachmentQuery}
-            items={defaultArtieAttachments}
-            selectedIds={previewArtieAttachmentIds}
+          <DexterAttachmentPalette
+            query={previewDexterAttachmentQuery}
+            items={defaultDexterAttachments}
+            selectedIds={previewDexterAttachmentIds}
             recommendedIds={["marlow", "md-22414", "ci-rev2"]}
-            onQueryChange={setPreviewArtieAttachmentQuery}
-            onToggle={togglePreviewArtieAttachment}
+            onQueryChange={setPreviewDexterAttachmentQuery}
+            onToggle={togglePreviewDexterAttachment}
           />
         </div>
       ) : null}
 
-      {id === "artie-history-list" ? (
+      {id === "dexter-history-list" ? (
         <div className="h-[560px] w-full max-w-[340px] overflow-hidden rounded-[var(--md-radius-xl)] shadow-[var(--md-shadow-line)]">
-          <ArtieHistoryList
+          <DexterHistoryList
             items={[
               { id: "customs-risk", title: "At-risk customs this week", summary: "4 flagged - drafts ready for review", time: "11:42" },
               { id: "marlow-qbr", title: "Marlow Apparel - QBR prep", summary: "Snapshot, talking points, agenda draft", time: "10:05" },
@@ -1275,14 +1325,14 @@ function ComponentPreview({ id }: { id: string }) {
             ]}
             activeId="customs-risk"
             onSelect={(itemId) => toast.success(`${itemId} opened`)}
-            onNew={() => toast.success("New Artie thread")}
+            onNew={() => toast.success("New Dexter thread")}
           />
         </div>
       ) : null}
 
-      {id === "artie-monitor-card" ? (
+      {id === "dexter-monitor-card" ? (
         <div className="w-full max-w-[420px]">
-          <ArtieMonitorCard
+          <DexterMonitorCard
             monitor={{
               title: "Berth queue - MD-22479",
               body: "Watching Rotterdam congestion. Re-pings if ETA shifts more than 6h.",
@@ -1294,13 +1344,13 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
-      {id === "artie-monitor-detail" ? (
+      {id === "dexter-monitor-detail" ? (
         <div className="relative h-[720px] w-full max-w-[980px] overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-bg)] shadow-[var(--md-shadow-line)]">
           <div className="absolute inset-0 grid place-items-center bg-[rgba(11,20,19,0.2)] text-[13px] text-white backdrop-blur-[6px]">
             Thread content blurred behind the drawer
           </div>
           <div className="absolute inset-y-0 right-0 w-[min(580px,100%)]">
-            <ArtieMonitorDetailSheet
+            <DexterMonitorDetailSheet
               monitor={{
                 title: "Berth queue - MD-22479",
                 body: "Watching Rotterdam congestion. Re-pings if ETA shifts more than 6h.",
@@ -1315,11 +1365,11 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
-      {id === "artie-response-blocks" ? (
+      {id === "dexter-response-blocks" ? (
         <div className="grid w-full max-w-[980px] gap-4 lg:grid-cols-2">
           <div className="grid gap-4">
-            <ArtieCustomerSnapshot />
-            <ArtieChecklistCard
+            <DexterCustomerSnapshot />
+            <DexterChecklistCard
               items={[
                 { label: "Pull open shipments arriving this week - 23 found.", done: true },
                 { label: "Cross-check HS codes against active regulations.", done: true },
@@ -1327,7 +1377,7 @@ function ComponentPreview({ id }: { id: string }) {
               ]}
             />
           </div>
-          <ArtieRiskTable />
+          <DexterRiskTable />
         </div>
       ) : null}
 
@@ -1337,7 +1387,7 @@ function ComponentPreview({ id }: { id: string }) {
             <CustomerActivityPanel />
           </div>
           <div className="flex flex-col gap-[var(--md-page-stack-gap)]">
-            <ArtiePulsePanel />
+            <DexterPulsePanel />
             <AccountPanel />
           </div>
         </div>
@@ -1468,7 +1518,7 @@ function ComponentPreview({ id }: { id: string }) {
             <SettingsFieldRow label="Time zone">
               <SettingsInput value="Europe/Berlin - UTC+1" readOnly />
             </SettingsFieldRow>
-            <SettingsFieldRow label="Working hours" description="Artie will not send non-critical pings outside these hours.">
+            <SettingsFieldRow label="Working hours" description="Dexter will not send non-critical pings outside these hours.">
               <div className="grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
                 <SettingsInput value="08:00" readOnly />
                 <span className="text-center text-[13px] text-[var(--md-text)]">to</span>
@@ -1485,7 +1535,7 @@ function ComponentPreview({ id }: { id: string }) {
             <SettingsIntegrationRow
               icon={Mail}
               title="Gmail"
-              description="Connect your Google inbox for customer replies, quote follow-ups, and approved Artie drafts."
+              description="Connect your Google inbox for customer replies, quote follow-ups, and approved Dexter drafts."
               status="Ready"
               statusTone="ready"
               actionLabel="Connect"
@@ -1525,7 +1575,7 @@ function ComponentPreview({ id }: { id: string }) {
         <div className="grid w-full max-w-[920px] gap-3 md:grid-cols-2 xl:grid-cols-4">
           {[
             ["Off", "No background agents. Manual chats only."],
-            ["Manual", "Artie answers when asked. Never acts."],
+            ["Manual", "Dexter answers when asked. Never acts."],
             ["Suggest", "Drafts and proposes. Always asks before sending or changing data."],
             ["Autopilot", "Acts within your rules for low-risk changes."],
           ].map(([label, description]) => (
@@ -1666,7 +1716,7 @@ function GallerySidebar({
                     </div>
                     <div className="flex flex-col gap-1">
                       {group.components.map((component) => {
-                        const Icon = galleryIcons[component.id as GalleryIconKey]
+                        const Icon = galleryIcons[component.id as GalleryIconKey] ?? Component
                         return (
                           <button
                             key={component.id}
@@ -1737,7 +1787,7 @@ export function ComponentsGalleryPage() {
   const [selectedId, setSelectedId] = useState(getInitialComponentId)
   const [query, setQuery] = useState("")
   const selected = galleryComponents.find((component) => component.id === selectedId) ?? galleryComponents[0]
-  const SelectedIcon = galleryIcons[selected.id as GalleryIconKey]
+  const SelectedIcon = galleryIcons[selected.id as GalleryIconKey] ?? Component
   const selectedIndex = galleryComponents.findIndex((component) => component.id === selected.id)
 
   const filtered = useMemo(() => {

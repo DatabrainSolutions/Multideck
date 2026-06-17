@@ -79,13 +79,17 @@ Radius tokens are defined in `src/styles.css`:
 
 Use nested radius intentionally. If a parent has 10px radius and 4px internal padding, inner elements should usually be 6px.
 
-Use layered shadows instead of flat borders. Panel shadows should be visible enough to separate white elements from the green shell without making the UI feel heavy:
+Use layered premium strokes instead of flat borders. Panel shadows should be visible enough to separate white elements from the green shell without making the UI feel heavy:
 
 ```css
---md-shadow-line: inset 0 0 0 1px rgba(255,255,255,0.88), 0 0 0 1px rgba(11,20,19,0.10), 0 8px 18px rgba(42,52,50,0.06);
---md-shadow-soft: inset 0 0 0 1px rgba(255,255,255,0.92), 0 0 0 1px rgba(11,20,19,0.09), 0 12px 28px rgba(42,52,50,0.08);
---md-shadow-lift: inset 0 0 0 1px rgba(255,255,255,0.94), 0 0 0 1px rgba(11,20,19,0.11), 0 18px 38px rgba(42,52,50,0.14);
+--md-premium-stroke: inset 0 1px 0 rgba(255,255,255,0.72), inset 0 0 0 1px rgba(255,255,255,0.58), inset 0 -14px 26px rgba(15,23,42,0.035), 0 0 0 1px rgba(15,23,42,0.055), 0 18px 46px rgba(15,23,42,0.08);
+--md-premium-stroke-soft: inset 0 1px 0 rgba(255,255,255,0.64), inset 0 0 0 1px rgba(255,255,255,0.48), 0 0 0 1px rgba(15,23,42,0.045), 0 12px 30px rgba(15,23,42,0.065);
+--md-shadow-line: var(--md-premium-stroke-soft);
+--md-shadow-soft: var(--md-premium-stroke);
+--md-shadow-lift: var(--md-premium-stroke);
 ```
+
+Use `premium-stroke` for panels, popovers, modals, cards, and sheet-like surfaces. Use `premium-stroke-soft` for smaller controls such as buttons, inputs, selects, toggles, badges, and slider handles.
 
 ## Component Architecture
 
@@ -105,7 +109,7 @@ Current Multideck components:
 - `Surface`: base product panel.
 - `SectionHeader`: consistent panel heading.
 - `StatusPill`: compact status treatment.
-- `AIEdgeGlow`: animated Artie working-state edge treatment for AI-active screens or workflow areas.
+- `AIEdgeGlow`: animated Dexter working-state edge treatment for AI-active screens or workflow areas.
 - `MetricCard`: overview KPI component.
 - `LineChartCard`, `AreaChartCard`, `BarChartCard`, `StackedBarChartCard`, `DonutChartCard`, `FunnelChartCard`, `HeatmapChartCard`, `RadialGoalChartCard`, `ScatterChartCard`, and `MixedChartCard`: reusable report-ready visualization components.
 - `ReportVisualizationBlock`: report-builder adapter for chart variants such as single bars, comparison bars, pie charts with or without keys, and variable-step funnels.

@@ -2,11 +2,11 @@
 
 This file captures intended product behavior that is currently represented as UI practice. Use it when wiring real data, backend actions, or agent workflows.
 
-## Agent Artie
+## Agent Dexter
 
 ### First Visit
 
-- Opening `/agent-artie` should show one centered prompt box.
+- Opening `/agent-dexter` should show one centered prompt box.
 - The default specialist is `Auto`.
 - Auto should route the request to the most relevant specialist based on the user's prompt and attached context.
 - Suggested prompts are examples only; selecting one should start a realistic thread and choose the appropriate specialist.
@@ -60,5 +60,5 @@ This file captures intended product behavior that is currently represented as UI
 
 ### Approval Principle
 
-- Artie may draft notes, customer messages, and recommendations.
+- Dexter may draft notes, customer messages, and recommendations.
 - Nothing customer-facing should send without explicit operator approval unless a future workspace setting allows it.

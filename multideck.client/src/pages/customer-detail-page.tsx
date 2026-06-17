@@ -2,7 +2,7 @@ import { useState } from "react"
 import {
   AccountPanel,
   ActiveShipmentsPanel,
-  ArtiePulsePanel,
+  DexterPulsePanel,
   ContactProfileModule,
   CustomerActivityPanel,
   CustomerDetailHero,
@@ -44,7 +44,7 @@ export function CustomerDetailPage() {
               selectedContact={selectedContact}
               onSelectContact={(contact) => setSelectedContactEmail(contact.email)}
             />
-            <ArtiePulsePanel />
+            <DexterPulsePanel />
             <AccountPanel />
           </div>
         </div>

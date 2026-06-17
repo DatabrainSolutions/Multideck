@@ -22,17 +22,17 @@ import type { StatusTone } from "@/data/multideck-data"
 import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
 import { Surface } from "@/components/multideck/surface"
 
-export type ArtieSpecialistId = "auto" | "customs" | "customer" | "sales" | "ops" | "analytics"
+export type DexterSpecialistId = "auto" | "customs" | "customer" | "sales" | "ops" | "analytics"
 
-export type ArtieSpecialist = {
-  id: ArtieSpecialistId
+export type DexterSpecialist = {
+  id: DexterSpecialistId
   name: string
   label?: string
   description: string
   icon: LucideIcon
 }
 
-export type ArtieAttachment = {
+export type DexterAttachment = {
   id: string
   type: "customer" | "shipment" | "document"
   title: string
@@ -41,14 +41,14 @@ export type ArtieAttachment = {
   icon: LucideIcon
 }
 
-export type ArtieHistoryItem = {
+export type DexterHistoryItem = {
   id: string
   title: string
   summary: string
   time: string
 }
 
-export type ArtieMonitor = {
+export type DexterMonitor = {
   title: string
   body: string
   meta: string
@@ -56,7 +56,7 @@ export type ArtieMonitor = {
   tone: StatusTone
 }
 
-const specialistTone: Record<ArtieSpecialistId, string> = {
+const specialistTone: Record<DexterSpecialistId, string> = {
   auto: "bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)]",
   customs: "bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)]",
   customer: "bg-[rgba(74,125,156,0.1)] text-[var(--md-blue)]",
@@ -65,7 +65,7 @@ const specialistTone: Record<ArtieSpecialistId, string> = {
   analytics: "bg-[rgba(46,142,96,0.1)] text-[var(--md-green)]",
 }
 
-function AttachmentIcon({ attachment }: { attachment: ArtieAttachment }) {
+function AttachmentIcon({ attachment }: { attachment: DexterAttachment }) {
   const Icon = attachment.icon
 
   return (
@@ -75,7 +75,7 @@ function AttachmentIcon({ attachment }: { attachment: ArtieAttachment }) {
   )
 }
 
-export function ArtieBrandMark({ className }: { className?: string }) {
+export function DexterBrandMark({ className }: { className?: string }) {
   return (
     <span
       className={cn(
@@ -88,11 +88,11 @@ export function ArtieBrandMark({ className }: { className?: string }) {
   )
 }
 
-export function ArtieSpecialistChip({
+export function DexterSpecialistChip({
   specialist,
   onClick,
 }: {
-  specialist: ArtieSpecialist
+  specialist: DexterSpecialist
   onClick?: () => void
 }) {
   const Icon = specialist.icon
@@ -109,7 +109,7 @@ export function ArtieSpecialistChip({
   )
 }
 
-export function ArtiePromptComposer({
+export function DexterPromptComposer({
   value,
   selectedSpecialist,
   attachments = [],
@@ -123,8 +123,8 @@ export function ArtiePromptComposer({
   className,
 }: {
   value: string
-  selectedSpecialist: ArtieSpecialist
-  attachments?: ArtieAttachment[]
+  selectedSpecialist: DexterSpecialist
+  attachments?: DexterAttachment[]
   placeholder?: string
   onChange: (value: string) => void
   onOpenAttachments: () => void
@@ -219,22 +219,22 @@ export function ArtiePromptComposer({
   )
 }
 
-export function ArtieSpecialistPicker({
+export function DexterSpecialistPicker({
   specialists,
   selectedId,
   onSelect,
   className,
 }: {
-  specialists: ArtieSpecialist[]
-  selectedId: ArtieSpecialistId
-  onSelect: (id: ArtieSpecialistId) => void
+  specialists: DexterSpecialist[]
+  selectedId: DexterSpecialistId
+  onSelect: (id: DexterSpecialistId) => void
   className?: string
 }) {
   return (
     <Surface padding="md" className={cn("rounded-[var(--md-radius-xl)]", className)}>
       <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1">
         <h2 className="text-[14px] font-medium text-[var(--md-ink)]">Specialists</h2>
-        <p className="text-[13px] text-[var(--md-text)]">On Auto, Artie picks the right one for each request.</p>
+        <p className="text-[13px] text-[var(--md-text)]">On Auto, Dexter picks the right one for each request.</p>
       </div>
       <div className="grid gap-2 md:grid-cols-2">
         {specialists.map((specialist) => {
@@ -274,15 +274,15 @@ export function ArtieSpecialistPicker({
   )
 }
 
-export function ArtieSpecialistMenu({
+export function DexterSpecialistMenu({
   specialists,
   selectedId,
   onSelect,
   className,
 }: {
-  specialists: ArtieSpecialist[]
-  selectedId: ArtieSpecialistId
-  onSelect: (id: ArtieSpecialistId) => void
+  specialists: DexterSpecialist[]
+  selectedId: DexterSpecialistId
+  onSelect: (id: DexterSpecialistId) => void
   className?: string
 }) {
   return (
@@ -322,7 +322,7 @@ export function ArtieSpecialistMenu({
   )
 }
 
-export function ArtieAttachmentPalette({
+export function DexterAttachmentPalette({
   query,
   items,
   selectedIds,
@@ -333,7 +333,7 @@ export function ArtieAttachmentPalette({
   className,
 }: {
   query: string
-  items: ArtieAttachment[]
+  items: DexterAttachment[]
   selectedIds: Set<string>
   recommendedIds?: string[]
   onQueryChange: (value: string) => void
@@ -344,7 +344,7 @@ export function ArtieAttachmentPalette({
   const filtered = items.filter((item) => `${item.title} ${item.meta} ${item.type}`.toLowerCase().includes(query.toLowerCase()))
   const recommended = recommendedIds
     .map((id) => items.find((item) => item.id === id))
-    .filter((item): item is ArtieAttachment => Boolean(item))
+    .filter((item): item is DexterAttachment => Boolean(item))
     .filter((item) => `${item.title} ${item.meta} ${item.type}`.toLowerCase().includes(query.toLowerCase()))
 
   function selectItem(id: string) {
@@ -444,19 +444,19 @@ export function ArtieAttachmentPalette({
 
       <div className="flex flex-wrap items-center gap-4 bg-[var(--md-surface-tint)] px-5 py-3 text-[12px] text-[var(--md-text)]">
         <span className="font-medium text-[var(--md-accent)]">Attached items become live context</span>
-        <span>Artie sees their full timeline, docs, and customer state.</span>
+        <span>Dexter sees their full timeline, docs, and customer state.</span>
       </div>
     </Surface>
   )
 }
 
-export function ArtieHistoryList({
+export function DexterHistoryList({
   items,
   activeId,
   onSelect,
   onNew,
 }: {
-  items: ArtieHistoryItem[]
+  items: DexterHistoryItem[]
   activeId: string
   onSelect: (id: string) => void
   onNew: () => void
@@ -498,16 +498,16 @@ export function ArtieHistoryList({
   )
 }
 
-export function ArtieMonitorCard({
+export function DexterMonitorCard({
   monitor,
   onClick,
 }: {
-  monitor: ArtieMonitor
+  monitor: DexterMonitor
   onClick?: () => void
 }) {
   return (
     <button type="button" className="block w-full text-left" onClick={onClick}>
-      <Surface padding="md" className="rounded-[var(--md-radius-xl)] bg-[rgba(233,242,240,0.66)] transition-[background,color,box-shadow,opacity,transform] duration-200 hover:-translate-y-0.5 hover:bg-[rgba(233,242,240,0.86)]">
+      <Surface padding="md" className="rounded-[var(--md-radius-xl)] bg-[rgba(233,242,240,0.66)] transition-[background,color,box-shadow,opacity,transform] duration-200 hover:scale-[1.01] hover:bg-[rgba(233,242,240,0.86)]">
       <div className="flex items-start gap-2">
         <span className="mt-1 size-2.5 rounded-full" style={{ background: toneToVar(monitor.tone) }} />
         <div className="min-w-0 flex-1">
@@ -524,16 +524,16 @@ export function ArtieMonitorCard({
   )
 }
 
-export function ArtieMonitorStack({
+export function DexterMonitorStack({
   monitors,
   onCollapse,
   onAsk,
   onSelectMonitor,
 }: {
-  monitors: ArtieMonitor[]
+  monitors: DexterMonitor[]
   onCollapse?: () => void
   onAsk?: () => void
-  onSelectMonitor?: (monitor: ArtieMonitor) => void
+  onSelectMonitor?: (monitor: DexterMonitor) => void
 }) {
   return (
     <aside className="flex h-full min-h-0 flex-col border-l border-[var(--md-line)] bg-[var(--md-composer-inner-bg)]">
@@ -558,11 +558,11 @@ export function ArtieMonitorStack({
             ) : null}
           </div>
         </div>
-        <p className="mt-2 text-[13px] leading-5 text-[var(--md-text)]">Background monitors Artie runs on your behalf. Pause anytime.</p>
+        <p className="mt-2 text-[13px] leading-5 text-[var(--md-text)]">Background monitors Dexter runs on your behalf. Pause anytime.</p>
       </div>
       <div className="grid gap-3 overflow-y-auto p-4 md-scrollbar">
         {monitors.map((monitor) => (
-          <ArtieMonitorCard key={monitor.title} monitor={monitor} onClick={() => onSelectMonitor?.(monitor)} />
+          <DexterMonitorCard key={monitor.title} monitor={monitor} onClick={() => onSelectMonitor?.(monitor)} />
         ))}
         <button
           type="button"
@@ -570,19 +570,19 @@ export function ArtieMonitorStack({
           onClick={onAsk}
         >
           <Sparkles className="mr-2 inline size-3.5" strokeWidth={1.2} />
-          Ask Artie to watch something else
+          Ask Dexter to watch something else
         </button>
       </div>
     </aside>
   )
 }
 
-export function ArtieMonitorDetailSheet({
+export function DexterMonitorDetailSheet({
   monitor,
   onClose,
   floating = true,
 }: {
-  monitor: ArtieMonitor
+  monitor: DexterMonitor
   onClose: () => void
   floating?: boolean
 }) {
@@ -621,7 +621,7 @@ export function ArtieMonitorDetailSheet({
             Watching
           </p>
           <p className="mt-3 text-[14px] leading-7 text-[var(--md-ink)]">
-            Rotterdam terminal congestion for this shipment. If the ETA shifts by more than <strong>6 hours</strong>, Artie pings you and drafts a customer note - nothing sends without approval.
+            Rotterdam terminal congestion for this shipment. If the ETA shifts by more than <strong>6 hours</strong>, Dexter pings you and drafts a customer note - nothing sends without approval.
           </p>
         </Surface>
 
@@ -652,13 +652,13 @@ export function ArtieMonitorDetailSheet({
           </div>
           <svg viewBox="0 0 484 150" className="mt-[var(--md-page-stack-gap)] h-[150px] w-full overflow-visible" role="img" aria-label="Berth queue last seven days">
             <defs>
-              <linearGradient id="artie-monitor-fill" x1="0" x2="0" y1="0" y2="1">
+              <linearGradient id="dexter-monitor-fill" x1="0" x2="0" y1="0" y2="1">
                 <stop offset="0%" stopColor="rgba(221,138,43,0.22)" />
                 <stop offset="100%" stopColor="rgba(221,138,43,0)" />
               </linearGradient>
             </defs>
             <line x1="0" x2="484" y1="74" y2="74" stroke="rgba(209,78,78,0.42)" strokeDasharray="4 6" />
-            <polygon points={`0,150 ${chartPoints} 484,150`} fill="url(#artie-monitor-fill)" />
+            <polygon points={`0,150 ${chartPoints} 484,150`} fill="url(#dexter-monitor-fill)" />
             <polyline points={chartPoints} fill="none" stroke="var(--md-amber)" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" />
             <circle cx="484" cy="50" r="4" fill="var(--md-amber)" />
           </svg>
@@ -711,7 +711,7 @@ export function ArtieMonitorDetailSheet({
   )
 }
 
-export function ArtieCustomerSnapshot() {
+export function DexterCustomerSnapshot() {
   return (
     <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-glass-strong)]">
       <div className="flex flex-wrap items-center gap-4 px-5 py-4">
@@ -741,7 +741,7 @@ export function ArtieCustomerSnapshot() {
   )
 }
 
-export function ArtieChecklistCard({
+export function DexterChecklistCard({
   items,
 }: {
   items: { label: string; done?: boolean }[]
@@ -767,7 +767,7 @@ export function ArtieChecklistCard({
   )
 }
 
-export function ArtieRiskTable() {
+export function DexterRiskTable() {
   const rows = [
     ["MD-22455", "Shanghai", "Long Beach", "Export licence missing - on hold", "Northwind GmbH", "red" as StatusTone],
     ["MD-22479", "Ningbo", "Rotterdam", "Berth queue +36h - ETA slipping", "Northwind GmbH", "amber" as StatusTone],
@@ -803,16 +803,16 @@ export function ArtieRiskTable() {
   )
 }
 
-export function ArtieSuggestionGrid({
+export function DexterSuggestionGrid({
   onPick,
 }: {
-  onPick: (prompt: string, specialistId: ArtieSpecialistId) => void
+  onPick: (prompt: string, specialistId: DexterSpecialistId) => void
 }) {
   const suggestions = [
-    { title: "Triage my morning", body: "Which shipments need me first today?", icon: Zap, specialistId: "ops" as ArtieSpecialistId },
-    { title: "Draft a quote", body: "Yantian to Felixstowe - 2x40HC - week 28", icon: PackageCheck, specialistId: "sales" as ArtieSpecialistId },
-    { title: "Explain a delay", body: "Why is MD-22479 slipping in Rotterdam?", icon: BarChart3, specialistId: "analytics" as ArtieSpecialistId },
-    { title: "Prep a customer review", body: "Summarize Marlow Apparel's last quarter", icon: MessageCircle, specialistId: "analytics" as ArtieSpecialistId },
+    { title: "Triage my morning", body: "Which shipments need me first today?", icon: Zap, specialistId: "ops" as DexterSpecialistId },
+    { title: "Draft a quote", body: "Yantian to Felixstowe - 2x40HC - week 28", icon: PackageCheck, specialistId: "sales" as DexterSpecialistId },
+    { title: "Explain a delay", body: "Why is MD-22479 slipping in Rotterdam?", icon: BarChart3, specialistId: "analytics" as DexterSpecialistId },
+    { title: "Prep a customer review", body: "Summarize Marlow Apparel's last quarter", icon: MessageCircle, specialistId: "analytics" as DexterSpecialistId },
   ]
 
   return (
@@ -825,7 +825,7 @@ export function ArtieSuggestionGrid({
           <button
             key={suggestion.title}
             type="button"
-            className="grid grid-cols-[26px_1fr] items-start gap-3 rounded-[var(--md-radius-lg)] bg-white/70 px-5 py-4 text-left shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 hover:-translate-y-0.5 hover:bg-white"
+            className="grid grid-cols-[26px_1fr] items-start gap-3 rounded-[var(--md-radius-lg)] bg-white/70 px-5 py-4 text-left shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 hover:scale-[1.01] hover:bg-white"
             onClick={() => onPick(prompt, suggestion.specialistId)}
           >
             <Icon className="mt-1 size-4 text-[var(--md-accent)]" strokeWidth={1.2} />
@@ -840,8 +840,8 @@ export function ArtieSuggestionGrid({
   )
 }
 
-export const defaultArtieSpecialists: ArtieSpecialist[] = [
-  { id: "auto", name: "Auto", label: "Default", description: "Artie reads the request and routes it to the right specialist.", icon: Sparkles },
+export const defaultDexterSpecialists: DexterSpecialist[] = [
+  { id: "auto", name: "Auto", label: "Default", description: "Dexter reads the request and routes it to the right specialist.", icon: Sparkles },
   { id: "sales", name: "Sales & quoting", description: "Rates, quotes, margins, win-back drafts", icon: PackageCheck },
   { id: "customs", name: "Customs & compliance", description: "HS codes, holds, licences, document checks", icon: ShieldCheck },
   { id: "ops", name: "Ops & exceptions", description: "Delays, reroutes, terminals, carrier escalations", icon: Zap },
@@ -849,7 +849,7 @@ export const defaultArtieSpecialists: ArtieSpecialist[] = [
   { id: "analytics", name: "Analytics & reporting", description: "Trends, carrier scorecards, spend deep-dives", icon: BarChart3 },
 ]
 
-export const defaultArtieAttachments: ArtieAttachment[] = [
+export const defaultDexterAttachments: DexterAttachment[] = [
   { id: "md-22455", type: "shipment", title: "MD-22455", meta: "Shanghai to Long Beach - Northwind GmbH - on hold", tone: "red", icon: Boxes },
   { id: "md-22479", type: "shipment", title: "MD-22479", meta: "Ningbo to Rotterdam - Northwind GmbH - delayed", tone: "amber", icon: Boxes },
   { id: "md-22414", type: "shipment", title: "MD-22414", meta: "Qingdao to Felixstowe - Aldridge & Sons - at risk", tone: "amber", icon: Boxes },

@@ -632,7 +632,7 @@ export function MetricsGrid({
               layoutId={getDashboardDrilldownLayoutId(drilldownId)}
               layout
               type="button"
-              className="min-w-0 rounded-[var(--md-radius-xl)] text-left outline-none transition-transform duration-200 hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-[rgba(14,125,116,0.18)]"
+              className="min-w-0 rounded-[var(--md-radius-xl)] text-left outline-none transition-transform duration-200 hover:scale-[1.01] focus-visible:ring-2 focus-visible:ring-[rgba(14,125,116,0.18)]"
               onClick={() => onOpenDrilldown?.(drilldownId)}
               transition={{ layout: { duration: 0.3, ease: [0.16, 1, 0.3, 1] } }}
             >
@@ -693,7 +693,7 @@ export function WorldClockCell({
         <div className="flex flex-1 flex-col items-center justify-center gap-2.5">
           <AnalogueClockFace time={clock.time} tone={clock.tone} size="md" />
           <div className="flex w-full min-w-0 flex-col items-center">
-            <p className="max-w-full whitespace-normal break-words text-center text-[13px] font-medium leading-tight text-[var(--md-ink)]">{city.city}</p>
+            <p className="line-clamp-2 max-w-full whitespace-normal break-words text-center text-[13px] font-medium leading-tight text-[var(--md-ink)]" title={city.city}>{city.city}</p>
             <p className={cn("mt-1 text-[13px] font-medium leading-tight text-[var(--md-text)]", clock.tone === "neutral" && "text-[var(--md-ink)]")} dir="ltr">{clock.time}</p>
             {statusLine ? <p className={cn("mt-1 text-[11px] font-medium", clock.tone === "amber" ? "text-[var(--md-amber-strong)]" : "text-[var(--md-ink-soft)]")}>{statusLine}</p> : null}
           </div>
@@ -701,7 +701,7 @@ export function WorldClockCell({
       ) : (
         <div className="flex items-end justify-between gap-3">
           <div className="min-w-0">
-            <p className="truncate text-[14px] font-medium text-[var(--md-ink)]">{city.city}</p>
+            <p className="line-clamp-2 max-w-[88px] whitespace-normal break-words text-[13px] font-medium leading-tight text-[var(--md-ink)] sm:max-w-[104px]" title={city.city}>{city.city}</p>
             <p className={cn("font-medium leading-tight text-[var(--md-ink)] text-[18px]", compact && "text-[17px]")}>{clock.time}</p>
             {statusLine ? <p className={cn("mt-1 text-[11px] font-medium", clock.tone === "amber" ? "text-[var(--md-amber-strong)]" : "text-[var(--md-ink-soft)]")}>{statusLine}</p> : null}
           </div>
@@ -1056,10 +1056,10 @@ export function TimezoneFocusPanel({ selectedCode }: { selectedCode: string }) {
         <div className="flex flex-col gap-3 bg-[var(--md-surface-tint)] px-5 py-4 md:flex-row md:items-center md:justify-between">
           <p className="text-[13px] leading-5 text-[var(--md-text)]">
             <Sparkles className="mr-2 inline size-3.5 text-[var(--md-accent)]" strokeWidth={1.2} />
-            Artie can quote the <span className="font-medium text-[var(--md-ink)]">{queue.readyToQuote} ready RFQs</span> and chase the <span className="font-medium text-[var(--md-ink)]">{queue.needAction} blockers</span> before the {city.city} cutoff.
+            Dexter can quote the <span className="font-medium text-[var(--md-ink)]">{queue.readyToQuote} ready RFQs</span> and chase the <span className="font-medium text-[var(--md-ink)]">{queue.needAction} blockers</span> before the {city.city} cutoff.
           </p>
           <Button variant="ghost" className="h-9 rounded-[var(--md-radius-lg)] bg-white/56 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/78">
-            Let Artie handle it
+            Let Dexter handle it
           </Button>
         </div>
       </Surface>
@@ -1080,7 +1080,7 @@ function getDashboardDrilldownDetail(id: DashboardDrilldownId, range: DashboardR
       meta: metric.label === "Emails waiting" ? "Customer threads from Outlook, ready to triage and reply." : `${metric.value} - ${metric.detail}`,
       tone: metric.tone,
       actionItems,
-      primaryAction: metric.label === "Emails waiting" ? "Draft replies with Artie" : actionItems.length ? "Work selected items" : undefined,
+      primaryAction: metric.label === "Emails waiting" ? "Draft replies with Dexter" : actionItems.length ? "Work selected items" : undefined,
       rows: [
         ["Current", metric.value],
         ["Status", metric.change],
@@ -1313,10 +1313,34 @@ export function LiveShipmentsPanel() {
           })}
         </div>
       </div>
-      <Suspense fallback={<div className="min-h-[310px] flex-1 bg-[var(--md-bg-strong)]" />}>
+      <Suspense fallback={<LiveShipmentsMapFallback />}>
         <InteractiveShipmentMap className="md-live-shipments-map min-h-[310px] flex-1" />
       </Suspense>
     </Surface>
+  )
+}
+
+function LiveShipmentsMapFallback() {
+  return (
+    <div className="relative min-h-[310px] flex-1 overflow-hidden bg-[var(--md-bg-strong)]">
+      <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.22),rgba(255,255,255,0)_48%,rgba(14,125,116,0.12))]" />
+      <div className="absolute left-5 top-5 flex items-center gap-2 rounded-[var(--md-radius-lg)] bg-white/58 px-3 py-2 text-[12px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
+        <span className="size-2 rounded-full bg-[var(--md-accent)]" />
+        Loading live routes
+      </div>
+      <div className="absolute inset-x-[8%] top-[46%] h-px rotate-[-7deg] bg-[rgba(14,125,116,0.18)]" />
+      <div className="absolute inset-x-[18%] top-[58%] h-px rotate-[9deg] bg-[rgba(14,125,116,0.12)]" />
+      {[
+        { left: "20%", top: "42%", width: "7rem" },
+        { left: "46%", top: "34%", width: "8rem" },
+        { right: "16%", top: "52%", width: "6rem" },
+      ].map((pin) => (
+        <div key={`${pin.left ?? pin.right}-${pin.top}`} className="absolute rounded-[var(--md-radius-lg)] bg-white/56 p-3 shadow-[var(--md-shadow-line)]" style={pin}>
+          <div className="h-2 animate-pulse rounded-full bg-white/70" style={{ width: pin.width }} />
+          <div className="mt-2 h-2 w-16 animate-pulse rounded-full bg-white/50" />
+        </div>
+      ))}
+    </div>
   )
 }
 
@@ -1364,7 +1388,7 @@ export function MorningDigestPanel({
             fadeColor="rgba(255,255,255,0.96)"
             className="md-morning-digest-items mt-3 min-h-0 flex-1 rounded-[var(--md-radius-lg)]"
             listClassName="gap-2 p-1 pr-1"
-            itemClassName="grid grid-cols-[30px_1fr_auto] items-start gap-3 bg-white/42 px-3 py-2.5 shadow-[var(--md-shadow-line)] hover:bg-white/60"
+            itemClassName="grid grid-cols-[30px_1fr_auto] items-start gap-3 bg-white/42 px-3 py-2.5 shadow-[var(--md-shadow-line)] hover:scale-[1.01] hover:bg-white/62 hover:shadow-[var(--md-shadow-soft)] focus-visible:bg-white/68 aria-selected:bg-white/68 aria-selected:shadow-[var(--md-shadow-soft)]"
             itemElement="button"
             selectionBehavior="click"
             ariaLabel="Today's action list"
@@ -1420,7 +1444,7 @@ export function ActivityPanel({ onOpenDrilldown }: { onOpenDrilldown?: (id: Dash
         fadeColor="var(--md-surface)"
         className="md-activity-scroll mt-3 min-h-0 flex-1 rounded-[var(--md-radius-lg)]"
         listClassName="gap-2 p-1 pr-1"
-        itemClassName="grid grid-cols-[28px_1fr_auto] gap-3 px-2 py-2 hover:bg-white/45"
+        itemClassName="grid grid-cols-[28px_1fr_auto] gap-3 px-2 py-2 hover:scale-[1.01] hover:bg-white/52 hover:shadow-[var(--md-shadow-line)] focus-visible:bg-white/60 aria-selected:bg-white/60 aria-selected:shadow-[var(--md-shadow-line)]"
         itemElement="button"
         selectionBehavior="click"
         ariaLabel="Dashboard activity"

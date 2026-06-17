@@ -7,6 +7,7 @@ import {
   Check,
   CircleDollarSign,
   FileText,
+  KanbanSquare,
   MessageCircle,
   PanelRightClose,
   Paperclip,
@@ -16,10 +17,12 @@ import {
   SlidersHorizontal,
   Sparkles,
   Star,
+  Table2,
   TriangleAlert,
   X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
@@ -40,16 +43,21 @@ import {
   type ShipmentStatus,
   type StatusTone,
 } from "@/data/multideck-data"
-import { FilterChips, SegmentedControl, TabsRail } from "./workflow-components"
+import { FilterChips, TabsRail } from "./workflow-components"
 import { StatusPill, toneToVar } from "./status-pill"
 import { Surface } from "./surface"
 import { AnimatedList } from "./animated-list"
+import { PageSettingsMenu, type PageSettingsViewOption } from "./page-settings-menu"
 import multideckFullLogo from "@/assets/brand/multideck-full-logo.svg"
 
 export type Shipment = (typeof shipments)[number]
 export type OperatorJob = (typeof operatorJobs)[number]
 export const shipmentViewModes = ["Table", "Board"] as const
 export type ShipmentViewMode = (typeof shipmentViewModes)[number]
+export const shipmentViewOptions = [
+  { value: "Table", label: "Table", icon: Table2 },
+  { value: "Board", label: "Board", icon: KanbanSquare },
+] satisfies readonly PageSettingsViewOption<ShipmentViewMode>[]
 const shipmentDetailTabs = ["Overview", "Documents", "Customs", "Costs", "Comms", "Timeline"] as const
 type ShipmentDetailTab = (typeof shipmentDetailTabs)[number]
 export const shipmentSearchFieldOptions = [
@@ -223,7 +231,7 @@ export function YourJobsPanel({
             itemElement="div"
             selectionBehavior="click"
             listClassName="md-your-jobs-grid grid gap-2 overflow-visible p-1 pr-1 md:grid-cols-2 xl:grid-cols-5"
-            itemClassName="h-full !bg-[var(--md-job-card-bg)] p-0 shadow-[var(--md-job-card-shadow)] hover:!bg-[var(--md-job-card-hover)] hover:shadow-[var(--md-job-card-hover-shadow)]"
+            itemClassName="h-full !rounded-[var(--md-radius-lg)] !bg-[var(--md-job-card-bg)] p-0 shadow-[var(--md-job-card-shadow)] hover:scale-[1.01] hover:!bg-[var(--md-job-card-hover)] hover:shadow-[var(--md-job-card-hover-shadow)] focus-visible:!bg-[var(--md-job-card-selected)] focus-visible:shadow-[var(--md-shadow-green-card-selected)] aria-selected:!bg-[var(--md-job-card-selected)] aria-selected:shadow-[var(--md-shadow-green-card-selected)]"
             ariaLabel="Your active jobs"
             getItemKey={(job) => job.id}
             onItemSelect={(job) => {
@@ -252,7 +260,7 @@ export function YourJobsPanel({
                       type="button"
                       aria-label={`${isFavourite ? "Remove" : "Add"} ${job.shipmentId} favourite`}
                       aria-pressed={isFavourite}
-                      className={cn("grid size-7 shrink-0 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-subtle)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white hover:text-[var(--md-amber)]", isFavourite && "bg-[rgba(221,138,43,0.12)] text-[var(--md-amber)]")}
+                      className={cn("grid size-7 shrink-0 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-subtle)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-white hover:text-[var(--md-amber)] hover:shadow-[var(--md-shadow-line)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(221,138,43,0.2)]", isFavourite && "bg-[rgba(221,138,43,0.12)] text-[var(--md-amber)] shadow-[var(--md-shadow-line)]")}
                       onClick={(event) => {
                         event.stopPropagation()
                         onToggleFavourite(job.shipmentId)
@@ -337,15 +345,17 @@ export function ShipmentViewSwitch({
   value: ShipmentViewMode
   onChange: (value: ShipmentViewMode) => void
 }) {
-  return <SegmentedControl options={shipmentViewModes} value={value} onChange={onChange} />
+  return <PageSettingsMenu viewOptions={shipmentViewOptions} value={value} onViewChange={onChange} />
 }
 
 export function ShipmentListHeader({
   viewMode,
   onViewModeChange,
+  onSpeakToDexter,
 }: {
   viewMode: ShipmentViewMode
   onViewModeChange: (mode: ShipmentViewMode) => void
+  onSpeakToDexter: () => void
 }) {
   return (
     <div className="flex flex-col gap-[var(--md-page-stack-gap)] xl:flex-row xl:items-end xl:justify-between">
@@ -361,7 +371,10 @@ export function ShipmentListHeader({
           <span className="font-medium">4 delivered today</span>
         </p>
       </div>
-      <ShipmentViewSwitch value={viewMode} onChange={onViewModeChange} />
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <DexterActionPill onClick={onSpeakToDexter} />
+        <ShipmentViewSwitch value={viewMode} onChange={onViewModeChange} />
+      </div>
     </div>
   )
 }
@@ -812,8 +825,9 @@ export function ShipmentRow({
   return (
     <TableRow
       className={cn(
-        "h-[78px] cursor-pointer border-[rgba(11,20,19,0.04)] hover:bg-white/35",
-        shipment.status === "Exception" && "bg-[rgba(14,125,116,0.06)] hover:bg-[rgba(14,125,116,0.1)]",
+        "h-[78px] cursor-pointer border-[rgba(11,20,19,0.045)] bg-white shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] hover:bg-[#f8faf9]",
+        selected && "bg-[#f4faf8] shadow-[inset_3px_0_0_var(--md-accent),inset_0_1px_0_rgba(255,255,255,0.92),inset_0_-1px_0_rgba(11,20,19,0.04)] hover:bg-[#f2f8f6]",
+        shipment.status === "Exception" && !selected && "bg-[#fbfdfc] hover:bg-[#f6faf8]",
       )}
       onClick={onOpen}
     >
@@ -905,7 +919,7 @@ export function ShipmentsTable({
   onOpenShipment: (shipment: Shipment) => void
 }) {
   return (
-    <div className="overflow-hidden rounded-[var(--md-radius-xl)]">
+    <div className="overflow-hidden rounded-[var(--md-radius-xl)] bg-white shadow-[var(--md-shadow-line)]">
       <Table className="min-w-[1470px]">
         <TableHeader>
           <TableRow className="border-[rgba(11,20,19,0.05)] hover:bg-transparent">

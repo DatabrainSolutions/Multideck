@@ -73,7 +73,7 @@ const settingsGroups: SettingsTabGroup[] = [
     items: [
       { id: "preferences", label: "Preferences", icon: BriefcaseBusiness },
       { id: "notifications", label: "Notifications", badge: "3", icon: Bell },
-      { id: "agent-artie", label: "Agent Artie", icon: Sparkles },
+      { id: "agent-dexter", label: "Agent Dexter", icon: Sparkles },
     ],
   },
   {
@@ -302,7 +302,7 @@ function ProfileTab() {
     {
       icon: Mail,
       title: "Gmail",
-      description: "Connect your Google inbox for customer replies, quote follow-ups, and approved Artie drafts.",
+      description: "Connect your Google inbox for customer replies, quote follow-ups, and approved Dexter drafts.",
       status: "Ready",
       statusTone: "ready",
       actionLabel: "Connect",
@@ -378,7 +378,7 @@ function ProfileTab() {
       <SettingsPageHeader
         eyebrow="Account / Profile"
         title="Profile"
-        description="How you appear to your team, customers, and Artie. Some of this is used in audit logs and customer-facing comms."
+        description="How you appear to your team, customers, and Dexter. Some of this is used in audit logs and customer-facing comms."
         actions={
           <>
             {compactAction("Discard", () => toast.message("Changes discarded"))}
@@ -409,7 +409,7 @@ function ProfileTab() {
           <SettingsFieldRow label="Full name">
             <SettingsInput defaultValue="Elena Moreno" />
           </SettingsFieldRow>
-          <SettingsFieldRow label="Preferred name" description="What Artie and your team call you.">
+          <SettingsFieldRow label="Preferred name" description="What Dexter and your team call you.">
             <SettingsInput defaultValue="Elena" />
           </SettingsFieldRow>
           <SettingsFieldRow label="Work email">
@@ -444,7 +444,7 @@ function ProfileTab() {
           <SettingsFieldRow label="Time zone">
             <SettingsSelect value="Europe/Berlin - UTC+1" options={["Europe/Berlin - UTC+1", "Europe/London - UTC+0", "America/New York - UTC-5", "Asia/Singapore - UTC+8"]} />
           </SettingsFieldRow>
-          <SettingsFieldRow label="Working hours" description="Artie will not send non-critical pings outside these hours.">
+          <SettingsFieldRow label="Working hours" description="Dexter will not send non-critical pings outside these hours.">
             <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_70px] sm:items-center">
               <SettingsInput defaultValue="08:00" />
               <span className="text-center text-[13px] text-[var(--md-text)]">to</span>
@@ -595,7 +595,7 @@ function PreferencesTab() {
             </div>
           </SettingsFieldRow>
           <SettingsFieldRow label="Start page">
-            <SettingsSelect value="Overview - Today Ops" options={["Overview - Today Ops", "Shipments - Open", "Customers", "Agent Artie"]} />
+            <SettingsSelect value="Overview - Today Ops" options={["Overview - Today Ops", "Shipments - Open", "Customers", "Agent Dexter"]} />
           </SettingsFieldRow>
           <SettingsFieldRow label="Default shipment view">
             <ChoiceSetting options={["Table", "Board"]} initialValue="Table" />
@@ -637,7 +637,7 @@ function NotificationsTab() {
         <div className="space-y-[var(--md-page-stack-gap)]">
           <SettingsPanel title="Urgent alerts" description="These can break quiet hours when customer risk is high.">
             <ToggleSetting title="Customs holds" description="Ping immediately when a hold is raised or a licence is missing." initialChecked meta={<StatusPill tone="amber">3 pending</StatusPill>} />
-            <ToggleSetting title="ETA slips over 6 hours" description="Notify the owner before Artie drafts the customer update." initialChecked />
+            <ToggleSetting title="ETA slips over 6 hours" description="Notify the owner before Dexter drafts the customer update." initialChecked />
             <ToggleSetting title="Customer message unanswered" description="Escalate when a premium account waits more than 2 working hours." initialChecked />
             <ToggleSetting title="Document parse below 80%" description="Keep this in digest unless the shipment is due within 24 hours." initialChecked={false} />
           </SettingsPanel>
@@ -668,24 +668,24 @@ function NotificationsTab() {
   )
 }
 
-function AgentArtieTab() {
+function AgentDexterTab() {
   return (
     <>
       <SettingsPageHeader
-        eyebrow="Workspace / Agent Artie"
-        title="Agent Artie"
-        description="Tune how proactive Artie is, what it watches by default, and when it should escalate to a human. Changes apply to everything Artie does in your workspace."
+        eyebrow="Workspace / Agent Dexter"
+        title="Agent Dexter"
+        description="Tune how proactive Dexter is, what it watches by default, and when it should escalate to a human. Changes apply to everything Dexter does in your workspace."
         actions={
           <>
-            {compactAction("Reset to defaults", () => toast.message("Artie defaults restored"))}
-            {primaryAction("Save", () => toast.success("Agent Artie settings saved"))}
+            {compactAction("Reset to defaults", () => toast.message("Dexter defaults restored"))}
+            {primaryAction("Save", () => toast.success("Agent Dexter settings saved"))}
           </>
         }
       />
       <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
         <SettingsPanel
           title="Autonomy level"
-          description="Pick how much Artie does on its own. You can always override per-task by setting an approval rule below."
+          description="Pick how much Dexter does on its own. You can always override per-task by setting an approval rule below."
           action={<span className="text-[12px] font-medium text-[var(--md-accent)]">Current - Suggest</span>}
         >
           <div className="px-5 py-5">
@@ -693,7 +693,7 @@ function AgentArtieTab() {
               initialValue="Suggest"
               options={[
                 { label: "Off", description: "No background agents. Manual chats only." },
-                { label: "Manual", description: "Artie answers when asked. Never acts." },
+                { label: "Manual", description: "Dexter answers when asked. Never acts." },
                 { label: "Suggest", description: "Drafts and proposes. Always asks before sending or changing data." },
                 { label: "Autopilot", description: "Acts within your rules. Asks only for irreversible or high-value actions." },
               ]}
@@ -701,8 +701,8 @@ function AgentArtieTab() {
           </div>
         </SettingsPanel>
 
-        <SettingsPanel title="Default watchers" description="Background agents Artie runs for you. Toggle any off, or add more from the Artie workspace.">
-          <ToggleSetting title="Doc parse confidence < 80%" description="Flags documents Artie is unsure about for your review." initialChecked />
+        <SettingsPanel title="Default watchers" description="Background agents Dexter runs for you. Toggle any off, or add more from the Dexter workspace.">
+          <ToggleSetting title="Doc parse confidence < 80%" description="Flags documents Dexter is unsure about for your review." initialChecked />
           <ToggleSetting title="Customs hold raised" description="Pings within 60 seconds of any new hold." initialChecked />
           <ToggleSetting title="ETA slip > 6 hours" description="Notifies you and the customer after approval." initialChecked />
           <ToggleSetting title="Carrier on-time degradation" description="Watches for any carrier dropping 5%+ vs trailing 90d." initialChecked />
@@ -710,7 +710,7 @@ function AgentArtieTab() {
           <ToggleSetting title="Quote silence > 48h" description="Drafts a follow-up after two days of silence on open quotes." initialChecked={false} />
         </SettingsPanel>
 
-        <SettingsPanel title="Approval rules" description="Artie will always pause for explicit approval when any rule below is true, regardless of autonomy level.">
+        <SettingsPanel title="Approval rules" description="Dexter will always pause for explicit approval when any rule below is true, regardless of autonomy level.">
           <SettingsFieldRow label="Outbound emails to customers">
             <ChoiceSetting options={["Always ask", "Ask if > EUR 1k impact", "Never ask"]} initialValue="Always ask" />
           </SettingsFieldRow>
@@ -742,7 +742,7 @@ function TeamTab() {
       <SettingsPageHeader
         eyebrow="Organisation / Team & permissions"
         title="Team & permissions"
-        description="Control who can see shipment data, approve Artie actions, and manage customer-facing changes."
+        description="Control who can see shipment data, approve Dexter actions, and manage customer-facing changes."
         actions={primaryAction("Invite teammate", () => toast.success("Invite link copied"))}
       />
       <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
@@ -845,7 +845,7 @@ function BillingTab() {
       <SettingsPageHeader
         eyebrow="Organisation / Billing & usage"
         title="Billing & usage"
-        description="Understand plan limits, Artie usage, and the workspace costs that affect operating margin."
+        description="Understand plan limits, Dexter usage, and the workspace costs that affect operating margin."
         actions={compactAction("Download invoices", () => toast.success("Invoices prepared"))}
       />
       <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1fr)_310px]">
@@ -866,7 +866,7 @@ function BillingTab() {
             </SettingsFieldRow>
           </SettingsPanel>
           <SettingsPanel title="Usage controls" description="Keep AI and data volume predictable without slowing operators down.">
-            <SettingsFieldRow label="Artie spend guardrail">
+            <SettingsFieldRow label="Dexter spend guardrail">
               <SettingsSelect value="Warn at EUR 1,500/month" options={["Warn at EUR 750/month", "Warn at EUR 1,500/month", "Warn at EUR 3,000/month"]} />
             </SettingsFieldRow>
             <ToggleSetting title="Pause non-critical watchers at limit" description="High-risk shipment and customs alerts still run." initialChecked />
@@ -875,7 +875,7 @@ function BillingTab() {
         <SettingsSummaryCard
           title="This month"
           rows={[
-            ["Artie actions", "12,480"],
+            ["Dexter actions", "12,480"],
             ["Documents parsed", "4,812"],
             ["Customer emails drafted", "286"],
             ["Projected bill", "EUR 1,284"],
@@ -929,7 +929,7 @@ function BrandingTab() {
 
 function WhatsNewTab() {
   const notes = [
-    ["Artie approval rules", "Set approval thresholds by customer emails, bookings, data edits, and watcher changes.", "New"],
+    ["Dexter approval rules", "Set approval thresholds by customer emails, bookings, data edits, and watcher changes.", "New"],
     ["Customer tracking preview", "Branding changes now show in a live preview before publishing.", "Improved"],
     ["Customs hold digest", "Daily digest groups holds by broker, missing field, and customer impact.", "New"],
   ]
@@ -973,7 +973,7 @@ function DocsTab() {
           <SettingsFieldRow label="New shipment">
             <SettingsInput value="N then S" readOnly />
           </SettingsFieldRow>
-          <SettingsFieldRow label="Open Artie">
+          <SettingsFieldRow label="Open Dexter">
             <SettingsInput value="A" readOnly />
           </SettingsFieldRow>
           <SettingsFieldRow label="Copy tracking link">
@@ -997,13 +997,13 @@ function SupportTab() {
       <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1fr)_310px]">
         <SettingsPanel title="Request details" description="Include a shipment ID or customer name when the issue is workflow-specific.">
           <SettingsFieldRow label="Topic">
-            <SettingsSelect value="Artie action review" options={["Artie action review", "Shipment sync issue", "Billing question", "Security concern", "Product feedback"]} />
+            <SettingsSelect value="Dexter action review" options={["Dexter action review", "Shipment sync issue", "Billing question", "Security concern", "Product feedback"]} />
           </SettingsFieldRow>
           <SettingsFieldRow label="Priority">
             <ChoiceSetting options={["Normal", "High", "Urgent"]} initialValue="High" />
           </SettingsFieldRow>
           <SettingsFieldRow label="Message" align="start">
-            <SettingsTextarea defaultValue="Artie drafted a customer ETA note correctly, but the approval rule did not mention the value threshold. Please review our configuration." />
+            <SettingsTextarea defaultValue="Dexter drafted a customer ETA note correctly, but the approval rule did not mention the value threshold. Please review our configuration." />
           </SettingsFieldRow>
           <SettingsFieldRow label="Attachment">
             <div className="flex flex-wrap gap-2">
@@ -1038,8 +1038,8 @@ function TabContent({ activeTab }: { activeTab: string }) {
       return <PreferencesTab />
     case "notifications":
       return <NotificationsTab />
-    case "agent-artie":
-      return <AgentArtieTab />
+    case "agent-dexter":
+      return <AgentDexterTab />
     case "team":
       return <TeamTab />
     case "integrations":

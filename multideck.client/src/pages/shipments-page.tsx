@@ -14,6 +14,7 @@ import {
   type ShipmentViewMode,
 } from "@/components/multideck/shipment-components"
 import { Pagination } from "@/components/multideck/pagination"
+import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
 import { SegmentedControl } from "@/components/multideck/workflow-components"
 import { currentOperator, initialFavouriteShipmentIds, shipmentFilters, shipmentScopeTabs, shipments } from "@/data/multideck-data"
 
@@ -147,6 +148,7 @@ export function ShipmentsPage({ navigate }: { navigate: (path: string) => void }
   const [searchCriteria, setSearchCriteria] = useState<ShipmentSearchCriterion[]>(initialSearchCriteria)
   const [page, setPage] = useState(1)
   const [rowsPerPage, setRowsPerPage] = useState(10)
+  const [dexterOpen, setDexterOpen] = useState(false)
 
   const statusFilteredShipments = useMemo(() => {
     const filter = activeFilter.split(" · ")[0]
@@ -200,8 +202,8 @@ export function ShipmentsPage({ navigate }: { navigate: (path: string) => void }
   }
 
   return (
-    <div className="md-page md-page-stack">
-      <ShipmentListHeader viewMode={viewMode} onViewModeChange={setViewMode} />
+    <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel="Shipments" className="md-page md-page-stack">
+      <ShipmentListHeader viewMode={viewMode} onViewModeChange={setViewMode} onSpeakToDexter={() => setDexterOpen(true)} />
       <div className="flex justify-start">
         <SegmentedControl options={shipmentScopeTabs} value={scope} onChange={setScope} />
       </div>
@@ -245,6 +247,6 @@ export function ShipmentsPage({ navigate }: { navigate: (path: string) => void }
           setPage(1)
         }}
       />
-    </div>
+    </DexterDockedPage>
   )
 }

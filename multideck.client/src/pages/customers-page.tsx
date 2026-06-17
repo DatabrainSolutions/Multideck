@@ -9,6 +9,7 @@ import {
   customerViewModes,
   type CustomerViewMode,
 } from "@/components/multideck/customer-components"
+import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
 import { Pagination } from "@/components/multideck/pagination"
 import { currentOperator, customers, customerFilters, customerScopeTabs } from "@/data/multideck-data"
 
@@ -22,6 +23,7 @@ export function CustomersPage({ navigate }: { navigate: (path: string) => void }
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [page, setPage] = useState(1)
   const [rowsPerPage, setRowsPerPage] = useState(20)
+  const [dexterOpen, setDexterOpen] = useState(false)
 
   const visibleCustomers = useMemo(() => {
     const filter = activeFilter.split(" · ")[0]
@@ -55,13 +57,14 @@ export function CustomersPage({ navigate }: { navigate: (path: string) => void }
   }
 
   return (
-    <div className="md-page md-page-stack">
+    <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel="Customers" className="md-page md-page-stack">
       <CustomerListHeader
         scope={scope}
         onScopeChange={setScope}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         onExport={() => toast.success("Customer CSV prepared")}
+        onSpeakToDexter={() => setDexterOpen(true)}
       />
 
       <CustomerFilterBar activeFilter={activeFilter} onFilterChange={setActiveFilter} />
@@ -96,6 +99,6 @@ export function CustomersPage({ navigate }: { navigate: (path: string) => void }
           setPage(1)
         }}
       />
-    </div>
+    </DexterDockedPage>
   )
 }

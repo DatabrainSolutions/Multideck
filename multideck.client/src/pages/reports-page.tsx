@@ -18,7 +18,7 @@ export function ReportsPage({ navigate }: { navigate: (path: string) => void }) 
 
   function runTemplate(template: ReportTemplate) {
     toast.success(`${template.title} started`, {
-      description: "Artie is preparing the latest shipment, exception, and spend data.",
+      description: "Dexter is preparing the latest shipment, exception, and spend data.",
     })
   }
 

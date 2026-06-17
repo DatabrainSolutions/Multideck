@@ -35,6 +35,8 @@ import {
   type CrmAssetFolder,
 } from "@/components/multideck/crm-components"
 import { Pagination } from "@/components/multideck/pagination"
+import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
+import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
 import {
@@ -371,7 +373,7 @@ const crmMarketingActivity = [
 const crmEmailTemplates = [
   {
     name: "Monthly rates newsletter",
-    detail: "Lane tables + Artie market note",
+    detail: "Lane tables + Dexter market note",
     accent: "wide",
   },
   {
@@ -396,7 +398,7 @@ const crmEmailCampaigns = [
     id: "june-ocean-rates-update",
     name: "June ocean rates update",
     subject: "June ocean rates: Felixstowe, Rotterdam and Hamburg",
-    preheader: "Updated lane tables with Artie's market note.",
+    preheader: "Updated lane tables with Dexter's market note.",
     type: "Newsletter",
     audience: "June rates audience · 412",
     status: "Sent",
@@ -511,12 +513,14 @@ function CrmPageHeader({
   summary,
   meta,
   action,
+  onSpeakToDexter,
 }: {
   eyebrow?: string
   title: string
   summary?: ReactNode
   meta?: string
   action?: ReactNode
+  onSpeakToDexter?: () => void
 }) {
   return (
     <div className="flex flex-col gap-[var(--md-gap-lg)] xl:flex-row xl:items-end xl:justify-between">
@@ -526,7 +530,12 @@ function CrmPageHeader({
         {summary ? <p className="mt-2 max-w-[860px] text-[15px] leading-6 text-[var(--md-text)]">{summary}</p> : null}
         {meta ? <p className="mt-2 text-[12px] font-medium text-[var(--md-subtle)]">{meta}</p> : null}
       </div>
-      {action ? <div className="flex shrink-0 flex-wrap items-center gap-2">{action}</div> : null}
+      {action || onSpeakToDexter ? (
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {onSpeakToDexter ? <DexterActionPill onClick={onSpeakToDexter} /> : null}
+          {action}
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -596,6 +605,7 @@ function DealDetailDrawer({
 export function CrmOverviewPage() {
   const [selectedDeal, setSelectedDeal] = useState<CrmDeal>(() => firstDeal())
   const [detailOpen, setDetailOpen] = useState(false)
+  const [dexterOpen, setDexterOpen] = useState(false)
 
   function openDealDetail(deal: CrmDeal) {
     setSelectedDeal(deal)
@@ -608,7 +618,7 @@ export function CrmOverviewPage() {
   }
 
   return (
-    <div className="md-page md-page-stack">
+    <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel="CRM overview" className="md-page md-page-stack">
       <CrmPageHeader
         title="Commercial pipeline"
         summary={
@@ -617,12 +627,13 @@ export function CrmOverviewPage() {
           </>
         }
         meta="Drag cards between stages as deals move"
+        onSpeakToDexter={() => setDexterOpen(true)}
         action={<PrimaryActionButton onClick={() => toast.success("Deal draft created")}>New deal</PrimaryActionButton>}
       />
 
       <CrmPipelineBoard selectedDealId={detailOpen ? selectedDeal.id : undefined} onSelectDeal={openDealDetail} onPipelineChange={switchPipeline} />
       <DealDetailDrawer deal={selectedDeal} open={detailOpen} onClose={() => setDetailOpen(false)} />
-    </div>
+    </DexterDockedPage>
   )
 }
 
@@ -684,6 +695,7 @@ export function CrmLeadsPage({ navigate }: { navigate: (path: string) => void })
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [page, setPage] = useState(1)
   const [rowsPerPage, setRowsPerPage] = useState(20)
+  const [dexterOpen, setDexterOpen] = useState(false)
 
   const visibleLeads = useMemo(() => {
     const filter = activeFilter.split(" · ")[0]
@@ -716,7 +728,7 @@ export function CrmLeadsPage({ navigate }: { navigate: (path: string) => void })
   }
 
   return (
-    <div className="md-page md-page-stack">
+    <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel="Leads" className="md-page md-page-stack">
       <CrmPageHeader
         title="Leads"
         summary={
@@ -725,6 +737,7 @@ export function CrmLeadsPage({ navigate }: { navigate: (path: string) => void })
           </>
         }
         meta={`${customers.length} leads · ${customers.filter((customer) => customer.owner === currentOperator.initials).length} owned by ${currentOperator.name}`}
+        onSpeakToDexter={() => setDexterOpen(true)}
         action={
           <>
             <Button
@@ -762,7 +775,7 @@ export function CrmLeadsPage({ navigate }: { navigate: (path: string) => void })
           setPage(1)
         }}
       />
-    </div>
+    </DexterDockedPage>
   )
 }
 
@@ -802,7 +815,7 @@ export function CrmLeadDetailPage({
     ["Today 09:12", "Petra opened “June ocean rates” twice · clicked Asia–EU table", "Email · June rates campaign", "teal"],
     ["Tue 16:40", "Rates newsletter delivered", "Email · June rates campaign", "neutral"],
     ["Mon 11:05", "Intro call · 22 min — moving from spot to contract, decision in July", "Call · Elena Moreno", "blue"],
-    ["Jun 4", "Artie qualified the lead — lane & volume fit ICP, score 86/100", "AI · lead scoring", "green"],
+    ["Jun 4", "Dexter qualified the lead — lane & volume fit ICP, score 86/100", "AI · lead scoring", "green"],
   ] as const
   const leadTabs = [
     ["Overview", ""],
@@ -813,7 +826,7 @@ export function CrmLeadDetailPage({
     ["Notes", ""],
   ] as const
   const metricCards = [
-    ["Artie score", "86", "strong ICP fit", "green"],
+    ["Dexter score", "86", "strong ICP fit", "green"],
     ["Est. annual value", "€168k", "14 TEU/mo · FCL", "ink"],
     ["Engagement", "4 of 5", "emails opened · 2 clicks", "teal"],
     ["Days to decision", "19", "targets Jul 1 contract", "amber"],
@@ -971,7 +984,7 @@ export function CrmLeadDetailPage({
             </Surface>
 
             <Surface padding="lg" className="rounded-[var(--md-radius-xl)] bg-[rgba(191,222,217,0.72)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.26)]">
-              <SectionHeader title="Artie · lead pulse" meta="" />
+              <SectionHeader title="Dexter · lead pulse" meta="" />
               <p className="mt-4 text-[15px] leading-7 text-[var(--md-ink)]">
                 Ready to quote. Petra opened the rates email twice and lingered on Asia–EU. Their July decision window means a quote this week lands while they're comparing — I've pre-filled one from the intro-call notes.
               </p>
@@ -1014,10 +1027,11 @@ export function CrmLeadDetailPage({
 }
 export function CrmContactsPage() {
   const [selectedEmail, setSelectedEmail] = useState(crmContacts[0].email)
+  const [dexterOpen, setDexterOpen] = useState(false)
   const selectedContact = crmContacts.find((contact) => contact.email === selectedEmail) ?? crmContacts[0]
 
   return (
-    <div className="md-page md-page-stack">
+    <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel="Contacts" className="md-page md-page-stack">
       <CrmPageHeader
         title="Contacts"
         summary={
@@ -1026,6 +1040,7 @@ export function CrmContactsPage() {
           </>
         }
         meta={`${crmContacts.length} contacts · 5 leads · customer preferences visible inline`}
+        onSpeakToDexter={() => setDexterOpen(true)}
         action={<PrimaryActionButton onClick={() => toast.success("Contact draft created")}>New contact</PrimaryActionButton>}
       />
 
@@ -1044,7 +1059,7 @@ export function CrmContactsPage() {
         </Surface>
         <ContactProfileModule contact={selectedContact} />
       </div>
-    </div>
+    </DexterDockedPage>
   )
 }
 
@@ -1064,8 +1079,10 @@ function EmailTemplatePreview({ variant }: { variant: string }) {
 }
 
 export function CrmListsPage({ navigate }: { navigate: (path: string) => void }) {
+  const [dexterOpen, setDexterOpen] = useState(false)
+
   return (
-    <div className="md-page md-page-stack">
+    <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel="Lists" className="md-page md-page-stack">
       <CrmPageHeader
         title="Lists"
         summary={
@@ -1073,6 +1090,7 @@ export function CrmListsPage({ navigate }: { navigate: (path: string) => void })
             Smart lists update themselves from CRM data — build a rule once and every campaign that uses the list stays current.
           </>
         }
+        onSpeakToDexter={() => setDexterOpen(true)}
         action={
           <>
             <Button
@@ -1093,7 +1111,7 @@ export function CrmListsPage({ navigate }: { navigate: (path: string) => void })
           <button
             key={list.id}
             type="button"
-            className="group min-h-[184px] rounded-[var(--md-radius-xl)] bg-white/72 p-5 text-left shadow-[var(--md-shadow-line)] transition-[background,transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:bg-white/88 hover:shadow-[var(--md-shadow-lift)]"
+            className="group min-h-[184px] rounded-[var(--md-radius-xl)] bg-white/72 p-5 text-left shadow-[var(--md-shadow-line)] transition-[background,transform,box-shadow] duration-200 hover:scale-[1.01] hover:bg-white/88 hover:shadow-[var(--md-shadow-lift)]"
             onClick={() => navigate(getCrmListPath(list))}
           >
             <div className="flex items-start justify-between gap-4">
@@ -1119,17 +1137,17 @@ export function CrmListsPage({ navigate }: { navigate: (path: string) => void })
 
         <button
           type="button"
-          className="grid min-h-[184px] place-items-center rounded-[var(--md-radius-xl)] bg-white/20 p-5 text-center shadow-[inset_0_0_0_1px_rgba(11,20,19,0.08)] transition-[background,transform] duration-200 hover:-translate-y-0.5 hover:bg-white/35"
+          className="grid min-h-[184px] place-items-center rounded-[var(--md-radius-xl)] bg-white/20 p-5 text-center shadow-[inset_0_0_0_1px_rgba(11,20,19,0.08)] transition-[background,transform] duration-200 hover:scale-[1.01] hover:bg-white/35"
           onClick={() => toast.success("New list draft created")}
         >
           <span>
             <span className="mx-auto grid size-10 place-items-center rounded-full bg-[rgba(14,125,116,0.12)] text-[22px] font-medium text-[var(--md-accent)]">+</span>
             <span className="mt-4 block text-[14px] font-medium text-[var(--md-ink)]">New list</span>
-            <span className="mt-2 block text-[13px] text-[var(--md-text)]">or describe one to Artie</span>
+            <span className="mt-2 block text-[13px] text-[var(--md-text)]">or describe one to Dexter</span>
           </span>
         </button>
       </div>
-    </div>
+    </DexterDockedPage>
   )
 }
 
@@ -1270,7 +1288,7 @@ export function CrmEmailsPage({ navigate }: { navigate: (path: string) => void }
             <button
               key={template.name}
               type="button"
-              className="rounded-[var(--md-radius-xl)] bg-white/72 p-4 text-left shadow-[var(--md-shadow-line)] transition-[background,transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:bg-white/88 hover:shadow-[var(--md-shadow-lift)]"
+              className="rounded-[var(--md-radius-xl)] bg-white/72 p-4 text-left shadow-[var(--md-shadow-line)] transition-[background,transform,box-shadow] duration-200 hover:scale-[1.01] hover:bg-white/88 hover:shadow-[var(--md-shadow-lift)]"
               onClick={() => toast.success(`${template.name} selected`)}
             >
               <EmailTemplatePreview variant={template.accent} />
@@ -1703,6 +1721,7 @@ export function CrmDealsPage() {
   const [selectedDeal, setSelectedDeal] = useState<CrmDeal>(() => firstDeal())
   const [detailOpen, setDetailOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [dexterOpen, setDexterOpen] = useState(false)
 
   function openDealDetail(deal: CrmDeal) {
     setSelectedDeal(deal)
@@ -1715,10 +1734,11 @@ export function CrmDealsPage() {
   }
 
   return (
-    <div className="md-page md-page-stack">
+    <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel="Deals" className="md-page md-page-stack">
       <CrmPageHeader
         title="Deals"
         meta="Drag cards between stages"
+        onSpeakToDexter={() => setDexterOpen(true)}
         action={<PrimaryActionButton onClick={() => toast.success("Deal draft created")}>New deal</PrimaryActionButton>}
       />
 
@@ -1730,7 +1750,7 @@ export function CrmDealsPage() {
       />
       <DealDetailDrawer deal={selectedDeal} open={detailOpen} onClose={() => setDetailOpen(false)} />
       <PipelineSettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
-    </div>
+    </DexterDockedPage>
   )
 }
 

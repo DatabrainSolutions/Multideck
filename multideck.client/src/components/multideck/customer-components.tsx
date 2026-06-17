@@ -1,5 +1,5 @@
 import { useId, type CSSProperties, type ReactNode } from "react"
-import { ArrowRight, Download, Mail, MapPin, Phone, Plus, Sparkles, X } from "lucide-react"
+import { ArrowRight, Download, LayoutGrid, List, Mail, Map as MapIcon, MapPin, Phone, Plus, Sparkles, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -20,11 +20,18 @@ import {
 import { SectionHeader, Surface } from "./surface"
 import { StatusPill, toneToVar } from "./status-pill"
 import { FilterChips, SegmentedControl } from "./workflow-components"
+import { DexterActionPill } from "./dexter-action-pill"
+import { PageSettingsMenu, type PageSettingsViewOption } from "./page-settings-menu"
 
 type Customer = (typeof customers)[number]
 type MarlowContact = (typeof marlowContacts)[number]
 export const customerViewModes = ["List", "Cards", "Map"] as const
 export type CustomerViewMode = (typeof customerViewModes)[number]
+export const customerViewOptions = [
+  { value: "List", label: "List", icon: List },
+  { value: "Map", label: "Map", icon: MapIcon },
+  { value: "Cards", label: "Board", icon: LayoutGrid },
+] satisfies readonly PageSettingsViewOption<CustomerViewMode>[]
 
 const avatarToneClass: Record<string, string> = {
   olive: "bg-[#dce1d6] text-[#786b37] dark:bg-[rgba(232,241,235,0.1)] dark:text-[var(--md-text)]",
@@ -142,10 +149,9 @@ export function CustomerRow({
     <TableRow
       data-state={selected ? "selected" : undefined}
       className={cn(
-        "h-[72px] cursor-pointer border-[rgba(11,20,19,0.045)] bg-[color-mix(in_srgb,var(--md-surface)_72%,transparent)] shadow-[inset_0_1px_0_rgba(255,255,255,0.58)] hover:bg-[color-mix(in_srgb,var(--md-surface)_86%,transparent)]",
-        selected && "bg-[color-mix(in_srgb,var(--md-surface)_94%,transparent)] shadow-[inset_3px_0_0_var(--md-accent),inset_0_1px_0_rgba(255,255,255,0.92),inset_0_-1px_0_rgba(11,20,19,0.04)] hover:bg-[color-mix(in_srgb,var(--md-surface)_96%,transparent)]",
+        "h-[72px] cursor-pointer border-[rgba(11,20,19,0.045)] bg-white shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] hover:bg-[#f8faf9]",
+        selected && "bg-[#f4faf8] shadow-[inset_3px_0_0_var(--md-accent),inset_0_1px_0_rgba(255,255,255,0.92),inset_0_-1px_0_rgba(11,20,19,0.04)] hover:bg-[#f2f8f6]",
       )}
-      style={selected ? ({ backgroundColor: "color-mix(in srgb, var(--md-surface) 94%, transparent)" } satisfies CSSProperties) : undefined}
       onClick={onOpen}
     >
       <TableCell className="w-12 pl-4 pr-2">
@@ -226,12 +232,14 @@ export function CustomerCard({ customer, onOpen }: { customer: Customer; onOpen:
 
 export function CustomerListHeader({
   onExport,
+  onSpeakToDexter,
   scope,
   onScopeChange,
   viewMode,
   onViewModeChange,
 }: {
   onExport: () => void
+  onSpeakToDexter: () => void
   scope: (typeof customerScopeTabs)[number]
   onScopeChange: (scope: (typeof customerScopeTabs)[number]) => void
   viewMode: CustomerViewMode
@@ -248,15 +256,13 @@ export function CustomerListHeader({
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <SegmentedControl options={customerScopeTabs} value={scope} onChange={onScopeChange} />
-        <CustomerViewModeSwitch viewMode={viewMode} onViewModeChange={onViewModeChange} />
-        <Button
-          variant="ghost"
-          className="h-10 rounded-[var(--md-radius-lg)] bg-white/35 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/65"
-          onClick={onExport}
-        >
-          <Download data-icon="inline-start" strokeWidth={1.2} />
-          Export CSV
-        </Button>
+        <DexterActionPill onClick={onSpeakToDexter} />
+        <PageSettingsMenu
+          viewOptions={customerViewOptions}
+          value={viewMode}
+          onViewChange={onViewModeChange}
+          actions={[{ id: "export-customers", label: "Export CSV", icon: Download, onSelect: onExport }]}
+        />
       </div>
     </div>
   )
@@ -270,7 +276,7 @@ export function CustomerViewModeSwitch({
   onViewModeChange: (mode: CustomerViewMode) => void
 }) {
   return (
-    <SegmentedControl options={customerViewModes} value={viewMode} onChange={onViewModeChange} />
+    <PageSettingsMenu viewOptions={customerViewOptions} value={viewMode} onViewChange={onViewModeChange} />
   )
 }
 
@@ -306,7 +312,7 @@ export function CustomerListTable({
   onOpenCustomer: (customer: Customer) => void
 }) {
   return (
-    <div className="overflow-hidden rounded-[var(--md-radius-xl)] bg-[color-mix(in_srgb,var(--md-surface)_42%,transparent)] shadow-[var(--md-shadow-line)]">
+    <div className="overflow-hidden rounded-[var(--md-radius-xl)] bg-white shadow-[var(--md-shadow-line)]">
       <Table className="min-w-[1180px]">
         <TableHeader>
           <TableRow className="border-[rgba(11,20,19,0.05)] hover:bg-transparent">
@@ -733,12 +739,12 @@ export function PrimaryContactsPanel({
   )
 }
 
-export function ArtiePulsePanel() {
+export function DexterPulsePanel() {
   return (
     <section className="rounded-[var(--md-radius-xl)] bg-[rgba(14,125,116,0.12)] p-[var(--md-page-stack-gap)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.22)]">
       <div className="flex items-center gap-3">
         <Sparkles className="size-4 text-[var(--md-accent)]" strokeWidth={1.2} />
-        <h2 className="text-[15px] font-medium text-[var(--md-ink)]">Artie · customer pulse</h2>
+        <h2 className="text-[15px] font-medium text-[var(--md-ink)]">Dexter · customer pulse</h2>
       </div>
       <p className="mt-[var(--md-page-stack-gap)] text-[15px] leading-7 text-[var(--md-ink)]">
         Healthy and growing. Sandra mentioned in last week's email that volumes for AW26 may run 20% above forecast — worth touching base on capacity before September. One open hold; everything else on track.

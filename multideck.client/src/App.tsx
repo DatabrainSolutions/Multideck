@@ -6,13 +6,13 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { AppShell } from "@/components/multideck/app-shell"
 import { LanguageProvider } from "@/i18n/language-provider"
 import { mdMotion } from "@/lib/motion"
+import { OverviewPage } from "@/pages/overview-page"
 
-const AgentArtiePage = lazy(() => import("@/pages/agent-artie-page").then((module) => ({ default: module.AgentArtiePage })))
+const AgentDexterPage = lazy(() => import("@/pages/agent-dexter-page").then((module) => ({ default: module.AgentDexterPage })))
 const AuthFlowPage = lazy(() => import("@/pages/auth-flow-page").then((module) => ({ default: module.AuthFlowPage })))
 const ComponentsGalleryPage = lazy(() => import("@/pages/components-gallery-page").then((module) => ({ default: module.ComponentsGalleryPage })))
 const CustomerDetailPage = lazy(() => import("@/pages/customer-detail-page").then((module) => ({ default: module.CustomerDetailPage })))
 const CustomersPage = lazy(() => import("@/pages/customers-page").then((module) => ({ default: module.CustomersPage })))
-const OverviewPage = lazy(() => import("@/pages/overview-page").then((module) => ({ default: module.OverviewPage })))
 const ReportsPage = lazy(() => import("@/pages/reports-page").then((module) => ({ default: module.ReportsPage })))
 const ReportTemplateBuilderPage = lazy(() => import("@/pages/report-template-builder-page").then((module) => ({ default: module.ReportTemplateBuilderPage })))
 const ReportViewerPage = lazy(() => import("@/pages/report-viewer-page").then((module) => ({ default: module.ReportViewerPage })))
@@ -35,7 +35,7 @@ const CrmSettingsPage = lazy(() => import("@/pages/crm-page").then((module) => (
 
 const validRoutes = new Set([
   "/",
-  "/agent-artie",
+  "/agent-dexter",
   "/auth",
   "/components",
   "/crm",
@@ -138,7 +138,7 @@ export default function App() {
               <AppShell route={route} navigate={navigate}>
                 <Suspense fallback={<RouteFallback />}>
                   {route === "/components" ? <ComponentsGalleryPage /> : null}
-                  {route === "/agent-artie" ? <AgentArtiePage /> : null}
+                  {route === "/agent-dexter" ? <AgentDexterPage /> : null}
                   {route === "/crm" ? <CrmOverviewPage /> : null}
                   {route === "/crm/accounts" || route === "/crm/leads" ? <CrmLeadsPage navigate={navigate} /> : null}
                   {isCrmLeadDetailRoute(route) ? <CrmLeadDetailPage navigate={navigate} leadId={route.split("/").at(-1) ?? ""} /> : null}

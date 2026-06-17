@@ -179,7 +179,7 @@ export function NewReportTemplateCard({ onCreate, className }: { onCreate?: () =
         <Plus className="size-5" strokeWidth={1.5} />
       </span>
       <span className="mt-[var(--md-page-section-gap)] text-[15px] font-medium text-[var(--md-ink)]">New template</span>
-      <span className="mt-[var(--md-page-stack-gap)] max-w-[230px] text-[13px] leading-5 text-[var(--md-text)]">Start blank, or let Artie draft one from a report you already sent</span>
+      <span className="mt-[var(--md-page-stack-gap)] max-w-[230px] text-[13px] leading-5 text-[var(--md-text)]">Start blank, or let Dexter draft one from a report you already sent</span>
     </button>
   )
 }
@@ -876,7 +876,7 @@ export const monthlyTemplatePages: ReportPage[] = [
         id: "written-summary",
         type: "summary",
         title: "Written summary",
-        body: "Artie writes 3–4 sentences here on each run — volumes, on-time trend, exceptions worth a conversation, and what's coming next month.",
+        body: "Dexter writes 3–4 sentences here on each run — volumes, on-time trend, exceptions worth a conversation, and what's coming next month.",
         tone: "teal",
       },
     ],
@@ -1198,7 +1198,7 @@ export const reportWidgets: ReportWidget[] = [
   { id: "mixed-chart", title: "Mixed chart", description: "Bar and line together", group: "Visualizations", type: "chart", visualization: "mixed", icon: <BarChart3 className="size-5" strokeWidth={1.2} /> },
   { id: "shipment-table", title: "Shipment table", description: "Every shipment in period", group: "Lists & tables", type: "table", icon: <Table2 className="size-5" strokeWidth={1.2} /> },
   { id: "exception-log", title: "Exception log", description: "Issues & resolutions", group: "Lists & tables", type: "exception-log", icon: <FileText className="size-5" strokeWidth={1.2} /> },
-  { id: "written-summary", title: "Written summary", description: "Artie narrative block", group: "Narrative", type: "summary", icon: <Sparkles className="size-5" strokeWidth={1.2} /> },
+  { id: "written-summary", title: "Written summary", description: "Dexter narrative block", group: "Narrative", type: "summary", icon: <Sparkles className="size-5" strokeWidth={1.2} /> },
 ]
 
 export function ReportBlockView({
@@ -1523,7 +1523,7 @@ export function ReportPageThumbnailRail({
           <button key={page.id} type="button" className="group shrink-0 text-center" onClick={() => onChange(page.id)}>
             <span
               className={cn(
-                "block aspect-[1.45] w-[136px] rounded-[var(--md-radius-md)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 group-hover:-translate-y-0.5 group-hover:bg-white",
+                "block aspect-[1.45] w-[136px] rounded-[var(--md-radius-md)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 group-hover:scale-[1.01] group-hover:bg-white",
                 active && "shadow-[inset_0_0_0_3px_var(--md-accent),0_10px_22px_rgba(42,52,50,0.10)]",
               )}
             >
@@ -1624,7 +1624,7 @@ export function ReportWidgetPalette({
 	                      type="button"
 	                      draggable={canDragWidgets}
 	                      className={cn(
-	                        "group rounded-[var(--md-radius-lg)] bg-[var(--md-report-preview-bg)] p-3 text-left shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 hover:-translate-y-0.5 hover:bg-[var(--md-report-preview-hover-bg)]",
+	                        "group rounded-[var(--md-radius-lg)] bg-[var(--md-report-preview-bg)] p-3 text-left shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 hover:scale-[1.01] hover:bg-[var(--md-report-preview-hover-bg)]",
 	                        selected && "shadow-[inset_0_0_0_2px_var(--md-accent),0_8px_20px_rgba(42,52,50,0.08)]",
 	                      )}
 	                      onDragStart={(event) => {
@@ -1733,7 +1733,7 @@ export function createReportBlockFromWidget(widget: ReportWidget, index: number)
     id,
     type: "summary",
     title: widget.title,
-    body: "Artie will write this section from the selected report scope, period, and shipment data when the report is generated.",
+    body: "Dexter will write this section from the selected report scope, period, and shipment data when the report is generated.",
     tone: "teal",
   }
 }

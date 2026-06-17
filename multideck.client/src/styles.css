@@ -113,9 +113,11 @@
   --md-radius-lg: 10px;
   --md-radius-xl: 14px;
   --md-radius-2xl: 18px;
-  --md-shadow-line: inset 0 0 0 1px rgba(255, 255, 255, 0.92), 0 0 0 1px rgba(11, 20, 19, 0.14), 0 8px 18px rgba(42, 52, 50, 0.07);
-  --md-shadow-soft: inset 0 0 0 1px rgba(255, 255, 255, 0.95), 0 0 0 1px rgba(11, 20, 19, 0.13), 0 14px 32px rgba(42, 52, 50, 0.1);
-  --md-shadow-lift: inset 0 0 0 1px rgba(255, 255, 255, 0.96), 0 0 0 1px rgba(11, 20, 19, 0.16), 0 20px 42px rgba(42, 52, 50, 0.16);
+  --md-premium-stroke: inset 0 1px 0 rgba(255, 255, 255, 0.72), inset 0 0 0 1px rgba(255, 255, 255, 0.58), inset 0 -14px 26px rgba(15, 23, 42, 0.035), 0 0 0 1px rgba(15, 23, 42, 0.055), 0 18px 46px rgba(15, 23, 42, 0.08);
+  --md-premium-stroke-soft: inset 0 1px 0 rgba(255, 255, 255, 0.64), inset 0 0 0 1px rgba(255, 255, 255, 0.48), 0 0 0 1px rgba(15, 23, 42, 0.045), 0 12px 30px rgba(15, 23, 42, 0.065);
+  --md-shadow-line: var(--md-premium-stroke-soft);
+  --md-shadow-soft: var(--md-premium-stroke);
+  --md-shadow-lift: var(--md-premium-stroke);
   --md-shadow-green-card: inset 0 0 0 1px rgba(255, 255, 255, 0.9), 0 0 0 1px rgba(14, 125, 116, 0.18), 0 10px 24px rgba(14, 125, 116, 0.08);
   --md-shadow-green-card-hover: inset 0 0 0 1px rgba(255, 255, 255, 0.92), 0 0 0 1px rgba(14, 125, 116, 0.24), 0 14px 30px rgba(14, 125, 116, 0.1);
   --md-shadow-green-card-selected: inset 0 0 0 1px rgba(255, 255, 255, 0.92), 0 0 0 3px rgba(14, 125, 116, 0.13), 0 16px 34px rgba(14, 125, 116, 0.12);
@@ -203,9 +205,11 @@
   --md-report-preview-hover-bg: color-mix(in srgb, var(--md-surface-soft) 94%, transparent);
   --md-report-donut-hole: inset 0 0 0 8px color-mix(in srgb, var(--md-surface-soft) 94%, transparent);
   --md-composer-inner-bg: color-mix(in srgb, var(--md-surface-soft) 90%, transparent);
-  --md-shadow-line: inset 0 0 0 1px rgba(255, 255, 255, 0.07), 0 0 0 1px rgba(0, 0, 0, 0.26), 0 12px 28px rgba(0, 0, 0, 0.24);
-  --md-shadow-soft: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.3), 0 18px 42px rgba(0, 0, 0, 0.3);
-  --md-shadow-lift: inset 0 0 0 1px rgba(255, 255, 255, 0.09), 0 0 0 1px rgba(0, 0, 0, 0.32), 0 24px 58px rgba(0, 0, 0, 0.42);
+  --md-premium-stroke: inset 0 1px 0 rgba(255, 255, 255, 0.11), inset 0 0 0 1px rgba(255, 255, 255, 0.09), inset 0 -16px 30px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.22), 0 18px 46px rgba(0, 0, 0, 0.28);
+  --md-premium-stroke-soft: inset 0 1px 0 rgba(255, 255, 255, 0.11), inset 0 0 0 1px rgba(255, 255, 255, 0.09), inset 0 -16px 30px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.22), 0 12px 30px rgba(0, 0, 0, 0.22);
+  --md-shadow-line: var(--md-premium-stroke-soft);
+  --md-shadow-soft: var(--md-premium-stroke);
+  --md-shadow-lift: var(--md-premium-stroke);
   --md-shadow-green-card: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 0 0 1px rgba(104, 199, 184, 0.22), 0 14px 32px rgba(0, 0, 0, 0.26);
   --md-shadow-green-card-hover: inset 0 0 0 1px rgba(255, 255, 255, 0.1), 0 0 0 1px rgba(104, 199, 184, 0.28), 0 18px 40px rgba(0, 0, 0, 0.3);
   --md-shadow-green-card-selected: inset 0 0 0 1px rgba(255, 255, 255, 0.1), 0 0 0 3px rgba(104, 199, 184, 0.16), 0 20px 46px rgba(0, 0, 0, 0.34);
@@ -267,6 +271,8 @@ button,
 input,
 textarea,
 select,
+[class~="premium-stroke"],
+[class~="premium-stroke-soft"],
 [class*="bg-[var(--md-"],
 [class*="text-[var(--md-"],
 [class*="shadow-[var(--md-shadow"] {
@@ -369,6 +375,34 @@ button {
 }
 
 @layer utilities {
+  .premium-stroke {
+    border: 1px solid transparent;
+    box-shadow: var(--md-premium-stroke);
+  }
+
+  .premium-stroke-soft {
+    border: 1px solid transparent;
+    box-shadow: var(--md-premium-stroke-soft);
+  }
+
+  [data-theme="dark"] .premium-stroke {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.11),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.09),
+      inset 0 -16px 30px rgba(0, 0, 0, 0.18),
+      0 0 0 1px rgba(0, 0, 0, 0.22),
+      0 18px 46px rgba(0, 0, 0, 0.28);
+  }
+
+  [data-theme="dark"] .premium-stroke-soft {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.11),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.09),
+      inset 0 -16px 30px rgba(0, 0, 0, 0.18),
+      0 0 0 1px rgba(0, 0, 0, 0.22),
+      0 12px 30px rgba(0, 0, 0, 0.22);
+  }
+
   .md-page {
     padding-bottom: var(--md-page-bottom-pad);
   }
@@ -907,6 +941,234 @@ button {
 
   .md-ai-edge-glow--active .md-ai-edge-glow__frame {
     animation: md-ai-edge-breathe 3s ease-in-out infinite;
+  }
+
+  .md-dexter-pill {
+    isolation: isolate;
+    background:
+      linear-gradient(135deg, color-mix(in srgb, var(--md-accent) 13%, var(--md-surface)), color-mix(in srgb, var(--md-blue) 8%, var(--md-surface))),
+      color-mix(in srgb, var(--md-surface) 72%, transparent);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.84),
+      inset 0 0 0 1px color-mix(in srgb, var(--md-accent) 28%, transparent),
+      0 0 0 1px rgba(14, 125, 116, 0.08),
+      0 12px 26px rgba(14, 125, 116, 0.12);
+  }
+
+  .md-dexter-pill:hover,
+  .md-dexter-pill:focus-visible {
+    background:
+      linear-gradient(135deg, color-mix(in srgb, var(--md-accent) 18%, var(--md-surface)), color-mix(in srgb, var(--md-blue) 12%, var(--md-surface))),
+      color-mix(in srgb, var(--md-surface) 78%, var(--md-accent) 7%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.82),
+      inset 0 0 0 1px color-mix(in srgb, var(--md-accent) 34%, transparent),
+      0 0 0 1px rgba(14, 125, 116, 0.12),
+      0 16px 32px rgba(14, 125, 116, 0.16);
+    transform: translateY(-1px);
+  }
+
+  .md-dexter-pill__wash {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    border-radius: inherit;
+    background:
+      radial-gradient(circle at 20% 50%, color-mix(in srgb, var(--md-accent) 20%, transparent), transparent 28%),
+      radial-gradient(circle at 78% 44%, color-mix(in srgb, var(--md-blue) 16%, transparent), transparent 28%);
+    opacity: 0;
+    transform: scale(0.94);
+    transition: opacity var(--md-motion), transform var(--md-motion);
+  }
+
+  .md-dexter-pill:hover .md-dexter-pill__wash,
+  .md-dexter-pill:focus-visible .md-dexter-pill__wash {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  .md-dexter-pill__particle {
+    position: absolute;
+    z-index: 0;
+    width: 3px;
+    height: 3px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--md-accent) 82%, white 18%);
+    box-shadow: 0 0 10px color-mix(in srgb, var(--md-accent) 34%, transparent);
+    opacity: 0;
+    animation: md-dexter-pill-particle 1.65s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+    animation-play-state: paused;
+  }
+
+  .md-dexter-pill:hover .md-dexter-pill__particle,
+  .md-dexter-pill:focus-visible .md-dexter-pill__particle {
+    animation-play-state: running;
+  }
+
+  .md-dexter-pill__particle--one {
+    left: 18%;
+    top: 58%;
+  }
+
+  .md-dexter-pill__particle--two {
+    left: 48%;
+    top: 38%;
+    width: 2px;
+    height: 2px;
+    animation-delay: 220ms;
+  }
+
+  .md-dexter-pill__particle--three {
+    left: 76%;
+    top: 62%;
+    animation-delay: 440ms;
+  }
+
+  .md-dexter-page {
+    width: 100%;
+    max-width: 100%;
+    transition:
+      width 260ms cubic-bezier(0.22, 1, 0.36, 1),
+      max-width 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  @media (min-width: 1120px) {
+    .md-dexter-page--open {
+      width: calc(100% - min(440px, calc(100vw - 20px)));
+      max-width: calc(100% - min(440px, calc(100vw - 20px)));
+    }
+  }
+
+  .md-dexter-companion-panel {
+    border: 0;
+    background: #fff;
+    box-shadow:
+      inset 1px 0 0 rgba(42, 52, 50, 0.12),
+      -1px 0 0 rgba(255, 255, 255, 0.92),
+      -14px 0 28px rgba(42, 52, 50, 0.035);
+  }
+
+  .md-dexter-companion-header {
+    background: rgba(255, 255, 255, 0.98);
+  }
+
+  .md-dexter-companion-header::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -34px;
+    height: 44px;
+    pointer-events: none;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(255, 255, 255, 0.72) 46%, rgba(255, 255, 255, 0) 100%);
+  }
+
+  .md-dexter-chat-bubble {
+    color: var(--md-ink);
+    box-shadow: 0 14px 34px rgba(42, 52, 50, 0.055);
+  }
+
+  .md-dexter-chat-bubble--user {
+    background: #f1f3f3;
+  }
+
+  .md-dexter-chat-bubble--assistant {
+    background: rgba(255, 255, 255, 0.98);
+  }
+
+  .md-dexter-context-card {
+    background: rgba(247, 250, 249, 0.78);
+    box-shadow: 0 8px 20px rgba(42, 52, 50, 0.035);
+  }
+
+  .md-dexter-followup {
+    background: rgba(255, 255, 255, 0.62);
+    box-shadow: 0 10px 24px rgba(42, 52, 50, 0.045);
+  }
+
+  .md-dexter-followup:hover {
+    background: rgba(255, 255, 255, 0.82);
+    box-shadow: 0 16px 32px rgba(42, 52, 50, 0.07);
+  }
+
+  .md-dexter-companion-composer {
+    position: relative;
+    isolation: isolate;
+    margin-top: -14px;
+    background: transparent;
+  }
+
+  .md-dexter-companion-composer::before {
+    content: none;
+  }
+
+  .md-dexter-companion-composer > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  .md-dexter-companion-composer-shell {
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow:
+      inset 0 0 0 1px rgba(42, 52, 50, 0.1),
+      0 14px 32px rgba(42, 52, 50, 0.05);
+  }
+
+  .md-dexter-companion-composer-inner {
+    background: transparent;
+  }
+
+  .dark .md-dexter-companion-panel {
+    background: rgb(15, 23, 21);
+    box-shadow:
+      inset 1px 0 0 rgba(255, 255, 255, 0.12),
+      -1px 0 0 rgba(0, 0, 0, 0.24),
+      -14px 0 28px rgba(0, 0, 0, 0.2);
+  }
+
+  .dark .md-dexter-companion-header {
+    background: rgba(15, 23, 21, 0.96);
+  }
+
+  .dark .md-dexter-companion-header::after {
+    background: linear-gradient(180deg, rgba(15, 23, 21, 0.96) 0%, rgba(15, 23, 21, 0.72) 46%, rgba(15, 23, 21, 0) 100%);
+  }
+
+  .dark .md-dexter-chat-bubble {
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+  }
+
+  .dark .md-dexter-chat-bubble--user,
+  .dark .md-dexter-chat-bubble--assistant {
+    background: rgba(24, 34, 32, 0.76);
+  }
+
+  .dark .md-dexter-context-card,
+  .dark .md-dexter-followup {
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  .dark .md-dexter-followup:hover {
+    background: rgba(255, 255, 255, 0.09);
+  }
+
+  .dark .md-dexter-companion-composer {
+    background: transparent;
+  }
+
+  .dark .md-dexter-companion-composer::before {
+    content: none;
+  }
+
+  .dark .md-dexter-companion-composer-shell {
+    background: rgba(24, 34, 32, 0.96);
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+      0 16px 36px rgba(0, 0, 0, 0.22);
+  }
+
+  .dark .md-dexter-companion-composer-inner {
+    background: transparent;
   }
 
   .md-dashboard-edit-tile {
@@ -1616,6 +1878,22 @@ button {
     }
   }
 
+  @keyframes md-dexter-pill-particle {
+    0% {
+      opacity: 0;
+      transform: translate3d(0, 5px, 0) scale(0.7);
+    }
+
+    32% {
+      opacity: 0.62;
+    }
+
+    100% {
+      opacity: 0;
+      transform: translate3d(9px, -8px, 0) scale(1);
+    }
+  }
+
   @media (max-width: 640px) {
     .md-toast {
       min-height: 64px;
@@ -1625,7 +1903,8 @@ button {
 
   @media (prefers-reduced-motion: reduce) {
     .md-ai-edge-glow__signal,
-    .md-ai-edge-glow__frame {
+    .md-ai-edge-glow__frame,
+    .md-dexter-pill__particle {
       animation: none !important;
     }
   }

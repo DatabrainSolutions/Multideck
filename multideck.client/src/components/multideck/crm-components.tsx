@@ -196,7 +196,7 @@ export function CrmAssetFolderCard({
       type="button"
       aria-pressed={selected}
       className={cn(
-        "group grid min-h-[168px] content-between rounded-[var(--md-radius-xl)] bg-[var(--md-green-card)] p-4 text-left shadow-[var(--md-shadow-green-card)] transition-[background,box-shadow,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:-translate-y-0.5 hover:bg-[var(--md-green-card-hover)] hover:shadow-[var(--md-shadow-green-card-hover)]",
+        "group grid min-h-[168px] content-between rounded-[var(--md-radius-xl)] bg-[var(--md-green-card)] p-4 text-left shadow-[var(--md-shadow-green-card)] transition-[background,box-shadow,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-[var(--md-green-card-hover)] hover:shadow-[var(--md-shadow-green-card-hover)]",
         selected && "bg-[var(--md-green-card-selected)] shadow-[var(--md-shadow-green-card-selected)]",
       )}
       onClick={() => onSelect?.(folder)}
@@ -281,7 +281,7 @@ function DealCard({
       aria-pressed={selected}
       aria-grabbed={isDragging}
       className={cn(
-        "group relative w-full touch-none select-none overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-crm-deal-bg)] p-4 text-left shadow-[var(--md-crm-deal-shadow)] transition-[background,box-shadow,transform,opacity] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:-translate-y-0.5 hover:bg-[var(--md-crm-deal-hover-bg)] hover:shadow-[var(--md-crm-deal-hover-shadow)]",
+        "group relative w-full touch-none select-none overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-crm-deal-bg)] p-4 text-left shadow-[var(--md-crm-deal-shadow)] transition-[background,box-shadow,transform,opacity] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-[var(--md-crm-deal-hover-bg)] hover:shadow-[var(--md-crm-deal-hover-shadow)]",
         selected && "bg-[var(--md-crm-deal-selected-bg)] shadow-[var(--md-crm-deal-selected-shadow)]",
         isDragging && "z-20 cursor-grabbing opacity-95 transition-none",
       )}

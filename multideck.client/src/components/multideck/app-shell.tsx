@@ -13,7 +13,7 @@ export function AppShell({
   children: ReactNode
 }) {
   const isSettingsRoute = route === "/settings"
-  const isAgentRoute = route === "/agent-artie"
+  const isAgentRoute = route === "/agent-dexter"
 
   return (
     <div className="h-screen overflow-hidden bg-[var(--md-bg)] text-[var(--md-ink)]">

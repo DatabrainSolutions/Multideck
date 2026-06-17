@@ -3,30 +3,30 @@ import { ArrowRight, BarChart3, Pause, Share2, ShieldCheck, Sparkles } from "luc
 import { AnimatePresence, LayoutGroup, motion } from "motion/react"
 import { Button } from "@/components/ui/button"
 import {
-  ArtieAttachmentPalette,
-  ArtieBrandMark,
-  ArtieChecklistCard,
-  ArtieCustomerSnapshot,
-  ArtieHistoryList,
-  ArtieMonitorStack,
-  ArtieMonitorDetailSheet,
-  ArtiePromptComposer,
-  ArtieRiskTable,
-  ArtieSpecialistChip,
-  ArtieSpecialistMenu,
-  ArtieSpecialistPicker,
-  ArtieSuggestionGrid,
-  defaultArtieAttachments,
-  defaultArtieSpecialists,
-  type ArtieAttachment,
-  type ArtieHistoryItem,
-  type ArtieMonitor,
-  type ArtieSpecialistId,
-} from "@/components/multideck/agent-artie-components"
+  DexterAttachmentPalette,
+  DexterBrandMark,
+  DexterChecklistCard,
+  DexterCustomerSnapshot,
+  DexterHistoryList,
+  DexterMonitorStack,
+  DexterMonitorDetailSheet,
+  DexterPromptComposer,
+  DexterRiskTable,
+  DexterSpecialistChip,
+  DexterSpecialistMenu,
+  DexterSpecialistPicker,
+  DexterSuggestionGrid,
+  defaultDexterAttachments,
+  defaultDexterSpecialists,
+  type DexterAttachment,
+  type DexterHistoryItem,
+  type DexterMonitor,
+  type DexterSpecialistId,
+} from "@/components/multideck/agent-dexter-components"
 import { cn } from "@/lib/utils"
 import { mdMotion } from "@/lib/motion"
 
-const historyItems: ArtieHistoryItem[] = [
+const historyItems: DexterHistoryItem[] = [
   { id: "customs-risk", title: "At-risk customs this week", summary: "4 flagged - drafts ready for review", time: "11:42" },
   { id: "marlow-qbr", title: "Marlow Apparel - QBR prep", summary: "Snapshot, talking points, agenda draft", time: "10:05" },
   { id: "daily", title: "Daily briefing - 11 Jun", summary: "Quiet night. 23 in transit, 2 need you.", time: "07:00" },
@@ -35,7 +35,7 @@ const historyItems: ArtieHistoryItem[] = [
   { id: "refund", title: "Refund analysis - May demurrage", summary: "Owed EUR 4,820 across 6 containers", time: "Jun 4" },
 ]
 
-const monitors: ArtieMonitor[] = [
+const monitors: DexterMonitor[] = [
   {
     title: "Berth queue - MD-22479",
     body: "Watching Rotterdam congestion. Re-pings if ETA shifts more than 6h.",
@@ -45,7 +45,7 @@ const monitors: ArtieMonitor[] = [
   },
   {
     title: "Doc parse confidence < 80%",
-    body: "Any document Artie is not sure about gets flagged for review.",
+    body: "Any document Dexter is not sure about gets flagged for review.",
     meta: "always on",
     detail: "1 today - CO-CN-44128",
     tone: "blue",
@@ -66,25 +66,25 @@ const monitors: ArtieMonitor[] = [
   },
 ]
 
-function specialistById(id: ArtieSpecialistId) {
-  return defaultArtieSpecialists.find((specialist) => specialist.id === id) ?? defaultArtieSpecialists[0]
+function specialistById(id: DexterSpecialistId) {
+  return defaultDexterSpecialists.find((specialist) => specialist.id === id) ?? defaultDexterSpecialists[0]
 }
 
 function useAttachedItems(selectedAttachmentIds: Set<string>) {
   return useMemo(
-    () => defaultArtieAttachments.filter((attachment) => selectedAttachmentIds.has(attachment.id)),
+    () => defaultDexterAttachments.filter((attachment) => selectedAttachmentIds.has(attachment.id)),
     [selectedAttachmentIds],
   )
 }
 
-function ArtiePageHeader({
+function DexterPageHeader({
   conversationMode,
   selectedSpecialistId,
   watchersCollapsed,
   onToggleWatchers,
 }: {
   conversationMode: "customs" | "customer"
-  selectedSpecialistId: ArtieSpecialistId
+  selectedSpecialistId: DexterSpecialistId
   watchersCollapsed?: boolean
   onToggleWatchers?: () => void
 }) {
@@ -153,25 +153,25 @@ function ConversationStream({
     return (
       <div className={cn("mx-auto flex w-full min-w-0 flex-col gap-[var(--md-page-stack-gap)] px-[var(--md-page-stack-gap)] py-[var(--md-page-section-gap)]", streamWidth)}>
         <div className="ml-auto max-w-[620px] rounded-[var(--md-radius-xl)] bg-[rgba(213,228,225,0.72)] px-5 py-4 text-[15px] leading-6 text-[var(--md-ink)]">
-          <ArtieSpecialistChip specialist={specialistById("customer")} />
+          <DexterSpecialistChip specialist={specialistById("customer")} />
           <span className="ml-2">Prep me for Thursday's QBR with Sandra - what should I know, and what should we ask for?</span>
         </div>
 
         <div className="grid min-w-0 grid-cols-[38px_minmax(0,1fr)] gap-4">
-          <ArtieBrandMark className="mt-1" />
+          <DexterBrandMark className="mt-1" />
           <div className="min-w-0">
-            <p className="text-[12px] text-[var(--md-subtle)]">Artie - Analytics & reporting - 10:05</p>
+            <p className="text-[12px] text-[var(--md-subtle)]">Dexter - Analytics & reporting - 10:05</p>
             <p className="mt-3 text-[15px] leading-6 text-[var(--md-ink)]">Here is where Marlow stands going into Thursday.</p>
             <div className="mt-4">
-              <ArtieCustomerSnapshot />
+              <DexterCustomerSnapshot />
             </div>
           </div>
         </div>
 
         <div className="grid min-w-0 grid-cols-[38px_minmax(0,1fr)] gap-4">
-          <ArtieBrandMark className="mt-1" />
+          <DexterBrandMark className="mt-1" />
           <div className="min-w-0">
-            <p className="text-[12px] text-[var(--md-subtle)]">Artie</p>
+            <p className="text-[12px] text-[var(--md-subtle)]">Dexter</p>
             <p className="mt-3 text-[15px] leading-6 text-[var(--md-ink)]">Three things worth raising:</p>
             <div className="mt-4 overflow-hidden rounded-[var(--md-radius-xl)] bg-[rgba(251,253,253,0.72)] shadow-[var(--md-shadow-line)]">
               {[
@@ -201,12 +201,12 @@ function ConversationStream({
       </div>
 
       <div className="grid min-w-0 grid-cols-[38px_minmax(0,1fr)] gap-4">
-        <ArtieBrandMark className="mt-1" />
+        <DexterBrandMark className="mt-1" />
         <div className="min-w-0">
-          <p className="text-[12px] text-[var(--md-subtle)]">Artie - Customs & compliance - 11:42</p>
+          <p className="text-[12px] text-[var(--md-subtle)]">Dexter - Customs & compliance - 11:42</p>
           <p className="mt-3 text-[15px] leading-6 text-[var(--md-ink)]">I will work through this in four steps.</p>
           <div className="mt-4">
-            <ArtieChecklistCard
+            <DexterChecklistCard
               items={[
                 { label: "Pull open shipments arriving this week - 23 found.", done: true },
                 { label: "Cross-check HS codes against active regulations and recent holds.", done: true },
@@ -219,14 +219,14 @@ function ConversationStream({
       </div>
 
       <div className="grid min-w-0 grid-cols-[38px_minmax(0,1fr)] gap-4">
-        <ArtieBrandMark className="mt-1" />
+        <DexterBrandMark className="mt-1" />
         <div className="min-w-0">
-          <p className="text-[12px] text-[var(--md-subtle)]">Artie</p>
+          <p className="text-[12px] text-[var(--md-subtle)]">Dexter</p>
           <p className="mt-3 text-[15px] leading-6 text-[var(--md-ink)]">
             <strong>Four shipments</strong> have elevated customs risk - one already on hold, three flagged by rule checks.
           </p>
           <div className="mt-4">
-            <ArtieRiskTable />
+            <DexterRiskTable />
           </div>
         </div>
       </div>
@@ -234,18 +234,18 @@ function ConversationStream({
   )
 }
 
-export function AgentArtiePage() {
+export function AgentDexterPage() {
   const [stage, setStage] = useState<"landing" | "conversation">("landing")
   const [isLaunchingConversation, setIsLaunchingConversation] = useState(false)
   const [composerValue, setComposerValue] = useState("")
-  const [selectedSpecialistId, setSelectedSpecialistId] = useState<ArtieSpecialistId>("auto")
+  const [selectedSpecialistId, setSelectedSpecialistId] = useState<DexterSpecialistId>("auto")
   const [showSpecialists, setShowSpecialists] = useState(false)
   const [showAttachments, setShowAttachments] = useState(false)
   const [attachmentQuery, setAttachmentQuery] = useState("")
   const [selectedAttachmentIds, setSelectedAttachmentIds] = useState<Set<string>>(new Set())
   const [activeHistoryId, setActiveHistoryId] = useState("customs-risk")
   const [conversationMode, setConversationMode] = useState<"customs" | "customer">("customs")
-  const [selectedMonitor, setSelectedMonitor] = useState<ArtieMonitor | null>(null)
+  const [selectedMonitor, setSelectedMonitor] = useState<DexterMonitor | null>(null)
   const [isMonitorRailCollapsed, setIsMonitorRailCollapsed] = useState(false)
   const launchTimeoutRef = useRef<number | null>(null)
   const selectedSpecialist = specialistById(selectedSpecialistId)
@@ -316,7 +316,7 @@ export function AgentArtiePage() {
     setStage("conversation")
   }
 
-  function handleSuggestion(prompt: string, specialistId: ArtieSpecialistId) {
+  function handleSuggestion(prompt: string, specialistId: DexterSpecialistId) {
     setComposerValue(prompt)
     setSelectedSpecialistId(specialistId)
     if (specialistId === "analytics") {
@@ -332,7 +332,7 @@ export function AgentArtiePage() {
       <AnimatePresence initial={false}>
         {hasFocusOverlay ? (
           <motion.div
-            key="artie-focus-overlay"
+            key="dexter-focus-overlay"
             className="fixed inset-0 z-20 bg-[rgba(11,20,19,0.22)] backdrop-blur-[7px]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -349,7 +349,7 @@ export function AgentArtiePage() {
       <AnimatePresence mode="popLayout" initial={false}>
         {stage === "landing" ? (
           <motion.div
-            key="artie-landing"
+            key="dexter-landing"
             className="relative flex min-h-[calc(100vh)] flex-col overflow-hidden bg-[var(--md-bg)]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -371,12 +371,12 @@ export function AgentArtiePage() {
           ) : null}
 
           <motion.div
-            layoutId="artie-composer"
+            layoutId="dexter-composer"
             className="relative z-30"
             transition={mdMotion.spring}
             style={{ willChange: "transform" }}
           >
-            <ArtiePromptComposer
+            <DexterPromptComposer
               value={composerValue}
               selectedSpecialist={selectedSpecialist}
               attachments={attachedItems}
@@ -400,8 +400,8 @@ export function AgentArtiePage() {
                 transition={mdMotion.panel}
                 style={{ transformOrigin: "top center", willChange: "transform, opacity" }}
               >
-                <ArtieSpecialistPicker
-                  specialists={defaultArtieSpecialists}
+                <DexterSpecialistPicker
+                  specialists={defaultDexterSpecialists}
                   selectedId={selectedSpecialistId}
                   onSelect={(id) => {
                     setSelectedSpecialistId(id)
@@ -425,9 +425,9 @@ export function AgentArtiePage() {
                 transition={mdMotion.panel}
                 style={{ transformOrigin: "top center", willChange: "transform, opacity" }}
               >
-                <ArtieAttachmentPalette
+                <DexterAttachmentPalette
                   query={attachmentQuery}
-                  items={defaultArtieAttachments}
+                  items={defaultDexterAttachments}
                   selectedIds={selectedAttachmentIds}
                   recommendedIds={recommendedAttachmentIds}
                   onQueryChange={setAttachmentQuery}
@@ -447,7 +447,7 @@ export function AgentArtiePage() {
               exit={{ opacity: 0, y: 8 }}
               transition={mdMotion.panel}
             >
-              <ArtieSuggestionGrid onPick={handleSuggestion} />
+              <DexterSuggestionGrid onPick={handleSuggestion} />
             </motion.div>
           ) : null}
         </div>
@@ -465,7 +465,7 @@ export function AgentArtiePage() {
       </motion.div>
         ) : (
           <motion.div
-            key="artie-conversation"
+            key="dexter-conversation"
             className={cn(
               "grid h-screen min-h-[680px] grid-cols-1 overflow-hidden bg-[var(--md-bg)] transition-[grid-template-columns] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
               isMonitorRailCollapsed
@@ -484,7 +484,7 @@ export function AgentArtiePage() {
         transition={{ ...mdMotion.page, delay: 0.06 }}
         style={{ willChange: "transform, opacity" }}
       >
-        <ArtieHistoryList
+        <DexterHistoryList
           items={historyItems}
           activeId={activeHistoryId}
           onSelect={handleHistorySelect}
@@ -503,7 +503,7 @@ export function AgentArtiePage() {
           animate={{ y: 0, opacity: 1 }}
           transition={{ ...mdMotion.page, delay: 0.08 }}
         >
-          <ArtiePageHeader
+          <DexterPageHeader
             conversationMode={conversationMode}
             selectedSpecialistId={selectedSpecialistId}
             watchersCollapsed={isMonitorRailCollapsed}
@@ -526,12 +526,12 @@ export function AgentArtiePage() {
         >
           <div className={cn("relative mx-auto w-full transition-[max-width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]", isMonitorRailCollapsed ? "max-w-[920px]" : "max-w-[720px]")}>
             <motion.div
-              layoutId="artie-composer"
+              layoutId="dexter-composer"
               className="relative z-30"
               transition={mdMotion.spring}
               style={{ willChange: "transform" }}
             >
-              <ArtiePromptComposer
+              <DexterPromptComposer
                 compact
                 value={composerValue}
                 selectedSpecialist={selectedSpecialist}
@@ -556,9 +556,9 @@ export function AgentArtiePage() {
                   transition={mdMotion.panel}
                   style={{ willChange: "transform, opacity" }}
                 >
-                  <ArtieAttachmentPalette
+                  <DexterAttachmentPalette
                     query={attachmentQuery}
-                    items={defaultArtieAttachments}
+                    items={defaultDexterAttachments}
                     selectedIds={selectedAttachmentIds}
                     recommendedIds={recommendedAttachmentIds}
                     onQueryChange={setAttachmentQuery}
@@ -580,8 +580,8 @@ export function AgentArtiePage() {
                   transition={mdMotion.panel}
                   style={{ willChange: "transform, opacity" }}
                 >
-                  <ArtieSpecialistMenu
-                    specialists={defaultArtieSpecialists}
+                  <DexterSpecialistMenu
+                    specialists={defaultDexterSpecialists}
                     selectedId={selectedSpecialistId}
                     onSelect={(id) => {
                       setSelectedSpecialistId(id)
@@ -605,7 +605,7 @@ export function AgentArtiePage() {
             transition={{ ...mdMotion.panel, delay: 0.02 }}
             style={{ willChange: "transform, opacity" }}
           >
-            <ArtieMonitorStack
+            <DexterMonitorStack
               monitors={monitors}
               onCollapse={() => setIsMonitorRailCollapsed(true)}
               onSelectMonitor={(monitor) => setSelectedMonitor(monitor)}
@@ -631,7 +631,7 @@ export function AgentArtiePage() {
             transition={mdMotion.panel}
             style={{ willChange: "transform, opacity" }}
           >
-            <ArtieMonitorDetailSheet monitor={selectedMonitor} floating={false} onClose={() => setSelectedMonitor(null)} />
+            <DexterMonitorDetailSheet monitor={selectedMonitor} floating={false} onClose={() => setSelectedMonitor(null)} />
           </motion.div>
         ) : null}
       </AnimatePresence>
