@@ -28,8 +28,14 @@ import {
   CrmAssetRow,
   CrmContactTable,
   CrmDealDetailPanel,
+  CrmForecastPanel,
   CrmLeadSignalList,
+  CrmMetricsGrid,
   CrmPipelineBoard,
+  CrmPriorityActionsPanel,
+  CrmRevenueMixPanel,
+  CrmSalesCommandCenter,
+  CrmSalesFunnelPanel,
   CrmSettingsBuilder,
   type CrmAssetFile,
   type CrmAssetFolder,
@@ -620,18 +626,43 @@ export function CrmOverviewPage() {
   return (
     <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel="CRM overview" className="md-page md-page-stack">
       <CrmPageHeader
-        title="Commercial pipeline"
+        title="CRM overview"
         summary={
           <>
-            A Kanban view for live commercial work: lead conversion, quote follow-ups, renewals, and freight handoffs.
+            A sales dashboard for live pipeline health, lead conversion, forecast confidence, and the actions that move revenue forward.
           </>
         }
-        meta="Drag cards between stages as deals move"
+        meta="Live CRM · sales pipeline · lead follow-up"
         onSpeakToDexter={() => setDexterOpen(true)}
         action={<PrimaryActionButton onClick={() => toast.success("Deal draft created")}>New deal</PrimaryActionButton>}
       />
 
-      <CrmPipelineBoard selectedDealId={detailOpen ? selectedDeal.id : undefined} onSelectDeal={openDealDetail} onPipelineChange={switchPipeline} />
+      <CrmSalesCommandCenter />
+      <CrmMetricsGrid />
+
+      <div className="grid items-start gap-[var(--md-page-stack-gap-compact)] xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+        <CrmSalesFunnelPanel />
+        <div className="grid gap-[var(--md-page-stack-gap-compact)] lg:grid-cols-2 xl:grid-cols-1">
+          <CrmRevenueMixPanel />
+          <CrmForecastPanel />
+        </div>
+      </div>
+
+      <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
+        <div className="px-5 py-4">
+          <SectionHeader title="Pipeline board" meta="drag cards between stages as deals move" />
+        </div>
+        <div className="px-4 pb-5 sm:px-5">
+          <CrmPipelineBoard selectedDealId={detailOpen ? selectedDeal.id : undefined} onSelectDeal={openDealDetail} onPipelineChange={switchPipeline} />
+        </div>
+      </Surface>
+
+      <div className="grid gap-[var(--md-page-stack-gap-compact)] xl:grid-cols-[minmax(0,0.92fr)_minmax(360px,0.72fr)]">
+        <CrmLeadSignalList onOpenLead={(signal) => toast.success(`${signal.account} opened`)} />
+        <CrmPriorityActionsPanel />
+      </div>
+
+      <CrmActivityTimeline compact />
       <DealDetailDrawer deal={selectedDeal} open={detailOpen} onClose={() => setDetailOpen(false)} />
     </DexterDockedPage>
   )

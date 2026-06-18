@@ -112,11 +112,7 @@ export function TopBar({
             </Button>
             <Button
               className={topBarPrimaryActionClass}
-              onClick={() =>
-                toast.success("Booking draft created", {
-                  description: "A new Marlow Apparel booking is ready to complete.",
-                })
-              }
+              onClick={() => navigate("/bookings/new")}
             >
               <span className="hidden sm:inline">New booking for Marlow</span>
               <span className="sm:hidden">New booking</span>
@@ -263,11 +259,7 @@ export function TopBar({
               </Button>
               <Button
                 className={topBarPrimaryActionClass}
-                onClick={() =>
-                  toast.success("Booking draft created", {
-                    description: "Add the customer, route, and documents next.",
-                  })
-                }
+                onClick={() => navigate("/bookings/new")}
               >
                 <Plus data-icon="inline-start" strokeWidth={1.2} />
                 <span className="hidden sm:inline">New booking</span>

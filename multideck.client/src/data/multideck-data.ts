@@ -1083,6 +1083,40 @@ export const crmSummaryMetrics = [
   { label: "At-risk leads", value: "3", detail: "customs noise or renewal risk", tone: "red" as StatusTone },
 ]
 
+export const crmDashboardFocus = [
+  { label: "Pipeline value", value: "€842k", detail: "+18% vs last month", tone: "teal" as StatusTone },
+  { label: "Weighted forecast", value: "€486k", detail: "June commit", tone: "green" as StatusTone },
+  { label: "Win rate", value: "38%", detail: "+4 pts in 30 days", tone: "blue" as StatusTone },
+]
+
+export const crmSalesFunnel = [
+  { stage: "New leads", count: "39", value: "€1.42M", conversion: 100, tone: "blue" as StatusTone },
+  { stage: "Qualified", count: "26", value: "€1.08M", conversion: 67, tone: "teal" as StatusTone },
+  { stage: "Quoted", count: "14", value: "€842k", conversion: 36, tone: "amber" as StatusTone },
+  { stage: "Committed", count: "5", value: "€486k", conversion: 13, tone: "green" as StatusTone },
+]
+
+export const crmRevenueMix = [
+  { label: "New business", value: "€318k", share: 38, tone: "teal" as StatusTone, detail: "trial and cold lead conversion" },
+  { label: "Renewals", value: "€286k", share: 34, tone: "green" as StatusTone, detail: "active account retention" },
+  { label: "Expansion", value: "€154k", share: 18, tone: "blue" as StatusTone, detail: "new lanes and seasonal volume" },
+  { label: "Recovery", value: "€84k", share: 10, tone: "amber" as StatusTone, detail: "service recovery work" },
+]
+
+export const crmForecastTrend = [
+  { period: "Week 1", commit: "€74k", bestCase: "€112k", attainment: 72, tone: "green" as StatusTone },
+  { period: "Week 2", commit: "€96k", bestCase: "€156k", attainment: 81, tone: "teal" as StatusTone },
+  { period: "Week 3", commit: "€118k", bestCase: "€184k", attainment: 68, tone: "amber" as StatusTone },
+  { period: "Week 4", commit: "€198k", bestCase: "€262k", attainment: 86, tone: "green" as StatusTone },
+]
+
+export const crmPriorityActions = [
+  { title: "Close Pacific air quote before cutoff", account: "Pacific Goods Co", due: "Today", owner: "EM", impact: "€54k", tone: "amber" as StatusTone },
+  { title: "Book Marlow AW26 capacity review", account: "Marlow Apparel Ltd", due: "Tomorrow", owner: "EM", impact: "€310k", tone: "green" as StatusTone },
+  { title: "Send Bauhaus service recovery note", account: "Bauhaus Importe GmbH", due: "Jun 19", owner: "JL", impact: "€184k", tone: "amber" as StatusTone },
+  { title: "Resolve Aldridge customs blocker", account: "Aldridge & Sons", due: "Overdue", owner: "EM", impact: "€92k", tone: "red" as StatusTone },
+]
+
 export const crmAccountSignals = [
   {
     account: "Marlow Apparel Ltd",
@@ -2264,14 +2298,64 @@ export const galleryComponents = [
     usageCode: `<div className="flex flex-col gap-5">\n  <DexterPulsePanel />\n  <AccountPanel />\n</div>`,
   },
   {
+    id: "crm-sales-command-center",
+    name: "CRM Sales Command Center",
+    category: "CRM",
+    description: "A CRM overview hero panel that frames the sales dashboard around pipeline pressure, forecast confidence, and next best work.",
+    details: "Use at the top of CRM overview-style pages when sales needs a quick read before drilling into pipeline, signals, or actions.",
+    foundOn: [{ label: "CRM overview", route: "/crm" }, { label: "Components", route: "/components" }],
+    componentCode: `export function CrmSalesCommandCenter({ focus = crmDashboardFocus }) {\n  return (\n    <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">\n      <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,0.96fr)_minmax(420px,1.04fr)]">\n        <div className="rounded-[var(--md-radius-lg)] bg-[var(--md-green-card)] p-5 shadow-[var(--md-shadow-green-card)]">\n          <StatusPill tone="teal">Sales dashboard</StatusPill>\n          <h2>See pipeline pressure, forecast confidence, and the sales work that needs attention now.</h2>\n        </div>\n        <div className="grid gap-3 sm:grid-cols-3">\n          {focus.map((item) => <CrmMiniStat key={item.label} item={item} />)}\n        </div>\n      </div>\n    </Surface>\n  )\n}`,
+    usageCode: `<CrmSalesCommandCenter />\n\n<CrmSalesCommandCenter focus={crmDashboardFocus} />`,
+  },
+  {
     id: "crm-metrics-grid",
     name: "CRM Metrics Grid",
     category: "CRM",
     description: "A compact relationship KPI row for CRM summary areas.",
     details: "Use when the operator needs commercial health, revenue, follow-up load, and risk in one scan. Do not use on the pure Kanban pipeline view.",
-    foundOn: [{ label: "Components", route: "/components" }],
+    foundOn: [{ label: "CRM overview", route: "/crm" }, { label: "Components", route: "/components" }],
     componentCode: `export function CrmMetricsGrid({ metrics = crmSummaryMetrics }) {\n  return (\n    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">\n      {metrics.map((metric) => (\n        <CrmMetricCard key={metric.label} metric={metric} />\n      ))}\n    </div>\n  )\n}\n\nexport function CrmMetricCard({ metric }) {\n  return (\n    <Surface padding="md" className="min-h-[116px] rounded-[var(--md-radius-xl)]">\n      <p>{metric.label}</p>\n      <strong>{metric.value}</strong>\n      <p>{metric.detail}</p>\n    </Surface>\n  )\n}`,
     usageCode: `<CrmMetricsGrid />\n\n<CrmMetricsGrid metrics={crmSummaryMetrics} />`,
+  },
+  {
+    id: "crm-sales-funnel-panel",
+    name: "CRM Sales Funnel Panel",
+    category: "CRM",
+    description: "A horizontal funnel readout that shows lead volume, open value, and conversion through the sales stages.",
+    details: "Use near sales dashboard summaries when the operator needs to spot where lead movement is thinning out.",
+    foundOn: [{ label: "CRM overview", route: "/crm" }, { label: "Components", route: "/components" }],
+    componentCode: `export function CrmSalesFunnelPanel({ stages = crmSalesFunnel }) {\n  return (\n    <Surface padding="none">\n      <SectionHeader title="Sales funnel" meta="lead volume to committed revenue" />\n      {stages.map((stage) => (\n        <div key={stage.stage}>\n          <p>{stage.stage}</p>\n          <p>{stage.count} leads - {stage.value}</p>\n          <div style={{ width: \`\${stage.conversion}%\` }} />\n        </div>\n      ))}\n    </Surface>\n  )\n}`,
+    usageCode: `<CrmSalesFunnelPanel />\n\n<CrmSalesFunnelPanel stages={crmSalesFunnel} />`,
+  },
+  {
+    id: "crm-revenue-mix-panel",
+    name: "CRM Revenue Mix Panel",
+    category: "CRM",
+    description: "A stacked revenue mix block for new business, renewals, expansion, and recovery value.",
+    details: "Use when CRM needs to show what kind of work is making up open revenue, not just the total value.",
+    foundOn: [{ label: "CRM overview", route: "/crm" }, { label: "Components", route: "/components" }],
+    componentCode: `export function CrmRevenueMixPanel({ mix = crmRevenueMix }) {\n  return (\n    <Surface padding="none">\n      <SectionHeader title="Revenue mix" meta="where open value is coming from" />\n      <div className="flex h-4 overflow-hidden rounded-full">\n        {mix.map((item) => <span key={item.label} style={{ width: \`\${item.share}%\` }} />)}\n      </div>\n      {mix.map((item) => <RevenueMixRow key={item.label} item={item} />)}\n    </Surface>\n  )\n}`,
+    usageCode: `<CrmRevenueMixPanel />\n\n<CrmRevenueMixPanel mix={crmRevenueMix} />`,
+  },
+  {
+    id: "crm-forecast-panel",
+    name: "CRM Forecast Panel",
+    category: "CRM",
+    description: "A compact weekly forecast chart for committed revenue, best case, and attainment confidence.",
+    details: "Use beside funnel or revenue mix panels when the sales team needs a fast visual check on forecast shape.",
+    foundOn: [{ label: "CRM overview", route: "/crm" }, { label: "Components", route: "/components" }],
+    componentCode: `export function CrmForecastPanel({ trend = crmForecastTrend }) {\n  return (\n    <Surface padding="none">\n      <SectionHeader title="Forecast shape" meta="commit and best case by week" />\n      <div className="grid grid-cols-4 items-end gap-3">\n        {trend.map((item) => <ForecastBar key={item.period} item={item} />)}\n      </div>\n    </Surface>\n  )\n}`,
+    usageCode: `<CrmForecastPanel />\n\n<CrmForecastPanel trend={crmForecastTrend} />`,
+  },
+  {
+    id: "crm-priority-actions-panel",
+    name: "CRM Priority Actions Panel",
+    category: "CRM",
+    description: "A sales action queue ranked by urgency, revenue impact, owner, and account.",
+    details: "Use on CRM overview when the page should make the next commercial action obvious without opening a deal card.",
+    foundOn: [{ label: "CRM overview", route: "/crm" }, { label: "Components", route: "/components" }],
+    componentCode: `export function CrmPriorityActionsPanel({ actions = crmPriorityActions }) {\n  return (\n    <Surface padding="none">\n      <SectionHeader title="Priority actions" meta="ranked by revenue and urgency" />\n      {actions.map((action) => (\n        <button key={action.title} type="button">\n          <span>{action.title}</span>\n          <StatusPill tone={action.tone}>{action.due}</StatusPill>\n          <span>{action.impact}</span>\n        </button>\n      ))}\n    </Surface>\n  )\n}`,
+    usageCode: `<CrmPriorityActionsPanel />\n\n<CrmPriorityActionsPanel actions={crmPriorityActions} />`,
   },
   {
     id: "crm-pipeline-board",

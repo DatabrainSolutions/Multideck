@@ -1,7 +1,9 @@
 import { useEffect, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react"
 import {
   ArrowRight,
+  BarChart3,
   ChevronDown,
+  CircleDollarSign,
   FileText,
   Folder,
   GripVertical,
@@ -11,6 +13,8 @@ import {
   Plus,
   Settings2,
   SlidersHorizontal,
+  Target,
+  TrendingUp,
   UserCheck,
   type LucideIcon,
 } from "lucide-react"
@@ -31,10 +35,15 @@ import {
   crmAccountSignals,
   crmActivities,
   crmContacts,
+  crmDashboardFocus,
+  crmForecastTrend,
   crmLeadFieldSettings,
   crmPipelineBoards,
   crmPipelineSettings,
   crmPipelineStages,
+  crmPriorityActions,
+  crmRevenueMix,
+  crmSalesFunnel,
   crmSummaryMetrics,
   customers,
   type StatusTone,
@@ -53,6 +62,11 @@ type CrmLeadSignal = (typeof crmAccountSignals)[number]
 type CrmLead = (typeof customers)[number]
 type CrmPipelineSetting = (typeof crmPipelineSettings)[number]
 type CrmLeadFieldSetting = (typeof crmLeadFieldSettings)[number]
+type CrmDashboardFocus = (typeof crmDashboardFocus)[number]
+type CrmSalesFunnelStage = (typeof crmSalesFunnel)[number]
+type CrmRevenueMixItem = (typeof crmRevenueMix)[number]
+type CrmForecastTrendItem = (typeof crmForecastTrend)[number]
+type CrmPriorityAction = (typeof crmPriorityActions)[number]
 
 export type CrmAssetFolder = {
   id: string
@@ -151,6 +165,220 @@ function customerTone(status: CrmLead["status"]): StatusTone {
   if (status === "Trial") return "amber"
   if (status === "New") return "green"
   return "neutral"
+}
+
+function percentWidth(value: number) {
+  return `${clamp(value, 0, 100)}%`
+}
+
+function CrmMiniStat({
+  item,
+  icon: Icon,
+}: {
+  item: CrmDashboardFocus
+  icon: LucideIcon
+}) {
+  return (
+    <div className="rounded-[var(--md-radius-lg)] bg-white/62 p-3 shadow-[var(--md-shadow-line)] dark:bg-[var(--md-glass-strong)]">
+      <div className="flex items-start justify-between gap-3">
+        <span className="grid size-8 shrink-0 place-items-center rounded-[var(--md-radius-sm)] bg-[var(--md-surface-tint)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">
+          <Icon className="size-4" strokeWidth={1.2} />
+        </span>
+        <span className="size-2.5 rounded-full" style={{ background: toneToVar(item.tone) }} />
+      </div>
+      <p className="mt-4 text-[12px] font-medium text-[var(--md-text)]">{item.label}</p>
+      <p className="mt-1 text-[22px] font-medium leading-none text-[var(--md-ink)]" data-i18n-skip dir="ltr">{item.value}</p>
+      <p className="mt-2 text-[12px] leading-5 text-[var(--md-subtle)]">{item.detail}</p>
+    </div>
+  )
+}
+
+export function CrmSalesCommandCenter({
+  focus = crmDashboardFocus,
+}: {
+  focus?: readonly CrmDashboardFocus[]
+}) {
+  const icons = [CircleDollarSign, Target, TrendingUp]
+
+  return (
+    <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)] bg-[linear-gradient(135deg,var(--md-surface)_0%,var(--md-surface-soft)_54%,color-mix(in_srgb,var(--md-accent)_14%,var(--md-surface))_100%)]">
+      <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,0.96fr)_minmax(420px,1.04fr)] lg:p-5">
+        <div className="flex min-h-[214px] flex-col justify-between rounded-[var(--md-radius-lg)] bg-[var(--md-green-card)] p-5 shadow-[var(--md-shadow-green-card)]">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusPill tone="teal">Sales dashboard</StatusPill>
+              <StatusPill tone="green">Live CRM</StatusPill>
+            </div>
+            <h2 className="mt-5 max-w-[560px] text-[24px] font-medium leading-tight text-[var(--md-ink)]">
+              See pipeline pressure, forecast confidence, and the sales work that needs attention now.
+            </h2>
+          </div>
+          <div className="mt-6 grid gap-3 sm:grid-cols-3">
+            {[
+              ["Focus", "Pacific quote"],
+              ["Next best move", "Marlow capacity review"],
+              ["Risk", "Aldridge blocker"],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-[var(--md-radius-md)] bg-white/56 px-3 py-2.5 shadow-[var(--md-shadow-line)] dark:bg-[var(--md-glass-strong)]">
+                <p className="text-[11px] font-medium text-[var(--md-subtle)]">{label}</p>
+                <p className="mt-1 truncate text-[13px] font-medium text-[var(--md-ink)]">{value}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-3">
+          {focus.map((item, index) => (
+            <CrmMiniStat key={item.label} item={item} icon={icons[index] ?? BarChart3} />
+          ))}
+        </div>
+      </div>
+    </Surface>
+  )
+}
+
+export function CrmSalesFunnelPanel({
+  stages = crmSalesFunnel,
+}: {
+  stages?: readonly CrmSalesFunnelStage[]
+}) {
+  return (
+    <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
+      <div className="px-5 py-4">
+        <SectionHeader title="Sales funnel" meta="lead volume to committed revenue" />
+      </div>
+      <div className="grid gap-3 px-5 pb-5">
+        {stages.map((stage) => (
+          <div key={stage.stage} className="grid gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-3 shadow-[var(--md-shadow-line)]">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-[13px] font-medium text-[var(--md-ink)]">{stage.stage}</p>
+                <p className="mt-1 text-[12px] text-[var(--md-text)]">
+                  <span data-i18n-skip dir="ltr">{stage.count}</span> leads · <span data-i18n-skip dir="ltr">{stage.value}</span>
+                </p>
+              </div>
+              <span className="text-[12px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="ltr">{stage.conversion}%</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-[var(--md-surface-tint)]">
+              <div
+                className="h-full rounded-full transition-[width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]"
+                style={{ width: percentWidth(stage.conversion), background: toneToVar(stage.tone) }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </Surface>
+  )
+}
+
+export function CrmRevenueMixPanel({
+  mix = crmRevenueMix,
+}: {
+  mix?: readonly CrmRevenueMixItem[]
+}) {
+  return (
+    <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
+      <div className="px-5 py-4">
+        <SectionHeader title="Revenue mix" meta="where open value is coming from" />
+      </div>
+      <div className="px-5 pb-5">
+        <div className="flex h-4 overflow-hidden rounded-full bg-[var(--md-surface-tint)] shadow-[var(--md-shadow-line)]" aria-hidden="true">
+          {mix.map((item) => (
+            <span key={item.label} style={{ width: percentWidth(item.share), background: toneToVar(item.tone) }} />
+          ))}
+        </div>
+        <div className="mt-4 grid gap-2">
+          {mix.map((item) => (
+            <div key={item.label} className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-[var(--md-radius-lg)] px-3 py-2.5 transition-colors hover:bg-[var(--md-surface-soft)]">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="size-2.5 rounded-full" style={{ background: toneToVar(item.tone) }} />
+                  <p className="truncate text-[13px] font-medium text-[var(--md-ink)]">{item.label}</p>
+                </div>
+                <p className="mt-1 truncate text-[12px] text-[var(--md-subtle)]">{item.detail}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[13px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="ltr">{item.value}</p>
+                <p className="mt-1 text-[12px] text-[var(--md-text)]" data-i18n-skip dir="ltr">{item.share}%</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Surface>
+  )
+}
+
+export function CrmForecastPanel({
+  trend = crmForecastTrend,
+}: {
+  trend?: readonly CrmForecastTrendItem[]
+}) {
+  return (
+    <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
+      <div className="px-5 py-4">
+        <SectionHeader title="Forecast shape" meta="commit and best case by week" />
+      </div>
+      <div className="px-5 pb-5">
+        <div className="grid min-h-[178px] grid-cols-4 items-end gap-3">
+          {trend.map((item) => (
+            <div key={item.period} className="grid gap-2">
+              <div className="flex h-[128px] items-end rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-2 shadow-[var(--md-shadow-line)]">
+                <div
+                  className="w-full rounded-[var(--md-radius-sm)]"
+                  style={{
+                    height: percentWidth(item.attainment),
+                    background: `linear-gradient(180deg, ${toneToVar(item.tone)}, color-mix(in srgb, ${toneToVar(item.tone)} 66%, transparent))`,
+                  }}
+                />
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-[12px] font-medium text-[var(--md-ink)]">{item.period}</p>
+                <p className="mt-1 text-[11px] text-[var(--md-subtle)]" data-i18n-skip dir="ltr">{item.commit} / {item.bestCase}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Surface>
+  )
+}
+
+export function CrmPriorityActionsPanel({
+  actions = crmPriorityActions,
+}: {
+  actions?: readonly CrmPriorityAction[]
+}) {
+  return (
+    <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
+      <div className="px-5 py-4">
+        <SectionHeader title="Priority actions" meta="ranked by revenue and urgency" />
+      </div>
+      <div className="px-5 pb-5">
+        {actions.map((action) => (
+          <button
+            key={`${action.account}-${action.title}`}
+            type="button"
+            className="grid w-full gap-3 shadow-[inset_0_1px_0_rgba(11,20,19,0.06)] py-4 text-left transition-[background,box-shadow] hover:bg-white/25 first:shadow-none sm:grid-cols-[1fr_auto]"
+          >
+            <span className="min-w-0">
+              <span className="flex flex-wrap items-center gap-2">
+                <span className="text-[14px] font-medium leading-5 text-[var(--md-ink)]">{action.title}</span>
+                <StatusPill tone={action.tone}>{action.due}</StatusPill>
+              </span>
+              <span className="mt-1 block truncate text-[12px] text-[var(--md-text)]">{action.account} · owner {action.owner}</span>
+            </span>
+            <span className="flex items-center justify-between gap-3 sm:justify-end">
+              <span className="text-[13px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="ltr">{action.impact}</span>
+              <span className="grid size-7 place-items-center rounded-full bg-[var(--md-surface-tint)] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]">
+                <ArrowRight data-icon="inline-end" className="size-4" strokeWidth={1.2} />
+              </span>
+            </span>
+          </button>
+        ))}
+      </div>
+    </Surface>
+  )
 }
 
 export function CrmMetricCard({ metric }: { metric: CrmMetric }) {

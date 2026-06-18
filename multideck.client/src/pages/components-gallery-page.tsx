@@ -31,7 +31,7 @@ import {
   LaneMixPanel,
   PrimaryContactsPanel,
 } from "@/components/multideck/customer-components"
-import { CrmActivityTimeline, CrmAssetFolderCard, CrmAssetRow, CrmContactTable, CrmLeadDetailPanel, CrmLeadSignalList, CrmMetricsGrid, CrmPipelineBoard, CrmSettingsBuilder } from "@/components/multideck/crm-components"
+import { CrmActivityTimeline, CrmAssetFolderCard, CrmAssetRow, CrmContactTable, CrmForecastPanel, CrmLeadDetailPanel, CrmLeadSignalList, CrmMetricsGrid, CrmPipelineBoard, CrmPriorityActionsPanel, CrmRevenueMixPanel, CrmSalesCommandCenter, CrmSalesFunnelPanel, CrmSettingsBuilder } from "@/components/multideck/crm-components"
 import { FilterChips, SegmentedControl, TabsRail } from "@/components/multideck/workflow-components"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
@@ -143,7 +143,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "CRM",
     helper: "Leads, contacts, deals, activity, marketing, settings",
-    ids: ["crm-metrics-grid", "crm-pipeline-board", "crm-asset-folder-card", "crm-asset-row", "crm-lead-detail-panel", "crm-contact-table", "crm-activity-timeline", "crm-lead-signals", "crm-settings-builder"],
+    ids: ["crm-sales-command-center", "crm-metrics-grid", "crm-sales-funnel-panel", "crm-revenue-mix-panel", "crm-forecast-panel", "crm-priority-actions-panel", "crm-pipeline-board", "crm-asset-folder-card", "crm-asset-row", "crm-lead-detail-panel", "crm-contact-table", "crm-activity-timeline", "crm-lead-signals", "crm-settings-builder"],
   },
   {
     label: "Agent Dexter",
@@ -1393,9 +1393,39 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "crm-sales-command-center" ? (
+        <div className="w-full max-w-[1120px]">
+          <CrmSalesCommandCenter />
+        </div>
+      ) : null}
+
       {id === "crm-metrics-grid" ? (
         <div className="w-full max-w-[980px]">
           <CrmMetricsGrid metrics={crmSummaryMetrics} />
+        </div>
+      ) : null}
+
+      {id === "crm-sales-funnel-panel" ? (
+        <div className="w-full max-w-[680px]">
+          <CrmSalesFunnelPanel />
+        </div>
+      ) : null}
+
+      {id === "crm-revenue-mix-panel" ? (
+        <div className="w-full max-w-[680px]">
+          <CrmRevenueMixPanel />
+        </div>
+      ) : null}
+
+      {id === "crm-forecast-panel" ? (
+        <div className="w-full max-w-[680px]">
+          <CrmForecastPanel />
+        </div>
+      ) : null}
+
+      {id === "crm-priority-actions-panel" ? (
+        <div className="w-full max-w-[760px]">
+          <CrmPriorityActionsPanel />
         </div>
       ) : null}
 
