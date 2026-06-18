@@ -712,7 +712,7 @@ export function CrmLeadDetailPanel({
       </div>
 
       <div className="px-5 py-4">
-        <CustomerSparkline values={lead.shipments30d} tone={lead.sparkTone} className="w-full" />
+        <CustomerSparkline values={lead.bookings30d} tone={lead.sparkTone} className="w-full" />
         <div className="mt-4 flex flex-wrap gap-2">
           <Button
             variant="ghost"
@@ -817,7 +817,7 @@ export function CrmActivityTimeline({
   return (
     <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
       <div className="px-5 py-4">
-        <SectionHeader title="Relationship activity" meta={compact ? "latest signals" : "AI, email, sales, and shipment events"} />
+        <SectionHeader title="Relationship activity" meta={compact ? "latest signals" : "AI, email, sales, and booking events"} />
       </div>
       <div className="px-5 pb-4">
         {activities.map((item) => (

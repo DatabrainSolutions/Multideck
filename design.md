@@ -9,7 +9,7 @@ Multideck should feel like a calm operating cockpit for freight teams. The inter
 The first screen should answer:
 
 - What needs attention now?
-- Which shipments are moving?
+- Which bookings are moving?
 - Which documents or customs entries need review?
 - Where is the freight team working across time zones?
 - What can the AI already prepare for the operator?
@@ -105,7 +105,7 @@ Current Multideck components:
 
 - `AppShell`: app layout wrapper.
 - `AppSidebar`: left navigation and workspace area.
-- `TopBar`: user, search, invite, and shipment action.
+- `TopBar`: user, search, invite, and booking action.
 - `Surface`: base product panel.
 - `SectionHeader`: consistent panel heading.
 - `StatusPill`: compact status treatment.
@@ -117,16 +117,16 @@ Current Multideck components:
 - `SegmentedControl`: generic mutually-exclusive mode switch.
 - `FilterChips`: generic filter chip row with clear selected state.
 - `TabsRail`: generic tab rail for switching in-record sections.
-- `ShipmentRow`: live shipment row.
-- `InteractiveShipmentMap`: real map layer for live route tracking, markers, and shipment-card selection.
+- `BookingRow`: live booking row.
+- `InteractiveBookingMap`: real map layer for live route tracking, markers, and booking-card selection.
 - `WorldClockCell`: city queue and timezone unit.
 - `QueueRow`: customs/document queue row.
 - `CustomerAvatar`: customer identity marker for list/detail screens.
-- `CustomerSparkline`: compact customer shipment trend.
+- `CustomerSparkline`: compact customer booking trend.
 - `CustomerRow`: dense customer table row.
 - `CustomerCard`: customer summary card for alternate view modes.
 - `CustomerMetricCard`: account-level customer KPI tile.
-- `ActiveShipmentRow`: customer-detail shipment row.
+- `ActiveBookingRow`: customer-detail booking row.
 - `ContactRow`: customer contact row with quick actions.
 - `LaneMixPanel`: customer lane distribution panel.
 - `ComponentsGalleryPage`: interactive gallery for inspecting components.
@@ -134,7 +134,7 @@ Current Multideck components:
 Component naming rule:
 
 - Gallery entries should describe reusable primitives or patterns, not one-off screen labels. Use `Tabs`, `Filter Chips`, `Segmented Control`, `Data Table`, `Record Header`, and `Side Panels` instead of names like `Customer Tabs`.
-- Screen-specific components are allowed only when the content is genuinely domain-specific, such as `CustomerDetailHero`, `ActiveShipmentsPanel`, or `PrimaryContactsPanel`.
+- Screen-specific components are allowed only when the content is genuinely domain-specific, such as `CustomerDetailHero`, `ActiveBookingsPanel`, or `PrimaryContactsPanel`.
 - Customer screens should pass customer data into generic primitives rather than creating parallel customer-only controls.
 
 ## Language And Direction
@@ -145,7 +145,7 @@ Multideck must treat language support as a product-system requirement, not a lat
 - User-facing copy should be localisable rather than trapped inside one-off hardcoded strings.
 - Layouts should remain calm and readable when text length changes between languages.
 - Arabic and other right-to-left languages must flip reading direction cleanly for navigation, sidebars, tables, forms, rows, and directional controls.
-- Inputs that contain emails, URLs, shipment IDs, codes, tracking numbers, or phone numbers should stay readable with direction-safe handling.
+- Inputs that contain emails, URLs, booking IDs, codes, tracking numbers, or phone numbers should stay readable with direction-safe handling.
 - Any component added to the gallery should be checked in a non-English language, and in right-to-left mode when it has direction-sensitive layout.
 
 ## Page Rules
@@ -156,7 +156,7 @@ Overview:
 - The top bar is for search and fast action.
 - The hero should be short and useful.
 - Metrics should be compact, comparable, and not oversized.
-- Live shipments should use the real interactive map component, not a decorative route illustration.
+- Live bookings should use the real interactive map component, not a decorative route illustration.
 - Operational lists should scan vertically.
 - AI content should feel assistive and specific.
 

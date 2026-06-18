@@ -15,9 +15,9 @@ type AuthCopy = {
 
 const authCopyByStep: Record<AuthFlowStep, AuthCopy> = {
   signin: {
-    title: "Every shipment,\nin formation.",
+    title: "Every booking,\nin formation.",
     body: "Your whole book of freight - tracked, triaged, and explained - the moment you sign in.",
-    footnote: "248 shipments moving right now - 3 waiting on you",
+    footnote: "248 bookings moving right now - 3 waiting on you",
   },
   verify: {
     title: "One link.\nNo passwords.",
@@ -27,18 +27,18 @@ const authCopyByStep: Record<AuthFlowStep, AuthCopy> = {
   "signed-out": {
     title: "Lights off.\nDexter keeps watch.",
     body: "Exceptions, ETA changes, and new documents are monitored overnight. Anything urgent will be waiting at the top of your morning digest.",
-    footnote: "Monitoring 248 shipments while you're away",
+    footnote: "Monitoring 248 bookings while you're away",
   },
 }
 
-const authShipments = [
+const authBookings = [
   { id: "MD-22481", route: "Yantian -> Felixstowe", status: "On track", tone: "green" },
   { id: "MD-22479", route: "Ningbo -> Rotterdam", status: "Delayed 2d", tone: "amber" },
   { id: "MD-22466", route: "Frankfurt -> JFK", status: "Arriving today", tone: "teal" },
 ]
 
 const signedOutStats = [
-  ["12", "shipments you touched today"],
+  ["12", "bookings you touched today"],
   ["3", "exceptions cleared"],
   ["6", "customer updates Dexter sent for you"],
 ]
@@ -93,9 +93,9 @@ function FreightNarrative({
           <p className="mt-[var(--md-page-section-gap)] max-w-[540px] text-[22px] leading-[1.55] text-white/58">{copy.body}</p>
 
           <div className="mt-[clamp(48px,6.2vw,86px)] flex max-w-[690px] flex-col gap-4">
-            {authShipments.map((shipment, index) => (
+            {authBookings.map((booking, index) => (
               <div
-                key={shipment.id}
+                key={booking.id}
                 className={cn(
                   "grid h-[84px] w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 rounded-[20px] px-5 text-[16px] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08),0_22px_44px_rgba(0,0,0,0.12)] transition-[background,color,box-shadow,opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] sm:h-[92px] sm:w-[86%] sm:gap-5 sm:px-8 sm:text-[18px]",
                   index === 0 && "bg-white/[0.055]",
@@ -107,24 +107,24 @@ function FreightNarrative({
                 <span
                   className={cn(
                     "size-2.5 rounded-full",
-                    shipment.tone === "green" && "bg-[#7bdcae]",
-                    shipment.tone === "amber" && "bg-[var(--md-amber)]",
-                    shipment.tone === "teal" && "bg-[#8ed2cb]",
+                    booking.tone === "green" && "bg-[#7bdcae]",
+                    booking.tone === "amber" && "bg-[var(--md-amber)]",
+                    booking.tone === "teal" && "bg-[#8ed2cb]",
                   )}
                 />
                 <div className="flex min-w-0 items-center gap-[var(--md-page-stack-gap)]">
-                  <strong className="shrink-0 font-medium text-white">{shipment.id}</strong>
-                  <span className="hidden truncate text-white/52 sm:block">{shipment.route}</span>
+                  <strong className="shrink-0 font-medium text-white">{booking.id}</strong>
+                  <span className="hidden truncate text-white/52 sm:block">{booking.route}</span>
                 </div>
                 <span
                   className={cn(
                     "shrink-0 text-[14px] font-medium sm:text-[16px]",
-                    shipment.tone === "green" && "text-[#80caa3]",
-                    shipment.tone === "amber" && "text-[var(--md-amber)]",
-                    shipment.tone === "teal" && "text-white",
+                    booking.tone === "green" && "text-[#80caa3]",
+                    booking.tone === "amber" && "text-[var(--md-amber)]",
+                    booking.tone === "teal" && "text-white",
                   )}
                 >
-                  {shipment.status}
+                  {booking.status}
                 </span>
               </div>
             ))}

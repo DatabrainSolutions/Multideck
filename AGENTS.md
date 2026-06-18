@@ -71,8 +71,8 @@ Important: full screens, pages, routes, workspaces, and multi-step flows are not
 
 Do not add a full screen preview to `/components` and call it a component. For example:
 - Do not add `Auth Flow` as one component.
-- Do not add `Shipments Table` as a scaled full shipments page.
-- Do not add `Shipment Detail Workspace` as a scaled full detail route.
+- Do not add `Bookings Table` as a scaled full bookings page.
+- Do not add `Booking Detail Workspace` as a scaled full detail route.
 
 Instead, break the screen into its real reusable parts and add those:
 - A KPI box is a component.

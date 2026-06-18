@@ -1,7 +1,7 @@
 import { useState } from "react"
 import {
   AccountPanel,
-  ActiveShipmentsPanel,
+  ActiveBookingsPanel,
   DexterPulsePanel,
   ContactProfileModule,
   CustomerActivityPanel,
@@ -35,7 +35,7 @@ export function CustomerDetailPage() {
                 onClose={() => setSelectedContactEmail(null)}
               />
             ) : null}
-            <ActiveShipmentsPanel />
+            <ActiveBookingsPanel />
             <LaneMixPanel />
             <CustomerActivityPanel />
           </div>

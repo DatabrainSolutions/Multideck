@@ -315,7 +315,7 @@ export type ReportBlockDataSelection = {
 }
 
 export const reportDataSources = [
-  { id: "shipments", label: "Shipments" },
+  { id: "bookings", label: "Bookings" },
   { id: "exceptions", label: "Exceptions" },
   { id: "quotes", label: "Quotes" },
   { id: "spend", label: "Spend" },
@@ -325,7 +325,7 @@ export const reportDataSources = [
 
 export const reportDataMetrics = [
   { id: "on-time", label: "On-time performance" },
-  { id: "shipment-volume", label: "Shipment volume" },
+  { id: "booking-volume", label: "Booking volume" },
   { id: "freight-spend", label: "Freight spend" },
   { id: "exceptions", label: "Exceptions" },
   { id: "margin", label: "Margin" },
@@ -352,7 +352,7 @@ export const reportDataPeriods = [
 ] as const
 
 const defaultReportDataSelection: ReportBlockDataSelection = {
-  source: "shipments",
+  source: "bookings",
   metric: "on-time",
   breakdown: "month",
   period: "30-days",
@@ -748,7 +748,7 @@ export const monthlyReviewPages: ReportPage[] = [
         id: "summary",
         type: "summary",
         title: "Summary",
-        body: "A strong month: 38 shipments moved, on-time performance rose to 94.2%, and spend came in 3% under April. Two of three exceptions were resolved within a day. Watch AW26 volumes — early bookings suggest a 20% step up from September.",
+        body: "A strong month: 38 bookings moved, on-time performance rose to 94.2%, and spend came in 3% under April. Two of three exceptions were resolved within a day. Watch AW26 volumes — early bookings suggest a 20% step up from September.",
         tone: "teal",
       },
     ],
@@ -766,7 +766,7 @@ export const monthlyReviewPages: ReportPage[] = [
         type: "kpi-grid",
         title: "Operating metrics",
         metrics: [
-          { label: "Shipments", value: "38", change: "+6 vs Apr" },
+          { label: "Bookings", value: "38", change: "+6 vs Apr" },
           { label: "On-time", value: "94.2%", change: "+1.8pp" },
           { label: "Exceptions", value: "3", change: "-2" },
           { label: "Spend", value: "€184k", change: "-3%" },
@@ -782,17 +782,17 @@ export const monthlyReviewPages: ReportPage[] = [
     ],
   },
   {
-    id: "shipments",
-    label: "Shipments",
-    title: "Shipment movement",
+    id: "bookings",
+    label: "Bookings",
+    title: "Booking movement",
     preparedBy: "Prepared by Northwind Forwarding",
     footer: "Confidential — prepared for Marlow Apparel Ltd",
     pageNumber: 3,
     blocks: [
       {
-        id: "shipment-table",
+        id: "booking-table",
         type: "table",
-        title: "Key shipments",
+        title: "Key bookings",
         rows: [
           ["Lane", "Volume", "Status"],
           ["Yantian → Felixstowe", "14", "On track"],
@@ -852,7 +852,7 @@ export const monthlyReviewPages: ReportPage[] = [
         title: "Included data",
         rows: [
           ["Source", "Rows"],
-          ["Shipments", "38"],
+          ["Bookings", "38"],
           ["Invoices", "19"],
           ["Exceptions", "3"],
         ],
@@ -894,7 +894,7 @@ export const monthlyTemplatePages: ReportPage[] = [
         type: "kpi-grid",
         title: "KPI overview",
         metrics: [
-          { label: "Shipments", value: "{Shipments}" },
+          { label: "Bookings", value: "{Bookings}" },
           { label: "On-time", value: "{On-time}" },
           { label: "Exceptions", value: "{Exceptions}" },
           { label: "Spend", value: "{Spend}" },
@@ -1196,7 +1196,7 @@ export const reportWidgets: ReportWidget[] = [
   { id: "heatmap", title: "Heatmap", description: "Origin × destination", group: "Visualizations", type: "chart", visualization: "heatmap", icon: <Grid3X3 className="size-5" strokeWidth={1.2} /> },
   { id: "scatter-chart", title: "Scatter plot", description: "Outliers and tradeoffs", group: "Visualizations", type: "chart", visualization: "scatter", icon: <Map className="size-5" strokeWidth={1.2} /> },
   { id: "mixed-chart", title: "Mixed chart", description: "Bar and line together", group: "Visualizations", type: "chart", visualization: "mixed", icon: <BarChart3 className="size-5" strokeWidth={1.2} /> },
-  { id: "shipment-table", title: "Shipment table", description: "Every shipment in period", group: "Lists & tables", type: "table", icon: <Table2 className="size-5" strokeWidth={1.2} /> },
+  { id: "booking-table", title: "Booking table", description: "Every booking in period", group: "Lists & tables", type: "table", icon: <Table2 className="size-5" strokeWidth={1.2} /> },
   { id: "exception-log", title: "Exception log", description: "Issues & resolutions", group: "Lists & tables", type: "exception-log", icon: <FileText className="size-5" strokeWidth={1.2} /> },
   { id: "written-summary", title: "Written summary", description: "Dexter narrative block", group: "Narrative", type: "summary", icon: <Sparkles className="size-5" strokeWidth={1.2} /> },
 ]
@@ -1693,7 +1693,7 @@ export function createReportBlockFromWidget(widget: ReportWidget, index: number)
       type: "kpi-grid",
       title: widget.title,
       metrics: [
-        { label: "Shipments", value: "{Value}", change: "vs prev." },
+        { label: "Bookings", value: "{Value}", change: "vs prev." },
         { label: "Target", value: "{Goal}" },
       ],
     }
@@ -1733,7 +1733,7 @@ export function createReportBlockFromWidget(widget: ReportWidget, index: number)
     id,
     type: "summary",
     title: widget.title,
-    body: "Dexter will write this section from the selected report scope, period, and shipment data when the report is generated.",
+    body: "Dexter will write this section from the selected report scope, period, and booking data when the report is generated.",
     tone: "teal",
   }
 }

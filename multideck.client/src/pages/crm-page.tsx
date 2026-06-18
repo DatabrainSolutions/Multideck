@@ -90,7 +90,7 @@ const crmEmailLists = [
     statusTone: "green" as StatusTone,
     owner: "EM",
     updated: "Live from CRM",
-    description: "Customers with shipments, quotes, or account activity in the current commercial cycle.",
+    description: "Customers with bookings, quotes, or account activity in the current commercial cycle.",
     rules: ["Customer status is active", "No suppression flag", "Primary contact has a valid work email"],
     members: [
       ["Northwind GmbH", "Elena Moreno", "elena@northwind.de", "Customer", "Opened last advisory"],
@@ -111,11 +111,11 @@ const crmEmailLists = [
     statusTone: "green" as StatusTone,
     owner: "WC",
     updated: "Live from CRM",
-    description: "Accounts with no shipment activity in the last 90 days and no active deal in pipeline.",
-    rules: ["Last shipment older than 90 days", "No open quote", "Contact is not suppressed"],
+    description: "Accounts with no booking activity in the last 90 days and no active deal in pipeline.",
+    rules: ["Last booking older than 90 days", "No open quote", "Contact is not suppressed"],
     members: [
       ["Harbour Homeware", "Amelia Stone", "amelia@harbourhome.co.uk", "Dormant", "Last opened May rates"],
-      ["Forma Retail Group", "Oscar Bennett", "oscar@formaretail.co", "Dormant", "No shipment 112d"],
+      ["Forma Retail Group", "Oscar Bennett", "oscar@formaretail.co", "Dormant", "No booking 112d"],
       ["Ridgeway Textiles", "Priya Shah", "priya@ridgewaytextiles.co.uk", "Dormant", "Clicked win-back"],
     ],
   },
@@ -733,7 +733,7 @@ export function CrmLeadsPage({ navigate }: { navigate: (path: string) => void })
         title="Leads"
         summary={
           <>
-            CRM leads reuse the customer system, with commercial context close to live shipments and service health.
+            CRM leads reuse the customer system, with commercial context close to live bookings and service health.
           </>
         }
         meta={`${customers.length} leads · ${customers.filter((customer) => customer.owner === currentOperator.initials).length} owned by ${currentOperator.name}`}
@@ -1761,7 +1761,7 @@ export function CrmActivityPage({ navigate }: { navigate: (path: string) => void
         title="Activity"
         summary={
           <>
-            A relationship timeline that blends lead notes, quote events, email replies, AI signals, and shipment exceptions.
+            A relationship timeline that blends lead notes, quote events, email replies, AI signals, and booking exceptions.
           </>
         }
         meta="Updated from the last 24 hours of customer-facing work"
@@ -1777,7 +1777,7 @@ export function CrmActivityPage({ navigate }: { navigate: (path: string) => void
               {[
                 ["Email replies", "12", "teal"],
                 ["Quote updates", "7", "green"],
-                ["Shipment exceptions", "3", "red"],
+                ["Booking exceptions", "3", "red"],
                 ["Renewal notes", "2", "amber"],
               ].map(([label, value, tone]) => (
                 <div key={label} className="grid grid-cols-[1fr_auto] items-center gap-4 shadow-[inset_0_1px_0_rgba(11,20,19,0.06)] py-3 first:shadow-none">

@@ -7,16 +7,16 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
-import { activityItems, cityQueues, crmAccountSignals, crmActivities, crmContacts, crmPipelineStages, crmSummaryMetrics, customerFilters, customerScopeTabs, customers, customsQueue, galleryComponents, galleryIcons, generatedReports, initialFavouriteShipmentIds, liveShipments, marlowContacts, marlowMetrics, metricCards, reportTemplates, shipmentFilters, shipmentMetrics, shipments } from "@/data/multideck-data"
+import { activityItems, cityQueues, crmAccountSignals, crmActivities, crmContacts, crmPipelineStages, crmSummaryMetrics, customerFilters, customerScopeTabs, customers, customsQueue, galleryComponents, galleryIcons, generatedReports, initialFavouriteBookingIds, liveBookings, marlowContacts, marlowMetrics, metricCards, reportTemplates, bookingFilters, bookingMetrics, bookings } from "@/data/multideck-data"
 import { AnimatedList } from "@/components/multideck/animated-list"
 import { CommandInput } from "@/components/multideck/command-input"
 import { SidebarNavItem } from "@/components/multideck/app-sidebar"
 import { MetricCard } from "@/components/multideck/metric-card"
 import { Pagination } from "@/components/multideck/pagination"
-import { QueueRow, ShipmentRow, TimezoneFocusPanel, WorldClockCell, useLiveNow } from "@/components/multideck/overview-panels"
+import { QueueRow, BookingRow, TimezoneFocusPanel, WorldClockCell, useLiveNow } from "@/components/multideck/overview-panels"
 import {
   AccountPanel,
-  ActiveShipmentsPanel,
+  ActiveBookingsPanel,
   DexterPulsePanel,
   ContactProfileModule,
   CustomerAvatar,
@@ -36,7 +36,7 @@ import { FilterChips, SegmentedControl, TabsRail } from "@/components/multideck/
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
 import { CodeInput, FreightNarrative, SignInPanel, SignedOutPanel, VerifyPanel } from "@/components/multideck/auth-flow"
-import { ShipmentAdvancedSearch, ShipmentArrivalCard, ShipmentAskPanel, ShipmentBoardPreview, ShipmentExceptionPanel, ShipmentMetricCard, ShipmentResolutionChecklist, ShipmentsTable, YourJobsPanel, shipmentViewModes, shipmentViewOptions, type ShipmentSearchCriterion, type ShipmentViewMode } from "@/components/multideck/shipment-components"
+import { BookingAdvancedSearch, BookingArrivalCard, BookingAskPanel, BookingBoardPreview, BookingExceptionPanel, BookingMetricCard, BookingResolutionChecklist, BookingsTable, YourJobsPanel, bookingViewModes, bookingViewOptions, type BookingSearchCriterion, type BookingViewMode } from "@/components/multideck/booking-components"
 import {
   DexterAttachmentPalette,
   DexterChecklistCard,
@@ -138,7 +138,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["shipment-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "geo-panel", "record-header", "active-shipments-panel", "your-jobs-panel", "lane-mix-panel", "shipment-metric-card", "shipment-advanced-search", "shipments-table", "shipment-board-preview", "shipment-arrival-card", "shipment-exception-panel", "shipment-checklist", "shipment-ask-panel", "side-panels"],
+    ids: ["booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "lane-mix-panel", "booking-metric-card", "booking-advanced-search", "bookings-table", "booking-board-preview", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
   },
   {
     label: "CRM",
@@ -273,7 +273,7 @@ const introNotes = [
   },
   {
     title: "What they do",
-    body: "They turn freight work into clear, scannable UI. Each component helps a rep show what needs attention, where a shipment is, what state a customer is in, or what action should happen next.",
+    body: "They turn freight work into clear, scannable UI. Each component helps a rep show what needs attention, where a booking is, what state a customer is in, or what action should happen next.",
   },
   {
     title: "How to use them",
@@ -296,8 +296,8 @@ const colourTokens = [
 ]
 const typographyRows = [
   ["24px / Medium", "Main page headings", "Northwind operations"],
-  ["18px / Medium", "Subheads and important summaries", "Two shipments need attention"],
-  ["14px / Medium", "Section headings", "Live shipments"],
+  ["18px / Medium", "Subheads and important summaries", "Two bookings need attention"],
+  ["14px / Medium", "Section headings", "Live bookings"],
   ["13px / Regular", "Standard product copy", "Customs documents are ready for review."],
   ["12px / Regular", "Metadata and hints", "Updated 41s ago"],
   ["11px / Medium", "Pills and dense labels", "AI note"],
@@ -318,9 +318,9 @@ const settingsPreviewGroups: SettingsTabGroup[] = [
     ],
   },
 ]
-const InteractiveShipmentMapPreview = lazy(() =>
-  import("@/components/multideck/interactive-shipment-map").then((module) => ({
-    default: module.InteractiveShipmentMap,
+const InteractiveBookingMapPreview = lazy(() =>
+  import("@/components/multideck/interactive-booking-map").then((module) => ({
+    default: module.InteractiveBookingMap,
   })),
 )
 
@@ -467,8 +467,8 @@ function FoundOnLinks({ links }: { links: (typeof galleryComponents)[number]["fo
 function ComponentPreview({ id }: { id: string }) {
   const [previewPage, setPreviewPage] = useState(1)
   const [previewPageSize, setPreviewPageSize] = useState(20)
-  const [previewShipmentFilter, setPreviewShipmentFilter] = useState<string>(shipmentFilters[0])
-  const [previewShipmentView, setPreviewShipmentView] = useState<ShipmentViewMode>("Table")
+  const [previewBookingFilter, setPreviewBookingFilter] = useState<string>(bookingFilters[0])
+  const [previewBookingView, setPreviewBookingView] = useState<BookingViewMode>("Table")
   const [previewCustomerView, setPreviewCustomerView] = useState<CustomerViewMode>("List")
   const [previewSelectedIds, setPreviewSelectedIds] = useState<Set<string>>(new Set(["marlow-apparel"]))
   const [previewCustomerTab, setPreviewCustomerTab] = useState("Overview")
@@ -483,15 +483,15 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewWidgetQuery, setPreviewWidgetQuery] = useState("")
   const [previewWidgetId, setPreviewWidgetId] = useState(reportWidgets[0].id)
   const [previewDataEditorOpen, setPreviewDataEditorOpen] = useState(false)
-  const [previewShipmentSelectedIds, setPreviewShipmentSelectedIds] = useState<Set<string>>(new Set(["MD-22455"]))
-  const [previewFavouriteShipmentIds, setPreviewFavouriteShipmentIds] = useState<Set<string>>(() => new Set(initialFavouriteShipmentIds))
-  const [previewShipmentSearchCriteria, setPreviewShipmentSearchCriteria] = useState<ShipmentSearchCriterion[]>([
-    { id: "preview-shipment-search-invoice", field: "invoice", groupId: "preview-search-main", value: "INV-MAR", valueTo: "" },
-    { id: "preview-shipment-search-destination", connector: "and", field: "destination", groupId: "preview-search-main", value: "Felixstowe", valueTo: "" },
-    { id: "preview-shipment-search-vin", field: "vin", groupConnector: "or", groupId: "preview-search-vin", value: "WVW", valueTo: "" },
+  const [previewBookingSelectedIds, setPreviewBookingSelectedIds] = useState<Set<string>>(new Set(["MD-22455"]))
+  const [previewFavouriteBookingIds, setPreviewFavouriteBookingIds] = useState<Set<string>>(() => new Set(initialFavouriteBookingIds))
+  const [previewBookingSearchCriteria, setPreviewBookingSearchCriteria] = useState<BookingSearchCriterion[]>([
+    { id: "preview-booking-search-invoice", field: "invoice", groupId: "preview-search-main", value: "INV-MAR", valueTo: "" },
+    { id: "preview-booking-search-destination", connector: "and", field: "destination", groupId: "preview-search-main", value: "Felixstowe", valueTo: "" },
+    { id: "preview-booking-search-vin", field: "vin", groupConnector: "or", groupId: "preview-search-vin", value: "WVW", valueTo: "" },
   ])
   const [previewContactEmail, setPreviewContactEmail] = useState(marlowContacts[0].email)
-  const [previewDexterPrompt, setPreviewDexterPrompt] = useState("Prep Marlow's QBR and attach the latest open shipment context.")
+  const [previewDexterPrompt, setPreviewDexterPrompt] = useState("Prep Marlow's QBR and attach the latest open booking context.")
   const [previewDexterSpecialistId, setPreviewDexterSpecialistId] = useState<DexterSpecialistId>("auto")
   const [previewDexterAttachmentQuery, setPreviewDexterAttachmentQuery] = useState("")
   const [previewDexterAttachmentIds, setPreviewDexterAttachmentIds] = useState<Set<string>>(new Set(["marlow", "md-22414"]))
@@ -500,35 +500,35 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewCrmContactEmail, setPreviewCrmContactEmail] = useState(crmContacts[0].email)
   const [previewMarketingFolderId, setPreviewMarketingFolderId] = useState(previewMarketingFolders[0].id)
   const previewNow = useLiveNow()
-  const previewShipmentSearchCount = useMemo(() => {
-    function matchesCriterion(shipment: (typeof shipments)[number], criterion: ShipmentSearchCriterion) {
+  const previewBookingSearchCount = useMemo(() => {
+    function matchesCriterion(booking: (typeof bookings)[number], criterion: BookingSearchCriterion) {
       const query = criterion.value.trim().toLowerCase()
       const queryTo = criterion.valueTo?.trim()
       if (!query && !queryTo) return true
       if (criterion.field === "date") {
-        return [shipment.departureDate, shipment.arrivalDate].some((date) => date >= (criterion.value || queryTo || "") && date <= (queryTo || criterion.value || "9999-12-31"))
+        return [booking.departureDate, booking.arrivalDate].some((date) => date >= (criterion.value || queryTo || "") && date <= (queryTo || criterion.value || "9999-12-31"))
       }
-      if (criterion.field === "departure") return shipment.departureDate >= (criterion.value || queryTo || "") && shipment.departureDate <= (queryTo || criterion.value || "9999-12-31")
-      if (criterion.field === "arrival") return shipment.arrivalDate >= (criterion.value || queryTo || "") && shipment.arrivalDate <= (queryTo || criterion.value || "9999-12-31")
+      if (criterion.field === "departure") return booking.departureDate >= (criterion.value || queryTo || "") && booking.departureDate <= (queryTo || criterion.value || "9999-12-31")
+      if (criterion.field === "arrival") return booking.arrivalDate >= (criterion.value || queryTo || "") && booking.arrivalDate <= (queryTo || criterion.value || "9999-12-31")
 
-      const customFields = shipment.customFields.flatMap((field) => [field.label, field.value, `${field.label} ${field.value}`])
-      const valuesByField: Record<Exclude<ShipmentSearchCriterion["field"], "date" | "departure" | "arrival">, string[]> = {
-        any: [shipment.id, shipment.customer, shipment.route, shipment.carrier, shipment.container, shipment.invoice, shipment.jobRef, shipment.customerRef, shipment.supplierRef, shipment.origin, shipment.destination, shipment.vessel, shipment.vin, ...customFields],
-        invoice: [shipment.invoice],
-        jobRef: [shipment.jobRef],
-        customerRef: [shipment.customerRef],
-        supplierRef: [shipment.supplierRef],
-        destination: [shipment.destination, shipment.route],
-        origin: [shipment.origin, shipment.route],
-        vessel: [shipment.vessel, shipment.carrier],
-        vin: [shipment.vin],
+      const customFields = booking.customFields.flatMap((field) => [field.label, field.value, `${field.label} ${field.value}`])
+      const valuesByField: Record<Exclude<BookingSearchCriterion["field"], "date" | "departure" | "arrival">, string[]> = {
+        any: [booking.id, booking.customer, booking.route, booking.carrier, booking.container, booking.invoice, booking.jobRef, booking.customerRef, booking.supplierRef, booking.origin, booking.destination, booking.vessel, booking.vin, ...customFields],
+        invoice: [booking.invoice],
+        jobRef: [booking.jobRef],
+        customerRef: [booking.customerRef],
+        supplierRef: [booking.supplierRef],
+        destination: [booking.destination, booking.route],
+        origin: [booking.origin, booking.route],
+        vessel: [booking.vessel, booking.carrier],
+        vin: [booking.vin],
         customFields,
       }
 
       return valuesByField[criterion.field].some((value) => value.toLowerCase().includes(query))
     }
 
-    const groups = previewShipmentSearchCriteria.reduce<Array<{ id: string; connector: "and" | "or"; criteria: ShipmentSearchCriterion[] }>>((currentGroups, criterion, index) => {
+    const groups = previewBookingSearchCriteria.reduce<Array<{ id: string; connector: "and" | "or"; criteria: BookingSearchCriterion[] }>>((currentGroups, criterion, index) => {
       if (!criterion.value.trim() && !criterion.valueTo?.trim()) return currentGroups
       const groupId = criterion.groupId ?? "preview-search-main"
       const existingGroup = currentGroups.find((group) => group.id === groupId)
@@ -545,11 +545,11 @@ function ComponentPreview({ id }: { id: string }) {
       return currentGroups
     }, [])
 
-    return shipments.filter((shipment) => {
+    return bookings.filter((booking) => {
       if (!groups.length) return true
       return groups.reduce<boolean>((searchMatches, group, groupIndex) => {
         const groupMatches = group.criteria.reduce<boolean>((matches, criterion, criterionIndex) => {
-          const criterionMatches = matchesCriterion(shipment, criterion)
+          const criterionMatches = matchesCriterion(booking, criterion)
           if (criterionIndex === 0) return criterionMatches
           return (criterion.connector ?? "and") === "or" ? matches || criterionMatches : matches && criterionMatches
         }, true)
@@ -558,7 +558,7 @@ function ComponentPreview({ id }: { id: string }) {
         return group.connector === "or" ? searchMatches || groupMatches : searchMatches && groupMatches
       }, true)
     }).length
-  }, [previewShipmentSearchCriteria])
+  }, [previewBookingSearchCriteria])
 
   useEffect(() => {
     if (!previewScreenGlow) return undefined
@@ -576,8 +576,8 @@ function ComponentPreview({ id }: { id: string }) {
     })
   }
 
-  function togglePreviewShipment(id: string) {
-    setPreviewShipmentSelectedIds((current) => {
+  function togglePreviewBooking(id: string) {
+    setPreviewBookingSelectedIds((current) => {
       const next = new Set(current)
       if (next.has(id)) next.delete(id)
       else next.add(id)
@@ -585,8 +585,8 @@ function ComponentPreview({ id }: { id: string }) {
     })
   }
 
-  function togglePreviewFavouriteShipment(id: string) {
-    setPreviewFavouriteShipmentIds((current) => {
+  function togglePreviewFavouriteBooking(id: string) {
+    setPreviewFavouriteBookingIds((current) => {
       const next = new Set(current)
       if (next.has(id)) next.delete(id)
       else next.add(id)
@@ -662,10 +662,10 @@ function ComponentPreview({ id }: { id: string }) {
 
       {id === "surface" ? (
         <Surface className="w-full max-w-[620px]" padding="lg">
-          <SectionHeader title="Live shipments" meta="A production panel built from shared tokens." />
+          <SectionHeader title="Live bookings" meta="A production panel built from shared tokens." />
           <div className="mt-[var(--md-page-stack-gap)] divide-y divide-[rgba(11,20,19,0.05)]">
-            {liveShipments.slice(0, 3).map((shipment) => (
-              <ShipmentRow key={shipment.id} shipment={shipment} />
+            {liveBookings.slice(0, 3).map((booking) => (
+              <BookingRow key={booking.id} booking={booking} />
             ))}
           </div>
         </Surface>
@@ -861,10 +861,10 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
-      {id === "shipment-row" ? (
+      {id === "booking-row" ? (
         <Surface className="w-full max-w-[680px]">
-          {liveShipments.slice(0, 4).map((shipment) => (
-            <ShipmentRow key={shipment.id} shipment={shipment} />
+          {liveBookings.slice(0, 4).map((booking) => (
+            <BookingRow key={booking.id} booking={booking} />
           ))}
         </Surface>
       ) : null}
@@ -872,7 +872,7 @@ function ComponentPreview({ id }: { id: string }) {
       {id === "interactive-map" ? (
         <div className="w-full max-w-[780px] overflow-hidden rounded-[var(--md-radius-xl)] bg-white shadow-[var(--md-shadow-line)]">
           <Suspense fallback={<div className="h-[430px] bg-[var(--md-bg-strong)]" />}>
-            <InteractiveShipmentMapPreview />
+            <InteractiveBookingMapPreview />
           </Suspense>
         </div>
       ) : null}
@@ -882,7 +882,7 @@ function ComponentPreview({ id }: { id: string }) {
           <CommandInput />
           <Textarea
             className="mt-3 min-h-[110px] rounded-[var(--md-radius-lg)] border-0 bg-white/70 text-[13px] shadow-[var(--md-shadow-line)]"
-            defaultValue="Ask: show shipments with customs risk today"
+            defaultValue="Ask: show bookings with customs risk today"
           />
         </div>
       ) : null}
@@ -896,7 +896,7 @@ function ComponentPreview({ id }: { id: string }) {
               className="h-[34px] w-auto max-w-[172px] object-contain transition-[filter,opacity] duration-200 dark:brightness-0 dark:invert"
             />
           </div>
-          <SidebarNavItem item={{ label: "Shipments", value: "7", icon: Ship }} isActive />
+          <SidebarNavItem item={{ label: "Bookings", value: "7", icon: Ship }} isActive />
           <SidebarNavItem item={{ label: "CRM", value: "6", icon: galleryIcons["crm-pipeline-board"] }} />
           <SidebarNavItem item={{ label: "Components", icon: galleryIcons.sidebar }} />
         </div>
@@ -1031,7 +1031,7 @@ function ComponentPreview({ id }: { id: string }) {
 
       {id === "segmented-control" ? (
         <div className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] bg-white/50 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
-          <SegmentedControl options={shipmentViewModes} value={previewShipmentView} onChange={setPreviewShipmentView} />
+          <SegmentedControl options={bookingViewModes} value={previewBookingView} onChange={setPreviewBookingView} />
         </div>
       ) : null}
 
@@ -1046,9 +1046,9 @@ function ComponentPreview({ id }: { id: string }) {
               actions={[{ id: "preview-export-customers", label: "Export CSV", icon: Download, onSelect: () => toast.success("Customer CSV prepared") }]}
             />
             <PageSettingsMenu
-              viewOptions={shipmentViewOptions}
-              value={previewShipmentView}
-              onViewChange={setPreviewShipmentView}
+              viewOptions={bookingViewOptions}
+              value={previewBookingView}
+              onViewChange={setPreviewBookingView}
             />
           </div>
         </div>
@@ -1057,9 +1057,9 @@ function ComponentPreview({ id }: { id: string }) {
       {id === "filter-chips" ? (
         <div className="w-full max-w-[980px]">
           <FilterChips
-            options={shipmentFilters}
-            activeOption={previewShipmentFilter}
-            onChange={setPreviewShipmentFilter}
+            options={bookingFilters}
+            activeOption={previewBookingFilter}
+            onChange={setPreviewBookingFilter}
             auxiliaryOptions={["+ Mode", "+ Carrier", "+ Customer", "+ Owner", "+ ETA range"]}
           />
         </div>
@@ -1095,7 +1095,7 @@ function ComponentPreview({ id }: { id: string }) {
             tabs={[
               { label: "Overview" },
               { label: "Contacts", value: "4" },
-              { label: "Shipments", value: "6 active" },
+              { label: "Bookings", value: "6 active" },
               { label: "Documents", value: "94" },
               { label: "Activity" },
             ]}
@@ -1105,9 +1105,9 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
-      {id === "active-shipments-panel" ? (
+      {id === "active-bookings-panel" ? (
         <div className="w-full max-w-[980px]">
-          <ActiveShipmentsPanel />
+          <ActiveBookingsPanel />
         </div>
       ) : null}
 
@@ -1117,10 +1117,10 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
-      {id === "shipment-metric-card" ? (
+      {id === "booking-metric-card" ? (
         <div className="grid w-full max-w-[760px] gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {shipmentMetrics.slice(0, 3).map((metric) => (
-            <ShipmentMetricCard key={metric.label} {...metric} />
+          {bookingMetrics.slice(0, 3).map((metric) => (
+            <BookingMetricCard key={metric.label} {...metric} />
           ))}
         </div>
       ) : null}
@@ -1128,41 +1128,41 @@ function ComponentPreview({ id }: { id: string }) {
       {id === "your-jobs-panel" ? (
         <div className="w-full max-w-[1120px]">
           <YourJobsPanel
-            favouriteIds={previewFavouriteShipmentIds}
-            onToggleFavourite={togglePreviewFavouriteShipment}
+            favouriteIds={previewFavouriteBookingIds}
+            onToggleFavourite={togglePreviewFavouriteBooking}
             onOpenJobDrilldown={(jobId) => toast.success(`${jobId} opened`)}
             animated
           />
         </div>
       ) : null}
 
-      {id === "shipment-advanced-search" ? (
+      {id === "booking-advanced-search" ? (
         <div className="w-full max-w-[1120px]">
-          <ShipmentAdvancedSearch
-            criteria={previewShipmentSearchCriteria}
-            onCriteriaChange={setPreviewShipmentSearchCriteria}
-            resultCount={previewShipmentSearchCount}
-            totalCount={shipments.length}
+          <BookingAdvancedSearch
+            criteria={previewBookingSearchCriteria}
+            onCriteriaChange={setPreviewBookingSearchCriteria}
+            resultCount={previewBookingSearchCount}
+            totalCount={bookings.length}
           />
         </div>
       ) : null}
 
-      {id === "shipments-table" ? (
+      {id === "bookings-table" ? (
         <div className="w-full max-w-[1120px] overflow-x-auto md-scrollbar">
-          <ShipmentsTable
-            rows={shipments.slice(0, 4)}
-            selectedIds={previewShipmentSelectedIds}
-            favouriteIds={previewFavouriteShipmentIds}
-            onToggleShipment={togglePreviewShipment}
-            onToggleFavourite={togglePreviewFavouriteShipment}
-            onOpenShipment={(shipment) => toast.success(`${shipment.id} opened`)}
+          <BookingsTable
+            rows={bookings.slice(0, 4)}
+            selectedIds={previewBookingSelectedIds}
+            favouriteIds={previewFavouriteBookingIds}
+            onToggleBooking={togglePreviewBooking}
+            onToggleFavourite={togglePreviewFavouriteBooking}
+            onOpenBooking={(booking) => toast.success(`${booking.id} opened`)}
           />
         </div>
       ) : null}
 
-      {id === "shipment-board-preview" ? (
+      {id === "booking-board-preview" ? (
         <div className="w-full max-w-[980px]">
-          <ShipmentBoardPreview onOpenShipment={(shipment) => toast.success(`${shipment.id} opened`)} />
+          <BookingBoardPreview onOpenBooking={(booking) => toast.success(`${booking.id} opened`)} />
         </div>
       ) : null}
 
@@ -1243,27 +1243,27 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
-      {id === "shipment-arrival-card" ? (
+      {id === "booking-arrival-card" ? (
         <div className="w-full max-w-[860px]">
-          <ShipmentArrivalCard />
+          <BookingArrivalCard />
         </div>
       ) : null}
 
-      {id === "shipment-exception-panel" ? (
+      {id === "booking-exception-panel" ? (
         <div className="w-full max-w-[860px]">
-          <ShipmentExceptionPanel />
+          <BookingExceptionPanel />
         </div>
       ) : null}
 
-      {id === "shipment-checklist" ? (
+      {id === "booking-checklist" ? (
         <div className="w-full max-w-[680px]">
-          <ShipmentResolutionChecklist />
+          <BookingResolutionChecklist />
         </div>
       ) : null}
 
-      {id === "shipment-ask-panel" ? (
+      {id === "booking-ask-panel" ? (
         <div className="h-[620px] w-full max-w-[380px]">
-          <ShipmentAskPanel />
+          <BookingAskPanel />
         </div>
       ) : null}
 
@@ -1371,7 +1371,7 @@ function ComponentPreview({ id }: { id: string }) {
             <DexterCustomerSnapshot />
             <DexterChecklistCard
               items={[
-                { label: "Pull open shipments arriving this week - 23 found.", done: true },
+                { label: "Pull open bookings arriving this week - 23 found.", done: true },
                 { label: "Cross-check HS codes against active regulations.", done: true },
                 { label: "Draft notifications for approval." },
               ]}
@@ -1596,7 +1596,7 @@ function ComponentPreview({ id }: { id: string }) {
             title="At a glance"
             rows={[
               ["Member since", "Jan 2024"],
-              ["Shipments handled", "1,847"],
+              ["Bookings handled", "1,847"],
               ["Active boards", "3"],
               ["Role", "Admin - Ops"],
             ]}

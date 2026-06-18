@@ -17,8 +17,9 @@ const ReportsPage = lazy(() => import("@/pages/reports-page").then((module) => (
 const ReportTemplateBuilderPage = lazy(() => import("@/pages/report-template-builder-page").then((module) => ({ default: module.ReportTemplateBuilderPage })))
 const ReportViewerPage = lazy(() => import("@/pages/report-viewer-page").then((module) => ({ default: module.ReportViewerPage })))
 const SettingsPage = lazy(() => import("@/pages/settings-page").then((module) => ({ default: module.SettingsPage })))
-const ShipmentDetailPage = lazy(() => import("@/pages/shipment-detail-page").then((module) => ({ default: module.ShipmentDetailPage })))
-const ShipmentsPage = lazy(() => import("@/pages/shipments-page").then((module) => ({ default: module.ShipmentsPage })))
+const BookingDetailPage = lazy(() => import("@/pages/booking-detail-page").then((module) => ({ default: module.BookingDetailPage })))
+const BookingWizardPage = lazy(() => import("@/pages/booking-wizard-page").then((module) => ({ default: module.BookingWizardPage })))
+const BookingsPage = lazy(() => import("@/pages/bookings-page").then((module) => ({ default: module.BookingsPage })))
 const CrmOverviewPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmOverviewPage })))
 const CrmLeadsPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmLeadsPage })))
 const CrmLeadDetailPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmLeadDetailPage })))
@@ -53,11 +54,18 @@ const validRoutes = new Set([
   "/reports",
   "/reports/templates/monthly-client-review",
   "/settings",
-  "/shipments",
+  "/bookings",
+  "/bookings/new",
 ])
 
-function isShipmentDetailRoute(path: string) {
-  return /^\/shipments\/[^/]+$/.test(path)
+function isBookingDetailRoute(path: string) {
+  return /^\/bookings\/[^/]+$/.test(path) && path !== "/bookings/new"
+}
+
+function getLegacyBookingRoute(path: string) {
+  if (path === "/shipments") return "/bookings"
+  const detailMatch = path.match(/^\/shipments\/([^/]+)$/)
+  return detailMatch ? `/bookings/${detailMatch[1]}` : null
 }
 
 function isCrmLeadDetailRoute(path: string) {
@@ -77,8 +85,10 @@ function isCrmEmailEditRoute(path: string) {
 }
 
 function getRoute() {
+  const legacyBookingRoute = getLegacyBookingRoute(window.location.pathname)
+  if (legacyBookingRoute) return legacyBookingRoute
   if (window.location.pathname.startsWith("/reports/rpt-")) return window.location.pathname
-  if (isShipmentDetailRoute(window.location.pathname)) return window.location.pathname
+  if (isBookingDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCrmLeadDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCrmListDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCrmEmailStatsRoute(window.location.pathname)) return window.location.pathname
@@ -122,9 +132,9 @@ export default function App() {
               <Suspense fallback={<RouteFallback />}>
                 <AuthFlowPage />
               </Suspense>
-            ) : isShipmentDetailRoute(route) ? (
+            ) : isBookingDetailRoute(route) ? (
               <Suspense fallback={<RouteFallback />}>
-                <ShipmentDetailPage navigate={navigate} shipmentId={route.split("/").at(-1) ?? "md-22455"} />
+                <BookingDetailPage navigate={navigate} bookingId={route.split("/").at(-1) ?? "md-22455"} />
               </Suspense>
             ) : route.startsWith("/reports/rpt-") ? (
               <Suspense fallback={<RouteFallback />}>
@@ -156,7 +166,8 @@ export default function App() {
                   {route === "/customers/marlow-apparel" ? <CustomerDetailPage /> : null}
                   {route === "/reports" ? <ReportsPage navigate={navigate} /> : null}
                   {route === "/settings" ? <SettingsPage navigate={navigate} /> : null}
-                  {route === "/shipments" ? <ShipmentsPage navigate={navigate} /> : null}
+                  {route === "/bookings" ? <BookingsPage navigate={navigate} /> : null}
+                  {route === "/bookings/new" ? <BookingWizardPage navigate={navigate} /> : null}
                   {route === "/" ? <OverviewPage navigate={navigate} /> : null}
                 </Suspense>
               </AppShell>

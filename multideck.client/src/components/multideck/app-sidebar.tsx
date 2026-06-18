@@ -222,7 +222,7 @@ export function SidebarNavItem({
     accent === "dexter" ? "bg-[var(--md-accent)] text-white" :
     item.label === "Documents" ? "bg-[var(--md-accent)] text-white" :
     item.label === "Exceptions" || item.value === "2" ? "bg-[rgba(209,78,78,0.1)] text-[var(--md-red)]" :
-    item.label === "Shipments" ? "bg-[rgba(221,138,43,0.12)] text-[var(--md-amber)]" :
+    item.label === "Bookings" ? "bg-[rgba(221,138,43,0.12)] text-[var(--md-amber)]" :
     item.label === "Customers" ? "bg-[rgba(90,103,100,0.1)] text-[var(--md-text)]" :
     "bg-transparent text-[var(--md-text)]"
 

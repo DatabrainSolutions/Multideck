@@ -93,12 +93,12 @@ function DexterPageHeader({
     conversationMode === "customer"
       ? {
           title: "Marlow Apparel - QBR prep",
-          route: "Routed to Analytics & reporting - 1 attached context - reads shipments, comms, invoices",
+          route: "Routed to Analytics & reporting - 1 attached context - reads bookings, comms, invoices",
           icon: BarChart3,
         }
       : {
           title: "At-risk customs this week",
-          route: "Routed to Customs & compliance - read access to shipments, documents, comms - writes need approval",
+          route: "Routed to Customs & compliance - read access to bookings, documents, comms - writes need approval",
           icon: ShieldCheck,
         }
 
@@ -197,7 +197,7 @@ function ConversationStream({
   return (
     <div className={cn("mx-auto flex w-full min-w-0 flex-col gap-[var(--md-page-stack-gap)] px-[var(--md-page-stack-gap)] py-[var(--md-page-section-gap)]", streamWidth)}>
       <div className="ml-auto max-w-[620px] rounded-[var(--md-radius-xl)] bg-[rgba(213,228,225,0.72)] px-5 py-4 text-[15px] leading-6 text-[var(--md-ink)]">
-        Find shipments at risk of customs delay this week, and draft notifications to the customers.
+        Find bookings at risk of customs delay this week, and draft notifications to the customers.
       </div>
 
       <div className="grid min-w-0 grid-cols-[38px_minmax(0,1fr)] gap-4">
@@ -208,7 +208,7 @@ function ConversationStream({
           <div className="mt-4">
             <DexterChecklistCard
               items={[
-                { label: "Pull open shipments arriving this week - 23 found.", done: true },
+                { label: "Pull open bookings arriving this week - 23 found.", done: true },
                 { label: "Cross-check HS codes against active regulations and recent holds.", done: true },
                 { label: "Pull each customer's preferred contact and recent tone.", done: true },
                 { label: "Draft notifications and surface them for approval." },
@@ -223,7 +223,7 @@ function ConversationStream({
         <div className="min-w-0">
           <p className="text-[12px] text-[var(--md-subtle)]">Dexter</p>
           <p className="mt-3 text-[15px] leading-6 text-[var(--md-ink)]">
-            <strong>Four shipments</strong> have elevated customs risk - one already on hold, three flagged by rule checks.
+            <strong>Four bookings</strong> have elevated customs risk - one already on hold, three flagged by rule checks.
           </p>
           <div className="mt-4">
             <DexterRiskTable />
@@ -366,7 +366,7 @@ export function AgentDexterPage() {
             >
               <Sparkles className="mx-auto size-8 text-[var(--md-accent)]" strokeWidth={1.2} />
               <h1 className="mt-[var(--md-page-section-gap)] text-[24px] font-medium leading-tight text-[var(--md-ink)] sm:text-[30px]">What can I help you with today?</h1>
-              <p className="mt-4 text-[15px] text-[var(--md-text)]">Shipments, customers, documents, rates - or hand me the whole job.</p>
+              <p className="mt-4 text-[15px] text-[var(--md-text)]">Bookings, customers, documents, rates - or hand me the whole job.</p>
             </motion.div>
           ) : null}
 
@@ -610,7 +610,7 @@ export function AgentDexterPage() {
               onCollapse={() => setIsMonitorRailCollapsed(true)}
               onSelectMonitor={(monitor) => setSelectedMonitor(monitor)}
               onAsk={() => {
-                setComposerValue("Watch for any customer-critical movement on Northwind shipments this week.")
+                setComposerValue("Watch for any customer-critical movement on Northwind bookings this week.")
                 setShowSpecialists(true)
               }}
             />

@@ -342,7 +342,7 @@ function ProfileTab() {
     {
       icon: Cloud,
       title: "OneDrive / SharePoint",
-      description: "Bring Microsoft files into shipment records without asking operators to download and reupload.",
+      description: "Bring Microsoft files into booking records without asking operators to download and reupload.",
       status: "Ready",
       statusTone: "ready",
       actionLabel: "Connect",
@@ -430,7 +430,7 @@ function ProfileTab() {
           title="At a glance"
           rows={[
             ["Member since", "Jan 2024"],
-            ["Shipments handled", "1,847"],
+            ["Bookings handled", "1,847"],
             ["Active boards", "3"],
             ["Last sign-in", "Today - 06:14"],
             ["Role", "Admin - Ops"],
@@ -486,7 +486,7 @@ function ProfileTab() {
         </SettingsPanel>
 
         <SettingsPanel title="Danger zone" className="shadow-[inset_0_0_0_1px_rgba(209,78,78,0.16),0_0_0_1px_rgba(209,78,78,0.08)]">
-          <SettingsFieldRow label="Export my data" description="A zip of every shipment, document note, profile event, and audit log linked to your account.">
+          <SettingsFieldRow label="Export my data" description="A zip of every booking, document note, profile event, and audit log linked to your account.">
             {compactAction("Request export", () => toast.success("Data export requested"))}
           </SettingsFieldRow>
           <SettingsFieldRow label="Delete account" description="Only available after workspace ownership is transferred.">
@@ -547,7 +547,7 @@ function SessionsTab() {
       <SettingsPageHeader
         eyebrow="Account / Active sessions"
         title="Active sessions"
-        description="Review signed-in devices and remove anything that should not have access to live shipment data."
+        description="Review signed-in devices and remove anything that should not have access to live booking data."
         actions={compactAction("Sign out all others", () => toast.success("Other sessions signed out"))}
       />
       <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
@@ -587,7 +587,7 @@ function PreferencesTab() {
         actions={primaryAction("Save preferences", () => toast.success("Preferences saved"))}
       />
       <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
-        <SettingsPanel title="Workspace defaults" description="These affect new boards, lists, and shipment views for your account.">
+        <SettingsPanel title="Workspace defaults" description="These affect new boards, lists, and booking views for your account.">
           <LanguageSettingField label="App language" />
           <SettingsFieldRow label="Appearance" description="Choose the workspace colour mode for this browser.">
             <div className="max-w-[300px]">
@@ -595,9 +595,9 @@ function PreferencesTab() {
             </div>
           </SettingsFieldRow>
           <SettingsFieldRow label="Start page">
-            <SettingsSelect value="Overview - Today Ops" options={["Overview - Today Ops", "Shipments - Open", "Customers", "Agent Dexter"]} />
+            <SettingsSelect value="Overview - Today Ops" options={["Overview - Today Ops", "Bookings - Open", "Customers", "Agent Dexter"]} />
           </SettingsFieldRow>
-          <SettingsFieldRow label="Default shipment view">
+          <SettingsFieldRow label="Default booking view">
             <ChoiceSetting options={["Table", "Board"]} initialValue="Table" />
           </SettingsFieldRow>
           <SettingsFieldRow label="World clock display" description="Digital is the default. Analogue switches dashboard city times to clock faces.">
@@ -639,7 +639,7 @@ function NotificationsTab() {
             <ToggleSetting title="Customs holds" description="Ping immediately when a hold is raised or a licence is missing." initialChecked meta={<StatusPill tone="amber">3 pending</StatusPill>} />
             <ToggleSetting title="ETA slips over 6 hours" description="Notify the owner before Dexter drafts the customer update." initialChecked />
             <ToggleSetting title="Customer message unanswered" description="Escalate when a premium account waits more than 2 working hours." initialChecked />
-            <ToggleSetting title="Document parse below 80%" description="Keep this in digest unless the shipment is due within 24 hours." initialChecked={false} />
+            <ToggleSetting title="Document parse below 80%" description="Keep this in digest unless the booking is due within 24 hours." initialChecked={false} />
           </SettingsPanel>
           <SettingsPanel title="Delivery channels" description="Where updates should land by default.">
             <SettingsFieldRow label="Daily digest">
@@ -717,7 +717,7 @@ function AgentDexterTab() {
           <SettingsFieldRow label="Booking confirmations & bookings">
             <ChoiceSetting options={["Always ask", "Ask if > EUR 5k", "Never ask"]} initialValue="Always ask" />
           </SettingsFieldRow>
-          <SettingsFieldRow label="Changes to shipment data">
+          <SettingsFieldRow label="Changes to booking data">
             <ChoiceSetting options={["Always ask", "Ask non-reversible", "Never ask"]} initialValue="Ask non-reversible" />
           </SettingsFieldRow>
           <SettingsFieldRow label="Watcher creation & modification">
@@ -742,7 +742,7 @@ function TeamTab() {
       <SettingsPageHeader
         eyebrow="Organisation / Team & permissions"
         title="Team & permissions"
-        description="Control who can see shipment data, approve Dexter actions, and manage customer-facing changes."
+        description="Control who can see booking data, approve Dexter actions, and manage customer-facing changes."
         actions={primaryAction("Invite teammate", () => toast.success("Invite link copied"))}
       />
       <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
@@ -779,9 +779,9 @@ function IntegrationsTab() {
     [Mail, "Gmail", "Connected for customer replies, quote follow-ups, and digest delivery.", "Connected"],
     [Mail, "Outlook", "Available for shared mailboxes and finance inbox routing.", "Ready"],
     [MessageCircle, "Slack", "Exception alerts go to #ops-customs and #premium-customers.", "Connected"],
-    [Cloud, "CargoWise", "Shipment sync every 15 minutes. 1 warning needs mapping review.", "Review"],
+    [Cloud, "CargoWise", "Booking sync every 15 minutes. 1 warning needs mapping review.", "Review"],
     [ReceiptText, "Xero", "Invoices and credit-limit snapshots sync nightly.", "Connected"],
-    [Globe2, "Customs broker portal", "Broker updates imported into shipment timelines.", "Connected"],
+    [Globe2, "Customs broker portal", "Broker updates imported into booking timelines.", "Connected"],
   ]
 
   return (
@@ -819,13 +819,13 @@ function ApiTab() {
       />
       <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
         <SettingsPanel title="API keys" description="Keys are shown once. Use scoped keys for customer portals and broker automations.">
-          <IconRow icon={KeyRound} title="Production sync key" description="Read shipments, write milestones. Last used 8 minutes ago." right={<StatusPill tone="teal">Active</StatusPill>} />
+          <IconRow icon={KeyRound} title="Production sync key" description="Read bookings, write milestones. Last used 8 minutes ago." right={<StatusPill tone="teal">Active</StatusPill>} />
           <IconRow icon={Braces} title="Customer portal key" description="Read tracking pages and quotes only. Last used today 05:41." right={<StatusPill tone="teal">Active</StatusPill>} />
           <IconRow icon={History} title="Legacy import key" description="No calls in 44 days. Rotate or remove before launch." right={<StatusPill tone="amber">Review</StatusPill>} />
         </SettingsPanel>
         <SettingsPanel title="Webhooks" description="Event delivery for downstream systems.">
-          <SettingsFieldRow label="Shipment updated">
-            <SettingsInput defaultValue="https://ops.northwind.de/hooks/shipments" />
+          <SettingsFieldRow label="Booking updated">
+            <SettingsInput defaultValue="https://ops.northwind.de/hooks/bookings" />
           </SettingsFieldRow>
           <SettingsFieldRow label="Document parsed">
             <SettingsInput defaultValue="https://ops.northwind.de/hooks/documents" />
@@ -869,7 +869,7 @@ function BillingTab() {
             <SettingsFieldRow label="Dexter spend guardrail">
               <SettingsSelect value="Warn at EUR 1,500/month" options={["Warn at EUR 750/month", "Warn at EUR 1,500/month", "Warn at EUR 3,000/month"]} />
             </SettingsFieldRow>
-            <ToggleSetting title="Pause non-critical watchers at limit" description="High-risk shipment and customs alerts still run." initialChecked />
+            <ToggleSetting title="Pause non-critical watchers at limit" description="High-risk booking and customs alerts still run." initialChecked />
           </SettingsPanel>
         </div>
         <SettingsSummaryCard
@@ -963,14 +963,14 @@ function DocsTab() {
       <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-page-stack-gap)] xl:grid-cols-2">
         <SettingsPanel title="Guides" description="Short docs for common operational setup.">
           <IconRow icon={BookOpen} title="Build a customs hold workflow" description="Set watchers, approvals, broker sync, and owner notifications." right={compactAction("Open")} />
-          <IconRow icon={BookOpen} title="Customer tracking pages" description="Share shipment status safely without exposing internal comments." right={compactAction("Open")} />
-          <IconRow icon={BookOpen} title="Import shipments by CSV" description="Prepare fields, map columns, and fix failed imports." right={compactAction("Open")} />
+          <IconRow icon={BookOpen} title="Customer tracking pages" description="Share booking status safely without exposing internal comments." right={compactAction("Open")} />
+          <IconRow icon={BookOpen} title="Import bookings by CSV" description="Prepare fields, map columns, and fix failed imports." right={compactAction("Open")} />
         </SettingsPanel>
         <SettingsPanel title="Keyboard shortcuts" description="Keep operators moving without menu hunting.">
           <SettingsFieldRow label="Command menu">
             <SettingsInput value="Cmd K" readOnly />
           </SettingsFieldRow>
-          <SettingsFieldRow label="New shipment">
+          <SettingsFieldRow label="New booking">
             <SettingsInput value="N then S" readOnly />
           </SettingsFieldRow>
           <SettingsFieldRow label="Open Dexter">
@@ -995,9 +995,9 @@ function SupportTab() {
         actions={primaryAction("Send request", () => toast.success("Support request sent"))}
       />
       <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1fr)_310px]">
-        <SettingsPanel title="Request details" description="Include a shipment ID or customer name when the issue is workflow-specific.">
+        <SettingsPanel title="Request details" description="Include a booking ID or customer name when the issue is workflow-specific.">
           <SettingsFieldRow label="Topic">
-            <SettingsSelect value="Dexter action review" options={["Dexter action review", "Shipment sync issue", "Billing question", "Security concern", "Product feedback"]} />
+            <SettingsSelect value="Dexter action review" options={["Dexter action review", "Booking sync issue", "Billing question", "Security concern", "Product feedback"]} />
           </SettingsFieldRow>
           <SettingsFieldRow label="Priority">
             <ChoiceSetting options={["Normal", "High", "Urgent"]} initialValue="High" />
@@ -1008,7 +1008,7 @@ function SupportTab() {
           <SettingsFieldRow label="Attachment">
             <div className="flex flex-wrap gap-2">
               {compactAction("Attach screenshot")}
-              {compactAction("Attach shipment log")}
+              {compactAction("Attach booking log")}
             </div>
           </SettingsFieldRow>
         </SettingsPanel>

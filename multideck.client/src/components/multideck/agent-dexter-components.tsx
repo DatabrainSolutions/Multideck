@@ -34,7 +34,7 @@ export type DexterSpecialist = {
 
 export type DexterAttachment = {
   id: string
-  type: "customer" | "shipment" | "document"
+  type: "customer" | "booking" | "document"
   title: string
   meta: string
   tone: StatusTone
@@ -359,7 +359,7 @@ export function DexterAttachmentPalette({
         <input
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
-          placeholder="Search shipments, customers, documents..."
+          placeholder="Search bookings, customers, documents..."
           className="min-w-0 flex-1 border-0 bg-transparent text-[16px] text-[var(--md-ink)] outline-none placeholder:text-[var(--md-subtle)]"
         />
         {onClose ? (
@@ -372,7 +372,7 @@ export function DexterAttachmentPalette({
       </div>
 
       <div className="flex flex-wrap gap-2 px-5 py-3">
-        {["All 12", "Shipments 6", "Customers 2", "Documents 4"].map((filter, index) => (
+        {["All 12", "Bookings 6", "Customers 2", "Documents 4"].map((filter, index) => (
           <span
             key={filter}
             className={cn(
@@ -390,7 +390,7 @@ export function DexterAttachmentPalette({
           <div className="mb-3 rounded-[var(--md-radius-xl)] bg-[rgba(233,242,240,0.72)] p-2 shadow-[var(--md-shadow-line)]">
             <div className="px-2 py-2">
               <p className="text-[12px] font-medium text-[var(--md-ink)]">Recommended from this thread</p>
-              <p className="mt-1 text-[11px] text-[var(--md-text)]">Based on the customer, shipment IDs, and documents already mentioned.</p>
+              <p className="mt-1 text-[11px] text-[var(--md-text)]">Based on the customer, booking IDs, and documents already mentioned.</p>
             </div>
             <div className="grid gap-1">
               {recommended.map((item) => (
@@ -412,7 +412,7 @@ export function DexterAttachmentPalette({
           </div>
         ) : null}
 
-        {["shipment", "customer", "document"].map((type) => {
+        {["booking", "customer", "document"].map((type) => {
           const group = filtered.filter((item) => item.type === type && !recommendedIds.includes(item.id))
           if (group.length === 0) return null
 
@@ -621,7 +621,7 @@ export function DexterMonitorDetailSheet({
             Watching
           </p>
           <p className="mt-3 text-[14px] leading-7 text-[var(--md-ink)]">
-            Rotterdam terminal congestion for this shipment. If the ETA shifts by more than <strong>6 hours</strong>, Dexter pings you and drafts a customer note - nothing sends without approval.
+            Rotterdam terminal congestion for this booking. If the ETA shifts by more than <strong>6 hours</strong>, Dexter pings you and drafts a customer note - nothing sends without approval.
           </p>
         </Surface>
 
@@ -726,7 +726,7 @@ export function DexterCustomerSnapshot() {
       </div>
       <div className="grid divide-y divide-[var(--md-line)] border-t border-[var(--md-line)] sm:grid-cols-4 sm:divide-x sm:divide-y-0">
         {[
-          ["Shipments YTD", "38"],
+          ["Bookings YTD", "38"],
           ["On-time", "94.2%"],
           ["Spend YTD", "EUR 412k"],
           ["Open exceptions", "1"],
@@ -778,7 +778,7 @@ export function DexterRiskTable() {
   return (
     <Surface padding="none" className="min-w-0 overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-glass-strong)]">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 px-5 py-3">
-        <p className="text-[13px] font-medium text-[var(--md-text)]">4 shipments - customs risk</p>
+        <p className="text-[13px] font-medium text-[var(--md-text)]">4 bookings - customs risk</p>
         <button type="button" className="text-[12px] font-medium text-[var(--md-accent)]">
           Open in board <ArrowRight className="inline size-3" strokeWidth={1.2} />
         </button>
@@ -809,7 +809,7 @@ export function DexterSuggestionGrid({
   onPick: (prompt: string, specialistId: DexterSpecialistId) => void
 }) {
   const suggestions = [
-    { title: "Triage my morning", body: "Which shipments need me first today?", icon: Zap, specialistId: "ops" as DexterSpecialistId },
+    { title: "Triage my morning", body: "Which bookings need me first today?", icon: Zap, specialistId: "ops" as DexterSpecialistId },
     { title: "Draft a quote", body: "Yantian to Felixstowe - 2x40HC - week 28", icon: PackageCheck, specialistId: "sales" as DexterSpecialistId },
     { title: "Explain a delay", body: "Why is MD-22479 slipping in Rotterdam?", icon: BarChart3, specialistId: "analytics" as DexterSpecialistId },
     { title: "Prep a customer review", body: "Summarize Marlow Apparel's last quarter", icon: MessageCircle, specialistId: "analytics" as DexterSpecialistId },
@@ -850,11 +850,11 @@ export const defaultDexterSpecialists: DexterSpecialist[] = [
 ]
 
 export const defaultDexterAttachments: DexterAttachment[] = [
-  { id: "md-22455", type: "shipment", title: "MD-22455", meta: "Shanghai to Long Beach - Northwind GmbH - on hold", tone: "red", icon: Boxes },
-  { id: "md-22479", type: "shipment", title: "MD-22479", meta: "Ningbo to Rotterdam - Northwind GmbH - delayed", tone: "amber", icon: Boxes },
-  { id: "md-22414", type: "shipment", title: "MD-22414", meta: "Qingdao to Felixstowe - Aldridge & Sons - at risk", tone: "amber", icon: Boxes },
-  { id: "marlow", type: "customer", title: "Marlow Apparel Ltd", meta: "38 shipments YTD - contact Sandra Hale", tone: "teal", icon: Users },
-  { id: "northwind", type: "customer", title: "Northwind GmbH", meta: "12 active shipments - contact Jonas Weber", tone: "teal", icon: Users },
+  { id: "md-22455", type: "booking", title: "MD-22455", meta: "Shanghai to Long Beach - Northwind GmbH - on hold", tone: "red", icon: Boxes },
+  { id: "md-22479", type: "booking", title: "MD-22479", meta: "Ningbo to Rotterdam - Northwind GmbH - delayed", tone: "amber", icon: Boxes },
+  { id: "md-22414", type: "booking", title: "MD-22414", meta: "Qingdao to Felixstowe - Aldridge & Sons - at risk", tone: "amber", icon: Boxes },
+  { id: "marlow", type: "customer", title: "Marlow Apparel Ltd", meta: "38 bookings YTD - contact Sandra Hale", tone: "teal", icon: Users },
+  { id: "northwind", type: "customer", title: "Northwind GmbH", meta: "12 active bookings - contact Jonas Weber", tone: "teal", icon: Users },
   { id: "co-cn", type: "document", title: "CO-CN-44128.pdf", meta: "Certificate of origin - parsed 98% - MD-22455", tone: "blue", icon: FileText },
   { id: "ci-rev2", type: "document", title: "CI-22455-rev2.pdf", meta: "Commercial invoice - parsed 99% - MD-22455", tone: "blue", icon: FileText },
 ]

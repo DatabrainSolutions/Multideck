@@ -534,28 +534,28 @@ button {
 }
 
 @layer components {
-  .md-shipment-map {
+  .md-booking-map {
     z-index: 0;
     background: var(--md-bg-strong);
     font-family: var(--font-sans);
   }
 
-  .md-shipment-map .leaflet-tile-pane {
+  .md-booking-map .leaflet-tile-pane {
     filter: saturate(0.68) contrast(0.96) brightness(1.02);
   }
 
-  .dark .md-shipment-map .leaflet-tile-pane {
+  .dark .md-booking-map .leaflet-tile-pane {
     filter: saturate(0.64) contrast(1.04) brightness(0.58) invert(0.92) hue-rotate(150deg);
   }
 
-  .md-shipment-map .leaflet-control-zoom {
+  .md-booking-map .leaflet-control-zoom {
     overflow: hidden;
     border: 0;
     border-radius: var(--md-radius-lg);
     box-shadow: var(--md-shadow-line);
   }
 
-  .md-shipment-map .leaflet-control-zoom a {
+  .md-booking-map .leaflet-control-zoom a {
     width: 30px;
     height: 30px;
     border: 0;
@@ -566,31 +566,31 @@ button {
     transition: background var(--md-motion), color var(--md-motion);
   }
 
-  .dark .md-shipment-map .leaflet-control-zoom a {
+  .dark .md-booking-map .leaflet-control-zoom a {
     background: color-mix(in srgb, var(--md-surface) 86%, transparent);
     color: var(--md-ink);
   }
 
-  .md-shipment-map .leaflet-control-zoom a:last-child {
+  .md-booking-map .leaflet-control-zoom a:last-child {
     border-bottom: 0;
   }
 
-  .md-shipment-map .leaflet-control-zoom a:hover {
+  .md-booking-map .leaflet-control-zoom a:hover {
     background: #ffffff;
     color: var(--md-accent);
   }
 
-  .dark .md-shipment-map .leaflet-control-zoom a:hover {
+  .dark .md-booking-map .leaflet-control-zoom a:hover {
     background: var(--md-surface-soft);
     color: var(--md-accent);
   }
 
-  .md-shipment-map .leaflet-control-zoom a:focus {
+  .md-booking-map .leaflet-control-zoom a:focus {
     outline: none;
     box-shadow: inset 0 0 0 2px rgba(14, 125, 116, 0.18);
   }
 
-  .md-shipment-map .leaflet-control-attribution {
+  .md-booking-map .leaflet-control-attribution {
     margin: 0 10px 8px 0;
     border-radius: 999px;
     background: rgba(251, 253, 253, 0.76);
@@ -600,16 +600,16 @@ button {
     box-shadow: var(--md-shadow-line);
   }
 
-  .dark .md-shipment-map .leaflet-control-attribution {
+  .dark .md-booking-map .leaflet-control-attribution {
     background: color-mix(in srgb, var(--md-surface) 78%, transparent);
     color: var(--md-subtle);
   }
 
-  .md-shipment-map .leaflet-control-attribution a {
+  .md-booking-map .leaflet-control-attribution a {
     color: var(--md-text);
   }
 
-  .md-shipment-map .leaflet-interactive {
+  .md-booking-map .leaflet-interactive {
     outline: none;
     transition: stroke-opacity var(--md-motion), stroke-width var(--md-motion);
   }
@@ -636,7 +636,7 @@ button {
     box-shadow: 0 0 0 3px rgba(251, 253, 253, 0.96), 0 0 0 9px color-mix(in srgb, var(--marker-color) 18%, transparent), 0 10px 22px rgba(11, 20, 19, 0.16);
   }
 
-  .md-shipment-map .leaflet-tooltip {
+  .md-booking-map .leaflet-tooltip {
     border: 0;
     border-radius: var(--md-radius-md);
     background: rgba(251, 253, 253, 0.94);
@@ -646,15 +646,15 @@ button {
     box-shadow: var(--md-shadow-line);
   }
 
-  .dark .md-shipment-map .leaflet-tooltip {
+  .dark .md-booking-map .leaflet-tooltip {
     background: color-mix(in srgb, var(--md-surface) 88%, transparent);
     color: var(--md-ink);
   }
 
-  .md-shipment-map .leaflet-tooltip-top::before,
-  .md-shipment-map .leaflet-tooltip-bottom::before,
-  .md-shipment-map .leaflet-tooltip-left::before,
-  .md-shipment-map .leaflet-tooltip-right::before {
+  .md-booking-map .leaflet-tooltip-top::before,
+  .md-booking-map .leaflet-tooltip-bottom::before,
+  .md-booking-map .leaflet-tooltip-left::before,
+  .md-booking-map .leaflet-tooltip-right::before {
     display: none;
   }
 
@@ -1199,7 +1199,7 @@ button {
 
   .md-dashboard-edit-tile[data-md-dashboard-rows] .md-world-clock-panel,
   .md-dashboard-edit-tile[data-md-dashboard-rows] .md-your-jobs-panel,
-  .md-dashboard-edit-tile[data-md-dashboard-rows] .md-live-shipments-panel,
+  .md-dashboard-edit-tile[data-md-dashboard-rows] .md-live-bookings-panel,
   .md-dashboard-edit-tile[data-md-dashboard-rows] .md-morning-digest-panel,
   .md-dashboard-edit-tile[data-md-dashboard-rows] .md-activity-panel,
   .md-dashboard-edit-tile[data-md-dashboard-rows] .md-customs-queue-panel {
@@ -1232,7 +1232,7 @@ button {
   }
 
   .md-dashboard-edit-tile[data-md-dashboard-rows] .md-world-clock-strip,
-  .md-dashboard-edit-tile[data-md-dashboard-rows] .md-live-shipments-map,
+  .md-dashboard-edit-tile[data-md-dashboard-rows] .md-live-bookings-map,
   .md-dashboard-edit-tile[data-md-dashboard-rows] .md-your-jobs-list-shell,
   .md-dashboard-edit-tile[data-md-dashboard-rows] .md-morning-digest-body,
   .md-dashboard-edit-tile[data-md-dashboard-rows] .md-activity-scroll,
@@ -1672,7 +1672,7 @@ button {
 
     .md-dashboard-edit-tile .md-world-clock-header,
     .md-dashboard-edit-tile .md-your-jobs-header,
-    .md-dashboard-edit-tile .md-live-shipments-header {
+    .md-dashboard-edit-tile .md-live-bookings-header {
       padding-left: 14px;
       padding-right: 14px;
     }
@@ -1681,7 +1681,7 @@ button {
       min-height: 82px;
     }
 
-    .md-dashboard-edit-tile .md-live-shipments-header,
+    .md-dashboard-edit-tile .md-live-bookings-header,
     .md-dashboard-edit-tile .md-world-clock-header,
     .md-dashboard-edit-tile .md-your-jobs-header {
       gap: 10px;

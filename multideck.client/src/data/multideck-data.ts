@@ -53,7 +53,7 @@ export type NavItem = {
 
 export const sidebarPrimary: NavItem[] = [
   { label: "Overview", value: "G O", icon: LayoutDashboard, route: "/" },
-  { label: "Shipments", value: "7", icon: Ship, route: "/shipments" },
+  { label: "Bookings", value: "7", icon: Ship, route: "/bookings" },
   { label: "Customers", value: "39", icon: Users, route: "/customers" },
   { label: "CRM", value: "9", icon: BriefcaseBusiness, route: "/crm" },
   { label: "Documents", value: "184", icon: FileText },
@@ -125,7 +125,7 @@ export type DashboardCustomRange = {
   end: string | null
 }
 
-export const savedDashboardViews = ["Today ops brief", "My shipments", "Customs watch", "Customer replies"]
+export const savedDashboardViews = ["Today ops brief", "My bookings", "Customs watch", "Customer replies"]
 
 export const dashboardSnapshots: Record<DashboardRange, {
   label: string
@@ -146,19 +146,19 @@ export const dashboardSnapshots: Record<DashboardRange, {
     label: "Today",
     headline: "Good morning, Elena.",
     summary: "You have 10 active jobs, 6 customer emails waiting, and 4 quotes that should go out before local cutoffs.",
-    meta: "Live from Outlook, quotes, shipments, and customs queues",
-    briefLead: "Start with the customer-facing replies and blockers that are most likely to slow shipments down.",
+    meta: "Live from Outlook, quotes, bookings, and customs queues",
+    briefLead: "Start with the customer-facing replies and blockers that are most likely to slow bookings down.",
     briefItems: [
       { label: "Reply to Sandra Hale", value: "Reply", detail: "Marlow asked whether MD-22481 can still hit the Felixstowe handover. Send the cleared-docs note with the ETA.", source: "Outlook inbox", tone: "amber" },
       { label: "Approve Yong Hua chase", value: "Approve", detail: "Dexter drafted the licence request for MD-22455. Check wording, then send when you are ready.", source: "Customs hold", tone: "red" },
       { label: "Send Pacific air quote", value: "Send", detail: "DXB → Heathrow rate is confirmed and inside margin rules. Customer is waiting for pickup options.", source: "Quotes", tone: "green" },
-      { label: "Notify Bauhaus ETA slip", value: "Notify", detail: "Rotterdam berth queue moved MD-22479 by 36h. Use the customer-safe draft and attach the new ETA.", source: "Shipment update", tone: "teal" },
+      { label: "Notify Bauhaus ETA slip", value: "Notify", detail: "Rotterdam berth queue moved MD-22479 by 36h. Use the customer-safe draft and attach the new ETA.", source: "Booking update", tone: "teal" },
     ],
     kpis: [
       { label: "Your jobs", scope: "today", value: "10", change: "5 need action", detail: "before 15:00", tone: "amber", series: [3, 4, 4, 5, 6, 7, 8, 8, 9, 10] },
       { label: "Emails waiting", scope: "Outlook", value: "6", change: "3 customer", detail: "reply first", tone: "red", series: [8, 7, 9, 6, 7, 5, 6, 4, 6, 6] },
       { label: "Quotes due", scope: "today", value: "4", change: "2 ready", detail: "send now", tone: "green", series: [1, 2, 2, 3, 4, 3, 5, 4, 4, 4] },
-      { label: "Watched shipments", scope: "favourites", value: "7", change: "2 exceptions", detail: "keep close", tone: "teal", series: [4, 4, 5, 6, 6, 7, 7, 8, 7, 7] },
+      { label: "Watched bookings", scope: "favourites", value: "7", change: "2 exceptions", detail: "keep close", tone: "teal", series: [4, 4, 5, 6, 6, 7, 7, 8, 7, 7] },
     ],
   },
   week: {
@@ -177,26 +177,26 @@ export const dashboardSnapshots: Record<DashboardRange, {
       { label: "Your jobs", scope: "week", value: "18", change: "5 at risk", detail: "3 customs", tone: "amber", series: [9, 10, 12, 11, 15, 16, 18, 17, 18, 18] },
       { label: "Emails waiting", scope: "week", value: "21", change: "-8 cleared", detail: "since Monday", tone: "green", series: [32, 29, 27, 25, 24, 22, 21, 23, 20, 21] },
       { label: "Quotes due", scope: "week", value: "14", change: "7 ready", detail: "4 high value", tone: "teal", series: [5, 8, 11, 12, 15, 13, 14, 13, 14, 14] },
-      { label: "Watched shipments", scope: "favourites", value: "9", change: "3 changed", detail: "since Monday", tone: "blue", series: [5, 5, 6, 8, 8, 9, 10, 9, 9, 9] },
+      { label: "Watched bookings", scope: "favourites", value: "9", change: "3 changed", detail: "since Monday", tone: "blue", series: [5, 5, 6, 8, 8, 9, 10, 9, 9, 9] },
     ],
   },
   month: {
     label: "Month",
     headline: "June is tracking well, with customs exceptions still the pressure point.",
-    summary: "Your owned work includes 42 shipments, 28 quote threads, and 9 account follow-ups across premium customers.",
+    summary: "Your owned work includes 42 bookings, 28 quote threads, and 9 account follow-ups across premium customers.",
     meta: "Month-to-date operating view",
     briefLead: "The month is commercially strong, but keep premium customers updated before exception noise becomes relationship risk.",
     briefItems: [
       { label: "Tighten premium reply SLA", value: "1h 42m", detail: "Response time is good, but Marlow and Pacific still create most urgent follow-up load.", source: "Outlook inbox", tone: "green" },
       { label: "Review quote conversion", value: "62%", detail: "Accepted quotes are strongest on Asia-Europe ocean lanes; air quotes need faster carrier confirmation.", source: "Quotes", tone: "teal" },
-      { label: "Close exception history", value: "4", detail: "Four owned shipments had exception history this month. Capture the cause before the client review.", source: "Shipments", tone: "amber" },
+      { label: "Close exception history", value: "4", detail: "Four owned bookings had exception history this month. Capture the cause before the client review.", source: "Bookings", tone: "amber" },
       { label: "Reduce detention risk", value: "9", detail: "Most open risks are customs holds or containers nearing free-time expiry.", source: "Dexter brief", tone: "red" },
     ],
     kpis: [
       { label: "Your jobs", scope: "month", value: "42", change: "31 clean", detail: "month to date", tone: "teal", series: [12, 16, 21, 24, 28, 31, 35, 38, 40, 42] },
       { label: "Emails waiting", scope: "month", value: "84", change: "1h 42m", detail: "avg reply", tone: "green", series: [11, 22, 31, 39, 46, 58, 66, 72, 79, 84] },
       { label: "Quotes sent", scope: "month", value: "38", change: "62% accepted", detail: "or negotiating", tone: "green", series: [4, 7, 11, 14, 18, 23, 27, 31, 35, 38] },
-      { label: "Watched shipments", scope: "favourites", value: "12", change: "4 exceptions", detail: "this month", tone: "amber", series: [4, 6, 7, 8, 9, 9, 10, 11, 12, 12] },
+      { label: "Watched bookings", scope: "favourites", value: "12", change: "4 exceptions", detail: "this month", tone: "amber", series: [4, 6, 7, 8, 9, 9, 10, 11, 12, 12] },
     ],
   },
   quarter: {
@@ -208,14 +208,14 @@ export const dashboardSnapshots: Record<DashboardRange, {
     briefItems: [
       { label: "Protect premium SLA", value: "91%", detail: "Premium replies are mostly inside target, but spikes still happen when customs holds arrive after local cutoff.", source: "Outlook inbox", tone: "green" },
       { label: "Standardise quote playbook", value: "112", detail: "Quote volume is high enough to turn accepted Asia-Europe patterns into reusable defaults.", source: "Quotes", tone: "teal" },
-      { label: "Reduce manual interventions", value: "24", detail: "The recurring manual work is concentrated in docs, broker handoff, and customer-safe ETA updates.", source: "Shipments", tone: "amber" },
+      { label: "Reduce manual interventions", value: "24", detail: "The recurring manual work is concentrated in docs, broker handoff, and customer-safe ETA updates.", source: "Bookings", tone: "amber" },
       { label: "Fix repeated customs patterns", value: "7", detail: "Licence, HS-code, and detention issues repeat by lane. These should become watchers, not surprises.", source: "Dexter brief", tone: "red" },
     ],
     kpis: [
       { label: "Your jobs", scope: "quarter", value: "148", change: "84% clean", detail: "handled", tone: "teal", series: [22, 36, 48, 61, 76, 89, 104, 121, 136, 148] },
       { label: "Emails waiting", scope: "quarter", value: "286", change: "91% SLA", detail: "premium replies", tone: "green", series: [38, 69, 91, 121, 149, 177, 203, 231, 260, 286] },
       { label: "Quotes sent", scope: "quarter", value: "112", change: "+18%", detail: "vs last qtr", tone: "green", series: [12, 22, 31, 45, 56, 69, 82, 91, 103, 112] },
-      { label: "Watched shipments", scope: "favourites", value: "16", change: "7 patterns", detail: "worth review", tone: "amber", series: [7, 8, 9, 10, 12, 13, 14, 15, 16, 16] },
+      { label: "Watched bookings", scope: "favourites", value: "16", change: "7 patterns", detail: "worth review", tone: "amber", series: [7, 8, 9, 10, 12, 13, 14, 15, 16, 16] },
     ],
   },
   custom: {
@@ -226,7 +226,7 @@ export const dashboardSnapshots: Record<DashboardRange, {
     briefLead: "The dashboard is scoped to your selected dates. Prioritise the replies, quotes, and blockers inside that window.",
     briefItems: [
       { label: "Review date-specific replies", value: "Review", detail: "Check customer-facing threads that fall inside the selected date range.", source: "Outlook inbox", tone: "amber" },
-      { label: "Audit active blockers", value: "Audit", detail: "Look for customs, licence, or carrier issues that need action before the range closes.", source: "Shipments", tone: "red" },
+      { label: "Audit active blockers", value: "Audit", detail: "Look for customs, licence, or carrier issues that need action before the range closes.", source: "Bookings", tone: "red" },
       { label: "Send ready quotes", value: "Send", detail: "Prioritise quotes that can still protect margin and service level inside this window.", source: "Quotes", tone: "green" },
       { label: "Prepare customer recap", value: "Draft", detail: "Summarise movement, risk, and next steps for the selected operating period.", source: "Dexter brief", tone: "teal" },
     ],
@@ -234,7 +234,7 @@ export const dashboardSnapshots: Record<DashboardRange, {
       { label: "Your jobs", scope: "custom", value: "24", change: "6 need action", detail: "in range", tone: "amber", series: [8, 11, 12, 14, 17, 18, 20, 22, 23, 24] },
       { label: "Emails waiting", scope: "custom", value: "17", change: "5 customer", detail: "reply first", tone: "red", series: [21, 19, 18, 16, 18, 15, 17, 14, 16, 17] },
       { label: "Quotes due", scope: "custom", value: "9", change: "4 ready", detail: "send now", tone: "green", series: [3, 4, 5, 6, 7, 8, 7, 9, 8, 9] },
-      { label: "Watched shipments", scope: "custom", value: "11", change: "3 exceptions", detail: "keep close", tone: "teal", series: [6, 7, 7, 8, 9, 10, 10, 11, 10, 11] },
+      { label: "Watched bookings", scope: "custom", value: "11", change: "3 exceptions", detail: "keep close", tone: "teal", series: [6, 7, 7, 8, 9, 10, 10, 11, 10, 11] },
     ],
   },
 }
@@ -260,7 +260,7 @@ export type TimezoneWorkItem = {
   action: string
   tone: StatusTone
   priority: StatusTone
-  kind: "RFQ" | "Shipment"
+  kind: "RFQ" | "Booking"
 }
 
 export const timezoneWorkQueues: Record<string, {
@@ -281,7 +281,7 @@ export const timezoneWorkQueues: Record<string, {
     readyToQuote: 2,
     items: [
       { id: "RFQ-3294", lane: "Felixstowe → Rotterdam", cargo: "2 x 40HC · retail fixtures", customer: "Marlow Apparel", ready: "Jun 03", status: "Ready to quote", action: "Send quote", tone: "green", priority: "green", kind: "RFQ" },
-      { id: "MD-22468", lane: "Tilbury → Hamburg", cargo: "LCL · machinery parts", customer: "Aldridge & Sons", ready: "Today", status: "CDS submitted", action: "Check broker", tone: "teal", priority: "amber", kind: "Shipment" },
+      { id: "MD-22468", lane: "Tilbury → Hamburg", cargo: "LCL · machinery parts", customer: "Aldridge & Sons", ready: "Today", status: "CDS submitted", action: "Check broker", tone: "teal", priority: "amber", kind: "Booking" },
       { id: "RFQ-3288", lane: "London → Dubai", cargo: "1 x ULD · samples", customer: "Pacific Goods", ready: "Jun 04", status: "Air rate needed", action: "Request rate", tone: "blue", priority: "blue", kind: "RFQ" },
     ],
   },
@@ -295,7 +295,7 @@ export const timezoneWorkQueues: Record<string, {
     items: [
       { id: "RFQ-3304", lane: "Rotterdam → Felixstowe", cargo: "3 x 40HC · furniture", customer: "Northwind GmbH", ready: "Jun 03", status: "Ready to quote", action: "Send quote", tone: "green", priority: "green", kind: "RFQ" },
       { id: "RFQ-3301", lane: "Amsterdam → Istanbul", cargo: "LCL · packaging", customer: "Atlas Office Supply", ready: "Jun 04", status: "Carrier confirm", action: "Chase carrier", tone: "amber", priority: "amber", kind: "RFQ" },
-      { id: "MD-22479", lane: "Ningbo → Rotterdam", cargo: "1 x 40GP · homeware", customer: "Bauhaus Importe", ready: "Today", status: "ETA shifted", action: "Notify client", tone: "amber", priority: "red", kind: "Shipment" },
+      { id: "MD-22479", lane: "Ningbo → Rotterdam", cargo: "1 x 40GP · homeware", customer: "Bauhaus Importe", ready: "Today", status: "ETA shifted", action: "Notify client", tone: "amber", priority: "red", kind: "Booking" },
     ],
   },
   IST: {
@@ -307,7 +307,7 @@ export const timezoneWorkQueues: Record<string, {
     readyToQuote: 1,
     items: [
       { id: "RFQ-3279", lane: "Istanbul → Southampton", cargo: "1 x 20GP · ceramics", customer: "Mediterranean Spice", ready: "Jun 03", status: "CI/PL mismatch", action: "Approve fix", tone: "amber", priority: "amber", kind: "RFQ" },
-      { id: "MD-22492", lane: "Mersin → Hamburg", cargo: "2 x 40HC · textiles", customer: "Valencia Textiles", ready: "Today", status: "Licence needed", action: "Email shipper", tone: "red", priority: "red", kind: "Shipment" },
+      { id: "MD-22492", lane: "Mersin → Hamburg", cargo: "2 x 40HC · textiles", customer: "Valencia Textiles", ready: "Today", status: "Licence needed", action: "Email shipper", tone: "red", priority: "red", kind: "Booking" },
       { id: "RFQ-3275", lane: "Izmir → Felixstowe", cargo: "LCL · lighting", customer: "Lisbon Lighting", ready: "Jun 05", status: "Ready to quote", action: "Send quote", tone: "green", priority: "green", kind: "RFQ" },
     ],
   },
@@ -321,7 +321,7 @@ export const timezoneWorkQueues: Record<string, {
     items: [
       { id: "RFQ-3310", lane: "Dubai → Heathrow", cargo: "1 x ULD · electronics", customer: "Pacific Goods", ready: "Today", status: "Ready to quote", action: "Send quote", tone: "green", priority: "green", kind: "RFQ" },
       { id: "RFQ-3308", lane: "Jebel Ali → Felixstowe", cargo: "2 x 40HC · fixtures", customer: "Rotterdam Retail", ready: "Jun 03", status: "Awaiting BoL", action: "Chase BoL", tone: "amber", priority: "amber", kind: "RFQ" },
-      { id: "MD-22502", lane: "Dubai → JFK", cargo: "Air · medical supplies", customer: "Meridian Medical", ready: "Today", status: "Temperature doc", action: "Send note", tone: "blue", priority: "red", kind: "Shipment" },
+      { id: "MD-22502", lane: "Dubai → JFK", cargo: "Air · medical supplies", customer: "Meridian Medical", ready: "Today", status: "Temperature doc", action: "Send note", tone: "blue", priority: "red", kind: "Booking" },
     ],
   },
   SHA: {
@@ -351,7 +351,7 @@ export const timezoneWorkQueues: Record<string, {
     items: [
       { id: "RFQ-3322", lane: "Singapore → Southampton", cargo: "1 x 40HC · electronics", customer: "Pacific Goods", ready: "Jun 02", status: "Ready to quote", action: "Send quote", tone: "green", priority: "green", kind: "RFQ" },
       { id: "RFQ-3319", lane: "Singapore → Rotterdam", cargo: "LCL · labware", customer: "Zurich Labware", ready: "Jun 03", status: "Awaiting MSDS", action: "Chase docs", tone: "amber", priority: "amber", kind: "RFQ" },
-      { id: "MD-22508", lane: "Singapore → Hamburg", cargo: "2 x 20GP · components", customer: "Tallinn Tech", ready: "Today", status: "DG check", action: "Send note", tone: "blue", priority: "red", kind: "Shipment" },
+      { id: "MD-22508", lane: "Singapore → Hamburg", cargo: "2 x 20GP · components", customer: "Tallinn Tech", ready: "Today", status: "DG check", action: "Send note", tone: "blue", priority: "red", kind: "Booking" },
     ],
   },
   NYC: {
@@ -363,7 +363,7 @@ export const timezoneWorkQueues: Record<string, {
     readyToQuote: 2,
     items: [
       { id: "RFQ-3268", lane: "JFK → Frankfurt", cargo: "Air · samples", customer: "Black Forest Foods", ready: "Jun 03", status: "Ready to quote", action: "Send quote", tone: "green", priority: "green", kind: "RFQ" },
-      { id: "MD-22466", lane: "Frankfurt → JFK", cargo: "1 ULD · chilled food", customer: "Black Forest Foods", ready: "Today", status: "Customs cleared", action: "Notify consignee", tone: "green", priority: "blue", kind: "Shipment" },
+      { id: "MD-22466", lane: "Frankfurt → JFK", cargo: "1 ULD · chilled food", customer: "Black Forest Foods", ready: "Today", status: "Customs cleared", action: "Notify consignee", tone: "green", priority: "blue", kind: "Booking" },
       { id: "RFQ-3261", lane: "Newark → Felixstowe", cargo: "1 x 40GP · office goods", customer: "Atlas Office Supply", ready: "Jun 06", status: "Carrier confirm", action: "Request rate", tone: "amber", priority: "amber", kind: "RFQ" },
     ],
   },
@@ -375,14 +375,14 @@ export const timezoneWorkQueues: Record<string, {
     needAction: 1,
     readyToQuote: 1,
     items: [
-      { id: "MD-22455", lane: "Shanghai → Long Beach", cargo: "1 x 40HC · optical terminals", customer: "Marlow Apparel", ready: "Jun 09", status: "Customs hold", action: "Email shipper", tone: "red", priority: "red", kind: "Shipment" },
+      { id: "MD-22455", lane: "Shanghai → Long Beach", cargo: "1 x 40HC · optical terminals", customer: "Marlow Apparel", ready: "Jun 09", status: "Customs hold", action: "Email shipper", tone: "red", priority: "red", kind: "Booking" },
       { id: "RFQ-3258", lane: "Long Beach → Felixstowe", cargo: "1 x 40HC · fixtures", customer: "Rotterdam Retail", ready: "Jun 06", status: "Ready to quote", action: "Send quote", tone: "green", priority: "green", kind: "RFQ" },
       { id: "RFQ-3252", lane: "Oakland → Hamburg", cargo: "LCL · electronics", customer: "Pacific Goods", ready: "Jun 07", status: "Awaiting weight", action: "Chase shipper", tone: "amber", priority: "amber", kind: "RFQ" },
     ],
   },
 }
 
-export const liveShipments = [
+export const liveBookings = [
   { id: "MD-22481", from: "Yantian", to: "Felixstowe", mode: "Ocean", eta: "Jun 04", time: "06:20", progress: 72, tone: "teal" as StatusTone, origin: [22.56, 114.23] as const, destination: [51.95, 1.35] as const },
   { id: "MD-22479", from: "Ningbo", to: "Rotterdam", mode: "Ocean", eta: "Jun 06", time: "11:45", progress: 58, tone: "amber" as StatusTone, origin: [29.87, 121.55] as const, destination: [51.95, 4.14] as const },
   { id: "MD-22466", from: "Frankfurt", to: "JFK", mode: "Air", eta: "May 28", time: "21:10", progress: 86, tone: "green" as StatusTone, origin: [50.04, 8.56] as const, destination: [40.64, -73.78] as const },
@@ -390,21 +390,21 @@ export const liveShipments = [
   { id: "MD-22441", from: "Hamburg", to: "Milano", mode: "Road", eta: "May 27", time: "14:00", progress: 64, tone: "blue" as StatusTone, origin: [53.55, 9.99] as const, destination: [45.46, 9.19] as const },
 ]
 
-export const shipmentFilters = ["Open · 34", "On-track · 26", "Delayed · 3", "Exceptions · 2", "Delivered · 48"] as const
+export const bookingFilters = ["Open · 34", "On-track · 26", "Delayed · 3", "Exceptions · 2", "Delivered · 48"] as const
 
-export type ShipmentStatus = "On track" | "Delayed" | "Exception"
-export type ShipmentMode = "OCEAN" | "AIR" | "ROAD"
+export type BookingStatus = "On track" | "Delayed" | "Exception"
+export type BookingMode = "OCEAN" | "AIR" | "ROAD"
 
-export const shipments = [
-  { id: "MD-22481", customer: "Marlow Apparel Ltd", route: "Yantian → Felixstowe", carrier: "COSCO", container: "40HC", mode: "OCEAN" as ShipmentMode, value: "€84,200", eta: "Jun 04", time: "06:20", status: "On track" as ShipmentStatus, progress: 64, owner: "EM", tone: "green" as StatusTone, invoice: "INV-MAR-8841", jobRef: "JOB-LON-22481", customerRef: "MAR-PO-7781", supplierRef: "YH-SO-1440", origin: "Yantian, China", destination: "Felixstowe, United Kingdom", vessel: "COSCO Pride", departureDate: "2026-05-25", arrivalDate: "2026-06-04", vin: "", customFields: [{ label: "Season", value: "SS26 launch" }, { label: "Buyer", value: "Sandra Hale" }] },
-  { id: "MD-22479", customer: "Bauhaus Importe GmbH", route: "Ningbo → Rotterdam", carrier: "MAERSK", container: "40GP", mode: "OCEAN" as ShipmentMode, value: "€41,820", eta: "Jun 06", time: "11:45", status: "Delayed" as ShipmentStatus, progress: 41, owner: "EM", tone: "amber" as StatusTone, invoice: "INV-BAU-4420", jobRef: "JOB-RTM-22479", customerRef: "BAU-CREF-912", supplierRef: "NB-FAC-302", origin: "Ningbo, China", destination: "Rotterdam, Netherlands", vessel: "Maersk Girona", departureDate: "2026-05-23", arrivalDate: "2026-06-06", vin: "", customFields: [{ label: "Delay reason", value: "Rotterdam berth queue" }, { label: "Incoterms", value: "FOB Ningbo" }] },
-  { id: "MD-22466", customer: "Black Forest Foods", route: "Frankfurt → JFK", carrier: "LH 8841", container: "1 ULD", mode: "AIR" as ShipmentMode, value: "€18,400", eta: "May 28", time: "21:10", status: "On track" as ShipmentStatus, progress: 88, owner: "JL", tone: "green" as StatusTone, invoice: "INV-BFF-1198", jobRef: "JOB-JFK-22466", customerRef: "BFF-CHILL-44", supplierRef: "FRA-COLD-18", origin: "Frankfurt, Germany", destination: "JFK, United States", vessel: "LH 8841", departureDate: "2026-05-28", arrivalDate: "2026-05-28", vin: "", customFields: [{ label: "Temperature", value: "Chilled 2-8C" }, { label: "FDA prior notice", value: "PN-8841" }] },
-  { id: "MD-22455", customer: "Northwind GmbH", route: "Shanghai → Long Beach", carrier: "EVERGREEN", container: "40HC", mode: "OCEAN" as ShipmentMode, value: "€184,200", eta: "Jun 09", time: "03:00", status: "Exception" as ShipmentStatus, progress: 22, owner: "EM", tone: "red" as StatusTone, invoice: "INV-YH-6629", jobRef: "JOB-LAX-22455", customerRef: "NW-US-7710", supplierRef: "YONG-HUA-448", origin: "Shanghai, China", destination: "Long Beach, United States", vessel: "Ever Given", departureDate: "2026-05-21", arrivalDate: "2026-06-09", vin: "", customFields: [{ label: "HS code", value: "8517.62.00" }, { label: "Licence", value: "CN export licence missing" }] },
-  { id: "MD-22441", customer: "Pacific Goods Co", route: "Hamburg → Milano", carrier: "DHL 2218", container: "LTL", mode: "ROAD" as ShipmentMode, value: "€8,420", eta: "May 27", time: "14:00", status: "On track" as ShipmentStatus, progress: 71, owner: "WC", tone: "green" as StatusTone, invoice: "INV-PAC-2044", jobRef: "JOB-MIL-22441", customerRef: "PAC-IT-511", supplierRef: "HH-ROAD-09", origin: "Hamburg, Germany", destination: "Milano, Italy", vessel: "DHL 2218", departureDate: "2026-05-25", arrivalDate: "2026-05-27", vin: "WVWZZZ1KZ6W612345", customFields: [{ label: "Trailer", value: "DE-HH-4182" }, { label: "Delivery slot", value: "Dock 4 afternoon" }] },
-  { id: "MD-22429", customer: "Mediterranean Spice Trading", route: "Piraeus → Marseille", carrier: "CMA CGM", container: "20GP", mode: "OCEAN" as ShipmentMode, value: "€32,180", eta: "Jun 03", time: "07:30", status: "On track" as ShipmentStatus, progress: 56, owner: "WC", tone: "green" as StatusTone, invoice: "INV-MST-7004", jobRef: "JOB-MRS-22429", customerRef: "MST-HERB-72", supplierRef: "PIR-SPICE-15", origin: "Piraeus, Greece", destination: "Marseille, France", vessel: "CMA CGM Mistral", departureDate: "2026-05-29", arrivalDate: "2026-06-03", vin: "", customFields: [{ label: "Commodity", value: "Dried herbs" }, { label: "Phyto cert", value: "GR-44817" }] },
-  { id: "MD-22414", customer: "Marlow Apparel Ltd", route: "Qingdao → Felixstowe", carrier: "MAERSK", container: "40HC", mode: "OCEAN" as ShipmentMode, value: "€96,400", eta: "Jun 11", time: "17:00", status: "Exception" as ShipmentStatus, progress: 38, owner: "EM", tone: "red" as StatusTone, invoice: "INV-MAR-8902", jobRef: "JOB-FXT-22414", customerRef: "MAR-PO-7810", supplierRef: "QD-GAR-502", origin: "Qingdao, China", destination: "Felixstowe, United Kingdom", vessel: "Maersk Cardiff", departureDate: "2026-05-26", arrivalDate: "2026-06-11", vin: "", customFields: [{ label: "Exception", value: "Packing list mismatch" }, { label: "Range", value: "Marlow activewear" }] },
-  { id: "MD-22399", customer: "Marlow Apparel Ltd", route: "Ningbo → Southampton", carrier: "ONE", container: "40HC", mode: "OCEAN" as ShipmentMode, value: "€72,100", eta: "Jun 13", time: "04:00", status: "On track" as ShipmentStatus, progress: 28, owner: "EM", tone: "green" as StatusTone, invoice: "INV-MAR-8755", jobRef: "JOB-SOU-22399", customerRef: "MAR-PO-7688", supplierRef: "NB-TEX-205", origin: "Ningbo, China", destination: "Southampton, United Kingdom", vessel: "ONE Innovation", departureDate: "2026-05-30", arrivalDate: "2026-06-13", vin: "", customFields: [{ label: "Range", value: "Outlet replenishment" }, { label: "Priority", value: "Standard" }] },
-  { id: "MD-22388", customer: "Atlas Office Supply", route: "Shenzhen → Hamburg", carrier: "HMM", container: "20GP", mode: "OCEAN" as ShipmentMode, value: "€16,300", eta: "Jun 02", time: "11:00", status: "On track" as ShipmentStatus, progress: 60, owner: "JL", tone: "green" as StatusTone, invoice: "INV-AOS-5108", jobRef: "JOB-HAM-22388", customerRef: "AOS-DESK-301", supplierRef: "SZ-OFF-77", origin: "Shenzhen, China", destination: "Hamburg, Germany", vessel: "HMM Oslo", departureDate: "2026-05-22", arrivalDate: "2026-06-02", vin: "SALGA2BFXGA234567", customFields: [{ label: "Commodity", value: "Office furniture" }, { label: "Assembly kit", value: "Desk pod A12" }] },
+export const bookings = [
+  { id: "MD-22481", customer: "Marlow Apparel Ltd", route: "Yantian → Felixstowe", carrier: "COSCO", container: "40HC", mode: "OCEAN" as BookingMode, value: "€84,200", eta: "Jun 04", time: "06:20", status: "On track" as BookingStatus, progress: 64, owner: "EM", tone: "green" as StatusTone, invoice: "INV-MAR-8841", jobRef: "JOB-LON-22481", customerRef: "MAR-PO-7781", supplierRef: "YH-SO-1440", origin: "Yantian, China", destination: "Felixstowe, United Kingdom", vessel: "COSCO Pride", departureDate: "2026-05-25", arrivalDate: "2026-06-04", vin: "", customFields: [{ label: "Season", value: "SS26 launch" }, { label: "Buyer", value: "Sandra Hale" }] },
+  { id: "MD-22479", customer: "Bauhaus Importe GmbH", route: "Ningbo → Rotterdam", carrier: "MAERSK", container: "40GP", mode: "OCEAN" as BookingMode, value: "€41,820", eta: "Jun 06", time: "11:45", status: "Delayed" as BookingStatus, progress: 41, owner: "EM", tone: "amber" as StatusTone, invoice: "INV-BAU-4420", jobRef: "JOB-RTM-22479", customerRef: "BAU-CREF-912", supplierRef: "NB-FAC-302", origin: "Ningbo, China", destination: "Rotterdam, Netherlands", vessel: "Maersk Girona", departureDate: "2026-05-23", arrivalDate: "2026-06-06", vin: "", customFields: [{ label: "Delay reason", value: "Rotterdam berth queue" }, { label: "Incoterms", value: "FOB Ningbo" }] },
+  { id: "MD-22466", customer: "Black Forest Foods", route: "Frankfurt → JFK", carrier: "LH 8841", container: "1 ULD", mode: "AIR" as BookingMode, value: "€18,400", eta: "May 28", time: "21:10", status: "On track" as BookingStatus, progress: 88, owner: "JL", tone: "green" as StatusTone, invoice: "INV-BFF-1198", jobRef: "JOB-JFK-22466", customerRef: "BFF-CHILL-44", supplierRef: "FRA-COLD-18", origin: "Frankfurt, Germany", destination: "JFK, United States", vessel: "LH 8841", departureDate: "2026-05-28", arrivalDate: "2026-05-28", vin: "", customFields: [{ label: "Temperature", value: "Chilled 2-8C" }, { label: "FDA prior notice", value: "PN-8841" }] },
+  { id: "MD-22455", customer: "Northwind GmbH", route: "Shanghai → Long Beach", carrier: "EVERGREEN", container: "40HC", mode: "OCEAN" as BookingMode, value: "€184,200", eta: "Jun 09", time: "03:00", status: "Exception" as BookingStatus, progress: 22, owner: "EM", tone: "red" as StatusTone, invoice: "INV-YH-6629", jobRef: "JOB-LAX-22455", customerRef: "NW-US-7710", supplierRef: "YONG-HUA-448", origin: "Shanghai, China", destination: "Long Beach, United States", vessel: "Ever Given", departureDate: "2026-05-21", arrivalDate: "2026-06-09", vin: "", customFields: [{ label: "HS code", value: "8517.62.00" }, { label: "Licence", value: "CN export licence missing" }] },
+  { id: "MD-22441", customer: "Pacific Goods Co", route: "Hamburg → Milano", carrier: "DHL 2218", container: "LTL", mode: "ROAD" as BookingMode, value: "€8,420", eta: "May 27", time: "14:00", status: "On track" as BookingStatus, progress: 71, owner: "WC", tone: "green" as StatusTone, invoice: "INV-PAC-2044", jobRef: "JOB-MIL-22441", customerRef: "PAC-IT-511", supplierRef: "HH-ROAD-09", origin: "Hamburg, Germany", destination: "Milano, Italy", vessel: "DHL 2218", departureDate: "2026-05-25", arrivalDate: "2026-05-27", vin: "WVWZZZ1KZ6W612345", customFields: [{ label: "Trailer", value: "DE-HH-4182" }, { label: "Delivery slot", value: "Dock 4 afternoon" }] },
+  { id: "MD-22429", customer: "Mediterranean Spice Trading", route: "Piraeus → Marseille", carrier: "CMA CGM", container: "20GP", mode: "OCEAN" as BookingMode, value: "€32,180", eta: "Jun 03", time: "07:30", status: "On track" as BookingStatus, progress: 56, owner: "WC", tone: "green" as StatusTone, invoice: "INV-MST-7004", jobRef: "JOB-MRS-22429", customerRef: "MST-HERB-72", supplierRef: "PIR-SPICE-15", origin: "Piraeus, Greece", destination: "Marseille, France", vessel: "CMA CGM Mistral", departureDate: "2026-05-29", arrivalDate: "2026-06-03", vin: "", customFields: [{ label: "Commodity", value: "Dried herbs" }, { label: "Phyto cert", value: "GR-44817" }] },
+  { id: "MD-22414", customer: "Marlow Apparel Ltd", route: "Qingdao → Felixstowe", carrier: "MAERSK", container: "40HC", mode: "OCEAN" as BookingMode, value: "€96,400", eta: "Jun 11", time: "17:00", status: "Exception" as BookingStatus, progress: 38, owner: "EM", tone: "red" as StatusTone, invoice: "INV-MAR-8902", jobRef: "JOB-FXT-22414", customerRef: "MAR-PO-7810", supplierRef: "QD-GAR-502", origin: "Qingdao, China", destination: "Felixstowe, United Kingdom", vessel: "Maersk Cardiff", departureDate: "2026-05-26", arrivalDate: "2026-06-11", vin: "", customFields: [{ label: "Exception", value: "Packing list mismatch" }, { label: "Range", value: "Marlow activewear" }] },
+  { id: "MD-22399", customer: "Marlow Apparel Ltd", route: "Ningbo → Southampton", carrier: "ONE", container: "40HC", mode: "OCEAN" as BookingMode, value: "€72,100", eta: "Jun 13", time: "04:00", status: "On track" as BookingStatus, progress: 28, owner: "EM", tone: "green" as StatusTone, invoice: "INV-MAR-8755", jobRef: "JOB-SOU-22399", customerRef: "MAR-PO-7688", supplierRef: "NB-TEX-205", origin: "Ningbo, China", destination: "Southampton, United Kingdom", vessel: "ONE Innovation", departureDate: "2026-05-30", arrivalDate: "2026-06-13", vin: "", customFields: [{ label: "Range", value: "Outlet replenishment" }, { label: "Priority", value: "Standard" }] },
+  { id: "MD-22388", customer: "Atlas Office Supply", route: "Shenzhen → Hamburg", carrier: "HMM", container: "20GP", mode: "OCEAN" as BookingMode, value: "€16,300", eta: "Jun 02", time: "11:00", status: "On track" as BookingStatus, progress: 60, owner: "JL", tone: "green" as StatusTone, invoice: "INV-AOS-5108", jobRef: "JOB-HAM-22388", customerRef: "AOS-DESK-301", supplierRef: "SZ-OFF-77", origin: "Shenzhen, China", destination: "Hamburg, Germany", vessel: "HMM Oslo", departureDate: "2026-05-22", arrivalDate: "2026-06-02", vin: "SALGA2BFXGA234567", customFields: [{ label: "Commodity", value: "Office furniture" }, { label: "Assembly kit", value: "Desk pod A12" }] },
 ]
 
 export const currentOperator = {
@@ -412,14 +412,14 @@ export const currentOperator = {
   initials: "EM",
 }
 
-export const shipmentScopeTabs = ["My Jobs", "All Jobs", "Starred Jobs"] as const
+export const bookingScopeTabs = ["My Jobs", "All Jobs", "Starred Jobs"] as const
 export const customerScopeTabs = ["All customers", "My customers"] as const
-export const initialFavouriteShipmentIds = ["MD-22481", "MD-22455", "MD-22414"] as const
+export const initialFavouriteBookingIds = ["MD-22481", "MD-22455", "MD-22414"] as const
 
 export const operatorJobs = [
   {
     id: "job-md-22455",
-    shipmentId: "MD-22455",
+    bookingId: "MD-22455",
     customer: "Northwind GmbH",
     route: "Shanghai → Long Beach",
     task: "Request CN export licence from Yong Hua",
@@ -430,7 +430,7 @@ export const operatorJobs = [
   },
   {
     id: "job-md-22481",
-    shipmentId: "MD-22481",
+    bookingId: "MD-22481",
     customer: "Marlow Apparel Ltd",
     route: "Yantian → Felixstowe",
     task: "Send arrival note and attach cleared docs",
@@ -441,7 +441,7 @@ export const operatorJobs = [
   },
   {
     id: "job-rfq-3310",
-    shipmentId: "RFQ-3310",
+    bookingId: "RFQ-3310",
     customer: "Pacific Goods Co",
     route: "Dubai → Heathrow",
     task: "Send air quote before Dubai cutoff",
@@ -452,7 +452,7 @@ export const operatorJobs = [
   },
   {
     id: "job-md-22479",
-    shipmentId: "MD-22479",
+    bookingId: "MD-22479",
     customer: "Bauhaus Importe GmbH",
     route: "Ningbo → Rotterdam",
     task: "Notify customer about +36h berth delay",
@@ -463,7 +463,7 @@ export const operatorJobs = [
   },
   {
     id: "job-md-22414",
-    shipmentId: "MD-22414",
+    bookingId: "MD-22414",
     customer: "Marlow Apparel Ltd",
     route: "Qingdao → Felixstowe",
     task: "Review CI/PL value mismatch",
@@ -474,7 +474,7 @@ export const operatorJobs = [
   },
 ] as const
 
-export const shipmentMetrics = [
+export const bookingMetrics = [
   { label: "Open", value: "34", tone: "neutral" as StatusTone },
   { label: "In transit", value: "23", tone: "teal" as StatusTone },
   { label: "At destination", value: "6", tone: "blue" as StatusTone },
@@ -482,7 +482,7 @@ export const shipmentMetrics = [
   { label: "Delivered · 7d", value: "48", tone: "green" as StatusTone },
 ]
 
-export const shipmentMilestones = [
+export const bookingMilestones = [
   { label: "Picked up", detail: "May 22", state: "done" },
   { label: "Origin port", detail: "May 24", state: "done" },
   { label: "Departed", detail: "May 25", state: "done" },
@@ -492,7 +492,7 @@ export const shipmentMilestones = [
   { label: "Delivered", detail: "—", state: "pending" },
 ]
 
-export const shipmentCargo = [
+export const bookingCargo = [
   ["Container", "EGLV 728 4419 (40HC)"],
   ["Seal", "0148-2266"],
   ["HS code", "8517.62.00"],
@@ -502,7 +502,7 @@ export const shipmentCargo = [
   ["Incoterms", "CIF Long Beach"],
 ]
 
-export const shipmentDocuments = [
+export const bookingDocuments = [
   ["Commercial invoice", "CI-202604-7184.pdf", "extracted · 99%"],
   ["Packing list", "PL-202604-7184.pdf", "extracted · 98%"],
   ["Bill of lading", "EGLV-MBL-728.pdf", "extracted · 96%"],
@@ -510,9 +510,9 @@ export const shipmentDocuments = [
   ["Insurance certificate", "INS-22455.pdf", "extracted · 99%"],
 ]
 
-export const shipmentTimeline = [
+export const bookingTimeline = [
   { time: "09:42 · AI", text: "Customs hold raised — see exception above.", tone: "red" as StatusTone },
-  { time: "08:30 · Wei Chen", text: "Submitted CDS entry to HMRC on parallel shipment MD-22481.", tone: "blue" as StatusTone },
+  { time: "08:30 · Wei Chen", text: "Submitted CDS entry to HMRC on parallel booking MD-22481.", tone: "blue" as StatusTone },
   { time: "07:14 · AI", text: "BoL parsed · 18 fields extracted · 96% avg confidence.", tone: "green" as StatusTone },
   { time: "May 25 18:02 · EVERGREEN", text: "Vessel departed Shanghai · ETA pinned to model.", tone: "neutral" as StatusTone },
   { time: "May 24 11:30 · Yong Hua", text: "Container gated in at terminal SH-Waigaoqiao.", tone: "neutral" as StatusTone },
@@ -549,7 +549,7 @@ export const reportTemplates: ReportTemplate[] = [
   {
     id: "monthly-client-review",
     title: "Monthly client review",
-    description: "KPIs, shipments, exceptions & spend for one customer",
+    description: "KPIs, bookings, exceptions & spend for one customer",
     cadence: "Monthly · 1st",
     format: "PDF",
     chart: "kpi",
@@ -650,7 +650,7 @@ export const reportFilters = ["All", "Ready", "Scheduled", "Client reviews"] as 
 export const digestItems = [
   "MD-22455 is on customs hold. Missing CN export licence. Reach out to Yong Hua Logistics?",
   "Rotterdam berth queue is pushing MD-22479 ETA out 36h. Notify Northwind GmbH?",
-  "Otherwise quiet: 23 shipments on track, customs average is 11h.",
+  "Otherwise quiet: 23 bookings on track, customs average is 11h.",
 ]
 
 export const activityItems = [
@@ -667,7 +667,7 @@ export const customsQueue = [
   { id: "MD-22479", entry: "Awaiting HMRC response", status: "Under review", progress: 54, tone: "amber" as StatusTone },
 ]
 
-export const shipmentModes = [
+export const bookingModes = [
   { label: "Ocean", count: 14, icon: Ship, tone: "teal" as StatusTone },
   { label: "Air", count: 6, icon: Plane, tone: "blue" as StatusTone },
   { label: "Road", count: 3, icon: PackageCheck, tone: "green" as StatusTone },
@@ -684,7 +684,7 @@ type CustomerRecord = {
   contacts: number
   active: string
   activeTone: StatusTone
-  shipments30d: number[]
+  bookings30d: number[]
   sparkTone: StatusTone
   billedYtd: string
   onTime: string
@@ -737,7 +737,7 @@ const placeholderCustomerProfiles = [
   avatarTone: string
 }>
 
-function makeShipmentSeries(index: number) {
+function makeBookingSeries(index: number) {
   const base = 4 + (index % 7)
   return Array.from({ length: 12 }, (_, step) => base + step * ((index % 3) + 1) + ((step + index) % 4))
 }
@@ -752,7 +752,7 @@ const placeholderCustomers: CustomerRecord[] = placeholderCustomerProfiles.map((
     contacts: 1 + (index % 5),
     active: hasException ? `${activeCount} · 1!` : String(activeCount),
     activeTone: hasException ? "amber" : "neutral",
-    shipments30d: makeShipmentSeries(index),
+    bookings30d: makeBookingSeries(index),
     sparkTone: (["teal", "blue", "amber"] as StatusTone[])[index % 3],
     billedYtd: index < 8 ? `€${(1.1 + index * 0.22).toFixed(1)}M` : `€${420 + index * 35}k`,
     onTime: `${onTimeValue}%`,
@@ -770,7 +770,7 @@ export const customers: CustomerRecord[] = [
     contacts: 4,
     active: "6 · 1!",
     activeTone: "amber" as StatusTone,
-    shipments30d: [18, 24, 21, 28, 25, 31, 29, 36, 33, 41, 38, 47, 44],
+    bookings30d: [18, 24, 21, 28, 25, 31, 29, 36, 33, 41, 38, 47, 44],
     sparkTone: "teal" as StatusTone,
     billedYtd: "€4.2M",
     onTime: "96%",
@@ -788,7 +788,7 @@ export const customers: CustomerRecord[] = [
     contacts: 3,
     active: "4",
     activeTone: "neutral" as StatusTone,
-    shipments30d: [12, 9, 16, 13, 20, 17, 21, 18, 25, 22, 26, 30],
+    bookings30d: [12, 9, 16, 13, 20, 17, 21, 18, 25, 22, 26, 30],
     sparkTone: "teal" as StatusTone,
     billedYtd: "€2.8M",
     onTime: "94%",
@@ -806,7 +806,7 @@ export const customers: CustomerRecord[] = [
     contacts: 5,
     active: "9 · 1!",
     activeTone: "amber" as StatusTone,
-    shipments30d: [8, 14, 11, 17, 14, 21, 18, 24, 21, 28, 25, 31],
+    bookings30d: [8, 14, 11, 17, 14, 21, 18, 24, 21, 28, 25, 31],
     sparkTone: "blue" as StatusTone,
     billedYtd: "€2.1M",
     onTime: "91%",
@@ -824,7 +824,7 @@ export const customers: CustomerRecord[] = [
     contacts: 2,
     active: "5",
     activeTone: "neutral" as StatusTone,
-    shipments30d: [10, 14, 11, 18, 14, 14, 18, 18, 22, 22, 18, 28],
+    bookings30d: [10, 14, 11, 18, 14, 14, 18, 18, 22, 22, 18, 28],
     sparkTone: "teal" as StatusTone,
     billedYtd: "€1.9M",
     onTime: "89%",
@@ -842,7 +842,7 @@ export const customers: CustomerRecord[] = [
     contacts: 3,
     active: "7",
     activeTone: "neutral" as StatusTone,
-    shipments30d: [9, 11, 11, 13, 10, 16, 13, 19, 16, 22, 19, 25],
+    bookings30d: [9, 11, 11, 13, 10, 16, 13, 19, 16, 22, 19, 25],
     sparkTone: "amber" as StatusTone,
     billedYtd: "€1.4M",
     onTime: "93%",
@@ -860,7 +860,7 @@ export const customers: CustomerRecord[] = [
     contacts: 2,
     active: "3",
     activeTone: "neutral" as StatusTone,
-    shipments30d: [4, 7, 7, 10, 6, 9, 9, 12, 9, 12, 12, 15],
+    bookings30d: [4, 7, 7, 10, 6, 9, 9, 12, 9, 12, 12, 15],
     sparkTone: "blue" as StatusTone,
     billedYtd: "€620k",
     onTime: "97%",
@@ -878,7 +878,7 @@ export const customers: CustomerRecord[] = [
     contacts: 2,
     active: "2 · 1!",
     activeTone: "amber" as StatusTone,
-    shipments30d: [5, 9, 9, 13, 9, 13, 13, 16, 12, 16, 16, 20],
+    bookings30d: [5, 9, 9, 13, 9, 13, 13, 16, 12, 16, 16, 20],
     sparkTone: "teal" as StatusTone,
     billedYtd: "€410k",
     onTime: "88%",
@@ -896,7 +896,7 @@ export const customers: CustomerRecord[] = [
     contacts: 3,
     active: "3",
     activeTone: "neutral" as StatusTone,
-    shipments30d: [3, 3, 6, 3, 6, 6, 9, 6, 9, 9, 13, 9],
+    bookings30d: [3, 3, 6, 3, 6, 6, 9, 6, 9, 9, 13, 9],
     sparkTone: "amber" as StatusTone,
     billedYtd: "€890k",
     onTime: "99%",
@@ -914,7 +914,7 @@ export const customers: CustomerRecord[] = [
     contacts: 1,
     active: "1",
     activeTone: "neutral" as StatusTone,
-    shipments30d: [2, 5, 5, 5, 8, 5, 8, 8, 11, 8, 11, 11],
+    bookings30d: [2, 5, 5, 5, 8, 5, 8, 8, 11, 8, 11, 11],
     sparkTone: "blue" as StatusTone,
     billedYtd: "€180k",
     onTime: "100%",
@@ -939,7 +939,7 @@ export const customerFilters = [
 ]
 
 export const marlowMetrics = [
-  { label: "YTD shipments", value: "287", detail: "+18% vs '25", tone: "teal" as StatusTone },
+  { label: "YTD bookings", value: "287", detail: "+18% vs '25", tone: "teal" as StatusTone },
   { label: "Billed YTD", value: "€4.2M", detail: "€620k avg/mo", tone: "neutral" as StatusTone },
   { label: "On-time", value: "96%", detail: "trailing 90d", tone: "green" as StatusTone },
   { label: "Avg margin", value: "18.4%", detail: "company avg 16.2%", tone: "green" as StatusTone },
@@ -949,14 +949,14 @@ export const marlowMetrics = [
 export const marlowTabs = [
   { label: "Overview" },
   { label: "Contacts", value: "4" },
-  { label: "Shipments", value: "6 active · 287 YTD" },
+  { label: "Bookings", value: "6 active · 287 YTD" },
   { label: "Documents", value: "94" },
   { label: "Quotes", value: "3 open" },
   { label: "Activity" },
   { label: "Notes" },
 ]
 
-export const marlowActiveShipments = [
+export const marlowActiveBookings = [
   { id: "MD-22481", route: "Yantian → Felixstowe", detail: "COSCO 7184 · CFC service", mode: "OCEAN", eta: "Jun 04", progress: 64, tone: "green" as StatusTone },
   { id: "MD-22414", route: "Qingdao → Felixstowe", detail: "Maersk · doc mismatch", mode: "OCEAN", eta: "Jun 11", progress: 38, tone: "red" as StatusTone },
   { id: "MD-22399", route: "Ningbo → Southampton", detail: "ONE · JCV3", mode: "OCEAN", eta: "Jun 13", progress: 28, tone: "green" as StatusTone },
@@ -984,7 +984,7 @@ export const marlowContacts = [
     lastTouch: "Email reply yesterday · AW26 capacity planning",
     nextStep: "Confirm September allocation before new volume forecast locks",
     openItems: ["AW26 forecast +20% above baseline", "MD-22414 customs hold visibility", "Quarterly service review in July"],
-    linkedShipments: ["MD-22481", "MD-22414", "MD-22260"],
+    linkedBookings: ["MD-22481", "MD-22414", "MD-22260"],
     notes: "Values early warnings and concise options. Avoid long operational threads unless there is a decision needed.",
   },
   {
@@ -1005,7 +1005,7 @@ export const marlowContacts = [
     lastTouch: "Docs query 2 days ago · commercial invoice values",
     nextStep: "Send corrected CI/PL values for MD-22414",
     openItems: ["CI/PL value mismatch", "Broker response time review"],
-    linkedShipments: ["MD-22414", "MD-22399"],
+    linkedBookings: ["MD-22414", "MD-22399"],
     notes: "Needs exact references and attachment names. Best contacted before 3pm UK for same-day customs checks.",
   },
   {
@@ -1020,14 +1020,14 @@ export const marlowContacts = [
     tone: "cream",
     location: "London, UK",
     department: "Logistics",
-    influence: "Daily shipment chasing and internal warehouse coordination",
+    influence: "Daily booking chasing and internal warehouse coordination",
     preference: "Slack for quick status checks, email for final ETAs",
     owner: "Elena Moreno",
     lastTouch: "Status check today · Felixstowe arrivals",
     nextStep: "Share updated berth timing for MD-22481",
     openItems: ["Felixstowe delivery slot", "Warehouse intake timing"],
-    linkedShipments: ["MD-22481", "MD-22372"],
-    notes: "Responds quickly when updates include shipment ID, ETA, and what changed.",
+    linkedBookings: ["MD-22481", "MD-22372"],
+    notes: "Responds quickly when updates include booking ID, ETA, and what changed.",
   },
   {
     initials: "TW",
@@ -1047,7 +1047,7 @@ export const marlowContacts = [
     lastTouch: "Invoice query last week · open balance",
     nextStep: "Confirm EUR invoice treatment for June statements",
     openItems: ["Open balance €84,210", "Annual renewal pricing"],
-    linkedShipments: ["Q-1882"],
+    linkedBookings: ["Q-1882"],
     notes: "Commercially sharp. Keep finance messages short and attach the supporting statement.",
   },
 ]
@@ -1222,7 +1222,7 @@ export const crmPipelineStages = [
         owner: "JL",
         status: "Handoff",
         summary: "Repeat Asia-Europe ocean volume accepted with same broker escalation path.",
-        nextStep: "Create shipment templates and notify operations.",
+        nextStep: "Create booking templates and notify operations.",
         tone: "green" as StatusTone,
       },
     ],
@@ -1392,7 +1392,7 @@ export const crmPipelineBoards = [
             owner: "JL",
             status: "Resolved",
             summary: "Pickup windows and insurance terms were clarified; quote can move back to commercial follow-up.",
-            nextStep: "Watch first shipment and confirm customer satisfaction.",
+            nextStep: "Watch first booking and confirm customer satisfaction.",
             tone: "green" as StatusTone,
           },
         ],
@@ -1426,7 +1426,7 @@ export const crmContacts = [
     lastTouch: "Quote request today · Dubai to Heathrow",
     nextStep: "Send pickup options and insurance language before Dubai cutoff",
     openItems: ["DXB air quote", "Insurance terms", "Pickup cutoff"],
-    linkedShipments: ["RFQ-3310", "MD-22441"],
+    linkedBookings: ["RFQ-3310", "MD-22441"],
     notes: "Responds best when options include price, time, and risk in the first three lines.",
     relationship: "Decision maker",
   },
@@ -1449,7 +1449,7 @@ export const crmContacts = [
     lastTouch: "ETA delay note drafted · Rotterdam berth queue",
     nextStep: "Approve customer-safe delay note and renewal context",
     openItems: ["MD-22479 ETA slip", "Quarterly renewal", "Rotterdam lane plan"],
-    linkedShipments: ["MD-22479"],
+    linkedBookings: ["MD-22479"],
     notes: "Commercially calm when delay causes are clear and next actions are already proposed.",
     relationship: "Commercial owner",
   },
@@ -1470,10 +1470,10 @@ export const crmContacts = [
     preference: "Teams for quick approvals, email for final docs",
     owner: "Julia Lee",
     lastTouch: "Quote accepted today · repeat ocean work",
-    nextStep: "Create shipment templates and introduce operations owner",
+    nextStep: "Create booking templates and introduce operations owner",
     openItems: ["Template setup", "Broker handoff", "Repeat lane watch"],
-    linkedShipments: ["Q-1882", "RFQ-3305"],
-    notes: "Values repeatable process. Keep handoff precise and make the next shipment easy to start.",
+    linkedBookings: ["Q-1882", "RFQ-3305"],
+    notes: "Values repeatable process. Keep handoff precise and make the next booking easy to start.",
     relationship: "Operations sponsor",
   },
 ]
@@ -1491,7 +1491,7 @@ export const crmTasks = [
   { id: "task-pacific-quote", title: "Send Pacific DXB air quote", account: "Pacific Goods Co", owner: "EM", due: "Today 12:00", status: "Quote due", detail: "Include pickup windows, insurance terms, and carrier cutoff.", tone: "amber" as StatusTone },
   { id: "task-bauhaus-note", title: "Approve Bauhaus delay note", account: "Bauhaus Importe GmbH", owner: "EM", due: "Today 13:40", status: "Needs review", detail: "Customer-safe explanation for Rotterdam berth delay.", tone: "amber" as StatusTone },
   { id: "task-aldridge-trial", title: "Resolve Aldridge trial hold", account: "Aldridge & Sons", owner: "EM", due: "Tomorrow", status: "Risk", detail: "Close customs blocker before conversion email goes out.", tone: "red" as StatusTone },
-  { id: "task-northwind-handoff", title: "Create Northwind shipment templates", account: "Northwind GmbH", owner: "JL", due: "Jun 13", status: "Handoff", detail: "Turn accepted quote into repeatable lane defaults.", tone: "teal" as StatusTone },
+  { id: "task-northwind-handoff", title: "Create Northwind booking templates", account: "Northwind GmbH", owner: "JL", due: "Jun 13", status: "Handoff", detail: "Turn accepted quote into repeatable lane defaults.", tone: "teal" as StatusTone },
 ]
 
 export const crmPipelineSettings = [
@@ -1545,7 +1545,7 @@ export const crmLeadFieldSettings = [
     label: "Conversion trigger",
     type: "Dropdown",
     activeOption: "Committed stage",
-    options: ["Committed stage", "Quote accepted", "First shipment booked", "Manual approval"],
+    options: ["Committed stage", "Quote accepted", "First booking created", "Manual approval"],
   },
 ]
 
@@ -1571,7 +1571,7 @@ export const galleryComponents = [
     category: "Design System",
     description: "The Multideck colour tokens for shell backgrounds, product surfaces, text, accents, and operational status.",
     details: "Use tokens from `src/styles.css` instead of one-off colour values. Colours should support calm scanning, not decoration.",
-    foundOn: [{ label: "Overview", route: "/" }, { label: "Shipments", route: "/shipments" }, { label: "Shipment detail", route: "/shipments/md-22455" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Overview", route: "/" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
     componentCode: `:root {\n  --md-ink: #0b1413;\n  --md-text: #5a6764;\n  --md-subtle: #94a09c;\n  --md-hairline: #9fb8b0;\n  --md-bg: #c9ddd8;\n  --md-bg-strong: #aec9c1;\n  --md-sidebar-bg: #f6fbfa;\n  --md-surface: #ffffff;\n  --md-surface-soft: #f8fcfb;\n  --md-surface-tint: #d7e9e4;\n  --md-accent: #0e7d74;\n  --md-green: #2e8e60;\n  --md-amber: #dd8a2b;\n  --md-red: #d14e4e;\n  --md-blue: #4a7d9c;\n}`,
     usageCode: `<Surface className="bg-[var(--md-surface)] text-[var(--md-ink)]">\n  <StatusPill tone="teal">AI prepared</StatusPill>\n  <p className="text-[var(--md-text)]">Use token colours for calm operational hierarchy.</p>\n</Surface>`,
   },
@@ -1583,7 +1583,7 @@ export const galleryComponents = [
     details: "Use 11px and 12px for metadata, 13px for standard UI, 14px for section headings, 18px for subheads, and 24px for main page headings.",
     foundOn: [{ label: "Overview", route: "/" }, { label: "CRM", route: "/crm" }, { label: "Reports", route: "/reports" }, { label: "Components", route: "/components" }],
     componentCode: `@theme inline {\n  --font-sans: "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;\n  --font-mono: "SF Mono", "SFMono-Regular", ui-monospace, "Cascadia Code", monospace;\n}\n\n.type-page-title {\n  font-size: 24px;\n  font-weight: 500;\n  line-height: 1.15;\n}\n\n.type-section-title {\n  font-size: 14px;\n  font-weight: 500;\n}\n\n.type-body {\n  font-size: 13px;\n  font-weight: 400;\n  line-height: 1.55;\n}`,
-    usageCode: `<h1 className="text-[24px] font-medium leading-tight text-[var(--md-ink)]">Overview</h1>\n<h2 className="text-[14px] font-medium text-[var(--md-ink)]">Live shipments</h2>\n<p className="text-[13px] leading-6 text-[var(--md-text)]">Use compact type for operational scanning.</p>\n<p className="text-[12px] text-[var(--md-subtle)]">Updated 41s ago</p>`,
+    usageCode: `<h1 className="text-[24px] font-medium leading-tight text-[var(--md-ink)]">Overview</h1>\n<h2 className="text-[14px] font-medium text-[var(--md-ink)]">Live bookings</h2>\n<p className="text-[13px] leading-6 text-[var(--md-text)]">Use compact type for operational scanning.</p>\n<p className="text-[12px] text-[var(--md-subtle)]">Updated 41s ago</p>`,
   },
   {
     id: "surface",
@@ -1593,7 +1593,7 @@ export const galleryComponents = [
     details: "Use for primary panels, side panels, preview wells, and command areas. Radius and shadow come from tokens.",
     foundOn: [{ label: "Overview", route: "/" }, { label: "CRM", route: "/crm" }, { label: "Components", route: "/components" }],
     componentCode: `export function Surface({ tone = "panel", padding = "md", className, children }) {\n  return (\n    <section className={cn("rounded-[var(--md-radius-lg)]", toneClass[tone], paddingClass[padding], className)}>\n      {children}\n    </section>\n  )\n}\n\nexport function SectionHeader({ eyebrow, title, meta, action, className }) {\n  return (\n    <div className={cn("flex items-start justify-between gap-3", className)}>\n      <div className="min-w-0">\n        {eyebrow ? <p className="mb-1 text-xs font-medium text-[var(--md-subtle)]">{eyebrow}</p> : null}\n        <h2 className="truncate text-[14px] font-medium text-[var(--md-ink)]">{title}</h2>\n        {meta ? <p className="mt-1 text-[12px] text-[var(--md-text)]">{meta}</p> : null}\n      </div>\n      {action ? <div className="shrink-0">{action}</div> : null}\n    </div>\n  )\n}`,
-    usageCode: `<Surface tone="panel" padding="md">\n  <SectionHeader title="Live shipments" meta="updated 41s ago" />\n  <ShipmentRow shipment={shipment} />\n</Surface>`,
+    usageCode: `<Surface tone="panel" padding="md">\n  <SectionHeader title="Live bookings" meta="updated 41s ago" />\n  <BookingRow booking={booking} />\n</Surface>`,
   },
   {
     id: "status-pill",
@@ -1601,7 +1601,7 @@ export const galleryComponents = [
     category: "Feedback",
     description: "Compact status language for freight workflows, exceptions, and document states.",
     details: "Use green for good, amber for review, red for action, blue for information, teal for AI or customs flow.",
-    foundOn: [{ label: "Overview", route: "/" }, { label: "Shipments", route: "/shipments" }, { label: "Shipment detail", route: "/shipments/md-22455" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Overview", route: "/" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
     componentCode: `export function StatusPill({ tone = "neutral", children, className }) {\n  return (\n    <Badge\n      variant="secondary"\n      className={cn("h-[21px] rounded-full px-[9px] text-[11.5px] font-medium leading-none", toneClass[tone], className)}\n    >\n      {children}\n    </Badge>\n  )\n}`,
     usageCode: `<StatusPill tone="amber">Under review</StatusPill>\n<StatusPill tone="red">Action req.</StatusPill>`,
   },
@@ -1633,7 +1633,7 @@ export const galleryComponents = [
     details: "Use beside always-needed page controls when the operator may want to ask Dexter about the current screen. Keep view switches and utility actions in Page Settings when the header would otherwise feel crowded.",
     foundOn: [
       { label: "Customers", route: "/customers" },
-      { label: "Shipments", route: "/shipments" },
+      { label: "Bookings", route: "/bookings" },
       { label: "CRM overview", route: "/crm" },
       { label: "CRM leads", route: "/crm/leads" },
       { label: "CRM contacts", route: "/crm/contacts" },
@@ -1652,7 +1652,7 @@ export const galleryComponents = [
     details: "Use when Dexter should feel present inside the workflow instead of taking the operator to a separate page. The fade veil is part of the component: it should softly dissolve the underlying content into the rail and avoid a hard drawer edge.",
     foundOn: [
       { label: "Customers", route: "/customers" },
-      { label: "Shipments", route: "/shipments" },
+      { label: "Bookings", route: "/bookings" },
       { label: "CRM overview", route: "/crm" },
       { label: "CRM leads", route: "/crm/leads" },
       { label: "CRM contacts", route: "/crm/contacts" },
@@ -1679,7 +1679,7 @@ export const galleryComponents = [
     category: "Feedback",
     description: "A floating bottom-middle notification for short confirmations that need to be readable without stealing the workflow.",
     details: "Use for save, export, copy, and lightweight route feedback. Keep the title direct, add one short supporting line only when it helps the operator understand what happened.",
-    foundOn: [{ label: "Customers", route: "/customers" }, { label: "Shipments", route: "/shipments" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Customers", route: "/customers" }, { label: "Bookings", route: "/bookings" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
     componentCode: `export function Toaster(props) {\n  return (\n    <Sonner\n      position="bottom-center"\n      className="toaster group md-toaster"\n      style={{\n        "--normal-bg": "rgba(251, 253, 253, 0.92)",\n        "--normal-text": "var(--md-ink)",\n        "--normal-border": "transparent",\n        "--border-radius": "var(--md-radius-xl)",\n        "--width": "min(520px, calc(100vw - 32px))",\n      }}\n      toastOptions={{\n        classNames: {\n          toast: "cn-toast md-toast",\n          icon: "md-toast-icon",\n          title: "md-toast-title",\n          description: "md-toast-description",\n        },\n      }}\n      {...props}\n    />\n  )\n}`,
     usageCode: `<Toaster />\n\ntoast.success("Customer CSV prepared", {\n  description: "The export is ready for Northwind Forwarding.",\n})`,
   },
@@ -1740,8 +1740,8 @@ export const galleryComponents = [
     description: "A compact share-of-total chart for lane mix, mode mix, document state, or exception type.",
     details: "Use for simple composition only. Prefer a bar chart when exact comparison matters more than share of total.",
     foundOn: visualizationFoundOn,
-    componentCode: `export function DonutChartCard({\n  data = modeBreakdown,\n  showLegend = true,\n  innerRadius = 68,\n  outerRadius = 104,\n  centerLabel = "modes",\n  centerValueFormatter = formatPercent,\n}) {\n  const total = data.reduce((sum, item) => sum + item.value, 0)\n  let currentAngle = 0\n\n  return (\n    <VisualizationShell title="Lane mix" subtitle="Share of shipments by transport mode">\n      <svg viewBox="0 0 240 240" role="img" aria-label="Lane mix">\n        {data.map((entry) => {\n          const angle = total > 0 ? (entry.value / total) * 360 : 0\n          const startAngle = currentAngle\n          const endAngle = currentAngle + angle\n          currentAngle = endAngle\n\n          return (\n            <path\n              key={entry.name}\n              d={describePieSegment(120, 120, outerRadius, innerRadius, startAngle, endAngle)}\n              fill={entry.color}\n            />\n          )\n        })}\n        {innerRadius > 0 ? <ChartCenter value={centerValueFormatter(total)} label={centerLabel} /> : null}\n      </svg>\n      {showLegend ? <LegendRow items={data.map((item) => ({ label: item.name, color: item.color }))} /> : null}\n    </VisualizationShell>\n  )\n}`,
-    usageCode: `<DonutChartCard />\n\n<DonutChartCard\n  title="Pie chart with key"\n  data={modeBreakdown}\n  showLegend\n/>\n\n<DonutChartCard\n  title="Pie chart without key"\n  data={documentStates}\n  showLegend={false}\n  innerRadius={0}\n/>\n\n<DonutChartCard\n  title="Shipment count donut"\n  data={shipmentModeCounts}\n  centerLabel="shipments"\n  centerValueFormatter={(value) => value.toLocaleString()}\n/>\n\n<ReportVisualizationBlock kind="pie" title="Mode mix" options={{ showLegend: false, pieInnerRadius: 0 }} />`,
+    componentCode: `export function DonutChartCard({\n  data = modeBreakdown,\n  showLegend = true,\n  innerRadius = 68,\n  outerRadius = 104,\n  centerLabel = "modes",\n  centerValueFormatter = formatPercent,\n}) {\n  const total = data.reduce((sum, item) => sum + item.value, 0)\n  let currentAngle = 0\n\n  return (\n    <VisualizationShell title="Lane mix" subtitle="Share of bookings by transport mode">\n      <svg viewBox="0 0 240 240" role="img" aria-label="Lane mix">\n        {data.map((entry) => {\n          const angle = total > 0 ? (entry.value / total) * 360 : 0\n          const startAngle = currentAngle\n          const endAngle = currentAngle + angle\n          currentAngle = endAngle\n\n          return (\n            <path\n              key={entry.name}\n              d={describePieSegment(120, 120, outerRadius, innerRadius, startAngle, endAngle)}\n              fill={entry.color}\n            />\n          )\n        })}\n        {innerRadius > 0 ? <ChartCenter value={centerValueFormatter(total)} label={centerLabel} /> : null}\n      </svg>\n      {showLegend ? <LegendRow items={data.map((item) => ({ label: item.name, color: item.color }))} /> : null}\n    </VisualizationShell>\n  )\n}`,
+    usageCode: `<DonutChartCard />\n\n<DonutChartCard\n  title="Pie chart with key"\n  data={modeBreakdown}\n  showLegend\n/>\n\n<DonutChartCard\n  title="Pie chart without key"\n  data={documentStates}\n  showLegend={false}\n  innerRadius={0}\n/>\n\n<DonutChartCard\n  title="Booking count donut"\n  data={bookingModeCounts}\n  centerLabel="bookings"\n  centerValueFormatter={(value) => value.toLocaleString()}\n/>\n\n<ReportVisualizationBlock kind="pie" title="Mode mix" options={{ showLegend: false, pieInnerRadius: 0 }} />`,
   },
   {
     id: "funnel-chart",
@@ -1788,30 +1788,30 @@ export const galleryComponents = [
     name: "Mixed Chart",
     category: "Visualizations",
     description: "A combined bar-and-line chart for report sections where volume and performance need to be read together.",
-    details: "Use for spend and margin, volume and SLA, or shipments and exceptions. Keep it to two signals so the chart remains believable in a PDF-style report.",
+    details: "Use for spend and margin, volume and SLA, or bookings and exceptions. Keep it to two signals so the chart remains believable in a PDF-style report.",
     foundOn: visualizationFoundOn,
     componentCode: visualizationComponentCode("MixedChartCard", "ComposedChart", '<Bar dataKey="billed" fill="var(--color-billed)" radius={4} />\n            <Line dataKey="margin" type="monotone" stroke="var(--color-margin)" strokeWidth={3} dot={false} />'),
     usageCode: visualizationUsageCode("MixedChartCard", "mixed"),
   },
   {
-    id: "shipment-row",
-    name: "Shipment Row",
+    id: "booking-row",
+    name: "Booking Row",
     category: "Operations",
     description: "The repeated row pattern for live jobs, preserving origin, destination, ETA, mode, and progress.",
     details: "Use inside panels and detail sheets. It scales better than a dense table for operational attention.",
     foundOn: [{ label: "Overview", route: "/" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
-    componentCode: `export function ShipmentRow({ shipment, compact }) {\n  return (\n    <div className={cn("grid grid-cols-[minmax(76px,110px)_1fr_auto] items-center gap-3 py-2", compact && "py-1.5")}>\n      <div className="min-w-0">\n        <p className="truncate text-[12px] font-medium text-[var(--md-ink)]">{shipment.id}</p>\n        <p className="truncate text-[11px] text-[var(--md-subtle)]">{shipment.mode}</p>\n      </div>\n      <div className="min-w-0">\n        <div className="flex min-w-0 items-center gap-2 text-[13px] text-[var(--md-ink)]">\n          <span className="truncate">{shipment.from}</span>\n          <ArrowRight className="size-3 shrink-0 text-[var(--md-subtle)]" strokeWidth={1.2} />\n          <span className="truncate">{shipment.to}</span>\n        </div>\n        <Progress value={shipment.progress} className="mt-2 h-1.5 rounded-full bg-[rgba(90,103,100,0.08)]" />\n      </div>\n      <div className="text-right">\n        <p className="text-[11px] text-[var(--md-subtle)]">ETA</p>\n        <p className="text-[12px] font-medium text-[var(--md-ink)]">{shipment.eta}</p>\n      </div>\n    </div>\n  )\n}`,
-    usageCode: `<ShipmentRow shipment={liveShipments[0]} />`,
+    componentCode: `export function BookingRow({ booking, compact }) {\n  return (\n    <div className={cn("grid grid-cols-[minmax(76px,110px)_1fr_auto] items-center gap-3 py-2", compact && "py-1.5")}>\n      <div className="min-w-0">\n        <p className="truncate text-[12px] font-medium text-[var(--md-ink)]">{booking.id}</p>\n        <p className="truncate text-[11px] text-[var(--md-subtle)]">{booking.mode}</p>\n      </div>\n      <div className="min-w-0">\n        <div className="flex min-w-0 items-center gap-2 text-[13px] text-[var(--md-ink)]">\n          <span className="truncate">{booking.from}</span>\n          <ArrowRight className="size-3 shrink-0 text-[var(--md-subtle)]" strokeWidth={1.2} />\n          <span className="truncate">{booking.to}</span>\n        </div>\n        <Progress value={booking.progress} className="mt-2 h-1.5 rounded-full bg-[rgba(90,103,100,0.08)]" />\n      </div>\n      <div className="text-right">\n        <p className="text-[11px] text-[var(--md-subtle)]">ETA</p>\n        <p className="text-[12px] font-medium text-[var(--md-ink)]">{booking.eta}</p>\n      </div>\n    </div>\n  )\n}`,
+    usageCode: `<BookingRow booking={liveBookings[0]} />`,
   },
   {
     id: "interactive-map",
-    name: "Interactive Shipment Map",
+    name: "Interactive Booking Map",
     category: "Operations",
-    description: "A real map layer for live route tracking, shipment markers, and selected-route context.",
-    details: "Use where operators need geography, not decoration. Keep route data in shared shipment records and let cards select the matching route.",
+    description: "A real map layer for live route tracking, booking markers, and selected-route context.",
+    details: "Use where operators need geography, not decoration. Keep route data in shared booking records and let cards select the matching route.",
     foundOn: [{ label: "Overview", route: "/" }, { label: "Reports", route: "/reports" }, { label: "Components", route: "/components" }],
-    componentCode: `export function InteractiveShipmentMap() {\n  const [selectedId, setSelectedId] = useState(liveShipments[0].id)\n\n  return (\n    <>\n      <MapContainer className="md-shipment-map h-full w-full" zoomControl={false}>\n        <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />\n        <ZoomControl position="bottomright" />\n        {liveShipments.map((shipment) => (\n          <ShipmentRoute key={shipment.id} shipment={shipment} selected={shipment.id === selectedId} onSelect={setSelectedId} />\n        ))}\n      </MapContainer>\n      <ShipmentMapCards selectedId={selectedId} onSelect={setSelectedId} />\n    </>\n  )\n}`,
-    usageCode: `<Suspense fallback={<div className="h-[310px] bg-[var(--md-bg-strong)]" />}>\n  <InteractiveShipmentMap />\n</Suspense>`,
+    componentCode: `export function InteractiveBookingMap() {\n  const [selectedId, setSelectedId] = useState(liveBookings[0].id)\n\n  return (\n    <>\n      <MapContainer className="md-booking-map h-full w-full" zoomControl={false}>\n        <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />\n        <ZoomControl position="bottomright" />\n        {liveBookings.map((booking) => (\n          <BookingRoute key={booking.id} booking={booking} selected={booking.id === selectedId} onSelect={setSelectedId} />\n        ))}\n      </MapContainer>\n      <BookingMapCards selectedId={selectedId} onSelect={setSelectedId} />\n    </>\n  )\n}`,
+    usageCode: `<Suspense fallback={<div className="h-[310px] bg-[var(--md-bg-strong)]" />}>\n  <InteractiveBookingMap />\n</Suspense>`,
   },
   {
     id: "command",
@@ -1830,7 +1830,7 @@ export const galleryComponents = [
     description: "The animated navigation unit for module movement, counts, and active state.",
     details: "Use icon, label, optional count, and the shared moving active surface. Counts should only appear when useful, and inactive future modules should feel calm rather than clickable.",
     foundOn: [{ label: "Overview", route: "/" }, { label: "Components", route: "/components" }],
-    componentCode: `function AppSidebar({ activeTarget }) {\n  return (\n    <aside className="relative isolate">\n      <motion.span\n        aria-hidden\n        className="pointer-events-none absolute z-0 bg-[var(--md-bg-strong)] shadow-[var(--md-shadow-line)]"\n        animate={activeTarget}\n        transition={{ duration: 0.34, ease: [0.16, 1, 0.3, 1] }}\n      />\n      <nav className="relative z-10">\n        <SidebarNavItem item={shipmentsItem} isActive activeTargetRef={setActiveNode} />\n        <SidebarNavItem item={customersItem} onClick={() => navigate("/customers")} />\n      </nav>\n    </aside>\n  )\n}\n\nexport function SidebarNavItem({ item, isActive, onClick, activeTargetRef }) {\n  const Icon = item.icon\n  const isDisabled = !onClick\n\n  return (\n    <motion.button\n      ref={activeTargetRef}\n      type="button"\n      aria-current={isActive ? "page" : undefined}\n      disabled={isDisabled}\n      className={cn(\n        "group relative h-10 w-full overflow-hidden rounded-[var(--md-radius-md)] px-2.5",\n        "flex items-center justify-start gap-2 text-[14px] font-medium text-[var(--md-text)]",\n        isActive && "text-[var(--md-ink)]",\n      )}\n      onClick={onClick}\n      whileHover={isDisabled ? undefined : { x: 3, scale: 1.01 }}\n      whileTap={isDisabled ? undefined : { scale: 0.985 }}\n    >\n      {isActive ? null : <span className="absolute inset-0 rounded-[var(--md-radius-md)] bg-[var(--md-hover)] opacity-0 transition-opacity group-hover:opacity-100" />}\n      <span className="relative grid size-5 place-items-center rounded-[var(--md-radius-sm)]">\n        <Icon data-icon="inline-start" strokeWidth={1.2} />\n      </span>\n      <span className="relative min-w-0 flex-1 truncate text-left">{item.label}</span>\n      {item.value ? <span className="relative rounded-full px-2 py-0.5 text-[11px] font-medium">{item.value}</span> : null}\n    </motion.button>\n  )\n}`,
+    componentCode: `function AppSidebar({ activeTarget }) {\n  return (\n    <aside className="relative isolate">\n      <motion.span\n        aria-hidden\n        className="pointer-events-none absolute z-0 bg-[var(--md-bg-strong)] shadow-[var(--md-shadow-line)]"\n        animate={activeTarget}\n        transition={{ duration: 0.34, ease: [0.16, 1, 0.3, 1] }}\n      />\n      <nav className="relative z-10">\n        <SidebarNavItem item={bookingsItem} isActive activeTargetRef={setActiveNode} />\n        <SidebarNavItem item={customersItem} onClick={() => navigate("/customers")} />\n      </nav>\n    </aside>\n  )\n}\n\nexport function SidebarNavItem({ item, isActive, onClick, activeTargetRef }) {\n  const Icon = item.icon\n  const isDisabled = !onClick\n\n  return (\n    <motion.button\n      ref={activeTargetRef}\n      type="button"\n      aria-current={isActive ? "page" : undefined}\n      disabled={isDisabled}\n      className={cn(\n        "group relative h-10 w-full overflow-hidden rounded-[var(--md-radius-md)] px-2.5",\n        "flex items-center justify-start gap-2 text-[14px] font-medium text-[var(--md-text)]",\n        isActive && "text-[var(--md-ink)]",\n      )}\n      onClick={onClick}\n      whileHover={isDisabled ? undefined : { x: 3, scale: 1.01 }}\n      whileTap={isDisabled ? undefined : { scale: 0.985 }}\n    >\n      {isActive ? null : <span className="absolute inset-0 rounded-[var(--md-radius-md)] bg-[var(--md-hover)] opacity-0 transition-opacity group-hover:opacity-100" />}\n      <span className="relative grid size-5 place-items-center rounded-[var(--md-radius-sm)]">\n        <Icon data-icon="inline-start" strokeWidth={1.2} />\n      </span>\n      <span className="relative min-w-0 flex-1 truncate text-left">{item.label}</span>\n      {item.value ? <span className="relative rounded-full px-2 py-0.5 text-[11px] font-medium">{item.value}</span> : null}\n    </motion.button>\n  )\n}`,
     usageCode: `<AppSidebar route={route} navigate={navigate} />`,
   },
   {
@@ -1859,7 +1859,7 @@ export const galleryComponents = [
     category: "Navigation",
     description: "A compact control for moving through long operational lists without losing the current range.",
     details: "Use below tables, card grids, and list views when the dataset is longer than the screen should comfortably show. Keep the range and rows-per-page control visible so operators can decide how dense the list should be.",
-    foundOn: [{ label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Shipments", route: "/shipments" }, { label: "Reports", route: "/reports" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Reports", route: "/reports" }, { label: "Components", route: "/components" }],
     componentCode: `export function Pagination({ page, pageCount, totalItems, pageSize, pageSizeOptions, onPageChange, onPageSizeChange, itemLabel = "items" }) {\n  const safePageCount = Math.max(pageCount, 1)\n  const currentPage = Math.min(Math.max(page, 1), safePageCount)\n  const startItem = totalItems === 0 ? 0 : (currentPage - 1) * pageSize + 1\n  const endItem = Math.min(currentPage * pageSize, totalItems)\n  const visiblePages = getVisiblePages(currentPage, safePageCount)\n\n  return (\n    <nav aria-label={itemLabel + " pagination"}>\n      <div>\n        <p>Showing {startItem}-{endItem} of {totalItems} {itemLabel}</p>\n        {pageSizeOptions && onPageSizeChange ? (\n          <Select value={String(pageSize)} onValueChange={(value) => onPageSizeChange(Number(value))}>\n            <SelectTrigger aria-label="Rows per page"><SelectValue /></SelectTrigger>\n            <SelectContent>\n              {pageSizeOptions.map((option) => <SelectItem key={option} value={String(option)}>{option}</SelectItem>)}\n            </SelectContent>\n          </Select>\n        ) : null}\n      </div>\n      <div>\n        <button disabled={currentPage === 1} onClick={() => onPageChange(currentPage - 1)}>Previous</button>\n        {visiblePages.map((pageNumber) => <button key={pageNumber} onClick={() => onPageChange(pageNumber)}>{pageNumber}</button>)}\n        <button disabled={currentPage === safePageCount} onClick={() => onPageChange(currentPage + 1)}>Next</button>\n      </div>\n    </nav>\n  )\n}`,
     usageCode: `const [page, setPage] = useState(1)\nconst [rowsPerPage, setRowsPerPage] = useState(20)\nconst pageCount = Math.ceil(customers.length / rowsPerPage)\nconst paginatedCustomers = customers.slice((page - 1) * rowsPerPage, page * rowsPerPage)\n\n<Pagination\n  page={page}\n  pageCount={pageCount}\n  totalItems={customers.length}\n  pageSize={rowsPerPage}\n  pageSizeOptions={[10, 20, 30, 50]}\n  itemLabel="customers"\n  onPageChange={setPage}\n  onPageSizeChange={(nextRowsPerPage) => {\n    setRowsPerPage(nextRowsPerPage)\n    setPage(1)\n  }}\n/>`,
   },
@@ -1877,7 +1877,7 @@ export const galleryComponents = [
     id: "timezone-work-queue",
     name: "Timezone Work Queue",
     category: "Operations",
-    description: "A focused timezone mode that turns a selected office clock into the shipments, RFQs, blockers, and cutoffs that need action before local close.",
+    description: "A focused timezone mode that turns a selected office clock into the bookings, RFQs, blockers, and cutoffs that need action before local close.",
     details: "Use when timezones should drive prioritisation. The selected city stays visible as context while the operator gets a clear queue of what to send, chase, or approve before that office closes.",
     foundOn: [{ label: "Overview", route: "/" }, { label: "Components", route: "/components" }],
     componentCode: `export function TimezoneFocusPanel({ selectedCode }) {\n  const city = cityQueues.find((item) => item.code === selectedCode) ?? cityQueues[0]\n  const queue = timezoneWorkQueues[city.code]\n\n  return (\n    <motion.div layout>\n      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">\n        <FocusMetric label="Open RFQs" value={queue.openRfqs} detail={\`for \${city.city}\`} tone="neutral" />\n        <FocusMetric label="Need action" value={queue.needAction} detail="before cutoff" tone="amber" />\n        <FocusMetric label="Ready to quote" value={queue.readyToQuote} detail="send today" tone="green" />\n        <FocusMetric label="Pickup cutoff" value={queue.cutoffCountdown} detail={queue.cutoff} tone="red" />\n      </div>\n\n      <Surface padding="none">\n        <SectionHeader title={\`Outbound queue for \${city.city}\`} meta={\`Sorted by urgency - \${queue.items.length} active requests in this timezone\`} />\n        {queue.items.map((item) => <TimezoneWorkRow key={item.id} item={item} />)}\n      </Surface>\n    </motion.div>\n  )\n}`,
@@ -1939,9 +1939,9 @@ export const galleryComponents = [
     category: "Navigation",
     description: "A compact animated popover for page-level view controls and secondary actions.",
     details: "Use when a page header would otherwise collect several view switches or utility actions in one row. Keep always-needed scope tabs outside the menu, and place lower-priority controls like view mode or export inside.",
-    foundOn: [{ label: "Customers", route: "/customers" }, { label: "Shipments", route: "/shipments" }, { label: "Components", route: "/components?component=page-settings-menu" }],
+    foundOn: [{ label: "Customers", route: "/customers" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components?component=page-settings-menu" }],
     componentCode: `export function PageSettingsMenu({ viewOptions, value, onViewChange, actions = [] }) {\n  return (\n    <Popover>\n      <PopoverTrigger asChild>\n        <button aria-label="Open page settings">\n          <span aria-hidden>{/* three line menu icon */}</span>\n        </button>\n      </PopoverTrigger>\n      <PopoverContent align="end">\n        <motion.div variants={menuReveal} initial="hidden" animate="show">\n          <p>Page settings</p>\n          <div>\n            <p>View</p>\n            {viewOptions.map((option) => (\n              <motion.button key={option.value} aria-pressed={value === option.value} onClick={() => onViewChange(option.value)}>\n                <option.icon />\n                <span>{option.label ?? option.value}</span>\n                {value === option.value ? <Check /> : null}\n              </motion.button>\n            ))}\n          </div>\n          {actions.map((action) => (\n            <motion.button key={action.id} onClick={action.onSelect}>\n              <action.icon />\n              <span>{action.label}</span>\n            </motion.button>\n          ))}\n        </motion.div>\n      </PopoverContent>\n    </Popover>\n  )\n}`,
-    usageCode: `<SegmentedControl options={customerScopeTabs} value={scope} onChange={setScope} />\n<DexterActionPill onClick={() => navigate("/agent-dexter")} />\n<PageSettingsMenu\n  viewOptions={customerViewOptions}\n  value={viewMode}\n  onViewChange={setViewMode}\n  actions={[{ id: "export-customers", label: "Export CSV", icon: Download, onSelect: exportCustomers }]}\n/>\n\n<PageSettingsMenu\n  viewOptions={shipmentViewOptions}\n  value={shipmentViewMode}\n  onViewChange={setShipmentViewMode}\n/>`,
+    usageCode: `<SegmentedControl options={customerScopeTabs} value={scope} onChange={setScope} />\n<DexterActionPill onClick={() => navigate("/agent-dexter")} />\n<PageSettingsMenu\n  viewOptions={customerViewOptions}\n  value={viewMode}\n  onViewChange={setViewMode}\n  actions={[{ id: "export-customers", label: "Export CSV", icon: Download, onSelect: exportCustomers }]}\n/>\n\n<PageSettingsMenu\n  viewOptions={bookingViewOptions}\n  value={bookingViewMode}\n  onViewChange={setBookingViewMode}\n/>`,
   },
   {
     id: "segmented-control",
@@ -1949,7 +1949,7 @@ export const galleryComponents = [
     category: "Navigation",
     description: "A compact mode switch for changing views without leaving the current workflow.",
     details: "Use for mutually exclusive view modes such as list, cards, map, table, board, timeline, preview, or code. Keep labels short and selected state obvious.",
-    foundOn: [{ label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Shipments", route: "/shipments" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components" }],
     componentCode: `export function SegmentedControl({ options, value, onChange }) {\n  return (\n    <div className="flex rounded-[var(--md-radius-lg)] bg-white/60 p-1 shadow-[var(--md-shadow-line)]">\n      {options.map((option) => (\n        <button\n          key={option}\n          className={cn("h-8 rounded-[var(--md-radius-md)] px-4", value === option && "bg-[var(--md-sidebar-bg)]")}\n          onClick={() => onChange(option)}\n        >\n          {option}\n        </button>\n      ))}\n    </div>\n  )\n}`,
     usageCode: `<SegmentedControl\n  options={["Table", "Board"]}\n  value={viewMode}\n  onChange={setViewMode}\n/>`,
   },
@@ -1959,17 +1959,17 @@ export const galleryComponents = [
     category: "Navigation",
     description: "A reusable filter chip row with a strong selected state and optional secondary filters.",
     details: "Use at the top of list, table, and map workflows. The active filter should be unmistakable on mobile and desktop.",
-    foundOn: [{ label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Shipments", route: "/shipments" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components" }],
     componentCode: `export function FilterChips({ options, activeOption, onChange, auxiliaryOptions = [] }) {\n  return (\n    <div className="flex flex-wrap items-center gap-2">\n      {options.map((option) => (\n        <button\n          key={option}\n          aria-pressed={activeOption === option}\n          className={cn("rounded-full px-4", activeOption === option && "bg-[var(--md-accent)] text-white")}\n          onClick={() => onChange(option)}\n        >\n          {activeOption === option ? <Check /> : null}\n          {option}\n        </button>\n      ))}\n      {auxiliaryOptions.map((option) => <button key={option}>{option}</button>)}\n    </div>\n  )\n}`,
-    usageCode: `<FilterChips\n  options={shipmentFilters}\n  activeOption={activeFilter}\n  onChange={setActiveFilter}\n  auxiliaryOptions={["+ Mode", "+ Carrier", "+ Customer", "+ Owner", "+ ETA range"]}\n/>`,
+    usageCode: `<FilterChips\n  options={bookingFilters}\n  activeOption={activeFilter}\n  onChange={setActiveFilter}\n  auxiliaryOptions={["+ Mode", "+ Carrier", "+ Customer", "+ Owner", "+ ETA range"]}\n/>`,
   },
   {
     id: "data-table",
     name: "Data Table",
     category: "Data",
     description: "A production list-table pattern for dense operational records, selection, and row-level navigation.",
-    details: "Use for customers, shipments, documents, or quotes when the user needs to scan repeated records. Keep tables calm, direct, and stable; do not add scroll reveal treatment unless the screen has a very specific need for it.",
-    foundOn: [{ label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Shipments", route: "/shipments" }, { label: "Components", route: "/components" }],
+    details: "Use for customers, bookings, documents, or quotes when the user needs to scan repeated records. Keep tables calm, direct, and stable; do not add scroll reveal treatment unless the screen has a very specific need for it.",
+    foundOn: [{ label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components" }],
     componentCode: `export function CustomerListTable({ customers, selectedIds, onToggleCustomer, onOpenCustomer }) {\n  return (\n    <div className="overflow-hidden rounded-[var(--md-radius-xl)] bg-[color-mix(in_srgb,var(--md-surface)_42%,transparent)] shadow-[var(--md-shadow-line)]">\n      <Table className="min-w-[1180px]">\n        <TableHeader>{/* shared customer columns */}</TableHeader>\n        <TableBody>\n          {customers.map((customer) => (\n            <CustomerRow\n              key={customer.id}\n              customer={customer}\n              selected={selectedIds.has(customer.id)}\n              onSelect={() => onToggleCustomer(customer.id)}\n              onOpen={() => onOpenCustomer(customer)}\n            />\n          ))}\n        </TableBody>\n      </Table>\n    </div>\n  )\n}`,
     usageCode: `<CustomerListTable\n  customers={paginatedCustomers}\n  selectedIds={selectedIds}\n  onToggleCustomer={toggleCustomer}\n  onOpenCustomer={openCustomer}\n/>`,
   },
@@ -1998,29 +1998,29 @@ export const galleryComponents = [
     name: "Tabs",
     category: "Navigation",
     description: "A reusable horizontal tab rail for switching sections inside one record or workflow.",
-    details: "Use when the user should stay in context while moving between overview, contacts, shipments, documents, activity, or notes.",
-    foundOn: [{ label: "Customer detail", route: "/customers/marlow-apparel" }, { label: "Shipment detail", route: "/shipments/md-22455" }, { label: "Components", route: "/components" }],
+    details: "Use when the user should stay in context while moving between overview, contacts, bookings, documents, activity, or notes.",
+    foundOn: [{ label: "Customer detail", route: "/customers/marlow-apparel" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "Components", route: "/components" }],
     componentCode: `export function TabsRail({ tabs, activeTab, onChange }) {\n  return (\n    <div className="flex gap-6 overflow-x-auto border-b border-[rgba(11,20,19,0.08)]">\n      {tabs.map((tab) => (\n        <button key={tab.label} onClick={() => onChange(tab.label)}>\n          {tab.label}\n          {tab.value ? <span>{tab.value}</span> : null}\n        </button>\n      ))}\n    </div>\n  )\n}`,
     usageCode: `<TabsRail\n  tabs={tabs}\n  activeTab={activeTab}\n  onChange={setActiveTab}\n/>`,
   },
   {
-    id: "active-shipments-panel",
-    name: "Active Shipments Panel",
+    id: "active-bookings-panel",
+    name: "Active Bookings Panel",
     category: "Operations",
-    description: "The customer detail shipment panel for active routes, mode, ETA, exceptions, and progress.",
-    details: "Use in account detail views where operators need the customer-specific shipment queue without leaving the record.",
+    description: "The customer detail booking panel for active routes, mode, ETA, exceptions, and progress.",
+    details: "Use in account detail views where operators need the customer-specific booking queue without leaving the record.",
     foundOn: [{ label: "Customer detail", route: "/customers/marlow-apparel" }, { label: "Components", route: "/components" }],
-    componentCode: `export function ActiveShipmentsPanel() {\n  return (\n    <Surface padding="none">\n      <CustomerPanelHeader title="Active shipments" meta="6 · 1 exception" />\n      {marlowActiveShipments.map((shipment) => (\n        <ActiveShipmentRow key={shipment.id} shipment={shipment} />\n      ))}\n    </Surface>\n  )\n}`,
-    usageCode: `<ActiveShipmentsPanel />`,
+    componentCode: `export function ActiveBookingsPanel() {\n  return (\n    <Surface padding="none">\n      <CustomerPanelHeader title="Active bookings" meta="6 · 1 exception" />\n      {marlowActiveBookings.map((booking) => (\n        <ActiveBookingRow key={booking.id} booking={booking} />\n      ))}\n    </Surface>\n  )\n}`,
+    usageCode: `<ActiveBookingsPanel />`,
   },
   {
     id: "your-jobs-panel",
     name: "Your Jobs Panel",
     category: "Operations",
-    description: "A focused operator row for the shipments someone is actively working today, with favourite stars kept close to each job.",
-    details: "Use near the top of dashboard or shipment views when the user needs their own live work separated from the full company-wide shipment list.",
-    foundOn: [{ label: "Overview", route: "/" }, { label: "Shipments", route: "/shipments" }, { label: "Components", route: "/components" }],
-    componentCode: `export function YourJobsPanel({ favouriteIds, onToggleFavourite, onOpenJobDrilldown }) {\n  return (\n    <Surface padding="none">\n      <header>\n        <h2>Your jobs</h2>\n        <StatusPill tone="teal">5 active</StatusPill>\n      </header>\n      <AnimatedList\n        items={operatorJobs}\n        maxHeight="none"\n        itemClassName="bg-[color-mix(in_srgb,var(--md-green)_17%,white)]"\n        renderItem={(job) => (\n          <button onClick={() => onOpenJobDrilldown(job.id)}>\n            <span>{job.task}</span>\n            <span>{job.customer}</span>\n            <button onClick={() => onToggleFavourite(job.shipmentId)}>Star</button>\n          </button>\n        )}\n      />\n    </Surface>\n  )\n}`,
+    description: "A focused operator row for the bookings someone is actively working today, with favourite stars kept close to each job.",
+    details: "Use near the top of dashboard or booking views when the user needs their own live work separated from the full company-wide booking list.",
+    foundOn: [{ label: "Overview", route: "/" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components" }],
+    componentCode: `export function YourJobsPanel({ favouriteIds, onToggleFavourite, onOpenJobDrilldown }) {\n  return (\n    <Surface padding="none">\n      <header>\n        <h2>Your jobs</h2>\n        <StatusPill tone="teal">5 active</StatusPill>\n      </header>\n      <AnimatedList\n        items={operatorJobs}\n        maxHeight="none"\n        itemClassName="bg-[color-mix(in_srgb,var(--md-green)_17%,white)]"\n        renderItem={(job) => (\n          <button onClick={() => onOpenJobDrilldown(job.id)}>\n            <span>{job.task}</span>\n            <span>{job.customer}</span>\n            <button onClick={() => onToggleFavourite(job.bookingId)}>Star</button>\n          </button>\n        )}\n      />\n    </Surface>\n  )\n}`,
     usageCode: `<YourJobsPanel\n  favouriteIds={favouriteIds}\n  onToggleFavourite={toggleFavourite}\n  onOpenJobDrilldown={openDashboardDrilldown}\n  animated\n/>`,
   },
   {
@@ -2030,48 +2030,48 @@ export const galleryComponents = [
     description: "A customer-detail breakdown showing the busiest lanes as compact horizontal bars.",
     details: "Use when a customer or account view needs operational volume context without pulling the user into a full charting workflow.",
     foundOn: [{ label: "Customer detail", route: "/customers/marlow-apparel" }, { label: "Components", route: "/components" }],
-    componentCode: `export function LaneMixPanel() {\n  const max = Math.max(...marlowLaneMix.map((lane) => lane.value))\n\n  return (\n    <Surface className="rounded-[var(--md-radius-xl)]" padding="none">\n      <div className="px-5 py-4">\n        <SectionHeader title="Lane mix - last 90d" meta="6 lanes - 71 shipments" />\n      </div>\n      <div className="px-5 pb-5">\n        {marlowLaneMix.map((lane) => (\n          <div key={lane.lane} className="grid grid-cols-[220px_1fr_32px] items-center gap-4 border-t border-[rgba(11,20,19,0.06)] py-3">\n            <p className="truncate text-[14px] font-medium text-[var(--md-ink)]">{lane.lane}</p>\n            <div className="h-2 rounded-full bg-[rgba(90,103,100,0.12)]">\n              <div className="h-full rounded-full bg-[var(--md-accent)]" style={{ width: \`\${(lane.value / max) * 100}%\` }} />\n            </div>\n            <p className="text-right text-[13px] font-medium text-[var(--md-ink)]">{lane.value}</p>\n          </div>\n        ))}\n      </div>\n    </Surface>\n  )\n}`,
+    componentCode: `export function LaneMixPanel() {\n  const max = Math.max(...marlowLaneMix.map((lane) => lane.value))\n\n  return (\n    <Surface className="rounded-[var(--md-radius-xl)]" padding="none">\n      <div className="px-5 py-4">\n        <SectionHeader title="Lane mix - last 90d" meta="6 lanes - 71 bookings" />\n      </div>\n      <div className="px-5 pb-5">\n        {marlowLaneMix.map((lane) => (\n          <div key={lane.lane} className="grid grid-cols-[220px_1fr_32px] items-center gap-4 border-t border-[rgba(11,20,19,0.06)] py-3">\n            <p className="truncate text-[14px] font-medium text-[var(--md-ink)]">{lane.lane}</p>\n            <div className="h-2 rounded-full bg-[rgba(90,103,100,0.12)]">\n              <div className="h-full rounded-full bg-[var(--md-accent)]" style={{ width: \`\${(lane.value / max) * 100}%\` }} />\n            </div>\n            <p className="text-right text-[13px] font-medium text-[var(--md-ink)]">{lane.value}</p>\n          </div>\n        ))}\n      </div>\n    </Surface>\n  )\n}`,
     usageCode: `<LaneMixPanel />`,
   },
   {
-    id: "shipment-metric-card",
-    name: "Shipment Metric Card",
+    id: "booking-metric-card",
+    name: "Booking Metric Card",
     category: "Data",
-    description: "A single compact KPI tile for shipment list headers, designed for quick count scanning.",
-    details: "Use one per metric in shipment-heavy views. Keep the card to a short label and one number so the row stays calm and scannable.",
-    foundOn: [{ label: "Shipments", route: "/shipments" }, { label: "Components", route: "/components" }],
-    componentCode: `export function ShipmentMetricCard({ label, value, tone }) {\n  return (\n    <Surface padding="md" className="min-h-[92px] rounded-[var(--md-radius-xl)]">\n      <p className="text-[13px] font-medium text-[var(--md-text)]">{label}</p>\n      <strong\n        className={cn("mt-2 block text-[30px] font-medium leading-none", tone === "neutral" && "text-[var(--md-ink)]")}\n        style={{ color: tone === "neutral" ? undefined : toneToVar(tone) }}\n      >\n        {value}\n      </strong>\n    </Surface>\n  )\n}`,
-    usageCode: `<ShipmentMetricCard\n  label="In transit"\n  value="23"\n  tone="teal"\n/>`,
+    description: "A single compact KPI tile for booking list headers, designed for quick count scanning.",
+    details: "Use one per metric in booking-heavy views. Keep the card to a short label and one number so the row stays calm and scannable.",
+    foundOn: [{ label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components" }],
+    componentCode: `export function BookingMetricCard({ label, value, tone }) {\n  return (\n    <Surface padding="md" className="min-h-[92px] rounded-[var(--md-radius-xl)]">\n      <p className="text-[13px] font-medium text-[var(--md-text)]">{label}</p>\n      <strong\n        className={cn("mt-2 block text-[30px] font-medium leading-none", tone === "neutral" && "text-[var(--md-ink)]")}\n        style={{ color: tone === "neutral" ? undefined : toneToVar(tone) }}\n      >\n        {value}\n      </strong>\n    </Surface>\n  )\n}`,
+    usageCode: `<BookingMetricCard\n  label="In transit"\n  value="23"\n  tone="teal"\n/>`,
   },
   {
-    id: "shipment-advanced-search",
-    name: "Shipment Advanced Search",
+    id: "booking-advanced-search",
+    name: "Booking Advanced Search",
     category: "Operations",
-    description: "A compact shipment filter trigger that opens a modal builder, then shows applied filter summaries inline with the list pills.",
-    details: "Use beside shipment filter chips when operators need advanced AND/OR criteria without giving permanent screen space to the builder. Apply commits the draft filters and closes the modal.",
-    foundOn: [{ label: "Shipments", route: "/shipments" }, { label: "Components", route: "/components" }],
-    componentCode: `export function ShipmentAdvancedSearch({ criteria, onCriteriaChange, resultCount, totalCount }) {\n  const [open, setOpen] = useState(false)\n  const [draftCriteria, setDraftCriteria] = useState(criteria)\n  const activeCriteria = criteria.filter(hasSearchValue)\n\n  function applyCriteria() {\n    onCriteriaChange(draftCriteria)\n    setOpen(false)\n  }\n\n  return (\n    <div className=\"flex flex-wrap items-center gap-2\">\n      <Button onClick={() => { setDraftCriteria(criteria); setOpen(true) }}>\n        <SlidersHorizontal /> Filters {activeCriteria.length ? activeCriteria.length : null}\n      </Button>\n      {activeCriteria.map((criterion) => <span key={criterion.id}>{formatCriterionSummary(criterion)}</span>)}\n      <span>{resultCount}/{totalCount} shown</span>\n      <Dialog open={open} onOpenChange={setOpen}>\n        <DialogContent>\n          {/* grouped AND/OR filter rows */}\n          <Button onClick={addGroup}>Add group</Button>\n          <Button onClick={applyCriteria}>Apply filters</Button>\n        </DialogContent>\n      </Dialog>\n    </div>\n  )\n}`,
-    usageCode: `<ShipmentFilterBar\n  activeFilter={activeFilter}\n  onFilterChange={setActiveFilter}\n  controls={(\n    <ShipmentAdvancedSearch\n      criteria={searchCriteria}\n      onCriteriaChange={setSearchCriteria}\n      resultCount={visibleShipments.length}\n      totalCount={statusFilteredShipments.length}\n    />\n  )}\n/>`,
+    description: "A compact booking filter trigger that opens a modal builder, then shows applied filter summaries inline with the list pills.",
+    details: "Use beside booking filter chips when operators need advanced AND/OR criteria without giving permanent screen space to the builder. Apply commits the draft filters and closes the modal.",
+    foundOn: [{ label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components" }],
+    componentCode: `export function BookingAdvancedSearch({ criteria, onCriteriaChange, resultCount, totalCount }) {\n  const [open, setOpen] = useState(false)\n  const [draftCriteria, setDraftCriteria] = useState(criteria)\n  const activeCriteria = criteria.filter(hasSearchValue)\n\n  function applyCriteria() {\n    onCriteriaChange(draftCriteria)\n    setOpen(false)\n  }\n\n  return (\n    <div className=\"flex flex-wrap items-center gap-2\">\n      <Button onClick={() => { setDraftCriteria(criteria); setOpen(true) }}>\n        <SlidersHorizontal /> Filters {activeCriteria.length ? activeCriteria.length : null}\n      </Button>\n      {activeCriteria.map((criterion) => <span key={criterion.id}>{formatCriterionSummary(criterion)}</span>)}\n      <span>{resultCount}/{totalCount} shown</span>\n      <Dialog open={open} onOpenChange={setOpen}>\n        <DialogContent>\n          {/* grouped AND/OR filter rows */}\n          <Button onClick={addGroup}>Add group</Button>\n          <Button onClick={applyCriteria}>Apply filters</Button>\n        </DialogContent>\n      </Dialog>\n    </div>\n  )\n}`,
+    usageCode: `<BookingFilterBar\n  activeFilter={activeFilter}\n  onFilterChange={setActiveFilter}\n  controls={(\n    <BookingAdvancedSearch\n      criteria={searchCriteria}\n      onCriteriaChange={setSearchCriteria}\n      resultCount={visibleBookings.length}\n      totalCount={statusFilteredBookings.length}\n    />\n  )}\n/>`,
   },
   {
-    id: "shipments-table",
-    name: "Shipments Table",
+    id: "bookings-table",
+    name: "Bookings Table",
     category: "Data",
-    description: "The dense shipment record table for selection, favourites, status, ETA, owner, progress, and row-level navigation.",
-    details: "Use for shipment lists where operators need to scan many live records quickly while starring the few shipments they are actively watching.",
-    foundOn: [{ label: "Shipments", route: "/shipments" }, { label: "Components", route: "/components" }],
-    componentCode: `export function ShipmentsTable({ rows, selectedIds, favouriteIds, onToggleShipment, onToggleFavourite, onOpenShipment }) {\n  return (\n    <div className="overflow-hidden rounded-[var(--md-radius-xl)]">\n      <Table className="min-w-[1470px]">\n        <TableHeader>{/* selection, star, shipment, customer, carrier, ETA, status, progress, owner */}</TableHeader>\n        <TableBody>\n          {rows.map((shipment) => (\n            <ShipmentRow\n              key={shipment.id}\n              shipment={shipment}\n              selected={selectedIds.has(shipment.id)}\n              favourite={favouriteIds.has(shipment.id)}\n              onSelect={() => onToggleShipment(shipment.id)}\n              onToggleFavourite={() => onToggleFavourite(shipment.id)}\n              onOpen={() => onOpenShipment(shipment)}\n            />\n          ))}\n        </TableBody>\n      </Table>\n    </div>\n  )\n}`,
-    usageCode: `<ShipmentsTable\n  rows={paginatedShipments}\n  selectedIds={selectedIds}\n  favouriteIds={favouriteIds}\n  onToggleShipment={toggleShipment}\n  onToggleFavourite={toggleFavourite}\n  onOpenShipment={openShipment}\n/>`,
+    description: "The dense booking record table for selection, favourites, status, ETA, owner, progress, and row-level navigation.",
+    details: "Use for booking lists where operators need to scan many live records quickly while starring the few bookings they are actively watching.",
+    foundOn: [{ label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components" }],
+    componentCode: `export function BookingsTable({ rows, selectedIds, favouriteIds, onToggleBooking, onToggleFavourite, onOpenBooking }) {\n  return (\n    <div className="overflow-hidden rounded-[var(--md-radius-xl)]">\n      <Table className="min-w-[1470px]">\n        <TableHeader>{/* selection, star, booking, customer, carrier, ETA, status, progress, owner */}</TableHeader>\n        <TableBody>\n          {rows.map((booking) => (\n            <BookingRow\n              key={booking.id}\n              booking={booking}\n              selected={selectedIds.has(booking.id)}\n              favourite={favouriteIds.has(booking.id)}\n              onSelect={() => onToggleBooking(booking.id)}\n              onToggleFavourite={() => onToggleFavourite(booking.id)}\n              onOpen={() => onOpenBooking(booking)}\n            />\n          ))}\n        </TableBody>\n      </Table>\n    </div>\n  )\n}`,
+    usageCode: `<BookingsTable\n  rows={paginatedBookings}\n  selectedIds={selectedIds}\n  favouriteIds={favouriteIds}\n  onToggleBooking={toggleBooking}\n  onToggleFavourite={toggleFavourite}\n  onOpenBooking={openBooking}\n/>`,
   },
   {
-    id: "shipment-board-preview",
-    name: "Shipment Board Preview",
+    id: "booking-board-preview",
+    name: "Booking Board Preview",
     category: "Operations",
-    description: "A compact board-mode preview for grouped shipment states such as open, exception, and delivered soon.",
-    details: "Use as an alternate shipment list view when operators need state grouping rather than table density. Keep it inside the shipment workflow, not as a standalone screen.",
-    foundOn: [{ label: "Shipments", route: "/shipments" }, { label: "Components", route: "/components" }],
-    componentCode: `export function ShipmentBoardPreview({ onOpenShipment }) {\n  const columns = [\n    ["Open", shipments.slice(0, 3)],\n    ["Exception", shipments.filter((shipment) => shipment.status === "Exception")],\n    ["Delivered soon", shipments.slice(4, 7)],\n  ]\n\n  return (\n    <div className="grid gap-4 lg:grid-cols-3">\n      {columns.map(([label, rows]) => (\n        <Surface key={label} padding="md" className="rounded-[var(--md-radius-xl)]">\n          <h2>{label}</h2>\n          {rows.map((shipment) => <ShipmentBoardCard key={shipment.id} shipment={shipment} onOpen={onOpenShipment} />)}\n        </Surface>\n      ))}\n    </div>\n  )\n}`,
-    usageCode: `<ShipmentBoardPreview onOpenShipment={openShipment} />`,
+    description: "A compact board-mode preview for grouped booking states such as open, exception, and delivered soon.",
+    details: "Use as an alternate booking list view when operators need state grouping rather than table density. Keep it inside the booking workflow, not as a standalone screen.",
+    foundOn: [{ label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components" }],
+    componentCode: `export function BookingBoardPreview({ onOpenBooking }) {\n  const columns = [\n    ["Open", bookings.slice(0, 3)],\n    ["Exception", bookings.filter((booking) => booking.status === "Exception")],\n    ["Delivered soon", bookings.slice(4, 7)],\n  ]\n\n  return (\n    <div className="grid gap-4 lg:grid-cols-3">\n      {columns.map(([label, rows]) => (\n        <Surface key={label} padding="md" className="rounded-[var(--md-radius-xl)]">\n          <h2>{label}</h2>\n          {rows.map((booking) => <BookingBoardCard key={booking.id} booking={booking} onOpen={onOpenBooking} />)}\n        </Surface>\n      ))}\n    </div>\n  )\n}`,
+    usageCode: `<BookingBoardPreview onOpenBooking={openBooking} />`,
   },
   {
     id: "report-template-card",
@@ -2134,44 +2134,44 @@ export const galleryComponents = [
     usageCode: `<ReportWidgetPalette\n  widgets={reportWidgets}\n  query={query}\n  onQueryChange={setQuery}\n  activeWidgetId={activeWidgetId}\n  onAddWidget={addWidget}\n/>\n\n<ReportWidgetPalette\n  widgets={reportWidgets}\n  query={dashboardQuery}\n  onQueryChange={setDashboardQuery}\n  onAddWidget={addDashboardWidget}\n  presentation="inline"\n/>`,
   },
   {
-    id: "shipment-arrival-card",
-    name: "Shipment Arrival Card",
+    id: "booking-arrival-card",
+    name: "Booking Arrival Card",
     category: "Operations",
-    description: "The prediction panel for a shipment overview: arrival time, delay delta, confidence, booking, and milestone progress.",
-    details: "Use at the top of shipment detail overview when the operator needs the current arrival model and route stage in one place.",
-    foundOn: [{ label: "Shipment detail", route: "/shipments/md-22455" }, { label: "Components", route: "/components" }],
-    componentCode: `export function ShipmentArrivalCard() {\n  return (\n    <Surface padding="lg" className="rounded-[var(--md-radius-xl)]">\n      <p>Predicted arrival · Long Beach, USLGB</p>\n      <strong>Jun 09, 03:00 PT</strong>\n      <span>+ 2 days 4 hrs</span>\n      <p>Model confidence 87% · last update 41 seconds ago</p>\n      <MilestoneRail milestones={shipmentMilestones} />\n    </Surface>\n  )\n}`,
-    usageCode: `<ShipmentArrivalCard />`,
+    description: "The prediction panel for a booking overview: arrival time, delay delta, confidence, booking, and milestone progress.",
+    details: "Use at the top of booking detail overview when the operator needs the current arrival model and route stage in one place.",
+    foundOn: [{ label: "Booking detail", route: "/bookings/md-22455" }, { label: "Components", route: "/components" }],
+    componentCode: `export function BookingArrivalCard() {\n  return (\n    <Surface padding="lg" className="rounded-[var(--md-radius-xl)]">\n      <p>Predicted arrival · Long Beach, USLGB</p>\n      <strong>Jun 09, 03:00 PT</strong>\n      <span>+ 2 days 4 hrs</span>\n      <p>Model confidence 87% · last update 41 seconds ago</p>\n      <MilestoneRail milestones={bookingMilestones} />\n    </Surface>\n  )\n}`,
+    usageCode: `<BookingArrivalCard />`,
   },
   {
-    id: "shipment-exception-panel",
-    name: "Shipment Exception Panel",
+    id: "booking-exception-panel",
+    name: "Booking Exception Panel",
     category: "Operations",
     description: "A focused exception block with the issue, severity, context, and the next best resolution actions.",
-    details: "Use inside shipment overview when an exception needs action. It should explain why the hold exists and keep the fastest resolution choices close.",
-    foundOn: [{ label: "Shipment detail", route: "/shipments/md-22455" }, { label: "Components", route: "/components" }],
-    componentCode: `export function ShipmentExceptionPanel() {\n  return (\n    <section className="rounded-[var(--md-radius-xl)] bg-white/38 p-5 shadow-[inset_0_0_0_1px_rgba(209,78,78,0.28)]">\n      <TriangleAlert />\n      <h2>Customs hold · CN export licence missing</h2>\n      <StatusPill tone="red">Critical</StatusPill>\n      <p>The required export licence is missing from the document set.</p>\n      <button>Request licence from shipper</button>\n      <button>Mark as own goods</button>\n      <button>Escalate to broker</button>\n    </section>\n  )\n}`,
-    usageCode: `<ShipmentExceptionPanel />`,
+    details: "Use inside booking overview when an exception needs action. It should explain why the hold exists and keep the fastest resolution choices close.",
+    foundOn: [{ label: "Booking detail", route: "/bookings/md-22455" }, { label: "Components", route: "/components" }],
+    componentCode: `export function BookingExceptionPanel() {\n  return (\n    <section className="rounded-[var(--md-radius-xl)] bg-white/38 p-5 shadow-[inset_0_0_0_1px_rgba(209,78,78,0.28)]">\n      <TriangleAlert />\n      <h2>Customs hold · CN export licence missing</h2>\n      <StatusPill tone="red">Critical</StatusPill>\n      <p>The required export licence is missing from the document set.</p>\n      <button>Request licence from shipper</button>\n      <button>Mark as own goods</button>\n      <button>Escalate to broker</button>\n    </section>\n  )\n}`,
+    usageCode: `<BookingExceptionPanel />`,
   },
   {
-    id: "shipment-checklist",
-    name: "Shipment Checklist",
+    id: "booking-checklist",
+    name: "Booking Checklist",
     category: "Operations",
-    description: "A tickable operational checklist for clearing shipment exceptions without losing the current shipment context.",
-    details: "Use inside shipment overview or exception detail surfaces when the operator needs a shared, step-by-step resolution path.",
-    foundOn: [{ label: "Shipment detail", route: "/shipments/md-22455" }, { label: "Components", route: "/components" }],
-    componentCode: `export function ShipmentResolutionChecklist() {\n  const [checkedItems, setCheckedItems] = useState(new Set([\"Confirm hold reason\"]))\n\n  return (\n    <Surface>\n      {items.map(([label, detail]) => (\n        <button onClick={() => toggleItem(label)}>\n          <Checkbox checked={checkedItems.has(label)} />\n          <span>{label}</span>\n          <span>{detail}</span>\n        </button>\n      ))}\n    </Surface>\n  )\n}`,
-    usageCode: `<ShipmentResolutionChecklist />`,
+    description: "A tickable operational checklist for clearing booking exceptions without losing the current booking context.",
+    details: "Use inside booking overview or exception detail surfaces when the operator needs a shared, step-by-step resolution path.",
+    foundOn: [{ label: "Booking detail", route: "/bookings/md-22455" }, { label: "Components", route: "/components" }],
+    componentCode: `export function BookingResolutionChecklist() {\n  const [checkedItems, setCheckedItems] = useState(new Set([\"Confirm hold reason\"]))\n\n  return (\n    <Surface>\n      {items.map(([label, detail]) => (\n        <button onClick={() => toggleItem(label)}>\n          <Checkbox checked={checkedItems.has(label)} />\n          <span>{label}</span>\n          <span>{detail}</span>\n        </button>\n      ))}\n    </Surface>\n  )\n}`,
+    usageCode: `<BookingResolutionChecklist />`,
   },
   {
-    id: "shipment-ask-panel",
-    name: "Shipment Ask Panel",
+    id: "booking-ask-panel",
+    name: "Booking Ask Panel",
     category: "Operations",
-    description: "A floating, collapsible chatbot panel for asking contextual questions about one shipment.",
-    details: "Use on shipment detail views where operators need quick answers without losing the current record. Keep it fixed on desktop so page scrolling does not move it.",
-    foundOn: [{ label: "Shipment detail", route: "/shipments/md-22455" }, { label: "Components", route: "/components" }],
-    componentCode: `export function ShipmentAskPanel({ collapsed, onCollapsedChange }) {\n  const [draft, setDraft] = useState(\"\")\n  const [messages, setMessages] = useState(initialMessages)\n\n  if (collapsed) {\n    return (\n      <button aria-label=\"Open shipment chat\" onClick={() => onCollapsedChange(false)}>\n        <span className=\"glow\" />\n        <Sparkles />\n      </button>\n    )\n  }\n\n  return (\n    <aside className=\"flex h-full flex-col rounded-[var(--md-radius-xl)] bg-[var(--md-sidebar-bg)]\">\n      <header>\n        <Sparkles />\n        <h2>Ask about this shipment</h2>\n        <button onClick={() => onCollapsedChange(true)}>Collapse</button>\n      </header>\n      <div>{messages.map((message) => <ChatBubble message={message} />)}</div>\n      <form onSubmit={askQuestion}>\n        <textarea value={draft} onChange={(event) => setDraft(event.target.value)} />\n        <button type=\"submit\">Send</button>\n      </form>\n    </aside>\n  )\n}`,
-    usageCode: `<div className={chatCollapsed ? \"fixed right-6 top-6 size-14\" : \"fixed bottom-6 right-6 top-6 w-[368px]\"}>\n  <ShipmentAskPanel\n    collapsed={chatCollapsed}\n    onCollapsedChange={setChatCollapsed}\n  />\n</div>`,
+    description: "A floating, collapsible chatbot panel for asking contextual questions about one booking.",
+    details: "Use on booking detail views where operators need quick answers without losing the current record. Keep it fixed on desktop so page scrolling does not move it.",
+    foundOn: [{ label: "Booking detail", route: "/bookings/md-22455" }, { label: "Components", route: "/components" }],
+    componentCode: `export function BookingAskPanel({ collapsed, onCollapsedChange }) {\n  const [draft, setDraft] = useState(\"\")\n  const [messages, setMessages] = useState(initialMessages)\n\n  if (collapsed) {\n    return (\n      <button aria-label=\"Open booking chat\" onClick={() => onCollapsedChange(false)}>\n        <span className=\"glow\" />\n        <Sparkles />\n      </button>\n    )\n  }\n\n  return (\n    <aside className=\"flex h-full flex-col rounded-[var(--md-radius-xl)] bg-[var(--md-sidebar-bg)]\">\n      <header>\n        <Sparkles />\n        <h2>Ask about this booking</h2>\n        <button onClick={() => onCollapsedChange(true)}>Collapse</button>\n      </header>\n      <div>{messages.map((message) => <ChatBubble message={message} />)}</div>\n      <form onSubmit={askQuestion}>\n        <textarea value={draft} onChange={(event) => setDraft(event.target.value)} />\n        <button type=\"submit\">Send</button>\n      </form>\n    </aside>\n  )\n}`,
+    usageCode: `<div className={chatCollapsed ? \"fixed right-6 top-6 size-14\" : \"fixed bottom-6 right-6 top-6 w-[368px]\"}>\n  <BookingAskPanel\n    collapsed={chatCollapsed}\n    onCollapsedChange={setChatCollapsed}\n  />\n</div>`,
   },
   {
     id: "dexter-prompt-composer",
@@ -2207,7 +2207,7 @@ export const galleryComponents = [
     id: "dexter-attachment-palette",
     name: "Dexter Attachment Palette",
     category: "Agent Dexter",
-    description: "The search palette for attaching shipments, customers, and documents as live context for a conversation.",
+    description: "The search palette for attaching bookings, customers, and documents as live context for a conversation.",
     details: "Use when the operator clicks Attach. Keep grouped results scannable and show attached state inline so the modal never feels mysterious.",
     foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components" }],
     componentCode: `export function DexterAttachmentPalette({ query, items, selectedIds, onQueryChange, onToggle }) {\n  const filtered = items.filter((item) => item.title.toLowerCase().includes(query.toLowerCase()))\n\n  return (\n    <Surface>\n      <input value={query} onChange={(event) => onQueryChange(event.target.value)} />\n      {filtered.map((item) => (\n        <button key={item.id} onClick={() => onToggle(item.id)}>\n          <span>{item.title}</span>\n          <span>{item.meta}</span>\n          <span>{selectedIds.has(item.id) ? "Attached" : "Attach"}</span>\n        </button>\n      ))}\n    </Surface>\n  )\n}`,
@@ -2240,14 +2240,14 @@ export const galleryComponents = [
     description: "The right-side drawer for inspecting what a watcher is tracking, why it fired, and what actions are available.",
     details: "Use when an operator clicks a watcher card. The drawer should open over a blurred thread and preserve any draft in the prompt.",
     foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components" }],
-    componentCode: `export function DexterMonitorDetailSheet({ monitor, onClose }) {\n  return (\n    <aside className="fixed inset-y-0 right-0">\n      <button onClick={onClose}>Close</button>\n      <h2>{monitor.title}</h2>\n      <StatusPill tone="green">Active</StatusPill>\n      <section>Watching condition and linked shipment/customer context</section>\n      <section>Trend chart and activity timeline</section>\n      <footer>\n        <button>Pause</button>\n        <button>Edit conditions</button>\n        <button>Delete</button>\n      </footer>\n    </aside>\n  )\n}`,
+    componentCode: `export function DexterMonitorDetailSheet({ monitor, onClose }) {\n  return (\n    <aside className="fixed inset-y-0 right-0">\n      <button onClick={onClose}>Close</button>\n      <h2>{monitor.title}</h2>\n      <StatusPill tone="green">Active</StatusPill>\n      <section>Watching condition and linked booking/customer context</section>\n      <section>Trend chart and activity timeline</section>\n      <footer>\n        <button>Pause</button>\n        <button>Edit conditions</button>\n        <button>Delete</button>\n      </footer>\n    </aside>\n  )\n}`,
     usageCode: `<AnimatePresence>\n  {selectedMonitor ? (\n    <DexterMonitorDetailSheet\n      monitor={selectedMonitor}\n      onClose={() => setSelectedMonitor(null)}\n    />\n  ) : null}\n</AnimatePresence>`,
   },
   {
     id: "dexter-response-blocks",
     name: "Dexter Response Blocks",
     category: "Agent Dexter",
-    description: "Structured answer blocks for customer snapshots, action checklists, and shipment risk tables inside Dexter conversations.",
+    description: "Structured answer blocks for customer snapshots, action checklists, and booking risk tables inside Dexter conversations.",
     details: "Use when Dexter returns something the operator should scan or act on. The answer should feel operational, not like a long chat transcript.",
     foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components" }],
     componentCode: `<DexterCustomerSnapshot />\n<DexterChecklistCard items={steps} />\n<DexterRiskTable />`,
@@ -2327,7 +2327,7 @@ export const galleryComponents = [
     id: "crm-activity-timeline",
     name: "CRM Activity Timeline",
     category: "CRM",
-    description: "A relationship timeline that blends email, AI signals, quotes, shipment exceptions, and account notes.",
+    description: "A relationship timeline that blends email, AI signals, quotes, booking exceptions, and account notes.",
     details: "Use when the operator needs to understand what changed across leads. Compact mode is useful beside another primary workflow.",
     foundOn: [{ label: "CRM", route: "/crm" }, { label: "CRM activity", route: "/crm/activity" }, { label: "Components", route: "/components" }],
     componentCode: `export function CrmActivityTimeline({ activities = crmActivities, compact }) {\n  return (\n    <Surface padding="none">\n      <SectionHeader title="Relationship activity" />\n      {activities.map((item) => (\n        <div key={item.title} className="grid grid-cols-[120px_18px_1fr]">\n          <span>{item.time}</span>\n          <span style={{ background: toneToVar(item.tone) }} />\n          <div>\n            <p>{item.title}</p>\n            <StatusPill tone={item.tone}>{item.account}</StatusPill>\n            {!compact ? <p>{item.detail}</p> : null}\n          </div>\n        </div>\n      ))}\n    </Surface>\n  )\n}`,
@@ -2411,16 +2411,16 @@ export const galleryComponents = [
     details: "Use beside the main settings form when a page needs stable reference data rather than another editable panel.",
     foundOn: [{ label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
     componentCode: `export function SettingsSummaryCard({ title, rows }) {\n  return (\n    <aside className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-soft)]">\n      <p>{title}</p>\n      {rows.map(([label, value]) => (\n        <div key={label}>\n          <span>{label}</span>\n          <span>{value}</span>\n        </div>\n      ))}\n    </aside>\n  )\n}`,
-    usageCode: `<SettingsSummaryCard\n  title="At a glance"\n  rows={[\n    ["Member since", "Jan 2024"],\n    ["Shipments handled", "1,847"],\n    ["Role", "Admin - Ops"],\n  ]}\n/>`,
+    usageCode: `<SettingsSummaryCard\n  title="At a glance"\n  rows={[\n    ["Member since", "Jan 2024"],\n    ["Bookings handled", "1,847"],\n    ["Role", "Admin - Ops"],\n  ]}\n/>`,
   },
   {
     id: "auth-narrative-panel",
     name: "Auth Narrative Panel",
     category: "Operations",
-    description: "The branded freight context panel used beside auth forms, with step-specific copy and live shipment cards.",
+    description: "The branded freight context panel used beside auth forms, with step-specific copy and live booking cards.",
     details: "Use as the left-side context module for auth and session handoff states. It is a panel component, not the whole auth route.",
     foundOn: [{ label: "Auth", route: "/auth" }, { label: "Components", route: "/components" }],
-    componentCode: `export function FreightNarrative({ step = "signin", className }) {\n  const copy = authCopyByStep[step]\n\n  return (\n    <aside className={cn("relative flex min-h-[720px] overflow-hidden bg-[#062420] text-white", className)}>\n      <BrandLockup inverted />\n      <h1>{copy.title}</h1>\n      <p>{copy.body}</p>\n      {authShipments.map((shipment) => <AuthShipmentCard key={shipment.id} shipment={shipment} />)}\n      <p>{copy.footnote}</p>\n    </aside>\n  )\n}`,
+    componentCode: `export function FreightNarrative({ step = "signin", className }) {\n  const copy = authCopyByStep[step]\n\n  return (\n    <aside className={cn("relative flex min-h-[720px] overflow-hidden bg-[#062420] text-white", className)}>\n      <BrandLockup inverted />\n      <h1>{copy.title}</h1>\n      <p>{copy.body}</p>\n      {authBookings.map((booking) => <AuthBookingCard key={booking.id} booking={booking} />)}\n      <p>{copy.footnote}</p>\n    </aside>\n  )\n}`,
     usageCode: `<FreightNarrative step="signin" />\n<FreightNarrative step="verify" />\n<FreightNarrative step="signed-out" />`,
   },
   {
@@ -2488,7 +2488,7 @@ export const galleryIcons = {
   "radial-goal-chart": Gauge,
   "scatter-chart": ChartScatter,
   "mixed-chart": ChartNoAxesCombined,
-  "shipment-row": Ship,
+  "booking-row": Ship,
   "interactive-map": Globe2,
   command: ScanText,
   sidebar: LayoutDashboard,
@@ -2509,13 +2509,13 @@ export const galleryIcons = {
   "geo-panel": Globe2,
   "record-header": BriefcaseBusiness,
   tabs: LayoutDashboard,
-  "active-shipments-panel": Ship,
+  "active-bookings-panel": Ship,
   "your-jobs-panel": BriefcaseBusiness,
   "lane-mix-panel": ChartBar,
-  "shipment-metric-card": BarChart3,
-  "shipment-advanced-search": Search,
-  "shipments-table": Ship,
-  "shipment-board-preview": LayoutDashboard,
+  "booking-metric-card": BarChart3,
+  "booking-advanced-search": Search,
+  "bookings-table": Ship,
+  "booking-board-preview": LayoutDashboard,
   "report-template-card": BarChart3,
   "generated-report-table": FileText,
   "report-document-page": FileText,
@@ -2523,10 +2523,10 @@ export const galleryIcons = {
   "report-page-controls": ListOrdered,
   "report-widget-palette": Component,
   "report-data-editor": SlidersHorizontal,
-  "shipment-arrival-card": Clock3,
-  "shipment-exception-panel": TriangleAlert,
-  "shipment-checklist": ClipboardCheck,
-  "shipment-ask-panel": MessageCircle,
+  "booking-arrival-card": Clock3,
+  "booking-exception-panel": TriangleAlert,
+  "booking-checklist": ClipboardCheck,
+  "booking-ask-panel": MessageCircle,
   "crm-metrics-grid": BarChart3,
   "crm-pipeline-board": BriefcaseBusiness,
   "crm-asset-folder-card": Boxes,

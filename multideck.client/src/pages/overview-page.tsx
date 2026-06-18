@@ -6,7 +6,7 @@ import {
   ActivityPanel,
   CustomsQueuePanel,
   DashboardDrilldownPanel,
-  LiveShipmentsPanel,
+  LiveBookingsPanel,
   MetricsGrid,
   MorningDigestPanel,
   OverviewHero,
@@ -16,8 +16,8 @@ import {
   type DashboardDrilldownId,
 } from "@/components/multideck/overview-panels"
 import { DashboardCustomisePanel, type DashboardCustomiseMode } from "@/components/multideck/dashboard-customise-panel"
-import { YourJobsPanel, getShipmentDetailPath } from "@/components/multideck/shipment-components"
-import { initialFavouriteShipmentIds, savedDashboardViews, type DashboardCustomRange, type DashboardRange } from "@/data/multideck-data"
+import { YourJobsPanel, getBookingDetailPath } from "@/components/multideck/booking-components"
+import { initialFavouriteBookingIds, savedDashboardViews, type DashboardCustomRange, type DashboardRange } from "@/data/multideck-data"
 import { mdMotion } from "@/lib/motion"
 
 const overviewIntro = {
@@ -66,7 +66,7 @@ export function OverviewPage({ navigate }: { navigate: (path: string) => void })
   const [activeDrilldown, setActiveDrilldown] = useState<DashboardDrilldownId | null>(null)
   const [customiseOpen, setCustomiseOpen] = useState(false)
   const [customiseMode, setCustomiseMode] = useState<DashboardCustomiseMode>("ai")
-  const [favouriteIds, setFavouriteIds] = useState<Set<string>>(() => new Set(initialFavouriteShipmentIds))
+  const [favouriteIds, setFavouriteIds] = useState<Set<string>>(() => new Set(initialFavouriteBookingIds))
   const [dashboardViews, setDashboardViews] = useState<string[]>(savedDashboardViews)
   const [selectedDashboard, setSelectedDashboard] = useState(savedDashboardViews[0])
 
@@ -168,7 +168,7 @@ export function OverviewPage({ navigate }: { navigate: (path: string) => void })
                     onToggleFavourite={toggleFavourite}
                     animated
                     compact={customiseOpen}
-                    onOpenJob={(job) => navigate(getShipmentDetailPath(job.shipmentId))}
+                    onOpenJob={(job) => navigate(getBookingDetailPath(job.bookingId))}
                   />
                 </motion.div>
                 <motion.div className="mt-[var(--md-page-stack-gap-compact)]" variants={shouldReduceMotion ? undefined : overviewIntroItem}>
@@ -182,7 +182,7 @@ export function OverviewPage({ navigate }: { navigate: (path: string) => void })
                   <CustomsQueuePanel onOpenDrilldown={openDrilldown} />
                 </motion.div>
                 <motion.div className="mt-[var(--md-page-stack-gap-compact)]" variants={shouldReduceMotion ? undefined : overviewIntroItem}>
-                  <LiveShipmentsPanel />
+                  <LiveBookingsPanel />
                 </motion.div>
               </motion.div>
             )}

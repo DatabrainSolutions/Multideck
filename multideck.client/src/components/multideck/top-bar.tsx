@@ -50,7 +50,8 @@ export function TopBar({
   const isCustomerDetail = route.startsWith("/customers/")
   const isCrmRoute = route.startsWith("/crm")
   const isCrmLeadDetail = /^\/crm\/leads\/[^/]+$/.test(route)
-  const isShipmentList = route === "/shipments"
+  const isBookingList = route === "/bookings"
+  const isBookingWizard = route === "/bookings/new"
   const isReports = route === "/reports"
   const { language, t } = useLanguage()
   const todayLabel = getTopBarDateLabel(language, t("Today"))
@@ -112,13 +113,13 @@ export function TopBar({
             <Button
               className={topBarPrimaryActionClass}
               onClick={() =>
-                toast.success("Shipment draft created", {
-                  description: "A new Marlow Apparel shipment is ready to complete.",
+                toast.success("Booking draft created", {
+                  description: "A new Marlow Apparel booking is ready to complete.",
                 })
               }
             >
-              <span className="hidden sm:inline">New shipment for Marlow</span>
-              <span className="sm:hidden">New shipment</span>
+              <span className="hidden sm:inline">New booking for Marlow</span>
+              <span className="sm:hidden">New booking</span>
             </Button>
           </div>
         </>
@@ -151,11 +152,11 @@ export function TopBar({
         </>
       ) : (
         <>
-          <p className="hidden min-w-[210px] text-[15px] font-medium text-[var(--md-text)] md:block">{isShipmentList ? "Shipments" : isCustomerList ? "Customers" : isCrmRoute ? crmRouteLabel[route] ?? (route.startsWith("/crm/leads/") ? "Lead detail" : route.startsWith("/crm/lists/") ? "List detail" : route.includes("/stats") ? "Email statistics" : route.includes("/edit") ? "Email editor" : "CRM") : isReports ? "Reports" : todayLabel}</p>
+          <p className="hidden min-w-[210px] text-[15px] font-medium text-[var(--md-text)] md:block">{isBookingList ? "Bookings" : isBookingWizard ? "New booking" : isCustomerList ? "Customers" : isCrmRoute ? crmRouteLabel[route] ?? (route.startsWith("/crm/leads/") ? "Lead detail" : route.startsWith("/crm/lists/") ? "List detail" : route.includes("/stats") ? "Email statistics" : route.includes("/edit") ? "Email editor" : "CRM") : isReports ? "Reports" : todayLabel}</p>
           <div className="ml-auto min-w-0 flex-1 md:max-w-[560px]">
-            <CommandInput placeholder={isShipmentList ? "ID, container, customer, BoL, HS code..." : isCustomerList ? "Search customers, contacts, or shipments..." : isCrmRoute ? "Search leads, contacts, deals, emails, lists, or marketing..." : isReports ? "Report name, template, customer..." : "Ask Multideck or jump to anything..."} />
+            <CommandInput placeholder={isBookingList ? "ID, container, customer, BoL, HS code..." : isCustomerList ? "Search customers, contacts, or bookings..." : isCrmRoute ? "Search leads, contacts, deals, emails, lists, or marketing..." : isReports ? "Report name, template, customer..." : "Ask Multideck or jump to anything..."} />
           </div>
-          {isShipmentList ? (
+          {isBookingList ? (
             <>
               <Button variant="ghost" className={cn("hidden sm:inline-flex", topBarGhostActionClass)}>
                 <Upload data-icon="inline-start" strokeWidth={1.2} />
@@ -163,14 +164,10 @@ export function TopBar({
               </Button>
               <Button
                 className={topBarPrimaryActionClass}
-                onClick={() =>
-                  toast.success("Shipment draft created", {
-                    description: "Add the customer, route, and documents next.",
-                  })
-                }
+                onClick={() => navigate("/bookings/new")}
               >
                 <Plus data-icon="inline-start" strokeWidth={1.2} />
-                <span className="hidden sm:inline">New shipment</span>
+                <span className="hidden sm:inline">New booking</span>
               </Button>
             </>
           ) : isCustomerList ? (
@@ -267,13 +264,13 @@ export function TopBar({
               <Button
                 className={topBarPrimaryActionClass}
                 onClick={() =>
-                  toast.success("Shipment draft created", {
+                  toast.success("Booking draft created", {
                     description: "Add the customer, route, and documents next.",
                   })
                 }
               >
                 <Plus data-icon="inline-start" strokeWidth={1.2} />
-                <span className="hidden sm:inline">New shipment</span>
+                <span className="hidden sm:inline">New booking</span>
               </Button>
             </>
           )}

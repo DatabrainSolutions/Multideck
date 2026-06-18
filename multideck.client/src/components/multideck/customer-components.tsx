@@ -9,7 +9,7 @@ import {
   customerFilters,
   customerScopeTabs,
   marlowAccount,
-  marlowActiveShipments,
+  marlowActiveBookings,
   marlowActivity,
   marlowContacts,
   marlowLaneMix,
@@ -184,7 +184,7 @@ export function CustomerRow({
       <TableCell className="text-right text-[14px] font-medium text-[var(--md-ink)]">{customer.contacts}</TableCell>
       <TableCell className={cn("text-right text-[14px] font-medium", customer.activeTone === "amber" ? "text-[var(--md-amber)]" : "text-[var(--md-ink)]")}>{customer.active}</TableCell>
       <TableCell>
-        <CustomerSparkline values={customer.shipments30d} tone={customer.sparkTone} />
+        <CustomerSparkline values={customer.bookings30d} tone={customer.sparkTone} />
       </TableCell>
       <TableCell className="text-right text-[15px] font-medium text-[var(--md-ink)]">{customer.billedYtd}</TableCell>
       <TableCell className={cn("text-right text-[14px] font-medium", customer.onTimeTone === "green" ? "text-[var(--md-green)]" : customer.onTimeTone === "amber" ? "text-[var(--md-amber)]" : "text-[var(--md-ink)]")}>{customer.onTime}</TableCell>
@@ -225,7 +225,7 @@ export function CustomerCard({ customer, onOpen }: { customer: Customer; onOpen:
           <p className="mt-1 text-[16px] font-medium text-[var(--md-ink)]">{customer.active}</p>
         </div>
       </div>
-      <CustomerSparkline values={customer.shipments30d} tone={customer.sparkTone} className="mt-4 w-full" />
+      <CustomerSparkline values={customer.bookings30d} tone={customer.sparkTone} className="mt-4 w-full" />
     </button>
   )
 }
@@ -250,7 +250,7 @@ export function CustomerListHeader({
       <div>
         <h1 className="text-[32px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">Customers</h1>
         <p className="mt-2 text-[15px] leading-6 text-[var(--md-text)]">
-          <span className="font-medium text-[var(--md-ink)]">{customers.length} active</span> · 1,184 shipments YTD ·{" "}
+          <span className="font-medium text-[var(--md-ink)]">{customers.length} active</span> · 1,184 bookings YTD ·{" "}
           <span className="font-medium text-[var(--md-ink)]">€18.4M</span> billed YTD · 3 nearing renewal
         </p>
       </div>
@@ -321,7 +321,7 @@ export function CustomerListTable({
             <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Industry</TableHead>
             <TableHead className="text-right text-[12px] font-medium text-[var(--md-text)]">Contacts</TableHead>
             <TableHead className="text-right text-[12px] font-medium text-[var(--md-text)]">Active</TableHead>
-            <TableHead className="text-[12px] font-medium text-[var(--md-text)]">30d shipments</TableHead>
+            <TableHead className="text-[12px] font-medium text-[var(--md-text)]">30d bookings</TableHead>
             <TableHead className="text-right text-[12px] font-medium text-[var(--md-text)]">Billed YTD</TableHead>
             <TableHead className="text-right text-[12px] font-medium text-[var(--md-text)]">On-time</TableHead>
             <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Status</TableHead>
@@ -380,7 +380,7 @@ export function CustomerFootprintMap({
       <div className="flex items-center justify-between border-b border-[rgba(11,20,19,0.06)] px-5 py-4">
         <div>
           <h2 className="text-[15px] font-medium text-[var(--md-ink)]">Customer footprint</h2>
-          <p className="mt-1 text-[12px] text-[var(--md-text)]">Grouped by commercial region and active shipment volume.</p>
+          <p className="mt-1 text-[12px] text-[var(--md-text)]">Grouped by commercial region and active booking volume.</p>
         </div>
         <MapPin className="size-5 text-[var(--md-accent)]" strokeWidth={1.2} />
       </div>
@@ -412,24 +412,24 @@ export function CustomerFootprintMap({
   )
 }
 
-export function ActiveShipmentRow({ shipment }: { shipment: (typeof marlowActiveShipments)[number] }) {
+export function ActiveBookingRow({ booking }: { booking: (typeof marlowActiveBookings)[number] }) {
   return (
     <div className="grid min-h-[64px] grid-cols-[24px_minmax(110px,150px)_1fr_90px_96px_92px] items-center gap-4 border-t border-[rgba(11,20,19,0.06)] px-5 py-3">
-      <span className="size-2.5 rounded-full" style={{ background: toneToVar(shipment.tone), boxShadow: `0 0 0 4px color-mix(in srgb, ${toneToVar(shipment.tone)} 12%, transparent)` }} />
-      <p className="text-[13px] font-medium text-[var(--md-text)]">{shipment.id}</p>
+      <span className="size-2.5 rounded-full" style={{ background: toneToVar(booking.tone), boxShadow: `0 0 0 4px color-mix(in srgb, ${toneToVar(booking.tone)} 12%, transparent)` }} />
+      <p className="text-[13px] font-medium text-[var(--md-text)]">{booking.id}</p>
       <div className="min-w-0">
-        <p className="truncate text-[15px] font-medium text-[var(--md-ink)]">{shipment.route}</p>
-        <p className="truncate text-[12px] text-[var(--md-text)]">{shipment.detail}</p>
+        <p className="truncate text-[15px] font-medium text-[var(--md-ink)]">{booking.route}</p>
+        <p className="truncate text-[12px] text-[var(--md-text)]">{booking.detail}</p>
       </div>
-      <StatusPill tone={shipment.mode === "AIR" ? "green" : "blue"}>{shipment.mode}</StatusPill>
-      <p className="text-[13px] text-[var(--md-text)]">ETA {shipment.eta}</p>
+      <StatusPill tone={booking.mode === "AIR" ? "green" : "blue"}>{booking.mode}</StatusPill>
+      <p className="text-[13px] text-[var(--md-text)]">ETA {booking.eta}</p>
       <div className="flex items-center gap-2">
         <Progress
-          value={shipment.progress}
+          value={booking.progress}
           className="h-1.5 flex-1 rounded-full bg-[rgba(90,103,100,0.14)] [&>div]:bg-[var(--progress-color)]"
-          style={{ "--progress-color": toneToVar(shipment.tone) } as CSSProperties}
+          style={{ "--progress-color": toneToVar(booking.tone) } as CSSProperties}
         />
-        <span className="w-8 text-right text-[12px] text-[var(--md-text)]">{shipment.progress}%</span>
+        <span className="w-8 text-right text-[12px] text-[var(--md-text)]">{booking.progress}%</span>
       </div>
     </div>
   )
@@ -584,8 +584,8 @@ export function ContactProfileModule({
           <div className="mt-[var(--md-page-stack-gap)]">
             <p className="text-[12px] font-medium text-[var(--md-subtle)]">Linked work</p>
             <div className="mt-2 flex flex-wrap gap-2">
-              {contact.linkedShipments.map((shipment) => (
-                <StatusPill key={shipment} tone="neutral">{shipment}</StatusPill>
+              {contact.linkedBookings.map((booking) => (
+                <StatusPill key={booking} tone="neutral">{booking}</StatusPill>
               ))}
             </div>
           </div>
@@ -602,7 +602,7 @@ export function LaneMixPanel() {
   return (
     <Surface className="rounded-[var(--md-radius-xl)]" padding="none">
       <div className="px-5 py-4">
-        <SectionHeader title="Lane mix · last 90d" meta="6 lanes · 71 shipments" />
+        <SectionHeader title="Lane mix · last 90d" meta="6 lanes · 71 bookings" />
       </div>
       <div className="px-5 pb-5">
         {marlowLaneMix.map((lane) => (
@@ -697,18 +697,18 @@ export function CustomerMetricsGrid() {
   )
 }
 
-export function ActiveShipmentsPanel() {
+export function ActiveBookingsPanel() {
   return (
     <Surface className="overflow-hidden rounded-[var(--md-radius-xl)]" padding="none">
       <CustomerPanelHeader
-        title="Active shipments"
+        title="Active bookings"
         meta="6 · 1 exception"
         action={<ArrowTextButton>View all 287</ArrowTextButton>}
       />
       <div className="overflow-x-auto md-scrollbar">
         <div className="min-w-[760px]">
-          {marlowActiveShipments.map((shipment) => (
-            <ActiveShipmentRow key={shipment.id} shipment={shipment} />
+          {marlowActiveBookings.map((booking) => (
+            <ActiveBookingRow key={booking.id} booking={booking} />
           ))}
         </div>
       </div>
@@ -812,10 +812,10 @@ export function CustomerActivityPanel() {
 export function CustomerSimpleTabPanel({ tab }: { tab: string }) {
   const message = {
     Contacts: "Primary contacts, comms preferences, and owner notes for this account.",
-    Shipments: "All active, delayed, and completed shipments for Marlow Apparel.",
+    Bookings: "All active, delayed, and completed bookings for Marlow Apparel.",
     Documents: "Commercial invoices, packing lists, bills of lading, and customs docs.",
     Quotes: "Open and accepted commercial quotes linked to this account.",
-    Activity: "Account timeline across AI, email, shipments, quotes, and exceptions.",
+    Activity: "Account timeline across AI, email, bookings, quotes, and exceptions.",
     Notes: "Internal account notes, renewal context, and customer-specific preferences.",
   }[tab] ?? "Customer overview."
 

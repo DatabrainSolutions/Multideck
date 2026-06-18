@@ -30,17 +30,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
 import {
-  shipmentCargo,
-  shipmentDocuments,
-  shipmentFilters,
-  shipmentMetrics,
-  shipmentMilestones,
-  shipments,
-  shipmentTimeline,
+  bookingCargo,
+  bookingDocuments,
+  bookingFilters,
+  bookingMetrics,
+  bookingMilestones,
+  bookings,
+  bookingTimeline,
   currentOperator,
   operatorJobs,
-  type ShipmentMode,
-  type ShipmentStatus,
+  type BookingMode,
+  type BookingStatus,
   type StatusTone,
 } from "@/data/multideck-data"
 import { FilterChips, TabsRail } from "./workflow-components"
@@ -50,17 +50,17 @@ import { AnimatedList } from "./animated-list"
 import { PageSettingsMenu, type PageSettingsViewOption } from "./page-settings-menu"
 import multideckFullLogo from "@/assets/brand/multideck-full-logo.svg"
 
-export type Shipment = (typeof shipments)[number]
+export type Booking = (typeof bookings)[number]
 export type OperatorJob = (typeof operatorJobs)[number]
-export const shipmentViewModes = ["Table", "Board"] as const
-export type ShipmentViewMode = (typeof shipmentViewModes)[number]
-export const shipmentViewOptions = [
+export const bookingViewModes = ["Table", "Board"] as const
+export type BookingViewMode = (typeof bookingViewModes)[number]
+export const bookingViewOptions = [
   { value: "Table", label: "Table", icon: Table2 },
   { value: "Board", label: "Board", icon: KanbanSquare },
-] satisfies readonly PageSettingsViewOption<ShipmentViewMode>[]
-const shipmentDetailTabs = ["Overview", "Documents", "Customs", "Costs", "Comms", "Timeline"] as const
-type ShipmentDetailTab = (typeof shipmentDetailTabs)[number]
-export const shipmentSearchFieldOptions = [
+] satisfies readonly PageSettingsViewOption<BookingViewMode>[]
+const bookingDetailTabs = ["Overview", "Documents", "Customs", "Costs", "Comms", "Timeline"] as const
+type BookingDetailTab = (typeof bookingDetailTabs)[number]
+export const bookingSearchFieldOptions = [
   { value: "any", label: "Any field", placeholder: "ID, invoice, customer, VIN..." },
   { value: "invoice", label: "Invoice", placeholder: "INV-MAR-8841" },
   { value: "jobRef", label: "Job ref", placeholder: "JOB-LON-22481" },
@@ -75,46 +75,46 @@ export const shipmentSearchFieldOptions = [
   { value: "vin", label: "VIN", placeholder: "WVWZZZ..." },
   { value: "customFields", label: "Custom fields", placeholder: "HS code, buyer, licence..." },
 ] as const
-export type ShipmentSearchField = (typeof shipmentSearchFieldOptions)[number]["value"]
-export type ShipmentSearchCriterion = {
+export type BookingSearchField = (typeof bookingSearchFieldOptions)[number]["value"]
+export type BookingSearchCriterion = {
   id: string
   connector?: "and" | "or"
   groupConnector?: "and" | "or"
   groupId?: string
-  field: ShipmentSearchField
+  field: BookingSearchField
   value: string
   valueTo?: string
 }
 
-const dateSearchFields = new Set<ShipmentSearchField>(["date", "departure", "arrival"])
+const dateSearchFields = new Set<BookingSearchField>(["date", "departure", "arrival"])
 
-function getSearchFieldMeta(field: ShipmentSearchField) {
-  return shipmentSearchFieldOptions.find((option) => option.value === field) ?? shipmentSearchFieldOptions[0]
+function getSearchFieldMeta(field: BookingSearchField) {
+  return bookingSearchFieldOptions.find((option) => option.value === field) ?? bookingSearchFieldOptions[0]
 }
 
-export function getShipmentDetailPath(id: string) {
-  return `/shipments/${id.toLowerCase()}`
+export function getBookingDetailPath(id: string) {
+  return `/bookings/${id.toLowerCase()}`
 }
 
-function getShipmentDetailRecord(shipmentId: string) {
-  const normalizedId = shipmentId.toUpperCase()
-  const shipment = shipments.find((item) => item.id.toUpperCase() === normalizedId)
-  const job = operatorJobs.find((item) => item.shipmentId.toUpperCase() === normalizedId || item.id.toUpperCase() === normalizedId)
+function getBookingDetailRecord(bookingId: string) {
+  const normalizedId = bookingId.toUpperCase()
+  const booking = bookings.find((item) => item.id.toUpperCase() === normalizedId)
+  const job = operatorJobs.find((item) => item.bookingId.toUpperCase() === normalizedId || item.id.toUpperCase() === normalizedId)
 
   return {
-    id: job?.shipmentId ?? shipment?.id ?? "MD-22455",
-    shipment: shipment ?? shipments.find((item) => item.id === "MD-22455") ?? shipments[0],
+    id: job?.bookingId ?? booking?.id ?? "MD-22455",
+    booking: booking ?? bookings.find((item) => item.id === "MD-22455") ?? bookings[0],
     job,
   }
 }
 
-const statusTone: Record<ShipmentStatus, StatusTone> = {
+const statusTone: Record<BookingStatus, StatusTone> = {
   "On track": "green",
   Delayed: "amber",
   Exception: "red",
 }
 
-const modeTone: Record<ShipmentMode, StatusTone> = {
+const modeTone: Record<BookingMode, StatusTone> = {
   OCEAN: "blue",
   AIR: "green",
   ROAD: "amber",
@@ -150,15 +150,15 @@ const askStarterMessages = [
 
 const askSuggestions = ["Explain the hold", "What costs changed?", "Draft shipper email"]
 
-export function ShipmentStatusPill({ status }: { status: ShipmentStatus }) {
+export function BookingStatusPill({ status }: { status: BookingStatus }) {
   return <StatusPill tone={statusTone[status]}>{status}</StatusPill>
 }
 
-export function ShipmentModePill({ mode }: { mode: ShipmentMode }) {
+export function BookingModePill({ mode }: { mode: BookingMode }) {
   return <StatusPill tone={modeTone[mode]} className="min-w-[88px] justify-center">{mode}</StatusPill>
 }
 
-export function ShipmentMetricCard({ label, value, tone }: (typeof shipmentMetrics)[number]) {
+export function BookingMetricCard({ label, value, tone }: (typeof bookingMetrics)[number]) {
   return (
     <Surface padding="md" className="min-h-[92px] rounded-[var(--md-radius-xl)]">
       <p className="text-[13px] font-medium text-[var(--md-text)]">{label}</p>
@@ -175,11 +175,11 @@ export function ShipmentMetricCard({ label, value, tone }: (typeof shipmentMetri
   )
 }
 
-export function ShipmentMetricStrip() {
+export function BookingMetricStrip() {
   return (
     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-      {shipmentMetrics.map((metric) => (
-        <ShipmentMetricCard key={metric.label} {...metric} />
+      {bookingMetrics.map((metric) => (
+        <BookingMetricCard key={metric.label} {...metric} />
       ))}
     </div>
   )
@@ -189,7 +189,7 @@ export function YourJobsPanel({
   favouriteIds,
   onToggleFavourite,
   onOpenJob,
-  onOpenShipment,
+  onOpenBooking,
   onOpenJobDrilldown,
   panelLayoutId,
   getJobLayoutId,
@@ -199,7 +199,7 @@ export function YourJobsPanel({
   favouriteIds: Set<string>
   onToggleFavourite: (id: string) => void
   onOpenJob?: (job: OperatorJob) => void
-  onOpenShipment?: (shipment: Shipment) => void
+  onOpenBooking?: (booking: Booking) => void
   onOpenJobDrilldown?: (jobId: string) => void
   panelLayoutId?: string
   getJobLayoutId?: (jobId: string) => string
@@ -215,7 +215,7 @@ export function YourJobsPanel({
           <p className="mt-1 text-[13px] leading-5 text-[var(--md-text)]">
             {animated
               ? `Current work owned by ${currentOperator.name}.`
-              : `Current work owned by ${currentOperator.name}. Favourites stay pinned so active shipments do not get lost in the full list.`}
+              : `Current work owned by ${currentOperator.name}. Favourites stay pinned so active bookings do not get lost in the full list.`}
           </p>
         </div>
         <StatusPill tone="teal">{visibleJobs.length} active</StatusPill>
@@ -235,19 +235,19 @@ export function YourJobsPanel({
             ariaLabel="Your active jobs"
             getItemKey={(job) => job.id}
             onItemSelect={(job) => {
-              const shipment = shipments.find((item) => item.id === job.shipmentId)
+              const booking = bookings.find((item) => item.id === job.bookingId)
               if (onOpenJob) {
                 onOpenJob(job)
                 return
               }
-              if (shipment && onOpenShipment) {
-                onOpenShipment(shipment)
+              if (booking && onOpenBooking) {
+                onOpenBooking(booking)
                 return
               }
               onOpenJobDrilldown?.(job.id)
             }}
             renderItem={(job) => {
-              const isFavourite = favouriteIds.has(job.shipmentId)
+              const isFavourite = favouriteIds.has(job.bookingId)
 
               return (
                 <motion.div layoutId={getJobLayoutId?.(job.id)} className="md-your-job-card flex h-full min-h-[126px] flex-col justify-between gap-3 p-3">
@@ -258,12 +258,12 @@ export function YourJobsPanel({
                     </div>
                     <button
                       type="button"
-                      aria-label={`${isFavourite ? "Remove" : "Add"} ${job.shipmentId} favourite`}
+                      aria-label={`${isFavourite ? "Remove" : "Add"} ${job.bookingId} favourite`}
                       aria-pressed={isFavourite}
                       className={cn("grid size-7 shrink-0 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-subtle)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-white hover:text-[var(--md-amber)] hover:shadow-[var(--md-shadow-line)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(221,138,43,0.2)]", isFavourite && "bg-[rgba(221,138,43,0.12)] text-[var(--md-amber)] shadow-[var(--md-shadow-line)]")}
                       onClick={(event) => {
                         event.stopPropagation()
-                        onToggleFavourite(job.shipmentId)
+                        onToggleFavourite(job.bookingId)
                       }}
                     >
                       <Star className={cn("size-3.5", isFavourite && "fill-current")} strokeWidth={1.35} />
@@ -281,27 +281,27 @@ export function YourJobsPanel({
       ) : (
         <div className="divide-y divide-[rgba(11,20,19,0.06)] shadow-[inset_0_1px_0_rgba(11,20,19,0.06)]">
           {visibleJobs.map((job) => {
-            const shipment = shipments.find((item) => item.id === job.shipmentId)
-            const isFavourite = favouriteIds.has(job.shipmentId)
-            const canOpen = Boolean(onOpenJob || (shipment && onOpenShipment))
+            const booking = bookings.find((item) => item.id === job.bookingId)
+            const isFavourite = favouriteIds.has(job.bookingId)
+            const canOpen = Boolean(onOpenJob || (booking && onOpenBooking))
 
             return (
               <div key={job.id} className={cn("grid gap-3 px-5 py-4", compact ? "md:grid-cols-[32px_minmax(0,1fr)_82px]" : "md:grid-cols-[34px_120px_minmax(0,1fr)_104px_116px] md:items-center")}>
                 <button
                   type="button"
-                  aria-label={`${isFavourite ? "Remove" : "Add"} ${job.shipmentId} favourite`}
+                  aria-label={`${isFavourite ? "Remove" : "Add"} ${job.bookingId} favourite`}
                   aria-pressed={isFavourite}
                   className={cn(
                     "grid size-8 place-items-center rounded-[var(--md-radius-md)] bg-white/52 text-[var(--md-subtle)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white hover:text-[var(--md-amber)]",
                     isFavourite && "bg-[rgba(221,138,43,0.12)] text-[var(--md-amber)]",
                   )}
-                  onClick={() => onToggleFavourite(job.shipmentId)}
+                  onClick={() => onToggleFavourite(job.bookingId)}
                 >
                   <Star className={cn("size-4", isFavourite && "fill-current")} strokeWidth={1.35} />
                 </button>
                 {!compact ? (
                   <div>
-                    <p className="text-[13px] font-medium text-[var(--md-ink)]">{job.shipmentId}</p>
+                    <p className="text-[13px] font-medium text-[var(--md-ink)]">{job.bookingId}</p>
                     <p className="mt-1 text-[12px] text-[var(--md-text)]">Due {job.due}</p>
                   </div>
                 ) : null}
@@ -314,7 +314,7 @@ export function YourJobsPanel({
                       onOpenJob(job)
                       return
                     }
-                    if (shipment) onOpenShipment?.(shipment)
+                    if (booking) onOpenBooking?.(booking)
                   }}
                 >
                   <p className="truncate text-[14px] font-medium text-[var(--md-ink)]">{job.task}</p>
@@ -338,29 +338,31 @@ export function YourJobsPanel({
   return content
 }
 
-export function ShipmentViewSwitch({
+export function BookingViewSwitch({
   value,
   onChange,
 }: {
-  value: ShipmentViewMode
-  onChange: (value: ShipmentViewMode) => void
+  value: BookingViewMode
+  onChange: (value: BookingViewMode) => void
 }) {
-  return <PageSettingsMenu viewOptions={shipmentViewOptions} value={value} onViewChange={onChange} />
+  return <PageSettingsMenu viewOptions={bookingViewOptions} value={value} onViewChange={onChange} />
 }
 
-export function ShipmentListHeader({
+export function BookingListHeader({
   viewMode,
   onViewModeChange,
   onSpeakToDexter,
+  onCreateBooking,
 }: {
-  viewMode: ShipmentViewMode
-  onViewModeChange: (mode: ShipmentViewMode) => void
+  viewMode: BookingViewMode
+  onViewModeChange: (mode: BookingViewMode) => void
   onSpeakToDexter: () => void
+  onCreateBooking: () => void
 }) {
   return (
     <div className="flex flex-col gap-[var(--md-page-stack-gap)] xl:flex-row xl:items-end xl:justify-between">
       <div>
-        <h1 className="text-[32px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">Shipments</h1>
+        <h1 className="text-[32px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">Bookings</h1>
         <p className="mt-2 text-[16px] leading-6 text-[var(--md-ink)]">
           <span className="font-medium">23 in transit</span>
           <span className="text-[var(--md-text)]"> · </span>
@@ -373,21 +375,29 @@ export function ShipmentListHeader({
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-2">
         <DexterActionPill onClick={onSpeakToDexter} />
-        <ShipmentViewSwitch value={viewMode} onChange={onViewModeChange} />
+        <Button
+          type="button"
+          className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white shadow-[0_10px_22px_rgba(14,125,116,0.14)] transition-[background,color,box-shadow,opacity,transform] hover:scale-[1.01] hover:bg-[#0b6f67]"
+          onClick={onCreateBooking}
+        >
+          <Plus className="size-4" strokeWidth={1.35} />
+          + Booking
+        </Button>
+        <BookingViewSwitch value={viewMode} onChange={onViewModeChange} />
       </div>
     </div>
   )
 }
 
-export function ShipmentAdvancedSearch({
+export function BookingAdvancedSearch({
   criteria,
   onCriteriaChange,
   resultCount,
   totalCount,
   initialOpen = false,
 }: {
-  criteria: ShipmentSearchCriterion[]
-  onCriteriaChange: (criteria: ShipmentSearchCriterion[]) => void
+  criteria: BookingSearchCriterion[]
+  onCriteriaChange: (criteria: BookingSearchCriterion[]) => void
   resultCount: number
   totalCount: number
   initialOpen?: boolean
@@ -395,8 +405,8 @@ export function ShipmentAdvancedSearch({
   const [open, setOpen] = useState(initialOpen)
   const [draftCriteria, setDraftCriteria] = useState(criteria)
   const activeCriteria = criteria.filter(hasSearchValue)
-  const draftGroupedCriteria = groupShipmentSearchCriteria(draftCriteria)
-  const activeGroupedCriteria = groupShipmentSearchCriteria(criteria)
+  const draftGroupedCriteria = groupBookingSearchCriteria(draftCriteria)
+  const activeGroupedCriteria = groupBookingSearchCriteria(criteria)
     .map((group) => ({ ...group, criteria: group.criteria.filter(hasSearchValue) }))
     .filter((group) => group.criteria.length > 0)
   const summaries = activeGroupedCriteria.flatMap((group, groupIndex) => (
@@ -412,7 +422,7 @@ export function ShipmentAdvancedSearch({
     setOpen(true)
   }
 
-  function updateCriterion(id: string, patch: Partial<ShipmentSearchCriterion>) {
+  function updateCriterion(id: string, patch: Partial<BookingSearchCriterion>) {
     setDraftCriteria((current) => (
       current.map((criterion) => {
         if (criterion.id !== id) return criterion
@@ -427,7 +437,7 @@ export function ShipmentAdvancedSearch({
     setDraftCriteria((current) => [
       ...current,
       {
-        id: `shipment-search-${Date.now()}`,
+        id: `booking-search-${Date.now()}`,
         connector: "and",
         groupId,
         field: "invoice",
@@ -438,7 +448,7 @@ export function ShipmentAdvancedSearch({
   }
 
   function addGroup() {
-    const groupId = `shipment-search-group-${Date.now()}`
+    const groupId = `booking-search-group-${Date.now()}`
 
     setDraftCriteria((current) => [
       ...current,
@@ -457,7 +467,7 @@ export function ShipmentAdvancedSearch({
   function updateGroupConnector(groupId: string, connector: "and" | "or") {
     setDraftCriteria((current) => (
       current.map((criterion) => (
-        (criterion.groupId ?? "shipment-search-main") === groupId ? { ...criterion, groupConnector: connector } : criterion
+        (criterion.groupId ?? "booking-search-main") === groupId ? { ...criterion, groupConnector: connector } : criterion
       ))
     ))
   }
@@ -465,19 +475,19 @@ export function ShipmentAdvancedSearch({
   function removeCriterion(id: string) {
     setDraftCriteria((current) => {
       const next = current.filter((criterion) => criterion.id !== id)
-      return next.length ? next : [{ id: "shipment-search-any", field: "any", value: "", valueTo: "" }]
+      return next.length ? next : [{ id: "booking-search-any", field: "any", value: "", valueTo: "" }]
     })
   }
 
   function removeGroup(groupId: string) {
     setDraftCriteria((current) => {
-      const next = current.filter((criterion) => (criterion.groupId ?? "shipment-search-main") !== groupId)
-      return next.length ? next : [{ id: "shipment-search-any", field: "any", value: "", valueTo: "" }]
+      const next = current.filter((criterion) => (criterion.groupId ?? "booking-search-main") !== groupId)
+      return next.length ? next : [{ id: "booking-search-any", field: "any", value: "", valueTo: "" }]
     })
   }
 
   function clearCriteria() {
-    const next: ShipmentSearchCriterion[] = [{ id: "shipment-search-any", field: "any", value: "", valueTo: "" }]
+    const next: BookingSearchCriterion[] = [{ id: "booking-search-any", field: "any", value: "", valueTo: "" }]
     setDraftCriteria(next)
     onCriteriaChange(next)
   }
@@ -535,9 +545,9 @@ export function ShipmentAdvancedSearch({
           <DialogHeader className="px-5 pb-2 pt-5">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <DialogTitle className="text-[18px] font-medium leading-6 tracking-normal text-[var(--md-ink)]">Filter shipments</DialogTitle>
+                <DialogTitle className="text-[18px] font-medium leading-6 tracking-normal text-[var(--md-ink)]">Filter bookings</DialogTitle>
                 <DialogDescription className="mt-2 text-[13px] leading-5 text-[var(--md-text)]">
-                  Advanced shipment search
+                  Advanced booking search
                 </DialogDescription>
               </div>
               <DialogClose asChild>
@@ -627,7 +637,7 @@ export function ShipmentAdvancedSearch({
                           </div>
 
                           <label className="sr-only" htmlFor={`${criterion.id}-field`}>Criterion field</label>
-                          <Select value={criterion.field} onValueChange={(field) => updateCriterion(criterion.id, { field: field as ShipmentSearchField, value: "", valueTo: "" })}>
+                          <Select value={criterion.field} onValueChange={(field) => updateCriterion(criterion.id, { field: field as BookingSearchField, value: "", valueTo: "" })}>
                             <SelectTrigger
                               id={`${criterion.id}-field`}
                               className="h-9 w-full rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-tint)] px-3 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]"
@@ -635,7 +645,7 @@ export function ShipmentAdvancedSearch({
                               <SelectValue placeholder="Choose field" />
                             </SelectTrigger>
                             <SelectContent className="rounded-[var(--md-radius-lg)] bg-[var(--md-sidebar-bg)] shadow-[var(--md-shadow-line)]">
-                              {shipmentSearchFieldOptions.map((option) => (
+                              {bookingSearchFieldOptions.map((option) => (
                                 <SelectItem key={option.value} value={option.value} className="text-[13px]">
                                   {option.label}
                                 </SelectItem>
@@ -735,13 +745,13 @@ export function ShipmentAdvancedSearch({
   )
 }
 
-function hasSearchValue(criterion: ShipmentSearchCriterion) {
+function hasSearchValue(criterion: BookingSearchCriterion) {
   return Boolean(criterion.value.trim() || criterion.valueTo?.trim())
 }
 
-function groupShipmentSearchCriteria(criteria: ShipmentSearchCriterion[]) {
-  return criteria.reduce<Array<{ id: string; connector: "and" | "or"; criteria: ShipmentSearchCriterion[] }>>((groups, criterion, index) => {
-    const groupId = criterion.groupId ?? "shipment-search-main"
+function groupBookingSearchCriteria(criteria: BookingSearchCriterion[]) {
+  return criteria.reduce<Array<{ id: string; connector: "and" | "or"; criteria: BookingSearchCriterion[] }>>((groups, criterion, index) => {
+    const groupId = criterion.groupId ?? "booking-search-main"
     const existingGroup = groups.find((group) => group.id === groupId)
 
     if (existingGroup) {
@@ -759,7 +769,7 @@ function groupShipmentSearchCriteria(criteria: ShipmentSearchCriterion[]) {
   }, [])
 }
 
-function formatCriterionSummary(criterion: ShipmentSearchCriterion, criterionIndex: number, groupIndex: number) {
+function formatCriterionSummary(criterion: BookingSearchCriterion, criterionIndex: number, groupIndex: number) {
   const label = getSearchFieldMeta(criterion.field).label
   const connector = groupIndex > 0 && criterionIndex === 0 ? `${criterion.groupConnector === "and" ? "And" : "Or"} group` : criterionIndex > 0 ? (criterion.connector === "or" ? "Or" : "And") : ""
   const value = dateSearchFields.has(criterion.field)
@@ -769,7 +779,7 @@ function formatCriterionSummary(criterion: ShipmentSearchCriterion, criterionInd
   return [connector, label, value].filter(Boolean).join(" ")
 }
 
-export function ShipmentFilterBar({
+export function BookingFilterBar({
   activeFilter,
   onFilterChange,
   controls,
@@ -782,7 +792,7 @@ export function ShipmentFilterBar({
     <div className="flex flex-col gap-[var(--md-gap-lg)] xl:flex-row xl:items-center xl:justify-between">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <FilterChips
-          options={shipmentFilters}
+          options={bookingFilters}
           activeOption={activeFilter}
           onChange={onFilterChange}
           auxiliaryOptions={["+ Mode", "+ Carrier", "+ Customer", "+ Owner", "+ ETA range"]}
@@ -807,15 +817,15 @@ function SelectionBox({ selected }: { selected?: boolean }) {
   )
 }
 
-export function ShipmentRow({
-  shipment,
+export function BookingRow({
+  booking,
   selected,
   favourite,
   onSelect,
   onToggleFavourite,
   onOpen,
 }: {
-  shipment: Shipment
+  booking: Booking
   selected?: boolean
   favourite?: boolean
   onSelect: () => void
@@ -827,14 +837,14 @@ export function ShipmentRow({
       className={cn(
         "h-[78px] cursor-pointer border-[rgba(11,20,19,0.045)] bg-white shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] hover:bg-[#f8faf9]",
         selected && "bg-[#f4faf8] shadow-[inset_3px_0_0_var(--md-accent),inset_0_1px_0_rgba(255,255,255,0.92),inset_0_-1px_0_rgba(11,20,19,0.04)] hover:bg-[#f2f8f6]",
-        shipment.status === "Exception" && !selected && "bg-[#fbfdfc] hover:bg-[#f6faf8]",
+        booking.status === "Exception" && !selected && "bg-[#fbfdfc] hover:bg-[#f6faf8]",
       )}
       onClick={onOpen}
     >
       <TableCell className="w-12 pl-0">
         <button
           type="button"
-          aria-label={`Select ${shipment.id}`}
+          aria-label={`Select ${booking.id}`}
           aria-pressed={selected}
           onClick={(event) => {
             event.stopPropagation()
@@ -847,7 +857,7 @@ export function ShipmentRow({
       <TableCell className="w-12">
         <button
           type="button"
-          aria-label={`${favourite ? "Remove" : "Add"} ${shipment.id} favourite`}
+          aria-label={`${favourite ? "Remove" : "Add"} ${booking.id} favourite`}
           aria-pressed={favourite}
           className={cn(
             "grid size-8 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-subtle)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white/60 hover:text-[var(--md-amber)]",
@@ -863,60 +873,60 @@ export function ShipmentRow({
       </TableCell>
       <TableCell className="min-w-[130px]">
         <div className="flex items-center gap-3">
-          <span className="size-2.5 rounded-full" style={{ background: toneToVar(shipment.tone), boxShadow: `0 0 0 4px color-mix(in srgb, ${toneToVar(shipment.tone)} 12%, transparent)` }} />
-          <p className="text-[14px] font-medium text-[var(--md-ink)]">{shipment.id}</p>
+          <span className="size-2.5 rounded-full" style={{ background: toneToVar(booking.tone), boxShadow: `0 0 0 4px color-mix(in srgb, ${toneToVar(booking.tone)} 12%, transparent)` }} />
+          <p className="text-[14px] font-medium text-[var(--md-ink)]">{booking.id}</p>
         </div>
       </TableCell>
       <TableCell className="min-w-[300px]">
-        <p className="text-[15px] font-medium text-[var(--md-ink)]">{shipment.customer}</p>
-        <p className="mt-1 text-[13px] text-[var(--md-text)]">{shipment.route}</p>
+        <p className="text-[15px] font-medium text-[var(--md-ink)]">{booking.customer}</p>
+        <p className="mt-1 text-[13px] text-[var(--md-text)]">{booking.route}</p>
       </TableCell>
       <TableCell className="min-w-[190px]">
-        <p className="text-[14px] font-medium text-[var(--md-ink)]">{shipment.carrier}</p>
-        <p className="mt-1 text-[13px] text-[var(--md-text)]">{shipment.container}</p>
+        <p className="text-[14px] font-medium text-[var(--md-ink)]">{booking.carrier}</p>
+        <p className="mt-1 text-[13px] text-[var(--md-text)]">{booking.container}</p>
       </TableCell>
       <TableCell>
-        <ShipmentModePill mode={shipment.mode} />
+        <BookingModePill mode={booking.mode} />
       </TableCell>
-      <TableCell className="text-right text-[14px] font-medium text-[var(--md-ink)]">{shipment.value}</TableCell>
+      <TableCell className="text-right text-[14px] font-medium text-[var(--md-ink)]">{booking.value}</TableCell>
       <TableCell className="text-right">
-        <p className="text-[14px] font-medium text-[var(--md-ink)]">{shipment.eta}</p>
-        <p className="text-[12px] text-[var(--md-text)]">{shipment.time}</p>
+        <p className="text-[14px] font-medium text-[var(--md-ink)]">{booking.eta}</p>
+        <p className="text-[12px] text-[var(--md-text)]">{booking.time}</p>
       </TableCell>
       <TableCell>
-        <ShipmentStatusPill status={shipment.status} />
+        <BookingStatusPill status={booking.status} />
       </TableCell>
       <TableCell className="min-w-[150px]">
         <div className="flex items-center gap-3">
           <Progress
-            value={shipment.progress}
+            value={booking.progress}
             className="h-1.5 flex-1 rounded-full bg-[rgba(90,103,100,0.12)] [&>div]:bg-[var(--progress-color)]"
-            style={{ "--progress-color": toneToVar(shipment.tone) } as CSSProperties}
+            style={{ "--progress-color": toneToVar(booking.tone) } as CSSProperties}
           />
-          <span className="w-8 text-right text-[13px] text-[var(--md-text)]">{shipment.progress}%</span>
+          <span className="w-8 text-right text-[13px] text-[var(--md-text)]">{booking.progress}%</span>
         </div>
       </TableCell>
       <TableCell>
-        <span className="grid size-8 place-items-center rounded-full bg-[rgba(14,125,116,0.12)] text-[12px] font-medium text-[var(--md-accent)]">{shipment.owner}</span>
+        <span className="grid size-8 place-items-center rounded-full bg-[rgba(14,125,116,0.12)] text-[12px] font-medium text-[var(--md-accent)]">{booking.owner}</span>
       </TableCell>
     </TableRow>
   )
 }
 
-export function ShipmentsTable({
+export function BookingsTable({
   rows,
   selectedIds,
   favouriteIds,
-  onToggleShipment,
+  onToggleBooking,
   onToggleFavourite,
-  onOpenShipment,
+  onOpenBooking,
 }: {
-  rows: Shipment[]
+  rows: Booking[]
   selectedIds: Set<string>
   favouriteIds?: Set<string>
-  onToggleShipment: (id: string) => void
+  onToggleBooking: (id: string) => void
   onToggleFavourite?: (id: string) => void
-  onOpenShipment: (shipment: Shipment) => void
+  onOpenBooking: (booking: Booking) => void
 }) {
   return (
     <div className="overflow-hidden rounded-[var(--md-radius-xl)] bg-white shadow-[var(--md-shadow-line)]">
@@ -925,7 +935,7 @@ export function ShipmentsTable({
           <TableRow className="border-[rgba(11,20,19,0.05)] hover:bg-transparent">
             <TableHead className="w-12 pl-0" />
             <TableHead className="w-12 text-[12px] font-medium text-[var(--md-text)]">Star</TableHead>
-            <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Shipment</TableHead>
+            <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Booking</TableHead>
             <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Customer · route</TableHead>
             <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Carrier · container</TableHead>
             <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Mode</TableHead>
@@ -937,21 +947,21 @@ export function ShipmentsTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.length ? rows.map((shipment) => (
-            <ShipmentRow
-              key={shipment.id}
-              shipment={shipment}
-              selected={selectedIds.has(shipment.id)}
-              favourite={Boolean(favouriteIds?.has(shipment.id))}
-              onSelect={() => onToggleShipment(shipment.id)}
-              onToggleFavourite={() => onToggleFavourite?.(shipment.id)}
-              onOpen={() => onOpenShipment(shipment)}
+          {rows.length ? rows.map((booking) => (
+            <BookingRow
+              key={booking.id}
+              booking={booking}
+              selected={selectedIds.has(booking.id)}
+              favourite={Boolean(favouriteIds?.has(booking.id))}
+              onSelect={() => onToggleBooking(booking.id)}
+              onToggleFavourite={() => onToggleFavourite?.(booking.id)}
+              onOpen={() => onOpenBooking(booking)}
             />
           )) : (
             <TableRow className="h-[180px] border-[rgba(11,20,19,0.04)] hover:bg-transparent">
               <TableCell colSpan={11} className="text-center">
                 <div className="mx-auto max-w-[360px]">
-                  <p className="text-[14px] font-medium text-[var(--md-ink)]">No shipments match this search</p>
+                  <p className="text-[14px] font-medium text-[var(--md-ink)]">No bookings match this search</p>
                   <p className="mt-1 text-[13px] leading-5 text-[var(--md-text)]">
                     Remove a criterion or switch back to Open to widen the list.
                   </p>
@@ -965,16 +975,16 @@ export function ShipmentsTable({
   )
 }
 
-export function ShipmentBoardPreview({
-  rows = shipments,
-  onOpenShipment,
+export function BookingBoardPreview({
+  rows = bookings,
+  onOpenBooking,
 }: {
-  rows?: Shipment[]
-  onOpenShipment: (shipment: Shipment) => void
+  rows?: Booking[]
+  onOpenBooking: (booking: Booking) => void
 }) {
   const columns = [
     ["Open", rows.slice(0, 3)],
-    ["Exception", rows.filter((shipment) => shipment.status === "Exception")],
+    ["Exception", rows.filter((booking) => booking.status === "Exception")],
     ["Delivered soon", rows.slice(4, 7)],
   ] as const
 
@@ -984,18 +994,18 @@ export function ShipmentBoardPreview({
         <Surface key={label} padding="md" className="rounded-[var(--md-radius-xl)]">
           <h2 className="text-[14px] font-medium text-[var(--md-ink)]">{label}</h2>
           <div className="mt-4 flex flex-col gap-3">
-            {rows.length ? rows.map((shipment) => (
-              <button key={shipment.id} type="button" className="rounded-[var(--md-radius-lg)] bg-white/55 p-3 text-left shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white" onClick={() => onOpenShipment(shipment)}>
+            {rows.length ? rows.map((booking) => (
+              <button key={booking.id} type="button" className="rounded-[var(--md-radius-lg)] bg-white/55 p-3 text-left shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white" onClick={() => onOpenBooking(booking)}>
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-[13px] font-medium text-[var(--md-ink)]">{shipment.id}</span>
-                  <ShipmentStatusPill status={shipment.status} />
+                  <span className="text-[13px] font-medium text-[var(--md-ink)]">{booking.id}</span>
+                  <BookingStatusPill status={booking.status} />
                 </div>
-                <p className="mt-2 truncate text-[14px] font-medium text-[var(--md-ink)]">{shipment.customer}</p>
-                <p className="mt-1 truncate text-[12px] text-[var(--md-text)]">{shipment.route}</p>
+                <p className="mt-2 truncate text-[14px] font-medium text-[var(--md-ink)]">{booking.customer}</p>
+                <p className="mt-1 truncate text-[12px] text-[var(--md-text)]">{booking.route}</p>
               </button>
             )) : (
               <p className="rounded-[var(--md-radius-lg)] bg-white/35 px-3 py-4 text-[13px] leading-5 text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
-                No matching shipments in this lane.
+                No matching bookings in this lane.
               </p>
             )}
           </div>
@@ -1006,23 +1016,23 @@ export function ShipmentBoardPreview({
 }
 
 function DetailSideRail({ navigate }: { navigate: (path: string) => void }) {
-  const related = shipments.filter((shipment) => shipment.id !== "MD-22455").slice(0, 4)
+  const related = bookings.filter((booking) => booking.id !== "MD-22455").slice(0, 4)
 
   return (
     <aside className="hidden h-screen min-h-0 w-[262px] shrink-0 overflow-hidden bg-[var(--md-sidebar-bg)] px-[var(--md-page-stack-gap)] py-[var(--md-page-pad)] shadow-[inset_-1px_0_0_rgba(11,20,19,0.06)] lg:block">
       <img src={multideckFullLogo} alt="Multideck" className="h-[28px] w-auto" />
-      <button type="button" className="mt-[calc(var(--md-page-section-gap)+var(--md-gap-xl))] flex items-center gap-[var(--md-gap-sm)] text-[14px] font-medium text-[var(--md-text)] hover:text-[var(--md-ink)]" onClick={() => navigate("/shipments")}>
+      <button type="button" className="mt-[calc(var(--md-page-section-gap)+var(--md-gap-xl))] flex items-center gap-[var(--md-gap-sm)] text-[14px] font-medium text-[var(--md-text)] hover:text-[var(--md-ink)]" onClick={() => navigate("/bookings")}>
         <ArrowLeft className="size-4" strokeWidth={1.2} />
-        All shipments
+        All bookings
       </button>
       <p className="mt-[var(--md-page-section-gap)] text-[12px] font-medium text-[var(--md-subtle)]">Related</p>
       <div className="mt-[var(--md-page-stack-gap)] flex flex-col gap-[var(--md-page-stack-gap)]">
-        {related.map((shipment) => (
-          <button key={shipment.id} type="button" className="grid grid-cols-[10px_1fr] gap-3 text-left" onClick={() => navigate(getShipmentDetailPath(shipment.id))}>
-            <span className="mt-2 size-2 rounded-full" style={{ background: toneToVar(shipment.tone) }} />
+        {related.map((booking) => (
+          <button key={booking.id} type="button" className="grid grid-cols-[10px_1fr] gap-3 text-left" onClick={() => navigate(getBookingDetailPath(booking.id))}>
+            <span className="mt-2 size-2 rounded-full" style={{ background: toneToVar(booking.tone) }} />
             <span>
-              <span className="block text-[13px] text-[var(--md-text)]">{shipment.id}</span>
-              <span className="block text-[14px] font-medium leading-5 text-[var(--md-ink)]">{shipment.route}</span>
+              <span className="block text-[13px] text-[var(--md-text)]">{booking.id}</span>
+              <span className="block text-[14px] font-medium leading-5 text-[var(--md-ink)]">{booking.route}</span>
             </span>
           </button>
         ))}
@@ -1031,32 +1041,32 @@ function DetailSideRail({ navigate }: { navigate: (path: string) => void }) {
   )
 }
 
-function ShipmentDetailHeader({
+function BookingDetailHeader({
   activeTab,
   onTabChange,
   record,
 }: {
-  activeTab: ShipmentDetailTab
-  onTabChange: (tab: ShipmentDetailTab) => void
-  record: ReturnType<typeof getShipmentDetailRecord>
+  activeTab: BookingDetailTab
+  onTabChange: (tab: BookingDetailTab) => void
+  record: ReturnType<typeof getBookingDetailRecord>
 }) {
-  const tabs = shipmentDetailTabs.map((label) => ({ label }))
-  const statusLabel = record.job?.status ?? record.shipment.status
-  const statusTone = record.job?.tone ?? record.shipment.tone
+  const tabs = bookingDetailTabs.map((label) => ({ label }))
+  const statusLabel = record.job?.status ?? record.booking.status
+  const statusTone = record.job?.tone ?? record.booking.tone
 
   return (
     <header className="border-b border-[rgba(11,20,19,0.08)] px-[var(--md-page-pad)] pt-[var(--md-page-pad)]">
       <div className="flex flex-col gap-[var(--md-page-stack-gap)] xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-3 text-[13px] font-medium text-[var(--md-text)]">
-            <span className="uppercase tracking-normal">Shipment</span>
+            <span className="uppercase tracking-normal">Booking</span>
             <span>{record.id}</span>
             <StatusPill tone={statusTone} className="h-7 px-3 text-[13px]">{statusLabel}</StatusPill>
-            <StatusPill tone="neutral" className="h-7 px-3 text-[13px]">{record.shipment.mode} · {record.shipment.container}</StatusPill>
+            <StatusPill tone="neutral" className="h-7 px-3 text-[13px]">{record.booking.mode} · {record.booking.container}</StatusPill>
           </div>
           <div className="mt-[var(--md-page-stack-gap)] flex flex-wrap items-end gap-x-[var(--md-page-stack-gap)] gap-y-[var(--md-gap-sm)]">
-            <h1 className="text-[34px] font-medium leading-tight tracking-normal text-[var(--md-ink)] md:text-[40px]">{record.job?.route ?? record.shipment.route}</h1>
-            <p className="pb-1 text-[15px] font-medium text-[var(--md-text)]">{record.shipment.carrier} · {record.shipment.customer}</p>
+            <h1 className="text-[34px] font-medium leading-tight tracking-normal text-[var(--md-ink)] md:text-[40px]">{record.job?.route ?? record.booking.route}</h1>
+            <p className="pb-1 text-[15px] font-medium text-[var(--md-text)]">{record.booking.carrier} · {record.booking.customer}</p>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -1068,17 +1078,17 @@ function ShipmentDetailHeader({
           </Button>
         </div>
       </div>
-      <TabsRail tabs={tabs} activeTab={activeTab} onChange={(tab) => onTabChange(tab as ShipmentDetailTab)} className="mt-[var(--md-page-stack-gap)]" />
+      <TabsRail tabs={tabs} activeTab={activeTab} onChange={(tab) => onTabChange(tab as BookingDetailTab)} className="mt-[var(--md-page-stack-gap)]" />
     </header>
   )
 }
 
-function ShipmentJobContext({
+function BookingJobContext({
   job,
-  shipment,
+  booking,
 }: {
   job?: OperatorJob
-  shipment: Shipment
+  booking: Booking
 }) {
   if (!job) return null
 
@@ -1095,16 +1105,16 @@ function ShipmentJobContext({
           <p className="mt-1 text-[13px] leading-5 text-[var(--md-text)]">{job.detail}</p>
         </div>
         <div className="grid gap-1 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-4 py-3 shadow-[var(--md-shadow-line)]">
-          <p className="text-[12px] font-medium text-[var(--md-text)]">Linked shipment</p>
-          <p className="text-[14px] font-medium text-[var(--md-ink)]">{shipment.id}</p>
-          <p className="text-[12px] text-[var(--md-text)]">{shipment.eta} · {shipment.time}</p>
+          <p className="text-[12px] font-medium text-[var(--md-text)]">Linked booking</p>
+          <p className="text-[14px] font-medium text-[var(--md-ink)]">{booking.id}</p>
+          <p className="text-[12px] text-[var(--md-text)]">{booking.eta} · {booking.time}</p>
         </div>
       </div>
     </Surface>
   )
 }
 
-export function ShipmentArrivalCard() {
+export function BookingArrivalCard() {
   return (
     <Surface padding="lg" className="rounded-[var(--md-radius-xl)]">
       <div className="flex flex-col gap-[var(--md-page-stack-gap)] 2xl:flex-row 2xl:items-start 2xl:justify-between">
@@ -1125,9 +1135,9 @@ export function ShipmentArrivalCard() {
       </div>
       <div className="mt-[calc(var(--md-page-section-gap)+var(--md-gap-lg))] overflow-x-auto md-scrollbar">
         <div className="grid min-w-[680px] grid-cols-7 items-start">
-          {shipmentMilestones.map((milestone, index) => (
+          {bookingMilestones.map((milestone, index) => (
             <div key={milestone.label} className="relative flex flex-col items-center text-center">
-              {index < shipmentMilestones.length - 1 ? (
+              {index < bookingMilestones.length - 1 ? (
                 <span
                   className={cn(
                     "absolute left-1/2 top-[9px] h-0.5 w-full",
@@ -1153,7 +1163,7 @@ export function ShipmentArrivalCard() {
   )
 }
 
-export function ShipmentExceptionPanel() {
+export function BookingExceptionPanel() {
   return (
     <section className="rounded-[var(--md-radius-xl)] bg-white/38 p-[var(--md-page-stack-gap)] shadow-[inset_0_0_0_1px_rgba(209,78,78,0.28),0_0_0_1px_rgba(209,78,78,0.08)]">
       <div className="grid gap-4 md:grid-cols-[52px_1fr_auto]">
@@ -1194,7 +1204,7 @@ export function ShipmentExceptionPanel() {
   )
 }
 
-export function ShipmentResolutionChecklist() {
+export function BookingResolutionChecklist() {
   const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set(["Confirm hold reason"]))
   const items = [
     ["Confirm hold reason", "HS-code match flagged a missing CN export licence."],
@@ -1279,7 +1289,7 @@ function DetailDataPanel({
 function CargoPanel() {
   return (
     <DetailDataPanel title="Cargo">
-      {shipmentCargo.map(([label, value]) => (
+      {bookingCargo.map(([label, value]) => (
         <div key={label} className="grid grid-cols-[140px_1fr] gap-4 border-t border-[rgba(11,20,19,0.08)] py-3">
           <p className="text-[13px] text-[var(--md-text)]">{label}</p>
           <p className="text-right text-[14px] font-medium text-[var(--md-ink)]">{value}</p>
@@ -1292,7 +1302,7 @@ function CargoPanel() {
 function DocumentsPanel() {
   return (
     <DetailDataPanel title="Documents" meta="6 of 7 parsed">
-      {shipmentDocuments.map(([name, file, confidence]) => (
+      {bookingDocuments.map(([name, file, confidence]) => (
         <div key={name} className="grid grid-cols-[minmax(132px,1fr)_104px_68px] items-center gap-3 border-t border-[rgba(11,20,19,0.08)] py-3">
           <div className="min-w-0">
             <p className="truncate text-[14px] font-medium text-[var(--md-ink)]">{name}</p>
@@ -1331,12 +1341,12 @@ function MiniStat({
 function OverviewPage() {
   return (
     <>
-      <ShipmentArrivalCard />
+      <BookingArrivalCard />
       <div className="mt-[var(--md-page-stack-gap)]">
-        <ShipmentExceptionPanel />
+        <BookingExceptionPanel />
       </div>
       <div className="mt-[var(--md-page-stack-gap)]">
-        <ShipmentResolutionChecklist />
+        <BookingResolutionChecklist />
       </div>
       <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-page-stack-gap)] xl:grid-cols-2">
         <CargoPanel />
@@ -1368,7 +1378,7 @@ function DocumentsPage() {
             </Button>
           </div>
           <div className="px-5 pb-5">
-            {[...shipmentDocuments, ["CN export licence", "missing", "required"]].map(([name, file, confidence]) => {
+            {[...bookingDocuments, ["CN export licence", "missing", "required"]].map(([name, file, confidence]) => {
               const missing = file === "missing"
 
               return (
@@ -1407,7 +1417,7 @@ function DocumentsPage() {
 function CustomsPage() {
   return (
     <div className="flex flex-col gap-[var(--md-page-stack-gap)]">
-      <ShipmentExceptionPanel />
+      <BookingExceptionPanel />
       <div className="grid gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1fr)_380px]">
         <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
           <div className="px-5 py-4">
@@ -1430,7 +1440,7 @@ function CustomsPage() {
           </div>
         </Surface>
 
-        <ShipmentResolutionChecklist />
+        <BookingResolutionChecklist />
       </div>
     </div>
   )
@@ -1526,11 +1536,11 @@ function TimelinePage() {
     <div className="grid gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1fr)_360px]">
       <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
         <div className="px-5 py-4">
-          <h2 className="text-[16px] font-medium text-[var(--md-ink)]">Shipment timeline</h2>
+          <h2 className="text-[16px] font-medium text-[var(--md-ink)]">Booking timeline</h2>
           <p className="mt-1 text-[13px] text-[var(--md-text)]">Chronological event history for MD-22455.</p>
         </div>
         <div className="px-5 pb-5">
-          {shipmentTimeline.map((item) => (
+          {bookingTimeline.map((item) => (
             <div key={`${item.time}-${item.text}`} className="grid grid-cols-[18px_140px_1fr] gap-4 border-t border-[rgba(11,20,19,0.08)] py-5">
               <span className="mt-1.5 size-2.5 rounded-full" style={{ background: toneToVar(item.tone) }} />
               <p className="text-[13px] font-medium text-[var(--md-text)]">{item.time}</p>
@@ -1546,7 +1556,7 @@ function TimelinePage() {
         <strong className="mt-4 block text-[34px] font-medium leading-none tracking-normal text-[var(--md-ink)]">Jun 09, 03:00 PT</strong>
         <p className="mt-3 text-[14px] font-medium text-[var(--md-amber)]">+ 2 days 4 hrs</p>
         <div className="mt-[var(--md-gap-xl)] space-y-[var(--md-gap-md)]">
-          {shipmentMilestones.slice(0, 5).map((milestone) => (
+          {bookingMilestones.slice(0, 5).map((milestone) => (
             <div key={milestone.label} className="flex items-center justify-between gap-4 rounded-[var(--md-radius-lg)] bg-white/42 px-3 py-3 shadow-[var(--md-shadow-line)]">
               <div className="flex items-center gap-3">
                 <span
@@ -1567,7 +1577,7 @@ function TimelinePage() {
   )
 }
 
-function ShipmentDetailTabPage({ activeTab }: { activeTab: ShipmentDetailTab }) {
+function BookingDetailTabPage({ activeTab }: { activeTab: BookingDetailTab }) {
   if (activeTab === "Documents") return <DocumentsPage />
   if (activeTab === "Customs") return <CustomsPage />
   if (activeTab === "Costs") return <CostsPage />
@@ -1576,7 +1586,7 @@ function ShipmentDetailTabPage({ activeTab }: { activeTab: ShipmentDetailTab }) 
   return <OverviewPage />
 }
 
-export function ShipmentAskPanel({
+export function BookingAskPanel({
   collapsed = false,
   onCollapsedChange,
   className,
@@ -1606,7 +1616,7 @@ export function ShipmentAskPanel({
     return (
       <button
         type="button"
-        aria-label="Open shipment chat"
+        aria-label="Open booking chat"
         className={cn(
           "relative grid size-14 place-items-center overflow-visible rounded-full bg-[var(--md-accent)] text-white shadow-[0_0_0_1px_rgba(255,255,255,0.34),0_16px_38px_rgba(14,125,116,0.32),0_0_30px_rgba(14,125,116,0.28)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.04] hover:bg-[#0b6f67]",
           className,
@@ -1627,7 +1637,7 @@ export function ShipmentAskPanel({
             <Sparkles className="size-4" strokeWidth={1.4} />
           </span>
           <div className="min-w-0">
-            <h2 className="truncate text-[15px] font-medium text-[var(--md-ink)]">Ask about this shipment</h2>
+            <h2 className="truncate text-[15px] font-medium text-[var(--md-ink)]">Ask about this booking</h2>
             <p className="mt-0.5 truncate text-[12px] text-[var(--md-text)]">MD-22455 · Shanghai to Long Beach</p>
           </div>
         </div>
@@ -1635,7 +1645,7 @@ export function ShipmentAskPanel({
           type="button"
           variant="ghost"
           size="icon"
-          aria-label="Collapse shipment chat"
+          aria-label="Collapse booking chat"
           className="size-8 rounded-[var(--md-radius-md)] bg-white/45 shadow-[var(--md-shadow-line)]"
           onClick={() => onCollapsedChange?.(true)}
         >
@@ -1681,7 +1691,7 @@ export function ShipmentAskPanel({
           }}
         >
           <textarea
-            aria-label="Ask about shipment"
+            aria-label="Ask about booking"
             className="min-h-[46px] flex-1 resize-none rounded-[var(--md-radius-lg)] bg-white/65 px-3 py-3 text-[13px] leading-5 text-[var(--md-ink)] shadow-[var(--md-shadow-line)] outline-none placeholder:text-[var(--md-subtle)]"
             placeholder="Ask about costs, customs, ETA..."
             value={draft}
@@ -1696,7 +1706,7 @@ export function ShipmentAskPanel({
   )
 }
 
-function FloatingShipmentAskPanel({
+function FloatingBookingAskPanel({
   collapsed,
   onCollapsedChange,
 }: {
@@ -1710,38 +1720,38 @@ function FloatingShipmentAskPanel({
         collapsed ? "top-6 size-14" : "bottom-6 top-6 w-[368px]",
       )}
     >
-      <ShipmentAskPanel collapsed={collapsed} onCollapsedChange={onCollapsedChange} />
+      <BookingAskPanel collapsed={collapsed} onCollapsedChange={onCollapsedChange} />
     </div>
   )
 }
 
-export function ShipmentDetailWorkspace({
+export function BookingDetailWorkspace({
   navigate,
-  shipmentId = "md-22455",
+  bookingId = "md-22455",
 }: {
   navigate: (path: string) => void
-  shipmentId?: string
+  bookingId?: string
 }) {
-  const [activeTab, setActiveTab] = useState<ShipmentDetailTab>("Overview")
+  const [activeTab, setActiveTab] = useState<BookingDetailTab>("Overview")
   const [chatCollapsed, setChatCollapsed] = useState(false)
-  const record = getShipmentDetailRecord(shipmentId)
+  const record = getBookingDetailRecord(bookingId)
 
   return (
     <div className="h-screen overflow-hidden bg-[var(--md-bg)] text-[var(--md-ink)]">
       <div className="flex h-screen min-h-0">
         <DetailSideRail navigate={navigate} />
         <main className={cn("md-scrollbar min-h-0 min-w-0 flex-1 overflow-y-auto transition-[padding] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]", chatCollapsed ? "xl:pr-[96px]" : "xl:pr-[408px]")}>
-          <ShipmentDetailHeader activeTab={activeTab} onTabChange={setActiveTab} record={record} />
+          <BookingDetailHeader activeTab={activeTab} onTabChange={setActiveTab} record={record} />
           <div className="px-[var(--md-page-pad)] py-[var(--md-page-stack-gap)]">
-            <ShipmentJobContext job={record.job} shipment={record.shipment} />
-            <ShipmentDetailTabPage activeTab={activeTab} />
+            <BookingJobContext job={record.job} booking={record.booking} />
+            <BookingDetailTabPage activeTab={activeTab} />
           </div>
           <div className="px-[var(--md-page-pad)] pb-[var(--md-page-bottom-pad)] xl:hidden">
-            <ShipmentAskPanel />
+            <BookingAskPanel />
           </div>
         </main>
       </div>
-      <FloatingShipmentAskPanel collapsed={chatCollapsed} onCollapsedChange={setChatCollapsed} />
+      <FloatingBookingAskPanel collapsed={chatCollapsed} onCollapsedChange={setChatCollapsed} />
     </div>
   )
 }

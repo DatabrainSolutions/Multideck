@@ -4,18 +4,18 @@ import { ArrowRight, ChevronLeft, ChevronRight, Maximize2, Route, X } from "luci
 import { MapContainer, Marker, Polyline, TileLayer, Tooltip, useMap, ZoomControl } from "react-leaflet"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import { Progress } from "@/components/ui/progress"
-import { liveShipments } from "@/data/multideck-data"
+import { liveBookings } from "@/data/multideck-data"
 import { cn } from "@/lib/utils"
 import { toneToVar } from "./status-pill"
 
-type Shipment = (typeof liveShipments)[number]
+type Booking = (typeof liveBookings)[number]
 type Coordinate = readonly [number, number]
 
 const mapCenter: LatLngExpression = [42, 36]
 const mapBounds = L.latLngBounds(
-  liveShipments.flatMap((shipment) => [
-    [shipment.origin[0], shipment.origin[1]] as [number, number],
-    [shipment.destination[0], shipment.destination[1]] as [number, number],
+  liveBookings.flatMap((booking) => [
+    [booking.origin[0], booking.origin[1]] as [number, number],
+    [booking.destination[0], booking.destination[1]] as [number, number],
   ]),
 )
 
@@ -57,7 +57,7 @@ function markerIcon(color: string, variant: "terminal" | "current", selected = f
   })
 }
 
-function FitShipmentBounds({
+function FitBookingBounds({
   selectedId,
   routeLookup,
   focusSelected = false,
@@ -113,15 +113,15 @@ function FitShipmentBounds({
   return null
 }
 
-function MapStatusChip({ shipment }: { shipment: Shipment }) {
+function MapStatusChip({ booking }: { booking: Booking }) {
   return (
     <div className="pointer-events-none absolute left-4 top-4 z-[500] rounded-[var(--md-radius-lg)] bg-white/80 px-3 py-2 text-[12px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] backdrop-blur-md">
-      <span className="text-[var(--md-ink)]">{shipment.id}</span> · {shipment.mode} · {shipment.progress}% complete
+      <span className="text-[var(--md-ink)]">{booking.id}</span> · {booking.mode} · {booking.progress}% complete
     </div>
   )
 }
 
-function ShipmentRouteLayers({
+function BookingRouteLayers({
   selectedId,
   routeLookup,
   onSelect,
@@ -132,14 +132,14 @@ function ShipmentRouteLayers({
 }) {
   return (
     <>
-      {liveShipments.map((shipment) => {
-        const selected = shipment.id === selectedId
-        const route = routeLookup.get(shipment.id) ?? []
-        const color = toneToVar(shipment.tone)
-        const currentPosition = routePoint(route, shipment.progress)
+      {liveBookings.map((booking) => {
+        const selected = booking.id === selectedId
+        const route = routeLookup.get(booking.id) ?? []
+        const color = toneToVar(booking.tone)
+        const currentPosition = routePoint(route, booking.progress)
 
         return (
-          <Fragment key={shipment.id}>
+          <Fragment key={booking.id}>
             <Polyline
               positions={route}
               pathOptions={{
@@ -149,21 +149,21 @@ function ShipmentRouteLayers({
                 opacity: selected ? 0.94 : 0.54,
                 weight: selected ? 4 : 3,
               }}
-              eventHandlers={{ click: () => onSelect(shipment.id) }}
+              eventHandlers={{ click: () => onSelect(booking.id) }}
             >
               <Tooltip sticky>
-                {shipment.id}: {shipment.from} to {shipment.to}
+                {booking.id}: {booking.from} to {booking.to}
               </Tooltip>
             </Polyline>
-            <Marker position={toLatLng(shipment.origin)} icon={markerIcon(color, "terminal")}>
-              <Tooltip>{shipment.from}</Tooltip>
+            <Marker position={toLatLng(booking.origin)} icon={markerIcon(color, "terminal")}>
+              <Tooltip>{booking.from}</Tooltip>
             </Marker>
-            <Marker position={toLatLng(shipment.destination)} icon={markerIcon(color, "terminal")}>
-              <Tooltip>{shipment.to}</Tooltip>
+            <Marker position={toLatLng(booking.destination)} icon={markerIcon(color, "terminal")}>
+              <Tooltip>{booking.to}</Tooltip>
             </Marker>
-            <Marker position={currentPosition} icon={markerIcon(color, "current", selected)} eventHandlers={{ click: () => onSelect(shipment.id) }}>
+            <Marker position={currentPosition} icon={markerIcon(color, "current", selected)} eventHandlers={{ click: () => onSelect(booking.id) }}>
               <Tooltip>
-                {shipment.id} · {shipment.progress}% complete
+                {booking.id} · {booking.progress}% complete
               </Tooltip>
             </Marker>
           </Fragment>
@@ -173,7 +173,7 @@ function ShipmentRouteLayers({
   )
 }
 
-function ShipmentMapCanvas({
+function BookingMapCanvas({
   selectedId,
   routeLookup,
   onSelect,
@@ -191,7 +191,7 @@ function ShipmentMapCanvas({
       minZoom={2}
       maxZoom={7}
       zoomControl={false}
-      className="md-shipment-map absolute inset-0 h-full w-full"
+      className="md-booking-map absolute inset-0 h-full w-full"
       scrollWheelZoom
     >
       <TileLayer
@@ -199,18 +199,18 @@ function ShipmentMapCanvas({
         url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
       />
       <ZoomControl position="bottomright" />
-      <FitShipmentBounds selectedId={selectedId} routeLookup={routeLookup} focusSelected={fullscreen} />
-      <ShipmentRouteLayers selectedId={selectedId} routeLookup={routeLookup} onSelect={onSelect} />
+      <FitBookingBounds selectedId={selectedId} routeLookup={routeLookup} focusSelected={fullscreen} />
+      <BookingRouteLayers selectedId={selectedId} routeLookup={routeLookup} onSelect={onSelect} />
     </MapContainer>
   )
 }
 
-function ShipmentMapCard({
-  shipment,
+function BookingMapCard({
+  booking,
   selected,
   onSelect,
 }: {
-  shipment: Shipment
+  booking: Booking
   selected: boolean
   onSelect: () => void
 }) {
@@ -226,32 +226,32 @@ function ShipmentMapCard({
       onClick={onSelect}
     >
       <div className="flex items-center gap-2">
-        <span className="size-3 rounded-full" style={{ background: toneToVar(shipment.tone), boxShadow: `0 0 0 4px color-mix(in srgb, ${toneToVar(shipment.tone)} 12%, transparent)` }} />
-        <p className="truncate text-[12px] font-medium text-[var(--md-text)]">{shipment.id}</p>
+        <span className="size-3 rounded-full" style={{ background: toneToVar(booking.tone), boxShadow: `0 0 0 4px color-mix(in srgb, ${toneToVar(booking.tone)} 12%, transparent)` }} />
+        <p className="truncate text-[12px] font-medium text-[var(--md-text)]">{booking.id}</p>
       </div>
       <div className="mt-2 flex min-w-0 items-center gap-2 text-[15px] font-medium text-[var(--md-ink)]">
-        <span className="truncate">{shipment.from}</span>
+        <span className="truncate">{booking.from}</span>
         <ArrowRight className="size-3 shrink-0 text-[var(--md-subtle)]" strokeWidth={1.2} />
-        <span className="truncate">{shipment.to}</span>
+        <span className="truncate">{booking.to}</span>
       </div>
       <Progress
-        value={shipment.progress}
+        value={booking.progress}
         className="mt-3 h-1.5 rounded-full bg-[rgba(90,103,100,0.16)] [&>div]:bg-[var(--progress-color)]"
-        style={{ "--progress-color": toneToVar(shipment.tone) } as CSSProperties}
+        style={{ "--progress-color": toneToVar(booking.tone) } as CSSProperties}
       />
-      <p className="mt-2 text-[12px] text-[var(--md-text)]">ETA {shipment.eta} - {shipment.time}</p>
+      <p className="mt-2 text-[12px] text-[var(--md-text)]">ETA {booking.eta} - {booking.time}</p>
     </button>
   )
 }
 
 function FullscreenRouteSidebar({
-  selectedShipment,
+  selectedBooking,
   selectedId,
   onSelect,
   onPrevious,
   onNext,
 }: {
-  selectedShipment: Shipment
+  selectedBooking: Booking
   selectedId: string
   onSelect: (id: string) => void
   onPrevious: () => void
@@ -265,8 +265,8 @@ function FullscreenRouteSidebar({
             <Route className="size-3.5" strokeWidth={1.3} />
             Route focus
           </div>
-          <h3 className="text-[18px] font-medium leading-6 text-[var(--md-ink)]">{selectedShipment.from} to {selectedShipment.to}</h3>
-          <p className="mt-1 text-[13px] text-[var(--md-text)]">{selectedShipment.id} · {selectedShipment.mode} · ETA {selectedShipment.eta} {selectedShipment.time}</p>
+          <h3 className="text-[18px] font-medium leading-6 text-[var(--md-ink)]">{selectedBooking.from} to {selectedBooking.to}</h3>
+          <p className="mt-1 text-[13px] text-[var(--md-text)]">{selectedBooking.id} · {selectedBooking.mode} · ETA {selectedBooking.eta} {selectedBooking.time}</p>
         </div>
         <div className="flex gap-2">
           <button
@@ -290,23 +290,23 @@ function FullscreenRouteSidebar({
 
       <div className="px-5 pb-4">
         <Progress
-          value={selectedShipment.progress}
+          value={selectedBooking.progress}
           className="h-2 rounded-full bg-[rgba(90,103,100,0.14)] [&>div]:bg-[var(--progress-color)]"
-          style={{ "--progress-color": toneToVar(selectedShipment.tone) } as CSSProperties}
+          style={{ "--progress-color": toneToVar(selectedBooking.tone) } as CSSProperties}
         />
         <div className="mt-2 flex justify-between text-[12px] font-medium text-[var(--md-text)]">
-          <span>{selectedShipment.progress}% complete</span>
-          <span style={{ color: toneToVar(selectedShipment.tone) }}>{selectedShipment.mode}</span>
+          <span>{selectedBooking.progress}% complete</span>
+          <span style={{ color: toneToVar(selectedBooking.tone) }}>{selectedBooking.mode}</span>
         </div>
       </div>
 
       <div className="md-scrollbar flex gap-2 overflow-x-auto px-5 pb-5 md:flex-1 md:flex-col md:overflow-y-auto">
-        {liveShipments.map((shipment) => {
-          const selected = shipment.id === selectedId
+        {liveBookings.map((booking) => {
+          const selected = booking.id === selectedId
 
           return (
             <button
-              key={shipment.id}
+              key={booking.id}
               type="button"
               aria-pressed={selected}
               className={cn(
@@ -314,21 +314,21 @@ function FullscreenRouteSidebar({
                 "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.12)]",
                 selected && "bg-[var(--md-surface-tint)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.18),0_0_0_1px_rgba(11,20,19,0.04)]",
               )}
-              onClick={() => onSelect(shipment.id)}
+              onClick={() => onSelect(booking.id)}
             >
               <div className="flex items-center justify-between gap-3">
                 <span className="inline-flex items-center gap-2 text-[12px] font-medium text-[var(--md-text)]">
-                  <span className="size-2.5 rounded-full" style={{ background: toneToVar(shipment.tone), boxShadow: `0 0 0 4px color-mix(in srgb, ${toneToVar(shipment.tone)} 12%, transparent)` }} />
-                  {shipment.id}
+                  <span className="size-2.5 rounded-full" style={{ background: toneToVar(booking.tone), boxShadow: `0 0 0 4px color-mix(in srgb, ${toneToVar(booking.tone)} 12%, transparent)` }} />
+                  {booking.id}
                 </span>
-                <span className="text-[12px] font-medium" style={{ color: toneToVar(shipment.tone) }}>{shipment.progress}%</span>
+                <span className="text-[12px] font-medium" style={{ color: toneToVar(booking.tone) }}>{booking.progress}%</span>
               </div>
               <div className="mt-2 flex items-center gap-2 text-[14px] font-medium text-[var(--md-ink)]">
-                <span className="truncate">{shipment.from}</span>
+                <span className="truncate">{booking.from}</span>
                 <ArrowRight className="size-3 shrink-0 text-[var(--md-subtle)]" strokeWidth={1.2} />
-                <span className="truncate">{shipment.to}</span>
+                <span className="truncate">{booking.to}</span>
               </div>
-              <p className="mt-1 text-[12px] text-[var(--md-text)]">{shipment.mode} · ETA {shipment.eta} {shipment.time}</p>
+              <p className="mt-1 text-[12px] text-[var(--md-text)]">{booking.mode} · ETA {booking.eta} {booking.time}</p>
             </button>
           )
         })}
@@ -337,33 +337,33 @@ function FullscreenRouteSidebar({
   )
 }
 
-export function InteractiveShipmentMap({ className }: { className?: string }) {
-  const [selectedId, setSelectedId] = useState(liveShipments[0].id)
+export function InteractiveBookingMap({ className }: { className?: string }) {
+  const [selectedId, setSelectedId] = useState(liveBookings[0].id)
   const [fullscreenOpen, setFullscreenOpen] = useState(false)
-  const selectedShipment = liveShipments.find((shipment) => shipment.id === selectedId) ?? liveShipments[0]
+  const selectedBooking = liveBookings.find((booking) => booking.id === selectedId) ?? liveBookings[0]
 
   const routeLookup = useMemo(() => {
-    return new Map(liveShipments.map((shipment) => [shipment.id, curvedRoute(shipment.origin, shipment.destination)]))
+    return new Map(liveBookings.map((booking) => [booking.id, curvedRoute(booking.origin, booking.destination)]))
   }, [])
 
   const selectPreviousRoute = () => {
-    const selectedIndex = liveShipments.findIndex((shipment) => shipment.id === selectedId)
-    const nextIndex = selectedIndex <= 0 ? liveShipments.length - 1 : selectedIndex - 1
+    const selectedIndex = liveBookings.findIndex((booking) => booking.id === selectedId)
+    const nextIndex = selectedIndex <= 0 ? liveBookings.length - 1 : selectedIndex - 1
 
-    setSelectedId(liveShipments[nextIndex].id)
+    setSelectedId(liveBookings[nextIndex].id)
   }
 
   const selectNextRoute = () => {
-    const selectedIndex = liveShipments.findIndex((shipment) => shipment.id === selectedId)
-    const nextIndex = selectedIndex >= liveShipments.length - 1 ? 0 : selectedIndex + 1
+    const selectedIndex = liveBookings.findIndex((booking) => booking.id === selectedId)
+    const nextIndex = selectedIndex >= liveBookings.length - 1 ? 0 : selectedIndex + 1
 
-    setSelectedId(liveShipments[nextIndex].id)
+    setSelectedId(liveBookings[nextIndex].id)
   }
 
   return (
     <>
       <div className={cn("relative min-h-[310px] overflow-hidden bg-[var(--md-bg-strong)]", className)}>
-        <MapStatusChip shipment={selectedShipment} />
+        <MapStatusChip booking={selectedBooking} />
         <button
           type="button"
           aria-label="Open full-screen route map"
@@ -372,11 +372,11 @@ export function InteractiveShipmentMap({ className }: { className?: string }) {
         >
           <Maximize2 className="size-4" strokeWidth={1.3} />
         </button>
-        <ShipmentMapCanvas selectedId={selectedId} routeLookup={routeLookup} onSelect={setSelectedId} />
+        <BookingMapCanvas selectedId={selectedId} routeLookup={routeLookup} onSelect={setSelectedId} />
       </div>
       <div className="grid overflow-x-auto border-t border-[rgba(11,20,19,0.08)] md:grid-cols-5 md-scrollbar">
-        {liveShipments.map((shipment) => (
-          <ShipmentMapCard key={shipment.id} shipment={shipment} selected={shipment.id === selectedId} onSelect={() => setSelectedId(shipment.id)} />
+        {liveBookings.map((booking) => (
+          <BookingMapCard key={booking.id} booking={booking} selected={booking.id === selectedId} onSelect={() => setSelectedId(booking.id)} />
         ))}
       </div>
       <Dialog open={fullscreenOpen} onOpenChange={setFullscreenOpen}>
@@ -384,10 +384,10 @@ export function InteractiveShipmentMap({ className }: { className?: string }) {
           showCloseButton={false}
           className="fixed inset-0 left-0 top-0 z-50 h-[100dvh] w-screen max-w-none translate-x-0 translate-y-0 overflow-hidden rounded-none bg-[var(--md-bg-strong)] p-0 ring-0 sm:max-w-none"
         >
-          <DialogTitle className="sr-only">Live shipment route map</DialogTitle>
-          <DialogDescription className="sr-only">Full-screen live shipment map with route navigation.</DialogDescription>
+          <DialogTitle className="sr-only">Live booking route map</DialogTitle>
+          <DialogDescription className="sr-only">Full-screen live booking map with route navigation.</DialogDescription>
           <div className="relative h-full w-full">
-            <MapStatusChip shipment={selectedShipment} />
+            <MapStatusChip booking={selectedBooking} />
             <button
               type="button"
               aria-label="Close full-screen route map"
@@ -396,9 +396,9 @@ export function InteractiveShipmentMap({ className }: { className?: string }) {
             >
               <X className="size-4" strokeWidth={1.3} />
             </button>
-            <ShipmentMapCanvas selectedId={selectedId} routeLookup={routeLookup} onSelect={setSelectedId} fullscreen />
+            <BookingMapCanvas selectedId={selectedId} routeLookup={routeLookup} onSelect={setSelectedId} fullscreen />
             <FullscreenRouteSidebar
-              selectedShipment={selectedShipment}
+              selectedBooking={selectedBooking}
               selectedId={selectedId}
               onSelect={setSelectedId}
               onPrevious={selectPreviousRoute}

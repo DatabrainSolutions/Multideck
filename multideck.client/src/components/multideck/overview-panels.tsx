@@ -33,10 +33,10 @@ import {
   customsQueue,
   dashboardRangeOptions,
   dashboardSnapshots,
-  liveShipments,
+  liveBookings,
   operatorJobs,
   savedDashboardViews,
-  shipmentModes,
+  bookingModes,
   timezoneWorkQueues,
   type DashboardCustomRange,
   type DashboardRange,
@@ -49,9 +49,9 @@ import { MetricCard } from "./metric-card"
 import { SectionHeader, Surface } from "./surface"
 import { StatusPill, toneToVar } from "./status-pill"
 
-const InteractiveShipmentMap = lazy(() =>
-  import("./interactive-shipment-map").then((module) => ({
-    default: module.InteractiveShipmentMap,
+const InteractiveBookingMap = lazy(() =>
+  import("./interactive-booking-map").then((module) => ({
+    default: module.InteractiveBookingMap,
   })),
 )
 
@@ -914,7 +914,7 @@ const dashboardEmailThreads: DashboardActionItem[] = [
   {
     title: "Sandra Hale - Marlow Apparel",
     meta: "Re: MD-22481 Felixstowe handover",
-    detail: "Customer wants a clean ETA confirmation and cleared-docs note. A draft is ready from the shipment timeline.",
+    detail: "Customer wants a clean ETA confirmation and cleared-docs note. A draft is ready from the booking timeline.",
     tone: "amber",
     action: "Reply",
     secondaryAction: "Draft",
@@ -925,7 +925,7 @@ const dashboardEmailThreads: DashboardActionItem[] = [
     detail: "Ask for the missing licence PDF and packing-list confirmation so customs can resubmit the entry.",
     tone: "red",
     action: "Reply",
-    secondaryAction: "Open shipment",
+    secondaryAction: "Open booking",
   },
   {
     title: "Pacific Goods Co",
@@ -972,13 +972,13 @@ const dashboardQuoteActions: DashboardActionItem[] = [
   },
 ]
 
-const dashboardWatchedShipmentActions: DashboardActionItem[] = [
+const dashboardWatchedBookingActions: DashboardActionItem[] = [
   {
     title: "MD-22455 - Northwind GmbH",
     meta: "Customs hold",
-    detail: "Missing export licence is still the blocker. Open the shipment and send the shipper chase.",
+    detail: "Missing export licence is still the blocker. Open the booking and send the shipper chase.",
     tone: "red",
-    action: "Open shipment",
+    action: "Open booking",
     secondaryAction: "Draft chase",
   },
   {
@@ -1002,10 +1002,10 @@ const dashboardWatchedShipmentActions: DashboardActionItem[] = [
 function getMetricActionItems(metricLabel: string): DashboardActionItem[] {
   if (metricLabel === "Emails waiting") return dashboardEmailThreads
   if (metricLabel === "Quotes due" || metricLabel === "Quotes sent") return dashboardQuoteActions
-  if (metricLabel === "Watched shipments") return dashboardWatchedShipmentActions
+  if (metricLabel === "Watched bookings") return dashboardWatchedBookingActions
   if (metricLabel === "Your jobs") {
     return operatorJobs.slice(0, 4).map((job) => ({
-      title: `${job.shipmentId} - ${job.customer}`,
+      title: `${job.bookingId} - ${job.customer}`,
       meta: job.task,
       detail: job.detail,
       tone: job.tone,
@@ -1084,7 +1084,7 @@ function getDashboardDrilldownDetail(id: DashboardDrilldownId, range: DashboardR
       rows: [
         ["Current", metric.value],
         ["Status", metric.change],
-        ["Next step", metric.label === "Emails waiting" ? "Open the customer replies first" : metric.label === "Quotes due" ? "Send ready quotes before local cutoff" : metric.label === "Your jobs" ? "Work the due-soon tasks in order" : "Keep these starred shipments visible"],
+        ["Next step", metric.label === "Emails waiting" ? "Open the customer replies first" : metric.label === "Quotes due" ? "Send ready quotes before local cutoff" : metric.label === "Your jobs" ? "Work the due-soon tasks in order" : "Keep these starred bookings visible"],
       ],
     }
   }
@@ -1117,7 +1117,7 @@ function getDashboardDrilldownDetail(id: DashboardDrilldownId, range: DashboardR
     const job = operatorJobs.find((item) => item.id === key) ?? operatorJobs[0]
     return {
       title: job.task,
-      meta: `${job.shipmentId} - ${job.customer}`,
+      meta: `${job.bookingId} - ${job.customer}`,
       tone: job.tone,
       rows: [
         ["Route", job.route],
@@ -1136,7 +1136,7 @@ function getDashboardDrilldownDetail(id: DashboardDrilldownId, range: DashboardR
       rows: [
         ["Source", item.source],
         ["Seen", item.time],
-        ["Follow-up", item.tone === "red" ? "Open the linked shipment and resolve the blocker" : "Keep in digest unless the customer asks"],
+        ["Follow-up", item.tone === "red" ? "Open the linked booking and resolve the blocker" : "Keep in digest unless the customer asks"],
       ],
     }
   }
@@ -1260,47 +1260,47 @@ export function DashboardDrilldownPanel({
   )
 }
 
-export function ShipmentRow({
-  shipment,
+export function BookingRow({
+  booking,
   compact,
 }: {
-  shipment: (typeof liveShipments)[number]
+  booking: (typeof liveBookings)[number]
   compact?: boolean
 }) {
   return (
     <div className={cn("grid grid-cols-[minmax(76px,110px)_1fr_auto] items-center gap-3 py-2", compact && "py-1.5")}>
       <div className="min-w-0">
-        <p className="truncate text-[12px] font-medium text-[var(--md-ink)]">{shipment.id}</p>
-        <p className="truncate text-[11px] text-[var(--md-subtle)]">{shipment.mode}</p>
+        <p className="truncate text-[12px] font-medium text-[var(--md-ink)]">{booking.id}</p>
+        <p className="truncate text-[11px] text-[var(--md-subtle)]">{booking.mode}</p>
       </div>
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-2 text-[13px] text-[var(--md-ink)]">
-          <span className="truncate">{shipment.from}</span>
+          <span className="truncate">{booking.from}</span>
           <ArrowRight className="size-3 shrink-0 text-[var(--md-subtle)]" strokeWidth={1.2} />
-          <span className="truncate">{shipment.to}</span>
+          <span className="truncate">{booking.to}</span>
         </div>
         <Progress
-          value={shipment.progress}
+          value={booking.progress}
           className="mt-2 h-1.5 rounded-full bg-[rgba(90,103,100,0.08)] [&>div]:bg-[var(--progress-color)]"
-          style={{ "--progress-color": toneToVar(shipment.tone) } as CSSProperties}
+          style={{ "--progress-color": toneToVar(booking.tone) } as CSSProperties}
         />
       </div>
       <div className="text-right">
         <p className="text-[11px] text-[var(--md-subtle)]">ETA</p>
-        <p className="text-[12px] font-medium text-[var(--md-ink)]">{shipment.eta}</p>
-        <p className="text-[11px] text-[var(--md-text)]">{shipment.time}</p>
+        <p className="text-[12px] font-medium text-[var(--md-ink)]">{booking.eta}</p>
+        <p className="text-[11px] text-[var(--md-text)]">{booking.time}</p>
       </div>
     </div>
   )
 }
 
-export function LiveShipmentsPanel() {
+export function LiveBookingsPanel() {
   return (
-    <Surface className="md-live-shipments-panel flex min-h-[420px] flex-col overflow-hidden rounded-[var(--md-radius-xl)]" padding="none">
-      <div className="md-live-shipments-header flex shrink-0 flex-col gap-3 px-5 py-4 md:flex-row md:items-start md:justify-between">
-        <SectionHeader title="Live shipments" meta="23 in transit - 4 modes - updated 41s ago" />
+    <Surface className="md-live-bookings-panel flex min-h-[420px] flex-col overflow-hidden rounded-[var(--md-radius-xl)]" padding="none">
+      <div className="md-live-bookings-header flex shrink-0 flex-col gap-3 px-5 py-4 md:flex-row md:items-start md:justify-between">
+        <SectionHeader title="Live bookings" meta="23 in transit - 4 modes - updated 41s ago" />
         <div className="flex flex-wrap gap-2">
-          {shipmentModes.map((mode) => {
+          {bookingModes.map((mode) => {
             const Icon = mode.icon
             return (
               <StatusPill key={mode.label} tone={mode.tone}>
@@ -1313,14 +1313,14 @@ export function LiveShipmentsPanel() {
           })}
         </div>
       </div>
-      <Suspense fallback={<LiveShipmentsMapFallback />}>
-        <InteractiveShipmentMap className="md-live-shipments-map min-h-[310px] flex-1" />
+      <Suspense fallback={<LiveBookingsMapFallback />}>
+        <InteractiveBookingMap className="md-live-bookings-map min-h-[310px] flex-1" />
       </Suspense>
     </Surface>
   )
 }
 
-function LiveShipmentsMapFallback() {
+function LiveBookingsMapFallback() {
   return (
     <div className="relative min-h-[310px] flex-1 overflow-hidden bg-[var(--md-bg-strong)]">
       <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.22),rgba(255,255,255,0)_48%,rgba(14,125,116,0.12))]" />

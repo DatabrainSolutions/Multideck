@@ -34,7 +34,7 @@ const progressSteps = ["LLM queries", "Fetching freight data", "Processing resul
 const dashboardWidgets = reportWidgets
 
 export type DashboardCustomiseMode = "ai" | "manual"
-export type DashboardModuleId = "world-clock" | "your-jobs" | "metrics" | "morning-digest" | "activity" | "customs-queue" | "live-shipments"
+export type DashboardModuleId = "world-clock" | "your-jobs" | "metrics" | "morning-digest" | "activity" | "customs-queue" | "live-bookings"
 type DashboardTileSize = "small" | "medium" | "wide" | "large"
 type DashboardTilePreset = { columns: number; rows: number }
 type DashboardTilePresets = Record<DashboardTileSize, DashboardTilePreset>
@@ -128,11 +128,11 @@ const dashboardModuleDefinitions: Array<{ id: DashboardModuleId; title: string; 
   { id: "morning-digest", title: "Morning digest", defaultSize: "medium", sizes: dashboardStandardTilePresets },
   { id: "activity", title: "Activity", defaultSize: "medium", sizes: dashboardStandardTilePresets },
   { id: "customs-queue", title: "Customs queue", defaultSize: "medium", sizes: dashboardStandardTilePresets },
-  { id: "live-shipments", title: "Live shipments", defaultSize: "medium", sizes: dashboardStandardTilePresets },
+  { id: "live-bookings", title: "Live bookings", defaultSize: "medium", sizes: dashboardStandardTilePresets },
 ]
 
 const dashboardDefaultDataSelection: ReportBlockDataSelection = {
-  source: "shipments",
+  source: "bookings",
   metric: "on-time",
   breakdown: "month",
   period: "30-days",
