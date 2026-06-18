@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react"
+import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { AnimatePresence, motion } from "motion/react"
 import {
   ArrowLeft,
@@ -24,32 +24,44 @@ import { bookings } from "@/data/multideck-data"
 import { cn } from "@/lib/utils"
 
 type BookingSource = "scratch" | "existing" | null
-type BookingModeOption = "Sea" | "Air" | "Road" | "Courier"
-type BookingDirection = "Import" | "Export"
-type BookingScope = "International" | "Domestic"
+const directionOptions = ["Import", "Export", "Domestic", "Cross Trade"] as const
+const standardModeOptions = ["Air", "Sea", "Road", "Courier", "Rail", "Air-Sea", "Sea-Air", "Customs Only", "Documentation Only"] as const
+
+type BookingModeOption = (typeof standardModeOptions)[number]
+type BookingDirection = (typeof directionOptions)[number]
 
 type BookingWizardData = {
   source: BookingSource
   templateBookingId: string
   direction: BookingDirection
   mode: BookingModeOption
-  movementScope: BookingScope
   collectionRequired: boolean
   deliveryRequired: boolean
   customer: string
   customerContact: string
+  customerOffice: string
   customerEmail: string
   shipper: string
   shipperContact: string
+  shipperOffice: string
   consignee: string
   consigneeContact: string
+  consigneeOffice: string
+  consigneeReference: string
   notifyParty: string
+  notifyPartyContact: string
+  notifyPartyOffice: string
+  notifyPartyReference: string
   collectionAddress: string
   deliveryAddress: string
   collectionDate: string
   collectionTime: string
+  cargoReadyDate: string
+  requestedCollectionDate: string
   deliveryDate: string
   deliveryTime: string
+  requestedDeliveryDate: string
+  cargoRequiredByDate: string
   collectionReference: string
   deliveryReference: string
   accessRestrictions: string
@@ -120,9 +132,9 @@ type WizardStep = {
 }
 
 const steps: WizardStep[] = [
-  { id: "type", name: "Booking Type", eyebrow: "Step 1", title: "What kind of movement is this?", summary: "Mode, direction, scope, and collection/delivery needs." },
-  { id: "parties", name: "Parties", eyebrow: "Step 2", title: "Who is involved?", summary: "Customer, shipper, consignee, notify party, and contacts." },
-  { id: "collection", name: "Collection and Delivery", eyebrow: "Step 3", title: "Where and when does it move?", summary: "Addresses, timings, references, restrictions, and notes." },
+  { id: "type", name: "Booking Type", eyebrow: "Step 1", title: "What kind of movement is this?", summary: "Direction, mode, and collection/delivery needs." },
+  { id: "parties", name: "Parties", eyebrow: "Step 2", title: "Who is involved?", summary: "Company, contact, and reference for each party." },
+  { id: "collection", name: "Collection and Delivery", eyebrow: "Step 3", title: "Where and when does it move?", summary: "Linked addresses, required dates, references, and editable notes." },
   { id: "cargo", name: "Cargo Details", eyebrow: "Step 4", title: "What are we moving?", summary: "Goods, packages, dimensions, risk flags, and equipment." },
   { id: "transport", name: "Transport Details", eyebrow: "Step 5", title: "Which transport details matter?", summary: "Fields change based on the selected booking mode." },
   { id: "customs", name: "Customs and Compliance", eyebrow: "Step 6", title: "What needs clearing?", summary: "Customs status, codes, documents, and compliance notes." },
@@ -138,23 +150,33 @@ const defaultBooking: BookingWizardData = {
   templateBookingId: "",
   direction: "Import",
   mode: "Sea",
-  movementScope: "International",
   collectionRequired: true,
   deliveryRequired: true,
   customer: "",
   customerContact: "",
+  customerOffice: "",
   customerEmail: "",
   shipper: "",
   shipperContact: "",
+  shipperOffice: "",
   consignee: "",
   consigneeContact: "",
+  consigneeOffice: "",
+  consigneeReference: "",
   notifyParty: "",
+  notifyPartyContact: "",
+  notifyPartyOffice: "",
+  notifyPartyReference: "",
   collectionAddress: "",
   deliveryAddress: "",
   collectionDate: today,
   collectionTime: "09:00",
+  cargoReadyDate: today,
+  requestedCollectionDate: today,
   deliveryDate: tomorrow,
   deliveryTime: "14:00",
+  requestedDeliveryDate: tomorrow,
+  cargoRequiredByDate: tomorrow,
   collectionReference: "",
   deliveryReference: "",
   accessRestrictions: "",
@@ -240,6 +262,62 @@ const fieldMotion = {
   visible: { opacity: 1, y: 0 },
 }
 
+const partyCompanies = [
+  {
+    name: "Marlow Apparel Ltd",
+    contacts: ["Sandra Hale", "Tom Rees", "Warehouse team"],
+    offices: ["London billing office", "Manchester buying office", "Felixstowe DC"],
+  },
+  {
+    name: "Northwind GmbH",
+    contacts: ["Elena Moreno", "Kai Müller", "Accounts payable"],
+    offices: ["Hamburg HQ", "Berlin finance office", "Munich operations"],
+  },
+  {
+    name: "Yong Hua Logistics",
+    contacts: ["Wei Chen", "Lina Zhou", "Export desk"],
+    offices: ["Shanghai export office", "Ningbo consolidation warehouse", "Yantian port desk"],
+  },
+  {
+    name: "Marlow UK DC",
+    contacts: ["Warehouse team", "Receiving desk", "Aisha Patel"],
+    offices: ["Felixstowe distribution centre", "Southampton overflow warehouse"],
+  },
+  {
+    name: "Pacific Goods Co",
+    contacts: ["Jon Bell", "Lisa Hart", "Operations desk"],
+    offices: ["Hamburg office", "Milan delivery depot"],
+  },
+  {
+    name: "Customs broker",
+    contacts: ["Broker team", "Wei Chen", "Clearance desk"],
+    offices: ["London customs desk", "Shanghai broker handoff", "Rotterdam clearance desk"],
+  },
+] as const
+
+const partyCompanyOptions = partyCompanies.map((company) => company.name)
+
+function contactsForCompany(companyName: string) {
+  return partyCompanies.find((company) => company.name === companyName)?.contacts ?? []
+}
+
+function officesForCompany(companyName: string) {
+  return partyCompanies.find((company) => company.name === companyName)?.offices ?? []
+}
+
+function notesForOffice(office: string) {
+  const notesByOffice: Record<string, string> = {
+    "Shanghai export office": "Collection by appointment only. Driver must quote supplier reference at gate.",
+    "Ningbo consolidation warehouse": "Warehouse requires 24h pre-alert and carton count before arrival.",
+    "Yantian port desk": "Use terminal booking reference for port-side handoff.",
+    "Felixstowe distribution centre": "Book receiving slot before arrival. Tail-lift not required.",
+    "Southampton overflow warehouse": "Call receiving desk before dispatch; limited afternoon slots.",
+    "London customs desk": "Send documents before cargo arrival and quote internal booking reference.",
+  }
+
+  return notesByOffice[office] ?? ""
+}
+
 function isFilled(value: string) {
   return value.trim().length > 0
 }
@@ -247,9 +325,16 @@ function isFilled(value: string) {
 function getRequiredFields(data: BookingWizardData, stepIndex: number) {
   const fields: Array<[keyof BookingWizardData, string]> = []
 
-  if (stepIndex === 0) fields.push(["direction", "Direction"], ["mode", "Mode"], ["movementScope", "Domestic or international"])
+  if (stepIndex === 0) fields.push(["direction", "Direction"], ["mode", "Mode"])
   if (stepIndex === 1) fields.push(["customer", "Customer"], ["shipper", "Shipper"], ["consignee", "Consignee"])
-  if (stepIndex === 2) fields.push(["collectionAddress", "Collection address"], ["deliveryAddress", "Delivery address"], ["collectionDate", "Collection date"], ["deliveryDate", "Delivery date"])
+  if (stepIndex === 2) fields.push(
+    ["collectionAddress", "Collection address"],
+    ["deliveryAddress", "Delivery address"],
+    ["cargoReadyDate", "Cargo ready from"],
+    ["requestedCollectionDate", "Requested collection date"],
+    ["requestedDeliveryDate", "Requested delivery date"],
+    ["cargoRequiredByDate", "Cargo required by"],
+  )
   if (stepIndex === 3) fields.push(["goodsDescription", "Goods description"], ["packages", "Number of packages"], ["weight", "Weight"])
   if (stepIndex === 4 && data.mode === "Sea") fields.push(["portOfLoading", "Port of loading"], ["portOfDischarge", "Port of discharge"], ["seaEtd", "ETD"], ["seaEta", "ETA"])
   if (stepIndex === 4 && data.mode === "Air") fields.push(["airportDeparture", "Airport of departure"], ["airportArrival", "Airport of arrival"], ["airline", "Airline"], ["airEtd", "ETD"], ["airEta", "ETA"])
@@ -307,7 +392,7 @@ function FieldShell({
   children: ReactNode
 }) {
   return (
-    <motion.label variants={fieldMotion} className="grid gap-1.5">
+    <motion.label variants={fieldMotion} className="grid min-w-0 gap-1.5">
       <span className="flex items-center justify-between gap-3">
         <span className="text-[13px] font-medium text-[var(--md-ink)]">
           {label}
@@ -349,7 +434,7 @@ function TextField({
         value={value}
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
-        className="h-10 rounded-[var(--md-radius-lg)] border-0 bg-white/64 px-3 text-[13px] shadow-[var(--md-shadow-line)]"
+        className="h-10 min-w-0 truncate rounded-[var(--md-radius-lg)] border-0 bg-white/64 px-3 text-[13px] shadow-[var(--md-shadow-line)]"
         dir={dir}
       />
     </FieldShell>
@@ -413,6 +498,43 @@ function SelectField({
           ))}
         </SelectContent>
       </Select>
+    </FieldShell>
+  )
+}
+
+function NativeSelectField({
+  label,
+  value,
+  onChange,
+  options,
+  placeholder,
+  required,
+  missing,
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  options: readonly string[]
+  placeholder: string
+  required?: boolean
+  missing?: boolean
+}) {
+  return (
+    <FieldShell label={label} required={required} missing={missing}>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-10 min-w-0 truncate rounded-[var(--md-radius-lg)] border-0 bg-white/64 px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] outline-none"
+        dir="auto"
+        title={value || placeholder}
+      >
+        <option value="">{placeholder}</option>
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
     </FieldShell>
   )
 }
@@ -488,6 +610,180 @@ function ToggleTile({
         {checked ? <Check className="size-3.5" strokeWidth={1.8} /> : null}
       </span>
     </motion.button>
+  )
+}
+
+function CompactOptionGroup<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string
+  value: T
+  options: readonly T[]
+  onChange: (value: T) => void
+}) {
+  return (
+    <motion.div variants={fieldMotion} className="grid gap-1.5">
+      <p className="text-[13px] font-medium text-[var(--md-ink)]">{label}</p>
+      <div className="flex flex-wrap gap-2">
+        {options.map((option) => {
+          const selected = option === value
+
+          return (
+            <button
+              key={option}
+              type="button"
+              aria-pressed={selected}
+              className={cn(
+                "h-9 rounded-[var(--md-radius-md)] px-3 text-[13px] font-medium shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
+                selected
+                  ? "bg-[var(--md-accent)] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_8px_18px_rgba(14,125,116,0.18)] hover:bg-[#0b6f67]"
+                  : "bg-white/54 text-[var(--md-text)] hover:bg-white/78",
+              )}
+              onClick={() => onChange(option)}
+            >
+              {option}
+            </button>
+          )
+        })}
+      </div>
+    </motion.div>
+  )
+}
+
+function ModePicker({
+  value,
+  onChange,
+}: {
+  value: BookingModeOption
+  onChange: (value: BookingModeOption) => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const visibleModes = expanded ? standardModeOptions : standardModeOptions.slice(0, 4)
+  const hiddenCount = standardModeOptions.length - visibleModes.length
+
+  return (
+    <motion.div variants={fieldMotion} className="grid gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-[13px] font-medium text-[var(--md-ink)]">Mode</p>
+        <button
+          type="button"
+          className="h-8 rounded-[var(--md-radius-md)] bg-white/54 px-3 text-[12px] font-medium text-[var(--md-accent)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white/78"
+          onClick={() => setExpanded((current) => !current)}
+        >
+          {expanded ? "Show fewer" : `Show all ${standardModeOptions.length}`}
+        </button>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {visibleModes.map((mode) => {
+          const selected = mode === value
+
+          return (
+            <button
+              key={mode}
+              type="button"
+              aria-pressed={selected}
+              className={cn(
+                "h-9 rounded-[var(--md-radius-md)] px-3 text-[13px] font-medium shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
+                selected
+                  ? "bg-[var(--md-accent)] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_8px_18px_rgba(14,125,116,0.18)] hover:bg-[#0b6f67]"
+                  : "bg-white/54 text-[var(--md-text)] hover:bg-white/78",
+              )}
+              onClick={() => onChange(mode)}
+            >
+              {mode}
+            </button>
+          )
+        })}
+        {!expanded && hiddenCount > 0 ? (
+          <button
+            type="button"
+            className="h-9 rounded-[var(--md-radius-md)] bg-white/32 px-3 text-[13px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white/68"
+            onClick={() => setExpanded(true)}
+          >
+            +{hiddenCount} more
+          </button>
+        ) : null}
+      </div>
+    </motion.div>
+  )
+}
+
+function PartyRow({
+  label,
+  company,
+  contact,
+  office,
+  reference,
+  companyMissing,
+  onCompanyChange,
+  onContactChange,
+  onOfficeChange,
+  onReferenceChange,
+}: {
+  label: string
+  company: string
+  contact: string
+  office: string
+  reference: string
+  companyMissing?: boolean
+  onCompanyChange: (value: string) => void
+  onContactChange: (value: string) => void
+  onOfficeChange: (value: string) => void
+  onReferenceChange: (value: string) => void
+}) {
+  const contactOptions = contactsForCompany(company)
+  const officeOptions = officesForCompany(company)
+
+  return (
+    <motion.div
+      variants={fieldMotion}
+      className="grid gap-3 rounded-[var(--md-radius-xl)] bg-white/38 p-3 shadow-[var(--md-shadow-line)]"
+    >
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <p className="text-[14px] font-medium text-[var(--md-ink)]">{label}</p>
+        <p className="text-[12px] leading-5 text-[var(--md-text)]">Linked to company records later.</p>
+      </div>
+      <div className="grid min-w-0 gap-3 lg:grid-cols-2 xl:grid-cols-[repeat(4,minmax(0,1fr))]">
+        <NativeSelectField
+          label="Company name"
+          value={company}
+          onChange={(value) => {
+            onCompanyChange(value)
+            onContactChange("")
+            onOfficeChange("")
+          }}
+          options={partyCompanyOptions}
+          placeholder="Select company"
+          required={label !== "Notify Party"}
+          missing={companyMissing}
+        />
+        <NativeSelectField
+          label="Contact"
+          value={contact}
+          onChange={onContactChange}
+          options={contactOptions}
+          placeholder={company ? "Select contact" : "Select company first"}
+        />
+        <NativeSelectField
+          label="Office / address"
+          value={office}
+          onChange={onOfficeChange}
+          options={officeOptions}
+          placeholder={company ? "Select office" : "Select company first"}
+        />
+        <TextField
+          label="Reference"
+          value={reference}
+          onChange={onReferenceChange}
+          placeholder="Party reference"
+          dir="ltr"
+        />
+      </div>
+    </motion.div>
   )
 }
 
@@ -742,41 +1038,17 @@ function StepContent({
   if (activeStep === 0) {
     return (
       <StepShell step={steps[0]}>
-        <FieldGroup className="lg:grid-cols-2">
-          <OptionGroup
+        <FieldGroup>
+          <CompactOptionGroup
             label="Direction"
             value={data.direction}
-            options={[
-              { value: "Import", title: "Import", body: "Goods coming into the destination market." },
-              { value: "Export", title: "Export", body: "Goods leaving the origin market." },
-            ]}
+            options={directionOptions}
             onChange={(value) => update("direction", value)}
           />
-          <OptionGroup
-            label="Movement scope"
-            value={data.movementScope}
-            options={[
-              { value: "International", title: "International", body: "Cross-border movement with customs touchpoints." },
-              { value: "Domestic", title: "Domestic", body: "Same-country movement with simpler compliance." },
-            ]}
-            onChange={(value) => update("movementScope", value)}
-          />
-          <OptionGroup
-            label="Mode"
+          <ModePicker
             value={data.mode}
-            options={[
-              { value: "Sea", title: "Sea", body: "Ports, vessel, voyage, containers, ETD and ETA." },
-              { value: "Air", title: "Air", body: "Airports, airline, flight, airway bills, ETD and ETA." },
-              { value: "Road", title: "Road", body: "Collection point, vehicle, trailer, driver notes and delivery plan." },
-              { value: "Courier", title: "Courier", body: "Service level, cut-off and tracking preference." },
-            ]}
             onChange={(value) => update("mode", value)}
           />
-          <div className="grid content-start gap-2">
-            <p className="text-[13px] font-medium text-[var(--md-ink)]">Service requirements</p>
-            <ToggleTile label="Collection required" checked={data.collectionRequired} onChange={(value) => update("collectionRequired", value)} />
-            <ToggleTile label="Delivery required" checked={data.deliveryRequired} onChange={(value) => update("deliveryRequired", value)} />
-          </div>
         </FieldGroup>
       </StepShell>
     )
@@ -785,34 +1057,115 @@ function StepContent({
   if (activeStep === 1) {
     return (
       <StepShell step={steps[1]}>
-        <FieldGroup className="lg:grid-cols-2">
-          <TextField label="Customer" value={data.customer} onChange={(value) => update("customer", value)} placeholder="Marlow Apparel Ltd" required missing={missing.has("Customer")} />
-          <TextField label="Customer contact" value={data.customerContact} onChange={(value) => update("customerContact", value)} placeholder="Sandra Hale" />
-          <TextField label="Customer email" value={data.customerEmail} onChange={(value) => update("customerEmail", value)} placeholder="sandra@marlow.example" type="email" dir="ltr" />
-          <TextField label="Shipper" value={data.shipper} onChange={(value) => update("shipper", value)} placeholder="Yong Hua Logistics" required missing={missing.has("Shipper")} />
-          <TextField label="Shipper contact" value={data.shipperContact} onChange={(value) => update("shipperContact", value)} placeholder="Wei Chen" />
-          <TextField label="Consignee" value={data.consignee} onChange={(value) => update("consignee", value)} placeholder="Marlow UK DC" required missing={missing.has("Consignee")} />
-          <TextField label="Consignee contact" value={data.consigneeContact} onChange={(value) => update("consigneeContact", value)} placeholder="Warehouse team" />
-          <TextField label="Notify party" value={data.notifyParty} onChange={(value) => update("notifyParty", value)} placeholder="Broker, buyer, or account contact" />
+        <FieldGroup>
+          <PartyRow
+            label="Customer / Billing"
+            company={data.customer}
+            contact={data.customerContact}
+            office={data.customerOffice}
+            reference={data.customerReference}
+            companyMissing={missing.has("Customer")}
+            onCompanyChange={(value) => update("customer", value)}
+            onContactChange={(value) => update("customerContact", value)}
+            onOfficeChange={(value) => update("customerOffice", value)}
+            onReferenceChange={(value) => update("customerReference", value)}
+          />
+          <PartyRow
+            label="Shipper / Consignor"
+            company={data.shipper}
+            contact={data.shipperContact}
+            office={data.shipperOffice}
+            reference={data.supplierReference}
+            companyMissing={missing.has("Shipper")}
+            onCompanyChange={(value) => update("shipper", value)}
+            onContactChange={(value) => update("shipperContact", value)}
+            onOfficeChange={(value) => update("shipperOffice", value)}
+            onReferenceChange={(value) => update("supplierReference", value)}
+          />
+          <PartyRow
+            label="Consignee"
+            company={data.consignee}
+            contact={data.consigneeContact}
+            office={data.consigneeOffice}
+            reference={data.consigneeReference}
+            companyMissing={missing.has("Consignee")}
+            onCompanyChange={(value) => update("consignee", value)}
+            onContactChange={(value) => update("consigneeContact", value)}
+            onOfficeChange={(value) => update("consigneeOffice", value)}
+            onReferenceChange={(value) => update("consigneeReference", value)}
+          />
+          <PartyRow
+            label="Notify Party"
+            company={data.notifyParty}
+            contact={data.notifyPartyContact}
+            office={data.notifyPartyOffice}
+            reference={data.notifyPartyReference}
+            onCompanyChange={(value) => update("notifyParty", value)}
+            onContactChange={(value) => update("notifyPartyContact", value)}
+            onOfficeChange={(value) => update("notifyPartyOffice", value)}
+            onReferenceChange={(value) => update("notifyPartyReference", value)}
+          />
         </FieldGroup>
       </StepShell>
     )
   }
 
   if (activeStep === 2) {
+    const collectionAddressOptions = officesForCompany(data.shipper)
+    const deliveryAddressOptions = officesForCompany(data.consignee)
+
     return (
       <StepShell step={steps[2]}>
         <FieldGroup className="lg:grid-cols-2">
-          <TextAreaField label="Collection address" value={data.collectionAddress} onChange={(value) => update("collectionAddress", value)} placeholder="Origin warehouse, dock, or port-side collection point" />
-          <TextAreaField label="Delivery address" value={data.deliveryAddress} onChange={(value) => update("deliveryAddress", value)} placeholder="Destination warehouse, port, airport, or final consignee address" />
-          <TextField label="Collection date" value={data.collectionDate} onChange={(value) => update("collectionDate", value)} type="date" required missing={missing.has("Collection date")} dir="ltr" />
-          <TextField label="Collection time" value={data.collectionTime} onChange={(value) => update("collectionTime", value)} type="time" dir="ltr" />
-          <TextField label="Delivery date" value={data.deliveryDate} onChange={(value) => update("deliveryDate", value)} type="date" required missing={missing.has("Delivery date")} dir="ltr" />
-          <TextField label="Delivery time" value={data.deliveryTime} onChange={(value) => update("deliveryTime", value)} type="time" dir="ltr" />
-          <TextField label="Collection reference" value={data.collectionReference} onChange={(value) => update("collectionReference", value)} placeholder="Gate pass, warehouse ref, supplier ref" dir="ltr" />
-          <TextField label="Delivery reference" value={data.deliveryReference} onChange={(value) => update("deliveryReference", value)} placeholder="Booking slot, DC ref, customer ref" dir="ltr" />
-          <TextAreaField label="Access restrictions" value={data.accessRestrictions} onChange={(value) => update("accessRestrictions", value)} placeholder="Vehicle limits, loading hours, PPE, appointment rules" />
-          <TextAreaField label="Booking notes" value={data.bookingNotes} onChange={(value) => update("bookingNotes", value)} placeholder="Anything operators need to avoid re-checking later" />
+          <motion.section variants={fieldMotion} className="grid content-start gap-3 rounded-[var(--md-radius-xl)] bg-white/38 p-3 shadow-[var(--md-shadow-line)]">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <p className="text-[14px] font-medium text-[var(--md-ink)]">Collection</p>
+              <p className="text-[12px] leading-5 text-[var(--md-text)]">Defaults from the shipper record.</p>
+            </div>
+            <NativeSelectField
+              label="Collection address"
+              value={data.collectionAddress}
+              onChange={(value) => {
+                update("collectionAddress", value)
+                if (!data.accessRestrictions.trim()) update("accessRestrictions", notesForOffice(value))
+              }}
+              options={collectionAddressOptions}
+              placeholder={data.shipper ? "Select collection address" : "Select shipper first"}
+              required
+              missing={missing.has("Collection address")}
+            />
+            <div className="grid gap-3 md:grid-cols-2">
+              <TextField label="Cargo ready from" value={data.cargoReadyDate} onChange={(value) => update("cargoReadyDate", value)} type="date" required missing={missing.has("Cargo ready from")} dir="ltr" />
+              <TextField label="Requested collection date" value={data.requestedCollectionDate} onChange={(value) => update("requestedCollectionDate", value)} type="date" required missing={missing.has("Requested collection date")} dir="ltr" />
+            </div>
+            <TextField label="Collection reference" value={data.collectionReference} onChange={(value) => update("collectionReference", value)} placeholder="Gate pass, warehouse ref, supplier ref" dir="ltr" />
+            <TextAreaField label="Collection notes" value={data.accessRestrictions} onChange={(value) => update("accessRestrictions", value)} placeholder="Default notes from the collection address, editable for this booking" helper="Later this can default from the selected shipper office or warehouse record." />
+          </motion.section>
+
+          <motion.section variants={fieldMotion} className="grid content-start gap-3 rounded-[var(--md-radius-xl)] bg-white/38 p-3 shadow-[var(--md-shadow-line)]">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <p className="text-[14px] font-medium text-[var(--md-ink)]">Delivery</p>
+              <p className="text-[12px] leading-5 text-[var(--md-text)]">Defaults from the consignee record.</p>
+            </div>
+            <NativeSelectField
+              label="Delivery address"
+              value={data.deliveryAddress}
+              onChange={(value) => {
+                update("deliveryAddress", value)
+                if (!data.bookingNotes.trim()) update("bookingNotes", notesForOffice(value))
+              }}
+              options={deliveryAddressOptions}
+              placeholder={data.consignee ? "Select delivery address" : "Select consignee first"}
+              required
+              missing={missing.has("Delivery address")}
+            />
+            <div className="grid gap-3 md:grid-cols-2">
+              <TextField label="Requested delivery date" value={data.requestedDeliveryDate} onChange={(value) => update("requestedDeliveryDate", value)} type="date" required missing={missing.has("Requested delivery date")} dir="ltr" />
+              <TextField label="Cargo required by" value={data.cargoRequiredByDate} onChange={(value) => update("cargoRequiredByDate", value)} type="date" required missing={missing.has("Cargo required by")} dir="ltr" />
+            </div>
+            <TextField label="Delivery reference" value={data.deliveryReference} onChange={(value) => update("deliveryReference", value)} placeholder="Booking slot, DC ref, customer ref" dir="ltr" />
+            <TextAreaField label="Delivery notes" value={data.bookingNotes} onChange={(value) => update("bookingNotes", value)} placeholder="Default notes from the delivery address, editable for this booking" helper="Later this can default from the selected consignee office or delivery record." />
+          </motion.section>
         </FieldGroup>
       </StepShell>
     )
@@ -934,7 +1287,7 @@ function StepContent({
 
   const missingAll = allMissingFields(data)
   const sections = [
-    ["Booking type", `${data.direction} ${data.mode} - ${data.movementScope}`],
+    ["Booking type", `${data.direction} ${data.mode}`],
     ["Parties", `${data.customer || "No customer"} / ${data.shipper || "No shipper"} / ${data.consignee || "No consignee"}`],
     ["Collection and delivery", [data.collectionAddress, data.deliveryAddress].filter(Boolean).join(" to ") || "Locations missing"],
     ["Cargo details", buildCargoSummary(data)],
@@ -1036,6 +1389,32 @@ export function BookingWizardPage({ navigate }: { navigate: (path: string) => vo
   const missingCurrent = useMemo(() => missingFieldsForStep(data, activeStep), [activeStep, data])
   const canCreate = allMissingFields(data).length === 0
 
+  useEffect(() => {
+    setData((current) => {
+      const collectionAddress = current.collectionAddress || current.shipperOffice
+      const deliveryAddress = current.deliveryAddress || current.consigneeOffice
+      const accessRestrictions = current.accessRestrictions || notesForOffice(collectionAddress)
+      const bookingNotes = current.bookingNotes || notesForOffice(deliveryAddress)
+
+      if (
+        collectionAddress === current.collectionAddress &&
+        deliveryAddress === current.deliveryAddress &&
+        accessRestrictions === current.accessRestrictions &&
+        bookingNotes === current.bookingNotes
+      ) {
+        return current
+      }
+
+      return {
+        ...current,
+        collectionAddress,
+        deliveryAddress,
+        accessRestrictions,
+        bookingNotes,
+      }
+    })
+  }, [data.shipperOffice, data.consigneeOffice])
+
   function update<K extends keyof BookingWizardData>(field: K, value: BookingWizardData[K]) {
     setData((current) => ({ ...current, [field]: value }))
   }
@@ -1052,13 +1431,32 @@ export function BookingWizardPage({ navigate }: { navigate: (path: string) => vo
       direction: booking.mode === "ROAD" ? "Export" as const : "Import" as const,
       mode: booking.mode === "AIR" ? "Air" as const : booking.mode === "ROAD" ? "Road" as const : "Sea" as const,
       customer: booking.customer,
+      customerContact: contactsForCompany(booking.customer)[0] ?? "",
+      customerOffice: officesForCompany(booking.customer)[0] ?? "",
       customerReference: booking.customerRef,
+      shipper: "Yong Hua Logistics",
+      shipperContact: "Wei Chen",
+      shipperOffice: "Shanghai export office",
       supplierReference: booking.supplierRef,
+      consignee: booking.destination.includes("Felixstowe") ? "Marlow UK DC" : booking.customer,
+      consigneeContact: booking.destination.includes("Felixstowe") ? "Warehouse team" : contactsForCompany(booking.customer)[0] ?? "",
+      consigneeOffice: booking.destination.includes("Felixstowe") ? "Felixstowe distribution centre" : officesForCompany(booking.customer)[0] ?? "",
+      consigneeReference: booking.customerRef,
+      notifyParty: "Customs broker",
+      notifyPartyContact: "Broker team",
+      notifyPartyOffice: "London customs desk",
+      notifyPartyReference: booking.jobRef,
       internalReference: booking.jobRef.replace("JOB", "BK"),
-      collectionAddress: booking.origin,
-      deliveryAddress: booking.destination,
+      collectionAddress: "Shanghai export office",
+      deliveryAddress: booking.destination.includes("Felixstowe") ? "Felixstowe distribution centre" : officesForCompany(booking.customer)[0] ?? "",
+      cargoReadyDate: booking.departureDate,
+      requestedCollectionDate: booking.departureDate,
+      requestedDeliveryDate: booking.arrivalDate,
+      cargoRequiredByDate: booking.arrivalDate,
       collectionReference: booking.supplierRef,
       deliveryReference: booking.customerRef,
+      accessRestrictions: notesForOffice("Shanghai export office"),
+      bookingNotes: notesForOffice(booking.destination.includes("Felixstowe") ? "Felixstowe distribution centre" : officesForCompany(booking.customer)[0] ?? ""),
       goodsDescription: booking.customFields[0]?.value ?? "Repeat booking cargo",
       packages: booking.container.includes("ULD") ? "1" : "120",
       packageType: booking.container.includes("ULD") ? "ULD" : "Cartons",
