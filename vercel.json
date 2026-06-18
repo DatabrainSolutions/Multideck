@@ -1,0 +1,23 @@
+{
+  "installCommand": "cd multideck.client && npm ci",
+  "buildCommand": "cd multideck.client && npm run build",
+  "outputDirectory": "multideck.client/dist",
+  "redirects": [
+    {
+      "source": "/multideck.client",
+      "destination": "/",
+      "permanent": false
+    },
+    {
+      "source": "/multideck.client/index.html",
+      "destination": "/",
+      "permanent": false
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
