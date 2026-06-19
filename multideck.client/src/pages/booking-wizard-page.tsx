@@ -8,12 +8,17 @@ import {
   ClipboardCheck,
   Copy,
   PackageCheck,
+  Plus,
+  RotateCcw,
   Search,
   Ship,
   Sparkles,
+  Trash2,
+  X,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -23,16 +28,66 @@ import { StatusPill } from "@/components/multideck/status-pill"
 import { bookings } from "@/data/multideck-data"
 import { cn } from "@/lib/utils"
 
-type BookingSource = "scratch" | "existing" | null
+type BookingSource = "quote" | "scratch" | "existing" | null
 const directionOptions = ["Import", "Export", "Domestic", "Cross Trade"] as const
 const standardModeOptions = ["Air", "Sea", "Road", "Courier", "Rail", "Air-Sea", "Sea-Air", "Customs Only", "Documentation Only"] as const
 
 type BookingModeOption = (typeof standardModeOptions)[number]
 type BookingDirection = (typeof directionOptions)[number]
 
+function normalizeBookingMode(mode: string): BookingModeOption {
+  const normalizedModes: Record<string, BookingModeOption> = {
+    OCEAN: "Sea",
+    SEA: "Sea",
+    AIR: "Air",
+    ROAD: "Road",
+  }
+
+  return normalizedModes[mode.toUpperCase()] ?? (standardModeOptions.find((option) => option === mode) ?? "Sea")
+}
+
+type CargoLine = {
+  id: string
+  commodity: string
+  outerPackages: string
+  outerPackageType: string
+  innerPackages: string
+  innerPackageType: string
+  grossWeight: string
+  netWeight: string
+  volume: string
+  height: string
+  width: string
+  depth: string
+  dimensions: string
+}
+
+type CargoLineDraft = Omit<CargoLine, "id">
+
+type TransportLeg = {
+  id: string
+  mode: BookingModeOption
+  fromCode: string
+  fromName: string
+  fromCountry: string
+  toCode: string
+  toName: string
+  toCountry: string
+  carrier: string
+  reference: string
+  etd: string
+  eta: string
+}
+
+type TransportLegDraft = Omit<TransportLeg, "id">
+
 type BookingWizardData = {
   source: BookingSource
   templateBookingId: string
+  quoteNumber: string
+  quoteCustomer: string
+  bookingNumber: string
+  bookingCustomer: string
   direction: BookingDirection
   mode: BookingModeOption
   collectionRequired: boolean
@@ -40,6 +95,9 @@ type BookingWizardData = {
   customer: string
   customerContact: string
   customerOffice: string
+  customerIsShipper: boolean
+  customerIsConsignee: boolean
+  customerIsNotifyParty: boolean
   customerEmail: string
   shipper: string
   shipperContact: string
@@ -53,7 +111,9 @@ type BookingWizardData = {
   notifyPartyOffice: string
   notifyPartyReference: string
   collectionAddress: string
+  collectionAddressManual: boolean
   deliveryAddress: string
+  deliveryAddressManual: boolean
   collectionDate: string
   collectionTime: string
   cargoReadyDate: string
@@ -77,6 +137,10 @@ type BookingWizardData = {
   hazardousGoods: boolean
   temperatureControlled: boolean
   fragileOrHighValue: boolean
+  stackable: boolean
+  perishable: boolean
+  cargoSpecialNotes: string
+  cargoLines: CargoLine[]
   portOfLoading: string
   portOfDischarge: string
   vessel: string
@@ -104,9 +168,16 @@ type BookingWizardData = {
   courierService: string
   courierCutoff: string
   courierTracking: string
+  transportLegs: TransportLeg[]
   customsStatus: string
   commodityCode: string
   eoriVat: string
+  exportBroker: string
+  importBroker: string
+  registeredExporter: string
+  registeredImporter: string
+  vatDutyPayment: string
+  certificateRequirements: string
   commercialInvoice: boolean
   packingList: boolean
   certificates: boolean
@@ -137,7 +208,7 @@ const steps: WizardStep[] = [
   { id: "collection", name: "Collection and Delivery", eyebrow: "Step 3", title: "Where and when does it move?", summary: "Linked addresses, required dates, references, and editable notes." },
   { id: "cargo", name: "Cargo Details", eyebrow: "Step 4", title: "What are we moving?", summary: "Goods, packages, dimensions, risk flags, and equipment." },
   { id: "transport", name: "Transport Details", eyebrow: "Step 5", title: "Which transport details matter?", summary: "Fields change based on the selected booking mode." },
-  { id: "customs", name: "Customs and Compliance", eyebrow: "Step 6", title: "What needs clearing?", summary: "Customs status, codes, documents, and compliance notes." },
+  { id: "customs", name: "Customs and Compliance", eyebrow: "Step 6", title: "Who is handling customs?", summary: "Export/import broker allocation, importer/exporter roles, certificates, compliance, and duty payment." },
   { id: "charges", name: "Charges and References", eyebrow: "Step 7", title: "Which references and charges belong here?", summary: "Customer, supplier, quote, PO, buying, selling, and ops notes." },
   { id: "review", name: "Review and Create", eyebrow: "Step 8", title: "Review before creating", summary: "Check each section, fix missing fields, then create the booking." },
 ]
@@ -145,9 +216,42 @@ const steps: WizardStep[] = [
 const today = "2026-06-18"
 const tomorrow = "2026-06-19"
 
+const defaultCargoLineDraft: CargoLineDraft = {
+  commodity: "",
+  outerPackages: "",
+  outerPackageType: "Pallets",
+  innerPackages: "",
+  innerPackageType: "Cartons",
+  grossWeight: "",
+  netWeight: "",
+  volume: "",
+  height: "",
+  width: "",
+  depth: "",
+  dimensions: "",
+}
+
+const defaultTransportLegDraft: TransportLegDraft = {
+  mode: "Sea",
+  fromCode: "",
+  fromName: "",
+  fromCountry: "",
+  toCode: "",
+  toName: "",
+  toCountry: "",
+  carrier: "",
+  reference: "",
+  etd: "",
+  eta: "",
+}
+
 const defaultBooking: BookingWizardData = {
   source: null,
   templateBookingId: "",
+  quoteNumber: "",
+  quoteCustomer: "",
+  bookingNumber: "",
+  bookingCustomer: "",
   direction: "Import",
   mode: "Sea",
   collectionRequired: true,
@@ -155,6 +259,9 @@ const defaultBooking: BookingWizardData = {
   customer: "",
   customerContact: "",
   customerOffice: "",
+  customerIsShipper: false,
+  customerIsConsignee: false,
+  customerIsNotifyParty: false,
   customerEmail: "",
   shipper: "",
   shipperContact: "",
@@ -168,7 +275,9 @@ const defaultBooking: BookingWizardData = {
   notifyPartyOffice: "",
   notifyPartyReference: "",
   collectionAddress: "",
+  collectionAddressManual: false,
   deliveryAddress: "",
+  deliveryAddressManual: false,
   collectionDate: today,
   collectionTime: "09:00",
   cargoReadyDate: today,
@@ -192,6 +301,10 @@ const defaultBooking: BookingWizardData = {
   hazardousGoods: false,
   temperatureControlled: false,
   fragileOrHighValue: false,
+  stackable: false,
+  perishable: false,
+  cargoSpecialNotes: "",
+  cargoLines: [],
   portOfLoading: "",
   portOfDischarge: "",
   vessel: "",
@@ -219,9 +332,16 @@ const defaultBooking: BookingWizardData = {
   courierService: "",
   courierCutoff: "",
   courierTracking: "",
+  transportLegs: [],
   customsStatus: "Not started",
   commodityCode: "",
   eoriVat: "",
+  exportBroker: "",
+  importBroker: "",
+  registeredExporter: "",
+  registeredImporter: "",
+  vatDutyPayment: "Importer deferment account",
+  certificateRequirements: "",
   commercialInvoice: true,
   packingList: true,
   certificates: false,
@@ -297,8 +417,47 @@ const partyCompanies = [
 
 const partyCompanyOptions = partyCompanies.map((company) => company.name)
 
-function contactsForCompany(companyName: string) {
-  return partyCompanies.find((company) => company.name === companyName)?.contacts ?? []
+const customerQuotes = [
+  { id: "QT-10482", customer: "Marlow Apparel Ltd", route: "Yantian -> Felixstowe", detail: "3 x 40HC apparel", status: "Accepted" },
+  { id: "QT-10479", customer: "Marlow Apparel Ltd", route: "Ningbo -> Southampton", detail: "LCL outlet replenishment", status: "Pending" },
+  { id: "QT-10470", customer: "Marlow Apparel Ltd", route: "Qingdao -> Felixstowe", detail: "2 x 40HC activewear", status: "Accepted" },
+  { id: "QT-10461", customer: "Marlow Apparel Ltd", route: "Shanghai -> Felixstowe", detail: "Retail launch cargo", status: "Accepted" },
+  { id: "QT-10456", customer: "Northwind GmbH", route: "Shanghai -> Long Beach", detail: "1 x 40HC electronics", status: "Accepted" },
+  { id: "QT-10444", customer: "Northwind GmbH", route: "Ningbo -> Hamburg", detail: "Furniture programme", status: "Pending" },
+  { id: "QT-10439", customer: "Pacific Goods Co", route: "Hamburg -> Milano", detail: "Road LTL service", status: "Accepted" },
+  { id: "QT-10433", customer: "Pacific Goods Co", route: "Shenzhen -> Oakland", detail: "1 x 20GP electronics", status: "Pending" },
+  { id: "QT-10421", customer: "Bauhaus Importe GmbH", route: "Ningbo -> Rotterdam", detail: "1 x 40GP homeware", status: "Accepted" },
+  { id: "QT-10412", customer: "Atlas Office Supply", route: "Shenzhen -> Hamburg", detail: "20GP office goods", status: "Accepted" },
+  { id: "QT-10398", customer: "Black Forest Foods", route: "Frankfurt -> JFK", detail: "Chilled air freight", status: "Accepted" },
+  { id: "QT-10382", customer: "Mediterranean Spice Trading", route: "Piraeus -> Marseille", detail: "20GP foodstuffs", status: "Accepted" },
+] as const
+
+const contactsByOffice: Record<string, readonly string[]> = {
+  "London billing office": ["Sandra Hale", "Accounts team"],
+  "Manchester buying office": ["Tom Rees", "Buying desk"],
+  "Felixstowe DC": ["Warehouse team", "Receiving desk"],
+  "Hamburg HQ": ["Elena Moreno", "Kai Müller"],
+  "Berlin finance office": ["Accounts payable", "Elena Moreno"],
+  "Munich operations": ["Kai Müller", "Operations desk"],
+  "Shanghai export office": ["Wei Chen", "Export desk"],
+  "Ningbo consolidation warehouse": ["Lina Zhou", "Warehouse team"],
+  "Yantian port desk": ["Export desk", "Wei Chen"],
+  "Felixstowe distribution centre": ["Warehouse team", "Receiving desk"],
+  "Southampton overflow warehouse": ["Receiving desk", "Aisha Patel"],
+  "Hamburg office": ["Jon Bell", "Operations desk"],
+  "Milan delivery depot": ["Lisa Hart", "Operations desk"],
+  "London customs desk": ["Broker team", "Clearance desk"],
+  "Shanghai broker handoff": ["Wei Chen", "Clearance desk"],
+  "Rotterdam clearance desk": ["Broker team", "Clearance desk"],
+}
+
+function defaultContactForCompany(companyName: string) {
+  return partyCompanies.find((company) => company.name === companyName)?.contacts[0] ?? ""
+}
+
+function contactsForOffice(companyName: string, officeName: string) {
+  if (!officeName) return []
+  return contactsByOffice[officeName] ?? partyCompanies.find((company) => company.name === companyName)?.contacts ?? []
 }
 
 function officesForCompany(companyName: string) {
@@ -316,6 +475,48 @@ function notesForOffice(office: string) {
   }
 
   return notesByOffice[office] ?? ""
+}
+
+function fullAddressForOffice(office: string) {
+  if (!office) return ""
+
+  const addressByOffice: Record<string, string> = {
+    "London billing office": "Marlow Apparel Ltd\nLondon billing office\n42 Threadneedle Street\nLondon EC2R 8AH\nUnited Kingdom",
+    "Manchester buying office": "Marlow Apparel Ltd\nManchester buying office\n18 Deansgate\nManchester M3 2BY\nUnited Kingdom",
+    "Felixstowe DC": "Marlow Apparel Ltd\nFelixstowe DC\nDock Road\nFelixstowe IP11 3SY\nUnited Kingdom",
+    "Hamburg HQ": "Northwind GmbH\nHamburg HQ\nAm Sandtorkai 27\n20457 Hamburg\nGermany",
+    "Berlin finance office": "Northwind GmbH\nBerlin finance office\nFriedrichstrasse 121\n10117 Berlin\nGermany",
+    "Munich operations": "Northwind GmbH\nMunich operations\nLandsberger Strasse 89\n80339 Munich\nGermany",
+    "Shanghai export office": "Yong Hua Logistics\nShanghai export office\n88 Yangshan Road\nPudong, Shanghai 200120\nChina",
+    "Ningbo consolidation warehouse": "Yong Hua Logistics\nNingbo consolidation warehouse\n18 Beilun Port Road\nNingbo, Zhejiang 315800\nChina",
+    "Yantian port desk": "Yong Hua Logistics\nYantian port desk\nYantian International Terminal\nShenzhen, Guangdong 518081\nChina",
+    "Felixstowe distribution centre": "Marlow UK DC\nFelixstowe distribution centre\nClickett Hill Road\nFelixstowe IP11 4BA\nUnited Kingdom",
+    "Southampton overflow warehouse": "Marlow UK DC\nSouthampton overflow warehouse\nWestern Docks\nSouthampton SO15 1HJ\nUnited Kingdom",
+    "Hamburg office": "Pacific Goods Co\nHamburg office\nBrooktorkai 12\n20457 Hamburg\nGermany",
+    "Milan delivery depot": "Pacific Goods Co\nMilan delivery depot\nVia Privata Oslavia 4\n20134 Milano MI\nItaly",
+    "London customs desk": "Customs broker\nLondon customs desk\n25 King William Street\nLondon EC4R 9AT\nUnited Kingdom",
+    "Shanghai broker handoff": "Customs broker\nShanghai broker handoff\n120 Century Avenue\nPudong, Shanghai 200120\nChina",
+    "Rotterdam clearance desk": "Customs broker\nRotterdam clearance desk\nWaalhaven Zuidzijde 19\n3089 JH Rotterdam\nNetherlands",
+  }
+
+  return addressByOffice[office] ?? office
+}
+
+function routeLocationForAddress(address: string) {
+  const locationByAddress: Record<string, { code: string; name: string; country: string }> = {
+    "Shanghai export office": { code: "CNSHA", name: "Shanghai", country: "China" },
+    "Ningbo consolidation warehouse": { code: "CNNGB", name: "Ningbo", country: "China" },
+    "Yantian port desk": { code: "CNYTN", name: "Yantian", country: "China" },
+    "Felixstowe distribution centre": { code: "GBFXT", name: "Felixstowe", country: "United Kingdom" },
+    "Southampton overflow warehouse": { code: "GBSOU", name: "Southampton", country: "United Kingdom" },
+    "Hamburg office": { code: "DEHAM", name: "Hamburg", country: "Germany" },
+    "Milan delivery depot": { code: "ITMIL", name: "Milan", country: "Italy" },
+    "JFK fulfilment centre": { code: "USJFK", name: "New York JFK", country: "United States" },
+    "Rotterdam clearance desk": { code: "NLRTM", name: "Rotterdam", country: "Netherlands" },
+    "London customs desk": { code: "GBLON", name: "London", country: "United Kingdom" },
+  }
+
+  return locationByAddress[address] ?? { code: "", name: address || "", country: "" }
 }
 
 function isFilled(value: string) {
@@ -336,11 +537,12 @@ function getRequiredFields(data: BookingWizardData, stepIndex: number) {
     ["cargoRequiredByDate", "Cargo required by"],
   )
   if (stepIndex === 3) fields.push(["goodsDescription", "Goods description"], ["packages", "Number of packages"], ["weight", "Weight"])
-  if (stepIndex === 4 && data.mode === "Sea") fields.push(["portOfLoading", "Port of loading"], ["portOfDischarge", "Port of discharge"], ["seaEtd", "ETD"], ["seaEta", "ETA"])
-  if (stepIndex === 4 && data.mode === "Air") fields.push(["airportDeparture", "Airport of departure"], ["airportArrival", "Airport of arrival"], ["airline", "Airline"], ["airEtd", "ETD"], ["airEta", "ETA"])
-  if (stepIndex === 4 && data.mode === "Road") fields.push(["roadCollectionPoint", "Collection point"], ["roadDeliveryPoint", "Delivery point"], ["vehicleType", "Vehicle type"], ["plannedCollectionDate", "Planned collection date"])
+  if (stepIndex === 4) fields.push(["portOfLoading", "First origin"], ["portOfDischarge", "Final destination"])
+  if (stepIndex === 4 && data.mode === "Sea") fields.push(["seaEtd", "ETD"], ["seaEta", "ETA"])
+  if (stepIndex === 4 && data.mode === "Air") fields.push(["airline", "Airline"], ["airEtd", "ETD"], ["airEta", "ETA"])
+  if (stepIndex === 4 && data.mode === "Road") fields.push(["vehicleType", "Vehicle type"], ["plannedCollectionDate", "Planned collection date"])
   if (stepIndex === 4 && data.mode === "Courier") fields.push(["courierService", "Courier service"], ["courierCutoff", "Cut-off"], ["courierTracking", "Tracking preference"])
-  if (stepIndex === 5) fields.push(["customsStatus", "Customs status"], ["commodityCode", "Commodity code"])
+  if (stepIndex === 5) fields.push(["exportBroker", "Export broker"], ["importBroker", "Import broker"], ["registeredExporter", "Registered exporter"], ["registeredImporter", "Registered importer"], ["vatDutyPayment", "VAT and duty payment"])
   if (stepIndex === 6) fields.push(["customerReference", "Customer reference"], ["internalReference", "Internal reference"])
 
   return fields
@@ -358,12 +560,70 @@ function allMissingFields(data: BookingWizardData) {
   ))
 }
 
+function numberValue(value: string) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function formatCargoTotal(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/\.?0+$/, "")
+}
+
+function perOuterPackageLabel(outerPackageType: string) {
+  const labels: Record<string, string> = {
+    Pallets: "Pallet",
+    Cartons: "Carton",
+    Crates: "Crate",
+    Bags: "Bag",
+    Drums: "Drum",
+    Cases: "Case",
+    Loose: "Loose item",
+    ULD: "ULD",
+  }
+
+  return labels[outerPackageType] ?? outerPackageType
+}
+
+function formatCargoDimensions(line: Pick<CargoLineDraft, "height" | "width" | "depth" | "dimensions">) {
+  const dimensions = [line.height, line.width, line.depth].filter(Boolean).join(" x ")
+  return dimensions || line.dimensions
+}
+
+function cargoLineTotals(lines: CargoLine[]) {
+  return {
+    outerPackages: lines.reduce((total, line) => total + numberValue(line.outerPackages), 0),
+    grossWeight: lines.reduce((total, line) => total + numberValue(line.grossWeight), 0),
+    volume: lines.reduce((total, line) => total + numberValue(line.volume), 0),
+  }
+}
+
 function buildCargoSummary(data: BookingWizardData) {
+  if (data.cargoLines.length) {
+    const totals = cargoLineTotals(data.cargoLines)
+    const commodities = [...new Set(data.cargoLines.map((line) => line.commodity).filter(Boolean))]
+    const commodityLabel = commodities.length === 1 ? commodities[0] : `${commodities.length} commodities`
+    const pieces = [
+      `${data.cargoLines.length} line${data.cargoLines.length === 1 ? "" : "s"}`,
+      totals.outerPackages ? `${formatCargoTotal(totals.outerPackages)} outer pkgs` : "",
+      totals.grossWeight ? `${formatCargoTotal(totals.grossWeight)} kg` : "",
+      totals.volume ? `${formatCargoTotal(totals.volume)} cbm` : "",
+      commodityLabel,
+    ].filter(Boolean)
+
+    return pieces.join(" - ")
+  }
+
   const pieces = [data.packages ? `${data.packages} ${data.packageType.toLowerCase()}` : "", data.weight ? `${data.weight} kg` : "", data.volume ? `${data.volume} cbm` : ""].filter(Boolean)
   return pieces.length ? pieces.join(" - ") : "Cargo not set"
 }
 
 function buildTransportEta(data: BookingWizardData) {
+  if (data.transportLegs.length) {
+    const firstLeg = data.transportLegs[0]
+    const lastLeg = data.transportLegs[data.transportLegs.length - 1]
+    return [firstLeg.etd && `ETD ${firstLeg.etd}`, lastLeg.eta && `ETA ${lastLeg.eta}`].filter(Boolean).join(" - ")
+  }
+
   if (data.mode === "Sea") return [data.seaEtd && `ETD ${data.seaEtd}`, data.seaEta && `ETA ${data.seaEta}`].filter(Boolean).join(" - ")
   if (data.mode === "Air") return [data.airEtd && `ETD ${data.airEtd}`, data.airEta && `ETA ${data.airEta}`].filter(Boolean).join(" - ")
   if (data.mode === "Road") return [data.plannedCollectionDate && `Collect ${data.plannedCollectionDate}`, data.plannedDeliveryDate && `Deliver ${data.plannedDeliveryDate}`].filter(Boolean).join(" - ")
@@ -378,17 +638,21 @@ function FieldGroup({ children, className }: { children: ReactNode; className?: 
   )
 }
 
+const missingFieldClass = "ring-1 ring-[rgba(192,57,43,0.78)] shadow-[var(--md-shadow-line),0_0_0_4px_rgba(192,57,43,0.12),0_0_18px_rgba(192,57,43,0.16)]"
+
 function FieldShell({
   label,
   helper,
   required,
   missing,
+  action,
   children,
 }: {
   label: string
   helper?: string
   required?: boolean
   missing?: boolean
+  action?: ReactNode
   children: ReactNode
 }) {
   return (
@@ -398,7 +662,7 @@ function FieldShell({
           {label}
           {required ? <span className="text-[var(--md-red)]"> *</span> : null}
         </span>
-        {missing ? <span className="text-[11px] font-medium text-[var(--md-red)]">Missing</span> : null}
+        {action ? <span className="flex items-center gap-1.5">{action}</span> : null}
       </span>
       {children}
       {helper ? <span className="text-[12px] leading-5 text-[var(--md-text)]">{helper}</span> : null}
@@ -434,8 +698,12 @@ function TextField({
         value={value}
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
-        className="h-10 min-w-0 truncate rounded-[var(--md-radius-lg)] border-0 bg-white/64 px-3 text-[13px] shadow-[var(--md-shadow-line)]"
+        className={cn(
+          "h-10 min-w-0 truncate rounded-[var(--md-radius-lg)] border-0 bg-white/64 px-3 text-[13px] shadow-[var(--md-shadow-line)]",
+          missing && missingFieldClass,
+        )}
         dir={dir}
+        aria-invalid={missing || undefined}
       />
     </FieldShell>
   )
@@ -487,7 +755,13 @@ function SelectField({
   return (
     <FieldShell label={label} helper={helper} required={required} missing={missing}>
       <Select value={value} onValueChange={onChange}>
-        <SelectTrigger className="h-10 rounded-[var(--md-radius-lg)] border-0 bg-white/64 px-3 text-[13px] shadow-[var(--md-shadow-line)]">
+        <SelectTrigger
+          className={cn(
+            "h-10 rounded-[var(--md-radius-lg)] border-0 bg-white/64 px-3 text-[13px] shadow-[var(--md-shadow-line)]",
+            missing && missingFieldClass,
+          )}
+          aria-invalid={missing || undefined}
+        >
           <SelectValue />
         </SelectTrigger>
         <SelectContent className="rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-sidebar-bg)] shadow-[var(--md-shadow-lift)]">
@@ -510,6 +784,7 @@ function NativeSelectField({
   placeholder,
   required,
   missing,
+  action,
 }: {
   label: string
   value: string
@@ -518,23 +793,123 @@ function NativeSelectField({
   placeholder: string
   required?: boolean
   missing?: boolean
+  action?: ReactNode
 }) {
+  const hasSelectedOption = !value || options.includes(value)
+
   return (
-    <FieldShell label={label} required={required} missing={missing}>
+    <FieldShell label={label} required={required} missing={missing} action={action}>
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-10 min-w-0 truncate rounded-[var(--md-radius-lg)] border-0 bg-white/64 px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] outline-none"
+        className={cn(
+          "h-10 min-w-0 truncate rounded-[var(--md-radius-lg)] border-0 bg-white/64 px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] outline-none",
+          missing && missingFieldClass,
+        )}
         dir="auto"
         title={value || placeholder}
+        aria-invalid={missing || undefined}
       >
         <option value="">{placeholder}</option>
+        {!hasSelectedOption ? <option value={value}>{value}</option> : null}
         {options.map((option) => (
           <option key={option} value={option}>
             {option}
           </option>
         ))}
       </select>
+    </FieldShell>
+  )
+}
+
+function ComboField({
+  label,
+  value,
+  onChange,
+  options,
+  placeholder,
+  required,
+  missing,
+  disabled,
+  action,
+  clearable,
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  options: readonly string[]
+  placeholder: string
+  required?: boolean
+  missing?: boolean
+  disabled?: boolean
+  action?: ReactNode
+  clearable?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const normalizedValue = value.trim().toLowerCase()
+  const matches = options
+    .filter((option) => !normalizedValue || option.toLowerCase().includes(normalizedValue))
+    .slice(0, 8)
+
+  return (
+    <FieldShell label={label} required={required} missing={missing} action={action}>
+      <div className="relative z-0 min-w-0 focus-within:z-50">
+        <Input
+          value={value}
+          placeholder={placeholder}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setOpen(false)}
+          onChange={(event) => {
+            onChange(event.target.value)
+            setOpen(true)
+          }}
+          disabled={disabled}
+          className={cn(
+            "h-10 min-w-0 truncate rounded-[var(--md-radius-lg)] border-0 bg-white/64 px-3 text-[13px] shadow-[var(--md-shadow-line)]",
+            clearable && value && "pe-9",
+            missing && missingFieldClass,
+            disabled && "cursor-not-allowed bg-[rgba(228,233,233,0.72)] text-[var(--md-muted)] opacity-80",
+          )}
+          dir="auto"
+          autoComplete="off"
+          role="combobox"
+          aria-expanded={open && !disabled}
+          aria-invalid={missing || undefined}
+        />
+        {clearable && value && !disabled ? (
+          <button
+            type="button"
+            aria-label={`Clear ${label}`}
+            title={`Clear ${label}`}
+            className="absolute end-2 top-1/2 z-[130] grid size-5 -translate-y-1/2 place-items-center rounded-[var(--md-radius-sm)] text-[var(--md-red)] transition-colors hover:bg-[rgba(192,57,43,0.1)]"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => {
+              onChange("")
+              setOpen(false)
+            }}
+          >
+            <X className="size-3.5" strokeWidth={2} />
+          </button>
+        ) : null}
+        {open && !disabled && matches.length > 0 ? (
+          <div className="absolute inset-x-0 top-[calc(100%+4px)] z-[999] max-h-56 overflow-auto rounded-[var(--md-radius-lg)] bg-[rgba(251,253,253,0.98)] p-1 shadow-[var(--md-shadow-lift)]">
+            {matches.map((option) => (
+              <button
+                key={option}
+                type="button"
+                className="block w-full truncate rounded-[var(--md-radius-md)] px-2.5 py-2 text-left text-[13px] text-[var(--md-ink)] transition-colors hover:bg-[rgba(14,125,116,0.08)]"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  onChange(option)
+                  setOpen(false)
+                }}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
     </FieldShell>
   )
 }
@@ -719,6 +1094,9 @@ function PartyRow({
   office,
   reference,
   companyMissing,
+  companyLocked,
+  actions,
+  onReset,
   onCompanyChange,
   onContactChange,
   onOfficeChange,
@@ -730,25 +1108,95 @@ function PartyRow({
   office: string
   reference: string
   companyMissing?: boolean
+  companyLocked?: boolean
+  actions?: ReactNode
+  onReset: () => void
   onCompanyChange: (value: string) => void
   onContactChange: (value: string) => void
   onOfficeChange: (value: string) => void
   onReferenceChange: (value: string) => void
 }) {
-  const contactOptions = contactsForCompany(company)
+  const contactOptions = contactsForOffice(company, office)
   const officeOptions = officesForCompany(company)
+  const [addressDialogOpen, setAddressDialogOpen] = useState(false)
+  const [contactDialogOpen, setContactDialogOpen] = useState(false)
+  const [draftAddressName, setDraftAddressName] = useState("")
+  const [draftAddressDetails, setDraftAddressDetails] = useState("")
+  const [draftContactName, setDraftContactName] = useState("")
+  const [draftContactEmail, setDraftContactEmail] = useState("")
+  const [draftContactPhone, setDraftContactPhone] = useState("")
+
+  const addAddressDisabled = !company.trim()
+  const addContactDisabled = !office.trim()
+
+  const saveAddress = () => {
+    const newAddress = draftAddressName.trim()
+    if (!newAddress) return
+
+    onOfficeChange(newAddress)
+    onContactChange("")
+    setDraftAddressName("")
+    setDraftAddressDetails("")
+    setAddressDialogOpen(false)
+  }
+
+  const saveContact = () => {
+    const newContact = draftContactName.trim()
+    if (!newContact) return
+
+    onContactChange(newContact)
+    setDraftContactName("")
+    setDraftContactEmail("")
+    setDraftContactPhone("")
+    setContactDialogOpen(false)
+  }
+
+  const addAddressButton = (
+    <button
+      type="button"
+      aria-label={`Add address for ${label}`}
+      title={addAddressDisabled ? "Select a company first" : `Add address for ${label}`}
+      disabled={addAddressDisabled}
+      className="grid size-6 place-items-center rounded-[var(--md-radius-sm)] bg-white/58 text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,opacity] hover:bg-white/78 hover:text-[var(--md-accent)] disabled:cursor-not-allowed disabled:opacity-40"
+      onClick={() => setAddressDialogOpen(true)}
+    >
+      <Plus className="size-3.5" strokeWidth={1.8} />
+    </button>
+  )
+
+  const addContactButton = (
+    <button
+      type="button"
+      aria-label={`Add contact for ${label}`}
+      title={addContactDisabled ? "Select an office first" : `Add contact for ${label}`}
+      disabled={addContactDisabled}
+      className="grid size-6 place-items-center rounded-[var(--md-radius-sm)] bg-white/58 text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,opacity] hover:bg-white/78 hover:text-[var(--md-accent)] disabled:cursor-not-allowed disabled:opacity-40"
+      onClick={() => setContactDialogOpen(true)}
+    >
+      <Plus className="size-3.5" strokeWidth={1.8} />
+    </button>
+  )
 
   return (
     <motion.div
       variants={fieldMotion}
-      className="grid gap-3 rounded-[var(--md-radius-xl)] bg-white/38 p-3 shadow-[var(--md-shadow-line)]"
+      className="relative z-0 grid gap-2 rounded-[var(--md-radius-lg)] bg-white/38 p-2.5 shadow-[var(--md-shadow-line)] focus-within:z-[300]"
     >
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
+      <div className="flex flex-wrap items-baseline gap-2">
         <p className="text-[14px] font-medium text-[var(--md-ink)]">{label}</p>
-        <p className="text-[12px] leading-5 text-[var(--md-text)]">Linked to company records later.</p>
+        {actions}
+        <button
+          type="button"
+          aria-label={`Reset ${label}`}
+          title={`Reset ${label}`}
+          className="ms-auto grid size-7 place-items-center rounded-[var(--md-radius-sm)] bg-white/54 text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white/78 hover:text-[var(--md-accent)]"
+          onClick={onReset}
+        >
+          <RotateCcw className="size-3.5" strokeWidth={1.8} />
+        </button>
       </div>
-      <div className="grid min-w-0 gap-3 lg:grid-cols-2 xl:grid-cols-[repeat(4,minmax(0,1fr))]">
-        <NativeSelectField
+      <div className="grid min-w-0 gap-2 lg:grid-cols-2 xl:grid-cols-[repeat(4,minmax(0,1fr))]">
+        <ComboField
           label="Company name"
           value={company}
           onChange={(value) => {
@@ -760,20 +1208,26 @@ function PartyRow({
           placeholder="Select company"
           required={label !== "Notify Party"}
           missing={companyMissing}
+          disabled={companyLocked}
         />
-        <NativeSelectField
+        <ComboField
+          label="Office / address"
+          value={office}
+          onChange={(value) => {
+            onOfficeChange(value)
+            onContactChange("")
+          }}
+          options={officeOptions}
+          placeholder={company ? "Select office" : "Select company first"}
+          action={addAddressButton}
+        />
+        <ComboField
           label="Contact"
           value={contact}
           onChange={onContactChange}
           options={contactOptions}
-          placeholder={company ? "Select contact" : "Select company first"}
-        />
-        <NativeSelectField
-          label="Office / address"
-          value={office}
-          onChange={onOfficeChange}
-          options={officeOptions}
-          placeholder={company ? "Select office" : "Select company first"}
+          placeholder={office ? "Select contact" : "Select office first"}
+          action={addContactButton}
         />
         <TextField
           label="Reference"
@@ -783,7 +1237,96 @@ function PartyRow({
           dir="ltr"
         />
       </div>
+      <Dialog open={addressDialogOpen} onOpenChange={setAddressDialogOpen}>
+        <DialogContent className="rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-sidebar-bg)] shadow-[var(--md-shadow-lift)] sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>Add address</DialogTitle>
+            <DialogDescription>Create a booking address for {company || "this party"}.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <TextField label="Address name" value={draftAddressName} onChange={setDraftAddressName} placeholder="Regional office, warehouse, division..." />
+            <TextAreaField label="Address details" value={draftAddressDetails} onChange={setDraftAddressDetails} placeholder="Address lines, city, country, loading point notes..." />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-md)] px-3 text-[13px]" onClick={() => setAddressDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[13px] text-white hover:bg-[#0b6f67]" disabled={!draftAddressName.trim()} onClick={saveAddress}>
+              Add address
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={contactDialogOpen} onOpenChange={setContactDialogOpen}>
+        <DialogContent className="rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-sidebar-bg)] shadow-[var(--md-shadow-lift)] sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>Add contact</DialogTitle>
+            <DialogDescription>Create a contact for {office || company || "this party"}.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <TextField label="Contact name" value={draftContactName} onChange={setDraftContactName} placeholder="Full name or team name" />
+            </div>
+            <TextField label="Email" value={draftContactEmail} onChange={setDraftContactEmail} placeholder="name@example.com" type="email" dir="ltr" />
+            <TextField label="Phone" value={draftContactPhone} onChange={setDraftContactPhone} placeholder="+44..." dir="ltr" />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-md)] px-3 text-[13px]" onClick={() => setContactDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[13px] text-white hover:bg-[#0b6f67]" disabled={!draftContactName.trim()} onClick={saveContact}>
+              Add contact
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </motion.div>
+  )
+}
+
+function CustomerRoleCheckboxes({
+  isShipper,
+  isConsignee,
+  isNotifyParty,
+  onShipperChange,
+  onConsigneeChange,
+  onNotifyPartyChange,
+}: {
+  isShipper: boolean
+  isConsignee: boolean
+  isNotifyParty: boolean
+  onShipperChange: (checked: boolean) => void
+  onConsigneeChange: (checked: boolean) => void
+  onNotifyPartyChange: (checked: boolean) => void
+}) {
+  const options = [
+    ["customer-is-shipper", "...is Shipper", isShipper, onShipperChange],
+    ["customer-is-consignee", "...is Consignee", isConsignee, onConsigneeChange],
+    ["customer-is-notify", "...is Notify Party", isNotifyParty, onNotifyPartyChange],
+  ] as const
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {options.map(([id, label, checked, onChange]) => (
+        <label
+          key={id}
+          htmlFor={id}
+          className={cn(
+            "flex h-7 cursor-pointer items-center gap-1.5 rounded-[var(--md-radius-sm)] bg-white/50 px-2.5 text-[12px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white/78",
+            checked && "bg-[var(--md-accent)] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_8px_18px_rgba(14,125,116,0.16)] hover:bg-[#0b6f67]",
+          )}
+        >
+          <input
+            id={id}
+            type="checkbox"
+            checked={checked}
+            onChange={(event) => onChange(event.target.checked)}
+            className="size-3.5 rounded border-white/70 accent-[var(--md-accent)]"
+          />
+          <span>{label}</span>
+        </label>
+      ))}
+    </div>
   )
 }
 
@@ -800,115 +1343,353 @@ function SourceScreen({
   onUpdate: <K extends keyof BookingWizardData>(field: K, value: BookingWizardData[K]) => void
   onStart: (source: Exclude<BookingSource, null>) => void
 }) {
-  const filteredBookings = bookings.filter((booking) => (
-    [booking.id, booking.customer, booking.route, booking.carrier, booking.customerRef, booking.jobRef].join(" ").toLowerCase().includes(query.toLowerCase())
-  )).slice(0, 5)
+  const [selectedStartType, setSelectedStartType] = useState<Exclude<BookingSource, null>>("quote")
+  const [quoteSearchOpen, setQuoteSearchOpen] = useState(false)
+  const [bookingSearchOpen, setBookingSearchOpen] = useState(false)
+  const [quoteCriteria, setQuoteCriteria] = useState({ customer: "", origin: "", destination: "", mode: "", containerSize: "" })
+  const [bookingCriteria, setBookingCriteria] = useState({ customer: "", origin: "", destination: "", mode: "", containerSize: "" })
+  const customerOptions = Array.from(new Set([
+    ...partyCompanyOptions,
+    ...bookings.map((booking) => booking.customer),
+    ...customerQuotes.map((quote) => quote.customer),
+  ])).sort()
+  const modeOptions = Array.from(new Set([...standardModeOptions, ...bookings.map((booking) => booking.mode)])).sort()
+  const containerOptions = Array.from(new Set(bookings.map((booking) => booking.container))).sort()
+  const quoteNumberOptions = customerQuotes
+    .filter((quote) => !data.quoteCustomer || quote.customer === data.quoteCustomer)
+    .map((quote) => quote.id)
+  const bookingNumberOptions = bookings
+    .filter((booking) => !data.bookingCustomer || booking.customer === data.bookingCustomer)
+    .map((booking) => booking.id)
+  const quoteSearchTerm = data.quoteNumber.toLowerCase()
+  const visibleQuotes = customerQuotes
+    .filter((quote) => !data.quoteCustomer || quote.customer === data.quoteCustomer)
+    .filter((quote) => !quoteSearchTerm || [quote.id, quote.route, quote.detail, quote.status].join(" ").toLowerCase().includes(quoteSearchTerm))
+    .slice(0, 10)
+  const bookingSearchTerm = (query || data.bookingNumber).toLowerCase()
+  const favouriteBookings = bookings.filter((booking) => ["MD-22481", "MD-22455", "MD-22441", "MD-22414", "MD-22466"].includes(booking.id))
+  const visibleBookings = (data.bookingCustomer
+    ? bookings.filter((booking) => booking.customer === data.bookingCustomer)
+    : favouriteBookings
+  )
+    .filter((booking) => !bookingSearchTerm || [booking.id, booking.customer, booking.route, booking.carrier, booking.customerRef, booking.jobRef].join(" ").toLowerCase().includes(bookingSearchTerm))
+    .slice(0, 10)
+
+  const searchQuote = () => {
+    setQuoteCriteria((current) => ({ ...current, customer: data.quoteCustomer || current.customer }))
+    setQuoteSearchOpen(true)
+  }
+
+  const searchBooking = () => {
+    setBookingCriteria((current) => ({ ...current, customer: data.bookingCustomer || current.customer }))
+    setBookingSearchOpen(true)
+  }
+
+  const quoteSearchResults = customerQuotes
+    .filter((quote) => !quoteCriteria.customer || quote.customer === quoteCriteria.customer)
+    .filter((quote) => !quoteCriteria.origin || quote.route.toLowerCase().includes(quoteCriteria.origin.toLowerCase()))
+    .filter((quote) => !quoteCriteria.destination || quote.route.toLowerCase().includes(quoteCriteria.destination.toLowerCase()))
+    .filter((quote) => !quoteCriteria.containerSize || quote.detail.toLowerCase().includes(quoteCriteria.containerSize.toLowerCase()))
+    .slice(0, 10)
+
+  const bookingSearchResults = bookings
+    .filter((booking) => !bookingCriteria.customer || booking.customer === bookingCriteria.customer)
+    .filter((booking) => !bookingCriteria.origin || booking.origin.toLowerCase().includes(bookingCriteria.origin.toLowerCase()))
+    .filter((booking) => !bookingCriteria.destination || booking.destination.toLowerCase().includes(bookingCriteria.destination.toLowerCase()))
+    .filter((booking) => !bookingCriteria.mode || booking.mode.toLowerCase() === bookingCriteria.mode.toLowerCase())
+    .filter((booking) => !bookingCriteria.containerSize || booking.container.toLowerCase().includes(bookingCriteria.containerSize.toLowerCase()))
+    .slice(0, 10)
 
   return (
     <motion.div variants={stepMotion} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}>
       <Surface padding="lg" className="overflow-hidden rounded-[var(--md-radius-2xl)]">
-        <div className="grid gap-8 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-start">
-          <div>
-            <StatusPill tone="teal">New booking</StatusPill>
-            <h1 className="mt-4 max-w-[620px] text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">
-              Start from the fastest path for the operator.
-            </h1>
-            <p className="mt-3 max-w-[620px] text-[14px] leading-6 text-[var(--md-text)]">
-              Duplicate a similar movement when the lane repeats, or start clean when the booking is genuinely new.
-            </p>
-          </div>
+        <div>
+          <StatusPill tone="teal">New booking</StatusPill>
+          <h1 className="mt-4 max-w-[760px] text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">
+            Start from the fastest path for the operator.
+          </h1>
+          <p className="mt-3 max-w-[760px] text-[14px] leading-6 text-[var(--md-text)]">
+            Convert a customer quote, duplicate a favourite or customer job, or start clean when the booking is genuinely new.
+          </p>
+        </div>
 
-          <motion.div variants={fieldListMotion} initial="hidden" animate="visible" className="grid gap-3">
-            <motion.button
+          <motion.div variants={fieldListMotion} initial="hidden" animate="visible" className="mt-6 grid gap-3 xl:grid-cols-3 xl:items-start">
+            <motion.div
               variants={optionMotion}
-              type="button"
               className={cn(
-                "rounded-[var(--md-radius-xl)] bg-white/58 p-5 text-left shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] hover:scale-[1.005] hover:bg-white/78",
-                data.source === "existing" && "shadow-[inset_0_0_0_1px_rgba(14,125,116,0.42),0_16px_30px_rgba(14,125,116,0.08)]",
+                "grid gap-4 rounded-[var(--md-radius-xl)] bg-white/58 p-4 shadow-[var(--md-shadow-line)]",
+                selectedStartType === "quote" && "shadow-[inset_0_0_0_1px_rgba(14,125,116,0.42),0_16px_30px_rgba(14,125,116,0.08)]",
               )}
-              onClick={() => onUpdate("source", "existing")}
             >
-              <span className="flex items-start gap-4">
+              <div className="flex items-start gap-4">
+                <span className="grid size-10 place-items-center rounded-[var(--md-radius-lg)] bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)]">
+                  <ClipboardCheck className="size-5" strokeWidth={1.35} />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-[16px] font-medium text-[var(--md-ink)]">Create from Customer Quote</span>
+                  <span className="mt-1 block text-[13px] leading-5 text-[var(--md-text)]">Pull the accepted quote into a new booking workflow.</span>
+                </span>
+              </div>
+              <div className="grid gap-2">
+                <ComboField
+                  label="Customer"
+                  value={data.quoteCustomer}
+                  onChange={(value) => {
+                    setSelectedStartType("quote")
+                    onUpdate("quoteCustomer", value)
+                    onUpdate("quoteNumber", "")
+                  }}
+                  options={customerOptions}
+                  placeholder="Select customer"
+                  clearable
+                />
+                <ComboField
+                  label="Quote number"
+                  value={data.quoteNumber}
+                  onChange={(value) => {
+                    setSelectedStartType("quote")
+                    onUpdate("quoteNumber", value)
+                  }}
+                  options={quoteNumberOptions}
+                  placeholder="Quote number"
+                />
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-lg)] bg-[rgba(14,125,116,0.1)] px-3 text-[13px] font-medium text-[var(--md-accent)] shadow-[var(--md-shadow-line)] hover:bg-[rgba(14,125,116,0.16)]" onClick={searchQuote}>
+                    <Search className="size-4" strokeWidth={1.35} />
+                    Search
+                  </Button>
+                  <Button
+                    type="button"
+                    className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white hover:bg-[#0b6f67]"
+                    disabled={!data.quoteNumber.trim()}
+                    onClick={() => onStart("quote")}
+                  >
+                    Start
+                    <ChevronRight className="size-4" strokeWidth={1.35} />
+                  </Button>
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <p className="text-[12px] font-medium text-[var(--md-subtle)]">{data.quoteCustomer ? "Last 10 quotes" : "Select a customer to show quotes"}</p>
+                {data.quoteCustomer ? visibleQuotes.map((quote) => (
+                  <button
+                    key={quote.id}
+                    type="button"
+                    className={cn(
+                      "grid gap-1 rounded-[var(--md-radius-lg)] bg-white/52 px-3 py-2 text-left shadow-[var(--md-shadow-line)] transition-colors hover:bg-white/78",
+                      data.quoteNumber === quote.id && "bg-[rgba(14,125,116,0.1)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.35),0_8px_18px_rgba(14,125,116,0.08)]",
+                    )}
+                    onClick={() => {
+                      setSelectedStartType("quote")
+                      onUpdate("quoteNumber", quote.id)
+                    }}
+                  >
+                    <span className="text-[13px] font-medium text-[var(--md-ink)]" dir="ltr">{quote.id}</span>
+                    <span className="truncate text-[12px] text-[var(--md-text)]">{quote.route}</span>
+                    <span className="truncate text-[12px] text-[var(--md-subtle)]">{quote.detail} - {quote.status}</span>
+                  </button>
+                )) : null}
+              </div>
+            </motion.div>
+
+            <motion.div
+              variants={optionMotion}
+              className={cn(
+                "grid gap-4 rounded-[var(--md-radius-xl)] bg-white/58 p-4 shadow-[var(--md-shadow-line)]",
+                selectedStartType === "existing" && "shadow-[inset_0_0_0_1px_rgba(14,125,116,0.42),0_16px_30px_rgba(14,125,116,0.08)]",
+              )}
+            >
+              <div className="flex items-start gap-4">
                 <span className="grid size-10 place-items-center rounded-[var(--md-radius-lg)] bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)]">
                   <Copy className="size-5" strokeWidth={1.35} />
                 </span>
                 <span className="min-w-0">
-                  <span className="block text-[16px] font-medium text-[var(--md-ink)]">Create from existing booking</span>
+                  <span className="block text-[16px] font-medium text-[var(--md-ink)]">Create from Existing Booking</span>
                   <span className="mt-1 block text-[13px] leading-5 text-[var(--md-text)]">Use a previous route, customer, and reference pattern as the starting point.</span>
                 </span>
-              </span>
-            </motion.button>
-
-            {data.source === "existing" ? (
-              <motion.div variants={optionMotion} className="rounded-[var(--md-radius-xl)] bg-[rgba(255,255,255,0.44)] p-4 shadow-[var(--md-shadow-line)]">
-                <div className="relative">
-                  <Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.25} />
-                  <Input
-                    value={query}
-                    placeholder="Search customer, route, ref, carrier..."
-                    onChange={(event) => onQueryChange(event.target.value)}
-                    className="h-10 rounded-[var(--md-radius-lg)] border-0 bg-white/68 ps-9 text-[13px] shadow-[var(--md-shadow-line)]"
-                    dir="auto"
-                  />
+              </div>
+              <div className="grid gap-2">
+                <ComboField
+                  label="Customer"
+                  value={data.bookingCustomer}
+                  onChange={(value) => {
+                    setSelectedStartType("existing")
+                    onUpdate("bookingCustomer", value)
+                    onUpdate("bookingNumber", "")
+                    onUpdate("templateBookingId", "")
+                    onQueryChange("")
+                  }}
+                  options={customerOptions}
+                  placeholder="Select customer"
+                  clearable
+                />
+                <ComboField
+                  label="Booking number"
+                  value={data.bookingNumber}
+                  onChange={(value) => {
+                    setSelectedStartType("existing")
+                    onUpdate("bookingNumber", value)
+                    onQueryChange(value)
+                  }}
+                  options={bookingNumberOptions}
+                  placeholder="Booking number"
+                />
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-lg)] bg-[rgba(14,125,116,0.1)] px-3 text-[13px] font-medium text-[var(--md-accent)] shadow-[var(--md-shadow-line)] hover:bg-[rgba(14,125,116,0.16)]" onClick={searchBooking}>
+                    <Search className="size-4" strokeWidth={1.35} />
+                    Search
+                  </Button>
+                  <Button
+                    type="button"
+                    className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white hover:bg-[#0b6f67]"
+                    disabled={!data.templateBookingId}
+                    onClick={() => onStart("existing")}
+                  >
+                    Start
+                    <ChevronRight className="size-4" strokeWidth={1.35} />
+                  </Button>
                 </div>
-                <div className="mt-3 grid gap-2">
-                  {filteredBookings.map((booking) => {
-                    const selected = data.templateBookingId === booking.id
+              </div>
+              <div className="grid gap-2">
+                <p className="text-[12px] font-medium text-[var(--md-subtle)]">{data.bookingCustomer ? "Last 10 jobs" : "Favourite jobs"}</p>
+                {visibleBookings.map((booking) => {
+                  const selected = data.templateBookingId === booking.id
 
-                    return (
-                      <button
-                        key={booking.id}
-                        type="button"
-                        aria-pressed={selected}
-                        className={cn(
-                          "grid gap-3 rounded-[var(--md-radius-lg)] bg-white/52 px-3 py-3 text-left shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white/78 sm:grid-cols-[86px_minmax(0,1fr)_auto] sm:items-center",
-                          selected && "bg-[rgba(14,125,116,0.1)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.35),0_8px_18px_rgba(14,125,116,0.08)]",
-                        )}
-                        onClick={() => onUpdate("templateBookingId", booking.id)}
-                      >
-                        <span className="text-[13px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="ltr">{booking.id}</span>
-                        <span className="min-w-0">
-                          <span className="block truncate text-[13px] font-medium text-[var(--md-ink)]">{booking.customer}</span>
-                          <span className="mt-1 block truncate text-[12px] text-[var(--md-text)]">{booking.route} - {booking.carrier}</span>
-                        </span>
-                        <StatusPill tone={selected ? "teal" : "neutral"}>{selected ? "Selected" : booking.mode}</StatusPill>
-                      </button>
-                    )
-                  })}
-                </div>
-                <Button
-                  type="button"
-                  className="mt-4 h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white hover:bg-[#0b6f67]"
-                  disabled={!data.templateBookingId}
-                  onClick={() => onStart("existing")}
-                >
-                  Use selected booking
-                  <ChevronRight className="size-4" strokeWidth={1.35} />
-                </Button>
-              </motion.div>
-            ) : null}
+                  return (
+                    <button
+                      key={booking.id}
+                      type="button"
+                      aria-pressed={selected}
+                      className={cn(
+                        "grid gap-3 rounded-[var(--md-radius-lg)] bg-white/52 px-3 py-3 text-left shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white/78 sm:grid-cols-[86px_minmax(0,1fr)_auto] sm:items-center",
+                        selected && "bg-[rgba(14,125,116,0.1)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.35),0_8px_18px_rgba(14,125,116,0.08)]",
+                      )}
+                      onClick={() => {
+                        setSelectedStartType("existing")
+                        onUpdate("templateBookingId", booking.id)
+                        onUpdate("bookingNumber", booking.id)
+                        onUpdate("bookingCustomer", booking.customer)
+                      }}
+                    >
+                      <span className="text-[13px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="ltr">{booking.id}</span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-[13px] font-medium text-[var(--md-ink)]">{booking.customer}</span>
+                        <span className="mt-1 block truncate text-[12px] text-[var(--md-text)]">{booking.route} - {booking.carrier}</span>
+                      </span>
+                      <StatusPill tone={selected ? "teal" : "neutral"}>{selected ? "Selected" : booking.mode}</StatusPill>
+                    </button>
+                  )
+                })}
+              </div>
+            </motion.div>
 
-            <motion.button
+            <motion.div
               variants={optionMotion}
-              type="button"
               className={cn(
-                "rounded-[var(--md-radius-xl)] bg-white/58 p-5 text-left shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] hover:scale-[1.005] hover:bg-white/78",
-                data.source === "scratch" && "shadow-[inset_0_0_0_1px_rgba(14,125,116,0.42),0_16px_30px_rgba(14,125,116,0.08)]",
+                "grid gap-4 rounded-[var(--md-radius-xl)] bg-white/58 p-4 shadow-[var(--md-shadow-line)]",
+                selectedStartType === "scratch" && "shadow-[inset_0_0_0_1px_rgba(14,125,116,0.42),0_16px_30px_rgba(14,125,116,0.08)]",
               )}
-              onClick={() => onStart("scratch")}
             >
-              <span className="flex items-start gap-4">
+              <div className="flex items-start gap-4">
                 <span className="grid size-10 place-items-center rounded-[var(--md-radius-lg)] bg-[rgba(221,138,43,0.12)] text-[var(--md-amber)]">
                   <Sparkles className="size-5" strokeWidth={1.35} />
                 </span>
                 <span className="min-w-0">
-                  <span className="block text-[16px] font-medium text-[var(--md-ink)]">Create from scratch</span>
+                  <span className="block text-[16px] font-medium text-[var(--md-ink)]">Create from Scratch</span>
                   <span className="mt-1 block text-[13px] leading-5 text-[var(--md-text)]">Start the guided booking flow with clean defaults.</span>
                 </span>
-              </span>
-            </motion.button>
+              </div>
+              <div className="mt-auto">
+                <Button
+                  type="button"
+                  className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white hover:bg-[#0b6f67]"
+                  onClick={() => onStart("scratch")}
+                >
+                  Start
+                  <ChevronRight className="size-4" strokeWidth={1.35} />
+                </Button>
+              </div>
+            </motion.div>
           </motion.div>
-        </div>
+          <Dialog open={quoteSearchOpen} onOpenChange={setQuoteSearchOpen}>
+            <DialogContent className="rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-sidebar-bg)] shadow-[var(--md-shadow-lift)] sm:max-w-[760px]">
+              <DialogHeader>
+                <DialogTitle>Find quote</DialogTitle>
+                <DialogDescription>Search by customer, origin, destination, mode, and container size. More criteria can be added later.</DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <ComboField label="Customer" value={quoteCriteria.customer} onChange={(value) => setQuoteCriteria((current) => ({ ...current, customer: value }))} options={customerOptions} placeholder="Any customer" clearable />
+                <ComboField label="Mode" value={quoteCriteria.mode} onChange={(value) => setQuoteCriteria((current) => ({ ...current, mode: value }))} options={modeOptions} placeholder="Any mode" />
+                <TextField label="Origin" value={quoteCriteria.origin} onChange={(value) => setQuoteCriteria((current) => ({ ...current, origin: value }))} placeholder="Origin city, port, or country" />
+                <TextField label="Destination" value={quoteCriteria.destination} onChange={(value) => setQuoteCriteria((current) => ({ ...current, destination: value }))} placeholder="Destination city, port, or country" />
+                <ComboField label="Container size" value={quoteCriteria.containerSize} onChange={(value) => setQuoteCriteria((current) => ({ ...current, containerSize: value }))} options={containerOptions} placeholder="Any size" />
+              </div>
+              <div className="grid max-h-72 gap-2 overflow-auto">
+                {quoteSearchResults.map((quote) => (
+                  <button
+                    key={quote.id}
+                    type="button"
+                    className="grid gap-1 rounded-[var(--md-radius-lg)] bg-white/58 px-3 py-2 text-left shadow-[var(--md-shadow-line)] transition-colors hover:bg-white/78"
+                    onClick={() => {
+                      setSelectedStartType("quote")
+                      onUpdate("quoteCustomer", quote.customer)
+                      onUpdate("quoteNumber", quote.id)
+                      setQuoteSearchOpen(false)
+                    }}
+                  >
+                    <span className="text-[13px] font-medium text-[var(--md-ink)]" dir="ltr">{quote.id} · {quote.customer}</span>
+                    <span className="text-[12px] text-[var(--md-text)]">{quote.route}</span>
+                    <span className="text-[12px] text-[var(--md-subtle)]">{quote.detail} · {quote.status}</span>
+                  </button>
+                ))}
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-md)] px-3 text-[13px]" onClick={() => setQuoteSearchOpen(false)}>
+                  Close
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          <Dialog open={bookingSearchOpen} onOpenChange={setBookingSearchOpen}>
+            <DialogContent className="rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-sidebar-bg)] shadow-[var(--md-shadow-lift)] sm:max-w-[760px]">
+              <DialogHeader>
+                <DialogTitle>Find booking</DialogTitle>
+                <DialogDescription>Search by customer, origin, destination, mode, and container size. More criteria can be added later.</DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <ComboField label="Customer" value={bookingCriteria.customer} onChange={(value) => setBookingCriteria((current) => ({ ...current, customer: value }))} options={customerOptions} placeholder="Any customer" clearable />
+                <ComboField label="Mode" value={bookingCriteria.mode} onChange={(value) => setBookingCriteria((current) => ({ ...current, mode: value }))} options={modeOptions} placeholder="Any mode" />
+                <TextField label="Origin" value={bookingCriteria.origin} onChange={(value) => setBookingCriteria((current) => ({ ...current, origin: value }))} placeholder="Origin city, port, or country" />
+                <TextField label="Destination" value={bookingCriteria.destination} onChange={(value) => setBookingCriteria((current) => ({ ...current, destination: value }))} placeholder="Destination city, port, or country" />
+                <ComboField label="Container size" value={bookingCriteria.containerSize} onChange={(value) => setBookingCriteria((current) => ({ ...current, containerSize: value }))} options={containerOptions} placeholder="Any size" />
+              </div>
+              <div className="grid max-h-72 gap-2 overflow-auto">
+                {bookingSearchResults.map((booking) => (
+                  <button
+                    key={booking.id}
+                    type="button"
+                    className="grid gap-1 rounded-[var(--md-radius-lg)] bg-white/58 px-3 py-2 text-left shadow-[var(--md-shadow-line)] transition-colors hover:bg-white/78"
+                    onClick={() => {
+                      setSelectedStartType("existing")
+                      onUpdate("bookingCustomer", booking.customer)
+                      onUpdate("bookingNumber", booking.id)
+                      onUpdate("templateBookingId", booking.id)
+                      setBookingSearchOpen(false)
+                    }}
+                  >
+                    <span className="text-[13px] font-medium text-[var(--md-ink)]" dir="ltr">{booking.id} · {booking.customer}</span>
+                    <span className="text-[12px] text-[var(--md-text)]">{booking.route} · {booking.carrier}</span>
+                    <span className="text-[12px] text-[var(--md-subtle)]">{booking.container} · {booking.mode} · {booking.status}</span>
+                  </button>
+                ))}
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-md)] px-3 text-[13px]" onClick={() => setBookingSearchOpen(false)}>
+                  Close
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
       </Surface>
     </motion.div>
   )
@@ -1009,13 +1790,16 @@ function LiveSummaryPanel({ data, activeStep }: { data: BookingWizardData; activ
   )
 }
 
-function StepShell({ step, children }: { step: WizardStep; children: ReactNode }) {
+function StepShell({ step, action, children }: { step: WizardStep; action?: ReactNode; children: ReactNode }) {
   return (
-    <Surface padding="md" className="overflow-hidden rounded-[var(--md-radius-2xl)]">
-      <div className="mb-5">
-        <p className="text-[12px] font-medium uppercase text-[var(--md-accent)]">{step.eyebrow}</p>
-        <h1 className="mt-1.5 text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">{step.title}</h1>
-        <p className="mt-1.5 max-w-[720px] text-[14px] leading-5 text-[var(--md-text)]">{step.summary}</p>
+    <Surface padding="md" className="overflow-visible rounded-[var(--md-radius-2xl)]">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-[12px] font-medium uppercase text-[var(--md-accent)]">{step.eyebrow}</p>
+          <h1 className="mt-1.5 text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">{step.title}</h1>
+          <p className="mt-1.5 max-w-[720px] text-[14px] leading-5 text-[var(--md-text)]">{step.summary}</p>
+        </div>
+        {action}
       </div>
       {children}
     </Surface>
@@ -1034,6 +1818,106 @@ function StepContent({
   goToStep: (step: number) => void
 }) {
   const missing = new Set(missingFieldsForStep(data, activeStep))
+  const [cargoDraft, setCargoDraft] = useState<CargoLineDraft>(defaultCargoLineDraft)
+  const [transportDraft, setTransportDraft] = useState<TransportLegDraft>(defaultTransportLegDraft)
+
+  function updateCargoDraft<K extends keyof CargoLineDraft>(field: K, value: CargoLineDraft[K]) {
+    setCargoDraft((current) => ({ ...current, [field]: value }))
+  }
+
+  function syncCargoSummary(lines: CargoLine[]) {
+    const totals = cargoLineTotals(lines)
+    const firstLine = lines[0]
+    update("cargoLines", lines)
+    update("goodsDescription", lines.map((line) => line.commodity).filter(Boolean).join(", "))
+    update("packages", totals.outerPackages ? formatCargoTotal(totals.outerPackages) : "")
+    update("packageType", firstLine?.outerPackageType ?? defaultCargoLineDraft.outerPackageType)
+    update("weight", totals.grossWeight ? formatCargoTotal(totals.grossWeight) : "")
+    update("volume", totals.volume ? formatCargoTotal(totals.volume) : "")
+    update("dimensions", firstLine?.dimensions ?? "")
+  }
+
+  function addCargoLine() {
+    if (!cargoDraft.commodity.trim() || !cargoDraft.outerPackages.trim() || !cargoDraft.grossWeight.trim()) return
+
+    const nextLines = [
+      ...data.cargoLines,
+      {
+        ...cargoDraft,
+        dimensions: formatCargoDimensions(cargoDraft),
+        id: `cargo-line-${Date.now()}`,
+      },
+    ]
+
+    syncCargoSummary(nextLines)
+    setCargoDraft(defaultCargoLineDraft)
+  }
+
+  function removeCargoLine(id: string) {
+    syncCargoSummary(data.cargoLines.filter((line) => line.id !== id))
+  }
+
+  function updateTransportDraft<K extends keyof TransportLegDraft>(field: K, value: TransportLegDraft[K]) {
+    setTransportDraft((current) => ({ ...current, [field]: value }))
+  }
+
+  function syncTransportLegs(legs: TransportLeg[]) {
+    const firstLeg = legs[0]
+    const lastLeg = legs[legs.length - 1]
+
+    update("transportLegs", legs)
+    update("portOfLoading", firstLeg?.fromCode || firstLeg?.fromName || "")
+    update("portOfDischarge", lastLeg?.toCode || lastLeg?.toName || "")
+    update("airportDeparture", firstLeg?.fromCode || "")
+    update("airportArrival", lastLeg?.toCode || "")
+    update("roadCollectionPoint", firstLeg?.fromName || "")
+    update("roadDeliveryPoint", lastLeg?.toName || "")
+    update("seaEtd", firstLeg?.etd ?? "")
+    update("seaEta", lastLeg?.eta ?? "")
+    update("airEtd", firstLeg?.etd ?? "")
+    update("airEta", lastLeg?.eta ?? "")
+    update("plannedCollectionDate", firstLeg?.etd || today)
+    update("plannedDeliveryDate", lastLeg?.eta || tomorrow)
+    update("airline", legs.find((leg) => leg.mode === "Air" || leg.mode === "Air-Sea" || leg.mode === "Sea-Air")?.carrier ?? "")
+    update("vessel", legs.find((leg) => leg.mode === "Sea" || leg.mode === "Air-Sea" || leg.mode === "Sea-Air")?.carrier ?? "")
+  }
+
+  function addTransportLeg() {
+    if (!transportDraft.fromName.trim() || !transportDraft.toName.trim()) return
+
+    syncTransportLegs([...data.transportLegs, { ...transportDraft, id: `transport-leg-${Date.now()}` }])
+    setTransportDraft({
+      ...defaultTransportLegDraft,
+      mode: data.mode,
+      fromCode: transportDraft.toCode,
+      fromName: transportDraft.toName,
+      fromCountry: transportDraft.toCountry,
+    })
+  }
+
+  function removeTransportLeg(id: string) {
+    syncTransportLegs(data.transportLegs.filter((leg) => leg.id !== id))
+  }
+
+  useEffect(() => {
+    if (activeStep !== 4 || data.transportLegs.length || transportDraft.fromName || transportDraft.toName) return
+
+    const collectionLocation = routeLocationForAddress(data.collectionAddress)
+    const deliveryLocation = routeLocationForAddress(data.deliveryAddress)
+
+    setTransportDraft({
+      ...defaultTransportLegDraft,
+      mode: data.mode,
+      fromCode: collectionLocation.code,
+      fromName: collectionLocation.name,
+      fromCountry: collectionLocation.country,
+      toCode: deliveryLocation.code,
+      toName: deliveryLocation.name,
+      toCountry: deliveryLocation.country,
+      etd: data.requestedCollectionDate,
+      eta: data.requestedDeliveryDate,
+    })
+  }, [activeStep, data.collectionAddress, data.deliveryAddress, data.mode, data.requestedCollectionDate, data.requestedDeliveryDate, data.transportLegs.length, transportDraft.fromName, transportDraft.toName])
 
   if (activeStep === 0) {
     return (
@@ -1055,8 +1939,125 @@ function StepContent({
   }
 
   if (activeStep === 1) {
+    const copyCustomerToShipper = (checked: boolean) => {
+      update("customerIsShipper", checked)
+      if (!checked) return
+
+      update("shipper", data.customer)
+      update("shipperContact", "")
+      update("shipperOffice", "")
+      update("collectionAddress", "")
+      update("collectionAddressManual", false)
+    }
+
+    const copyCustomerToConsignee = (checked: boolean) => {
+      update("customerIsConsignee", checked)
+      if (!checked) return
+
+      update("consignee", data.customer)
+      update("consigneeContact", "")
+      update("consigneeOffice", "")
+      update("deliveryAddress", "")
+      update("deliveryAddressManual", false)
+    }
+
+    const copyCustomerToNotifyParty = (checked: boolean) => {
+      update("customerIsNotifyParty", checked)
+      if (!checked) return
+
+      update("notifyParty", data.customer)
+      update("notifyPartyContact", "")
+      update("notifyPartyOffice", "")
+    }
+
+    const updateCustomerCompany = (value: string) => {
+      update("customer", value)
+      if (data.customerIsShipper) {
+        update("shipper", value)
+        update("shipperContact", "")
+        update("shipperOffice", "")
+        update("collectionAddress", "")
+        update("collectionAddressManual", false)
+      }
+      if (data.customerIsConsignee) {
+        update("consignee", value)
+        update("consigneeContact", "")
+        update("consigneeOffice", "")
+        update("deliveryAddress", "")
+        update("deliveryAddressManual", false)
+      }
+      if (data.customerIsNotifyParty) {
+        update("notifyParty", value)
+        update("notifyPartyContact", "")
+        update("notifyPartyOffice", "")
+      }
+    }
+
+    const updateCustomerContact = (value: string) => {
+      update("customerContact", value)
+    }
+
+    const resetCustomer = () => {
+      update("customer", "")
+      update("customerContact", "")
+      update("customerOffice", "")
+      update("customerReference", "")
+      update("customerIsShipper", false)
+      update("customerIsConsignee", false)
+      update("customerIsNotifyParty", false)
+    }
+
+    const resetShipper = () => {
+      update("shipper", "")
+      update("shipperContact", "")
+      update("shipperOffice", "")
+      update("supplierReference", "")
+      update("collectionAddress", "")
+      update("collectionAddressManual", false)
+      update("accessRestrictions", "")
+      update("customerIsShipper", false)
+    }
+
+    const resetConsignee = () => {
+      update("consignee", "")
+      update("consigneeContact", "")
+      update("consigneeOffice", "")
+      update("consigneeReference", "")
+      update("deliveryAddress", "")
+      update("deliveryAddressManual", false)
+      update("bookingNotes", "")
+      update("customerIsConsignee", false)
+    }
+
+    const resetNotifyParty = () => {
+      update("notifyParty", "")
+      update("notifyPartyContact", "")
+      update("notifyPartyOffice", "")
+      update("notifyPartyReference", "")
+      update("customerIsNotifyParty", false)
+    }
+
+    const resetAllParties = () => {
+      resetCustomer()
+      resetShipper()
+      resetConsignee()
+      resetNotifyParty()
+    }
+
     return (
-      <StepShell step={steps[1]}>
+      <StepShell
+        step={steps[1]}
+        action={
+          <button
+            type="button"
+            className="inline-flex h-8 items-center gap-2 rounded-[var(--md-radius-md)] bg-white/54 px-3 text-[12px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white/78 hover:text-[var(--md-accent)]"
+            onClick={resetAllParties}
+          >
+            <RotateCcw className="size-3.5" strokeWidth={1.8} />
+            Reset all
+          </button>
+        }
+      >
         <FieldGroup>
           <PartyRow
             label="Customer / Billing"
@@ -1065,8 +2066,19 @@ function StepContent({
             office={data.customerOffice}
             reference={data.customerReference}
             companyMissing={missing.has("Customer")}
-            onCompanyChange={(value) => update("customer", value)}
-            onContactChange={(value) => update("customerContact", value)}
+            actions={
+              <CustomerRoleCheckboxes
+                isShipper={data.customerIsShipper}
+                isConsignee={data.customerIsConsignee}
+                isNotifyParty={data.customerIsNotifyParty}
+                onShipperChange={copyCustomerToShipper}
+                onConsigneeChange={copyCustomerToConsignee}
+                onNotifyPartyChange={copyCustomerToNotifyParty}
+              />
+            }
+            onReset={resetCustomer}
+            onCompanyChange={updateCustomerCompany}
+            onContactChange={updateCustomerContact}
             onOfficeChange={(value) => update("customerOffice", value)}
             onReferenceChange={(value) => update("customerReference", value)}
           />
@@ -1077,7 +2089,12 @@ function StepContent({
             office={data.shipperOffice}
             reference={data.supplierReference}
             companyMissing={missing.has("Shipper")}
-            onCompanyChange={(value) => update("shipper", value)}
+            companyLocked={data.customerIsShipper && Boolean(data.customer)}
+            onReset={resetShipper}
+            onCompanyChange={(value) => {
+              update("shipper", value)
+              if (value !== data.customer) update("customerIsShipper", false)
+            }}
             onContactChange={(value) => update("shipperContact", value)}
             onOfficeChange={(value) => update("shipperOffice", value)}
             onReferenceChange={(value) => update("supplierReference", value)}
@@ -1089,7 +2106,12 @@ function StepContent({
             office={data.consigneeOffice}
             reference={data.consigneeReference}
             companyMissing={missing.has("Consignee")}
-            onCompanyChange={(value) => update("consignee", value)}
+            companyLocked={data.customerIsConsignee && Boolean(data.customer)}
+            onReset={resetConsignee}
+            onCompanyChange={(value) => {
+              update("consignee", value)
+              if (value !== data.customer) update("customerIsConsignee", false)
+            }}
             onContactChange={(value) => update("consigneeContact", value)}
             onOfficeChange={(value) => update("consigneeOffice", value)}
             onReferenceChange={(value) => update("consigneeReference", value)}
@@ -1100,7 +2122,12 @@ function StepContent({
             contact={data.notifyPartyContact}
             office={data.notifyPartyOffice}
             reference={data.notifyPartyReference}
-            onCompanyChange={(value) => update("notifyParty", value)}
+            companyLocked={data.customerIsNotifyParty && Boolean(data.customer)}
+            onReset={resetNotifyParty}
+            onCompanyChange={(value) => {
+              update("notifyParty", value)
+              if (value !== data.customer) update("customerIsNotifyParty", false)
+            }}
             onContactChange={(value) => update("notifyPartyContact", value)}
             onOfficeChange={(value) => update("notifyPartyOffice", value)}
             onReferenceChange={(value) => update("notifyPartyReference", value)}
@@ -1113,6 +2140,14 @@ function StepContent({
   if (activeStep === 2) {
     const collectionAddressOptions = officesForCompany(data.shipper)
     const deliveryAddressOptions = officesForCompany(data.consignee)
+    const setCollectionAddress = (value: string) => {
+      update("collectionAddress", value)
+      if (!data.accessRestrictions.trim()) update("accessRestrictions", notesForOffice(value))
+    }
+    const setDeliveryAddress = (value: string) => {
+      update("deliveryAddress", value)
+      if (!data.bookingNotes.trim()) update("bookingNotes", notesForOffice(value))
+    }
 
     return (
       <StepShell step={steps[2]}>
@@ -1122,23 +2157,55 @@ function StepContent({
               <p className="text-[14px] font-medium text-[var(--md-ink)]">Collection</p>
               <p className="text-[12px] leading-5 text-[var(--md-text)]">Defaults from the shipper record.</p>
             </div>
-            <NativeSelectField
-              label="Collection address"
-              value={data.collectionAddress}
-              onChange={(value) => {
-                update("collectionAddress", value)
-                if (!data.accessRestrictions.trim()) update("accessRestrictions", notesForOffice(value))
-              }}
-              options={collectionAddressOptions}
-              placeholder={data.shipper ? "Select collection address" : "Select shipper first"}
-              required
-              missing={missing.has("Collection address")}
-            />
-            <div className="grid gap-3 md:grid-cols-2">
-              <TextField label="Cargo ready from" value={data.cargoReadyDate} onChange={(value) => update("cargoReadyDate", value)} type="date" required missing={missing.has("Cargo ready from")} dir="ltr" />
-              <TextField label="Requested collection date" value={data.requestedCollectionDate} onChange={(value) => update("requestedCollectionDate", value)} type="date" required missing={missing.has("Requested collection date")} dir="ltr" />
+            <div className="grid gap-3 xl:grid-cols-2 xl:gap-4">
+              <div className="grid content-start gap-3">
+                {!data.collectionAddressManual ? (
+                  <NativeSelectField
+                    label="Address"
+                    value={collectionAddressOptions.some((option) => option === data.collectionAddress) ? data.collectionAddress : ""}
+                    onChange={setCollectionAddress}
+                    options={collectionAddressOptions}
+                    placeholder={data.shipper ? "Select collection address" : "Select shipper first"}
+                    required
+                    missing={missing.has("Collection address")}
+                    action={
+                      <Button type="button" variant="ghost" size="icon" className="size-7 rounded-[var(--md-radius-md)] bg-white/58 text-[var(--md-accent)] shadow-[var(--md-shadow-line)] hover:bg-white/78" onClick={() => update("collectionAddressManual", true)} aria-label="Add collection address">
+                        <Plus className="size-3.5" strokeWidth={1.5} />
+                      </Button>
+                    }
+                  />
+                ) : null}
+                <label className="flex items-center gap-2 text-[12px] font-medium text-[var(--md-text)]">
+                  <input
+                    type="checkbox"
+                    checked={data.collectionAddressManual}
+                    onChange={(event) => update("collectionAddressManual", event.target.checked)}
+                    className="size-3.5 rounded border-0 accent-[var(--md-accent)]"
+                  />
+                  Manually override address
+                </label>
+                <FieldShell label="Full address" required missing={missing.has("Collection address")}>
+                  <Textarea
+                    value={data.collectionAddressManual ? data.collectionAddress : fullAddressForOffice(data.collectionAddress)}
+                    onChange={(event) => update("collectionAddress", event.target.value)}
+                    readOnly={!data.collectionAddressManual}
+                    placeholder="Enter the full collection address"
+                    className={cn(
+                      "min-h-[132px] rounded-[var(--md-radius-lg)] border-0 bg-white/64 px-3 py-2.5 text-[13px] leading-[18px] shadow-[var(--md-shadow-line)]",
+                      missing.has("Collection address") && missingFieldClass,
+                      !data.collectionAddressManual && "text-[var(--md-text)]",
+                    )}
+                    dir="auto"
+                    aria-invalid={missing.has("Collection address") || undefined}
+                  />
+                </FieldShell>
+              </div>
+              <div className="grid content-start gap-3 xl:border-l xl:border-[rgba(90,103,100,0.14)] xl:pl-4">
+                <TextField label="Cargo ready from" value={data.cargoReadyDate} onChange={(value) => update("cargoReadyDate", value)} type="date" required missing={missing.has("Cargo ready from")} dir="ltr" />
+                <TextField label="Requested collection date" value={data.requestedCollectionDate} onChange={(value) => update("requestedCollectionDate", value)} type="date" required missing={missing.has("Requested collection date")} dir="ltr" />
+                <TextField label="Collection reference" value={data.collectionReference} onChange={(value) => update("collectionReference", value)} placeholder="Gate pass, warehouse ref, supplier ref" dir="ltr" />
+              </div>
             </div>
-            <TextField label="Collection reference" value={data.collectionReference} onChange={(value) => update("collectionReference", value)} placeholder="Gate pass, warehouse ref, supplier ref" dir="ltr" />
             <TextAreaField label="Collection notes" value={data.accessRestrictions} onChange={(value) => update("accessRestrictions", value)} placeholder="Default notes from the collection address, editable for this booking" helper="Later this can default from the selected shipper office or warehouse record." />
           </motion.section>
 
@@ -1147,23 +2214,55 @@ function StepContent({
               <p className="text-[14px] font-medium text-[var(--md-ink)]">Delivery</p>
               <p className="text-[12px] leading-5 text-[var(--md-text)]">Defaults from the consignee record.</p>
             </div>
-            <NativeSelectField
-              label="Delivery address"
-              value={data.deliveryAddress}
-              onChange={(value) => {
-                update("deliveryAddress", value)
-                if (!data.bookingNotes.trim()) update("bookingNotes", notesForOffice(value))
-              }}
-              options={deliveryAddressOptions}
-              placeholder={data.consignee ? "Select delivery address" : "Select consignee first"}
-              required
-              missing={missing.has("Delivery address")}
-            />
-            <div className="grid gap-3 md:grid-cols-2">
-              <TextField label="Requested delivery date" value={data.requestedDeliveryDate} onChange={(value) => update("requestedDeliveryDate", value)} type="date" required missing={missing.has("Requested delivery date")} dir="ltr" />
-              <TextField label="Cargo required by" value={data.cargoRequiredByDate} onChange={(value) => update("cargoRequiredByDate", value)} type="date" required missing={missing.has("Cargo required by")} dir="ltr" />
+            <div className="grid gap-3 xl:grid-cols-2 xl:gap-4">
+              <div className="grid content-start gap-3">
+                {!data.deliveryAddressManual ? (
+                  <NativeSelectField
+                    label="Address"
+                    value={deliveryAddressOptions.some((option) => option === data.deliveryAddress) ? data.deliveryAddress : ""}
+                    onChange={setDeliveryAddress}
+                    options={deliveryAddressOptions}
+                    placeholder={data.consignee ? "Select delivery address" : "Select consignee first"}
+                    required
+                    missing={missing.has("Delivery address")}
+                    action={
+                      <Button type="button" variant="ghost" size="icon" className="size-7 rounded-[var(--md-radius-md)] bg-white/58 text-[var(--md-accent)] shadow-[var(--md-shadow-line)] hover:bg-white/78" onClick={() => update("deliveryAddressManual", true)} aria-label="Add delivery address">
+                        <Plus className="size-3.5" strokeWidth={1.5} />
+                      </Button>
+                    }
+                  />
+                ) : null}
+                <label className="flex items-center gap-2 text-[12px] font-medium text-[var(--md-text)]">
+                  <input
+                    type="checkbox"
+                    checked={data.deliveryAddressManual}
+                    onChange={(event) => update("deliveryAddressManual", event.target.checked)}
+                    className="size-3.5 rounded border-0 accent-[var(--md-accent)]"
+                  />
+                  Manually override address
+                </label>
+                <FieldShell label="Full address" required missing={missing.has("Delivery address")}>
+                  <Textarea
+                    value={data.deliveryAddressManual ? data.deliveryAddress : fullAddressForOffice(data.deliveryAddress)}
+                    onChange={(event) => update("deliveryAddress", event.target.value)}
+                    readOnly={!data.deliveryAddressManual}
+                    placeholder="Enter the full delivery address"
+                    className={cn(
+                      "min-h-[132px] rounded-[var(--md-radius-lg)] border-0 bg-white/64 px-3 py-2.5 text-[13px] leading-[18px] shadow-[var(--md-shadow-line)]",
+                      missing.has("Delivery address") && missingFieldClass,
+                      !data.deliveryAddressManual && "text-[var(--md-text)]",
+                    )}
+                    dir="auto"
+                    aria-invalid={missing.has("Delivery address") || undefined}
+                  />
+                </FieldShell>
+              </div>
+              <div className="grid content-start gap-3 xl:border-l xl:border-[rgba(90,103,100,0.14)] xl:pl-4">
+                <TextField label="Requested delivery date" value={data.requestedDeliveryDate} onChange={(value) => update("requestedDeliveryDate", value)} type="date" required missing={missing.has("Requested delivery date")} dir="ltr" />
+                <TextField label="Cargo required by" value={data.cargoRequiredByDate} onChange={(value) => update("cargoRequiredByDate", value)} type="date" required missing={missing.has("Cargo required by")} dir="ltr" />
+                <TextField label="Delivery reference" value={data.deliveryReference} onChange={(value) => update("deliveryReference", value)} placeholder="Booking slot, DC ref, customer ref" dir="ltr" />
+              </div>
             </div>
-            <TextField label="Delivery reference" value={data.deliveryReference} onChange={(value) => update("deliveryReference", value)} placeholder="Booking slot, DC ref, customer ref" dir="ltr" />
             <TextAreaField label="Delivery notes" value={data.bookingNotes} onChange={(value) => update("bookingNotes", value)} placeholder="Default notes from the delivery address, editable for this booking" helper="Later this can default from the selected consignee office or delivery record." />
           </motion.section>
         </FieldGroup>
@@ -1172,96 +2271,272 @@ function StepContent({
   }
 
   if (activeStep === 3) {
+    const cargoTotals = cargoLineTotals(data.cargoLines)
+    const canAddCargoLine = Boolean(cargoDraft.commodity.trim() && cargoDraft.outerPackages.trim() && cargoDraft.grossWeight.trim())
+
     return (
       <StepShell step={steps[3]}>
-        <FieldGroup className="lg:grid-cols-3">
-          <TextAreaField label="Goods description" value={data.goodsDescription} onChange={(value) => update("goodsDescription", value)} placeholder="Retail apparel, machinery parts, chilled food..." />
-          <TextField label="Number of packages" value={data.packages} onChange={(value) => update("packages", value)} placeholder="148" type="number" required missing={missing.has("Number of packages")} dir="ltr" />
-          <SelectField label="Package type" value={data.packageType} onChange={(value) => update("packageType", value)} options={["Cartons", "Pallets", "Crates", "Bags", "ULD", "Loose cartons"]} />
-          <TextField label="Weight" value={data.weight} onChange={(value) => update("weight", value)} placeholder="12420" type="number" required missing={missing.has("Weight")} helper="Use kg for this prototype." dir="ltr" />
-          <TextField label="Volume" value={data.volume} onChange={(value) => update("volume", value)} placeholder="58.4" type="number" helper="Use cbm where known." dir="ltr" />
-          <TextField label="Dimensions" value={data.dimensions} onChange={(value) => update("dimensions", value)} placeholder="120 x 80 x 160 cm" dir="ltr" />
-          <TextField label="Pallet information" value={data.palletInfo} onChange={(value) => update("palletInfo", value)} placeholder="12 euro pallets, stackable" />
-          <TextField label="Container information" value={data.containerInfo} onChange={(value) => update("containerInfo", value)} placeholder="1 x 40HC, shipper owned, SOC if relevant" />
-          <div className="grid content-start gap-2">
-            <p className="text-[13px] font-medium text-[var(--md-ink)]">Cargo flags</p>
-            <ToggleTile label="Hazardous goods" checked={data.hazardousGoods} onChange={(value) => update("hazardousGoods", value)} />
-            <ToggleTile label="Temperature controlled" checked={data.temperatureControlled} onChange={(value) => update("temperatureControlled", value)} />
-            <ToggleTile label="Fragile or high value" checked={data.fragileOrHighValue} onChange={(value) => update("fragileOrHighValue", value)} />
-          </div>
-        </FieldGroup>
+        <div className="grid gap-4">
+          <motion.section variants={fieldMotion} className="grid gap-3 rounded-[var(--md-radius-xl)] bg-white/38 p-3 shadow-[var(--md-shadow-line)]">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-[14px] font-medium text-[var(--md-ink)]">Add cargo line</p>
+                <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">Build the shipment from outer packages, inner packages, commodity and weights.</p>
+              </div>
+              <Button type="button" className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3 text-[13px] font-medium text-white hover:bg-[#0b6f67] disabled:opacity-45" disabled={!canAddCargoLine} onClick={addCargoLine}>
+                <Plus className="size-4" strokeWidth={1.6} />
+                Add line
+              </Button>
+            </div>
+
+            <motion.div variants={fieldListMotion} initial="hidden" animate="visible" className="flex flex-wrap items-start gap-3">
+              <div className="min-w-[230px] flex-[1_1_270px]">
+                <TextField label="Commodity" value={cargoDraft.commodity} onChange={(value) => updateCargoDraft("commodity", value)} placeholder="Retail apparel, machinery parts..." required missing={missing.has("Goods description") && !data.cargoLines.length} />
+              </div>
+              <div className="w-[94px] shrink-0">
+                <TextField label="Outer pkgs" value={cargoDraft.outerPackages} onChange={(value) => updateCargoDraft("outerPackages", value)} placeholder="12" type="number" required missing={missing.has("Number of packages") && !data.cargoLines.length} dir="ltr" />
+              </div>
+              <div className="w-[142px] shrink-0">
+                <SelectField label="Outer type" value={cargoDraft.outerPackageType} onChange={(value) => updateCargoDraft("outerPackageType", value)} options={["Pallets", "Cartons", "Crates", "Bags", "Drums", "Cases", "Loose"]} />
+              </div>
+              <div className="w-[94px] shrink-0">
+                <TextField label={`Inner per ${perOuterPackageLabel(cargoDraft.outerPackageType)}`} value={cargoDraft.innerPackages} onChange={(value) => updateCargoDraft("innerPackages", value)} placeholder="240" type="number" dir="ltr" />
+              </div>
+              <div className="w-[150px] shrink-0">
+                <SelectField label="Inner type" value={cargoDraft.innerPackageType} onChange={(value) => updateCargoDraft("innerPackageType", value)} options={["Cartons", "Units", "Pieces", "Bags", "Bottles", "Rolls", "Not applicable"]} />
+              </div>
+              <div className="w-[112px] shrink-0">
+                <TextField label="Gross kg" value={cargoDraft.grossWeight} onChange={(value) => updateCargoDraft("grossWeight", value)} placeholder="12420" type="number" required missing={missing.has("Weight") && !data.cargoLines.length} dir="ltr" />
+              </div>
+              <div className="w-[112px] shrink-0">
+                <TextField label="Net kg" value={cargoDraft.netWeight} onChange={(value) => updateCargoDraft("netWeight", value)} placeholder="11880" type="number" dir="ltr" />
+              </div>
+              <div className="w-[96px] shrink-0">
+                <TextField label="CBM" value={cargoDraft.volume} onChange={(value) => updateCargoDraft("volume", value)} placeholder="58.4" type="number" dir="ltr" />
+              </div>
+              <div className="w-[70px] shrink-0">
+                <TextField label="H" value={cargoDraft.height} onChange={(value) => updateCargoDraft("height", value)} placeholder="120" type="number" dir="ltr" />
+              </div>
+              <div className="w-[70px] shrink-0">
+                <TextField label="W" value={cargoDraft.width} onChange={(value) => updateCargoDraft("width", value)} placeholder="80" type="number" dir="ltr" />
+              </div>
+              <div className="w-[70px] shrink-0">
+                <TextField label="D" value={cargoDraft.depth} onChange={(value) => updateCargoDraft("depth", value)} placeholder="160" type="number" dir="ltr" />
+              </div>
+            </motion.div>
+          </motion.section>
+
+          <motion.section variants={fieldMotion} className="overflow-hidden rounded-[var(--md-radius-xl)] bg-white/48 shadow-[var(--md-shadow-line)]">
+            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+              <div>
+                <p className="text-[14px] font-medium text-[var(--md-ink)]">Cargo lines</p>
+                <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">
+                  {data.cargoLines.length ? `${data.cargoLines.length} line${data.cargoLines.length === 1 ? "" : "s"} / ${formatCargoTotal(cargoTotals.outerPackages)} outer pkgs / ${formatCargoTotal(cargoTotals.grossWeight)} kg` : "Add at least one cargo line to complete this step."}
+                </p>
+              </div>
+              {data.cargoLines.length ? (
+                <Button type="button" variant="ghost" className="h-8 rounded-[var(--md-radius-md)] px-3 text-[12px] font-medium text-[var(--md-red)] hover:bg-[rgba(192,57,43,0.08)]" onClick={() => syncCargoSummary([])}>
+                  Clear lines
+                </Button>
+              ) : null}
+            </div>
+
+            <div className="overflow-x-auto md-scrollbar">
+              <table className="w-full min-w-[860px] border-t border-[rgba(11,20,19,0.06)] text-left">
+                <thead className="bg-white/42">
+                  <tr className="text-[11px] font-medium text-[var(--md-text)]">
+                    <th className="px-4 py-2">Commodity</th>
+                    <th className="px-3 py-2">Outer</th>
+                    <th className="px-3 py-2">Inner</th>
+                    <th className="px-3 py-2 text-right">Gross kg</th>
+                    <th className="px-3 py-2 text-right">Net kg</th>
+                    <th className="px-3 py-2 text-right">CBM</th>
+                    <th className="px-3 py-2">Dimensions</th>
+                    <th className="w-12 px-3 py-2" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.cargoLines.length ? data.cargoLines.map((line) => (
+                    <tr key={line.id} className="border-t border-[rgba(11,20,19,0.05)] text-[13px] text-[var(--md-ink)]">
+                      <td className="max-w-[230px] truncate px-4 py-3 font-medium" title={line.commodity}>{line.commodity}</td>
+                      <td className="px-3 py-3">{line.outerPackages} {line.outerPackageType}</td>
+                      <td className="px-3 py-3">{line.innerPackages ? `${line.innerPackages} ${line.innerPackageType} per ${perOuterPackageLabel(line.outerPackageType)}` : "-"}</td>
+                      <td className="px-3 py-3 text-right tabular-nums">{line.grossWeight || "-"}</td>
+                      <td className="px-3 py-3 text-right tabular-nums">{line.netWeight || "-"}</td>
+                      <td className="px-3 py-3 text-right tabular-nums">{line.volume || "-"}</td>
+                      <td className="max-w-[180px] truncate px-3 py-3 text-[var(--md-text)]" title={formatCargoDimensions(line)}>{formatCargoDimensions(line) || "-"}</td>
+                      <td className="px-3 py-2">
+                        <button type="button" aria-label={`Remove cargo line ${line.commodity}`} className="grid size-8 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-red)] transition-colors hover:bg-[rgba(192,57,43,0.08)]" onClick={() => removeCargoLine(line.id)}>
+                          <Trash2 className="size-4" strokeWidth={1.6} />
+                        </button>
+                      </td>
+                    </tr>
+                  )) : (
+                    <tr>
+                      <td colSpan={8} className="px-4 py-10 text-center text-[13px] text-[var(--md-text)]">
+                        No cargo lines added yet.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </motion.section>
+
+          <FieldGroup className="lg:grid-cols-[minmax(260px,360px)_minmax(0,1fr)]">
+            <div className="grid content-start gap-2 rounded-[var(--md-radius-xl)] bg-white/38 p-3 shadow-[var(--md-shadow-line)]">
+              <p className="text-[13px] font-medium text-[var(--md-ink)]">Cargo flags</p>
+              <ToggleTile label="Hazardous goods" checked={data.hazardousGoods} onChange={(value) => update("hazardousGoods", value)} />
+              <ToggleTile label="Temperature controlled" checked={data.temperatureControlled} onChange={(value) => update("temperatureControlled", value)} />
+              <ToggleTile label="Fragile or high value" checked={data.fragileOrHighValue} onChange={(value) => update("fragileOrHighValue", value)} />
+              <ToggleTile label="Stackable" checked={data.stackable} onChange={(value) => update("stackable", value)} />
+              <ToggleTile label="Perishable" checked={data.perishable} onChange={(value) => update("perishable", value)} />
+            </div>
+            <TextAreaField label="Special notes" value={data.cargoSpecialNotes} onChange={(value) => update("cargoSpecialNotes", value)} placeholder="Cargo handling notes, stacking limits, perishability detail, segregation, marks, or other cargo-specific instructions" />
+          </FieldGroup>
+        </div>
       </StepShell>
     )
   }
 
   if (activeStep === 4) {
+    const collectionLocation = routeLocationForAddress(data.collectionAddress)
+    const deliveryLocation = routeLocationForAddress(data.deliveryAddress)
+    const canAddTransportLeg = Boolean(transportDraft.fromName.trim() && transportDraft.toName.trim())
+    const linkedRoutePoints = [
+      { label: "Collection point", address: data.collectionAddress, location: collectionLocation },
+      { label: "Delivery point", address: data.deliveryAddress, location: deliveryLocation },
+    ]
+
     return (
       <StepShell step={steps[4]}>
-        {data.mode === "Sea" ? (
-          <FieldGroup className="lg:grid-cols-3">
-            <TextField label="Port of loading" value={data.portOfLoading} onChange={(value) => update("portOfLoading", value)} placeholder="Yantian, CNYTN" required missing={missing.has("Port of loading")} />
-            <TextField label="Port of discharge" value={data.portOfDischarge} onChange={(value) => update("portOfDischarge", value)} placeholder="Felixstowe, GBFXT" required missing={missing.has("Port of discharge")} />
-            <TextField label="Vessel" value={data.vessel} onChange={(value) => update("vessel", value)} placeholder="COSCO Pride" />
-            <TextField label="Voyage" value={data.voyage} onChange={(value) => update("voyage", value)} placeholder="091W" dir="ltr" />
-            <SelectField label="Container type" value={data.containerType} onChange={(value) => update("containerType", value)} options={["20GP", "40GP", "40HC", "45HC", "LCL"]} />
-            <TextField label="Container number" value={data.containerNumber} onChange={(value) => update("containerNumber", value)} placeholder="MSKU1234567" dir="ltr" />
-            <TextField label="Seal number" value={data.sealNumber} onChange={(value) => update("sealNumber", value)} placeholder="SL998412" dir="ltr" />
-            <TextField label="ETD" value={data.seaEtd} onChange={(value) => update("seaEtd", value)} type="date" required missing={missing.has("ETD")} dir="ltr" />
-            <TextField label="ETA" value={data.seaEta} onChange={(value) => update("seaEta", value)} type="date" required missing={missing.has("ETA")} dir="ltr" />
+        <div className="grid gap-4">
+          <FieldGroup className="lg:grid-cols-2">
+            {linkedRoutePoints.map(({ label, address, location }) => (
+              <motion.section key={label} variants={fieldMotion} className="rounded-[var(--md-radius-xl)] bg-white/38 p-3 shadow-[var(--md-shadow-line)]">
+                <p className="text-[12px] font-medium uppercase text-[var(--md-subtle)]">{label}</p>
+                <p className="mt-1 truncate text-[14px] font-medium text-[var(--md-ink)]">{address || "Not set"}</p>
+                <div className="mt-3 grid grid-cols-3 gap-2">
+                  <span className="rounded-[var(--md-radius-md)] bg-white/58 px-2.5 py-2 shadow-[var(--md-shadow-line)]">
+                    <span className="block text-[10px] font-medium uppercase text-[var(--md-subtle)]">UN/LOCODE</span>
+                    <span className="mt-1 block truncate text-[12px] font-medium text-[var(--md-ink)]">{location.code || "-"}</span>
+                  </span>
+                  <span className="rounded-[var(--md-radius-md)] bg-white/58 px-2.5 py-2 shadow-[var(--md-shadow-line)]">
+                    <span className="block text-[10px] font-medium uppercase text-[var(--md-subtle)]">Name</span>
+                    <span className="mt-1 block truncate text-[12px] font-medium text-[var(--md-ink)]">{location.name || "-"}</span>
+                  </span>
+                  <span className="rounded-[var(--md-radius-md)] bg-white/58 px-2.5 py-2 shadow-[var(--md-shadow-line)]">
+                    <span className="block text-[10px] font-medium uppercase text-[var(--md-subtle)]">Country</span>
+                    <span className="mt-1 block truncate text-[12px] font-medium text-[var(--md-ink)]">{location.country || "-"}</span>
+                  </span>
+                </div>
+              </motion.section>
+            ))}
           </FieldGroup>
-        ) : null}
 
-        {data.mode === "Air" ? (
-          <FieldGroup className="lg:grid-cols-3">
-            <TextField label="Airport of departure" value={data.airportDeparture} onChange={(value) => update("airportDeparture", value)} placeholder="FRA - Frankfurt" required missing={missing.has("Airport of departure")} />
-            <TextField label="Airport of arrival" value={data.airportArrival} onChange={(value) => update("airportArrival", value)} placeholder="LHR - Heathrow" required missing={missing.has("Airport of arrival")} />
-            <TextField label="Airline" value={data.airline} onChange={(value) => update("airline", value)} placeholder="Lufthansa Cargo" required missing={missing.has("Airline")} />
-            <TextField label="Flight number" value={data.flightNumber} onChange={(value) => update("flightNumber", value)} placeholder="LH8841" dir="ltr" />
-            <TextField label="MAWB" value={data.mawb} onChange={(value) => update("mawb", value)} placeholder="020-12345678" dir="ltr" />
-            <TextField label="HAWB" value={data.hawb} onChange={(value) => update("hawb", value)} placeholder="HAWB-7781" dir="ltr" />
-            <TextField label="ETD" value={data.airEtd} onChange={(value) => update("airEtd", value)} type="date" required missing={missing.has("ETD")} dir="ltr" />
-            <TextField label="ETA" value={data.airEta} onChange={(value) => update("airEta", value)} type="date" required missing={missing.has("ETA")} dir="ltr" />
-          </FieldGroup>
-        ) : null}
+          <motion.section variants={fieldMotion} className="grid gap-3 rounded-[var(--md-radius-xl)] bg-white/38 p-3 shadow-[var(--md-shadow-line)]">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-[14px] font-medium text-[var(--md-ink)]">Add route leg</p>
+                <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">Use UN/LOCODEs for ports and airport codes where relevant. Add legs for air-sea and sea-air routings.</p>
+              </div>
+              <Button type="button" className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3 text-[13px] font-medium text-white hover:bg-[#0b6f67] disabled:opacity-45" disabled={!canAddTransportLeg} onClick={addTransportLeg}>
+                <Plus className="size-4" strokeWidth={1.6} />
+                Add leg
+              </Button>
+            </div>
 
-        {data.mode === "Road" ? (
-          <FieldGroup className="lg:grid-cols-3">
-            <TextField label="Collection point" value={data.roadCollectionPoint} onChange={(value) => update("roadCollectionPoint", value)} placeholder="Hamburg warehouse" required missing={missing.has("Collection point")} />
-            <TextField label="Delivery point" value={data.roadDeliveryPoint} onChange={(value) => update("roadDeliveryPoint", value)} placeholder="Milan DC" required missing={missing.has("Delivery point")} />
-            <SelectField label="Trailer type" value={data.trailerType} onChange={(value) => update("trailerType", value)} options={["Curtainsider", "Box trailer", "Reefer", "Flatbed", "Mega trailer"]} />
-            <SelectField label="Vehicle type" value={data.vehicleType} onChange={(value) => update("vehicleType", value)} options={["Artic", "Rigid", "Van", "Sprinter", "Tail-lift truck"]} required missing={missing.has("Vehicle type")} />
-            <TextField label="Planned collection date" value={data.plannedCollectionDate} onChange={(value) => update("plannedCollectionDate", value)} type="date" required missing={missing.has("Planned collection date")} dir="ltr" />
-            <TextField label="Planned delivery date" value={data.plannedDeliveryDate} onChange={(value) => update("plannedDeliveryDate", value)} type="date" dir="ltr" />
-            <TextAreaField label="Driver instructions" value={data.driverInstructions} onChange={(value) => update("driverInstructions", value)} placeholder="Gate, contact, loading bay, call-ahead rules" />
-          </FieldGroup>
-        ) : null}
+            <FieldGroup className="lg:grid-cols-4">
+              <SelectField label="Leg mode" value={transportDraft.mode} onChange={(value) => updateTransportDraft("mode", value as BookingModeOption)} options={["Sea", "Air", "Road", "Courier", "Rail", "Air-Sea", "Sea-Air"]} />
+              <TextField label="From code" value={transportDraft.fromCode} onChange={(value) => updateTransportDraft("fromCode", value.toUpperCase())} placeholder="CNSHA / PVG" dir="ltr" />
+              <TextField label="From name" value={transportDraft.fromName} onChange={(value) => updateTransportDraft("fromName", value)} placeholder="Shanghai" required missing={missing.has("First origin") && !data.transportLegs.length} />
+              <TextField label="From country" value={transportDraft.fromCountry} onChange={(value) => updateTransportDraft("fromCountry", value)} placeholder="China" />
+              <TextField label="To code" value={transportDraft.toCode} onChange={(value) => updateTransportDraft("toCode", value.toUpperCase())} placeholder="GBFXT / LHR" dir="ltr" />
+              <TextField label="To name" value={transportDraft.toName} onChange={(value) => updateTransportDraft("toName", value)} placeholder="Felixstowe" required missing={missing.has("Final destination") && !data.transportLegs.length} />
+              <TextField label="To country" value={transportDraft.toCountry} onChange={(value) => updateTransportDraft("toCountry", value)} placeholder="United Kingdom" />
+              <TextField label="Carrier / line" value={transportDraft.carrier} onChange={(value) => updateTransportDraft("carrier", value)} placeholder="COSCO, LH Cargo, Maersk..." />
+              <TextField label="Leg ref" value={transportDraft.reference} onChange={(value) => updateTransportDraft("reference", value)} placeholder="Vessel, flight, trailer, booking ref" dir="ltr" />
+              <TextField label="ETD" value={transportDraft.etd} onChange={(value) => updateTransportDraft("etd", value)} type="date" missing={missing.has("ETD") && !data.transportLegs.length} dir="ltr" />
+              <TextField label="ETA" value={transportDraft.eta} onChange={(value) => updateTransportDraft("eta", value)} type="date" missing={missing.has("ETA") && !data.transportLegs.length} dir="ltr" />
+            </FieldGroup>
+          </motion.section>
 
-        {data.mode === "Courier" ? (
-          <FieldGroup className="lg:grid-cols-3">
-            <SelectField label="Courier service" value={data.courierService} onChange={(value) => update("courierService", value)} options={["Express", "Economy", "Same day", "Next day", "Temperature-controlled courier"]} required missing={missing.has("Courier service")} />
-            <TextField label="Cut-off" value={data.courierCutoff} onChange={(value) => update("courierCutoff", value)} type="time" required missing={missing.has("Cut-off")} dir="ltr" />
-            <SelectField label="Tracking preference" value={data.courierTracking} onChange={(value) => update("courierTracking", value)} options={["Customer-visible", "Internal only", "Milestone digest", "Exception alerts only"]} required missing={missing.has("Tracking preference")} />
-          </FieldGroup>
-        ) : null}
+          <motion.section variants={fieldMotion} className="overflow-hidden rounded-[var(--md-radius-xl)] bg-white/48 shadow-[var(--md-shadow-line)]">
+            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+              <div>
+                <p className="text-[14px] font-medium text-[var(--md-ink)]">Route legs</p>
+                <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{data.transportLegs.length ? `${data.transportLegs.length} leg${data.transportLegs.length === 1 ? "" : "s"} added` : "Add the first leg to build the operational route."}</p>
+              </div>
+              {data.transportLegs.length ? (
+                <Button type="button" variant="ghost" className="h-8 rounded-[var(--md-radius-md)] px-3 text-[12px] font-medium text-[var(--md-red)] hover:bg-[rgba(192,57,43,0.08)]" onClick={() => syncTransportLegs([])}>
+                  Clear route
+                </Button>
+              ) : null}
+            </div>
+            <div className="overflow-x-auto md-scrollbar">
+              <table className="w-full min-w-[980px] border-t border-[rgba(11,20,19,0.06)] text-left">
+                <thead className="bg-white/42">
+                  <tr className="text-[11px] font-medium text-[var(--md-text)]">
+                    <th className="px-4 py-2">Leg</th>
+                    <th className="px-3 py-2">From</th>
+                    <th className="px-3 py-2">To</th>
+                    <th className="px-3 py-2">Carrier / line</th>
+                    <th className="px-3 py-2">Reference</th>
+                    <th className="px-3 py-2">ETD</th>
+                    <th className="px-3 py-2">ETA</th>
+                    <th className="w-12 px-3 py-2" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.transportLegs.length ? data.transportLegs.map((leg, index) => (
+                    <tr key={leg.id} className="border-t border-[rgba(11,20,19,0.05)] text-[13px] text-[var(--md-ink)]">
+                      <td className="px-4 py-3 font-medium">{index + 1}. {leg.mode}</td>
+                      <td className="px-3 py-3"><span className="font-medium">{leg.fromCode || "-"}</span><span className="block text-[12px] text-[var(--md-text)]">{leg.fromName}{leg.fromCountry ? `, ${leg.fromCountry}` : ""}</span></td>
+                      <td className="px-3 py-3"><span className="font-medium">{leg.toCode || "-"}</span><span className="block text-[12px] text-[var(--md-text)]">{leg.toName}{leg.toCountry ? `, ${leg.toCountry}` : ""}</span></td>
+                      <td className="px-3 py-3">{leg.carrier || "-"}</td>
+                      <td className="px-3 py-3">{leg.reference || "-"}</td>
+                      <td className="px-3 py-3">{leg.etd || "-"}</td>
+                      <td className="px-3 py-3">{leg.eta || "-"}</td>
+                      <td className="px-3 py-2">
+                        <button type="button" aria-label={`Remove route leg ${index + 1}`} className="grid size-8 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-red)] transition-colors hover:bg-[rgba(192,57,43,0.08)]" onClick={() => removeTransportLeg(leg.id)}>
+                          <Trash2 className="size-4" strokeWidth={1.6} />
+                        </button>
+                      </td>
+                    </tr>
+                  )) : (
+                    <tr>
+                      <td colSpan={8} className="px-4 py-10 text-center text-[13px] text-[var(--md-text)]">No route legs added yet.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </motion.section>
+        </div>
       </StepShell>
     )
   }
 
   if (activeStep === 5) {
+    const customsPartyOptions = [data.shipper, data.consignee, data.customer, data.notifyParty, "Third party / broker nominated"].filter(Boolean)
+
     return (
       <StepShell step={steps[5]}>
         <FieldGroup className="lg:grid-cols-2">
-          <SelectField label="Customs status" value={data.customsStatus} onChange={(value) => update("customsStatus", value)} options={["Not started", "Data required", "Ready to submit", "Submitted", "Cleared", "Held"]} required missing={missing.has("Customs status")} />
-          <TextField label="Commodity code" value={data.commodityCode} onChange={(value) => update("commodityCode", value)} placeholder="6109.10.00" required missing={missing.has("Commodity code")} dir="ltr" />
-          <TextField label="EORI / VAT details" value={data.eoriVat} onChange={(value) => update("eoriVat", value)} placeholder="GB123456789000" dir="ltr" />
-          <div className="grid content-start gap-2">
-            <p className="text-[13px] font-medium text-[var(--md-ink)]">Documents required</p>
-            <ToggleTile label="Commercial invoice" checked={data.commercialInvoice} onChange={(value) => update("commercialInvoice", value)} />
-            <ToggleTile label="Packing list" checked={data.packingList} onChange={(value) => update("packingList", value)} />
-            <ToggleTile label="Certificates" checked={data.certificates} onChange={(value) => update("certificates", value)} />
+          <TextField label="Export broker" value={data.exportBroker} onChange={(value) => update("exportBroker", value)} placeholder="Broker or agent handling export clearance" required missing={missing.has("Export broker")} />
+          <TextField label="Import broker" value={data.importBroker} onChange={(value) => update("importBroker", value)} placeholder="Broker or agent handling import clearance" required missing={missing.has("Import broker")} />
+          <SelectField label="Registered exporter" value={data.registeredExporter} onChange={(value) => update("registeredExporter", value)} options={customsPartyOptions} required missing={missing.has("Registered exporter")} />
+          <SelectField label="Registered importer" value={data.registeredImporter} onChange={(value) => update("registeredImporter", value)} options={customsPartyOptions} required missing={missing.has("Registered importer")} />
+          <SelectField label="VAT and duty paid by" value={data.vatDutyPayment} onChange={(value) => update("vatDutyPayment", value)} options={["Importer deferment account", "Importer direct payment", "Customer account", "Freight forwarder disbursement", "Broker deferment account", "To be confirmed"]} required missing={missing.has("VAT and duty payment")} />
+          <div className="grid content-start gap-2 rounded-[var(--md-radius-xl)] bg-white/38 p-3 shadow-[var(--md-shadow-line)]">
+            <p className="text-[13px] font-medium text-[var(--md-ink)]">Certificate requirements</p>
+            <ToggleTile label="Commercial invoice required" checked={data.commercialInvoice} onChange={(value) => update("commercialInvoice", value)} />
+            <ToggleTile label="Packing list required" checked={data.packingList} onChange={(value) => update("packingList", value)} />
+            <ToggleTile label="Certificates required" checked={data.certificates} onChange={(value) => update("certificates", value)} />
           </div>
-          <TextAreaField label="Customs notes" value={data.customsNotes} onChange={(value) => update("customsNotes", value)} placeholder="Broker handoff, declaration owner, known risks" />
-          <TextAreaField label="Compliance requirements" value={data.complianceRequirements} onChange={(value) => update("complianceRequirements", value)} placeholder="Licences, certificates, declarations, sanctions checks" />
+          <TextAreaField label="Customs notes" value={data.customsNotes} onChange={(value) => update("customsNotes", value)} placeholder="Broker handoff, declaration owner, known risks, or timing notes" />
+          <TextAreaField label="Compliance requirements" value={data.complianceRequirements} onChange={(value) => update("complianceRequirements", value)} placeholder="Licences, declarations, sanctions checks, controlled goods, or special compliance handling" />
+          <TextAreaField label="Certificate requirements" value={data.certificateRequirements} onChange={(value) => update("certificateRequirements", value)} placeholder="Certificate of origin, health certificate, phytosanitary, MSDS, inspection certificates..." />
         </FieldGroup>
       </StepShell>
     )
@@ -1292,7 +2567,7 @@ function StepContent({
     ["Collection and delivery", [data.collectionAddress, data.deliveryAddress].filter(Boolean).join(" to ") || "Locations missing"],
     ["Cargo details", buildCargoSummary(data)],
     ["Transport details", buildTransportEta(data) || "Transport dates missing"],
-    ["Customs and compliance", `${data.customsStatus} - ${data.commodityCode || "No commodity code"}`],
+    ["Customs and compliance", [data.exportBroker && `Export: ${data.exportBroker}`, data.importBroker && `Import: ${data.importBroker}`, data.vatDutyPayment].filter(Boolean).join(" / ") || "Customs allocation missing"],
     ["Charges and references", data.customerReference || data.internalReference || "References missing"],
   ] as const
 
@@ -1424,14 +2699,17 @@ export function BookingWizardPage({ navigate }: { navigate: (path: string) => vo
     if (!booking) return defaultBooking
     const [origin = "", destination = ""] = booking.route.split(" -> ").length > 1 ? booking.route.split(" -> ") : booking.route.split("→").map((part) => part.trim())
 
+    const bookingMode = normalizeBookingMode(booking.mode)
+    const isAirBooking = bookingMode === "Air"
+
     return {
       ...defaultBooking,
       source: "existing" as const,
       templateBookingId: booking.id,
-      direction: booking.mode === "ROAD" ? "Export" as const : "Import" as const,
-      mode: booking.mode === "AIR" ? "Air" as const : booking.mode === "ROAD" ? "Road" as const : "Sea" as const,
+      direction: bookingMode === "Road" ? "Export" as const : "Import" as const,
+      mode: bookingMode,
       customer: booking.customer,
-      customerContact: contactsForCompany(booking.customer)[0] ?? "",
+      customerContact: contactsForOffice(booking.customer, officesForCompany(booking.customer)[0] ?? "")[0] ?? defaultContactForCompany(booking.customer),
       customerOffice: officesForCompany(booking.customer)[0] ?? "",
       customerReference: booking.customerRef,
       shipper: "Yong Hua Logistics",
@@ -1439,7 +2717,7 @@ export function BookingWizardPage({ navigate }: { navigate: (path: string) => vo
       shipperOffice: "Shanghai export office",
       supplierReference: booking.supplierRef,
       consignee: booking.destination.includes("Felixstowe") ? "Marlow UK DC" : booking.customer,
-      consigneeContact: booking.destination.includes("Felixstowe") ? "Warehouse team" : contactsForCompany(booking.customer)[0] ?? "",
+      consigneeContact: booking.destination.includes("Felixstowe") ? "Warehouse team" : contactsForOffice(booking.customer, officesForCompany(booking.customer)[0] ?? "")[0] ?? defaultContactForCompany(booking.customer),
       consigneeOffice: booking.destination.includes("Felixstowe") ? "Felixstowe distribution centre" : officesForCompany(booking.customer)[0] ?? "",
       consigneeReference: booking.customerRef,
       notifyParty: "Customs broker",
@@ -1460,10 +2738,28 @@ export function BookingWizardPage({ navigate }: { navigate: (path: string) => vo
       goodsDescription: booking.customFields[0]?.value ?? "Repeat booking cargo",
       packages: booking.container.includes("ULD") ? "1" : "120",
       packageType: booking.container.includes("ULD") ? "ULD" : "Cartons",
-      weight: booking.mode === "AIR" ? "1840" : "12420",
-      volume: booking.mode === "AIR" ? "9.2" : "58.4",
+      weight: isAirBooking ? "1840" : "12420",
+      volume: isAirBooking ? "9.2" : "58.4",
+      cargoLines: [{
+        id: `cargo-line-${booking.id}`,
+        commodity: booking.customFields[0]?.value ?? "Repeat booking cargo",
+        outerPackages: booking.container.includes("ULD") ? "1" : "120",
+        outerPackageType: booking.container.includes("ULD") ? "ULD" : "Cartons",
+        innerPackages: booking.container.includes("ULD") ? "" : "20",
+        innerPackageType: booking.container.includes("ULD") ? "Not applicable" : "Cartons",
+        grossWeight: isAirBooking ? "1840" : "12420",
+        netWeight: isAirBooking ? "1720" : "11880",
+        volume: isAirBooking ? "9.2" : "58.4",
+        height: booking.container.includes("ULD") ? "" : "120",
+        width: booking.container.includes("ULD") ? "" : "80",
+        depth: booking.container.includes("ULD") ? "" : "160",
+        dimensions: booking.container.includes("ULD") ? "ULD profile" : "120 x 80 x 160",
+      }],
       containerType: booking.container,
       containerInfo: booking.container,
+      stackable: true,
+      perishable: false,
+      cargoSpecialNotes: booking.status === "Exception" ? "Check cargo exception notes before release." : "",
       portOfLoading: origin,
       portOfDischarge: destination,
       vessel: booking.vessel,
@@ -1478,13 +2774,33 @@ export function BookingWizardPage({ navigate }: { navigate: (path: string) => vo
       roadDeliveryPoint: destination,
       plannedCollectionDate: booking.departureDate,
       plannedDeliveryDate: booking.arrivalDate,
+      transportLegs: [{
+        id: `transport-leg-${booking.id}`,
+        mode: bookingMode,
+        fromCode: origin.includes(",") ? origin.split(",")[0].trim().toUpperCase().slice(0, 5) : origin.toUpperCase().slice(0, 5),
+        fromName: origin,
+        fromCountry: "",
+        toCode: destination.includes(",") ? destination.split(",")[0].trim().toUpperCase().slice(0, 5) : destination.toUpperCase().slice(0, 5),
+        toName: destination,
+        toCountry: "",
+        carrier: booking.carrier,
+        reference: booking.vessel,
+        etd: booking.departureDate,
+        eta: booking.arrivalDate,
+      }],
       customsStatus: booking.status === "Exception" ? "Held" : "Ready to submit",
       commodityCode: booking.customFields.find((field) => field.label.toLowerCase().includes("hs"))?.value ?? "",
+      exportBroker: "Shanghai broker handoff",
+      importBroker: booking.destination.includes("Felixstowe") ? "London customs desk" : "Rotterdam clearance desk",
+      registeredExporter: "Yong Hua Logistics",
+      registeredImporter: booking.destination.includes("Felixstowe") ? "Marlow UK DC" : booking.customer,
+      vatDutyPayment: "Importer deferment account",
+      certificateRequirements: "Commercial invoice and packing list required before broker handoff.",
     }
   }
 
   function startFlow(source: Exclude<BookingSource, null>) {
-    setData((current) => source === "existing" ? applyExistingBooking(current.templateBookingId) : { ...current, source: "scratch" })
+    setData((current) => source === "existing" ? applyExistingBooking(current.templateBookingId || current.bookingNumber) : { ...current, source })
     setActiveStep(0)
   }
 
@@ -1519,8 +2835,8 @@ export function BookingWizardPage({ navigate }: { navigate: (path: string) => vo
           <ArrowLeft className="size-4" strokeWidth={1.25} />
           Bookings
         </button>
-        <StatusPill tone={data.source === "existing" ? "blue" : data.source === "scratch" ? "teal" : "neutral"}>
-          {data.source === "existing" ? "Using existing booking" : data.source === "scratch" ? "Creating from scratch" : "Choose starting point"}
+        <StatusPill tone={data.source === "existing" ? "blue" : data.source === "quote" ? "teal" : data.source === "scratch" ? "teal" : "neutral"}>
+          {data.source === "existing" ? "Using existing booking" : data.source === "quote" ? "Using customer quote" : data.source === "scratch" ? "Creating from scratch" : "Choose starting point"}
         </StatusPill>
       </div>
 
