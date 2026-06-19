@@ -3,6 +3,7 @@ import { ArrowUp, Check, Clock3, FileText, Sparkles, X } from "lucide-react"
 import { AnimatePresence, motion } from "motion/react"
 import { Button } from "@/components/ui/button"
 import { mdMotion } from "@/lib/motion"
+import { useAiAgentName } from "@/lib/user-preferences"
 import { cn } from "@/lib/utils"
 
 const suggestedFollowUps = [
@@ -43,6 +44,7 @@ export function DexterCompanionSidebar({
   contextLabel?: string
   presentation?: "fixed" | "preview"
 }) {
+  const aiAgentName = useAiAgentName()
   const [prompt, setPrompt] = useState("")
   const [sentPrompt, setSentPrompt] = useState<string | null>(null)
   const responseLead = useMemo(
@@ -74,7 +76,7 @@ export function DexterCompanionSidebar({
           <motion.aside
             role="dialog"
             aria-modal={presentation === "fixed"}
-            aria-label="Dexter companion"
+            aria-label={`${aiAgentName} companion`}
             className={cn(
               "md-dexter-companion-panel pointer-events-auto absolute inset-y-0 right-0 flex flex-col overflow-hidden text-[var(--md-ink)]",
               presentation === "fixed" ? "w-[min(440px,calc(100vw-20px))]" : "w-[min(420px,74%)]",
@@ -86,7 +88,7 @@ export function DexterCompanionSidebar({
           >
             <header className="md-dexter-companion-header relative z-10 flex items-start justify-between gap-4 px-5 pb-3 pt-4">
               <div className="min-w-0">
-                <h2 className="text-[18px] font-medium leading-5 tracking-normal text-[var(--md-ink)]">Ask Dexter</h2>
+                <h2 className="text-[18px] font-medium leading-5 tracking-normal text-[var(--md-ink)]">Ask {aiAgentName}</h2>
                 <p className="mt-1.5 text-[12px] leading-4 text-[var(--md-text)]">
                   Current page context loaded from <span className="font-medium text-[var(--md-ink)]">{contextLabel}</span>.
                 </p>
@@ -102,7 +104,7 @@ export function DexterCompanionSidebar({
               </div>
 
               <div className="mt-5">
-                <p className="px-1 text-[11px] font-semibold leading-4 text-[var(--md-ink)]">Dexter</p>
+                <p className="px-1 text-[11px] font-semibold leading-4 text-[var(--md-ink)]">{aiAgentName}</p>
                 <section className="md-dexter-chat-bubble md-dexter-chat-bubble--assistant mt-1.5 rounded-[22px] p-4">
                   <p className="text-[14px] leading-6 text-[var(--md-ink)]">{responseLead}</p>
                   <div className="mt-4 grid gap-2">
@@ -164,7 +166,7 @@ export function DexterCompanionSidebar({
                   <textarea
                     value={prompt}
                     onChange={(event) => setPrompt(event.target.value)}
-                    placeholder="Describe what you want Dexter to do..."
+                    placeholder={`Describe what you want ${aiAgentName} to do...`}
                     className="min-h-0 flex-1 resize-none border-0 bg-transparent text-[13px] leading-5 text-[var(--md-ink)] outline-none placeholder:text-[var(--md-subtle)]"
                   />
                   <div className="mt-3 flex items-center justify-between gap-3">

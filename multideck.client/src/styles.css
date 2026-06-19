@@ -54,6 +54,8 @@
   --md-ink-soft: #2a3432;
   --md-text: #5a6764;
   --md-subtle: #94a09c;
+  --md-placeholder: var(--md-subtle);
+  --md-placeholder-opacity: 0.35;
   --md-hairline: #9fb8b0;
   --md-bg: #c9ddd8;
   --md-bg-strong: #aec9c1;
@@ -165,6 +167,8 @@
   --md-ink-soft: #dce5df;
   --md-text: #b6c4bd;
   --md-subtle: #7f9088;
+  --md-placeholder: var(--md-subtle);
+  --md-placeholder-opacity: 0.35;
   --md-hairline: #2b3934;
   --md-bg: #0f1715;
   --md-bg-strong: #18231f;
@@ -279,6 +283,18 @@ select,
   transition-duration: var(--md-motion);
   transition-property: background, background-color, border-color, box-shadow, color, opacity, transform, filter;
   transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--md-placeholder);
+  opacity: var(--md-placeholder-opacity);
+}
+
+input::-webkit-input-placeholder,
+textarea::-webkit-input-placeholder {
+  color: var(--md-placeholder);
+  opacity: var(--md-placeholder-opacity);
 }
 
 html[dir="rtl"] {

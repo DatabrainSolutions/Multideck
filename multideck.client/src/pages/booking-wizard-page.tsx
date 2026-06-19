@@ -31,6 +31,19 @@ import { cn } from "@/lib/utils"
 type BookingSource = "quote" | "scratch" | "existing" | null
 const directionOptions = ["Import", "Export", "Domestic", "Cross Trade"] as const
 const standardModeOptions = ["Air", "Sea", "Road", "Courier", "Rail", "Air-Sea", "Sea-Air", "Customs Only", "Documentation Only"] as const
+const incotermOptions = [
+  { code: "EXW", wording: "Ex Works" },
+  { code: "FCA", wording: "Free Carrier" },
+  { code: "FAS", wording: "Free Alongside Ship" },
+  { code: "FOB", wording: "Free On Board" },
+  { code: "CFR", wording: "Cost and Freight" },
+  { code: "CIF", wording: "Cost, Insurance and Freight" },
+  { code: "CPT", wording: "Carriage Paid To" },
+  { code: "CIP", wording: "Carriage and Insurance Paid To" },
+  { code: "DAP", wording: "Delivered at Place" },
+  { code: "DPU", wording: "Delivered at Place Unloaded" },
+  { code: "DDP", wording: "Delivered Duty Paid" },
+] as const
 
 type BookingModeOption = (typeof standardModeOptions)[number]
 type BookingDirection = (typeof directionOptions)[number]
@@ -66,6 +79,7 @@ type CargoLineDraft = Omit<CargoLine, "id">
 
 type TransportLeg = {
   id: string
+  legType: string
   mode: BookingModeOption
   fromCode: string
   fromName: string
@@ -77,6 +91,7 @@ type TransportLeg = {
   reference: string
   etd: string
   eta: string
+  notes: string
 }
 
 type TransportLegDraft = Omit<TransportLeg, "id">
@@ -90,6 +105,8 @@ type BookingWizardData = {
   bookingCustomer: string
   direction: BookingDirection
   mode: BookingModeOption
+  incoterms: string
+  incotermsExtra: string
   collectionRequired: boolean
   deliveryRequired: boolean
   customer: string
@@ -209,9 +226,10 @@ const steps: WizardStep[] = [
   { id: "cargo", name: "Cargo Details", eyebrow: "Step 4", title: "What are we moving?", summary: "Goods, packages, dimensions, risk flags, and equipment." },
   { id: "transport", name: "Transport Details", eyebrow: "Step 5", title: "Which transport details matter?", summary: "Fields change based on the selected booking mode." },
   { id: "customs", name: "Customs and Compliance", eyebrow: "Step 6", title: "Who is handling customs?", summary: "Export/import broker allocation, importer/exporter roles, certificates, compliance, and duty payment." },
-  { id: "charges", name: "Charges and References", eyebrow: "Step 7", title: "Which references and charges belong here?", summary: "Customer, supplier, quote, PO, buying, selling, and ops notes." },
-  { id: "review", name: "Review and Create", eyebrow: "Step 8", title: "Review before creating", summary: "Check each section, fix missing fields, then create the booking." },
+  { id: "review", name: "Review and Create", eyebrow: "Step 7", title: "Review before creating", summary: "Check each section, fix missing fields, then create the booking." },
 ]
+
+const requiredStepCount = steps.length - 1
 
 const today = "2026-06-18"
 const tomorrow = "2026-06-19"
@@ -232,6 +250,7 @@ const defaultCargoLineDraft: CargoLineDraft = {
 }
 
 const defaultTransportLegDraft: TransportLegDraft = {
+  legType: "Main Leg",
   mode: "Sea",
   fromCode: "",
   fromName: "",
@@ -243,6 +262,21 @@ const defaultTransportLegDraft: TransportLegDraft = {
   reference: "",
   etd: "",
   eta: "",
+  notes: "",
+}
+
+function legTypeOptionsForMode(mode: BookingModeOption) {
+  if (mode === "Air") return ["Collection", "Main Flight", "Other Flight", "On Carriage", "Delivery"]
+  if (mode.includes("Air")) return ["Collection", "Main Leg", "Main Flight", "Other Flight", "Transhipment", "On Carriage", "Delivery"]
+  return ["Collection", "Main Leg", "Transhipment", "On Carriage", "Delivery"]
+}
+
+function defaultLegTypeForMode(mode: BookingModeOption) {
+  return mode === "Air" ? "Main Flight" : "Main Leg"
+}
+
+function defaultRouteLegModeForBookingMode(mode: BookingModeOption): BookingModeOption {
+  return ["Air", "Sea", "Road", "Courier", "Rail"].includes(mode) ? mode : "Sea"
 }
 
 const defaultBooking: BookingWizardData = {
@@ -254,6 +288,8 @@ const defaultBooking: BookingWizardData = {
   bookingCustomer: "",
   direction: "Import",
   mode: "Sea",
+  incoterms: "",
+  incotermsExtra: "",
   collectionRequired: true,
   deliveryRequired: true,
   customer: "",
@@ -543,8 +579,6 @@ function getRequiredFields(data: BookingWizardData, stepIndex: number) {
   if (stepIndex === 4 && data.mode === "Road") fields.push(["vehicleType", "Vehicle type"], ["plannedCollectionDate", "Planned collection date"])
   if (stepIndex === 4 && data.mode === "Courier") fields.push(["courierService", "Courier service"], ["courierCutoff", "Cut-off"], ["courierTracking", "Tracking preference"])
   if (stepIndex === 5) fields.push(["exportBroker", "Export broker"], ["importBroker", "Import broker"], ["registeredExporter", "Registered exporter"], ["registeredImporter", "Registered importer"], ["vatDutyPayment", "VAT and duty payment"])
-  if (stepIndex === 6) fields.push(["customerReference", "Customer reference"], ["internalReference", "Internal reference"])
-
   return fields
 }
 
@@ -555,7 +589,7 @@ function missingFieldsForStep(data: BookingWizardData, stepIndex: number) {
 }
 
 function allMissingFields(data: BookingWizardData) {
-  return steps.slice(0, 7).flatMap((step, index) => (
+  return steps.slice(0, requiredStepCount).flatMap((step, index) => (
     missingFieldsForStep(data, index).map((label) => `${step.name}: ${label}`)
   ))
 }
@@ -728,7 +762,9 @@ function TextAreaField({
         value={value}
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
-        className="min-h-[76px] rounded-[var(--md-radius-lg)] border-0 bg-white/64 px-3 py-2.5 text-[13px] leading-[18px] shadow-[var(--md-shadow-line)]"
+        className={cn(
+          "min-h-[76px] rounded-[var(--md-radius-lg)] border-0 bg-white/64 px-3 py-2.5 text-[13px] leading-[18px] shadow-[var(--md-shadow-line)]",
+        )}
         dir="auto"
       />
     </FieldShell>
@@ -776,6 +812,38 @@ function SelectField({
   )
 }
 
+function IncotermsField({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (value: string) => void
+}) {
+  const selected = incotermOptions.find((option) => option.code === value)
+
+  return (
+    <FieldShell label="Incoterms">
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger className="h-10 rounded-[var(--md-radius-lg)] border-0 bg-white/64 px-3 text-[13px] shadow-[var(--md-shadow-line)]">
+          <SelectValue placeholder="Select Incoterms">
+            {selected ? `${selected.code} - ${selected.wording}` : undefined}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent position="popper" align="start" className="min-w-[380px] rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-sidebar-bg)] shadow-[var(--md-shadow-lift)]">
+          {incotermOptions.map((option) => (
+            <SelectItem key={option.code} value={option.code} className="py-2 text-[13px]">
+              <span className="grid min-w-[320px] grid-cols-[52px_minmax(0,1fr)] items-center gap-3">
+                <span className="font-medium text-[var(--md-ink)]">{option.code}</span>
+                <span className="text-[var(--md-text)]">{option.wording}</span>
+              </span>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </FieldShell>
+  )
+}
+
 function NativeSelectField({
   label,
   value,
@@ -804,6 +872,7 @@ function NativeSelectField({
         onChange={(event) => onChange(event.target.value)}
         className={cn(
           "h-10 min-w-0 truncate rounded-[var(--md-radius-lg)] border-0 bg-white/64 px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] outline-none",
+          !value && "text-[var(--md-muted)] opacity-70",
           missing && missingFieldClass,
         )}
         dir="auto"
@@ -833,6 +902,8 @@ function ComboField({
   disabled,
   action,
   clearable,
+  clearTone = "default",
+  onClear,
 }: {
   label: string
   value: string
@@ -844,6 +915,8 @@ function ComboField({
   disabled?: boolean
   action?: ReactNode
   clearable?: boolean
+  clearTone?: "default" | "danger"
+  onClear?: () => void
 }) {
   const [open, setOpen] = useState(false)
   const normalizedValue = value.trim().toLowerCase()
@@ -881,10 +954,16 @@ function ComboField({
             type="button"
             aria-label={`Clear ${label}`}
             title={`Clear ${label}`}
-            className="absolute end-2 top-1/2 z-[130] grid size-5 -translate-y-1/2 place-items-center rounded-[var(--md-radius-sm)] text-[var(--md-red)] transition-colors hover:bg-[rgba(192,57,43,0.1)]"
+            className={cn(
+              "absolute end-2 top-1/2 z-[130] grid size-5 -translate-y-1/2 place-items-center rounded-[var(--md-radius-sm)] transition-colors",
+              clearTone === "danger"
+                ? "text-[var(--md-red)] hover:bg-[rgba(192,57,43,0.12)]"
+                : "text-[var(--md-text)] hover:bg-[rgba(90,103,100,0.1)] hover:text-[var(--md-red)]",
+            )}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => {
-              onChange("")
+              if (onClear) onClear()
+              else onChange("")
               setOpen(false)
             }}
           >
@@ -1035,25 +1114,12 @@ function ModePicker({
   value: BookingModeOption
   onChange: (value: BookingModeOption) => void
 }) {
-  const [expanded, setExpanded] = useState(false)
-  const visibleModes = expanded ? standardModeOptions : standardModeOptions.slice(0, 4)
-  const hiddenCount = standardModeOptions.length - visibleModes.length
-
   return (
     <motion.div variants={fieldMotion} className="grid gap-2">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-[13px] font-medium text-[var(--md-ink)]">Mode</p>
-        <button
-          type="button"
-          className="h-8 rounded-[var(--md-radius-md)] bg-white/54 px-3 text-[12px] font-medium text-[var(--md-accent)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white/78"
-          onClick={() => setExpanded((current) => !current)}
-        >
-          {expanded ? "Show fewer" : `Show all ${standardModeOptions.length}`}
-        </button>
-      </div>
+      <p className="text-[13px] font-medium text-[var(--md-ink)]">Mode</p>
 
       <div className="flex flex-wrap gap-2">
-        {visibleModes.map((mode) => {
+        {standardModeOptions.map((mode) => {
           const selected = mode === value
 
           return (
@@ -1073,15 +1139,6 @@ function ModePicker({
             </button>
           )
         })}
-        {!expanded && hiddenCount > 0 ? (
-          <button
-            type="button"
-            className="h-9 rounded-[var(--md-radius-md)] bg-white/32 px-3 text-[13px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white/68"
-            onClick={() => setExpanded(true)}
-          >
-            +{hiddenCount} more
-          </button>
-        ) : null}
       </div>
     </motion.div>
   )
@@ -1096,7 +1153,7 @@ function PartyRow({
   companyMissing,
   companyLocked,
   actions,
-  onReset,
+  onCompanyReset,
   onCompanyChange,
   onContactChange,
   onOfficeChange,
@@ -1110,7 +1167,7 @@ function PartyRow({
   companyMissing?: boolean
   companyLocked?: boolean
   actions?: ReactNode
-  onReset: () => void
+  onCompanyReset: () => void
   onCompanyChange: (value: string) => void
   onContactChange: (value: string) => void
   onOfficeChange: (value: string) => void
@@ -1185,15 +1242,6 @@ function PartyRow({
       <div className="flex flex-wrap items-baseline gap-2">
         <p className="text-[14px] font-medium text-[var(--md-ink)]">{label}</p>
         {actions}
-        <button
-          type="button"
-          aria-label={`Reset ${label}`}
-          title={`Reset ${label}`}
-          className="ms-auto grid size-7 place-items-center rounded-[var(--md-radius-sm)] bg-white/54 text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white/78 hover:text-[var(--md-accent)]"
-          onClick={onReset}
-        >
-          <RotateCcw className="size-3.5" strokeWidth={1.8} />
-        </button>
       </div>
       <div className="grid min-w-0 gap-2 lg:grid-cols-2 xl:grid-cols-[repeat(4,minmax(0,1fr))]">
         <ComboField
@@ -1209,6 +1257,9 @@ function PartyRow({
           required={label !== "Notify Party"}
           missing={companyMissing}
           disabled={companyLocked}
+          clearable
+          clearTone="danger"
+          onClear={onCompanyReset}
         />
         <ComboField
           label="Office / address"
@@ -1704,7 +1755,7 @@ function WizardProgress({
   data: BookingWizardData
   onStepChange: (step: number) => void
 }) {
-  const completeCount = steps.slice(0, 7).filter((_, index) => missingFieldsForStep(data, index).length === 0).length
+  const completeCount = steps.slice(0, requiredStepCount).filter((_, index) => missingFieldsForStep(data, index).length === 0).length
   const progressValue = ((activeStep + 1) / steps.length) * 100
 
   return (
@@ -1714,12 +1765,12 @@ function WizardProgress({
           <p className="text-[12px] font-medium text-[var(--md-subtle)]">Step {activeStep + 1} of {steps.length}</p>
           <h2 className="mt-1 text-[16px] font-medium text-[var(--md-ink)]">{steps[activeStep].name}</h2>
         </div>
-        <StatusPill tone={completeCount >= 7 ? "green" : "teal"}>{completeCount}/7 sections complete</StatusPill>
+        <StatusPill tone={completeCount >= requiredStepCount ? "green" : "teal"}>{completeCount}/{requiredStepCount} sections complete</StatusPill>
       </div>
       <Progress value={progressValue} className="mt-3 h-1.5 rounded-full bg-[rgba(90,103,100,0.12)] [&>div]:bg-[var(--md-accent)]" />
-      <div className="mt-3 grid grid-cols-4 gap-2 lg:grid-cols-8">
+      <div className="mt-3 grid grid-cols-4 gap-2 lg:grid-cols-7">
         {steps.map((step, index) => {
-          const missing = index < 7 ? missingFieldsForStep(data, index).length : allMissingFields(data).length
+          const missing = index < requiredStepCount ? missingFieldsForStep(data, index).length : allMissingFields(data).length
           const complete = missing === 0 && index < activeStep
           const active = index === activeStep
 
@@ -1749,12 +1800,13 @@ function WizardProgress({
 }
 
 function LiveSummaryPanel({ data, activeStep }: { data: BookingWizardData; activeStep: number }) {
-  const completion = Math.round((steps.slice(0, 7).filter((_, index) => missingFieldsForStep(data, index).length === 0).length / 7) * 100)
+  const completion = Math.round((steps.slice(0, requiredStepCount).filter((_, index) => missingFieldsForStep(data, index).length === 0).length / requiredStepCount) * 100)
   const route = [data.collectionAddress, data.deliveryAddress].filter(Boolean).join(" to ")
   const eta = buildTransportEta(data)
 
   const rows = [
     ["Booking type", `${data.direction} ${data.mode}`],
+    ["Incoterms", [data.incoterms, data.incotermsExtra].filter(Boolean).join(" - ") || "Not set"],
     ["Customer", data.customer || "Not set"],
     ["Shipper", data.shipper || "Not set"],
     ["Consignee", data.consignee || "Not set"],
@@ -1779,7 +1831,7 @@ function LiveSummaryPanel({ data, activeStep }: { data: BookingWizardData; activ
       <p className="mt-4 line-clamp-2 text-[13px] leading-5 text-[var(--md-text)]">{route || "Locations will appear here as the operator fills the booking."}</p>
       <div className="mt-4 grid gap-2">
         {rows.map(([label, value]) => (
-          <div key={label} className="grid grid-cols-[94px_minmax(0,1fr)] gap-3 rounded-[var(--md-radius-lg)] bg-white/48 px-3 py-2 shadow-[var(--md-shadow-line)]">
+          <div key={label} className="grid grid-cols-[78px_minmax(0,1fr)] gap-2 rounded-[var(--md-radius-lg)] bg-white/48 px-3 py-2 shadow-[var(--md-shadow-line)]">
             <p className="text-[11px] font-medium text-[var(--md-subtle)]">{label}</p>
             <p className="truncate text-[12px] font-medium text-[var(--md-ink)]" dir="auto">{value}</p>
           </div>
@@ -1861,6 +1913,15 @@ function StepContent({
     setTransportDraft((current) => ({ ...current, [field]: value }))
   }
 
+  function updateTransportMode(value: BookingModeOption) {
+    const options = legTypeOptionsForMode(value)
+    setTransportDraft((current) => ({
+      ...current,
+      mode: value,
+      legType: options.includes(current.legType) ? current.legType : defaultLegTypeForMode(value),
+    }))
+  }
+
   function syncTransportLegs(legs: TransportLeg[]) {
     const firstLeg = legs[0]
     const lastLeg = legs[legs.length - 1]
@@ -1878,8 +1939,8 @@ function StepContent({
     update("airEta", lastLeg?.eta ?? "")
     update("plannedCollectionDate", firstLeg?.etd || today)
     update("plannedDeliveryDate", lastLeg?.eta || tomorrow)
-    update("airline", legs.find((leg) => leg.mode === "Air" || leg.mode === "Air-Sea" || leg.mode === "Sea-Air")?.carrier ?? "")
-    update("vessel", legs.find((leg) => leg.mode === "Sea" || leg.mode === "Air-Sea" || leg.mode === "Sea-Air")?.carrier ?? "")
+    update("airline", legs.find((leg) => leg.mode === "Air")?.carrier ?? "")
+    update("vessel", legs.find((leg) => leg.mode === "Sea")?.carrier ?? "")
   }
 
   function addTransportLeg() {
@@ -1888,7 +1949,8 @@ function StepContent({
     syncTransportLegs([...data.transportLegs, { ...transportDraft, id: `transport-leg-${Date.now()}` }])
     setTransportDraft({
       ...defaultTransportLegDraft,
-      mode: data.mode,
+      mode: defaultRouteLegModeForBookingMode(data.mode),
+      legType: defaultLegTypeForMode(defaultRouteLegModeForBookingMode(data.mode)),
       fromCode: transportDraft.toCode,
       fromName: transportDraft.toName,
       fromCountry: transportDraft.toCountry,
@@ -1907,7 +1969,8 @@ function StepContent({
 
     setTransportDraft({
       ...defaultTransportLegDraft,
-      mode: data.mode,
+      mode: defaultRouteLegModeForBookingMode(data.mode),
+      legType: defaultLegTypeForMode(defaultRouteLegModeForBookingMode(data.mode)),
       fromCode: collectionLocation.code,
       fromName: collectionLocation.name,
       fromCountry: collectionLocation.country,
@@ -1922,17 +1985,29 @@ function StepContent({
   if (activeStep === 0) {
     return (
       <StepShell step={steps[0]}>
-        <FieldGroup>
-          <CompactOptionGroup
-            label="Direction"
-            value={data.direction}
-            options={directionOptions}
-            onChange={(value) => update("direction", value)}
-          />
-          <ModePicker
-            value={data.mode}
-            onChange={(value) => update("mode", value)}
-          />
+        <FieldGroup className="xl:grid-cols-[minmax(300px,0.9fr)_minmax(0,1.1fr)] xl:items-start">
+          <div className="grid gap-3">
+            <CompactOptionGroup
+              label="Direction"
+              value={data.direction}
+              options={directionOptions}
+              onChange={(value) => update("direction", value)}
+            />
+            <ModePicker
+              value={data.mode}
+              onChange={(value) => update("mode", value)}
+            />
+          </div>
+
+          <div className="grid gap-3">
+            <IncotermsField value={data.incoterms} onChange={(value) => update("incoterms", value)} />
+            <TextField
+              label="Incoterms Extra"
+              value={data.incotermsExtra}
+              onChange={(value) => update("incotermsExtra", value)}
+              placeholder="Named place, terminal, port, or qualifier"
+            />
+          </div>
         </FieldGroup>
       </StepShell>
     )
@@ -2076,7 +2151,7 @@ function StepContent({
                 onNotifyPartyChange={copyCustomerToNotifyParty}
               />
             }
-            onReset={resetCustomer}
+            onCompanyReset={resetCustomer}
             onCompanyChange={updateCustomerCompany}
             onContactChange={updateCustomerContact}
             onOfficeChange={(value) => update("customerOffice", value)}
@@ -2090,7 +2165,7 @@ function StepContent({
             reference={data.supplierReference}
             companyMissing={missing.has("Shipper")}
             companyLocked={data.customerIsShipper && Boolean(data.customer)}
-            onReset={resetShipper}
+            onCompanyReset={resetShipper}
             onCompanyChange={(value) => {
               update("shipper", value)
               if (value !== data.customer) update("customerIsShipper", false)
@@ -2107,7 +2182,7 @@ function StepContent({
             reference={data.consigneeReference}
             companyMissing={missing.has("Consignee")}
             companyLocked={data.customerIsConsignee && Boolean(data.customer)}
-            onReset={resetConsignee}
+            onCompanyReset={resetConsignee}
             onCompanyChange={(value) => {
               update("consignee", value)
               if (value !== data.customer) update("customerIsConsignee", false)
@@ -2123,7 +2198,7 @@ function StepContent({
             office={data.notifyPartyOffice}
             reference={data.notifyPartyReference}
             companyLocked={data.customerIsNotifyParty && Boolean(data.customer)}
-            onReset={resetNotifyParty}
+            onCompanyReset={resetNotifyParty}
             onCompanyChange={(value) => {
               update("notifyParty", value)
               if (value !== data.customer) update("customerIsNotifyParty", false)
@@ -2446,19 +2521,50 @@ function StepContent({
               </Button>
             </div>
 
-            <FieldGroup className="lg:grid-cols-4">
-              <SelectField label="Leg mode" value={transportDraft.mode} onChange={(value) => updateTransportDraft("mode", value as BookingModeOption)} options={["Sea", "Air", "Road", "Courier", "Rail", "Air-Sea", "Sea-Air"]} />
-              <TextField label="From code" value={transportDraft.fromCode} onChange={(value) => updateTransportDraft("fromCode", value.toUpperCase())} placeholder="CNSHA / PVG" dir="ltr" />
-              <TextField label="From name" value={transportDraft.fromName} onChange={(value) => updateTransportDraft("fromName", value)} placeholder="Shanghai" required missing={missing.has("First origin") && !data.transportLegs.length} />
-              <TextField label="From country" value={transportDraft.fromCountry} onChange={(value) => updateTransportDraft("fromCountry", value)} placeholder="China" />
-              <TextField label="To code" value={transportDraft.toCode} onChange={(value) => updateTransportDraft("toCode", value.toUpperCase())} placeholder="GBFXT / LHR" dir="ltr" />
-              <TextField label="To name" value={transportDraft.toName} onChange={(value) => updateTransportDraft("toName", value)} placeholder="Felixstowe" required missing={missing.has("Final destination") && !data.transportLegs.length} />
-              <TextField label="To country" value={transportDraft.toCountry} onChange={(value) => updateTransportDraft("toCountry", value)} placeholder="United Kingdom" />
-              <TextField label="Carrier / line" value={transportDraft.carrier} onChange={(value) => updateTransportDraft("carrier", value)} placeholder="COSCO, LH Cargo, Maersk..." />
-              <TextField label="Leg ref" value={transportDraft.reference} onChange={(value) => updateTransportDraft("reference", value)} placeholder="Vessel, flight, trailer, booking ref" dir="ltr" />
-              <TextField label="ETD" value={transportDraft.etd} onChange={(value) => updateTransportDraft("etd", value)} type="date" missing={missing.has("ETD") && !data.transportLegs.length} dir="ltr" />
-              <TextField label="ETA" value={transportDraft.eta} onChange={(value) => updateTransportDraft("eta", value)} type="date" missing={missing.has("ETA") && !data.transportLegs.length} dir="ltr" />
-            </FieldGroup>
+            <div className="grid gap-3">
+              <FieldGroup className="md:grid-cols-2 xl:grid-cols-5">
+                <SelectField label="Leg mode" value={transportDraft.mode} onChange={(value) => updateTransportMode(value as BookingModeOption)} options={["Sea", "Air", "Road", "Courier", "Rail"]} />
+                <SelectField label="Leg type" value={transportDraft.legType} onChange={(value) => updateTransportDraft("legType", value)} options={legTypeOptionsForMode(transportDraft.mode)} />
+              </FieldGroup>
+
+              <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_36px_minmax(0,1fr)] xl:items-start">
+                <div className="grid gap-3 rounded-[var(--md-radius-lg)] bg-white/32 p-3 shadow-[var(--md-shadow-line)]">
+                  <p className="text-[13px] font-medium text-[var(--md-ink)]">From</p>
+                  <div className="grid gap-3">
+                    <div className="grid gap-3 md:grid-cols-[88px_minmax(0,1fr)_minmax(0,1fr)]">
+                      <TextField label="Code" value={transportDraft.fromCode} onChange={(value) => updateTransportDraft("fromCode", value.toUpperCase())} placeholder="CNSHA / PVG" dir="ltr" />
+                      <TextField label="Name" value={transportDraft.fromName} onChange={(value) => updateTransportDraft("fromName", value)} placeholder="Shanghai" required missing={missing.has("First origin") && !data.transportLegs.length} />
+                      <TextField label="Country" value={transportDraft.fromCountry} onChange={(value) => updateTransportDraft("fromCountry", value)} placeholder="China" />
+                    </div>
+                    <TextField label="ETD" value={transportDraft.etd} onChange={(value) => updateTransportDraft("etd", value)} type="date" missing={missing.has("ETD") && !data.transportLegs.length} dir="ltr" />
+                  </div>
+                </div>
+
+                <div className="hidden h-full min-h-[96px] items-center justify-center xl:flex">
+                  <span className="grid size-8 place-items-center rounded-full bg-white/58 text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">
+                    <ArrowRight className="size-4" strokeWidth={1.55} />
+                  </span>
+                </div>
+
+                <div className="grid gap-3 rounded-[var(--md-radius-lg)] bg-white/32 p-3 shadow-[var(--md-shadow-line)]">
+                  <p className="text-[13px] font-medium text-[var(--md-ink)]">To</p>
+                  <div className="grid gap-3">
+                    <div className="grid gap-3 md:grid-cols-[88px_minmax(0,1fr)_minmax(0,1fr)]">
+                      <TextField label="Code" value={transportDraft.toCode} onChange={(value) => updateTransportDraft("toCode", value.toUpperCase())} placeholder="GBFXT / LHR" dir="ltr" />
+                      <TextField label="Name" value={transportDraft.toName} onChange={(value) => updateTransportDraft("toName", value)} placeholder="Felixstowe" required missing={missing.has("Final destination") && !data.transportLegs.length} />
+                      <TextField label="Country" value={transportDraft.toCountry} onChange={(value) => updateTransportDraft("toCountry", value)} placeholder="United Kingdom" />
+                    </div>
+                    <TextField label="ETA" value={transportDraft.eta} onChange={(value) => updateTransportDraft("eta", value)} type="date" missing={missing.has("ETA") && !data.transportLegs.length} dir="ltr" />
+                  </div>
+                </div>
+              </div>
+
+              <FieldGroup className="lg:grid-cols-2">
+                <TextField label="Carrier / line" value={transportDraft.carrier} onChange={(value) => updateTransportDraft("carrier", value)} placeholder="COSCO, LH Cargo, Maersk..." />
+                <TextField label="Leg ref" value={transportDraft.reference} onChange={(value) => updateTransportDraft("reference", value)} placeholder="Vessel, flight, trailer, booking ref" dir="ltr" />
+              </FieldGroup>
+              <TextAreaField label="Leg notes" value={transportDraft.notes} onChange={(value) => updateTransportDraft("notes", value)} placeholder="Handling notes, transhipment detail, delivery instructions, or carrier-specific requirements" />
+            </div>
           </motion.section>
 
           <motion.section variants={fieldMotion} className="overflow-hidden rounded-[var(--md-radius-xl)] bg-white/48 shadow-[var(--md-shadow-line)]">
@@ -2474,16 +2580,18 @@ function StepContent({
               ) : null}
             </div>
             <div className="overflow-x-auto md-scrollbar">
-              <table className="w-full min-w-[980px] border-t border-[rgba(11,20,19,0.06)] text-left">
+              <table className="w-full min-w-[1080px] border-t border-[rgba(11,20,19,0.06)] text-left">
                 <thead className="bg-white/42">
                   <tr className="text-[11px] font-medium text-[var(--md-text)]">
                     <th className="px-4 py-2">Leg</th>
+                    <th className="px-3 py-2">Type</th>
                     <th className="px-3 py-2">From</th>
                     <th className="px-3 py-2">To</th>
                     <th className="px-3 py-2">Carrier / line</th>
                     <th className="px-3 py-2">Reference</th>
                     <th className="px-3 py-2">ETD</th>
                     <th className="px-3 py-2">ETA</th>
+                    <th className="px-3 py-2">Notes</th>
                     <th className="w-12 px-3 py-2" />
                   </tr>
                 </thead>
@@ -2491,12 +2599,14 @@ function StepContent({
                   {data.transportLegs.length ? data.transportLegs.map((leg, index) => (
                     <tr key={leg.id} className="border-t border-[rgba(11,20,19,0.05)] text-[13px] text-[var(--md-ink)]">
                       <td className="px-4 py-3 font-medium">{index + 1}. {leg.mode}</td>
+                      <td className="px-3 py-3">{leg.legType || "-"}</td>
                       <td className="px-3 py-3"><span className="font-medium">{leg.fromCode || "-"}</span><span className="block text-[12px] text-[var(--md-text)]">{leg.fromName}{leg.fromCountry ? `, ${leg.fromCountry}` : ""}</span></td>
                       <td className="px-3 py-3"><span className="font-medium">{leg.toCode || "-"}</span><span className="block text-[12px] text-[var(--md-text)]">{leg.toName}{leg.toCountry ? `, ${leg.toCountry}` : ""}</span></td>
                       <td className="px-3 py-3">{leg.carrier || "-"}</td>
                       <td className="px-3 py-3">{leg.reference || "-"}</td>
                       <td className="px-3 py-3">{leg.etd || "-"}</td>
                       <td className="px-3 py-3">{leg.eta || "-"}</td>
+                      <td className="max-w-[220px] px-3 py-3"><span className="line-clamp-2">{leg.notes || "-"}</span></td>
                       <td className="px-3 py-2">
                         <button type="button" aria-label={`Remove route leg ${index + 1}`} className="grid size-8 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-red)] transition-colors hover:bg-[rgba(192,57,43,0.08)]" onClick={() => removeTransportLeg(leg.id)}>
                           <Trash2 className="size-4" strokeWidth={1.6} />
@@ -2505,7 +2615,7 @@ function StepContent({
                     </tr>
                   )) : (
                     <tr>
-                      <td colSpan={8} className="px-4 py-10 text-center text-[13px] text-[var(--md-text)]">No route legs added yet.</td>
+                      <td colSpan={10} className="px-4 py-10 text-center text-[13px] text-[var(--md-text)]">No route legs added yet.</td>
                     </tr>
                   )}
                 </tbody>
@@ -2529,7 +2639,7 @@ function StepContent({
           <SelectField label="Registered importer" value={data.registeredImporter} onChange={(value) => update("registeredImporter", value)} options={customsPartyOptions} required missing={missing.has("Registered importer")} />
           <SelectField label="VAT and duty paid by" value={data.vatDutyPayment} onChange={(value) => update("vatDutyPayment", value)} options={["Importer deferment account", "Importer direct payment", "Customer account", "Freight forwarder disbursement", "Broker deferment account", "To be confirmed"]} required missing={missing.has("VAT and duty payment")} />
           <div className="grid content-start gap-2 rounded-[var(--md-radius-xl)] bg-white/38 p-3 shadow-[var(--md-shadow-line)]">
-            <p className="text-[13px] font-medium text-[var(--md-ink)]">Certificate requirements</p>
+            <p className="text-[13px] font-medium text-[var(--md-ink)]">Documents Supplied</p>
             <ToggleTile label="Commercial invoice required" checked={data.commercialInvoice} onChange={(value) => update("commercialInvoice", value)} />
             <ToggleTile label="Packing list required" checked={data.packingList} onChange={(value) => update("packingList", value)} />
             <ToggleTile label="Certificates required" checked={data.certificates} onChange={(value) => update("certificates", value)} />
@@ -2537,24 +2647,6 @@ function StepContent({
           <TextAreaField label="Customs notes" value={data.customsNotes} onChange={(value) => update("customsNotes", value)} placeholder="Broker handoff, declaration owner, known risks, or timing notes" />
           <TextAreaField label="Compliance requirements" value={data.complianceRequirements} onChange={(value) => update("complianceRequirements", value)} placeholder="Licences, declarations, sanctions checks, controlled goods, or special compliance handling" />
           <TextAreaField label="Certificate requirements" value={data.certificateRequirements} onChange={(value) => update("certificateRequirements", value)} placeholder="Certificate of origin, health certificate, phytosanitary, MSDS, inspection certificates..." />
-        </FieldGroup>
-      </StepShell>
-    )
-  }
-
-  if (activeStep === 6) {
-    return (
-      <StepShell step={steps[6]}>
-        <FieldGroup className="lg:grid-cols-3">
-          <TextField label="Customer reference" value={data.customerReference} onChange={(value) => update("customerReference", value)} placeholder="MAR-PO-7781" required missing={missing.has("Customer reference")} dir="ltr" />
-          <TextField label="Internal reference" value={data.internalReference} onChange={(value) => update("internalReference", value)} placeholder="BK-LON-22618" required missing={missing.has("Internal reference")} dir="ltr" />
-          <TextField label="Supplier reference" value={data.supplierReference} onChange={(value) => update("supplierReference", value)} placeholder="YH-SO-1440" dir="ltr" />
-          <TextField label="Quote reference" value={data.quoteReference} onChange={(value) => update("quoteReference", value)} placeholder="Q-1882" dir="ltr" />
-          <TextField label="Purchase order reference" value={data.purchaseOrderReference} onChange={(value) => update("purchaseOrderReference", value)} placeholder="PO-7781" dir="ltr" />
-          <TextField label="Agreed charges" value={data.agreedCharges} onChange={(value) => update("agreedCharges", value)} placeholder="Ocean freight EUR 4,840 + destination handling" />
-          <TextAreaField label="Buying notes" value={data.buyingNotes} onChange={(value) => update("buyingNotes", value)} placeholder="Carrier rate, validity, margin watch, supplier exceptions" />
-          <TextAreaField label="Selling notes" value={data.sellingNotes} onChange={(value) => update("sellingNotes", value)} placeholder="Customer quote commitments, what can be shared externally" />
-          <TextAreaField label="Operational notes" value={data.operationalNotes} onChange={(value) => update("operationalNotes", value)} placeholder="Anything the operations team needs before this goes live" />
         </FieldGroup>
       </StepShell>
     )
@@ -2568,11 +2660,10 @@ function StepContent({
     ["Cargo details", buildCargoSummary(data)],
     ["Transport details", buildTransportEta(data) || "Transport dates missing"],
     ["Customs and compliance", [data.exportBroker && `Export: ${data.exportBroker}`, data.importBroker && `Import: ${data.importBroker}`, data.vatDutyPayment].filter(Boolean).join(" / ") || "Customs allocation missing"],
-    ["Charges and references", data.customerReference || data.internalReference || "References missing"],
   ] as const
 
   return (
-    <StepShell step={steps[7]}>
+    <StepShell step={steps[6]}>
       <div className="grid gap-4">
         {missingAll.length ? (
           <div className="rounded-[var(--md-radius-xl)] bg-[rgba(221,138,43,0.1)] p-3 shadow-[inset_0_0_0_1px_rgba(221,138,43,0.22),0_0_0_1px_rgba(221,138,43,0.06)]">
@@ -2776,6 +2867,7 @@ export function BookingWizardPage({ navigate }: { navigate: (path: string) => vo
       plannedDeliveryDate: booking.arrivalDate,
       transportLegs: [{
         id: `transport-leg-${booking.id}`,
+        legType: "Main Leg",
         mode: bookingMode,
         fromCode: origin.includes(",") ? origin.split(",")[0].trim().toUpperCase().slice(0, 5) : origin.toUpperCase().slice(0, 5),
         fromName: origin,
@@ -2787,6 +2879,7 @@ export function BookingWizardPage({ navigate }: { navigate: (path: string) => vo
         reference: booking.vessel,
         etd: booking.departureDate,
         eta: booking.arrivalDate,
+        notes: "",
       }],
       customsStatus: booking.status === "Exception" ? "Held" : "Ready to submit",
       commodityCode: booking.customFields.find((field) => field.label.toLowerCase().includes("hs"))?.value ?? "",
@@ -2846,12 +2939,12 @@ export function BookingWizardPage({ navigate }: { navigate: (path: string) => vo
         ) : showingSource ? (
           <SourceScreen key="source" data={data} query={sourceQuery} onQueryChange={setSourceQuery} onUpdate={update} onStart={startFlow} />
         ) : (
-          <motion.div key="wizard" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="grid min-h-[calc(100svh-168px)] gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <motion.div key="wizard" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="grid min-h-[calc(100svh-168px)] gap-4 xl:grid-cols-[minmax(0,1fr)_260px] 2xl:grid-cols-[minmax(0,1fr)_280px]">
             <div className="flex min-w-0 flex-col gap-4">
               <WizardProgress activeStep={activeStep} data={data} onStepChange={setActiveStep} />
               <AnimatePresence mode="wait">
                 <motion.div key={steps[activeStep].id} variants={stepMotion} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }} className="pb-16 sm:pb-0">
-                  <StepContent activeStep={activeStep} data={data} update={update} goToStep={setActiveStep} />
+                  <StepContent key={activeStep} activeStep={activeStep} data={data} update={update} goToStep={setActiveStep} />
                 </motion.div>
               </AnimatePresence>
 

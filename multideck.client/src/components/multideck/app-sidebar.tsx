@@ -7,6 +7,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
 import { mdMotion, reduceMotion } from "@/lib/motion"
+import { useAiAgentName } from "@/lib/user-preferences"
 import { crmSidebarItems, sidebarPrimary, sidebarSecondary, type NavItem } from "@/data/multideck-data"
 import { useLanguage } from "@/i18n/language-provider"
 import multideckFullLogo from "@/assets/brand/multideck-full-logo.svg"
@@ -216,6 +217,7 @@ export function SidebarNavItem({
 }) {
   const Icon = item.icon
   const { t } = useLanguage()
+  const aiAgentName = useAiAgentName()
   const shouldReduceMotion = useReducedMotion()
   const isDisabled = !onClick
   const valueTone =
@@ -311,6 +313,7 @@ export function AppSidebar({
 }) {
   const isCrmMode = route.startsWith("/crm")
   const { t } = useLanguage()
+  const aiAgentName = useAiAgentName()
   const shouldReduceMotion = useReducedMotion()
   const sidebarRef = useRef<HTMLElement>(null)
   const sidebarModeRef = useRef<"crm" | "main">(isCrmMode ? "crm" : "main")
@@ -442,7 +445,7 @@ export function AppSidebar({
             ))}
             <SidebarSectionItem>
               <SidebarNavItem
-                item={{ label: "Agent Dexter", value: "NEW", icon: Sparkles, route: "/agent-dexter" }}
+                item={{ label: `Agent ${aiAgentName}`, value: "NEW", icon: Sparkles, route: "/agent-dexter" }}
                 isActive={route === "/agent-dexter"}
                 onClick={() => navigate("/agent-dexter")}
                 accent="dexter"
