@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties } from "react"
 import { AnimatePresence, LayoutGroup, motion } from "motion/react"
-import { ArrowLeft, ArrowRight, CalendarDays, ChevronDown, Mail, Plus, ReceiptText, Save, Ship, Sparkles, TriangleAlert } from "lucide-react"
+import { ArrowLeft, ArrowRight, ChevronDown, Mail, Plus, ReceiptText, Save, Ship, Sparkles, TriangleAlert } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -20,12 +20,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Progress } from "@/components/ui/progress"
 import { TableCell } from "@/components/ui/table"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { useLanguage } from "@/i18n/language-provider"
-import type { LanguageCode } from "@/i18n/languages"
 import { cn } from "@/lib/utils"
 import {
   activityItems,
@@ -45,6 +43,7 @@ import {
 } from "@/data/multideck-data"
 import { useClockDisplayMode, type ClockDisplayMode } from "@/lib/user-preferences"
 import { AnimatedList } from "./animated-list"
+import { MultideckDateRangePicker, getDefaultDateRange } from "./date-picker"
 import { MetricCard } from "./metric-card"
 import { SectionHeader, Surface } from "./surface"
 import { StatusPill, toneToVar } from "./status-pill"
@@ -168,138 +167,8 @@ function getSnapshot(range: DashboardRange) {
   return dashboardSnapshots[range] ?? dashboardSnapshots.today
 }
 
-function getLanguageLocale(language: LanguageCode) {
-  if (language === "de") return "de-DE"
-  if (language === "fr") return "fr-FR"
-  if (language === "ar") return "ar-GB-u-ca-gregory"
-  return "en-GB"
-}
-
-function getDateKey(date: Date) {
-  const year = date.getFullYear()
-  const month = `${date.getMonth() + 1}`.padStart(2, "0")
-  const day = `${date.getDate()}`.padStart(2, "0")
-  return `${year}-${month}-${day}`
-}
-
-function parseDateKey(dateKey: string | null) {
-  if (!dateKey) return null
-  const [year, month, day] = dateKey.split("-").map(Number)
-  if (!year || !month || !day) return null
-  return new Date(year, month - 1, day)
-}
-
-function startOfMonth(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), 1)
-}
-
-function addMonths(date: Date, amount: number) {
-  return new Date(date.getFullYear(), date.getMonth() + amount, 1)
-}
-
 function getDefaultCustomRange(): DashboardCustomRange {
-  const end = new Date()
-  const start = new Date(end)
-  start.setDate(end.getDate() - 6)
-  return { start: getDateKey(start), end: getDateKey(end) }
-}
-
-function normalizeCustomRange(start: string, end: string): DashboardCustomRange {
-  return start <= end ? { start, end } : { start: end, end: start }
-}
-
-function getCustomRangeLabel(range: DashboardCustomRange, locale: string) {
-  const start = parseDateKey(range.start)
-  const end = parseDateKey(range.end)
-  if (!start || !end) return "Custom"
-
-  const formatter = new Intl.DateTimeFormat(locale, { day: "numeric", month: "short" })
-  const yearFormatter = new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", year: "numeric" })
-  const sameYear = start.getFullYear() === end.getFullYear()
-  return `${sameYear ? formatter.format(start) : yearFormatter.format(start)} - ${yearFormatter.format(end)}`
-}
-
-function getPreviewRange(start: string | null, end: string | null, hover: string | null) {
-  if (!start) return null
-  if (end) return normalizeCustomRange(start, end)
-  if (hover) return normalizeCustomRange(start, hover)
-  return { start, end: start }
-}
-
-function isDateInsideRange(dateKey: string, range: DashboardCustomRange | null) {
-  return Boolean(range?.start && range.end && dateKey >= range.start && dateKey <= range.end)
-}
-
-function CalendarMonth({
-  month,
-  customRange,
-  previewRange,
-  locale,
-  onSelectDate,
-  onPreviewDate,
-}: {
-  month: Date
-  customRange: DashboardCustomRange
-  previewRange: DashboardCustomRange | null
-  locale: string
-  onSelectDate: (dateKey: string) => void
-  onPreviewDate: (dateKey: string | null) => void
-}) {
-  const monthStart = startOfMonth(month)
-  const monthLabel = new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }).format(monthStart)
-  const firstWeekday = (monthStart.getDay() + 6) % 7
-  const daysInMonth = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate()
-  const todayKey = getDateKey(new Date())
-  const weekdayLabels = Array.from({ length: 7 }, (_, index) => new Intl.DateTimeFormat(locale, { weekday: "short" }).format(new Date(2026, 5, 8 + index)))
-  const cells = Array.from({ length: firstWeekday + daysInMonth }, (_, index) => {
-    if (index < firstWeekday) return null
-    return new Date(monthStart.getFullYear(), monthStart.getMonth(), index - firstWeekday + 1)
-  })
-
-  return (
-    <div className="min-w-0">
-      <p className="text-[13px] font-medium text-[var(--md-ink)]">{monthLabel}</p>
-      <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[11px] font-medium text-[var(--md-subtle)]">
-        {weekdayLabels.map((label) => (
-          <span key={label} className="grid h-7 place-items-center">
-            {label}
-          </span>
-        ))}
-      </div>
-      <div className="grid grid-cols-7 gap-1" onMouseLeave={() => onPreviewDate(null)}>
-        {cells.map((date, index) => {
-          if (!date) return <span key={`empty-${index}`} className="size-9" aria-hidden="true" />
-
-          const dateKey = getDateKey(date)
-          const isStart = customRange.start === dateKey
-          const isEnd = customRange.end === dateKey
-          const isInPreview = isDateInsideRange(dateKey, previewRange)
-          const isToday = todayKey === dateKey
-
-          return (
-            <button
-              key={dateKey}
-              type="button"
-              dir="ltr"
-              aria-pressed={isStart || isEnd || isInPreview}
-              aria-label={new Intl.DateTimeFormat(locale, { dateStyle: "full" }).format(date)}
-              className={cn(
-                "grid size-9 place-items-center rounded-[10px] text-[13px] font-medium text-[var(--md-text)] transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-white/78 hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(14,125,116,0.18)]",
-                isToday && "shadow-[inset_0_0_0_1px_rgba(14,125,116,0.22)]",
-                isInPreview && "bg-[rgba(14,125,116,0.1)] text-[var(--md-ink)]",
-                (isStart || isEnd) && "bg-[var(--md-accent)] text-white shadow-[var(--md-shadow-line)] hover:bg-[var(--md-accent)] hover:text-white",
-              )}
-              onMouseEnter={() => onPreviewDate(dateKey)}
-              onFocus={() => onPreviewDate(dateKey)}
-              onClick={() => onSelectDate(dateKey)}
-            >
-              {date.getDate()}
-            </button>
-          )
-        })}
-      </div>
-    </div>
-  )
+  return getDefaultDateRange()
 }
 
 function CustomDashboardRangePicker({
@@ -313,104 +182,35 @@ function CustomDashboardRangePicker({
   onRangeChange: (range: DashboardRange) => void
   onCustomRangeChange?: (range: DashboardCustomRange) => void
 }) {
-  const { language, t } = useLanguage()
-  const locale = getLanguageLocale(language)
+  const { t } = useLanguage()
   const resolvedRange = customRange ?? getDefaultCustomRange()
-  const [open, setOpen] = useState(false)
-  const [visibleMonth, setVisibleMonth] = useState(() => startOfMonth(parseDateKey(resolvedRange.start) ?? new Date()))
-  const [hoveredDate, setHoveredDate] = useState<string | null>(null)
-  const previewRange = getPreviewRange(resolvedRange.start, resolvedRange.end, hoveredDate)
-  const hasCompleteRange = Boolean(parseDateKey(resolvedRange.start) && parseDateKey(resolvedRange.end))
-  const rawRangeLabel = getCustomRangeLabel(resolvedRange, locale)
-  const rangeLabel = rawRangeLabel === "Custom" ? t("Custom") : rawRangeLabel
-  const waitingForEndDate = Boolean(resolvedRange.start && !resolvedRange.end)
 
   function updateOpen(nextOpen: boolean) {
-    setOpen(nextOpen)
     if (nextOpen) onRangeChange("custom")
   }
 
-  function selectDate(dateKey: string) {
-    onRangeChange("custom")
-    if (!resolvedRange.start || resolvedRange.end) {
-      onCustomRangeChange?.({ start: dateKey, end: null })
-      return
-    }
-
-    onCustomRangeChange?.(normalizeCustomRange(resolvedRange.start, dateKey))
-    setHoveredDate(null)
-  }
-
-  function resetRange() {
-    const nextRange = getDefaultCustomRange()
-    onRangeChange("custom")
-    onCustomRangeChange?.(nextRange)
-    setVisibleMonth(startOfMonth(parseDateKey(nextRange.start) ?? new Date()))
-  }
-
   return (
-    <Popover open={open} onOpenChange={updateOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          className={cn(
-            "h-10 rounded-[var(--md-radius-lg)] bg-white/35 px-3 text-[13px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-white/70",
-            active && "bg-[var(--md-glass-strong)] text-[var(--md-ink)]",
-          )}
-        >
-          <CalendarDays data-icon="inline-start" className="size-3.5" strokeWidth={1.2} />
-          <span className="max-w-[150px] truncate" dir={hasCompleteRange ? "ltr" : undefined}>
-            {active ? rangeLabel : t("Custom")}
-          </span>
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-[min(92vw,560px)] rounded-[var(--md-radius-xl)] border-0 bg-[rgba(251,253,253,0.98)] p-3 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)]">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-[14px] font-medium text-[var(--md-ink)]">{t("Custom range")}</p>
-            <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Pick a start date, then an end date.")}</p>
-          </div>
-          <div className="flex shrink-0 gap-1">
-            <Button type="button" variant="ghost" size="icon-sm" className="rounded-[10px] bg-white/45 shadow-[var(--md-shadow-line)] hover:bg-white/70" aria-label={t("Previous month")} onClick={() => setVisibleMonth((current) => addMonths(current, -1))}>
-              <ArrowLeft className="size-3.5" strokeWidth={1.2} />
-            </Button>
-            <Button type="button" variant="ghost" size="icon-sm" className="rounded-[10px] bg-white/45 shadow-[var(--md-shadow-line)] hover:bg-white/70" aria-label={t("Next month")} onClick={() => setVisibleMonth((current) => addMonths(current, 1))}>
-              <ArrowRight className="size-3.5" strokeWidth={1.2} />
-            </Button>
-          </div>
-        </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          {[visibleMonth, addMonths(visibleMonth, 1)].map((month) => (
-            <CalendarMonth
-              key={getDateKey(month)}
-              month={month}
-              customRange={resolvedRange}
-              previewRange={previewRange}
-              locale={locale}
-              onSelectDate={selectDate}
-              onPreviewDate={(dateKey) => setHoveredDate(waitingForEndDate ? dateKey : null)}
-            />
-          ))}
-        </div>
-        <div className="mt-4 flex flex-col gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3 shadow-[var(--md-shadow-line)] sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0 text-[12px] leading-5 text-[var(--md-text)]">
-            <span className="font-medium text-[var(--md-ink)]">{t("Selected custom range")}</span>
-            <span className="ms-2 inline-block" dir={hasCompleteRange ? "ltr" : undefined}>
-              {rangeLabel}
-            </span>
-          </div>
-          <div className="flex shrink-0 gap-2">
-            <Button type="button" variant="ghost" className="h-8 rounded-[var(--md-radius-md)] bg-white/45 px-3 text-[12px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-white/70" onClick={resetRange}>
-              {t("Reset")}
-            </Button>
-            <Button type="button" className="h-8 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[12px] font-medium text-white hover:bg-[var(--md-accent)]/88" disabled={!resolvedRange.start || !resolvedRange.end} onClick={() => setOpen(false)}>
-              {t("Apply range")}
-            </Button>
-          </div>
-        </div>
-      </PopoverContent>
-    </Popover>
+    <MultideckDateRangePicker
+      value={resolvedRange}
+      onChange={(range) => {
+        onRangeChange("custom")
+        onCustomRangeChange?.(range)
+      }}
+      triggerLabel={active ? undefined : t("Custom")}
+      placeholder="Custom"
+      title="Custom range"
+      description="Pick a start date, then an end date."
+      startLabel="Start"
+      endLabel="End"
+      footerLabel="Selected custom range"
+      active={active}
+      align="end"
+      triggerClassName={cn(
+        "h-10 w-auto bg-white/35 px-3 text-[13px] text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-white/70",
+        active && "bg-[var(--md-glass-strong)] text-[var(--md-ink)]",
+      )}
+      onOpenChange={updateOpen}
+    />
   )
 }
 
