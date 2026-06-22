@@ -266,6 +266,8 @@ body,
 
 html {
   scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
@@ -275,7 +277,28 @@ body {
   background: var(--background);
   color: var(--foreground);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3,
+h4,
+[data-slot="card-title"],
+[data-slot="dialog-title"],
+[data-slot="sheet-title"],
+[data-slot="popover-title"] {
+  text-wrap: balance;
+}
+
+p,
+li,
+[data-slot="card-description"],
+[data-slot="dialog-description"],
+[data-slot="sheet-description"],
+[data-slot="popover-description"] {
+  text-wrap: pretty;
 }
 
 body,
@@ -289,7 +312,7 @@ select,
 [class*="text-[var(--md-"],
 [class*="shadow-[var(--md-shadow"] {
   transition-duration: var(--md-motion);
-  transition-property: background, background-color, border-color, box-shadow, color, opacity, transform, filter;
+  transition-property: background-color, border-color, box-shadow, color, opacity, transform, filter;
   transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
 }
 

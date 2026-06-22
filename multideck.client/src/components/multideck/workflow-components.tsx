@@ -31,7 +31,7 @@ export function SegmentedControl<T extends string>({
           type="button"
           aria-pressed={value === option}
           className={cn(
-            "relative h-8 rounded-[var(--md-radius-md)] px-4 text-[13px] font-medium text-[var(--md-text)] transition-[color,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:text-[var(--md-ink)]",
+            "relative h-8 rounded-[var(--md-radius-md)] px-4 text-[13px] font-medium text-[var(--md-text)] transition-[color,opacity,scale,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.96] hover:text-[var(--md-ink)]",
             value === option && "text-[var(--md-ink)]",
           )}
           onClick={() => onChange(option)}
@@ -72,7 +72,7 @@ export function FilterChips({
           type="button"
           aria-pressed={activeOption === option}
           className={cn(
-            "inline-flex h-9 items-center gap-2 rounded-full px-4 text-[13px] font-medium shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform]",
+            "inline-flex h-9 items-center gap-2 rounded-full px-4 text-[13px] font-medium shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,color,opacity,scale,transform] active:scale-[0.96]",
             activeOption === option
               ? "bg-[var(--md-accent)] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_0_0_3px_rgba(14,125,116,0.13)]"
               : "bg-white/25 text-[var(--md-text)] hover:bg-white/50",
@@ -86,7 +86,7 @@ export function FilterChips({
       ))}
       {auxiliaryOptions.length ? <span className="mx-2 hidden h-7 w-px bg-[rgba(11,20,19,0.08)] sm:block" /> : null}
       {auxiliaryOptions.map((option) => (
-        <button key={option} type="button" className="h-9 rounded-full bg-white/25 px-4 text-[13px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white/50">
+        <button key={option} type="button" className="h-9 rounded-full bg-white/25 px-4 text-[13px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,color,opacity,scale,transform] active:scale-[0.96] hover:bg-white/50">
           {option}
         </button>
       ))}
@@ -116,7 +116,7 @@ export function TabsRail({
           type="button"
           aria-pressed={activeTab === tab.label}
           className={cn(
-            "relative flex h-12 shrink-0 items-center gap-2 text-[14px] font-medium text-[var(--md-text)] transition-[color,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:text-[var(--md-ink)]",
+            "relative flex h-12 shrink-0 items-center gap-2 text-[14px] font-medium text-[var(--md-text)] transition-[color,opacity,scale,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.96] hover:text-[var(--md-ink)]",
             activeTab === tab.label && "text-[var(--md-ink)]",
           )}
           onClick={() => onChange(tab.label)}
@@ -130,7 +130,7 @@ export function TabsRail({
             />
           ) : null}
           {tab.label}
-          {tab.value ? <span className="rounded-[var(--md-radius-sm)] bg-[rgba(90,103,100,0.08)] px-2 py-0.5 text-[12px] text-[var(--md-text)]">{tab.value}</span> : null}
+          {tab.value ? <span className="rounded-[var(--md-radius-sm)] bg-[rgba(90,103,100,0.08)] px-2 py-0.5 text-[12px] text-[var(--md-text)] tabular-nums">{tab.value}</span> : null}
         </button>
       ))}
     </div>

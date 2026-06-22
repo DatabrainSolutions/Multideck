@@ -24,7 +24,7 @@ export function StatusPill({
   return (
     <Badge
       variant="secondary"
-      className={cn("h-[21px] rounded-full px-[9px] text-[11.5px] font-medium leading-none", toneClass[tone], className)}
+      className={cn("h-[21px] rounded-full px-[9px] text-[11.5px] font-medium leading-none tabular-nums", toneClass[tone], className)}
     >
       {children}
     </Badge>

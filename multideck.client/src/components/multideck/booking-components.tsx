@@ -164,7 +164,7 @@ export function BookingMetricCard({ label, value, tone }: (typeof bookingMetrics
       <p className="text-[13px] font-medium text-[var(--md-text)]">{label}</p>
       <strong
         className={cn(
-          "mt-2 block text-[30px] font-medium leading-none tracking-normal",
+          "mt-2 block text-[30px] font-medium leading-none tracking-normal tabular-nums",
           tone === "neutral" ? "text-[var(--md-ink)]" : undefined,
         )}
         style={{ color: tone === "neutral" ? undefined : toneToVar(tone) }}

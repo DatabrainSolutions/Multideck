@@ -71,7 +71,7 @@ export function MetricCard({
               {label}
               {scope ? <span className="text-[var(--md-subtle)]"> - {scope}</span> : null}
             </p>
-            <strong className="mt-1 block max-w-full whitespace-nowrap text-[26px] font-medium leading-none tracking-normal text-[var(--md-ink)]">{value}</strong>
+            <strong className="mt-1 block max-w-full whitespace-nowrap text-[26px] font-medium leading-none tracking-normal text-[var(--md-ink)] tabular-nums">{value}</strong>
           </div>
           {series ? <Sparkline values={series} tone={tone} small /> : null}
         </div>
@@ -92,7 +92,7 @@ export function MetricCard({
         </div>
         <div className={cn("flex min-w-0 items-end justify-between gap-4", compact && "gap-3")}>
           <div className="min-w-0">
-            <strong className={cn("block max-w-full whitespace-nowrap text-[40px] font-medium leading-none tracking-normal text-[var(--md-ink)]", compact && "text-[clamp(28px,4.2vw,34px)]")}>{value}</strong>
+            <strong className={cn("block max-w-full whitespace-nowrap text-[40px] font-medium leading-none tracking-normal text-[var(--md-ink)] tabular-nums", compact && "text-[clamp(28px,4.2vw,34px)]")}>{value}</strong>
             <div className="mt-4 flex min-w-0 flex-wrap items-center gap-2">
               <StatusPill tone={tone}>{change}</StatusPill>
               <span className="min-w-0 text-[13px] leading-5 text-[var(--md-text)]">{detail}</span>
