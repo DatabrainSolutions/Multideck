@@ -462,8 +462,8 @@ export function DexterHistoryList({
   onNew: () => void
 }) {
   return (
-    <aside className="relative flex h-screen min-h-0 flex-col overflow-hidden bg-[var(--md-sidebar-bg)] shadow-[inset_-1px_0_0_rgba(11,20,19,0.07)]">
-      <div className="flex h-[72px] items-center justify-between gap-3 border-b border-[rgba(11,20,19,0.07)] px-5">
+    <aside className="relative flex h-screen min-h-0 flex-col overflow-hidden bg-[var(--md-sidebar-bg)] shadow-[var(--md-stroke-right)]">
+      <div className="flex h-[72px] items-center justify-between gap-3 px-5 shadow-[var(--md-stroke-bottom)]">
         <h2 className="text-[18px] font-medium text-[var(--md-ink)]">History</h2>
         <Button className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[13px] text-white hover:bg-[var(--md-accent)]/90" onClick={onNew}>
           <Plus data-icon="inline-start" strokeWidth={1.2} />
@@ -536,8 +536,8 @@ export function DexterMonitorStack({
   onSelectMonitor?: (monitor: DexterMonitor) => void
 }) {
   return (
-    <aside className="flex h-full min-h-0 flex-col border-l border-[var(--md-line)] bg-[var(--md-composer-inner-bg)]">
-      <div className="border-b border-[var(--md-line)] px-5 py-5">
+    <aside className="flex h-full min-h-0 flex-col bg-[var(--md-composer-inner-bg)] shadow-[var(--md-stroke-left)]">
+      <div className="px-5 py-5 shadow-[var(--md-stroke-bottom)]">
         <div className="flex items-center justify-between gap-3">
           <h2 className="flex items-center gap-2 text-[17px] font-medium text-[var(--md-ink)]">
             <span className="size-2 rounded-full bg-[var(--md-green)]" />
@@ -566,7 +566,7 @@ export function DexterMonitorStack({
         ))}
         <button
           type="button"
-          className="h-12 rounded-[var(--md-radius-lg)] border-0 border-dashed bg-transparent text-[13px] font-medium text-[var(--md-text)] shadow-[inset_0_0_0_1px_rgba(90,103,100,0.18)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white/55 hover:text-[var(--md-ink)]"
+          className="h-12 rounded-[var(--md-radius-lg)] border-0 border-dashed bg-transparent text-[13px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white/55 hover:text-[var(--md-ink)]"
           onClick={onAsk}
         >
           <Sparkles className="mr-2 inline size-3.5" strokeWidth={1.2} />

@@ -136,7 +136,7 @@ function getWorkStatusLabel(tone: StatusTone) {
 function getClockCellToneClass(tone: StatusTone) {
   if (tone === "amber") return "bg-[rgba(221,138,43,0.1)] hover:bg-[rgba(221,138,43,0.16)]"
   if (tone === "green") return "hover:bg-[rgba(255,255,255,0.45)]"
-  return "bg-[rgba(11,20,19,0.045)] shadow-[inset_-1px_0_0_rgba(11,20,19,0.08),inset_0_0_0_1px_rgba(11,20,19,0.045)] hover:bg-[rgba(11,20,19,0.07)]"
+  return "bg-[rgba(11,20,19,0.045)] shadow-[var(--md-shadow-line),var(--md-stroke-right)] hover:bg-[rgba(11,20,19,0.07)]"
 }
 
 function getClockStatusLine(tone: StatusTone) {
@@ -448,8 +448,8 @@ function AnalogueClockFace({
   return (
     <span
       className={cn(
-        "relative shrink-0 rounded-full bg-white/76 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.82),0_0_0_1px_rgba(11,20,19,0.05)]",
-        tone === "neutral" && "bg-[rgba(11,20,19,0.075)] shadow-[inset_0_0_0_1px_rgba(11,20,19,0.13),0_0_0_3px_rgba(11,20,19,0.035)]",
+        "relative shrink-0 rounded-full bg-white/76 shadow-[var(--md-shadow-line)]",
+        tone === "neutral" && "bg-[rgba(11,20,19,0.075)] shadow-[var(--md-shadow-line),0_0_0_3px_rgba(11,20,19,0.035)]",
         size === "lg" ? "size-[74px]" : size === "md" ? "size-[62px]" : "size-11",
       )}
       aria-label={`Analogue time ${time}`}
@@ -580,13 +580,13 @@ export function OverviewHero({
               value={newDashboardName}
               onChange={(event) => setNewDashboardName(event.target.value)}
               placeholder="e.g. Customs morning view"
-              className="h-10 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-tint)] text-[13px] shadow-[inset_0_0_0_1px_rgba(11,20,19,0.08)]"
+              className="h-10 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-tint)] text-[13px] shadow-[var(--md-shadow-line)]"
               onKeyDown={(event) => {
                 if (event.key === "Enter") createDashboard()
               }}
             />
           </div>
-          <DialogFooter className="m-0 flex-row justify-end rounded-b-[var(--md-radius-xl)] border-0 bg-[var(--md-surface-soft)] px-5 py-4 shadow-[inset_0_1px_0_rgba(11,20,19,0.06)]">
+          <DialogFooter className="m-0 flex-row justify-end rounded-b-[var(--md-radius-xl)] border-0 bg-[var(--md-surface-soft)] px-5 py-4 shadow-[var(--md-stroke-top)]">
             <DialogClose asChild>
               <Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-md)] px-3 text-[13px] font-medium text-[var(--md-text)] hover:bg-white/70">
                 Cancel
@@ -672,11 +672,11 @@ export function WorldClockCell({
       type="button"
       data-md-clock-display={displayMode}
       className={cn(
-        "md-world-clock-cell flex min-h-[96px] min-w-[145px] flex-col justify-between bg-transparent px-4 py-3 text-left shadow-[inset_-1px_0_0_rgba(11,20,19,0.08)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
+        "md-world-clock-cell flex min-h-[96px] min-w-[145px] flex-col justify-between bg-transparent px-4 py-3 text-left shadow-[var(--md-stroke-right)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
         displayMode === "analogue" && (compact ? "min-h-[138px] gap-2.5 px-3 py-3.5 text-center" : "min-h-[154px] min-w-[192px] gap-3 px-4 py-4 text-center"),
         compact && "min-w-0 px-3",
         getClockCellToneClass(clock.tone),
-        selected && (clock.tone === "amber" ? "bg-[rgba(221,138,43,0.16)] shadow-[inset_0_0_0_1px_rgba(221,138,43,0.22),inset_-1px_0_0_var(--md-line)]" : clock.tone === "neutral" ? "bg-[rgba(11,20,19,0.075)] shadow-[inset_0_0_0_1px_rgba(11,20,19,0.12),inset_-1px_0_0_var(--md-line)]" : "bg-[var(--md-clock-selected-bg)]"),
+        selected && (clock.tone === "amber" ? "bg-[rgba(221,138,43,0.16)] shadow-[inset_0_0_0_1px_rgba(221,138,43,0.22),var(--md-stroke-right)]" : clock.tone === "neutral" ? "bg-[rgba(11,20,19,0.075)] shadow-[var(--md-shadow-line),var(--md-stroke-right)]" : "bg-[var(--md-clock-selected-bg)]"),
       )}
       onClick={onSelect}
       transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}

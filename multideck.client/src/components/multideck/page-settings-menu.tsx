@@ -209,7 +209,7 @@ export function PageSettingsMenu<T extends string>({
           ) : null}
 
           {actions.length ? (
-            <motion.div variants={itemReveal} className="grid gap-1 border-t border-[rgba(11,20,19,0.06)] pt-2 dark:border-[rgba(255,255,255,0.08)]">
+            <motion.div variants={itemReveal} className="grid gap-1 pt-2 shadow-[var(--md-stroke-top)]">
               <p className="px-2 text-[11px] font-medium uppercase text-[var(--md-subtle)]">{t("Actions")}</p>
               {actions.map((action) => {
                 const Icon = action.icon

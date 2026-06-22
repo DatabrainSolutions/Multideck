@@ -1009,7 +1009,7 @@ function DetailSideRail({ navigate }: { navigate: (path: string) => void }) {
   const related = bookings.filter((booking) => booking.id !== "MD-22455").slice(0, 4)
 
   return (
-    <aside className="hidden h-screen min-h-0 w-[262px] shrink-0 overflow-hidden bg-[var(--md-sidebar-bg)] px-[var(--md-page-stack-gap)] py-[var(--md-page-pad)] shadow-[inset_-1px_0_0_rgba(11,20,19,0.06)] lg:block">
+    <aside className="hidden h-screen min-h-0 w-[262px] shrink-0 overflow-hidden bg-[var(--md-sidebar-bg)] px-[var(--md-page-stack-gap)] py-[var(--md-page-pad)] shadow-[var(--md-stroke-right)] lg:block">
       <img src={multideckFullLogo} alt="Multideck" className="h-[28px] w-auto" />
       <button type="button" className="mt-[calc(var(--md-page-section-gap)+var(--md-gap-xl))] flex items-center gap-[var(--md-gap-sm)] text-[14px] font-medium text-[var(--md-text)] hover:text-[var(--md-ink)]" onClick={() => navigate("/bookings")}>
         <ArrowLeft className="size-4" strokeWidth={1.2} />

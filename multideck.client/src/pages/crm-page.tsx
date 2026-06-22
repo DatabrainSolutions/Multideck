@@ -45,6 +45,7 @@ import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
+import { TabsRail } from "@/components/multideck/workflow-components"
 import {
   crmActivities,
   crmContacts,
@@ -849,12 +850,12 @@ export function CrmLeadDetailPage({
     ["Jun 4", "Dexter qualified the lead — lane & volume fit ICP, score 86/100", "AI · lead scoring", "green"],
   ] as const
   const leadTabs = [
-    ["Overview", ""],
-    ["Contacts", "2"],
-    ["Emails", "5"],
-    ["Quotes", "1 draft"],
-    ["Activity", ""],
-    ["Notes", ""],
+    { label: "Overview" },
+    { label: "Contacts", value: "2" },
+    { label: "Emails", value: "5" },
+    { label: "Quotes", value: "1 draft" },
+    { label: "Activity" },
+    { label: "Notes" },
   ] as const
   const metricCards = [
     ["Dexter score", "86", "strong ICP fit", "green"],
@@ -898,22 +899,7 @@ export function CrmLeadDetailPage({
           ))}
         </div>
 
-        <div className="flex gap-7 overflow-x-auto shadow-[inset_0_-1px_0_rgba(11,20,19,0.08)]">
-          {leadTabs.map(([label, count]) => {
-            const active = activeLeadTab === label
-            return (
-              <button
-                key={label}
-                type="button"
-                className={`flex h-12 shrink-0 items-center gap-2 border-b-2 px-1 text-[14px] font-medium transition-colors ${active ? "border-[var(--md-accent)] text-[var(--md-ink)]" : "border-transparent text-[var(--md-text)] hover:text-[var(--md-ink)]"}`}
-                onClick={() => setActiveLeadTab(label)}
-              >
-                {label}
-                {count ? <span className="rounded-[var(--md-radius-sm)] bg-[var(--md-bg-strong)] px-2 py-0.5 text-[12px] text-[var(--md-text)]">{count}</span> : null}
-              </button>
-            )
-          })}
-        </div>
+        <TabsRail tabs={leadTabs} activeTab={activeLeadTab} onChange={setActiveLeadTab} />
       </section>
 
       {activeLeadTab === "Overview" ? (
@@ -1005,7 +991,7 @@ export function CrmLeadDetailPage({
               <div className="px-5 pb-5">
                 <Button
                   variant="ghost"
-                  className="h-11 w-full rounded-[var(--md-radius-lg)] border-0 bg-white/20 text-[13px] font-medium text-[var(--md-ink)] shadow-[inset_0_0_0_1px_rgba(11,20,19,0.08)] hover:bg-white/45"
+                  className="h-11 w-full rounded-[var(--md-radius-lg)] border-0 bg-white/20 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/45"
                   onClick={() => toast.success("Contact draft created")}
                 >
                   <Plus data-icon="inline-start" strokeWidth={1.2} />
@@ -1168,7 +1154,7 @@ export function CrmListsPage({ navigate }: { navigate: (path: string) => void })
 
         <button
           type="button"
-          className="grid min-h-[184px] place-items-center rounded-[var(--md-radius-xl)] bg-white/20 p-5 text-center shadow-[inset_0_0_0_1px_rgba(11,20,19,0.08)] transition-[background,transform] duration-200 hover:scale-[1.01] hover:bg-white/35"
+          className="grid min-h-[184px] place-items-center rounded-[var(--md-radius-xl)] bg-white/20 p-5 text-center shadow-[var(--md-shadow-line)] transition-[background,transform] duration-200 hover:scale-[1.01] hover:bg-white/35"
           onClick={() => toast.success("New list draft created")}
         >
           <span>
