@@ -15,6 +15,7 @@ import {
   makeDashboardDrilldownId,
   type DashboardDrilldownId,
 } from "@/components/multideck/overview-panels"
+import { getDefaultDateRange } from "@/components/multideck/date-picker"
 import { DashboardCustomisePanel, type DashboardCustomiseMode } from "@/components/multideck/dashboard-customise-panel"
 import { YourJobsPanel, getBookingDetailPath } from "@/components/multideck/booking-components"
 import { initialFavouriteBookingIds, savedDashboardViews, type DashboardCustomRange, type DashboardRange } from "@/data/multideck-data"
@@ -44,18 +45,8 @@ const overviewIntroItem = {
   },
 }
 
-function getDateKey(date: Date) {
-  const year = date.getFullYear()
-  const month = `${date.getMonth() + 1}`.padStart(2, "0")
-  const day = `${date.getDate()}`.padStart(2, "0")
-  return `${year}-${month}-${day}`
-}
-
 function getDefaultCustomRange(): DashboardCustomRange {
-  const end = new Date()
-  const start = new Date(end)
-  start.setDate(end.getDate() - 6)
-  return { start: getDateKey(start), end: getDateKey(end) }
+  return getDefaultDateRange()
 }
 
 export function OverviewPage({ navigate }: { navigate: (path: string) => void }) {

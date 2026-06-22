@@ -26,6 +26,7 @@ import { Progress } from "@/components/ui/progress"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { MultideckDateRangePicker } from "@/components/multideck/date-picker"
 import { Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { bookings } from "@/data/multideck-data"
@@ -650,10 +651,16 @@ function focusLabelForMissingField(field: string) {
     "Existing booking": "Booking number",
     "Collection address": "Address lookup",
     "Delivery address": "Address lookup",
+    "Cargo ready from": "Collection dates",
+    "Requested collection date": "Collection dates",
+    "Requested delivery date": "Delivery dates",
+    "Cargo required by": "Delivery dates",
     "Number of packages": "Outer pkgs",
     Weight: "Gross kg",
     "First origin": "Name",
     "Final destination": "Name",
+    ETD: "Leg dates",
+    ETA: "Leg dates",
     "VAT and duty payment": "VAT and duty paid by",
   }
 
@@ -746,6 +753,7 @@ function FieldShell({
   required,
   missing,
   action,
+  asDiv,
   children,
 }: {
   label: string
@@ -753,10 +761,13 @@ function FieldShell({
   required?: boolean
   missing?: boolean
   action?: ReactNode
+  asDiv?: boolean
   children: ReactNode
 }) {
+  const Shell = asDiv ? motion.div : motion.label
+
   return (
-    <motion.label variants={fieldMotion} className="grid min-w-0 content-start gap-1.5" data-field-label={label}>
+    <Shell variants={fieldMotion} className="grid min-w-0 content-start gap-1.5" data-field-label={label}>
       <span className="flex min-h-[18px] items-center justify-between gap-3">
         <span className="text-[13px] font-medium text-[var(--md-ink)]">
           {label}
@@ -766,7 +777,7 @@ function FieldShell({
       </span>
       {children}
       {helper ? <span className="text-[12px] leading-5 text-[var(--md-text)]">{helper}</span> : null}
-    </motion.label>
+    </Shell>
   )
 }
 
@@ -2579,8 +2590,22 @@ function StepContent({
                 </FieldShell>
               </div>
               <div className="grid content-start gap-3 xl:border-l xl:border-[rgba(90,103,100,0.14)] xl:pl-4">
-                <TextField label="Cargo ready from" value={data.cargoReadyDate} onChange={(value) => update("cargoReadyDate", value)} type="date" required missing={missing.has("Cargo ready from")} dir="ltr" />
-                <TextField label="Requested collection date" value={data.requestedCollectionDate} onChange={(value) => update("requestedCollectionDate", value)} type="date" required missing={missing.has("Requested collection date")} dir="ltr" />
+                <FieldShell label="Collection dates" required missing={missing.has("Cargo ready from") || missing.has("Requested collection date")} asDiv>
+                  <MultideckDateRangePicker
+                    value={{ start: data.cargoReadyDate, end: data.requestedCollectionDate }}
+                    onChange={(range) => {
+                      update("cargoReadyDate", range.start ?? "")
+                      update("requestedCollectionDate", range.end ?? "")
+                    }}
+                    placeholder="Select collection dates"
+                    title="Collection dates"
+                    description="Pick when cargo is ready, then the requested collection date."
+                    startLabel="Cargo ready from"
+                    endLabel="Requested collection date"
+                    footerLabel="Selected collection dates"
+                    missing={missing.has("Cargo ready from") || missing.has("Requested collection date")}
+                  />
+                </FieldShell>
                 <TextField label="Collection reference" value={data.collectionReference} onChange={(value) => update("collectionReference", value)} placeholder="Gate pass, warehouse ref, supplier ref" dir="ltr" />
               </div>
             </div>
@@ -2632,8 +2657,22 @@ function StepContent({
                 </FieldShell>
               </div>
               <div className="grid content-start gap-3 xl:border-l xl:border-[rgba(90,103,100,0.14)] xl:pl-4">
-                <TextField label="Requested delivery date" value={data.requestedDeliveryDate} onChange={(value) => update("requestedDeliveryDate", value)} type="date" required missing={missing.has("Requested delivery date")} dir="ltr" />
-                <TextField label="Cargo required by" value={data.cargoRequiredByDate} onChange={(value) => update("cargoRequiredByDate", value)} type="date" required missing={missing.has("Cargo required by")} dir="ltr" />
+                <FieldShell label="Delivery dates" required missing={missing.has("Requested delivery date") || missing.has("Cargo required by")} asDiv>
+                  <MultideckDateRangePicker
+                    value={{ start: data.requestedDeliveryDate, end: data.cargoRequiredByDate }}
+                    onChange={(range) => {
+                      update("requestedDeliveryDate", range.start ?? "")
+                      update("cargoRequiredByDate", range.end ?? "")
+                    }}
+                    placeholder="Select delivery dates"
+                    title="Delivery dates"
+                    description="Pick the requested delivery date, then the date cargo is required by."
+                    startLabel="Requested delivery date"
+                    endLabel="Cargo required by"
+                    footerLabel="Selected delivery dates"
+                    missing={missing.has("Requested delivery date") || missing.has("Cargo required by")}
+                  />
+                </FieldShell>
                 <TextField label="Delivery reference" value={data.deliveryReference} onChange={(value) => update("deliveryReference", value)} placeholder="Booking slot, DC ref, customer ref" dir="ltr" />
               </div>
             </div>
@@ -2840,7 +2879,6 @@ function StepContent({
                       <TextField label="Name" value={transportDraft.fromName} onChange={(value) => updateTransportDraft("fromName", value)} placeholder="Shanghai" required missing={missing.has("First origin") && !data.transportLegs.length} />
                       <TextField label="Country" value={transportDraft.fromCountry} onChange={(value) => updateTransportDraft("fromCountry", value)} placeholder="China" />
                     </div>
-                    <TextField label="ETD" value={transportDraft.etd} onChange={(value) => updateTransportDraft("etd", value)} type="date" missing={missing.has("ETD") && !data.transportLegs.length} dir="ltr" />
                   </div>
                 </div>
 
@@ -2858,10 +2896,26 @@ function StepContent({
                       <TextField label="Name" value={transportDraft.toName} onChange={(value) => updateTransportDraft("toName", value)} placeholder="Felixstowe" required missing={missing.has("Final destination") && !data.transportLegs.length} />
                       <TextField label="Country" value={transportDraft.toCountry} onChange={(value) => updateTransportDraft("toCountry", value)} placeholder="United Kingdom" />
                     </div>
-                    <TextField label="ETA" value={transportDraft.eta} onChange={(value) => updateTransportDraft("eta", value)} type="date" missing={missing.has("ETA") && !data.transportLegs.length} dir="ltr" />
                   </div>
                 </div>
               </div>
+
+              <FieldShell label="Leg dates" required={data.mode === "Sea" || data.mode === "Air"} missing={!data.transportLegs.length && (missing.has("ETD") || missing.has("ETA"))} asDiv>
+                <MultideckDateRangePicker
+                  value={{ start: transportDraft.etd, end: transportDraft.eta }}
+                  onChange={(range) => {
+                    updateTransportDraft("etd", range.start ?? "")
+                    updateTransportDraft("eta", range.end ?? "")
+                  }}
+                  placeholder="Select ETD and ETA"
+                  title="Leg dates"
+                  description="Pick the estimated departure date, then the estimated arrival date."
+                  startLabel="ETD"
+                  endLabel="ETA"
+                  footerLabel="Selected leg dates"
+                  missing={!data.transportLegs.length && (missing.has("ETD") || missing.has("ETA"))}
+                />
+              </FieldShell>
 
               <FieldGroup className="lg:grid-cols-2">
                 <TextField label="Carrier / line" value={transportDraft.carrier} onChange={(value) => updateTransportDraft("carrier", value)} placeholder="COSCO, LH Cargo, Maersk..." />

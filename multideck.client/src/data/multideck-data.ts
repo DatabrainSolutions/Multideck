@@ -4,6 +4,7 @@ import {
   Bell,
   Boxes,
   BriefcaseBusiness,
+  CalendarDays,
   ChartArea,
   ChartBar,
   ChartBarStacked,
@@ -1978,6 +1979,16 @@ export const galleryComponents = [
     usageCode: `<SegmentedControl options={customerScopeTabs} value={scope} onChange={setScope} />\n<DexterActionPill onClick={() => navigate("/agent-dexter")} />\n<PageSettingsMenu\n  viewOptions={customerViewOptions}\n  value={viewMode}\n  onViewChange={setViewMode}\n  actions={[{ id: "export-customers", label: "Export CSV", icon: Download, onSelect: exportCustomers }]}\n/>\n\n<PageSettingsMenu\n  viewOptions={bookingViewOptions}\n  value={bookingViewMode}\n  onViewChange={setBookingViewMode}\n/>`,
   },
   {
+    id: "date-range-picker",
+    name: "Date Range Picker",
+    category: "Controls",
+    description: "A branded date-range selector for paired dates, with one trigger, a two-month calendar, and highlighted days between the start and end.",
+    details: "Use for date pairs such as cargo ready/requested collection, requested delivery/cargo required by, ETD/ETA, dashboard custom ranges, and booking search ranges. Avoid two separate native browser date inputs for paired dates.",
+    foundOn: [{ label: "Overview", route: "/" }, { label: "New booking", route: "/bookings/new" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components?component=date-range-picker" }],
+    componentCode: `export function MultideckDateRangePicker({ value, onChange }) {\n  return (\n    <Popover>\n      <PopoverTrigger asChild>\n        <Button className="h-11 rounded-[var(--md-radius-lg)] bg-[#F4F9F7] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.15)]">\n          <CalendarDays />\n          {formatDateRangeLabel(value)}\n        </Button>\n      </PopoverTrigger>\n      <PopoverContent>\n        <CalendarMonth />\n        <CalendarMonth />\n        <Button onClick={() => closePicker()}>Apply dates</Button>\n      </PopoverContent>\n    </Popover>\n  )\n}`,
+    usageCode: `const [collectionDates, setCollectionDates] = useState({\n  start: "2026-05-25",\n  end: "2026-06-04",\n})\n\n<MultideckDateRangePicker\n  value={collectionDates}\n  onChange={setCollectionDates}\n  placeholder="Select collection dates"\n  title="Collection dates"\n  description="Pick when cargo is ready, then the requested collection date."\n  startLabel="Cargo ready from"\n  endLabel="Requested collection date"\n/>`,
+  },
+  {
     id: "segmented-control",
     name: "Segmented Control",
     category: "Navigation",
@@ -2549,7 +2560,7 @@ export const galleryComponents = [
   },
 ]
 
-export const galleryCategories = ["All", "Design System", "Foundation", "Navigation", "Data", "Visualizations", "Feedback", "Operations", "CRM", "Agent Dexter"]
+export const galleryCategories = ["All", "Design System", "Foundation", "Controls", "Navigation", "Data", "Visualizations", "Feedback", "Operations", "CRM", "Agent Dexter"]
 
 export const galleryIcons = {
   colours: Palette,
@@ -2578,6 +2589,7 @@ export const galleryIcons = {
   sidebar: LayoutDashboard,
   "theme-toggle": MoonStar,
   "page-settings-menu": Settings2,
+  "date-range-picker": CalendarDays,
   "animated-list": ListOrdered,
   pagination: ListOrdered,
   "world-clock": Globe2,
