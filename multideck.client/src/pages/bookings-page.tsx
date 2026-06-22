@@ -203,7 +203,7 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
 
   return (
     <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel="Bookings" className="md-page md-page-stack">
-      <BookingListHeader viewMode={viewMode} onViewModeChange={setViewMode} onSpeakToDexter={() => setDexterOpen(true)} onCreateBooking={() => navigate("/bookings/new")} />
+      <BookingListHeader viewMode={viewMode} onViewModeChange={setViewMode} onSpeakToDexter={() => setDexterOpen(true)} />
       <div className="flex justify-start">
         <SegmentedControl options={bookingScopeTabs} value={scope} onChange={setScope} />
       </div>

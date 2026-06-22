@@ -352,12 +352,10 @@ export function BookingListHeader({
   viewMode,
   onViewModeChange,
   onSpeakToDexter,
-  onCreateBooking,
 }: {
   viewMode: BookingViewMode
   onViewModeChange: (mode: BookingViewMode) => void
   onSpeakToDexter: () => void
-  onCreateBooking: () => void
 }) {
   return (
     <div className="flex flex-col gap-[var(--md-page-stack-gap)] xl:flex-row xl:items-end xl:justify-between">
@@ -375,14 +373,6 @@ export function BookingListHeader({
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-2">
         <DexterActionPill onClick={onSpeakToDexter} />
-        <Button
-          type="button"
-          className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white shadow-[0_10px_22px_rgba(14,125,116,0.14)] transition-[background,color,box-shadow,opacity,transform] hover:scale-[1.01] hover:bg-[#0b6f67]"
-          onClick={onCreateBooking}
-        >
-          <Plus className="size-4" strokeWidth={1.35} />
-          + Booking
-        </Button>
         <BookingViewSwitch value={viewMode} onChange={onViewModeChange} />
       </div>
     </div>

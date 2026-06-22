@@ -56,7 +56,7 @@ import {
 } from "@/components/multideck/settings-components"
 import { languageOptions, getLanguageOption } from "@/i18n/languages"
 import { useLanguage } from "@/i18n/language-provider"
-import { clockDisplayLabelFromMode, clockDisplayLabels, clockDisplayModeFromLabel, readClockDisplayMode, writeClockDisplayMode } from "@/lib/user-preferences"
+import { clockDisplayLabelFromMode, clockDisplayLabels, clockDisplayModeFromLabel, readClockDisplayMode, resetAiAgentName, useAiAgentName, writeAiAgentName, writeClockDisplayMode } from "@/lib/user-preferences"
 import { cn } from "@/lib/utils"
 
 const settingsGroups: SettingsTabGroup[] = [
@@ -669,23 +669,34 @@ function NotificationsTab() {
 }
 
 function AgentDexterTab() {
+  const aiAgentName = useAiAgentName()
+
   return (
     <>
       <SettingsPageHeader
-        eyebrow="Workspace / Agent Dexter"
-        title="Agent Dexter"
-        description="Tune how proactive Dexter is, what it watches by default, and when it should escalate to a human. Changes apply to everything Dexter does in your workspace."
+        eyebrow={`Workspace / Agent ${aiAgentName}`}
+        title={`Agent ${aiAgentName}`}
+        description={`Tune how proactive ${aiAgentName} is, what it watches by default, and when it should escalate to a human. Changes apply to everything ${aiAgentName} does in your workspace.`}
         actions={
           <>
-            {compactAction("Reset to defaults", () => toast.message("Dexter defaults restored"))}
-            {primaryAction("Save", () => toast.success("Agent Dexter settings saved"))}
+            {compactAction("Reset to defaults", () => {
+              resetAiAgentName()
+              toast.message("AI agent defaults restored")
+            })}
+            {primaryAction("Save", () => toast.success(`Agent ${aiAgentName} settings saved`))}
           </>
         }
       />
       <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
+        <SettingsPanel title="Agent identity" description="System administrators can choose the workspace AI agent name shown across Multideck.">
+          <SettingsFieldRow label="AI agent name" description="Used in navigation, action buttons, chat panels, and operator-facing copy.">
+            <SettingsInput aria-label="AI agent name" value={aiAgentName} onChange={(event) => writeAiAgentName(event.target.value)} placeholder="Dexter" />
+          </SettingsFieldRow>
+        </SettingsPanel>
+
         <SettingsPanel
           title="Autonomy level"
-          description="Pick how much Dexter does on its own. You can always override per-task by setting an approval rule below."
+          description={`Pick how much ${aiAgentName} does on its own. You can always override per-task by setting an approval rule below.`}
           action={<span className="text-[12px] font-medium text-[var(--md-accent)]">Current - Suggest</span>}
         >
           <div className="px-5 py-5">
@@ -693,7 +704,7 @@ function AgentDexterTab() {
               initialValue="Suggest"
               options={[
                 { label: "Off", description: "No background agents. Manual chats only." },
-                { label: "Manual", description: "Dexter answers when asked. Never acts." },
+                { label: "Manual", description: `${aiAgentName} answers when asked. Never acts.` },
                 { label: "Suggest", description: "Drafts and proposes. Always asks before sending or changing data." },
                 { label: "Autopilot", description: "Acts within your rules. Asks only for irreversible or high-value actions." },
               ]}
@@ -701,8 +712,8 @@ function AgentDexterTab() {
           </div>
         </SettingsPanel>
 
-        <SettingsPanel title="Default watchers" description="Background agents Dexter runs for you. Toggle any off, or add more from the Dexter workspace.">
-          <ToggleSetting title="Doc parse confidence < 80%" description="Flags documents Dexter is unsure about for your review." initialChecked />
+        <SettingsPanel title="Default watchers" description={`Background agents ${aiAgentName} runs for you. Toggle any off, or add more from the ${aiAgentName} workspace.`}>
+          <ToggleSetting title="Doc parse confidence < 80%" description={`Flags documents ${aiAgentName} is unsure about for your review.`} initialChecked />
           <ToggleSetting title="Customs hold raised" description="Pings within 60 seconds of any new hold." initialChecked />
           <ToggleSetting title="ETA slip > 6 hours" description="Notifies you and the customer after approval." initialChecked />
           <ToggleSetting title="Carrier on-time degradation" description="Watches for any carrier dropping 5%+ vs trailing 90d." initialChecked />
@@ -710,7 +721,7 @@ function AgentDexterTab() {
           <ToggleSetting title="Quote silence > 48h" description="Drafts a follow-up after two days of silence on open quotes." initialChecked={false} />
         </SettingsPanel>
 
-        <SettingsPanel title="Approval rules" description="Dexter will always pause for explicit approval when any rule below is true, regardless of autonomy level.">
+        <SettingsPanel title="Approval rules" description={`${aiAgentName} will always pause for explicit approval when any rule below is true, regardless of autonomy level.`}>
           <SettingsFieldRow label="Outbound emails to customers">
             <ChoiceSetting options={["Always ask", "Ask if > EUR 1k impact", "Never ask"]} initialValue="Always ask" />
           </SettingsFieldRow>
