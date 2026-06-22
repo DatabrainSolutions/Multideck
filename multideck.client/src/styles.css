@@ -82,16 +82,16 @@
   --md-avatar-bg: #dfd1ad;
   --md-job-card-bg: color-mix(in srgb, var(--md-green) 17%, white);
   --md-job-card-hover: color-mix(in srgb, var(--md-green) 17%, white);
-  --md-job-card-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.9), 0 0 0 1px rgba(46, 142, 96, 0.26), 0 10px 22px rgba(46, 142, 96, 0.1);
-  --md-job-card-hover-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.92), 0 0 0 1px rgba(46, 142, 96, 0.3), 0 14px 28px rgba(46, 142, 96, 0.13);
+  --md-job-card-shadow: var(--md-premium-stroke), 0 10px 22px rgba(46, 142, 96, 0.1);
+  --md-job-card-hover-shadow: var(--md-premium-stroke), 0 14px 28px rgba(46, 142, 96, 0.13);
   --md-clock-selected-bg: rgba(255, 255, 255, 0.58);
   --md-crm-stage-bg: #ffffff;
   --md-crm-deal-bg: #ffffff;
   --md-crm-deal-hover-bg: #ffffff;
   --md-crm-deal-selected-bg: #ffffff;
-  --md-crm-deal-shadow: inset 0 0 0 1px rgba(14, 125, 116, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.94), 0 10px 24px rgba(42, 52, 50, 0.075);
-  --md-crm-deal-hover-shadow: inset 0 0 0 1px rgba(14, 125, 116, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.96), 0 16px 32px rgba(42, 52, 50, 0.1);
-  --md-crm-deal-selected-shadow: inset 0 0 0 1px rgba(14, 125, 116, 0.38), 0 0 0 3px rgba(14, 125, 116, 0.1), 0 14px 28px rgba(42, 52, 50, 0.09);
+  --md-crm-deal-shadow: var(--md-premium-stroke), 0 10px 24px rgba(42, 52, 50, 0.075);
+  --md-crm-deal-hover-shadow: var(--md-premium-stroke), 0 16px 32px rgba(42, 52, 50, 0.1);
+  --md-crm-deal-selected-shadow: var(--md-premium-stroke), 0 0 0 3px rgba(14, 125, 116, 0.1), 0 14px 28px rgba(42, 52, 50, 0.09);
   --md-report-preview-bg: rgba(223, 234, 231, 0.72);
   --md-report-preview-hover-bg: rgba(233, 242, 240, 0.92);
   --md-report-donut-hole: inset 0 0 0 8px rgba(223, 234, 231, 0.95);
@@ -115,14 +115,18 @@
   --md-radius-lg: 10px;
   --md-radius-xl: 14px;
   --md-radius-2xl: 18px;
-  --md-premium-stroke: inset 0 1px 0 rgba(255, 255, 255, 0.72), inset 0 0 0 1px rgba(255, 255, 255, 0.58), inset 0 -14px 26px rgba(15, 23, 42, 0.035), 0 0 0 1px rgba(15, 23, 42, 0.055), 0 18px 46px rgba(15, 23, 42, 0.08);
-  --md-premium-stroke-soft: inset 0 1px 0 rgba(255, 255, 255, 0.64), inset 0 0 0 1px rgba(255, 255, 255, 0.48), 0 0 0 1px rgba(15, 23, 42, 0.045), 0 12px 30px rgba(15, 23, 42, 0.065);
-  --md-shadow-line: var(--md-premium-stroke-soft);
-  --md-shadow-soft: var(--md-premium-stroke);
-  --md-shadow-lift: var(--md-premium-stroke);
-  --md-shadow-green-card: inset 0 0 0 1px rgba(255, 255, 255, 0.9), 0 0 0 1px rgba(14, 125, 116, 0.18), 0 10px 24px rgba(14, 125, 116, 0.08);
-  --md-shadow-green-card-hover: inset 0 0 0 1px rgba(255, 255, 255, 0.92), 0 0 0 1px rgba(14, 125, 116, 0.24), 0 14px 30px rgba(14, 125, 116, 0.1);
-  --md-shadow-green-card-selected: inset 0 0 0 1px rgba(255, 255, 255, 0.92), 0 0 0 3px rgba(14, 125, 116, 0.13), 0 16px 34px rgba(14, 125, 116, 0.12);
+  --md-premium-stroke: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  --md-premium-stroke-soft: var(--md-premium-stroke);
+  --md-stroke-top: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 -1px 0 rgba(0, 0, 0, 0.04);
+  --md-stroke-right: inset -1px 0 0 rgba(255, 255, 255, 0.08), 1px 0 0 rgba(0, 0, 0, 0.04);
+  --md-stroke-bottom: inset 0 -1px 0 rgba(255, 255, 255, 0.08), 0 1px 0 rgba(0, 0, 0, 0.04);
+  --md-stroke-left: inset 1px 0 0 rgba(255, 255, 255, 0.08), -1px 0 0 rgba(0, 0, 0, 0.04);
+  --md-shadow-line: var(--md-premium-stroke);
+  --md-shadow-soft: var(--md-premium-stroke), 0 12px 28px rgba(42, 52, 50, 0.08);
+  --md-shadow-lift: var(--md-premium-stroke), 0 18px 38px rgba(42, 52, 50, 0.14);
+  --md-shadow-green-card: var(--md-premium-stroke), 0 10px 24px rgba(14, 125, 116, 0.08);
+  --md-shadow-green-card-hover: var(--md-premium-stroke), 0 14px 30px rgba(14, 125, 116, 0.1);
+  --md-shadow-green-card-selected: var(--md-premium-stroke), 0 0 0 3px rgba(14, 125, 116, 0.13), 0 16px 34px rgba(14, 125, 116, 0.12);
   --md-motion: 220ms cubic-bezier(0.22, 1, 0.36, 1);
   --md-motion-fast: 160ms cubic-bezier(0.22, 1, 0.36, 1);
   --md-motion-panel: 300ms cubic-bezier(0.16, 1, 0.3, 1);
@@ -195,28 +199,32 @@
   --md-avatar-bg: #384b43;
   --md-job-card-bg: color-mix(in srgb, var(--md-green) 10%, var(--md-surface-soft));
   --md-job-card-hover: color-mix(in srgb, var(--md-green) 14%, var(--md-surface-soft));
-  --md-job-card-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.26), 0 12px 28px rgba(0, 0, 0, 0.24);
-  --md-job-card-hover-shadow: inset 0 0 0 1px rgba(119, 209, 154, 0.2), 0 0 0 1px rgba(0, 0, 0, 0.28), 0 16px 34px rgba(0, 0, 0, 0.28);
+  --md-job-card-shadow: var(--md-premium-stroke), 0 12px 28px rgba(0, 0, 0, 0.24);
+  --md-job-card-hover-shadow: var(--md-premium-stroke), 0 16px 34px rgba(0, 0, 0, 0.28);
   --md-clock-selected-bg: rgba(232, 241, 235, 0.1);
   --md-crm-stage-bg: linear-gradient(180deg, color-mix(in srgb, var(--md-surface-soft) 90%, transparent), color-mix(in srgb, var(--md-surface) 82%, transparent));
   --md-crm-deal-bg: linear-gradient(180deg, color-mix(in srgb, var(--md-surface-soft) 92%, transparent), color-mix(in srgb, var(--md-surface) 88%, transparent));
   --md-crm-deal-hover-bg: color-mix(in srgb, var(--md-surface-soft) 94%, transparent);
   --md-crm-deal-selected-bg: color-mix(in srgb, var(--md-surface-soft) 96%, transparent);
-  --md-crm-deal-shadow: inset 0 0 0 1px rgba(104, 199, 184, 0.16), 0 0 0 1px rgba(0, 0, 0, 0.28), 0 12px 28px rgba(0, 0, 0, 0.24);
-  --md-crm-deal-hover-shadow: inset 0 0 0 1px rgba(104, 199, 184, 0.26), 0 0 0 1px rgba(0, 0, 0, 0.3), 0 16px 34px rgba(0, 0, 0, 0.28);
-  --md-crm-deal-selected-shadow: inset 0 0 0 1px rgba(104, 199, 184, 0.32), 0 0 0 3px rgba(104, 199, 184, 0.1), 0 16px 34px rgba(0, 0, 0, 0.3);
+  --md-crm-deal-shadow: var(--md-premium-stroke), 0 12px 28px rgba(0, 0, 0, 0.24);
+  --md-crm-deal-hover-shadow: var(--md-premium-stroke), 0 16px 34px rgba(0, 0, 0, 0.28);
+  --md-crm-deal-selected-shadow: var(--md-premium-stroke), 0 0 0 3px rgba(104, 199, 184, 0.1), 0 16px 34px rgba(0, 0, 0, 0.3);
   --md-report-preview-bg: color-mix(in srgb, var(--md-surface-soft) 86%, transparent);
   --md-report-preview-hover-bg: color-mix(in srgb, var(--md-surface-soft) 94%, transparent);
   --md-report-donut-hole: inset 0 0 0 8px color-mix(in srgb, var(--md-surface-soft) 94%, transparent);
   --md-composer-inner-bg: color-mix(in srgb, var(--md-surface-soft) 90%, transparent);
-  --md-premium-stroke: inset 0 1px 0 rgba(255, 255, 255, 0.11), inset 0 0 0 1px rgba(255, 255, 255, 0.09), inset 0 -16px 30px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.22), 0 18px 46px rgba(0, 0, 0, 0.28);
-  --md-premium-stroke-soft: inset 0 1px 0 rgba(255, 255, 255, 0.11), inset 0 0 0 1px rgba(255, 255, 255, 0.09), inset 0 -16px 30px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.22), 0 12px 30px rgba(0, 0, 0, 0.22);
-  --md-shadow-line: var(--md-premium-stroke-soft);
-  --md-shadow-soft: var(--md-premium-stroke);
-  --md-shadow-lift: var(--md-premium-stroke);
-  --md-shadow-green-card: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 0 0 1px rgba(104, 199, 184, 0.22), 0 14px 32px rgba(0, 0, 0, 0.26);
-  --md-shadow-green-card-hover: inset 0 0 0 1px rgba(255, 255, 255, 0.1), 0 0 0 1px rgba(104, 199, 184, 0.28), 0 18px 40px rgba(0, 0, 0, 0.3);
-  --md-shadow-green-card-selected: inset 0 0 0 1px rgba(255, 255, 255, 0.1), 0 0 0 3px rgba(104, 199, 184, 0.16), 0 20px 46px rgba(0, 0, 0, 0.34);
+  --md-premium-stroke: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.24);
+  --md-premium-stroke-soft: var(--md-premium-stroke);
+  --md-stroke-top: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 -1px 0 rgba(0, 0, 0, 0.24);
+  --md-stroke-right: inset -1px 0 0 rgba(255, 255, 255, 0.08), 1px 0 0 rgba(0, 0, 0, 0.24);
+  --md-stroke-bottom: inset 0 -1px 0 rgba(255, 255, 255, 0.08), 0 1px 0 rgba(0, 0, 0, 0.24);
+  --md-stroke-left: inset 1px 0 0 rgba(255, 255, 255, 0.08), -1px 0 0 rgba(0, 0, 0, 0.24);
+  --md-shadow-line: var(--md-premium-stroke);
+  --md-shadow-soft: var(--md-premium-stroke), 0 12px 28px rgba(0, 0, 0, 0.24);
+  --md-shadow-lift: var(--md-premium-stroke), 0 18px 38px rgba(0, 0, 0, 0.3);
+  --md-shadow-green-card: var(--md-premium-stroke), 0 14px 32px rgba(0, 0, 0, 0.26);
+  --md-shadow-green-card-hover: var(--md-premium-stroke), 0 18px 40px rgba(0, 0, 0, 0.3);
+  --md-shadow-green-card-selected: var(--md-premium-stroke), 0 0 0 3px rgba(104, 199, 184, 0.16), 0 20px 46px rgba(0, 0, 0, 0.34);
 
   --background: var(--md-bg);
   --foreground: var(--md-ink);
@@ -402,21 +410,11 @@ button {
   }
 
   [data-theme="dark"] .premium-stroke {
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.11),
-      inset 0 0 0 1px rgba(255, 255, 255, 0.09),
-      inset 0 -16px 30px rgba(0, 0, 0, 0.18),
-      0 0 0 1px rgba(0, 0, 0, 0.22),
-      0 18px 46px rgba(0, 0, 0, 0.28);
+    box-shadow: var(--md-premium-stroke);
   }
 
   [data-theme="dark"] .premium-stroke-soft {
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.11),
-      inset 0 0 0 1px rgba(255, 255, 255, 0.09),
-      inset 0 -16px 30px rgba(0, 0, 0, 0.18),
-      0 0 0 1px rgba(0, 0, 0, 0.22),
-      0 12px 30px rgba(0, 0, 0, 0.22);
+    box-shadow: var(--md-premium-stroke-soft);
   }
 
   .md-page {
@@ -575,10 +573,10 @@ button {
     width: 30px;
     height: 30px;
     border: 0;
-    border-bottom: 1px solid rgba(11, 20, 19, 0.06);
     background: rgba(251, 253, 253, 0.9);
     color: var(--md-ink);
     font: 500 16px/29px var(--font-sans);
+    box-shadow: var(--md-stroke-bottom);
     transition: background var(--md-motion), color var(--md-motion);
   }
 
@@ -588,7 +586,7 @@ button {
   }
 
   .md-booking-map .leaflet-control-zoom a:last-child {
-    border-bottom: 0;
+    box-shadow: none;
   }
 
   .md-booking-map .leaflet-control-zoom a:hover {
@@ -686,7 +684,7 @@ button {
     padding: 16px 18px;
     background: rgba(251, 253, 253, 0.92);
     color: var(--md-ink);
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.82), 0 0 0 1px rgba(11, 20, 19, 0.04), 0 18px 46px rgba(42, 52, 50, 0.16);
+    box-shadow: var(--md-shadow-lift);
     backdrop-filter: blur(20px);
   }
 
@@ -699,7 +697,7 @@ button {
     padding: 16px 18px !important;
     background: rgba(251, 253, 253, 0.92) !important;
     color: var(--md-ink) !important;
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.82), 0 0 0 1px rgba(11, 20, 19, 0.04), 0 18px 46px rgba(42, 52, 50, 0.16) !important;
+    box-shadow: var(--md-shadow-lift) !important;
     backdrop-filter: blur(20px);
   }
 
@@ -1058,10 +1056,7 @@ button {
   .md-dexter-companion-panel {
     border: 0;
     background: #fff;
-    box-shadow:
-      inset 1px 0 0 rgba(42, 52, 50, 0.12),
-      -1px 0 0 rgba(255, 255, 255, 0.92),
-      -14px 0 28px rgba(42, 52, 50, 0.035);
+    box-shadow: var(--md-premium-stroke), -14px 0 28px rgba(42, 52, 50, 0.035);
   }
 
   .md-dexter-companion-header {
@@ -1125,9 +1120,7 @@ button {
 
   .md-dexter-companion-composer-shell {
     background: rgba(255, 255, 255, 0.98);
-    box-shadow:
-      inset 0 0 0 1px rgba(42, 52, 50, 0.1),
-      0 14px 32px rgba(42, 52, 50, 0.05);
+    box-shadow: var(--md-premium-stroke), 0 14px 32px rgba(42, 52, 50, 0.05);
   }
 
   .md-dexter-companion-composer-inner {
@@ -1136,10 +1129,7 @@ button {
 
   .dark .md-dexter-companion-panel {
     background: rgb(15, 23, 21);
-    box-shadow:
-      inset 1px 0 0 rgba(255, 255, 255, 0.12),
-      -1px 0 0 rgba(0, 0, 0, 0.24),
-      -14px 0 28px rgba(0, 0, 0, 0.2);
+    box-shadow: var(--md-premium-stroke), -14px 0 28px rgba(0, 0, 0, 0.2);
   }
 
   .dark .md-dexter-companion-header {

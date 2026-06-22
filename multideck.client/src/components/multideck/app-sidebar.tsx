@@ -377,12 +377,12 @@ export function AppSidebar({
   }
 
   return (
-    <aside ref={sidebarRef} className={cn("relative isolate flex h-full min-h-0 w-[var(--md-sidebar-width)] shrink-0 flex-col bg-[var(--md-sidebar-bg)] px-[var(--md-gap-lg)] py-[var(--md-page-stack-gap)] shadow-[inset_-1px_0_0_rgba(11,20,19,0.06),0_0_0_1px_rgba(255,255,255,0.44)] dark:shadow-[inset_-1px_0_0_rgba(255,255,255,0.07),0_0_0_1px_rgba(0,0,0,0.2)]", className)}>
+    <aside ref={sidebarRef} className={cn("relative isolate flex h-full min-h-0 w-[var(--md-sidebar-width)] shrink-0 flex-col bg-[var(--md-sidebar-bg)] px-[var(--md-gap-lg)] py-[var(--md-page-stack-gap)] shadow-[var(--md-stroke-right)]", className)}>
       {activeTarget ? (
         <motion.span
           data-sidebar-active-surface
           aria-hidden="true"
-          className="pointer-events-none absolute z-0 bg-[var(--md-bg-strong)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.68),0_8px_18px_rgba(42,52,50,0.08)]"
+          className="pointer-events-none absolute z-0 bg-[var(--md-bg-strong)] shadow-[var(--md-shadow-line),0_8px_18px_rgba(42,52,50,0.08)]"
           style={{ top: 0, left: 0 }}
           initial={false}
           animate={{

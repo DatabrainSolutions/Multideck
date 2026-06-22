@@ -69,7 +69,7 @@ export function ReportTemplateBuilderPage({ navigate }: { navigate: (path: strin
 
   return (
     <div className="min-h-screen bg-[var(--md-bg)] text-[var(--md-ink)]">
-      <header className="sticky top-0 z-40 flex h-[76px] items-center justify-between gap-[var(--md-gap-lg)] bg-[var(--md-topbar-bg)] px-[var(--md-page-pad)] shadow-[inset_0_-1px_0_var(--md-line)] backdrop-blur-xl">
+      <header className="sticky top-0 z-40 flex h-[76px] items-center justify-between gap-[var(--md-gap-lg)] bg-[var(--md-topbar-bg)] px-[var(--md-page-pad)] shadow-[var(--md-stroke-bottom)] backdrop-blur-xl">
         <div className="flex min-w-0 items-center gap-4">
           <img src={multideckMark} alt="" className="hidden h-8 w-8 sm:block" />
           <button type="button" className="flex shrink-0 items-center gap-2 text-[14px] font-medium text-[var(--md-text)] transition-colors hover:text-[var(--md-ink)]" onClick={() => navigate("/reports")}>
