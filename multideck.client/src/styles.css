@@ -291,6 +291,40 @@ textarea::placeholder {
   opacity: var(--md-placeholder-opacity);
 }
 
+.md-field-xs {
+  --md-field-value-width: 72px;
+  --md-field-width: 156px;
+}
+
+.md-field-sm {
+  --md-field-value-width: 112px;
+  --md-field-width: 198px;
+}
+
+.md-field-md {
+  --md-field-value-width: 164px;
+  --md-field-width: 250px;
+}
+
+.md-field-lg {
+  --md-field-value-width: 230px;
+  --md-field-width: 316px;
+}
+
+.md-field-wide {
+  --md-field-value-width: 300px;
+  --md-field-width: 386px;
+}
+
+.md-field-xs,
+.md-field-sm,
+.md-field-md,
+.md-field-lg,
+.md-field-wide {
+  grid-template-columns: 76px minmax(0, var(--md-field-value-width));
+  width: min(100%, var(--md-field-width));
+}
+
 input::-webkit-input-placeholder,
 textarea::-webkit-input-placeholder {
   color: var(--md-placeholder);

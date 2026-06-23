@@ -58,7 +58,7 @@ export const bookingViewOptions = [
   { value: "Table", label: "Table", icon: Table2 },
   { value: "Board", label: "Board", icon: KanbanSquare },
 ] satisfies readonly PageSettingsViewOption<BookingViewMode>[]
-const bookingDetailTabs = ["Overview", "Documents", "Customs", "Costs", "Comms", "Timeline"] as const
+const bookingDetailTabs = ["Details", "Parties", "Cargo", "Routing", "Collection & Delivery", "Customs", "Job Costing", "Documents", "Workflow", "Notes"] as const
 type BookingDetailTab = (typeof bookingDetailTabs)[number]
 export const bookingSearchFieldOptions = [
   { value: "any", label: "Any field", placeholder: "ID, invoice, customer, VIN..." },
@@ -149,6 +149,51 @@ const askStarterMessages = [
 ]
 
 const askSuggestions = ["Explain the hold", "What costs changed?", "Draft shipper email"]
+
+const partyRows = [
+  ["Customer / Billing", "NORFABIE", "Northstar Fabrication Ltd", "14 Docklands Way, Ardmore, AM1 4QA, Fictionland", "Operations Desk", "900045612"],
+  ["Shipper / Consignor", "NORFABIE", "Northstar Fabrication Ltd", "14 Docklands Way, Ardmore, AM1 4QA, Fictionland", "Northport Export Team", "SHIP-9001"],
+  ["Consignee", "HARRETSYD", "Harbourview Retail Pty Ltd", "27 Harbour View Road, Bay District BD 2048, Pacifica", "Bayview Imports", "PO-9017"],
+  ["Notify Party", "HARRETSYD", "Harbourview Retail Pty Ltd", "27 Harbour View Road, Bay District BD 2048, Pacifica", "Warehouse Receiving", "N/A"],
+] as const
+
+const routeLegRows = [
+  ["1", "Sea", "Main Leg", "FLNPT", "Northport, Fictionland", "FDWST", "Le Havre, France", "ED611R", "TROUPER", "18-Mar-26 00:00", "04-Apr-26 04:30", "19-Mar-26 12:07", ""],
+  ["2", "Sea", "Transhipment", "FDWST", "Le Havre, France", "MUPLU", "Port Louis, Mauritius", "IP611R", "MSC Sindy", "30-Mar-26 06:45", "10-Apr-26 00:00", "", ""],
+  ["3", "Sea", "On Carriage", "MUPLU", "Port Louis, Mauritius", "PCBVH", "Bayhaven, Pacifica", "MA601A", "MSC Toronto", "23-Apr-26 00:00", "28-May-26 05:24", "", "28-May-26 06:00"],
+] as const
+
+const cargoLineRows = [
+  ["NXDU7086840", "1000466", "1,380", "PKG", "7,300.000", "KG", "GEN", "Composite panels", "0.000", "M3"],
+  ["VRHU6073892", "1000486", "1,000", "PKG", "7,420.000", "KG", "GEN", "Composite panels", "0.000", "M3"],
+  ["QZNU3123998", "1000462", "1,380", "PKG", "7,200.000", "KG", "GEN", "Composite panels", "0.000", "M3"],
+  ["ALSU6578880", "1000485", "1,380", "PKG", "7,280.000", "KG", "GEN", "Composite panels", "0.000", "M3"],
+  ["BXHU7237091", "1000490", "1,380", "PKG", "7,080.000", "KG", "GEN", "Composite panels", "0.000", "M3"],
+] as const
+
+const costLineRows = [
+  ["SYSAUTO", "System automation fee", "FIS", "BLUWATGN", "GBP", "3.04", "3.04", "NORFABIE", "GBP", "0.00", "VAT"],
+  ["FRT", "International Freight", "FIS", "BLUWATGN", "USD", "7,200.00", "5,486.55", "NORFABIE", "GBP", "21,072.00", "FREEVAT"],
+  ["MISCFRT", "Freight Auxiliaries", "FIS", "BLUWATGN", "USD", "4,636.00", "3,532.73", "NORFABIE", "GBP", "0.00", "FREEVAT"],
+  ["ODOC", "Origin Documentation Fee", "FIS", "BLUWATGN", "EUR", "150.00", "131.53", "NORFABIE", "GBP", "0.00", "FREEVAT"],
+  ["OTHC", "Origin Terminal Handling", "FIS", "BLUWATGN", "EUR", "700.00", "613.82", "NORFABIE", "GBP", "0.00", "FREEVAT"],
+  ["MISCFRT", "Destination charges", "FIS", "BLUWATGN", "GBP", "2,304.70", "2,304.70", "NORFABIE", "GBP", "0.00", "FREEVAT"],
+] as const
+
+const documentRows = [
+  ["02-Apr-26 11:04", "HBL", "Copy (Express)", "House Bill Copy - REF9002686.pdf"],
+  ["20-Mar-26 13:02", "EMB", "Express MBL", "Master Bill REF449331.pdf"],
+  ["11-Mar-26 14:57", "MSC", "Customs from roadtrain", "REF9002686_ROUTE_UPDATE_5x40HC.msg"],
+  ["11-Mar-26 12:12", "LBC", "Line Booking Confirmation", "carrier-booking-confirmation-REF90115.pdf"],
+  ["11-Mar-26 11:31", "SHI", "Shipping Instruction", "REF9002686 Shipping Instruction.pdf"],
+  ["10-Mar-26 17:26", "CIV", "Commercial Invoice", "Load 9002 Commercial Invoice.pdf"],
+  ["10-Mar-26 17:26", "PKL", "Packing List", "Load 9002 Packing List.pdf"],
+] as const
+
+const workflowRows = [
+  ["C9001283", "1", "Departure from First Load Port", "DEP", "Exception-Scheduled Action Missing", "30-Mar-26 06:45", "19-Mar-26 12:07", "Published"],
+  ["C9001283", "6", "Arrival at Final Discharge Port", "ARV", "Exception-Scheduled Action Missing", "28-May-26 05:24", "22-Mar-26 12:53", "Published"],
+] as const
 
 export function BookingStatusPill({ status }: { status: BookingStatus }) {
   return <StatusPill tone={statusTone[status]}>{status}</StatusPill>
@@ -1005,25 +1050,40 @@ export function BookingBoardPreview({
   )
 }
 
-function DetailSideRail({ navigate }: { navigate: (path: string) => void }) {
+function DetailSideRail({
+  navigate,
+  collapsed,
+  onCollapsedChange,
+}: {
+  navigate: (path: string) => void
+  collapsed: boolean
+  onCollapsedChange: (collapsed: boolean) => void
+}) {
   const related = bookings.filter((booking) => booking.id !== "MD-22455").slice(0, 4)
 
   return (
-    <aside className="hidden h-screen min-h-0 w-[262px] shrink-0 overflow-hidden bg-[var(--md-sidebar-bg)] px-[var(--md-page-stack-gap)] py-[var(--md-page-pad)] shadow-[inset_-1px_0_0_rgba(11,20,19,0.06)] lg:block">
-      <img src={multideckFullLogo} alt="Multideck" className="h-[28px] w-auto" />
-      <button type="button" className="mt-[calc(var(--md-page-section-gap)+var(--md-gap-xl))] flex items-center gap-[var(--md-gap-sm)] text-[14px] font-medium text-[var(--md-text)] hover:text-[var(--md-ink)]" onClick={() => navigate("/bookings")}>
-        <ArrowLeft className="size-4" strokeWidth={1.2} />
-        All bookings
+    <aside className={cn("hidden h-screen min-h-0 shrink-0 overflow-hidden bg-[var(--md-sidebar-bg)] px-3 py-4 shadow-[inset_-1px_0_0_rgba(11,20,19,0.06)] transition-[width] duration-300 lg:flex lg:flex-col", collapsed ? "w-[68px]" : "w-[248px]")}>
+      <div className="flex items-center justify-between gap-2">
+        {!collapsed ? <img src={multideckFullLogo} alt="Multideck" className="h-[26px] w-auto" /> : <span className="grid size-9 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] text-[13px] font-medium text-white">M</span>}
+        <Button type="button" variant="ghost" size="icon" aria-label={collapsed ? "Expand booking rail" : "Collapse booking rail"} className="size-8 rounded-[var(--md-radius-md)] bg-white/45 shadow-[var(--md-shadow-line)]" onClick={() => onCollapsedChange(!collapsed)}>
+          <PanelRightClose className={cn("size-4 transition-transform", collapsed && "rotate-180")} strokeWidth={1.3} />
+        </Button>
+      </div>
+      <button type="button" className={cn("mt-8 flex items-center gap-2 rounded-[var(--md-radius-md)] px-2 py-2 text-[13px] font-medium text-[var(--md-text)] hover:bg-white/45 hover:text-[var(--md-ink)]", collapsed && "justify-center")} onClick={() => navigate("/bookings")}>
+        <ArrowLeft className="size-4 shrink-0" strokeWidth={1.2} />
+        {!collapsed ? <span>All bookings</span> : null}
       </button>
-      <p className="mt-[var(--md-page-section-gap)] text-[12px] font-medium text-[var(--md-subtle)]">Related</p>
-      <div className="mt-[var(--md-page-stack-gap)] flex flex-col gap-[var(--md-page-stack-gap)]">
+      {!collapsed ? <p className="mt-6 px-2 text-[11px] font-medium uppercase text-[var(--md-subtle)]">Related shipments</p> : null}
+      <div className="mt-3 flex min-h-0 flex-col gap-2 overflow-y-auto md-scrollbar">
         {related.map((booking) => (
-          <button key={booking.id} type="button" className="grid grid-cols-[10px_1fr] gap-3 text-left" onClick={() => navigate(getBookingDetailPath(booking.id))}>
-            <span className="mt-2 size-2 rounded-full" style={{ background: toneToVar(booking.tone) }} />
-            <span>
-              <span className="block text-[13px] text-[var(--md-text)]">{booking.id}</span>
-              <span className="block text-[14px] font-medium leading-5 text-[var(--md-ink)]">{booking.route}</span>
-            </span>
+          <button key={booking.id} type="button" className={cn("rounded-[var(--md-radius-lg)] px-2 py-2 text-left transition hover:bg-white/45", collapsed ? "grid place-items-center" : "grid grid-cols-[10px_1fr] gap-3")} onClick={() => navigate(getBookingDetailPath(booking.id))}>
+            <span className="mt-1 size-2 rounded-full" style={{ background: toneToVar(booking.tone) }} />
+            {!collapsed ? (
+              <span className="min-w-0">
+                <span className="block truncate text-[12px] text-[var(--md-text)]">{booking.id}</span>
+                <span className="block truncate text-[13px] font-medium leading-5 text-[var(--md-ink)]">{booking.route}</span>
+              </span>
+            ) : null}
           </button>
         ))}
       </div>
@@ -1035,40 +1095,47 @@ function BookingDetailHeader({
   activeTab,
   onTabChange,
   record,
+  navigate,
 }: {
   activeTab: BookingDetailTab
   onTabChange: (tab: BookingDetailTab) => void
   record: ReturnType<typeof getBookingDetailRecord>
+  navigate: (path: string) => void
 }) {
   const tabs = bookingDetailTabs.map((label) => ({ label }))
   const statusLabel = record.job?.status ?? record.booking.status
   const statusTone = record.job?.tone ?? record.booking.tone
 
   return (
-    <header className="border-b border-[rgba(11,20,19,0.08)] px-[var(--md-page-pad)] pt-[var(--md-page-pad)]">
-      <div className="flex flex-col gap-[var(--md-page-stack-gap)] xl:flex-row xl:items-start xl:justify-between">
+    <header className="sticky top-0 z-20 border-b border-[rgba(11,20,19,0.08)] bg-[color-mix(in_srgb,var(--md-bg)_94%,transparent)] px-4 pt-4 backdrop-blur-xl md:px-5">
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-3 text-[13px] font-medium text-[var(--md-text)]">
-            <span className="uppercase tracking-normal">Booking</span>
+            <span className="uppercase tracking-normal">Shipment</span>
             <span>{record.id}</span>
             <StatusPill tone={statusTone} className="h-7 px-3 text-[13px]">{statusLabel}</StatusPill>
             <StatusPill tone="neutral" className="h-7 px-3 text-[13px]">{record.booking.mode} · {record.booking.container}</StatusPill>
           </div>
-          <div className="mt-[var(--md-page-stack-gap)] flex flex-wrap items-end gap-x-[var(--md-page-stack-gap)] gap-y-[var(--md-gap-sm)]">
-            <h1 className="text-[34px] font-medium leading-tight tracking-normal text-[var(--md-ink)] md:text-[40px]">{record.job?.route ?? record.booking.route}</h1>
+          <div className="mt-2 flex flex-wrap items-end gap-x-4 gap-y-1">
+            <h1 className="text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)] md:text-[28px]">{record.job?.route ?? record.booking.route}</h1>
             <p className="pb-1 text-[15px] font-medium text-[var(--md-text)]">{record.booking.carrier} · {record.booking.customer}</p>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="ghost" className="h-11 rounded-[var(--md-radius-lg)] bg-white/35 px-4 text-[14px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/65">
-            Notify shipper
+          <Button variant="ghost" className="h-9 rounded-[var(--md-radius-md)] bg-white/35 px-3 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/65" onClick={() => navigate(`/bookings/${record.id.toLowerCase()}/cargowise-reference`)}>
+            Full data reference
           </Button>
-          <Button className="h-11 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-5 text-[14px] font-medium text-white hover:bg-[#0b6f67]">
-            Resolve hold
+          <Button variant="ghost" className="h-9 rounded-[var(--md-radius-md)] bg-white/35 px-3 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/65">
+            Add note
+          </Button>
+          <Button className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white hover:bg-[#0b6f67]">
+            Save changes
           </Button>
         </div>
       </div>
-      <TabsRail tabs={tabs} activeTab={activeTab} onChange={(tab) => onTabChange(tab as BookingDetailTab)} className="mt-[var(--md-page-stack-gap)]" />
+      <div className="mt-3 overflow-x-auto md-scrollbar">
+        <TabsRail tabs={tabs} activeTab={activeTab} onChange={(tab) => onTabChange(tab as BookingDetailTab)} />
+      </div>
     </header>
   )
 }
@@ -1328,6 +1395,313 @@ function MiniStat({
   )
 }
 
+function DensePanel({
+  title,
+  meta,
+  children,
+  className,
+}: {
+  title: string
+  meta?: string
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <Surface padding="none" className={cn("overflow-hidden rounded-[var(--md-radius-lg)]", className)}>
+      <div className="flex min-h-10 items-center justify-between gap-3 border-b border-[rgba(11,20,19,0.08)] px-3 py-2">
+        <h2 className="text-[13px] font-medium text-[var(--md-ink)]">{title}</h2>
+        {meta ? <span className="truncate text-[12px] text-[var(--md-text)]">{meta}</span> : null}
+      </div>
+      <div className="p-3">{children}</div>
+    </Surface>
+  )
+}
+
+type DenseFieldSize = "xs" | "sm" | "md" | "lg" | "wide"
+type DenseField = readonly [label: string, value: string, size?: DenseFieldSize]
+
+function FieldGrid({
+  rows,
+  columns = "auto",
+}: {
+  rows: readonly DenseField[]
+  columns?: "auto" | "two" | "three"
+}) {
+  const widthBySize: Record<DenseFieldSize, string> = {
+    xs: "md-field-xs",
+    sm: "md-field-sm",
+    md: "md-field-md",
+    lg: "md-field-lg",
+    wide: "md-field-wide",
+  }
+
+  return (
+    <div className="min-w-0 max-w-full overflow-x-auto pb-1 md-scrollbar">
+      <div
+        className={cn(
+          "min-w-0 gap-x-3 gap-y-1.5",
+          columns === "auto" && "flex flex-wrap",
+          columns === "two" && "md:grid-cols-2",
+          columns === "three" && "md:grid-cols-2 xl:grid-cols-3",
+          columns !== "auto" && "grid",
+        )}
+      >
+        {rows.map(([label, value, size = "md"]) => (
+          <label key={label} className={cn("grid min-w-0 items-center gap-2 text-[12px]", widthBySize[size])}>
+            <span className="truncate text-right text-[var(--md-text)]">{label}</span>
+            <span className="min-h-6 truncate rounded-[var(--md-radius-sm)] bg-white/55 px-2 py-0.5 leading-5 font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]">{value}</span>
+          </label>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function CompactTable({
+  columns,
+  rows,
+}: {
+  columns: readonly string[]
+  rows: readonly (readonly string[])[]
+}) {
+  return (
+    <div className="overflow-x-auto md-scrollbar">
+      <Table className="min-w-[940px] text-[12px]">
+        <TableHeader>
+          <TableRow className="border-[rgba(11,20,19,0.08)]">
+            {columns.map((column, index) => (
+              <TableHead key={`${column}-${index}`} className="h-8 whitespace-nowrap px-2 text-[11px] font-medium text-[var(--md-text)]">{column}</TableHead>
+            ))}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((row, rowIndex) => (
+            <TableRow
+              // eslint-disable-next-line react/no-array-index-key
+              key={rowIndex}
+              className="border-[rgba(11,20,19,0.07)] odd:bg-white/22 hover:bg-[rgba(14,125,116,0.08)]"
+            >
+              {row.map((cell, cellIndex) => (
+                // eslint-disable-next-line react/no-array-index-key
+                <TableCell key={cellIndex} className="h-8 max-w-[240px] truncate px-2 py-1.5 font-medium text-[var(--md-ink)]">{cell}</TableCell>
+              ))}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
+function ShipmentDetailsPage({ booking }: { booking: Booking }) {
+  return (
+    <div className="grid gap-3 2xl:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="grid gap-3">
+        <div className="grid gap-3 xl:grid-cols-[minmax(520px,0.95fr)_minmax(360px,0.72fr)] 2xl:grid-cols-[minmax(560px,0.95fr)_minmax(420px,0.72fr)]">
+          <DensePanel title="Mode and references" meta="Basic registration">
+            <FieldGrid
+              rows={[
+                ["Transport", booking.mode, "sm"],
+                ["Container", booking.container, "sm"],
+                ["Type", "Standard House", "md"],
+                ["House Bill", booking.id.replace("MD-", "S900"), "sm"],
+                ["Service", "STD", "xs"],
+                ["Release", "Express Bill of Lading", "lg"],
+                ["Phase", "Open Security", "md"],
+                ["Order Ref", "900045612", "sm"],
+              ]}
+            />
+          </DensePanel>
+          <DensePanel title="Ports and dates" meta="Route summary">
+            <FieldGrid
+              rows={[
+                ["Origin", "FLNPT", "xs"],
+                ["Destination", "PCBVH", "xs"],
+                ["ETD", "16-Mar-26", "sm"],
+                ["ETA", "28-May-26", "sm"],
+                ["Incoterm", "DDP", "xs"],
+                ["Terms", "Delivered Duty Paid", "lg"],
+              ]}
+            />
+          </DensePanel>
+        </div>
+        <DensePanel title="Shipment measures" meta="Totals and chargeable detail">
+          <FieldGrid
+            rows={[
+              ["Weight", "36,280.000 KG", "sm"],
+              ["Volume", "0.000 M3", "sm"],
+              ["Chargeable", "36.280 M3", "sm"],
+              ["Packs", "6,520 PKG", "sm"],
+              ["Inners", "0 CTN", "xs"],
+              ["Goods Value", "0.00 GBP", "sm"],
+              ["Insurance", "0.00 GBP", "sm"],
+              ["CO2e", "Pending", "sm"],
+            ]}
+          />
+        </DensePanel>
+        <DensePanel title="Goods and instructions" meta="Description / marks">
+          <FieldGrid rows={[["Goods", "Composite panels", "lg"], ["Marks", "As addressed", "lg"], ["Additional Terms", "Freight prepaid", "lg"], ["Inspection", "Unknown - no security measures taken", "lg"]]} />
+        </DensePanel>
+        <DensePanel title="Job links" meta="Order ref 900045612">
+          <CompactTable columns={["Job Number", "Job Type", "Description", "Status", "Date", "Goods Description"]} rows={[["C9001283", "CNF", booking.route, "Open", "19-Mar-26", "Composite panels"]]} />
+        </DensePanel>
+      </div>
+      <DensePanel title="AI edit proposal" meta="Draft only">
+        <div className="space-y-3 text-[13px] leading-5 text-[var(--md-text)]">
+          <p>Suggested update: set Delivery Required By to match the final ETA plus customer delivery buffer.</p>
+          <div className="rounded-[var(--md-radius-md)] bg-[rgba(14,125,116,0.08)] p-3 text-[var(--md-ink)]">
+            Change delivery required by from blank to 31-May-26 17:00.
+          </div>
+          <div className="flex gap-2">
+            <Button className="h-8 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[12px] text-white hover:bg-[#0b6f67]">Apply</Button>
+            <Button variant="ghost" className="h-8 rounded-[var(--md-radius-md)] bg-white/45 px-3 text-[12px] shadow-[var(--md-shadow-line)]">Dismiss</Button>
+          </div>
+        </div>
+      </DensePanel>
+    </div>
+  )
+}
+
+function PartiesPage() {
+  return (
+    <div className="grid gap-3 xl:grid-cols-2">
+      {partyRows.map(([role, code, name, address, contact, reference]) => (
+        <DensePanel key={role} title={role} meta={code}>
+          <FieldGrid rows={[["Company", name], ["Office", address], ["Contact", contact], ["Reference", reference]]} />
+        </DensePanel>
+      ))}
+    </div>
+  )
+}
+
+function CargoWorkspacePage() {
+  return (
+    <div className="flex flex-col gap-3">
+      <DensePanel title="Container and pack lines" meta="5 containers / 6,520 packs">
+        <CompactTable columns={["Container", "Seal", "Packs", "Type", "Weight", "Unit", "Commodity", "Description", "Volume", "Unit"]} rows={cargoLineRows} />
+      </DensePanel>
+      <div className="grid gap-3 xl:grid-cols-3">
+        <DensePanel title="Commodity">
+          <FieldGrid rows={[["Code", "GEN"], ["Description", "Composite panels"], ["HS Code", "Pending"], ["Origin", "Fictionland"]]} />
+        </DensePanel>
+        <DensePanel title="Cargo flags">
+          <FieldGrid rows={[["Dangerous Goods", "No"], ["Temperature", "No"], ["Stackable", "Unknown"], ["Special Notes", "Check outturn condition"]]} />
+        </DensePanel>
+        <DensePanel title="Shipment totals">
+          <FieldGrid rows={[["Outer Packages", "6,520"], ["Weight", "36,280.000 KG"], ["Volume", "0.000 M3"], ["Chargeable", "36.280 M3"]]} />
+        </DensePanel>
+      </div>
+    </div>
+  )
+}
+
+function RoutingWorkspacePage() {
+  return (
+    <div className="flex flex-col gap-3">
+      <DensePanel title="Route legs" meta="Multi-leg sea route">
+        <CompactTable columns={["Order", "Mode", "Type", "From", "From Name", "To", "To Name", "Voyage", "Vessel", "ETD", "ETA", "ATD", "ATA"]} rows={routeLegRows} />
+      </DensePanel>
+      <DensePanel title="Selected leg details" meta="Leg 1">
+        <FieldGrid rows={[["Carrier", "BLUWATGB / Eastport"], ["Vessel", "TROUPER"], ["Lloyds / IMO", "9326952"], ["Load Port", "FLNPT"], ["Discharge Port", "FDWST"], ["Docs Due", "Pending"], ["CTO Cut Off", "Pending"], ["VGM Cut Off", "Pending"]]} />
+      </DensePanel>
+    </div>
+  )
+}
+
+function CollectionDeliveryPage() {
+  return (
+    <div className="grid gap-3 xl:grid-cols-2">
+      <DensePanel title="Collection" meta="Pickup">
+        <FieldGrid rows={[["Broker", "Not selected"], ["Transport Co.", "Not selected"], ["Pickup From", "Northstar Fabrication Ltd"], ["Address", "14 Docklands Way, Ardmore, Fictionland"], ["Required From", "Pending"], ["Required By", "Pending"], ["Estimated", "06-Mar-26 08:00"], ["Actual", "Pending"], ["Drop Mode", "Wait for Pack/Unpack"]]} />
+      </DensePanel>
+      <DensePanel title="Delivery" meta="Final delivery">
+        <FieldGrid rows={[["Broker", "Not selected"], ["Transport Co.", "Not selected"], ["Delivery Agent", "Southern Cross Logistics"], ["Deliver To", "Harbourview Retail Pty Ltd"], ["Address", "27 Harbour View Road, Bay District BD 2048, Pacifica"], ["FCL Available", "31-May-26 00:00"], ["Storage Date", "03-Jun-26 00:00"], ["Estimated", "Pending"], ["Actual", "Pending"]]} />
+      </DensePanel>
+      <DensePanel title="Transport bookings" className="xl:col-span-2">
+        <CompactTable columns={["Booking ID", "Description", "Transport", "Transport Ref.", "Status", "Active", "Consol ID", "First Pickup Estimate", "Last Delivery Estimate"]} rows={[["", "", "", "", "", "", "C9001283", "", ""]]} />
+      </DensePanel>
+    </div>
+  )
+}
+
+function CustomsWorkspacePage() {
+  return (
+    <div className="grid gap-3 xl:grid-cols-[360px_minmax(0,1fr)]">
+      <DensePanel title="Declaration parties">
+        <FieldGrid rows={[["Exporter", "Northstar Fabrication Ltd"], ["Consignee", "Harbourview Retail Pty Ltd"], ["Entry Type", "EXP / Export"], ["Transport", "SEA / Sea Freight"], ["Container Mode", "FCL"], ["Submit Type", "CDS"]]} />
+      </DensePanel>
+      <DensePanel title="Declaration details">
+        <FieldGrid rows={[["MRN", "Pending"], ["House Bill", "S9002686"], ["Origin Port", "FLNPT"], ["Destination", "PCBVH / Bayview"], ["Goods", "Composite panels"], ["Total Weight", "36,280.000 KG"], ["Incoterm", "DDP"], ["Declarant", "Meridian Forwarding Ltd"], ["Rep. Type", "Direct Representation"]]} />
+      </DensePanel>
+      <DensePanel title="Customs organisations" className="xl:col-span-2">
+        <CompactTable columns={["Role", "Code", "Organisation", "Office", "Contact"]} rows={[["Carrier", "BLUWATGB", "Bluewater Shipping", "Eastport", ""], ["Declarant", "MERFWDGB", "Meridian Forwarding Ltd", "Head Office", ""], ["External Broker", "", "None selected", "", ""], ["Consignor", "", "None selected", "", ""]]} />
+      </DensePanel>
+    </div>
+  )
+}
+
+function JobCostingWorkspacePage() {
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="grid gap-3 md:grid-cols-4">
+        <MiniStat label="Cost" value="12,897.79" />
+        <MiniStat label="Revenue" value="26,340.00" tone="green" />
+        <MiniStat label="Profit" value="13,442.21" tone="teal" />
+        <MiniStat label="Margin" value="51.04%" tone="amber" />
+      </div>
+      <DensePanel title="Charge lines" meta="Cost and sell by debtor / creditor">
+        <CompactTable columns={["Code", "Description", "Dept", "Creditor", "Cost Cur.", "OS Cost", "Local Cost", "Debtor", "Sell Cur.", "OS Sell", "Tax"]} rows={costLineRows} />
+      </DensePanel>
+    </div>
+  )
+}
+
+function DocumentsWorkspacePage() {
+  return (
+    <div className="flex flex-col gap-3">
+      <DensePanel title="Document storage" meta="This shipment">
+        <CompactTable columns={["Date", "Type", "Description", "File Name"]} rows={documentRows} />
+      </DensePanel>
+      <DensePanel title="Document tracking">
+        <CompactTable columns={["Category", "Type", "Description", "Period", "Date Received", "Usage", "Original Required", "Credit Control"]} rows={[["SCL", "CIV", "Commercial Invoice", "SHP", "06-Mar-26 16:59", "Both Export and Import", "No", "No"], ["SCL", "PKL", "Packing List", "SHP", "06-Mar-26 16:59", "Both Export and Import", "No", "No"], ["SCL", "HBL", "House Waybill / Bill of Lading", "SHP", "13-Mar-26 14:07", "Both Export and Import", "No", "No"]]} />
+      </DensePanel>
+    </div>
+  )
+}
+
+function WorkflowWorkspacePage() {
+  return (
+    <div className="flex flex-col gap-3">
+      <DensePanel title="Milestones and exceptions" meta="Workflow & tracking">
+        <CompactTable columns={["Job", "Seq", "Description", "Event", "Exception", "Estimated", "Actual Start", "State"]} rows={workflowRows} />
+      </DensePanel>
+      <DensePanel title="Selected milestone">
+        <FieldGrid rows={[["Description", "Departure from First Load Port"], ["Milestone", "DEP / Departure"], ["Exception Type", "Exception-Scheduled Action Missing"], ["Estimated", "30-Mar-26 06:45"], ["Actual", "19-Mar-26 12:07"], ["Reminder", "No"], ["Assigned Staff", "Pending"], ["Group", "None selected"]]} />
+      </DensePanel>
+    </div>
+  )
+}
+
+function NotesWorkspacePage() {
+  return (
+    <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <DensePanel title="Operational notes">
+        <textarea className="min-h-[260px] w-full resize-y rounded-[var(--md-radius-md)] bg-white/55 p-3 text-[13px] leading-5 text-[var(--md-ink)] shadow-[var(--md-shadow-line)] outline-none" defaultValue={"Customer requires Bayview delivery agent updates once ATA is confirmed.\n\nCheck commercial invoice and packing list against final container allocation before customs close-out."} />
+      </DensePanel>
+      <DensePanel title="Audit summary">
+        <div className="space-y-3 text-[13px] leading-5 text-[var(--md-text)]">
+          {bookingTimeline.slice(0, 5).map((item) => (
+            <div key={`${item.time}-${item.text}`} className="border-b border-[rgba(11,20,19,0.08)] pb-3">
+              <p className="font-medium text-[var(--md-ink)]">{item.time}</p>
+              <p>{item.text}</p>
+            </div>
+          ))}
+        </div>
+      </DensePanel>
+    </div>
+  )
+}
+
 function OverviewPage() {
   return (
     <>
@@ -1567,13 +1941,17 @@ function TimelinePage() {
   )
 }
 
-function BookingDetailTabPage({ activeTab }: { activeTab: BookingDetailTab }) {
-  if (activeTab === "Documents") return <DocumentsPage />
-  if (activeTab === "Customs") return <CustomsPage />
-  if (activeTab === "Costs") return <CostsPage />
-  if (activeTab === "Comms") return <CommsPage />
-  if (activeTab === "Timeline") return <TimelinePage />
-  return <OverviewPage />
+function BookingDetailTabPage({ activeTab, booking }: { activeTab: BookingDetailTab; booking: Booking }) {
+  if (activeTab === "Parties") return <PartiesPage />
+  if (activeTab === "Cargo") return <CargoWorkspacePage />
+  if (activeTab === "Routing") return <RoutingWorkspacePage />
+  if (activeTab === "Collection & Delivery") return <CollectionDeliveryPage />
+  if (activeTab === "Customs") return <CustomsWorkspacePage />
+  if (activeTab === "Job Costing") return <JobCostingWorkspacePage />
+  if (activeTab === "Documents") return <DocumentsWorkspacePage />
+  if (activeTab === "Workflow") return <WorkflowWorkspacePage />
+  if (activeTab === "Notes") return <NotesWorkspacePage />
+  return <ShipmentDetailsPage booking={booking} />
 }
 
 export function BookingAskPanel({
@@ -1715,6 +2093,317 @@ function FloatingBookingAskPanel({
   )
 }
 
+function ReferenceSection({
+  title,
+  meta,
+  children,
+  className,
+}: {
+  title: string
+  meta?: string
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <section className={cn("min-w-0 overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]", className)}>
+      <div className="flex min-h-9 min-w-0 items-center justify-between gap-3 border-b border-[rgba(11,20,19,0.08)] px-3 py-1.5">
+        <h2 className="min-w-0 truncate text-[13px] font-semibold text-[var(--md-ink)]">{title}</h2>
+        {meta ? <span className="text-[11px] font-medium text-[var(--md-text)]">{meta}</span> : null}
+      </div>
+      <div className="p-2.5">{children}</div>
+    </section>
+  )
+}
+
+function MiniAddressBlock({
+  label,
+  code,
+  name,
+  address,
+}: {
+  label: string
+  code: string
+  name: string
+  address: string
+}) {
+  return (
+    <div className="min-w-0 rounded-[var(--md-radius-md)] bg-white/45 p-2 shadow-[var(--md-shadow-line)]">
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <span className="text-[12px] font-semibold text-[var(--md-ink)]">{label}</span>
+        <span className="rounded-[var(--md-radius-sm)] bg-[rgba(14,125,116,0.1)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--md-accent)]">{code}</span>
+      </div>
+      <p className="truncate text-[12px] font-semibold leading-4 text-[var(--md-ink)]">{name}</p>
+      <p className="mt-0.5 whitespace-pre-line text-[12px] leading-4 text-[var(--md-text)]">{address}</p>
+    </div>
+  )
+}
+
+function ReferenceTable({
+  columns,
+  rows,
+  minWidth = 900,
+}: {
+  columns: readonly string[]
+  rows: readonly (readonly string[])[]
+  minWidth?: number
+}) {
+  return (
+    <div className="overflow-x-auto md-scrollbar">
+      <Table style={{ minWidth }} className="text-[11px]">
+        <TableHeader>
+          <TableRow className="border-[rgba(11,20,19,0.08)]">
+            {columns.map((column, index) => (
+              <TableHead key={`${column}-${index}`} className="h-7 whitespace-nowrap px-1.5 text-[11px] font-semibold text-[var(--md-text)]">{column}</TableHead>
+            ))}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((row, rowIndex) => (
+            <TableRow
+              // eslint-disable-next-line react/no-array-index-key
+              key={rowIndex}
+              className="border-[rgba(11,20,19,0.06)] odd:bg-white/22 hover:bg-[rgba(14,125,116,0.08)]"
+            >
+              {row.map((cell, cellIndex) => (
+                // eslint-disable-next-line react/no-array-index-key
+                <TableCell key={cellIndex} className="h-7 max-w-[220px] truncate px-1.5 py-1 font-medium text-[var(--md-ink)]">{cell}</TableCell>
+              ))}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
+function CargoWiseReferenceHeader({
+  navigate,
+  bookingId,
+}: {
+  navigate: (path: string) => void
+  bookingId: string
+}) {
+  return (
+    <header className="sticky top-0 z-20 border-b border-[rgba(11,20,19,0.1)] bg-[color-mix(in_srgb,var(--md-bg)_96%,transparent)] px-3 py-2 backdrop-blur-xl">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <Button variant="ghost" size="icon" className="size-8 rounded-[var(--md-radius-md)] bg-white/45 shadow-[var(--md-shadow-line)]" onClick={() => navigate(`/bookings/${bookingId}`)}>
+            <ArrowLeft className="size-4" strokeWidth={1.3} />
+          </Button>
+          <div className="min-w-0">
+            <h1 className="truncate text-[17px] font-semibold text-[var(--md-ink)]">CargoWise Full Data Reference / Shipment {bookingId.toUpperCase()}</h1>
+            <p className="text-[12px] text-[var(--md-text)]">Design-only dummy data from the CargoWise screenshots. Use for density, grouping, tab coverage, and UI layout decisions.</p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {["Basic Registration", "Additional Detail", "Routing", "Packing", "Pickup", "Delivery", "Brokerage", "Billing", "Doc Data", "eDocs", "Workflow"].map((tab) => (
+            <a key={tab} href={`#${tab.toLowerCase().replaceAll(" ", "-")}`} className="rounded-[var(--md-radius-sm)] bg-white/45 px-2 py-1 text-[11px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:text-[var(--md-ink)]">
+              {tab}
+            </a>
+          ))}
+        </div>
+      </div>
+    </header>
+  )
+}
+
+export function CargoWiseReferenceWorkspace({
+  navigate,
+  bookingId,
+}: {
+  navigate: (path: string) => void
+  bookingId: string
+}) {
+  const shipmentNumber = bookingId.toUpperCase().startsWith("MD-") ? bookingId.toUpperCase().replace("MD-", "S900") : "S9002686"
+
+  return (
+    <div className="h-screen overflow-hidden bg-[var(--md-bg)] text-[var(--md-ink)]">
+      <CargoWiseReferenceHeader navigate={navigate} bookingId={bookingId} />
+      <main className="md-scrollbar h-[calc(100vh-58px)] overflow-y-auto px-3 py-3">
+        <div className="grid gap-3">
+          <section id="basic-registration" className="grid gap-3 2xl:grid-cols-[370px_minmax(520px,0.8fr)_minmax(420px,0.65fr)]">
+            <ReferenceSection title="Basic Registration / Parties">
+              <div className="grid gap-2">
+                <FieldGrid rows={[["Transport", "SEA", "xs"], ["Container", "FCL", "xs"], ["Type", "STD", "xs"]]} />
+                <MiniAddressBlock label="Consignor" code="NORFABIE" name="NORTHSTAR FABRICATION LTD" address={"14 DOCKLANDS WAY\nNORTH QUAY\nARDMORE\nAM1 4QA\nFICTIONLAND"} />
+                <MiniAddressBlock label="Consignee" code="HARRETSYD" name="HARBOURVIEW RETAIL PTY LTD" address={"27 HARBOUR VIEW ROAD\nBAY DISTRICT BD 2048\nPACIFICA"} />
+                <MiniAddressBlock label="Prepaid Bill-To Party" code="NORFABIE" name="NORTHSTAR FABRICATION LTD" address={"14 DOCKLANDS WAY\nNORTH QUAY"} />
+              </div>
+            </ReferenceSection>
+            <ReferenceSection title="Basic Registration / Shipment Details">
+              <FieldGrid
+                rows={[
+                  ["House Bill", shipmentNumber, "sm"], ["Domestic", "No", "xs"], ["Origin", "FLNPT", "xs"], ["Destination", "PCBVH", "xs"],
+                  ["ETD", "16-Mar-26", "sm"], ["ETA", "28-May-26", "sm"], ["Weight", "36,280.000 KG", "sm"], ["Vol", "0.000 M3", "sm"],
+                  ["Chargeable", "36.280 M3", "sm"], ["WV", "36.280 M3", "sm"], ["Packs", "6,520 PKG", "sm"], ["Inners", "0 CTN", "xs"],
+                  ["Goods Value", "0.00 GBP", "sm"], ["Insurance", "0.00 GBP", "sm"], ["CO2e", "Pending KG", "sm"], ["Description", "COMPOSITE PANELS", "lg"],
+                  ["Marks & Nums", "More...", "md"], ["Incoterm", "DDP / Delivered Duty Paid", "lg"], ["Additional Terms", "Freight Prepaid", "lg"],
+                  ["Service Level", "STD / Standard", "md"], ["Entry Details", "Customs Entries", "md"], ["Inspection", "UNK / Unknown - No Security Measures Taken", "lg"],
+                  ["Release Type", "EBL / Express Bill of Lading", "lg"], ["Air Waybill Dims", "Default (Dims, fallback to Vol)", "lg"], ["House Bill Type", "FIA / FIATA HBL", "md"],
+                  ["On Board", "SHP / Shipped / 19-Mar-26", "lg"], ["HBL Dlv. Mode", "DOOR/CY / DOOR/CY", "md"], ["Originals", "0", "xs"], ["Exp. Bills", "1", "xs"],
+                  ["Charges Apply", "NON / No Charges showing", "lg"], ["Shipper COD", "0.00", "sm"], ["Phase", "ALL / Open Security", "md"], ["Spot Rate", "0.0000 STD", "sm"],
+                ]}
+              />
+            </ReferenceSection>
+            <ReferenceSection title="Custom Fields and Job Links">
+              <p className="mb-3 rounded-[var(--md-radius-md)] bg-white/35 p-3 text-[12px] leading-5 text-[var(--md-text)]">Custom fields are not configured in this dummy branch. This area is intentionally reserved for customer-defined shipment fields.</p>
+              <FieldGrid rows={[["Order Refs", "900045612", "lg"]]} />
+              <ReferenceTable columns={["Job Number", "Job Type", "Job Description", "Job Status", "Date", "Goods Description"]} rows={[["C9001283", "CNF", "Fictionland to Pacifica shipment", "Open", "19-Mar-26", "COMPOSITE PANELS"]]} minWidth={620} />
+            </ReferenceSection>
+          </section>
+
+          <section id="additional-detail" className="grid gap-3 2xl:grid-cols-[minmax(460px,0.7fr)_minmax(360px,0.55fr)_minmax(360px,0.55fr)]">
+            <ReferenceSection title="Additional Detail / Consolidation">
+              <ReferenceTable columns={["Reference", "1st Load", "Last Disc", "Master Bill"]} rows={[["C9001283", "FLNPT", "PCBVH", ""]]} minWidth={480} />
+              <FieldGrid rows={[["ETA", "04-Apr-26 04:30", "md"], ["ETD", "18-Mar-26 00:00", "md"], ["Voyage", "ED611R", "sm"], ["Vessel", "TROUPER", "md"], ["Planned Carrier", "BLUWATGB / Bluewater Shipping / Eastport", "lg"]]} />
+            </ReferenceSection>
+            <ReferenceSection title="Weight / Volume / Chargeable">
+              <FieldGrid rows={[["Client Weight", "36,280.00 KG", "sm"], ["Carrier Weight", "36,280.000 KG", "sm"], ["Client Volume", "0.000 M3", "sm"], ["Carrier Volume", "0.000 M3", "sm"], ["Chargeable", "36.280 M3", "sm"], ["Density Factor", "1:6 / Volumetric 1:12", "lg"], ["Excess W/V", "0.000 M3", "sm"]]} />
+            </ReferenceSection>
+            <ReferenceSection title="Notify / References / Services">
+              <MiniAddressBlock label="Notify Party" code="HARRETSYD" name="HARBOURVIEW RETAIL PTY LTD" address={"27 HARBOUR VIEW ROAD\nBAY DISTRICT BD 2048\nPACIFICA"} />
+              <ReferenceTable columns={["Ctry/Rgn", "Type", "Reference Number"]} rows={[["", "", ""], ["", "", ""]]} minWidth={420} />
+            </ReferenceSection>
+            <ReferenceSection title="Freight Rates and Gateways">
+              <FieldGrid rows={[["Rev. Autorating", "", "sm"], ["CT Level", "", "md"], ["Rate Commodity", "None selected", "lg"], ["Commodity Local", "", "md"], ["FMC Tariff ID", "", "md"], ["Negotiated Cost", "0.0000 STD", "sm"], ["Gateway Sell", "0.0000 STD", "sm"], ["Payment Term", "PPD / Prepaid", "md"], ["Rate Origin", "None selected", "lg"], ["Rate Destination", "None selected", "lg"], ["G/W Service", "None selected", "lg"]]} />
+            </ReferenceSection>
+            <ReferenceSection title="Additional Detail / Services" meta="Service work rows" className="2xl:col-span-2">
+              <ReferenceTable columns={["Type", "Job Service", "Date Booked", "Service Date Completed", "Contractor"]} rows={[["", "", "", "", ""], ["", "", "", "", ""]]} minWidth={760} />
+              <FieldGrid rows={[["Service Type", "", "sm"], ["Contractor", "None selected", "lg"], ["Srv. Location", "", "lg"], ["Date Booked", "", "sm"], ["Completed", "", "sm"], ["Service Rate", "0.0000", "sm"], ["Service Notes", "", "lg"], ["Service Count", "", "sm"], ["Duration", "", "sm"], ["Ref", "", "sm"]]} />
+            </ReferenceSection>
+          </section>
+
+          <section id="routing" className="grid gap-3">
+            <ReferenceSection title="Routing / Legs">
+              <ReferenceTable columns={["Defined By", "Linked", "L.", "Mode", "Type", "Status", "Vessel / Journey Name", "Voyage / Flight", "Load Port", "Discharge", "Domestic", "ETD", "ETA", "ATD", "ATA"]} rows={routeLegRows.map((leg) => ["C9001283", "", leg[0], leg[1], leg[2], "CNF", leg[8], leg[7], leg[3], leg[5], "", leg[9], leg[10], leg[11], leg[12]])} minWidth={1500} />
+            </ReferenceSection>
+            <ReferenceSection title="Routing / Selected Leg Details">
+              <FieldGrid rows={[["Defined By", "C9001283", "sm"], ["Mode", "SEA", "xs"], ["Type", "MAI", "xs"], ["Status", "CNF", "xs"], ["Charter Route", "No", "xs"], ["Linked", "No", "xs"], ["Voyage", "ED611R", "sm"], ["Vessel", "TROUPER", "md"], ["Lloyds/IMO", "9326952", "sm"], ["Carrier", "BLUWATGB / EASTPORT", "lg"], ["Load Port", "FLNPT", "xs"], ["Discharge Port", "FDWST", "xs"], ["ETD", "18-Mar-26 00:00", "md"], ["ATD", "19-Mar-26 12:07", "md"], ["ETA", "04-Apr-26 04:30", "md"], ["ATA", "", "sm"], ["CTO Cut Off", "", "sm"], ["CFS Cut Off", "", "sm"], ["Docs Due", "", "sm"], ["VGM Cut Off", "", "sm"]]} />
+            </ReferenceSection>
+          </section>
+
+          <section id="packing" className="grid gap-3">
+            <ReferenceSection title="Packing / Containers">
+              <ReferenceTable columns={["Container Number", "Count", "Seal Number", "Mode", "Cont. Type", "Delivery Mode", "Sealed By", "2nd Sealed By", "3rd Sealed By", "Train Wagon", "Total Packs"]} rows={[["ALSU6578880", "1", "1000485", "FCL", "40HC", "DOR/DOR", "", "", "", "", "1,380"], ["BXHU7237091", "1", "1000490", "FCL", "40HC", "DOR/DOR", "", "", "", "", "1,380"], ["NXDU7086840", "1", "1000466", "FCL", "40HC", "DOR/DOR", "", "", "", "", "1,380"], ["QZNU3123998", "1", "1000462", "FCL", "40HC", "DOR/DOR", "", "", "", "", "1,380"], ["VRHU6073892", "1", "1000486", "FCL", "40HC", "DOR/DOR", "", "", "", "", "1,000"]]} minWidth={1180} />
+            </ReferenceSection>
+            <ReferenceSection title="Packing / Pack Lines">
+              <ReferenceTable columns={["Packs", "Type", "Container", "Weight", "Inspection", "Origin", "Commodity", "Packing Order", "Shipment ID", "Engine CC", "Variants", "Volume", "Vehicle Reg", "Supplier Booking Line", "Supplier Booking ID"]} rows={cargoLineRows.map((row, index) => [row[2], row[3], row[0], row[4], "", "", "GEN", "1", shipmentNumber, "", "", row[8], "", index === 0 ? "Load 9002" : "", ""])} minWidth={1500} />
+            </ReferenceSection>
+            <section className="grid gap-3 2xl:grid-cols-[minmax(390px,0.65fr)_minmax(360px,0.55fr)_minmax(430px,0.7fr)]">
+              <ReferenceSection title="Commodity / Description">
+                <FieldGrid rows={[["Commodity", "GEN / General", "md"], ["Harmonised", "", "md"], ["HS Country", "", "md"], ["Origin", "None Selected", "lg"], ["Goods Desc.", "COMPOSITE PANELS", "lg"], ["Ref Number", "", "md"], ["Outer Packs", "6,520", "sm"], ["Shipment Weight", "36,280.000 KG", "sm"], ["Volume", "0.000 M3", "sm"]]} />
+              </ReferenceSection>
+              <ReferenceSection title="Dangerous Goods / Temperature">
+                <FieldGrid rows={[["DG Substance", "None Selected", "lg"], ["DG Class", "", "sm"], ["Flash Point", "0.0 C", "sm"], ["UNDG Contact", "", "md"], ["Temp Controlled", "No", "xs"], ["Min Temp", "0.0 C", "sm"], ["Max Temp", "0.0 C", "sm"]]} />
+              </ReferenceSection>
+              <ReferenceSection title="Packing / Location / Outturn">
+                <FieldGrid rows={[["Packs", "1,380 PKG", "sm"], ["Weight", "7,300.000 KG", "sm"], ["Volume", "0.000 M3", "sm"], ["Length", "0.000 M", "sm"], ["Width", "0.000", "sm"], ["Height", "0.000 M", "sm"], ["Transit Whse", "", "md"], ["Status", "", "sm"], ["Outturn", "0", "xs"], ["Damaged", "0", "xs"], ["Pillaged", "0", "xs"], ["Outturn Wt.", "0.000 KG", "sm"], ["Outturn Vol.", "0.000 M3", "sm"], ["Comment", "", "lg"], ["Marks", "", "lg"]]} />
+              </ReferenceSection>
+            </section>
+          </section>
+
+          <section id="pickup" className="grid gap-3 2xl:grid-cols-[380px_minmax(520px,0.7fr)]">
+            <ReferenceSection title="Pickup / Organisations">
+              <FieldGrid rows={[["Export Broker", "", "sm"], ["Pickup Co.", "", "sm"], ["Pickup Agent", "", "sm"], ["Pickup By", "", "sm"]]} />
+              <MiniAddressBlock label="Pickup From" code="NORFABIE" name="NORTHSTAR FABRICATION LTD" address={"14 DOCKLANDS WAY\nNORTH QUAY\nARDMORE\nAM1 4QA\nFICTIONLAND"} />
+            </ReferenceSection>
+            <ReferenceSection title="Pickup / Status and Detail">
+              <FieldGrid rows={[["Shipper Ref", "900045612", "sm"], ["HBL Status", "CNF / SI Confirmed", "lg"], ["CFS Warehouse", "No organisation selected", "lg"], ["Receipt Req.", "", "sm"], ["Dispatch Req.", "", "sm"], ["Interim Receipt", "", "sm"], ["Drop Mode", "WUP / Wait for Pack/Unpack", "lg"], ["Pickup From", "", "sm"], ["Pickup By", "", "sm"], ["Trn Booking Req.", "", "sm"], ["Estimated", "06-Mar-26 08:00", "md"], ["Actual", "", "sm"], ["Pickup Labour", "0.00", "sm"], ["Truck Wait", "0.00", "sm"], ["Detention", "10 / 0 Days / 0.00", "md"]]} />
+            </ReferenceSection>
+            <ReferenceSection title="Pickup / Transport Bookings" meta="Details / Confirmations" className="2xl:col-span-2">
+              <ReferenceTable columns={["Booking ID", "Description", "Transport", "Transport Ref.", "Status", "Active", "Consol. ID", "1st Pic. Estimate", "1st Pic. Actual", "Last Del. Estimate", "Last Del. Act."]} rows={[["", "", "", "", "", "", "C9001283", "", "", "", ""]]} minWidth={1200} />
+            </ReferenceSection>
+          </section>
+
+          <section id="delivery" className="grid gap-3 2xl:grid-cols-[380px_minmax(520px,0.7fr)]">
+            <ReferenceSection title="Delivery / Organisations">
+              <FieldGrid rows={[["Import Broker", "", "sm"], ["Transport Co.", "", "sm"], ["Delivery Agent", "SOUCROFRE", "sm"], ["Delivery By", "", "sm"]]} />
+              <MiniAddressBlock label="Deliver To" code="HARRETSYD" name="HARBOURVIEW RETAIL PTY LTD" address={"27 HARBOUR VIEW ROAD\nBAY DISTRICT BD 2048\nPACIFICA"} />
+            </ReferenceSection>
+            <ReferenceSection title="Delivery / Dates and Detail">
+              <FieldGrid rows={[["CFS Warehouse", "No organisation selected", "lg"], ["Receipt Req.", "", "sm"], ["Dispatch Req.", "", "sm"], ["CFS Arrival By", "", "sm"], ["Drop Mode", "WUP / Wait for Pack/Unpack", "lg"], ["FCL Available", "31-May-26 00:00", "md"], ["FCL Storage", "03-Jun-26 00:00", "md"], ["Delivery From", "", "sm"], ["Delivery By", "", "sm"], ["Trn Booking Req.", "", "sm"], ["Estimated Delivery", "", "md"], ["Actual Delivery", "", "md"], ["Delivery Labour", "0.00", "sm"], ["Truck Wait", "0.00", "sm"]]} />
+            </ReferenceSection>
+            <ReferenceSection title="Delivery / Transport Bookings" meta="Details / Confirmations" className="2xl:col-span-2">
+              <ReferenceTable columns={["Booking ID", "Description", "Transport", "Transport Ref.", "Status", "Active", "Consol. ID", "1st Pic. Estimate", "1st Pic. Actual", "Last Del. Estimate", "Last Del. Act."]} rows={[["", "", "", "", "", "", "C9001283", "", "", "", ""]]} minWidth={1200} />
+            </ReferenceSection>
+          </section>
+
+          <section id="brokerage" className="grid gap-3 2xl:grid-cols-[370px_minmax(520px,0.7fr)_minmax(430px,0.7fr)]">
+            <ReferenceSection title="Brokerage / Declaration Parties">
+              <MiniAddressBlock label="[UCC 3/1] Exporter" code="NORFABIE" name="NORTHSTAR FABRICATION LTD" address={"14 DOCKLANDS WAY\nNORTH QUAY\nARDMORE\nAM1 4QA\nFICTIONLAND"} />
+              <MiniAddressBlock label="[UCC 3/9] Consignee" code="HARRETSYD" name="HARBOURVIEW RETAIL PTY LTD" address={"27 HARBOUR VIEW ROAD\nBAY DISTRICT BD 2048\nPACIFICA"} />
+              <FieldGrid rows={[["Entry Type", "EXP / Export", "md"], ["Dec. Type", "EX / Export to rest of world", "lg"], ["Transport", "SEA / Sea Freight", "lg"], ["Container Mode", "FCL / Full Container Load", "lg"], ["Submit Type", "CDS / Customs Declaration", "lg"]]} />
+            </ReferenceSection>
+            <ReferenceSection title="Brokerage / Declaration and Shipment">
+              <FieldGrid rows={[["MRN", "", "md"], ["Status", "", "md"], ["Customs Reason", "", "lg"], ["Ocean Bill", "", "md"], ["Inland MOT", "", "sm"], ["Vessel", "", "md"], ["Voyage", "", "sm"], ["Load Port", "", "sm"], ["Dep.", "19-Mar-26", "sm"], ["Arrival", "", "sm"], ["Discharge Port", "", "sm"], ["Arr.", "28-May-26", "sm"], ["House Bill", shipmentNumber, "sm"], ["Origin Port", "FLNPT / Invalid Selection / FL", "lg"], ["Destination", "PCBVH / Bayview / PC", "lg"], ["Goods", "COMPOSITE PANELS", "lg"], ["C/R", "GB", "xs"], ["No. Pkgs", "6.5 PKG", "sm"], ["Weight", "36,280.000 KG", "sm"], ["Volume", "0.000 M3", "sm"], ["Incoterm", "DDP / Delivered Duty Paid", "lg"], ["Client DUCR", "", "md"], ["Agent Ref.", "", "md"], ["DUCR", "", "md"], ["Master UCR", "", "md"], ["Office of Exit", "None Selected", "lg"]]} />
+            </ReferenceSection>
+            <ReferenceSection title="Brokerage / Organisations">
+              <FieldGrid rows={[["Carrier", "None Selected", "lg"], ["Forwarder", "None Selected", "lg"], ["CTO", "", "md"], ["Depot", "", "md"], ["Container Yard", "", "md"], ["Controlling Agent", "None Selected", "lg"], ["Controlling Customer", "None Selected", "lg"], ["External Broker", "None Selected", "lg"], ["Supervising Org", "", "md"], ["Declarant", "MERFWDGB / Meridian Forwarding Ltd / Head Office", "lg"], ["Rep. Type", "DIR / Direct Representation", "lg"], ["Representative", "None Selected", "lg"], ["Seller", "None Selected", "lg"], ["Manufacturer", "None Selected", "lg"], ["Consignor", "None Selected", "lg"]]} />
+            </ReferenceSection>
+          </section>
+
+          <section id="billing" className="grid gap-3">
+            <section className="grid gap-3 2xl:grid-cols-[360px_360px_minmax(420px,0.65fr)_minmax(420px,0.65fr)]">
+              <ReferenceSection title="Billing / Prepaid Bill-To">
+                <MiniAddressBlock label="Prepaid Bill-To Party" code="NORFABIE" name="NORTHSTAR FABRICATION LTD" address={"14 DOCKLANDS WAY\nNORTH QUAY"} />
+                <FieldGrid rows={[["Client Contract", "", "sm"], ["Quote Number", "", "sm"]]} />
+              </ReferenceSection>
+              <ReferenceSection title="Billing / Collect Bill-To">
+                <MiniAddressBlock label="Collect Bill-To Party" code="HARRETSYD" name="HARBOURVIEW RETAIL PTY LTD" address={"27 HARBOUR VIEW ROAD\nBAY DISTRICT BD 2048\nPACIFICA"} />
+              </ReferenceSection>
+              <ReferenceSection title="Billing / Job Header">
+                <FieldGrid rows={[["Job Desc.", "", "lg"], ["Local Ref", "009001230", "sm"], ["Open Date", "06-Mar-26", "sm"], ["Close Date", "", "sm"], ["Margin %", "51.04", "sm"], ["Branch", "LBA", "xs"], ["Dept", "FIS", "xs"], ["Sales Rep", "LS1", "xs"], ["Operations Rep", "LH", "xs"], ["Job Status", "INV", "xs"], ["Hold Reason", "", "md"]]} />
+              </ReferenceSection>
+              <ReferenceSection title="Billing / Currency Rates">
+                <ReferenceTable columns={["Currency", "Base Rate", "Today's Rate", "Org. Role", "Organisation"]} rows={[["USD", "1.300000", "0.000000", "CRD", "BLUWATGB"], ["EUR", "1.100000", "0.000000", "CRD", "BLUWATGB"], ["AUD", "1.900000", "0.000000", "CRD", "SOUCROFRE"], ["USD", "1.312300", "0.000000", "CRD", "BLUWATGN"], ["EUR", "1.140400", "0.000000", "CRD", "BLUWATGN"]]} minWidth={520} />
+              </ReferenceSection>
+            </section>
+            <ReferenceSection title="Billing / Charge Lines">
+              <ReferenceTable columns={["Charge Code", "Description", "Depart.", "Creditor", "Currency", "OS Cost Amt", "Estimated Cost", "Local Cost Amt", "Cost Tax ID", "Posted Cost", "Apt", "Debtor", "Sell Cur.", "OS Sell Amt", "Estimated Revenue", "Local Sell Amt", "Sell Tax ID"]} rows={costLineRows.map((row, index) => [row[0], row[1], row[2], row[3], row[4], row[5], row[5], row[6], "", index < 6 ? "Yes" : "No", "", row[7], row[8], row[9], row[9], row[9], row[10]])} minWidth={1700} />
+              <div className="mt-2 grid gap-2 md:grid-cols-3">
+                <FieldGrid rows={[["Total Cost", "12,897.79 GBP", "md"]]} />
+                <FieldGrid rows={[["Revenue", "26,340.00 GBP", "md"]]} />
+                <FieldGrid rows={[["Profit", "13,442.21 GBP", "md"]]} />
+              </div>
+            </ReferenceSection>
+            <ReferenceSection title="Billing / Charge Detail">
+              <FieldGrid rows={[["Charge Code", "SYSAUTO / Cargowise Automation Fee", "lg"], ["Dept", "FIS / Forwarding Import Sea", "lg"], ["Branch", "LBA / Meridian Forwarding Ltd", "lg"], ["Charge Type", "DSB", "sm"], ["Margin %", "100.00", "sm"], ["Chargeable", "36.280 M3", "sm"], ["Internal Job", "", "sm"], ["Internal Dept", "", "sm"], ["Internal Branch", "", "sm"], ["Profit Share", "No", "xs"], ["OS Amount", "3.04 GBP", "sm"], ["Local Amount", "3.04 GBP", "sm"], ["Declared Revenue", "0.00 GBP", "sm"]]} />
+            </ReferenceSection>
+          </section>
+
+          <section id="doc-data" className="grid gap-3 2xl:grid-cols-[minmax(420px,0.55fr)_minmax(420px,0.55fr)]">
+            <ReferenceSection title="Doc Data / Bill of Lading">
+              <FieldGrid rows={[["Consignor", "NORTHSTAR FABRICATION LTD / NORTH QUAY / ARDMORE / FICTIONLAND", "wide"], ["Consignee", "HARBOURVIEW RETAIL PTY LTD / 27 HARBOUR VIEW ROAD / PACIFICA", "wide"], ["Notify Party", "HARBOURVIEW RETAIL PTY LTD / 27 HARBOUR VIEW ROAD / PACIFICA", "wide"], ["Delivery Agent", "SOUTHERN CROSS LOGISTICS / Harbour City HC 6100", "wide"], ["Phone", "+99 1 5550 1200", "md"], ["Fax", "+99 1 5550 1201", "md"], ["Origin Place", "ARDMORE, FICTIONLAND", "lg"], ["Destination Place", "BAYHAVEN, PACIFICA", "lg"], ["Port of Loading", "NORTHPORT, FICTIONLAND", "lg"], ["Port of Discharge", "WESTHAVEN, FREEDONIA", "lg"], ["Freight Payable", "ARDMORE, FICTIONLAND", "lg"], ["As Agent", "AS CARRIER / No more detail required", "lg"], ["Place of Issue", "NORTHPORT, FICTIONLAND", "lg"], ["Date of Issue", "19-Mar-26", "sm"]]} />
+            </ReferenceSection>
+            <ReferenceSection title="Doc Data / Miscellaneous">
+              <FieldGrid rows={[["Shipper Load", "SLC / Shipper Load and Count", "lg"], ["Destination", "BAYHAVEN, PACIFICA", "lg"], ["Excess Value", "", "md"], ["Sending Forwarder", "", "lg"], ["Port Loading Short", "NORTHPORT, FICTIONLAND", "lg"], ["Port Loading 2", "", "lg"]]} />
+            </ReferenceSection>
+          </section>
+
+          <section id="edocs" className="grid gap-3">
+            <ReferenceSection title="eDocs / Document Storage">
+              <ReferenceTable columns={["Date UTC", "Date Local", "Document Type", "Document Description", "File Name"]} rows={documentRows.map((row) => [row[0], row[0], row[1], row[2], row[3]])} minWidth={1300} />
+            </ReferenceSection>
+            <ReferenceSection title="eDocs / Document Tracking">
+              <ReferenceTable columns={["Category", "Type", "Doc Description", "Period", "Date Received Local", "Date Received UTC", "Valid To Date", "Doc Num.", "Usage", "Original Req.", "Credit Control", "Doc Owner"]} rows={[["SCL", "CIV", "Commercial Invoice", "SHP", "06-Mar-26 16:59", "06-Mar-26 16:59", "", "", "BTH", "No", "No", ""], ["SCL", "PKL", "Packing List", "SHP", "06-Mar-26 16:59", "06-Mar-26 16:59", "", "", "BTH", "No", "No", ""], ["SCL", "LBC", "Line Booking Confirmation", "SHP", "09-Mar-26 16:42", "09-Mar-26 16:42", "", "", "BTH", "No", "No", ""], ["SCL", "SHI", "Shipping Instruction", "SHP", "11-Mar-26 11:31", "11-Mar-26 11:31", "", "", "BTH", "No", "No", ""], ["SCL", "HBL", "House Waybill/Bill of Lading", "SHP", "13-Mar-26 14:07", "13-Mar-26 14:07", "", "", "BTH", "No", "No", ""], ["SCL", "EMB", "Express MBL", "SHP", "20-Mar-26 13:03", "20-Mar-26 13:03", "", "", "BTH", "No", "No", ""]]} minWidth={1400} />
+            </ReferenceSection>
+          </section>
+
+          <section id="workflow" className="grid gap-3">
+            <ReferenceSection title="Workflow & Tracking / Tasks and Milestones">
+              <ReferenceTable columns={["Job #", "Seq.", "Description", "Event Code", "Exception", "Reminder", "Staff", "Group", "Estimated Time", "Estimated UTC", "Estimated Local", "Actual Start Time", "Recalculate", "Published", "Condition", "Trigger Condition Value"]} rows={workflowRows.map((row) => [row[0], row[1], row[2], row[3], row[4], "", "", "", row[5], row[5], row[5], row[6], "Yes", "Yes", "", ""])} minWidth={1700} />
+            </ReferenceSection>
+            <ReferenceSection title="Workflow & Tracking / Selected Task">
+              <FieldGrid rows={[["Description", "Departure from First Load Port", "lg"], ["Milestone", "DEP / Departure", "md"], ["Exception Type", "EXC / Exception-Scheduled Action Missing", "lg"], ["Staff", "", "sm"], ["Group", "None Selected", "lg"], ["Reminder", "No", "xs"], ["Estimated", "30-Mar-26 06:45", "md"], ["Actual", "19-Mar-26 12:07", "md"], ["On Field Change", "", "md"]]} />
+              <ReferenceTable columns={["Action", "Recipient", "Email Address", "Purpose", "Additional Context", "Document", "Field Name", "Field Value", "Override Email", "Message Content", "Printer"]} rows={[["", "", "", "", "", "", "", "", "", "", ""]]} minWidth={1300} />
+            </ReferenceSection>
+          </section>
+        </div>
+      </main>
+    </div>
+  )
+}
+
 export function BookingDetailWorkspace({
   navigate,
   bookingId = "md-22455",
@@ -1722,19 +2411,19 @@ export function BookingDetailWorkspace({
   navigate: (path: string) => void
   bookingId?: string
 }) {
-  const [activeTab, setActiveTab] = useState<BookingDetailTab>("Overview")
+  const [activeTab, setActiveTab] = useState<BookingDetailTab>("Details")
   const [chatCollapsed, setChatCollapsed] = useState(false)
+  const [railCollapsed, setRailCollapsed] = useState(false)
   const record = getBookingDetailRecord(bookingId)
 
   return (
     <div className="h-screen overflow-hidden bg-[var(--md-bg)] text-[var(--md-ink)]">
       <div className="flex h-screen min-h-0">
-        <DetailSideRail navigate={navigate} />
+        <DetailSideRail navigate={navigate} collapsed={railCollapsed} onCollapsedChange={setRailCollapsed} />
         <main className={cn("md-scrollbar min-h-0 min-w-0 flex-1 overflow-y-auto transition-[padding] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]", chatCollapsed ? "xl:pr-[96px]" : "xl:pr-[408px]")}>
-          <BookingDetailHeader activeTab={activeTab} onTabChange={setActiveTab} record={record} />
-          <div className="px-[var(--md-page-pad)] py-[var(--md-page-stack-gap)]">
-            <BookingJobContext job={record.job} booking={record.booking} />
-            <BookingDetailTabPage activeTab={activeTab} />
+          <BookingDetailHeader activeTab={activeTab} onTabChange={setActiveTab} record={record} navigate={navigate} />
+          <div className="px-4 py-3 md:px-5">
+            <BookingDetailTabPage activeTab={activeTab} booking={record.booking} />
           </div>
           <div className="px-[var(--md-page-pad)] pb-[var(--md-page-bottom-pad)] xl:hidden">
             <BookingAskPanel />
@@ -1745,3 +2434,4 @@ export function BookingDetailWorkspace({
     </div>
   )
 }
+

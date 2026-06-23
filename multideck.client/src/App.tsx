@@ -62,6 +62,10 @@ function isBookingDetailRoute(path: string) {
   return /^\/bookings\/[^/]+$/.test(path) && path !== "/bookings/new"
 }
 
+function isBookingCargoWiseReferenceRoute(path: string) {
+  return /^\/bookings\/[^/]+\/cargowise-reference$/.test(path)
+}
+
 function getLegacyBookingRoute(path: string) {
   if (path === "/shipments") return "/bookings"
   const detailMatch = path.match(/^\/shipments\/([^/]+)$/)
@@ -88,6 +92,7 @@ function getRoute() {
   const legacyBookingRoute = getLegacyBookingRoute(window.location.pathname)
   if (legacyBookingRoute) return legacyBookingRoute
   if (window.location.pathname.startsWith("/reports/rpt-")) return window.location.pathname
+  if (isBookingCargoWiseReferenceRoute(window.location.pathname)) return window.location.pathname
   if (isBookingDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCrmLeadDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCrmListDetailRoute(window.location.pathname)) return window.location.pathname
@@ -131,6 +136,10 @@ export default function App() {
             {route === "/auth" ? (
               <Suspense fallback={<RouteFallback />}>
                 <AuthFlowPage />
+              </Suspense>
+            ) : isBookingCargoWiseReferenceRoute(route) ? (
+              <Suspense fallback={<RouteFallback />}>
+                <BookingDetailPage navigate={navigate} bookingId={route.split("/").at(-2) ?? "md-22455"} variant="cargowise-reference" />
               </Suspense>
             ) : isBookingDetailRoute(route) ? (
               <Suspense fallback={<RouteFallback />}>
