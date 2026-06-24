@@ -42,7 +42,7 @@ export function SettingsRail({
   return (
     <aside
       className={cn(
-        "relative flex h-screen min-h-0 w-full flex-col overflow-hidden bg-[var(--md-sidebar-bg)] px-[var(--md-page-stack-gap)] py-[var(--md-gap-xl)] shadow-[inset_-1px_0_0_rgba(11,20,19,0.07)] lg:sticky lg:top-0 lg:w-[260px] lg:shrink-0",
+        "relative flex h-screen min-h-0 w-full flex-col overflow-hidden bg-[var(--md-sidebar-bg)] px-[var(--md-page-stack-gap)] py-[var(--md-gap-xl)] shadow-[var(--md-stroke-right)] lg:sticky lg:top-0 lg:w-[260px] lg:shrink-0",
         className,
       )}
     >
@@ -151,7 +151,7 @@ export function SettingsPanel({
         </div>
         {action ? <div className="shrink-0">{action}</div> : null}
       </div>
-      <div className="divide-y divide-[rgba(11,20,19,0.07)] shadow-[inset_0_1px_0_rgba(11,20,19,0.06)]">{children}</div>
+      <div className="divide-y divide-[rgba(11,20,19,0.07)] shadow-[var(--md-stroke-top)]">{children}</div>
     </section>
   )
 }
@@ -195,7 +195,7 @@ export function SettingsInput({
     <Input
       dir={dir ?? "auto"}
       className={cn(
-        "h-9 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-tint)] px-3 text-[13px] text-[var(--md-ink)] shadow-[inset_0_0_0_1px_rgba(11,20,19,0.08)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
+        "h-9 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-tint)] px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
         className,
       )}
       {...props}
@@ -212,7 +212,7 @@ export function SettingsTextarea({
     <Textarea
       dir={dir ?? "auto"}
       className={cn(
-        "min-h-[88px] rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-tint)] px-3 py-2 text-[13px] leading-5 text-[var(--md-ink)] shadow-[inset_0_0_0_1px_rgba(11,20,19,0.08)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
+        "min-h-[88px] rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-tint)] px-3 py-2 text-[13px] leading-5 text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
         className,
       )}
       {...props}
@@ -238,7 +238,7 @@ export function SettingsSelect({
       <SelectTrigger
         aria-label={ariaLabel}
         className={cn(
-          "h-9 min-w-[220px] rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-tint)] px-3 text-[13px] text-[var(--md-ink)] shadow-[inset_0_0_0_1px_rgba(11,20,19,0.08)]",
+          "h-9 min-w-[220px] rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-tint)] px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
           className,
         )}
       >

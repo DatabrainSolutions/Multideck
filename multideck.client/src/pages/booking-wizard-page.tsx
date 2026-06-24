@@ -3,14 +3,16 @@ import { AnimatePresence, motion } from "motion/react"
 import {
   ArrowLeft,
   ArrowRight,
+  Bot,
   Check,
+  ChevronDown,
   ChevronRight,
+  ChevronUp,
   ClipboardCheck,
   Copy,
   PackageCheck,
   Plus,
   RotateCcw,
-  Search,
   Ship,
   Sparkles,
   Trash2,
@@ -23,12 +25,15 @@ import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { MultideckDateRangePicker } from "@/components/multideck/date-picker"
 import { Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { bookings } from "@/data/multideck-data"
 import { cn } from "@/lib/utils"
 
 type BookingSource = "quote" | "scratch" | "existing" | null
+type BookingTypeStage = "source" | "movement"
 const directionOptions = ["Import", "Export", "Domestic", "Cross Trade"] as const
 const standardModeOptions = ["Air", "Sea", "Road", "Courier", "Rail", "Air-Sea", "Sea-Air", "Customs Only", "Documentation Only"] as const
 const incotermOptions = [
@@ -418,6 +423,12 @@ const fieldMotion = {
   visible: { opacity: 1, y: 0 },
 }
 
+const bookingStepSurfaceClass = "bg-[#F4F9F7] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.12),0_18px_42px_rgba(14,125,116,0.08)]"
+const fieldBoundaryShadow = "shadow-[inset_0_0_0_1px_rgba(14,125,116,0.15),0_1px_1px_rgba(14,125,116,0.04)]"
+const fieldControlClass = cn("!h-11 w-full min-w-0 rounded-[var(--md-radius-lg)] border-0 bg-[#F4F9F7] px-3 text-[13px]", fieldBoundaryShadow)
+const fieldPanelClass = "rounded-[var(--md-radius-xl)] bg-[#F4F9F7] p-3 shadow-[inset_0_0_0_1px_rgba(14,125,116,0.13),0_10px_24px_rgba(14,125,116,0.06)]"
+const tablePanelClass = "overflow-hidden rounded-[var(--md-radius-xl)] bg-[#F4F9F7] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.13),0_10px_24px_rgba(14,125,116,0.06)]"
+
 const partyCompanies = [
   {
     name: "Marlow Apparel Ltd",
@@ -538,6 +549,31 @@ function fullAddressForOffice(office: string) {
   return addressByOffice[office] ?? office
 }
 
+type AddressRecord = {
+  office: string
+  company: string
+  postcode: string
+  address: string
+}
+
+const addressBook: AddressRecord[] = partyCompanies.flatMap((company) => (
+  company.offices.map((office) => {
+    const address = fullAddressForOffice(office)
+    const postcodeMatch = address.match(/\b[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}\b|\b\d{5}(?:-\d{4})?\b|\b\d{5}\b|\b\d{6}\b/i)
+
+    return {
+      office,
+      company: company.name,
+      postcode: postcodeMatch?.[0]?.toUpperCase() ?? "",
+      address,
+    }
+  })
+))
+
+function addressRecordForOffice(office: string) {
+  return addressBook.find((record) => record.office === office)
+}
+
 function routeLocationForAddress(address: string) {
   const locationByAddress: Record<string, { code: string; name: string; country: string }> = {
     "Shanghai export office": { code: "CNSHA", name: "Shanghai", country: "China" },
@@ -562,7 +598,11 @@ function isFilled(value: string) {
 function getRequiredFields(data: BookingWizardData, stepIndex: number) {
   const fields: Array<[keyof BookingWizardData, string]> = []
 
-  if (stepIndex === 0) fields.push(["direction", "Direction"], ["mode", "Mode"])
+  if (stepIndex === 0) {
+    if (data.source === "quote") fields.push(["quoteNumber", "Customer quote"])
+    if (data.source === "existing") fields.push(["templateBookingId", "Existing booking"])
+    fields.push(["direction", "Direction"], ["mode", "Mode"])
+  }
   if (stepIndex === 1) fields.push(["customer", "Customer"], ["shipper", "Shipper"], ["consignee", "Consignee"])
   if (stepIndex === 2) fields.push(
     ["collectionAddress", "Collection address"],
@@ -592,6 +632,39 @@ function allMissingFields(data: BookingWizardData) {
   return steps.slice(0, requiredStepCount).flatMap((step, index) => (
     missingFieldsForStep(data, index).map((label) => `${step.name}: ${label}`)
   ))
+}
+
+function allMissingFieldItems(data: BookingWizardData) {
+  return steps.slice(0, requiredStepCount).flatMap((step, index) => (
+    missingFieldsForStep(data, index).map((field) => ({
+      stepIndex: index,
+      stepName: step.name,
+      field,
+      label: `${step.name}: ${field}`,
+    }))
+  ))
+}
+
+function focusLabelForMissingField(field: string) {
+  const labels: Record<string, string> = {
+    "Customer quote": "Quote number",
+    "Existing booking": "Booking number",
+    "Collection address": "Address lookup",
+    "Delivery address": "Address lookup",
+    "Cargo ready from": "Collection dates",
+    "Requested collection date": "Collection dates",
+    "Requested delivery date": "Delivery dates",
+    "Cargo required by": "Delivery dates",
+    "Number of packages": "Outer pkgs",
+    Weight: "Gross kg",
+    "First origin": "Name",
+    "Final destination": "Name",
+    ETD: "Leg dates",
+    ETA: "Leg dates",
+    "VAT and duty payment": "VAT and duty paid by",
+  }
+
+  return labels[field] ?? field
 }
 
 function numberValue(value: string) {
@@ -680,6 +753,7 @@ function FieldShell({
   required,
   missing,
   action,
+  asDiv,
   children,
 }: {
   label: string
@@ -687,11 +761,14 @@ function FieldShell({
   required?: boolean
   missing?: boolean
   action?: ReactNode
+  asDiv?: boolean
   children: ReactNode
 }) {
+  const Shell = asDiv ? motion.div : motion.label
+
   return (
-    <motion.label variants={fieldMotion} className="grid min-w-0 gap-1.5">
-      <span className="flex items-center justify-between gap-3">
+    <Shell variants={fieldMotion} className="grid min-w-0 content-start gap-1.5" data-field-label={label}>
+      <span className="flex min-h-[18px] items-center justify-between gap-3">
         <span className="text-[13px] font-medium text-[var(--md-ink)]">
           {label}
           {required ? <span className="text-[var(--md-red)]"> *</span> : null}
@@ -700,7 +777,7 @@ function FieldShell({
       </span>
       {children}
       {helper ? <span className="text-[12px] leading-5 text-[var(--md-text)]">{helper}</span> : null}
-    </motion.label>
+    </Shell>
   )
 }
 
@@ -714,6 +791,7 @@ function TextField({
   required,
   missing,
   dir = "auto",
+  action,
 }: {
   label: string
   value: string
@@ -724,21 +802,118 @@ function TextField({
   required?: boolean
   missing?: boolean
   dir?: "auto" | "ltr"
+  action?: ReactNode
 }) {
   return (
-    <FieldShell label={label} helper={helper} required={required} missing={missing}>
+    <FieldShell label={label} helper={helper} required={required} missing={missing} action={action}>
       <Input
         type={type}
         value={value}
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
         className={cn(
-          "h-10 min-w-0 truncate rounded-[var(--md-radius-lg)] border-0 bg-white/64 px-3 text-[13px] shadow-[var(--md-shadow-line)]",
+          fieldControlClass,
+          "truncate",
           missing && missingFieldClass,
         )}
         dir={dir}
         aria-invalid={missing || undefined}
       />
+    </FieldShell>
+  )
+}
+
+function formatStepperNumber(value: number, decimals: number) {
+  const fixed = value.toFixed(decimals)
+  return decimals > 0 ? fixed.replace(/\.?0+$/, "") : fixed
+}
+
+function NumberStepperField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  step = 1,
+  decimals = 0,
+  min = 0,
+  required,
+  missing,
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  placeholder?: string
+  step?: number
+  decimals?: number
+  min?: number
+  required?: boolean
+  missing?: boolean
+}) {
+  const [slotDirection, setSlotDirection] = useState(1)
+  const displayValue = value || placeholder || ""
+
+  function updateBy(delta: number) {
+    const parsed = Number.parseFloat(value)
+    const base = Number.isFinite(parsed) ? parsed : 0
+    const next = Math.max(min, base + delta * step)
+    setSlotDirection(delta)
+    onChange(formatStepperNumber(next, decimals))
+  }
+
+  return (
+    <FieldShell label={label} required={required} missing={missing}>
+      <div
+        className={cn(
+          fieldControlClass,
+          "grid grid-cols-[minmax(0,1fr)_22px] overflow-hidden p-0",
+          missing && missingFieldClass,
+        )}
+      >
+        <div className="relative min-w-0">
+          <Input
+            type="text"
+            inputMode={decimals > 0 ? "decimal" : "numeric"}
+            value={value}
+            placeholder={placeholder}
+            onChange={(event) => onChange(event.target.value.replace(decimals > 0 ? /[^\d.]/g : /\D/g, ""))}
+            className="absolute inset-0 z-10 h-full border-0 bg-transparent px-3 text-transparent shadow-none outline-none caret-[var(--md-ink)] placeholder:text-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
+            dir="ltr"
+            aria-invalid={missing || undefined}
+          />
+          <span className="pointer-events-none absolute inset-0 flex min-w-0 items-center overflow-hidden px-3">
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.span
+                key={displayValue || "empty"}
+                initial={{ opacity: 0, y: slotDirection > 0 ? 8 : -8, filter: "blur(2px)" }}
+                animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                exit={{ opacity: 0, y: slotDirection > 0 ? -8 : 8, filter: "blur(2px)" }}
+                transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                className={cn("block truncate text-[13px] tabular-nums text-[var(--md-ink)]", !value && "text-[var(--md-muted)]")}
+              >
+                {displayValue}
+              </motion.span>
+            </AnimatePresence>
+          </span>
+        </div>
+        <div className="grid border-l border-[rgba(14,125,116,0.14)] bg-[rgba(14,125,116,0.04)]">
+          <button
+            type="button"
+            aria-label={`Increase ${label}`}
+            className="grid place-items-center text-[var(--md-subtle)] transition-colors hover:bg-[rgba(14,125,116,0.08)] hover:text-[var(--md-accent)]"
+            onClick={() => updateBy(1)}
+          >
+            <ChevronUp className="size-3" strokeWidth={1.7} />
+          </button>
+          <button
+            type="button"
+            aria-label={`Decrease ${label}`}
+            className="grid place-items-center border-t border-[rgba(14,125,116,0.14)] text-[var(--md-subtle)] transition-colors hover:bg-[rgba(14,125,116,0.08)] hover:text-[var(--md-accent)]"
+            onClick={() => updateBy(-1)}
+          >
+            <ChevronDown className="size-3" strokeWidth={1.7} />
+          </button>
+        </div>
+      </div>
     </FieldShell>
   )
 }
@@ -763,7 +938,8 @@ function TextAreaField({
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
         className={cn(
-          "min-h-[76px] rounded-[var(--md-radius-lg)] border-0 bg-white/64 px-3 py-2.5 text-[13px] leading-[18px] shadow-[var(--md-shadow-line)]",
+          "min-h-[92px] rounded-[var(--md-radius-lg)] border-0 bg-[#F4F9F7] px-3 py-2.5 text-[13px] leading-[18px]",
+          fieldBoundaryShadow,
         )}
         dir="auto"
       />
@@ -776,6 +952,7 @@ function SelectField({
   value,
   onChange,
   options,
+  placeholder = "Select option",
   helper,
   required,
   missing,
@@ -784,6 +961,7 @@ function SelectField({
   value: string
   onChange: (value: string) => void
   options: string[]
+  placeholder?: string
   helper?: string
   required?: boolean
   missing?: boolean
@@ -793,12 +971,12 @@ function SelectField({
       <Select value={value} onValueChange={onChange}>
         <SelectTrigger
           className={cn(
-            "h-10 rounded-[var(--md-radius-lg)] border-0 bg-white/64 px-3 text-[13px] shadow-[var(--md-shadow-line)]",
+            fieldControlClass,
             missing && missingFieldClass,
           )}
           aria-invalid={missing || undefined}
         >
-          <SelectValue />
+          <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent className="rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-sidebar-bg)] shadow-[var(--md-shadow-lift)]">
           {options.map((option) => (
@@ -824,7 +1002,7 @@ function IncotermsField({
   return (
     <FieldShell label="Incoterms">
       <Select value={value} onValueChange={onChange}>
-        <SelectTrigger className="h-10 rounded-[var(--md-radius-lg)] border-0 bg-white/64 px-3 text-[13px] shadow-[var(--md-shadow-line)]">
+        <SelectTrigger className={fieldControlClass}>
           <SelectValue placeholder="Select Incoterms">
             {selected ? `${selected.code} - ${selected.wording}` : undefined}
           </SelectValue>
@@ -840,53 +1018,6 @@ function IncotermsField({
           ))}
         </SelectContent>
       </Select>
-    </FieldShell>
-  )
-}
-
-function NativeSelectField({
-  label,
-  value,
-  onChange,
-  options,
-  placeholder,
-  required,
-  missing,
-  action,
-}: {
-  label: string
-  value: string
-  onChange: (value: string) => void
-  options: readonly string[]
-  placeholder: string
-  required?: boolean
-  missing?: boolean
-  action?: ReactNode
-}) {
-  const hasSelectedOption = !value || options.includes(value)
-
-  return (
-    <FieldShell label={label} required={required} missing={missing} action={action}>
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className={cn(
-          "h-10 min-w-0 truncate rounded-[var(--md-radius-lg)] border-0 bg-white/64 px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] outline-none",
-          !value && "text-[var(--md-muted)] opacity-70",
-          missing && missingFieldClass,
-        )}
-        dir="auto"
-        title={value || placeholder}
-        aria-invalid={missing || undefined}
-      >
-        <option value="">{placeholder}</option>
-        {!hasSelectedOption ? <option value={value}>{value}</option> : null}
-        {options.map((option) => (
-          <option key={option} value={option}>
-            {option}
-          </option>
-        ))}
-      </select>
     </FieldShell>
   )
 }
@@ -938,7 +1069,8 @@ function ComboField({
           }}
           disabled={disabled}
           className={cn(
-            "h-10 min-w-0 truncate rounded-[var(--md-radius-lg)] border-0 bg-white/64 px-3 text-[13px] shadow-[var(--md-shadow-line)]",
+            fieldControlClass,
+            "truncate",
             clearable && value && "pe-9",
             missing && missingFieldClass,
             disabled && "cursor-not-allowed bg-[rgba(228,233,233,0.72)] text-[var(--md-muted)] opacity-80",
@@ -986,6 +1118,109 @@ function ComboField({
                 {option}
               </button>
             ))}
+          </div>
+        ) : null}
+      </div>
+    </FieldShell>
+  )
+}
+
+function AddressLookupField({
+  label,
+  value,
+  preferredOffices,
+  onSelect,
+  placeholder,
+  required,
+  missing,
+}: {
+  label: string
+  value: string
+  preferredOffices: readonly string[]
+  onSelect: (office: string) => void
+  placeholder: string
+  required?: boolean
+  missing?: boolean
+}) {
+  const selectedRecord = addressRecordForOffice(value)
+  const [query, setQuery] = useState("")
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => {
+    setQuery(selectedRecord ? [selectedRecord.office, selectedRecord.postcode].filter(Boolean).join(" - ") : value)
+  }, [selectedRecord, value])
+
+  const preferredSet = new Set(preferredOffices)
+  const normalizedQuery = query.trim().toLowerCase()
+  const suggestions = addressBook
+    .filter((record) => {
+      if (!normalizedQuery) return preferredSet.has(record.office)
+      return [record.office, record.company, record.postcode, record.address].join(" ").toLowerCase().includes(normalizedQuery)
+    })
+    .sort((a, b) => Number(preferredSet.has(b.office)) - Number(preferredSet.has(a.office)) || a.office.localeCompare(b.office))
+    .slice(0, 8)
+
+  return (
+    <FieldShell label={label} required={required} missing={missing}>
+      <div className="relative z-0 min-w-0 focus-within:z-50">
+        <Input
+          value={query}
+          placeholder={placeholder}
+          onFocus={() => setOpen(true)}
+          onBlur={() => window.setTimeout(() => setOpen(false), 120)}
+          onChange={(event) => {
+            setQuery(event.target.value)
+            setOpen(true)
+          }}
+          className={cn(
+            fieldControlClass,
+            "truncate pe-9",
+            missing && missingFieldClass,
+          )}
+          dir="auto"
+          autoComplete="off"
+          role="combobox"
+          aria-expanded={open}
+          aria-invalid={missing || undefined}
+        />
+        {value ? (
+          <button
+            type="button"
+            aria-label={`Clear ${label}`}
+            className="absolute end-2 top-1/2 z-[130] grid size-5 -translate-y-1/2 place-items-center rounded-[var(--md-radius-sm)] text-[var(--md-text)] transition-colors hover:bg-[rgba(90,103,100,0.1)] hover:text-[var(--md-red)]"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => {
+              onSelect("")
+              setQuery("")
+              setOpen(false)
+            }}
+          >
+            <X className="size-3.5" strokeWidth={2} />
+          </button>
+        ) : null}
+        {open ? (
+          <div className="absolute inset-x-0 top-[calc(100%+4px)] z-[999] max-h-72 overflow-auto rounded-[var(--md-radius-xl)] bg-[rgba(251,253,253,0.98)] p-1 shadow-[var(--md-shadow-lift)]">
+            {suggestions.length ? suggestions.map((record) => (
+              <button
+                key={`${record.company}-${record.office}`}
+                type="button"
+                className="grid w-full gap-1 rounded-[var(--md-radius-lg)] px-2.5 py-2 text-left transition-colors hover:bg-[rgba(14,125,116,0.08)]"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  onSelect(record.office)
+                  setQuery([record.office, record.postcode].filter(Boolean).join(" - "))
+                  setOpen(false)
+                }}
+              >
+                <span className="flex min-w-0 items-center justify-between gap-2">
+                  <span className="truncate text-[13px] font-medium text-[var(--md-ink)]">{record.office}</span>
+                  {record.postcode ? <span className="shrink-0 text-[11px] font-medium text-[var(--md-accent)]" dir="ltr">{record.postcode}</span> : null}
+                </span>
+                <span className="truncate text-[12px] text-[var(--md-text)]">{record.company} - {record.address.replace(/\n/g, ", ")}</span>
+              </button>
+            )) : (
+              <div className="px-3 py-3 text-[12px] text-[var(--md-text)]">No matching addresses in the prototype list.</div>
+            )}
           </div>
         ) : null}
       </div>
@@ -1054,7 +1289,7 @@ function ToggleTile({
       type="button"
       aria-pressed={checked}
       className={cn(
-        "flex min-h-10 items-center justify-between gap-3 rounded-[var(--md-radius-lg)] bg-white/54 px-3 py-1.5 text-left text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-white/78",
+        "flex min-h-10 items-center justify-between gap-3 rounded-[var(--md-radius-lg)] bg-[#F4F9F7] px-3 py-1.5 text-left text-[13px] font-medium text-[var(--md-ink)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.14),0_1px_1px_rgba(14,125,116,0.04)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-white/78",
         checked && "bg-[var(--md-accent)] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_10px_20px_rgba(14,125,116,0.18)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]",
       )}
       onClick={() => onChange(!checked)}
@@ -1064,6 +1299,75 @@ function ToggleTile({
         {checked ? <Check className="size-3.5" strokeWidth={1.8} /> : null}
       </span>
     </motion.button>
+  )
+}
+
+function BrandedCheckbox({
+  label,
+  checked,
+  onChange,
+  className,
+}: {
+  label: string
+  checked: boolean
+  onChange: (checked: boolean) => void
+  className?: string
+}) {
+  return (
+    <motion.button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      whileTap={{ scale: 0.98 }}
+      className={cn(
+        "inline-flex min-h-8 items-center gap-2 rounded-[var(--md-radius-lg)] bg-[#F4F9F7] px-2.5 text-left text-[12px] font-medium text-[var(--md-text)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.14),0_1px_1px_rgba(14,125,116,0.04)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white/82",
+        checked && "bg-[var(--md-accent)] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_10px_20px_rgba(14,125,116,0.18)] hover:bg-[#0b6f67]",
+        className,
+      )}
+      onClick={() => onChange(!checked)}
+    >
+      <span
+        className={cn(
+          "grid size-4 shrink-0 place-items-center rounded-[var(--md-radius-sm)] bg-white/82 text-transparent shadow-[var(--md-shadow-line)]",
+          checked && "text-[var(--md-accent)]",
+        )}
+        aria-hidden="true"
+      >
+        <AnimatePresence initial={false}>
+          {checked ? (
+            <motion.span
+              key="tick"
+              initial={{ opacity: 0, scale: 0.5, rotate: -12 }}
+              animate={{ opacity: 1, scale: 1, rotate: 0 }}
+              exit={{ opacity: 0, scale: 0.5, rotate: 12 }}
+              transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <Check className="size-3" strokeWidth={2.2} />
+            </motion.span>
+          ) : null}
+        </AnimatePresence>
+      </span>
+      <span className="min-w-0 whitespace-nowrap">{label}</span>
+    </motion.button>
+  )
+}
+
+function DexterCodeHint() {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          tabIndex={0}
+          aria-label="Dexter auto-population note"
+          className="grid size-6 place-items-center rounded-[var(--md-radius-md)] bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)] outline-none transition-[background,box-shadow,transform] hover:scale-[1.04] hover:bg-[rgba(14,125,116,0.16)] focus-visible:ring-2 focus-visible:ring-[rgba(14,125,116,0.22)]"
+        >
+          <Bot className="size-3.5" strokeWidth={1.5} />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top" sideOffset={8} className="max-w-[260px] rounded-[var(--md-radius-lg)] bg-[var(--md-ink)] px-3 py-2 text-[12px] leading-5 text-white shadow-[var(--md-shadow-lift)]">
+        Dexter will auto-populate this code when the backend handoff is connected.
+      </TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -1086,20 +1390,23 @@ function CompactOptionGroup<T extends string>({
           const selected = option === value
 
           return (
-            <button
+            <motion.button
               key={option}
               type="button"
               aria-pressed={selected}
+              whileTap={{ scale: 0.965 }}
+              animate={{ scale: selected ? 1.015 : 1 }}
+              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
               className={cn(
-                "h-9 rounded-[var(--md-radius-md)] px-3 text-[13px] font-medium shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
+                "h-11 rounded-[var(--md-radius-xl)] px-4 text-[13px] font-medium transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01]",
                 selected
-                  ? "bg-[var(--md-accent)] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_8px_18px_rgba(14,125,116,0.18)] hover:bg-[#0b6f67]"
-                  : "bg-white/54 text-[var(--md-text)] hover:bg-white/78",
+                  ? "bg-[var(--md-accent)] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_10px_22px_rgba(14,125,116,0.2)] hover:bg-[#0b6f67]"
+                  : "bg-[#F4F9F7] text-[var(--md-text)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.14),0_1px_1px_rgba(14,125,116,0.04)] hover:bg-white/82",
               )}
               onClick={() => onChange(option)}
             >
               {option}
-            </button>
+            </motion.button>
           )
         })}
       </div>
@@ -1115,7 +1422,7 @@ function ModePicker({
   onChange: (value: BookingModeOption) => void
 }) {
   return (
-    <motion.div variants={fieldMotion} className="grid gap-2">
+    <motion.div variants={fieldMotion} className="grid gap-1.5">
       <p className="text-[13px] font-medium text-[var(--md-ink)]">Mode</p>
 
       <div className="flex flex-wrap gap-2">
@@ -1123,20 +1430,23 @@ function ModePicker({
           const selected = mode === value
 
           return (
-            <button
+            <motion.button
               key={mode}
               type="button"
               aria-pressed={selected}
+              whileTap={{ scale: 0.965 }}
+              animate={{ scale: selected ? 1.015 : 1 }}
+              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
               className={cn(
-                "h-9 rounded-[var(--md-radius-md)] px-3 text-[13px] font-medium shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
+                "h-11 rounded-[var(--md-radius-xl)] px-4 text-[13px] font-medium transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01]",
                 selected
-                  ? "bg-[var(--md-accent)] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_8px_18px_rgba(14,125,116,0.18)] hover:bg-[#0b6f67]"
-                  : "bg-white/54 text-[var(--md-text)] hover:bg-white/78",
+                  ? "bg-[var(--md-accent)] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_10px_22px_rgba(14,125,116,0.2)] hover:bg-[#0b6f67]"
+                  : "bg-[#F4F9F7] text-[var(--md-text)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.14),0_1px_1px_rgba(14,125,116,0.04)] hover:bg-white/82",
               )}
               onClick={() => onChange(mode)}
             >
               {mode}
-            </button>
+            </motion.button>
           )
         })}
       </div>
@@ -1214,7 +1524,7 @@ function PartyRow({
       aria-label={`Add address for ${label}`}
       title={addAddressDisabled ? "Select a company first" : `Add address for ${label}`}
       disabled={addAddressDisabled}
-      className="grid size-6 place-items-center rounded-[var(--md-radius-sm)] bg-white/58 text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,opacity] hover:bg-white/78 hover:text-[var(--md-accent)] disabled:cursor-not-allowed disabled:opacity-40"
+      className="grid size-6 place-items-center rounded-[var(--md-radius-sm)] bg-[#F4F9F7] text-[var(--md-text)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.14),0_1px_1px_rgba(14,125,116,0.04)] transition-[background,color,opacity] hover:bg-white/78 hover:text-[var(--md-accent)] disabled:cursor-not-allowed disabled:opacity-40"
       onClick={() => setAddressDialogOpen(true)}
     >
       <Plus className="size-3.5" strokeWidth={1.8} />
@@ -1227,7 +1537,7 @@ function PartyRow({
       aria-label={`Add contact for ${label}`}
       title={addContactDisabled ? "Select an office first" : `Add contact for ${label}`}
       disabled={addContactDisabled}
-      className="grid size-6 place-items-center rounded-[var(--md-radius-sm)] bg-white/58 text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,opacity] hover:bg-white/78 hover:text-[var(--md-accent)] disabled:cursor-not-allowed disabled:opacity-40"
+      className="grid size-6 place-items-center rounded-[var(--md-radius-sm)] bg-[#F4F9F7] text-[var(--md-text)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.14),0_1px_1px_rgba(14,125,116,0.04)] transition-[background,color,opacity] hover:bg-white/78 hover:text-[var(--md-accent)] disabled:cursor-not-allowed disabled:opacity-40"
       onClick={() => setContactDialogOpen(true)}
     >
       <Plus className="size-3.5" strokeWidth={1.8} />
@@ -1237,7 +1547,7 @@ function PartyRow({
   return (
     <motion.div
       variants={fieldMotion}
-      className="relative z-0 grid gap-2 rounded-[var(--md-radius-lg)] bg-white/38 p-2.5 shadow-[var(--md-shadow-line)] focus-within:z-[300]"
+      className={cn("relative z-0 grid gap-3 rounded-[var(--md-radius-xl)] bg-[#F4F9F7] p-3 focus-within:z-[300]", fieldBoundaryShadow)}
     >
       <div className="flex flex-wrap items-baseline gap-2">
         <p className="text-[14px] font-medium text-[var(--md-ink)]">{label}</p>
@@ -1351,449 +1661,414 @@ function CustomerRoleCheckboxes({
   onNotifyPartyChange: (checked: boolean) => void
 }) {
   const options = [
-    ["customer-is-shipper", "...is Shipper", isShipper, onShipperChange],
-    ["customer-is-consignee", "...is Consignee", isConsignee, onConsigneeChange],
-    ["customer-is-notify", "...is Notify Party", isNotifyParty, onNotifyPartyChange],
+    ["customer-is-shipper", "Is shipper", isShipper, onShipperChange],
+    ["customer-is-consignee", "Is consignee", isConsignee, onConsigneeChange],
+    ["customer-is-notify", "Is notify party", isNotifyParty, onNotifyPartyChange],
   ] as const
 
   return (
     <div className="flex flex-wrap gap-2">
       {options.map(([id, label, checked, onChange]) => (
-        <label
+        <BrandedCheckbox
           key={id}
-          htmlFor={id}
-          className={cn(
-            "flex h-7 cursor-pointer items-center gap-1.5 rounded-[var(--md-radius-sm)] bg-white/50 px-2.5 text-[12px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white/78",
-            checked && "bg-[var(--md-accent)] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_8px_18px_rgba(14,125,116,0.16)] hover:bg-[#0b6f67]",
-          )}
-        >
-          <input
-            id={id}
-            type="checkbox"
-            checked={checked}
-            onChange={(event) => onChange(event.target.checked)}
-            className="size-3.5 rounded border-white/70 accent-[var(--md-accent)]"
-          />
-          <span>{label}</span>
-        </label>
+          label={label}
+          checked={checked}
+          onChange={onChange}
+        />
       ))}
     </div>
   )
 }
 
-function SourceScreen({
+function SourceChoiceCard({
+  title,
+  body,
+  icon,
+  onClick,
+}: {
+  title: string
+  body: string
+  icon: ReactNode
+  onClick: () => void
+}) {
+  return (
+    <motion.button
+      type="button"
+      variants={optionMotion}
+      whileTap={{ scale: 0.985 }}
+      className="group grid min-h-[148px] content-between gap-4 rounded-[var(--md-radius-2xl)] bg-[#F4F9F7] p-4 text-left shadow-[inset_0_0_0_1px_rgba(14,125,116,0.13),0_10px_24px_rgba(14,125,116,0.06)] transition-[background,box-shadow,transform] hover:scale-[1.01] hover:bg-white/82 hover:shadow-[inset_0_0_0_1px_rgba(14,125,116,0.2),0_14px_30px_rgba(14,125,116,0.1)]"
+      onClick={onClick}
+    >
+      <span className="grid gap-3">
+        <span className="grid size-10 place-items-center rounded-[var(--md-radius-lg)] bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">
+          {icon}
+        </span>
+        <span className="grid gap-1.5">
+          <span className="text-[16px] font-medium text-[var(--md-ink)]">{title}</span>
+          <span className="text-[13px] leading-5 text-[var(--md-text)]">{body}</span>
+        </span>
+      </span>
+      <span className="inline-flex h-8 w-fit items-center gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[12px] font-medium text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_10px_22px_rgba(14,125,116,0.18)] transition-transform group-hover:scale-[1.02]">
+        Select
+        <ChevronRight className="size-3.5" strokeWidth={1.35} />
+      </span>
+    </motion.button>
+  )
+}
+
+function SourceScreen({ onStart }: { onStart: (source: Exclude<BookingSource, null>) => void }) {
+  return (
+    <motion.div variants={stepMotion} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}>
+      <Surface padding="md" className={cn("overflow-hidden rounded-[var(--md-radius-2xl)]", bookingStepSurfaceClass)}>
+        <h1 className="sr-only">Choose booking start type</h1>
+        <motion.div variants={fieldListMotion} initial="hidden" animate="visible" className="grid gap-3 xl:grid-cols-3">
+          <SourceChoiceCard
+            title="Create from Customer Quote"
+            body="Use an accepted quote as the source, then confirm the booking details."
+            icon={<ClipboardCheck className="size-5" strokeWidth={1.35} />}
+            onClick={() => onStart("quote")}
+          />
+          <SourceChoiceCard
+            title="Create from Existing Booking"
+            body="Duplicate a previous customer job or favourite route pattern."
+            icon={<Copy className="size-5" strokeWidth={1.35} />}
+            onClick={() => onStart("existing")}
+          />
+          <SourceChoiceCard
+            title="Create from Scratch"
+            body="Start clean when this movement is genuinely new."
+            icon={<Sparkles className="size-5" strokeWidth={1.35} />}
+            onClick={() => onStart("scratch")}
+          />
+        </motion.div>
+      </Surface>
+    </motion.div>
+  )
+}
+
+function SourceDetailPanel({
   data,
-  query,
-  onQueryChange,
-  onUpdate,
-  onStart,
+  missing,
+  update,
+  onApplyExistingBooking,
+  onApplyCustomerQuote,
 }: {
   data: BookingWizardData
-  query: string
-  onQueryChange: (value: string) => void
-  onUpdate: <K extends keyof BookingWizardData>(field: K, value: BookingWizardData[K]) => void
-  onStart: (source: Exclude<BookingSource, null>) => void
+  missing: Set<string>
+  update: <K extends keyof BookingWizardData>(field: K, value: BookingWizardData[K]) => void
+  onApplyExistingBooking: (bookingId: string) => void
+  onApplyCustomerQuote: (quoteId: string) => void
 }) {
-  const [selectedStartType, setSelectedStartType] = useState<Exclude<BookingSource, null>>("quote")
-  const [quoteSearchOpen, setQuoteSearchOpen] = useState(false)
-  const [bookingSearchOpen, setBookingSearchOpen] = useState(false)
-  const [quoteCriteria, setQuoteCriteria] = useState({ customer: "", origin: "", destination: "", mode: "", containerSize: "" })
-  const [bookingCriteria, setBookingCriteria] = useState({ customer: "", origin: "", destination: "", mode: "", containerSize: "" })
+  const [sourceSearch, setSourceSearch] = useState("")
   const customerOptions = Array.from(new Set([
     ...partyCompanyOptions,
     ...bookings.map((booking) => booking.customer),
     ...customerQuotes.map((quote) => quote.customer),
   ])).sort()
-  const modeOptions = Array.from(new Set([...standardModeOptions, ...bookings.map((booking) => booking.mode)])).sort()
-  const containerOptions = Array.from(new Set(bookings.map((booking) => booking.container))).sort()
   const quoteNumberOptions = customerQuotes
     .filter((quote) => !data.quoteCustomer || quote.customer === data.quoteCustomer)
     .map((quote) => quote.id)
   const bookingNumberOptions = bookings
     .filter((booking) => !data.bookingCustomer || booking.customer === data.bookingCustomer)
     .map((booking) => booking.id)
-  const quoteSearchTerm = data.quoteNumber.toLowerCase()
-  const visibleQuotes = customerQuotes
-    .filter((quote) => !data.quoteCustomer || quote.customer === data.quoteCustomer)
-    .filter((quote) => !quoteSearchTerm || [quote.id, quote.route, quote.detail, quote.status].join(" ").toLowerCase().includes(quoteSearchTerm))
-    .slice(0, 10)
-  const bookingSearchTerm = (query || data.bookingNumber).toLowerCase()
-  const favouriteBookings = bookings.filter((booking) => ["MD-22481", "MD-22455", "MD-22441", "MD-22414", "MD-22466"].includes(booking.id))
-  const visibleBookings = (data.bookingCustomer
-    ? bookings.filter((booking) => booking.customer === data.bookingCustomer)
-    : favouriteBookings
-  )
-    .filter((booking) => !bookingSearchTerm || [booking.id, booking.customer, booking.route, booking.carrier, booking.customerRef, booking.jobRef].join(" ").toLowerCase().includes(bookingSearchTerm))
-    .slice(0, 10)
 
-  const searchQuote = () => {
-    setQuoteCriteria((current) => ({ ...current, customer: data.quoteCustomer || current.customer }))
-    setQuoteSearchOpen(true)
+  if (data.source === "quote") {
+    const normalizedSearch = sourceSearch.trim().toLowerCase()
+    const visibleQuotes = customerQuotes
+      .filter((quote) => !data.quoteCustomer || quote.customer === data.quoteCustomer)
+      .filter((quote) => !normalizedSearch || [quote.id, quote.customer, quote.route, quote.detail, quote.status].join(" ").toLowerCase().includes(normalizedSearch))
+      .slice(0, 8)
+
+    return (
+      <motion.section variants={fieldMotion} className={cn(fieldPanelClass, "grid gap-3")}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-[14px] font-medium text-[var(--md-ink)]">Customer quote source</p>
+            <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">Select the accepted quote before confirming the movement details.</p>
+          </div>
+          {data.quoteNumber ? <StatusPill tone="teal">Quote selected</StatusPill> : <StatusPill tone="amber">Required</StatusPill>}
+        </div>
+        <FieldGroup className="lg:grid-cols-3">
+          <ComboField
+            label="Customer"
+            value={data.quoteCustomer}
+            onChange={(value) => {
+              update("quoteCustomer", value)
+              update("quoteNumber", "")
+            }}
+            options={customerOptions}
+            placeholder="Select customer"
+            clearable
+          />
+          <ComboField
+            label="Quote number"
+            value={data.quoteNumber}
+            onChange={(value) => {
+              update("quoteNumber", value)
+              const quote = customerQuotes.find((item) => item.id === value)
+              if (quote) onApplyCustomerQuote(quote.id)
+            }}
+            options={quoteNumberOptions}
+            placeholder="Quote number"
+            required
+            missing={missing.has("Customer quote")}
+          />
+          <TextField label="Search quotes" value={sourceSearch} onChange={setSourceSearch} placeholder="Search route, status, detail..." />
+        </FieldGroup>
+        <div className="grid gap-2">
+          {visibleQuotes.map((quote) => {
+            const selected = data.quoteNumber === quote.id
+
+            return (
+              <button
+                key={quote.id}
+                type="button"
+                aria-pressed={selected}
+                className={cn(
+                  "grid gap-2 rounded-[var(--md-radius-lg)] bg-white/58 px-3 py-2.5 text-left shadow-[var(--md-shadow-line)] transition-[background,box-shadow,transform] hover:bg-white/82 sm:grid-cols-[96px_minmax(0,1fr)_auto] sm:items-center",
+                  selected && "bg-[rgba(14,125,116,0.1)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.35),0_8px_18px_rgba(14,125,116,0.08)]",
+                )}
+                onClick={() => onApplyCustomerQuote(quote.id)}
+              >
+                <span className="text-[13px] font-medium text-[var(--md-ink)]" dir="ltr">{quote.id}</span>
+                <span className="min-w-0">
+                  <span className="block truncate text-[13px] font-medium text-[var(--md-ink)]">{quote.customer}</span>
+                  <span className="mt-0.5 block truncate text-[12px] text-[var(--md-text)]">{quote.route} - {quote.detail}</span>
+                </span>
+                <StatusPill tone={selected ? "teal" : quote.status === "Accepted" ? "green" : "neutral"}>{selected ? "Selected" : quote.status}</StatusPill>
+              </button>
+            )
+          })}
+        </div>
+      </motion.section>
+    )
   }
 
-  const searchBooking = () => {
-    setBookingCriteria((current) => ({ ...current, customer: data.bookingCustomer || current.customer }))
-    setBookingSearchOpen(true)
+  if (data.source === "existing") {
+    const normalizedSearch = sourceSearch.trim().toLowerCase()
+    const favouriteBookings = bookings.filter((booking) => ["MD-22481", "MD-22455", "MD-22441", "MD-22414", "MD-22466"].includes(booking.id))
+    const visibleBookings = (data.bookingCustomer
+      ? bookings.filter((booking) => booking.customer === data.bookingCustomer)
+      : favouriteBookings
+    )
+      .filter((booking) => !normalizedSearch || [booking.id, booking.customer, booking.route, booking.carrier, booking.customerRef, booking.jobRef].join(" ").toLowerCase().includes(normalizedSearch))
+      .slice(0, 8)
+
+    return (
+      <motion.section variants={fieldMotion} className={cn(fieldPanelClass, "grid gap-3")}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-[14px] font-medium text-[var(--md-ink)]">Existing booking source</p>
+            <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">Pick a customer job or favourite route to prefill this booking.</p>
+          </div>
+          {data.templateBookingId ? <StatusPill tone="teal">Booking selected</StatusPill> : <StatusPill tone="amber">Required</StatusPill>}
+        </div>
+        <FieldGroup className="lg:grid-cols-3">
+          <ComboField
+            label="Customer"
+            value={data.bookingCustomer}
+            onChange={(value) => {
+              update("bookingCustomer", value)
+              update("bookingNumber", "")
+              update("templateBookingId", "")
+              setSourceSearch("")
+            }}
+            options={customerOptions}
+            placeholder="Select customer"
+            clearable
+          />
+          <ComboField
+            label="Booking number"
+            value={data.bookingNumber}
+            onChange={(value) => {
+              update("bookingNumber", value)
+              const booking = bookings.find((item) => item.id === value)
+              if (booking) onApplyExistingBooking(booking.id)
+              else update("templateBookingId", "")
+            }}
+            options={bookingNumberOptions}
+            placeholder="Booking number"
+            required
+            missing={missing.has("Existing booking")}
+          />
+          <TextField label="Search jobs" value={sourceSearch} onChange={setSourceSearch} placeholder="Search customer, route, carrier..." />
+        </FieldGroup>
+        <div className="grid gap-2">
+          <p className="text-[12px] font-medium text-[var(--md-subtle)]">{data.bookingCustomer ? "Last 10 jobs" : "Favourite jobs"}</p>
+          {visibleBookings.map((booking) => {
+            const selected = data.templateBookingId === booking.id
+
+            return (
+              <button
+                key={booking.id}
+                type="button"
+                aria-pressed={selected}
+                className={cn(
+                  "grid gap-3 rounded-[var(--md-radius-lg)] bg-white/58 px-3 py-3 text-left shadow-[var(--md-shadow-line)] transition-[background,box-shadow,transform] hover:bg-white/82 sm:grid-cols-[88px_minmax(0,1fr)_auto] sm:items-center",
+                  selected && "bg-[rgba(14,125,116,0.1)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.35),0_8px_18px_rgba(14,125,116,0.08)]",
+                )}
+                onClick={() => onApplyExistingBooking(booking.id)}
+              >
+                <span className="text-[13px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="ltr">{booking.id}</span>
+                <span className="min-w-0">
+                  <span className="block truncate text-[13px] font-medium text-[var(--md-ink)]">{booking.customer}</span>
+                  <span className="mt-1 block truncate text-[12px] text-[var(--md-text)]">{booking.route} - {booking.carrier}</span>
+                </span>
+                <StatusPill tone={selected ? "teal" : "neutral"}>{selected ? "Selected" : booking.mode}</StatusPill>
+              </button>
+            )
+          })}
+        </div>
+      </motion.section>
+    )
   }
 
-  const quoteSearchResults = customerQuotes
-    .filter((quote) => !quoteCriteria.customer || quote.customer === quoteCriteria.customer)
-    .filter((quote) => !quoteCriteria.origin || quote.route.toLowerCase().includes(quoteCriteria.origin.toLowerCase()))
-    .filter((quote) => !quoteCriteria.destination || quote.route.toLowerCase().includes(quoteCriteria.destination.toLowerCase()))
-    .filter((quote) => !quoteCriteria.containerSize || quote.detail.toLowerCase().includes(quoteCriteria.containerSize.toLowerCase()))
-    .slice(0, 10)
+  return null
+}
 
-  const bookingSearchResults = bookings
-    .filter((booking) => !bookingCriteria.customer || booking.customer === bookingCriteria.customer)
-    .filter((booking) => !bookingCriteria.origin || booking.origin.toLowerCase().includes(bookingCriteria.origin.toLowerCase()))
-    .filter((booking) => !bookingCriteria.destination || booking.destination.toLowerCase().includes(bookingCriteria.destination.toLowerCase()))
-    .filter((booking) => !bookingCriteria.mode || booking.mode.toLowerCase() === bookingCriteria.mode.toLowerCase())
-    .filter((booking) => !bookingCriteria.containerSize || booking.container.toLowerCase().includes(bookingCriteria.containerSize.toLowerCase()))
-    .slice(0, 10)
+function BookingTypeMiniSteps({
+  source,
+  stage,
+  sourceComplete,
+  onStageChange,
+}: {
+  source: BookingSource
+  stage: BookingTypeStage
+  sourceComplete: boolean
+  onStageChange: (stage: BookingTypeStage) => void
+}) {
+  const hasSourceStage = source === "quote" || source === "existing"
+  const items = hasSourceStage
+    ? [
+        { id: "source" as const, label: source === "quote" ? "Quote source" : "Existing source", complete: sourceComplete },
+        { id: "movement" as const, label: "Movement details", complete: false },
+      ]
+    : [{ id: "movement" as const, label: "Movement details", complete: false }]
 
   return (
-    <motion.div variants={stepMotion} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}>
-      <Surface padding="lg" className="overflow-hidden rounded-[var(--md-radius-2xl)]">
-        <div>
-          <StatusPill tone="teal">New booking</StatusPill>
-          <h1 className="mt-4 max-w-[760px] text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">
-            Start from the fastest path for the operator.
-          </h1>
-          <p className="mt-3 max-w-[760px] text-[14px] leading-6 text-[var(--md-text)]">
-            Convert a customer quote, duplicate a favourite or customer job, or start clean when the booking is genuinely new.
-          </p>
-        </div>
+    <div className="mb-3 flex flex-wrap gap-2">
+      {items.map((item, index) => {
+        const active = item.id === stage
+        const disabled = item.id === "movement" && hasSourceStage && !sourceComplete
 
-          <motion.div variants={fieldListMotion} initial="hidden" animate="visible" className="mt-6 grid gap-3 xl:grid-cols-3 xl:items-start">
-            <motion.div
-              variants={optionMotion}
-              className={cn(
-                "grid gap-4 rounded-[var(--md-radius-xl)] bg-white/58 p-4 shadow-[var(--md-shadow-line)]",
-                selectedStartType === "quote" && "shadow-[inset_0_0_0_1px_rgba(14,125,116,0.42),0_16px_30px_rgba(14,125,116,0.08)]",
-              )}
-            >
-              <div className="flex items-start gap-4">
-                <span className="grid size-10 place-items-center rounded-[var(--md-radius-lg)] bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)]">
-                  <ClipboardCheck className="size-5" strokeWidth={1.35} />
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-[16px] font-medium text-[var(--md-ink)]">Create from Customer Quote</span>
-                  <span className="mt-1 block text-[13px] leading-5 text-[var(--md-text)]">Pull the accepted quote into a new booking workflow.</span>
-                </span>
-              </div>
-              <div className="grid gap-2">
-                <ComboField
-                  label="Customer"
-                  value={data.quoteCustomer}
-                  onChange={(value) => {
-                    setSelectedStartType("quote")
-                    onUpdate("quoteCustomer", value)
-                    onUpdate("quoteNumber", "")
-                  }}
-                  options={customerOptions}
-                  placeholder="Select customer"
-                  clearable
-                />
-                <ComboField
-                  label="Quote number"
-                  value={data.quoteNumber}
-                  onChange={(value) => {
-                    setSelectedStartType("quote")
-                    onUpdate("quoteNumber", value)
-                  }}
-                  options={quoteNumberOptions}
-                  placeholder="Quote number"
-                />
-                <div className="flex flex-wrap gap-2">
-                  <Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-lg)] bg-[rgba(14,125,116,0.1)] px-3 text-[13px] font-medium text-[var(--md-accent)] shadow-[var(--md-shadow-line)] hover:bg-[rgba(14,125,116,0.16)]" onClick={searchQuote}>
-                    <Search className="size-4" strokeWidth={1.35} />
-                    Search
-                  </Button>
-                  <Button
-                    type="button"
-                    className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white hover:bg-[#0b6f67]"
-                    disabled={!data.quoteNumber.trim()}
-                    onClick={() => onStart("quote")}
-                  >
-                    Start
-                    <ChevronRight className="size-4" strokeWidth={1.35} />
-                  </Button>
-                </div>
-              </div>
-              <div className="grid gap-2">
-                <p className="text-[12px] font-medium text-[var(--md-subtle)]">{data.quoteCustomer ? "Last 10 quotes" : "Select a customer to show quotes"}</p>
-                {data.quoteCustomer ? visibleQuotes.map((quote) => (
-                  <button
-                    key={quote.id}
-                    type="button"
-                    className={cn(
-                      "grid gap-1 rounded-[var(--md-radius-lg)] bg-white/52 px-3 py-2 text-left shadow-[var(--md-shadow-line)] transition-colors hover:bg-white/78",
-                      data.quoteNumber === quote.id && "bg-[rgba(14,125,116,0.1)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.35),0_8px_18px_rgba(14,125,116,0.08)]",
-                    )}
-                    onClick={() => {
-                      setSelectedStartType("quote")
-                      onUpdate("quoteNumber", quote.id)
-                    }}
-                  >
-                    <span className="text-[13px] font-medium text-[var(--md-ink)]" dir="ltr">{quote.id}</span>
-                    <span className="truncate text-[12px] text-[var(--md-text)]">{quote.route}</span>
-                    <span className="truncate text-[12px] text-[var(--md-subtle)]">{quote.detail} - {quote.status}</span>
-                  </button>
-                )) : null}
-              </div>
-            </motion.div>
-
-            <motion.div
-              variants={optionMotion}
-              className={cn(
-                "grid gap-4 rounded-[var(--md-radius-xl)] bg-white/58 p-4 shadow-[var(--md-shadow-line)]",
-                selectedStartType === "existing" && "shadow-[inset_0_0_0_1px_rgba(14,125,116,0.42),0_16px_30px_rgba(14,125,116,0.08)]",
-              )}
-            >
-              <div className="flex items-start gap-4">
-                <span className="grid size-10 place-items-center rounded-[var(--md-radius-lg)] bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)]">
-                  <Copy className="size-5" strokeWidth={1.35} />
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-[16px] font-medium text-[var(--md-ink)]">Create from Existing Booking</span>
-                  <span className="mt-1 block text-[13px] leading-5 text-[var(--md-text)]">Use a previous route, customer, and reference pattern as the starting point.</span>
-                </span>
-              </div>
-              <div className="grid gap-2">
-                <ComboField
-                  label="Customer"
-                  value={data.bookingCustomer}
-                  onChange={(value) => {
-                    setSelectedStartType("existing")
-                    onUpdate("bookingCustomer", value)
-                    onUpdate("bookingNumber", "")
-                    onUpdate("templateBookingId", "")
-                    onQueryChange("")
-                  }}
-                  options={customerOptions}
-                  placeholder="Select customer"
-                  clearable
-                />
-                <ComboField
-                  label="Booking number"
-                  value={data.bookingNumber}
-                  onChange={(value) => {
-                    setSelectedStartType("existing")
-                    onUpdate("bookingNumber", value)
-                    onQueryChange(value)
-                  }}
-                  options={bookingNumberOptions}
-                  placeholder="Booking number"
-                />
-                <div className="flex flex-wrap gap-2">
-                  <Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-lg)] bg-[rgba(14,125,116,0.1)] px-3 text-[13px] font-medium text-[var(--md-accent)] shadow-[var(--md-shadow-line)] hover:bg-[rgba(14,125,116,0.16)]" onClick={searchBooking}>
-                    <Search className="size-4" strokeWidth={1.35} />
-                    Search
-                  </Button>
-                  <Button
-                    type="button"
-                    className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white hover:bg-[#0b6f67]"
-                    disabled={!data.templateBookingId}
-                    onClick={() => onStart("existing")}
-                  >
-                    Start
-                    <ChevronRight className="size-4" strokeWidth={1.35} />
-                  </Button>
-                </div>
-              </div>
-              <div className="grid gap-2">
-                <p className="text-[12px] font-medium text-[var(--md-subtle)]">{data.bookingCustomer ? "Last 10 jobs" : "Favourite jobs"}</p>
-                {visibleBookings.map((booking) => {
-                  const selected = data.templateBookingId === booking.id
-
-                  return (
-                    <button
-                      key={booking.id}
-                      type="button"
-                      aria-pressed={selected}
-                      className={cn(
-                        "grid gap-3 rounded-[var(--md-radius-lg)] bg-white/52 px-3 py-3 text-left shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white/78 sm:grid-cols-[86px_minmax(0,1fr)_auto] sm:items-center",
-                        selected && "bg-[rgba(14,125,116,0.1)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.35),0_8px_18px_rgba(14,125,116,0.08)]",
-                      )}
-                      onClick={() => {
-                        setSelectedStartType("existing")
-                        onUpdate("templateBookingId", booking.id)
-                        onUpdate("bookingNumber", booking.id)
-                        onUpdate("bookingCustomer", booking.customer)
-                      }}
-                    >
-                      <span className="text-[13px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="ltr">{booking.id}</span>
-                      <span className="min-w-0">
-                        <span className="block truncate text-[13px] font-medium text-[var(--md-ink)]">{booking.customer}</span>
-                        <span className="mt-1 block truncate text-[12px] text-[var(--md-text)]">{booking.route} - {booking.carrier}</span>
-                      </span>
-                      <StatusPill tone={selected ? "teal" : "neutral"}>{selected ? "Selected" : booking.mode}</StatusPill>
-                    </button>
-                  )
-                })}
-              </div>
-            </motion.div>
-
-            <motion.div
-              variants={optionMotion}
-              className={cn(
-                "grid gap-4 rounded-[var(--md-radius-xl)] bg-white/58 p-4 shadow-[var(--md-shadow-line)]",
-                selectedStartType === "scratch" && "shadow-[inset_0_0_0_1px_rgba(14,125,116,0.42),0_16px_30px_rgba(14,125,116,0.08)]",
-              )}
-            >
-              <div className="flex items-start gap-4">
-                <span className="grid size-10 place-items-center rounded-[var(--md-radius-lg)] bg-[rgba(221,138,43,0.12)] text-[var(--md-amber)]">
-                  <Sparkles className="size-5" strokeWidth={1.35} />
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-[16px] font-medium text-[var(--md-ink)]">Create from Scratch</span>
-                  <span className="mt-1 block text-[13px] leading-5 text-[var(--md-text)]">Start the guided booking flow with clean defaults.</span>
-                </span>
-              </div>
-              <div className="mt-auto">
-                <Button
-                  type="button"
-                  className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white hover:bg-[#0b6f67]"
-                  onClick={() => onStart("scratch")}
-                >
-                  Start
-                  <ChevronRight className="size-4" strokeWidth={1.35} />
-                </Button>
-              </div>
-            </motion.div>
-          </motion.div>
-          <Dialog open={quoteSearchOpen} onOpenChange={setQuoteSearchOpen}>
-            <DialogContent className="rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-sidebar-bg)] shadow-[var(--md-shadow-lift)] sm:max-w-[760px]">
-              <DialogHeader>
-                <DialogTitle>Find quote</DialogTitle>
-                <DialogDescription>Search by customer, origin, destination, mode, and container size. More criteria can be added later.</DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <ComboField label="Customer" value={quoteCriteria.customer} onChange={(value) => setQuoteCriteria((current) => ({ ...current, customer: value }))} options={customerOptions} placeholder="Any customer" clearable />
-                <ComboField label="Mode" value={quoteCriteria.mode} onChange={(value) => setQuoteCriteria((current) => ({ ...current, mode: value }))} options={modeOptions} placeholder="Any mode" />
-                <TextField label="Origin" value={quoteCriteria.origin} onChange={(value) => setQuoteCriteria((current) => ({ ...current, origin: value }))} placeholder="Origin city, port, or country" />
-                <TextField label="Destination" value={quoteCriteria.destination} onChange={(value) => setQuoteCriteria((current) => ({ ...current, destination: value }))} placeholder="Destination city, port, or country" />
-                <ComboField label="Container size" value={quoteCriteria.containerSize} onChange={(value) => setQuoteCriteria((current) => ({ ...current, containerSize: value }))} options={containerOptions} placeholder="Any size" />
-              </div>
-              <div className="grid max-h-72 gap-2 overflow-auto">
-                {quoteSearchResults.map((quote) => (
-                  <button
-                    key={quote.id}
-                    type="button"
-                    className="grid gap-1 rounded-[var(--md-radius-lg)] bg-white/58 px-3 py-2 text-left shadow-[var(--md-shadow-line)] transition-colors hover:bg-white/78"
-                    onClick={() => {
-                      setSelectedStartType("quote")
-                      onUpdate("quoteCustomer", quote.customer)
-                      onUpdate("quoteNumber", quote.id)
-                      setQuoteSearchOpen(false)
-                    }}
-                  >
-                    <span className="text-[13px] font-medium text-[var(--md-ink)]" dir="ltr">{quote.id} · {quote.customer}</span>
-                    <span className="text-[12px] text-[var(--md-text)]">{quote.route}</span>
-                    <span className="text-[12px] text-[var(--md-subtle)]">{quote.detail} · {quote.status}</span>
-                  </button>
-                ))}
-              </div>
-              <DialogFooter>
-                <Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-md)] px-3 text-[13px]" onClick={() => setQuoteSearchOpen(false)}>
-                  Close
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-          <Dialog open={bookingSearchOpen} onOpenChange={setBookingSearchOpen}>
-            <DialogContent className="rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-sidebar-bg)] shadow-[var(--md-shadow-lift)] sm:max-w-[760px]">
-              <DialogHeader>
-                <DialogTitle>Find booking</DialogTitle>
-                <DialogDescription>Search by customer, origin, destination, mode, and container size. More criteria can be added later.</DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <ComboField label="Customer" value={bookingCriteria.customer} onChange={(value) => setBookingCriteria((current) => ({ ...current, customer: value }))} options={customerOptions} placeholder="Any customer" clearable />
-                <ComboField label="Mode" value={bookingCriteria.mode} onChange={(value) => setBookingCriteria((current) => ({ ...current, mode: value }))} options={modeOptions} placeholder="Any mode" />
-                <TextField label="Origin" value={bookingCriteria.origin} onChange={(value) => setBookingCriteria((current) => ({ ...current, origin: value }))} placeholder="Origin city, port, or country" />
-                <TextField label="Destination" value={bookingCriteria.destination} onChange={(value) => setBookingCriteria((current) => ({ ...current, destination: value }))} placeholder="Destination city, port, or country" />
-                <ComboField label="Container size" value={bookingCriteria.containerSize} onChange={(value) => setBookingCriteria((current) => ({ ...current, containerSize: value }))} options={containerOptions} placeholder="Any size" />
-              </div>
-              <div className="grid max-h-72 gap-2 overflow-auto">
-                {bookingSearchResults.map((booking) => (
-                  <button
-                    key={booking.id}
-                    type="button"
-                    className="grid gap-1 rounded-[var(--md-radius-lg)] bg-white/58 px-3 py-2 text-left shadow-[var(--md-shadow-line)] transition-colors hover:bg-white/78"
-                    onClick={() => {
-                      setSelectedStartType("existing")
-                      onUpdate("bookingCustomer", booking.customer)
-                      onUpdate("bookingNumber", booking.id)
-                      onUpdate("templateBookingId", booking.id)
-                      setBookingSearchOpen(false)
-                    }}
-                  >
-                    <span className="text-[13px] font-medium text-[var(--md-ink)]" dir="ltr">{booking.id} · {booking.customer}</span>
-                    <span className="text-[12px] text-[var(--md-text)]">{booking.route} · {booking.carrier}</span>
-                    <span className="text-[12px] text-[var(--md-subtle)]">{booking.container} · {booking.mode} · {booking.status}</span>
-                  </button>
-                ))}
-              </div>
-              <DialogFooter>
-                <Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-md)] px-3 text-[13px]" onClick={() => setBookingSearchOpen(false)}>
-                  Close
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-      </Surface>
-    </motion.div>
+        return (
+          <button
+            key={item.id}
+            type="button"
+            disabled={disabled}
+            className={cn(
+              "inline-flex h-8 items-center gap-2 rounded-[var(--md-radius-lg)] px-2.5 text-[12px] font-medium shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform]",
+              active
+                ? "bg-[var(--md-accent)] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_10px_20px_rgba(14,125,116,0.18)]"
+                : "bg-white/58 text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-white/82",
+              disabled && "cursor-not-allowed opacity-45",
+            )}
+            onClick={() => onStageChange(item.id)}
+          >
+            <span className={cn("grid size-4 place-items-center rounded-full text-[10px]", active ? "bg-white text-[var(--md-accent)]" : "bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)]")}>
+              {item.complete ? <Check className="size-3" strokeWidth={1.8} /> : index + 1}
+            </span>
+            {item.label}
+          </button>
+        )
+      })}
+    </div>
   )
 }
 
 function WizardProgress({
   activeStep,
   data,
+  bookingTypeStage,
   onStepChange,
 }: {
   activeStep: number
   data: BookingWizardData
+  bookingTypeStage: BookingTypeStage
   onStepChange: (step: number) => void
 }) {
   const completeCount = steps.slice(0, requiredStepCount).filter((_, index) => missingFieldsForStep(data, index).length === 0).length
-  const progressValue = ((activeStep + 1) / steps.length) * 100
+  const compactLabels: Record<string, string> = {
+    type: "Type",
+    parties: "Parties",
+    collection: "Locations",
+    cargo: "Cargo",
+    transport: "Transport",
+    customs: "Customs",
+    review: "Review",
+  }
+  const segmentProgress = (step: WizardStep, index: number) => {
+    if (index < activeStep) return 100
+    if (index > activeStep) return 0
+    if (step.id === "type" && data.source !== "scratch") return bookingTypeStage === "source" ? 50 : 100
+    return 100
+  }
 
   return (
-    <Surface padding="md" className="sticky top-[72px] z-10 rounded-[var(--md-radius-xl)] bg-[rgba(250,253,252,0.88)] backdrop-blur-xl">
-      <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-        <div>
-          <p className="text-[12px] font-medium text-[var(--md-subtle)]">Step {activeStep + 1} of {steps.length}</p>
-          <h2 className="mt-1 text-[16px] font-medium text-[var(--md-ink)]">{steps[activeStep].name}</h2>
+    <Surface padding="sm" className={cn("sticky top-[72px] z-10 rounded-[var(--md-radius-xl)] backdrop-blur-xl", bookingStepSurfaceClass)}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] font-medium text-[var(--md-subtle)]">Step {activeStep + 1} of {steps.length}</p>
+          <h2 className="mt-0.5 truncate text-[15px] font-medium text-[var(--md-ink)]">{steps[activeStep].name}</h2>
         </div>
-        <StatusPill tone={completeCount >= requiredStepCount ? "green" : "teal"}>{completeCount}/{requiredStepCount} sections complete</StatusPill>
+        <StatusPill tone={completeCount >= requiredStepCount ? "green" : "teal"}>{completeCount}/{requiredStepCount} complete</StatusPill>
       </div>
-      <Progress value={progressValue} className="mt-3 h-1.5 rounded-full bg-[rgba(90,103,100,0.12)] [&>div]:bg-[var(--md-accent)]" />
-      <div className="mt-3 grid grid-cols-4 gap-2 lg:grid-cols-7">
-        {steps.map((step, index) => {
-          const missing = index < requiredStepCount ? missingFieldsForStep(data, index).length : allMissingFields(data).length
-          const complete = missing === 0 && index < activeStep
-          const active = index === activeStep
+      <div className="mt-3">
+        <div className="grid grid-cols-7 gap-1 rounded-full bg-[rgba(14,125,116,0.06)] p-1 shadow-[inset_0_0_0_1px_rgba(14,125,116,0.1),0_1px_1px_rgba(14,125,116,0.04)]" aria-label="Booking progress">
+          {steps.map((step, index) => {
+            const missing = index < requiredStepCount ? missingFieldsForStep(data, index).length : allMissingFields(data).length
+            const active = index === activeStep
+            const complete = missing === 0 && index < activeStep
+            const visited = index < activeStep
+            const fill = segmentProgress(step, index)
 
-          return (
-            <button
-              key={step.id}
-              type="button"
-              className={cn(
-                "min-h-[46px] rounded-[var(--md-radius-lg)] px-2 py-1.5 text-left shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
-                active ? "bg-[rgba(14,125,116,0.1)] text-[var(--md-ink)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.36),0_10px_20px_rgba(14,125,116,0.08)]" : "bg-white/48 text-[var(--md-text)] hover:bg-white/76",
-              )}
-              onClick={() => onStepChange(index)}
-            >
-              <span className="flex items-center gap-1.5">
-                <span className={cn("grid size-4 place-items-center rounded-full text-[10px] font-medium", complete ? "bg-[var(--md-accent)] text-white" : active ? "bg-white text-[var(--md-accent)]" : "bg-white/78 text-[var(--md-subtle)]")}>
-                  {complete ? <Check className="size-3" strokeWidth={1.8} /> : index + 1}
-                </span>
-                <span className="truncate text-[11px] font-medium">{step.name}</span>
-              </span>
-              {missing ? <span className="mt-1 block text-[10px] font-medium text-[var(--md-amber)]">{missing} missing</span> : null}
-            </button>
-          )
-        })}
+            return (
+              <button
+                key={step.id}
+                type="button"
+                aria-current={active ? "step" : undefined}
+                aria-label={`${step.name}${missing ? `, ${missing} missing` : ""}`}
+                className={cn(
+                  "relative h-2.5 min-w-0 overflow-hidden rounded-full bg-[rgba(90,103,100,0.14)] transition-[background,box-shadow,transform,opacity] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[rgba(14,125,116,0.18)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(14,125,116,0.28)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
+                  active && "scale-y-125 shadow-[0_0_0_1px_rgba(14,125,116,0.18),0_8px_18px_rgba(14,125,116,0.14)]",
+                )}
+                onClick={() => onStepChange(index)}
+              >
+                <span
+                  className={cn(
+                    "block h-full rounded-full transition-[width,background] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
+                    active || complete ? "bg-[var(--md-accent)]" : visited ? "bg-[rgba(14,125,116,0.42)]" : "bg-transparent",
+                  )}
+                  style={{ width: `${fill}%` }}
+                />
+              </button>
+            )
+          })}
+        </div>
+        <div className="mt-2 grid grid-cols-7 gap-1">
+          {steps.map((step, index) => {
+            const missing = index < requiredStepCount ? missingFieldsForStep(data, index).length : allMissingFields(data).length
+            const active = index === activeStep
+            const complete = missing === 0 && index < activeStep
+
+            return (
+              <button
+                key={step.id}
+                type="button"
+                title={step.name}
+                className={cn(
+                  "flex min-w-0 items-center justify-center gap-1 py-0.5 text-center text-[10px] font-medium transition-[color,opacity] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(14,125,116,0.22)]",
+                  active ? "text-[var(--md-accent)]" : "text-[var(--md-subtle)] hover:text-[var(--md-text)]",
+                  complete && !active && "text-[var(--md-accent)]",
+                )}
+                onClick={() => onStepChange(index)}
+              >
+                <span className="truncate">{compactLabels[step.id] ?? step.name}</span>
+                {missing ? <span className="size-1 rounded-full bg-[var(--md-amber)]" aria-hidden /> : null}
+              </button>
+            )
+          })}
+        </div>
       </div>
     </Surface>
   )
@@ -1844,7 +2119,7 @@ function LiveSummaryPanel({ data, activeStep }: { data: BookingWizardData; activ
 
 function StepShell({ step, action, children }: { step: WizardStep; action?: ReactNode; children: ReactNode }) {
   return (
-    <Surface padding="md" className="overflow-visible rounded-[var(--md-radius-2xl)]">
+    <Surface padding="md" className={cn("overflow-visible rounded-[var(--md-radius-2xl)]", bookingStepSurfaceClass)}>
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-[12px] font-medium uppercase text-[var(--md-accent)]">{step.eyebrow}</p>
@@ -1863,11 +2138,19 @@ function StepContent({
   data,
   update,
   goToStep,
+  onApplyExistingBooking,
+  onApplyCustomerQuote,
+  bookingTypeStage,
+  onBookingTypeStageChange,
 }: {
   activeStep: number
   data: BookingWizardData
   update: <K extends keyof BookingWizardData>(field: K, value: BookingWizardData[K]) => void
-  goToStep: (step: number) => void
+  goToStep: (step: number, focusLabel?: string) => void
+  onApplyExistingBooking: (bookingId: string) => void
+  onApplyCustomerQuote: (quoteId: string) => void
+  bookingTypeStage: BookingTypeStage
+  onBookingTypeStageChange: (stage: BookingTypeStage) => void
 }) {
   const missing = new Set(missingFieldsForStep(data, activeStep))
   const [cargoDraft, setCargoDraft] = useState<CargoLineDraft>(defaultCargoLineDraft)
@@ -1983,32 +2266,65 @@ function StepContent({
   }, [activeStep, data.collectionAddress, data.deliveryAddress, data.mode, data.requestedCollectionDate, data.requestedDeliveryDate, data.transportLegs.length, transportDraft.fromName, transportDraft.toName])
 
   if (activeStep === 0) {
-    return (
-      <StepShell step={steps[0]}>
-        <FieldGroup className="xl:grid-cols-[minmax(300px,0.9fr)_minmax(0,1.1fr)] xl:items-start">
-          <div className="grid gap-3">
-            <CompactOptionGroup
-              label="Direction"
-              value={data.direction}
-              options={directionOptions}
-              onChange={(value) => update("direction", value)}
-            />
-            <ModePicker
-              value={data.mode}
-              onChange={(value) => update("mode", value)}
-            />
-          </div>
+    const hasSourceMiniStep = data.source === "quote" || data.source === "existing"
+    const sourceComplete = data.source === "quote" ? Boolean(data.quoteNumber.trim()) : data.source === "existing" ? Boolean(data.templateBookingId) : true
+    const stepForStage: WizardStep = bookingTypeStage === "source" && hasSourceMiniStep
+      ? {
+          ...steps[0],
+          eyebrow: "Step 1.1",
+          title: data.source === "quote" ? "Which quote should this start from?" : "Which booking should this copy?",
+          summary: data.source === "quote"
+            ? "Select the accepted customer quote before confirming the movement details."
+            : "Select the existing booking before confirming the movement details.",
+        }
+      : {
+          ...steps[0],
+          eyebrow: hasSourceMiniStep ? "Step 1.2" : "Step 1",
+        }
 
-          <div className="grid gap-3">
-            <IncotermsField value={data.incoterms} onChange={(value) => update("incoterms", value)} />
-            <TextField
-              label="Incoterms Extra"
-              value={data.incotermsExtra}
-              onChange={(value) => update("incotermsExtra", value)}
-              placeholder="Named place, terminal, port, or qualifier"
+    return (
+      <StepShell step={stepForStage}>
+        <BookingTypeMiniSteps
+          source={data.source}
+          stage={bookingTypeStage}
+          sourceComplete={sourceComplete}
+          onStageChange={onBookingTypeStageChange}
+        />
+        {bookingTypeStage === "source" && hasSourceMiniStep ? (
+          <FieldGroup className="gap-4">
+            <SourceDetailPanel
+              data={data}
+              missing={missing}
+              update={update}
+              onApplyExistingBooking={onApplyExistingBooking}
+              onApplyCustomerQuote={onApplyCustomerQuote}
             />
-          </div>
-        </FieldGroup>
+          </FieldGroup>
+        ) : (
+          <FieldGroup className="gap-3">
+            <div className="grid gap-3 xl:grid-cols-[minmax(300px,0.9fr)_minmax(0,1.1fr)] xl:items-start">
+              <CompactOptionGroup
+                label="Direction"
+                value={data.direction}
+                options={directionOptions}
+                onChange={(value) => update("direction", value)}
+              />
+              <IncotermsField value={data.incoterms} onChange={(value) => update("incoterms", value)} />
+            </div>
+            <div className="grid gap-3 xl:grid-cols-[minmax(300px,0.9fr)_minmax(0,1.1fr)] xl:items-start">
+              <ModePicker
+                value={data.mode}
+                onChange={(value) => update("mode", value)}
+              />
+              <TextField
+                label="Incoterms Extra"
+                value={data.incotermsExtra}
+                onChange={(value) => update("incotermsExtra", value)}
+                placeholder="Named place, terminal, port, or qualifier"
+              />
+            </div>
+          </FieldGroup>
+        )}
       </StepShell>
     )
   }
@@ -2217,48 +2533,45 @@ function StepContent({
     const deliveryAddressOptions = officesForCompany(data.consignee)
     const setCollectionAddress = (value: string) => {
       update("collectionAddress", value)
+      if (value) update("collectionAddressManual", false)
       if (!data.accessRestrictions.trim()) update("accessRestrictions", notesForOffice(value))
     }
     const setDeliveryAddress = (value: string) => {
       update("deliveryAddress", value)
+      if (value) update("deliveryAddressManual", false)
       if (!data.bookingNotes.trim()) update("bookingNotes", notesForOffice(value))
     }
 
     return (
       <StepShell step={steps[2]}>
         <FieldGroup className="lg:grid-cols-2">
-          <motion.section variants={fieldMotion} className="grid content-start gap-3 rounded-[var(--md-radius-xl)] bg-white/38 p-3 shadow-[var(--md-shadow-line)]">
+          <motion.section variants={fieldMotion} className={cn(fieldPanelClass, "grid content-start gap-3")}>
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <p className="text-[14px] font-medium text-[var(--md-ink)]">Collection</p>
               <p className="text-[12px] leading-5 text-[var(--md-text)]">Defaults from the shipper record.</p>
             </div>
             <div className="grid gap-3 xl:grid-cols-2 xl:gap-4">
               <div className="grid content-start gap-3">
-                {!data.collectionAddressManual ? (
-                  <NativeSelectField
-                    label="Address"
-                    value={collectionAddressOptions.some((option) => option === data.collectionAddress) ? data.collectionAddress : ""}
-                    onChange={setCollectionAddress}
-                    options={collectionAddressOptions}
-                    placeholder={data.shipper ? "Select collection address" : "Select shipper first"}
-                    required
-                    missing={missing.has("Collection address")}
-                    action={
-                      <Button type="button" variant="ghost" size="icon" className="size-7 rounded-[var(--md-radius-md)] bg-white/58 text-[var(--md-accent)] shadow-[var(--md-shadow-line)] hover:bg-white/78" onClick={() => update("collectionAddressManual", true)} aria-label="Add collection address">
-                        <Plus className="size-3.5" strokeWidth={1.5} />
-                      </Button>
+                <AddressLookupField
+                  label="Address lookup"
+                  value={data.collectionAddress}
+                  preferredOffices={collectionAddressOptions}
+                  onSelect={setCollectionAddress}
+                  placeholder={data.shipper ? "Start typing postcode or address" : "Select shipper first"}
+                  required
+                  missing={missing.has("Collection address")}
+                />
+                <BrandedCheckbox
+                  label="Manually override address"
+                  checked={data.collectionAddressManual}
+                  onChange={(checked) => {
+                    if (checked && data.collectionAddress && addressRecordForOffice(data.collectionAddress)) {
+                      update("collectionAddress", fullAddressForOffice(data.collectionAddress))
                     }
-                  />
-                ) : null}
-                <label className="flex items-center gap-2 text-[12px] font-medium text-[var(--md-text)]">
-                  <input
-                    type="checkbox"
-                    checked={data.collectionAddressManual}
-                    onChange={(event) => update("collectionAddressManual", event.target.checked)}
-                    className="size-3.5 rounded border-0 accent-[var(--md-accent)]"
-                  />
-                  Manually override address
-                </label>
+                    update("collectionAddressManual", checked)
+                  }}
+                  className="w-fit"
+                />
                 <FieldShell label="Full address" required missing={missing.has("Collection address")}>
                   <Textarea
                     value={data.collectionAddressManual ? data.collectionAddress : fullAddressForOffice(data.collectionAddress)}
@@ -2266,7 +2579,8 @@ function StepContent({
                     readOnly={!data.collectionAddressManual}
                     placeholder="Enter the full collection address"
                     className={cn(
-                      "min-h-[132px] rounded-[var(--md-radius-lg)] border-0 bg-white/64 px-3 py-2.5 text-[13px] leading-[18px] shadow-[var(--md-shadow-line)]",
+                      "min-h-[132px] rounded-[var(--md-radius-lg)] border-0 bg-[#F4F9F7] px-3 py-2.5 text-[13px] leading-[18px]",
+                      fieldBoundaryShadow,
                       missing.has("Collection address") && missingFieldClass,
                       !data.collectionAddressManual && "text-[var(--md-text)]",
                     )}
@@ -2276,46 +2590,55 @@ function StepContent({
                 </FieldShell>
               </div>
               <div className="grid content-start gap-3 xl:border-l xl:border-[rgba(90,103,100,0.14)] xl:pl-4">
-                <TextField label="Cargo ready from" value={data.cargoReadyDate} onChange={(value) => update("cargoReadyDate", value)} type="date" required missing={missing.has("Cargo ready from")} dir="ltr" />
-                <TextField label="Requested collection date" value={data.requestedCollectionDate} onChange={(value) => update("requestedCollectionDate", value)} type="date" required missing={missing.has("Requested collection date")} dir="ltr" />
+                <FieldShell label="Collection dates" required missing={missing.has("Cargo ready from") || missing.has("Requested collection date")} asDiv>
+                  <MultideckDateRangePicker
+                    value={{ start: data.cargoReadyDate, end: data.requestedCollectionDate }}
+                    onChange={(range) => {
+                      update("cargoReadyDate", range.start ?? "")
+                      update("requestedCollectionDate", range.end ?? "")
+                    }}
+                    placeholder="Select collection dates"
+                    title="Collection dates"
+                    description="Pick when cargo is ready, then the requested collection date."
+                    startLabel="Cargo ready from"
+                    endLabel="Requested collection date"
+                    footerLabel="Selected collection dates"
+                    missing={missing.has("Cargo ready from") || missing.has("Requested collection date")}
+                  />
+                </FieldShell>
                 <TextField label="Collection reference" value={data.collectionReference} onChange={(value) => update("collectionReference", value)} placeholder="Gate pass, warehouse ref, supplier ref" dir="ltr" />
               </div>
             </div>
             <TextAreaField label="Collection notes" value={data.accessRestrictions} onChange={(value) => update("accessRestrictions", value)} placeholder="Default notes from the collection address, editable for this booking" helper="Later this can default from the selected shipper office or warehouse record." />
           </motion.section>
 
-          <motion.section variants={fieldMotion} className="grid content-start gap-3 rounded-[var(--md-radius-xl)] bg-white/38 p-3 shadow-[var(--md-shadow-line)]">
+          <motion.section variants={fieldMotion} className={cn(fieldPanelClass, "grid content-start gap-3")}>
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <p className="text-[14px] font-medium text-[var(--md-ink)]">Delivery</p>
               <p className="text-[12px] leading-5 text-[var(--md-text)]">Defaults from the consignee record.</p>
             </div>
             <div className="grid gap-3 xl:grid-cols-2 xl:gap-4">
               <div className="grid content-start gap-3">
-                {!data.deliveryAddressManual ? (
-                  <NativeSelectField
-                    label="Address"
-                    value={deliveryAddressOptions.some((option) => option === data.deliveryAddress) ? data.deliveryAddress : ""}
-                    onChange={setDeliveryAddress}
-                    options={deliveryAddressOptions}
-                    placeholder={data.consignee ? "Select delivery address" : "Select consignee first"}
-                    required
-                    missing={missing.has("Delivery address")}
-                    action={
-                      <Button type="button" variant="ghost" size="icon" className="size-7 rounded-[var(--md-radius-md)] bg-white/58 text-[var(--md-accent)] shadow-[var(--md-shadow-line)] hover:bg-white/78" onClick={() => update("deliveryAddressManual", true)} aria-label="Add delivery address">
-                        <Plus className="size-3.5" strokeWidth={1.5} />
-                      </Button>
+                <AddressLookupField
+                  label="Address lookup"
+                  value={data.deliveryAddress}
+                  preferredOffices={deliveryAddressOptions}
+                  onSelect={setDeliveryAddress}
+                  placeholder={data.consignee ? "Start typing postcode or address" : "Select consignee first"}
+                  required
+                  missing={missing.has("Delivery address")}
+                />
+                <BrandedCheckbox
+                  label="Manually override address"
+                  checked={data.deliveryAddressManual}
+                  onChange={(checked) => {
+                    if (checked && data.deliveryAddress && addressRecordForOffice(data.deliveryAddress)) {
+                      update("deliveryAddress", fullAddressForOffice(data.deliveryAddress))
                     }
-                  />
-                ) : null}
-                <label className="flex items-center gap-2 text-[12px] font-medium text-[var(--md-text)]">
-                  <input
-                    type="checkbox"
-                    checked={data.deliveryAddressManual}
-                    onChange={(event) => update("deliveryAddressManual", event.target.checked)}
-                    className="size-3.5 rounded border-0 accent-[var(--md-accent)]"
-                  />
-                  Manually override address
-                </label>
+                    update("deliveryAddressManual", checked)
+                  }}
+                  className="w-fit"
+                />
                 <FieldShell label="Full address" required missing={missing.has("Delivery address")}>
                   <Textarea
                     value={data.deliveryAddressManual ? data.deliveryAddress : fullAddressForOffice(data.deliveryAddress)}
@@ -2323,7 +2646,8 @@ function StepContent({
                     readOnly={!data.deliveryAddressManual}
                     placeholder="Enter the full delivery address"
                     className={cn(
-                      "min-h-[132px] rounded-[var(--md-radius-lg)] border-0 bg-white/64 px-3 py-2.5 text-[13px] leading-[18px] shadow-[var(--md-shadow-line)]",
+                      "min-h-[132px] rounded-[var(--md-radius-lg)] border-0 bg-[#F4F9F7] px-3 py-2.5 text-[13px] leading-[18px]",
+                      fieldBoundaryShadow,
                       missing.has("Delivery address") && missingFieldClass,
                       !data.deliveryAddressManual && "text-[var(--md-text)]",
                     )}
@@ -2333,8 +2657,22 @@ function StepContent({
                 </FieldShell>
               </div>
               <div className="grid content-start gap-3 xl:border-l xl:border-[rgba(90,103,100,0.14)] xl:pl-4">
-                <TextField label="Requested delivery date" value={data.requestedDeliveryDate} onChange={(value) => update("requestedDeliveryDate", value)} type="date" required missing={missing.has("Requested delivery date")} dir="ltr" />
-                <TextField label="Cargo required by" value={data.cargoRequiredByDate} onChange={(value) => update("cargoRequiredByDate", value)} type="date" required missing={missing.has("Cargo required by")} dir="ltr" />
+                <FieldShell label="Delivery dates" required missing={missing.has("Requested delivery date") || missing.has("Cargo required by")} asDiv>
+                  <MultideckDateRangePicker
+                    value={{ start: data.requestedDeliveryDate, end: data.cargoRequiredByDate }}
+                    onChange={(range) => {
+                      update("requestedDeliveryDate", range.start ?? "")
+                      update("cargoRequiredByDate", range.end ?? "")
+                    }}
+                    placeholder="Select delivery dates"
+                    title="Delivery dates"
+                    description="Pick the requested delivery date, then the date cargo is required by."
+                    startLabel="Requested delivery date"
+                    endLabel="Cargo required by"
+                    footerLabel="Selected delivery dates"
+                    missing={missing.has("Requested delivery date") || missing.has("Cargo required by")}
+                  />
+                </FieldShell>
                 <TextField label="Delivery reference" value={data.deliveryReference} onChange={(value) => update("deliveryReference", value)} placeholder="Booking slot, DC ref, customer ref" dir="ltr" />
               </div>
             </div>
@@ -2352,7 +2690,7 @@ function StepContent({
     return (
       <StepShell step={steps[3]}>
         <div className="grid gap-4">
-          <motion.section variants={fieldMotion} className="grid gap-3 rounded-[var(--md-radius-xl)] bg-white/38 p-3 shadow-[var(--md-shadow-line)]">
+          <motion.section variants={fieldMotion} className={cn(fieldPanelClass, "grid gap-3")}>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="text-[14px] font-medium text-[var(--md-ink)]">Add cargo line</p>
@@ -2369,39 +2707,39 @@ function StepContent({
                 <TextField label="Commodity" value={cargoDraft.commodity} onChange={(value) => updateCargoDraft("commodity", value)} placeholder="Retail apparel, machinery parts..." required missing={missing.has("Goods description") && !data.cargoLines.length} />
               </div>
               <div className="w-[94px] shrink-0">
-                <TextField label="Outer pkgs" value={cargoDraft.outerPackages} onChange={(value) => updateCargoDraft("outerPackages", value)} placeholder="12" type="number" required missing={missing.has("Number of packages") && !data.cargoLines.length} dir="ltr" />
+                <NumberStepperField label="Outer pkgs" value={cargoDraft.outerPackages} onChange={(value) => updateCargoDraft("outerPackages", value)} placeholder="12" required missing={missing.has("Number of packages") && !data.cargoLines.length} />
               </div>
               <div className="w-[142px] shrink-0">
                 <SelectField label="Outer type" value={cargoDraft.outerPackageType} onChange={(value) => updateCargoDraft("outerPackageType", value)} options={["Pallets", "Cartons", "Crates", "Bags", "Drums", "Cases", "Loose"]} />
               </div>
               <div className="w-[94px] shrink-0">
-                <TextField label={`Inner per ${perOuterPackageLabel(cargoDraft.outerPackageType)}`} value={cargoDraft.innerPackages} onChange={(value) => updateCargoDraft("innerPackages", value)} placeholder="240" type="number" dir="ltr" />
+                <NumberStepperField label={`Inner per ${perOuterPackageLabel(cargoDraft.outerPackageType)}`} value={cargoDraft.innerPackages} onChange={(value) => updateCargoDraft("innerPackages", value)} placeholder="240" />
               </div>
               <div className="w-[150px] shrink-0">
                 <SelectField label="Inner type" value={cargoDraft.innerPackageType} onChange={(value) => updateCargoDraft("innerPackageType", value)} options={["Cartons", "Units", "Pieces", "Bags", "Bottles", "Rolls", "Not applicable"]} />
               </div>
               <div className="w-[112px] shrink-0">
-                <TextField label="Gross kg" value={cargoDraft.grossWeight} onChange={(value) => updateCargoDraft("grossWeight", value)} placeholder="12420" type="number" required missing={missing.has("Weight") && !data.cargoLines.length} dir="ltr" />
+                <NumberStepperField label="Gross kg" value={cargoDraft.grossWeight} onChange={(value) => updateCargoDraft("grossWeight", value)} placeholder="12420" required missing={missing.has("Weight") && !data.cargoLines.length} />
               </div>
               <div className="w-[112px] shrink-0">
-                <TextField label="Net kg" value={cargoDraft.netWeight} onChange={(value) => updateCargoDraft("netWeight", value)} placeholder="11880" type="number" dir="ltr" />
+                <NumberStepperField label="Net kg" value={cargoDraft.netWeight} onChange={(value) => updateCargoDraft("netWeight", value)} placeholder="11880" />
               </div>
               <div className="w-[96px] shrink-0">
-                <TextField label="CBM" value={cargoDraft.volume} onChange={(value) => updateCargoDraft("volume", value)} placeholder="58.4" type="number" dir="ltr" />
+                <NumberStepperField label="CBM" value={cargoDraft.volume} onChange={(value) => updateCargoDraft("volume", value)} placeholder="58.4" step={0.1} decimals={1} />
               </div>
               <div className="w-[70px] shrink-0">
-                <TextField label="H" value={cargoDraft.height} onChange={(value) => updateCargoDraft("height", value)} placeholder="120" type="number" dir="ltr" />
+                <NumberStepperField label="H" value={cargoDraft.height} onChange={(value) => updateCargoDraft("height", value)} placeholder="120" />
               </div>
               <div className="w-[70px] shrink-0">
-                <TextField label="W" value={cargoDraft.width} onChange={(value) => updateCargoDraft("width", value)} placeholder="80" type="number" dir="ltr" />
+                <NumberStepperField label="W" value={cargoDraft.width} onChange={(value) => updateCargoDraft("width", value)} placeholder="80" />
               </div>
               <div className="w-[70px] shrink-0">
-                <TextField label="D" value={cargoDraft.depth} onChange={(value) => updateCargoDraft("depth", value)} placeholder="160" type="number" dir="ltr" />
+                <NumberStepperField label="D" value={cargoDraft.depth} onChange={(value) => updateCargoDraft("depth", value)} placeholder="160" />
               </div>
             </motion.div>
           </motion.section>
 
-          <motion.section variants={fieldMotion} className="overflow-hidden rounded-[var(--md-radius-xl)] bg-white/48 shadow-[var(--md-shadow-line)]">
+          <motion.section variants={fieldMotion} className={tablePanelClass}>
             <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
               <div>
                 <p className="text-[14px] font-medium text-[var(--md-ink)]">Cargo lines</p>
@@ -2410,7 +2748,7 @@ function StepContent({
                 </p>
               </div>
               {data.cargoLines.length ? (
-                <Button type="button" variant="ghost" className="h-8 rounded-[var(--md-radius-md)] px-3 text-[12px] font-medium text-[var(--md-red)] hover:bg-[rgba(192,57,43,0.08)]" onClick={() => syncCargoSummary([])}>
+                <Button type="button" variant="ghost" className="h-8 rounded-[var(--md-radius-md)] bg-white/58 px-3 text-[12px] font-medium text-[var(--md-red)] shadow-[var(--md-shadow-line)] hover:bg-[rgba(192,57,43,0.08)]" onClick={() => syncCargoSummary([])}>
                   Clear lines
                 </Button>
               ) : null}
@@ -2458,8 +2796,8 @@ function StepContent({
             </div>
           </motion.section>
 
-          <FieldGroup className="lg:grid-cols-[minmax(260px,360px)_minmax(0,1fr)]">
-            <div className="grid content-start gap-2 rounded-[var(--md-radius-xl)] bg-white/38 p-3 shadow-[var(--md-shadow-line)]">
+          <FieldGroup className="items-start lg:grid-cols-[minmax(260px,360px)_minmax(0,1fr)]">
+            <div className={cn(fieldPanelClass, "grid content-start gap-2")}>
               <p className="text-[13px] font-medium text-[var(--md-ink)]">Cargo flags</p>
               <ToggleTile label="Hazardous goods" checked={data.hazardousGoods} onChange={(value) => update("hazardousGoods", value)} />
               <ToggleTile label="Temperature controlled" checked={data.temperatureControlled} onChange={(value) => update("temperatureControlled", value)} />
@@ -2467,7 +2805,9 @@ function StepContent({
               <ToggleTile label="Stackable" checked={data.stackable} onChange={(value) => update("stackable", value)} />
               <ToggleTile label="Perishable" checked={data.perishable} onChange={(value) => update("perishable", value)} />
             </div>
-            <TextAreaField label="Special notes" value={data.cargoSpecialNotes} onChange={(value) => update("cargoSpecialNotes", value)} placeholder="Cargo handling notes, stacking limits, perishability detail, segregation, marks, or other cargo-specific instructions" />
+            <div className={cn(fieldPanelClass, "grid content-start gap-2")}>
+              <TextAreaField label="Special notes" value={data.cargoSpecialNotes} onChange={(value) => update("cargoSpecialNotes", value)} placeholder="Cargo handling notes, stacking limits, perishability detail, segregation, marks, or other cargo-specific instructions" />
+            </div>
           </FieldGroup>
         </div>
       </StepShell>
@@ -2488,19 +2828,22 @@ function StepContent({
         <div className="grid gap-4">
           <FieldGroup className="lg:grid-cols-2">
             {linkedRoutePoints.map(({ label, address, location }) => (
-              <motion.section key={label} variants={fieldMotion} className="rounded-[var(--md-radius-xl)] bg-white/38 p-3 shadow-[var(--md-shadow-line)]">
+              <motion.section key={label} variants={fieldMotion} className={cn(fieldPanelClass, "p-3")}>
                 <p className="text-[12px] font-medium uppercase text-[var(--md-subtle)]">{label}</p>
                 <p className="mt-1 truncate text-[14px] font-medium text-[var(--md-ink)]">{address || "Not set"}</p>
                 <div className="mt-3 grid grid-cols-3 gap-2">
-                  <span className="rounded-[var(--md-radius-md)] bg-white/58 px-2.5 py-2 shadow-[var(--md-shadow-line)]">
-                    <span className="block text-[10px] font-medium uppercase text-[var(--md-subtle)]">UN/LOCODE</span>
+                  <span className={cn("rounded-[var(--md-radius-md)] bg-[#F4F9F7] px-2.5 py-2", fieldBoundaryShadow)}>
+                    <span className="flex items-center justify-between gap-2 text-[10px] font-medium uppercase text-[var(--md-subtle)]">
+                      UN/LOCODE
+                      <DexterCodeHint />
+                    </span>
                     <span className="mt-1 block truncate text-[12px] font-medium text-[var(--md-ink)]">{location.code || "-"}</span>
                   </span>
-                  <span className="rounded-[var(--md-radius-md)] bg-white/58 px-2.5 py-2 shadow-[var(--md-shadow-line)]">
+                  <span className={cn("rounded-[var(--md-radius-md)] bg-[#F4F9F7] px-2.5 py-2", fieldBoundaryShadow)}>
                     <span className="block text-[10px] font-medium uppercase text-[var(--md-subtle)]">Name</span>
                     <span className="mt-1 block truncate text-[12px] font-medium text-[var(--md-ink)]">{location.name || "-"}</span>
                   </span>
-                  <span className="rounded-[var(--md-radius-md)] bg-white/58 px-2.5 py-2 shadow-[var(--md-shadow-line)]">
+                  <span className={cn("rounded-[var(--md-radius-md)] bg-[#F4F9F7] px-2.5 py-2", fieldBoundaryShadow)}>
                     <span className="block text-[10px] font-medium uppercase text-[var(--md-subtle)]">Country</span>
                     <span className="mt-1 block truncate text-[12px] font-medium text-[var(--md-ink)]">{location.country || "-"}</span>
                   </span>
@@ -2509,7 +2852,7 @@ function StepContent({
             ))}
           </FieldGroup>
 
-          <motion.section variants={fieldMotion} className="grid gap-3 rounded-[var(--md-radius-xl)] bg-white/38 p-3 shadow-[var(--md-shadow-line)]">
+          <motion.section variants={fieldMotion} className={cn(fieldPanelClass, "grid gap-3")}>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="text-[14px] font-medium text-[var(--md-ink)]">Add route leg</p>
@@ -2528,15 +2871,14 @@ function StepContent({
               </FieldGroup>
 
               <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_36px_minmax(0,1fr)] xl:items-start">
-                <div className="grid gap-3 rounded-[var(--md-radius-lg)] bg-white/32 p-3 shadow-[var(--md-shadow-line)]">
+                <div className={cn("grid gap-3 rounded-[var(--md-radius-lg)] bg-[#F4F9F7] p-3", fieldBoundaryShadow)}>
                   <p className="text-[13px] font-medium text-[var(--md-ink)]">From</p>
                   <div className="grid gap-3">
                     <div className="grid gap-3 md:grid-cols-[88px_minmax(0,1fr)_minmax(0,1fr)]">
-                      <TextField label="Code" value={transportDraft.fromCode} onChange={(value) => updateTransportDraft("fromCode", value.toUpperCase())} placeholder="CNSHA / PVG" dir="ltr" />
+                      <TextField label="Code" value={transportDraft.fromCode} onChange={(value) => updateTransportDraft("fromCode", value.toUpperCase())} placeholder="CNSHA / PVG" dir="ltr" action={<DexterCodeHint />} />
                       <TextField label="Name" value={transportDraft.fromName} onChange={(value) => updateTransportDraft("fromName", value)} placeholder="Shanghai" required missing={missing.has("First origin") && !data.transportLegs.length} />
                       <TextField label="Country" value={transportDraft.fromCountry} onChange={(value) => updateTransportDraft("fromCountry", value)} placeholder="China" />
                     </div>
-                    <TextField label="ETD" value={transportDraft.etd} onChange={(value) => updateTransportDraft("etd", value)} type="date" missing={missing.has("ETD") && !data.transportLegs.length} dir="ltr" />
                   </div>
                 </div>
 
@@ -2546,18 +2888,34 @@ function StepContent({
                   </span>
                 </div>
 
-                <div className="grid gap-3 rounded-[var(--md-radius-lg)] bg-white/32 p-3 shadow-[var(--md-shadow-line)]">
+                <div className={cn("grid gap-3 rounded-[var(--md-radius-lg)] bg-[#F4F9F7] p-3", fieldBoundaryShadow)}>
                   <p className="text-[13px] font-medium text-[var(--md-ink)]">To</p>
                   <div className="grid gap-3">
                     <div className="grid gap-3 md:grid-cols-[88px_minmax(0,1fr)_minmax(0,1fr)]">
-                      <TextField label="Code" value={transportDraft.toCode} onChange={(value) => updateTransportDraft("toCode", value.toUpperCase())} placeholder="GBFXT / LHR" dir="ltr" />
+                      <TextField label="Code" value={transportDraft.toCode} onChange={(value) => updateTransportDraft("toCode", value.toUpperCase())} placeholder="GBFXT / LHR" dir="ltr" action={<DexterCodeHint />} />
                       <TextField label="Name" value={transportDraft.toName} onChange={(value) => updateTransportDraft("toName", value)} placeholder="Felixstowe" required missing={missing.has("Final destination") && !data.transportLegs.length} />
                       <TextField label="Country" value={transportDraft.toCountry} onChange={(value) => updateTransportDraft("toCountry", value)} placeholder="United Kingdom" />
                     </div>
-                    <TextField label="ETA" value={transportDraft.eta} onChange={(value) => updateTransportDraft("eta", value)} type="date" missing={missing.has("ETA") && !data.transportLegs.length} dir="ltr" />
                   </div>
                 </div>
               </div>
+
+              <FieldShell label="Leg dates" required={data.mode === "Sea" || data.mode === "Air"} missing={!data.transportLegs.length && (missing.has("ETD") || missing.has("ETA"))} asDiv>
+                <MultideckDateRangePicker
+                  value={{ start: transportDraft.etd, end: transportDraft.eta }}
+                  onChange={(range) => {
+                    updateTransportDraft("etd", range.start ?? "")
+                    updateTransportDraft("eta", range.end ?? "")
+                  }}
+                  placeholder="Select ETD and ETA"
+                  title="Leg dates"
+                  description="Pick the estimated departure date, then the estimated arrival date."
+                  startLabel="ETD"
+                  endLabel="ETA"
+                  footerLabel="Selected leg dates"
+                  missing={!data.transportLegs.length && (missing.has("ETD") || missing.has("ETA"))}
+                />
+              </FieldShell>
 
               <FieldGroup className="lg:grid-cols-2">
                 <TextField label="Carrier / line" value={transportDraft.carrier} onChange={(value) => updateTransportDraft("carrier", value)} placeholder="COSCO, LH Cargo, Maersk..." />
@@ -2567,14 +2925,14 @@ function StepContent({
             </div>
           </motion.section>
 
-          <motion.section variants={fieldMotion} className="overflow-hidden rounded-[var(--md-radius-xl)] bg-white/48 shadow-[var(--md-shadow-line)]">
+          <motion.section variants={fieldMotion} className={tablePanelClass}>
             <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
               <div>
                 <p className="text-[14px] font-medium text-[var(--md-ink)]">Route legs</p>
                 <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{data.transportLegs.length ? `${data.transportLegs.length} leg${data.transportLegs.length === 1 ? "" : "s"} added` : "Add the first leg to build the operational route."}</p>
               </div>
               {data.transportLegs.length ? (
-                <Button type="button" variant="ghost" className="h-8 rounded-[var(--md-radius-md)] px-3 text-[12px] font-medium text-[var(--md-red)] hover:bg-[rgba(192,57,43,0.08)]" onClick={() => syncTransportLegs([])}>
+                <Button type="button" variant="ghost" className="h-8 rounded-[var(--md-radius-md)] bg-white/58 px-3 text-[12px] font-medium text-[var(--md-red)] shadow-[var(--md-shadow-line)] hover:bg-[rgba(192,57,43,0.08)]" onClick={() => syncTransportLegs([])}>
                   Clear route
                 </Button>
               ) : null}
@@ -2628,31 +2986,42 @@ function StepContent({
   }
 
   if (activeStep === 5) {
-    const customsPartyOptions = [data.shipper, data.consignee, data.customer, data.notifyParty, "Third party / broker nominated"].filter(Boolean)
+    const customsPartyOptions = Array.from(new Set([data.shipper, data.consignee, data.customer, data.notifyParty, "Third party / broker nominated"].filter(Boolean)))
 
     return (
       <StepShell step={steps[5]}>
-        <FieldGroup className="lg:grid-cols-2">
-          <TextField label="Export broker" value={data.exportBroker} onChange={(value) => update("exportBroker", value)} placeholder="Broker or agent handling export clearance" required missing={missing.has("Export broker")} />
-          <TextField label="Import broker" value={data.importBroker} onChange={(value) => update("importBroker", value)} placeholder="Broker or agent handling import clearance" required missing={missing.has("Import broker")} />
-          <SelectField label="Registered exporter" value={data.registeredExporter} onChange={(value) => update("registeredExporter", value)} options={customsPartyOptions} required missing={missing.has("Registered exporter")} />
-          <SelectField label="Registered importer" value={data.registeredImporter} onChange={(value) => update("registeredImporter", value)} options={customsPartyOptions} required missing={missing.has("Registered importer")} />
-          <SelectField label="VAT and duty paid by" value={data.vatDutyPayment} onChange={(value) => update("vatDutyPayment", value)} options={["Importer deferment account", "Importer direct payment", "Customer account", "Freight forwarder disbursement", "Broker deferment account", "To be confirmed"]} required missing={missing.has("VAT and duty payment")} />
-          <div className="grid content-start gap-2 rounded-[var(--md-radius-xl)] bg-white/38 p-3 shadow-[var(--md-shadow-line)]">
-            <p className="text-[13px] font-medium text-[var(--md-ink)]">Documents Supplied</p>
-            <ToggleTile label="Commercial invoice required" checked={data.commercialInvoice} onChange={(value) => update("commercialInvoice", value)} />
-            <ToggleTile label="Packing list required" checked={data.packingList} onChange={(value) => update("packingList", value)} />
-            <ToggleTile label="Certificates required" checked={data.certificates} onChange={(value) => update("certificates", value)} />
-          </div>
-          <TextAreaField label="Customs notes" value={data.customsNotes} onChange={(value) => update("customsNotes", value)} placeholder="Broker handoff, declaration owner, known risks, or timing notes" />
-          <TextAreaField label="Compliance requirements" value={data.complianceRequirements} onChange={(value) => update("complianceRequirements", value)} placeholder="Licences, declarations, sanctions checks, controlled goods, or special compliance handling" />
-          <TextAreaField label="Certificate requirements" value={data.certificateRequirements} onChange={(value) => update("certificateRequirements", value)} placeholder="Certificate of origin, health certificate, phytosanitary, MSDS, inspection certificates..." />
-        </FieldGroup>
+        <div className="grid gap-4">
+          <FieldGroup className="items-start lg:grid-cols-[minmax(0,1fr)_minmax(260px,340px)]">
+            <div className={cn(fieldPanelClass, "grid gap-3")}>
+              <p className="text-[14px] font-medium text-[var(--md-ink)]">Clearance ownership</p>
+              <div className="grid gap-3 lg:grid-cols-2">
+                <TextField label="Export broker" value={data.exportBroker} onChange={(value) => update("exportBroker", value)} placeholder="Broker or agent handling export clearance" required missing={missing.has("Export broker")} />
+                <TextField label="Import broker" value={data.importBroker} onChange={(value) => update("importBroker", value)} placeholder="Broker or agent handling import clearance" required missing={missing.has("Import broker")} />
+                <SelectField label="Registered exporter" value={data.registeredExporter} onChange={(value) => update("registeredExporter", value)} options={customsPartyOptions} placeholder="Select exporter" required missing={missing.has("Registered exporter")} />
+                <SelectField label="Registered importer" value={data.registeredImporter} onChange={(value) => update("registeredImporter", value)} options={customsPartyOptions} placeholder="Select importer" required missing={missing.has("Registered importer")} />
+                <div className="lg:col-span-2">
+                  <SelectField label="VAT and duty paid by" value={data.vatDutyPayment} onChange={(value) => update("vatDutyPayment", value)} options={["Importer deferment account", "Importer direct payment", "Customer account", "Freight forwarder disbursement", "Broker deferment account", "To be confirmed"]} placeholder="Select payment owner" required missing={missing.has("VAT and duty payment")} />
+                </div>
+              </div>
+            </div>
+            <div className={cn(fieldPanelClass, "grid content-start gap-2")}>
+              <p className="text-[13px] font-medium text-[var(--md-ink)]">Documents supplied</p>
+              <ToggleTile label="Commercial invoice required" checked={data.commercialInvoice} onChange={(value) => update("commercialInvoice", value)} />
+              <ToggleTile label="Packing list required" checked={data.packingList} onChange={(value) => update("packingList", value)} />
+              <ToggleTile label="Certificates required" checked={data.certificates} onChange={(value) => update("certificates", value)} />
+            </div>
+          </FieldGroup>
+          <FieldGroup className="lg:grid-cols-3">
+            <TextAreaField label="Customs notes" value={data.customsNotes} onChange={(value) => update("customsNotes", value)} placeholder="Broker handoff, declaration owner, known risks, or timing notes" />
+            <TextAreaField label="Compliance requirements" value={data.complianceRequirements} onChange={(value) => update("complianceRequirements", value)} placeholder="Licences, declarations, sanctions checks, controlled goods, or special compliance handling" />
+            <TextAreaField label="Certificate requirements" value={data.certificateRequirements} onChange={(value) => update("certificateRequirements", value)} placeholder="Certificate of origin, health certificate, phytosanitary, MSDS, inspection certificates..." />
+          </FieldGroup>
+        </div>
       </StepShell>
     )
   }
 
-  const missingAll = allMissingFields(data)
+  const missingAll = allMissingFieldItems(data)
   const sections = [
     ["Booking type", `${data.direction} ${data.mode}`],
     ["Parties", `${data.customer || "No customer"} / ${data.shipper || "No shipper"} / ${data.consignee || "No consignee"}`],
@@ -2676,9 +3045,14 @@ function StepContent({
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               {missingAll.map((item) => (
-                <span key={item} className="rounded-full bg-white/62 px-3 py-1.5 text-[12px] font-medium text-[var(--md-amber)] shadow-[var(--md-shadow-line)]">
-                  {item}
-                </span>
+                <button
+                  key={item.label}
+                  type="button"
+                  className="rounded-full bg-white/62 px-3 py-1.5 text-[12px] font-medium text-[var(--md-amber)] shadow-[var(--md-shadow-line)] transition-[background,box-shadow,transform] hover:scale-[1.02] hover:bg-white/82"
+                  onClick={() => goToStep(item.stepIndex, focusLabelForMissingField(item.field))}
+                >
+                  {item.label}
+                </button>
               ))}
             </div>
           </div>
@@ -2703,7 +3077,7 @@ function StepContent({
               variants={fieldMotion}
               initial="hidden"
               animate="visible"
-              className="grid gap-3 rounded-[var(--md-radius-xl)] bg-white/56 p-3 shadow-[var(--md-shadow-line)] md:grid-cols-[minmax(140px,220px)_minmax(0,1fr)_auto] md:items-center"
+              className={cn(fieldPanelClass, "grid gap-3 md:grid-cols-[minmax(140px,220px)_minmax(0,1fr)_auto] md:items-center")}
             >
               <p className="text-[14px] font-medium text-[var(--md-ink)]">{title}</p>
               <p className="text-[13px] leading-5 text-[var(--md-text)]" dir="auto">{value}</p>
@@ -2748,12 +3122,29 @@ function SuccessState({ data, navigate, onRestart }: { data: BookingWizardData; 
 export function BookingWizardPage({ navigate }: { navigate: (path: string) => void }) {
   const [data, setData] = useState<BookingWizardData>(defaultBooking)
   const [activeStep, setActiveStep] = useState(0)
-  const [sourceQuery, setSourceQuery] = useState("")
   const [showSuccess, setShowSuccess] = useState(false)
+  const [focusFieldLabel, setFocusFieldLabel] = useState("")
+  const [bookingTypeStage, setBookingTypeStage] = useState<BookingTypeStage>("movement")
 
   const showingSource = data.source === null
   const missingCurrent = useMemo(() => missingFieldsForStep(data, activeStep), [activeStep, data])
   const canCreate = allMissingFields(data).length === 0
+
+  useEffect(() => {
+    if (!focusFieldLabel) return
+
+    const timer = window.setTimeout(() => {
+      const escapedLabel = focusFieldLabel.replace(/"/g, '\\"')
+      const target = document.querySelector<HTMLElement>(`[data-field-label="${escapedLabel}"]`)
+      const control = target?.querySelector<HTMLElement>("input, select, textarea, button")
+
+      target?.scrollIntoView({ behavior: "smooth", block: "center" })
+      control?.focus({ preventScroll: true })
+      setFocusFieldLabel("")
+    }, 80)
+
+    return () => window.clearTimeout(timer)
+  }, [activeStep, focusFieldLabel])
 
   useEffect(() => {
     setData((current) => {
@@ -2797,6 +3188,8 @@ export function BookingWizardPage({ navigate }: { navigate: (path: string) => vo
       ...defaultBooking,
       source: "existing" as const,
       templateBookingId: booking.id,
+      bookingNumber: booking.id,
+      bookingCustomer: booking.customer,
       direction: bookingMode === "Road" ? "Export" as const : "Import" as const,
       mode: bookingMode,
       customer: booking.customer,
@@ -2892,13 +3285,109 @@ export function BookingWizardPage({ navigate }: { navigate: (path: string) => vo
     }
   }
 
+  function applyCustomerQuote(quoteId: string) {
+    const quote = customerQuotes.find((item) => item.id === quoteId)
+    if (!quote) return
+
+    const [origin = "", destination = ""] = quote.route.split(" -> ")
+    const firstOffice = officesForCompany(quote.customer)[0] ?? ""
+    const quoteMode: BookingModeOption = quote.detail.toLowerCase().includes("air")
+      ? "Air"
+      : quote.route.includes("Milano") || quote.route.includes("Hamburg -> Milano")
+        ? "Road"
+        : "Sea"
+
+    setData((current) => ({
+      ...current,
+      source: "quote",
+      quoteNumber: quote.id,
+      quoteCustomer: quote.customer,
+      quoteReference: quote.id,
+      customer: quote.customer,
+      customerOffice: current.customerOffice || firstOffice,
+      customerContact: current.customerContact || defaultContactForCompany(quote.customer),
+      customerReference: quote.id,
+      direction: quoteMode === "Road" ? "Export" : current.direction,
+      mode: quoteMode,
+      goodsDescription: current.goodsDescription || quote.detail,
+      portOfLoading: current.portOfLoading || origin,
+      portOfDischarge: current.portOfDischarge || destination,
+      internalReference: current.internalReference || `BK-${quote.id.replace("QT-", "")}`,
+    }))
+  }
+
+  function applyExistingBookingToState(bookingId: string) {
+    setData(applyExistingBooking(bookingId))
+  }
+
   function startFlow(source: Exclude<BookingSource, null>) {
-    setData((current) => source === "existing" ? applyExistingBooking(current.templateBookingId || current.bookingNumber) : { ...current, source })
+    setData((current) => ({
+      ...current,
+      source,
+      ...(source === "scratch" ? {
+        quoteNumber: "",
+        quoteCustomer: "",
+        bookingNumber: "",
+        bookingCustomer: "",
+        templateBookingId: "",
+      } : {}),
+    }))
     setActiveStep(0)
+    setBookingTypeStage(source === "scratch" ? "movement" : "source")
+  }
+
+  function requestStepChange(targetStep: number, focusLabel?: string) {
+    if (targetStep <= activeStep) {
+      if (targetStep === 0) {
+        if (focusLabel === "Quote number" || focusLabel === "Booking number") setBookingTypeStage("source")
+        else if (focusLabel || activeStep > 0) setBookingTypeStage("movement")
+      }
+      setActiveStep(targetStep)
+      if (focusLabel) setFocusFieldLabel(focusLabel)
+      return
+    }
+
+    const blockingStep = steps.slice(0, targetStep).findIndex((_, index) => missingFieldsForStep(data, index).length > 0)
+
+    if (blockingStep !== -1) {
+      const missing = missingFieldsForStep(data, blockingStep)
+      setActiveStep(blockingStep)
+      toast.warning("Complete required fields first", {
+        description: `${steps[blockingStep].name}: ${missing.slice(0, 2).join(", ")}${missing.length > 2 ? "..." : ""}`,
+      })
+      return
+    }
+
+    setActiveStep(targetStep)
+    if (focusLabel) setFocusFieldLabel(focusLabel)
   }
 
   function goNext() {
     if (activeStep < steps.length - 1) {
+      if (activeStep === 0 && bookingTypeStage === "source" && data.source !== "scratch") {
+        const sourceMissing = data.source === "quote" && !data.quoteNumber.trim()
+          ? ["Customer quote"]
+          : data.source === "existing" && !data.templateBookingId
+            ? ["Existing booking"]
+            : []
+
+        if (sourceMissing.length) {
+          toast.warning("Select the source first", {
+            description: sourceMissing.join(", "),
+          })
+          return
+        }
+
+        setBookingTypeStage("movement")
+        return
+      }
+
+      if (missingCurrent.length) {
+        toast.warning("Complete required fields first", {
+          description: missingCurrent.slice(0, 3).join(", "),
+        })
+        return
+      }
       setActiveStep((current) => current + 1)
       return
     }
@@ -2917,7 +3406,7 @@ export function BookingWizardPage({ navigate }: { navigate: (path: string) => vo
   function restart() {
     setData(defaultBooking)
     setActiveStep(0)
-    setSourceQuery("")
+    setBookingTypeStage("movement")
     setShowSuccess(false)
   }
 
@@ -2937,14 +3426,24 @@ export function BookingWizardPage({ navigate }: { navigate: (path: string) => vo
         {showSuccess ? (
           <SuccessState key="success" data={data} navigate={navigate} onRestart={restart} />
         ) : showingSource ? (
-          <SourceScreen key="source" data={data} query={sourceQuery} onQueryChange={setSourceQuery} onUpdate={update} onStart={startFlow} />
+          <SourceScreen key="source" onStart={startFlow} />
         ) : (
           <motion.div key="wizard" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="grid min-h-[calc(100svh-168px)] gap-4 xl:grid-cols-[minmax(0,1fr)_260px] 2xl:grid-cols-[minmax(0,1fr)_280px]">
             <div className="flex min-w-0 flex-col gap-4">
-              <WizardProgress activeStep={activeStep} data={data} onStepChange={setActiveStep} />
+              <WizardProgress activeStep={activeStep} data={data} bookingTypeStage={bookingTypeStage} onStepChange={requestStepChange} />
               <AnimatePresence mode="wait">
-                <motion.div key={steps[activeStep].id} variants={stepMotion} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }} className="pb-16 sm:pb-0">
-                  <StepContent key={activeStep} activeStep={activeStep} data={data} update={update} goToStep={setActiveStep} />
+                <motion.div key={steps[activeStep].id} variants={stepMotion} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }} className="pb-24">
+                  <StepContent
+                    key={activeStep}
+                    activeStep={activeStep}
+                    data={data}
+                    update={update}
+                    goToStep={requestStepChange}
+                    onApplyExistingBooking={applyExistingBookingToState}
+                    onApplyCustomerQuote={applyCustomerQuote}
+                    bookingTypeStage={bookingTypeStage}
+                    onBookingTypeStageChange={setBookingTypeStage}
+                  />
                 </motion.div>
               </AnimatePresence>
 
@@ -2956,18 +3455,19 @@ export function BookingWizardPage({ navigate }: { navigate: (path: string) => vo
                 <LiveSummaryPanel data={data} activeStep={activeStep} />
               </details>
 
-              <div className="sticky bottom-3 z-30 mt-auto flex items-center justify-between gap-2 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-2.5 shadow-[var(--md-shadow-lift)]">
+              <div className="fixed bottom-0 left-0 right-0 z-40 mt-auto flex items-center justify-between gap-2 bg-[rgba(250,253,252,0.94)] px-[var(--md-page-pad)] py-2.5 pb-[calc(env(safe-area-inset-bottom)+10px)] shadow-[var(--md-shadow-lift)] backdrop-blur-xl lg:left-[var(--md-sidebar-width)]">
                 <Button
                   type="button"
                   variant="ghost"
                   className="h-10 shrink-0 rounded-[var(--md-radius-lg)] px-3 text-[13px] font-medium text-[var(--md-text)] hover:bg-white/64 hover:text-[var(--md-ink)] sm:px-4"
                   onClick={() => {
-                    if (activeStep === 0) update("source", null)
+                    if (activeStep === 0 && bookingTypeStage === "movement" && data.source !== "scratch") setBookingTypeStage("source")
+                    else if (activeStep === 0) update("source", null)
                     else setActiveStep((current) => current - 1)
                   }}
                 >
                   <ArrowLeft className="size-4" strokeWidth={1.35} />
-                  {activeStep === 0 ? "Change start" : "Back"}
+                  {activeStep === 0 && bookingTypeStage === "movement" && data.source !== "scratch" ? "Source" : activeStep === 0 ? "Change start" : "Back"}
                 </Button>
                 <div className="flex min-w-0 items-center justify-end gap-2">
                   {missingCurrent.length ? <p className="hidden text-[12px] font-medium text-[var(--md-amber)] md:block">{missingCurrent.length} required field{missingCurrent.length === 1 ? "" : "s"} still missing</p> : null}

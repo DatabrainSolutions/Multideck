@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties } from "react"
 import { AnimatePresence, LayoutGroup, motion } from "motion/react"
-import { ArrowLeft, ArrowRight, CalendarDays, ChevronDown, Mail, Plus, ReceiptText, Save, Ship, Sparkles, TriangleAlert } from "lucide-react"
+import { ArrowLeft, ArrowRight, CalendarDays, ChevronDown, Loader2, Mail, Plus, ReceiptText, RefreshCw, Save, ShieldCheck, Ship, Sparkles, TriangleAlert } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -20,12 +20,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Progress } from "@/components/ui/progress"
 import { TableCell } from "@/components/ui/table"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { useLanguage } from "@/i18n/language-provider"
 import type { LanguageCode } from "@/i18n/languages"
+import { getApiAuthSession } from "@/lib/api"
+import { getSupabaseSession } from "@/lib/supabase"
 import { cn } from "@/lib/utils"
 import {
   activityItems,
@@ -45,6 +46,7 @@ import {
 } from "@/data/multideck-data"
 import { useClockDisplayMode, type ClockDisplayMode } from "@/lib/user-preferences"
 import { AnimatedList } from "./animated-list"
+import { MultideckDateRangePicker, getDefaultDateRange } from "./date-picker"
 import { MetricCard } from "./metric-card"
 import { SectionHeader, Surface } from "./surface"
 import { StatusPill, toneToVar } from "./status-pill"
@@ -136,7 +138,7 @@ function getWorkStatusLabel(tone: StatusTone) {
 function getClockCellToneClass(tone: StatusTone) {
   if (tone === "amber") return "bg-[rgba(221,138,43,0.1)] hover:bg-[rgba(221,138,43,0.16)]"
   if (tone === "green") return "hover:bg-[rgba(255,255,255,0.45)]"
-  return "bg-[rgba(11,20,19,0.045)] shadow-[inset_-1px_0_0_rgba(11,20,19,0.08),inset_0_0_0_1px_rgba(11,20,19,0.045)] hover:bg-[rgba(11,20,19,0.07)]"
+  return "bg-[rgba(11,20,19,0.045)] shadow-[var(--md-shadow-line),var(--md-stroke-right)] hover:bg-[rgba(11,20,19,0.07)]"
 }
 
 function getClockStatusLine(tone: StatusTone) {
@@ -166,6 +168,38 @@ function getCityClock(city: (typeof cityQueues)[number], now: Date) {
 
 function getSnapshot(range: DashboardRange) {
   return dashboardSnapshots[range] ?? dashboardSnapshots.today
+}
+
+type DashboardConnectionStatus = "checking" | "connected" | "signed-out" | "error"
+
+type DashboardConnectionState = {
+  status: DashboardConnectionStatus
+  email: string | null
+}
+
+function createDashboardConnectionState(status: DashboardConnectionStatus, email: string | null = null): DashboardConnectionState {
+  return { status, email }
+}
+
+async function checkDashboardConnection(): Promise<DashboardConnectionState> {
+  try {
+    const session = await getSupabaseSession()
+
+    if (!session?.access_token) {
+      return createDashboardConnectionState("signed-out")
+    }
+
+    const apiSession = await getApiAuthSession(session.access_token)
+
+    if (!apiSession.authenticated) {
+      return createDashboardConnectionState("error")
+    }
+
+    return createDashboardConnectionState("connected", apiSession.user.email ?? session.user.email ?? null)
+  } catch (error) {
+    console.error("Dashboard API connection check failed", error)
+    return createDashboardConnectionState("error")
+  }
 }
 
 function getLanguageLocale(language: LanguageCode) {
@@ -198,108 +232,7 @@ function addMonths(date: Date, amount: number) {
 }
 
 function getDefaultCustomRange(): DashboardCustomRange {
-  const end = new Date()
-  const start = new Date(end)
-  start.setDate(end.getDate() - 6)
-  return { start: getDateKey(start), end: getDateKey(end) }
-}
-
-function normalizeCustomRange(start: string, end: string): DashboardCustomRange {
-  return start <= end ? { start, end } : { start: end, end: start }
-}
-
-function getCustomRangeLabel(range: DashboardCustomRange, locale: string) {
-  const start = parseDateKey(range.start)
-  const end = parseDateKey(range.end)
-  if (!start || !end) return "Custom"
-
-  const formatter = new Intl.DateTimeFormat(locale, { day: "numeric", month: "short" })
-  const yearFormatter = new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", year: "numeric" })
-  const sameYear = start.getFullYear() === end.getFullYear()
-  return `${sameYear ? formatter.format(start) : yearFormatter.format(start)} - ${yearFormatter.format(end)}`
-}
-
-function getPreviewRange(start: string | null, end: string | null, hover: string | null) {
-  if (!start) return null
-  if (end) return normalizeCustomRange(start, end)
-  if (hover) return normalizeCustomRange(start, hover)
-  return { start, end: start }
-}
-
-function isDateInsideRange(dateKey: string, range: DashboardCustomRange | null) {
-  return Boolean(range?.start && range.end && dateKey >= range.start && dateKey <= range.end)
-}
-
-function CalendarMonth({
-  month,
-  customRange,
-  previewRange,
-  locale,
-  onSelectDate,
-  onPreviewDate,
-}: {
-  month: Date
-  customRange: DashboardCustomRange
-  previewRange: DashboardCustomRange | null
-  locale: string
-  onSelectDate: (dateKey: string) => void
-  onPreviewDate: (dateKey: string | null) => void
-}) {
-  const monthStart = startOfMonth(month)
-  const monthLabel = new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }).format(monthStart)
-  const firstWeekday = (monthStart.getDay() + 6) % 7
-  const daysInMonth = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate()
-  const todayKey = getDateKey(new Date())
-  const weekdayLabels = Array.from({ length: 7 }, (_, index) => new Intl.DateTimeFormat(locale, { weekday: "short" }).format(new Date(2026, 5, 8 + index)))
-  const cells = Array.from({ length: firstWeekday + daysInMonth }, (_, index) => {
-    if (index < firstWeekday) return null
-    return new Date(monthStart.getFullYear(), monthStart.getMonth(), index - firstWeekday + 1)
-  })
-
-  return (
-    <div className="min-w-0">
-      <p className="text-[13px] font-medium text-[var(--md-ink)]">{monthLabel}</p>
-      <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[11px] font-medium text-[var(--md-subtle)]">
-        {weekdayLabels.map((label) => (
-          <span key={label} className="grid h-7 place-items-center">
-            {label}
-          </span>
-        ))}
-      </div>
-      <div className="grid grid-cols-7 gap-1" onMouseLeave={() => onPreviewDate(null)}>
-        {cells.map((date, index) => {
-          if (!date) return <span key={`empty-${index}`} className="size-9" aria-hidden="true" />
-
-          const dateKey = getDateKey(date)
-          const isStart = customRange.start === dateKey
-          const isEnd = customRange.end === dateKey
-          const isInPreview = isDateInsideRange(dateKey, previewRange)
-          const isToday = todayKey === dateKey
-
-          return (
-            <button
-              key={dateKey}
-              type="button"
-              dir="ltr"
-              aria-pressed={isStart || isEnd || isInPreview}
-              aria-label={new Intl.DateTimeFormat(locale, { dateStyle: "full" }).format(date)}
-              className={cn(
-                "grid size-9 place-items-center rounded-[10px] text-[13px] font-medium text-[var(--md-text)] transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-white/78 hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(14,125,116,0.18)]",
-                isToday && "shadow-[inset_0_0_0_1px_rgba(14,125,116,0.22)]",
-                isInPreview && "bg-[rgba(14,125,116,0.1)] text-[var(--md-ink)]",
-                (isStart || isEnd) && "bg-[var(--md-accent)] text-white shadow-[var(--md-shadow-line)] hover:bg-[var(--md-accent)] hover:text-white",
-              )}
-              onMouseEnter={() => onPreviewDate(dateKey)}
-              onFocus={() => onPreviewDate(dateKey)}
-              onClick={() => onSelectDate(dateKey)}
-            >
-              {date.getDate()}
-            </button>
-          )
-        })}
-      </div>
-    </div>
-  )
+  return getDefaultDateRange()
 }
 
 function CustomDashboardRangePicker({
@@ -313,104 +246,35 @@ function CustomDashboardRangePicker({
   onRangeChange: (range: DashboardRange) => void
   onCustomRangeChange?: (range: DashboardCustomRange) => void
 }) {
-  const { language, t } = useLanguage()
-  const locale = getLanguageLocale(language)
+  const { t } = useLanguage()
   const resolvedRange = customRange ?? getDefaultCustomRange()
-  const [open, setOpen] = useState(false)
-  const [visibleMonth, setVisibleMonth] = useState(() => startOfMonth(parseDateKey(resolvedRange.start) ?? new Date()))
-  const [hoveredDate, setHoveredDate] = useState<string | null>(null)
-  const previewRange = getPreviewRange(resolvedRange.start, resolvedRange.end, hoveredDate)
-  const hasCompleteRange = Boolean(parseDateKey(resolvedRange.start) && parseDateKey(resolvedRange.end))
-  const rawRangeLabel = getCustomRangeLabel(resolvedRange, locale)
-  const rangeLabel = rawRangeLabel === "Custom" ? t("Custom") : rawRangeLabel
-  const waitingForEndDate = Boolean(resolvedRange.start && !resolvedRange.end)
 
   function updateOpen(nextOpen: boolean) {
-    setOpen(nextOpen)
     if (nextOpen) onRangeChange("custom")
   }
 
-  function selectDate(dateKey: string) {
-    onRangeChange("custom")
-    if (!resolvedRange.start || resolvedRange.end) {
-      onCustomRangeChange?.({ start: dateKey, end: null })
-      return
-    }
-
-    onCustomRangeChange?.(normalizeCustomRange(resolvedRange.start, dateKey))
-    setHoveredDate(null)
-  }
-
-  function resetRange() {
-    const nextRange = getDefaultCustomRange()
-    onRangeChange("custom")
-    onCustomRangeChange?.(nextRange)
-    setVisibleMonth(startOfMonth(parseDateKey(nextRange.start) ?? new Date()))
-  }
-
   return (
-    <Popover open={open} onOpenChange={updateOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          className={cn(
-            "h-10 rounded-[var(--md-radius-lg)] bg-white/35 px-3 text-[13px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-white/70",
-            active && "bg-[var(--md-glass-strong)] text-[var(--md-ink)]",
-          )}
-        >
-          <CalendarDays data-icon="inline-start" className="size-3.5" strokeWidth={1.2} />
-          <span className="max-w-[150px] truncate" dir={hasCompleteRange ? "ltr" : undefined}>
-            {active ? rangeLabel : t("Custom")}
-          </span>
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-[min(92vw,560px)] rounded-[var(--md-radius-xl)] border-0 bg-[rgba(251,253,253,0.98)] p-3 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)]">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-[14px] font-medium text-[var(--md-ink)]">{t("Custom range")}</p>
-            <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Pick a start date, then an end date.")}</p>
-          </div>
-          <div className="flex shrink-0 gap-1">
-            <Button type="button" variant="ghost" size="icon-sm" className="rounded-[10px] bg-white/45 shadow-[var(--md-shadow-line)] hover:bg-white/70" aria-label={t("Previous month")} onClick={() => setVisibleMonth((current) => addMonths(current, -1))}>
-              <ArrowLeft className="size-3.5" strokeWidth={1.2} />
-            </Button>
-            <Button type="button" variant="ghost" size="icon-sm" className="rounded-[10px] bg-white/45 shadow-[var(--md-shadow-line)] hover:bg-white/70" aria-label={t("Next month")} onClick={() => setVisibleMonth((current) => addMonths(current, 1))}>
-              <ArrowRight className="size-3.5" strokeWidth={1.2} />
-            </Button>
-          </div>
-        </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          {[visibleMonth, addMonths(visibleMonth, 1)].map((month) => (
-            <CalendarMonth
-              key={getDateKey(month)}
-              month={month}
-              customRange={resolvedRange}
-              previewRange={previewRange}
-              locale={locale}
-              onSelectDate={selectDate}
-              onPreviewDate={(dateKey) => setHoveredDate(waitingForEndDate ? dateKey : null)}
-            />
-          ))}
-        </div>
-        <div className="mt-4 flex flex-col gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3 shadow-[var(--md-shadow-line)] sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0 text-[12px] leading-5 text-[var(--md-text)]">
-            <span className="font-medium text-[var(--md-ink)]">{t("Selected custom range")}</span>
-            <span className="ms-2 inline-block" dir={hasCompleteRange ? "ltr" : undefined}>
-              {rangeLabel}
-            </span>
-          </div>
-          <div className="flex shrink-0 gap-2">
-            <Button type="button" variant="ghost" className="h-8 rounded-[var(--md-radius-md)] bg-white/45 px-3 text-[12px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-white/70" onClick={resetRange}>
-              {t("Reset")}
-            </Button>
-            <Button type="button" className="h-8 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[12px] font-medium text-white hover:bg-[var(--md-accent)]/88" disabled={!resolvedRange.start || !resolvedRange.end} onClick={() => setOpen(false)}>
-              {t("Apply range")}
-            </Button>
-          </div>
-        </div>
-      </PopoverContent>
-    </Popover>
+    <MultideckDateRangePicker
+      value={resolvedRange}
+      onChange={(range) => {
+        onRangeChange("custom")
+        onCustomRangeChange?.(range)
+      }}
+      triggerLabel={active ? undefined : t("Custom")}
+      placeholder="Custom"
+      title="Custom range"
+      description="Pick a start date, then an end date."
+      startLabel="Start"
+      endLabel="End"
+      footerLabel="Selected custom range"
+      active={active}
+      align="end"
+      triggerClassName={cn(
+        "h-10 w-auto bg-white/35 px-3 text-[13px] text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-white/70",
+        active && "bg-[var(--md-glass-strong)] text-[var(--md-ink)]",
+      )}
+      onOpenChange={updateOpen}
+    />
   )
 }
 
@@ -448,8 +312,8 @@ function AnalogueClockFace({
   return (
     <span
       className={cn(
-        "relative shrink-0 rounded-full bg-white/76 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.82),0_0_0_1px_rgba(11,20,19,0.05)]",
-        tone === "neutral" && "bg-[rgba(11,20,19,0.075)] shadow-[inset_0_0_0_1px_rgba(11,20,19,0.13),0_0_0_3px_rgba(11,20,19,0.035)]",
+        "relative shrink-0 rounded-full bg-white/76 shadow-[var(--md-shadow-line)]",
+        tone === "neutral" && "bg-[rgba(11,20,19,0.075)] shadow-[var(--md-shadow-line),0_0_0_3px_rgba(11,20,19,0.035)]",
         size === "lg" ? "size-[74px]" : size === "md" ? "size-[62px]" : "size-11",
       )}
       aria-label={`Analogue time ${time}`}
@@ -504,9 +368,46 @@ export function OverviewHero({
   customRange?: DashboardCustomRange
   onCustomRangeChange?: (range: DashboardCustomRange) => void
 }) {
+  const { t } = useLanguage()
   const [createOpen, setCreateOpen] = useState(false)
   const [newDashboardName, setNewDashboardName] = useState("")
+  const [connectionState, setConnectionState] = useState<DashboardConnectionState>(() => createDashboardConnectionState("checking"))
+  const [connectionRefreshing, setConnectionRefreshing] = useState(false)
   const activeDashboard = selectedDashboard ?? dashboardViews[0] ?? "Dashboard"
+
+  async function refreshConnectionCheck() {
+    setConnectionRefreshing(true)
+    setConnectionState(createDashboardConnectionState("checking"))
+
+    const nextState = await checkDashboardConnection()
+    setConnectionState(nextState)
+    setConnectionRefreshing(false)
+  }
+
+  useEffect(() => {
+    let active = true
+
+    setConnectionRefreshing(true)
+    checkDashboardConnection()
+      .then((nextState) => {
+        if (active) setConnectionState(nextState)
+      })
+      .finally(() => {
+        if (active) setConnectionRefreshing(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const connectionToneClass = cn(
+    connectionState.status === "connected" && "bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)]",
+    connectionState.status === "checking" && "bg-[rgba(74,125,156,0.1)] text-[var(--md-blue)]",
+    (connectionState.status === "error" || connectionState.status === "signed-out") && "bg-[rgba(209,78,78,0.1)] text-[var(--md-red)]",
+  )
+  const connectionTitle = connectionState.status === "connected" ? t("System connected") : connectionState.status === "checking" ? t("Checking API") : connectionState.status === "signed-out" ? t("No Supabase session") : t("Connection issue")
+  const ConnectionIcon = connectionState.status === "connected" ? ShieldCheck : connectionState.status === "checking" ? Loader2 : TriangleAlert
 
   function createDashboard() {
     const name = newDashboardName.trim()
@@ -567,6 +468,47 @@ export function OverviewHero({
         >
           Customise
         </Button>
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex h-10 min-w-[min(100%,270px)] items-center gap-2 rounded-[var(--md-radius-lg)] bg-white/35 py-1 pe-1.5 ps-2 shadow-[var(--md-shadow-line)]"
+        >
+          <span className={cn("grid size-7 shrink-0 place-items-center rounded-[var(--md-radius-md)]", connectionToneClass)}>
+            <ConnectionIcon className={cn("size-3.5", connectionState.status === "checking" && "animate-spin")} strokeWidth={1.5} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[12px] font-medium text-[var(--md-ink)]">{connectionTitle}</p>
+            <p className="truncate text-[11px] leading-4 text-[var(--md-text)]">
+              {connectionState.status === "connected" ? (
+                connectionState.email ? (
+                  <>
+                    <span>{t("Signed in as")}</span>{" "}
+                    <span data-i18n-skip dir="ltr">{connectionState.email}</span>
+                  </>
+                ) : (
+                  t("API accepted your Supabase session.")
+                )
+              ) : connectionState.status === "checking" ? (
+                t("Calling protected API...")
+              ) : connectionState.status === "signed-out" ? (
+                t("Sign in again to test the API.")
+              ) : (
+                t("Protected API check failed.")
+              )}
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="rounded-[var(--md-radius-md)] bg-white/42 text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-white/70"
+            aria-label={t("Refresh API connection check")}
+            disabled={connectionRefreshing}
+            onClick={() => void refreshConnectionCheck()}
+          >
+            <RefreshCw className={cn("size-3.5", connectionRefreshing && "animate-spin")} strokeWidth={1.4} />
+          </Button>
+        </div>
       </div>
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-w-[360px] rounded-[var(--md-radius-xl)] border-0 bg-[rgba(251,253,253,0.96)] p-0 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)]">
@@ -580,13 +522,13 @@ export function OverviewHero({
               value={newDashboardName}
               onChange={(event) => setNewDashboardName(event.target.value)}
               placeholder="e.g. Customs morning view"
-              className="h-10 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-tint)] text-[13px] shadow-[inset_0_0_0_1px_rgba(11,20,19,0.08)]"
+              className="h-10 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-tint)] text-[13px] shadow-[var(--md-shadow-line)]"
               onKeyDown={(event) => {
                 if (event.key === "Enter") createDashboard()
               }}
             />
           </div>
-          <DialogFooter className="m-0 flex-row justify-end rounded-b-[var(--md-radius-xl)] border-0 bg-[var(--md-surface-soft)] px-5 py-4 shadow-[inset_0_1px_0_rgba(11,20,19,0.06)]">
+          <DialogFooter className="m-0 flex-row justify-end rounded-b-[var(--md-radius-xl)] border-0 bg-[var(--md-surface-soft)] px-5 py-4 shadow-[var(--md-stroke-top)]">
             <DialogClose asChild>
               <Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-md)] px-3 text-[13px] font-medium text-[var(--md-text)] hover:bg-white/70">
                 Cancel
@@ -672,11 +614,11 @@ export function WorldClockCell({
       type="button"
       data-md-clock-display={displayMode}
       className={cn(
-        "md-world-clock-cell flex min-h-[96px] min-w-[145px] flex-col justify-between bg-transparent px-4 py-3 text-left shadow-[inset_-1px_0_0_rgba(11,20,19,0.08)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
+        "md-world-clock-cell flex min-h-[96px] min-w-[145px] flex-col justify-between bg-transparent px-4 py-3 text-left shadow-[var(--md-stroke-right)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
         displayMode === "analogue" && (compact ? "min-h-[138px] gap-2.5 px-3 py-3.5 text-center" : "min-h-[154px] min-w-[192px] gap-3 px-4 py-4 text-center"),
         compact && "min-w-0 px-3",
         getClockCellToneClass(clock.tone),
-        selected && (clock.tone === "amber" ? "bg-[rgba(221,138,43,0.16)] shadow-[inset_0_0_0_1px_rgba(221,138,43,0.22),inset_-1px_0_0_var(--md-line)]" : clock.tone === "neutral" ? "bg-[rgba(11,20,19,0.075)] shadow-[inset_0_0_0_1px_rgba(11,20,19,0.12),inset_-1px_0_0_var(--md-line)]" : "bg-[var(--md-clock-selected-bg)]"),
+        selected && (clock.tone === "amber" ? "bg-[rgba(221,138,43,0.16)] shadow-[inset_0_0_0_1px_rgba(221,138,43,0.22),var(--md-stroke-right)]" : clock.tone === "neutral" ? "bg-[rgba(11,20,19,0.075)] shadow-[var(--md-shadow-line),var(--md-stroke-right)]" : "bg-[var(--md-clock-selected-bg)]"),
       )}
       onClick={onSelect}
       transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}

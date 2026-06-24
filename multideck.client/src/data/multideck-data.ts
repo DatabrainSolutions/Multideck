@@ -4,6 +4,7 @@ import {
   Bell,
   Boxes,
   BriefcaseBusiness,
+  CalendarDays,
   ChartArea,
   ChartBar,
   ChartBarStacked,
@@ -1978,6 +1979,16 @@ export const galleryComponents = [
     usageCode: `<SegmentedControl options={customerScopeTabs} value={scope} onChange={setScope} />\n<DexterActionPill onClick={() => navigate("/agent-dexter")} />\n<PageSettingsMenu\n  viewOptions={customerViewOptions}\n  value={viewMode}\n  onViewChange={setViewMode}\n  actions={[{ id: "export-customers", label: "Export CSV", icon: Download, onSelect: exportCustomers }]}\n/>\n\n<PageSettingsMenu\n  viewOptions={bookingViewOptions}\n  value={bookingViewMode}\n  onViewChange={setBookingViewMode}\n/>`,
   },
   {
+    id: "date-range-picker",
+    name: "Date Range Picker",
+    category: "Controls",
+    description: "A branded date-range selector for paired dates, with one trigger, a two-month calendar, and highlighted days between the start and end.",
+    details: "Use for date pairs such as cargo ready/requested collection, requested delivery/cargo required by, ETD/ETA, dashboard custom ranges, and booking search ranges. Avoid two separate native browser date inputs for paired dates.",
+    foundOn: [{ label: "Overview", route: "/" }, { label: "New booking", route: "/bookings/new" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components?component=date-range-picker" }],
+    componentCode: `export function MultideckDateRangePicker({ value, onChange }) {\n  return (\n    <Popover>\n      <PopoverTrigger asChild>\n        <Button className="h-11 rounded-[var(--md-radius-lg)] bg-[#F4F9F7] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.15)]">\n          <CalendarDays />\n          {formatDateRangeLabel(value)}\n        </Button>\n      </PopoverTrigger>\n      <PopoverContent>\n        <CalendarMonth />\n        <CalendarMonth />\n        <Button onClick={() => closePicker()}>Apply dates</Button>\n      </PopoverContent>\n    </Popover>\n  )\n}`,
+    usageCode: `const [collectionDates, setCollectionDates] = useState({\n  start: "2026-05-25",\n  end: "2026-06-04",\n})\n\n<MultideckDateRangePicker\n  value={collectionDates}\n  onChange={setCollectionDates}\n  placeholder="Select collection dates"\n  title="Collection dates"\n  description="Pick when cargo is ready, then the requested collection date."\n  startLabel="Cargo ready from"\n  endLabel="Requested collection date"\n/>`,
+  },
+  {
     id: "segmented-control",
     name: "Segmented Control",
     category: "Navigation",
@@ -2454,7 +2465,7 @@ export const galleryComponents = [
     description: "The repeated settings form structure: a quiet panel with labelled rows and aligned controls.",
     details: "Use when a setting needs a label, short explanation, and a control. It keeps settings pages scannable without turning every field into a separate card.",
     foundOn: [{ label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
-    componentCode: `export function SettingsPanel({ title, description, children }) {\n  return (\n    <section className="overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-soft)]">\n      <div className="px-5 py-4">\n        <h3>{title}</h3>\n        <p>{description}</p>\n      </div>\n      <div className="divide-y divide-[rgba(11,20,19,0.07)]">{children}</div>\n    </section>\n  )\n}\n\nexport function SettingsFieldRow({ label, description, children }) {\n  return (\n    <div className="grid gap-3 px-5 py-4 md:grid-cols-[minmax(160px,260px)_minmax(0,1fr)]">\n      <div>\n        <p>{label}</p>\n        <p>{description}</p>\n      </div>\n      <div>{children}</div>\n    </div>\n  )\n}`,
+    componentCode: `export function SettingsPanel({ title, description, children }) {\n  return (\n    <section className="overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-soft)]">\n      <div className="px-5 py-4">\n        <h3>{title}</h3>\n        <p>{description}</p>\n      </div>\n      <div className="divide-y divide-[rgba(11,20,19,0.07)] shadow-[var(--md-stroke-top)]">{children}</div>\n    </section>\n  )\n}\n\nexport function SettingsFieldRow({ label, description, children }) {\n  return (\n    <div className="grid gap-3 px-5 py-4 md:grid-cols-[minmax(160px,260px)_minmax(0,1fr)]">\n      <div>\n        <p>{label}</p>\n        <p>{description}</p>\n      </div>\n      <div>{children}</div>\n    </div>\n  )\n}`,
     usageCode: `<SettingsPanel title="Working schedule" description="Used for notifications and escalation.">\n  <SettingsFieldRow label="Time zone">\n    <SettingsSelect value={timezone} options={timezones} onChange={setTimezone} />\n  </SettingsFieldRow>\n</SettingsPanel>`,
   },
   {
@@ -2474,7 +2485,7 @@ export const galleryComponents = [
     description: "Compact input, select, toggle, and segmented choice controls for settings pages.",
     details: "Use these inside settings rows so field heights, radius, shadows, and focus states stay consistent across every tab.",
     foundOn: [{ label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
-    componentCode: `export function SettingsInput(props) {\n  return <Input className="h-9 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-tint)] shadow-[inset_0_0_0_1px_rgba(11,20,19,0.08)]" {...props} />\n}\n\nexport function SettingsChoiceGroup({ options, value, onChange }) {\n  return (\n    <div className="inline-flex rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-1 shadow-[var(--md-shadow-line)]">\n      {options.map((option) => <button onClick={() => onChange(option)}>{option}</button>)}\n    </div>\n  )\n}`,
+    componentCode: `export function SettingsInput(props) {\n  return <Input className="h-9 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-tint)] shadow-[var(--md-shadow-line)]" {...props} />\n}\n\nexport function SettingsChoiceGroup({ options, value, onChange }) {\n  return (\n    <div className="inline-flex rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-1 shadow-[var(--md-shadow-line)]">\n      {options.map((option) => <button onClick={() => onChange(option)}>{option}</button>)}\n    </div>\n  )\n}`,
     usageCode: `<SettingsFieldRow label="Approval rule">\n  <SettingsChoiceGroup\n    options={["Always ask", "Ask non-reversible", "Never ask"]}\n    value={approvalRule}\n    onChange={setApprovalRule}\n  />\n</SettingsFieldRow>`,
   },
   {
@@ -2503,7 +2514,7 @@ export const galleryComponents = [
     category: "Operations",
     description: "The branded freight context panel used beside auth forms, with step-specific copy and live booking cards.",
     details: "Use as the left-side context module for auth and session handoff states. It is a panel component, not the whole auth route.",
-    foundOn: [{ label: "Auth", route: "/auth" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Auth", route: "/auth" }, { label: "Components", route: "/components?component=auth-narrative-panel" }],
     componentCode: `export function FreightNarrative({ step = "signin", className }) {\n  const copy = authCopyByStep[step]\n\n  return (\n    <aside className={cn("relative flex min-h-[720px] overflow-hidden bg-[#062420] text-white", className)}>\n      <BrandLockup inverted />\n      <h1>{copy.title}</h1>\n      <p>{copy.body}</p>\n      {authBookings.map((booking) => <AuthBookingCard key={booking.id} booking={booking} />)}\n      <p>{copy.footnote}</p>\n    </aside>\n  )\n}`,
     usageCode: `<FreightNarrative step="signin" />\n<FreightNarrative step="verify" />\n<FreightNarrative step="signed-out" />`,
   },
@@ -2511,11 +2522,11 @@ export const galleryComponents = [
     id: "auth-sign-in-panel",
     name: "Auth Sign In Panel",
     category: "Navigation",
-    description: "The focused passwordless sign-in panel with workspace copy, email entry, provider actions, and team handoff link.",
-    details: "Use for the first auth step. Keep this as a centered panel component and compose it with the narrative panel on the full auth route.",
+    description: "The focused sign-in panel with email link, password fallback, provider actions, workspace copy, and team handoff link.",
+    details: "Use for the first auth step. Keep password fallback inside this panel so operators can still log in when email OTP rate limits are hit.",
     foundOn: [{ label: "Auth", route: "/auth" }, { label: "Components", route: "/components" }],
-    componentCode: `export function SignInPanel({ email, onEmailChange, onContinue }) {\n  return (\n    <div className="w-full max-w-[540px]">\n      <h2>Welcome back</h2>\n      <p>Sign in to Northwind Forwarding's workspace.</p>\n      <AuthField label="Work email" value={email} onChange={onEmailChange} onSubmit={onContinue} />\n      <ProviderButton label="Google" icon="google" onClick={onContinue} />\n      <ProviderButton label="Microsoft" icon="microsoft" onClick={onContinue} />\n      <ProviderButton label="SSO" icon="sso" onClick={onContinue} />\n    </div>\n  )\n}`,
-    usageCode: `<SignInPanel\n  email={email}\n  onEmailChange={setEmail}\n  onContinue={() => setStep("verify")}\n/>`,
+    componentCode: `export function SignInPanel({ email, password, signInMethod, onEmailChange, onPasswordChange, onSignInMethodChange, onContinue, onPasswordSignIn }) {\n  return (\n    <div className="w-full max-w-[540px]">\n      <h2>Welcome back</h2>\n      <p>Sign in to your workspace. Northwind Forwarding</p>\n      <button onClick={() => onSignInMethodChange("magic-link")}>Email link</button>\n      <button onClick={() => onSignInMethodChange("password")}>Password</button>\n      {signInMethod === "magic-link" ? (\n        <AuthField label="Work email" value={email} onChange={onEmailChange} onSubmit={onContinue} />\n      ) : (\n        <PasswordSignInForm email={email} password={password} onEmailChange={onEmailChange} onPasswordChange={onPasswordChange} onSubmit={onPasswordSignIn} />\n      )}\n    </div>\n  )\n}`,
+    usageCode: `<SignInPanel\n  email={email}\n  password={password}\n  signInMethod={signInMethod}\n  onEmailChange={setEmail}\n  onPasswordChange={setPassword}\n  onSignInMethodChange={setSignInMethod}\n  onContinue={sendMagicLink}\n  onPasswordSignIn={signInWithPassword}\n  onProviderSignIn={signInWithProvider}\n  isSubmitting={isSubmitting}\n  error={authError}\n/>`,
   },
   {
     id: "auth-verification-panel",
@@ -2524,8 +2535,8 @@ export const galleryComponents = [
     description: "The inbox verification panel that combines the mail icon, sent-to email, six-digit code input, resend actions, and session note.",
     details: "Use after a work email has been submitted. Keep resend and different-email actions inside this panel so the flow remains self-contained.",
     foundOn: [{ label: "Auth", route: "/auth" }, { label: "Components", route: "/components" }],
-    componentCode: `export function VerifyPanel({ email, code, onCodeChange, onBack, onComplete }) {\n  return (\n    <div className="w-full max-w-[600px]">\n      <Mail />\n      <h2>Check your inbox</h2>\n      <p>We sent a code to {email}</p>\n      <CodeInput code={code} onCodeChange={onCodeChange} onComplete={onComplete} />\n      <button onClick={() => onCodeChange("742")}>Resend</button>\n      <button onClick={onBack}>Use a different email</button>\n    </div>\n  )\n}`,
-    usageCode: `<VerifyPanel\n  email={email}\n  code={code}\n  onCodeChange={setCode}\n  onBack={() => setStep("signin")}\n  onComplete={() => setStep("signed-out")}\n/>`,
+    componentCode: `export function VerifyPanel({ email, code, onCodeChange, onBack, onComplete, onResend, isSubmitting, error }) {\n  return (\n    <div className="w-full max-w-[600px]">\n      <Mail />\n      <h2>Check your inbox</h2>\n      <p>We sent a code to {email}</p>\n      <CodeInput code={code} onCodeChange={onCodeChange} onComplete={onComplete} disabled={isSubmitting} />\n      <AuthAlert tone="error">{error}</AuthAlert>\n      <button onClick={onResend}>Resend</button>\n      <button onClick={onBack}>Use a different email</button>\n    </div>\n  )\n}`,
+    usageCode: `<VerifyPanel\n  email={email}\n  code={code}\n  onCodeChange={setCode}\n  onBack={() => setStep("signin")}\n  onComplete={verifyCode}\n  onResend={sendMagicLink}\n  isSubmitting={isSubmitting}\n  error={authError}\n/>`,
   },
   {
     id: "auth-code-input",
@@ -2535,7 +2546,7 @@ export const galleryComponents = [
     details: "Use for one-time auth codes only. It should stay numeric, fixed-width, and auto-complete the flow when all six digits are entered.",
     foundOn: [{ label: "Auth", route: "/auth" }, { label: "Components", route: "/components" }],
     componentCode: `export function CodeInput({ code, onCodeChange, onComplete }) {\n  const digits = code.padEnd(6, " ").slice(0, 6).split("")\n\n  return (\n    <div className="flex gap-4">\n      {digits.map((digit, index) => (\n        <Input value={digit.trim()} inputMode="numeric" maxLength={1} onChange={(event) => updateDigit(index, event.target.value)} />\n      ))}\n    </div>\n  )\n}`,
-    usageCode: `<CodeInput\n  code={code}\n  onCodeChange={setCode}\n  onComplete={() => setStep("signed-out")}\n/>`,
+    usageCode: `<CodeInput\n  code={code}\n  onCodeChange={setCode}\n  onComplete={verifyCode}\n/>`,
   },
   {
     id: "auth-signed-out-panel",
@@ -2549,7 +2560,7 @@ export const galleryComponents = [
   },
 ]
 
-export const galleryCategories = ["All", "Design System", "Foundation", "Navigation", "Data", "Visualizations", "Feedback", "Operations", "CRM", "Agent Dexter"]
+export const galleryCategories = ["All", "Design System", "Foundation", "Controls", "Navigation", "Data", "Visualizations", "Feedback", "Operations", "CRM", "Agent Dexter"]
 
 export const galleryIcons = {
   colours: Palette,
@@ -2578,6 +2589,7 @@ export const galleryIcons = {
   sidebar: LayoutDashboard,
   "theme-toggle": MoonStar,
   "page-settings-menu": Settings2,
+  "date-range-picker": CalendarDays,
   "animated-list": ListOrdered,
   pagination: ListOrdered,
   "world-clock": Globe2,

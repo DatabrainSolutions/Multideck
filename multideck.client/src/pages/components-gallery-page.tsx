@@ -91,6 +91,7 @@ import { Table, TableBody } from "@/components/ui/table"
 import multideckFullLogo from "@/assets/brand/multideck-full-logo.svg"
 import { AIEdgeGlow } from "@/components/multideck/ai-edge-glow"
 import { DashboardCustomisePanel } from "@/components/multideck/dashboard-customise-panel"
+import { MultideckDateRangePicker, type MultideckDateRange } from "@/components/multideck/date-picker"
 import { ThemeToggle } from "@/components/multideck/theme-toggle"
 import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import { DexterCompanionSidebar } from "@/components/multideck/dexter-companion-sidebar"
@@ -123,7 +124,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Button & control components",
     helper: "Navigation and input controls",
-    ids: ["command", "sidebar", "theme-toggle", "page-settings-menu", "segmented-control", "filter-chips", "tabs", "pagination", "settings-controls", "settings-option-card"],
+    ids: ["command", "sidebar", "theme-toggle", "page-settings-menu", "date-range-picker", "segmented-control", "filter-chips", "tabs", "pagination", "settings-controls", "settings-option-card"],
   },
   {
     label: "Auth components",
@@ -472,7 +473,7 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewCustomerView, setPreviewCustomerView] = useState<CustomerViewMode>("List")
   const [previewSelectedIds, setPreviewSelectedIds] = useState<Set<string>>(new Set(["marlow-apparel"]))
   const [previewCustomerTab, setPreviewCustomerTab] = useState("Overview")
-  const [previewAuthEmail, setPreviewAuthEmail] = useState("emma@northwind-fwd.com")
+  const [previewAuthEmail, setPreviewAuthEmail] = useState("john.doe@multideck.app")
   const [previewAuthCode, setPreviewAuthCode] = useState("742")
   const [previewSettingsTab, setPreviewSettingsTab] = useState("profile")
   const [previewSettingsChoice, setPreviewSettingsChoice] = useState("Always ask")
@@ -485,6 +486,7 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewDataEditorOpen, setPreviewDataEditorOpen] = useState(false)
   const [previewBookingSelectedIds, setPreviewBookingSelectedIds] = useState<Set<string>>(new Set(["MD-22455"]))
   const [previewFavouriteBookingIds, setPreviewFavouriteBookingIds] = useState<Set<string>>(() => new Set(initialFavouriteBookingIds))
+  const [previewDateRange, setPreviewDateRange] = useState<MultideckDateRange>({ start: "2026-05-25", end: "2026-06-04" })
   const [previewBookingSearchCriteria, setPreviewBookingSearchCriteria] = useState<BookingSearchCriterion[]>([
     { id: "preview-booking-search-invoice", field: "invoice", groupId: "preview-search-main", value: "INV-MAR", valueTo: "" },
     { id: "preview-booking-search-destination", connector: "and", field: "destination", groupId: "preview-search-main", value: "Felixstowe", valueTo: "" },
@@ -1025,6 +1027,25 @@ function ComponentPreview({ id }: { id: string }) {
           <PrimaryContactsPanel
             selectedContact={marlowContacts.find((contact) => contact.email === previewContactEmail)}
             onSelectContact={(contact) => setPreviewContactEmail(contact.email)}
+          />
+        </div>
+      ) : null}
+
+      {id === "date-range-picker" ? (
+        <div className="grid w-full max-w-[560px] gap-3 rounded-[var(--md-radius-xl)] bg-white/54 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          <div>
+            <p className="text-[14px] font-medium text-[var(--md-ink)]">Collection dates</p>
+            <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">A paired date range using one selector and highlighted in-between days.</p>
+          </div>
+          <MultideckDateRangePicker
+            value={previewDateRange}
+            onChange={setPreviewDateRange}
+            placeholder="Select collection dates"
+            title="Collection dates"
+            description="Pick when cargo is ready, then the requested collection date."
+            startLabel="Cargo ready from"
+            endLabel="Requested collection date"
+            footerLabel="Selected collection dates"
           />
         </div>
       ) : null}

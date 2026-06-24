@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { motion } from "motion/react"
+import { AnimatePresence, motion } from "motion/react"
 import { Moon, Sun } from "lucide-react"
 import { useTheme } from "next-themes"
 import { useLanguage } from "@/i18n/language-provider"
@@ -29,7 +29,7 @@ export function ThemeToggle({ className, compact = false }: ThemeToggleProps) {
       title={label}
       data-theme-toggle-state={isDark ? "dark" : "light"}
       className={cn(
-        "group/theme-toggle flex h-10 w-full items-center justify-between gap-3 rounded-[var(--md-radius-lg)] px-2.5 text-left text-[13px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
+        "group/theme-toggle flex h-10 w-full items-center justify-between gap-3 rounded-[var(--md-radius-lg)] px-2.5 text-left text-[13px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,color,opacity,scale,transform] duration-200 active:scale-[0.96] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
         compact && "size-10 justify-center rounded-[var(--md-radius-md)] p-0",
         className,
       )}
@@ -43,16 +43,19 @@ export function ThemeToggle({ className, compact = false }: ThemeToggleProps) {
       )}
 
       <span className="relative grid size-7 shrink-0 place-items-center overflow-hidden rounded-[var(--md-radius-md)] bg-[var(--md-icon-well)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">
-        <motion.span
-          key={isDark ? "moon" : "sun"}
-          aria-hidden="true"
-          className="absolute grid size-5 place-items-center"
-          initial={{ opacity: 0, rotate: isDark ? -70 : 70, scale: 0.72, filter: "blur(4px)" }}
-          animate={{ opacity: 1, rotate: 0, scale: 1, filter: "blur(0px)" }}
-          transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
-        >
-          {isDark ? <Moon className="size-4" strokeWidth={1.25} /> : <Sun className="size-4" strokeWidth={1.25} />}
-        </motion.span>
+        <AnimatePresence mode="popLayout" initial={false}>
+          <motion.span
+            key={isDark ? "moon" : "sun"}
+            aria-hidden="true"
+            className="absolute grid size-5 place-items-center"
+            initial={{ opacity: 0, scale: 0.25, filter: "blur(4px)" }}
+            animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
+            exit={{ opacity: 0, scale: 0.25, filter: "blur(4px)" }}
+            transition={{ type: "spring", duration: 0.3, bounce: 0 }}
+          >
+            {isDark ? <Moon className="size-4" strokeWidth={1.25} /> : <Sun className="size-4" strokeWidth={1.25} />}
+          </motion.span>
+        </AnimatePresence>
       </span>
     </button>
   )

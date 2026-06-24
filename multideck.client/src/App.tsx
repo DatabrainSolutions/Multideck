@@ -1,11 +1,16 @@
 import { lazy, startTransition, Suspense, useEffect, useState } from "react"
+import type { Session } from "@supabase/supabase-js"
 import { MotionConfig } from "motion/react"
 import { ThemeProvider } from "next-themes"
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { AppShell } from "@/components/multideck/app-shell"
 import { LanguageProvider } from "@/i18n/language-provider"
+import { getApiAuthSession } from "@/lib/api"
 import { mdMotion } from "@/lib/motion"
+import { rememberAuthReturnPath, takeAuthReturnPath } from "@/lib/auth-routing"
+import { summarizeAuthUser, type AuthUserSummary } from "@/lib/auth-user"
+import { isSupabaseConfigured, supabase } from "@/lib/supabase"
 import { OverviewPage } from "@/pages/overview-page"
 
 const AgentDexterPage = lazy(() => import("@/pages/agent-dexter-page").then((module) => ({ default: module.AgentDexterPage })))
@@ -33,6 +38,8 @@ const CrmListsPage = lazy(() => import("@/pages/crm-page").then((module) => ({ d
 const CrmListDetailPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmListDetailPage })))
 const CrmMarketingPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmMarketingPage })))
 const CrmSettingsPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmSettingsPage })))
+
+type AuthStatus = "checking" | "authenticated" | "unauthenticated"
 
 const validRoutes = new Set([
   "/",
@@ -108,6 +115,8 @@ function RouteFallback() {
 
 export default function App() {
   const [route, setRoute] = useState(getRoute)
+  const [authStatus, setAuthStatus] = useState<AuthStatus>(isSupabaseConfigured ? "checking" : "unauthenticated")
+  const [currentUser, setCurrentUser] = useState<AuthUserSummary | null>(null)
 
   useEffect(() => {
     const onPopState = () => {
@@ -116,6 +125,101 @@ export default function App() {
     window.addEventListener("popstate", onPopState)
     return () => window.removeEventListener("popstate", onPopState)
   }, [])
+
+  useEffect(() => {
+    if (!supabase) {
+      setCurrentUser(null)
+      setAuthStatus("unauthenticated")
+      return
+    }
+
+    let cancelled = false
+
+    const applySession = async (session: Session | null) => {
+      if (cancelled) return
+
+      if (!session?.user) {
+        setCurrentUser(null)
+        setAuthStatus("unauthenticated")
+        return
+      }
+
+      setAuthStatus((current) => current === "authenticated" ? "authenticated" : "checking")
+
+      try {
+        await getApiAuthSession(session.access_token)
+        if (cancelled) return
+
+        setCurrentUser(summarizeAuthUser(session.user))
+        setAuthStatus("authenticated")
+      } catch (error) {
+        console.error(error)
+        if (cancelled) return
+
+        setCurrentUser(null)
+        setAuthStatus("unauthenticated")
+      }
+    }
+
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (error) {
+        console.error(error)
+        void clearStaleSession()
+        void applySession(null)
+        return
+      }
+
+      void applySession(data.session)
+    }).catch((error) => {
+      console.error(error)
+      void clearStaleSession()
+      void applySession(null)
+    })
+
+    const { data } = supabase.auth.onAuthStateChange((event, session) => {
+      // When token refresh fails (stale session), clear storage and redirect to sign-in
+      if ((event as string) === "TOKEN_REFRESH_FAILED") {
+        console.warn("Token refresh failed — clearing stale session.")
+        void clearStaleSession()
+        void applySession(null)
+        return
+      }
+
+      void applySession(session)
+    })
+
+    return () => {
+      cancelled = true
+      data.subscription.unsubscribe()
+    }
+  }, [])
+
+  /** Clear stale Supabase session from storage when tokens can no longer be refreshed. */
+  function clearStaleSession() {
+    try {
+      const storageKey = `sb-${import.meta.env.VITE_SUPABASE_URL?.match(/https?:\/\/([^.]+)/)?.[1] ?? ""}-auth-token`
+      localStorage.removeItem(storageKey)
+      sessionStorage.removeItem(storageKey)
+    } catch {
+      // Storage may not be available
+    }
+  }
+
+  useEffect(() => {
+    if (authStatus === "checking") return
+
+    if (authStatus === "unauthenticated" && route !== "/auth") {
+      rememberAuthReturnPath()
+      window.history.replaceState({}, "", "/auth")
+      startTransition(() => setRoute(getRoute()))
+      return
+    }
+
+    if (authStatus === "authenticated" && route === "/auth") {
+      window.history.replaceState({}, "", takeAuthReturnPath())
+      startTransition(() => setRoute(getRoute()))
+    }
+  }, [authStatus, route])
 
   function navigate(path: string) {
     if (path === route) return
@@ -128,9 +232,11 @@ export default function App() {
       <LanguageProvider>
         <TooltipProvider>
           <MotionConfig reducedMotion="user" transition={mdMotion.fast}>
-            {route === "/auth" ? (
+            {(authStatus === "checking" && route !== "/auth") || (authStatus === "authenticated" && route === "/auth") ? (
+              <RouteFallback />
+            ) : authStatus === "unauthenticated" || route === "/auth" ? (
               <Suspense fallback={<RouteFallback />}>
-                <AuthFlowPage />
+                <AuthFlowPage navigate={navigate} />
               </Suspense>
             ) : isBookingDetailRoute(route) ? (
               <Suspense fallback={<RouteFallback />}>
@@ -145,7 +251,7 @@ export default function App() {
                 <ReportTemplateBuilderPage navigate={navigate} />
               </Suspense>
             ) : (
-              <AppShell route={route} navigate={navigate}>
+              <AppShell route={route} navigate={navigate} currentUser={currentUser}>
                 <Suspense fallback={<RouteFallback />}>
                   {route === "/components" ? <ComponentsGalleryPage /> : null}
                   {route === "/agent-dexter" ? <AgentDexterPage /> : null}

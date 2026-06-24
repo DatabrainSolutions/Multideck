@@ -3,7 +3,6 @@ import { motion } from "motion/react"
 import { toast } from "sonner"
 import {
   ArrowLeft,
-  CalendarDays,
   Check,
   CircleDollarSign,
   FileText,
@@ -22,6 +21,7 @@ import {
   X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { MultideckDateRangePicker } from "@/components/multideck/date-picker"
 import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -164,7 +164,7 @@ export function BookingMetricCard({ label, value, tone }: (typeof bookingMetrics
       <p className="text-[13px] font-medium text-[var(--md-text)]">{label}</p>
       <strong
         className={cn(
-          "mt-2 block text-[30px] font-medium leading-none tracking-normal",
+          "mt-2 block text-[30px] font-medium leading-none tracking-normal tabular-nums",
           tone === "neutral" ? "text-[var(--md-ink)]" : undefined,
         )}
         style={{ color: tone === "neutral" ? undefined : toneToVar(tone) }}
@@ -644,32 +644,18 @@ export function BookingAdvancedSearch({
                           </Select>
 
                           {isDateSearch ? (
-                            <div className="grid gap-2 sm:grid-cols-2">
-                              <label className="sr-only" htmlFor={`${criterion.id}-from`}>Start date</label>
-                              <div className="relative">
-                                <CalendarDays className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.25} />
-                                <Input
-                                  id={`${criterion.id}-from`}
-                                  type="date"
-                                  value={criterion.value}
-                                  onChange={(event) => updateCriterion(criterion.id, { value: event.target.value })}
-                                  className="h-9 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-tint)] ps-9 text-[13px] shadow-[var(--md-shadow-line)]"
-                                  dir="ltr"
-                                />
-                              </div>
-                              <label className="sr-only" htmlFor={`${criterion.id}-to`}>End date</label>
-                              <div className="relative">
-                                <CalendarDays className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.25} />
-                                <Input
-                                  id={`${criterion.id}-to`}
-                                  type="date"
-                                  value={criterion.valueTo ?? ""}
-                                  onChange={(event) => updateCriterion(criterion.id, { valueTo: event.target.value })}
-                                  className="h-9 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-tint)] ps-9 text-[13px] shadow-[var(--md-shadow-line)]"
-                                  dir="ltr"
-                                />
-                              </div>
-                            </div>
+                            <MultideckDateRangePicker
+                              value={{ start: criterion.value, end: criterion.valueTo ?? "" }}
+                              onChange={(range) => updateCriterion(criterion.id, { value: range.start ?? "", valueTo: range.end ?? "" })}
+                              placeholder={meta.placeholder}
+                              title={`${meta.label} range`}
+                              description="Pick a start date, then an end date."
+                              startLabel="Start date"
+                              endLabel="End date"
+                              footerLabel="Selected date range"
+                              allowClear
+                              triggerClassName="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] text-[13px] shadow-[var(--md-shadow-line)]"
+                            />
                           ) : (
                             <>
                               <label className="sr-only" htmlFor={`${criterion.id}-value`}>{meta.label}</label>
@@ -1009,7 +995,7 @@ function DetailSideRail({ navigate }: { navigate: (path: string) => void }) {
   const related = bookings.filter((booking) => booking.id !== "MD-22455").slice(0, 4)
 
   return (
-    <aside className="hidden h-screen min-h-0 w-[262px] shrink-0 overflow-hidden bg-[var(--md-sidebar-bg)] px-[var(--md-page-stack-gap)] py-[var(--md-page-pad)] shadow-[inset_-1px_0_0_rgba(11,20,19,0.06)] lg:block">
+    <aside className="hidden h-screen min-h-0 w-[262px] shrink-0 overflow-hidden bg-[var(--md-sidebar-bg)] px-[var(--md-page-stack-gap)] py-[var(--md-page-pad)] shadow-[var(--md-stroke-right)] lg:block">
       <img src={multideckFullLogo} alt="Multideck" className="h-[28px] w-auto" />
       <button type="button" className="mt-[calc(var(--md-page-section-gap)+var(--md-gap-xl))] flex items-center gap-[var(--md-gap-sm)] text-[14px] font-medium text-[var(--md-text)] hover:text-[var(--md-ink)]" onClick={() => navigate("/bookings")}>
         <ArrowLeft className="size-4" strokeWidth={1.2} />

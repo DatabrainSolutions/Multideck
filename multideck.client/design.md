@@ -79,13 +79,17 @@ Radius tokens are defined in `src/styles.css`:
 
 Use nested radius intentionally. If a parent has 10px radius and 4px internal padding, inner elements should usually be 6px.
 
-Use layered shadows instead of flat borders. Panel shadows should be visible enough to separate white elements from the green shell without making the UI feel heavy:
+Use layered premium strokes instead of flat borders. The app-wide stroke recipe is intentionally simple: a soft inner light edge plus an outer shadow edge, with the dark-mode outer edge strengthened for charcoal surfaces. Elevation can be added after the stroke, but the stroke itself should stay consistent:
 
 ```css
---md-shadow-line: inset 0 0 0 1px rgba(255,255,255,0.88), 0 0 0 1px rgba(11,20,19,0.10), 0 8px 18px rgba(42,52,50,0.06);
---md-shadow-soft: inset 0 0 0 1px rgba(255,255,255,0.92), 0 0 0 1px rgba(11,20,19,0.09), 0 12px 28px rgba(42,52,50,0.08);
---md-shadow-lift: inset 0 0 0 1px rgba(255,255,255,0.94), 0 0 0 1px rgba(11,20,19,0.11), 0 18px 38px rgba(42,52,50,0.14);
+--md-premium-stroke: inset 0 0 0 1px rgba(255,255,255,0.08), 0 0 0 1px rgba(0,0,0,0.04);
+--md-premium-stroke-soft: var(--md-premium-stroke);
+--md-shadow-line: var(--md-premium-stroke);
+--md-shadow-soft: var(--md-premium-stroke), 0 12px 28px rgba(42,52,50,0.08);
+--md-shadow-lift: var(--md-premium-stroke), 0 18px 38px rgba(42,52,50,0.14);
 ```
+
+Use `premium-stroke` for panels, popovers, modals, cards, and sheet-like surfaces. Use `premium-stroke-soft` for smaller controls such as buttons, inputs, selects, toggles, badges, and slider handles. Use `--md-stroke-top`, `--md-stroke-right`, `--md-stroke-bottom`, and `--md-stroke-left` when a header, footer, or docked panel needs one directional edge instead of a full outline.
 
 ## Component Architecture
 

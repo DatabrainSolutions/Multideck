@@ -430,7 +430,7 @@ export function CrmAssetFolderCard({
       onClick={() => onSelect?.(folder)}
     >
       <div className="flex items-start justify-between gap-3">
-        <span className="grid size-10 place-items-center rounded-[var(--md-radius-md)] bg-white/82 text-[var(--md-accent)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.9),0_0_0_1px_rgba(14,125,116,0.12),0_8px_18px_rgba(14,125,116,0.08)]">
+        <span className="grid size-10 place-items-center rounded-[var(--md-radius-md)] bg-white/82 text-[var(--md-accent)] shadow-[var(--md-shadow-line),0_8px_18px_rgba(14,125,116,0.08)]">
           <Icon className="size-5" strokeWidth={1.2} />
         </span>
         <StatusPill tone="green" className="bg-white/64 text-[var(--md-accent)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.72),0_0_0_1px_rgba(14,125,116,0.08)]">{folder.itemCount} items</StatusPill>

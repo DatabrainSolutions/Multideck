@@ -1322,7 +1322,7 @@ function DataSelect({
           id={id}
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          className="h-11 w-full appearance-none truncate rounded-[var(--md-radius-md)] border-0 bg-white/[0.82] px-3 pe-9 text-[13px] font-medium text-[var(--md-ink)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.9),0_0_0_1px_rgba(11,20,19,0.08),0_8px_16px_rgba(42,52,50,0.04)] outline-none transition-[background,box-shadow] duration-200 focus:bg-white focus:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.92),0_0_0_1px_var(--md-accent),0_10px_18px_rgba(42,52,50,0.07)]"
+          className="h-11 w-full appearance-none truncate rounded-[var(--md-radius-md)] border-0 bg-white/[0.82] px-3 pe-9 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] outline-none transition-[background,box-shadow] duration-200 focus:bg-white focus:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08),0_0_0_1px_var(--md-accent),0_10px_18px_rgba(42,52,50,0.07)]"
         >
           {options.map((option) => (
             <option key={option.id} value={option.id}>
@@ -1385,14 +1385,14 @@ export function ReportBlockDataEditorDialog({
         </DialogHeader>
 
         <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-4 pb-4 pt-4 sm:px-5 sm:pb-5 lg:grid-cols-[minmax(280px,320px)_minmax(0,1fr)]">
-          <div className="grid min-w-0 content-start gap-3 rounded-[var(--md-radius-xl)] bg-[linear-gradient(180deg,rgba(226,238,235,0.76),rgba(247,251,250,0.78))] p-3 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.88),0_0_0_1px_rgba(11,20,19,0.07),0_12px_24px_rgba(42,52,50,0.05)] sm:grid-cols-2 lg:grid-cols-1">
+          <div className="grid min-w-0 content-start gap-3 rounded-[var(--md-radius-xl)] bg-[linear-gradient(180deg,rgba(226,238,235,0.76),rgba(247,251,250,0.78))] p-3 shadow-[var(--md-shadow-soft)] sm:grid-cols-2 lg:grid-cols-1">
             <DataSelect id="report-data-source" label="Source" value={draft.source} options={reportDataSources} onChange={(value) => updateDraft("source", value)} />
             <DataSelect id="report-data-metric" label="Metric" value={draft.metric} options={reportDataMetrics} onChange={(value) => updateDraft("metric", value)} />
             <DataSelect id="report-data-period" label="Period" value={draft.period} options={reportDataPeriods} onChange={(value) => updateDraft("period", value)} />
             <DataSelect id="report-data-breakdown" label="Breakdown" value={draft.breakdown} options={reportDataBreakdowns} onChange={(value) => updateDraft("breakdown", value)} />
           </div>
 
-          <div className="md-report-data-editor-preview min-w-0 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] p-3 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.9),0_0_0_1px_rgba(11,20,19,0.08),0_14px_26px_rgba(42,52,50,0.06)]">
+          <div className="md-report-data-editor-preview min-w-0 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] p-3 shadow-[var(--md-shadow-soft)]">
             <div className="mb-3 flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-[12px] font-medium text-[var(--md-subtle)]">Preview</p>
@@ -1406,7 +1406,7 @@ export function ReportBlockDataEditorDialog({
           </div>
         </div>
 
-        <DialogFooter className="m-0 flex-col-reverse gap-2 rounded-b-[var(--md-radius-2xl)] border-0 bg-[var(--md-surface-soft)] px-4 py-3 shadow-[inset_0_1px_0_rgba(11,20,19,0.06)] sm:flex-row sm:justify-end sm:px-5 sm:py-4">
+        <DialogFooter className="m-0 flex-col-reverse gap-2 rounded-b-[var(--md-radius-2xl)] border-0 bg-[var(--md-surface-soft)] px-4 py-3 shadow-[var(--md-stroke-top)] sm:flex-row sm:justify-end sm:px-5 sm:py-4">
           <DialogClose asChild>
             <Button type="button" variant="ghost" className="h-10 w-full rounded-[var(--md-radius-md)] px-4 text-[13px] font-medium text-[var(--md-text)] hover:bg-white/70 sm:w-auto">
               Cancel

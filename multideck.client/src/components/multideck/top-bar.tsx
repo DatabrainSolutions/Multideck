@@ -70,7 +70,7 @@ export function TopBar({
   const currentLead = isCrmLeadDetail ? customers.find((customer) => customer.id === route.split("/").at(-1)) : undefined
 
   return (
-    <header className="sticky top-0 z-10 -mx-[var(--md-page-pad)] mb-[var(--md-page-stack-gap)] flex min-h-[56px] items-center gap-[var(--md-gap-lg)] border-b border-[var(--md-line)] bg-[var(--md-topbar-bg)] px-[var(--md-page-pad)] py-[var(--md-gap-sm)] backdrop-blur-xl">
+    <header className="sticky top-0 z-10 -mx-[var(--md-page-pad)] mb-[var(--md-page-stack-gap)] flex min-h-[56px] items-center gap-[var(--md-gap-lg)] bg-[var(--md-topbar-bg)] px-[var(--md-page-pad)] py-[var(--md-gap-sm)] shadow-[var(--md-stroke-bottom)] backdrop-blur-xl">
       <Sheet>
         <SheetTrigger asChild>
           <Button variant="ghost" size="icon" className={cn(topBarIconActionClass, "bg-[var(--md-glass-strong)] lg:hidden")}>
