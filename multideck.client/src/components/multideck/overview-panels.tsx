@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties } from "react"
 import { AnimatePresence, LayoutGroup, motion } from "motion/react"
-import { ArrowLeft, ArrowRight, ChevronDown, Mail, Plus, ReceiptText, Save, Ship, Sparkles, TriangleAlert } from "lucide-react"
+import { ArrowLeft, ArrowRight, CalendarDays, ChevronDown, Loader2, Mail, Plus, ReceiptText, RefreshCw, Save, ShieldCheck, Ship, Sparkles, TriangleAlert } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -24,6 +24,9 @@ import { Progress } from "@/components/ui/progress"
 import { TableCell } from "@/components/ui/table"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { useLanguage } from "@/i18n/language-provider"
+import type { LanguageCode } from "@/i18n/languages"
+import { getApiAuthSession } from "@/lib/api"
+import { getSupabaseSession } from "@/lib/supabase"
 import { cn } from "@/lib/utils"
 import {
   activityItems,
@@ -167,6 +170,67 @@ function getSnapshot(range: DashboardRange) {
   return dashboardSnapshots[range] ?? dashboardSnapshots.today
 }
 
+type DashboardConnectionStatus = "checking" | "connected" | "signed-out" | "error"
+
+type DashboardConnectionState = {
+  status: DashboardConnectionStatus
+  email: string | null
+}
+
+function createDashboardConnectionState(status: DashboardConnectionStatus, email: string | null = null): DashboardConnectionState {
+  return { status, email }
+}
+
+async function checkDashboardConnection(): Promise<DashboardConnectionState> {
+  try {
+    const session = await getSupabaseSession()
+
+    if (!session?.access_token) {
+      return createDashboardConnectionState("signed-out")
+    }
+
+    const apiSession = await getApiAuthSession(session.access_token)
+
+    if (!apiSession.authenticated) {
+      return createDashboardConnectionState("error")
+    }
+
+    return createDashboardConnectionState("connected", apiSession.user.email ?? session.user.email ?? null)
+  } catch (error) {
+    console.error("Dashboard API connection check failed", error)
+    return createDashboardConnectionState("error")
+  }
+}
+
+function getLanguageLocale(language: LanguageCode) {
+  if (language === "de") return "de-DE"
+  if (language === "fr") return "fr-FR"
+  if (language === "ar") return "ar-GB-u-ca-gregory"
+  return "en-GB"
+}
+
+function getDateKey(date: Date) {
+  const year = date.getFullYear()
+  const month = `${date.getMonth() + 1}`.padStart(2, "0")
+  const day = `${date.getDate()}`.padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+function parseDateKey(dateKey: string | null) {
+  if (!dateKey) return null
+  const [year, month, day] = dateKey.split("-").map(Number)
+  if (!year || !month || !day) return null
+  return new Date(year, month - 1, day)
+}
+
+function startOfMonth(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1)
+}
+
+function addMonths(date: Date, amount: number) {
+  return new Date(date.getFullYear(), date.getMonth() + amount, 1)
+}
+
 function getDefaultCustomRange(): DashboardCustomRange {
   return getDefaultDateRange()
 }
@@ -304,9 +368,46 @@ export function OverviewHero({
   customRange?: DashboardCustomRange
   onCustomRangeChange?: (range: DashboardCustomRange) => void
 }) {
+  const { t } = useLanguage()
   const [createOpen, setCreateOpen] = useState(false)
   const [newDashboardName, setNewDashboardName] = useState("")
+  const [connectionState, setConnectionState] = useState<DashboardConnectionState>(() => createDashboardConnectionState("checking"))
+  const [connectionRefreshing, setConnectionRefreshing] = useState(false)
   const activeDashboard = selectedDashboard ?? dashboardViews[0] ?? "Dashboard"
+
+  async function refreshConnectionCheck() {
+    setConnectionRefreshing(true)
+    setConnectionState(createDashboardConnectionState("checking"))
+
+    const nextState = await checkDashboardConnection()
+    setConnectionState(nextState)
+    setConnectionRefreshing(false)
+  }
+
+  useEffect(() => {
+    let active = true
+
+    setConnectionRefreshing(true)
+    checkDashboardConnection()
+      .then((nextState) => {
+        if (active) setConnectionState(nextState)
+      })
+      .finally(() => {
+        if (active) setConnectionRefreshing(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const connectionToneClass = cn(
+    connectionState.status === "connected" && "bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)]",
+    connectionState.status === "checking" && "bg-[rgba(74,125,156,0.1)] text-[var(--md-blue)]",
+    (connectionState.status === "error" || connectionState.status === "signed-out") && "bg-[rgba(209,78,78,0.1)] text-[var(--md-red)]",
+  )
+  const connectionTitle = connectionState.status === "connected" ? t("System connected") : connectionState.status === "checking" ? t("Checking API") : connectionState.status === "signed-out" ? t("No Supabase session") : t("Connection issue")
+  const ConnectionIcon = connectionState.status === "connected" ? ShieldCheck : connectionState.status === "checking" ? Loader2 : TriangleAlert
 
   function createDashboard() {
     const name = newDashboardName.trim()
@@ -367,6 +468,47 @@ export function OverviewHero({
         >
           Customise
         </Button>
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex h-10 min-w-[min(100%,270px)] items-center gap-2 rounded-[var(--md-radius-lg)] bg-white/35 py-1 pe-1.5 ps-2 shadow-[var(--md-shadow-line)]"
+        >
+          <span className={cn("grid size-7 shrink-0 place-items-center rounded-[var(--md-radius-md)]", connectionToneClass)}>
+            <ConnectionIcon className={cn("size-3.5", connectionState.status === "checking" && "animate-spin")} strokeWidth={1.5} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[12px] font-medium text-[var(--md-ink)]">{connectionTitle}</p>
+            <p className="truncate text-[11px] leading-4 text-[var(--md-text)]">
+              {connectionState.status === "connected" ? (
+                connectionState.email ? (
+                  <>
+                    <span>{t("Signed in as")}</span>{" "}
+                    <span data-i18n-skip dir="ltr">{connectionState.email}</span>
+                  </>
+                ) : (
+                  t("API accepted your Supabase session.")
+                )
+              ) : connectionState.status === "checking" ? (
+                t("Calling protected API...")
+              ) : connectionState.status === "signed-out" ? (
+                t("Sign in again to test the API.")
+              ) : (
+                t("Protected API check failed.")
+              )}
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="rounded-[var(--md-radius-md)] bg-white/42 text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-white/70"
+            aria-label={t("Refresh API connection check")}
+            disabled={connectionRefreshing}
+            onClick={() => void refreshConnectionCheck()}
+          >
+            <RefreshCw className={cn("size-3.5", connectionRefreshing && "animate-spin")} strokeWidth={1.4} />
+          </Button>
+        </div>
       </div>
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-w-[360px] rounded-[var(--md-radius-xl)] border-0 bg-[rgba(251,253,253,0.96)] p-0 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)]">

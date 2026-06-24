@@ -1,12 +1,14 @@
 import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from "react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { ArrowLeft, Bell, CheckCircle2, Clock3, Sparkles, TriangleAlert, type LucideIcon } from "lucide-react"
+import { ArrowLeft, Bell, CheckCircle2, Clock3, LogOut, Settings, Sparkles, TriangleAlert, type LucideIcon } from "lucide-react"
 import { motion, useReducedMotion } from "motion/react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
 import { mdMotion, reduceMotion } from "@/lib/motion"
+import type { AuthUserSummary } from "@/lib/auth-user"
+import { supabase } from "@/lib/supabase"
 import { useAiAgentName } from "@/lib/user-preferences"
 import { crmSidebarItems, sidebarPrimary, sidebarSecondary, type NavItem } from "@/data/multideck-data"
 import { useLanguage } from "@/i18n/language-provider"
@@ -306,18 +308,23 @@ export function AppSidebar({
   route,
   navigate,
   className,
+  currentUser,
 }: {
   route: string
   navigate: (path: string) => void
   className?: string
+  currentUser?: AuthUserSummary | null
 }) {
   const isCrmMode = route.startsWith("/crm")
-  const { t } = useLanguage()
+  const { direction, t } = useLanguage()
   const aiAgentName = useAiAgentName()
   const shouldReduceMotion = useReducedMotion()
   const sidebarRef = useRef<HTMLElement>(null)
   const sidebarModeRef = useRef<"crm" | "main">(isCrmMode ? "crm" : "main")
   const [activeTarget, setActiveTarget] = useState<SidebarActiveTarget | null>(null)
+  const accountName = currentUser?.name ?? currentUser?.email ?? t("Signed in")
+  const accountDetail = currentUser?.name && currentUser.email ? currentUser.email : t("Signed in")
+  const accountInitials = currentUser?.initials ?? "MD"
 
   const updateActiveTarget = useCallback(() => {
     const sidebar = sidebarRef.current
@@ -480,28 +487,61 @@ export function AppSidebar({
 
       <div className="relative z-10 mt-auto">
         <Separator className="mb-[var(--md-page-stack-gap)] bg-[var(--md-line-strong)]" />
-        <motion.button
-          data-sidebar-active-target={route === "/settings" ? "true" : undefined}
-          type="button"
-          aria-current={route === "/settings" ? "page" : undefined}
-          className={cn(
-            "group relative flex min-w-0 w-full items-center gap-3 overflow-hidden rounded-[var(--md-radius-lg)] px-2 py-2 text-left transition-[color,opacity] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
-            route === "/settings" && "text-[var(--md-ink)]",
-          )}
-          onClick={() => navigate("/settings")}
-          whileHover={shouldReduceMotion ? undefined : { scale: 1.01 }}
-          whileTap={shouldReduceMotion ? undefined : { scale: 0.985 }}
-          transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.micro)}
-        >
-          {route === "/settings" ? null : <span className="absolute inset-0 rounded-[var(--md-radius-lg)] bg-[var(--md-hover)] opacity-0 transition-opacity duration-200 group-hover:opacity-100" />}
-          <Avatar className="relative size-10 rounded-full">
-            <AvatarFallback className="rounded-full bg-[var(--md-avatar-bg)] text-[13px] font-medium text-[var(--md-ink)]">EM</AvatarFallback>
-          </Avatar>
-          <div className="relative min-w-0 flex-1">
-            <p className="truncate text-[14px] font-medium text-[var(--md-ink)]">Elena Moreno</p>
-            <p className="truncate text-[12px] text-[var(--md-text)]">{t("Northwind Forwarding")}</p>
-          </div>
-        </motion.button>
+        <Popover>
+          <PopoverTrigger asChild>
+            <motion.button
+              data-sidebar-active-target={route === "/settings" ? "true" : undefined}
+              type="button"
+              aria-current={route === "/settings" ? "page" : undefined}
+              className={cn(
+                "group relative flex min-w-0 w-full items-center gap-3 overflow-hidden rounded-[var(--md-radius-lg)] px-2 py-2 text-left transition-[color,opacity] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
+                route === "/settings" && "text-[var(--md-ink)]",
+              )}
+              whileHover={shouldReduceMotion ? undefined : { scale: 1.01 }}
+              whileTap={shouldReduceMotion ? undefined : { scale: 0.985 }}
+              transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.micro)}
+            >
+              {route === "/settings" ? null : <span className="absolute inset-0 rounded-[var(--md-radius-lg)] bg-[var(--md-hover)] opacity-0 transition-opacity duration-200 group-hover:opacity-100" />}
+              <Avatar className="relative size-10 rounded-full">
+                <AvatarFallback className="rounded-full bg-[var(--md-avatar-bg)] text-[13px] font-medium text-[var(--md-ink)]" data-i18n-skip>{accountInitials}</AvatarFallback>
+              </Avatar>
+              <div className="relative min-w-0 flex-1">
+                <p className="truncate text-[14px] font-medium text-[var(--md-ink)]" dir="auto" data-i18n-skip>{accountName}</p>
+                <p className="truncate text-[12px] text-[var(--md-text)]" dir={currentUser?.email ? "ltr" : "auto"} data-i18n-skip={currentUser?.email ? true : undefined}>{accountDetail}</p>
+              </div>
+            </motion.button>
+          </PopoverTrigger>
+          <PopoverContent
+            side={direction === "rtl" ? "left" : "right"}
+            align="end"
+            alignOffset={-4}
+            sideOffset={12}
+            collisionPadding={18}
+            className="w-[248px] overflow-hidden rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-surface)] p-2 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)]"
+          >
+            <div className="px-2 pb-2 pt-1">
+              <p className="truncate text-[13px] font-medium text-[var(--md-ink)]" dir="auto" data-i18n-skip>{accountName}</p>
+              <p className="mt-0.5 truncate text-[12px] text-[var(--md-text)]" dir={currentUser?.email ? "ltr" : "auto"} data-i18n-skip={currentUser?.email ? true : undefined}>{accountDetail}</p>
+            </div>
+            <Separator className="my-1 bg-[var(--md-line-strong)]" />
+            <button
+              type="button"
+              className="flex h-9 w-full items-center gap-2 rounded-[var(--md-radius-md)] px-2 text-left text-[13px] font-medium text-[var(--md-text)] transition-[background,color,opacity,transform] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]"
+              onClick={() => navigate("/settings")}
+            >
+              <Settings data-icon="inline-start" className="size-4" strokeWidth={1.4} />
+              <span className="min-w-0 flex-1 truncate">{t("Account settings")}</span>
+            </button>
+            <button
+              type="button"
+              className="flex h-9 w-full items-center gap-2 rounded-[var(--md-radius-md)] px-2 text-left text-[13px] font-medium text-[var(--md-red)] transition-[background,color,opacity,transform] hover:bg-[rgba(209,78,78,0.08)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(209,78,78,0.14)]"
+              onClick={() => void supabase?.auth.signOut()}
+            >
+              <LogOut data-icon="inline-start" className="size-4" strokeWidth={1.4} />
+              <span className="min-w-0 flex-1 truncate">{t("Sign out")}</span>
+            </button>
+          </PopoverContent>
+        </Popover>
       </div>
     </aside>
   )

@@ -260,7 +260,7 @@ export function TopBar({
             <>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className={cn("hidden sm:inline-flex md:hidden", topBarIconActionClass)}>
+                  <Button variant="ghost" size="icon" className={cn("hidden sm:inline-flex md:hidden", topBarIconActionClass)} onClick={() => navigate("/settings?tab=team")}>
                     <UserRoundPlus data-icon="inline-start" strokeWidth={1.2} />
                   </Button>
                 </TooltipTrigger>
@@ -269,11 +269,7 @@ export function TopBar({
               <Button
                 variant="ghost"
                 className={cn("hidden sm:inline-flex", topBarGhostActionClass)}
-                onClick={() =>
-                  toast.success("Invite link copied", {
-                    description: "The Northwind workspace invite is ready to send.",
-                  })
-                }
+                onClick={() => navigate("/settings?tab=team")}
               >
                 Invite
               </Button>

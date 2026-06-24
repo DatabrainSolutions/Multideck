@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react"
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react"
+import type { User } from "@supabase/supabase-js"
 import {
   BadgeCheck,
   Bell,
@@ -56,7 +57,9 @@ import {
 } from "@/components/multideck/settings-components"
 import { languageOptions, getLanguageOption } from "@/i18n/languages"
 import { useLanguage } from "@/i18n/language-provider"
+import { changeApiTeamUserOffice, createApiTeamUser, getApiTeamUsers, type ApiTeamUser, type ApiTeamUsersResponse } from "@/lib/api"
 import { clockDisplayLabelFromMode, clockDisplayLabels, clockDisplayModeFromLabel, readClockDisplayMode, resetAiAgentName, useAiAgentName, writeAiAgentName, writeClockDisplayMode } from "@/lib/user-preferences"
+import { getSupabaseSession, supabase } from "@/lib/supabase"
 import { cn } from "@/lib/utils"
 
 const settingsGroups: SettingsTabGroup[] = [
@@ -290,7 +293,162 @@ function IconRow({
   )
 }
 
+type ProfileFormState = {
+  firstName: string
+  lastName: string
+  preferredName: string
+  email: string
+  phone: string
+  roleTitle: string
+}
+
+const emptyProfileForm: ProfileFormState = {
+  firstName: "",
+  lastName: "",
+  preferredName: "",
+  email: "",
+  phone: "",
+  roleTitle: "",
+}
+
+function readProfileMetadataValue(metadata: Record<string, unknown> | undefined, keys: string[]) {
+  for (const key of keys) {
+    const value = metadata?.[key]
+    if (typeof value === "string" && value.trim()) return value.trim()
+  }
+
+  return ""
+}
+
+function splitProfileName(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return { firstName: "", lastName: "" }
+  if (parts.length === 1) return { firstName: parts[0], lastName: "" }
+
+  return { firstName: parts.slice(0, -1).join(" "), lastName: parts.at(-1) ?? "" }
+}
+
+function createProfileFormFromUser(user: User): ProfileFormState {
+  const metadata = user.user_metadata
+  const fallbackName = readProfileMetadataValue(metadata, ["full_name", "name", "display_name"])
+  const splitName = splitProfileName(fallbackName)
+  const firstName = readProfileMetadataValue(metadata, ["first_name", "firstName"]) || splitName.firstName
+  const lastName = readProfileMetadataValue(metadata, ["last_name", "lastName"]) || splitName.lastName
+
+  return {
+    firstName,
+    lastName,
+    preferredName: readProfileMetadataValue(metadata, ["preferred_name", "preferredName"]) || firstName,
+    email: user.email ?? "",
+    phone: readProfileMetadataValue(metadata, ["phone", "phone_number", "mobile"]) || (user.phone ?? ""),
+    roleTitle: readProfileMetadataValue(metadata, ["role_title", "roleTitle", "title"]),
+  }
+}
+
+function getProfileInitials(profile: ProfileFormState) {
+  const source = `${profile.firstName} ${profile.lastName}`.trim() || profile.email || "MD"
+  const parts = source.includes("@") ? source.split("@")[0].replace(/[._-]+/g, " ").split(/\s+/) : source.split(/\s+/)
+  const initials = parts.length > 1 ? `${parts[0][0]}${parts.at(-1)?.[0] ?? ""}` : source.slice(0, 2)
+
+  return initials.toUpperCase()
+}
+
+function getProfileFullName(profile: ProfileFormState) {
+  return `${profile.firstName.trim()} ${profile.lastName.trim()}`.trim()
+}
+
 function ProfileTab() {
+  const [profile, setProfile] = useState<ProfileFormState>(emptyProfileForm)
+  const [savedProfile, setSavedProfile] = useState<ProfileFormState>(emptyProfileForm)
+  const [isProfileLoading, setIsProfileLoading] = useState(true)
+  const [isProfileSaving, setIsProfileSaving] = useState(false)
+  const profileDirty = JSON.stringify(profile) !== JSON.stringify(savedProfile)
+  const profileInitials = getProfileInitials(profile)
+  const fullName = getProfileFullName(profile)
+
+  useEffect(() => {
+    if (!supabase) {
+      setIsProfileLoading(false)
+      return
+    }
+
+    let cancelled = false
+
+    function applyProfile(nextProfile: ProfileFormState) {
+      if (cancelled) return
+      setProfile(nextProfile)
+      setSavedProfile(nextProfile)
+      setIsProfileLoading(false)
+    }
+
+    supabase.auth.getUser().then(({ data, error }) => {
+      if (error || !data.user) {
+        if (error) console.error(error)
+        setIsProfileLoading(false)
+        return
+      }
+
+      applyProfile(createProfileFormFromUser(data.user))
+    }).catch((error) => {
+      console.error(error)
+      setIsProfileLoading(false)
+      toast.error("Could not load profile")
+    })
+
+    const { data } = supabase.auth.onAuthStateChange((event, session) => {
+      if ((event === "USER_UPDATED" || event === "SIGNED_IN") && session?.user) {
+        applyProfile(createProfileFormFromUser(session.user))
+      }
+    })
+
+    return () => {
+      cancelled = true
+      data.subscription.unsubscribe()
+    }
+  }, [])
+
+  function updateProfileField(field: keyof ProfileFormState, value: string) {
+    setProfile((current) => ({ ...current, [field]: value }))
+  }
+
+  function discardProfileChanges() {
+    setProfile(savedProfile)
+    toast.message("Changes discarded")
+  }
+
+  async function saveProfileChanges() {
+    if (!supabase || isProfileSaving) return
+
+    const nextFullName = getProfileFullName(profile)
+    setIsProfileSaving(true)
+
+    try {
+      const { data, error } = await supabase.auth.updateUser({
+        data: {
+          first_name: profile.firstName.trim(),
+          last_name: profile.lastName.trim(),
+          preferred_name: profile.preferredName.trim(),
+          full_name: nextFullName,
+          name: nextFullName,
+          phone: profile.phone.trim(),
+          role_title: profile.roleTitle.trim(),
+        },
+      })
+
+      if (error) throw error
+
+      const nextProfile = data.user ? createProfileFormFromUser(data.user) : profile
+      setProfile(nextProfile)
+      setSavedProfile(nextProfile)
+      toast.success("Profile settings saved")
+    } catch (error) {
+      console.error(error)
+      toast.error("Could not save profile")
+    } finally {
+      setIsProfileSaving(false)
+    }
+  }
+
   const personalConnectors: Array<{
     icon: LucideIcon
     title: string
@@ -381,8 +539,15 @@ function ProfileTab() {
         description="How you appear to your team, customers, and Dexter. Some of this is used in audit logs and customer-facing comms."
         actions={
           <>
-            {compactAction("Discard", () => toast.message("Changes discarded"))}
-            {primaryAction("Save changes", () => toast.success("Profile settings saved"))}
+            {compactAction("Discard", discardProfileChanges)}
+            <Button
+              type="button"
+              disabled={isProfileLoading || isProfileSaving || !profileDirty}
+              className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)] disabled:opacity-55"
+              onClick={() => void saveProfileChanges()}
+            >
+              {isProfileSaving ? "Saving..." : "Save changes"}
+            </Button>
           </>
         }
       />
@@ -392,7 +557,7 @@ function ProfileTab() {
           <SettingsFieldRow label="Avatar" description="Used in comments, assignment logs, and customer replies.">
             <div className="flex flex-wrap items-center gap-4">
               <Avatar className="size-[76px] rounded-full">
-                <AvatarFallback className="rounded-full bg-[var(--md-accent)] text-[24px] font-medium text-white">EM</AvatarFallback>
+                <AvatarFallback className="rounded-full bg-[var(--md-accent)] text-[24px] font-medium text-white" data-i18n-skip>{profileInitials}</AvatarFallback>
               </Avatar>
               <div className="flex flex-wrap items-center gap-2">
                 {compactAction("Upload photo", () => toast.success("Photo picker opened"))}
@@ -406,23 +571,53 @@ function ProfileTab() {
               </div>
             </div>
           </SettingsFieldRow>
-          <SettingsFieldRow label="Full name">
-            <SettingsInput defaultValue="Elena Moreno" />
+          <SettingsFieldRow label="Name">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <SettingsInput
+                value={profile.firstName}
+                placeholder="First name"
+                disabled={isProfileLoading || isProfileSaving}
+                onChange={(event) => updateProfileField("firstName", event.target.value)}
+              />
+              <SettingsInput
+                value={profile.lastName}
+                placeholder="Last name"
+                disabled={isProfileLoading || isProfileSaving}
+                onChange={(event) => updateProfileField("lastName", event.target.value)}
+              />
+            </div>
           </SettingsFieldRow>
           <SettingsFieldRow label="Preferred name" description="What Dexter and your team call you.">
-            <SettingsInput defaultValue="Elena" />
+            <SettingsInput
+              value={profile.preferredName}
+              placeholder="Preferred name"
+              disabled={isProfileLoading || isProfileSaving}
+              onChange={(event) => updateProfileField("preferredName", event.target.value)}
+            />
           </SettingsFieldRow>
           <SettingsFieldRow label="Work email">
             <div className="relative">
-              <SettingsInput defaultValue="elena@northwind.de" className="pr-20" />
+              <SettingsInput value={profile.email} className="pr-20" dir="ltr" data-i18n-skip disabled />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-medium text-[var(--md-text)]">verified</span>
             </div>
           </SettingsFieldRow>
           <SettingsFieldRow label="Phone" description="For two-factor and emergency alerts only.">
-            <SettingsInput defaultValue="+49 40 8821 4408" />
+            <SettingsInput
+              value={profile.phone}
+              placeholder="+44 20 7123 4567"
+              dir="ltr"
+              data-i18n-skip
+              disabled={isProfileLoading || isProfileSaving}
+              onChange={(event) => updateProfileField("phone", event.target.value)}
+            />
           </SettingsFieldRow>
           <SettingsFieldRow label="Role / title">
-            <SettingsInput defaultValue="Operations Manager" />
+            <SettingsInput
+              value={profile.roleTitle}
+              placeholder="Operations Manager"
+              disabled={isProfileLoading || isProfileSaving}
+              onChange={(event) => updateProfileField("roleTitle", event.target.value)}
+            />
           </SettingsFieldRow>
         </SettingsPanel>
 
@@ -432,8 +627,9 @@ function ProfileTab() {
             ["Member since", "Jan 2024"],
             ["Bookings handled", "1,847"],
             ["Active boards", "3"],
-            ["Last sign-in", "Today - 06:14"],
-            ["Role", "Admin - Ops"],
+            ["Profile name", fullName || "Not set"],
+            ["Last sign-in", "Current session"],
+            ["Role", profile.roleTitle || "Not set"],
             ["Workspace", "Northwind Forwarding"],
           ]}
         />
@@ -740,36 +936,291 @@ function AgentDexterTab() {
   )
 }
 
+const emptyInviteForm = {
+  firstName: "",
+  lastName: "",
+  email: "",
+  roleTitle: "Operator",
+  officeId: "",
+}
+
+function getTeamUserInitials(user: ApiTeamUser) {
+  const source = [user.firstName, user.lastName].filter(Boolean).join(" ").trim() || user.displayName || user.email
+  const parts = source.split(/\s+/).filter(Boolean)
+  const initials = parts.length > 1 ? `${parts[0][0]}${parts.at(-1)?.[0]}` : source.slice(0, 2)
+  return initials.toUpperCase()
+}
+
+function getOfficeLabel(office: { name: string; address: string | null }) {
+  return office.address ? `${office.name} - ${office.address}` : office.name
+}
+
+function upsertTeamUser(users: ApiTeamUser[], nextUser: ApiTeamUser) {
+  const existing = users.some((user) => user.id === nextUser.id)
+  const next = existing ? users.map((user) => (user.id === nextUser.id ? nextUser : user)) : [...users, nextUser]
+  return next.sort((a, b) => a.displayName.localeCompare(b.displayName))
+}
+
 function TeamTab() {
-  const members = [
-    ["Elena Moreno", "Admin - Ops", "Owner of customs and exception boards", "EM"],
-    ["Jonas Lehmann", "Operator", "Air freight and premium customer owner", "JL"],
-    ["Wei Chen", "Customs lead", "CDS entries, licences, and broker review", "WC"],
-    ["Maya Singh", "Finance", "Quotes, billing, and credit limits", "MS"],
-  ]
+  const { t } = useLanguage()
+  const [team, setTeam] = useState<ApiTeamUsersResponse | null>(null)
+  const [loadingTeam, setLoadingTeam] = useState(true)
+  const [teamError, setTeamError] = useState<string | null>(null)
+  const [showInviteForm, setShowInviteForm] = useState(false)
+  const [inviteForm, setInviteForm] = useState(emptyInviteForm)
+  const [creatingUser, setCreatingUser] = useState(false)
+  const [changingOfficeUserId, setChangingOfficeUserId] = useState<string | null>(null)
+
+  async function loadTeam() {
+    setLoadingTeam(true)
+    setTeamError(null)
+
+    try {
+      const session = await getSupabaseSession()
+      if (!session?.access_token) throw new Error(t("Sign in again before managing team users."))
+
+      const response = await getApiTeamUsers(session.access_token)
+      setTeam(response)
+      setInviteForm((current) => ({
+        ...current,
+        officeId: current.officeId || response.offices[0]?.id || "",
+      }))
+    } catch (error) {
+      setTeamError(error instanceof Error ? error.message : t("Team users could not be loaded."))
+    } finally {
+      setLoadingTeam(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadTeam()
+  }, [])
+
+  async function handleCreateUser(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (!inviteForm.email.trim()) {
+      toast.error(t("Email is required"))
+      return
+    }
+
+    setCreatingUser(true)
+
+    try {
+      const session = await getSupabaseSession()
+      if (!session?.access_token) throw new Error(t("Sign in again before creating users."))
+
+      const response = await createApiTeamUser(session.access_token, {
+        email: inviteForm.email.trim(),
+        firstName: inviteForm.firstName.trim() || null,
+        lastName: inviteForm.lastName.trim() || null,
+        companyId: team?.company?.id ?? null,
+        officeId: inviteForm.officeId || null,
+        roleTitle: inviteForm.roleTitle.trim() || null,
+      })
+
+      setTeam((current) => {
+        const offices = current?.offices ?? []
+
+        return {
+          company: current?.company ?? response.company,
+          offices: offices.some((office) => office.id === response.office.id) ? offices : [...offices, response.office],
+          users: upsertTeamUser(current?.users ?? [], response.user),
+        }
+      })
+      setInviteForm({ ...emptyInviteForm, officeId: inviteForm.officeId })
+      setShowInviteForm(false)
+      toast.success(t(response.invited ? "User invitation sent" : "User created"), { description: response.user.email })
+    } catch (error) {
+      toast.error(t("User could not be created"), {
+        description: error instanceof Error ? error.message : t("Check the Supabase admin configuration and try again."),
+      })
+    } finally {
+      setCreatingUser(false)
+    }
+  }
+
+  async function handleChangeUserOffice(member: ApiTeamUser, officeId: string) {
+    const currentOfficeId = member.offices[0]?.id ?? ""
+    if (!officeId || officeId === currentOfficeId) return
+
+    setChangingOfficeUserId(member.id)
+
+    try {
+      const session = await getSupabaseSession()
+      if (!session?.access_token) throw new Error(t("Sign in again before changing user offices."))
+
+      const updatedUser = await changeApiTeamUserOffice(session.access_token, member.id, { officeId })
+      setTeam((current) => current ? { ...current, users: upsertTeamUser(current.users, updatedUser) } : current)
+      toast.success(t("Office updated"), { description: updatedUser.email })
+    } catch (error) {
+      toast.error(t("Office could not be updated"), {
+        description: error instanceof Error ? error.message : t("Check the user and office, then try again."),
+      })
+    } finally {
+      setChangingOfficeUserId(null)
+    }
+  }
+
+  const members = team?.users ?? []
+  const inviteOffice = team?.offices.find((office) => office.id === inviteForm.officeId)
 
   return (
     <>
       <SettingsPageHeader
         eyebrow="Organisation / Team & permissions"
         title="Team & permissions"
-        description="Control who can see booking data, approve Dexter actions, and manage customer-facing changes."
-        actions={primaryAction("Invite teammate", () => toast.success("Invite link copied"))}
+        description="Create Supabase-authenticated users, link them to your company, and assign them to the right office."
+        actions={primaryAction(showInviteForm ? "Close invite" : "Invite teammate", () => setShowInviteForm((value) => !value))}
       />
       <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
-        <SettingsPanel title="Team members" description="Active people in Northwind Forwarding.">
-          {members.map(([name, role, detail, initials]) => (
-            <div key={name} className="grid gap-3 px-5 py-4 sm:grid-cols-[40px_minmax(0,1fr)_auto] sm:items-center">
-              <Avatar className="size-10 rounded-full">
-                <AvatarFallback className="rounded-full bg-[var(--md-surface-tint)] text-[13px] font-medium text-[var(--md-ink)]">{initials}</AvatarFallback>
-              </Avatar>
-              <div className="min-w-0">
-                <p className="text-[13px] font-medium text-[var(--md-ink)]">{name}</p>
-                <p className="mt-1 text-[12px] text-[var(--md-text)]">{detail}</p>
+        {showInviteForm ? (
+          <SettingsPanel title="Create user" description="Sends a Supabase invitation, creates the Multideck user profile, and links the user to an office.">
+            <form className="divide-y divide-[rgba(11,20,19,0.07)]" onSubmit={handleCreateUser}>
+              <SettingsFieldRow label="Name" description="Shown in Multideck and saved to the Supabase user metadata.">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <SettingsInput
+                    value={inviteForm.firstName}
+                    placeholder="First name"
+                    aria-label="First name"
+                    onChange={(event) => setInviteForm((current) => ({ ...current, firstName: event.target.value }))}
+                  />
+                  <SettingsInput
+                    value={inviteForm.lastName}
+                    placeholder="Last name"
+                    aria-label="Last name"
+                    onChange={(event) => setInviteForm((current) => ({ ...current, lastName: event.target.value }))}
+                  />
+                </div>
+              </SettingsFieldRow>
+              <SettingsFieldRow label="Email" description="The invitation is sent by Supabase Auth.">
+                <SettingsInput
+                  value={inviteForm.email}
+                  type="email"
+                  inputMode="email"
+                  dir="ltr"
+                  placeholder="name@company.com"
+                  aria-label="Email"
+                  onChange={(event) => setInviteForm((current) => ({ ...current, email: event.target.value }))}
+                />
+              </SettingsFieldRow>
+              <SettingsFieldRow label="Office" description="The user will be linked through the office membership table.">
+                {team?.offices.length ? (
+                  <select
+                    data-i18n-skip
+                    dir="auto"
+                    aria-label={t("Office")}
+                    className="h-9 w-full rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-tint)] px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]"
+                    value={inviteForm.officeId}
+                    onChange={(event) => setInviteForm((current) => ({ ...current, officeId: event.target.value }))}
+                  >
+                    {team.offices.map((office) => (
+                      <option key={office.id} value={office.id}>{getOfficeLabel(office)}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <SettingsInput value="Default Jenkar office" readOnly />
+                )}
+                {inviteOffice ? (
+                  <p className="mt-2 text-[12px] text-[var(--md-text)]">
+                    <span>Assigned to</span> <span data-i18n-skip dir="auto">{getOfficeLabel(inviteOffice)}</span><span>.</span>
+                  </p>
+                ) : null}
+              </SettingsFieldRow>
+              <SettingsFieldRow label="Role title" description="Stored as Supabase user metadata for the first invitation.">
+                <SettingsInput
+                  value={inviteForm.roleTitle}
+                  placeholder="Operator"
+                  aria-label="Role title"
+                  onChange={(event) => setInviteForm((current) => ({ ...current, roleTitle: event.target.value }))}
+                />
+              </SettingsFieldRow>
+              <div className="flex flex-col gap-2 px-5 py-4 sm:flex-row sm:justify-end">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="h-9 rounded-[var(--md-radius-lg)] bg-white/45 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/70"
+                  onClick={() => setShowInviteForm(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]"
+                  disabled={creatingUser}
+                >
+                  {creatingUser ? "Creating..." : "Create user"}
+                </Button>
               </div>
-              <StatusPill tone={role.includes("Admin") ? "teal" : "neutral"}>{role}</StatusPill>
+            </form>
+          </SettingsPanel>
+        ) : null}
+
+        <SettingsPanel title="Team members" description={loadingTeam ? "Loading team users..." : "Active people in your company."}>
+          {teamError ? (
+            <div className="px-5 py-4">
+              <p className="text-[13px] font-medium text-[var(--md-red)]">Team users could not be loaded.</p>
+              <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{teamError}</p>
+              <div className="mt-3">{compactAction("Retry", () => void loadTeam())}</div>
             </div>
-          ))}
+          ) : loadingTeam ? (
+            Array.from({ length: 4 }).map((_, index) => (
+              <div key={index} className="grid gap-3 px-5 py-4 sm:grid-cols-[40px_minmax(0,1fr)_auto] sm:items-center">
+                <div className="size-10 rounded-full bg-[var(--md-surface-tint)] shadow-[var(--md-shadow-line)]" />
+                <div className="space-y-2">
+                  <div className="h-3 w-40 rounded-full bg-[var(--md-surface-tint)]" />
+                  <div className="h-3 w-64 max-w-full rounded-full bg-[var(--md-surface-tint)]" />
+                </div>
+                <div className="h-7 w-16 rounded-full bg-[var(--md-surface-tint)]" />
+              </div>
+            ))
+          ) : members.length ? (
+            members.map((member) => {
+              const officeSummary = member.offices.map(getOfficeLabel).join(" · ")
+              const selectedOfficeId = member.offices[0]?.id ?? ""
+              const isChangingOffice = changingOfficeUserId === member.id
+
+              return (
+                <div key={member.id} className="grid gap-3 px-5 py-4 sm:grid-cols-[40px_minmax(0,1fr)_auto] sm:items-center">
+                  <Avatar className="size-10 rounded-full">
+                    <AvatarFallback className="rounded-full bg-[var(--md-surface-tint)] text-[13px] font-medium text-[var(--md-ink)]">{getTeamUserInitials(member)}</AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-medium text-[var(--md-ink)]">{member.displayName}</p>
+                    <p className="mt-1 truncate text-[12px] text-[var(--md-text)]">
+                      <span data-i18n-skip dir="ltr">{member.email}</span>
+                      <span> · </span>
+                      {officeSummary ? <span data-i18n-skip dir="auto">{officeSummary}</span> : <span>No office assigned</span>}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                    {team?.offices.length ? (
+                      <select
+                        data-i18n-skip
+                        dir="auto"
+                        aria-label={t("Change office")}
+                        className="h-8 w-full min-w-[190px] rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-tint)] px-2.5 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] outline-none transition-opacity focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)] disabled:cursor-not-allowed disabled:opacity-55 sm:w-[230px]"
+                        value={selectedOfficeId}
+                        disabled={isChangingOffice}
+                        onChange={(event) => void handleChangeUserOffice(member, event.target.value)}
+                      >
+                        <option value="" disabled>{t("No office assigned")}</option>
+                        {team.offices.map((office) => (
+                          <option key={office.id} value={office.id}>{getOfficeLabel(office)}</option>
+                        ))}
+                      </select>
+                    ) : null}
+                    <StatusPill tone={member.status === "Active" ? "teal" : "neutral"}>{isChangingOffice ? t("Updating office...") : member.status}</StatusPill>
+                  </div>
+                </div>
+              )
+            })
+          ) : (
+            <div className="px-5 py-4">
+              <p className="text-[13px] font-medium text-[var(--md-ink)]">No team users yet.</p>
+              <p className="mt-1 text-[12px] text-[var(--md-text)]">Invite the first teammate to create their Supabase Auth account and Multideck profile.</p>
+            </div>
+          )}
         </SettingsPanel>
         <SettingsPanel title="Permission defaults" description="New users inherit these access rules unless an admin changes them.">
           <SettingsFieldRow label="New teammate role">
