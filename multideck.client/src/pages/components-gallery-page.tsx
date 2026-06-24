@@ -473,7 +473,7 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewCustomerView, setPreviewCustomerView] = useState<CustomerViewMode>("List")
   const [previewSelectedIds, setPreviewSelectedIds] = useState<Set<string>>(new Set(["marlow-apparel"]))
   const [previewCustomerTab, setPreviewCustomerTab] = useState("Overview")
-  const [previewAuthEmail, setPreviewAuthEmail] = useState("emma@northwind-fwd.com")
+  const [previewAuthEmail, setPreviewAuthEmail] = useState("john.doe@multideck.app")
   const [previewAuthCode, setPreviewAuthCode] = useState("742")
   const [previewSettingsTab, setPreviewSettingsTab] = useState("profile")
   const [previewSettingsChoice, setPreviewSettingsChoice] = useState("Always ask")
