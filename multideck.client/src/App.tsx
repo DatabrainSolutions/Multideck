@@ -17,6 +17,7 @@ const ReportsPage = lazy(() => import("@/pages/reports-page").then((module) => (
 const ReportTemplateBuilderPage = lazy(() => import("@/pages/report-template-builder-page").then((module) => ({ default: module.ReportTemplateBuilderPage })))
 const ReportViewerPage = lazy(() => import("@/pages/report-viewer-page").then((module) => ({ default: module.ReportViewerPage })))
 const SettingsPage = lazy(() => import("@/pages/settings-page").then((module) => ({ default: module.SettingsPage })))
+const WarehousePage = lazy(() => import("@/pages/warehouse-page").then((module) => ({ default: module.WarehousePage })))
 const BookingDetailPage = lazy(() => import("@/pages/booking-detail-page").then((module) => ({ default: module.BookingDetailPage })))
 const BookingWizardPage = lazy(() => import("@/pages/booking-wizard-page").then((module) => ({ default: module.BookingWizardPage })))
 const BookingsPage = lazy(() => import("@/pages/bookings-page").then((module) => ({ default: module.BookingsPage })))
@@ -54,6 +55,7 @@ const validRoutes = new Set([
   "/reports",
   "/reports/templates/monthly-client-review",
   "/settings",
+  "/warehouse",
   "/bookings",
   "/bookings/new",
 ])
@@ -166,6 +168,7 @@ export default function App() {
                   {route === "/customers/marlow-apparel" ? <CustomerDetailPage /> : null}
                   {route === "/reports" ? <ReportsPage navigate={navigate} /> : null}
                   {route === "/settings" ? <SettingsPage navigate={navigate} /> : null}
+                  {route === "/warehouse" ? <WarehousePage /> : null}
                   {route === "/bookings" ? <BookingsPage navigate={navigate} /> : null}
                   {route === "/bookings/new" ? <BookingWizardPage navigate={navigate} /> : null}
                   {route === "/" ? <OverviewPage navigate={navigate} /> : null}

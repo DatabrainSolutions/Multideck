@@ -55,6 +55,7 @@ export type NavItem = {
 export const sidebarPrimary: NavItem[] = [
   { label: "Overview", value: "G O", icon: LayoutDashboard, route: "/" },
   { label: "Bookings", value: "7", icon: Ship, route: "/bookings" },
+  { label: "Warehouse", value: "12", icon: Boxes, route: "/warehouse" },
   { label: "Customers", value: "39", icon: Users, route: "/customers" },
   { label: "CRM", value: "9", icon: BriefcaseBusiness, route: "/crm" },
   { label: "Documents", value: "184", icon: FileText },
@@ -392,6 +393,369 @@ export const liveBookings = [
 ]
 
 export const bookingFilters = ["Open · 34", "On-track · 26", "Delayed · 3", "Exceptions · 2", "Delivered · 48"] as const
+
+export const warehouseTabs = [
+  { label: "Dashboard", value: "Live" },
+  { label: "Products", value: "128" },
+  { label: "Goods in/out", value: "24" },
+  { label: "Orders", value: "6" },
+  { label: "Calendar", value: "7d" },
+  { label: "Stock view", value: "642" },
+] as const
+
+export const warehouseProductFilters = ["All · 128", "Low stock · 8", "Inbound · 12", "Quarantine · 3"] as const
+export const warehouseOrderFilters = ["All orders · 6", "Inbound · 2", "Outbound · 3", "Hold · 1"] as const
+export const warehouseStockFilters = ["All stock · 642", "Low stock · 8", "Allocated · 184", "Quarantine · 3"] as const
+
+export const warehouseMetrics = [
+  { label: "Inventory value", value: "GBP 1.42M", detail: "Across Felixstowe DC and Southampton overflow.", tone: "teal" as StatusTone, icon: Boxes },
+  { label: "Orders due today", value: "46", detail: "14 pick waves, 9 dispatches, 7 receiving slots.", tone: "amber" as StatusTone, icon: Clock3 },
+  { label: "Stock accuracy", value: "98.4%", detail: "Last cycle count variance was down 0.7%.", tone: "green" as StatusTone, icon: PackageCheck },
+  { label: "Capacity used", value: "76%", detail: "Aisle B is the tightest zone after inbound apparel.", tone: "blue" as StatusTone, icon: Gauge },
+]
+
+export const warehouseProducts = [
+  { id: "prd-mar-thermal", name: "Thermal activewear carton", customer: "Marlow Apparel Ltd", category: "Apparel", sku: "MAR-ACT-044", hsCode: "6109.90.20", supplierRef: "QD-GAR-502", onHand: 1840, available: 1214, inbound: 620, status: "In stock", tone: "green" as StatusTone, owner: "EM" },
+  { id: "prd-mar-rain-shell", name: "Rain shell jackets", customer: "Marlow Apparel Ltd", category: "Outerwear", sku: "MAR-RSJ-118", hsCode: "6201.40.90", supplierRef: "YH-SO-1440", onHand: 426, available: 118, inbound: 780, status: "Low stock", tone: "amber" as StatusTone, owner: "EM" },
+  { id: "prd-bau-lamp", name: "Ceramic table lamp", customer: "Bauhaus Importe GmbH", category: "Homeware", sku: "BAU-LMP-220", hsCode: "9405.29.40", supplierRef: "NB-FAC-302", onHand: 962, available: 844, inbound: 0, status: "In stock", tone: "green" as StatusTone, owner: "JL" },
+  { id: "prd-nw-router", name: "Enterprise router module", customer: "Northwind GmbH", category: "Electronics", sku: "NW-RTR-762", hsCode: "8517.62.00", supplierRef: "YONG-HUA-448", onHand: 210, available: 0, inbound: 340, status: "Quarantine", tone: "red" as StatusTone, owner: "WC" },
+  { id: "prd-bff-chilled", name: "Chilled meal packs", customer: "Black Forest Foods", category: "Food", sku: "BFF-CHL-018", hsCode: "2106.90.98", supplierRef: "FRA-COLD-18", onHand: 148, available: 66, inbound: 120, status: "Low stock", tone: "amber" as StatusTone, owner: "JL" },
+  { id: "prd-aos-desk", name: "Modular desk pod", customer: "Atlas Office Supply", category: "Furniture", sku: "AOS-DSK-A12", hsCode: "9403.30.19", supplierRef: "SZ-OFF-77", onHand: 372, available: 290, inbound: 0, status: "In stock", tone: "green" as StatusTone, owner: "EM" },
+  { id: "prd-mst-herbs", name: "Dried herb cartons", customer: "Mediterranean Spice Trading", category: "Food", sku: "MST-HRB-072", hsCode: "0910.99.33", supplierRef: "PIR-SPICE-15", onHand: 284, available: 214, inbound: 180, status: "Inbound", tone: "teal" as StatusTone, owner: "WC" },
+]
+
+export const warehouseStockRows = [
+  {
+    id: "stk-mar-act-044",
+    location: "A01-04-02",
+    zone: "Fast pick",
+    product: "Thermal activewear carton",
+    productCode: "MAR-ACT-044",
+    customer: "Marlow Apparel Ltd",
+    lot: "LOT-MAR-7721",
+    onHand: 1840,
+    allocated: 626,
+    available: 1214,
+    fill: 82,
+    nextMovement: "Pick wave 14:00",
+    status: "Allocated",
+    tone: "teal" as StatusTone,
+    branchLocations: [
+      { id: "stk-a01-mar-044", location: "A01-04-02", zone: "Fast pick", lot: "LOT-MAR-7721", onHand: 840, allocated: 420, available: 420, fill: 82, nextMovement: "Pick wave 14:00", status: "Allocated", tone: "teal" as StatusTone },
+      { id: "stk-r01-mar-044", location: "R01-08-04", zone: "Reserve", lot: "LOT-MAR-7721", onHand: 620, allocated: 126, available: 494, fill: 64, nextMovement: "Replenish A01", status: "Available", tone: "green" as StatusTone },
+      { id: "stk-a04-mar-044", location: "A04-01-02", zone: "Overflow", lot: "LOT-MAR-7728", onHand: 380, allocated: 80, available: 300, fill: 51, nextMovement: "No movement", status: "Available", tone: "green" as StatusTone },
+    ],
+  },
+  {
+    id: "stk-mar-rsj-118",
+    location: "A03-02-05",
+    zone: "Outerwear",
+    product: "Rain shell jackets",
+    productCode: "MAR-RSJ-118",
+    customer: "Marlow Apparel Ltd",
+    lot: "LOT-MAR-7712",
+    onHand: 426,
+    allocated: 308,
+    available: 118,
+    fill: 38,
+    nextMovement: "Replenish from PO",
+    status: "Low stock",
+    tone: "amber" as StatusTone,
+    branchLocations: [
+      { id: "stk-a03-mar-118", location: "A03-02-05", zone: "Outerwear", lot: "LOT-MAR-7712", onHand: 426, allocated: 308, available: 118, fill: 38, nextMovement: "Replenish from PO", status: "Low stock", tone: "amber" as StatusTone },
+    ],
+  },
+  {
+    id: "stk-bau-lmp-220",
+    location: "B02-01-01",
+    zone: "Homeware",
+    product: "Ceramic table lamp",
+    productCode: "BAU-LMP-220",
+    customer: "Bauhaus Importe GmbH",
+    lot: "LOT-BAU-4420",
+    onHand: 962,
+    allocated: 118,
+    available: 844,
+    fill: 76,
+    nextMovement: "Cycle count Fri",
+    status: "Available",
+    tone: "green" as StatusTone,
+    branchLocations: [
+      { id: "stk-b02-bau-220", location: "B02-01-01", zone: "Homeware", lot: "LOT-BAU-4420", onHand: 642, allocated: 118, available: 524, fill: 76, nextMovement: "Cycle count Fri", status: "Available", tone: "green" as StatusTone },
+      { id: "stk-b02-bau-220b", location: "B02-03-04", zone: "Homeware", lot: "LOT-BAU-4426", onHand: 320, allocated: 0, available: 320, fill: 44, nextMovement: "No movement", status: "Available", tone: "green" as StatusTone },
+    ],
+  },
+  {
+    id: "stk-nw-rtr-762",
+    location: "Q01-HOLD",
+    zone: "Quarantine",
+    product: "Enterprise router module",
+    productCode: "NW-RTR-762",
+    customer: "Northwind GmbH",
+    lot: "LOT-NW-8517",
+    onHand: 210,
+    allocated: 210,
+    available: 0,
+    fill: 64,
+    nextMovement: "Licence review",
+    status: "Quarantine",
+    tone: "red" as StatusTone,
+    branchLocations: [
+      { id: "stk-q01-nw-762", location: "Q01-HOLD", zone: "Quarantine", lot: "LOT-NW-8517", onHand: 210, allocated: 210, available: 0, fill: 64, nextMovement: "Licence review", status: "Quarantine", tone: "red" as StatusTone },
+    ],
+  },
+  {
+    id: "stk-bff-chl-018",
+    location: "COLD-2-08",
+    zone: "Chilled",
+    product: "Chilled meal packs",
+    productCode: "BFF-CHL-018",
+    customer: "Black Forest Foods",
+    lot: "LOT-BFF-8841",
+    onHand: 148,
+    allocated: 82,
+    available: 66,
+    fill: 45,
+    nextMovement: "Dispatch 18:30",
+    status: "Low stock",
+    tone: "amber" as StatusTone,
+    branchLocations: [
+      { id: "stk-cold-bff-018", location: "COLD-2-08", zone: "Chilled", lot: "LOT-BFF-8841", onHand: 98, allocated: 82, available: 16, fill: 45, nextMovement: "Dispatch 18:30", status: "Low stock", tone: "amber" as StatusTone },
+      { id: "stk-cold-bff-018b", location: "COLD-STAGE", zone: "Dispatch staging", lot: "LOT-BFF-8841", onHand: 50, allocated: 0, available: 50, fill: 24, nextMovement: "Carrier handoff", status: "Ready", tone: "green" as StatusTone },
+    ],
+  },
+  {
+    id: "stk-aos-dsk-a12",
+    location: "C04-03-03",
+    zone: "Furniture",
+    product: "Modular desk pod",
+    productCode: "AOS-DSK-A12",
+    customer: "Atlas Office Supply",
+    lot: "LOT-AOS-5108",
+    onHand: 372,
+    allocated: 82,
+    available: 290,
+    fill: 68,
+    nextMovement: "No movement",
+    status: "Available",
+    tone: "green" as StatusTone,
+    branchLocations: [
+      { id: "stk-c04-aos-a12", location: "C04-03-03", zone: "Furniture", lot: "LOT-AOS-5108", onHand: 372, allocated: 82, available: 290, fill: 68, nextMovement: "No movement", status: "Available", tone: "green" as StatusTone },
+    ],
+  },
+  {
+    id: "stk-mst-hrb-072",
+    location: "D02-05-01",
+    zone: "Food ambient",
+    product: "Dried herb cartons",
+    productCode: "MST-HRB-072",
+    customer: "Mediterranean Spice Trading",
+    lot: "LOT-MST-7004",
+    onHand: 284,
+    allocated: 70,
+    available: 214,
+    fill: 58,
+    nextMovement: "Putaway pending",
+    status: "Inbound",
+    tone: "teal" as StatusTone,
+    branchLocations: [
+      { id: "stk-d02-mst-072", location: "D02-05-01", zone: "Food ambient", lot: "LOT-MST-7004", onHand: 204, allocated: 70, available: 134, fill: 58, nextMovement: "Putaway pending", status: "Inbound", tone: "teal" as StatusTone },
+      { id: "stk-dock-mst-072", location: "DOCK-1", zone: "Goods in", lot: "LOT-MST-7005", onHand: 80, allocated: 0, available: 80, fill: 20, nextMovement: "Move to D02", status: "Inbound", tone: "teal" as StatusTone },
+    ],
+  },
+]
+
+export const warehouseOrders = [
+  { id: "WO-10482", customer: "Marlow Apparel Ltd", route: "Felixstowe DC to Manchester retail", type: "Outbound", lines: 18, value: "GBP 42,600", due: "Today", window: "14:00-16:00", status: "Picking", tone: "amber" as StatusTone },
+  { id: "WO-10479", customer: "Bauhaus Importe GmbH", route: "Ningbo inbound to B02 homeware", type: "Inbound", lines: 9, value: "GBP 18,420", due: "Today", window: "Dock 3 - 11:30", status: "Receiving", tone: "teal" as StatusTone },
+  { id: "WO-10475", customer: "Northwind GmbH", route: "Quarantine hold to customs review", type: "Hold", lines: 6, value: "GBP 184,200", due: "Today", window: "Broker review", status: "Blocked", tone: "red" as StatusTone },
+  { id: "WO-10471", customer: "Black Forest Foods", route: "Cold store to Heathrow consolidation", type: "Outbound", lines: 4, value: "GBP 8,840", due: "Today", window: "18:30 cutoff", status: "Ready", tone: "green" as StatusTone },
+  { id: "WO-10466", customer: "Atlas Office Supply", route: "Furniture zone to Hamburg road", type: "Outbound", lines: 12, value: "GBP 16,300", due: "Tomorrow", window: "08:00-10:00", status: "Allocated", tone: "blue" as StatusTone },
+  { id: "WO-10460", customer: "Mediterranean Spice Trading", route: "Inbound putaway to D02", type: "Inbound", lines: 7, value: "GBP 11,940", due: "Tomorrow", window: "Dock 1 - 09:15", status: "Booked", tone: "neutral" as StatusTone },
+]
+
+export const warehouseGoodsMovements = [
+  { id: "GIN-8821", direction: "In" as const, product: "Ceramic table lamp", reference: "PO BAU-CREF-912 - 9 lines", quantity: "640 ctn", dock: "Dock 3", time: "11:30", status: "Receiving", tone: "teal" as StatusTone },
+  { id: "GOUT-6710", direction: "Out" as const, product: "Thermal activewear carton", reference: "WO-10482 - Manchester retail", quantity: "420 ctn", dock: "Door 7", time: "14:00", status: "Picking", tone: "amber" as StatusTone },
+  { id: "GIN-8817", direction: "In" as const, product: "Dried herb cartons", reference: "INV-MST-7004 - phyto checked", quantity: "180 ctn", dock: "Dock 1", time: "09:15", status: "Putaway", tone: "green" as StatusTone },
+  { id: "GOUT-6704", direction: "Out" as const, product: "Chilled meal packs", reference: "Cold chain dispatch", quantity: "82 ctn", dock: "Cold 2", time: "18:30", status: "Ready", tone: "green" as StatusTone },
+  { id: "GIN-8809", direction: "In" as const, product: "Enterprise router module", reference: "CN export licence pending", quantity: "210 ctn", dock: "Q01-HOLD", time: "10:20", status: "Blocked", tone: "red" as StatusTone },
+  { id: "GOUT-6698", direction: "Out" as const, product: "Modular desk pod", reference: "AOS Hamburg road groupage", quantity: "82 units", dock: "Door 4", time: "Tomorrow", status: "Allocated", tone: "blue" as StatusTone },
+]
+
+export const warehouseGoodsInKanbanColumns = [
+  {
+    id: "goods-in-pending",
+    title: "Pending",
+    meta: "Booked inbound work waiting to be claimed.",
+    cards: [
+      { id: "GIN-8824", title: "Supplier ASN for rain shell cartons", meta: "780 ctn - documents due before 13:00", status: "Pending", tone: "amber" as StatusTone },
+      { id: "GIN-8823", title: "Homeware overflow slot confirmation", meta: "Dock 5 - pallet count to confirm", status: "Pending", tone: "neutral" as StatusTone },
+    ],
+  },
+  {
+    id: "goods-in-picking",
+    title: "Picking",
+    meta: "Claimed and being checked by the floor team.",
+    cards: [
+      { id: "GIN-8821", title: "Bauhaus homeware cartons at Dock 3", meta: "640 ctn - pallet check in progress", status: "Claimed", tone: "teal" as StatusTone },
+      { id: "GIN-8820", title: "Outerwear reserve top-up unload", meta: "A03 reserve - split by carton type", status: "Picking", tone: "blue" as StatusTone },
+    ],
+  },
+  {
+    id: "goods-in-sat",
+    title: "Sat in Goods in",
+    meta: "Received and waiting for final putaway or review.",
+    cards: [
+      { id: "GIN-8817", title: "Mediterranean herbs await putaway", meta: "Phyto cert checked - bin D02-05-01", status: "Sat", tone: "green" as StatusTone },
+      { id: "GIN-8809", title: "Router modules held for licence review", meta: "Q01-HOLD - broker follow-up", status: "Hold", tone: "red" as StatusTone },
+    ],
+  },
+  {
+    id: "goods-in-loaded",
+    title: "Loaded",
+    meta: "Putaway confirmed into warehouse locations.",
+    cards: [
+      { id: "GIN-8798", title: "Desk pod cartons loaded to C04", meta: "82 units - replenishment complete", status: "Loaded", tone: "green" as StatusTone },
+    ],
+  },
+] as const
+
+export const warehouseGoodsOutKanbanColumns = [
+  {
+    id: "goods-out-pending",
+    title: "Pending",
+    meta: "Outbound work waiting for a picker or dispatch owner.",
+    cards: [
+      { id: "GOUT-6714", title: "Atlas Hamburg preload queue", meta: "82 units - trailer details pending", status: "Pending", tone: "blue" as StatusTone },
+      { id: "GOUT-6712", title: "Marlow label batch before pick", meta: "18 lines - carrier labels approved", status: "Pending", tone: "neutral" as StatusTone },
+    ],
+  },
+  {
+    id: "goods-out-picking",
+    title: "Picking",
+    meta: "Claimed and picking for customer dispatch.",
+    cards: [
+      { id: "GOUT-6710", title: "Thermal activewear Manchester wave", meta: "420 ctn - due 14:00", status: "Picking", tone: "amber" as StatusTone },
+      { id: "GOUT-6708", title: "Black Forest chilled order split", meta: "Cold 2 - temperature log ready", status: "Claimed", tone: "teal" as StatusTone },
+    ],
+  },
+  {
+    id: "goods-out-sat",
+    title: "Sat in Goods out",
+    meta: "Picked work staged at the outbound door.",
+    cards: [
+      { id: "GOUT-6704", title: "Chilled meal packs staged for handoff", meta: "82 ctn - 18:30 cutoff", status: "Sat", tone: "green" as StatusTone },
+    ],
+  },
+  {
+    id: "goods-out-loaded",
+    title: "Loaded",
+    meta: "Loaded to trailer or carrier handoff complete.",
+    cards: [
+      { id: "GOUT-6698", title: "Modular desk pod trailer load", meta: "Door 4 - Hamburg groupage", status: "Loaded", tone: "blue" as StatusTone },
+      { id: "GOUT-6692", title: "Retail labels print run dispatched", meta: "Carrier labels approved", status: "Loaded", tone: "green" as StatusTone },
+    ],
+  },
+] as const
+
+export const warehouseKanbanColumns = [
+  {
+    title: "Receiving",
+    cards: [
+      { id: "GIN-8821", title: "Bauhaus homeware cartons at Dock 3", meta: "640 ctn - pallet check in progress", status: "Live", tone: "teal" as StatusTone },
+      { id: "GIN-8817", title: "Mediterranean herbs await putaway", meta: "Phyto cert checked", status: "Ready", tone: "green" as StatusTone },
+      { id: "GIN-8824", title: "Rain shell ASN waiting at Dock 5", meta: "Documents due before 13:00", status: "Pending", tone: "amber" as StatusTone },
+    ],
+  },
+  {
+    title: "Quality",
+    cards: [
+      { id: "Q-221", title: "Router modules held for licence review", meta: "HS 8517.62.00 - broker follow-up", status: "Blocked", tone: "red" as StatusTone },
+      { id: "Q-218", title: "Rain shell carton count mismatch", meta: "12 cartons short vs ASN", status: "Check", tone: "amber" as StatusTone },
+      { id: "Q-224", title: "Homeware carton damage photos", meta: "Supplier evidence pack needed", status: "Review", tone: "blue" as StatusTone },
+    ],
+  },
+  {
+    title: "Putaway",
+    cards: [
+      { id: "PUT-340", title: "Move herbs into D02 food ambient", meta: "180 ctn - bin D02-05-01", status: "Next", tone: "blue" as StatusTone },
+      { id: "PUT-338", title: "Top up A03 outerwear reserve", meta: "780 inbound expected", status: "Booked", tone: "neutral" as StatusTone },
+      { id: "PUT-344", title: "Lamp pallets to B02 overflow", meta: "Homeware aisle after QC clear", status: "Next", tone: "teal" as StatusTone },
+    ],
+  },
+  {
+    title: "Pick",
+    cards: [
+      { id: "PICK-908", title: "Marlow Manchester retail wave", meta: "18 lines - due 14:00", status: "Picking", tone: "amber" as StatusTone },
+      { id: "PICK-904", title: "Black Forest chilled dispatch", meta: "Cold chain handoff 18:30", status: "Ready", tone: "green" as StatusTone },
+      { id: "PICK-911", title: "Atlas desk pod split pick", meta: "82 units - Door 4 preload", status: "Allocated", tone: "blue" as StatusTone },
+    ],
+  },
+  {
+    title: "Dispatch",
+    cards: [
+      { id: "DSP-551", title: "Atlas road groupage preload", meta: "Door 4 - trailer pending", status: "Allocated", tone: "blue" as StatusTone },
+      { id: "DSP-548", title: "Marlow retail labels print run", meta: "Carrier labels approved", status: "Ready", tone: "green" as StatusTone },
+    ],
+  },
+]
+
+export const warehouseCalendarViewModes = ["Week", "Month"] as const
+
+export type WarehouseCalendarCustomerId =
+  | "marlow"
+  | "atlas"
+  | "bauhaus"
+  | "mediterranean"
+  | "black-forest"
+  | "northwind"
+  | "pacific"
+  | "internal"
+
+export const warehouseCalendarCustomers = [
+  { id: "marlow", name: "Marlow Apparel Ltd", shortName: "Marlow", color: "var(--md-accent)" },
+  { id: "atlas", name: "Atlas Office Supply", shortName: "Atlas", color: "var(--md-blue)" },
+  { id: "bauhaus", name: "Bauhaus Importe GmbH", shortName: "Bauhaus", color: "var(--md-amber)" },
+  { id: "mediterranean", name: "Mediterranean Spice Trading", shortName: "Mediterranean", color: "color-mix(in srgb, var(--md-amber) 54%, var(--md-blue))" },
+  { id: "black-forest", name: "Black Forest Foods", shortName: "Black Forest", color: "color-mix(in srgb, var(--md-red) 62%, var(--md-amber))" },
+  { id: "northwind", name: "Northwind GmbH", shortName: "Northwind", color: "var(--md-red)" },
+  { id: "pacific", name: "Pacific Goods Co", shortName: "Pacific", color: "color-mix(in srgb, var(--md-blue) 65%, var(--md-accent))" },
+  { id: "internal", name: "Internal warehouse team", shortName: "Internal", color: "color-mix(in srgb, var(--md-text) 55%, var(--md-surface))" },
+] as const satisfies readonly { id: WarehouseCalendarCustomerId; name: string; shortName: string; color: string }[]
+
+export type WarehouseCalendarEvent = {
+  id: string
+  date: string
+  time: string
+  endTime: string
+  title: string
+  type: string
+  customerId: WarehouseCalendarCustomerId
+  tone: StatusTone
+}
+
+export const warehouseCalendarEvents: WarehouseCalendarEvent[] = [
+  { id: "wh-cal-0602-atlas", date: "2026-06-02", time: "08:20", endTime: "09:40", title: "Desk pod container unload", type: "Goods in", customerId: "atlas", tone: "blue" },
+  { id: "wh-cal-0604-mediterranean", date: "2026-06-04", time: "11:10", endTime: "12:00", title: "Herb cartons QC sample", type: "Stock check", customerId: "mediterranean", tone: "green" },
+  { id: "wh-cal-0605-bauhaus", date: "2026-06-05", time: "14:30", endTime: "15:20", title: "Lamp pallet dock audit", type: "Goods in", customerId: "bauhaus", tone: "teal" },
+  { id: "wh-cal-0609-marlow", date: "2026-06-09", time: "09:45", endTime: "11:00", title: "Retail labels print run", type: "Goods out", customerId: "marlow", tone: "amber" },
+  { id: "wh-cal-0611-black-forest", date: "2026-06-11", time: "18:30", endTime: "19:10", title: "Chilled dispatch handoff", type: "Dispatch", customerId: "black-forest", tone: "green" },
+  { id: "wh-cal-0616-northwind", date: "2026-06-16", time: "10:15", endTime: "11:15", title: "Router quarantine review", type: "Hold", customerId: "northwind", tone: "red" },
+  { id: "wh-cal-0618-pacific", date: "2026-06-18", time: "13:20", endTime: "14:10", title: "Milano road pallet transfer", type: "Dispatch", customerId: "pacific", tone: "blue" },
+  { id: "wh-cal-0619-internal", date: "2026-06-19", time: "16:00", endTime: "17:00", title: "Aisle A reserve sweep", type: "Capacity", customerId: "internal", tone: "neutral" },
+  { id: "wh-cal-0622-mediterranean", date: "2026-06-22", time: "09:15", endTime: "10:45", title: "Mediterranean herbs receiving", type: "Goods in", customerId: "mediterranean", tone: "teal" },
+  { id: "wh-cal-0623-atlas", date: "2026-06-23", time: "08:00", endTime: "09:30", title: "Atlas furniture preload", type: "Dispatch", customerId: "atlas", tone: "blue" },
+  { id: "wh-cal-0623-bauhaus", date: "2026-06-23", time: "11:30", endTime: "12:30", title: "Bauhaus dock slot", type: "Goods in", customerId: "bauhaus", tone: "teal" },
+  { id: "wh-cal-0624-internal", date: "2026-06-24", time: "10:00", endTime: "11:30", title: "Aisle B cycle count", type: "Stock check", customerId: "internal", tone: "green" },
+  { id: "wh-cal-0624-marlow", date: "2026-06-24", time: "10:30", endTime: "11:15", title: "Marlow urgent relabel", type: "Goods out", customerId: "marlow", tone: "amber" },
+  { id: "wh-cal-0624-bauhaus", date: "2026-06-24", time: "10:45", endTime: "11:45", title: "Bauhaus lamp QA", type: "Stock check", customerId: "bauhaus", tone: "teal" },
+  { id: "wh-cal-0625-marlow-pick", date: "2026-06-25", time: "13:30", endTime: "15:00", title: "Marlow pick wave", type: "Goods out", customerId: "marlow", tone: "amber" },
+  { id: "wh-cal-0625-northwind", date: "2026-06-25", time: "16:00", endTime: "17:00", title: "Router licence review", type: "Hold", customerId: "northwind", tone: "red" },
+  { id: "wh-cal-0626-mediterranean", date: "2026-06-26", time: "09:00", endTime: "10:00", title: "Food ambient variance close", type: "Stock check", customerId: "mediterranean", tone: "green" },
+  { id: "wh-cal-0627-internal", date: "2026-06-27", time: "10:30", endTime: "11:30", title: "Overflow warehouse sweep", type: "Capacity", customerId: "internal", tone: "neutral" },
+  { id: "wh-cal-0628-internal", date: "2026-06-28", time: "12:00", endTime: "12:30", title: "Quiet day monitor", type: "OOH", customerId: "internal", tone: "neutral" },
+]
 
 export type BookingStatus = "On track" | "Delayed" | "Exception"
 export type BookingMode = "OCEAN" | "AIR" | "ROAD"
@@ -2004,7 +2368,7 @@ export const galleryComponents = [
     category: "Navigation",
     description: "A reusable filter chip row with a strong selected state and optional secondary filters.",
     details: "Use at the top of list, table, and map workflows. The active filter should be unmistakable on mobile and desktop.",
-    foundOn: [{ label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Warehouse", route: "/warehouse" }, { label: "Components", route: "/components" }],
     componentCode: `export function FilterChips({ options, activeOption, onChange, auxiliaryOptions = [] }) {\n  return (\n    <div className="flex flex-wrap items-center gap-2">\n      {options.map((option) => (\n        <button\n          key={option}\n          aria-pressed={activeOption === option}\n          className={cn("rounded-full px-4", activeOption === option && "bg-[var(--md-accent)] text-white")}\n          onClick={() => onChange(option)}\n        >\n          {activeOption === option ? <Check /> : null}\n          {option}\n        </button>\n      ))}\n      {auxiliaryOptions.map((option) => <button key={option}>{option}</button>)}\n    </div>\n  )\n}`,
     usageCode: `<FilterChips\n  options={bookingFilters}\n  activeOption={activeFilter}\n  onChange={setActiveFilter}\n  auxiliaryOptions={["+ Mode", "+ Carrier", "+ Customer", "+ Owner", "+ ETA range"]}\n/>`,
   },
@@ -2017,6 +2381,26 @@ export const galleryComponents = [
     foundOn: [{ label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components" }],
     componentCode: `export function CustomerListTable({ customers, selectedIds, onToggleCustomer, onOpenCustomer }) {\n  return (\n    <div className="overflow-hidden rounded-[var(--md-radius-xl)] bg-[color-mix(in_srgb,var(--md-surface)_42%,transparent)] shadow-[var(--md-shadow-line)]">\n      <Table className="min-w-[1180px]">\n        <TableHeader>{/* shared customer columns */}</TableHeader>\n        <TableBody>\n          {customers.map((customer) => (\n            <CustomerRow\n              key={customer.id}\n              customer={customer}\n              selected={selectedIds.has(customer.id)}\n              onSelect={() => onToggleCustomer(customer.id)}\n              onOpen={() => onOpenCustomer(customer)}\n            />\n          ))}\n        </TableBody>\n      </Table>\n    </div>\n  )\n}`,
     usageCode: `<CustomerListTable\n  customers={paginatedCustomers}\n  selectedIds={selectedIds}\n  onToggleCustomer={toggleCustomer}\n  onOpenCustomer={openCustomer}\n/>`,
+  },
+  {
+    id: "warehouse-table",
+    name: "Warehouse Table",
+    category: "Data",
+    description: "A clean warehouse table pattern for products, stock rows, orders, and goods movements.",
+    details: "Use for inventory-style records that need a white table surface, light grey header, subtle column lines, status chips, code-safe IDs, staggered row reveal, row-click product and order detail popovers, an Orders tab table, and product-code stock rows that select into a top summary with a focused locations table filtered by customer, product, and batch.",
+    foundOn: [{ label: "Warehouse", route: "/warehouse" }, { label: "Components", route: "/components?component=warehouse-table" }],
+    componentCode: `export function WarehouseInventoryTable({ rows, columns, renderRowDetail }) {\n  const [openRowId, setOpenRowId] = useState(null)\n\n  return (\n    <div className="overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]">\n      <Table>\n        <TableHeader>{/* calm column headers */}</TableHeader>\n        <motion.tbody variants={tableBodyReveal} initial="hidden" animate="show">\n          {rows.map((row) => (\n            <Popover key={row.id} open={openRowId === row.id} onOpenChange={(open) => setOpenRowId(open ? row.id : null)}>\n              <PopoverAnchor asChild>\n                <motion.tr variants={rowReveal} onClick={() => setOpenRowId((current) => current === row.id ? null : row.id)}>\n                  {columns.map((column) => <TableCell key={column.key}>{column.render(row)}</TableCell>)}\n                </motion.tr>\n              </PopoverAnchor>\n              <PopoverContent>{renderRowDetail?.(row)}</PopoverContent>\n            </Popover>\n          ))}\n        </motion.tbody>\n      </Table>\n    </div>\n  )\n}`,
+    usageCode: `<WarehouseProductsTable rows={warehouseProducts} />\n<WarehouseOrdersTable rows={warehouseOrders} />\n<WarehouseStockTable rows={warehouseStockRows} />\n\n// Product and order rows open a compact detail popover.\n// Stock rows select into a top summary and focused location table.`,
+  },
+  {
+    id: "warehouse-kanban-board",
+    name: "Warehouse Kanban Board",
+    category: "Operations",
+    description: "A sortable warehouse board for goods in and goods out lanes.",
+    details: "Use when warehouse work needs to be moved above or below other cards in real time. Cards lift, tilt from the pickup point, snap into place, and keep the same calm status-colour language as the rest of Warehouse.",
+    foundOn: [{ label: "Warehouse goods in/out", route: "/warehouse" }, { label: "Components", route: "/components?component=warehouse-kanban-board" }],
+    componentCode: `export function SortableWarehouseKanbanBoard({ columnsSource }) {\n  const [columns, setColumns] = useState(() => createKanbanColumns(columnsSource))\n\n  return (\n    <DndContext onDragOver={reorderLive} onDragEnd={snapToFinalOrder}>\n      {columns.map((column) => (\n        <SortableContext key={column.id} items={column.cards.map((card) => card.id)}>\n          {column.cards.map((card) => <SortableWarehouseKanbanCard key={card.id} card={card} />)}\n        </SortableContext>\n      ))}\n      <DragOverlay>{activeCard ? <WarehouseKanbanDragPreview card={activeCard} /> : null}</DragOverlay>\n    </DndContext>\n  )\n}`,
+    usageCode: `<SortableWarehouseKanbanBoard\n  ariaLabel="Goods in Kanban board"\n  boardId="goods-in"\n  columnsSource={warehouseGoodsInKanbanColumns}\n  gridClassName="xl:grid-cols-4"\n/>\n\n<SortableWarehouseKanbanBoard\n  ariaLabel="Goods out Kanban board"\n  boardId="goods-out"\n  columnsSource={warehouseGoodsOutKanbanColumns}\n  gridClassName="xl:grid-cols-4"\n/>`,
   },
   {
     id: "geo-panel",
@@ -2044,7 +2428,7 @@ export const galleryComponents = [
     category: "Navigation",
     description: "A reusable horizontal tab rail for switching sections inside one record or workflow.",
     details: "Use when the user should stay in context while moving between overview, contacts, bookings, documents, activity, or notes.",
-    foundOn: [{ label: "Customer detail", route: "/customers/marlow-apparel" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Customer detail", route: "/customers/marlow-apparel" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "Warehouse", route: "/warehouse" }, { label: "Components", route: "/components" }],
     componentCode: `export function TabsRail({ tabs, activeTab, onChange }) {\n  return (\n    <div className="flex gap-6 overflow-x-auto border-b border-[rgba(11,20,19,0.08)]">\n      {tabs.map((tab) => (\n        <button key={tab.label} onClick={() => onChange(tab.label)}>\n          {tab.label}\n          {tab.value ? <span>{tab.value}</span> : null}\n        </button>\n      ))}\n    </div>\n  )\n}`,
     usageCode: `<TabsRail\n  tabs={tabs}\n  activeTab={activeTab}\n  onChange={setActiveTab}\n/>`,
   },
@@ -2602,6 +2986,8 @@ export const galleryIcons = {
   "segmented-control": LayoutDashboard,
   "filter-chips": Users,
   "data-table": Users,
+  "warehouse-table": Boxes,
+  "warehouse-kanban-board": LayoutDashboard,
   "geo-panel": Globe2,
   "record-header": BriefcaseBusiness,
   tabs: LayoutDashboard,

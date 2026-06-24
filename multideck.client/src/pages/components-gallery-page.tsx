@@ -7,7 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
-import { activityItems, cityQueues, crmAccountSignals, crmActivities, crmContacts, crmPipelineStages, crmSummaryMetrics, customerFilters, customerScopeTabs, customers, customsQueue, galleryComponents, galleryIcons, generatedReports, initialFavouriteBookingIds, liveBookings, marlowContacts, marlowMetrics, metricCards, reportTemplates, bookingFilters, bookingMetrics, bookings } from "@/data/multideck-data"
+import { activityItems, cityQueues, crmAccountSignals, crmActivities, crmContacts, crmPipelineStages, crmSummaryMetrics, customerFilters, customerScopeTabs, customers, customsQueue, galleryComponents, galleryIcons, generatedReports, initialFavouriteBookingIds, liveBookings, marlowContacts, marlowMetrics, metricCards, reportTemplates, bookingFilters, bookingMetrics, bookings, warehouseOrders, warehouseProducts, warehouseStockRows } from "@/data/multideck-data"
 import { AnimatedList } from "@/components/multideck/animated-list"
 import { CommandInput } from "@/components/multideck/command-input"
 import { SidebarNavItem } from "@/components/multideck/app-sidebar"
@@ -37,6 +37,7 @@ import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
 import { CodeInput, FreightNarrative, SignInPanel, SignedOutPanel, VerifyPanel } from "@/components/multideck/auth-flow"
 import { BookingAdvancedSearch, BookingArrivalCard, BookingAskPanel, BookingBoardPreview, BookingExceptionPanel, BookingMetricCard, BookingResolutionChecklist, BookingsTable, YourJobsPanel, bookingViewModes, bookingViewOptions, type BookingSearchCriterion, type BookingViewMode } from "@/components/multideck/booking-components"
+import { WarehouseKanbanBoardPreview, WarehouseOrdersTable, WarehouseProductsTable, WarehouseStockTable } from "@/components/multideck/warehouse-components"
 import {
   DexterAttachmentPalette,
   DexterChecklistCard,
@@ -139,7 +140,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "lane-mix-panel", "booking-metric-card", "booking-advanced-search", "bookings-table", "booking-board-preview", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
+    ids: ["booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "warehouse-table", "warehouse-kanban-board", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "lane-mix-panel", "booking-metric-card", "booking-advanced-search", "bookings-table", "booking-board-preview", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
   },
   {
     label: "CRM",
@@ -1094,6 +1095,20 @@ function ComponentPreview({ id }: { id: string }) {
             onToggleCustomer={togglePreviewCustomer}
             onOpenCustomer={() => undefined}
           />
+        </div>
+      ) : null}
+
+      {id === "warehouse-table" ? (
+        <div className="grid w-full max-w-[1120px] gap-3 overflow-x-auto md-scrollbar">
+          <WarehouseProductsTable rows={warehouseProducts.slice(0, 4)} />
+          <WarehouseOrdersTable rows={warehouseOrders.slice(0, 3)} />
+          <WarehouseStockTable rows={warehouseStockRows.slice(0, 3)} />
+        </div>
+      ) : null}
+
+      {id === "warehouse-kanban-board" ? (
+        <div className="w-full max-w-[1120px] overflow-x-auto md-scrollbar">
+          <WarehouseKanbanBoardPreview />
         </div>
       ) : null}
 
