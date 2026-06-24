@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react"
+import type { User } from "@supabase/supabase-js"
 import {
   BadgeCheck,
   Bell,
@@ -57,6 +58,7 @@ import {
 import { languageOptions, getLanguageOption } from "@/i18n/languages"
 import { useLanguage } from "@/i18n/language-provider"
 import { clockDisplayLabelFromMode, clockDisplayLabels, clockDisplayModeFromLabel, readClockDisplayMode, resetAiAgentName, useAiAgentName, writeAiAgentName, writeClockDisplayMode } from "@/lib/user-preferences"
+import { supabase } from "@/lib/supabase"
 import { cn } from "@/lib/utils"
 
 const settingsGroups: SettingsTabGroup[] = [
@@ -290,7 +292,162 @@ function IconRow({
   )
 }
 
+type ProfileFormState = {
+  firstName: string
+  lastName: string
+  preferredName: string
+  email: string
+  phone: string
+  roleTitle: string
+}
+
+const emptyProfileForm: ProfileFormState = {
+  firstName: "",
+  lastName: "",
+  preferredName: "",
+  email: "",
+  phone: "",
+  roleTitle: "",
+}
+
+function readProfileMetadataValue(metadata: Record<string, unknown> | undefined, keys: string[]) {
+  for (const key of keys) {
+    const value = metadata?.[key]
+    if (typeof value === "string" && value.trim()) return value.trim()
+  }
+
+  return ""
+}
+
+function splitProfileName(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return { firstName: "", lastName: "" }
+  if (parts.length === 1) return { firstName: parts[0], lastName: "" }
+
+  return { firstName: parts.slice(0, -1).join(" "), lastName: parts.at(-1) ?? "" }
+}
+
+function createProfileFormFromUser(user: User): ProfileFormState {
+  const metadata = user.user_metadata
+  const fallbackName = readProfileMetadataValue(metadata, ["full_name", "name", "display_name"])
+  const splitName = splitProfileName(fallbackName)
+  const firstName = readProfileMetadataValue(metadata, ["first_name", "firstName"]) || splitName.firstName
+  const lastName = readProfileMetadataValue(metadata, ["last_name", "lastName"]) || splitName.lastName
+
+  return {
+    firstName,
+    lastName,
+    preferredName: readProfileMetadataValue(metadata, ["preferred_name", "preferredName"]) || firstName,
+    email: user.email ?? "",
+    phone: readProfileMetadataValue(metadata, ["phone", "phone_number", "mobile"]) || (user.phone ?? ""),
+    roleTitle: readProfileMetadataValue(metadata, ["role_title", "roleTitle", "title"]),
+  }
+}
+
+function getProfileInitials(profile: ProfileFormState) {
+  const source = `${profile.firstName} ${profile.lastName}`.trim() || profile.email || "MD"
+  const parts = source.includes("@") ? source.split("@")[0].replace(/[._-]+/g, " ").split(/\s+/) : source.split(/\s+/)
+  const initials = parts.length > 1 ? `${parts[0][0]}${parts.at(-1)?.[0] ?? ""}` : source.slice(0, 2)
+
+  return initials.toUpperCase()
+}
+
+function getProfileFullName(profile: ProfileFormState) {
+  return `${profile.firstName.trim()} ${profile.lastName.trim()}`.trim()
+}
+
 function ProfileTab() {
+  const [profile, setProfile] = useState<ProfileFormState>(emptyProfileForm)
+  const [savedProfile, setSavedProfile] = useState<ProfileFormState>(emptyProfileForm)
+  const [isProfileLoading, setIsProfileLoading] = useState(true)
+  const [isProfileSaving, setIsProfileSaving] = useState(false)
+  const profileDirty = JSON.stringify(profile) !== JSON.stringify(savedProfile)
+  const profileInitials = getProfileInitials(profile)
+  const fullName = getProfileFullName(profile)
+
+  useEffect(() => {
+    if (!supabase) {
+      setIsProfileLoading(false)
+      return
+    }
+
+    let cancelled = false
+
+    function applyProfile(nextProfile: ProfileFormState) {
+      if (cancelled) return
+      setProfile(nextProfile)
+      setSavedProfile(nextProfile)
+      setIsProfileLoading(false)
+    }
+
+    supabase.auth.getUser().then(({ data, error }) => {
+      if (error || !data.user) {
+        if (error) console.error(error)
+        setIsProfileLoading(false)
+        return
+      }
+
+      applyProfile(createProfileFormFromUser(data.user))
+    }).catch((error) => {
+      console.error(error)
+      setIsProfileLoading(false)
+      toast.error("Could not load profile")
+    })
+
+    const { data } = supabase.auth.onAuthStateChange((event, session) => {
+      if ((event === "USER_UPDATED" || event === "SIGNED_IN") && session?.user) {
+        applyProfile(createProfileFormFromUser(session.user))
+      }
+    })
+
+    return () => {
+      cancelled = true
+      data.subscription.unsubscribe()
+    }
+  }, [])
+
+  function updateProfileField(field: keyof ProfileFormState, value: string) {
+    setProfile((current) => ({ ...current, [field]: value }))
+  }
+
+  function discardProfileChanges() {
+    setProfile(savedProfile)
+    toast.message("Changes discarded")
+  }
+
+  async function saveProfileChanges() {
+    if (!supabase || isProfileSaving) return
+
+    const nextFullName = getProfileFullName(profile)
+    setIsProfileSaving(true)
+
+    try {
+      const { data, error } = await supabase.auth.updateUser({
+        data: {
+          first_name: profile.firstName.trim(),
+          last_name: profile.lastName.trim(),
+          preferred_name: profile.preferredName.trim(),
+          full_name: nextFullName,
+          name: nextFullName,
+          phone: profile.phone.trim(),
+          role_title: profile.roleTitle.trim(),
+        },
+      })
+
+      if (error) throw error
+
+      const nextProfile = data.user ? createProfileFormFromUser(data.user) : profile
+      setProfile(nextProfile)
+      setSavedProfile(nextProfile)
+      toast.success("Profile settings saved")
+    } catch (error) {
+      console.error(error)
+      toast.error("Could not save profile")
+    } finally {
+      setIsProfileSaving(false)
+    }
+  }
+
   const personalConnectors: Array<{
     icon: LucideIcon
     title: string
@@ -381,8 +538,15 @@ function ProfileTab() {
         description="How you appear to your team, customers, and Dexter. Some of this is used in audit logs and customer-facing comms."
         actions={
           <>
-            {compactAction("Discard", () => toast.message("Changes discarded"))}
-            {primaryAction("Save changes", () => toast.success("Profile settings saved"))}
+            {compactAction("Discard", discardProfileChanges)}
+            <Button
+              type="button"
+              disabled={isProfileLoading || isProfileSaving || !profileDirty}
+              className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)] disabled:opacity-55"
+              onClick={() => void saveProfileChanges()}
+            >
+              {isProfileSaving ? "Saving..." : "Save changes"}
+            </Button>
           </>
         }
       />
@@ -392,7 +556,7 @@ function ProfileTab() {
           <SettingsFieldRow label="Avatar" description="Used in comments, assignment logs, and customer replies.">
             <div className="flex flex-wrap items-center gap-4">
               <Avatar className="size-[76px] rounded-full">
-                <AvatarFallback className="rounded-full bg-[var(--md-accent)] text-[24px] font-medium text-white">EM</AvatarFallback>
+                <AvatarFallback className="rounded-full bg-[var(--md-accent)] text-[24px] font-medium text-white" data-i18n-skip>{profileInitials}</AvatarFallback>
               </Avatar>
               <div className="flex flex-wrap items-center gap-2">
                 {compactAction("Upload photo", () => toast.success("Photo picker opened"))}
@@ -406,23 +570,53 @@ function ProfileTab() {
               </div>
             </div>
           </SettingsFieldRow>
-          <SettingsFieldRow label="Full name">
-            <SettingsInput defaultValue="Elena Moreno" />
+          <SettingsFieldRow label="Name">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <SettingsInput
+                value={profile.firstName}
+                placeholder="First name"
+                disabled={isProfileLoading || isProfileSaving}
+                onChange={(event) => updateProfileField("firstName", event.target.value)}
+              />
+              <SettingsInput
+                value={profile.lastName}
+                placeholder="Last name"
+                disabled={isProfileLoading || isProfileSaving}
+                onChange={(event) => updateProfileField("lastName", event.target.value)}
+              />
+            </div>
           </SettingsFieldRow>
           <SettingsFieldRow label="Preferred name" description="What Dexter and your team call you.">
-            <SettingsInput defaultValue="Elena" />
+            <SettingsInput
+              value={profile.preferredName}
+              placeholder="Preferred name"
+              disabled={isProfileLoading || isProfileSaving}
+              onChange={(event) => updateProfileField("preferredName", event.target.value)}
+            />
           </SettingsFieldRow>
           <SettingsFieldRow label="Work email">
             <div className="relative">
-              <SettingsInput defaultValue="elena@northwind.de" className="pr-20" />
+              <SettingsInput value={profile.email} className="pr-20" dir="ltr" data-i18n-skip disabled />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-medium text-[var(--md-text)]">verified</span>
             </div>
           </SettingsFieldRow>
           <SettingsFieldRow label="Phone" description="For two-factor and emergency alerts only.">
-            <SettingsInput defaultValue="+49 40 8821 4408" />
+            <SettingsInput
+              value={profile.phone}
+              placeholder="+44 20 7123 4567"
+              dir="ltr"
+              data-i18n-skip
+              disabled={isProfileLoading || isProfileSaving}
+              onChange={(event) => updateProfileField("phone", event.target.value)}
+            />
           </SettingsFieldRow>
           <SettingsFieldRow label="Role / title">
-            <SettingsInput defaultValue="Operations Manager" />
+            <SettingsInput
+              value={profile.roleTitle}
+              placeholder="Operations Manager"
+              disabled={isProfileLoading || isProfileSaving}
+              onChange={(event) => updateProfileField("roleTitle", event.target.value)}
+            />
           </SettingsFieldRow>
         </SettingsPanel>
 
@@ -432,8 +626,9 @@ function ProfileTab() {
             ["Member since", "Jan 2024"],
             ["Bookings handled", "1,847"],
             ["Active boards", "3"],
-            ["Last sign-in", "Today - 06:14"],
-            ["Role", "Admin - Ops"],
+            ["Profile name", fullName || "Not set"],
+            ["Last sign-in", "Current session"],
+            ["Role", profile.roleTitle || "Not set"],
             ["Workspace", "Northwind Forwarding"],
           ]}
         />
