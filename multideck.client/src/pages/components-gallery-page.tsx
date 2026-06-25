@@ -37,7 +37,7 @@ import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
 import { CodeInput, FreightNarrative, SignInPanel, SignedOutPanel, VerifyPanel } from "@/components/multideck/auth-flow"
 import { BookingAdvancedSearch, BookingArrivalCard, BookingAskPanel, BookingBoardPreview, BookingExceptionPanel, BookingMetricCard, BookingResolutionChecklist, BookingsTable, YourJobsPanel, bookingViewModes, bookingViewOptions, type BookingSearchCriterion, type BookingViewMode } from "@/components/multideck/booking-components"
-import { WarehouseKanbanBoardPreview, WarehouseOrdersTable, WarehouseProductsTable, WarehouseStockTable } from "@/components/multideck/warehouse-components"
+import { WarehouseGoodsInFlow, WarehouseKanbanBoardPreview, WarehouseOrdersTable, WarehousePickResumeTablePreview, WarehouseProductsTable, WarehouseStockTable } from "@/components/multideck/warehouse-components"
 import {
   DexterAttachmentPalette,
   DexterChecklistCard,
@@ -140,7 +140,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "warehouse-table", "warehouse-kanban-board", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "lane-mix-panel", "booking-metric-card", "booking-advanced-search", "bookings-table", "booking-board-preview", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
+    ids: ["booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "warehouse-table", "warehouse-pick-resume-table", "warehouse-goods-in-flow", "warehouse-kanban-board", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "lane-mix-panel", "booking-metric-card", "booking-advanced-search", "bookings-table", "booking-board-preview", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
   },
   {
     label: "CRM",
@@ -1103,6 +1103,18 @@ function ComponentPreview({ id }: { id: string }) {
           <WarehouseProductsTable rows={warehouseProducts.slice(0, 4)} />
           <WarehouseOrdersTable rows={warehouseOrders.slice(0, 3)} />
           <WarehouseStockTable rows={warehouseStockRows.slice(0, 3)} />
+        </div>
+      ) : null}
+
+      {id === "warehouse-pick-resume-table" ? (
+        <div className="w-full max-w-[1180px] overflow-x-auto md-scrollbar">
+          <WarehousePickResumeTablePreview />
+        </div>
+      ) : null}
+
+      {id === "warehouse-goods-in-flow" ? (
+        <div className="w-full max-w-[1180px]">
+          <WarehouseGoodsInFlow />
         </div>
       ) : null}
 

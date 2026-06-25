@@ -24,10 +24,20 @@ import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/r
 import {
   ArrowDownToLine,
   ArrowLeft,
+  ArrowRight,
   ArrowUpFromLine,
+  Barcode,
   CalendarDays,
+  Camera,
+  Check,
+  Clock3,
+  ClipboardCheck,
+  FileText,
   Plus,
+  Printer,
+  ScanLine,
   Search,
+  Send,
   SlidersHorizontal,
   Warehouse,
 } from "lucide-react"
@@ -37,6 +47,7 @@ import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/compon
 import { Progress } from "@/components/ui/progress"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { MultideckDatePicker } from "@/components/multideck/date-picker"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
 import { FilterChips, SegmentedControl } from "@/components/multideck/workflow-components"
@@ -47,9 +58,14 @@ import {
   warehouseCalendarCustomers,
   warehouseCalendarEvents,
   warehouseCalendarViewModes,
+  warehouseGoodsInFlowSteps,
   warehouseGoodsInKanbanColumns,
+  warehouseGoodsInReceipts,
+  warehouseGoodsInSources,
   warehouseGoodsMovements,
   warehouseGoodsOutKanbanColumns,
+  warehouseGoodsOutFlowSteps,
+  warehouseGoodsOutPicks,
   warehouseMetrics,
   warehouseOrderFilters,
   warehouseOrders,
@@ -94,6 +110,7 @@ const stockMorphTransition = { duration: 0.38, ease: [0.22, 1, 0.36, 1] as const
 const tableHeadClass = "border-r border-[rgba(90,103,100,0.12)] bg-[rgba(90,103,100,0.06)] px-4 py-3 text-[12px] font-medium text-[var(--md-text)] last:border-r-0"
 const tableCellClass = "border-r border-[rgba(90,103,100,0.09)] px-4 py-3 last:border-r-0"
 const kanbanLiftShadow = "var(--md-premium-stroke), 0 20px 42px rgba(42,52,50,0.16)"
+const goodsInWizardSurfaceClass = "bg-[#F4F9F7] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.12),0_18px_42px_rgba(14,125,116,0.08)]"
 
 type WarehouseKanbanCardData = {
   id: string
@@ -125,6 +142,61 @@ type WarehouseKanbanPickup = {
 type WarehouseCalendarViewMode = (typeof warehouseCalendarViewModes)[number]
 type WarehouseProduct = (typeof warehouseProducts)[number]
 type WarehouseOrder = (typeof warehouseOrders)[number]
+type WarehouseGoodsInSource = (typeof warehouseGoodsInSources)[number]
+type WarehouseGoodsInStepId = (typeof warehouseGoodsInFlowSteps)[number]["id"]
+type WarehouseGoodsOutStepId = (typeof warehouseGoodsOutFlowSteps)[number]["id"]
+type WarehouseGoodsOutPick = (typeof warehouseGoodsOutPicks)[number]
+type WarehouseGoodsInLine = {
+  id: string
+  product: string
+  sku: string
+  expected: number
+  actual: number
+  unit: string
+  condition: string
+  status: string
+  tone: StatusTone
+  location: string
+  note: string
+  photoCount: number
+}
+type WarehouseGoodsInReceipt = {
+  id: string
+  customer: string
+  supplier: string
+  source: string
+  deliveryNote: string
+  booking: string
+  contact: string
+  owner: string
+  status: string
+  tone: StatusTone
+  progress: number
+  expected: string
+  actual: string
+  nextAction: string
+  completeness: readonly { label: string; status: string; tone: StatusTone }[]
+  lines: readonly WarehouseGoodsInLine[]
+  putaway: readonly { label: string; value: string; tone: StatusTone }[]
+}
+type WarehouseGoodsInActualMap = Record<string, Record<string, number>>
+type WarehouseGoodsInLineWithActual = WarehouseGoodsInLine & { actual: number }
+type WarehousePickResumeRow = {
+  id: string
+  direction: "Goods in" | "Goods out"
+  expectedDate: string
+  customerNumber: string
+  name: string
+  reference: string
+  owner: string
+  status: string
+  tone: StatusTone
+  progress: number
+  nextStep: string
+  stepLabel: string
+  stepTone: StatusTone
+  savedAt: string
+}
 
 type WarehouseCalendarDay = {
   dateKey: string
@@ -1212,7 +1284,7 @@ export function WarehouseMetricStrip() {
   )
 }
 
-export function WarehousePageHeader() {
+export function WarehousePageHeader({ onNewPick }: { onNewPick?: () => void }) {
   const { t } = useLanguage()
 
   return (
@@ -1233,7 +1305,11 @@ export function WarehousePageHeader() {
           <SlidersHorizontal data-icon="inline-start" className="size-4" strokeWidth={1.25} />
           {t("Filters")}
         </Button>
-        <Button className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white shadow-[0_10px_22px_rgba(14,125,116,0.14)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]">
+        <Button
+          type="button"
+          className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white shadow-[0_10px_22px_rgba(14,125,116,0.14)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]"
+          onClick={onNewPick}
+        >
           <Plus data-icon="inline-start" className="size-4" strokeWidth={1.25} />
           {t("New pick")}
         </Button>
@@ -1336,16 +1412,1628 @@ export function WarehouseProductsView({
   )
 }
 
-export function WarehouseGoodsView() {
+function createGoodsInActualMap() {
+  return warehouseGoodsInReceipts.reduce<WarehouseGoodsInActualMap>((receiptMap, receipt) => {
+    receiptMap[receipt.id] = receipt.lines.reduce<Record<string, number>>((lineMap, line) => {
+      lineMap[line.id] = line.actual
+      return lineMap
+    }, {})
+
+    return receiptMap
+  }, {})
+}
+
+function getGoodsInLineTone(line: WarehouseGoodsInLineWithActual): StatusTone {
+  if (line.condition !== "Clear" && line.condition !== "Awaiting arrival") return line.tone
+  if (line.actual === line.expected && line.actual > 0) return "green"
+  if (line.actual === 0) return line.tone
+  if (line.actual < line.expected) return "amber"
+  return "blue"
+}
+
+function getGoodsInLineStatus(line: WarehouseGoodsInLineWithActual) {
+  if (line.condition !== "Clear" && line.condition !== "Awaiting arrival") return line.status
+  if (line.actual === 0) return line.status
+  if (line.actual === line.expected) return "Matched"
+  if (line.actual < line.expected) return "Short"
+  return "Over"
+}
+
+function GoodsInMetric({
+  label,
+  value,
+  tone = "neutral",
+}: {
+  label: string
+  value: ReactNode
+  tone?: StatusTone
+}) {
+  return (
+    <div
+      className="min-w-0 rounded-[var(--md-radius-md)] bg-[color-mix(in_srgb,var(--goods-in-tone)_8%,var(--md-surface-soft))] px-3 py-2 shadow-[var(--md-shadow-line)]"
+      style={{ "--goods-in-tone": toneToVar(tone) } as CSSProperties}
+    >
+      <p className="truncate text-[11px] font-medium text-[var(--md-subtle)]">{label}</p>
+      <p className="mt-1 truncate text-[13px] font-medium text-[var(--md-ink)]">{value}</p>
+    </div>
+  )
+}
+
+function getGoodsInResumeStep(receipt: WarehouseGoodsInReceipt): WarehouseGoodsInStepId {
+  if (receipt.status === "Need setup") return "setup"
+  if (receipt.status === "Putaway") return "summary"
+  if (receipt.lines.some((line) => line.status === "Damage" || line.status === "Variance")) return "exceptions"
+  return "receive"
+}
+
+function getWarehouseCustomerNumber(customer: string) {
+  const customerNumbers: Record<string, string> = {
+    "Atlas Office Supply": "AOS-001",
+    "Bauhaus Importe GmbH": "BAU-001",
+    "Black Forest Foods": "BFF-001",
+    "Marlow Apparel Ltd": "MAR-001",
+    "Mediterranean Spice Trading": "MST-001",
+    "Northwind GmbH": "NW-001",
+  }
+
+  return customerNumbers[customer] ?? "CUS-000"
+}
+
+function getGoodsInExpectedDate(receipt: WarehouseGoodsInReceipt) {
+  const expectedDates: Record<string, string> = {
+    "GIN-8821": "2026-06-24",
+    "GIN-8824": "2026-06-24",
+    "GIN-8817": "2026-06-25",
+  }
+
+  return expectedDates[receipt.id] ?? "2026-06-24"
+}
+
+function getGoodsOutExpectedDate(pick: WarehouseGoodsOutPick) {
+  const expectedDates: Record<string, string> = {
+    "GOUT-6710": "2026-06-24",
+    "GOUT-6708": "2026-06-24",
+    "GOUT-6704": "2026-06-24",
+    "GOUT-6698": "2026-06-25",
+  }
+
+  return expectedDates[pick.id] ?? "2026-06-24"
+}
+
+function getGoodsInResumeRows(): WarehousePickResumeRow[] {
+  return warehouseGoodsInReceipts.map((receipt) => {
+    const step = warehouseGoodsInFlowSteps.find((item) => item.id === getGoodsInResumeStep(receipt)) ?? warehouseGoodsInFlowSteps[0]
+
+    return {
+      id: receipt.id,
+      direction: "Goods in",
+      expectedDate: getGoodsInExpectedDate(receipt),
+      customerNumber: getWarehouseCustomerNumber(receipt.customer),
+      name: receipt.source,
+      reference: receipt.deliveryNote,
+      owner: receipt.owner,
+      status: receipt.status,
+      tone: receipt.tone,
+      progress: receipt.progress,
+      nextStep: receipt.nextAction,
+      stepLabel: step.label,
+      stepTone: step.tone,
+      savedAt: receipt.status === "Need setup" ? "Saved yesterday" : receipt.status === "Putaway" ? "Saved today" : "Saved 4 min ago",
+    }
+  })
+}
+
+function getGoodsOutResumeRows(): WarehousePickResumeRow[] {
+  return warehouseGoodsOutPicks.map((pick) => {
+    const step = warehouseGoodsOutFlowSteps.find((item) => item.id === pick.stepId) ?? warehouseGoodsOutFlowSteps[0]
+
+    return {
+      id: pick.id,
+      direction: "Goods out",
+      expectedDate: getGoodsOutExpectedDate(pick),
+      customerNumber: getWarehouseCustomerNumber(pick.customer),
+      name: pick.name,
+      reference: pick.orderRef,
+      owner: pick.owner,
+      status: pick.status,
+      tone: pick.tone,
+      progress: pick.progress,
+      nextStep: pick.nextStep,
+      stepLabel: step.label,
+      stepTone: step.tone,
+      savedAt: pick.savedAt,
+    }
+  })
+}
+
+function WarehousePickProgress({ value, tone }: { value: number; tone: StatusTone }) {
+  return (
+    <div className="flex min-w-[142px] items-center gap-2">
+      <Progress
+        value={value}
+        className="h-1.5 rounded-full bg-[rgba(90,103,100,0.12)] [&>div]:bg-[var(--pick-progress-tone)]"
+        style={{ "--pick-progress-tone": toneToVar(tone) } as CSSProperties}
+      />
+      <span className="w-8 text-end text-[11px] font-medium tabular-nums text-[var(--md-text)]">{value}%</span>
+    </div>
+  )
+}
+
+export function WarehousePickResumeTable({
+  title,
+  meta,
+  rows,
+  onOpenPick,
+}: {
+  title: string
+  meta: string
+  rows: WarehousePickResumeRow[]
+  onOpenPick?: (row: WarehousePickResumeRow) => void
+}) {
+  const [expectedDateByRow, setExpectedDateByRow] = useState<Record<string, string>>(() => (
+    rows.reduce<Record<string, string>>((dateMap, row) => {
+      dateMap[row.id] = row.expectedDate
+      return dateMap
+    }, {})
+  ))
+
+  useEffect(() => {
+    setExpectedDateByRow((current) => {
+      const next = { ...current }
+      rows.forEach((row) => {
+        if (!next[row.id]) next[row.id] = row.expectedDate
+      })
+      return next
+    })
+  }, [rows])
+
+  const columns = useMemo<WarehouseTableColumn<WarehousePickResumeRow>[]>(() => [
+    {
+      key: "expectedDate",
+      label: "Expected date",
+      className: "w-[176px]",
+      render: (row) => (
+        <div
+          className="w-[154px] [&_button]:h-9 [&_button]:bg-white/64 [&_button]:px-2 [&_button]:text-[12px]"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
+        >
+          <MultideckDatePicker
+            value={expectedDateByRow[row.id] ?? row.expectedDate}
+            onChange={(date) => {
+              if (!date) return
+              setExpectedDateByRow((current) => ({ ...current, [row.id]: date }))
+            }}
+            placeholder="Select date"
+            title="Expected date"
+            description="Choose one expected date for this pick."
+            align="start"
+          />
+        </div>
+      ),
+    },
+    {
+      key: "progress",
+      label: "Progress",
+      className: "w-[178px]",
+      render: (row) => <WarehousePickProgress value={row.progress} tone={row.tone} />,
+    },
+    {
+      key: "status",
+      label: "Status",
+      className: "w-[132px]",
+      render: (row) => <StatusPill tone={row.tone}>{row.status}</StatusPill>,
+    },
+    {
+      key: "customerNumber",
+      label: "Customer no.",
+      className: "w-[142px]",
+      render: (row) => <WarehouseCode>{row.customerNumber}</WarehouseCode>,
+    },
+    {
+      key: "name",
+      label: "Name",
+      className: "min-w-[240px]",
+      render: (row) => (
+        <span className="grid gap-1">
+          <span className="truncate font-medium text-[var(--md-ink)]">{row.name}</span>
+          <WarehouseCode>{row.reference}</WarehouseCode>
+        </span>
+      ),
+    },
+    {
+      key: "owner",
+      label: "Owner",
+      className: "w-[88px]",
+      align: "center",
+      render: (row) => (
+        <span data-i18n-skip dir="ltr" className="inline-grid size-7 place-items-center rounded-full bg-[rgba(14,125,116,0.1)] text-[11px] font-medium text-[var(--md-accent)]">
+          {row.owner}
+        </span>
+      ),
+    },
+    {
+      key: "nextStep",
+      label: "Next step",
+      className: "min-w-[280px]",
+      render: (row) => (
+        <span className="flex min-w-0 items-center gap-2">
+          <StatusPill tone={row.stepTone}>{row.stepLabel}</StatusPill>
+          <span className="truncate text-[12.5px] text-[var(--md-text)]">{row.nextStep}</span>
+        </span>
+      ),
+    },
+    {
+      key: "saved",
+      label: "Saved",
+      className: "w-[140px]",
+      render: (row) => <span className="text-[12px] text-[var(--md-subtle)]">{row.savedAt}</span>,
+    },
+  ], [expectedDateByRow])
+
+  return (
+    <div className="grid gap-3">
+      <SectionHeader
+        eyebrow="Resume picks"
+        title={title}
+        meta={meta}
+        action={<StatusPill tone="teal">{rows.length} open</StatusPill>}
+      />
+      <div className="overflow-x-auto md-scrollbar">
+        <WarehouseInventoryTable
+          rows={rows}
+          columns={columns}
+          minWidth={1280}
+          rowLabel="picks"
+          emptyMessage="No picks are waiting in this view."
+          onRowClick={onOpenPick}
+        />
+      </div>
+    </div>
+  )
+}
+
+export function WarehousePickResumeTablePreview() {
+  return (
+    <WarehousePickResumeTable
+      title="Open goods-in picks"
+      meta="Rows resume the guided flow at the step where the warehouse team left off."
+      rows={getGoodsInResumeRows()}
+    />
+  )
+}
+
+function GoodsInSourceCard({
+  source,
+  active,
+  onSelect,
+}: {
+  source: WarehouseGoodsInSource
+  active: boolean
+  onSelect: () => void
+}) {
+  const isDocument = source === "Document / PO"
+
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      className={cn(
+        "rounded-[var(--md-radius-lg)] p-3 text-start shadow-[var(--md-shadow-line)] transition-[background,box-shadow,scale,transform] active:scale-[0.98]",
+        active ? "bg-[color-mix(in_srgb,var(--md-accent)_12%,white)] shadow-[var(--md-shadow-green-card-selected)]" : "bg-white/54 hover:bg-white/78",
+      )}
+      onClick={onSelect}
+    >
+      <div className="flex items-start gap-3">
+        <span className="grid size-9 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-white/62 text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">
+          {isDocument ? <FileText className="size-4" strokeWidth={1.25} /> : <Plus className="size-4" strokeWidth={1.25} />}
+        </span>
+        <div className="min-w-0">
+          <p className="text-[13px] font-medium text-[var(--md-ink)]">{source}</p>
+          <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">
+            {isDocument ? "Parse the purchase order or delivery note, then receive against expected lines." : "Start when the stock arrives before a document has been prepared."}
+          </p>
+        </div>
+      </div>
+    </button>
+  )
+}
+
+function GoodsInQueueCard({
+  receipt,
+  active,
+  onSelect,
+}: {
+  receipt: WarehouseGoodsInReceipt
+  active: boolean
+  onSelect: () => void
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      className={cn(
+        "w-full rounded-[var(--md-radius-lg)] p-3 text-start shadow-[var(--md-shadow-line)] transition-[background,box-shadow,scale,transform] active:scale-[0.98]",
+        active ? "bg-[color-mix(in_srgb,var(--md-accent)_11%,white)] shadow-[var(--md-shadow-green-card-selected)]" : "bg-white/50 hover:bg-white/76",
+      )}
+      onClick={onSelect}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <WarehouseCode>{receipt.id}</WarehouseCode>
+          <p className="mt-2 truncate text-[13px] font-medium text-[var(--md-ink)]">{receipt.customer}</p>
+          <p className="mt-1 truncate text-[12px] text-[var(--md-text)]">{receipt.booking}</p>
+        </div>
+        <StatusPill tone={receipt.tone}>{receipt.status}</StatusPill>
+      </div>
+      <div className="mt-3 flex items-center gap-2">
+        <Progress
+          value={receipt.progress}
+          className="h-1.5 rounded-full bg-[rgba(90,103,100,0.12)] [&>div]:bg-[var(--goods-in-progress)]"
+          style={{ "--goods-in-progress": toneToVar(receipt.tone) } as CSSProperties}
+        />
+        <span className="w-8 text-end text-[11px] font-medium tabular-nums text-[var(--md-text)]">{receipt.progress}%</span>
+      </div>
+    </button>
+  )
+}
+
+function GoodsInStepRail({
+  activeStep,
+  onChange,
+}: {
+  activeStep: WarehouseGoodsInStepId
+  onChange: (step: WarehouseGoodsInStepId) => void
+}) {
+  const activeIndex = getGoodsInStepIndex(activeStep)
+  const activeStepMeta = warehouseGoodsInFlowSteps[activeIndex] ?? warehouseGoodsInFlowSteps[0]
+  const completeCount = Math.max(activeIndex, 0)
+
+  return (
+    <Surface padding="sm" className={cn("sticky top-[72px] z-10 rounded-[var(--md-radius-xl)] backdrop-blur-xl", goodsInWizardSurfaceClass)}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] font-medium text-[var(--md-subtle)]">Step {activeIndex + 1} of {warehouseGoodsInFlowSteps.length}</p>
+          <h2 className="mt-0.5 truncate text-[15px] font-medium text-[var(--md-ink)]">{activeStepMeta.label}</h2>
+        </div>
+        <StatusPill tone={activeStepMeta.tone}>{completeCount}/{warehouseGoodsInFlowSteps.length - 1} complete</StatusPill>
+      </div>
+      <div className="mt-3">
+        <div
+          className="grid gap-1 rounded-full bg-[rgba(14,125,116,0.06)] p-1 shadow-[inset_0_0_0_1px_rgba(14,125,116,0.1),0_1px_1px_rgba(14,125,116,0.04)]"
+          style={{ gridTemplateColumns: `repeat(${warehouseGoodsInFlowSteps.length}, minmax(0, 1fr))` }}
+          aria-label="Goods in progress"
+        >
+          {warehouseGoodsInFlowSteps.map((step, index) => {
+            const active = activeStep === step.id
+            const complete = index < activeIndex
+
+            return (
+              <button
+                key={step.id}
+                type="button"
+                aria-current={active ? "step" : undefined}
+                aria-label={step.label}
+                className={cn(
+                  "relative h-2.5 min-w-0 overflow-hidden rounded-full bg-[rgba(90,103,100,0.14)] transition-[background,box-shadow,transform,opacity] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[rgba(14,125,116,0.18)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(14,125,116,0.28)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
+                  active && "scale-y-125 shadow-[0_0_0_1px_rgba(14,125,116,0.18),0_8px_18px_rgba(14,125,116,0.14)]",
+                )}
+                onClick={() => onChange(step.id)}
+              >
+                <span
+                  className={cn(
+                    "block h-full rounded-full transition-[width,background] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
+                    active || complete ? "bg-[var(--md-accent)]" : "bg-transparent",
+                  )}
+                  style={{ width: active || complete ? "100%" : "0%" }}
+                />
+              </button>
+            )
+          })}
+        </div>
+        <div
+          className="mt-2 grid gap-1"
+          style={{ gridTemplateColumns: `repeat(${warehouseGoodsInFlowSteps.length}, minmax(0, 1fr))` }}
+        >
+          {warehouseGoodsInFlowSteps.map((step) => {
+            const active = activeStep === step.id
+
+            return (
+              <button
+                key={step.id}
+                type="button"
+                title={step.label}
+                className={cn(
+                  "flex min-w-0 items-center justify-center gap-1 py-0.5 text-center text-[10px] font-medium transition-[color,opacity] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(14,125,116,0.22)]",
+                  active ? "text-[var(--md-accent)]" : "text-[var(--md-subtle)] hover:text-[var(--md-text)]",
+                )}
+                onClick={() => onChange(step.id)}
+              >
+                <span className="truncate">{step.label}</span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    </Surface>
+  )
+}
+
+function GoodsInLineRow({
+  line,
+  active,
+  hasEvidence,
+  onSelect,
+  onAdjust,
+  onMatchExpected,
+}: {
+  line: WarehouseGoodsInLineWithActual
+  active: boolean
+  hasEvidence: boolean
+  onSelect: () => void
+  onAdjust: (delta: number) => void
+  onMatchExpected: () => void
+}) {
+  const variance = line.actual - line.expected
+  const tone = getGoodsInLineTone(line)
+  const status = getGoodsInLineStatus(line)
+
+  return (
+    <div
+      className={cn(
+        "grid gap-3 rounded-[var(--md-radius-lg)] bg-white/58 p-3 shadow-[var(--md-shadow-line)] transition-[background,box-shadow]",
+        active && "bg-[color-mix(in_srgb,var(--md-accent)_10%,white)] shadow-[var(--md-shadow-green-card-selected)]",
+      )}
+    >
+      <button type="button" className="grid gap-3 text-start lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start" onClick={onSelect}>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <WarehouseCode>{line.sku}</WarehouseCode>
+            <StatusPill tone={tone}>{status}</StatusPill>
+            {hasEvidence ? <StatusPill tone="blue">Photo attached</StatusPill> : null}
+          </div>
+          <p className="mt-2 truncate text-[14px] font-medium text-[var(--md-ink)]">{line.product}</p>
+          <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{line.note}</p>
+        </div>
+        <div className="grid grid-cols-3 gap-2 sm:min-w-[260px]">
+          <GoodsInMetric label="Expected" value={<span data-i18n-skip dir="ltr">{line.expected} {line.unit}</span>} tone="neutral" />
+          <GoodsInMetric label="Actual" value={<span data-i18n-skip dir="ltr">{line.actual} {line.unit}</span>} tone={tone} />
+          <GoodsInMetric label="Variance" value={<span data-i18n-skip dir="ltr">{variance > 0 ? "+" : ""}{variance}</span>} tone={variance === 0 ? "green" : variance < 0 ? "amber" : "blue"} />
+        </div>
+      </button>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          variant="ghost"
+          className="h-8 rounded-[var(--md-radius-md)] bg-white/54 px-2 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/80"
+          aria-label={`Reduce actual quantity for ${line.product}`}
+          onClick={() => onAdjust(-1)}
+        >
+          -1
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          className="h-8 rounded-[var(--md-radius-md)] bg-white/54 px-2 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/80"
+          aria-label={`Increase actual quantity for ${line.product}`}
+          onClick={() => onAdjust(1)}
+        >
+          +1
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          className="h-8 rounded-[var(--md-radius-md)] bg-white/54 px-3 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/80"
+          onClick={onMatchExpected}
+        >
+          <Check data-icon="inline-start" className="size-3.5" strokeWidth={1.25} />
+          Mark expected
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function GoodsInStockCheckTable({
+  lines,
+  activeLineId,
+  evidenceLineIds,
+  onSelectLine,
+  onAdjust,
+  onMatchExpected,
+  onToggleEvidence,
+}: {
+  lines: WarehouseGoodsInLineWithActual[]
+  activeLineId?: string
+  evidenceLineIds: Set<string>
+  onSelectLine: (lineId: string) => void
+  onAdjust: (lineId: string, delta: number) => void
+  onMatchExpected: (line: WarehouseGoodsInLineWithActual) => void
+  onToggleEvidence: (lineId: string) => void
+}) {
+  return (
+    <div className="overflow-hidden rounded-[var(--md-radius-xl)] bg-white/70 shadow-[var(--md-shadow-line)]">
+      <div className="max-h-[min(58vh,620px)] overflow-auto md-scrollbar">
+        <Table className="text-[13px]" style={{ minWidth: 1120 } as CSSProperties}>
+          <TableHeader className="sticky top-0 z-10">
+            <TableRow className="border-b border-[rgba(90,103,100,0.12)] hover:bg-transparent">
+              <TableHead className={cn(tableHeadClass, "w-[150px]")}>SKU</TableHead>
+              <TableHead className={cn(tableHeadClass, "min-w-[240px]")}>Product</TableHead>
+              <TableHead className={cn(tableHeadClass, "w-[112px] text-right")}>Expected</TableHead>
+              <TableHead className={cn(tableHeadClass, "w-[112px] text-right")}>Actual</TableHead>
+              <TableHead className={cn(tableHeadClass, "w-[104px] text-right")}>Variance</TableHead>
+              <TableHead className={cn(tableHeadClass, "w-[138px]")}>Location</TableHead>
+              <TableHead className={cn(tableHeadClass, "w-[132px]")}>Status</TableHead>
+              <TableHead className={cn(tableHeadClass, "w-[220px]")}>Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <tbody className="[&_tr:last-child]:border-0">
+            {lines.map((line) => {
+              const variance = line.actual - line.expected
+              const tone = getGoodsInLineTone(line)
+              const active = activeLineId === line.id
+              const hasEvidence = evidenceLineIds.has(line.id)
+
+              return (
+                <TableRow
+                  key={line.id}
+                  tabIndex={0}
+                  aria-selected={active}
+                  className={cn(
+                    "h-[54px] cursor-pointer border-b border-[rgba(90,103,100,0.09)] bg-white/68 transition-[background,box-shadow] hover:bg-[rgba(14,125,116,0.045)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
+                    active && "bg-[color-mix(in_srgb,var(--md-accent)_9%,white)] shadow-[inset_3px_0_0_var(--md-accent)]",
+                  )}
+                  onClick={() => onSelectLine(line.id)}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" && event.key !== " ") return
+                    event.preventDefault()
+                    onSelectLine(line.id)
+                  }}
+                >
+                  <TableCell className={tableCellClass}><WarehouseCode>{line.sku}</WarehouseCode></TableCell>
+                  <TableCell className={tableCellClass}>
+                    <span className="grid gap-1">
+                      <span className="truncate font-medium text-[var(--md-ink)]">{line.product}</span>
+                      <span className="truncate text-[12px] text-[var(--md-subtle)]">{line.note}</span>
+                    </span>
+                  </TableCell>
+                  <TableCell className={cn(tableCellClass, "text-right tabular-nums")}><span data-i18n-skip dir="ltr">{line.expected} {line.unit}</span></TableCell>
+                  <TableCell className={cn(tableCellClass, "text-right tabular-nums")}><span data-i18n-skip dir="ltr">{line.actual} {line.unit}</span></TableCell>
+                  <TableCell className={cn(tableCellClass, "text-right tabular-nums text-[var(--md-ink)]")}><span data-i18n-skip dir="ltr">{variance > 0 ? "+" : ""}{variance}</span></TableCell>
+                  <TableCell className={tableCellClass}><WarehouseCode>{line.location}</WarehouseCode></TableCell>
+                  <TableCell className={tableCellClass}>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <StatusPill tone={tone}>{getGoodsInLineStatus(line)}</StatusPill>
+                      {hasEvidence ? <StatusPill tone="blue">Photo</StatusPill> : null}
+                    </div>
+                  </TableCell>
+                  <TableCell className={tableCellClass}>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="h-7 rounded-[var(--md-radius-md)] bg-white/64 px-2 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white"
+                        aria-label={`Reduce actual quantity for ${line.product}`}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          onAdjust(line.id, -1)
+                        }}
+                      >
+                        -1
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="h-7 rounded-[var(--md-radius-md)] bg-white/64 px-2 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white"
+                        aria-label={`Increase actual quantity for ${line.product}`}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          onAdjust(line.id, 1)
+                        }}
+                      >
+                        +1
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="h-7 rounded-[var(--md-radius-md)] bg-white/64 px-2 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          onMatchExpected(line)
+                        }}
+                      >
+                        Match
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className={cn(
+                          "h-7 rounded-[var(--md-radius-md)] px-2 text-[12px] font-medium shadow-[var(--md-shadow-line)] hover:bg-white",
+                          hasEvidence ? "bg-[color-mix(in_srgb,var(--md-blue)_12%,white)] text-[var(--md-blue)]" : "bg-white/64 text-[var(--md-ink)]",
+                        )}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          onToggleEvidence(line.id)
+                        }}
+                      >
+                        <Camera data-icon="inline-start" className="size-3.5" strokeWidth={1.25} />
+                        Photo
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              )
+            })}
+          </tbody>
+        </Table>
+      </div>
+    </div>
+  )
+}
+
+function GoodsInExceptionPanel({
+  line,
+  hasEvidence,
+  onToggleEvidence,
+}: {
+  line: WarehouseGoodsInLineWithActual
+  hasEvidence: boolean
+  onToggleEvidence: () => void
+}) {
+  const variance = line.actual - line.expected
+  const needsCustomer = variance !== 0 || line.condition !== "Clear"
+
+  return (
+    <Surface padding="md" className="rounded-[var(--md-radius-xl)]">
+      <SectionHeader
+        eyebrow="Exceptions"
+        title={needsCustomer ? "Customer decision needed" : "No exception on selected line"}
+        meta={needsCustomer ? "Capture the evidence once, then send a clean receipt summary." : "This line can move straight into barcode print and putaway."}
+      />
+
+      <div className="mt-4 grid gap-3">
+        <div className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-3 shadow-[var(--md-shadow-line)]">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <WarehouseCode>{line.sku}</WarehouseCode>
+              <p className="mt-2 text-[13px] font-medium text-[var(--md-ink)]">{line.product}</p>
+              <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{line.condition} · {line.note}</p>
+            </div>
+            <StatusPill tone={getGoodsInLineTone(line)}>{getGoodsInLineStatus(line)}</StatusPill>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <GoodsInMetric label="Expected" value={<span data-i18n-skip dir="ltr">{line.expected}</span>} />
+          <GoodsInMetric label="Actual" value={<span data-i18n-skip dir="ltr">{line.actual}</span>} tone={getGoodsInLineTone(line)} />
+        </div>
+
+        <button
+          type="button"
+          aria-pressed={hasEvidence}
+          className={cn(
+            "flex min-h-[92px] items-center gap-3 rounded-[var(--md-radius-lg)] p-3 text-start shadow-[var(--md-shadow-line)] transition-[background,box-shadow,scale,transform] active:scale-[0.98]",
+            hasEvidence ? "bg-[color-mix(in_srgb,var(--md-blue)_12%,white)]" : "bg-white/52 hover:bg-white/78",
+          )}
+          onClick={onToggleEvidence}
+        >
+          <span className="grid size-10 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-white/64 text-[var(--md-blue)] shadow-[var(--md-shadow-line)]">
+            <Camera className="size-4" strokeWidth={1.25} />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-[13px] font-medium text-[var(--md-ink)]">{hasEvidence ? "Evidence attached" : "Attach damage photo"}</span>
+            <span className="mt-1 block text-[12px] leading-5 text-[var(--md-text)]">
+              {hasEvidence ? "Photo evidence will travel with the receipt summary." : "Use this for visible damage, shortages, or over-delivery proof."}
+            </span>
+          </span>
+        </button>
+      </div>
+    </Surface>
+  )
+}
+
+function GoodsInReceiptSummary({
+  receipt,
+  lines,
+  sent,
+  printed,
+  onSend,
+  onPrint,
+}: {
+  receipt: WarehouseGoodsInReceipt
+  lines: WarehouseGoodsInLineWithActual[]
+  sent: boolean
+  printed: boolean
+  onSend: () => void
+  onPrint: () => void
+}) {
+  const expectedTotal = lines.reduce((total, line) => total + line.expected, 0)
+  const actualTotal = lines.reduce((total, line) => total + line.actual, 0)
+  const exceptionCount = lines.filter((line) => getGoodsInLineStatus(line) !== "Matched").length
+
+  return (
+    <Surface padding="md" className="rounded-[var(--md-radius-xl)]">
+      <SectionHeader
+        eyebrow="Receipt"
+        title="Ready to finish"
+        meta="One place for the customer receipt, barcode labels, and putaway handoff."
+        action={<StatusPill tone={sent ? "green" : exceptionCount ? "amber" : "teal"}>{sent ? "Sent" : `${exceptionCount} exception${exceptionCount === 1 ? "" : "s"}`}</StatusPill>}
+      />
+
+      <div className="mt-4 grid grid-cols-3 gap-2">
+        <GoodsInMetric label="Expected" value={<span data-i18n-skip dir="ltr">{expectedTotal}</span>} tone="neutral" />
+        <GoodsInMetric label="Actual" value={<span data-i18n-skip dir="ltr">{actualTotal}</span>} tone={expectedTotal === actualTotal ? "green" : "amber"} />
+        <GoodsInMetric label="Lines" value={<span data-i18n-skip dir="ltr">{lines.length}</span>} tone="teal" />
+      </div>
+
+      <div className="mt-4 grid gap-2">
+        {receipt.putaway.map((item) => (
+          <div key={item.label} className="flex items-center justify-between gap-3 rounded-[var(--md-radius-md)] bg-white/54 px-3 py-2 shadow-[var(--md-shadow-line)]">
+            <span className="text-[12px] font-medium text-[var(--md-text)]">{item.label}</span>
+            <StatusPill tone={item.tone}>{item.value}</StatusPill>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 grid gap-2">
+        <Button
+          type="button"
+          className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white shadow-[0_10px_22px_rgba(14,125,116,0.14)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]"
+          onClick={onSend}
+        >
+          <Send data-icon="inline-start" className="size-4" strokeWidth={1.25} />
+          {sent ? "Receipt summary sent" : "Send receipt summary"}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          className="h-10 rounded-[var(--md-radius-lg)] bg-white/54 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/80"
+          onClick={onPrint}
+        >
+          <Printer data-icon="inline-start" className="size-4" strokeWidth={1.25} />
+          {printed ? "Barcodes printed" : "Print barcodes"}
+        </Button>
+      </div>
+    </Surface>
+  )
+}
+
+function getInitialGoodsInStep(receipt: WarehouseGoodsInReceipt): WarehouseGoodsInStepId {
+  return getGoodsInResumeStep(receipt)
+}
+
+function createGoodsInStepMap() {
+  return warehouseGoodsInReceipts.reduce<Record<string, WarehouseGoodsInStepId>>((stepMap, receipt) => {
+    stepMap[receipt.id] = getInitialGoodsInStep(receipt)
+    return stepMap
+  }, {})
+}
+
+function createGoodsInExpectedDateMap() {
+  return warehouseGoodsInReceipts.reduce<Record<string, string>>((dateMap, receipt) => {
+    dateMap[receipt.id] = getGoodsInExpectedDate(receipt)
+    return dateMap
+  }, {})
+}
+
+function formatGoodsInSavedAt(value?: string) {
+  if (!value) return "Not saved yet"
+  return value
+}
+
+function getGoodsInStepIndex(step: WarehouseGoodsInStepId) {
+  return warehouseGoodsInFlowSteps.findIndex((item) => item.id === step)
+}
+
+function GoodsInWizardQueueCard({
+  receipt,
+  active,
+  activeStep,
+  progress,
+  savedAt,
+  waiting,
+  onSelect,
+}: {
+  receipt: WarehouseGoodsInReceipt
+  active: boolean
+  activeStep: WarehouseGoodsInStepId
+  progress: number
+  savedAt?: string
+  waiting: boolean
+  onSelect: () => void
+}) {
+  const step = warehouseGoodsInFlowSteps.find((item) => item.id === activeStep) ?? warehouseGoodsInFlowSteps[0]
+
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      className={cn(
+        "w-full rounded-[var(--md-radius-lg)] p-3 text-start shadow-[var(--md-shadow-line)] transition-[background,box-shadow,scale,transform] active:scale-[0.98]",
+        active ? "bg-[color-mix(in_srgb,var(--md-accent)_11%,white)] shadow-[var(--md-shadow-green-card-selected)]" : "bg-white/50 hover:bg-white/76",
+      )}
+      onClick={onSelect}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <WarehouseCode>{receipt.id}</WarehouseCode>
+          <p className="mt-2 truncate text-[13px] font-medium text-[var(--md-ink)]">{receipt.customer}</p>
+          <p className="mt-1 truncate text-[12px] text-[var(--md-text)]">{waiting ? "Waiting for delivery" : step.label}</p>
+        </div>
+        <StatusPill tone={waiting ? "amber" : step.tone}>{waiting ? "Paused" : receipt.status}</StatusPill>
+      </div>
+      <div className="mt-3 flex items-center gap-2">
+        <Progress
+          value={progress}
+          className="h-1.5 rounded-full bg-[rgba(90,103,100,0.12)] [&>div]:bg-[var(--goods-in-progress)]"
+          style={{ "--goods-in-progress": toneToVar(waiting ? "amber" : step.tone) } as CSSProperties}
+        />
+        <span className="w-8 text-end text-[11px] font-medium tabular-nums text-[var(--md-text)]">{progress}%</span>
+      </div>
+      <p className="mt-2 truncate text-[11.5px] text-[var(--md-subtle)]">{formatGoodsInSavedAt(savedAt)}</p>
+    </button>
+  )
+}
+
+function GoodsInWizardShell({
+  eyebrow,
+  title,
+  summary,
+  children,
+}: {
+  eyebrow: string
+  title: string
+  summary: string
+  children: ReactNode
+}) {
+  return (
+    <Surface padding="sm" className={cn("overflow-visible rounded-[var(--md-radius-xl)]", goodsInWizardSurfaceClass)}>
+      <div className="mb-3 flex flex-col gap-1 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0">
+        <p className="text-[12px] font-medium uppercase text-[var(--md-accent)]">{eyebrow}</p>
+          <h1 className="mt-1 text-[18px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">{title}</h1>
+        </div>
+        <p className="max-w-[520px] text-[12.5px] leading-5 text-[var(--md-text)] lg:text-right">{summary}</p>
+      </div>
+      {children}
+    </Surface>
+  )
+}
+
+export function WarehouseGoodsInFlow({
+  initialReceiptId,
+  onBack,
+}: {
+  initialReceiptId?: string
+  onBack?: () => void
+}) {
+  const [activeSource, setActiveSource] = useState<WarehouseGoodsInSource>(warehouseGoodsInSources[0])
+  const [selectedReceiptId, setSelectedReceiptId] = useState<string>(() => {
+    const initialReceipt = warehouseGoodsInReceipts.find((receipt) => receipt.id === initialReceiptId)
+    return initialReceipt?.id ?? warehouseGoodsInReceipts[0]?.id ?? ""
+  })
+  const [stepByReceipt, setStepByReceipt] = useState<Record<string, WarehouseGoodsInStepId>>(() => createGoodsInStepMap())
+  const [actualByReceipt, setActualByReceipt] = useState<WarehouseGoodsInActualMap>(() => createGoodsInActualMap())
+  const [activeLineId, setActiveLineId] = useState<string>(warehouseGoodsInReceipts[0]?.lines[0]?.id ?? "")
+  const [arrivedReceiptIds, setArrivedReceiptIds] = useState<Set<string>>(() => new Set(warehouseGoodsInReceipts.filter((receipt) => receipt.status !== "Need setup").map((receipt) => receipt.id)))
+  const [waitingReceiptIds, setWaitingReceiptIds] = useState<Set<string>>(() => new Set())
+  const [savedAtByReceipt, setSavedAtByReceipt] = useState<Record<string, string>>(() => ({
+    "GIN-8821": "Saved 4 min ago",
+    "GIN-8824": "Saved yesterday",
+    "GIN-8817": "Saved today",
+  }))
+  const [expectedDateByReceipt, setExpectedDateByReceipt] = useState<Record<string, string>>(() => createGoodsInExpectedDateMap())
+  const [evidenceLineIds, setEvidenceLineIds] = useState<Set<string>>(() => new Set(
+    warehouseGoodsInReceipts.flatMap((receipt) => receipt.lines.filter((line) => line.photoCount > 0).map((line) => line.id)),
+  ))
+  const [sentReceiptIds, setSentReceiptIds] = useState<Set<string>>(() => new Set(warehouseGoodsInReceipts.filter((receipt) => receipt.status === "Putaway").map((receipt) => receipt.id)))
+  const [printedReceiptIds, setPrintedReceiptIds] = useState<Set<string>>(() => new Set(warehouseGoodsInReceipts.filter((receipt) => receipt.status === "Putaway").map((receipt) => receipt.id)))
+
+  const selectedReceipt: WarehouseGoodsInReceipt = warehouseGoodsInReceipts.find((receipt) => receipt.id === selectedReceiptId) ?? warehouseGoodsInReceipts[0]
+  const activeStep = stepByReceipt[selectedReceipt.id] ?? getInitialGoodsInStep(selectedReceipt)
+  const activeStepMeta = warehouseGoodsInFlowSteps.find((step) => step.id === activeStep) ?? warehouseGoodsInFlowSteps[0]
+  const lines = useMemo<WarehouseGoodsInLineWithActual[]>(() => {
+    const actualLines = actualByReceipt[selectedReceipt.id] ?? {}
+    return selectedReceipt.lines.map((line) => ({ ...line, actual: actualLines[line.id] ?? line.actual }))
+  }, [actualByReceipt, selectedReceipt])
+  const activeLine = lines.find((line) => line.id === activeLineId) ?? lines[0]
+  const receiptSent = sentReceiptIds.has(selectedReceipt.id)
+  const barcodePrinted = printedReceiptIds.has(selectedReceipt.id)
+  const expectedLineTotal = lines.reduce((total, line) => total + line.expected, 0)
+  const actualLineTotal = lines.reduce((total, line) => total + line.actual, 0)
+  const activeStepIndex = getGoodsInStepIndex(activeStep)
+  const progress = Math.round(((activeStepIndex + (activeStep === "summary" ? 1 : 0)) / warehouseGoodsInFlowSteps.length) * 100)
+  const isWaiting = waitingReceiptIds.has(selectedReceipt.id)
+  const hasArrived = arrivedReceiptIds.has(selectedReceipt.id)
+
+  useEffect(() => {
+    const initialReceipt = warehouseGoodsInReceipts.find((receipt) => receipt.id === initialReceiptId)
+    if (!initialReceipt) return
+    setSelectedReceiptId(initialReceipt.id)
+    setActiveLineId(initialReceipt.lines[0]?.id ?? "")
+  }, [initialReceiptId])
+
+  function selectReceipt(receipt: WarehouseGoodsInReceipt) {
+    setSelectedReceiptId(receipt.id)
+    setActiveLineId(receipt.lines[0]?.id ?? "")
+  }
+
+  function setActiveStep(step: WarehouseGoodsInStepId) {
+    setStepByReceipt((current) => ({ ...current, [selectedReceipt.id]: step }))
+  }
+
+  function saveDraft(label = "Saved just now") {
+    setSavedAtByReceipt((current) => ({ ...current, [selectedReceipt.id]: label }))
+  }
+
+  function pauseForDelivery() {
+    setWaitingReceiptIds((current) => new Set(current).add(selectedReceipt.id))
+    setStepByReceipt((current) => ({ ...current, [selectedReceipt.id]: "arrival" }))
+    saveDraft("Waiting for delivery")
+  }
+
+  function markArrived() {
+    setArrivedReceiptIds((current) => new Set(current).add(selectedReceipt.id))
+    setWaitingReceiptIds((current) => {
+      const next = new Set(current)
+      next.delete(selectedReceipt.id)
+      return next
+    })
+    setStepByReceipt((current) => ({ ...current, [selectedReceipt.id]: "receive" }))
+    saveDraft("Delivery arrived just now")
+  }
+
+  function goToNextStep() {
+    const nextStep = warehouseGoodsInFlowSteps[Math.min(activeStepIndex + 1, warehouseGoodsInFlowSteps.length - 1)]?.id
+    if (!nextStep) return
+    setActiveStep(nextStep)
+    saveDraft()
+  }
+
+  function goToPreviousStep() {
+    const previousStep = warehouseGoodsInFlowSteps[Math.max(activeStepIndex - 1, 0)]?.id
+    if (!previousStep) return
+    setActiveStep(previousStep)
+  }
+
+  function adjustLine(lineId: string, delta: number) {
+    setActualByReceipt((current) => {
+      const currentReceipt = current[selectedReceipt.id] ?? {}
+      const currentValue = currentReceipt[lineId] ?? selectedReceipt.lines.find((line) => line.id === lineId)?.actual ?? 0
+
+      return {
+        ...current,
+        [selectedReceipt.id]: {
+          ...currentReceipt,
+          [lineId]: Math.max(0, currentValue + delta),
+        },
+      }
+    })
+    setActiveLineId(lineId)
+  }
+
+  function matchExpected(line: WarehouseGoodsInLineWithActual) {
+    setActualByReceipt((current) => ({
+      ...current,
+      [selectedReceipt.id]: {
+        ...(current[selectedReceipt.id] ?? {}),
+        [line.id]: line.expected,
+      },
+    }))
+    setActiveLineId(line.id)
+  }
+
+  function toggleEvidence(lineId: string) {
+    setEvidenceLineIds((current) => {
+      const next = new Set(current)
+      if (next.has(lineId)) next.delete(lineId)
+      else next.add(lineId)
+      return next
+    })
+    setActiveStep("exceptions")
+    saveDraft()
+  }
+
+  function sendReceipt() {
+    setSentReceiptIds((current) => new Set(current).add(selectedReceipt.id))
+    setActiveStep("summary")
+    saveDraft("Receipt summary sent")
+  }
+
+  function printBarcodes() {
+    setPrintedReceiptIds((current) => new Set(current).add(selectedReceipt.id))
+    setActiveStep("summary")
+    saveDraft("Barcodes printed")
+  }
+
+  function renderActiveStep() {
+    if (activeStep === "source") {
+      return (
+        <GoodsInWizardShell eyebrow="Step 1" title="How is this goods-in pick starting?" summary="Start from a purchase order or delivery note when it exists, or create a scratch intake when stock appears before admin is complete.">
+          <div className="grid gap-3 md:grid-cols-2">
+            {warehouseGoodsInSources.map((source) => (
+              <GoodsInSourceCard key={source} source={source} active={activeSource === source} onSelect={() => setActiveSource(source)} />
+            ))}
+          </div>
+          <div className="mt-4 grid gap-3 rounded-[var(--md-radius-lg)] bg-white/54 p-3 shadow-[var(--md-shadow-line)] md:grid-cols-3">
+            <GoodsInMetric label="Source" value={<WarehouseCode>{selectedReceipt.source}</WarehouseCode>} tone="teal" />
+            <GoodsInMetric label="Delivery note" value={<WarehouseCode>{selectedReceipt.deliveryNote}</WarehouseCode>} tone="neutral" />
+            <GoodsInMetric label="Customer" value={selectedReceipt.customer} tone="teal" />
+          </div>
+        </GoodsInWizardShell>
+      )
+    }
+
+    if (activeStep === "setup") {
+      return (
+        <GoodsInWizardShell eyebrow="Step 2" title="Check the order setup before the stock arrives" summary="This step can be completed before delivery. If a product is missing, save the draft and come back once the setup is done.">
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
+              Supplier
+              <Input defaultValue={selectedReceipt.supplier} className="h-10 rounded-[var(--md-radius-lg)] border-0 bg-white/68 text-[13px] shadow-[var(--md-shadow-line)]" />
+            </label>
+            <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
+              Customer contact
+              <Input defaultValue={selectedReceipt.contact} className="h-10 rounded-[var(--md-radius-lg)] border-0 bg-white/68 text-[13px] shadow-[var(--md-shadow-line)]" />
+            </label>
+            <div className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
+              Expected date
+              <MultideckDatePicker
+                value={expectedDateByReceipt[selectedReceipt.id] ?? getGoodsInExpectedDate(selectedReceipt)}
+                onChange={(date) => {
+                  if (!date) return
+                  setExpectedDateByReceipt((current) => ({ ...current, [selectedReceipt.id]: date }))
+                  saveDraft()
+                }}
+                placeholder="Select expected date"
+                title="Expected date"
+                description="Choose one expected date for this goods-in pick."
+              />
+            </div>
+            <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
+              Expected stock
+              <Input defaultValue={selectedReceipt.expected} className="h-10 rounded-[var(--md-radius-lg)] border-0 bg-white/68 text-[13px] shadow-[var(--md-shadow-line)]" />
+            </label>
+          </div>
+          <div className="mt-4 grid gap-2">
+            {selectedReceipt.completeness.map((item) => (
+              <div key={item.label} className="flex items-center justify-between gap-3 rounded-[var(--md-radius-md)] bg-white/54 px-3 py-2 shadow-[var(--md-shadow-line)]">
+                <span className="text-[12px] font-medium text-[var(--md-text)]">{item.label}</span>
+                <StatusPill tone={item.tone}>{item.status}</StatusPill>
+              </div>
+            ))}
+          </div>
+        </GoodsInWizardShell>
+      )
+    }
+
+    if (activeStep === "arrival") {
+      return (
+        <GoodsInWizardShell eyebrow="Step 3" title="Has the delivery actually arrived?" summary="This is the pause point. Operators can prepare the order now, save it, and resume when the truck, courier, or container arrives.">
+          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_260px]">
+            <div className="rounded-[var(--md-radius-lg)] bg-white/54 p-4 shadow-[var(--md-shadow-line)]">
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusPill tone={hasArrived ? "green" : isWaiting ? "amber" : "blue"}>{hasArrived ? "Arrived" : isWaiting ? "Waiting" : "Ready to receive"}</StatusPill>
+                <WarehouseCode>{selectedReceipt.booking}</WarehouseCode>
+              </div>
+              <p className="mt-3 text-[15px] font-medium text-[var(--md-ink)]">{selectedReceipt.customer}</p>
+              <p className="mt-1 text-[13px] leading-5 text-[var(--md-text)]">{selectedReceipt.nextAction}</p>
+            </div>
+            <div className="grid gap-2">
+              <Button type="button" className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] text-[13px] font-medium text-white" onClick={markArrived}>
+                <Check data-icon="inline-start" className="size-4" strokeWidth={1.25} />
+                Mark arrived
+              </Button>
+              <Button type="button" variant="ghost" className="h-10 rounded-[var(--md-radius-lg)] bg-white/54 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/80" onClick={pauseForDelivery}>
+                <Clock3 data-icon="inline-start" className="size-4" strokeWidth={1.25} />
+                Save and wait
+              </Button>
+            </div>
+          </div>
+        </GoodsInWizardShell>
+      )
+    }
+
+    if (activeStep === "receive") {
+      return (
+        <GoodsInWizardShell eyebrow="Step 4" title="Check expected stock against actual stock" summary="Adjust counts line by line. Nothing needs to be final until the receipt summary is sent.">
+          <div className="mb-3 grid gap-2 md:grid-cols-3">
+            <GoodsInMetric label="Expected" value={<span data-i18n-skip dir="ltr">{expectedLineTotal} units</span>} tone="neutral" />
+            <GoodsInMetric label="Actual" value={<span data-i18n-skip dir="ltr">{actualLineTotal} units</span>} tone={expectedLineTotal === actualLineTotal ? "green" : selectedReceipt.tone} />
+            <GoodsInMetric label="Last saved" value={formatGoodsInSavedAt(savedAtByReceipt[selectedReceipt.id])} tone={isWaiting ? "amber" : "teal"} />
+          </div>
+          <GoodsInStockCheckTable
+            lines={lines}
+            activeLineId={activeLine?.id}
+            evidenceLineIds={evidenceLineIds}
+            onSelectLine={setActiveLineId}
+            onAdjust={adjustLine}
+            onMatchExpected={matchExpected}
+            onToggleEvidence={toggleEvidence}
+          />
+        </GoodsInWizardShell>
+      )
+    }
+
+    if (activeStep === "exceptions" && activeLine) {
+      return (
+        <GoodsInWizardShell eyebrow="Step 5" title="Handle any damage, shortage, or over-delivery" summary="Pick the problem line, attach evidence, and keep the customer decision tied to the receipt.">
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="grid gap-2">
+              {lines.map((line) => (
+                <button
+                  key={line.id}
+                  type="button"
+                  aria-pressed={activeLine.id === line.id}
+                  className={cn(
+                    "flex items-center justify-between gap-3 rounded-[var(--md-radius-lg)] bg-white/54 px-3 py-2 text-start shadow-[var(--md-shadow-line)]",
+                    activeLine.id === line.id && "bg-[color-mix(in_srgb,var(--md-accent)_10%,white)] shadow-[var(--md-shadow-green-card-selected)]",
+                  )}
+                  onClick={() => setActiveLineId(line.id)}
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-[13px] font-medium text-[var(--md-ink)]">{line.product}</span>
+                    <span className="mt-0.5 block truncate text-[12px] text-[var(--md-text)]">{line.note}</span>
+                  </span>
+                  <StatusPill tone={getGoodsInLineTone(line)}>{getGoodsInLineStatus(line)}</StatusPill>
+                </button>
+              ))}
+            </div>
+            <GoodsInExceptionPanel line={activeLine} hasEvidence={evidenceLineIds.has(activeLine.id)} onToggleEvidence={() => toggleEvidence(activeLine.id)} />
+          </div>
+        </GoodsInWizardShell>
+      )
+    }
+
+    return (
+      <GoodsInWizardShell eyebrow="Step 6" title="Finish the receipt and move stock on" summary="Send the customer receipt summary, print barcodes, then hand the stock to putaway.">
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <GoodsInReceiptSummary
+            receipt={selectedReceipt}
+            lines={lines}
+            sent={receiptSent}
+            printed={barcodePrinted}
+            onSend={sendReceipt}
+            onPrint={printBarcodes}
+          />
+          <div className="grid gap-3">
+            <div className="rounded-[var(--md-radius-lg)] bg-white/52 p-3 shadow-[var(--md-shadow-line)]">
+              <Barcode className="size-4 text-[var(--md-accent)]" strokeWidth={1.25} />
+              <p className="mt-3 text-[13px] font-medium text-[var(--md-ink)]">Create barcodes</p>
+              <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">Labels use actual arrived quantities, not the original estimate.</p>
+            </div>
+            <div className="rounded-[var(--md-radius-lg)] bg-white/52 p-3 shadow-[var(--md-shadow-line)]">
+              <ScanLine className="size-4 text-[var(--md-blue)]" strokeWidth={1.25} />
+              <p className="mt-3 text-[13px] font-medium text-[var(--md-ink)]">Scan to bin</p>
+              <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">Move matched stock to its suggested warehouse location.</p>
+            </div>
+          </div>
+        </div>
+      </GoodsInWizardShell>
+    )
+  }
+
+  return (
+    <div className="grid gap-3">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <StatusPill tone="teal">Goods in pick</StatusPill>
+          <WarehouseCode>{selectedReceipt.id}</WarehouseCode>
+          <span className="max-w-[320px] truncate text-[13px] font-medium text-[var(--md-ink)]">{selectedReceipt.customer}</span>
+          <StatusPill tone={isWaiting ? "amber" : activeStepMeta.tone}>{isWaiting ? "Waiting for delivery" : activeStepMeta.label}</StatusPill>
+          <WarehousePickProgress value={progress} tone={isWaiting ? "amber" : activeStepMeta.tone} />
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {onBack ? (
+            <Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-lg)] bg-white/54 px-3 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/80" onClick={onBack}>
+              <ArrowLeft data-icon="inline-start" className="size-4" strokeWidth={1.25} />
+              Back to board
+            </Button>
+          ) : null}
+          <Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-lg)] bg-white/54 px-3 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/80" onClick={() => saveDraft()}>
+            <ClipboardCheck data-icon="inline-start" className="size-4" strokeWidth={1.25} />
+            Save draft
+          </Button>
+        </div>
+      </div>
+
+      <GoodsInStepRail activeStep={activeStep} onChange={setActiveStep} />
+      {renderActiveStep()}
+      <Surface padding="sm" className="rounded-[var(--md-radius-xl)] bg-white/58">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusPill tone={isWaiting ? "amber" : activeStepMeta.tone}>{isWaiting ? "Waiting for delivery" : activeStepMeta.label}</StatusPill>
+            <span className="text-[12px] text-[var(--md-text)]">{formatGoodsInSavedAt(savedAtByReceipt[selectedReceipt.id])}</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-lg)] bg-white/54 px-3 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/80" onClick={goToPreviousStep} disabled={activeStepIndex === 0}>
+              <ArrowLeft data-icon="inline-start" className="size-4" strokeWidth={1.25} />
+              Back
+            </Button>
+            <Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-lg)] bg-white/54 px-3 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/80" onClick={() => saveDraft()}>
+              Save draft
+            </Button>
+            {activeStep === "arrival" && !hasArrived ? (
+              <Button type="button" className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3 text-[13px] font-medium text-white" onClick={pauseForDelivery}>
+                <Clock3 data-icon="inline-start" className="size-4" strokeWidth={1.25} />
+                Save and wait
+              </Button>
+            ) : (
+              <Button type="button" className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3 text-[13px] font-medium text-white" onClick={goToNextStep} disabled={activeStepIndex >= warehouseGoodsInFlowSteps.length - 1}>
+                Next
+                <ArrowRight data-icon="inline-end" className="size-4" strokeWidth={1.25} />
+              </Button>
+            )}
+          </div>
+        </div>
+      </Surface>
+    </div>
+  )
+}
+
+function getGoodsOutStepIndex(step: WarehouseGoodsOutStepId) {
+  return warehouseGoodsOutFlowSteps.findIndex((item) => item.id === step)
+}
+
+function createGoodsOutPickedMap() {
+  return warehouseGoodsOutPicks.reduce<Record<string, Record<string, number>>>((pickMap, pick) => {
+    pickMap[pick.id] = pick.lines.reduce<Record<string, number>>((lineMap, line) => {
+      lineMap[line.id] = line.picked
+      return lineMap
+    }, {})
+
+    return pickMap
+  }, {})
+}
+
+function GoodsOutStepRail({
+  activeStep,
+  onChange,
+}: {
+  activeStep: WarehouseGoodsOutStepId
+  onChange: (step: WarehouseGoodsOutStepId) => void
+}) {
+  const activeIndex = getGoodsOutStepIndex(activeStep)
+  const activeStepMeta = warehouseGoodsOutFlowSteps[activeIndex] ?? warehouseGoodsOutFlowSteps[0]
+
+  return (
+    <Surface padding="sm" className="sticky top-[72px] z-10 rounded-[var(--md-radius-xl)] bg-[color-mix(in_srgb,var(--md-blue)_7%,white)] shadow-[inset_0_0_0_1px_rgba(66,109,219,0.12),0_18px_42px_rgba(66,109,219,0.08)] backdrop-blur-xl">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] font-medium text-[var(--md-subtle)]">Step {activeIndex + 1} of {warehouseGoodsOutFlowSteps.length}</p>
+          <h2 className="mt-0.5 truncate text-[15px] font-medium text-[var(--md-ink)]">{activeStepMeta.label}</h2>
+        </div>
+        <StatusPill tone={activeStepMeta.tone}>{activeIndex}/{warehouseGoodsOutFlowSteps.length - 1} complete</StatusPill>
+      </div>
+      <div className="mt-3 grid gap-1 rounded-full bg-[rgba(66,109,219,0.08)] p-1" style={{ gridTemplateColumns: `repeat(${warehouseGoodsOutFlowSteps.length}, minmax(0, 1fr))` }}>
+        {warehouseGoodsOutFlowSteps.map((step, index) => {
+          const active = activeStep === step.id
+          const complete = index < activeIndex
+
+          return (
+            <button
+              key={step.id}
+              type="button"
+              aria-current={active ? "step" : undefined}
+              className={cn(
+                "h-2.5 rounded-full bg-[rgba(90,103,100,0.14)] transition-[background,box-shadow,transform] hover:bg-[rgba(66,109,219,0.18)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(66,109,219,0.28)]",
+                (active || complete) && "bg-[var(--md-blue)]",
+                active && "scale-y-125 shadow-[0_8px_18px_rgba(66,109,219,0.14)]",
+              )}
+              onClick={() => onChange(step.id)}
+            />
+          )
+        })}
+      </div>
+      <div className="mt-2 grid gap-1" style={{ gridTemplateColumns: `repeat(${warehouseGoodsOutFlowSteps.length}, minmax(0, 1fr))` }}>
+        {warehouseGoodsOutFlowSteps.map((step) => (
+          <button
+            key={step.id}
+            type="button"
+            className={cn(
+              "truncate py-0.5 text-center text-[10px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(66,109,219,0.22)]",
+              activeStep === step.id ? "text-[var(--md-blue)]" : "text-[var(--md-subtle)] hover:text-[var(--md-text)]",
+            )}
+            onClick={() => onChange(step.id)}
+          >
+            {step.label}
+          </button>
+        ))}
+      </div>
+    </Surface>
+  )
+}
+
+function GoodsOutPickLineTable({
+  pick,
+  pickedByLine,
+  onAdjust,
+  onMatchRequired,
+}: {
+  pick: WarehouseGoodsOutPick
+  pickedByLine: Record<string, number>
+  onAdjust: (lineId: string, delta: number) => void
+  onMatchRequired: (lineId: string, required: number) => void
+}) {
+  return (
+    <div className="overflow-hidden rounded-[var(--md-radius-xl)] bg-white/70 shadow-[var(--md-shadow-line)]">
+      <div className="max-h-[min(56vh,560px)] overflow-auto md-scrollbar">
+        <Table className="text-[13px]" style={{ minWidth: 980 } as CSSProperties}>
+          <TableHeader className="sticky top-0 z-10">
+            <TableRow className="border-b border-[rgba(90,103,100,0.12)] hover:bg-transparent">
+              <TableHead className={cn(tableHeadClass, "w-[150px]")}>SKU</TableHead>
+              <TableHead className={cn(tableHeadClass, "min-w-[240px]")}>Product</TableHead>
+              <TableHead className={cn(tableHeadClass, "w-[112px] text-right")}>Required</TableHead>
+              <TableHead className={cn(tableHeadClass, "w-[112px] text-right")}>Picked</TableHead>
+              <TableHead className={cn(tableHeadClass, "w-[138px]")}>Location</TableHead>
+              <TableHead className={cn(tableHeadClass, "w-[132px]")}>Status</TableHead>
+              <TableHead className={cn(tableHeadClass, "w-[178px]")}>Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <tbody className="[&_tr:last-child]:border-0">
+            {pick.lines.map((line) => {
+              const picked = pickedByLine[line.id] ?? line.picked
+              const matched = picked >= line.required
+
+              return (
+                <TableRow key={line.id} className="h-[54px] border-b border-[rgba(90,103,100,0.09)] bg-white/68 hover:bg-[rgba(66,109,219,0.045)]">
+                  <TableCell className={tableCellClass}><WarehouseCode>{line.sku}</WarehouseCode></TableCell>
+                  <TableCell className={tableCellClass}>
+                    <span className="grid gap-1">
+                      <span className="truncate font-medium text-[var(--md-ink)]">{line.product}</span>
+                      <span className="truncate text-[12px] text-[var(--md-subtle)]">{line.note}</span>
+                    </span>
+                  </TableCell>
+                  <TableCell className={cn(tableCellClass, "text-right tabular-nums")}><span data-i18n-skip dir="ltr">{line.required} {line.unit}</span></TableCell>
+                  <TableCell className={cn(tableCellClass, "text-right tabular-nums")}><span data-i18n-skip dir="ltr">{picked} {line.unit}</span></TableCell>
+                  <TableCell className={tableCellClass}><WarehouseCode>{line.location}</WarehouseCode></TableCell>
+                  <TableCell className={tableCellClass}><StatusPill tone={matched ? "green" : line.tone}>{matched ? "Picked" : line.status}</StatusPill></TableCell>
+                  <TableCell className={tableCellClass}>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Button type="button" variant="ghost" className="h-7 rounded-[var(--md-radius-md)] bg-white/64 px-2 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white" onClick={() => onAdjust(line.id, 1)}>
+                        +1
+                      </Button>
+                      <Button type="button" variant="ghost" className="h-7 rounded-[var(--md-radius-md)] bg-white/64 px-2 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white" onClick={() => onMatchRequired(line.id, line.required)}>
+                        Match
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              )
+            })}
+          </tbody>
+        </Table>
+      </div>
+    </div>
+  )
+}
+
+export function WarehouseGoodsOutFlow({
+  initialPickId,
+  onBack,
+}: {
+  initialPickId?: string
+  onBack?: () => void
+}) {
+  const [selectedPickId, setSelectedPickId] = useState<string>(() => {
+    const initialPick = warehouseGoodsOutPicks.find((pick) => pick.id === initialPickId)
+    return initialPick?.id ?? warehouseGoodsOutPicks[0]?.id ?? ""
+  })
+  const [activeStep, setActiveStep] = useState<WarehouseGoodsOutStepId>(() => {
+    const initialPick = warehouseGoodsOutPicks.find((pick) => pick.id === initialPickId) ?? warehouseGoodsOutPicks[0]
+    return initialPick?.stepId ?? warehouseGoodsOutFlowSteps[0].id
+  })
+  const [pickedByPick, setPickedByPick] = useState<Record<string, Record<string, number>>>(() => createGoodsOutPickedMap())
+  const [savedAt, setSavedAt] = useState("Saved just now")
+
+  const selectedPick = warehouseGoodsOutPicks.find((pick) => pick.id === selectedPickId) ?? warehouseGoodsOutPicks[0]
+  const pickedByLine = pickedByPick[selectedPick.id] ?? {}
+  const stepMeta = warehouseGoodsOutFlowSteps.find((step) => step.id === activeStep) ?? warehouseGoodsOutFlowSteps[0]
+  const activeStepIndex = getGoodsOutStepIndex(activeStep)
+  const progress = Math.round(((activeStepIndex + (activeStep === "dispatch" ? 1 : 0)) / warehouseGoodsOutFlowSteps.length) * 100)
+  const requiredTotal = selectedPick.lines.reduce((total, line) => total + line.required, 0)
+  const pickedTotal = selectedPick.lines.reduce((total, line) => total + (pickedByLine[line.id] ?? line.picked), 0)
+
+  useEffect(() => {
+    const initialPick = warehouseGoodsOutPicks.find((pick) => pick.id === initialPickId)
+    if (!initialPick) return
+    setSelectedPickId(initialPick.id)
+    setActiveStep(initialPick.stepId)
+    setSavedAt(initialPick.savedAt)
+  }, [initialPickId])
+
+  function savePick(label = "Saved just now") {
+    setSavedAt(label)
+  }
+
+  function adjustPicked(lineId: string, delta: number) {
+    setPickedByPick((current) => {
+      const currentPick = current[selectedPick.id] ?? {}
+      const currentValue = currentPick[lineId] ?? selectedPick.lines.find((line) => line.id === lineId)?.picked ?? 0
+
+      return {
+        ...current,
+        [selectedPick.id]: {
+          ...currentPick,
+          [lineId]: Math.max(0, currentValue + delta),
+        },
+      }
+    })
+    savePick()
+  }
+
+  function matchRequired(lineId: string, required: number) {
+    setPickedByPick((current) => ({
+      ...current,
+      [selectedPick.id]: {
+        ...(current[selectedPick.id] ?? {}),
+        [lineId]: required,
+      },
+    }))
+    savePick()
+  }
+
+  function goToNextStep() {
+    const nextStep = warehouseGoodsOutFlowSteps[Math.min(activeStepIndex + 1, warehouseGoodsOutFlowSteps.length - 1)]?.id
+    if (!nextStep) return
+    setActiveStep(nextStep)
+    savePick()
+  }
+
+  function goToPreviousStep() {
+    const previousStep = warehouseGoodsOutFlowSteps[Math.max(activeStepIndex - 1, 0)]?.id
+    if (!previousStep) return
+    setActiveStep(previousStep)
+  }
+
+  function renderStep() {
+    if (activeStep === "pick") {
+      return (
+        <GoodsInWizardShell eyebrow="Goods out" title="Pick stock against the order" summary="Use the table for long pick waves; it stays stable even when there are many SKUs.">
+          <div className="mb-3 grid gap-2 md:grid-cols-3">
+            <GoodsInMetric label="Required" value={<span data-i18n-skip dir="ltr">{requiredTotal} units</span>} tone="neutral" />
+            <GoodsInMetric label="Picked" value={<span data-i18n-skip dir="ltr">{pickedTotal} units</span>} tone={pickedTotal >= requiredTotal ? "green" : selectedPick.tone} />
+            <GoodsInMetric label="Window" value={selectedPick.window} tone={selectedPick.tone} />
+          </div>
+          <GoodsOutPickLineTable pick={selectedPick} pickedByLine={pickedByLine} onAdjust={adjustPicked} onMatchRequired={matchRequired} />
+        </GoodsInWizardShell>
+      )
+    }
+
+    if (activeStep === "stage") {
+      return (
+        <GoodsInWizardShell eyebrow="Goods out" title="Stage the picked stock" summary="Confirm the dispatch door, temperature zone, or preload lane before closing the pick.">
+          <div className="grid gap-3 md:grid-cols-3">
+            <GoodsInMetric label="Customer" value={selectedPick.customer} tone="blue" />
+            <GoodsInMetric label="Window" value={selectedPick.window} tone={selectedPick.tone} />
+            <GoodsInMetric label="Owner" value={<span data-i18n-skip dir="ltr">{selectedPick.owner}</span>} tone="teal" />
+          </div>
+          <div className="mt-3 rounded-[var(--md-radius-lg)] bg-white/54 p-3 shadow-[var(--md-shadow-line)]">
+            <p className="text-[13px] font-medium text-[var(--md-ink)]">{selectedPick.nextStep}</p>
+            <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">Keep this open if the order is staged but the trailer, courier, or driver handoff is not ready yet.</p>
+          </div>
+        </GoodsInWizardShell>
+      )
+    }
+
+    if (activeStep === "dispatch") {
+      return (
+        <GoodsInWizardShell eyebrow="Goods out" title="Dispatch and close the pick" summary="Close the pick once loading, seal, and customer dispatch evidence are complete.">
+          <div className="grid gap-3 md:grid-cols-3">
+            <GoodsInMetric label="Order" value={<WarehouseCode>{selectedPick.orderRef}</WarehouseCode>} tone="blue" />
+            <GoodsInMetric label="Progress" value={<span data-i18n-skip dir="ltr">{selectedPick.progress}%</span>} tone={selectedPick.tone} />
+            <GoodsInMetric label="Saved" value={savedAt} tone="teal" />
+          </div>
+          <div className="mt-3 grid gap-2 md:grid-cols-2">
+            <Button type="button" className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-blue)] px-4 text-[13px] font-medium text-white" onClick={() => savePick("Dispatch paperwork saved")}>
+              <ClipboardCheck data-icon="inline-start" className="size-4" strokeWidth={1.25} />
+              Save dispatch evidence
+            </Button>
+            <Button type="button" variant="ghost" className="h-10 rounded-[var(--md-radius-lg)] bg-white/54 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/80" onClick={() => savePick("Pick closed")}>
+              <Check data-icon="inline-start" className="size-4" strokeWidth={1.25} />
+              Close pick
+            </Button>
+          </div>
+        </GoodsInWizardShell>
+      )
+    }
+
+    return (
+      <GoodsInWizardShell eyebrow="Goods out" title="Check the outbound order setup" summary="Confirm customer, order reference, labels, and carrier window before the team starts picking.">
+        <div className="grid gap-3 md:grid-cols-2">
+          <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
+            Customer
+            <Input defaultValue={selectedPick.customer} className="h-10 rounded-[var(--md-radius-lg)] border-0 bg-white/68 text-[13px] shadow-[var(--md-shadow-line)]" />
+          </label>
+          <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
+            Order reference
+            <Input defaultValue={selectedPick.orderRef} className="h-10 rounded-[var(--md-radius-lg)] border-0 bg-white/68 text-[13px] shadow-[var(--md-shadow-line)]" />
+          </label>
+          <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
+            Dispatch window
+            <Input defaultValue={selectedPick.window} className="h-10 rounded-[var(--md-radius-lg)] border-0 bg-white/68 text-[13px] shadow-[var(--md-shadow-line)]" />
+          </label>
+          <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
+            Pick owner
+            <Input defaultValue={selectedPick.owner} className="h-10 rounded-[var(--md-radius-lg)] border-0 bg-white/68 text-[13px] shadow-[var(--md-shadow-line)]" />
+          </label>
+        </div>
+      </GoodsInWizardShell>
+    )
+  }
+
+  return (
+    <div className="grid gap-3">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <StatusPill tone="blue">Goods out pick</StatusPill>
+          <WarehouseCode>{selectedPick.id}</WarehouseCode>
+          <span className="max-w-[320px] truncate text-[13px] font-medium text-[var(--md-ink)]">{selectedPick.customer}</span>
+          <StatusPill tone={stepMeta.tone}>{stepMeta.label}</StatusPill>
+          <WarehousePickProgress value={progress} tone={stepMeta.tone} />
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {onBack ? (
+            <Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-lg)] bg-white/54 px-3 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/80" onClick={onBack}>
+              <ArrowLeft data-icon="inline-start" className="size-4" strokeWidth={1.25} />
+              Back to board
+            </Button>
+          ) : null}
+          <Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-lg)] bg-white/54 px-3 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/80" onClick={() => savePick()}>
+            <ClipboardCheck data-icon="inline-start" className="size-4" strokeWidth={1.25} />
+            Save draft
+          </Button>
+        </div>
+      </div>
+      <GoodsOutStepRail activeStep={activeStep} onChange={setActiveStep} />
+      {renderStep()}
+      <Surface padding="sm" className="rounded-[var(--md-radius-xl)] bg-white/58">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusPill tone={stepMeta.tone}>{stepMeta.label}</StatusPill>
+            <span className="text-[12px] text-[var(--md-text)]">{savedAt}</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-lg)] bg-white/54 px-3 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/80" onClick={goToPreviousStep} disabled={activeStepIndex === 0}>
+              <ArrowLeft data-icon="inline-start" className="size-4" strokeWidth={1.25} />
+              Back
+            </Button>
+            <Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-lg)] bg-white/54 px-3 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/80" onClick={() => savePick()}>
+              Save draft
+            </Button>
+            <Button type="button" className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-blue)] px-3 text-[13px] font-medium text-white" onClick={goToNextStep} disabled={activeStepIndex >= warehouseGoodsOutFlowSteps.length - 1}>
+              Next
+              <ArrowRight data-icon="inline-end" className="size-4" strokeWidth={1.25} />
+            </Button>
+          </div>
+        </div>
+      </Surface>
+    </div>
+  )
+}
+
+export function WarehouseGoodsView({
+  onNewPick,
+  onResumeGoodsInPick,
+  onResumeGoodsOutPick,
+}: {
+  onNewPick?: () => void
+  onResumeGoodsInPick?: (pickId: string) => void
+  onResumeGoodsOutPick?: (pickId: string) => void
+}) {
   const goodsBoardTabs = ["Goods in", "Goods out"] as const
   const [activeGoodsBoard, setActiveGoodsBoard] = useState<(typeof goodsBoardTabs)[number]>("Goods in")
   const goodsInCardCount = countKanbanCards(warehouseGoodsInKanbanColumns)
   const goodsOutCardCount = countKanbanCards(warehouseGoodsOutKanbanColumns)
   const isGoodsIn = activeGoodsBoard === "Goods in"
+  const goodsInRows = useMemo(() => getGoodsInResumeRows(), [])
+  const goodsOutRows = useMemo(() => getGoodsOutResumeRows(), [])
 
   return (
     <div className="grid gap-[var(--md-page-stack-gap)]">
-      <WarehouseToolbar title="Goods in and goods out" meta="Inbound and outbound work now runs as two clean Kanban boards with the same operational stages.">
+      <WarehouseToolbar title="Goods in and goods out" meta="Inbound and outbound work runs as clean Kanban boards. Use New pick when you need the guided goods-in wizard.">
         <SegmentedControl options={goodsBoardTabs} value={activeGoodsBoard} onChange={setActiveGoodsBoard} />
         <WarehouseSearch placeholder="Search movement, dock, product..." />
       </WarehouseToolbar>
@@ -1358,6 +3046,16 @@ export function WarehouseGoodsView() {
               count={`${goodsInCardCount} cards`}
               icon={<ArrowDownToLine className="size-5" strokeWidth={1.25} />}
               tone="teal"
+              action={onNewPick ? (
+                <Button
+                  type="button"
+                  className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white shadow-[0_10px_22px_rgba(14,125,116,0.14)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]"
+                  onClick={onNewPick}
+                >
+                  <Plus data-icon="inline-start" className="size-4" strokeWidth={1.25} />
+                  New pick
+                </Button>
+              ) : null}
             />
             <SortableWarehouseKanbanBoard
               key="goods-in-board"
@@ -1365,6 +3063,12 @@ export function WarehouseGoodsView() {
               boardId="goods-in"
               columnsSource={warehouseGoodsInKanbanColumns}
               gridClassName="xl:grid-cols-4"
+            />
+            <WarehousePickResumeTable
+              title="Open goods-in picks"
+              meta="Click a row to resume the intake flow from the step the warehouse team last reached."
+              rows={goodsInRows}
+              onOpenPick={(row) => onResumeGoodsInPick?.(row.id)}
             />
           </>
         ) : (
@@ -1383,6 +3087,12 @@ export function WarehouseGoodsView() {
               columnsSource={warehouseGoodsOutKanbanColumns}
               gridClassName="xl:grid-cols-4"
             />
+            <WarehousePickResumeTable
+              title="Open goods-out picks"
+              meta="Click a row to resume picking, staging, or dispatch without losing the board view."
+              rows={goodsOutRows}
+              onOpenPick={(row) => onResumeGoodsOutPick?.(row.id)}
+            />
           </>
         )}
       </div>
@@ -1396,12 +3106,14 @@ function WarehouseBoardSummary({
   count,
   icon,
   tone,
+  action,
 }: {
   title: string
   meta: string
   count: string
   icon: ReactNode
   tone: StatusTone
+  action?: ReactNode
 }) {
   return (
     <Surface padding="md" className="rounded-[var(--md-radius-xl)]">
@@ -1415,7 +3127,10 @@ function WarehouseBoardSummary({
             <p className="mt-1 text-[13px] leading-5 text-[var(--md-text)]">{meta}</p>
           </div>
         </div>
-        <StatusPill tone={tone}>{count}</StatusPill>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <StatusPill tone={tone}>{count}</StatusPill>
+          {action}
+        </div>
       </div>
     </Surface>
   )
