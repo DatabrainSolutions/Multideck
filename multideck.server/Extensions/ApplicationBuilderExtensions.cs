@@ -28,6 +28,13 @@ public static class ApplicationBuilderExtensions
     public static IEndpointRouteBuilder MapRootEndpoint(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/", () => "Multideck Server is running.");
+        endpoints.MapGet("/api/health", () => Results.Ok(new
+        {
+            status = "healthy",
+            service = "Multideck",
+            timestamp = DateTimeOffset.UtcNow,
+        }));
+
         return endpoints;
     }
 }
