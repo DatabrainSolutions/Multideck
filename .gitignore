@@ -15,9 +15,11 @@
 node_modules/
 dist/
 .vite/
+.npm-cache/
 .env
 .env.*
 !.env.example
+Multideck_Scope_v5.docx
 
 # ═══════════════════════════════════════════════════════════
 # Local tooling output

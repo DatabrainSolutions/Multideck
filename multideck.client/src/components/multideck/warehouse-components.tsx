@@ -95,7 +95,7 @@ const tableHeadClass = "border-r border-[rgba(90,103,100,0.12)] bg-[rgba(90,103,
 const tableCellClass = "border-r border-[rgba(90,103,100,0.09)] px-4 py-3 last:border-r-0"
 const kanbanLiftShadow = "var(--md-premium-stroke), 0 20px 42px rgba(42,52,50,0.16)"
 
-type WarehouseKanbanCardData = {
+export type WarehouseKanbanCardData = {
   id: string
   title: string
   meta: string
@@ -103,7 +103,7 @@ type WarehouseKanbanCardData = {
   tone: StatusTone
 }
 
-type WarehouseKanbanColumnSource = {
+export type WarehouseKanbanColumnSource = {
   id?: string
   title: string
   meta?: string
@@ -123,8 +123,11 @@ type WarehouseKanbanPickup = {
 }
 
 type WarehouseCalendarViewMode = (typeof warehouseCalendarViewModes)[number]
-type WarehouseProduct = (typeof warehouseProducts)[number]
-type WarehouseOrder = (typeof warehouseOrders)[number]
+export type WarehouseMetric = (typeof warehouseMetrics)[number]
+export type WarehouseProduct = (typeof warehouseProducts)[number]
+export type WarehouseOrder = (typeof warehouseOrders)[number]
+export type WarehouseMovement = (typeof warehouseGoodsMovements)[number]
+export type WarehouseCalendarCustomer = (typeof warehouseCalendarCustomers)[number]
 
 type WarehouseCalendarDay = {
   dateKey: string
@@ -200,8 +203,8 @@ function getMonthDateKeys(monthStartKey: string) {
   return Array.from({ length: visibleDayCount }, (_, index) => formatDateKey(addCalendarDays(gridStart, index)))
 }
 
-function getWarehouseCalendarCustomer(customerId: WarehouseCalendarCustomerId) {
-  return warehouseCalendarCustomers.find((customer) => customer.id === customerId) ?? warehouseCalendarCustomerFallback
+function getWarehouseCalendarCustomer(customerId: WarehouseCalendarCustomerId, customers: readonly WarehouseCalendarCustomer[] = warehouseCalendarCustomers) {
+  return customers.find((customer) => customer.id === customerId) ?? customers.find((customer) => customer.id === "internal") ?? warehouseCalendarCustomerFallback
 }
 
 function getTimeInMinutes(time: string) {
@@ -217,8 +220,8 @@ function getHourLabel(hour: number) {
   return `${normalizedHour - 12} PM`
 }
 
-function getCalendarEventsByDate() {
-  return warehouseCalendarEvents.reduce<Record<string, WarehouseCalendarEvent[]>>((eventsByDate, event) => {
+function getCalendarEventsByDate(events: readonly WarehouseCalendarEvent[] = warehouseCalendarEvents) {
+  return events.reduce<Record<string, WarehouseCalendarEvent[]>>((eventsByDate, event) => {
     eventsByDate[event.date] = [...(eventsByDate[event.date] ?? []), event]
     return eventsByDate
   }, {})
@@ -687,8 +690,8 @@ function StockBar({ value, tone }: { value: number; tone: StatusTone }) {
   )
 }
 
-type WarehouseStockRow = (typeof warehouseStockRows)[number]
-type WarehouseStockBranchLocation = WarehouseStockRow["branchLocations"][number]
+export type WarehouseStockRow = (typeof warehouseStockRows)[number]
+export type WarehouseStockBranchLocation = WarehouseStockRow["branchLocations"][number]
 
 const allWarehouseCustomers = "All customers"
 const allWarehouseProducts = "All products"
@@ -738,7 +741,7 @@ const productColumns = [
     key: "product",
     label: "Product",
     className: "min-w-[260px]",
-    render: (product: (typeof warehouseProducts)[number]) => (
+    render: (product: WarehouseProduct) => (
       <div className="min-w-0">
         <p className="truncate text-[14px] font-medium text-[var(--md-ink)]">{product.name}</p>
         <p className="mt-1 truncate text-[12px] text-[var(--md-text)]">{product.customer} - {product.category}</p>
@@ -748,23 +751,23 @@ const productColumns = [
   {
     key: "sku",
     label: "SKU",
-    render: (product: (typeof warehouseProducts)[number]) => <WarehouseCode>{product.sku}</WarehouseCode>,
+    render: (product: WarehouseProduct) => <WarehouseCode>{product.sku}</WarehouseCode>,
   },
   {
     key: "hsCode",
     label: "HS code",
-    render: (product: (typeof warehouseProducts)[number]) => <WarehouseCode className="text-[var(--md-text)]">{product.hsCode}</WarehouseCode>,
+    render: (product: WarehouseProduct) => <WarehouseCode className="text-[var(--md-text)]">{product.hsCode}</WarehouseCode>,
   },
   {
     key: "supplier",
     label: "Supplier ref",
-    render: (product: (typeof warehouseProducts)[number]) => <WarehouseCode className="text-[var(--md-text)]">{product.supplierRef}</WarehouseCode>,
+    render: (product: WarehouseProduct) => <WarehouseCode className="text-[var(--md-text)]">{product.supplierRef}</WarehouseCode>,
   },
   {
     key: "stock",
     label: "Stock",
     align: "right" as const,
-    render: (product: (typeof warehouseProducts)[number]) => (
+    render: (product: WarehouseProduct) => (
       <div className="text-right">
         <p className="text-[14px] font-medium tabular-nums text-[var(--md-ink)]">{product.onHand}</p>
         <p className="mt-1 text-[12px] text-[var(--md-text)]">{product.available} available</p>
@@ -774,19 +777,19 @@ const productColumns = [
   {
     key: "status",
     label: "Status",
-    render: (product: (typeof warehouseProducts)[number]) => <StatusPill tone={product.tone}>{product.status}</StatusPill>,
+    render: (product: WarehouseProduct) => <StatusPill tone={product.tone}>{product.status}</StatusPill>,
   },
   {
     key: "inbound",
     label: "Inbound",
     align: "right" as const,
-    render: (product: (typeof warehouseProducts)[number]) => <span className="tabular-nums text-[var(--md-ink)]">{product.inbound}</span>,
+    render: (product: WarehouseProduct) => <span className="tabular-nums text-[var(--md-ink)]">{product.inbound}</span>,
   },
   {
     key: "owner",
     label: "Owner",
     align: "center" as const,
-    render: (product: (typeof warehouseProducts)[number]) => (
+    render: (product: WarehouseProduct) => (
       <span className="inline-grid size-7 place-items-center rounded-full bg-[rgba(14,125,116,0.1)] text-[11px] font-medium text-[var(--md-accent)]">{product.owner}</span>
     ),
   },
@@ -891,7 +894,7 @@ const orderColumns = [
     key: "order",
     label: "Order",
     className: "min-w-[160px]",
-    render: (order: (typeof warehouseOrders)[number]) => (
+    render: (order: WarehouseOrder) => (
       <div>
         <WarehouseCode>{order.id}</WarehouseCode>
         <p className="mt-1 text-[12px] text-[var(--md-text)]">{order.type}</p>
@@ -902,7 +905,7 @@ const orderColumns = [
     key: "customer",
     label: "Customer",
     className: "min-w-[230px]",
-    render: (order: (typeof warehouseOrders)[number]) => (
+    render: (order: WarehouseOrder) => (
       <div className="min-w-0">
         <p className="truncate text-[14px] font-medium text-[var(--md-ink)]">{order.customer}</p>
         <p className="mt-1 truncate text-[12px] text-[var(--md-text)]">{order.route}</p>
@@ -913,18 +916,18 @@ const orderColumns = [
     key: "lines",
     label: "Lines",
     align: "right" as const,
-    render: (order: (typeof warehouseOrders)[number]) => <span className="tabular-nums text-[var(--md-ink)]">{order.lines}</span>,
+    render: (order: WarehouseOrder) => <span className="tabular-nums text-[var(--md-ink)]">{order.lines}</span>,
   },
   {
     key: "value",
     label: "Value",
     align: "right" as const,
-    render: (order: (typeof warehouseOrders)[number]) => <span className="font-medium tabular-nums text-[var(--md-ink)]">{order.value}</span>,
+    render: (order: WarehouseOrder) => <span className="font-medium tabular-nums text-[var(--md-ink)]">{order.value}</span>,
   },
   {
     key: "due",
     label: "Due",
-    render: (order: (typeof warehouseOrders)[number]) => (
+    render: (order: WarehouseOrder) => (
       <div>
         <p className="text-[13px] font-medium text-[var(--md-ink)]">{order.due}</p>
         <p className="mt-1 text-[12px] text-[var(--md-text)]">{order.window}</p>
@@ -934,7 +937,7 @@ const orderColumns = [
   {
     key: "status",
     label: "Status",
-    render: (order: (typeof warehouseOrders)[number]) => <StatusPill tone={order.tone}>{order.status}</StatusPill>,
+    render: (order: WarehouseOrder) => <StatusPill tone={order.tone}>{order.status}</StatusPill>,
   },
 ] satisfies WarehouseTableColumn<WarehouseOrder>[]
 
@@ -943,7 +946,7 @@ const movementColumns = [
     key: "movement",
     label: "Movement",
     className: "min-w-[190px]",
-    render: (movement: (typeof warehouseGoodsMovements)[number]) => (
+    render: (movement: WarehouseMovement) => (
       <div className="flex items-center gap-3">
         <span className={cn("grid size-8 place-items-center rounded-[var(--md-radius-md)] shadow-[var(--md-shadow-line)]", movement.direction === "In" ? "bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)]" : "bg-[rgba(74,125,156,0.1)] text-[var(--md-blue)]")}>
           {movement.direction === "In" ? <ArrowDownToLine className="size-4" strokeWidth={1.25} /> : <ArrowUpFromLine className="size-4" strokeWidth={1.25} />}
@@ -959,7 +962,7 @@ const movementColumns = [
     key: "product",
     label: "Product",
     className: "min-w-[260px]",
-    render: (movement: (typeof warehouseGoodsMovements)[number]) => (
+    render: (movement: WarehouseMovement) => (
       <div className="min-w-0">
         <p className="truncate text-[14px] font-medium text-[var(--md-ink)]">{movement.product}</p>
         <p className="mt-1 truncate text-[12px] text-[var(--md-text)]">{movement.reference}</p>
@@ -970,26 +973,26 @@ const movementColumns = [
     key: "qty",
     label: "Qty",
     align: "right" as const,
-    render: (movement: (typeof warehouseGoodsMovements)[number]) => <span className="font-medium tabular-nums text-[var(--md-ink)]">{movement.quantity}</span>,
+    render: (movement: WarehouseMovement) => <span className="font-medium tabular-nums text-[var(--md-ink)]">{movement.quantity}</span>,
   },
   {
     key: "dock",
     label: "Dock / bin",
-    render: (movement: (typeof warehouseGoodsMovements)[number]) => <WarehouseCode>{movement.dock}</WarehouseCode>,
+    render: (movement: WarehouseMovement) => <WarehouseCode>{movement.dock}</WarehouseCode>,
   },
   {
     key: "time",
     label: "Time",
-    render: (movement: (typeof warehouseGoodsMovements)[number]) => <span className="text-[13px] text-[var(--md-text)]">{movement.time}</span>,
+    render: (movement: WarehouseMovement) => <span className="text-[13px] text-[var(--md-text)]">{movement.time}</span>,
   },
   {
     key: "status",
     label: "Status",
-    render: (movement: (typeof warehouseGoodsMovements)[number]) => <StatusPill tone={movement.tone}>{movement.status}</StatusPill>,
+    render: (movement: WarehouseMovement) => <StatusPill tone={movement.tone}>{movement.status}</StatusPill>,
   },
-] satisfies WarehouseTableColumn<(typeof warehouseGoodsMovements)[number]>[]
+] satisfies WarehouseTableColumn<WarehouseMovement>[]
 
-export function WarehouseProductsTable({ rows = warehouseProducts }: { rows?: typeof warehouseProducts }) {
+export function WarehouseProductsTable({ rows = warehouseProducts }: { rows?: readonly WarehouseProduct[] }) {
   return (
     <WarehouseInventoryTable
       rows={[...rows]}
@@ -1161,7 +1164,7 @@ export function WarehouseStockTable({
   )
 }
 
-export function WarehouseOrdersTable({ rows = warehouseOrders }: { rows?: typeof warehouseOrders }) {
+export function WarehouseOrdersTable({ rows = warehouseOrders }: { rows?: readonly WarehouseOrder[] }) {
   return (
     <WarehouseInventoryTable
       rows={[...rows]}
@@ -1175,7 +1178,7 @@ export function WarehouseOrdersTable({ rows = warehouseOrders }: { rows?: typeof
   )
 }
 
-function WarehouseMovementsTable({ rows = warehouseGoodsMovements }: { rows?: typeof warehouseGoodsMovements }) {
+function WarehouseMovementsTable({ rows = warehouseGoodsMovements }: { rows?: readonly WarehouseMovement[] }) {
   return (
     <WarehouseInventoryTable
       rows={[...rows]}
@@ -1187,10 +1190,10 @@ function WarehouseMovementsTable({ rows = warehouseGoodsMovements }: { rows?: ty
   )
 }
 
-export function WarehouseMetricStrip() {
+export function WarehouseMetricStrip({ metrics = warehouseMetrics }: { metrics?: readonly WarehouseMetric[] }) {
   return (
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      {warehouseMetrics.map((metric) => {
+      {metrics.map((metric) => {
         const Icon = metric.icon
 
         return (
@@ -1242,7 +1245,7 @@ export function WarehousePageHeader() {
   )
 }
 
-function WarehouseActivityPanel() {
+function WarehouseActivityPanel({ rows = warehouseGoodsMovements }: { rows?: readonly WarehouseMovement[] }) {
   const shouldReduceMotion = useReducedMotion()
 
   return (
@@ -1256,7 +1259,7 @@ function WarehouseActivityPanel() {
         initial={shouldReduceMotion ? undefined : "hidden"}
         animate={shouldReduceMotion ? undefined : "show"}
       >
-        {warehouseGoodsMovements.slice(0, 5).map((movement) => (
+        {rows.slice(0, 5).map((movement) => (
           <motion.div key={movement.id} variants={shouldReduceMotion ? undefined : rowReveal} className="grid grid-cols-[34px_minmax(0,1fr)_auto] gap-3 px-5 py-3">
             <span className={cn("grid size-[34px] place-items-center rounded-[var(--md-radius-md)] shadow-[var(--md-shadow-line)]", movement.direction === "In" ? "bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)]" : "bg-[rgba(74,125,156,0.1)] text-[var(--md-blue)]")}>
               {movement.direction === "In" ? <ArrowDownToLine className="size-4" strokeWidth={1.25} /> : <ArrowUpFromLine className="size-4" strokeWidth={1.25} />}
@@ -1276,29 +1279,37 @@ function WarehouseActivityPanel() {
   )
 }
 
-export function WarehouseDashboard() {
+export function WarehouseDashboard({
+  metrics = warehouseMetrics,
+  orders = warehouseOrders,
+  movements = warehouseGoodsMovements,
+}: {
+  metrics?: readonly WarehouseMetric[]
+  orders?: readonly WarehouseOrder[]
+  movements?: readonly WarehouseMovement[]
+}) {
   return (
     <div className="grid gap-[var(--md-page-stack-gap)]">
-      <WarehouseMetricStrip />
+      <WarehouseMetricStrip metrics={metrics} />
       <div className="grid gap-[var(--md-page-stack-gap)] 2xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.75fr)]">
         <div className="grid gap-[var(--md-gap-md)]">
           <WarehouseToolbar title="Open warehouse orders" meta="Pick, receive, and dispatch work ready for the next product pass.">
-            <StatusPill tone="amber">6 active</StatusPill>
+            <StatusPill tone="amber">{orders.length} active</StatusPill>
           </WarehouseToolbar>
-          <WarehouseOrdersTable rows={warehouseOrders.slice(0, 5)} />
+          <WarehouseOrdersTable rows={orders.slice(0, 5)} />
         </div>
-        <WarehouseActivityPanel />
+        <WarehouseActivityPanel rows={movements} />
       </div>
     </div>
   )
 }
 
-export function WarehouseOrdersView() {
+export function WarehouseOrdersView({ rows: sourceRows = warehouseOrders }: { rows?: readonly WarehouseOrder[] }) {
   const [activeFilter, setActiveFilter] = useState<string>(warehouseOrderFilters[0])
   const filter = activeFilter.split(" · ")[0]
   const rows =
-    filter === "All orders" ? warehouseOrders :
-    warehouseOrders.filter((order) => order.type === filter)
+    filter === "All orders" ? sourceRows :
+    sourceRows.filter((order) => order.type === filter)
 
   return (
     <div className="grid gap-[var(--md-page-stack-gap)]">
@@ -1314,16 +1325,18 @@ export function WarehouseOrdersView() {
 export function WarehouseProductsView({
   activeFilter,
   onFilterChange,
+  rows: sourceRows = warehouseProducts,
 }: {
   activeFilter: string
   onFilterChange: (filter: string) => void
+  rows?: readonly WarehouseProduct[]
 }) {
   const filter = activeFilter.split(" · ")[0]
   const rows =
-    filter === "All" ? warehouseProducts :
-    filter === "Low stock" ? warehouseProducts.filter((product) => product.status === "Low stock") :
-    filter === "Inbound" ? warehouseProducts.filter((product) => product.inbound > 0) :
-    warehouseProducts.filter((product) => product.status === "Quarantine")
+    filter === "All" ? sourceRows :
+    filter === "Low stock" ? sourceRows.filter((product) => product.status === "Low stock") :
+    filter === "Inbound" ? sourceRows.filter((product) => product.inbound > 0) :
+    sourceRows.filter((product) => product.status === "Quarantine")
 
   return (
     <div className="grid gap-[var(--md-page-stack-gap)]">
@@ -1336,11 +1349,19 @@ export function WarehouseProductsView({
   )
 }
 
-export function WarehouseGoodsView() {
+export function WarehouseGoodsView({
+  goodsInColumns = warehouseGoodsInKanbanColumns,
+  goodsOutColumns = warehouseGoodsOutKanbanColumns,
+  onReorder,
+}: {
+  goodsInColumns?: readonly WarehouseKanbanColumnSource[]
+  goodsOutColumns?: readonly WarehouseKanbanColumnSource[]
+  onReorder?: (board: "goods-in" | "goods-out", columns: SortableWarehouseKanbanColumn[]) => void
+}) {
   const goodsBoardTabs = ["Goods in", "Goods out"] as const
   const [activeGoodsBoard, setActiveGoodsBoard] = useState<(typeof goodsBoardTabs)[number]>("Goods in")
-  const goodsInCardCount = countKanbanCards(warehouseGoodsInKanbanColumns)
-  const goodsOutCardCount = countKanbanCards(warehouseGoodsOutKanbanColumns)
+  const goodsInCardCount = countKanbanCards(goodsInColumns)
+  const goodsOutCardCount = countKanbanCards(goodsOutColumns)
   const isGoodsIn = activeGoodsBoard === "Goods in"
 
   return (
@@ -1363,8 +1384,9 @@ export function WarehouseGoodsView() {
               key="goods-in-board"
               ariaLabel="Goods in Kanban board"
               boardId="goods-in"
-              columnsSource={warehouseGoodsInKanbanColumns}
+              columnsSource={goodsInColumns}
               gridClassName="xl:grid-cols-4"
+              onReorder={(columns) => onReorder?.("goods-in", columns)}
             />
           </>
         ) : (
@@ -1380,8 +1402,9 @@ export function WarehouseGoodsView() {
               key="goods-out-board"
               ariaLabel="Goods out Kanban board"
               boardId="goods-out"
-              columnsSource={warehouseGoodsOutKanbanColumns}
+              columnsSource={goodsOutColumns}
               gridClassName="xl:grid-cols-4"
+              onReorder={(columns) => onReorder?.("goods-out", columns)}
             />
           </>
         )}
@@ -1475,11 +1498,13 @@ function SortableWarehouseKanbanBoard({
   boardId,
   columnsSource,
   gridClassName,
+  onReorder,
 }: {
   ariaLabel: string
   boardId: string
   columnsSource: readonly WarehouseKanbanColumnSource[]
   gridClassName: string
+  onReorder?: (columns: SortableWarehouseKanbanColumn[]) => void
 }) {
   const shouldReduceMotion = useReducedMotion()
   const [columns, setColumns] = useState(() => createKanbanColumns(columnsSource, boardId))
@@ -1490,6 +1515,10 @@ function SortableWarehouseKanbanBoard({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
   const columnIds = useMemo(() => columns.map((column) => column.id), [columns])
+
+  useEffect(() => {
+    setColumns(createKanbanColumns(columnsSource, boardId))
+  }, [boardId, columnsSource])
 
   function handleDragStart(event: DragStartEvent) {
     const activeId = String(event.active.id)
@@ -1521,10 +1550,14 @@ function SortableWarehouseKanbanBoard({
 
         if (activeCardIndex < 0 || overCardIndex < 0 || activeCardIndex === overCardIndex) return currentColumns
 
-        return currentColumns.map((column, index) => (
+        const nextColumns = currentColumns.map((column, index) => (
           index === columnIndex ? { ...column, cards: arrayMove(column.cards, activeCardIndex, overCardIndex) } : column
         ))
+        onReorder?.(nextColumns)
+        return nextColumns
       })
+    } else {
+      onReorder?.(columns)
     }
 
     setActiveCard(null)
@@ -1829,11 +1862,13 @@ function WarehouseCalendarEventDetails({
 function WarehouseCalendarEventCard({
   event,
   compact,
+  customers,
 }: {
   event: WarehouseCalendarEvent
   compact: boolean
+  customers: readonly WarehouseCalendarCustomer[]
 }) {
-  const customer = getWarehouseCalendarCustomer(event.customerId)
+  const customer = getWarehouseCalendarCustomer(event.customerId, customers)
   const { t } = useLanguage()
   const eventStyle = {
     "--warehouse-calendar-color": customer.color,
@@ -1875,11 +1910,13 @@ function WarehouseCalendarEventCard({
 
 function WarehouseCalendarTimedEvent({
   positionedEvent,
+  customers,
 }: {
   positionedEvent: PositionedWarehouseCalendarEvent
+  customers: readonly WarehouseCalendarCustomer[]
 }) {
   const { event, top, height, column, columnCount } = positionedEvent
-  const customer = getWarehouseCalendarCustomer(event.customerId)
+  const customer = getWarehouseCalendarCustomer(event.customerId, customers)
   const { t } = useLanguage()
   const compact = height < 58 || columnCount > 1
   const eventStyle = {
@@ -1928,7 +1965,7 @@ function WarehouseCalendarTimedEvent({
   )
 }
 
-function WarehouseCalendarTimedDayColumn({ day }: { day: WarehouseCalendarDay }) {
+function WarehouseCalendarTimedDayColumn({ day, customers }: { day: WarehouseCalendarDay; customers: readonly WarehouseCalendarCustomer[] }) {
   const positionedEvents = useMemo(() => getCalendarEventLayout(day.events), [day.events])
   const isToday = day.dateKey === warehouseCalendarCurrentDate
 
@@ -1944,13 +1981,13 @@ function WarehouseCalendarTimedDayColumn({ day }: { day: WarehouseCalendarDay })
         <span key={`${day.dateKey}-${hour}`} aria-hidden="true" className="absolute inset-x-0 h-px bg-[rgba(90,103,100,0.11)]" style={{ top: index * warehouseCalendarHourHeight }} />
       ))}
       {positionedEvents.map((positionedEvent) => (
-        <WarehouseCalendarTimedEvent key={positionedEvent.event.id} positionedEvent={positionedEvent} />
+        <WarehouseCalendarTimedEvent key={positionedEvent.event.id} positionedEvent={positionedEvent} customers={customers} />
       ))}
     </div>
   )
 }
 
-function WarehouseCalendarWeekGrid({ days }: { days: WarehouseCalendarDay[] }) {
+function WarehouseCalendarWeekGrid({ days, customers }: { days: WarehouseCalendarDay[]; customers: readonly WarehouseCalendarCustomer[] }) {
   return (
     <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
       <div className="overflow-x-auto md-scrollbar">
@@ -2003,7 +2040,7 @@ function WarehouseCalendarWeekGrid({ days }: { days: WarehouseCalendarDay[] }) {
               ))}
             </div>
             {days.map((day) => (
-              <WarehouseCalendarTimedDayColumn key={day.dateKey} day={day} />
+              <WarehouseCalendarTimedDayColumn key={day.dateKey} day={day} customers={customers} />
             ))}
           </div>
         </div>
@@ -2015,9 +2052,11 @@ function WarehouseCalendarWeekGrid({ days }: { days: WarehouseCalendarDay[] }) {
 function WarehouseCalendarDayCell({
   day,
   view,
+  customers,
 }: {
   day: WarehouseCalendarDay
   view: WarehouseCalendarViewMode
+  customers: readonly WarehouseCalendarCustomer[]
 }) {
   const { t } = useLanguage()
   const isMonthView = view === "Month"
@@ -2045,7 +2084,7 @@ function WarehouseCalendarDayCell({
       </div>
       <div className={cn("mt-3 grid", isMonthView ? "gap-1.5" : "gap-2")}>
         {day.events.map((event) => (
-          <WarehouseCalendarEventCard key={event.id} event={event} compact={isMonthView} />
+          <WarehouseCalendarEventCard key={event.id} event={event} compact={isMonthView} customers={customers} />
         ))}
         {!day.events.length && !isMonthView ? <p className="px-1 py-4 text-[12px] leading-5 text-[var(--md-subtle)]">{t("No planned warehouse work")}</p> : null}
       </div>
@@ -2053,11 +2092,17 @@ function WarehouseCalendarDayCell({
   )
 }
 
-export function WarehouseCalendarView() {
+export function WarehouseCalendarView({
+  customers = warehouseCalendarCustomers,
+  events = warehouseCalendarEvents,
+}: {
+  customers?: readonly WarehouseCalendarCustomer[]
+  events?: readonly WarehouseCalendarEvent[]
+}) {
   const { language, t } = useLanguage()
   const [calendarView, setCalendarView] = useState<WarehouseCalendarViewMode>("Week")
   const [selectedCustomerIds, setSelectedCustomerIds] = useState<WarehouseCalendarCustomerId[]>([])
-  const eventsByDate = useMemo(() => getCalendarEventsByDate(), [])
+  const eventsByDate = useMemo(() => getCalendarEventsByDate(events), [events])
   const allCalendarDays = useMemo(() => buildCalendarDays(calendarView, language, eventsByDate), [calendarView, eventsByDate, language])
   const calendarDays = useMemo(() => (
     selectedCustomerIds.length
@@ -2065,7 +2110,7 @@ export function WarehouseCalendarView() {
       : allCalendarDays
   ), [allCalendarDays, selectedCustomerIds])
   const visibleCustomerIds = useMemo(() => new Set(allCalendarDays.flatMap((day) => day.events.map((event) => event.customerId))), [allCalendarDays])
-  const visibleCustomers = warehouseCalendarCustomers.filter((customer) => visibleCustomerIds.has(customer.id))
+  const visibleCustomers = customers.filter((customer) => visibleCustomerIds.has(customer.id))
   const eventCount = calendarDays.reduce((total, day) => total + day.events.length, 0)
   const periodLabel = formatCalendarPeriodLabel(calendarView, language)
 
@@ -2093,11 +2138,11 @@ export function WarehouseCalendarView() {
       </WarehouseToolbar>
       <WarehouseCalendarCustomerKey customers={visibleCustomers} selectedCustomerIds={selectedCustomerIds} onSelectCustomer={handleSelectCustomer} />
       {calendarView === "Week" ? (
-        <WarehouseCalendarWeekGrid days={calendarDays} />
+        <WarehouseCalendarWeekGrid days={calendarDays} customers={customers} />
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
           {calendarDays.map((day) => (
-            <WarehouseCalendarDayCell key={day.dateKey} day={day} view={calendarView} />
+            <WarehouseCalendarDayCell key={day.dateKey} day={day} view={calendarView} customers={customers} />
           ))}
         </div>
       )}
@@ -2108,32 +2153,34 @@ export function WarehouseCalendarView() {
 export function WarehouseStockView({
   activeFilter,
   onFilterChange,
+  rows: sourceRows = warehouseStockRows,
 }: {
   activeFilter: string
   onFilterChange: (filter: string) => void
+  rows?: readonly WarehouseStockRow[]
 }) {
   const [customerFilter, setCustomerFilter] = useState(allWarehouseCustomers)
   const [productFilter, setProductFilter] = useState(allWarehouseProducts)
   const [batchFilter, setBatchFilter] = useState(allWarehouseBatches)
   const [selectedStockId, setSelectedStockId] = useState<string | null>(null)
   const customerOptions = useMemo(
-    () => makeWarehouseFilterOptions(warehouseStockRows.map((row) => row.customer), allWarehouseCustomers),
-    [],
+    () => makeWarehouseFilterOptions(sourceRows.map((row) => row.customer), allWarehouseCustomers),
+    [sourceRows],
   )
   const productOptions = useMemo(
-    () => makeWarehouseFilterOptions(warehouseStockRows.map((row) => row.product), allWarehouseProducts),
-    [],
+    () => makeWarehouseFilterOptions(sourceRows.map((row) => row.product), allWarehouseProducts),
+    [sourceRows],
   )
   const batchOptions = useMemo(
-    () => makeWarehouseFilterOptions(warehouseStockRows.flatMap((row) => row.branchLocations.map((location) => location.lot)), allWarehouseBatches),
-    [],
+    () => makeWarehouseFilterOptions(sourceRows.flatMap((row) => row.branchLocations.map((location) => location.lot)), allWarehouseBatches),
+    [sourceRows],
   )
   const filter = activeFilter.split(" · ")[0]
   const statusRows =
-    filter === "All stock" ? warehouseStockRows :
-    filter === "Low stock" ? warehouseStockRows.filter((row) => row.status === "Low stock") :
-    filter === "Allocated" ? warehouseStockRows.filter((row) => row.allocated > 0) :
-    warehouseStockRows.filter((row) => row.status === "Quarantine")
+    filter === "All stock" ? sourceRows :
+    filter === "Low stock" ? sourceRows.filter((row) => row.status === "Low stock") :
+    filter === "Allocated" ? sourceRows.filter((row) => row.allocated > 0) :
+    sourceRows.filter((row) => row.status === "Quarantine")
   const rows = statusRows
     .filter((row) => customerFilter === allWarehouseCustomers || row.customer === customerFilter)
     .filter((row) => productFilter === allWarehouseProducts || row.product === productFilter)
