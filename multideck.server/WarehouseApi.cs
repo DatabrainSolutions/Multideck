@@ -1,3 +1,4 @@
+using Multideck.Server.Configuration;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
@@ -11,11 +12,11 @@ internal static class WarehouseApi
     {
         var warehouseApi = app.MapGroup("/api/warehouse").WithTags("Warehouse");
 
-        if (!supabaseAuth.HasRestAccess)
+        if (!supabaseAuth.HasServiceRoleKey)
         {
             warehouseApi.MapGet("/{*path}", () => Results.Problem(
                 title: "Warehouse backend is not configured.",
-                detail: "Set Supabase:Url/VITE_SUPABASE_URL and Supabase:AnonKey/VITE_SUPABASE_ANON_KEY for the API.",
+                detail: "Set Supabase:Url/VITE_SUPABASE_URL and Supabase:ServiceRoleKey/VITE_SUPABASE_ANON_KEY for the API.",
                 statusCode: StatusCodes.Status503ServiceUnavailable));
             return;
         }
@@ -441,7 +442,7 @@ internal sealed class SupabaseRestClient(HttpClient httpClient, SupabaseAuthOpti
     private HttpRequestMessage CreateRequest(HttpMethod method, string pathAndQuery, string accessToken)
     {
         var request = new HttpRequestMessage(method, $"{options.Url}/rest/v1/{pathAndQuery}");
-        request.Headers.TryAddWithoutValidation("apikey", options.AnonKey);
+        request.Headers.TryAddWithoutValidation("apikey", options.ServiceRoleKey);
         request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {accessToken}");
         request.Headers.TryAddWithoutValidation("Accept", "application/json");
         return request;
