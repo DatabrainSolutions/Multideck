@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react"
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react"
 import type { User } from "@supabase/supabase-js"
 import {
   BadgeCheck,
@@ -38,6 +38,7 @@ import {
 import { toast } from "sonner"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
+import { Pagination } from "@/components/multideck/pagination"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { ThemeToggle } from "@/components/multideck/theme-toggle"
 import {
@@ -57,8 +58,24 @@ import {
 } from "@/components/multideck/settings-components"
 import { languageOptions, getLanguageOption } from "@/i18n/languages"
 import { useLanguage } from "@/i18n/language-provider"
+import {
+  changeApiTeamUserOffice,
+  createApiAuthorizationRole,
+  createApiTeamUser,
+  deleteApiAuthorizationRole,
+  getApiAuthorizationState,
+  getApiTeamUsers,
+  updateApiRolePermissions,
+  updateApiUserRoles,
+  type ApiAuthorizationRole,
+  type ApiAuthorizationState,
+  type ApiPermission,
+  type ApiTeamRole,
+  type ApiTeamUser,
+  type ApiTeamUsersResponse,
+} from "@/lib/api"
 import { clockDisplayLabelFromMode, clockDisplayLabels, clockDisplayModeFromLabel, readClockDisplayMode, resetAiAgentName, useAiAgentName, writeAiAgentName, writeClockDisplayMode } from "@/lib/user-preferences"
-import { supabase } from "@/lib/supabase"
+import { getSupabaseSession, supabase } from "@/lib/supabase"
 import { cn } from "@/lib/utils"
 
 const settingsGroups: SettingsTabGroup[] = [
@@ -81,7 +98,8 @@ const settingsGroups: SettingsTabGroup[] = [
   {
     label: "Organisation",
     items: [
-      { id: "team", label: "Team & permissions", icon: Users },
+      { id: "team", label: "Team", icon: Users },
+      { id: "permissions", label: "Permissions", icon: ShieldCheck },
       { id: "integrations", label: "Integrations", badge: "14", icon: Plug },
       { id: "api", label: "API & webhooks", icon: Webhook },
       { id: "billing", label: "Billing & usage", icon: CreditCard },
@@ -935,45 +953,711 @@ function AgentDexterTab() {
   )
 }
 
+const emptyInviteForm = {
+  firstName: "",
+  lastName: "",
+  email: "",
+  roleTitle: "Operator",
+  roleId: "",
+  officeId: "",
+}
+
+function getTeamUserInitials(user: ApiTeamUser) {
+  const source = [user.firstName, user.lastName].filter(Boolean).join(" ").trim() || user.displayName || user.email
+  const parts = source.split(/\s+/).filter(Boolean)
+  const initials = parts.length > 1 ? `${parts[0][0]}${parts.at(-1)?.[0]}` : source.slice(0, 2)
+  return initials.toUpperCase()
+}
+
+function getOfficeLabel(office: { name: string; address: string | null }) {
+  return office.address ? `${office.name} - ${office.address}` : office.name
+}
+
+function upsertTeamUser(users: ApiTeamUser[], nextUser: ApiTeamUser) {
+  const existing = users.some((user) => user.id === nextUser.id)
+  const next = existing ? users.map((user) => (user.id === nextUser.id ? nextUser : user)) : [...users, nextUser]
+  return next.sort((a, b) => a.displayName.localeCompare(b.displayName))
+}
+
+function getDefaultInviteRole(roles: ApiAuthorizationRole[]) {
+  return roles.find((role) => role.name.toLowerCase() === "operator") ?? roles[0] ?? null
+}
+
+function getPermissionGroups(permissions: ApiPermission[]) {
+  return permissions.reduce<Array<{ group: string; permissions: ApiPermission[] }>>((groups, permission) => {
+    const existingGroup = groups.find((item) => item.group === permission.group)
+    if (existingGroup) {
+      existingGroup.permissions.push(permission)
+    } else {
+      groups.push({ group: permission.group, permissions: [permission] })
+    }
+
+    return groups
+  }, [])
+}
+
+function getRolesFromIds(roles: ApiAuthorizationRole[], roleIds: string[]): ApiTeamRole[] {
+  return roleIds
+    .map((roleId) => roles.find((role) => role.id === roleId))
+    .filter((role): role is ApiAuthorizationRole => Boolean(role))
+    .map((role) => ({ id: role.id, name: role.name }))
+}
+
+function upsertUserRoleAssignment(assignments: ApiAuthorizationState["userRoles"], userId: string, roleIds: string[]) {
+  const nextAssignment = { userId, roleIds }
+  return assignments.some((assignment) => assignment.userId === userId)
+    ? assignments.map((assignment) => (assignment.userId === userId ? nextAssignment : assignment))
+    : [...assignments, nextAssignment]
+}
+
 function TeamTab() {
-  const members = [
-    ["Elena Moreno", "Admin - Ops", "Owner of customs and exception boards", "EM"],
-    ["Jonas Lehmann", "Operator", "Air freight and premium customer owner", "JL"],
-    ["Wei Chen", "Customs lead", "CDS entries, licences, and broker review", "WC"],
-    ["Maya Singh", "Finance", "Quotes, billing, and credit limits", "MS"],
-  ]
+  const { t } = useLanguage()
+  const [team, setTeam] = useState<ApiTeamUsersResponse | null>(null)
+  const [loadingTeam, setLoadingTeam] = useState(true)
+  const [teamError, setTeamError] = useState<string | null>(null)
+  const [showInviteForm, setShowInviteForm] = useState(false)
+  const [inviteForm, setInviteForm] = useState(emptyInviteForm)
+  const [creatingUser, setCreatingUser] = useState(false)
+  const [changingOfficeUserId, setChangingOfficeUserId] = useState<string | null>(null)
+  const [changingRoleUserId, setChangingRoleUserId] = useState<string | null>(null)
+  const [authorizationState, setAuthorizationState] = useState<ApiAuthorizationState | null>(null)
+  const [teamPage, setTeamPage] = useState(1)
+  const [teamPageSize, setTeamPageSize] = useState(8)
+
+  async function loadTeam() {
+    setLoadingTeam(true)
+    setTeamError(null)
+
+    try {
+      const session = await getSupabaseSession()
+      if (!session?.access_token) throw new Error(t("Sign in again before managing team users."))
+
+      const response = await getApiTeamUsers(session.access_token)
+      setTeam(response)
+
+      let nextAuthorizationState: ApiAuthorizationState | null = null
+      try {
+        nextAuthorizationState = await getApiAuthorizationState(session.access_token)
+        setAuthorizationState(nextAuthorizationState)
+      } catch (error) {
+        console.error(error)
+      }
+
+      const defaultRole = nextAuthorizationState ? getDefaultInviteRole(nextAuthorizationState.roles) : null
+      setInviteForm((current) => ({
+        ...current,
+        officeId: current.officeId || response.offices[0]?.id || "",
+        roleId: current.roleId || defaultRole?.id || "",
+        roleTitle: defaultRole?.name ?? current.roleTitle,
+      }))
+    } catch (error) {
+      setTeamError(error instanceof Error ? error.message : t("Team users could not be loaded."))
+    } finally {
+      setLoadingTeam(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadTeam()
+  }, [])
+
+  async function handleCreateUser(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (!inviteForm.email.trim()) {
+      toast.error(t("Email is required"))
+      return
+    }
+
+    setCreatingUser(true)
+
+    try {
+      const session = await getSupabaseSession()
+      if (!session?.access_token) throw new Error(t("Sign in again before creating users."))
+
+      const selectedInviteRole = authorizationState?.roles.find((role) => role.id === inviteForm.roleId)
+      const response = await createApiTeamUser(session.access_token, {
+        email: inviteForm.email.trim(),
+        firstName: inviteForm.firstName.trim() || null,
+        lastName: inviteForm.lastName.trim() || null,
+        companyId: team?.company?.id ?? null,
+        officeId: inviteForm.officeId || null,
+        roleTitle: (selectedInviteRole?.name ?? inviteForm.roleTitle.trim()) || null,
+        roleId: inviteForm.roleId || null,
+      })
+
+      setTeam((current) => {
+        const offices = current?.offices ?? []
+
+        return {
+          company: current?.company ?? response.company,
+          offices: offices.some((office) => office.id === response.office.id) ? offices : [...offices, response.office],
+          users: upsertTeamUser(current?.users ?? [], response.user),
+        }
+      })
+      setAuthorizationState((current) => current ? {
+        ...current,
+        userRoles: upsertUserRoleAssignment(current.userRoles, response.user.id, response.user.roles.map((role) => role.id)),
+      } : current)
+      const defaultRole = authorizationState ? getDefaultInviteRole(authorizationState.roles) : null
+      setInviteForm({ ...emptyInviteForm, officeId: inviteForm.officeId, roleId: defaultRole?.id ?? "", roleTitle: defaultRole?.name ?? "Operator" })
+      setShowInviteForm(false)
+      toast.success(t(response.invited ? "User invitation sent" : "User created"), { description: response.user.email })
+    } catch (error) {
+      toast.error(t("User could not be created"), {
+        description: error instanceof Error ? error.message : t("Check the Supabase admin configuration and try again."),
+      })
+    } finally {
+      setCreatingUser(false)
+    }
+  }
+
+  async function handleChangeUserOffice(member: ApiTeamUser, officeId: string) {
+    const currentOfficeId = member.offices[0]?.id ?? ""
+    if (!officeId || officeId === currentOfficeId) return
+
+    setChangingOfficeUserId(member.id)
+
+    try {
+      const session = await getSupabaseSession()
+      if (!session?.access_token) throw new Error(t("Sign in again before changing user offices."))
+
+      const updatedUser = await changeApiTeamUserOffice(session.access_token, member.id, { officeId })
+      setTeam((current) => current ? { ...current, users: upsertTeamUser(current.users, updatedUser) } : current)
+      toast.success(t("Office updated"), { description: updatedUser.email })
+    } catch (error) {
+      toast.error(t("Office could not be updated"), {
+        description: error instanceof Error ? error.message : t("Check the user and office, then try again."),
+      })
+    } finally {
+      setChangingOfficeUserId(null)
+    }
+  }
+
+  async function handleChangeUserRole(member: ApiTeamUser, roleId: string) {
+    const currentRoleId = member.roles[0]?.id ?? ""
+    if (!authorizationState || !roleId || roleId === currentRoleId) return
+
+    setChangingRoleUserId(member.id)
+
+    try {
+      const session = await getSupabaseSession()
+      if (!session?.access_token) throw new Error(t("Sign in again before changing user roles."))
+
+      const assignment = await updateApiUserRoles(session.access_token, member.id, { roleIds: [roleId] })
+      const nextRoles = getRolesFromIds(authorizationState.roles, assignment.roleIds)
+
+      setAuthorizationState((current) => current ? {
+        ...current,
+        userRoles: upsertUserRoleAssignment(current.userRoles, assignment.userId, assignment.roleIds),
+      } : current)
+      setTeam((current) => current ? {
+        ...current,
+        users: current.users.map((user) => user.id === member.id ? { ...user, roles: nextRoles } : user),
+      } : current)
+      toast.success(t("Role updated"), { description: member.email })
+    } catch (error) {
+      toast.error(t("Role could not be updated"), {
+        description: error instanceof Error ? error.message : t("Check the role and try again."),
+      })
+    } finally {
+      setChangingRoleUserId(null)
+    }
+  }
+
+  const members = team?.users ?? []
+  const teamPageCount = Math.max(Math.ceil(members.length / teamPageSize), 1)
+  const visibleMembers = members.slice((Math.min(teamPage, teamPageCount) - 1) * teamPageSize, Math.min(teamPage, teamPageCount) * teamPageSize)
+  const inviteOffice = team?.offices.find((office) => office.id === inviteForm.officeId)
+  const inviteRole = authorizationState?.roles.find((role) => role.id === inviteForm.roleId)
+  const roleOptions = authorizationState?.roles ?? []
+
+  useEffect(() => {
+    if (teamPage > teamPageCount) setTeamPage(teamPageCount)
+  }, [teamPage, teamPageCount])
 
   return (
     <>
       <SettingsPageHeader
-        eyebrow="Organisation / Team & permissions"
-        title="Team & permissions"
-        description="Control who can see booking data, approve Dexter actions, and manage customer-facing changes."
-        actions={primaryAction("Invite teammate", () => toast.success("Invite link copied"))}
+        eyebrow="Organisation / Team"
+        title="Team"
+        description="Create Supabase-authenticated users, link them to your company, and assign precise permission roles."
+        actions={primaryAction(showInviteForm ? "Close invite" : "Invite teammate", () => setShowInviteForm((value) => !value))}
       />
       <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
-        <SettingsPanel title="Team members" description="Active people in Northwind Forwarding.">
-          {members.map(([name, role, detail, initials]) => (
-            <div key={name} className="grid gap-3 px-5 py-4 sm:grid-cols-[40px_minmax(0,1fr)_auto] sm:items-center">
-              <Avatar className="size-10 rounded-full">
-                <AvatarFallback className="rounded-full bg-[var(--md-surface-tint)] text-[13px] font-medium text-[var(--md-ink)]">{initials}</AvatarFallback>
-              </Avatar>
-              <div className="min-w-0">
-                <p className="text-[13px] font-medium text-[var(--md-ink)]">{name}</p>
-                <p className="mt-1 text-[12px] text-[var(--md-text)]">{detail}</p>
+        {showInviteForm ? (
+          <SettingsPanel title="Create user" description="Sends a Supabase invitation, creates the Multideck profile, and assigns an office plus role.">
+            <form className="divide-y divide-[rgba(11,20,19,0.07)]" onSubmit={handleCreateUser}>
+              <SettingsFieldRow label="Name" description="Shown in Multideck and saved to the Supabase user metadata.">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <SettingsInput
+                    value={inviteForm.firstName}
+                    placeholder="First name"
+                    aria-label="First name"
+                    onChange={(event) => setInviteForm((current) => ({ ...current, firstName: event.target.value }))}
+                  />
+                  <SettingsInput
+                    value={inviteForm.lastName}
+                    placeholder="Last name"
+                    aria-label="Last name"
+                    onChange={(event) => setInviteForm((current) => ({ ...current, lastName: event.target.value }))}
+                  />
+                </div>
+              </SettingsFieldRow>
+              <SettingsFieldRow label="Email" description="The invitation is sent by Supabase Auth.">
+                <SettingsInput
+                  value={inviteForm.email}
+                  type="email"
+                  inputMode="email"
+                  dir="ltr"
+                  placeholder="name@company.com"
+                  aria-label="Email"
+                  onChange={(event) => setInviteForm((current) => ({ ...current, email: event.target.value }))}
+                />
+              </SettingsFieldRow>
+              <SettingsFieldRow label="Office" description="The user will be linked through the office membership table.">
+                {team?.offices.length ? (
+                  <select
+                    data-i18n-skip
+                    dir="auto"
+                    aria-label={t("Office")}
+                    className="h-9 w-full rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-tint)] px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]"
+                    value={inviteForm.officeId}
+                    onChange={(event) => setInviteForm((current) => ({ ...current, officeId: event.target.value }))}
+                  >
+                    {team.offices.map((office) => (
+                      <option key={office.id} value={office.id}>{getOfficeLabel(office)}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <SettingsInput value="Default Jenkar office" readOnly />
+                )}
+                {inviteOffice ? (
+                  <p className="mt-2 text-[12px] text-[var(--md-text)]">
+                    <span>Assigned to</span> <span data-i18n-skip dir="auto">{getOfficeLabel(inviteOffice)}</span><span>.</span>
+                  </p>
+                ) : null}
+              </SettingsFieldRow>
+              <SettingsFieldRow label="Role" description="Sets the user's permission bundle. You can edit each bundle below.">
+                {roleOptions.length ? (
+                  <select
+                    dir="auto"
+                    aria-label={t("Role")}
+                    className="h-9 w-full rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-tint)] px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]"
+                    value={inviteForm.roleId}
+                    onChange={(event) => {
+                      const nextRole = roleOptions.find((role) => role.id === event.target.value)
+                      setInviteForm((current) => ({ ...current, roleId: event.target.value, roleTitle: nextRole?.name ?? current.roleTitle }))
+                    }}
+                  >
+                    {roleOptions.map((role) => (
+                      <option key={role.id} value={role.id}>{role.name}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <SettingsInput value={inviteForm.roleTitle} readOnly />
+                )}
+                {inviteRole ? (
+                  <p className="mt-2 text-[12px] leading-5 text-[var(--md-text)]">
+                    <span>{inviteRole.description}</span>
+                  </p>
+                ) : null}
+              </SettingsFieldRow>
+              <div className="flex flex-col gap-2 px-5 py-4 sm:flex-row sm:justify-end">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="h-9 rounded-[var(--md-radius-lg)] bg-white/45 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/70"
+                  onClick={() => setShowInviteForm(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]"
+                  disabled={creatingUser}
+                >
+                  {creatingUser ? "Creating..." : "Create user"}
+                </Button>
               </div>
-              <StatusPill tone={role.includes("Admin") ? "teal" : "neutral"}>{role}</StatusPill>
+            </form>
+          </SettingsPanel>
+        ) : null}
+
+        <SettingsPanel title="Team members" description={loadingTeam ? "Loading team users..." : "Active people in your company."}>
+          {teamError ? (
+            <div className="px-5 py-4">
+              <p className="text-[13px] font-medium text-[var(--md-red)]">Team users could not be loaded.</p>
+              <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{teamError}</p>
+              <div className="mt-3">{compactAction("Retry", () => void loadTeam())}</div>
             </div>
-          ))}
+          ) : loadingTeam ? (
+            Array.from({ length: 4 }).map((_, index) => (
+              <div key={index} className="grid gap-3 px-5 py-4 sm:grid-cols-[40px_minmax(0,1fr)_auto] sm:items-center">
+                <div className="size-10 rounded-full bg-[var(--md-surface-tint)] shadow-[var(--md-shadow-line)]" />
+                <div className="space-y-2">
+                  <div className="h-3 w-40 rounded-full bg-[var(--md-surface-tint)]" />
+                  <div className="h-3 w-64 max-w-full rounded-full bg-[var(--md-surface-tint)]" />
+                </div>
+                <div className="h-7 w-16 rounded-full bg-[var(--md-surface-tint)]" />
+              </div>
+            ))
+          ) : members.length ? (
+            visibleMembers.map((member) => {
+              const officeSummary = member.offices.map(getOfficeLabel).join(" · ")
+              const roleSummary = member.roles.map((role) => role.name).join(" · ")
+              const selectedOfficeId = member.offices[0]?.id ?? ""
+              const selectedMemberRoleId = member.roles[0]?.id ?? ""
+              const isChangingOffice = changingOfficeUserId === member.id
+              const isChangingRole = changingRoleUserId === member.id
+
+              return (
+                <div key={member.id} className="grid gap-3 px-5 py-4 sm:grid-cols-[40px_minmax(0,1fr)_auto] sm:items-center">
+                  <Avatar className="size-10 rounded-full">
+                    <AvatarFallback className="rounded-full bg-[var(--md-surface-tint)] text-[13px] font-medium text-[var(--md-ink)]">{getTeamUserInitials(member)}</AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-medium text-[var(--md-ink)]">{member.displayName}</p>
+                    <p className="mt-1 truncate text-[12px] text-[var(--md-text)]">
+                      <span data-i18n-skip dir="ltr">{member.email}</span>
+                      <span> · </span>
+                      {officeSummary ? <span data-i18n-skip dir="auto">{officeSummary}</span> : <span>No office assigned</span>}
+                      <span> · </span>
+                      {roleSummary ? <span>{roleSummary}</span> : <span>No role assigned</span>}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                    {roleOptions.length ? (
+                      <select
+                        dir="auto"
+                        aria-label={t("Change role")}
+                        className="h-8 w-full min-w-[170px] rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-tint)] px-2.5 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] outline-none transition-opacity focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)] disabled:cursor-not-allowed disabled:opacity-55 sm:w-[210px]"
+                        value={selectedMemberRoleId}
+                        disabled={isChangingRole}
+                        onChange={(event) => void handleChangeUserRole(member, event.target.value)}
+                      >
+                        <option value="" disabled>{t("No role assigned")}</option>
+                        {roleOptions.map((role) => (
+                          <option key={role.id} value={role.id}>{role.name}</option>
+                        ))}
+                      </select>
+                    ) : null}
+                    {team?.offices.length ? (
+                      <select
+                        data-i18n-skip
+                        dir="auto"
+                        aria-label={t("Change office")}
+                        className="h-8 w-full min-w-[190px] rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-tint)] px-2.5 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] outline-none transition-opacity focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)] disabled:cursor-not-allowed disabled:opacity-55 sm:w-[230px]"
+                        value={selectedOfficeId}
+                        disabled={isChangingOffice}
+                        onChange={(event) => void handleChangeUserOffice(member, event.target.value)}
+                      >
+                        <option value="" disabled>{t("No office assigned")}</option>
+                        {team.offices.map((office) => (
+                          <option key={office.id} value={office.id}>{getOfficeLabel(office)}</option>
+                        ))}
+                      </select>
+                    ) : null}
+                    <StatusPill tone={member.status === "Active" ? "teal" : "neutral"}>{isChangingOffice ? t("Updating office...") : isChangingRole ? t("Updating role...") : member.status}</StatusPill>
+                  </div>
+                </div>
+              )
+            })
+          ) : (
+            <div className="px-5 py-4">
+              <p className="text-[13px] font-medium text-[var(--md-ink)]">No team users yet.</p>
+              <p className="mt-1 text-[12px] text-[var(--md-text)]">Invite the first teammate to create their Supabase Auth account and Multideck profile.</p>
+            </div>
+          )}
+          {!teamError && !loadingTeam && members.length ? (
+            <div className="px-5 py-4">
+              <Pagination
+                page={teamPage}
+                pageCount={teamPageCount}
+                totalItems={members.length}
+                pageSize={teamPageSize}
+                itemLabel="team members"
+                pageSizeOptions={[8, 16, 32]}
+                onPageChange={setTeamPage}
+                onPageSizeChange={(nextPageSize) => {
+                  setTeamPageSize(nextPageSize)
+                  setTeamPage(1)
+                }}
+                className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)]"
+              />
+            </div>
+          ) : null}
         </SettingsPanel>
-        <SettingsPanel title="Permission defaults" description="New users inherit these access rules unless an admin changes them.">
-          <SettingsFieldRow label="New teammate role">
-            <SettingsSelect value="Operator" options={["Viewer", "Operator", "Customs lead", "Admin - Ops"]} />
-          </SettingsFieldRow>
-          <SettingsFieldRow label="Customer visibility">
-            <ChoiceSetting options={["All customers", "Assigned only", "No financials"]} initialValue="Assigned only" />
-          </SettingsFieldRow>
-          <ToggleSetting title="Require admin approval for exports" description="Prevents accidental export of customer documents and commercial records." initialChecked />
+      </div>
+    </>
+  )
+}
+
+function PermissionsTab() {
+  const { t } = useLanguage()
+  const [authorizationState, setAuthorizationState] = useState<ApiAuthorizationState | null>(null)
+  const [authorizationError, setAuthorizationError] = useState<string | null>(null)
+  const [loadingAuthorization, setLoadingAuthorization] = useState(true)
+  const [selectedRoleId, setSelectedRoleId] = useState("")
+  const [savingRoleId, setSavingRoleId] = useState<string | null>(null)
+  const [deletingRoleId, setDeletingRoleId] = useState<string | null>(null)
+  const [customRoleName, setCustomRoleName] = useState("")
+  const [creatingRole, setCreatingRole] = useState(false)
+
+  async function loadAuthorizationState() {
+    setLoadingAuthorization(true)
+    setAuthorizationError(null)
+
+    try {
+      const session = await getSupabaseSession()
+      if (!session?.access_token) throw new Error(t("Sign in again before managing roles and permissions."))
+
+      const response = await getApiAuthorizationState(session.access_token)
+      setAuthorizationState(response)
+      setSelectedRoleId((current) => current || response.roles[0]?.id || "")
+    } catch (error) {
+      setAuthorizationError(error instanceof Error ? error.message : t("Authorization settings could not be loaded."))
+    } finally {
+      setLoadingAuthorization(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadAuthorizationState()
+  }, [])
+
+  async function handleCreateRole(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    const roleName = customRoleName.trim()
+    if (!roleName) {
+      toast.error(t("Role name is required"))
+      return
+    }
+
+    setCreatingRole(true)
+
+    try {
+      const session = await getSupabaseSession()
+      if (!session?.access_token) throw new Error(t("Sign in again before creating roles."))
+
+      const createdRole = await createApiAuthorizationRole(session.access_token, {
+        name: roleName,
+        permissionValues: selectedRole?.permissionValues ?? [],
+      })
+
+      setAuthorizationState((current) => current ? {
+        ...current,
+        roles: [...current.roles, createdRole].sort((a, b) => a.name.localeCompare(b.name)),
+      } : current)
+      setSelectedRoleId(createdRole.id)
+      setCustomRoleName("")
+      toast.success(t("Custom role created"), { description: createdRole.name })
+    } catch (error) {
+      toast.error(t("Custom role could not be created"), {
+        description: error instanceof Error ? error.message : t("Check the role name and try again."),
+      })
+    } finally {
+      setCreatingRole(false)
+    }
+  }
+
+  async function handleDeleteRole(role: ApiAuthorizationRole) {
+    if (role.isSystem || deletingRoleId) return
+
+    const confirmed = window.confirm(t("Delete this custom role? Users must be moved off the role before it can be deleted."))
+    if (!confirmed) return
+
+    setDeletingRoleId(role.id)
+
+    try {
+      const session = await getSupabaseSession()
+      if (!session?.access_token) throw new Error(t("Sign in again before deleting roles."))
+
+      await deleteApiAuthorizationRole(session.access_token, role.id)
+      setAuthorizationState((current) => current ? {
+        ...current,
+        roles: current.roles.filter((item) => item.id !== role.id),
+        userRoles: current.userRoles.map((assignment) => ({
+          ...assignment,
+          roleIds: assignment.roleIds.filter((roleId) => roleId !== role.id),
+        })),
+      } : current)
+      setSelectedRoleId((current) => current === role.id ? "" : current)
+      toast.success(t("Custom role deleted"), { description: role.name })
+    } catch (error) {
+      toast.error(t("Custom role could not be deleted"), {
+        description: error instanceof Error ? error.message : t("Only administrators can delete roles."),
+      })
+    } finally {
+      setDeletingRoleId(null)
+    }
+  }
+
+  async function handleToggleRolePermission(role: ApiAuthorizationRole, permissionValue: string) {
+    if (!role.canEditPermissions || savingRoleId) return
+
+    const hasPermission = role.permissionValues.includes(permissionValue)
+    const permissionValues = hasPermission
+      ? role.permissionValues.filter((value) => value !== permissionValue)
+      : [...role.permissionValues, permissionValue]
+
+    setSavingRoleId(role.id)
+
+    try {
+      const session = await getSupabaseSession()
+      if (!session?.access_token) throw new Error(t("Sign in again before changing role permissions."))
+
+      const updatedRole = await updateApiRolePermissions(session.access_token, role.id, { permissionValues })
+      setAuthorizationState((current) => current ? {
+        ...current,
+        roles: current.roles.map((item) => item.id === updatedRole.id ? updatedRole : item),
+      } : current)
+      toast.success(t("Role permissions saved"), { description: updatedRole.name })
+    } catch (error) {
+      toast.error(t("Role permissions could not be saved"), {
+        description: error instanceof Error ? error.message : t("Check the permission selection and try again."),
+      })
+    } finally {
+      setSavingRoleId(null)
+    }
+  }
+
+  const roleOptions = authorizationState?.roles ?? []
+  const selectedRole = roleOptions.find((role) => role.id === selectedRoleId) ?? roleOptions[0]
+  const permissionGroups = authorizationState ? getPermissionGroups(authorizationState.permissions) : []
+
+  return (
+    <>
+      <SettingsPageHeader
+        eyebrow="Organisation / Roles & permissions"
+        title="Roles & permissions"
+        description="Review each role and the access it gives across shipments, customers, reports, users, and workspace settings."
+        actions={compactAction("Refresh", () => void loadAuthorizationState())}
+      />
+      <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
+        <SettingsPanel title="Role access" description="Choose a role, then turn individual permission lines on or off.">
+          {authorizationError ? (
+            <div className="px-5 py-4">
+              <p className="text-[13px] font-medium text-[var(--md-red)]">Authorization settings could not be loaded.</p>
+              <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{authorizationError}</p>
+              <div className="mt-3">{compactAction("Retry", () => void loadAuthorizationState())}</div>
+            </div>
+          ) : loadingAuthorization ? (
+            <div className="px-5 py-4">
+              <div className="h-8 w-72 max-w-full rounded-full bg-[var(--md-surface-tint)]" />
+              <div className="mt-4 divide-y divide-[rgba(11,20,19,0.07)]">
+                {Array.from({ length: 8 }).map((_, index) => (
+                  <div key={index} className="grid gap-3 py-3 md:grid-cols-[20px_220px_minmax(0,1fr)_80px]">
+                    <div className="size-4 rounded bg-[var(--md-surface-tint)]" />
+                    <div className="h-3 rounded-full bg-[var(--md-surface-tint)]" />
+                    <div className="h-3 rounded-full bg-[var(--md-surface-tint)]" />
+                    <div className="h-5 rounded-full bg-[var(--md-surface-tint)]" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : authorizationState && selectedRole ? (
+            <>
+              <SettingsFieldRow label="Role" description="Role changes affect every user assigned to that role.">
+                <select
+                  dir="auto"
+                  aria-label={t("Role")}
+                  className="h-9 w-full rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-tint)] px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)] sm:max-w-[360px]"
+                  value={selectedRole.id}
+                  onChange={(event) => setSelectedRoleId(event.target.value)}
+                >
+                  {roleOptions.map((role) => (
+                    <option key={role.id} value={role.id}>{role.name}</option>
+                  ))}
+                </select>
+              </SettingsFieldRow>
+              <SettingsFieldRow label="Custom role" description="Creates a new editable role using the selected role as a starting point.">
+                <form className="flex flex-col gap-2 sm:flex-row" onSubmit={handleCreateRole}>
+                  <SettingsInput
+                    value={customRoleName}
+                    placeholder="Role name"
+                    aria-label="Role name"
+                    disabled={creatingRole}
+                    onChange={(event) => setCustomRoleName(event.target.value)}
+                  />
+                  <Button
+                    type="submit"
+                    className="h-9 shrink-0 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)] disabled:opacity-55"
+                    disabled={creatingRole}
+                  >
+                    {creatingRole ? "Creating..." : "Create role"}
+                  </Button>
+                </form>
+              </SettingsFieldRow>
+              <div className="grid gap-3 px-5 py-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                <div>
+                  <p className="text-[13px] font-medium text-[var(--md-ink)]">{selectedRole.name}</p>
+                  <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{selectedRole.description}</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                  <StatusPill tone={selectedRole.canEditPermissions ? "blue" : "neutral"}>{selectedRole.canEditPermissions ? "Editable" : "Protected"}</StatusPill>
+                  <StatusPill tone="teal"><span data-i18n-skip dir="ltr">{selectedRole.permissionValues.length}</span> permissions</StatusPill>
+                  {!selectedRole.isSystem ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="h-8 rounded-[var(--md-radius-md)] bg-[rgba(209,78,78,0.08)] px-3 text-[12px] font-medium text-[var(--md-red)] hover:bg-[rgba(209,78,78,0.12)] disabled:opacity-55"
+                      disabled={deletingRoleId === selectedRole.id}
+                      onClick={() => void handleDeleteRole(selectedRole)}
+                    >
+                      {deletingRoleId === selectedRole.id ? "Deleting..." : "Delete role"}
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+              {permissionGroups.map((group) => (
+                <div key={group.group}>
+                  <div className="flex items-center justify-between gap-3 bg-[var(--md-surface-tint)] px-5 py-2">
+                    <p className="text-[12px] font-medium uppercase tracking-[0.12em] text-[var(--md-subtle)]">{group.group}</p>
+                    <span className="text-[12px] font-medium text-[var(--md-text)]">
+                      <span data-i18n-skip dir="ltr">{group.permissions.length}</span> permissions
+                    </span>
+                  </div>
+                  <div className="divide-y divide-[rgba(11,20,19,0.07)]">
+                    {group.permissions.map((permission) => {
+                      const checked = selectedRole.permissionValues.includes(permission.value)
+                      const disabled = !selectedRole.canEditPermissions || savingRoleId === selectedRole.id
+
+                      return (
+                        <label
+                          key={permission.value}
+                          className={cn(
+                            "grid cursor-pointer gap-2 px-5 py-3 transition-colors hover:bg-[rgba(233,242,240,0.45)] md:grid-cols-[20px_minmax(190px,250px)_minmax(0,1fr)_auto] md:items-center",
+                            disabled && "cursor-not-allowed opacity-65",
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            className="mt-0.5 size-4 shrink-0 accent-[var(--md-accent)] md:mt-0"
+                            checked={checked}
+                            disabled={disabled}
+                            onChange={() => void handleToggleRolePermission(selectedRole, permission.value)}
+                          />
+                          <span className="min-w-0">
+                            <span className="block truncate text-[13px] font-medium text-[var(--md-ink)]">{permission.name}</span>
+                            <span className="mt-0.5 block truncate text-[12px] font-medium text-[var(--md-accent)]" data-i18n-skip dir="ltr">{permission.value}</span>
+                          </span>
+                          <span className="text-[12px] leading-5 text-[var(--md-text)]">{permission.description}</span>
+                          {permission.isDangerous ? <StatusPill tone="amber">Sensitive</StatusPill> : <span className="hidden md:block" />}
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+            </>
+          ) : (
+            <div className="px-5 py-4">
+              <p className="text-[13px] font-medium text-[var(--md-ink)]">No roles have been configured yet.</p>
+              <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">Run the latest API migration to create the authorization tables and default roles.</p>
+            </div>
+          )}
         </SettingsPanel>
       </div>
     </>
@@ -1248,6 +1932,8 @@ function TabContent({ activeTab }: { activeTab: string }) {
       return <AgentDexterTab />
     case "team":
       return <TeamTab />
+    case "permissions":
+      return <PermissionsTab />
     case "integrations":
       return <IntegrationsTab />
     case "api":

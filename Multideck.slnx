@@ -1,3 +1,5 @@
 <Solution>
+  <Project Path="multideck.persistence/multideck.persistence.csproj" />
   <Project Path="multideck.server/multideck.server.csproj" />
+  <Project Path="multideck.shared/multideck.shared.csproj" Id="bd680ffa-37e2-453b-88bd-b4d77cf7b2e1" />
 </Solution>
