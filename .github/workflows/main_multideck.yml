@@ -15,10 +15,6 @@ jobs:
     permissions:
       contents: read #This is required for actions/checkout
 
-    defaults:
-      run:
-        working-directory: multideck.server
-
     steps:
       - uses: actions/checkout@v4
 
@@ -27,14 +23,41 @@ jobs:
         with:
           dotnet-version: '10.x'
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: multideck.client/package-lock.json
+
+      - name: Install client dependencies
+        run: npm ci
+        working-directory: multideck.client
+
+      - name: Build client
+        run: npm run build
+        working-directory: multideck.client
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+
+      - name: Copy client into server
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path multideck.server/wwwroot | Out-Null
+          Copy-Item -Path multideck.client/dist/* -Destination multideck.server/wwwroot -Recurse -Force
+
       - name: Restore dependencies
         run: dotnet restore
+        working-directory: multideck.server
 
       - name: Build with dotnet
         run: dotnet build --configuration Release --no-restore
+        working-directory: multideck.server
 
       - name: dotnet publish
         run: dotnet publish --configuration Release --no-build --output "${{ env.DOTNET_ROOT }}/myapp"
+        working-directory: multideck.server
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4

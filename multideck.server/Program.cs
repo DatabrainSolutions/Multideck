@@ -82,6 +82,9 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference(); // Scalar API docs at /scalar/v1
 }
 
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
 app.UseCors();
 
 if (supabaseAuth.IsConfigured)
@@ -94,6 +97,13 @@ app.UseAuthorization();
 // ═══════════════════════════════════════════════════════════
 // API Endpoints — add your routes below
 // ═══════════════════════════════════════════════════════════
+
+app.MapGet("/api/health", () => Results.Ok(new
+{
+    status = "healthy",
+    service = "Multideck",
+    timestamp = DateTimeOffset.UtcNow,
+}));
 
 app.MapGet("/", () => "Multideck Server is running.");
 app.MapWarehouseApi(supabaseAuth);
@@ -120,6 +130,8 @@ else
         detail: "Set Supabase:Url on the API, and set Supabase:JwtSecret only if your project still uses a legacy shared JWT secret.",
         statusCode: StatusCodes.Status503ServiceUnavailable));
 }
+
+app.MapFallbackToFile("index.html");
 
 app.Run();
 
