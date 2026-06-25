@@ -14,6 +14,11 @@ export type ApiOffice = {
   address: string | null
 }
 
+export type ApiTeamRole = {
+  id: string
+  name: string
+}
+
 export type ApiTeamUser = {
   id: string
   authUserId: string | null
@@ -23,6 +28,7 @@ export type ApiTeamUser = {
   email: string
   company: ApiCompany | null
   offices: ApiOffice[]
+  roles: ApiTeamRole[]
   status: string
 }
 
@@ -51,6 +57,7 @@ export type CreateTeamUserRequest = {
   companyId?: string | null
   officeId?: string | null
   roleTitle?: string | null
+  roleId?: string | null
 }
 
 export type CreateTeamUserResponse = {
@@ -62,6 +69,48 @@ export type CreateTeamUserResponse = {
 
 export type ChangeTeamUserOfficeRequest = {
   officeId: string
+}
+
+export type ApiPermission = {
+  id: string
+  value: string
+  group: string
+  name: string
+  description: string
+  isDangerous: boolean
+}
+
+export type ApiAuthorizationRole = {
+  id: string
+  name: string
+  description: string
+  isSystem: boolean
+  canEditPermissions: boolean
+  permissionValues: string[]
+}
+
+export type ApiUserRoleAssignment = {
+  userId: string
+  roleIds: string[]
+}
+
+export type ApiAuthorizationState = {
+  permissions: ApiPermission[]
+  roles: ApiAuthorizationRole[]
+  userRoles: ApiUserRoleAssignment[]
+}
+
+export type CreateAuthorizationRoleRequest = {
+  name: string
+  permissionValues: string[]
+}
+
+export type UpdateRolePermissionsRequest = {
+  permissionValues: string[]
+}
+
+export type UpdateUserRolesRequest = {
+  roleIds: string[]
 }
 
 function getApiUrl(path: string) {
@@ -149,4 +198,82 @@ export async function changeApiTeamUserOffice(accessToken: string, userId: strin
   }
 
   return response.json() as Promise<ApiTeamUser>
+}
+
+export async function getApiAuthorizationState(accessToken: string): Promise<ApiAuthorizationState> {
+  const response = await apiFetch("/api/authorization", {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(await parseApiError(response))
+  }
+
+  return response.json() as Promise<ApiAuthorizationState>
+}
+
+export async function createApiAuthorizationRole(accessToken: string, request: CreateAuthorizationRoleRequest): Promise<ApiAuthorizationRole> {
+  const response = await apiFetch("/api/authorization/roles", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(request),
+  })
+
+  if (!response.ok) {
+    throw new Error(await parseApiError(response))
+  }
+
+  return response.json() as Promise<ApiAuthorizationRole>
+}
+
+export async function deleteApiAuthorizationRole(accessToken: string, roleId: string): Promise<void> {
+  const response = await apiFetch(`/api/authorization/roles/${roleId}`, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(await parseApiError(response))
+  }
+}
+
+export async function updateApiRolePermissions(accessToken: string, roleId: string, request: UpdateRolePermissionsRequest): Promise<ApiAuthorizationRole> {
+  const response = await apiFetch(`/api/authorization/roles/${roleId}/permissions`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(request),
+  })
+
+  if (!response.ok) {
+    throw new Error(await parseApiError(response))
+  }
+
+  return response.json() as Promise<ApiAuthorizationRole>
+}
+
+export async function updateApiUserRoles(accessToken: string, userId: string, request: UpdateUserRolesRequest): Promise<ApiUserRoleAssignment> {
+  const response = await apiFetch(`/api/authorization/users/${userId}/roles`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(request),
+  })
+
+  if (!response.ok) {
+    throw new Error(await parseApiError(response))
+  }
+
+  return response.json() as Promise<ApiUserRoleAssignment>
 }

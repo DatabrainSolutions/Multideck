@@ -92,6 +92,23 @@ namespace Multideck.Persistence.Data.Migrations
                     b.ToTable("cmp_Users_Roles", (string)null);
                 });
 
+            modelBuilder.Entity("SysUserRolePermission", b =>
+                {
+                    b.Property<Guid>("SysUserRoleId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("sys_UserRole_ID");
+
+                    b.Property<Guid>("SysPermissionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("sys_Permission_ID");
+
+                    b.HasKey("SysUserRoleId", "SysPermissionId");
+
+                    b.HasIndex("SysPermissionId");
+
+                    b.ToTable("sys_UserRole_Permissions", (string)null);
+                });
+
             modelBuilder.Entity("JobPackCargoContainer", b =>
                 {
                     b.Property<Guid>("JobCargoId")
@@ -3234,6 +3251,59 @@ namespace Multideck.Persistence.Data.Migrations
                     b.ToTable("sys_RefUNLOCO", (string)null);
                 });
 
+            modelBuilder.Entity("Multideck.Persistence.Entities.SysPermission", b =>
+                {
+                    b.Property<Guid>("SysPermissionId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("sys_Permission_ID")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTime>("SysPermissionCreatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp without time zone")
+                        .HasColumnName("sys_Permission_CreatedAtUtc")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("SysPermissionDescription")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("sys_Permission_Description");
+
+                    b.Property<string>("SysPermissionGroup")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("sys_Permission_Group");
+
+                    b.Property<bool>("SysPermissionIsDangerous")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasColumnName("sys_Permission_IsDangerous")
+                        .HasDefaultValue(false);
+
+                    b.Property<string>("SysPermissionName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("sys_Permission_Name");
+
+                    b.Property<string>("SysPermissionValue")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("sys_Permission_Value");
+
+                    b.HasKey("SysPermissionId");
+
+                    b.HasIndex("SysPermissionValue")
+                        .IsUnique()
+                        .HasDatabaseName("UX_sys_Permissions_Value");
+
+                    b.ToTable("sys_Permissions", (string)null);
+                });
+
             modelBuilder.Entity("Multideck.Persistence.Entities.SysUserRole", b =>
                 {
                     b.Property<Guid>("SysUserRoleId")
@@ -3697,6 +3767,21 @@ namespace Multideck.Persistence.Data.Migrations
                         .HasForeignKey("UserId")
                         .IsRequired()
                         .HasConstraintName("FK_tbl_cmp_Users_Roles_tbl_cmp_Users");
+                });
+
+            modelBuilder.Entity("SysUserRolePermission", b =>
+                {
+                    b.HasOne("Multideck.Persistence.Entities.SysPermission", null)
+                        .WithMany()
+                        .HasForeignKey("SysPermissionId")
+                        .IsRequired()
+                        .HasConstraintName("FK_sys_UserRole_Permissions_sys_Permissions");
+
+                    b.HasOne("Multideck.Persistence.Entities.SysUserRole", null)
+                        .WithMany()
+                        .HasForeignKey("SysUserRoleId")
+                        .IsRequired()
+                        .HasConstraintName("FK_sys_UserRole_Permissions_sys_UserRoles");
                 });
 
             modelBuilder.Entity("JobPackCargoContainer", b =>
