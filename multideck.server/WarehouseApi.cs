@@ -16,7 +16,7 @@ internal static class WarehouseApi
         {
             warehouseApi.MapGet("/{*path}", () => Results.Problem(
                 title: "Warehouse backend is not configured.",
-                detail: "Set Supabase:Url/VITE_SUPABASE_URL and Supabase:ServiceRoleKey/VITE_SUPABASE_ANON_KEY for the API.",
+                detail: "Set Supabase:Url and Supabase:ServiceRoleKey for the API. The service role key must stay server-side.",
                 statusCode: StatusCodes.Status503ServiceUnavailable));
             return;
         }
