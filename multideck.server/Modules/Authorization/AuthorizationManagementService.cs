@@ -32,7 +32,7 @@ public sealed class AuthorizationManagementService(MultideckContext db) : IAutho
 
         var roles = await db.SysUserRoles
             .AsNoTracking()
-            .Include(role => role.Permissions)
+            .Include(role => role.SysPermissions)
             .OrderBy(role => role.SysUserRoleName)
             .ToListAsync(cancellationToken);
 
@@ -97,7 +97,7 @@ public sealed class AuthorizationManagementService(MultideckContext db) : IAutho
         var role = new SysUserRole { SysUserRoleName = roleName! };
         foreach (var permission in permissions.OrderBy(permission => permission.SysPermissionValue))
         {
-            role.Permissions.Add(permission);
+            role.SysPermissions.Add(permission);
         }
 
         db.SysUserRoles.Add(role);
@@ -120,7 +120,7 @@ public sealed class AuthorizationManagementService(MultideckContext db) : IAutho
         }
 
         var role = await db.SysUserRoles
-            .Include(item => item.Permissions)
+            .Include(item => item.SysPermissions)
             .FirstOrDefaultAsync(item => item.SysUserRoleId == roleId, cancellationToken);
 
         if (role is null)
@@ -138,10 +138,10 @@ public sealed class AuthorizationManagementService(MultideckContext db) : IAutho
             .Where(permission => requestedValues.Values.Contains(permission.SysPermissionValue))
             .ToListAsync(cancellationToken);
 
-        role.Permissions.Clear();
+        role.SysPermissions.Clear();
         foreach (var permission in permissions.OrderBy(permission => permission.SysPermissionValue))
         {
-            role.Permissions.Add(permission);
+            role.SysPermissions.Add(permission);
         }
 
         await db.SaveChangesAsync(cancellationToken);
@@ -154,7 +154,7 @@ public sealed class AuthorizationManagementService(MultideckContext db) : IAutho
         await EnsureCurrentUserIsAdministratorAsync(user, cancellationToken);
 
         var role = await db.SysUserRoles
-            .Include(item => item.Permissions)
+            .Include(item => item.SysPermissions)
             .FirstOrDefaultAsync(item => item.SysUserRoleId == roleId, cancellationToken);
 
         if (role is null)
@@ -176,7 +176,7 @@ public sealed class AuthorizationManagementService(MultideckContext db) : IAutho
             throw new AuthorizationManagementException("Role is still assigned", "Move every user off this role before deleting it.", StatusCodes.Status400BadRequest);
         }
 
-        role.Permissions.Clear();
+        role.SysPermissions.Clear();
         db.SysUserRoles.Remove(role);
         await db.SaveChangesAsync(cancellationToken);
     }
@@ -309,7 +309,7 @@ public sealed class AuthorizationManagementService(MultideckContext db) : IAutho
         }
     }
 
-    private async Task EnsurePermissionCatalogAsync(CancellationToken cancellationToken)
+    public async Task EnsurePermissionCatalogAsync(CancellationToken cancellationToken)
     {
         var permissions = await db.SysPermissions.ToListAsync(cancellationToken);
         var permissionsByValue = permissions.ToDictionary(permission => permission.SysPermissionValue, StringComparer.OrdinalIgnoreCase);
@@ -355,7 +355,7 @@ public sealed class AuthorizationManagementService(MultideckContext db) : IAutho
         }
 
         var roles = await db.SysUserRoles
-            .Include(role => role.Permissions)
+            .Include(role => role.SysPermissions)
             .ToListAsync(cancellationToken);
         var rolesByName = roles
             .GroupBy(role => role.SysUserRoleName, StringComparer.OrdinalIgnoreCase)
@@ -372,16 +372,16 @@ public sealed class AuthorizationManagementService(MultideckContext db) : IAutho
                 changed = true;
             }
 
-            if (roleDefinition == SystemRoleDefinitions.Administrator || role.Permissions.Count == 0)
+            // Ensure every system role always carries at least its defined baseline permissions.
+            // This only adds missing permissions (never removes), so newly introduced permissions
+            // such as Warehouse.Write propagate to existing roles while admin-added extras are kept.
+            var targetValues = roleDefinition.Permissions.Select(permission => permission.Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach (var permission in permissionsByValue.Values.Where(permission => targetValues.Contains(permission.SysPermissionValue)))
             {
-                var targetValues = roleDefinition.Permissions.Select(permission => permission.Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
-                foreach (var permission in permissionsByValue.Values.Where(permission => targetValues.Contains(permission.SysPermissionValue)))
+                if (role.SysPermissions.All(existing => existing.SysPermissionValue != permission.SysPermissionValue))
                 {
-                    if (role.Permissions.All(existing => existing.SysPermissionValue != permission.SysPermissionValue))
-                    {
-                        role.Permissions.Add(permission);
-                        changed = true;
-                    }
+                    role.SysPermissions.Add(permission);
+                    changed = true;
                 }
             }
         }
@@ -428,7 +428,7 @@ public sealed class AuthorizationManagementService(MultideckContext db) : IAutho
             roleDefinition?.Description ?? "Custom role.",
             roleDefinition is not null,
             roleDefinition?.CanEditPermissions ?? true,
-            role.Permissions
+            role.SysPermissions
                 .OrderBy(permission => permission.SysPermissionValue)
                 .Select(permission => permission.SysPermissionValue)
                 .ToList());

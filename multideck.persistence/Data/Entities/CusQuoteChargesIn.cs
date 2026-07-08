@@ -27,5 +27,21 @@ public partial class CusQuoteChargesIn
 
     public decimal? CusQuoteChargesInExpectedCostLocal { get; set; }
 
+    public int? CusQuoteChargesInLineNo { get; set; }
+
+    public bool CusQuoteChargesInShowToCustomer { get; set; }
+
+    public Guid? CusQuoteChargesInSourceRateResultLineId { get; set; }
+
+    public Guid? CusQuoteChargesInSourceRateLineId { get; set; }
+
+    public virtual RateRateLine? CusQuoteChargesInSourceRateLine { get; set; }
+
+    public virtual RateRateResultLine? CusQuoteChargesInSourceRateResultLine { get; set; }
+
     public virtual CusQuoteCostOption CusQuoteCostOpt { get; set; } = null!;
+
+    public virtual ICollection<JobCostingChargesIn> JobCostingChargesIns { get; set; } = new List<JobCostingChargesIn>();
+
+    public virtual ICollection<RateQuoteLink> RateQuoteLinks { get; set; } = new List<RateQuoteLink>();
 }

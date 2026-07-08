@@ -1,4 +1,5 @@
 using System.Text;
+using Asp.Versioning;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
@@ -9,20 +10,21 @@ using Multideck.Server.Modules.Auth;
 using Multideck.Server.Modules.Authorization;
 using Multideck.Server.Modules.Users;
 using Multideck.Server.Modules.Users.Supabase;
+using Multideck.Server.Modules.Warehouse;
 
 namespace Multideck.Server.Extensions;
 
 public static class ServiceCollectionExtensions
 {
-    public static IServiceCollection AddMultideckServer(
-        this IServiceCollection services,
-        IConfiguration configuration,
-        SupabaseAuthOptions supabaseAuth)
+    public static IServiceCollection AddMultideckServer(this IServiceCollection services, IConfiguration configuration,SupabaseAuthOptions supabaseAuth)
     {
         services.AddOpenApi();
+        services.AddControllers();
+        services.AddApiVersioningForMultideck();
         services.AddAuthorization();
         services.AddHttpClient();
         services.AddMultideckPersistence(configuration);
+        services.AddWarehouseModule();
 
         services.AddSingleton(supabaseAuth);
         services.AddScoped<IAuthSessionService, AuthSessionService>();
@@ -34,6 +36,28 @@ public static class ServiceCollectionExtensions
 
         services.AddSupabaseAuthentication(supabaseAuth);
         services.AddClientCors(configuration);
+
+        return services;
+    }
+
+    private static IServiceCollection AddApiVersioningForMultideck(this IServiceCollection services)
+    {
+        services
+            .AddApiVersioning(options =>
+            {
+                options.DefaultApiVersion = ApiVersions.V1;
+                options.AssumeDefaultVersionWhenUnspecified = true;
+                options.ReportApiVersions = true;
+                options.ApiVersionReader = ApiVersionReader.Combine(
+                    new UrlSegmentApiVersionReader(),
+                    new HeaderApiVersionReader("X-Api-Version"));
+            })
+            .AddMvc()
+            .AddApiExplorer(options =>
+            {
+                options.GroupNameFormat = "'v'VVV";
+                options.SubstituteApiVersionInUrl = true;
+            });
 
         return services;
     }

@@ -32,4 +32,14 @@ public partial class SysDocType
     public string? DocTypesParseType { get; set; }
 
     public bool? DocTypesIsDefaultPeriodic { get; set; }
+
+    public virtual ICollection<DocbDocumentTemplate> DocbDocumentTemplates { get; set; } = new List<DocbDocumentTemplate>();
+
+    public virtual ICollection<DocbLibraryDocument> DocbLibraryDocuments { get; set; } = new List<DocbLibraryDocument>();
+
+    public virtual ICollection<DocbLibraryPackItem> DocbLibraryPackItems { get; set; } = new List<DocbLibraryPackItem>();
+
+    public virtual ICollection<DocsecSecurityProfile> DocsecSecurityProfiles { get; set; } = new List<DocsecSecurityProfile>();
+
+    public virtual ICollection<JobDocument> JobDocuments { get; set; } = new List<JobDocument>();
 }

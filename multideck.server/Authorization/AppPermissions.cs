@@ -32,6 +32,16 @@ public static class AppPermissions
         public static readonly PermissionDefinition Write = new("Reports.Write", "Reports", "Create and update reports", "Create report templates and publish report changes.");
     }
 
+    public static class Warehouse
+    {
+        // Raw permission strings live here as consts so they can also be used in attribute arguments.
+        public const string ReadValue = "Warehouse.Read";
+        public const string WriteValue = "Warehouse.Write";
+
+        public static readonly PermissionDefinition Read = new(ReadValue, "Warehouse", "Read warehouse", "View warehouse dashboard, products, stock, orders, movements, work items, and calendar.");
+        public static readonly PermissionDefinition Write = new(WriteValue, "Warehouse", "Create and update warehouse", "Create and update warehouse products, stock, orders, movements, work items, and calendar entries.");
+    }
+
     public static class Users
     {
         public static readonly PermissionDefinition Read = new("Users.Read", "Users", "Read users", "View team users, offices, and role assignments.");
@@ -76,6 +86,8 @@ public static class AppPermissions
         Quotes.Delete,
         Reports.Read,
         Reports.Write,
+        Warehouse.Read,
+        Warehouse.Write,
         Users.Read,
         Users.Invite,
         Users.Manage,

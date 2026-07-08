@@ -17,7 +17,7 @@ public sealed class UserPermissionService(MultideckContext db) : IUserPermission
             .AsNoTracking()
             .Where(profile => profile.AuthUserId == authUserId)
             .SelectMany(profile => profile.SysUserRoles)
-            .SelectMany(role => role.Permissions)
+            .SelectMany(role => role.SysPermissions)
             .Select(permission => permission.SysPermissionValue)
             .Distinct()
             .ToListAsync(cancellationToken);

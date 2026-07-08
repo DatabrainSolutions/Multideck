@@ -153,7 +153,7 @@ export async function getApiAuthSession(accessToken: string): Promise<ApiAuthSes
 }
 
 export async function getApiTeamUsers(accessToken: string): Promise<ApiTeamUsersResponse> {
-  const response = await apiFetch("/api/users", {
+  const response = await apiFetch("/api/v1/users", {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -167,7 +167,7 @@ export async function getApiTeamUsers(accessToken: string): Promise<ApiTeamUsers
 }
 
 export async function createApiTeamUser(accessToken: string, user: CreateTeamUserRequest): Promise<CreateTeamUserResponse> {
-  const response = await apiFetch("/api/users", {
+  const response = await apiFetch("/api/v1/users", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -184,7 +184,7 @@ export async function createApiTeamUser(accessToken: string, user: CreateTeamUse
 }
 
 export async function changeApiTeamUserOffice(accessToken: string, userId: string, request: ChangeTeamUserOfficeRequest): Promise<ApiTeamUser> {
-  const response = await apiFetch(`/api/users/${userId}/office`, {
+  const response = await apiFetch(`/api/v1/users/${userId}/office`, {
     method: "PATCH",
     headers: {
       Authorization: `Bearer ${accessToken}`,

@@ -10,6 +10,7 @@ import {
   WarehouseProductsView,
   WarehouseStockView,
 } from "@/components/multideck/warehouse-components"
+import { WarehouseFacilitiesView, WarehouseItemsView, WarehouseLocationsView } from "@/components/multideck/warehouse-management-components"
 import { TabsRail } from "@/components/multideck/workflow-components"
 import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
 import { warehouseProductFilters, warehouseStockFilters, warehouseTabs } from "@/data/multideck-data"
@@ -76,6 +77,9 @@ export function WarehousePage() {
         transition={shouldReduceMotion ? { duration: 0 } : mdMotion.smooth}
       >
         {activeTab === "Dashboard" ? <WarehouseDashboard metrics={warehouseData?.overview.metrics} orders={warehouseData?.orders} movements={warehouseData?.movements} /> : null}
+        {activeTab === "Facilities" ? <WarehouseFacilitiesView /> : null}
+        {activeTab === "Locations" ? <WarehouseLocationsView /> : null}
+        {activeTab === "Items" ? <WarehouseItemsView /> : null}
         {activeTab === "Products" ? <WarehouseProductsView activeFilter={activeProductFilter} onFilterChange={setActiveProductFilter} rows={warehouseData?.products} /> : null}
         {activeTab === "Goods in/out" ? (
           <WarehouseGoodsView

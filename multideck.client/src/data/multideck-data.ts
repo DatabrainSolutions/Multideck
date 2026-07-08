@@ -396,6 +396,9 @@ export const bookingFilters = ["Open · 34", "On-track · 26", "Delayed · 3", "
 
 export const warehouseTabs = [
   { label: "Dashboard", value: "Live" },
+  { label: "Facilities" },
+  { label: "Locations" },
+  { label: "Items" },
   { label: "Products", value: "128" },
   { label: "Goods in/out", value: "24" },
   { label: "Orders", value: "6" },
@@ -2391,6 +2394,16 @@ export const galleryComponents = [
     foundOn: [{ label: "Warehouse", route: "/warehouse" }, { label: "Components", route: "/components?component=warehouse-table" }],
     componentCode: `export function WarehouseInventoryTable({ rows, columns, renderRowDetail }) {\n  const [openRowId, setOpenRowId] = useState(null)\n\n  return (\n    <div className="overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]">\n      <Table>\n        <TableHeader>{/* calm column headers */}</TableHeader>\n        <motion.tbody variants={tableBodyReveal} initial="hidden" animate="show">\n          {rows.map((row) => (\n            <Popover key={row.id} open={openRowId === row.id} onOpenChange={(open) => setOpenRowId(open ? row.id : null)}>\n              <PopoverAnchor asChild>\n                <motion.tr variants={rowReveal} onClick={() => setOpenRowId((current) => current === row.id ? null : row.id)}>\n                  {columns.map((column) => <TableCell key={column.key}>{column.render(row)}</TableCell>)}\n                </motion.tr>\n              </PopoverAnchor>\n              <PopoverContent>{renderRowDetail?.(row)}</PopoverContent>\n            </Popover>\n          ))}\n        </motion.tbody>\n      </Table>\n    </div>\n  )\n}`,
     usageCode: `<WarehouseProductsTable rows={warehouseProducts} />\n<WarehouseOrdersTable rows={warehouseOrders} />\n<WarehouseStockTable rows={warehouseStockRows} />\n\n// Product and order rows open a compact detail popover.\n// Stock rows select into a top summary and focused location table.`,
+  },
+  {
+    id: "warehouse-form-field",
+    name: "Warehouse Form Field",
+    category: "Operations",
+    description: "A calm, reusable labelled field wrapper for warehouse forms: label, optional required marker, the control, and a single hint-or-error line.",
+    details: "Use inside the Facilities and Items create/edit dialogs and any warehouse form. It keeps every field aligned and shows FluentValidation messages from the API next to the right input. Localised automatically and direction-safe, so codes such as SKU, HS code, and country codes stay readable in right-to-left mode.",
+    foundOn: [{ label: "Warehouse", route: "/warehouse" }, { label: "Components", route: "/components?component=warehouse-form-field" }],
+    componentCode: `export function WarehouseFormField({ label, htmlFor, hint, error, required, className, children }) {\n  return (\n    <div className={cn("grid gap-1.5", className)}>\n      <label htmlFor={htmlFor} className="flex items-center gap-1 text-[12px] font-medium text-[var(--md-ink)]">\n        {label}\n        {required ? <span className="text-[var(--md-red)]" aria-hidden="true">*</span> : null}\n      </label>\n      {children}\n      {error ? (\n        <p className="flex items-center gap-1 text-[11.5px] text-[var(--md-red)]">\n          <AlertCircle className="size-3" strokeWidth={1.5} aria-hidden="true" />\n          {error}\n        </p>\n      ) : hint ? (\n        <p className="text-[11.5px] leading-4 text-[var(--md-subtle)]">{hint}</p>\n      ) : null}\n    </div>\n  )\n}`,
+    usageCode: `<WarehouseFormField label="Facility code" htmlFor="facility-code" required hint="A short unique code, e.g. FXT-DC1." error={firstFieldError(errors, "Code")}>\n  <Input id="facility-code" dir="ltr" value={form.code} onChange={(event) => update("code", event.target.value)} className={fieldControlClass} />\n</WarehouseFormField>`,
   },
   {
     id: "warehouse-kanban-board",

@@ -19,5 +19,5 @@ public partial class SysPermission
 
     public DateTime SysPermissionCreatedAtUtc { get; set; }
 
-    public virtual ICollection<SysUserRole> Roles { get; set; } = new List<SysUserRole>();
+    public virtual ICollection<SysUserRole> SysUserRoles { get; set; } = new List<SysUserRole>();
 }

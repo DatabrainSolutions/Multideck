@@ -12,6 +12,8 @@ builder.Services.AddMultideckServer(builder.Configuration, supabaseAuth);
 
 var app = builder.Build();
 
+await app.SeedMultideckAuthorizationAsync();
+
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
@@ -21,6 +23,7 @@ app.MapRootEndpoint();
 app.MapAuthModule(supabaseAuth);
 app.MapAuthorizationModule(supabaseAuth);
 app.MapUsersModule(supabaseAuth);
+app.MapControllers();
 
 app.MapFallbackToFile("index.html");
 

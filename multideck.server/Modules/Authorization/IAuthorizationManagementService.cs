@@ -9,4 +9,10 @@ public interface IAuthorizationManagementService
     Task<RoleDto> UpdateRolePermissionsAsync(Guid roleId, UpdateRolePermissionsRequest request, CancellationToken cancellationToken);
     Task DeleteRoleAsync(Guid roleId, ClaimsPrincipal user, CancellationToken cancellationToken);
     Task<UserRoleAssignmentDto> UpdateUserRolesAsync(Guid userId, UpdateUserRolesRequest request, ClaimsPrincipal user, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Ensures the permission catalog and system roles exist and carry their baseline permissions.
+    /// Safe to run at startup and idempotent.
+    /// </summary>
+    Task EnsurePermissionCatalogAsync(CancellationToken cancellationToken);
 }

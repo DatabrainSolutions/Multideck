@@ -27,5 +27,25 @@ public partial class CusQuoteChargesOut
 
     public decimal? CusQuoteChargesOutRevenueLocal { get; set; }
 
+    public int? CusQuoteChargesOutLineNo { get; set; }
+
+    public bool CusQuoteChargesOutShowToCustomer { get; set; }
+
+    public Guid? CusQuoteChargesOutSourceRateResultLineId { get; set; }
+
+    public Guid? CusQuoteChargesOutSourceRateLineId { get; set; }
+
+    public Guid? CusQuoteChargesOutSourceMarginRuleId { get; set; }
+
+    public virtual RateMarginRule? CusQuoteChargesOutSourceMarginRule { get; set; }
+
+    public virtual RateRateLine? CusQuoteChargesOutSourceRateLine { get; set; }
+
+    public virtual RateRateResultLine? CusQuoteChargesOutSourceRateResultLine { get; set; }
+
     public virtual CusQuoteRevenueOption CusQuoteRevenueOpt { get; set; } = null!;
+
+    public virtual ICollection<JobCostingChargesOut> JobCostingChargesOuts { get; set; } = new List<JobCostingChargesOut>();
+
+    public virtual ICollection<RateQuoteLink> RateQuoteLinks { get; set; } = new List<RateQuoteLink>();
 }

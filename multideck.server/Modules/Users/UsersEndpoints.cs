@@ -8,7 +8,10 @@ public static class UsersEndpoints
 {
     public static IEndpointRouteBuilder MapUsersModule(this IEndpointRouteBuilder endpoints, SupabaseAuthOptions supabaseAuth)
     {
-        var usersApi = endpoints.MapGroup("/api/users").WithTags("Users");
+        var usersApi = endpoints.NewVersionedApi("Users")
+            .MapGroup("/api/v{version:apiVersion}/users")
+            .HasApiVersion(ApiVersions.V1)
+            .WithTags("Users");
 
         if (supabaseAuth.IsConfigured)
         {
