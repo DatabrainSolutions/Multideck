@@ -30,6 +30,9 @@ jobs:
           cache: 'npm'
           cache-dependency-path: multideck.client/package-lock.json
 
+      - name: Set up npm
+        run: npm install --global npm@10.9.2
+
       - name: Install client dependencies
         run: npm ci
         working-directory: multideck.client
