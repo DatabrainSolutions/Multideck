@@ -399,11 +399,11 @@ export const warehouseTabs = [
   { label: "Facilities" },
   { label: "Locations" },
   { label: "Items" },
-  { label: "Products", value: "128" },
-  { label: "Goods in/out", value: "24" },
-  { label: "Orders", value: "6" },
+  { label: "Inventory" },
+  { label: "Goods in" },
+  { label: "Goods out" },
+  { label: "Orders" },
   { label: "Calendar", value: "7d" },
-  { label: "Stock view", value: "642" },
 ] as const
 
 export const warehouseProductFilters = ["All · 128", "Low stock · 8", "Inbound · 12", "Quarantine · 3"] as const

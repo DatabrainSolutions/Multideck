@@ -130,6 +130,21 @@ public sealed class FacilityService(MultideckContext db, IWarehouseContext conte
             throw WarehouseException.Conflict("Move or remove the items stored in this facility before deleting it.");
         }
 
+        var hasStock = await db.WmsInventoryBalances.AnyAsync(balance =>
+            balance.WmsbalanceFacilityId == facilityId && balance.WmsbalanceOnHandQuantity != 0, cancellationToken);
+        if (hasStock)
+        {
+            throw WarehouseException.Conflict("Dispatch or transfer the stock in this facility before deleting it.");
+        }
+
+        var hasOpenOrders = await db.WmsOrders.AnyAsync(order =>
+            order.WmsorderFacilityId == facilityId && !order.WmsorderIsDeleted &&
+            order.WmsorderStatusCode != "complete" && order.WmsorderStatusCode != "cancelled", cancellationToken);
+        if (hasOpenOrders)
+        {
+            throw WarehouseException.Conflict("Complete or cancel this facility's open warehouse orders before deleting it.");
+        }
+
         facility.WmsfacilityIsDeleted = true;
         facility.WmsfacilityIsActive = false;
         facility.WmsfacilityUpdatedAt = DateTime.UtcNow;

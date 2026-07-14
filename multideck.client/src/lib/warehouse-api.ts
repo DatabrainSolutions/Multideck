@@ -532,3 +532,218 @@ export function updateWarehouseLocation(facilityId: string, locationId: string, 
 export function deleteWarehouseLocation(facilityId: string, locationId: string) {
   return requestWarehouse<void>(`/api/v1/warehouse/facilities/${facilityId}/locations/${locationId}`, "DELETE")
 }
+
+// ---------------------------------------------------------------------------
+// Operational inventory, inbound receiving, outbound dispatch, and orders
+// ---------------------------------------------------------------------------
+
+export type WarehouseInventoryBalance = {
+  id: string
+  facilityId: string
+  facilityCode: string
+  facilityName: string
+  customerOrgId: string | null
+  customerName: string | null
+  itemId: string
+  sku: string
+  itemDescription: string
+  locationId: string | null
+  locationCode: string | null
+  lotId: string | null
+  lotNumber: string | null
+  batchNumber: string | null
+  manufactureDate: string | null
+  expiryDate: string | null
+  inventoryStatusCode: string
+  inventoryStatusName: string | null
+  customsStatusCode: string
+  uomCode: string
+  onHandQuantity: number
+  reservedQuantity: number
+  allocatedQuantity: number
+  heldQuantity: number
+  availableQuantity: number
+  isBonded: boolean
+  firstReceiptAt: string | null
+  lastMovementAt: string | null
+  updatedAt: string
+}
+
+export type WarehouseInventoryMovement = {
+  id: string
+  facilityId: string
+  facilityName: string
+  itemId: string
+  sku: string
+  itemDescription: string
+  typeCode: string
+  typeName: string | null
+  quantity: number
+  uomCode: string
+  fromLocationCode: string | null
+  toLocationCode: string | null
+  lotNumber: string | null
+  batchNumber: string | null
+  reference: string | null
+  notes: string | null
+  createdAt: string
+}
+
+export type WarehouseOrderLine = {
+  id: string
+  lineNumber: number
+  itemId: string
+  sku: string
+  description: string
+  statusCode: string
+  orderedQuantity: number
+  receivedQuantity: number
+  pickedQuantity: number
+  packedQuantity: number
+  dispatchedQuantity: number
+  remainingQuantity: number
+  uomCode: string
+  lotNumber: string | null
+  expiryDate: string | null
+  sourceLocationId: string | null
+  sourceLocationCode: string | null
+  targetLocationId: string | null
+  targetLocationCode: string | null
+  inventoryStatusCode: string
+  customsStatusCode: string
+  goodsValue: number | null
+  currencyCode: string | null
+  instructions: string | null
+}
+
+export type WarehouseOperationalOrder = {
+  id: string
+  facilityId: string
+  facilityCode: string
+  facilityName: string
+  officeId: string | null
+  officeName: string | null
+  customerOrgId: string
+  customerName: string
+  orderNumber: string
+  typeCode: "inbound" | "outbound"
+  typeName: string | null
+  statusCode: string
+  statusName: string | null
+  priorityCode: string
+  customerReference: string | null
+  requestedDate: string | null
+  appointmentStartAt: string | null
+  appointmentEndAt: string | null
+  vehicleReg: string | null
+  containerNumber: string | null
+  sealNumber: string | null
+  instructions: string | null
+  createdAt: string
+  updatedAt: string
+  lines: WarehouseOrderLine[]
+  receipts: { id: string; receiptNumber: string; statusCode: string; receivedAt: string | null; hasDiscrepancy: boolean; notes: string | null }[]
+  dispatches: { id: string; dispatchNumber: string; statusCode: string; dispatchedAt: string | null; vehicleReg: string | null; containerNumber: string | null; sealNumber: string | null }[]
+}
+
+export type WarehouseOrderReference = {
+  facilities: { id: string; officeId: string | null; code: string; name: string }[]
+  customers: { id: string; name: string }[]
+  items: { id: string; customerOrgId: string; facilityId: string | null; sku: string; description: string; uomCode: string; requiresLot: boolean; requiresExpiry: boolean }[]
+  locations: { id: string; facilityId: string; code: string; zoneName: string | null }[]
+  types: { code: string; name: string; directionCode: string | null }[]
+  statuses: { code: string; name: string; isOpen: boolean; isFinal: boolean }[]
+  customsStatuses: { code: string; name: string; isDutySuspended: boolean }[]
+}
+
+export type CreateWarehouseOrderInput = {
+  facilityId: string
+  customerOrgId: string
+  typeCode: "inbound" | "outbound"
+  priorityCode: string | null
+  customerReference: string | null
+  requestedDate: string | null
+  appointmentStartAt: string | null
+  appointmentEndAt: string | null
+  vehicleReg: string | null
+  containerNumber: string | null
+  sealNumber: string | null
+  instructions: string | null
+  lines: {
+    itemId: string
+    quantity: number
+    uomCode: string | null
+    lotNumber: string | null
+    expiryDate: string | null
+    sourceLocationId: string | null
+    targetLocationId: string | null
+    customsStatusCode: string | null
+    goodsValue: number | null
+    currencyCode: string | null
+    instructions: string | null
+  }[]
+}
+
+export type ReceiveWarehouseOrderInput = {
+  receivingLocationId: string | null
+  notes: string | null
+  lines: {
+    orderLineId: string
+    quantity: number
+    damagedQuantity: number
+    targetLocationId: string | null
+    lotNumber: string | null
+    batchNumber: string | null
+    manufactureDate: string | null
+    expiryDate: string | null
+  }[]
+}
+
+export type DispatchWarehouseOrderInput = {
+  vehicleReg: string | null
+  containerNumber: string | null
+  sealNumber: string | null
+  notes: string | null
+  lines: { orderLineId: string; quantity: number; sourceLocationId: string | null; lotId: string | null }[]
+}
+
+export function listWarehouseInventory(options: { facilityId?: string; itemId?: string; search?: string; includeZero?: boolean } = {}) {
+  return requestWarehouse<WarehouseInventoryBalance[]>(
+    `/api/v1/warehouse/inventory${toQuery({ facilityId: options.facilityId, itemId: options.itemId, search: options.search, includeZero: options.includeZero })}`,
+    "GET",
+  )
+}
+
+export function listWarehouseInventoryMovements(options: { facilityId?: string; itemId?: string; take?: number } = {}) {
+  return requestWarehouse<WarehouseInventoryMovement[]>(
+    `/api/v1/warehouse/inventory/movements${toQuery({ facilityId: options.facilityId, itemId: options.itemId, take: options.take === undefined ? undefined : String(options.take) })}`,
+    "GET",
+  )
+}
+
+export function listOperationalWarehouseOrders(options: { facilityId?: string; typeCode?: string; statusCode?: string; search?: string } = {}) {
+  return requestWarehouse<WarehouseOperationalOrder[]>(
+    `/api/v1/warehouse/orders${toQuery({ facilityId: options.facilityId, typeCode: options.typeCode, statusCode: options.statusCode, search: options.search })}`,
+    "GET",
+  )
+}
+
+export function getWarehouseOrderReference() {
+  return requestWarehouse<WarehouseOrderReference>("/api/v1/warehouse/orders/reference", "GET")
+}
+
+export function createOperationalWarehouseOrder(input: CreateWarehouseOrderInput) {
+  return requestWarehouse<WarehouseOperationalOrder>("/api/v1/warehouse/orders", "POST", input)
+}
+
+export function receiveOperationalWarehouseOrder(orderId: string, input: ReceiveWarehouseOrderInput) {
+  return requestWarehouse<WarehouseOperationalOrder>(`/api/v1/warehouse/orders/${orderId}/receive`, "POST", input)
+}
+
+export function dispatchOperationalWarehouseOrder(orderId: string, input: DispatchWarehouseOrderInput) {
+  return requestWarehouse<WarehouseOperationalOrder>(`/api/v1/warehouse/orders/${orderId}/dispatch`, "POST", input)
+}
+
+export function cancelOperationalWarehouseOrder(orderId: string) {
+  return requestWarehouse<WarehouseOperationalOrder>(`/api/v1/warehouse/orders/${orderId}/cancel`, "POST")
+}

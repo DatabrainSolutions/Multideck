@@ -137,6 +137,23 @@ public sealed class LocationService(MultideckContext db, IWarehouseContext conte
         await EnsureFacilityInCompanyAsync(current.CompanyId, facilityId, cancellationToken);
         var location = await LoadScopedAsync(facilityId, locationId, trackChanges: true, cancellationToken);
 
+        var hasStock = await db.WmsInventoryBalances.AnyAsync(balance =>
+            balance.WmsbalanceLocationId == locationId && balance.WmsbalanceOnHandQuantity != 0, cancellationToken);
+        if (hasStock)
+        {
+            throw WarehouseException.Conflict("Move or dispatch the stock in this location before deleting it.");
+        }
+
+        var usedByOpenOrder = await db.WmsOrderLines.AnyAsync(line =>
+            (line.WmsorderLineSourceLocationId == locationId || line.WmsorderLineTargetLocationId == locationId) &&
+            line.WmsorderLineOrder.WmsorderStatusCode != "complete" &&
+            line.WmsorderLineOrder.WmsorderStatusCode != "cancelled" &&
+            !line.WmsorderLineOrder.WmsorderIsDeleted, cancellationToken);
+        if (usedByOpenOrder)
+        {
+            throw WarehouseException.Conflict("This location is still used by an open warehouse order.");
+        }
+
         location.WmslocationIsDeleted = true;
         location.WmslocationIsActive = false;
         location.WmslocationUpdatedAt = DateTime.UtcNow;
