@@ -1,5 +1,5 @@
-using Serilog;
 using Serilog.Events;
+using Serilog;
 
 namespace Multideck.Server.Extensions;
 
@@ -7,32 +7,29 @@ public static class LoggingExtensions
 {
     public static WebApplicationBuilder AddMultideckLogging(this WebApplicationBuilder builder)
     {
-        var sourceToken = builder.Configuration["BetterStack:SourceToken"]?.Trim();
+        var token = builder.Configuration["BetterStack:SourceToken"]?.Trim();
         var endpoint = builder.Configuration["BetterStack:Endpoint"]?.Trim().TrimEnd('/');
 
         var loggerConfiguration = new LoggerConfiguration()
             .MinimumLevel.Information()
             .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
             .Enrich.FromLogContext()
-            .Enrich.WithProperty("Application", "Multideck.Api")
+            .Enrich.WithProperty("Application", "Multideck.API")
             .Enrich.WithProperty("Environment", builder.Environment.EnvironmentName)
             .WriteTo.Console();
 
-        if (!string.IsNullOrWhiteSpace(sourceToken) && !string.IsNullOrWhiteSpace(endpoint))
+        if (!string.IsNullOrWhiteSpace(token) && !string.IsNullOrWhiteSpace(endpoint))
         {
-            loggerConfiguration.WriteTo.BetterStack(
-                sourceToken: sourceToken,
-                betterStackEndpoint: endpoint);
+            loggerConfiguration.WriteTo.BetterStack(sourceToken: token, betterStackEndpoint: endpoint);
         }
 
         Log.Logger = loggerConfiguration.CreateLogger();
         builder.Logging.ClearProviders();
         builder.Services.AddSerilog(Log.Logger, dispose: false);
 
-        if (string.IsNullOrWhiteSpace(sourceToken) || string.IsNullOrWhiteSpace(endpoint))
+        if (string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(endpoint))
         {
-            Log.Warning(
-                "Better Stack logging is disabled. Configure BetterStack:SourceToken and BetterStack:Endpoint to enable cloud logging");
+            Log.Warning("Better Stack logging is disabled. Configure BetterStack Token and Endpoint to enable cloud logging");
         }
 
         return builder;
