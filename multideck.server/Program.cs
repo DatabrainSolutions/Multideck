@@ -4,7 +4,6 @@ using Multideck.Server.Modules.Auth;
 using Multideck.Server.Modules.Authorization;
 using Multideck.Server.Extensions;
 using Serilog;
-using Serilog.Events;
 
 Log.Logger = new LoggerConfiguration()
     .WriteTo.Console()
@@ -16,14 +15,14 @@ try
     LoadDotEnv(builder.Environment.ContentRootPath);
     builder.Configuration.AddEnvironmentVariables();
 
-    ConfigureSerilog(builder);
+    builder.AddMultideckLogging();
 
     var supabaseAuth = SupabaseAuthOptions.FromConfiguration(builder.Configuration);
     builder.Services.AddMultideckServer(builder.Configuration, supabaseAuth);
 
     var app = builder.Build();
 
-    app.UseSerilogRequestLogging();
+    app.UseMultideckRequestLogging();
 
     if (builder.Configuration.GetValue<bool>("Features:SeedAuthorizationOnStartup"))
     {
@@ -47,37 +46,6 @@ catch (Exception exception)
 finally
 {
     await Log.CloseAndFlushAsync();
-}
-
-static void ConfigureSerilog(WebApplicationBuilder builder)
-{
-    var sourceToken = builder.Configuration["BetterStack:SourceToken"]?.Trim();
-    var endpoint = builder.Configuration["BetterStack:Endpoint"]?.Trim().TrimEnd('/');
-
-    var loggerConfiguration = new LoggerConfiguration()
-        .MinimumLevel.Information()
-        .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
-        .Enrich.FromLogContext()
-        .Enrich.WithProperty("Application", "Multideck.Api")
-        .Enrich.WithProperty("Environment", builder.Environment.EnvironmentName)
-        .WriteTo.Console();
-
-    if (!string.IsNullOrWhiteSpace(sourceToken) && !string.IsNullOrWhiteSpace(endpoint))
-    {
-        loggerConfiguration.WriteTo.BetterStack(
-            sourceToken: sourceToken,
-            betterStackEndpoint: endpoint);
-    }
-
-    Log.Logger = loggerConfiguration.CreateLogger();
-    builder.Logging.ClearProviders();
-    builder.Services.AddSerilog(Log.Logger, dispose: false);
-
-    if (string.IsNullOrWhiteSpace(sourceToken) || string.IsNullOrWhiteSpace(endpoint))
-    {
-        Log.Warning(
-            "Better Stack logging is disabled. Configure BetterStack:SourceToken and BetterStack:Endpoint to enable cloud logging");
-    }
 }
 
 static void LoadDotEnv(string contentRootPath)

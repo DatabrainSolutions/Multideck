@@ -56,6 +56,14 @@ dotnet user-secrets set "BetterStack:SourceToken" "your-source-token"
 dotnet user-secrets set "BetterStack:Endpoint" "https://your-ingesting-host"
 ```
 
+HTTP request events include `IpAddress`, plus `Username` when the request is authenticated. The username is the authenticated user's email for the current Supabase JWT configuration.
+
+When the API runs behind a cloud proxy or load balancer, configure ASP.NET Core to trust that proxy's forwarded headers so `IpAddress` contains the user address rather than the proxy address. Prefer configuring the provider's proxy IP or network as trusted. If the API cannot be reached except through the trusted proxy, the hosting environment can instead set:
+
+```text
+ASPNETCORE_FORWARDEDHEADERS_ENABLED=true
+```
+
 ## Supabase Auth Setup
 
 ### Server
