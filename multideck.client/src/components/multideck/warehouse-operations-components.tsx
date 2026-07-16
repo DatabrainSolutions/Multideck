@@ -157,35 +157,125 @@ export function WarehouseInventoryView() {
 
 type DraftLine = { key: string; itemId: string; quantity: string; lotNumber: string; expiryDate: string; locationId: string; customsStatusCode: string }
 type OrderForm = { facilityId: string; customerOrgId: string; typeCode: "inbound" | "outbound"; customerReference: string; requestedDate: string; appointmentStartAt: string; vehicleReg: string; containerNumber: string; sealNumber: string; instructions: string; lines: DraftLine[] }
+type DraftLineAvailability = { available: number; uomCode: string }
 
-function blankLine(reference: WarehouseOrderReference | null, facilityId: string, customerOrgId: string): DraftLine {
+function blankLine(reference: WarehouseOrderReference | null, facilityId: string, customerOrgId: string, typeCode: "inbound" | "outbound"): DraftLine {
   const item = reference?.items.find((candidate) => candidate.facilityId === facilityId && candidate.customerOrgId === customerOrgId)
   const location = reference?.locations.find((candidate) => candidate.facilityId === facilityId)
-  return { key: crypto.randomUUID(), itemId: item?.id ?? "", quantity: "1", lotNumber: "", expiryDate: "", locationId: location?.id ?? "", customsStatusCode: reference?.customsStatuses[0]?.code ?? "free_circulation" }
+  return { key: crypto.randomUUID(), itemId: item?.id ?? "", quantity: item ? "1" : "", lotNumber: "", expiryDate: "", locationId: typeCode === "inbound" ? location?.id ?? "" : "", customsStatusCode: reference?.customsStatuses[0]?.code ?? "free_circulation" }
+}
+
+function calculateDraftLineAvailability(
+  form: OrderForm,
+  stock: readonly WarehouseInventoryBalance[],
+  reference: WarehouseOrderReference | null,
+) {
+  const result: Record<string, DraftLineAvailability> = {}
+  const remainingByBalanceId = new Map(stock.map((balance) => [balance.id, balance.availableQuantity]))
+  const linesBySpecificity = [...form.lines].sort((first, second) => (
+    Number(Boolean(second.locationId)) + Number(Boolean(second.lotNumber)) - Number(Boolean(first.locationId)) - Number(Boolean(first.lotNumber))
+  ))
+
+  for (const line of linesBySpecificity) {
+    const item = reference?.items.find((candidate) => candidate.id === line.itemId)
+    const eligible = stock.filter((balance) =>
+      balance.facilityId === form.facilityId &&
+      balance.customerOrgId === form.customerOrgId &&
+      balance.itemId === line.itemId &&
+      balance.inventoryStatusCode === "available" &&
+      balance.customsStatusCode === line.customsStatusCode &&
+      balance.uomCode === item?.uomCode &&
+      (!line.locationId || balance.locationId === line.locationId) &&
+      (!line.lotNumber.trim() || balance.lotNumber === line.lotNumber.trim()),
+    )
+    const available = eligible.reduce((total, balance) => total + (remainingByBalanceId.get(balance.id) ?? 0), 0)
+    result[line.key] = { available, uomCode: item?.uomCode ?? "" }
+
+    let quantityToAssign = Math.min(Math.max(Number(line.quantity) || 0, 0), available)
+    for (const balance of eligible) {
+      if (quantityToAssign <= 0) break
+      const balanceAvailable = remainingByBalanceId.get(balance.id) ?? 0
+      const assigned = Math.min(quantityToAssign, balanceAvailable)
+      remainingByBalanceId.set(balance.id, balanceAvailable - assigned)
+      quantityToAssign -= assigned
+    }
+  }
+
+  return result
 }
 
 function CreateOrderDialog({ open, onOpenChange, reference, fixedType, onSaved }: { open: boolean; onOpenChange: (open: boolean) => void; reference: WarehouseOrderReference | null; fixedType?: "inbound" | "outbound"; onSaved: () => void }) {
   const firstFacility = reference?.facilities[0]?.id ?? ""
   const firstCustomer = reference?.customers[0]?.id ?? ""
-  const [form, setForm] = useState<OrderForm>(() => ({ facilityId: firstFacility, customerOrgId: firstCustomer, typeCode: fixedType ?? "inbound", customerReference: "", requestedDate: "", appointmentStartAt: "", vehicleReg: "", containerNumber: "", sealNumber: "", instructions: "", lines: [blankLine(reference, firstFacility, firstCustomer)] }))
+  const initialType = fixedType ?? "inbound"
+  const [form, setForm] = useState<OrderForm>(() => ({ facilityId: firstFacility, customerOrgId: firstCustomer, typeCode: initialType, customerReference: "", requestedDate: "", appointmentStartAt: "", vehicleReg: "", containerNumber: "", sealNumber: "", instructions: "", lines: [blankLine(reference, firstFacility, firstCustomer, initialType)] }))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [stock, setStock] = useState<WarehouseInventoryBalance[] | null>(null)
+  const [stockError, setStockError] = useState<string | null>(null)
+  const { language, t } = useLanguage()
+  const number = useMemo(() => new Intl.NumberFormat(language, { maximumFractionDigits: 3 }), [language])
 
   useEffect(() => {
     if (!open) return
     const facilityId = reference?.facilities[0]?.id ?? ""
     const customerOrgId = reference?.customers[0]?.id ?? ""
-    setForm({ facilityId, customerOrgId, typeCode: fixedType ?? "inbound", customerReference: "", requestedDate: "", appointmentStartAt: "", vehicleReg: "", containerNumber: "", sealNumber: "", instructions: "", lines: [blankLine(reference, facilityId, customerOrgId)] })
+    const typeCode = fixedType ?? "inbound"
+    setForm({ facilityId, customerOrgId, typeCode, customerReference: "", requestedDate: "", appointmentStartAt: "", vehicleReg: "", containerNumber: "", sealNumber: "", instructions: "", lines: [blankLine(reference, facilityId, customerOrgId, typeCode)] })
     setError(null)
   }, [open, reference, fixedType])
 
+  useEffect(() => {
+    if (!open || form.typeCode !== "outbound" || !form.facilityId) {
+      setStock([])
+      setStockError(null)
+      return
+    }
+
+    let cancelled = false
+    setStock(null)
+    setStockError(null)
+    listWarehouseInventory({ facilityId: form.facilityId })
+      .then((balances) => { if (!cancelled) setStock(balances) })
+      .catch((cause) => {
+        if (cancelled) return
+        setStock([])
+        setStockError(errorMessage(cause))
+      })
+    return () => { cancelled = true }
+  }, [open, form.typeCode, form.facilityId])
+
   const availableItems = reference?.items.filter((item) => item.facilityId === form.facilityId && item.customerOrgId === form.customerOrgId) ?? []
   const availableLocations = reference?.locations.filter((location) => location.facilityId === form.facilityId) ?? []
+  const lineAvailability = useMemo(() => calculateDraftLineAvailability(form, stock ?? [], reference), [form, stock, reference])
+  const hasOutboundStockIssue = form.typeCode === "outbound" && (
+    stock === null || Boolean(stockError) || form.lines.some((line) => Boolean(line.itemId) && Number(line.quantity) > (lineAvailability[line.key]?.available ?? 0))
+  )
+  function availableFor(itemId: string, locationId = "", customsStatusCode = "") {
+    if (!itemId || form.typeCode !== "outbound" || stock === null) return null
+    const item = availableItems.find((candidate) => candidate.id === itemId)
+    return stock
+      .filter((balance) =>
+        balance.facilityId === form.facilityId &&
+        balance.customerOrgId === form.customerOrgId &&
+        balance.itemId === itemId &&
+        balance.inventoryStatusCode === "available" &&
+        balance.uomCode === item?.uomCode &&
+        (!locationId || balance.locationId === locationId) &&
+        (!customsStatusCode || balance.customsStatusCode === customsStatusCode),
+      )
+      .reduce((total, balance) => total + balance.availableQuantity, 0)
+  }
   function patchForm(patch: Partial<OrderForm>) { setForm((current) => ({ ...current, ...patch })) }
   function patchLine(key: string, patch: Partial<DraftLine>) { setForm((current) => ({ ...current, lines: current.lines.map((line) => line.key === key ? { ...line, ...patch } : line) })) }
-  function resetLines(facilityId: string, customerOrgId: string) { patchForm({ facilityId, customerOrgId, lines: [blankLine(reference, facilityId, customerOrgId)] }) }
+  function resetLines(facilityId: string, customerOrgId: string) { patchForm({ facilityId, customerOrgId, lines: [blankLine(reference, facilityId, customerOrgId, form.typeCode)] }) }
+  function changeType(typeCode: "inbound" | "outbound") { patchForm({ typeCode, lines: [blankLine(reference, form.facilityId, form.customerOrgId, typeCode)] }) }
 
   async function submit() {
+    if (hasOutboundStockIssue) {
+      setError(t("Reduce the outbound quantities to the available stock before placing the order."))
+      return
+    }
     setSaving(true); setError(null)
     try {
       const payload: CreateWarehouseOrderInput = {
@@ -206,30 +296,51 @@ function CreateOrderDialog({ open, onOpenChange, reference, fixedType, onSaved }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto border-0 bg-[var(--md-surface)] p-0 sm:max-w-[880px]">
+      <DialogContent className="max-h-[90vh] overflow-x-hidden overflow-y-auto border-0 bg-[var(--md-surface)] p-0 sm:max-w-[880px]">
         <DialogHeader className="px-6 pt-6"><DialogTitle>{form.typeCode === "inbound" ? "Book goods in" : "Place goods-out order"}</DialogTitle><DialogDescription>Create the order now, then post the physical receipt or dispatch when warehouse work is complete.</DialogDescription></DialogHeader>
         <div className="grid gap-5 px-6 py-5">
           {error ? <div className="rounded-[var(--md-radius-lg)] bg-[rgba(185,28,28,0.07)] px-3 py-2 text-[12px] text-[var(--md-red)]">{error}</div> : null}
           <div className="grid gap-3 md:grid-cols-3">
             <WarehouseFormField label="Warehouse" required><Select value={form.facilityId} onValueChange={(value) => resetLines(value, form.customerOrgId)}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent>{reference?.facilities.map((facility) => <SelectItem key={facility.id} value={facility.id}>{facility.name}</SelectItem>)}</SelectContent></Select></WarehouseFormField>
             <WarehouseFormField label="Customer" required><Select value={form.customerOrgId} onValueChange={(value) => resetLines(form.facilityId, value)}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent>{reference?.customers.map((customer) => <SelectItem key={customer.id} value={customer.id}>{customer.name}</SelectItem>)}</SelectContent></Select></WarehouseFormField>
-            {!fixedType ? <WarehouseFormField label="Direction" required><Select value={form.typeCode} onValueChange={(value) => patchForm({ typeCode: value as "inbound" | "outbound" })}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="inbound">Inbound receipt</SelectItem><SelectItem value="outbound">Outbound release</SelectItem></SelectContent></Select></WarehouseFormField> : <WarehouseFormField label="Direction"><div className={`${controlClass} flex items-center`}>{form.typeCode === "inbound" ? "Inbound receipt" : "Outbound release"}</div></WarehouseFormField>}
+            {!fixedType ? <WarehouseFormField label="Direction" required><Select value={form.typeCode} onValueChange={(value) => changeType(value as "inbound" | "outbound")}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="inbound">Inbound receipt</SelectItem><SelectItem value="outbound">Outbound release</SelectItem></SelectContent></Select></WarehouseFormField> : <WarehouseFormField label="Direction"><div className={`${controlClass} flex items-center`}>{form.typeCode === "inbound" ? "Inbound receipt" : "Outbound release"}</div></WarehouseFormField>}
             <WarehouseFormField label="Customer reference"><Input value={form.customerReference} onChange={(event) => patchForm({ customerReference: event.target.value })} className={controlClass} dir="ltr" /></WarehouseFormField>
             <WarehouseFormField label="Requested date"><Input type="date" value={form.requestedDate} onChange={(event) => patchForm({ requestedDate: event.target.value })} className={controlClass} dir="ltr" /></WarehouseFormField>
             <WarehouseFormField label="Appointment"><Input type="datetime-local" value={form.appointmentStartAt} onChange={(event) => patchForm({ appointmentStartAt: event.target.value })} className={controlClass} dir="ltr" /></WarehouseFormField>
           </div>
           <div className="grid gap-3">
-            <div className="flex items-center justify-between"><div><p className="text-[13px] font-medium text-[var(--md-ink)]">Order lines</p><p className="text-[11.5px] text-[var(--md-subtle)]">Choose the item, quantity, batch requirement, and warehouse location.</p></div><Button variant="ghost" onClick={() => patchForm({ lines: [...form.lines, blankLine(reference, form.facilityId, form.customerOrgId)] })} className="h-9 rounded-[var(--md-radius-lg)] bg-white/48 shadow-[var(--md-shadow-line)]"><Plus className="size-4" />Add line</Button></div>
+            <div className="flex items-center justify-between"><div><p className="text-[13px] font-medium text-[var(--md-ink)]">Order lines</p><p className="text-[11.5px] text-[var(--md-subtle)]">{form.typeCode === "outbound" ? t("Available stock is shown before you assign each quantity.") : "Choose the item, quantity, batch requirement, and warehouse location."}</p></div><Button variant="ghost" onClick={() => patchForm({ lines: [...form.lines, blankLine(reference, form.facilityId, form.customerOrgId, form.typeCode)] })} className="h-9 rounded-[var(--md-radius-lg)] bg-white/48 shadow-[var(--md-shadow-line)]"><Plus className="size-4" />Add line</Button></div>
             {form.lines.map((line, index) => {
               const item = availableItems.find((candidate) => candidate.id === line.itemId)
+              const availability = lineAvailability[line.key] ?? { available: 0, uomCode: item?.uomCode ?? "" }
+              const requestedQuantity = Number(line.quantity) || 0
+              const quantityExceedsAvailability = form.typeCode === "outbound" && Boolean(line.itemId) && stock !== null && requestedQuantity > availability.available
+              const quantityHint = form.typeCode !== "outbound" || !line.itemId
+                ? undefined
+                : stock === null
+                  ? t("Checking available stock…")
+                  : `${number.format(availability.available)} ${availability.uomCode} ${t(line.locationId ? "available at this location." : "available across the warehouse.")}`
+              const quantityError = form.typeCode !== "outbound" || !line.itemId
+                ? undefined
+                : stockError
+                  ? t("Available stock could not be checked.")
+                  : quantityExceedsAvailability
+                    ? `${t("Only")} ${number.format(availability.available)} ${availability.uomCode} ${t(line.locationId ? "available at this location." : "available across the warehouse.")}`
+                    : undefined
               return <div key={line.key} className="grid gap-3 rounded-[var(--md-radius-xl)] bg-white/36 p-4 shadow-[var(--md-shadow-line)] md:grid-cols-12">
-                <WarehouseFormField label={`Item ${index + 1}`} required className="md:col-span-4"><Select value={line.itemId} onValueChange={(value) => patchLine(line.key, { itemId: value })}><SelectTrigger className={controlClass}><SelectValue placeholder="Choose item" /></SelectTrigger><SelectContent>{availableItems.map((option) => <SelectItem key={option.id} value={option.id}>{option.sku} · {option.description}</SelectItem>)}</SelectContent></Select></WarehouseFormField>
-                <WarehouseFormField label="Quantity" required className="md:col-span-2"><Input type="number" min="0.000001" step="0.001" value={line.quantity} onChange={(event) => patchLine(line.key, { quantity: event.target.value })} className={controlClass} dir="ltr" /></WarehouseFormField>
-                <WarehouseFormField label={form.typeCode === "inbound" ? "Target location" : "Source location"} required className="md:col-span-3"><Select value={line.locationId} onValueChange={(value) => patchLine(line.key, { locationId: value })}><SelectTrigger className={controlClass}><SelectValue placeholder="Choose location" /></SelectTrigger><SelectContent>{availableLocations.map((location) => <SelectItem key={location.id} value={location.id}>{location.code}</SelectItem>)}</SelectContent></Select></WarehouseFormField>
+                <WarehouseFormField label={`Item ${index + 1}`} required className="md:col-span-5"><Select value={line.itemId} onValueChange={(value) => patchLine(line.key, { itemId: value, quantity: line.quantity || "1", locationId: form.typeCode === "outbound" ? "" : line.locationId })}><SelectTrigger className={controlClass}><SelectValue placeholder="Choose item" /></SelectTrigger><SelectContent>{availableItems.map((option) => {
+                  const itemAvailable = availableFor(option.id, "", line.customsStatusCode)
+                  return <SelectItem key={option.id} value={option.id} disabled={itemAvailable !== null && itemAvailable <= 0}>{option.sku} · {option.description}{itemAvailable === null ? "" : ` · ${number.format(itemAvailable)} ${option.uomCode} ${t("available")}`}</SelectItem>
+                })}</SelectContent></Select></WarehouseFormField>
+                <WarehouseFormField label="Quantity" required hint={quantityHint} error={quantityError} className="md:col-span-3"><Input type="number" min="0.000001" max={form.typeCode === "outbound" && line.itemId && stock !== null ? availability.available : undefined} step="0.001" value={line.quantity} onChange={(event) => patchLine(line.key, { quantity: event.target.value })} disabled={!line.itemId} aria-invalid={Boolean(quantityError)} className={controlClass} dir="ltr" /></WarehouseFormField>
+                <WarehouseFormField label={form.typeCode === "inbound" ? "Target location" : "Source location"} required className="md:col-span-4"><Select value={line.locationId} onValueChange={(value) => patchLine(line.key, { locationId: value })} disabled={!line.itemId}><SelectTrigger className={controlClass}><SelectValue placeholder="Choose location" /></SelectTrigger><SelectContent>{availableLocations.map((location) => {
+                  const locationAvailable = availableFor(line.itemId, location.id, line.customsStatusCode)
+                  return <SelectItem key={location.id} value={location.id} disabled={locationAvailable !== null && locationAvailable <= 0}>{location.code}{locationAvailable === null ? "" : ` · ${number.format(locationAvailable)} ${item?.uomCode ?? ""} ${t("available")}`}</SelectItem>
+                })}</SelectContent></Select></WarehouseFormField>
                 <WarehouseFormField label="Customs" className="md:col-span-3"><Select value={line.customsStatusCode} onValueChange={(value) => patchLine(line.key, { customsStatusCode: value })}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent>{reference?.customsStatuses.map((status) => <SelectItem key={status.code} value={status.code}>{status.name}</SelectItem>)}</SelectContent></Select></WarehouseFormField>
-                <WarehouseFormField label={item?.requiresLot ? "Lot / batch (required at receipt)" : "Lot / batch"} className="md:col-span-5"><Input value={line.lotNumber} onChange={(event) => patchLine(line.key, { lotNumber: event.target.value })} className={controlClass} dir="ltr" /></WarehouseFormField>
+                <WarehouseFormField label={item?.requiresLot ? "Lot / batch (required at receipt)" : "Lot / batch"} className="md:col-span-4"><Input value={line.lotNumber} onChange={(event) => patchLine(line.key, { lotNumber: event.target.value })} className={controlClass} dir="ltr" /></WarehouseFormField>
                 <WarehouseFormField label={item?.requiresExpiry ? "Expiry (required at receipt)" : "Expiry"} className="md:col-span-4"><Input type="date" value={line.expiryDate} onChange={(event) => patchLine(line.key, { expiryDate: event.target.value })} className={controlClass} dir="ltr" /></WarehouseFormField>
-                <div className="flex items-end justify-end md:col-span-3"><Button variant="ghost" size="icon" disabled={form.lines.length === 1} onClick={() => patchForm({ lines: form.lines.filter((candidate) => candidate.key !== line.key) })} className="size-10 rounded-[var(--md-radius-lg)] text-[var(--md-red)]"><Trash2 className="size-4" /></Button></div>
+                <div className="flex items-end justify-end md:col-span-1"><Button variant="ghost" size="icon" disabled={form.lines.length === 1} onClick={() => patchForm({ lines: form.lines.filter((candidate) => candidate.key !== line.key) })} className="size-10 rounded-[var(--md-radius-lg)] text-[var(--md-red)]"><Trash2 className="size-4" /></Button></div>
               </div>
             })}
             {availableItems.length === 0 ? <p className="text-[12px] text-[var(--md-red)]">No active items are assigned to this customer and warehouse.</p> : null}
@@ -237,7 +348,7 @@ function CreateOrderDialog({ open, onOpenChange, reference, fixedType, onSaved }
           <div className="grid gap-3 md:grid-cols-3"><WarehouseFormField label="Vehicle registration"><Input value={form.vehicleReg} onChange={(event) => patchForm({ vehicleReg: event.target.value })} className={controlClass} dir="ltr" /></WarehouseFormField><WarehouseFormField label="Container"><Input value={form.containerNumber} onChange={(event) => patchForm({ containerNumber: event.target.value })} className={controlClass} dir="ltr" /></WarehouseFormField><WarehouseFormField label="Seal"><Input value={form.sealNumber} onChange={(event) => patchForm({ sealNumber: event.target.value })} className={controlClass} dir="ltr" /></WarehouseFormField></div>
           <WarehouseFormField label="Instructions"><Textarea value={form.instructions} onChange={(event) => patchForm({ instructions: event.target.value })} className="min-h-20 rounded-[var(--md-radius-lg)] border-0 bg-white/68 shadow-[var(--md-shadow-line)]" /></WarehouseFormField>
         </div>
-        <DialogFooter className="px-6 py-4 shadow-[var(--md-stroke-top)]"><Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button><Button disabled={saving || !form.facilityId || !form.customerOrgId || form.lines.some((line) => !line.itemId || Number(line.quantity) <= 0 || !line.locationId)} onClick={() => void submit()} className="bg-[var(--md-accent)] text-white">{saving ? <Loader2 className="size-4 animate-spin" /> : null}{form.typeCode === "inbound" ? "Create inbound booking" : "Place outbound order"}</Button></DialogFooter>
+        <DialogFooter className="mx-0 mb-0 px-6 py-4 shadow-[var(--md-stroke-top)]"><Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button><Button disabled={saving || hasOutboundStockIssue || !form.facilityId || !form.customerOrgId || form.lines.some((line) => !line.itemId || Number(line.quantity) <= 0 || !line.locationId)} onClick={() => void submit()} className="bg-[var(--md-accent)] text-white">{saving ? <Loader2 className="size-4 animate-spin" /> : null}{form.typeCode === "inbound" ? "Create inbound booking" : "Place outbound order"}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   )
@@ -290,7 +401,7 @@ function OrderActionDialog({ order, open, onOpenChange, reference, onChanged }: 
     try { await cancelOperationalWarehouseOrder(currentOrder.id); toast.success("Warehouse order cancelled"); onOpenChange(false); onChanged() } catch (cause) { setError(errorMessage(cause)) } finally { setSaving(false) }
   }
 
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[90vh] overflow-y-auto border-0 bg-[var(--md-surface)] p-0 sm:max-w-[820px]">
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[90vh] overflow-x-hidden overflow-y-auto border-0 bg-[var(--md-surface)] p-0 sm:max-w-[820px]">
     <DialogHeader className="px-6 pt-6"><div className="flex items-center gap-2"><DialogTitle><Code>{order.orderNumber}</Code></DialogTitle><StatusPill tone={toneForStatus(order.statusCode)}>{order.statusName ?? order.statusCode}</StatusPill></div><DialogDescription>{order.customerName} · {order.facilityName} · {order.typeName ?? order.typeCode}</DialogDescription></DialogHeader>
     <div className="grid gap-5 px-6 py-5">
       {error ? <div className="rounded-[var(--md-radius-lg)] bg-[rgba(185,28,28,0.07)] px-3 py-2 text-[12px] text-[var(--md-red)]">{error}</div> : null}
@@ -308,7 +419,7 @@ function OrderActionDialog({ order, open, onOpenChange, reference, onChanged }: 
       {order.receipts.length ? <div><p className="mb-2 text-[12px] font-medium text-[var(--md-ink)]">Goods receipts</p>{order.receipts.map((receipt) => <p key={receipt.id} className="text-[12px] text-[var(--md-text)]"><Code>{receipt.receiptNumber}</Code> · {receipt.receivedAt ? new Date(receipt.receivedAt).toLocaleString() : receipt.statusCode}</p>)}</div> : null}
       {order.dispatches.length ? <div><p className="mb-2 text-[12px] font-medium text-[var(--md-ink)]">Dispatches</p>{order.dispatches.map((dispatch) => <p key={dispatch.id} className="text-[12px] text-[var(--md-text)]"><Code>{dispatch.dispatchNumber}</Code> · {dispatch.dispatchedAt ? new Date(dispatch.dispatchedAt).toLocaleString() : dispatch.statusCode}</p>)}</div> : null}
     </div>
-    <DialogFooter className="flex-row items-center justify-between px-6 py-4 shadow-[var(--md-stroke-top)]"><div>{!final && !order.lines.some((line) => line.receivedQuantity > 0 || line.dispatchedQuantity > 0) ? <Button variant="ghost" disabled={saving} onClick={() => void cancel()} className="text-[var(--md-red)]"><XCircle className="size-4" />Cancel order</Button> : null}</div><div className="flex gap-2"><Button variant="ghost" onClick={() => onOpenChange(false)}>Close</Button>{!final && rows.length ? <Button disabled={saving || rows.some((row) => Number(row.quantity) <= 0 || (order.typeCode === "inbound" && !row.locationId))} onClick={() => void post()} className="bg-[var(--md-accent)] text-white">{saving ? <Loader2 className="size-4 animate-spin" /> : order.typeCode === "inbound" ? <ArrowDownToLine className="size-4" /> : <ArrowUpFromLine className="size-4" />}{order.typeCode === "inbound" ? "Receive goods" : "Dispatch goods"}</Button> : null}</div></DialogFooter>
+    <DialogFooter className="mx-0 mb-0 flex-row items-center justify-between px-6 py-4 shadow-[var(--md-stroke-top)]"><div>{!final && !order.lines.some((line) => line.receivedQuantity > 0 || line.dispatchedQuantity > 0) ? <Button variant="ghost" disabled={saving} onClick={() => void cancel()} className="text-[var(--md-red)]"><XCircle className="size-4" />Cancel order</Button> : null}</div><div className="flex gap-2"><Button variant="ghost" onClick={() => onOpenChange(false)}>Close</Button>{!final && rows.length ? <Button disabled={saving || rows.some((row) => Number(row.quantity) <= 0 || (order.typeCode === "inbound" && !row.locationId))} onClick={() => void post()} className="bg-[var(--md-accent)] text-white">{saving ? <Loader2 className="size-4 animate-spin" /> : order.typeCode === "inbound" ? <ArrowDownToLine className="size-4" /> : <ArrowUpFromLine className="size-4" />}{order.typeCode === "inbound" ? "Receive goods" : "Dispatch goods"}</Button> : null}</div></DialogFooter>
   </DialogContent></Dialog>
 }
 

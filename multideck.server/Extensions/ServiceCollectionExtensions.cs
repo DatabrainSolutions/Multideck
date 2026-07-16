@@ -3,6 +3,7 @@ using Asp.Versioning;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
+using Multideck.Intelligence;
 using Multideck.Persistence;
 using Multideck.Server.Authorization;
 using Multideck.Server.Configuration;
@@ -11,6 +12,7 @@ using Multideck.Server.Modules.Authorization;
 using Multideck.Server.Modules.Users;
 using Multideck.Server.Modules.Users.Supabase;
 using Multideck.Server.Modules.Warehouse;
+using Multideck.Server.Modules.Customers;
 
 namespace Multideck.Server.Extensions;
 
@@ -23,8 +25,10 @@ public static class ServiceCollectionExtensions
         services.AddApiVersioningForMultideck();
         services.AddAuthorization();
         services.AddHttpClient();
+        services.AddMultideckIntelligence(configuration);
         services.AddMultideckPersistence(configuration);
         services.AddWarehouseModule();
+        services.AddScoped<ICustomerService, CustomerService>();
 
         services.AddSingleton(supabaseAuth);
         services.AddScoped<IAuthSessionService, AuthSessionService>();

@@ -194,11 +194,7 @@ export function TopBar({
               </Button>
               <Button
                 className={topBarPrimaryActionClass}
-                onClick={() =>
-                  toast.success("Customer draft created", {
-                    description: "Add account details and contacts next.",
-                  })
-                }
+                onClick={() => window.dispatchEvent(new CustomEvent("multideck:create-customer"))}
               >
                 <Plus data-icon="inline-start" strokeWidth={1.2} />
                 <span className="hidden sm:inline">New customer</span>

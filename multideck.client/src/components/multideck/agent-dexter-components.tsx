@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils"
 import type { StatusTone } from "@/data/multideck-data"
 import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
 import { Surface } from "@/components/multideck/surface"
+import { useLanguage } from "@/i18n/language-provider"
 
 export type DexterSpecialistId = "auto" | "customs" | "customer" | "sales" | "ops" | "analytics"
 
@@ -44,8 +45,6 @@ export type DexterAttachment = {
 export type DexterHistoryItem = {
   id: string
   title: string
-  summary: string
-  time: string
 }
 
 export type DexterMonitor = {
@@ -113,12 +112,13 @@ export function DexterPromptComposer({
   value,
   selectedSpecialist,
   attachments = [],
-  placeholder = "Ask anything - \"chase the late B/L on MD-22455\", \"quote 2 reefers to Ningbo\"...",
+  placeholder = "Ask about open orders, held stock, warehouse exceptions, or recent movements...",
   onChange,
   onOpenAttachments,
   onOpenSpecialists,
   onRemoveAttachment,
   onSend,
+  disabled = false,
   compact = false,
   className,
 }: {
@@ -131,9 +131,12 @@ export function DexterPromptComposer({
   onOpenSpecialists: () => void
   onRemoveAttachment?: (id: string) => void
   onSend: () => void
+  disabled?: boolean
   compact?: boolean
   className?: string
 }) {
+  const { t } = useLanguage()
+
   return (
     <div
       className={cn(
@@ -174,7 +177,14 @@ export function DexterPromptComposer({
         <textarea
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          placeholder={placeholder}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+              event.preventDefault()
+              if (!disabled && value.trim()) onSend()
+            }
+          }}
+          placeholder={t(placeholder)}
+          disabled={disabled}
           className={cn(
             "min-h-0 flex-1 resize-none border-0 bg-transparent text-[15px] leading-6 text-[var(--md-ink)] outline-none placeholder:text-[var(--md-subtle)]",
             compact ? "min-h-[56px]" : "min-h-[78px]",
@@ -189,7 +199,7 @@ export function DexterPromptComposer({
             onClick={onOpenAttachments}
           >
             <Plus data-icon="inline-start" strokeWidth={1.2} />
-            Attach
+            {t("Attach")}
           </Button>
           <Button
             type="button"
@@ -200,16 +210,17 @@ export function DexterPromptComposer({
             <selectedSpecialist.icon data-icon="inline-start" strokeWidth={1.2} />
             {selectedSpecialist.name}
           </Button>
-          <span className="ml-auto hidden items-center gap-1 text-[12px] text-[var(--md-subtle)] sm:inline-flex">
+          <span className="ms-auto hidden items-center gap-1 text-[12px] text-[var(--md-subtle)] sm:inline-flex">
             <span className="text-[15px] leading-none">↵</span>
-            to send
+            {t("to send")}
           </span>
           <Button
             type="button"
             size="icon-lg"
-            className="ml-auto rounded-[var(--md-radius-lg)] bg-[var(--md-bg-strong)] text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-accent)] hover:text-white sm:ml-0"
+            className="ms-auto rounded-[var(--md-radius-lg)] bg-[var(--md-bg-strong)] text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-accent)] hover:text-white sm:ms-0"
             onClick={onSend}
-            aria-label="Send prompt"
+            disabled={disabled || !value.trim()}
+            aria-label={t("Send prompt")}
           >
             <ArrowUp className="size-4" strokeWidth={1.4} />
           </Button>
@@ -455,44 +466,74 @@ export function DexterHistoryList({
   activeId,
   onSelect,
   onNew,
+  onClose,
+  variant = "rail",
+  isLoading = false,
 }: {
   items: DexterHistoryItem[]
   activeId: string
   onSelect: (id: string) => void
   onNew: () => void
+  onClose?: () => void
+  variant?: "rail" | "panel"
+  isLoading?: boolean
 }) {
+  const { t } = useLanguage()
+
   return (
-    <aside className="relative flex h-screen min-h-0 flex-col overflow-hidden bg-[var(--md-sidebar-bg)] shadow-[var(--md-stroke-right)]">
+    <aside
+      className={cn(
+        "relative flex min-h-0 flex-col overflow-hidden bg-[var(--md-sidebar-bg)]",
+        variant === "panel"
+          ? "h-full rounded-[22px] shadow-[var(--md-shadow-lift)]"
+          : "h-screen shadow-[var(--md-stroke-right)]",
+      )}
+      aria-label={t("Previous conversations")}
+    >
       <div className="flex h-[72px] items-center justify-between gap-3 px-5 shadow-[var(--md-stroke-bottom)]">
-        <h2 className="text-[18px] font-medium text-[var(--md-ink)]">History</h2>
-        <Button className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[13px] text-white hover:bg-[var(--md-accent)]/90" onClick={onNew}>
-          <Plus data-icon="inline-start" strokeWidth={1.2} />
-          New
-        </Button>
+        <h2 className="min-w-0 truncate text-[18px] font-medium text-[var(--md-ink)]">{variant === "panel" ? t("Previous conversations") : t("History")}</h2>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[13px] text-white hover:bg-[var(--md-accent)]/90" onClick={onNew}>
+            <Plus data-icon="inline-start" strokeWidth={1.2} />
+            {t("New")}
+          </Button>
+          {onClose ? (
+            <Button type="button" variant="ghost" size="icon-sm" className="rounded-[var(--md-radius-md)]" onClick={onClose} aria-label={t("Close history")}>
+              <X className="size-4" strokeWidth={1.2} />
+            </Button>
+          ) : null}
+        </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-3 md-scrollbar">
-        <p className="px-2 py-3 text-[12px] font-medium text-[var(--md-subtle)]">Today</p>
-        <div className="grid gap-1">
+        <p className="px-2 py-3 text-[12px] font-medium text-[var(--md-subtle)]">{t("Recent")}</p>
+        {isLoading ? (
+          <div className="grid gap-2 px-2" aria-label={t("Loading conversations")}>
+            {[0, 1, 2].map((index) => (
+              <div key={index} className="h-[58px] animate-pulse rounded-[var(--md-radius-lg)] bg-white/48" />
+            ))}
+          </div>
+        ) : items.length > 0 ? (
+          <div className="grid gap-1">
           {items.map((item) => (
             <button
               key={item.id}
               type="button"
               className={cn(
-                "rounded-[var(--md-radius-lg)] px-3 py-3 text-left transition-[background,color,box-shadow,opacity,transform] duration-200",
+                "rounded-[var(--md-radius-lg)] px-3 py-3 text-start transition-[background,color,box-shadow,opacity,transform] duration-200",
                 activeId === item.id ? "bg-white shadow-[var(--md-shadow-line)]" : "hover:bg-white/52",
               )}
               onClick={() => onSelect(item.id)}
+              aria-current={activeId === item.id ? "page" : undefined}
             >
-              <span className="flex items-start justify-between gap-3">
-                <span className="min-w-0">
-                  <span className="block truncate text-[13px] font-medium text-[var(--md-ink)]">{item.title}</span>
-                  <span className="mt-1 block truncate text-[12px] text-[var(--md-text)]">{item.summary}</span>
-                </span>
-                <span className="shrink-0 text-[12px] text-[var(--md-subtle)]">{item.time}</span>
-              </span>
+              <span className="line-clamp-2 block text-[13px] font-medium leading-5 text-[var(--md-ink)]">{item.title}</span>
             </button>
           ))}
-        </div>
+          </div>
+        ) : (
+          <div className="mx-2 rounded-[var(--md-radius-lg)] bg-white/42 px-4 py-5 text-[13px] leading-5 text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
+            {t("Your previous Dexter conversations will appear here.")}
+          </div>
+        )}
       </div>
     </aside>
   )
@@ -808,11 +849,12 @@ export function DexterSuggestionGrid({
 }: {
   onPick: (prompt: string, specialistId: DexterSpecialistId) => void
 }) {
+  const { t } = useLanguage()
   const suggestions = [
-    { title: "Triage my morning", body: "Which bookings need me first today?", icon: Zap, specialistId: "ops" as DexterSpecialistId },
-    { title: "Draft a quote", body: "Yantian to Felixstowe - 2x40HC - week 28", icon: PackageCheck, specialistId: "sales" as DexterSpecialistId },
-    { title: "Explain a delay", body: "Why is MD-22479 slipping in Rotterdam?", icon: BarChart3, specialistId: "analytics" as DexterSpecialistId },
-    { title: "Prep a customer review", body: "Summarize Marlow Apparel's last quarter", icon: MessageCircle, specialistId: "analytics" as DexterSpecialistId },
+    { title: t("Triage warehouse operations"), body: t("Which open orders, tasks, and exceptions need attention first?"), icon: Zap, specialistId: "ops" as DexterSpecialistId },
+    { title: t("Find held stock"), body: t("Which SKUs currently have held inventory and why?"), icon: ShieldCheck, specialistId: "customs" as DexterSpecialistId },
+    { title: t("Check outbound workload"), body: t("Show open outbound orders due this week and their release blockers."), icon: PackageCheck, specialistId: "ops" as DexterSpecialistId },
+    { title: t("Trace recent movements"), body: t("Summarise the latest warehouse movements by facility."), icon: BarChart3, specialistId: "analytics" as DexterSpecialistId },
   ]
 
   return (

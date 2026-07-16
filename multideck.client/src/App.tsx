@@ -6,7 +6,6 @@ import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { AppShell } from "@/components/multideck/app-shell"
 import { LanguageProvider } from "@/i18n/language-provider"
-import { getApiAuthSession } from "@/lib/api"
 import { mdMotion } from "@/lib/motion"
 import { rememberAuthReturnPath, takeAuthReturnPath } from "@/lib/auth-routing"
 import { summarizeAuthUser, type AuthUserSummary } from "@/lib/auth-user"
@@ -58,7 +57,6 @@ const validRoutes = new Set([
   "/crm/marketing",
   "/crm/settings",
   "/customers",
-  "/customers/marlow-apparel",
   "/reports",
   "/reports/templates/monthly-client-review",
   "/settings",
@@ -81,6 +79,10 @@ function isCrmLeadDetailRoute(path: string) {
   return /^\/crm\/leads\/[^/]+$/.test(path)
 }
 
+function isCustomerDetailRoute(path: string) {
+  return /^\/customers\/[^/]+$/.test(path)
+}
+
 function isCrmListDetailRoute(path: string) {
   return /^\/crm\/lists\/[^/]+$/.test(path)
 }
@@ -98,6 +100,7 @@ function getRoute() {
   if (legacyBookingRoute) return legacyBookingRoute
   if (window.location.pathname.startsWith("/reports/rpt-")) return window.location.pathname
   if (isBookingDetailRoute(window.location.pathname)) return window.location.pathname
+  if (isCustomerDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCrmLeadDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCrmListDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCrmEmailStatsRoute(window.location.pathname)) return window.location.pathname
@@ -137,7 +140,7 @@ export default function App() {
 
     let cancelled = false
 
-    const applySession = async (session: Session | null) => {
+    const applySession = (session: Session | null) => {
       if (cancelled) return
 
       if (!session?.user) {
@@ -146,36 +149,23 @@ export default function App() {
         return
       }
 
-      setAuthStatus((current) => current === "authenticated" ? "authenticated" : "checking")
-
-      try {
-        await getApiAuthSession(session.access_token)
-        if (cancelled) return
-
-        setCurrentUser(summarizeAuthUser(session.user))
-        setAuthStatus("authenticated")
-      } catch (error) {
-        console.error(error)
-        if (cancelled) return
-
-        setCurrentUser(null)
-        setAuthStatus("unauthenticated")
-      }
+      setCurrentUser(summarizeAuthUser(session.user))
+      setAuthStatus("authenticated")
     }
 
     supabase.auth.getSession().then(({ data, error }) => {
       if (error) {
         console.error(error)
         void clearStaleSession()
-        void applySession(null)
+        applySession(null)
         return
       }
 
-      void applySession(data.session)
+      applySession(data.session)
     }).catch((error) => {
       console.error(error)
       void clearStaleSession()
-      void applySession(null)
+      applySession(null)
     })
 
     const { data } = supabase.auth.onAuthStateChange((event, session) => {
@@ -183,11 +173,11 @@ export default function App() {
       if ((event as string) === "TOKEN_REFRESH_FAILED") {
         console.warn("Token refresh failed — clearing stale session.")
         void clearStaleSession()
-        void applySession(null)
+        applySession(null)
         return
       }
 
-      void applySession(session)
+      applySession(session)
     })
 
     return () => {
@@ -271,7 +261,7 @@ export default function App() {
                   {route === "/crm/marketing" ? <CrmMarketingPage /> : null}
                   {route === "/crm/settings" ? <CrmSettingsPage /> : null}
                   {route === "/customers" ? <CustomersPage navigate={navigate} /> : null}
-                  {route === "/customers/marlow-apparel" ? <CustomerDetailPage /> : null}
+                  {isCustomerDetailRoute(route) ? <CustomerDetailPage customerId={route.split("/").at(-1) ?? ""} /> : null}
                   {route === "/reports" ? <ReportsPage navigate={navigate} /> : null}
                   {route === "/settings" ? <SettingsPage navigate={navigate} /> : null}
                   {route === "/warehouse" ? <WarehousePage /> : null}

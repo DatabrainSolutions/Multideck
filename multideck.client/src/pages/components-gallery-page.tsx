@@ -477,6 +477,7 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewSelectedIds, setPreviewSelectedIds] = useState<Set<string>>(new Set(["marlow-apparel"]))
   const [previewCustomerTab, setPreviewCustomerTab] = useState("Overview")
   const [previewAuthEmail, setPreviewAuthEmail] = useState("john.doe@multideck.app")
+  const [previewAuthMethod, setPreviewAuthMethod] = useState<"magic-link" | "password" | null>(null)
   const [previewAuthCode, setPreviewAuthCode] = useState("742")
   const [previewSettingsTab, setPreviewSettingsTab] = useState("profile")
   const [previewSettingsChoice, setPreviewSettingsChoice] = useState("Always ask")
@@ -1377,9 +1378,9 @@ function ComponentPreview({ id }: { id: string }) {
         <div className="h-[560px] w-full max-w-[340px] overflow-hidden rounded-[var(--md-radius-xl)] shadow-[var(--md-shadow-line)]">
           <DexterHistoryList
             items={[
-              { id: "customs-risk", title: "At-risk customs this week", summary: "4 flagged - drafts ready for review", time: "11:42" },
-              { id: "marlow-qbr", title: "Marlow Apparel - QBR prep", summary: "Snapshot, talking points, agenda draft", time: "10:05" },
-              { id: "daily", title: "Daily briefing - 11 Jun", summary: "Quiet night. 23 in transit, 2 need you.", time: "07:00" },
+              { id: "customs-risk", title: "Which customs exceptions need attention this week?" },
+              { id: "marlow-qbr", title: "What should I prepare for the Marlow Apparel review?" },
+              { id: "daily", title: "What needs my attention in warehouse operations today?" },
             ]}
             activeId="customs-risk"
             onSelect={(itemId) => toast.success(`${itemId} opened`)}
@@ -1705,7 +1706,9 @@ function ComponentPreview({ id }: { id: string }) {
         <div className="w-full max-w-[620px] rounded-[var(--md-radius-xl)] bg-[var(--md-bg)] p-[var(--md-page-section-gap)] shadow-[var(--md-shadow-line)]">
           <SignInPanel
             email={previewAuthEmail}
+            signInMethod={previewAuthMethod}
             onEmailChange={setPreviewAuthEmail}
+            onSignInMethodChange={setPreviewAuthMethod}
             onContinue={() => undefined}
           />
         </div>

@@ -14,8 +14,11 @@ public static class AppPermissions
 
     public static class Customers
     {
-        public static readonly PermissionDefinition Read = new("Customers.Read", "Customers", "Read customers", "View customer accounts, contacts, and CRM context.");
-        public static readonly PermissionDefinition Write = new("Customers.Write", "Customers", "Create and update customers", "Create customers and update customer profile data.");
+        public const string ReadValue = "Customers.Read";
+        public const string WriteValue = "Customers.Write";
+
+        public static readonly PermissionDefinition Read = new(ReadValue, "Customers", "Read customers", "View customer accounts, contacts, and CRM context.");
+        public static readonly PermissionDefinition Write = new(WriteValue, "Customers", "Create and update customers", "Create customers and update customer profile data.");
         public static readonly PermissionDefinition Delete = new("Customers.Delete", "Customers", "Delete customers", "Delete customer records and linked commercial context.", IsDangerous: true);
     }
 

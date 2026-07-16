@@ -183,6 +183,11 @@ public sealed class WarehouseOrderService(MultideckContext db, IWarehouseContext
             }
         }
 
+        if (typeCode == Outbound)
+        {
+            await RequireOutboundAvailabilityAsync(request, facility.WmsfacilityDefaultCustomsStatusCode, items, cancellationToken);
+        }
+
         var now = DateTime.UtcNow;
         var orderId = Guid.NewGuid();
         var order = new WmsOrder
@@ -251,212 +256,297 @@ public sealed class WarehouseOrderService(MultideckContext db, IWarehouseContext
         return await GetAsync(user, orderId, cancellationToken);
     }
 
+    private async Task RequireOutboundAvailabilityAsync(
+        CreateWarehouseOrderRequest request,
+        string defaultCustomsStatusCode,
+        IReadOnlyDictionary<Guid, WmsItem> items,
+        CancellationToken cancellationToken)
+    {
+        var itemIds = items.Keys.ToList();
+        var balances = await db.WmsInventoryBalances
+            .AsNoTracking()
+            .Include(balance => balance.WmsbalanceLocation)
+            .Include(balance => balance.WmsbalanceLot)
+            .Where(balance =>
+                balance.WmsbalanceFacilityId == request.FacilityId &&
+                balance.WmsbalanceCustomerOrgId == request.CustomerOrgId &&
+                itemIds.Contains(balance.WmsbalanceItemId) &&
+                balance.WmsbalanceInventoryStatusCode == Available &&
+                balance.WmsbalanceAvailableQuantity > 0)
+            .ToListAsync(cancellationToken);
+
+        var remainingByBalanceId = balances.ToDictionary(
+            balance => balance.WmsbalanceId,
+            balance => balance.WmsbalanceAvailableQuantity);
+
+        var linesBySpecificity = request.Lines
+            .Select((line, index) => new { Line = line, Index = index })
+            .OrderByDescending(entry =>
+                (entry.Line.SourceLocationId.HasValue ? 1 : 0) +
+                (!string.IsNullOrWhiteSpace(entry.Line.LotNumber) ? 1 : 0))
+            .ThenBy(entry => entry.Index);
+
+        foreach (var entry in linesBySpecificity)
+        {
+            var line = entry.Line;
+            var item = items[line.ItemId];
+            var uomCode = Normalize(line.UomCode)?.ToUpperInvariant() ?? item.WmsitemBaseUomcode;
+            var customsStatusCode = Normalize(line.CustomsStatusCode) ?? defaultCustomsStatusCode;
+            var lotNumber = Normalize(line.LotNumber);
+            var eligibleBalances = balances
+                .Where(balance =>
+                    balance.WmsbalanceItemId == line.ItemId &&
+                    string.Equals(balance.WmsbalanceUomcode, uomCode, StringComparison.OrdinalIgnoreCase) &&
+                    balance.WmsbalanceCustomsStatusCode == customsStatusCode &&
+                    (!line.SourceLocationId.HasValue || balance.WmsbalanceLocationId == line.SourceLocationId) &&
+                    (lotNumber is null || string.Equals(balance.WmsbalanceLot?.WmslotLotNumber, lotNumber, StringComparison.OrdinalIgnoreCase)) &&
+                    remainingByBalanceId[balance.WmsbalanceId] > 0)
+                .OrderBy(balance => balance.WmsbalanceLot?.WmslotExpiryDate)
+                .ThenBy(balance => balance.WmsbalanceFirstReceiptAt)
+                .ToList();
+
+            var availableQuantity = eligibleBalances.Sum(balance => remainingByBalanceId[balance.WmsbalanceId]);
+            if (line.Quantity > availableQuantity)
+            {
+                var scope = line.SourceLocationId.HasValue ? " at the selected location" : " across this warehouse";
+                throw WarehouseException.BadRequest($"Only {availableQuantity:0.######} {uomCode} of '{item.WmsitemSku}' is available{scope}. Reduce the quantity before placing the outbound order.");
+            }
+
+            var quantityToAssign = line.Quantity;
+            foreach (var balance in eligibleBalances)
+            {
+                if (quantityToAssign <= 0) break;
+
+                var balanceAvailable = remainingByBalanceId[balance.WmsbalanceId];
+                var assignedQuantity = Math.Min(quantityToAssign, balanceAvailable);
+                remainingByBalanceId[balance.WmsbalanceId] = balanceAvailable - assignedQuantity;
+                quantityToAssign -= assignedQuantity;
+            }
+        }
+    }
+
     public async Task<WarehouseOrderDto> ReceiveAsync(ClaimsPrincipal user, Guid orderId, ReceiveWarehouseOrderRequest request, CancellationToken cancellationToken)
     {
         var current = await context.RequireCurrentUserAsync(user, cancellationToken);
-        await using var databaseTransaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        var order = await LoadScopedAsync(current.CompanyId, orderId, trackChanges: true, cancellationToken);
-        EnsureActionable(order, Inbound, "receive");
-        EnsureDistinctLines(request.Lines.Select(line => line.OrderLineId));
+        var strategy = db.Database.CreateExecutionStrategy();
+        var receiptId = Guid.NewGuid();
 
-        var locationIds = request.Lines.Select(line => line.TargetLocationId).Append(request.ReceivingLocationId).Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToList();
-        await RequireLocationsAsync(order.WmsorderFacilityId, locationIds, cancellationToken);
-        await RequirePostingLookupsAsync(includeDamaged: request.Lines.Any(line => line.DamagedQuantity > 0), cancellationToken);
-
-        var now = DateTime.UtcNow;
-        var receipt = new WmsReceipt
-        {
-            WmsreceiptId = Guid.NewGuid(),
-            WmsreceiptFacilityId = order.WmsorderFacilityId,
-            WmsreceiptOrderId = order.WmsorderId,
-            WmsreceiptJobId = order.WmsorderJobId,
-            WmsreceiptReceiptNumber = await CreateUniqueReceiptNumberAsync(order.WmsorderFacilityId, cancellationToken),
-            WmsreceiptStatusCode = "complete",
-            WmsreceiptReceivingLocationId = request.ReceivingLocationId,
-            WmsreceiptReceivedAt = now,
-            WmsreceiptReceivedBy = current.UserId,
-            WmsreceiptHasDiscrepancy = false,
-            WmsreceiptNotes = Normalize(request.Notes),
-            WmsreceiptMetadataJson = "{}",
-            WmsreceiptCreatedAt = now,
-            WmsreceiptCreatedBy = current.UserId,
-        };
-        db.WmsReceipts.Add(receipt);
-
-        for (var index = 0; index < request.Lines.Count; index++)
-        {
-            var input = request.Lines[index];
-            var line = order.WmsOrderLines.FirstOrDefault(candidate => candidate.WmsorderLineId == input.OrderLineId)
-                ?? throw WarehouseException.BadRequest("A received line does not belong to this order.");
-            var outstanding = Math.Max(0, line.WmsorderLineOrderedQuantity - line.WmsorderLineReceivedQuantity);
-            var targetLocationId = input.TargetLocationId ?? line.WmsorderLineTargetLocationId ?? request.ReceivingLocationId;
-            if (!targetLocationId.HasValue) throw WarehouseException.BadRequest($"Choose a receiving location for line {line.WmsorderLineLineNo}.");
-
-            var lot = await ResolveLotAsync(order, line, input, cancellationToken);
-            var customsStatus = line.WmsorderLineCustomsStatusCode;
-            var goodQuantity = input.Quantity - input.DamagedQuantity;
-            WmsInventoryTransaction? primaryTransaction = null;
-
-            if (goodQuantity > 0)
+        await strategy.ExecuteInTransactionAsync(
+            async () =>
             {
-                primaryTransaction = await PostReceiptBalanceAsync(order, line, receipt, targetLocationId.Value, lot, Available, goodQuantity, input, current.UserId, now, cancellationToken);
-            }
+                db.ChangeTracker.Clear();
+                var order = await LoadScopedAsync(current.CompanyId, orderId, trackChanges: true, cancellationToken);
+                EnsureActionable(order, Inbound, "receive");
+                EnsureDistinctLines(request.Lines.Select(line => line.OrderLineId));
 
-            if (input.DamagedQuantity > 0)
-            {
-                primaryTransaction ??= await PostReceiptBalanceAsync(order, line, receipt, targetLocationId.Value, lot, Damaged, input.DamagedQuantity, input, current.UserId, now, cancellationToken);
-            }
+                var locationIds = request.Lines.Select(line => line.TargetLocationId).Append(request.ReceivingLocationId).Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToList();
+                await RequireLocationsAsync(order.WmsorderFacilityId, locationIds, cancellationToken);
+                await RequirePostingLookupsAsync(includeDamaged: request.Lines.Any(line => line.DamagedQuantity > 0), cancellationToken);
 
-            var over = Math.Max(0, input.Quantity - outstanding);
-            var shortQuantity = Math.Max(0, outstanding - input.Quantity);
-            receipt.WmsreceiptHasDiscrepancy |= input.DamagedQuantity > 0 || over > 0;
-            receipt.WmsReceiptLines.Add(new WmsReceiptLine
-            {
-                WmsreceiptLineId = Guid.NewGuid(),
-                WmsreceiptLineOrderLineId = line.WmsorderLineId,
-                WmsreceiptLineItemId = line.WmsorderLineItemId,
-                WmsreceiptLineLineNo = index + 1,
-                WmsreceiptLineExpectedQuantity = outstanding,
-                WmsreceiptLineReceivedQuantity = input.Quantity,
-                WmsreceiptLineDamagedQuantity = input.DamagedQuantity,
-                WmsreceiptLineOverQuantity = over,
-                WmsreceiptLineShortQuantity = shortQuantity,
-                WmsreceiptLineUomcode = line.WmsorderLineUomcode,
-                WmsreceiptLineLotNumber = lot?.WmslotLotNumber,
-                WmsreceiptLineExpiryDate = lot?.WmslotExpiryDate ?? input.ExpiryDate,
-                WmsreceiptLineTargetLocationId = targetLocationId,
-                WmsreceiptLineInventoryTransactionId = primaryTransaction?.WmstransactionId,
-                WmsreceiptLineCustomsStatusCode = customsStatus,
-                WmsreceiptLineCreatedAt = now,
-            });
+                var now = DateTime.UtcNow;
+                var receipt = new WmsReceipt
+                {
+                    WmsreceiptId = receiptId,
+                    WmsreceiptFacilityId = order.WmsorderFacilityId,
+                    WmsreceiptOrderId = order.WmsorderId,
+                    WmsreceiptJobId = order.WmsorderJobId,
+                    WmsreceiptReceiptNumber = await CreateUniqueReceiptNumberAsync(order.WmsorderFacilityId, cancellationToken),
+                    WmsreceiptStatusCode = "complete",
+                    WmsreceiptReceivingLocationId = request.ReceivingLocationId,
+                    WmsreceiptReceivedAt = now,
+                    WmsreceiptReceivedBy = current.UserId,
+                    WmsreceiptHasDiscrepancy = false,
+                    WmsreceiptNotes = Normalize(request.Notes),
+                    WmsreceiptMetadataJson = "{}",
+                    WmsreceiptCreatedAt = now,
+                    WmsreceiptCreatedBy = current.UserId,
+                };
+                db.WmsReceipts.Add(receipt);
 
-            line.WmsorderLineReceivedQuantity += input.Quantity;
-            line.WmsorderLineStatusCode = line.WmsorderLineReceivedQuantity >= line.WmsorderLineOrderedQuantity ? "received" : "open";
-        }
+                for (var index = 0; index < request.Lines.Count; index++)
+                {
+                    var input = request.Lines[index];
+                    var line = order.WmsOrderLines.FirstOrDefault(candidate => candidate.WmsorderLineId == input.OrderLineId)
+                        ?? throw WarehouseException.BadRequest("A received line does not belong to this order.");
+                    var outstanding = Math.Max(0, line.WmsorderLineOrderedQuantity - line.WmsorderLineReceivedQuantity);
+                    var targetLocationId = input.TargetLocationId ?? line.WmsorderLineTargetLocationId ?? request.ReceivingLocationId;
+                    if (!targetLocationId.HasValue) throw WarehouseException.BadRequest($"Choose a receiving location for line {line.WmsorderLineLineNo}.");
 
-        UpdateOrderStatus(order, Inbound, current.UserId, now);
-        await db.SaveChangesAsync(cancellationToken);
-        await databaseTransaction.CommitAsync(cancellationToken);
+                    var lot = await ResolveLotAsync(order, line, input, cancellationToken);
+                    var customsStatus = line.WmsorderLineCustomsStatusCode;
+                    var goodQuantity = input.Quantity - input.DamagedQuantity;
+                    WmsInventoryTransaction? primaryTransaction = null;
+
+                    if (goodQuantity > 0)
+                    {
+                        primaryTransaction = await PostReceiptBalanceAsync(order, line, receipt, targetLocationId.Value, lot, Available, goodQuantity, input, current.UserId, now, cancellationToken);
+                    }
+
+                    if (input.DamagedQuantity > 0)
+                    {
+                        primaryTransaction ??= await PostReceiptBalanceAsync(order, line, receipt, targetLocationId.Value, lot, Damaged, input.DamagedQuantity, input, current.UserId, now, cancellationToken);
+                    }
+
+                    var over = Math.Max(0, input.Quantity - outstanding);
+                    var shortQuantity = Math.Max(0, outstanding - input.Quantity);
+                    receipt.WmsreceiptHasDiscrepancy |= input.DamagedQuantity > 0 || over > 0;
+                    receipt.WmsReceiptLines.Add(new WmsReceiptLine
+                    {
+                        WmsreceiptLineId = Guid.NewGuid(),
+                        WmsreceiptLineOrderLineId = line.WmsorderLineId,
+                        WmsreceiptLineItemId = line.WmsorderLineItemId,
+                        WmsreceiptLineLineNo = index + 1,
+                        WmsreceiptLineExpectedQuantity = outstanding,
+                        WmsreceiptLineReceivedQuantity = input.Quantity,
+                        WmsreceiptLineDamagedQuantity = input.DamagedQuantity,
+                        WmsreceiptLineOverQuantity = over,
+                        WmsreceiptLineShortQuantity = shortQuantity,
+                        WmsreceiptLineUomcode = line.WmsorderLineUomcode,
+                        WmsreceiptLineLotNumber = lot?.WmslotLotNumber,
+                        WmsreceiptLineExpiryDate = lot?.WmslotExpiryDate ?? input.ExpiryDate,
+                        WmsreceiptLineTargetLocationId = targetLocationId,
+                        WmsreceiptLineInventoryTransactionId = primaryTransaction?.WmstransactionId,
+                        WmsreceiptLineCustomsStatusCode = customsStatus,
+                        WmsreceiptLineCreatedAt = now,
+                    });
+
+                    line.WmsorderLineReceivedQuantity += input.Quantity;
+                    line.WmsorderLineStatusCode = line.WmsorderLineReceivedQuantity >= line.WmsorderLineOrderedQuantity ? "received" : "open";
+                }
+
+                UpdateOrderStatus(order, Inbound, current.UserId, now);
+                await db.SaveChangesAsync(cancellationToken);
+            },
+            async () => await db.WmsReceipts.AsNoTracking().AnyAsync(receipt => receipt.WmsreceiptId == receiptId, cancellationToken));
+
         return await GetAsync(user, orderId, cancellationToken);
     }
 
     public async Task<WarehouseOrderDto> DispatchAsync(ClaimsPrincipal user, Guid orderId, DispatchWarehouseOrderRequest request, CancellationToken cancellationToken)
     {
         var current = await context.RequireCurrentUserAsync(user, cancellationToken);
-        await using var databaseTransaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        var order = await LoadScopedAsync(current.CompanyId, orderId, trackChanges: true, cancellationToken);
-        EnsureActionable(order, Outbound, "dispatch");
-        EnsureDistinctLines(request.Lines.Select(line => line.OrderLineId));
-        await RequirePostingLookupsAsync(includeDamaged: false, cancellationToken);
+        var strategy = db.Database.CreateExecutionStrategy();
+        var dispatchId = Guid.NewGuid();
 
-        var locationIds = request.Lines.Where(line => line.SourceLocationId.HasValue).Select(line => line.SourceLocationId!.Value).Distinct().ToList();
-        await RequireLocationsAsync(order.WmsorderFacilityId, locationIds, cancellationToken);
-
-        var now = DateTime.UtcNow;
-        var dispatch = new WmsDispatch
-        {
-            WmsdispatchId = Guid.NewGuid(),
-            WmsdispatchFacilityId = order.WmsorderFacilityId,
-            WmsdispatchOrderId = order.WmsorderId,
-            WmsdispatchJobId = order.WmsorderJobId,
-            WmsdispatchDispatchNumber = await CreateUniqueDispatchNumberAsync(order.WmsorderFacilityId, cancellationToken),
-            WmsdispatchStatusCode = "complete",
-            WmsdispatchCarrierOrgId = order.WmsorderCarrierOrgId,
-            WmsdispatchVehicleReg = Normalize(request.VehicleReg) ?? order.WmsorderVehicleReg,
-            WmsdispatchContainerNumber = Normalize(request.ContainerNumber)?.ToUpperInvariant() ?? order.WmsorderContainerNumber,
-            WmsdispatchSealNumber = Normalize(request.SealNumber) ?? order.WmsorderSealNumber,
-            WmsdispatchDispatchedAt = now,
-            WmsdispatchDispatchedBy = current.UserId,
-            WmsdispatchMetadataJson = string.IsNullOrWhiteSpace(request.Notes) ? "{}" : System.Text.Json.JsonSerializer.Serialize(new { notes = request.Notes.Trim() }),
-            WmsdispatchCreatedAt = now,
-        };
-        db.WmsDispatches.Add(dispatch);
-
-        foreach (var input in request.Lines)
-        {
-            var line = order.WmsOrderLines.FirstOrDefault(candidate => candidate.WmsorderLineId == input.OrderLineId)
-                ?? throw WarehouseException.BadRequest("A dispatch line does not belong to this order.");
-            var outstanding = Math.Max(0, line.WmsorderLineOrderedQuantity - line.WmsorderLineDispatchedQuantity);
-            if (input.Quantity > outstanding)
+        await strategy.ExecuteInTransactionAsync(
+            async () =>
             {
-                throw WarehouseException.BadRequest($"Line {line.WmsorderLineLineNo} only has {outstanding:0.######} {line.WmsorderLineUomcode} left to dispatch.");
-            }
+                db.ChangeTracker.Clear();
+                var order = await LoadScopedAsync(current.CompanyId, orderId, trackChanges: true, cancellationToken);
+                EnsureActionable(order, Outbound, "dispatch");
+                EnsureDistinctLines(request.Lines.Select(line => line.OrderLineId));
+                await RequirePostingLookupsAsync(includeDamaged: false, cancellationToken);
 
-            var balancesQuery = db.WmsInventoryBalances
-                .Where(balance =>
-                    balance.WmsbalanceFacilityId == order.WmsorderFacilityId &&
-                    balance.WmsbalanceCustomerOrgId == order.WmsorderCustomerOrgId &&
-                    balance.WmsbalanceItemId == line.WmsorderLineItemId &&
-                    balance.WmsbalanceInventoryStatusCode == Available &&
-                    balance.WmsbalanceCustomsStatusCode == line.WmsorderLineCustomsStatusCode &&
-                    balance.WmsbalanceAvailableQuantity > 0);
+                var locationIds = request.Lines.Where(line => line.SourceLocationId.HasValue).Select(line => line.SourceLocationId!.Value).Distinct().ToList();
+                await RequireLocationsAsync(order.WmsorderFacilityId, locationIds, cancellationToken);
 
-            var sourceLocationId = input.SourceLocationId ?? line.WmsorderLineSourceLocationId;
-            if (sourceLocationId.HasValue) balancesQuery = balancesQuery.Where(balance => balance.WmsbalanceLocationId == sourceLocationId.Value);
-            if (input.LotId.HasValue) balancesQuery = balancesQuery.Where(balance => balance.WmsbalanceLotId == input.LotId.Value);
-            else if (!string.IsNullOrWhiteSpace(line.WmsorderLineLotNumber)) balancesQuery = balancesQuery.Where(balance => balance.WmsbalanceLot != null && balance.WmsbalanceLot.WmslotLotNumber == line.WmsorderLineLotNumber);
-
-            var balances = await balancesQuery
-                .Include(balance => balance.WmsbalanceLot)
-                .OrderBy(balance => balance.WmsbalanceLot != null ? balance.WmsbalanceLot.WmslotExpiryDate : null)
-                .ThenBy(balance => balance.WmsbalanceFirstReceiptAt)
-                .ToListAsync(cancellationToken);
-
-            if (balances.Sum(balance => balance.WmsbalanceAvailableQuantity) < input.Quantity)
-            {
-                throw WarehouseException.Conflict($"There is not enough available stock to dispatch {input.Quantity:0.######} {line.WmsorderLineUomcode} of {line.WmsorderLineItem.WmsitemSku}.");
-            }
-
-            var remaining = input.Quantity;
-            foreach (var balance in balances)
-            {
-                if (remaining <= 0) break;
-                var quantity = Math.Min(remaining, balance.WmsbalanceAvailableQuantity);
-                var before = balance.WmsbalanceOnHandQuantity;
-                balance.WmsbalanceOnHandQuantity -= quantity;
-                balance.WmsbalanceAvailableQuantity = CalculateAvailable(balance);
-                balance.WmsbalanceLastMovementAt = now;
-                balance.WmsbalanceUpdatedAt = now;
-
-                db.WmsInventoryTransactions.Add(new WmsInventoryTransaction
+                var now = DateTime.UtcNow;
+                var dispatch = new WmsDispatch
                 {
-                    WmstransactionId = Guid.NewGuid(),
-                    WmstransactionFacilityId = order.WmsorderFacilityId,
-                    WmstransactionBalanceId = balance.WmsbalanceId,
-                    WmstransactionTypeCode = "dispatch",
-                    WmstransactionItemId = line.WmsorderLineItemId,
-                    WmstransactionCustomerOrgId = order.WmsorderCustomerOrgId,
-                    WmstransactionFromLocationId = balance.WmsbalanceLocationId,
-                    WmstransactionLotId = balance.WmsbalanceLotId,
-                    WmstransactionQuantity = quantity,
-                    WmstransactionUomcode = line.WmsorderLineUomcode,
-                    WmstransactionBeforeOnHandQuantity = before,
-                    WmstransactionAfterOnHandQuantity = balance.WmsbalanceOnHandQuantity,
-                    WmstransactionInventoryStatusCode = balance.WmsbalanceInventoryStatusCode,
-                    WmstransactionCustomsStatusCode = balance.WmsbalanceCustomsStatusCode,
-                    WmstransactionOrderId = order.WmsorderId,
-                    WmstransactionOrderLineId = line.WmsorderLineId,
-                    WmstransactionSourceTable = "WMS_Dispatches",
-                    WmstransactionSourceId = dispatch.WmsdispatchId,
-                    WmstransactionReference = dispatch.WmsdispatchDispatchNumber,
-                    WmstransactionNotes = Normalize(request.Notes),
-                    WmstransactionMetadataJson = "{}",
-                    WmstransactionCreatedAt = now,
-                    WmstransactionCreatedBy = current.UserId,
-                });
-                remaining -= quantity;
-            }
+                    WmsdispatchId = dispatchId,
+                    WmsdispatchFacilityId = order.WmsorderFacilityId,
+                    WmsdispatchOrderId = order.WmsorderId,
+                    WmsdispatchJobId = order.WmsorderJobId,
+                    WmsdispatchDispatchNumber = await CreateUniqueDispatchNumberAsync(order.WmsorderFacilityId, cancellationToken),
+                    WmsdispatchStatusCode = "complete",
+                    WmsdispatchCarrierOrgId = order.WmsorderCarrierOrgId,
+                    WmsdispatchVehicleReg = Normalize(request.VehicleReg) ?? order.WmsorderVehicleReg,
+                    WmsdispatchContainerNumber = Normalize(request.ContainerNumber)?.ToUpperInvariant() ?? order.WmsorderContainerNumber,
+                    WmsdispatchSealNumber = Normalize(request.SealNumber) ?? order.WmsorderSealNumber,
+                    WmsdispatchDispatchedAt = now,
+                    WmsdispatchDispatchedBy = current.UserId,
+                    WmsdispatchMetadataJson = string.IsNullOrWhiteSpace(request.Notes) ? "{}" : System.Text.Json.JsonSerializer.Serialize(new { notes = request.Notes.Trim() }),
+                    WmsdispatchCreatedAt = now,
+                };
+                db.WmsDispatches.Add(dispatch);
 
-            line.WmsorderLineAllocatedQuantity = Math.Max(line.WmsorderLineAllocatedQuantity, line.WmsorderLineDispatchedQuantity + input.Quantity);
-            line.WmsorderLinePickedQuantity = Math.Max(line.WmsorderLinePickedQuantity, line.WmsorderLineDispatchedQuantity + input.Quantity);
-            line.WmsorderLinePackedQuantity = Math.Max(line.WmsorderLinePackedQuantity, line.WmsorderLineDispatchedQuantity + input.Quantity);
-            line.WmsorderLineDispatchedQuantity += input.Quantity;
-            line.WmsorderLineStatusCode = line.WmsorderLineDispatchedQuantity >= line.WmsorderLineOrderedQuantity ? "dispatched" : "open";
-        }
+                foreach (var input in request.Lines)
+                {
+                    var line = order.WmsOrderLines.FirstOrDefault(candidate => candidate.WmsorderLineId == input.OrderLineId)
+                        ?? throw WarehouseException.BadRequest("A dispatch line does not belong to this order.");
+                    var outstanding = Math.Max(0, line.WmsorderLineOrderedQuantity - line.WmsorderLineDispatchedQuantity);
+                    if (input.Quantity > outstanding)
+                    {
+                        throw WarehouseException.BadRequest($"Line {line.WmsorderLineLineNo} only has {outstanding:0.######} {line.WmsorderLineUomcode} left to dispatch.");
+                    }
 
-        UpdateOrderStatus(order, Outbound, current.UserId, now);
-        await db.SaveChangesAsync(cancellationToken);
-        await databaseTransaction.CommitAsync(cancellationToken);
+                    var balancesQuery = db.WmsInventoryBalances
+                        .Where(balance =>
+                            balance.WmsbalanceFacilityId == order.WmsorderFacilityId &&
+                            balance.WmsbalanceCustomerOrgId == order.WmsorderCustomerOrgId &&
+                            balance.WmsbalanceItemId == line.WmsorderLineItemId &&
+                            balance.WmsbalanceInventoryStatusCode == Available &&
+                            balance.WmsbalanceCustomsStatusCode == line.WmsorderLineCustomsStatusCode &&
+                            balance.WmsbalanceAvailableQuantity > 0);
+
+                    var sourceLocationId = input.SourceLocationId ?? line.WmsorderLineSourceLocationId;
+                    if (sourceLocationId.HasValue) balancesQuery = balancesQuery.Where(balance => balance.WmsbalanceLocationId == sourceLocationId.Value);
+                    if (input.LotId.HasValue) balancesQuery = balancesQuery.Where(balance => balance.WmsbalanceLotId == input.LotId.Value);
+                    else if (!string.IsNullOrWhiteSpace(line.WmsorderLineLotNumber)) balancesQuery = balancesQuery.Where(balance => balance.WmsbalanceLot != null && balance.WmsbalanceLot.WmslotLotNumber == line.WmsorderLineLotNumber);
+
+                    var balances = await balancesQuery
+                        .Include(balance => balance.WmsbalanceLot)
+                        .OrderBy(balance => balance.WmsbalanceLot != null ? balance.WmsbalanceLot.WmslotExpiryDate : null)
+                        .ThenBy(balance => balance.WmsbalanceFirstReceiptAt)
+                        .ToListAsync(cancellationToken);
+
+                    if (balances.Sum(balance => balance.WmsbalanceAvailableQuantity) < input.Quantity)
+                    {
+                        throw WarehouseException.Conflict($"There is not enough available stock to dispatch {input.Quantity:0.######} {line.WmsorderLineUomcode} of {line.WmsorderLineItem.WmsitemSku}.");
+                    }
+
+                    var remaining = input.Quantity;
+                    foreach (var balance in balances)
+                    {
+                        if (remaining <= 0) break;
+                        var quantity = Math.Min(remaining, balance.WmsbalanceAvailableQuantity);
+                        var before = balance.WmsbalanceOnHandQuantity;
+                        balance.WmsbalanceOnHandQuantity -= quantity;
+                        balance.WmsbalanceAvailableQuantity = CalculateAvailable(balance);
+                        balance.WmsbalanceLastMovementAt = now;
+                        balance.WmsbalanceUpdatedAt = now;
+
+                        db.WmsInventoryTransactions.Add(new WmsInventoryTransaction
+                        {
+                            WmstransactionId = Guid.NewGuid(),
+                            WmstransactionFacilityId = order.WmsorderFacilityId,
+                            WmstransactionBalanceId = balance.WmsbalanceId,
+                            WmstransactionTypeCode = "dispatch",
+                            WmstransactionItemId = line.WmsorderLineItemId,
+                            WmstransactionCustomerOrgId = order.WmsorderCustomerOrgId,
+                            WmstransactionFromLocationId = balance.WmsbalanceLocationId,
+                            WmstransactionLotId = balance.WmsbalanceLotId,
+                            WmstransactionQuantity = quantity,
+                            WmstransactionUomcode = line.WmsorderLineUomcode,
+                            WmstransactionBeforeOnHandQuantity = before,
+                            WmstransactionAfterOnHandQuantity = balance.WmsbalanceOnHandQuantity,
+                            WmstransactionInventoryStatusCode = balance.WmsbalanceInventoryStatusCode,
+                            WmstransactionCustomsStatusCode = balance.WmsbalanceCustomsStatusCode,
+                            WmstransactionOrderId = order.WmsorderId,
+                            WmstransactionOrderLineId = line.WmsorderLineId,
+                            WmstransactionSourceTable = "WMS_Dispatches",
+                            WmstransactionSourceId = dispatch.WmsdispatchId,
+                            WmstransactionReference = dispatch.WmsdispatchDispatchNumber,
+                            WmstransactionNotes = Normalize(request.Notes),
+                            WmstransactionMetadataJson = "{}",
+                            WmstransactionCreatedAt = now,
+                            WmstransactionCreatedBy = current.UserId,
+                        });
+                        remaining -= quantity;
+                    }
+
+                    line.WmsorderLineAllocatedQuantity = Math.Max(line.WmsorderLineAllocatedQuantity, line.WmsorderLineDispatchedQuantity + input.Quantity);
+                    line.WmsorderLinePickedQuantity = Math.Max(line.WmsorderLinePickedQuantity, line.WmsorderLineDispatchedQuantity + input.Quantity);
+                    line.WmsorderLinePackedQuantity = Math.Max(line.WmsorderLinePackedQuantity, line.WmsorderLineDispatchedQuantity + input.Quantity);
+                    line.WmsorderLineDispatchedQuantity += input.Quantity;
+                    line.WmsorderLineStatusCode = line.WmsorderLineDispatchedQuantity >= line.WmsorderLineOrderedQuantity ? "dispatched" : "open";
+                }
+
+                UpdateOrderStatus(order, Outbound, current.UserId, now);
+                await db.SaveChangesAsync(cancellationToken);
+            },
+            async () => await db.WmsDispatches.AsNoTracking().AnyAsync(dispatch => dispatch.WmsdispatchId == dispatchId, cancellationToken));
+
         return await GetAsync(user, orderId, cancellationToken);
     }
 

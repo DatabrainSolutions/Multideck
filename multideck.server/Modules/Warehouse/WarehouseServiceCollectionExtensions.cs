@@ -1,4 +1,5 @@
 using FluentValidation;
+using Multideck.Server.Modules.AgentDexter;
 using Multideck.Server.Modules.Warehouse.Facilities;
 using Multideck.Server.Modules.Warehouse.Items;
 using Multideck.Server.Modules.Warehouse.Inventory;
@@ -18,6 +19,7 @@ public static class WarehouseServiceCollectionExtensions
         services.AddScoped<ILocationService, LocationService>();
         services.AddScoped<IInventoryService, InventoryService>();
         services.AddScoped<IWarehouseOrderService, WarehouseOrderService>();
+        services.AddScoped<IAgentDexterService, AgentDexterService>();
 
         services.AddValidatorsFromAssemblyContaining<CreateFacilityRequestValidator>(includeInternalTypes: true);
 

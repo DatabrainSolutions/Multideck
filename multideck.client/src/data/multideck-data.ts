@@ -1043,7 +1043,7 @@ export const bookingModes = [
 
 export type CustomerStatus = "Premium" | "Standard" | "Trial" | "New"
 
-type CustomerRecord = {
+export type CustomerRecord = {
   id: string
   initials: string
   name: string
@@ -2622,8 +2622,8 @@ export const galleryComponents = [
     description: "The central command box for Agent Dexter: prompt text, attached context, specialist choice, and send action.",
     details: "Use on the Agent Dexter landing and conversation footer. It should feel like the operator can hand over a whole job from one calm control.",
     foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components" }],
-    componentCode: `export function DexterPromptComposer({ value, selectedSpecialist, attachments, onChange, onOpenAttachments, onOpenSpecialists, onSend }) {\n  return (\n    <div className="rounded-[22px] bg-[var(--md-surface)] p-1.5 shadow-[0_0_0_1px_rgba(14,125,116,0.36)]">\n      <textarea value={value} onChange={(event) => onChange(event.target.value)} />\n      {attachments.map((attachment) => <ContextChip key={attachment.id} attachment={attachment} />)}\n      <button onClick={onOpenAttachments}>Attach</button>\n      <button onClick={onOpenSpecialists}>{selectedSpecialist.name}</button>\n      <button onClick={onSend}>Send</button>\n    </div>\n  )\n}`,
-    usageCode: `<DexterPromptComposer\n  value={prompt}\n  selectedSpecialist={selectedSpecialist}\n  attachments={attachedItems}\n  onChange={setPrompt}\n  onOpenAttachments={() => setShowAttachments(true)}\n  onOpenSpecialists={() => setShowSpecialists(true)}\n  onSend={startConversation}\n/>`,
+    componentCode: `export function DexterPromptComposer({ value, selectedSpecialist, attachments, disabled, onChange, onOpenAttachments, onOpenSpecialists, onSend }) {\n  return (\n    <div className="rounded-[22px] bg-[var(--md-surface)] p-1.5 shadow-[0_0_0_1px_rgba(14,125,116,0.36)]">\n      <textarea\n        value={value}\n        disabled={disabled}\n        onChange={(event) => onChange(event.target.value)}\n        onKeyDown={(event) => {\n          if (event.key === "Enter" && !event.shiftKey && value.trim()) onSend()\n        }}\n      />\n      {attachments.map((attachment) => <ContextChip key={attachment.id} attachment={attachment} />)}\n      <button onClick={onOpenAttachments}>Attach</button>\n      <button onClick={onOpenSpecialists}>{selectedSpecialist.name}</button>\n      <button disabled={disabled || !value.trim()} onClick={onSend}>Send</button>\n    </div>\n  )\n}`,
+    usageCode: `<DexterPromptComposer\n  value={prompt}\n  selectedSpecialist={selectedSpecialist}\n  attachments={attachedItems}\n  disabled={isSending}\n  onChange={setPrompt}\n  onOpenAttachments={() => setShowAttachments(true)}\n  onOpenSpecialists={() => setShowSpecialists(true)}\n  onSend={startConversation}\n/>`,
   },
   {
     id: "dexter-specialist-picker",
@@ -2659,11 +2659,11 @@ export const galleryComponents = [
     id: "dexter-history-list",
     name: "Dexter History List",
     category: "Agent Dexter",
-    description: "The conversation rail for jumping between recent Dexter jobs without leaving the AI workspace.",
-    details: "Use only inside the Agent Dexter workspace. It should behave like a focused work history, not a full inbox.",
+    description: "The question-only conversation rail for returning to previous Dexter jobs without leaving the AI workspace.",
+    details: "Keep the rail in its normal left-hand position on desktop and use the panel only as a mobile fallback. Each row shows the operator's question only, keeping history quick to scan.",
     foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components" }],
-    componentCode: `export function DexterHistoryList({ items, activeId, onSelect, onNew }) {\n  return (\n    <aside>\n      <button onClick={onNew}>New</button>\n      {items.map((item) => (\n        <button key={item.id} aria-current={activeId === item.id ? "page" : undefined} onClick={() => onSelect(item.id)}>\n          <span>{item.title}</span>\n          <span>{item.summary}</span>\n          <span>{item.time}</span>\n        </button>\n      ))}\n    </aside>\n  )\n}`,
-    usageCode: `<DexterHistoryList\n  items={historyItems}\n  activeId={activeHistoryId}\n  onSelect={setActiveHistoryId}\n  onNew={startNewConversation}\n/>`,
+    componentCode: `export function DexterHistoryList({ items, activeId, variant = "rail", isLoading, onSelect, onNew, onClose }) {\n  return (\n    <aside data-variant={variant}>\n      <button onClick={onNew}>New</button>\n      {onClose ? <button onClick={onClose}>Close</button> : null}\n      {isLoading ? <HistorySkeleton /> : items.map((item) => (\n        <button key={item.id} aria-current={activeId === item.id ? "page" : undefined} onClick={() => onSelect(item.id)}>\n          {item.title}\n        </button>\n      ))}\n    </aside>\n  )\n}`,
+    usageCode: `<DexterHistoryList\n  variant="panel"\n  items={historyItems}\n  activeId={activeHistoryId}\n  isLoading={isLoadingHistory}\n  onSelect={openConversation}\n  onNew={startNewConversation}\n  onClose={() => setShowHistory(false)}\n/>`,
   },
   {
     id: "dexter-monitor-card",
@@ -2922,7 +2922,7 @@ export const galleryComponents = [
     description: "The focused sign-in panel with email link, password fallback, provider actions, workspace copy, and team handoff link.",
     details: "Use for the first auth step. Keep password fallback inside this panel so operators can still log in when email OTP rate limits are hit.",
     foundOn: [{ label: "Auth", route: "/auth" }, { label: "Components", route: "/components" }],
-    componentCode: `export function SignInPanel({ email, password, signInMethod, onEmailChange, onPasswordChange, onSignInMethodChange, onContinue, onPasswordSignIn }) {\n  return (\n    <div className="w-full max-w-[540px]">\n      <h2>Welcome back</h2>\n      <p>Sign in to your workspace. Northwind Forwarding</p>\n      <button onClick={() => onSignInMethodChange("magic-link")}>Email link</button>\n      <button onClick={() => onSignInMethodChange("password")}>Password</button>\n      {signInMethod === "magic-link" ? (\n        <AuthField label="Work email" value={email} onChange={onEmailChange} onSubmit={onContinue} />\n      ) : (\n        <PasswordSignInForm email={email} password={password} onEmailChange={onEmailChange} onPasswordChange={onPasswordChange} onSubmit={onPasswordSignIn} />\n      )}\n    </div>\n  )\n}`,
+    componentCode: `export function SignInPanel({ email, password, signInMethod = null, onEmailChange, onPasswordChange, onSignInMethodChange, onContinue, onPasswordSignIn }) {\n  return (\n    <div className="w-full max-w-[540px]">\n      <h2>Welcome back</h2>\n      <p>Sign in to your workspace. Northwind Forwarding</p>\n      <button onClick={() => onSignInMethodChange("magic-link")}>Email link</button>\n      <button onClick={() => onSignInMethodChange("password")}>Password</button>\n      {signInMethod === "magic-link" ? (\n        <AuthField label="Work email" value={email} onChange={onEmailChange} onSubmit={onContinue} submitLabel="Send email link" />\n      ) : signInMethod === "password" ? (\n        <PasswordSignInForm email={email} password={password} onEmailChange={onEmailChange} onPasswordChange={onPasswordChange} onSubmit={onPasswordSignIn} />\n      ) : (\n        <p>Choose how you want to sign in. Nothing is sent until you confirm.</p>\n      )}\n    </div>\n  )\n}`,
     usageCode: `<SignInPanel\n  email={email}\n  password={password}\n  signInMethod={signInMethod}\n  onEmailChange={setEmail}\n  onPasswordChange={setPassword}\n  onSignInMethodChange={setSignInMethod}\n  onContinue={sendMagicLink}\n  onPasswordSignIn={signInWithPassword}\n  onProviderSignIn={signInWithProvider}\n  isSubmitting={isSubmitting}\n  error={authError}\n/>`,
   },
   {

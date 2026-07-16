@@ -1,10 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react"
-import type { Session } from "@supabase/supabase-js"
+import { useCallback, useState } from "react"
 import { ArrowRight, Clock3, Loader2, LockKeyhole, Mail, TriangleAlert } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { getApiAuthSession } from "@/lib/api"
 import { takeAuthReturnPath } from "@/lib/auth-routing"
 import { cn } from "@/lib/utils"
 import { isSupabaseConfigured, supabase } from "@/lib/supabase"
@@ -12,7 +10,7 @@ import multideckLogoMark from "@/assets/brand/multideck-logo-mark.svg"
 
 export type AuthFlowStep = "signin" | "verify" | "signed-out"
 type AuthProvider = "google" | "microsoft" | "sso"
-type AuthSignInMethod = "magic-link" | "password"
+type AuthSignInMethod = "magic-link" | "password" | null
 
 type AuthCopy = {
   title: string
@@ -119,8 +117,8 @@ function FreightNarrative({
                 className={cn(
                   "grid h-[84px] w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 rounded-[20px] px-5 text-[16px] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08),0_22px_44px_rgba(0,0,0,0.12)] transition-[background,color,box-shadow,opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] sm:h-[92px] sm:w-[86%] sm:gap-5 sm:px-8 sm:text-[18px]",
                   index === 0 && "bg-white/[0.055]",
-                  index === 1 && "bg-white/[0.09] sm:ml-[44px]",
-                  index === 2 && "bg-[var(--md-accent)] sm:ml-[88px]",
+                  index === 1 && "bg-white/[0.09] sm:ms-[44px]",
+                  index === 2 && "bg-[var(--md-accent)] sm:ms-[88px]",
                   muted && "opacity-60",
                 )}
               >
@@ -225,9 +223,9 @@ function AuthField({
         className="mt-3 h-[64px] rounded-[14px] border-0 bg-white px-5 text-[21px] text-[var(--md-ink)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.42),0_0_0_4px_rgba(14,125,116,0.16)] focus-visible:ring-0 disabled:bg-white/72"
       />
       <Button type="submit" disabled={disabled || isSubmitting} className="mt-[var(--md-page-stack-gap)] h-[64px] w-full rounded-[14px] bg-[var(--md-accent)] text-[18px] font-medium text-white hover:bg-[#0b6f67]">
-        {isSubmitting ? <Loader2 data-icon="inline-start" className="mr-2 size-5 animate-spin" strokeWidth={1.5} /> : null}
+        {isSubmitting ? <Loader2 data-icon="inline-start" className="me-2 size-5 animate-spin" strokeWidth={1.5} /> : null}
         {submitLabel}
-        {!isSubmitting ? <ArrowRight data-icon="inline-end" className="ml-2 size-5" strokeWidth={1.4} /> : null}
+        {!isSubmitting ? <ArrowRight data-icon="inline-end" className="ms-2 size-5 rtl:-scale-x-100" strokeWidth={1.4} /> : null}
       </Button>
     </form>
   )
@@ -293,9 +291,9 @@ function PasswordSignInForm({
       />
 
       <Button type="submit" disabled={disabled || isSubmitting} className="mt-[var(--md-page-stack-gap)] h-[64px] w-full rounded-[14px] bg-[var(--md-accent)] text-[18px] font-medium text-white hover:bg-[#0b6f67]">
-        {isSubmitting ? <Loader2 data-icon="inline-start" className="mr-2 size-5 animate-spin" strokeWidth={1.5} /> : null}
+        {isSubmitting ? <Loader2 data-icon="inline-start" className="me-2 size-5 animate-spin" strokeWidth={1.5} /> : null}
         {isSubmitting ? "Signing in" : "Sign in with password"}
-        {!isSubmitting ? <ArrowRight data-icon="inline-end" className="ml-2 size-5" strokeWidth={1.4} /> : null}
+        {!isSubmitting ? <ArrowRight data-icon="inline-end" className="ms-2 size-5 rtl:-scale-x-100" strokeWidth={1.4} /> : null}
       </Button>
     </form>
   )
@@ -338,7 +336,7 @@ function ProviderButton({
 function SignInPanel({
   email,
   password = "",
-  signInMethod = "magic-link",
+  signInMethod = null,
   onEmailChange,
   onPasswordChange = () => undefined,
   onContinue,
@@ -359,7 +357,7 @@ function SignInPanel({
   onContinue: () => void | Promise<void>
   onPasswordSignIn?: () => void | Promise<void>
   onProviderSignIn?: (provider: AuthProvider) => void | Promise<void>
-  onSignInMethodChange?: (method: AuthSignInMethod) => void
+  onSignInMethodChange?: (method: Exclude<AuthSignInMethod, null>) => void
   disabled?: boolean
   isSubmitting?: boolean
   message?: string | null
@@ -376,6 +374,7 @@ function SignInPanel({
       <div className="mt-[var(--md-page-section-gap)] grid grid-cols-2 rounded-[14px] bg-white/52 p-1 shadow-[var(--md-shadow-line)]">
         <button
           type="button"
+          aria-pressed={signInMethod === "magic-link"}
           className={cn(
             "h-11 rounded-[10px] text-[15px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,opacity] disabled:opacity-55",
             signInMethod === "magic-link" && "bg-white text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
@@ -387,6 +386,7 @@ function SignInPanel({
         </button>
         <button
           type="button"
+          aria-pressed={signInMethod === "password"}
           className={cn(
             "h-11 rounded-[10px] text-[15px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,opacity] disabled:opacity-55",
             signInMethod === "password" && "bg-white text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
@@ -406,9 +406,9 @@ function SignInPanel({
           onSubmit={onContinue}
           disabled={disabled}
           isSubmitting={isSubmitting}
-          submitLabel={isSubmitting ? "Sending link" : "Continue"}
+          submitLabel={isSubmitting ? "Sending email link" : "Send email link"}
         />
-      ) : (
+      ) : signInMethod === "password" ? (
         <PasswordSignInForm
           email={email}
           password={password}
@@ -418,6 +418,10 @@ function SignInPanel({
           disabled={disabled}
           isSubmitting={isSubmitting}
         />
+      ) : (
+        <p className="mt-[var(--md-page-section-gap)] text-center text-[16px] leading-6 text-[var(--md-text)]">
+          Choose how you want to sign in. Nothing is sent until you confirm.
+        </p>
       )}
 
       <AuthAlert tone="error">{error}</AuthAlert>
@@ -604,12 +608,11 @@ export function AuthFlow({
   const [step, setStep] = useState<AuthFlowStep>(initialStep)
   const [email, setEmail] = useState(galleryMode ? "john.doe@multideck.app" : "")
   const [password, setPassword] = useState("")
-  const [signInMethod, setSignInMethod] = useState<AuthSignInMethod>("magic-link")
+  const [signInMethod, setSignInMethod] = useState<AuthSignInMethod>(null)
   const [code, setCode] = useState(galleryMode ? "742" : "")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [message, setMessage] = useState<string | null>(!galleryMode && !isSupabaseConfigured ? "Supabase credentials are needed before operators can sign in." : null)
   const [error, setError] = useState<string | null>(null)
-  const completedSessionRef = useRef(false)
 
   const goToApp = useCallback(() => {
     const destination = takeAuthReturnPath()
@@ -622,71 +625,21 @@ export function AuthFlow({
     window.location.assign(destination)
   }, [navigate])
 
-  const completeSignedInSession = useCallback(async (session: Session) => {
-    if (completedSessionRef.current) return
-
-    completedSessionRef.current = true
-    setIsSubmitting(true)
-    setError(null)
-    setMessage(null)
-
-    try {
-      await getApiAuthSession(session.access_token)
-      toast.success("Signed in", {
-        description: "Your Multideck session is ready.",
-      })
-      goToApp()
-    } catch (apiError) {
-      completedSessionRef.current = false
-      console.error("Supabase signed in, but the API could not verify the session yet.", apiError)
-      await new Promise((resolve) => window.setTimeout(resolve, 900))
-      toast.error("We couldn't log you in", {
-        description: "Please try again in a moment.",
-      })
-      setIsSubmitting(false)
-    }
+  const completeSignedInSession = useCallback(() => {
+    toast.success("Signed in", {
+      description: "Your Multideck session is ready.",
+    })
+    goToApp()
   }, [goToApp])
-
-  useEffect(() => {
-    if (galleryMode || !supabase) return
-
-    let cancelled = false
-
-    supabase.auth.getSession().then(({ data }) => {
-      if (cancelled || !data.session) return
-      void completeSignedInSession(data.session)
-    }).catch((sessionError) => {
-      console.error(sessionError)
-      setError("We could not restore your session. Please sign in again.")
-    })
-
-    const { data } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "SIGNED_IN" && session) {
-        void completeSignedInSession(session)
-      }
-
-      if (event === "SIGNED_OUT") {
-        completedSessionRef.current = false
-        setStep("signed-out")
-      }
-
-      if ((event as string) === "TOKEN_REFRESH_FAILED") {
-        console.warn("Token refresh failed in auth flow — clearing stale session.")
-        completedSessionRef.current = false
-        setStep("signin")
-        setError("Your session expired. Sign in again to continue.")
-      }
-    })
-
-    return () => {
-      cancelled = true
-      data.subscription.unsubscribe()
-    }
-  }, [completeSignedInSession, galleryMode])
 
   function clearFeedback() {
     setError(null)
     setMessage(null)
+  }
+
+  function chooseSignInMethod(method: Exclude<AuthSignInMethod, null>) {
+    clearFeedback()
+    setSignInMethod(method)
   }
 
   async function sendMagicLink() {
@@ -760,10 +713,9 @@ export function AuthFlow({
       if (!data.session) throw new Error("Supabase did not return a session.")
 
       setEmail(normalizedEmail)
-      await completeSignedInSession(data.session)
+      completeSignedInSession()
     } catch (passwordError) {
       console.error(passwordError)
-      completedSessionRef.current = false
       setError("We could not sign you in with that email and password.")
       setMessage("Password is enabled for users who already have a Supabase password.")
       setIsSubmitting(false)
@@ -846,24 +798,22 @@ export function AuthFlow({
       if (verifyError) throw verifyError
       if (!data.session) throw new Error("Supabase did not return a session.")
 
-      await completeSignedInSession(data.session)
+      completeSignedInSession()
     } catch (verifyError) {
       console.error(verifyError)
-      completedSessionRef.current = false
       setError("That code was not accepted. Request a new code or try again.")
       setIsSubmitting(false)
     }
   }
 
   function goToSignIn(resetEmail = false) {
-    completedSessionRef.current = false
     clearFeedback()
     setStep("signin")
     setCode("")
     if (resetEmail) {
       setEmail("")
       setPassword("")
-      setSignInMethod("magic-link")
+      setSignInMethod(null)
     }
     if (!galleryMode && !isSupabaseConfigured) setMessage("Supabase credentials are needed before operators can sign in.")
   }
@@ -877,7 +827,7 @@ export function AuthFlow({
           signInMethod={signInMethod}
           onEmailChange={setEmail}
           onPasswordChange={setPassword}
-          onSignInMethodChange={setSignInMethod}
+          onSignInMethodChange={chooseSignInMethod}
           onContinue={sendMagicLink}
           onPasswordSignIn={signInWithPassword}
           onProviderSignIn={signInWithProvider}

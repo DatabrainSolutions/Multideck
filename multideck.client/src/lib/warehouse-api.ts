@@ -1,27 +1,14 @@
-import { Boxes, CheckCircle2, Clock3, Gauge, PackageCheck, type LucideIcon } from "lucide-react"
-import {
-  warehouseGoodsInKanbanColumns,
-  warehouseGoodsOutKanbanColumns,
-  type StatusTone,
-  type WarehouseCalendarEvent,
-} from "@/data/multideck-data"
+import { ArrowDownToLine, ArrowUpFromLine, Boxes, Clock3, PackageCheck, ShieldAlert, type LucideIcon } from "lucide-react"
+import type { StatusTone } from "@/data/multideck-data"
 import type {
   WarehouseCalendarCustomer,
-  WarehouseKanbanCardData,
-  WarehouseKanbanColumnSource,
+  WarehouseCalendarEvent,
   WarehouseMetric,
   WarehouseMovement,
   WarehouseOrder,
-  WarehouseProduct,
-  WarehouseStockRow,
 } from "@/components/multideck/warehouse-components"
 import { apiFetch } from "@/lib/api"
 import { getSupabaseSession } from "@/lib/supabase"
-
-type WarehouseMetricResponse = Omit<WarehouseMetric, "tone" | "icon"> & {
-  tone: StatusTone
-  icon: string
-}
 
 export type WarehouseHeaderAction = {
   label: string
@@ -30,139 +17,17 @@ export type WarehouseHeaderAction = {
   tone: StatusTone
 }
 
-type WarehouseHeaderActionResponse = Omit<WarehouseHeaderAction, "tone" | "icon"> & {
-  tone: StatusTone
-  icon: string
-}
-
-type WarehouseOverviewResponse = {
-  metrics: WarehouseMetricResponse[]
-  headerActions: WarehouseHeaderActionResponse[]
-}
-
-type WarehouseWorkItemsResponse = {
-  goodsIn: readonly WarehouseKanbanColumnSource[]
-  goodsOut: readonly WarehouseKanbanColumnSource[]
-}
-
-type WarehouseCalendarResponse = {
-  customers: WarehouseCalendarCustomer[]
-  events: WarehouseCalendarEvent[]
-}
-
-export type WarehouseLiveData = {
-  overview: {
+export type WarehouseWorkspaceData = {
+  dashboard: {
     metrics: WarehouseMetric[]
     headerActions: WarehouseHeaderAction[]
+    orders: WarehouseOrder[]
+    movements: WarehouseMovement[]
   }
-  products: WarehouseProduct[]
-  stock: WarehouseStockRow[]
-  orders: WarehouseOrder[]
-  movements: WarehouseMovement[]
-  workItems: WarehouseWorkItemsResponse
-  calendar: WarehouseCalendarResponse
-}
-
-const iconByName: Record<string, LucideIcon> = {
-  Boxes,
-  CheckCircle2,
-  Clock3,
-  Gauge,
-  PackageCheck,
-}
-
-function iconFor(name: string) {
-  return iconByName[name] ?? PackageCheck
-}
-
-async function readApiJson<T>(path: string, accessToken: string): Promise<T> {
-  const response = await apiFetch(path, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  })
-
-  if (!response.ok) {
-    const fallback = `${response.status} ${response.statusText}`.trim()
-
-    try {
-      const body = await response.json()
-      throw new Error(body.detail || body.title || body.message || fallback)
-    } catch (error) {
-      if (error instanceof Error && error.message !== fallback) throw error
-      throw new Error(fallback)
-    }
+  calendar: {
+    customers: WarehouseCalendarCustomer[]
+    events: WarehouseCalendarEvent[]
   }
-
-  return response.json() as Promise<T>
-}
-
-async function writeApi(path: string, accessToken: string, init: RequestInit) {
-  const headers = new Headers(init.headers)
-  headers.set("Authorization", `Bearer ${accessToken}`)
-  headers.set("Content-Type", "application/json")
-
-  const response = await apiFetch(path, {
-    ...init,
-    headers,
-  })
-
-  if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}`.trim())
-  }
-}
-
-export async function getWarehouseLiveData(): Promise<WarehouseLiveData> {
-  const session = await getSupabaseSession()
-
-  if (!session?.access_token) {
-    throw new Error("No Supabase session is available for warehouse data.")
-  }
-
-  const accessToken = session.access_token
-  const [overview, products, stock, orders, movements, workItems, calendar] = await Promise.all([
-    readApiJson<WarehouseOverviewResponse>("/api/v1/warehouse/overview", accessToken),
-    readApiJson<WarehouseProduct[]>("/api/v1/warehouse/products", accessToken),
-    readApiJson<WarehouseStockRow[]>("/api/v1/warehouse/stock", accessToken),
-    readApiJson<WarehouseOrder[]>("/api/v1/warehouse/orders", accessToken),
-    readApiJson<WarehouseMovement[]>("/api/v1/warehouse/movements", accessToken),
-    readApiJson<WarehouseWorkItemsResponse>("/api/v1/warehouse/work-items", accessToken),
-    readApiJson<WarehouseCalendarResponse>("/api/v1/warehouse/calendar", accessToken),
-  ])
-
-  return {
-    overview: {
-      metrics: overview.metrics.map((metric) => ({ ...metric, icon: iconFor(metric.icon) })),
-      headerActions: overview.headerActions.map((action) => ({ ...action, icon: iconFor(action.icon) })),
-    },
-    products,
-    stock,
-    orders,
-    movements,
-    workItems: {
-      goodsIn: workItems.goodsIn.length ? workItems.goodsIn : warehouseGoodsInKanbanColumns,
-      goodsOut: workItems.goodsOut.length ? workItems.goodsOut : warehouseGoodsOutKanbanColumns,
-    },
-    calendar,
-  }
-}
-
-export async function persistWarehouseWorkItemOrder(board: "goods-in" | "goods-out", columns: readonly WarehouseKanbanColumnSource[]) {
-  const session = await getSupabaseSession()
-  if (!session?.access_token) return
-
-  await writeApi("/api/v1/warehouse/work-items/reorder", session.access_token, {
-    method: "PATCH",
-    body: JSON.stringify({
-      board,
-      columns: columns.map((column) => ({
-        id: column.id,
-        title: column.title,
-        meta: column.meta,
-        cards: column.cards.map((card: WarehouseKanbanCardData) => ({ id: card.id })),
-      })),
-    }),
-  })
 }
 
 // ---------------------------------------------------------------------------
@@ -746,4 +611,177 @@ export function dispatchOperationalWarehouseOrder(orderId: string, input: Dispat
 
 export function cancelOperationalWarehouseOrder(orderId: string) {
   return requestWarehouse<WarehouseOperationalOrder>(`/api/v1/warehouse/orders/${orderId}/cancel`, "POST")
+}
+
+const finalOrderStatuses = new Set(["complete", "cancelled"])
+const calendarCustomerColors = [
+  "var(--md-accent)",
+  "var(--md-blue)",
+  "var(--md-amber)",
+  "var(--md-red)",
+  "color-mix(in srgb, var(--md-amber) 54%, var(--md-blue))",
+  "color-mix(in srgb, var(--md-blue) 65%, var(--md-accent))",
+]
+
+function warehouseOrderTone(order: WarehouseOperationalOrder): StatusTone {
+  const status = order.statusCode.toLowerCase()
+  if (status === "cancelled" || status.includes("hold") || status.includes("blocked")) return "red"
+  if (status === "complete") return "green"
+  if (status.includes("part")) return "amber"
+  if (order.priorityCode.toLowerCase() === "urgent") return "red"
+  return order.typeCode === "inbound" ? "teal" : "blue"
+}
+
+function titleCaseCode(value: string) {
+  return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function parseWarehouseDate(value: string) {
+  const dateOnly = value.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (dateOnly) return new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
+  return new Date(value)
+}
+
+function dateKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
+}
+
+function timeKey(date: Date) {
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`
+}
+
+function formatOrderValue(order: WarehouseOperationalOrder, locale: string) {
+  const valuedLines = order.lines.filter((line) => line.goodsValue !== null && line.currencyCode)
+  if (!valuedLines.length) return "—"
+
+  const currencies = new Set(valuedLines.map((line) => line.currencyCode!))
+  if (currencies.size !== 1) return "—"
+
+  const currency = valuedLines[0].currencyCode!
+  const value = valuedLines.reduce((total, line) => total + (line.goodsValue ?? 0), 0)
+  try {
+    return new Intl.NumberFormat(locale, { style: "currency", currency, maximumFractionDigits: 0 }).format(value)
+  } catch {
+    return `${currency} ${new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(value)}`
+  }
+}
+
+function formatOrderWindow(order: WarehouseOperationalOrder, locale: string) {
+  if (!order.appointmentStartAt) return "Not scheduled"
+  const start = parseWarehouseDate(order.appointmentStartAt)
+  const end = order.appointmentEndAt ? parseWarehouseDate(order.appointmentEndAt) : null
+  const formatter = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" })
+  return end ? `${formatter.format(start)}–${formatter.format(end)}` : formatter.format(start)
+}
+
+function dashboardOrder(order: WarehouseOperationalOrder, locale: string): WarehouseOrder {
+  const scheduledDate = order.appointmentStartAt ?? order.requestedDate
+  return {
+    id: order.orderNumber,
+    customer: order.customerName,
+    route: order.facilityName,
+    type: order.typeName ?? titleCaseCode(order.typeCode),
+    lines: order.lines.length,
+    value: formatOrderValue(order, locale),
+    due: scheduledDate
+      ? new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", year: "numeric" }).format(parseWarehouseDate(scheduledDate))
+      : "Not scheduled",
+    window: formatOrderWindow(order, locale),
+    status: order.statusName ?? titleCaseCode(order.statusCode),
+    tone: warehouseOrderTone(order),
+  }
+}
+
+function dashboardMovement(movement: WarehouseInventoryMovement, locale: string): WarehouseMovement {
+  const isInbound = movement.typeCode.toLowerCase() === "receipt"
+  const number = new Intl.NumberFormat(locale, { maximumFractionDigits: 3 })
+  const createdAt = parseWarehouseDate(movement.createdAt)
+
+  return {
+    id: movement.reference ?? movement.id.slice(0, 8).toUpperCase(),
+    direction: isInbound ? "In" : "Out",
+    product: `${movement.sku} · ${movement.itemDescription}`,
+    reference: movement.reference ?? movement.typeName ?? titleCaseCode(movement.typeCode),
+    quantity: `${number.format(movement.quantity)} ${movement.uomCode}`,
+    dock: (isInbound ? movement.toLocationCode : movement.fromLocationCode) ?? "—",
+    time: new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(createdAt),
+    status: movement.typeName ?? titleCaseCode(movement.typeCode),
+    tone: isInbound ? "teal" : "blue",
+  }
+}
+
+function calendarData(orders: WarehouseOperationalOrder[]): WarehouseWorkspaceData["calendar"] {
+  const scheduledOrders = orders.filter((order) => order.statusCode !== "cancelled" && (order.appointmentStartAt || order.requestedDate))
+  const customerIds = [...new Set(scheduledOrders.map((order) => order.customerOrgId))]
+  const customers = customerIds.map<WarehouseCalendarCustomer>((customerId, index) => {
+    const name = scheduledOrders.find((order) => order.customerOrgId === customerId)?.customerName ?? "Warehouse customer"
+    return {
+      id: customerId,
+      name,
+      shortName: name.split(/\s+/).slice(0, 2).join(" "),
+      color: calendarCustomerColors[index % calendarCustomerColors.length],
+    }
+  })
+
+  const events = scheduledOrders.map<WarehouseCalendarEvent>((order) => {
+    const start = order.appointmentStartAt
+      ? parseWarehouseDate(order.appointmentStartAt)
+      : parseWarehouseDate(`${order.requestedDate}T09:00:00`)
+    const suppliedEnd = order.appointmentEndAt ? parseWarehouseDate(order.appointmentEndAt) : null
+    const end = suppliedEnd && suppliedEnd > start ? suppliedEnd : new Date(start.getTime() + 60 * 60 * 1000)
+
+    return {
+      id: order.id,
+      date: dateKey(start),
+      time: timeKey(start),
+      endTime: timeKey(end),
+      title: order.customerReference ?? order.orderNumber,
+      type: order.typeName ?? titleCaseCode(order.typeCode),
+      customerId: order.customerOrgId,
+      tone: warehouseOrderTone(order),
+      reference: order.orderNumber,
+      location: order.facilityName,
+    }
+  })
+
+  return { customers, events }
+}
+
+export async function getWarehouseWorkspaceData(locale = "en-GB"): Promise<WarehouseWorkspaceData> {
+  const [orders, balances, movements] = await Promise.all([
+    listOperationalWarehouseOrders(),
+    listWarehouseInventory(),
+    listWarehouseInventoryMovements({ take: 50 }),
+  ])
+
+  const openOrders = orders.filter((order) => !finalOrderStatuses.has(order.statusCode))
+  const inboundOrders = openOrders.filter((order) => order.typeCode === "inbound")
+  const outboundOrders = openOrders.filter((order) => order.typeCode === "outbound")
+  const onHandSkus = new Set(balances.filter((balance) => balance.onHandQuantity > 0).map((balance) => balance.itemId)).size
+  const availableSkus = new Set(balances.filter((balance) => balance.availableQuantity > 0).map((balance) => balance.itemId)).size
+  const heldBalances = balances.filter((balance) => balance.heldQuantity > 0 || balance.inventoryStatusCode !== "available").length
+  const number = new Intl.NumberFormat(locale, { maximumFractionDigits: 2 })
+
+  const metrics: WarehouseMetric[] = [
+    { label: "SKUs on hand", value: number.format(onHandSkus), detail: "Distinct items with physical stock in the warehouse.", tone: "teal", icon: Boxes },
+    { label: "Available SKUs", value: number.format(availableSkus), detail: "Distinct items currently available for allocation.", tone: "green", icon: PackageCheck },
+    { label: "Open inbound", value: number.format(inboundOrders.length), detail: "Inbound orders with lines still to receive.", tone: "amber", icon: ArrowDownToLine },
+    { label: "Open outbound", value: number.format(outboundOrders.length), detail: "Outbound orders with lines still to dispatch.", tone: "blue", icon: ArrowUpFromLine },
+  ]
+
+  return {
+    dashboard: {
+      metrics,
+      headerActions: [
+        { label: "Ready to receive", value: number.format(inboundOrders.length), icon: Clock3, tone: inboundOrders.length ? "amber" : "neutral" },
+        { label: "Ready to dispatch", value: number.format(outboundOrders.length), icon: PackageCheck, tone: outboundOrders.length ? "green" : "neutral" },
+        { label: "Stock holds", value: number.format(heldBalances), icon: ShieldAlert, tone: heldBalances ? "red" : "teal" },
+      ],
+      orders: openOrders
+        .sort((first, second) => (first.appointmentStartAt ?? first.requestedDate ?? "9999").localeCompare(second.appointmentStartAt ?? second.requestedDate ?? "9999"))
+        .map((order) => dashboardOrder(order, locale)),
+      movements: movements.map((movement) => dashboardMovement(movement, locale)),
+    },
+    calendar: calendarData(orders),
+  }
 }

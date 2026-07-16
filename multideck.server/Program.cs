@@ -12,7 +12,10 @@ builder.Services.AddMultideckServer(builder.Configuration, supabaseAuth);
 
 var app = builder.Build();
 
-await app.SeedMultideckAuthorizationAsync();
+if (builder.Configuration.GetValue<bool>("Features:SeedAuthorizationOnStartup"))
+{
+    await app.SeedMultideckAuthorizationAsync();
+}
 
 app.UseDefaultFiles();
 app.UseStaticFiles();

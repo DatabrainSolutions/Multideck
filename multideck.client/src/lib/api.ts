@@ -139,11 +139,25 @@ export async function apiFetch(path: string, init: RequestInit = {}) {
 }
 
 export async function getApiAuthSession(accessToken: string): Promise<ApiAuthSession> {
-  const response = await apiFetch("/api/auth/session", {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  })
+  const controller = new AbortController()
+  const timeoutId = window.setTimeout(() => controller.abort(), 8000)
+  let response: Response
+
+  try {
+    response = await apiFetch("/api/auth/session", {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+      signal: controller.signal,
+    })
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("The API session check timed out.")
+    }
+    throw error
+  } finally {
+    window.clearTimeout(timeoutId)
+  }
 
   if (!response.ok) {
     throw new Error(await parseApiError(response))

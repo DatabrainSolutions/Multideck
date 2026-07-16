@@ -26,10 +26,13 @@ import {
   ArrowLeft,
   ArrowUpFromLine,
   CalendarDays,
+  ChevronLeft,
+  ChevronRight,
   Plus,
   Search,
   SlidersHorizontal,
   Warehouse,
+  type LucideIcon,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -57,8 +60,6 @@ import {
   warehouseProductFilters,
   warehouseStockFilters,
   warehouseStockRows,
-  type WarehouseCalendarCustomerId,
-  type WarehouseCalendarEvent,
   type StatusTone,
 } from "@/data/multideck-data"
 
@@ -123,11 +124,55 @@ type WarehouseKanbanPickup = {
 }
 
 type WarehouseCalendarViewMode = (typeof warehouseCalendarViewModes)[number]
-export type WarehouseMetric = (typeof warehouseMetrics)[number]
+export type WarehouseMetric = {
+  label: string
+  value: string
+  detail: string
+  tone: StatusTone
+  icon: LucideIcon
+}
 export type WarehouseProduct = (typeof warehouseProducts)[number]
-export type WarehouseOrder = (typeof warehouseOrders)[number]
-export type WarehouseMovement = (typeof warehouseGoodsMovements)[number]
-export type WarehouseCalendarCustomer = (typeof warehouseCalendarCustomers)[number]
+export type WarehouseOrder = {
+  id: string
+  customer: string
+  route: string
+  type: string
+  lines: number
+  value: string
+  due: string
+  window: string
+  status: string
+  tone: StatusTone
+}
+export type WarehouseMovement = {
+  id: string
+  direction: "In" | "Out"
+  product: string
+  reference: string
+  quantity: string
+  dock: string
+  time: string
+  status: string
+  tone: StatusTone
+}
+export type WarehouseCalendarCustomer = {
+  id: string
+  name: string
+  shortName: string
+  color: string
+}
+export type WarehouseCalendarEvent = {
+  id: string
+  date: string
+  time: string
+  endTime: string
+  title: string
+  type: string
+  customerId: string
+  tone: StatusTone
+  reference?: string
+  location?: string
+}
 
 type WarehouseCalendarDay = {
   dateKey: string
@@ -153,10 +198,6 @@ const kanbanCardToneClass: Record<StatusTone, string> = {
   teal: "bg-[color-mix(in_srgb,var(--md-accent)_12%,white)] hover:bg-[color-mix(in_srgb,var(--md-accent)_16%,white)]",
 }
 
-const warehouseCalendarWeekStart = "2026-06-22"
-const warehouseCalendarMonthStart = "2026-06-01"
-const warehouseCalendarMonthIndex = 5
-const warehouseCalendarCurrentDate = "2026-06-24"
 const warehouseCalendarGridStartHour = 5
 const warehouseCalendarGridEndHour = 24
 const warehouseCalendarHourHeight = 48
@@ -188,13 +229,21 @@ function addCalendarDays(date: Date, days: number) {
   return next
 }
 
-function getWeekDateKeys(startKey: string) {
-  const start = parseDateKey(startKey)
+function startOfCalendarWeek(date: Date) {
+  const start = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  start.setDate(start.getDate() - ((start.getDay() + 6) % 7))
+  return start
+}
+
+function startOfCalendarMonth(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1)
+}
+
+function getWeekDateKeys(start: Date) {
   return Array.from({ length: 7 }, (_, index) => formatDateKey(addCalendarDays(start, index)))
 }
 
-function getMonthDateKeys(monthStartKey: string) {
-  const monthStart = parseDateKey(monthStartKey)
+function getMonthDateKeys(monthStart: Date) {
   const firstWeekday = (monthStart.getDay() + 6) % 7
   const daysInMonth = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate()
   const visibleDayCount = firstWeekday + daysInMonth > 35 ? 42 : 35
@@ -203,13 +252,19 @@ function getMonthDateKeys(monthStartKey: string) {
   return Array.from({ length: visibleDayCount }, (_, index) => formatDateKey(addCalendarDays(gridStart, index)))
 }
 
-function getWarehouseCalendarCustomer(customerId: WarehouseCalendarCustomerId, customers: readonly WarehouseCalendarCustomer[] = warehouseCalendarCustomers) {
+function getWarehouseCalendarCustomer(customerId: string, customers: readonly WarehouseCalendarCustomer[] = warehouseCalendarCustomers) {
   return customers.find((customer) => customer.id === customerId) ?? customers.find((customer) => customer.id === "internal") ?? warehouseCalendarCustomerFallback
 }
 
 function getTimeInMinutes(time: string) {
   const [hours, minutes] = time.split(":").map(Number)
   return (hours ?? 0) * 60 + (minutes ?? 0)
+}
+
+function getCalendarEventEndMinutes(event: WarehouseCalendarEvent) {
+  const start = getTimeInMinutes(event.time)
+  const end = getTimeInMinutes(event.endTime)
+  return end <= start ? end + 24 * 60 : end
 }
 
 function getHourLabel(hour: number) {
@@ -227,11 +282,12 @@ function getCalendarEventsByDate(events: readonly WarehouseCalendarEvent[] = war
   }, {})
 }
 
-function buildCalendarDays(view: WarehouseCalendarViewMode, language: string, eventsByDate: Record<string, WarehouseCalendarEvent[]>): WarehouseCalendarDay[] {
+function buildCalendarDays(view: WarehouseCalendarViewMode, language: string, anchorDate: Date, eventsByDate: Record<string, WarehouseCalendarEvent[]>): WarehouseCalendarDay[] {
   const weekdayFormatter = new Intl.DateTimeFormat(language, { weekday: "short" })
   const dateFormatter = new Intl.DateTimeFormat(language, { day: "numeric", month: "short" })
   const dayNumberFormatter = new Intl.DateTimeFormat(language, { day: "numeric" })
-  const dateKeys = view === "Week" ? getWeekDateKeys(warehouseCalendarWeekStart) : getMonthDateKeys(warehouseCalendarMonthStart)
+  const visibleMonth = startOfCalendarMonth(anchorDate)
+  const dateKeys = view === "Week" ? getWeekDateKeys(startOfCalendarWeek(anchorDate)) : getMonthDateKeys(visibleMonth)
 
   return dateKeys.map((dateKey) => {
     const date = parseDateKey(dateKey)
@@ -242,18 +298,18 @@ function buildCalendarDays(view: WarehouseCalendarViewMode, language: string, ev
       label: weekdayFormatter.format(date),
       dateLabel: dateFormatter.format(date),
       dayNumber: dayNumberFormatter.format(date),
-      outsideMonth: date.getMonth() !== warehouseCalendarMonthIndex,
+      outsideMonth: date.getMonth() !== visibleMonth.getMonth() || date.getFullYear() !== visibleMonth.getFullYear(),
       events: [...(eventsByDate[dateKey] ?? [])].sort((firstEvent, secondEvent) => getTimeInMinutes(firstEvent.time) - getTimeInMinutes(secondEvent.time)),
     }
   })
 }
 
-function formatCalendarPeriodLabel(view: WarehouseCalendarViewMode, language: string) {
+function formatCalendarPeriodLabel(view: WarehouseCalendarViewMode, language: string, anchorDate: Date) {
   if (view === "Month") {
-    return new Intl.DateTimeFormat(language, { month: "long", year: "numeric" }).format(parseDateKey(warehouseCalendarMonthStart))
+    return new Intl.DateTimeFormat(language, { month: "long", year: "numeric" }).format(startOfCalendarMonth(anchorDate))
   }
 
-  const start = parseDateKey(warehouseCalendarWeekStart)
+  const start = startOfCalendarWeek(anchorDate)
   const end = addCalendarDays(start, 6)
   const startFormatter = new Intl.DateTimeFormat(language, { day: "numeric", month: "short" })
   const endFormatter = new Intl.DateTimeFormat(language, { day: "numeric", month: "short", year: "numeric" })
@@ -277,7 +333,7 @@ function getCalendarEventLayout(events: readonly WarehouseCalendarEvent[]): Posi
 
   sortedEvents.forEach((event) => {
     const eventStart = getTimeInMinutes(event.time)
-    const eventEnd = getTimeInMinutes(event.endTime)
+    const eventEnd = getCalendarEventEndMinutes(event)
 
     if (!activeCluster.length || eventStart < activeClusterEnd) {
       activeCluster.push(event)
@@ -296,7 +352,7 @@ function getCalendarEventLayout(events: readonly WarehouseCalendarEvent[]): Posi
     const columnEndTimes: number[] = []
     const positionedCluster = cluster.map((event) => {
       const eventStart = getTimeInMinutes(event.time)
-      const eventEnd = getTimeInMinutes(event.endTime)
+      const eventEnd = getCalendarEventEndMinutes(event)
       const reusableColumnIndex = columnEndTimes.findIndex((endTime) => endTime <= eventStart)
       const column = reusableColumnIndex === -1 ? columnEndTimes.length : reusableColumnIndex
       columnEndTimes[column] = eventEnd
@@ -1191,6 +1247,8 @@ function WarehouseMovementsTable({ rows = warehouseGoodsMovements }: { rows?: re
 }
 
 export function WarehouseMetricStrip({ metrics = warehouseMetrics }: { metrics?: readonly WarehouseMetric[] }) {
+  const { t } = useLanguage()
+
   return (
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       {metrics.map((metric) => {
@@ -1200,14 +1258,14 @@ export function WarehouseMetricStrip({ metrics = warehouseMetrics }: { metrics?:
           <Surface key={metric.label} padding="md" className="min-h-[106px] rounded-[var(--md-radius-xl)]">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <p className="text-[13px] font-medium text-[var(--md-text)]">{metric.label}</p>
+                <p className="text-[13px] font-medium text-[var(--md-text)]">{t(metric.label)}</p>
                 <strong className="mt-2 block text-[28px] font-medium leading-none tracking-normal text-[var(--md-ink)]">{metric.value}</strong>
               </div>
               <span className="grid size-9 place-items-center rounded-[var(--md-radius-lg)] bg-white/56 text-[var(--metric-tone)] shadow-[var(--md-shadow-line)]" style={{ "--metric-tone": toneToVar(metric.tone) } as CSSProperties}>
                 <Icon className="size-4" strokeWidth={1.25} />
               </span>
             </div>
-            <p className="mt-3 text-[12px] leading-5 text-[var(--md-text)]">{metric.detail}</p>
+            <p className="mt-3 text-[12px] leading-5 text-[var(--md-text)]">{t(metric.detail)}</p>
           </Surface>
         )
       })}
@@ -1247,11 +1305,12 @@ export function WarehousePageHeader() {
 
 function WarehouseActivityPanel({ rows = warehouseGoodsMovements }: { rows?: readonly WarehouseMovement[] }) {
   const shouldReduceMotion = useReducedMotion()
+  const { t } = useLanguage()
 
   return (
     <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
       <div className="px-5 py-4 shadow-[var(--md-stroke-bottom)]">
-        <SectionHeader title="Today in the warehouse" meta="Receiving, pick, and dispatch work from the fake UI dataset." />
+        <SectionHeader title={t("Recent warehouse activity")} meta={t("Latest receiving and dispatch movements posted by the warehouse team.")} />
       </div>
       <motion.div
         className="divide-y divide-[rgba(90,103,100,0.09)]"
@@ -1274,6 +1333,7 @@ function WarehouseActivityPanel({ rows = warehouseGoodsMovements }: { rows?: rea
             </div>
           </motion.div>
         ))}
+        {!rows.length ? <p className="px-5 py-8 text-center text-[13px] text-[var(--md-subtle)]">{t("No warehouse movements have been posted yet.")}</p> : null}
       </motion.div>
     </Surface>
   )
@@ -1288,13 +1348,15 @@ export function WarehouseDashboard({
   orders?: readonly WarehouseOrder[]
   movements?: readonly WarehouseMovement[]
 }) {
+  const { t } = useLanguage()
+
   return (
     <div className="grid gap-[var(--md-page-stack-gap)]">
       <WarehouseMetricStrip metrics={metrics} />
       <div className="grid gap-[var(--md-page-stack-gap)] 2xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.75fr)]">
         <div className="grid gap-[var(--md-gap-md)]">
-          <WarehouseToolbar title="Open warehouse orders" meta="Pick, receive, and dispatch work ready for the next product pass.">
-            <StatusPill tone="amber">{orders.length} active</StatusPill>
+          <WarehouseToolbar title={t("Open warehouse orders")} meta={t("Live inbound and outbound work that still needs operator action.")}>
+            <StatusPill tone="amber">{orders.length} {t("active")}</StatusPill>
           </WarehouseToolbar>
           <WarehouseOrdersTable rows={orders.slice(0, 5)} />
         </div>
@@ -1757,9 +1819,9 @@ function WarehouseCalendarCustomerKey({
   selectedCustomerIds,
   onSelectCustomer,
 }: {
-  customers: (typeof warehouseCalendarCustomers)[number][]
-  selectedCustomerIds: readonly WarehouseCalendarCustomerId[]
-  onSelectCustomer: (customerId: WarehouseCalendarCustomerId) => void
+  customers: WarehouseCalendarCustomer[]
+  selectedCustomerIds: readonly string[]
+  onSelectCustomer: (customerId: string) => void
 }) {
   const { t } = useLanguage()
   const hasSelectedCustomers = selectedCustomerIds.length > 0
@@ -1822,7 +1884,7 @@ function WarehouseCalendarEventDetails({
   customer,
 }: {
   event: WarehouseCalendarEvent
-  customer: (typeof warehouseCalendarCustomers)[number]
+  customer: WarehouseCalendarCustomer
 }) {
   const { language, t } = useLanguage()
   const dateLabel = new Intl.DateTimeFormat(language, { weekday: "short", day: "numeric", month: "short" }).format(parseDateKey(event.date))
@@ -1853,7 +1915,8 @@ function WarehouseCalendarEventDetails({
         <WarehouseCalendarDetailRow label="Date" value={dateLabel} />
         <WarehouseCalendarDetailRow label="Time" value={`${event.time}-${event.endTime}`} skipTranslation />
         <WarehouseCalendarDetailRow label="Type" value={event.type} />
-        <WarehouseCalendarDetailRow label="Reference" value={event.id.toUpperCase()} skipTranslation />
+        <WarehouseCalendarDetailRow label="Reference" value={event.reference ?? event.id.toUpperCase()} skipTranslation />
+        {event.location ? <WarehouseCalendarDetailRow label="Warehouse" value={event.location} skipTranslation /> : null}
       </div>
     </PopoverContent>
   )
@@ -1967,7 +2030,7 @@ function WarehouseCalendarTimedEvent({
 
 function WarehouseCalendarTimedDayColumn({ day, customers }: { day: WarehouseCalendarDay; customers: readonly WarehouseCalendarCustomer[] }) {
   const positionedEvents = useMemo(() => getCalendarEventLayout(day.events), [day.events])
-  const isToday = day.dateKey === warehouseCalendarCurrentDate
+  const isToday = day.dateKey === formatDateKey(new Date())
 
   return (
     <div
@@ -1988,16 +2051,21 @@ function WarehouseCalendarTimedDayColumn({ day, customers }: { day: WarehouseCal
 }
 
 function WarehouseCalendarWeekGrid({ days, customers }: { days: WarehouseCalendarDay[]; customers: readonly WarehouseCalendarCustomer[] }) {
+  const { language } = useLanguage()
+  const timeZoneLabel = new Intl.DateTimeFormat(language, { timeZoneName: "short" })
+    .formatToParts(days[0]?.date ?? new Date())
+    .find((part) => part.type === "timeZoneName")?.value ?? "Local"
+
   return (
     <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
       <div className="overflow-x-auto md-scrollbar">
         <div className="min-w-[1120px]">
           <div className="grid grid-cols-[64px_repeat(7,minmax(0,1fr))] bg-[color-mix(in_srgb,var(--md-surface)_84%,transparent)] shadow-[inset_0_-1px_0_rgba(90,103,100,0.12)]">
             <div className="flex min-h-[92px] items-end px-3 py-4 text-[11px] font-medium text-[var(--md-text)]">
-              <span data-i18n-skip dir="ltr">GMT+01</span>
+              <span data-i18n-skip dir="auto">{timeZoneLabel}</span>
             </div>
             {days.map((day) => {
-              const isToday = day.dateKey === warehouseCalendarCurrentDate
+              const isToday = day.dateKey === formatDateKey(new Date())
 
               return (
                 <div
@@ -2060,7 +2128,7 @@ function WarehouseCalendarDayCell({
 }) {
   const { t } = useLanguage()
   const isMonthView = view === "Month"
-  const isToday = day.dateKey === warehouseCalendarCurrentDate
+  const isToday = day.dateKey === formatDateKey(new Date())
 
   return (
     <Surface
@@ -2101,9 +2169,13 @@ export function WarehouseCalendarView({
 }) {
   const { language, t } = useLanguage()
   const [calendarView, setCalendarView] = useState<WarehouseCalendarViewMode>("Week")
-  const [selectedCustomerIds, setSelectedCustomerIds] = useState<WarehouseCalendarCustomerId[]>([])
+  const [anchorDate, setAnchorDate] = useState(() => new Date())
+  const [selectedCustomerIds, setSelectedCustomerIds] = useState<string[]>([])
   const eventsByDate = useMemo(() => getCalendarEventsByDate(events), [events])
-  const allCalendarDays = useMemo(() => buildCalendarDays(calendarView, language, eventsByDate), [calendarView, eventsByDate, language])
+  const allCalendarDays = useMemo(
+    () => buildCalendarDays(calendarView, language, anchorDate, eventsByDate),
+    [anchorDate, calendarView, eventsByDate, language],
+  )
   const calendarDays = useMemo(() => (
     selectedCustomerIds.length
       ? allCalendarDays.map((day) => ({ ...day, events: day.events.filter((event) => selectedCustomerIds.includes(event.customerId)) }))
@@ -2112,9 +2184,9 @@ export function WarehouseCalendarView({
   const visibleCustomerIds = useMemo(() => new Set(allCalendarDays.flatMap((day) => day.events.map((event) => event.customerId))), [allCalendarDays])
   const visibleCustomers = customers.filter((customer) => visibleCustomerIds.has(customer.id))
   const eventCount = calendarDays.reduce((total, day) => total + day.events.length, 0)
-  const periodLabel = formatCalendarPeriodLabel(calendarView, language)
+  const periodLabel = formatCalendarPeriodLabel(calendarView, language, anchorDate)
 
-  function handleSelectCustomer(customerId: WarehouseCalendarCustomerId) {
+  function handleSelectCustomer(customerId: string) {
     setSelectedCustomerIds((currentCustomerIds) => (
       currentCustomerIds.includes(customerId)
         ? currentCustomerIds.filter((currentCustomerId) => currentCustomerId !== customerId)
@@ -2122,10 +2194,59 @@ export function WarehouseCalendarView({
     ))
   }
 
+  function changeCalendarView(nextView: WarehouseCalendarViewMode) {
+    setCalendarView(nextView)
+    setSelectedCustomerIds([])
+  }
+
+  function moveCalendarPeriod(direction: -1 | 1) {
+    setAnchorDate((currentDate) => (
+      calendarView === "Week"
+        ? addCalendarDays(currentDate, direction * 7)
+        : new Date(currentDate.getFullYear(), currentDate.getMonth() + direction, 1)
+    ))
+    setSelectedCustomerIds([])
+  }
+
+  function showToday() {
+    setAnchorDate(new Date())
+    setSelectedCustomerIds([])
+  }
+
   return (
     <div className="grid gap-[var(--md-page-stack-gap)]">
       <WarehouseToolbar title={t("Calendar")} meta={t("Dock bookings, count windows, dispatch cutoffs and stock-take planning.")}>
         <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label={t(calendarView === "Week" ? "Previous week" : "Previous month")}
+              className="rounded-[var(--md-radius-md)] bg-white/48 shadow-[var(--md-shadow-line)] hover:bg-white/74"
+              onClick={() => moveCalendarPeriod(-1)}
+            >
+              <ChevronLeft className="size-4 rtl:rotate-180" strokeWidth={1.25} />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-8 rounded-[var(--md-radius-md)] bg-white/48 px-3 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/74"
+              onClick={showToday}
+            >
+              {t("Today")}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label={t(calendarView === "Week" ? "Next week" : "Next month")}
+              className="rounded-[var(--md-radius-md)] bg-white/48 shadow-[var(--md-shadow-line)] hover:bg-white/74"
+              onClick={() => moveCalendarPeriod(1)}
+            >
+              <ChevronRight className="size-4 rtl:rotate-180" strokeWidth={1.25} />
+            </Button>
+          </div>
           <div className="flex h-9 items-center gap-2 rounded-[var(--md-radius-md)] bg-[color-mix(in_srgb,var(--md-surface)_72%,transparent)] px-3 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]">
             <CalendarDays data-icon="inline-start" className="size-4 text-[var(--md-accent)]" strokeWidth={1.25} />
             <span>{calendarView === "Week" ? `${t("Week of")} ${periodLabel}` : periodLabel}</span>
@@ -2133,10 +2254,10 @@ export function WarehouseCalendarView({
           <StatusPill tone="teal">
             {eventCount} {t(eventCount === 1 ? "Event" : "Events")}
           </StatusPill>
-          <SegmentedControl options={warehouseCalendarViewModes} value={calendarView} onChange={setCalendarView} />
+          <SegmentedControl options={warehouseCalendarViewModes} value={calendarView} onChange={changeCalendarView} />
         </div>
       </WarehouseToolbar>
-      <WarehouseCalendarCustomerKey customers={visibleCustomers} selectedCustomerIds={selectedCustomerIds} onSelectCustomer={handleSelectCustomer} />
+      {visibleCustomers.length ? <WarehouseCalendarCustomerKey customers={visibleCustomers} selectedCustomerIds={selectedCustomerIds} onSelectCustomer={handleSelectCustomer} /> : null}
       {calendarView === "Week" ? (
         <WarehouseCalendarWeekGrid days={calendarDays} customers={customers} />
       ) : (

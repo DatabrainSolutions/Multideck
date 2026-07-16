@@ -5,7 +5,7 @@ import { Progress } from "@/components/ui/progress"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
 import {
-  customers,
+  customers as galleryCustomers,
   customerFilters,
   customerScopeTabs,
   marlowAccount,
@@ -14,6 +14,7 @@ import {
   marlowContacts,
   marlowLaneMix,
   marlowMetrics,
+  type CustomerRecord,
   type CustomerStatus,
   type StatusTone,
 } from "@/data/multideck-data"
@@ -23,7 +24,7 @@ import { FilterChips, SegmentedControl } from "./workflow-components"
 import { DexterActionPill } from "./dexter-action-pill"
 import { PageSettingsMenu, type PageSettingsViewOption } from "./page-settings-menu"
 
-type Customer = (typeof customers)[number]
+type Customer = CustomerRecord
 type MarlowContact = (typeof marlowContacts)[number]
 export const customerViewModes = ["List", "Cards", "Map"] as const
 export type CustomerViewMode = (typeof customerViewModes)[number]
@@ -237,6 +238,7 @@ export function CustomerListHeader({
   onScopeChange,
   viewMode,
   onViewModeChange,
+  customerCount = galleryCustomers.length,
 }: {
   onExport: () => void
   onSpeakToDexter: () => void
@@ -244,7 +246,10 @@ export function CustomerListHeader({
   onScopeChange: (scope: (typeof customerScopeTabs)[number]) => void
   viewMode: CustomerViewMode
   onViewModeChange: (mode: CustomerViewMode) => void
+  customerCount?: number
 }) {
+  const customers = { length: customerCount }
+
   return (
     <div className="flex flex-col gap-[var(--md-gap-lg)] xl:flex-row xl:items-end xl:justify-between">
       <div>
@@ -283,14 +288,16 @@ export function CustomerViewModeSwitch({
 export function CustomerFilterBar({
   activeFilter,
   onFilterChange,
+  filters = customerFilters,
 }: {
   activeFilter: string
   onFilterChange: (filter: string) => void
+  filters?: string[]
 }) {
   return (
     <div className="flex flex-col gap-[var(--md-gap-lg)] xl:flex-row xl:items-center xl:justify-between">
       <FilterChips
-        options={customerFilters}
+        options={filters}
         activeOption={activeFilter}
         onChange={onFilterChange}
         auxiliaryOptions={["+ Owner", "+ Region", "+ Industry"]}
