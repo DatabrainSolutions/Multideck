@@ -41,6 +41,8 @@
     "vite": "latest"
   },
   "devDependencies": {
+    "@emnapi/core": "^1.11.2",
+    "@emnapi/runtime": "^1.11.2",
     "@tailwindcss/vite": "latest",
     "@types/node": "^25.9.2",
     "@types/react": "latest",
