@@ -1461,9 +1461,9 @@ function ComponentPreview({ id }: { id: string }) {
         <div className="h-[560px] w-full max-w-[340px] overflow-hidden rounded-[var(--md-radius-xl)] shadow-[var(--md-shadow-line)]">
           <DexterHistoryList
             items={[
-              { id: "customs-risk", title: "Which customs exceptions need attention this week?" },
-              { id: "marlow-qbr", title: "What should I prepare for the Marlow Apparel review?" },
-              { id: "daily", title: "What needs my attention in warehouse operations today?" },
+              { id: "customs-risk", title: "At-risk customs this week", summary: "4 flagged - drafts ready for review", time: "11:42" },
+              { id: "marlow-qbr", title: "Marlow Apparel - QBR prep", summary: "Snapshot, talking points, agenda draft", time: "10:05" },
+              { id: "daily", title: "Daily briefing - 11 Jun", summary: "Quiet night. 23 in transit, 2 need you.", time: "07:00" },
             ]}
             activeId="customs-risk"
             onSelect={(itemId) => toast.success(`${itemId} opened`)}

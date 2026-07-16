@@ -1,0 +1,498 @@
+@layer components {
+  .md-ignite-grid {
+    --ig-font-family: var(--font-sans);
+    --ig-size: 2;
+    --ig-grid-background: var(--md-surface);
+    --ig-grid-content-background: var(--md-surface);
+    --ig-grid-content-text-color: var(--md-ink);
+    --ig-grid-foreground: var(--md-ink);
+    --ig-grid-header-background: color-mix(in srgb, var(--md-surface-tint) 70%, white);
+    --ig-grid-header-text-color: var(--md-text);
+    --ig-grid-header-border-color: rgba(11, 20, 19, 0.07);
+    --ig-grid-row-border-color: rgba(11, 20, 19, 0.055);
+    --ig-grid-row-even-background: color-mix(in srgb, var(--md-surface-soft) 65%, white);
+    --ig-grid-row-odd-background: var(--md-surface);
+    --ig-grid-row-hover-background: color-mix(in srgb, var(--md-accent) 8%, white);
+    --ig-grid-row-hover-text-color: var(--md-ink);
+    --ig-grid-row-selected-background: color-mix(in srgb, var(--md-accent) 14%, white);
+    --ig-grid-row-selected-text-color: var(--md-ink);
+    --ig-grid-pinned-border-color: color-mix(in srgb, var(--md-accent) 22%, transparent);
+    --ig-grid-accent-color: var(--md-accent);
+    --ig-grid-filtering-dialog-background: var(--md-surface);
+    --ig-grid-grid-border-color: transparent;
+    --ig-grid-resize-line-color: var(--md-accent);
+    display: block;
+    height: min(47dvh, 410px);
+    min-height: 340px;
+    border-radius: calc(var(--md-radius-xl) - 8px);
+    font-family: var(--font-sans);
+  }
+
+  .md-charge-split-workspace {
+    background: transparent;
+  }
+
+  .md-charge-split-workspace__panes {
+    position: relative;
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(0, calc(var(--md-charge-split-position) - 6px)) 12px minmax(0, calc(100% - var(--md-charge-split-position) - 6px));
+    align-items: stretch;
+  }
+
+  .md-charge-split-workspace__panes--resizing,
+  .md-charge-split-workspace__panes--resizing * {
+    cursor: col-resize !important;
+    user-select: none;
+  }
+
+  .md-charge-split-workspace__divider {
+    position: relative;
+    z-index: 2;
+    display: grid;
+    min-width: 0;
+    cursor: col-resize;
+    place-items: center;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    touch-action: none;
+  }
+
+  .md-charge-split-workspace__divider::before {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 50%;
+    inline-size: 1px;
+    transform: translateX(-50%);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--md-accent) 28%, var(--md-line));
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--md-accent) 4%, transparent);
+    transition: inline-size 160ms ease, background 160ms ease, box-shadow 160ms ease;
+  }
+
+  .md-charge-split-workspace__divider:hover::before,
+  .md-charge-split-workspace__divider:focus-visible::before {
+    inline-size: 3px;
+    background: var(--md-accent);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--md-accent) 12%, transparent);
+  }
+
+  .md-charge-split-workspace__divider:focus-visible {
+    outline: 0;
+  }
+
+  .md-charge-split-workspace--fullscreen {
+    block-size: 100%;
+    overflow: auto;
+  }
+
+  @media (max-width: 860px) {
+    .md-charge-split-workspace__panes {
+      grid-template-columns: 1fr;
+      gap: var(--md-gap-xs);
+    }
+
+    .md-charge-split-workspace__divider {
+      display: none;
+    }
+  }
+
+  .md-quote-document-preview {
+    transform: none;
+    transform-origin: center;
+    border-radius: var(--md-radius-md);
+    box-shadow: inset 0 0 0 1px rgba(11, 20, 19, 0.07);
+  }
+
+  .md-quote-document-preview .md-paper-document-face__masthead {
+    padding: 10px 10px 0 13px;
+  }
+
+  .md-quote-document-preview .md-paper-document-face__title {
+    margin: 10px 12px 0 13px;
+    white-space: normal;
+  }
+
+  .md-quote-document-preview .md-paper-document-face__lines {
+    margin: 10px 13px;
+  }
+
+  .md-quote-stage-panel__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .md-quote-stage-panel__count {
+    display: grid;
+    flex: 0 0 auto;
+    place-items: center;
+    min-width: 40px;
+    height: 22px;
+    padding-inline: 8px;
+    border-radius: var(--md-radius-md);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--md-text);
+    background: var(--md-surface-soft);
+    box-shadow: var(--md-shadow-line);
+  }
+
+  .md-quote-stage-panel__steps {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 7px;
+    margin-top: 9px;
+  }
+
+  .md-quote-stage-panel__step {
+    min-width: 0;
+    transition:
+      opacity 170ms ease,
+      filter 170ms ease,
+      transform 190ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .md-quote-stage-panel__step button {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    text-align: start;
+    outline: none;
+  }
+
+  .md-quote-stage-panel__rail {
+    position: relative;
+    display: block;
+    height: 11px;
+    overflow: hidden;
+    border-radius: var(--md-radius-sm);
+    background: var(--md-surface-soft);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.5),
+      inset 0 0 0 1px rgba(11, 20, 19, 0.035);
+    transition: transform 170ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 170ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .md-quote-stage-panel__rail i {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+    opacity: 0.28;
+    background: var(--md-quote-stage-color);
+    transition: opacity 170ms cubic-bezier(0.22, 1, 0.36, 1), filter 170ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .md-quote-stage-panel__step[data-state="done"] .md-quote-stage-panel__rail i {
+    opacity: 0.82;
+  }
+
+  .md-quote-stage-panel__step[data-state="current"] .md-quote-stage-panel__rail i {
+    opacity: 1;
+    filter: saturate(1.08);
+    box-shadow: 0 0 9px color-mix(in srgb, var(--md-quote-stage-color) 28%, transparent);
+  }
+
+  .md-quote-stage-panel__step button:hover .md-quote-stage-panel__rail,
+  .md-quote-stage-panel__step button:focus-visible .md-quote-stage-panel__rail {
+    transform: scaleY(1.08);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.5),
+      0 0 0 3px color-mix(in srgb, var(--md-quote-stage-color) 12%, transparent),
+      0 5px 12px color-mix(in srgb, var(--md-quote-stage-color) 16%, transparent);
+  }
+
+  .md-quote-stage-panel__step button:hover .md-quote-stage-panel__rail i,
+  .md-quote-stage-panel__step button:focus-visible .md-quote-stage-panel__rail i {
+    opacity: 1;
+  }
+
+  .md-quote-stage-panel__steps:has(button:hover, button:focus-visible) .md-quote-stage-panel__step {
+    opacity: 0.34;
+    filter: saturate(0.55);
+    transform: scale(0.985);
+  }
+
+  .md-quote-stage-panel__steps:has(button:hover, button:focus-visible) .md-quote-stage-panel__step:has(button:hover, button:focus-visible) {
+    z-index: 1;
+    opacity: 1;
+    filter: none;
+    transform: translateY(-1px) scale(1.01);
+  }
+
+  .md-quote-stage-panel__step p {
+    overflow: hidden;
+    margin-top: 4px;
+    font-size: 9px;
+    font-weight: 500;
+    color: var(--md-subtle);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .md-quote-stage-panel__step[data-state="done"] p,
+  .md-quote-stage-panel__step[data-state="current"] p {
+    color: var(--md-ink);
+  }
+
+  .md-quote-stage-panel__step button:hover p,
+  .md-quote-stage-panel__step button:focus-visible p {
+    color: var(--md-quote-stage-color);
+  }
+
+  .md-quote-stage-tooltip {
+    display: grid !important;
+    width: max-content !important;
+    max-width: min(280px, calc(100vw - 24px)) !important;
+    gap: 4px !important;
+    border: 1px solid var(--md-line-strong) !important;
+    border-radius: var(--md-radius-lg);
+    padding: 10px 11px !important;
+    color: var(--md-ink) !important;
+    background: var(--md-surface) !important;
+    box-shadow: var(--md-shadow-lift);
+  }
+
+  .md-quote-stage-tooltip strong {
+    display: block;
+    font-size: 11.5px;
+    font-weight: 600;
+    line-height: 1.25;
+    color: var(--md-ink) !important;
+  }
+
+  .md-quote-stage-tooltip span {
+    display: block;
+    font-size: 10.5px;
+    line-height: 1.45;
+    color: var(--md-text) !important;
+    text-wrap: pretty;
+  }
+
+  .md-quote-stage-tooltip > svg {
+    background: var(--md-surface) !important;
+    fill: var(--md-surface) !important;
+  }
+
+  .md-quote-temperature-gradient {
+    filter: drop-shadow(0 2px 4px color-mix(in srgb, var(--md-red) 18%, transparent));
+  }
+
+  .md-quote-temperature-fire {
+    position: absolute;
+    left: calc(50% + 5px);
+    bottom: -19px;
+    z-index: 1;
+    width: 64px;
+    height: 64px;
+    pointer-events: none;
+    filter: drop-shadow(0 2px 5px color-mix(in srgb, var(--md-red) 30%, transparent));
+  }
+
+  .md-tabs-indicator {
+    --md-tabs-indicator-x: 0px;
+    --md-tabs-indicator-width: 0px;
+    --md-tabs-indicator-duration: 0ms;
+    position: absolute;
+    left: 0;
+    bottom: -5px;
+    z-index: 1;
+    width: var(--md-tabs-indicator-width);
+    height: 2px;
+    pointer-events: none;
+    border-radius: 999px;
+    opacity: 0;
+    background: var(--md-ink);
+    transform: translate3d(var(--md-tabs-indicator-x), 0, 0);
+    transition:
+      width var(--md-tabs-indicator-duration) cubic-bezier(0.22, 1, 0.36, 1),
+      transform var(--md-tabs-indicator-duration) cubic-bezier(0.22, 1, 0.36, 1),
+      opacity 120ms ease;
+    will-change: width, transform;
+  }
+
+  .md-tabs-indicator[data-ready="true"] {
+    opacity: 1;
+  }
+
+  .md-quote-copy-slot {
+    display: inline-grid;
+    height: 1em;
+    min-width: 0;
+    overflow: hidden;
+    line-height: 1;
+  }
+
+  .md-quote-copy-slot__layer {
+    grid-area: 1 / 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    white-space: pre;
+  }
+
+  .md-quote-copy-slot__layer > span {
+    display: inline-block;
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+    transition:
+      opacity 180ms ease,
+      filter 240ms ease,
+      transform 360ms cubic-bezier(0.22, 1, 0.36, 1);
+    transition-delay: calc(var(--md-copy-character-index) * 34ms);
+    will-change: opacity, filter, transform;
+  }
+
+  .md-quote-copy-slot__layer--copied > span {
+    opacity: 0;
+    transform: translateY(115%);
+    filter: blur(2px);
+  }
+
+  .md-quote-copy-slot[data-copied="true"] .md-quote-copy-slot__layer--reference > span {
+    opacity: 0;
+    transform: translateY(-115%);
+    filter: blur(2px);
+  }
+
+  .md-quote-copy-slot[data-copied="true"] .md-quote-copy-slot__layer--copied > span {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+
+  .md-quote-copy-slot {
+    display: inline-grid;
+    height: 1em;
+    min-width: 0;
+    overflow: hidden;
+    line-height: 1;
+  }
+
+  .md-quote-copy-slot__layer {
+    grid-area: 1 / 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    white-space: pre;
+  }
+
+  .md-quote-copy-slot__layer > span {
+    display: inline-block;
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+    transition:
+      opacity 180ms ease,
+      filter 240ms ease,
+      transform 360ms cubic-bezier(0.22, 1, 0.36, 1);
+    transition-delay: calc(var(--md-copy-character-index) * 34ms);
+    will-change: opacity, filter, transform;
+  }
+
+  .md-quote-copy-slot__layer--copied > span {
+    opacity: 0;
+    transform: translateY(115%);
+    filter: blur(2px);
+  }
+
+  .md-quote-copy-slot[data-copied="true"] .md-quote-copy-slot__layer--reference > span {
+    opacity: 0;
+    transform: translateY(-115%);
+    filter: blur(2px);
+  }
+
+  .md-quote-copy-slot[data-copied="true"] .md-quote-copy-slot__layer--copied > span {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+
+  .md-booking-confirm-slot {
+    position: relative;
+    display: inline-flex;
+    height: 1em;
+    overflow: hidden;
+    line-height: 1;
+  }
+
+  .md-booking-confirm-slot__layer {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    white-space: pre;
+  }
+
+  .md-booking-confirm-slot__layer--confirmation {
+    position: absolute;
+    inset: 0 auto auto 0;
+  }
+
+  .md-booking-confirm-slot[data-confirming="true"] .md-booking-confirm-slot__layer--initial {
+    position: absolute;
+    inset: 0 auto auto 0;
+  }
+
+  .md-booking-confirm-slot[data-confirming="true"] .md-booking-confirm-slot__layer--confirmation {
+    position: relative;
+    inset: auto;
+  }
+
+  .md-booking-confirm-slot__layer > span {
+    display: inline-block;
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+    transition:
+      opacity 140ms ease,
+      filter 220ms ease,
+      transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
+    transition-delay: calc(var(--md-confirm-character-index) * 22ms);
+    will-change: opacity, filter, transform;
+  }
+
+  .md-booking-confirm-slot__layer--confirmation > span {
+    opacity: 0;
+    transform: translateY(110%);
+    filter: blur(2px);
+  }
+
+  .md-booking-confirm-slot[data-confirming="true"] .md-booking-confirm-slot__layer--initial > span {
+    opacity: 0;
+    transform: translateY(-110%);
+    filter: blur(2px);
+  }
+
+  .md-booking-confirm-slot[data-confirming="true"] .md-booking-confirm-slot__layer--confirmation > span {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .md-quote-copy-slot__layer > span,
+    .md-booking-confirm-slot__layer > span {
+      transition-duration: 0.01ms !important;
+      transition-delay: 0ms !important;
+      filter: none !important;
+    }
+
+    .md-quote-stage-panel__step,
+    .md-quote-stage-panel__rail,
+    .md-quote-stage-panel__rail i {
+      transition-duration: 0.01ms !important;
+    }
+
+    .md-quote-stage-panel__steps:has(button:hover, button:focus-visible) .md-quote-stage-panel__step,
+    .md-quote-stage-panel__steps:has(button:hover, button:focus-visible) .md-quote-stage-panel__step:has(button:hover, button:focus-visible),
+    .md-quote-stage-panel__step button:hover .md-quote-stage-panel__rail,
+    .md-quote-stage-panel__step button:focus-visible .md-quote-stage-panel__rail {
+      transform: none;
+    }
+  }
+}

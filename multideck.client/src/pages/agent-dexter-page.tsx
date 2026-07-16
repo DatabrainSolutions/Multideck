@@ -1,14 +1,17 @@
-import { useEffect, useMemo, useState } from "react"
-import { AlertCircle, BarChart3, History as HistoryIcon, Pause, Share2, ShieldCheck, Sparkles } from "lucide-react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { ArrowRight, BarChart3, Pause, Share2, ShieldCheck, Sparkles } from "lucide-react"
 import { AnimatePresence, LayoutGroup, motion } from "motion/react"
 import { Button } from "@/components/ui/button"
 import {
   DexterAttachmentPalette,
-  DexterBrandMark,
+  DexterChecklistCard,
+  DexterCustomerSnapshot,
   DexterHistoryList,
   DexterMonitorStack,
   DexterMonitorDetailSheet,
   DexterPromptComposer,
+  DexterRiskTable,
+  DexterSpecialistChip,
   DexterSpecialistMenu,
   DexterSpecialistPicker,
   DexterSuggestionGrid,
@@ -19,17 +22,18 @@ import {
   type DexterMonitor,
   type DexterSpecialistId,
 } from "@/components/multideck/agent-dexter-components"
+import { DexterBrandMark } from "@/components/multideck/dexter-brand-mark"
 import { cn } from "@/lib/utils"
 import { mdMotion } from "@/lib/motion"
-import { useLanguage } from "@/i18n/language-provider"
-import {
-  getDexterConversation,
-  listDexterConversations,
-  sendDexterMessage,
-  type DexterConversation,
-  type DexterConversationSummary,
-  type DexterMessage,
-} from "@/lib/dexter-api"
+
+const historyItems: DexterHistoryItem[] = [
+  { id: "customs-risk", title: "At-risk customs this week", summary: "4 flagged - drafts ready for review", time: "11:42" },
+  { id: "marlow-qbr", title: "Marlow Apparel - QBR prep", summary: "Snapshot, talking points, agenda draft", time: "10:05" },
+  { id: "daily", title: "Daily briefing - 11 Jun", summary: "Quiet night. 23 in transit, 2 need you.", time: "07:00" },
+  { id: "rates", title: "Compare rates - Yantian to Felixstowe", summary: "3 carriers - ONE wins on direct and on-time", time: "Yesterday" },
+  { id: "maersk", title: "Why is Maersk slipping?", summary: "On-time fell from 94% to 87% over 60d", time: "Yesterday" },
+  { id: "refund", title: "Refund analysis - May demurrage", summary: "Owed EUR 4,820 across 6 containers", time: "Jun 4" },
+]
 
 const monitors: DexterMonitor[] = [
   {
@@ -74,59 +78,60 @@ function useAttachedItems(selectedAttachmentIds: Set<string>) {
 }
 
 function DexterPageHeader({
-  title,
-  isWorking,
+  conversationMode,
   selectedSpecialistId,
-  historyCount,
-  onOpenHistory,
   watchersCollapsed,
   onToggleWatchers,
 }: {
-  title: string
-  isWorking: boolean
+  conversationMode: "customs" | "customer"
   selectedSpecialistId: DexterSpecialistId
-  historyCount: number
-  onOpenHistory: () => void
   watchersCollapsed?: boolean
   onToggleWatchers?: () => void
 }) {
-  const { t } = useLanguage()
   const specialist = specialistById(selectedSpecialistId)
-  const RouteIcon = selectedSpecialistId === "analytics" ? BarChart3 : ShieldCheck
+  const copy =
+    conversationMode === "customer"
+      ? {
+          title: "Marlow Apparel - QBR prep",
+          route: "Routed to Analytics & reporting - 1 attached context - reads bookings, comms, invoices",
+          icon: BarChart3,
+        }
+      : {
+          title: "At-risk customs this week",
+          route: "Routed to Customs & compliance - read access to bookings, documents, comms - writes need approval",
+          icon: ShieldCheck,
+        }
+
+  const RouteIcon = copy.icon
 
   return (
     <header className="flex min-h-[72px] items-center justify-between gap-[var(--md-gap-lg)] border-b border-[rgba(11,20,19,0.07)] px-[var(--md-page-stack-gap)] py-[var(--md-gap-lg)]">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
-          <h1 className="text-[18px] font-medium leading-6 text-[var(--md-ink)]">{title}</h1>
+          <h1 className="text-[18px] font-medium leading-6 text-[var(--md-ink)]">{copy.title}</h1>
           <span className="inline-flex h-7 items-center gap-1.5 rounded-full bg-[rgba(14,125,116,0.1)] px-3 text-[12px] font-medium text-[var(--md-accent)]">
             <span className="size-1.5 rounded-full bg-[var(--md-accent)]" />
-            {isWorking ? t("Working") : t("Ready")}
+            Working
           </span>
         </div>
         <p className="mt-1 flex items-start gap-2 text-[13px] leading-5 text-[var(--md-text)]">
           <RouteIcon className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.2} />
-          <span>{t("Warehouse operations")} - {specialist.name} - {t("read-only access")}</span>
+          <span>{copy.route}</span>
           <span className="sr-only">Selected specialist: {specialist.name}</span>
         </p>
       </div>
       <div className="flex items-center gap-2">
-        <Button variant="ghost" className="h-9 rounded-[var(--md-radius-md)] bg-white/45 px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white lg:hidden" onClick={onOpenHistory}>
-          <HistoryIcon data-icon="inline-start" strokeWidth={1.2} />
-          <span className="hidden sm:inline">{t("Previous conversations")}</span>
-          {historyCount > 0 ? <span className="rounded-full bg-[var(--md-accent)] px-1.5 py-0.5 text-[10px] font-medium text-white">{historyCount}</span> : null}
-        </Button>
         {watchersCollapsed ? (
           <Button variant="ghost" className="h-9 rounded-[var(--md-radius-md)] bg-white/45 px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white" onClick={onToggleWatchers}>
             <Sparkles data-icon="inline-start" strokeWidth={1.2} />
             Show watchers
           </Button>
         ) : null}
-        <Button variant="ghost" className="hidden h-9 rounded-[var(--md-radius-md)] bg-white/45 px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white sm:inline-flex">
+        <Button variant="ghost" className="h-9 rounded-[var(--md-radius-md)] bg-white/45 px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white">
           <Pause data-icon="inline-start" strokeWidth={1.2} />
           Pause
         </Button>
-        <Button variant="ghost" className="hidden h-9 rounded-[var(--md-radius-md)] bg-white/45 px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white sm:inline-flex">
+        <Button variant="ghost" className="h-9 rounded-[var(--md-radius-md)] bg-white/45 px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white">
           <Share2 data-icon="inline-start" strokeWidth={1.2} />
           Share
         </Button>
@@ -136,93 +141,120 @@ function DexterPageHeader({
 }
 
 function ConversationStream({
-  messages,
-  isWorking,
-  error,
+  conversationMode,
   wide = false,
 }: {
-  messages: DexterMessage[]
-  isWorking: boolean
-  error: string | null
+  conversationMode: "customs" | "customer"
   wide?: boolean
 }) {
-  const { t } = useLanguage()
   const streamWidth = wide ? "max-w-[920px]" : "max-w-[720px]"
 
-  return (
-    <div className={cn("mx-auto flex w-full min-w-0 flex-col gap-[var(--md-page-stack-gap)] px-[var(--md-page-stack-gap)] py-[var(--md-page-section-gap)]", streamWidth)}>
-      {messages.map((message) =>
-        message.role === "user" ? (
-          <div key={message.id} className="ms-auto max-w-[620px] whitespace-pre-wrap rounded-[var(--md-radius-xl)] bg-[rgba(213,228,225,0.72)] px-5 py-4 text-[15px] leading-6 text-[var(--md-ink)]">
-            {message.content}
-          </div>
-        ) : message.role === "assistant" ? (
-          <div key={message.id} className="grid min-w-0 grid-cols-[38px_minmax(0,1fr)] gap-4">
-            <DexterBrandMark className="mt-1" />
-            <div className="min-w-0">
-              <p className="text-[12px] text-[var(--md-subtle)]">Dexter</p>
-              <p className="mt-3 whitespace-pre-wrap text-[15px] leading-7 text-[var(--md-ink)]">{message.content}</p>
+  if (conversationMode === "customer") {
+    return (
+      <div className={cn("mx-auto flex w-full min-w-0 flex-col gap-[var(--md-page-stack-gap)] px-[var(--md-page-stack-gap)] py-[var(--md-page-section-gap)]", streamWidth)}>
+        <div className="ml-auto max-w-[620px] rounded-[var(--md-radius-xl)] bg-[rgba(213,228,225,0.72)] px-5 py-4 text-[15px] leading-6 text-[var(--md-ink)]">
+          <DexterSpecialistChip specialist={specialistById("customer")} />
+          <span className="ml-2">Prep me for Thursday's QBR with Sandra - what should I know, and what should we ask for?</span>
+        </div>
+
+        <div className="grid min-w-0 grid-cols-[38px_minmax(0,1fr)] gap-4">
+          <DexterBrandMark className="mt-1" />
+          <div className="min-w-0">
+            <p className="text-[12px] text-[var(--md-subtle)]">Dexter - Analytics & reporting - 10:05</p>
+            <p className="mt-3 text-[15px] leading-6 text-[var(--md-ink)]">Here is where Marlow stands going into Thursday.</p>
+            <div className="mt-4">
+              <DexterCustomerSnapshot />
             </div>
           </div>
-        ) : null,
-      )}
+        </div>
 
-      {isWorking ? (
-        <div className="grid min-w-0 grid-cols-[38px_minmax(0,1fr)] gap-4" role="status">
+        <div className="grid min-w-0 grid-cols-[38px_minmax(0,1fr)] gap-4">
           <DexterBrandMark className="mt-1" />
-          <div className="min-w-0 pt-2">
-            <p className="text-[12px] text-[var(--md-subtle)]">{t("Dexter is checking warehouse operations...")}</p>
-            <div className="mt-3 flex gap-1.5" aria-hidden>
-              {[0, 1, 2].map((index) => (
-                <motion.span key={index} className="size-1.5 rounded-full bg-[var(--md-accent)]" animate={{ opacity: [0.25, 1, 0.25] }} transition={{ duration: 1.2, repeat: Infinity, delay: index * 0.16 }} />
+          <div className="min-w-0">
+            <p className="text-[12px] text-[var(--md-subtle)]">Dexter</p>
+            <p className="mt-3 text-[15px] leading-6 text-[var(--md-ink)]">Three things worth raising:</p>
+            <div className="mt-4 overflow-hidden rounded-[var(--md-radius-xl)] bg-[rgba(251,253,253,0.72)] shadow-[var(--md-shadow-line)]">
+              {[
+                ["1", "Volumes are stepping up", "Sandra mentioned AW26 may run 20% above forecast. Propose locking Q4 capacity now - rates favour early commitment."],
+                ["2", "On-time recovered", "After the April dip, the last 8 weeks averaged 96%. Worth claiming credit - it was the reroute via Felixstowe."],
+                ["3", "One open hold", "MD-22414 - CI / packing list mismatch. Resolution drafted; clearing it before Thursday makes the story clean."],
+              ].map(([index, title, body]) => (
+                <div key={title} className="grid grid-cols-[28px_1fr] gap-3 border-b border-[rgba(11,20,19,0.05)] px-5 py-4 last:border-b-0">
+                  <span className="grid size-5 place-items-center rounded-full bg-[rgba(14,125,116,0.1)] text-[11px] font-medium text-[var(--md-accent)]">{index}</span>
+                  <div>
+                    <p className="text-[14px] font-medium text-[var(--md-ink)]">{title}</p>
+                    <p className="mt-2 text-[13px] leading-6 text-[var(--md-text)]">{body}</p>
+                  </div>
+                </div>
               ))}
             </div>
           </div>
         </div>
-      ) : null}
+      </div>
+    )
+  }
 
-      {error ? (
-        <div className="grid grid-cols-[20px_minmax(0,1fr)] gap-3 rounded-[var(--md-radius-lg)] bg-[rgba(209,78,78,0.07)] px-4 py-3 text-[13px] leading-5 text-[var(--md-red)] shadow-[0_0_0_1px_rgba(209,78,78,0.14)]" role="alert">
-          <AlertCircle className="mt-0.5 size-4" strokeWidth={1.4} />
-          <span><strong>{t("Dexter could not answer")}</strong><br />{t(error)}</span>
+  return (
+    <div className={cn("mx-auto flex w-full min-w-0 flex-col gap-[var(--md-page-stack-gap)] px-[var(--md-page-stack-gap)] py-[var(--md-page-section-gap)]", streamWidth)}>
+      <div className="ml-auto max-w-[620px] rounded-[var(--md-radius-xl)] bg-[rgba(213,228,225,0.72)] px-5 py-4 text-[15px] leading-6 text-[var(--md-ink)]">
+        Find bookings at risk of customs delay this week, and draft notifications to the customers.
+      </div>
+
+      <div className="grid min-w-0 grid-cols-[38px_minmax(0,1fr)] gap-4">
+        <DexterBrandMark className="mt-1" />
+        <div className="min-w-0">
+          <p className="text-[12px] text-[var(--md-subtle)]">Dexter - Customs & compliance - 11:42</p>
+          <p className="mt-3 text-[15px] leading-6 text-[var(--md-ink)]">I will work through this in four steps.</p>
+          <div className="mt-4">
+            <DexterChecklistCard
+              items={[
+                { label: "Pull open bookings arriving this week - 23 found.", done: true },
+                { label: "Cross-check HS codes against active regulations and recent holds.", done: true },
+                { label: "Pull each customer's preferred contact and recent tone.", done: true },
+                { label: "Draft notifications and surface them for approval." },
+              ]}
+            />
+          </div>
         </div>
-      ) : null}
+      </div>
+
+      <div className="grid min-w-0 grid-cols-[38px_minmax(0,1fr)] gap-4">
+        <DexterBrandMark className="mt-1" />
+        <div className="min-w-0">
+          <p className="text-[12px] text-[var(--md-subtle)]">Dexter</p>
+          <p className="mt-3 text-[15px] leading-6 text-[var(--md-ink)]">
+            <strong>Four bookings</strong> have elevated customs risk - one already on hold, three flagged by rule checks.
+          </p>
+          <div className="mt-4">
+            <DexterRiskTable />
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
 
 export function AgentDexterPage() {
-  const { language, t } = useLanguage()
   const [stage, setStage] = useState<"landing" | "conversation">("landing")
-  const [isSending, setIsSending] = useState(false)
-  const [isLoadingHistory, setIsLoadingHistory] = useState(true)
-  const [isLoadingConversation, setIsLoadingConversation] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [conversations, setConversations] = useState<DexterConversationSummary[]>([])
-  const [activeConversation, setActiveConversation] = useState<DexterConversation | null>(null)
+  const [isLaunchingConversation, setIsLaunchingConversation] = useState(false)
   const [composerValue, setComposerValue] = useState("")
   const [selectedSpecialistId, setSelectedSpecialistId] = useState<DexterSpecialistId>("auto")
   const [showSpecialists, setShowSpecialists] = useState(false)
   const [showAttachments, setShowAttachments] = useState(false)
-  const [showHistory, setShowHistory] = useState(false)
   const [attachmentQuery, setAttachmentQuery] = useState("")
   const [selectedAttachmentIds, setSelectedAttachmentIds] = useState<Set<string>>(new Set())
+  const [activeHistoryId, setActiveHistoryId] = useState("customs-risk")
+  const [conversationMode, setConversationMode] = useState<"customs" | "customer">("customs")
   const [selectedMonitor, setSelectedMonitor] = useState<DexterMonitor | null>(null)
   const [isMonitorRailCollapsed, setIsMonitorRailCollapsed] = useState(false)
+  const launchTimeoutRef = useRef<number | null>(null)
   const selectedSpecialist = specialistById(selectedSpecialistId)
   const attachedItems = useAttachedItems(selectedAttachmentIds)
-  const isWorking = isSending || isLoadingConversation
-  const hasFocusOverlay = showHistory || showAttachments || (stage === "conversation" && showSpecialists) || selectedMonitor !== null
-  const recommendedAttachmentIds = selectedSpecialistId === "customer" || selectedSpecialistId === "analytics"
-    ? ["marlow", "md-22414", "ci-rev2"]
-    : ["md-22455", "md-22479", "northwind", "co-cn"]
-  const historyItems = useMemo<DexterHistoryItem[]>(
-    () => conversations.map((conversation) => ({
-      id: conversation.id,
-      title: conversation.title,
-    })),
-    [conversations],
-  )
+  const hasFocusOverlay = showAttachments || (stage === "conversation" && showSpecialists) || selectedMonitor !== null
+  const recommendedAttachmentIds =
+    conversationMode === "customer"
+      ? ["marlow", "md-22414", "ci-rev2"]
+      : ["md-22455", "md-22479", "northwind", "co-cn"]
 
   useEffect(() => {
     if (stage === "conversation") {
@@ -231,20 +263,10 @@ export function AgentDexterPage() {
   }, [stage])
 
   useEffect(() => {
-    let cancelled = false
-    void listDexterConversations()
-      .then((items) => {
-        if (!cancelled) setConversations(items)
-      })
-      .catch(() => {
-        if (!cancelled) setConversations([])
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoadingHistory(false)
-      })
-
     return () => {
-      cancelled = true
+      if (launchTimeoutRef.current !== null) {
+        window.clearTimeout(launchTimeoutRef.current)
+      }
     }
   }, [])
 
@@ -265,92 +287,44 @@ export function AgentDexterPage() {
     })
   }
 
-  async function submitPrompt(prompt = composerValue, specialistId = selectedSpecialistId) {
-    const message = prompt.trim()
-    if (!message || isWorking) return
+  function startConversation(mode?: "customs" | "customer") {
+    const nextMode =
+      mode ??
+      (selectedAttachmentIds.has("marlow") || selectedSpecialistId === "analytics" || composerValue.toLowerCase().includes("qbr")
+        ? "customer"
+        : "customs")
 
-    const previousConversation = activeConversation
-    const pendingMessage: DexterMessage = {
-      id: `pending-${Date.now()}`,
-      role: "user",
-      content: message,
-      createdAt: new Date().toISOString(),
-    }
-    const pendingConversation: DexterConversation = previousConversation?.id
-      ? { ...previousConversation, messages: [...previousConversation.messages, pendingMessage] }
-      : {
-          id: "",
-          title: message.length > 100 ? `${message.slice(0, 99).trimEnd()}…` : message,
-          summary: "",
-          updatedAt: pendingMessage.createdAt,
-          messages: [pendingMessage],
-        }
-
-    setActiveConversation(pendingConversation)
-    setStage("conversation")
-    setIsSending(true)
-    setError(null)
+    setConversationMode(nextMode)
+    setActiveHistoryId(nextMode === "customer" ? "marlow-qbr" : "customs-risk")
+    window.scrollTo(0, 0)
+    setIsLaunchingConversation(true)
     setShowSpecialists(false)
     setShowAttachments(false)
-    window.scrollTo(0, 0)
-
-    try {
-      const conversation = await sendDexterMessage({
-        conversationId: previousConversation?.id || null,
-        message,
-        specialist: specialistId,
-        attachments: attachedItems.map((attachment) => ({ id: attachment.id, type: attachment.type, title: attachment.title })),
-      })
-      setActiveConversation(conversation)
-      setConversations((items) => [
-        { id: conversation.id, title: conversation.title, summary: conversation.summary, updatedAt: conversation.updatedAt },
-        ...items.filter((item) => item.id !== conversation.id),
-      ])
-      setComposerValue("")
-      setSelectedAttachmentIds(new Set())
-    } catch (requestError) {
-      setActiveConversation(previousConversation ?? pendingConversation)
-      setError(requestError instanceof Error ? requestError.message : t("Dexter could not answer this request."))
-    } finally {
-      setIsSending(false)
+    if (launchTimeoutRef.current !== null) {
+      window.clearTimeout(launchTimeoutRef.current)
     }
+    launchTimeoutRef.current = window.setTimeout(() => {
+      setStage("conversation")
+      setIsLaunchingConversation(false)
+      launchTimeoutRef.current = null
+    }, 140)
   }
 
-  async function handleHistorySelect(id: string) {
-    setShowHistory(false)
+  function handleHistorySelect(id: string) {
+    setActiveHistoryId(id)
+    setConversationMode(id === "marlow-qbr" ? "customer" : "customs")
     setStage("conversation")
-    setIsLoadingConversation(true)
-    setError(null)
-    try {
-      setActiveConversation(await getDexterConversation(id))
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : t("This conversation could not be loaded."))
-    } finally {
-      setIsLoadingConversation(false)
-    }
   }
 
   function handleSuggestion(prompt: string, specialistId: DexterSpecialistId) {
     setComposerValue(prompt)
     setSelectedSpecialistId(specialistId)
-    void submitPrompt(prompt, specialistId)
-  }
-
-  function startNewConversation() {
-    setShowHistory(false)
-    setStage("landing")
-    setActiveConversation(null)
-    setError(null)
-    setComposerValue("")
-    setSelectedAttachmentIds(new Set())
-    setSelectedSpecialistId("auto")
-  }
-
-  function openHistory() {
-    setShowAttachments(false)
-    setShowSpecialists(false)
-    setSelectedMonitor(null)
-    setShowHistory(true)
+    if (specialistId === "analytics") {
+      setSelectedAttachmentIds(new Set(["marlow"]))
+      startConversation("customer")
+    } else {
+      startConversation("customs")
+    }
   }
 
   return (
@@ -367,83 +341,34 @@ export function AgentDexterPage() {
             onClick={() => {
               setShowAttachments(false)
               setShowSpecialists(false)
-              setShowHistory(false)
               setSelectedMonitor(null)
             }}
           />
-        ) : null}
-      </AnimatePresence>
-      <AnimatePresence initial={false}>
-        {showHistory ? (
-          <motion.div
-            key="dexter-history-panel"
-            className="fixed inset-y-4 end-4 z-30 w-[min(390px,calc(100vw-32px))]"
-            initial={{ opacity: 0, x: language === "ar" ? -24 : 24, scale: 0.985 }}
-            animate={{ opacity: 1, x: 0, scale: 1 }}
-            exit={{ opacity: 0, x: language === "ar" ? -18 : 18, scale: 0.99 }}
-            transition={mdMotion.panel}
-            style={{ willChange: "transform, opacity" }}
-          >
-            <DexterHistoryList
-              variant="panel"
-              items={historyItems}
-              activeId={activeConversation?.id ?? ""}
-              isLoading={isLoadingHistory}
-              onSelect={(id) => void handleHistorySelect(id)}
-              onNew={startNewConversation}
-              onClose={() => setShowHistory(false)}
-            />
-          </motion.div>
         ) : null}
       </AnimatePresence>
       <AnimatePresence mode="popLayout" initial={false}>
         {stage === "landing" ? (
           <motion.div
             key="dexter-landing"
-            className="relative grid h-screen min-h-[680px] grid-cols-1 overflow-hidden bg-[var(--md-bg)] lg:grid-cols-[290px_minmax(0,1fr)] xl:grid-cols-[310px_minmax(0,1fr)]"
+            className="relative flex min-h-[calc(100vh)] flex-col overflow-hidden bg-[var(--md-bg)]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 1, transition: { duration: 0.01 } }}
             transition={mdMotion.page}
           >
-        <motion.div
-          className="hidden h-full min-h-0 lg:block"
-          initial={{ x: language === "ar" ? 22 : -22, opacity: 0 }}
-          animate={{ x: 0, opacity: 1 }}
-          transition={{ ...mdMotion.page, delay: 0.04 }}
-          style={{ willChange: "transform, opacity" }}
-        >
-          <DexterHistoryList
-            items={historyItems}
-            activeId=""
-            isLoading={isLoadingHistory}
-            onSelect={(id) => void handleHistorySelect(id)}
-            onNew={startNewConversation}
-          />
-        </motion.div>
-
-        <div className="relative flex min-h-0 min-w-0 flex-col overflow-hidden">
-        <Button
-          type="button"
-          variant="ghost"
-          className="absolute start-[var(--md-page-stack-gap)] top-[var(--md-page-stack-gap)] z-10 h-9 rounded-full bg-white/58 px-3 text-[13px] text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-white lg:hidden"
-          onClick={openHistory}
-        >
-          <HistoryIcon data-icon="inline-start" strokeWidth={1.2} />
-          {t("History")}
-          {historyItems.length > 0 ? <span className="rounded-full bg-[var(--md-accent)] px-1.5 py-0.5 text-[10px] font-medium text-white">{historyItems.length}</span> : null}
-        </Button>
         <div className="mx-auto flex w-full max-w-[850px] flex-1 flex-col justify-center px-[var(--md-page-stack-gap)] py-[clamp(48px,8vw,64px)]">
-          {!isSending ? (
+          {!isLaunchingConversation ? (
             <motion.div
               className="mx-auto mb-[var(--md-page-section-gap)] text-center"
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={mdMotion.page}
             >
-              <Sparkles className="mx-auto size-8 text-[var(--md-accent)]" strokeWidth={1.2} />
-              <h1 className="mt-[var(--md-page-section-gap)] text-[24px] font-medium leading-tight text-[var(--md-ink)] sm:text-[30px]">{t("What can I help you with today?")}</h1>
-              <p className="mt-4 text-[15px] text-[var(--md-text)]">{t("Orders, inventory, warehouse tasks, and exceptions - ask Dexter what needs attention.")}</p>
+              <div className="flex items-center justify-center gap-3">
+                <DexterBrandMark className="size-6 shrink-0" />
+                <h1 className="text-[24px] font-medium leading-tight text-[var(--md-ink)] sm:text-[30px]">What can I help you with today?</h1>
+              </div>
+              <p className="mt-4 text-[15px] text-[var(--md-text)]">Bookings, customers, documents, rates - or hand me the whole job.</p>
             </motion.div>
           ) : null}
 
@@ -461,8 +386,7 @@ export function AgentDexterPage() {
               onOpenAttachments={() => setShowAttachments((value) => !value)}
               onOpenSpecialists={() => setShowSpecialists((value) => !value)}
               onRemoveAttachment={(id) => toggleAttachment(id)}
-              onSend={() => void submitPrompt()}
-              disabled={isWorking}
+              onSend={() => startConversation()}
             />
           </motion.div>
 
@@ -517,7 +441,7 @@ export function AgentDexterPage() {
             ) : null}
           </AnimatePresence>
 
-          {!showSpecialists && !showAttachments && !isSending ? (
+          {!showSpecialists && !showAttachments && !isLaunchingConversation ? (
             <motion.div
               className="mt-[var(--md-gap-xl)]"
               initial={{ opacity: 0, y: 10 }}
@@ -528,16 +452,17 @@ export function AgentDexterPage() {
               <DexterSuggestionGrid onPick={handleSuggestion} />
             </motion.div>
           ) : null}
-
         </div>
 
-        <div className="hidden items-center justify-center px-[var(--md-page-pad)] pb-[var(--md-page-pad)] text-[13px] text-[var(--md-text)] lg:flex">
+        <div className="hidden items-center justify-center gap-[clamp(32px,6vw,64px)] px-[var(--md-page-pad)] pb-[var(--md-page-pad)] text-[13px] text-[var(--md-text)] lg:flex">
           <span className="flex items-center gap-2">
             <span className="size-2 rounded-full bg-[var(--md-green)]" />
             Watching 4 things for you - Maersk on-time fell 7% overnight
             <button type="button" className="font-medium text-[var(--md-accent)]">View</button>
           </span>
-        </div>
+          <button type="button" className="font-medium text-[var(--md-text)]">
+            Recent: At-risk customs this week <ArrowRight className="inline size-3" strokeWidth={1.2} />
+          </button>
         </div>
       </motion.div>
         ) : (
@@ -555,7 +480,7 @@ export function AgentDexterPage() {
             transition={mdMotion.smooth}
           >
       <motion.div
-        className="hidden h-full min-h-0 lg:block"
+        className="h-full min-h-0"
         initial={{ x: -22, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
         transition={{ ...mdMotion.page, delay: 0.06 }}
@@ -563,10 +488,14 @@ export function AgentDexterPage() {
       >
         <DexterHistoryList
           items={historyItems}
-          activeId={activeConversation?.id ?? ""}
-          isLoading={isLoadingHistory}
-          onSelect={(id) => void handleHistorySelect(id)}
-          onNew={startNewConversation}
+          activeId={activeHistoryId}
+          onSelect={handleHistorySelect}
+          onNew={() => {
+            setStage("landing")
+            setComposerValue("")
+            setSelectedAttachmentIds(new Set())
+            setSelectedSpecialistId("auto")
+          }}
         />
       </motion.div>
 
@@ -577,11 +506,8 @@ export function AgentDexterPage() {
           transition={{ ...mdMotion.page, delay: 0.08 }}
         >
           <DexterPageHeader
-            title={activeConversation?.title ?? t("Warehouse conversation")}
-            isWorking={isWorking}
+            conversationMode={conversationMode}
             selectedSpecialistId={selectedSpecialistId}
-            historyCount={historyItems.length}
-            onOpenHistory={openHistory}
             watchersCollapsed={isMonitorRailCollapsed}
             onToggleWatchers={() => setIsMonitorRailCollapsed(false)}
           />
@@ -592,7 +518,7 @@ export function AgentDexterPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ ...mdMotion.page, delay: 0.12 }}
         >
-          <ConversationStream messages={activeConversation?.messages ?? []} isWorking={isWorking} error={error} wide={isMonitorRailCollapsed} />
+          <ConversationStream conversationMode={conversationMode} wide={isMonitorRailCollapsed} />
         </motion.div>
         <motion.div
           className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[var(--md-bg)] via-[var(--md-bg)]/96 to-transparent px-[var(--md-page-stack-gap)] pb-[var(--md-page-stack-gap)] pt-[var(--md-page-section-gap)]"
@@ -616,8 +542,7 @@ export function AgentDexterPage() {
                 onOpenAttachments={() => setShowAttachments((value) => !value)}
                 onOpenSpecialists={() => setShowSpecialists((value) => !value)}
                 onRemoveAttachment={(id) => toggleAttachment(id)}
-                onSend={() => void submitPrompt()}
-                disabled={isWorking}
+                onSend={() => startConversation()}
                 className="shadow-[0_0_0_1px_rgba(14,125,116,0.42),0_16px_38px_rgba(42,52,50,0.16)]"
               />
             </motion.div>
@@ -675,7 +600,7 @@ export function AgentDexterPage() {
       <AnimatePresence initial={false}>
         {!isMonitorRailCollapsed ? (
           <motion.div
-            className="hidden h-full min-h-0 lg:block"
+            className="h-full min-h-0"
             initial={{ x: 24, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: 24, opacity: 0 }}
