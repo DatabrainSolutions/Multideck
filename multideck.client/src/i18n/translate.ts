@@ -16,6 +16,15 @@ const britishToAmerican: WordDictionary = {
 }
 
 const phrases: PhraseDictionary = {
+  "Paper Tray": { de: "Dokumentenablage", fr: "Bannette à documents", ar: "درج المستندات" },
+  "Pre-booking": { de: "Vorbuchung", fr: "Pré-réservation", ar: "الحجز المسبق" },
+  "Provisional booking": { de: "Vorläufige Buchung", fr: "Réservation provisoire", ar: "حجز مؤقت" },
+  "Collapse sidebar": { de: "Seitenleiste einklappen", fr: "Réduire la barre latérale", ar: "طي الشريط الجانبي" },
+  "Expand sidebar": { de: "Seitenleiste ausklappen", fr: "Développer la barre latérale", ar: "توسيع الشريط الجانبي" },
+  "Account menu": { de: "Kontomenü", fr: "Menu du compte", ar: "قائمة الحساب" },
+  "Document workspace": { de: "Dokumentenarbeitsbereich", fr: "Espace de travail documentaire", ar: "مساحة عمل المستندات" },
+  "Quote control": { de: "Angebotssteuerung", fr: "Contrôle du devis", ar: "التحكم في عرض السعر" },
+  "Convert to booking": { de: "In Buchung umwandeln", fr: "Convertir en réservation", ar: "تحويل إلى حجز" },
   "Send email link": { de: "E-Mail-Link senden", fr: "Envoyer le lien par e-mail", ar: "إرسال رابط البريد الإلكتروني" },
   "Sending email link": { de: "E-Mail-Link wird gesendet", fr: "Envoi du lien par e-mail", ar: "جارٍ إرسال رابط البريد الإلكتروني" },
   "Choose how you want to sign in. Nothing is sent until you confirm.": {

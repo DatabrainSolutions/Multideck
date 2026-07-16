@@ -1,6 +1,6 @@
 import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from "react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { ArrowLeft, Bell, CheckCircle2, Clock3, LogOut, Settings, Sparkles, TriangleAlert, type LucideIcon } from "lucide-react"
+import { ArrowLeft, Bell, CheckCircle2, Clock3, LogOut, PanelLeftClose, PanelLeftOpen, Settings, Sparkles, TriangleAlert, type LucideIcon } from "lucide-react"
 import { motion, useReducedMotion } from "motion/react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -211,11 +211,13 @@ export function SidebarNavItem({
   isActive,
   onClick,
   accent = "default",
+  collapsed = false,
 }: {
   item: NavItem
   isActive?: boolean
   onClick?: () => void
   accent?: "default" | "dexter"
+  collapsed?: boolean
 }) {
   const Icon = item.icon
   const { t } = useLanguage()
@@ -236,10 +238,13 @@ export function SidebarNavItem({
       data-sidebar-active-target={isActive ? "true" : undefined}
       aria-current={isActive ? "page" : undefined}
       aria-disabled={isDisabled || undefined}
+      aria-label={collapsed ? t(item.label) : undefined}
+      title={collapsed ? t(item.label) : undefined}
       className={cn(
         buttonVariants({ variant: "ghost", size: "sm" }),
         "group relative h-10 w-full justify-start gap-2 overflow-hidden rounded-[var(--md-radius-md)] px-2.5 text-[14px] font-medium text-[var(--md-text)] transition-[color,opacity] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
         "bg-transparent hover:bg-transparent hover:text-[var(--md-ink)] aria-expanded:bg-transparent dark:hover:bg-transparent focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
+        collapsed && "justify-center px-0",
         isActive && "text-[var(--md-ink)]",
         accent === "dexter" && isActive && "text-[var(--md-accent)]",
         isDisabled && "cursor-default opacity-55 hover:text-[var(--md-text)]",
@@ -262,11 +267,15 @@ export function SidebarNavItem({
       >
         <Icon data-icon="inline-start" strokeWidth={1.2} />
       </motion.span>
-      <span className="relative min-w-0 flex-1 truncate text-left">{t(item.label)}</span>
+      <span className={cn("relative min-w-0 flex-1 truncate text-start", collapsed && "sr-only")}>{t(item.label)}</span>
       {item.value ? (
         <motion.span
           layout
-          className={cn("relative rounded-full px-2 py-0.5 text-[11px] font-medium shadow-[inset_0_0_0_1px_rgba(255,255,255,0.38)]", valueTone)}
+          className={cn(
+            "relative rounded-full px-2 py-0.5 text-[11px] font-medium shadow-[inset_0_0_0_1px_rgba(255,255,255,0.38)]",
+            valueTone,
+            collapsed && "absolute end-1 top-1 min-w-2 px-0 text-[0px] leading-none",
+          )}
           transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.layout)}
         >
           {t(item.value)}
@@ -309,11 +318,15 @@ export function AppSidebar({
   navigate,
   className,
   currentUser,
+  collapsed = false,
+  onCollapsedChange,
 }: {
   route: string
   navigate: (path: string) => void
   className?: string
   currentUser?: AuthUserSummary | null
+  collapsed?: boolean
+  onCollapsedChange?: (collapsed: boolean) => void
 }) {
   const isCrmMode = route.startsWith("/crm")
   const { direction, t } = useLanguage()
@@ -368,11 +381,12 @@ export function AppSidebar({
       window.clearTimeout(settledMeasure)
       window.removeEventListener("resize", updateActiveTarget)
     }
-  }, [isCrmMode, route, updateActiveTarget])
+  }, [collapsed, isCrmMode, route, updateActiveTarget])
 
   const isActiveRoute = (item: NavItem) => {
     if (!item.route) return false
     if (item.route === "/") return route === "/"
+    if (item.route === "/bookings" && route === "/bookings/provisional") return false
     return route === item.route || route.startsWith(`${item.route}/`)
   }
 
@@ -384,7 +398,15 @@ export function AppSidebar({
   }
 
   return (
-    <aside ref={sidebarRef} className={cn("relative isolate flex h-full min-h-0 w-[var(--md-sidebar-width)] shrink-0 flex-col bg-[var(--md-sidebar-bg)] px-[var(--md-gap-lg)] py-[var(--md-page-stack-gap)] shadow-[var(--md-stroke-right)]", className)}>
+    <aside
+      ref={sidebarRef}
+      data-sidebar-collapsed={collapsed ? "true" : undefined}
+      className={cn(
+        "relative isolate flex h-full min-h-0 shrink-0 flex-col bg-[var(--md-sidebar-bg)] py-[var(--md-page-stack-gap)] shadow-[var(--md-stroke-right)] transition-[width,padding] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
+        collapsed ? "w-[var(--md-sidebar-collapsed-width)] px-2" : "w-[var(--md-sidebar-width)] px-[var(--md-gap-lg)]",
+        className,
+      )}
+    >
       {activeTarget ? (
         <motion.span
           data-sidebar-active-surface
@@ -402,13 +424,31 @@ export function AppSidebar({
           transition={shouldReduceMotion ? { duration: 0 } : sidebarActiveTransition}
         />
       ) : null}
-      <div className="relative z-10 flex h-10 items-center justify-between gap-3 px-1">
-        <img
-          src={multideckFullLogo}
-          alt="Multideck"
-          className="h-[34px] min-w-0 max-w-[132px] object-contain transition-[filter,opacity] duration-200 dark:brightness-0 dark:invert"
-        />
-        <NotificationBell />
+      <div className={cn("relative z-10 flex h-10 items-center gap-2", collapsed ? "justify-center px-0" : "justify-between px-1")}>
+        {collapsed ? null : (
+          <img
+            src={multideckFullLogo}
+            alt="Multideck"
+            className="h-[34px] min-w-0 max-w-[132px] object-contain transition-[filter,opacity] duration-200 dark:brightness-0 dark:invert"
+          />
+        )}
+        {collapsed ? null : <NotificationBell />}
+        {onCollapsedChange ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label={t(collapsed ? "Expand sidebar" : "Collapse sidebar")}
+            title={t(collapsed ? "Expand sidebar" : "Collapse sidebar")}
+            className={cn(
+              "size-10 rounded-[var(--md-radius-md)] bg-[var(--md-glass)] text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]",
+              !collapsed && "ms-1 size-9",
+            )}
+            onClick={() => onCollapsedChange(!collapsed)}
+          >
+            {collapsed ? <PanelLeftOpen className="size-4" strokeWidth={1.3} /> : <PanelLeftClose className="size-4" strokeWidth={1.3} />}
+          </Button>
+        ) : null}
       </div>
 
       {isCrmMode ? (
@@ -422,7 +462,7 @@ export function AppSidebar({
               onClick={() => navigate("/")}
             >
               <ArrowLeft data-icon="inline-start" strokeWidth={1.2} />
-              Back
+              <span className={cn(collapsed && "sr-only")}>{t("Back")}</span>
             </Button>
           </div>
 
@@ -433,6 +473,7 @@ export function AppSidebar({
                   item={item}
                   isActive={isActiveCrmRoute(item)}
                   onClick={item.route ? () => navigate(item.route!) : undefined}
+                  collapsed={collapsed}
                 />
               </SidebarSectionItem>
             ))}
@@ -447,6 +488,7 @@ export function AppSidebar({
                   item={item}
                   isActive={isActiveRoute(item)}
                   onClick={item.route ? () => navigate(item.route!) : undefined}
+                  collapsed={collapsed}
                 />
               </SidebarSectionItem>
             ))}
@@ -456,6 +498,7 @@ export function AppSidebar({
                 isActive={route === "/agent-dexter"}
                 onClick={() => navigate("/agent-dexter")}
                 accent="dexter"
+                collapsed={collapsed}
               />
             </SidebarSectionItem>
             {sidebarPrimary.slice(1).map((item) => (
@@ -464,6 +507,7 @@ export function AppSidebar({
                   item={item}
                   isActive={isActiveRoute(item)}
                   onClick={item.route ? () => navigate(item.route!) : undefined}
+                  collapsed={collapsed}
                 />
               </SidebarSectionItem>
             ))}
@@ -478,6 +522,7 @@ export function AppSidebar({
                   item={item}
                   isActive={isActiveRoute(item)}
                   onClick={item.route ? () => navigate(item.route!) : undefined}
+                  collapsed={collapsed}
                 />
               </SidebarSectionItem>
             ))}
@@ -493,8 +538,11 @@ export function AppSidebar({
               data-sidebar-active-target={route === "/settings" ? "true" : undefined}
               type="button"
               aria-current={route === "/settings" ? "page" : undefined}
+              aria-label={collapsed ? t("Account menu") : undefined}
+              title={collapsed ? accountName : undefined}
               className={cn(
                 "group relative flex min-w-0 w-full items-center gap-3 overflow-hidden rounded-[var(--md-radius-lg)] px-2 py-2 text-left transition-[color,opacity] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
+                collapsed && "justify-center px-0",
                 route === "/settings" && "text-[var(--md-ink)]",
               )}
               whileHover={shouldReduceMotion ? undefined : { scale: 1.01 }}
@@ -505,7 +553,7 @@ export function AppSidebar({
               <Avatar className="relative size-10 rounded-full">
                 <AvatarFallback className="rounded-full bg-[var(--md-avatar-bg)] text-[13px] font-medium text-[var(--md-ink)]" data-i18n-skip>{accountInitials}</AvatarFallback>
               </Avatar>
-              <div className="relative min-w-0 flex-1">
+              <div className={cn("relative min-w-0 flex-1", collapsed && "sr-only")}>
                 <p className="truncate text-[14px] font-medium text-[var(--md-ink)]" dir="auto" data-i18n-skip>{accountName}</p>
                 <p className="truncate text-[12px] text-[var(--md-text)]" dir={currentUser?.email ? "ltr" : "auto"} data-i18n-skip={currentUser?.email ? true : undefined}>{accountDetail}</p>
               </div>

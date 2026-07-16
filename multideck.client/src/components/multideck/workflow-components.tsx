@@ -1,4 +1,4 @@
-import { useId } from "react"
+import { useId, type ReactNode } from "react"
 import { Check } from "lucide-react"
 import { motion, useReducedMotion } from "motion/react"
 import { cn } from "@/lib/utils"
@@ -14,17 +14,25 @@ export function SegmentedControl<T extends string>({
   value,
   onChange,
   className,
+  ariaLabel,
+  renderOption,
 }: {
   options: readonly T[]
   value: T
   onChange: (value: T) => void
   className?: string
+  ariaLabel?: string
+  renderOption?: (option: T) => ReactNode
 }) {
   const controlId = useId()
   const shouldReduceMotion = useReducedMotion()
 
   return (
-    <div className={cn("relative isolate flex rounded-[var(--md-radius-lg)] bg-white/60 p-1 shadow-[var(--md-shadow-line)]", className)}>
+    <div
+      role="group"
+      aria-label={ariaLabel}
+      className={cn("relative isolate flex rounded-[var(--md-radius-lg)] bg-white/60 p-1 shadow-[var(--md-shadow-line)]", className)}
+    >
       {options.map((option) => (
         <button
           key={option}
@@ -44,7 +52,7 @@ export function SegmentedControl<T extends string>({
               transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.page)}
             />
           ) : null}
-          <span className="relative">{option}</span>
+          <span className="relative inline-flex items-center gap-1.5">{renderOption ? renderOption(option) : option}</span>
         </button>
       ))}
     </div>

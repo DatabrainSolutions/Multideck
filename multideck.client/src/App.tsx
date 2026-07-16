@@ -18,12 +18,15 @@ const ComponentsGalleryPage = lazy(() => import("@/pages/components-gallery-page
 const CustomerDetailPage = lazy(() => import("@/pages/customer-detail-page").then((module) => ({ default: module.CustomerDetailPage })))
 const CustomersPage = lazy(() => import("@/pages/customers-page").then((module) => ({ default: module.CustomersPage })))
 const ReportsPage = lazy(() => import("@/pages/reports-page").then((module) => ({ default: module.ReportsPage })))
+const PaperTrayPage = lazy(() => import("@/pages/paper-tray-page").then((module) => ({ default: module.PaperTrayPage })))
+const QuotesPage = lazy(() => import("@/pages/quotes-page").then((module) => ({ default: module.QuotesPage })))
 const ReportTemplateBuilderPage = lazy(() => import("@/pages/report-template-builder-page").then((module) => ({ default: module.ReportTemplateBuilderPage })))
 const ReportViewerPage = lazy(() => import("@/pages/report-viewer-page").then((module) => ({ default: module.ReportViewerPage })))
 const SettingsPage = lazy(() => import("@/pages/settings-page").then((module) => ({ default: module.SettingsPage })))
 const WarehousePage = lazy(() => import("@/pages/warehouse-page").then((module) => ({ default: module.WarehousePage })))
 const BookingDetailPage = lazy(() => import("@/pages/booking-detail-page").then((module) => ({ default: module.BookingDetailPage })))
 const BookingWizardPage = lazy(() => import("@/pages/booking-wizard-page").then((module) => ({ default: module.BookingWizardPage })))
+const ProvisionalBookingPage = lazy(() => import("@/pages/provisional-booking-page").then((module) => ({ default: module.ProvisionalBookingPage })))
 const BookingsPage = lazy(() => import("@/pages/bookings-page").then((module) => ({ default: module.BookingsPage })))
 const CrmOverviewPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmOverviewPage })))
 const CrmLeadsPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmLeadsPage })))
@@ -57,16 +60,20 @@ const validRoutes = new Set([
   "/crm/marketing",
   "/crm/settings",
   "/customers",
+  "/paper-tray",
+  "/quotes",
+  "/quotes/3",
   "/reports",
   "/reports/templates/monthly-client-review",
   "/settings",
   "/warehouse",
   "/bookings",
   "/bookings/new",
+  "/bookings/provisional",
 ])
 
 function isBookingDetailRoute(path: string) {
-  return /^\/bookings\/[^/]+$/.test(path) && path !== "/bookings/new"
+  return /^\/bookings\/[^/]+$/.test(path) && path !== "/bookings/new" && path !== "/bookings/provisional"
 }
 
 function getLegacyBookingRoute(path: string) {
@@ -262,11 +269,14 @@ export default function App() {
                   {route === "/crm/settings" ? <CrmSettingsPage /> : null}
                   {route === "/customers" ? <CustomersPage navigate={navigate} /> : null}
                   {isCustomerDetailRoute(route) ? <CustomerDetailPage customerId={route.split("/").at(-1) ?? ""} /> : null}
+                  {route === "/paper-tray" ? <PaperTrayPage /> : null}
+                  {route === "/quotes" || route === "/quotes/3" ? <QuotesPage variant="cargowise" /> : null}
                   {route === "/reports" ? <ReportsPage navigate={navigate} /> : null}
                   {route === "/settings" ? <SettingsPage navigate={navigate} /> : null}
                   {route === "/warehouse" ? <WarehousePage /> : null}
                   {route === "/bookings" ? <BookingsPage navigate={navigate} /> : null}
                   {route === "/bookings/new" ? <BookingWizardPage navigate={navigate} /> : null}
+                  {route === "/bookings/provisional" ? <ProvisionalBookingPage navigate={navigate} /> : null}
                   {route === "/" ? <OverviewPage navigate={navigate} /> : null}
                 </Suspense>
               </AppShell>

@@ -42,8 +42,23 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react"
+import type { AuditTimelineEvent } from "@/components/multideck/audit-timeline"
 
 export type StatusTone = "green" | "amber" | "red" | "blue" | "neutral" | "teal"
+
+export const quoteAuditEvents: AuditTimelineEvent[] = [
+  { id: "quote-opened", title: "Quote opened", detail: "Local reference SPQ-74218 was created from the spot quote.", date: "08 Jan 2026", time: "09:42", actor: "Maya Stone", source: "Quote workspace", state: "completed", kind: "created" },
+  { id: "charges-entered", title: "Charges entered", detail: "Nine charge lines were copied into the pricing grid.", date: "08 Jan 2026", time: "10:18", actor: "Theo Grant", source: "Pricing", state: "completed", kind: "pricing" },
+  { id: "margin-recalculated", title: "Margin recalculated", detail: "Sell and cost changes moved the quote margin to 16.18%.", date: "Today", time: "11:06", actor: "Multideck", source: "Automatic calculation", state: "completed", kind: "calculation" },
+  { id: "commercial-review", title: "Commercial approval", detail: "Review the current margin and confirm the quote is ready to issue.", date: "Current", actor: "Commercial team", source: "Action required", state: "current", kind: "approval" },
+  { id: "booking-conversion", title: "Convert to booking", detail: "Create the provisional booking with the approved quote and customer terms.", date: "Next", actor: "Operations", source: "Planned workflow", state: "upcoming", kind: "booking" },
+]
+
+export const systemPeople = [
+  { code: "AM1", name: "Maya Stone", roles: ["sales"] },
+  { code: "EM", name: "Elena Moreno", roles: ["admin", "operations", "sales"] },
+  { code: "JL", name: "Julia Lee", roles: ["operations", "sales"] },
+] as const
 
 export type NavItem = {
   label: string
@@ -58,12 +73,13 @@ export const sidebarPrimary: NavItem[] = [
   { label: "Warehouse", value: "12", icon: Boxes, route: "/warehouse" },
   { label: "Customers", value: "39", icon: Users, route: "/customers" },
   { label: "CRM", value: "9", icon: BriefcaseBusiness, route: "/crm" },
-  { label: "Documents", value: "184", icon: FileText },
+  { label: "Paper Tray", value: "184", icon: FileText, route: "/paper-tray" },
   { label: "Exceptions", value: "2", icon: TriangleAlert },
 ]
 
 export const sidebarSecondary: NavItem[] = [
-  { label: "Quotes", icon: ReceiptText },
+  { label: "Quotes", icon: ReceiptText, route: "/quotes" },
+  { label: "Pre-booking", icon: PackageCheck, route: "/bookings/provisional" },
   { label: "Customs", icon: ClipboardCheck },
   { label: "Reports", icon: BarChart3, route: "/reports" },
   { label: "Components", icon: Component, route: "/components" },
@@ -2356,12 +2372,52 @@ export const galleryComponents = [
     usageCode: `const [collectionDates, setCollectionDates] = useState({\n  start: "2026-05-25",\n  end: "2026-06-04",\n})\n\n<MultideckDateRangePicker\n  value={collectionDates}\n  onChange={setCollectionDates}\n  placeholder="Select collection dates"\n  title="Collection dates"\n  description="Pick when cargo is ready, then the requested collection date."\n  startLabel="Cargo ready from"\n  endLabel="Requested collection date"\n/>`,
   },
   {
+    id: "paper-tray-stack",
+    name: "Digital Paper Tray",
+    category: "Operations",
+    description: "A shelf-based document workspace with focused previews, linked shipment context, tray colours, and clear document actions.",
+    details: "Use when operators need to sort, inspect, move, and open working documents without leaving the freight workflow.",
+    foundOn: [{ label: "Paper Tray", route: "/paper-tray" }, { label: "Quote documents", route: "/quotes" }, { label: "Components", route: "/components?component=paper-tray-stack" }],
+    componentCode: `export function PaperTrayStack({ trays, selectedDocumentId, onSelectDocument, onFilesAdded, onMoveDocument }) {\n  return (\n    <div className="md-paper-tray-shell">\n      {trays.map((tray) => (\n        <PaperShelfDocumentWheel key={tray.id} tray={tray} onSelectDocument={onSelectDocument} />\n      ))}\n    </div>\n  )\n}`,
+    usageCode: `<PaperTrayStack\n  trays={paperTrays}\n  selectedDocumentId={selectedDocumentId}\n  onSelectDocument={openDocument}\n  onFilesAdded={addFiles}\n  onMoveDocument={moveDocument}\n/>`,
+  },
+  {
+    id: "document-viewer",
+    name: "Document Viewer",
+    category: "Operations",
+    description: "A focused reader for PDF, image, sample-document, download, move, remove, and fullscreen states.",
+    details: "Use with Digital Paper Tray or another document source when an operator needs to inspect and act on one document.",
+    foundOn: [{ label: "Paper Tray", route: "/paper-tray" }, { label: "Components", route: "/components?component=document-viewer" }],
+    componentCode: `export function DocumentViewer({ item, trays, currentTrayId, onClose, onMove, onRemove, onDownload }) {\n  return item ? (\n    <motion.section role="dialog" aria-modal="true">\n      <DocumentToolbar item={item} onClose={onClose} onDownload={onDownload} />\n      <DocumentCanvas item={item} />\n    </motion.section>\n  ) : null\n}`,
+    usageCode: `<DocumentViewer\n  item={selectedDocument}\n  trays={paperTrays}\n  currentTrayId={selectedTrayId}\n  onClose={closeDocument}\n  onMove={moveDocument}\n  onRemove={removeDocument}\n  onDownload={downloadDocument}\n/>`,
+  },
+  {
+    id: "audit-timeline",
+    name: "Audit Timeline",
+    category: "Operations",
+    description: "An operational history for completed events, the current review step, and upcoming workflow actions.",
+    details: "Use where operators need to understand who changed what, when it happened, and what comes next.",
+    foundOn: [{ label: "Quote audit", route: "/quotes" }, { label: "Components", route: "/components?component=audit-timeline" }],
+    componentCode: `export function AuditTimeline({ events, title, description }) {\n  return (\n    <Surface padding="none">\n      <SectionHeader title={title} meta={description} />\n      {events.map((event) => <AuditTimelineRow key={event.id} event={event} />)}\n    </Surface>\n  )\n}`,
+    usageCode: `<AuditTimeline\n  events={quoteAuditEvents}\n  title="Audit and workflow"\n  description="Quote changes and next actions."\n/>`,
+  },
+  {
+    id: "multi-select-menu",
+    name: "Multi-select Menu",
+    category: "Navigation",
+    description: "A compact checkbox menu for fields that can hold several choices without expanding the form.",
+    details: "Use when choices can be combined, such as multimodal freight transport. It supports required, invalid, disabled, RTL, and translated states.",
+    foundOn: [{ label: "Quote details", route: "/quotes" }, { label: "Components", route: "/components?component=multi-select-menu" }],
+    componentCode: `export function MultiSelectMenu({ value, options, onValueChange, placeholder }) {\n  return (\n    <DropdownMenu>\n      <DropdownMenuTrigger asChild><Button>{value.length ? value.join(" + ") : placeholder}</Button></DropdownMenuTrigger>\n      <DropdownMenuContent>{options.map((option) => <DropdownMenuCheckboxItem key={option} checked={value.includes(option)}>{option}</DropdownMenuCheckboxItem>)}</DropdownMenuContent>\n    </DropdownMenu>\n  )\n}`,
+    usageCode: `<MultiSelectMenu\n  value={transportModes}\n  options={["Sea FCL", "Sea LCL", "Air", "Road", "Rail"]}\n  onValueChange={setTransportModes}\n  placeholder="Select transport modes"\n/>`,
+  },
+  {
     id: "segmented-control",
     name: "Segmented Control",
     category: "Navigation",
     description: "A compact mode switch for changing views without leaving the current workflow.",
     details: "Use for mutually exclusive view modes such as list, cards, map, table, board, timeline, preview, or code. Keep labels short and selected state obvious.",
-    foundOn: [{ label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Paper Tray", route: "/paper-tray" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components" }],
     componentCode: `export function SegmentedControl({ options, value, onChange }) {\n  return (\n    <div className="flex rounded-[var(--md-radius-lg)] bg-white/60 p-1 shadow-[var(--md-shadow-line)]">\n      {options.map((option) => (\n        <button\n          key={option}\n          className={cn("h-8 rounded-[var(--md-radius-md)] px-4", value === option && "bg-[var(--md-sidebar-bg)]")}\n          onClick={() => onChange(option)}\n        >\n          {option}\n        </button>\n      ))}\n    </div>\n  )\n}`,
     usageCode: `<SegmentedControl\n  options={["Table", "Board"]}\n  value={viewMode}\n  onChange={setViewMode}\n/>`,
   },
@@ -2379,11 +2435,11 @@ export const galleryComponents = [
     id: "data-table",
     name: "Data Table",
     category: "Data",
-    description: "A production list-table pattern for dense operational records, selection, and row-level navigation.",
-    details: "Use for customers, bookings, documents, or quotes when the user needs to scan repeated records. Keep tables calm, direct, and stable; do not add scroll reveal treatment unless the screen has a very specific need for it.",
-    foundOn: [{ label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components" }],
-    componentCode: `export function CustomerListTable({ customers, selectedIds, onToggleCustomer, onOpenCustomer }) {\n  return (\n    <div className="overflow-hidden rounded-[var(--md-radius-xl)] bg-[color-mix(in_srgb,var(--md-surface)_42%,transparent)] shadow-[var(--md-shadow-line)]">\n      <Table className="min-w-[1180px]">\n        <TableHeader>{/* shared customer columns */}</TableHeader>\n        <TableBody>\n          {customers.map((customer) => (\n            <CustomerRow\n              key={customer.id}\n              customer={customer}\n              selected={selectedIds.has(customer.id)}\n              onSelect={() => onToggleCustomer(customer.id)}\n              onOpen={() => onOpenCustomer(customer)}\n            />\n          ))}\n        </TableBody>\n      </Table>\n    </div>\n  )\n}`,
-    usageCode: `<CustomerListTable\n  customers={paginatedCustomers}\n  selectedIds={selectedIds}\n  onToggleCustomer={toggleCustomer}\n  onOpenCustomer={openCustomer}\n/>`,
+    description: "A configurable operational table with pinning, drag reordering, column resizing, sorting, selection, and visibility controls.",
+    details: "Use for dense operational records where each operator may need a different working view. Saved layouts are restored per table.",
+    foundOn: [{ label: "Quotes", route: "/quotes" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components" }],
+    componentCode: `export function DataTable({ columns, rows, getRowKey, storageKey, selectedRowKey, onRowClick }) {\n  return (\n    <Table>\n      <TableHeader>{/* sortable, resizable, draggable columns */}</TableHeader>\n      <TableBody>{/* rows follow the saved live column layout */}</TableBody>\n    </Table>\n  )\n}`,
+    usageCode: `<DataTable\n  ariaLabel="Supplier charges"\n  columns={chargeColumns}\n  rows={charges}\n  getRowKey={(charge) => charge.id}\n  storageKey="quote-charges-in"\n  onRowClick={selectCharge}\n/>`,
   },
   {
     id: "warehouse-table",
@@ -2980,6 +3036,9 @@ export const galleryIcons = {
   "radial-goal-chart": Gauge,
   "scatter-chart": ChartScatter,
   "mixed-chart": ChartNoAxesCombined,
+  "paper-tray-stack": FileText,
+  "document-viewer": FileText,
+  "audit-timeline": Clock3,
   "booking-row": Ship,
   "interactive-map": Globe2,
   command: ScanText,
@@ -2997,6 +3056,7 @@ export const galleryIcons = {
   "contact-profile": Users,
   "primary-contacts-panel": Users,
   "segmented-control": LayoutDashboard,
+  "multi-select-menu": SlidersHorizontal,
   "filter-chips": Users,
   "data-table": Users,
   "warehouse-table": Boxes,

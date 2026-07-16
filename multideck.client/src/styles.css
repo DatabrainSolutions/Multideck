@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "./feature-workspaces.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -98,6 +99,7 @@
   --md-composer-inner-bg: rgba(251, 253, 253, 0.88);
 
   --md-sidebar-width: 220px;
+  --md-sidebar-collapsed-width: 56px;
   --md-page-pad: clamp(16px, 2.4vw, 30px);
   --md-page-bottom-pad: clamp(32px, 4vw, 48px);
   --md-page-stack-gap: 20px;

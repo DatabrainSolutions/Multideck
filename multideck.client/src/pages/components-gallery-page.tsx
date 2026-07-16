@@ -7,7 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
-import { activityItems, cityQueues, crmAccountSignals, crmActivities, crmContacts, crmPipelineStages, crmSummaryMetrics, customerFilters, customerScopeTabs, customers, customsQueue, galleryComponents, galleryIcons, generatedReports, initialFavouriteBookingIds, liveBookings, marlowContacts, marlowMetrics, metricCards, reportTemplates, bookingFilters, bookingMetrics, bookings, warehouseOrders, warehouseProducts, warehouseStockRows } from "@/data/multideck-data"
+import { activityItems, cityQueues, crmAccountSignals, crmActivities, crmContacts, crmPipelineStages, crmSummaryMetrics, customerFilters, customerScopeTabs, customers, customsQueue, galleryComponents, galleryIcons, generatedReports, initialFavouriteBookingIds, liveBookings, marlowContacts, marlowMetrics, metricCards, quoteAuditEvents, reportTemplates, bookingFilters, bookingMetrics, bookings, warehouseOrders, warehouseProducts, warehouseStockRows } from "@/data/multideck-data"
 import { AnimatedList } from "@/components/multideck/animated-list"
 import { CommandInput } from "@/components/multideck/command-input"
 import { SidebarNavItem } from "@/components/multideck/app-sidebar"
@@ -99,6 +99,11 @@ import { ThemeToggle } from "@/components/multideck/theme-toggle"
 import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import { DexterCompanionSidebar } from "@/components/multideck/dexter-companion-sidebar"
 import { PageSettingsMenu } from "@/components/multideck/page-settings-menu"
+import { AuditTimeline } from "@/components/multideck/audit-timeline"
+import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
+import { MultiSelectMenu } from "@/components/multideck/multi-select-menu"
+import { DocumentViewer, PaperTrayStack } from "@/components/multideck/paper-tray"
+import { createInitialPaperTrays } from "@/data/paper-tray-data"
 
 type GalleryIconKey = keyof typeof galleryIcons
 
@@ -127,7 +132,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Button & control components",
     helper: "Navigation and input controls",
-    ids: ["command", "sidebar", "theme-toggle", "page-settings-menu", "date-range-picker", "segmented-control", "filter-chips", "tabs", "pagination", "settings-controls", "settings-option-card"],
+    ids: ["command", "sidebar", "theme-toggle", "page-settings-menu", "date-range-picker", "segmented-control", "filter-chips", "tabs", "multi-select-menu", "pagination", "settings-controls", "settings-option-card"],
   },
   {
     label: "Auth components",
@@ -142,7 +147,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "warehouse-table", "warehouse-form-field", "warehouse-kanban-board", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "lane-mix-panel", "booking-metric-card", "booking-advanced-search", "bookings-table", "booking-board-preview", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
+    ids: ["paper-tray-stack", "document-viewer", "audit-timeline", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "warehouse-table", "warehouse-form-field", "warehouse-kanban-board", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "lane-mix-panel", "booking-metric-card", "booking-advanced-search", "bookings-table", "booking-board-preview", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
   },
   {
     label: "CRM",
@@ -164,6 +169,30 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
     helper: "Configuration surfaces",
     ids: ["settings-rail", "settings-panel-row", "settings-integration-row", "settings-summary-card"],
   },
+]
+
+const previewPaperTrays = createInitialPaperTrays()
+
+type PreviewChargeRow = {
+  id: string
+  description: string
+  supplier: string
+  cost: number
+  sell: number
+}
+
+const previewChargeRows: PreviewChargeRow[] = [
+  { id: "FRT", description: "International freight", supplier: "Bluewave Ocean", cost: 840, sell: 980 },
+  { id: "OCART", description: "Pickup transport", supplier: "Severn Road Logistics", cost: 610, sell: 630 },
+  { id: "DTHC", description: "Destination handling", supplier: "Kobe Gateway Agency", cost: 304, sell: 360 },
+]
+
+const previewChargeColumns: DataTableColumn<PreviewChargeRow>[] = [
+  { id: "code", label: "Code", width: 100, defaultPinned: true, cell: (row) => <span dir="ltr">{row.id}</span>, sortValue: (row) => row.id },
+  { id: "description", label: "Description", width: 220, cell: (row) => row.description, sortValue: (row) => row.description },
+  { id: "supplier", label: "Supplier", width: 210, cell: (row) => row.supplier, sortValue: (row) => row.supplier },
+  { id: "cost", label: "Cost", width: 110, cell: (row) => `£${row.cost.toFixed(2)}`, sortValue: (row) => row.cost },
+  { id: "sell", label: "Sell", width: 110, cell: (row) => `£${row.sell.toFixed(2)}`, sortValue: (row) => row.sell },
 ]
 
 const previewMarketingFolders = [
@@ -505,7 +534,11 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewCrmLeadId, setPreviewCrmLeadId] = useState(customers[0].id)
   const [previewCrmContactEmail, setPreviewCrmContactEmail] = useState(crmContacts[0].email)
   const [previewMarketingFolderId, setPreviewMarketingFolderId] = useState(previewMarketingFolders[0].id)
+  const [previewPaperDocumentId, setPreviewPaperDocumentId] = useState<string | null>(null)
+  const [previewTransportModes, setPreviewTransportModes] = useState(["Sea FCL", "Road"])
   const previewNow = useLiveNow()
+  const previewPaperDocument = previewPaperTrays.flatMap((tray) => tray.documents).find((document) => document.id === previewPaperDocumentId) ?? null
+  const previewPaperDocumentTrayId = previewPaperTrays.find((tray) => tray.documents.some((document) => document.id === previewPaperDocumentId))?.id ?? null
   const previewBookingSearchCount = useMemo(() => {
     function matchesCriterion(booking: (typeof bookings)[number], criterion: BookingSearchCriterion) {
       const query = criterion.value.trim().toLowerCase()
@@ -914,6 +947,40 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "paper-tray-stack" ? (
+        <div className="w-full max-w-[920px] overflow-hidden py-2">
+          <PaperTrayStack
+            trays={previewPaperTrays.slice(0, 2)}
+            selectedDocumentId={previewPaperDocumentId}
+            mobileTrayId={previewPaperTrays[0].id}
+            onSelectDocument={(document) => setPreviewPaperDocumentId(document.id)}
+            onFilesAdded={(_, files) => toast.success(`${files.length} file${files.length === 1 ? "" : "s"} ready to add`)}
+            onMoveDocument={() => toast.success("Document moved in preview")}
+          />
+        </div>
+      ) : null}
+
+      {id === "document-viewer" ? (
+        <div className="grid min-h-[320px] w-full max-w-[520px] place-items-center rounded-[var(--md-radius-xl)] bg-white/55 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          <Button onClick={() => setPreviewPaperDocumentId(previewPaperTrays[0].documents[0].id)}>Open document viewer</Button>
+          <DocumentViewer
+            item={previewPaperDocument}
+            trays={previewPaperTrays}
+            currentTrayId={previewPaperDocumentTrayId}
+            onClose={() => setPreviewPaperDocumentId(null)}
+            onMove={(trayId) => toast.success(`Would move to ${previewPaperTrays.find((tray) => tray.id === trayId)?.name ?? "tray"}`)}
+            onRemove={() => setPreviewPaperDocumentId(null)}
+            onDownload={() => toast.success("Download preview started")}
+          />
+        </div>
+      ) : null}
+
+      {id === "audit-timeline" ? (
+        <div className="w-full max-w-[820px]">
+          <AuditTimeline events={quoteAuditEvents} title="Audit and workflow" description="Quote changes and next actions" />
+        </div>
+      ) : null}
+
       {id === "animated-list" ? (
         <div className="w-full max-w-[680px]">
           <AnimatedList
@@ -1060,6 +1127,21 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "multi-select-menu" ? (
+        <div className="grid min-h-[280px] w-full max-w-[520px] place-items-center rounded-[var(--md-radius-xl)] bg-white/55 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          <div className="grid w-full max-w-[320px] gap-2">
+            <span className="text-[12px] font-medium text-[var(--md-text)]">Transport modes</span>
+            <MultiSelectMenu
+              value={previewTransportModes}
+              options={["Sea FCL", "Sea LCL", "Air", "Road", "Rail"]}
+              onValueChange={setPreviewTransportModes}
+              placeholder="Select transport modes"
+              label="Transport modes"
+            />
+          </div>
+        </div>
+      ) : null}
+
       {id === "page-settings-menu" ? (
         <div className="flex w-full max-w-[720px] flex-wrap items-center justify-between gap-3 rounded-[var(--md-radius-xl)] bg-white/54 p-3 shadow-[var(--md-shadow-line)]">
           <SegmentedControl options={customerScopeTabs} value="All customers" onChange={() => undefined} />
@@ -1092,11 +1174,12 @@ function ComponentPreview({ id }: { id: string }) {
 
       {id === "data-table" ? (
         <div className="w-full max-w-[1120px] overflow-x-auto md-scrollbar">
-          <CustomerListTable
-            customers={customers.slice(0, 4)}
-            selectedIds={previewSelectedIds}
-            onToggleCustomer={togglePreviewCustomer}
-            onOpenCustomer={() => undefined}
+          <DataTable
+            columns={previewChargeColumns}
+            rows={previewChargeRows}
+            getRowKey={(row) => row.id}
+            storageKey="gallery-charge-table"
+            ariaLabel="Quote charges preview"
           />
         </div>
       ) : null}
