@@ -17,9 +17,6 @@ if (builder.Configuration.GetValue<bool>("Features:SeedAuthorizationOnStartup"))
     await app.SeedMultideckAuthorizationAsync();
 }
 
-app.UseDefaultFiles();
-app.UseStaticFiles();
-
 app.UseMultideckServer(supabaseAuth);
 
 app.MapRootEndpoint();
@@ -27,8 +24,6 @@ app.MapAuthModule(supabaseAuth);
 app.MapAuthorizationModule(supabaseAuth);
 app.MapUsersModule(supabaseAuth);
 app.MapControllers();
-
-app.MapFallbackToFile("index.html");
 
 app.Run();
 
