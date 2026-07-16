@@ -39,6 +39,23 @@ Open your browser and go to:
 
 > ⚠️ Scalar and OpenAPI are only available in **Development** mode (the default when running with `dotnet run`).
 
+## API Logging
+
+The API writes structured logs to the console and, when configured, Better Stack. Create a .NET source in Better Stack, then configure its source token and full ingesting endpoint using environment variables, user secrets, or deployment settings:
+
+| Key | Required for Better Stack | Notes |
+|---|---:|---|
+| `BetterStack__SourceToken` | Yes | The source token from Better Stack. |
+| `BetterStack__Endpoint` | Yes | The full source ingesting endpoint, for example `https://s123.eu-nbg-2.betterstackdata.com`. |
+
+Example local setup:
+
+```bash
+cd multideck.server
+dotnet user-secrets set "BetterStack:SourceToken" "your-source-token"
+dotnet user-secrets set "BetterStack:Endpoint" "https://your-ingesting-host"
+```
+
 ## Supabase Auth Setup
 
 ### Server
