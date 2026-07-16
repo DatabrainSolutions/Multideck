@@ -83,6 +83,7 @@ export const sidebarSecondary: NavItem[] = [
   { label: "Customs", icon: ClipboardCheck },
   { label: "Reports", icon: BarChart3, route: "/reports" },
   { label: "Components", icon: Component, route: "/components" },
+  { label: "Navigation lab", icon: Grid3X3, route: "/playground/navigation" },
 ]
 
 export const crmSidebarItems: NavItem[] = [

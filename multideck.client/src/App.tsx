@@ -19,6 +19,7 @@ const CustomerDetailPage = lazy(() => import("@/pages/customer-detail-page").the
 const CustomersPage = lazy(() => import("@/pages/customers-page").then((module) => ({ default: module.CustomersPage })))
 const ReportsPage = lazy(() => import("@/pages/reports-page").then((module) => ({ default: module.ReportsPage })))
 const PaperTrayPage = lazy(() => import("@/pages/paper-tray-page").then((module) => ({ default: module.PaperTrayPage })))
+const NavigationLabPage = lazy(() => import("@/pages/navigation-lab-page").then((module) => ({ default: module.NavigationLabPage })))
 const QuotesPage = lazy(() => import("@/pages/quotes-page").then((module) => ({ default: module.QuotesPage })))
 const ReportTemplateBuilderPage = lazy(() => import("@/pages/report-template-builder-page").then((module) => ({ default: module.ReportTemplateBuilderPage })))
 const ReportViewerPage = lazy(() => import("@/pages/report-viewer-page").then((module) => ({ default: module.ReportViewerPage })))
@@ -61,6 +62,7 @@ const validRoutes = new Set([
   "/crm/settings",
   "/customers",
   "/paper-tray",
+  "/playground/navigation",
   "/quotes",
   "/quotes/3",
   "/reports",
@@ -129,6 +131,7 @@ export default function App() {
   const [route, setRoute] = useState(getRoute)
   const [authStatus, setAuthStatus] = useState<AuthStatus>(isSupabaseConfigured ? "checking" : "unauthenticated")
   const [currentUser, setCurrentUser] = useState<AuthUserSummary | null>(null)
+  const isLocalNavigationLab = import.meta.env.DEV && route === "/playground/navigation"
 
   useEffect(() => {
     const onPopState = () => {
@@ -231,9 +234,9 @@ export default function App() {
       <LanguageProvider>
         <TooltipProvider>
           <MotionConfig reducedMotion="user" transition={mdMotion.fast}>
-            {(authStatus === "checking" && route !== "/auth") || (authStatus === "authenticated" && route === "/auth") ? (
+            {(!isLocalNavigationLab && ((authStatus === "checking" && route !== "/auth") || (authStatus === "authenticated" && route === "/auth"))) ? (
               <RouteFallback />
-            ) : authStatus === "unauthenticated" || route === "/auth" ? (
+            ) : !isLocalNavigationLab && (authStatus === "unauthenticated" || route === "/auth") ? (
               <Suspense fallback={<RouteFallback />}>
                 <AuthFlowPage navigate={navigate} />
               </Suspense>
@@ -270,6 +273,7 @@ export default function App() {
                   {route === "/customers" ? <CustomersPage navigate={navigate} /> : null}
                   {isCustomerDetailRoute(route) ? <CustomerDetailPage customerId={route.split("/").at(-1) ?? ""} /> : null}
                   {route === "/paper-tray" ? <PaperTrayPage /> : null}
+                  {route === "/playground/navigation" ? <NavigationLabPage /> : null}
                   {route === "/quotes" || route === "/quotes/3" ? <QuotesPage variant="cargowise" /> : null}
                   {route === "/reports" ? <ReportsPage navigate={navigate} /> : null}
                   {route === "/settings" ? <SettingsPage navigate={navigate} /> : null}
