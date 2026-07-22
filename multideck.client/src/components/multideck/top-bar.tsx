@@ -54,7 +54,9 @@ export function TopBar({
   const isBookingWizard = route === "/bookings/new"
   const isRoadControl = route === "/road-control"
   const isRoadBooking = route === "/road-control/new"
-  const isRoadRoute = isRoadControl || isRoadBooking
+  const isRoadJob = /^\/road-control\/[^/]+$/.test(route) && !isRoadBooking
+  const isRoadRoute = isRoadControl || isRoadBooking || isRoadJob
+  const roadJobLabel = isRoadJob ? route.split("/").at(-1)?.toLocaleUpperCase() : undefined
   const isQuotes = route === "/quotes"
   const isWarehouse = route.startsWith("/warehouse")
   const isReports = route === "/reports"
@@ -169,8 +171,9 @@ export function TopBar({
             <div className="hidden min-w-[210px] items-center gap-2 text-[14px] md:flex">
               <button type="button" onClick={() => navigate("/bookings")} className="font-medium text-[var(--md-text)] transition-colors hover:text-[var(--md-accent)]">{t("Bookings & jobs")}</button>
               <span className="text-[var(--md-subtle)]" aria-hidden="true">/</span>
-              {isRoadBooking ? <button type="button" onClick={() => navigate("/road-control")} className="font-medium text-[var(--md-text)] transition-colors hover:text-[var(--md-accent)]">{t("Road control")}</button> : <p className="font-medium text-[var(--md-ink)]">{t("Road control")}</p>}
+              {isRoadBooking || isRoadJob ? <button type="button" onClick={() => navigate("/road-control")} className="font-medium text-[var(--md-text)] transition-colors hover:text-[var(--md-accent)]">{t("Road control")}</button> : <p className="font-medium text-[var(--md-ink)]">{t("Road control")}</p>}
               {isRoadBooking ? <><span className="text-[var(--md-subtle)]" aria-hidden="true">/</span><p className="font-medium text-[var(--md-ink)]">{t("New road job")}</p></> : null}
+              {isRoadJob ? <><span className="text-[var(--md-subtle)]" aria-hidden="true">/</span><p dir="ltr" className="font-medium text-[var(--md-ink)]">{roadJobLabel}</p></> : null}
             </div>
           ) : <p className="hidden min-w-[210px] text-[15px] font-medium text-[var(--md-text)] md:block">{t(isBookingList ? "Bookings" : isQuotes ? "Quotes" : isBookingWizard ? "New booking" : isCustomerList ? "Customers" : isWarehouse ? warehouseRouteLabel[route] ?? "Warehouse" : isCrmRoute ? crmRouteLabel[route] ?? (route.startsWith("/crm/leads/") ? "Lead detail" : route.startsWith("/crm/lists/") ? "List detail" : route.includes("/stats") ? "Email statistics" : route.includes("/edit") ? "Email editor" : "CRM") : isReports ? "Reports" : todayLabel)}</p>}
           <div className="ml-auto min-w-0 flex-1 md:max-w-[560px]">
@@ -294,7 +297,7 @@ export function TopBar({
               ) : null}
               <Button
                 className={topBarPrimaryActionClass}
-                onClick={() => navigate(isRoadControl ? "/road-control/new" : "/bookings/new")}
+                onClick={() => navigate(isRoadRoute ? "/road-control/new" : "/bookings/new")}
               >
                 <Plus data-icon="inline-start" strokeWidth={1.2} />
                 <span className="hidden sm:inline">New booking</span>

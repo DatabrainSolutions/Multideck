@@ -93,7 +93,7 @@ export function RoadControlPage({ navigate }: { navigate: (path: string) => void
           <Button type="button" variant="ghost" size="sm" className="h-8 rounded-[var(--md-radius-md)] px-2.5 text-[12px] text-[var(--md-text)]" onClick={() => toast.success(t("Filters opened"))}><SlidersHorizontal className="size-3.5" strokeWidth={1.4} />{t("Filters")}</Button>
         </div>
         <div className="grid gap-2.5">
-          {jobs.map((job) => <DomesticRoadJobCard key={job.id} job={job} favourite={favouriteIds.has(job.bookingId)} onToggleFavourite={() => toggleFavourite(job.bookingId)} onOpenBooking={() => navigate(`/bookings/${job.bookingId.toLowerCase()}`)} />)}
+          {jobs.map((job) => <DomesticRoadJobCard key={job.id} job={job} favourite={favouriteIds.has(job.bookingId)} onToggleFavourite={() => toggleFavourite(job.bookingId)} onOpenBooking={() => navigate(`/road-control/${job.id.toLowerCase()}`)} />)}
           {jobs.length === 0 ? (
             <Surface className="rounded-[var(--md-radius-xl)] py-8 text-center">
               <p className="text-[13px] font-medium text-[var(--md-ink)]">{t(scope === "Starred Jobs" ? "No starred jobs in this stage" : "No jobs in this stage")}</p>
@@ -101,7 +101,7 @@ export function RoadControlPage({ navigate }: { navigate: (path: string) => void
             </Surface>
           ) : null}
         </div>
-      </section> : <DomesticRoadKanbanBoard jobs={scopedJobs} favouriteIds={favouriteIds} onMoveJob={moveRoadJob} onToggleFavourite={(job) => toggleFavourite(job.bookingId)} onOpenBooking={(job) => navigate(`/bookings/${job.bookingId.toLowerCase()}`)} />}
+      </section> : <DomesticRoadKanbanBoard jobs={scopedJobs} favouriteIds={favouriteIds} onMoveJob={moveRoadJob} onToggleFavourite={(job) => toggleFavourite(job.bookingId)} onOpenBooking={(job) => navigate(`/road-control/${job.id.toLowerCase()}`)} />}
     </DexterDockedPage>
   )
 }

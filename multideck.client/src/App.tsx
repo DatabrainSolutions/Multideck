@@ -97,6 +97,10 @@ function isQuoteDetailRoute(path: string) {
   return /^\/quotes\/[^/]+$/.test(path)
 }
 
+function isRoadJobDetailRoute(path: string) {
+  return /^\/road-control\/[^/]+$/.test(path) && path !== "/road-control/new"
+}
+
 function getLegacyBookingRoute(path: string) {
   if (path === "/shipments") return "/bookings"
   const detailMatch = path.match(/^\/shipments\/([^/]+)$/)
@@ -128,6 +132,7 @@ function getRoute() {
   if (legacyBookingRoute) return legacyBookingRoute
   if (window.location.pathname.startsWith("/reports/rpt-")) return window.location.pathname
   if (isBookingDetailRoute(window.location.pathname)) return window.location.pathname
+  if (isRoadJobDetailRoute(window.location.pathname)) return window.location.pathname
   if (isQuoteDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCustomerDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCrmLeadDetailRoute(window.location.pathname)) return window.location.pathname
@@ -328,6 +333,7 @@ export default function App() {
                   {route === "/bookings" ? <BookingsPage navigate={navigate} /> : null}
                   {route === "/road-control" ? <RoadControlPage navigate={navigate} /> : null}
                   {route === "/road-control/new" ? <DomesticRoadBookingPage navigate={navigate} /> : null}
+                  {isRoadJobDetailRoute(route) ? <DomesticRoadBookingPage key={route} navigate={navigate} roadJobId={route.split("/").at(-1) ?? ""} /> : null}
                   {route === "/bookings/new" ? <BookingWizardPage navigate={navigate} /> : null}
                   {route === "/bookings/provisional" ? <ProvisionalBookingPage navigate={navigate} /> : null}
                   {route === "/" ? <OverviewPage navigate={navigate} /> : null}

@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
+import { domesticRoadJobs } from "@/components/multideck/domestic-road-components"
 import { Surface } from "@/components/multideck/surface"
 import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
@@ -201,10 +202,12 @@ function CustomerAccountSearch({
   )
 }
 
-export function DomesticRoadBookingPage({ navigate }: { navigate: (path: string) => void }) {
+export function DomesticRoadBookingPage({ navigate, roadJobId }: { navigate: (path: string) => void; roadJobId?: string }) {
   const { t } = useLanguage()
+  const viewedJob = roadJobId ? domesticRoadJobs.find((job) => job.id.toLocaleLowerCase() === roadJobId.toLocaleLowerCase()) : undefined
+  const isExistingRoadJob = Boolean(viewedJob)
   const [dexterOpen, setDexterOpen] = useState(false)
-  const [networkDistribution, setNetworkDistribution] = useState(true)
+  const [networkDistribution, setNetworkDistribution] = useState(() => !viewedJob || /pallet|next-day/i.test(viewedJob.service))
   const [network, setNetwork] = useState("Palletline")
   const [service, setService] = useState("Next-day")
   const [palletType, setPalletType] = useState("Standard")
@@ -214,7 +217,7 @@ export function DomesticRoadBookingPage({ navigate }: { navigate: (path: string)
   const [productDetailsConfirmed, setProductDetailsConfirmed] = useState(false)
   const [palletDetailsOpen, setPalletDetailsOpen] = useState(false)
   const [palletDetails, setPalletDetails] = useState<PalletDetail[]>(initialPalletDetails)
-  const [customerReference, setCustomerReference] = useState("JK-PO-48230")
+  const [customerReference, setCustomerReference] = useState(viewedJob?.reference ?? "JK-PO-48230")
   const [accountId, setAccountId] = useState("jenkar")
   const [contactId, setContactId] = useState("jenkar-maya")
   const [collectionAddressId, setCollectionAddressId] = useState("jenkar-leicester")
@@ -236,8 +239,9 @@ export function DomesticRoadBookingPage({ navigate }: { navigate: (path: string)
   const deliveryAddress = account.addresses.find((item) => item.id === deliveryAddressId) ?? account.addresses.at(-1) ?? account.addresses[0]
 
   const journeySummary = useMemo(() => {
+    if (viewedJob) return `${viewedJob.collection} → ${viewedJob.delivery}`
     return collectionAddress && deliveryAddress ? `${collectionAddress.shortName} → ${deliveryAddress.shortName}` : t("Route to be confirmed")
-  }, [collectionAddress, deliveryAddress, t])
+  }, [collectionAddress, deliveryAddress, t, viewedJob])
 
   function selectAccount(nextAccountId: string) {
     const nextAccount = roadCustomerAccounts.find((item) => item.id === nextAccountId)
@@ -296,27 +300,36 @@ export function DomesticRoadBookingPage({ navigate }: { navigate: (path: string)
   }
 
   function saveDraft() {
+    if (viewedJob) {
+      toast.success(t("Road job updated"), { description: `${viewedJob.id} ${t("has been updated.")}` })
+      return
+    }
     toast.success(t("Road job draft saved"), { description: t("Your route, cargo and service choices are ready to continue.") })
   }
 
   function createRoadJob() {
+    if (viewedJob) {
+      toast.success(t("Road job updated"), { description: `${viewedJob.id} ${t("is ready in Road control.")}` })
+      navigate("/road-control")
+      return
+    }
     toast.success(t("Road job created"), { description: t("RD-10684 is ready in Road control." ) })
     navigate("/road-control")
   }
 
   return (
-    <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t("New domestic road job")} className="md-page md-page-stack">
+    <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={viewedJob ? `${t("Road job")} ${viewedJob.id}` : t("New domestic road job")} className="md-page md-page-stack">
       <header className="flex flex-wrap items-center justify-end gap-4">
         <h1 className="sr-only">{t("New domestic road job")}</h1>
         <div className="flex shrink-0 items-center gap-2">
           <DexterActionPill onClick={() => setDexterOpen(true)} />
           <Button type="button" variant="outline" className="h-9 rounded-[var(--md-radius-md)] px-3 text-[12px]" onClick={saveDraft}>
             <Save className="size-3.5" strokeWidth={1.5} />
-            {t("Save draft")}
+            {isExistingRoadJob ? t("Save changes") : t("Save draft")}
           </Button>
           <Button type="button" className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[12px] text-white hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]" onClick={createRoadJob}>
             <Check className="size-3.5" strokeWidth={1.7} />
-            {t("Create road job")}
+            {isExistingRoadJob ? t("Update road job") : t("Create road job")}
           </Button>
         </div>
       </header>
