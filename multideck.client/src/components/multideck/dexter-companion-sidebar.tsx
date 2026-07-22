@@ -2,6 +2,7 @@ import { useMemo, useState, type ReactNode } from "react"
 import { ArrowUp, Check, Clock3, FileText, Sparkles, X } from "lucide-react"
 import { AnimatePresence, motion } from "motion/react"
 import { Button } from "@/components/ui/button"
+import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import { mdMotion } from "@/lib/motion"
 import { useAiAgentName } from "@/lib/user-preferences"
 import { cn } from "@/lib/utils"
@@ -174,9 +175,14 @@ export function DexterCompanionSidebar({
                       {sentPrompt ? <Check className="size-3" strokeWidth={1.4} /> : <Sparkles className="size-3" strokeWidth={1.25} />}
                       {sentPrompt ? "Brief prepared" : "Uses this page as context"}
                     </span>
-                    <Button type="submit" size="icon-sm" className="rounded-full bg-[var(--md-ink)] text-white hover:bg-[var(--md-accent)]" disabled={!prompt.trim()}>
-                      <ArrowUp className="size-3.5" strokeWidth={1.4} />
-                    </Button>
+                    <DexterActionPill
+                      type="submit"
+                      icon={ArrowUp}
+                      iconOnly
+                      label="Send prompt"
+                      className="size-8 min-w-0 rounded-full p-0"
+                      disabled={!prompt.trim()}
+                    />
                   </div>
                 </div>
               </div>

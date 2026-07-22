@@ -8,6 +8,10 @@ export type ApiCompany = {
   name: string
 }
 
+export type ApiOrganisation = ApiCompany & {
+  canManageWarehouseUsers?: boolean
+}
+
 export type ApiOffice = {
   id: string
   name: string
@@ -30,6 +34,10 @@ export type ApiTeamUser = {
   offices: ApiOffice[]
   roles: ApiTeamRole[]
   status: string
+  actorType?: "internal" | "customer"
+  organisations?: ApiOrganisation[]
+  permissions?: string[]
+  landingPath?: string
 }
 
 export type ApiAuthSession = {

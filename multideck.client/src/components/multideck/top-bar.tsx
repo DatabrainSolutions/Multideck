@@ -52,7 +52,7 @@ export function TopBar({
   const isCrmLeadDetail = /^\/crm\/leads\/[^/]+$/.test(route)
   const isBookingList = route === "/bookings"
   const isBookingWizard = route === "/bookings/new"
-  const isWarehouse = route === "/warehouse"
+  const isWarehouse = route.startsWith("/warehouse")
   const isReports = route === "/reports"
   const { language, t } = useLanguage()
   const todayLabel = getTopBarDateLabel(language, t("Today"))
@@ -67,6 +67,17 @@ export function TopBar({
     "/crm/marketing": "Marketing",
     "/crm/activity": "Activity",
     "/crm/settings": "CRM settings",
+  }
+  const warehouseRouteLabel: Record<string, string> = {
+    "/warehouse": "Dashboard",
+    "/warehouse/facilities": "Facilities",
+    "/warehouse/locations": "Locations",
+    "/warehouse/items": "Items",
+    "/warehouse/inventory": "Inventory",
+    "/warehouse/goods-in": "Goods in",
+    "/warehouse/goods-out": "Goods out",
+    "/warehouse/orders": "Orders",
+    "/warehouse/calendar": "Calendar",
   }
   const currentLead = isCrmLeadDetail ? customers.find((customer) => customer.id === route.split("/").at(-1)) : undefined
 
@@ -149,7 +160,7 @@ export function TopBar({
         </>
       ) : (
         <>
-          <p className="hidden min-w-[210px] text-[15px] font-medium text-[var(--md-text)] md:block">{isBookingList ? "Bookings" : isBookingWizard ? "New booking" : isCustomerList ? "Customers" : isWarehouse ? "Warehouse" : isCrmRoute ? crmRouteLabel[route] ?? (route.startsWith("/crm/leads/") ? "Lead detail" : route.startsWith("/crm/lists/") ? "List detail" : route.includes("/stats") ? "Email statistics" : route.includes("/edit") ? "Email editor" : "CRM") : isReports ? "Reports" : todayLabel}</p>
+          <p className="hidden min-w-[210px] text-[15px] font-medium text-[var(--md-text)] md:block">{t(isBookingList ? "Bookings" : isBookingWizard ? "New booking" : isCustomerList ? "Customers" : isWarehouse ? warehouseRouteLabel[route] ?? "Warehouse" : isCrmRoute ? crmRouteLabel[route] ?? (route.startsWith("/crm/leads/") ? "Lead detail" : route.startsWith("/crm/lists/") ? "List detail" : route.includes("/stats") ? "Email statistics" : route.includes("/edit") ? "Email editor" : "CRM") : isReports ? "Reports" : todayLabel)}</p>
           <div className="ml-auto min-w-0 flex-1 md:max-w-[560px]">
             <CommandInput placeholder={isBookingList ? "ID, container, customer, BoL, HS code..." : isWarehouse ? "SKU, bin, order, customer, goods movement..." : isCustomerList ? "Search customers, contacts, or bookings..." : isCrmRoute ? "Search leads, contacts, deals, emails, lists, or marketing..." : isReports ? "Report name, template, customer..." : "Ask Multideck or jump to anything..."} />
           </div>
@@ -169,10 +180,6 @@ export function TopBar({
             </>
           ) : isWarehouse ? (
             <>
-              <Button variant="ghost" className={cn("hidden sm:inline-flex", topBarGhostActionClass)}>
-                <Upload data-icon="inline-start" strokeWidth={1.2} />
-                Import stock
-              </Button>
               <Button
                 className={topBarPrimaryActionClass}
                 onClick={() =>

@@ -91,9 +91,19 @@ const tableBodyReveal = {
   },
 }
 
+const warehouseTableRowTransition = {
+  hidden: { opacity: 0, y: 6 },
+  show: (index: number) => ({
+    opacity: 1,
+    y: 0,
+    transition: { ...mdMotion.smooth, delay: Math.min(index * 0.012, 0.12) },
+  }),
+  exit: { opacity: 0, y: -4, transition: mdMotion.fast },
+}
+
 const stockMorphTransition = { duration: 0.38, ease: [0.22, 1, 0.36, 1] as const }
-const tableHeadClass = "border-r border-[rgba(90,103,100,0.12)] bg-[rgba(90,103,100,0.06)] px-4 py-3 text-[12px] font-medium text-[var(--md-text)] last:border-r-0"
-const tableCellClass = "border-r border-[rgba(90,103,100,0.09)] px-4 py-3 last:border-r-0"
+const tableHeadClass = "h-9 border-r border-[rgba(90,103,100,0.12)] bg-[rgba(90,103,100,0.06)] px-3 py-2 text-[11.5px] font-medium text-[var(--md-text)] last:border-r-0"
+const tableCellClass = "border-r border-[rgba(90,103,100,0.09)] px-3 py-2 last:border-r-0"
 const kanbanLiftShadow = "var(--md-premium-stroke), 0 20px 42px rgba(42,52,50,0.16)"
 
 export type WarehouseKanbanCardData = {
@@ -654,7 +664,7 @@ export function WarehouseInventoryTable<T extends { id: string }>({
 
   return (
     <div className="overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]">
-      <Table className="text-[13px]" style={{ minWidth } as CSSProperties}>
+      <Table className="text-[12.5px]" style={{ minWidth } as CSSProperties}>
         <TableHeader>
           <TableRow className="border-b border-[rgba(90,103,100,0.12)] hover:bg-transparent">
             {columns.map((column) => (
@@ -664,25 +674,26 @@ export function WarehouseInventoryTable<T extends { id: string }>({
             ))}
           </TableRow>
         </TableHeader>
-        <motion.tbody
-          className="[&_tr:last-child]:border-0"
-          variants={shouldReduceMotion ? undefined : tableBodyReveal}
-          initial={shouldReduceMotion ? undefined : "hidden"}
-          animate={shouldReduceMotion ? undefined : "show"}
-        >
-          {rows.length ? rows.map((row) => {
+        <motion.tbody className="[&_tr:last-child]:border-0">
+          <AnimatePresence initial={false}>
+            {rows.length ? rows.map((row, index) => {
             const hasRowDetail = Boolean(renderRowDetail)
             const isInteractiveRow = Boolean(onRowClick || renderRowDetail)
             const isDetailOpen = openRowId === row.id
             const rowElement = (
               <motion.tr
-                variants={shouldReduceMotion ? undefined : rowReveal}
+                layout={shouldReduceMotion ? false : "position"}
+                custom={index}
+                variants={shouldReduceMotion ? undefined : warehouseTableRowTransition}
+                initial={shouldReduceMotion ? false : "hidden"}
+                animate={shouldReduceMotion ? undefined : "show"}
+                exit={shouldReduceMotion ? undefined : "exit"}
                 tabIndex={isInteractiveRow ? 0 : undefined}
                 aria-haspopup={hasRowDetail ? "dialog" : undefined}
                 aria-expanded={hasRowDetail ? isDetailOpen : undefined}
                 aria-label={hasRowDetail ? rowDetailLabel?.(row) ?? `Open details for ${row.id}` : undefined}
                 className={cn(
-                  "h-[66px] border-b border-[rgba(90,103,100,0.09)] bg-[var(--md-surface)] transition-[background,color,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[rgba(90,103,100,0.045)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
+                  "h-[52px] border-b border-[rgba(90,103,100,0.09)] bg-[var(--md-surface)] transition-[background,color,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[rgba(90,103,100,0.045)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
                   isInteractiveRow && "cursor-pointer",
                   isDetailOpen && "bg-[rgba(14,125,116,0.055)]",
                   rowClassName?.(row),
@@ -717,16 +728,17 @@ export function WarehouseInventoryTable<T extends { id: string }>({
                 {renderExpandedRow?.(row, columns.length)}
               </Fragment>
             )
-          }) : (
-            <TableRow className="h-[160px] border-0 hover:bg-transparent">
-              <TableCell colSpan={columns.length} className="text-center">
-                <div className="mx-auto max-w-[360px]">
-                  <p className="text-[14px] font-medium text-[var(--md-ink)]">{emptyMessage}</p>
-                  <p className="mt-1 text-[13px] leading-5 text-[var(--md-text)]">Change a filter or search a wider set of {rowLabel}.</p>
-                </div>
-              </TableCell>
-            </TableRow>
-          )}
+            }) : (
+              <TableRow key="warehouse-table-empty" className="h-[160px] border-0 hover:bg-transparent">
+                <TableCell colSpan={columns.length} className="text-center">
+                  <div className="mx-auto max-w-[360px]">
+                    <p className="text-[14px] font-medium text-[var(--md-ink)]">{emptyMessage}</p>
+                    <p className="mt-1 text-[13px] leading-5 text-[var(--md-text)]">Change a filter or search a wider set of {rowLabel}.</p>
+                  </div>
+                </TableCell>
+              </TableRow>
+            )}
+          </AnimatePresence>
         </motion.tbody>
       </Table>
     </div>
@@ -1273,7 +1285,7 @@ export function WarehouseMetricStrip({ metrics = warehouseMetrics }: { metrics?:
   )
 }
 
-export function WarehousePageHeader() {
+export function WarehousePageHeader({ customer = false }: { customer?: boolean }) {
   const { t } = useLanguage()
 
   return (
@@ -1285,11 +1297,11 @@ export function WarehousePageHeader() {
         <div className="min-w-0">
           <h1 className="text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">{t("Warehouse")}</h1>
           <p className="mt-1 max-w-[680px] text-[13px] leading-5 text-[var(--md-text)]">
-            {t("Inventory, stock, goods movements, warehouse orders, and operator planning in one calm workspace.")}
+            {t(customer ? "View your stock, manage items, and send inbound or outbound requests to the warehouse team." : "Inventory, stock, goods movements, warehouse orders, and operator planning in one calm workspace.")}
           </p>
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-2">
+      {!customer ? <div className="flex flex-wrap items-center gap-2">
         <Button variant="ghost" className="h-10 rounded-[var(--md-radius-lg)] bg-white/48 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/74">
           <SlidersHorizontal data-icon="inline-start" className="size-4" strokeWidth={1.25} />
           {t("Filters")}
@@ -1298,7 +1310,7 @@ export function WarehousePageHeader() {
           <Plus data-icon="inline-start" className="size-4" strokeWidth={1.25} />
           {t("New pick")}
         </Button>
-      </div>
+      </div> : null}
     </div>
   )
 }

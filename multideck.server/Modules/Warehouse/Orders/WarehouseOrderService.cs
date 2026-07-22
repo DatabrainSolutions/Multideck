@@ -18,15 +18,18 @@ public sealed class WarehouseOrderService(MultideckContext db, IWarehouseContext
         Guid? facilityId,
         string? typeCode,
         string? statusCode,
+        bool openOnly,
         string? search,
         CancellationToken cancellationToken)
     {
-        var current = await context.RequireCurrentUserAsync(user, cancellationToken);
-        var query = ScopedOrders(current.CompanyId).AsNoTracking();
+        var current = await context.RequireCurrentActorAsync(user, cancellationToken);
+        if (current.IsCustomer) context.RequireCapability(current, WarehouseCapabilities.OrdersReadOwn);
+        var query = ScopedOrders(current).AsNoTracking();
 
         if (facilityId.HasValue) query = query.Where(order => order.WmsorderFacilityId == facilityId.Value);
         if (!string.IsNullOrWhiteSpace(typeCode)) query = query.Where(order => order.WmsorderTypeCode == typeCode.Trim());
         if (!string.IsNullOrWhiteSpace(statusCode)) query = query.Where(order => order.WmsorderStatusCode == statusCode.Trim());
+        if (openOnly) query = query.Where(order => !order.WmsorderStatusCodeNavigation.WmsorderStatusIsFinal);
 
         var term = search?.Trim();
         if (!string.IsNullOrWhiteSpace(term))
@@ -36,6 +39,10 @@ public sealed class WarehouseOrderService(MultideckContext db, IWarehouseContext
                 EF.Functions.ILike(order.WmsorderOrderNumber, pattern) ||
                 (order.WmsorderCustomerReference != null && EF.Functions.ILike(order.WmsorderCustomerReference, pattern)) ||
                 EF.Functions.ILike(order.WmsorderCustomerOrg.OrgName, pattern) ||
+                EF.Functions.ILike(order.WmsorderFacility.WmsfacilityCode, pattern) ||
+                EF.Functions.ILike(order.WmsorderFacility.WmsfacilityName, pattern) ||
+                (order.WmsorderContainerNumber != null && EF.Functions.ILike(order.WmsorderContainerNumber, pattern)) ||
+                (order.WmsorderVehicleReg != null && EF.Functions.ILike(order.WmsorderVehicleReg, pattern)) ||
                 order.WmsOrderLines.Any(line => EF.Functions.ILike(line.WmsorderLineItem.WmsitemSku, pattern)));
         }
 
@@ -49,37 +56,36 @@ public sealed class WarehouseOrderService(MultideckContext db, IWarehouseContext
 
     public async Task<WarehouseOrderDto> GetAsync(ClaimsPrincipal user, Guid orderId, CancellationToken cancellationToken)
     {
-        var current = await context.RequireCurrentUserAsync(user, cancellationToken);
-        var order = await LoadScopedAsync(current.CompanyId, orderId, trackChanges: false, cancellationToken);
+        var current = await context.RequireCurrentActorAsync(user, cancellationToken);
+        if (current.IsCustomer) context.RequireCapability(current, WarehouseCapabilities.OrdersReadOwn);
+        var order = await LoadScopedAsync(current, orderId, trackChanges: false, cancellationToken);
         return ToDto(order);
     }
 
     public async Task<WarehouseOrderReferenceResponse> GetReferenceAsync(ClaimsPrincipal user, CancellationToken cancellationToken)
     {
-        var current = await context.RequireCurrentUserAsync(user, cancellationToken);
+        var current = await context.RequireCurrentActorAsync(user, cancellationToken);
+        if (current.IsCustomer) context.RequireCapability(current, WarehouseCapabilities.OrdersReadOwn);
 
-        var facilities = await db.WmsFacilities
-            .AsNoTracking()
-            .Where(facility =>
-                !facility.WmsfacilityIsDeleted && facility.WmsfacilityIsActive &&
-                facility.WmsfacilityOrgOffice != null && facility.WmsfacilityOrgOffice.CompanyId == current.CompanyId)
+        var facilitiesQuery = db.WmsFacilities.AsNoTracking().Where(facility => !facility.WmsfacilityIsDeleted && facility.WmsfacilityIsActive);
+        if (current.IsInternal) facilitiesQuery = facilitiesQuery.Where(facility => facility.WmsfacilityOrgOffice != null && facility.WmsfacilityOrgOffice.CompanyId == current.CompanyId);
+        else { var facilityIds = current.FacilityIds; facilitiesQuery = facilitiesQuery.Where(facility => facilityIds.Contains(facility.WmsfacilityId)); }
+        var facilities = await facilitiesQuery
             .OrderBy(facility => facility.WmsfacilityName)
             .Select(facility => new WarehouseOrderFacilityOption(facility.WmsfacilityId, facility.WmsfacilityOrgOfficeId, facility.WmsfacilityCode, facility.WmsfacilityName))
             .ToListAsync(cancellationToken);
 
-        var customers = await db.OrgMasters
-            .AsNoTracking()
+        var customersQuery = db.OrgMasters.AsNoTracking().AsQueryable();
+        if (current.IsCustomer) { var organisationIds = current.OrganisationIds; customersQuery = customersQuery.Where(org => organisationIds.Contains(org.OrgId)); }
+        var customers = await customersQuery
             .OrderBy(org => org.OrgName)
             .Select(org => new WarehouseOrderCustomerOption(org.OrgId, org.OrgName))
             .ToListAsync(cancellationToken);
 
-        var items = await db.WmsItems
-            .AsNoTracking()
-            .Where(item =>
-                !item.WmsitemIsDeleted && item.WmsitemIsActive &&
-                item.WmsitemDefaultFacility != null &&
-                item.WmsitemDefaultFacility.WmsfacilityOrgOffice != null &&
-                item.WmsitemDefaultFacility.WmsfacilityOrgOffice.CompanyId == current.CompanyId)
+        var itemsQuery = db.WmsItems.AsNoTracking().Where(item => !item.WmsitemIsDeleted && item.WmsitemIsActive && item.WmsitemDefaultFacility != null);
+        if (current.IsInternal) itemsQuery = itemsQuery.Where(item => item.WmsitemDefaultFacility!.WmsfacilityOrgOffice != null && item.WmsitemDefaultFacility.WmsfacilityOrgOffice.CompanyId == current.CompanyId);
+        else { var organisationIds = current.OrganisationIds; var facilityIds = current.FacilityIds; itemsQuery = itemsQuery.Where(item => organisationIds.Contains(item.WmsitemCustomerOrgId) && item.WmsitemDefaultFacilityId.HasValue && facilityIds.Contains(item.WmsitemDefaultFacilityId.Value)); }
+        var items = await itemsQuery
             .OrderBy(item => item.WmsitemSku)
             .Select(item => new WarehouseOrderItemOption(
                 item.WmsitemId,
@@ -92,12 +98,10 @@ public sealed class WarehouseOrderService(MultideckContext db, IWarehouseContext
                 item.WmsitemRequiresExpiry))
             .ToListAsync(cancellationToken);
 
-        var locations = await db.WmsLocations
-            .AsNoTracking()
-            .Where(location =>
-                !location.WmslocationIsDeleted && location.WmslocationIsActive &&
-                location.WmslocationFacility.WmsfacilityOrgOffice != null &&
-                location.WmslocationFacility.WmsfacilityOrgOffice.CompanyId == current.CompanyId)
+        var locationsQuery = db.WmsLocations.AsNoTracking().Where(location => !location.WmslocationIsDeleted && location.WmslocationIsActive);
+        if (current.IsInternal) locationsQuery = locationsQuery.Where(location => location.WmslocationFacility.WmsfacilityOrgOffice != null && location.WmslocationFacility.WmsfacilityOrgOffice.CompanyId == current.CompanyId);
+        else locationsQuery = locationsQuery.Where(_ => false); // Bin selection and posting are staff-only.
+        var locations = await locationsQuery
             .OrderBy(location => location.WmslocationCode)
             .Select(location => new WarehouseOrderLocationOption(
                 location.WmslocationId,
@@ -132,11 +136,21 @@ public sealed class WarehouseOrderService(MultideckContext db, IWarehouseContext
 
     public async Task<WarehouseOrderDto> CreateAsync(ClaimsPrincipal user, CreateWarehouseOrderRequest request, CancellationToken cancellationToken)
     {
-        var current = await context.RequireCurrentUserAsync(user, cancellationToken);
-        var facility = await RequireFacilityAsync(current.CompanyId, request.FacilityId, cancellationToken);
+        var current = await context.RequireCurrentActorAsync(user, cancellationToken);
+        var typeCode = request.TypeCode.Trim().ToLowerInvariant();
+        if (current.IsCustomer)
+        {
+            var capability = typeCode == Inbound ? WarehouseCapabilities.OrdersCreateInboundOwn : WarehouseCapabilities.OrdersCreateOutboundOwn;
+            context.RequireCapability(current, capability, request.CustomerOrgId);
+            if (!current.CanAccess(request.CustomerOrgId, request.FacilityId)) throw WarehouseException.Forbidden("You can only create orders for your organisation in an assigned warehouse.");
+            if (request.Lines.Any(line => line.SourceLocationId.HasValue || line.TargetLocationId.HasValue)) throw WarehouseException.Forbidden("Warehouse bin selection is completed by the warehouse team.");
+        }
+        var facility = current.IsInternal
+            ? await RequireFacilityAsync(current.CompanyId!.Value, request.FacilityId, cancellationToken)
+            : await db.WmsFacilities.FirstOrDefaultAsync(value => value.WmsfacilityId == request.FacilityId && !value.WmsfacilityIsDeleted && value.WmsfacilityIsActive, cancellationToken)
+                ?? throw WarehouseException.BadRequest("Choose an assigned warehouse.");
         await RequireCustomerAsync(request.CustomerOrgId, cancellationToken);
 
-        var typeCode = request.TypeCode.Trim().ToLowerInvariant();
         if (typeCode is not (Inbound or Outbound))
         {
             throw WarehouseException.BadRequest("Warehouse orders must be inbound or outbound.");
@@ -252,6 +266,39 @@ public sealed class WarehouseOrderService(MultideckContext db, IWarehouseContext
         }
 
         db.WmsOrders.Add(order);
+        if (current.IsCustomer && typeCode == Inbound)
+        {
+            var advice = new WmsInboundAdvice
+            {
+                WmsadviceId = Guid.NewGuid(),
+                WmsadviceFacilityId = order.WmsorderFacilityId,
+                WmsadviceOrderId = order.WmsorderId,
+                WmsadviceAdviceNumber = $"ASN-{order.WmsorderOrderNumber}",
+                WmsadviceStatusCode = "booked",
+                WmsadviceCustomerOrgId = order.WmsorderCustomerOrgId,
+                WmsadviceExpectedArrivalAt = order.WmsorderAppointmentStartAt,
+                WmsadviceContainerNumber = order.WmsorderContainerNumber,
+                WmsadviceSealNumber = order.WmsorderSealNumber,
+                WmsadviceMetadataJson = "{\"source\":\"customer_portal\"}",
+                WmsadviceCreatedAt = now,
+            };
+            foreach (var line in order.WmsOrderLines)
+            {
+                advice.WmsInboundAdviceLines.Add(new WmsInboundAdviceLine
+                {
+                    WmsadviceLineId = Guid.NewGuid(),
+                    WmsadviceLineOrderLineId = line.WmsorderLineId,
+                    WmsadviceLineLineNo = line.WmsorderLineLineNo,
+                    WmsadviceLineItemId = line.WmsorderLineItemId,
+                    WmsadviceLineExpectedQuantity = line.WmsorderLineOrderedQuantity,
+                    WmsadviceLineUomcode = line.WmsorderLineUomcode,
+                    WmsadviceLineLotNumber = line.WmsorderLineLotNumber,
+                    WmsadviceLineExpiryDate = line.WmsorderLineExpiryDate,
+                    WmsadviceLineCustomsStatusCode = line.WmsorderLineCustomsStatusCode,
+                });
+            }
+            db.WmsInboundAdvices.Add(advice);
+        }
         await db.SaveChangesAsync(cancellationToken);
         return await GetAsync(user, orderId, cancellationToken);
     }
@@ -552,8 +599,9 @@ public sealed class WarehouseOrderService(MultideckContext db, IWarehouseContext
 
     public async Task<WarehouseOrderDto> CancelAsync(ClaimsPrincipal user, Guid orderId, CancellationToken cancellationToken)
     {
-        var current = await context.RequireCurrentUserAsync(user, cancellationToken);
-        var order = await LoadScopedAsync(current.CompanyId, orderId, trackChanges: true, cancellationToken);
+        var current = await context.RequireCurrentActorAsync(user, cancellationToken);
+        var order = await LoadScopedAsync(current, orderId, trackChanges: true, cancellationToken);
+        if (current.IsCustomer) context.RequireCapability(current, WarehouseCapabilities.OrdersCancelOwn, order.WmsorderCustomerOrgId);
         if (order.WmsorderStatusCode is "complete" or "cancelled") throw WarehouseException.Conflict("This order is already final.");
         if (order.WmsOrderLines.Any(line => line.WmsorderLineReceivedQuantity > 0 || line.WmsorderLineDispatchedQuantity > 0))
         {
@@ -573,6 +621,15 @@ public sealed class WarehouseOrderService(MultideckContext db, IWarehouseContext
         order.WmsorderFacility.WmsfacilityOrgOffice != null &&
         order.WmsorderFacility.WmsfacilityOrgOffice.CompanyId == companyId);
 
+    private IQueryable<WmsOrder> ScopedOrders(WarehouseActor actor)
+    {
+        if (actor.IsInternal) return ScopedOrders(actor.CompanyId!.Value);
+        var organisationIds = actor.OrganisationIds;
+        var facilityIds = actor.FacilityIds;
+        return db.WmsOrders.Where(order => !order.WmsorderIsDeleted &&
+            organisationIds.Contains(order.WmsorderCustomerOrgId) && facilityIds.Contains(order.WmsorderFacilityId));
+    }
+
     private static IQueryable<WmsOrder> IncludeOrderGraph(IQueryable<WmsOrder> query) => query
         .Include(order => order.WmsorderFacility).ThenInclude(facility => facility.WmsfacilityOrgOffice)
         .Include(order => order.WmsorderCustomerOrg)
@@ -588,6 +645,14 @@ public sealed class WarehouseOrderService(MultideckContext db, IWarehouseContext
     private async Task<WmsOrder> LoadScopedAsync(Guid companyId, Guid orderId, bool trackChanges, CancellationToken cancellationToken)
     {
         var query = IncludeOrderGraph(ScopedOrders(companyId));
+        if (!trackChanges) query = query.AsNoTracking();
+        return await query.FirstOrDefaultAsync(order => order.WmsorderId == orderId, cancellationToken)
+            ?? throw WarehouseException.NotFound("This warehouse order does not exist in your workspace.");
+    }
+
+    private async Task<WmsOrder> LoadScopedAsync(WarehouseActor actor, Guid orderId, bool trackChanges, CancellationToken cancellationToken)
+    {
+        var query = IncludeOrderGraph(ScopedOrders(actor));
         if (!trackChanges) query = query.AsNoTracking();
         return await query.FirstOrDefaultAsync(order => order.WmsorderId == orderId, cancellationToken)
             ?? throw WarehouseException.NotFound("This warehouse order does not exist in your workspace.");

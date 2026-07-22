@@ -17,6 +17,7 @@ import {
   Zap,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import { cn } from "@/lib/utils"
 import type { StatusTone } from "@/data/multideck-data"
 import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
@@ -70,19 +71,6 @@ function AttachmentIcon({ attachment }: { attachment: DexterAttachment }) {
   return (
     <span className="grid size-7 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">
       <Icon className="size-3.5" strokeWidth={1.2} />
-    </span>
-  )
-}
-
-export function DexterBrandMark({ className }: { className?: string }) {
-  return (
-    <span
-      className={cn(
-        "grid size-9 place-items-center rounded-full bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]",
-        className,
-      )}
-    >
-      <Sparkles className="size-4" strokeWidth={1.2} />
     </span>
   )
 }
@@ -214,16 +202,15 @@ export function DexterPromptComposer({
             <span className="text-[15px] leading-none">↵</span>
             {t("to send")}
           </span>
-          <Button
+          <DexterActionPill
             type="button"
-            size="icon-lg"
-            className="ms-auto rounded-[var(--md-radius-lg)] bg-[var(--md-bg-strong)] text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-accent)] hover:text-white sm:ms-0"
+            icon={ArrowUp}
+            iconOnly
+            label={t("Send prompt")}
+            className="ms-auto size-10 min-w-0 rounded-[var(--md-radius-lg)] p-0 sm:ms-0"
             onClick={onSend}
             disabled={disabled || !value.trim()}
-            aria-label={t("Send prompt")}
-          >
-            <ArrowUp className="size-4" strokeWidth={1.4} />
-          </Button>
+          />
         </div>
       </div>
     </div>
@@ -605,14 +592,11 @@ export function DexterMonitorStack({
         {monitors.map((monitor) => (
           <DexterMonitorCard key={monitor.title} monitor={monitor} onClick={() => onSelectMonitor?.(monitor)} />
         ))}
-        <button
-          type="button"
-          className="h-12 rounded-[var(--md-radius-lg)] border-0 border-dashed bg-transparent text-[13px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white/55 hover:text-[var(--md-ink)]"
+        <DexterActionPill
+          label="Ask Dexter to watch something else"
+          className="h-12 w-full rounded-[var(--md-radius-lg)] text-[13px]"
           onClick={onAsk}
-        >
-          <Sparkles className="mr-2 inline size-3.5" strokeWidth={1.2} />
-          Ask Dexter to watch something else
-        </button>
+        />
       </div>
     </aside>
   )

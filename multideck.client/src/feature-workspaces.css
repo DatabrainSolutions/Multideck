@@ -57,8 +57,11 @@
 
 .md-charge-split-workspace__divider::before {
     content: "";
-    block-size: 100%;
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 50%;
     inline-size: 1px;
+    transform: translateX(-50%);
     border-radius: 999px;
     background: color-mix(in srgb, var(--md-accent) 28%, var(--md-line));
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--md-accent) 4%, transparent);

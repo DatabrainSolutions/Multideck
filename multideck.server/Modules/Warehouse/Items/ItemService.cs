@@ -9,9 +9,10 @@ public sealed class ItemService(MultideckContext db, IWarehouseContext context) 
 {
     public async Task<IReadOnlyList<ItemDto>> ListAsync(ClaimsPrincipal user, Guid? facilityId, string? search, bool includeInactive, CancellationToken cancellationToken)
     {
-        var current = await context.RequireCurrentUserAsync(user, cancellationToken);
+        var current = await context.RequireCurrentActorAsync(user, cancellationToken);
+        if (current.IsCustomer) context.RequireCapability(current, WarehouseCapabilities.ItemsReadOwn);
 
-        var query = ScopedItems(current.CompanyId).AsNoTracking();
+        var query = ScopedItems(current).AsNoTracking();
 
         if (facilityId.HasValue)
         {
@@ -29,7 +30,13 @@ public sealed class ItemService(MultideckContext db, IWarehouseContext context) 
             var pattern = $"%{term}%";
             query = query.Where(item =>
                 EF.Functions.ILike(item.WmsitemSku, pattern) ||
-                EF.Functions.ILike(item.WmsitemDescription, pattern));
+                EF.Functions.ILike(item.WmsitemDescription, pattern) ||
+                (item.WmsitemCommodityDescription != null && EF.Functions.ILike(item.WmsitemCommodityDescription, pattern)) ||
+                (item.WmsitemHscode != null && EF.Functions.ILike(item.WmsitemHscode, pattern)) ||
+                EF.Functions.ILike(item.WmsitemCustomerOrg.OrgName, pattern) ||
+                (item.WmsitemDefaultFacility != null &&
+                    (EF.Functions.ILike(item.WmsitemDefaultFacility.WmsfacilityCode, pattern) ||
+                     EF.Functions.ILike(item.WmsitemDefaultFacility.WmsfacilityName, pattern))));
         }
 
         var items = await query
@@ -43,17 +50,23 @@ public sealed class ItemService(MultideckContext db, IWarehouseContext context) 
 
     public async Task<ItemDto> GetAsync(ClaimsPrincipal user, Guid itemId, CancellationToken cancellationToken)
     {
-        var current = await context.RequireCurrentUserAsync(user, cancellationToken);
-        var item = await LoadScopedAsync(current.CompanyId, itemId, trackChanges: false, cancellationToken);
+        var current = await context.RequireCurrentActorAsync(user, cancellationToken);
+        if (current.IsCustomer) context.RequireCapability(current, WarehouseCapabilities.ItemsReadOwn);
+        var item = await LoadScopedAsync(current, itemId, trackChanges: false, cancellationToken);
         return ToDto(item);
     }
 
     public async Task<ItemDto> CreateAsync(ClaimsPrincipal user, CreateItemRequest request, CancellationToken cancellationToken)
     {
-        var current = await context.RequireCurrentUserAsync(user, cancellationToken);
+        var current = await context.RequireCurrentActorAsync(user, cancellationToken);
+        if (current.IsCustomer)
+        {
+            context.RequireCapability(current, WarehouseCapabilities.ItemsManageOwn, request.CustomerOrgId);
+            RequireCustomerScope(current, request.CustomerOrgId, request.FacilityId);
+        }
 
         var customerOrg = await ResolveCustomerOrgAsync(request.CustomerOrgId, cancellationToken);
-        await EnsureFacilityInCompanyAsync(current.CompanyId, request.FacilityId, cancellationToken);
+        await EnsureFacilityForActorAsync(current, request.FacilityId, request.CustomerOrgId, cancellationToken);
 
         var sku = request.Sku.Trim();
         await EnsureSkuIsUniqueAsync(customerOrg.OrgId, sku, excludeItemId: null, cancellationToken);
@@ -95,10 +108,11 @@ public sealed class ItemService(MultideckContext db, IWarehouseContext context) 
 
     public async Task<ItemDto> UpdateAsync(ClaimsPrincipal user, Guid itemId, UpdateItemRequest request, CancellationToken cancellationToken)
     {
-        var current = await context.RequireCurrentUserAsync(user, cancellationToken);
-        var item = await LoadScopedAsync(current.CompanyId, itemId, trackChanges: true, cancellationToken);
+        var current = await context.RequireCurrentActorAsync(user, cancellationToken);
+        var item = await LoadScopedAsync(current, itemId, trackChanges: true, cancellationToken);
+        if (current.IsCustomer) context.RequireCapability(current, WarehouseCapabilities.ItemsManageOwn, item.WmsitemCustomerOrgId);
 
-        await EnsureFacilityInCompanyAsync(current.CompanyId, request.FacilityId, cancellationToken);
+        await EnsureFacilityForActorAsync(current, request.FacilityId, item.WmsitemCustomerOrgId, cancellationToken);
 
         var sku = request.Sku.Trim();
         await EnsureSkuIsUniqueAsync(item.WmsitemCustomerOrgId, sku, excludeItemId: itemId, cancellationToken);
@@ -134,8 +148,9 @@ public sealed class ItemService(MultideckContext db, IWarehouseContext context) 
 
     public async Task DeleteAsync(ClaimsPrincipal user, Guid itemId, CancellationToken cancellationToken)
     {
-        var current = await context.RequireCurrentUserAsync(user, cancellationToken);
-        var item = await LoadScopedAsync(current.CompanyId, itemId, trackChanges: true, cancellationToken);
+        var current = await context.RequireCurrentActorAsync(user, cancellationToken);
+        var item = await LoadScopedAsync(current, itemId, trackChanges: true, cancellationToken);
+        if (current.IsCustomer) context.RequireCapability(current, WarehouseCapabilities.ItemsManageOwn, item.WmsitemCustomerOrgId);
 
         item.WmsitemIsDeleted = true;
         item.WmsitemIsActive = false;
@@ -146,21 +161,31 @@ public sealed class ItemService(MultideckContext db, IWarehouseContext context) 
 
     public async Task<ItemReferenceResponse> GetReferenceAsync(ClaimsPrincipal user, CancellationToken cancellationToken)
     {
-        var current = await context.RequireCurrentUserAsync(user, cancellationToken);
+        var current = await context.RequireCurrentActorAsync(user, cancellationToken);
+        if (current.IsCustomer) context.RequireCapability(current, WarehouseCapabilities.ItemsReadOwn);
 
-        var customers = await db.OrgMasters
-            .AsNoTracking()
+        var customersQuery = db.OrgMasters.AsNoTracking().AsQueryable();
+        if (current.IsCustomer)
+        {
+            var organisationIds = current.OrganisationIds;
+            customersQuery = customersQuery.Where(org => organisationIds.Contains(org.OrgId));
+        }
+        var customers = await customersQuery
             .OrderBy(org => org.OrgName)
             .Select(org => new ItemCustomerOption(org.OrgId, org.OrgName))
             .ToListAsync(cancellationToken);
 
-        var facilities = await db.WmsFacilities
-            .AsNoTracking()
-            .Where(facility =>
-                !facility.WmsfacilityIsDeleted &&
-                facility.WmsfacilityIsActive &&
-                facility.WmsfacilityOrgOffice != null &&
-                facility.WmsfacilityOrgOffice.CompanyId == current.CompanyId)
+        var facilitiesQuery = db.WmsFacilities.AsNoTracking().Where(facility => !facility.WmsfacilityIsDeleted && facility.WmsfacilityIsActive);
+        if (current.IsInternal)
+        {
+            facilitiesQuery = facilitiesQuery.Where(facility => facility.WmsfacilityOrgOffice != null && facility.WmsfacilityOrgOffice.CompanyId == current.CompanyId);
+        }
+        else
+        {
+            var facilityIds = current.FacilityIds;
+            facilitiesQuery = facilitiesQuery.Where(facility => facilityIds.Contains(facility.WmsfacilityId));
+        }
+        var facilities = await facilitiesQuery
             .OrderBy(facility => facility.WmsfacilityName)
             .Select(facility => new ItemFacilityOption(facility.WmsfacilityId, facility.WmsfacilityCode, facility.WmsfacilityName))
             .ToListAsync(cancellationToken);
@@ -170,9 +195,14 @@ public sealed class ItemService(MultideckContext db, IWarehouseContext context) 
 
     public async Task<ImportItemsResponse> ImportAsync(ClaimsPrincipal user, Guid customerOrgId, Guid facilityId, IReadOnlyList<ImportItemRow> rows, CancellationToken cancellationToken)
     {
-        var current = await context.RequireCurrentUserAsync(user, cancellationToken);
+        var current = await context.RequireCurrentActorAsync(user, cancellationToken);
+        if (current.IsCustomer)
+        {
+            context.RequireCapability(current, WarehouseCapabilities.ItemsManageOwn, customerOrgId);
+            RequireCustomerScope(current, customerOrgId, facilityId);
+        }
         var customerOrg = await ResolveCustomerOrgAsync(customerOrgId, cancellationToken);
-        await EnsureFacilityInCompanyAsync(current.CompanyId, facilityId, cancellationToken);
+        await EnsureFacilityForActorAsync(current, facilityId, customerOrgId, cancellationToken);
 
         if (rows.Count == 0)
         {
@@ -273,16 +303,25 @@ public sealed class ItemService(MultideckContext db, IWarehouseContext context) 
         return new ImportItemsResponse(createdCount, results.Count - createdCount, results);
     }
 
-    private IQueryable<WmsItem> ScopedItems(Guid companyId) =>
-        db.WmsItems.Where(item =>
+    private IQueryable<WmsItem> ScopedItems(WarehouseActor actor)
+    {
+        var query = db.WmsItems.Where(item =>
             !item.WmsitemIsDeleted &&
             item.WmsitemDefaultFacility != null &&
-            item.WmsitemDefaultFacility.WmsfacilityOrgOffice != null &&
-            item.WmsitemDefaultFacility.WmsfacilityOrgOffice.CompanyId == companyId);
+            item.WmsitemDefaultFacility.WmsfacilityOrgOffice != null);
+        if (actor.IsInternal)
+        {
+            return query.Where(item => item.WmsitemDefaultFacility!.WmsfacilityOrgOffice!.CompanyId == actor.CompanyId);
+        }
+        var organisationIds = actor.OrganisationIds;
+        var facilityIds = actor.FacilityIds;
+        return query.Where(item => organisationIds.Contains(item.WmsitemCustomerOrgId) &&
+            item.WmsitemDefaultFacilityId.HasValue && facilityIds.Contains(item.WmsitemDefaultFacilityId.Value));
+    }
 
-    private async Task<WmsItem> LoadScopedAsync(Guid companyId, Guid itemId, bool trackChanges, CancellationToken cancellationToken)
+    private async Task<WmsItem> LoadScopedAsync(WarehouseActor actor, Guid itemId, bool trackChanges, CancellationToken cancellationToken)
     {
-        var query = ScopedItems(companyId)
+        var query = ScopedItems(actor)
             .Include(item => item.WmsitemCustomerOrg)
             .Include(item => item.WmsitemDefaultFacility)
             .AsQueryable();
@@ -302,17 +341,30 @@ public sealed class ItemService(MultideckContext db, IWarehouseContext context) 
         return org ?? throw WarehouseException.BadRequest("Choose a valid customer for this item.");
     }
 
-    private async Task EnsureFacilityInCompanyAsync(Guid companyId, Guid facilityId, CancellationToken cancellationToken)
+    private async Task EnsureFacilityForActorAsync(WarehouseActor actor, Guid facilityId, Guid customerOrgId, CancellationToken cancellationToken)
     {
+        if (actor.IsCustomer)
+        {
+            RequireCustomerScope(actor, customerOrgId, facilityId);
+            return;
+        }
         var facilityExists = await db.WmsFacilities.AnyAsync(facility =>
             facility.WmsfacilityId == facilityId &&
             !facility.WmsfacilityIsDeleted &&
             facility.WmsfacilityOrgOffice != null &&
-            facility.WmsfacilityOrgOffice.CompanyId == companyId, cancellationToken);
+            facility.WmsfacilityOrgOffice.CompanyId == actor.CompanyId, cancellationToken);
 
         if (!facilityExists)
         {
             throw WarehouseException.BadRequest("Choose a facility that belongs to your workspace.");
+        }
+    }
+
+    private static void RequireCustomerScope(WarehouseActor actor, Guid customerOrgId, Guid facilityId)
+    {
+        if (!actor.CanAccess(customerOrgId, facilityId))
+        {
+            throw WarehouseException.Forbidden("You can only manage items for your organisation in an assigned warehouse.");
         }
     }
 

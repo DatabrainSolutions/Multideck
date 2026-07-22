@@ -16,7 +16,7 @@ public interface IInventoryService
         ClaimsPrincipal user,
         Guid? facilityId,
         Guid? itemId,
+        string? search,
         int take,
         CancellationToken cancellationToken);
 }
-

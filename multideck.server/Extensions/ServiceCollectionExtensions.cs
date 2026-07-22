@@ -13,6 +13,7 @@ using Multideck.Server.Modules.Users;
 using Multideck.Server.Modules.Users.Supabase;
 using Multideck.Server.Modules.Warehouse;
 using Multideck.Server.Modules.Customers;
+using Multideck.Server.Modules.Documents;
 
 namespace Multideck.Server.Extensions;
 
@@ -27,6 +28,7 @@ public static class ServiceCollectionExtensions
         services.AddHttpClient();
         services.AddMultideckIntelligence(configuration);
         services.AddMultideckPersistence(configuration);
+        services.AddDocumentStorage(configuration);
         services.AddWarehouseModule();
         services.AddScoped<ICustomerService, CustomerService>();
 

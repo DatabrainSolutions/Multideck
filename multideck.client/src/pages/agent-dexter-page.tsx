@@ -4,7 +4,6 @@ import { AnimatePresence, LayoutGroup, motion } from "motion/react"
 import { Button } from "@/components/ui/button"
 import {
   DexterAttachmentPalette,
-  DexterBrandMark,
   DexterHistoryList,
   DexterMonitorStack,
   DexterMonitorDetailSheet,
@@ -19,6 +18,7 @@ import {
   type DexterMonitor,
   type DexterSpecialistId,
 } from "@/components/multideck/agent-dexter-components"
+import { DexterBrandMark } from "@/components/multideck/dexter-brand-mark"
 import { cn } from "@/lib/utils"
 import { mdMotion } from "@/lib/motion"
 import { useLanguage } from "@/i18n/language-provider"
@@ -441,8 +441,10 @@ export function AgentDexterPage() {
               animate={{ opacity: 1, y: 0 }}
               transition={mdMotion.page}
             >
-              <Sparkles className="mx-auto size-8 text-[var(--md-accent)]" strokeWidth={1.2} />
-              <h1 className="mt-[var(--md-page-section-gap)] text-[24px] font-medium leading-tight text-[var(--md-ink)] sm:text-[30px]">{t("What can I help you with today?")}</h1>
+              <div className="flex items-center justify-center gap-3">
+                <DexterBrandMark className="size-6 shrink-0" />
+                <h1 className="text-[24px] font-medium leading-tight text-[var(--md-ink)] sm:text-[30px]">{t("What can I help you with today?")}</h1>
+              </div>
               <p className="mt-4 text-[15px] text-[var(--md-text)]">{t("Orders, inventory, warehouse tasks, and exceptions - ask Dexter what needs attention.")}</p>
             </motion.div>
           ) : null}

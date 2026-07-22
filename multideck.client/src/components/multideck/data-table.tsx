@@ -47,6 +47,7 @@ type DataTableProps<Row> = {
   selectedRowKey?: string | null
   ariaLabel?: string
   columnsButtonLabel?: string
+  toolbarLeading?: ReactNode
   emptyState?: ReactNode
   className?: string
   tableClassName?: string
@@ -89,6 +90,7 @@ export function DataTable<Row>({
   selectedRowKey,
   ariaLabel,
   columnsButtonLabel,
+  toolbarLeading,
   emptyState,
   className,
   tableClassName,
@@ -302,7 +304,8 @@ export function DataTable<Row>({
 
   return (
     <div className={cn("overflow-hidden rounded-[var(--md-radius-xl)] bg-white shadow-[var(--md-shadow-line)]", className)}>
-      <div className="flex h-10 items-center justify-end bg-[color-mix(in_srgb,var(--md-surface)_92%,transparent)] px-2 shadow-[inset_0_-1px_0_rgba(11,20,19,0.05)]">
+      <div className={cn("flex h-10 items-center gap-2 bg-[color-mix(in_srgb,var(--md-surface)_92%,transparent)] px-2 shadow-[inset_0_-1px_0_rgba(11,20,19,0.05)]", toolbarLeading ? "justify-between" : "justify-end")}>
+        {toolbarLeading ? <div className="flex min-w-0 items-center gap-1">{toolbarLeading}</div> : null}
         <Popover>
           <PopoverTrigger asChild>
             <button

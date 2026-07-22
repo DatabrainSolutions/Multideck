@@ -98,7 +98,7 @@
   --md-report-donut-hole: inset 0 0 0 8px rgba(223, 234, 231, 0.95);
   --md-composer-inner-bg: rgba(251, 253, 253, 0.88);
 
-  --md-sidebar-width: 220px;
+  --md-sidebar-width: 264px;
   --md-sidebar-collapsed-width: 56px;
   --md-page-pad: clamp(16px, 2.4vw, 30px);
   --md-page-bottom-pad: clamp(32px, 4vw, 48px);
@@ -984,83 +984,152 @@ button {
 
   .md-dexter-pill {
     isolation: isolate;
-    background:
-      linear-gradient(135deg, color-mix(in srgb, var(--md-accent) 13%, var(--md-surface)), color-mix(in srgb, var(--md-blue) 8%, var(--md-surface))),
-      color-mix(in srgb, var(--md-surface) 72%, transparent);
+    background: var(--md-accent);
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.84),
-      inset 0 0 0 1px color-mix(in srgb, var(--md-accent) 28%, transparent),
-      0 0 0 1px rgba(14, 125, 116, 0.08),
-      0 12px 26px rgba(14, 125, 116, 0.12);
+      inset 0 1px 0 rgba(255, 255, 255, 0.22),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+      0 0 0 1px rgba(6, 70, 62, 0.12),
+      0 10px 24px rgba(6, 70, 62, 0.18);
+    transition:
+      box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1),
+      transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .md-sidebar-dexter-item {
+    isolation: isolate;
+    background: var(--md-accent) !important;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.22),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+      0 0 0 1px rgba(6, 70, 62, 0.1),
+      0 7px 18px rgba(6, 70, 62, 0.15);
+    transition:
+      box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1),
+      color 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .md-sidebar-dexter-item:hover,
+  .md-sidebar-dexter-item:focus-visible {
+    background: var(--md-accent) !important;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.26),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.18),
+      0 0 0 1px rgba(6, 70, 62, 0.14),
+      0 10px 22px rgba(6, 70, 62, 0.2);
   }
 
   .md-dexter-pill:hover,
   .md-dexter-pill:focus-visible {
-    background:
-      linear-gradient(135deg, color-mix(in srgb, var(--md-accent) 18%, var(--md-surface)), color-mix(in srgb, var(--md-blue) 12%, var(--md-surface))),
-      color-mix(in srgb, var(--md-surface) 78%, var(--md-accent) 7%);
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.82),
-      inset 0 0 0 1px color-mix(in srgb, var(--md-accent) 34%, transparent),
-      0 0 0 1px rgba(14, 125, 116, 0.12),
-      0 16px 32px rgba(14, 125, 116, 0.16);
+      inset 0 1px 0 rgba(255, 255, 255, 0.26),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.18),
+      0 0 0 1px rgba(6, 70, 62, 0.16),
+      0 14px 30px rgba(6, 70, 62, 0.24);
     transform: translateY(-1px);
   }
 
-  .md-dexter-pill__wash {
+  .md-dexter-pill__shader {
     position: absolute;
     inset: 0;
     z-index: 0;
     border-radius: inherit;
-    background:
-      radial-gradient(circle at 20% 50%, color-mix(in srgb, var(--md-accent) 20%, transparent), transparent 28%),
-      radial-gradient(circle at 78% 44%, color-mix(in srgb, var(--md-blue) 16%, transparent), transparent 28%);
-    opacity: 0;
-    transform: scale(0.94);
-    transition: opacity var(--md-motion), transform var(--md-motion);
+    overflow: hidden;
+    pointer-events: none;
+    transform: scale(1.04);
+    transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
-  .md-dexter-pill:hover .md-dexter-pill__wash,
-  .md-dexter-pill:focus-visible .md-dexter-pill__wash {
-    opacity: 1;
-    transform: scale(1);
+  .md-dexter-pill__shader,
+  .md-dexter-pill__shader > *,
+  .md-dexter-pill__shader canvas {
+    width: 100% !important;
+    height: 100% !important;
   }
 
-  .md-dexter-pill__particle {
+  .md-dexter-pill:hover .md-dexter-pill__shader,
+  .md-dexter-pill:focus-visible .md-dexter-pill__shader {
+    transform: scale(1.1);
+  }
+
+  .md-dexter-pill__contrast {
     position: absolute;
-    z-index: 0;
-    width: 3px;
-    height: 3px;
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--md-accent) 82%, white 18%);
-    box-shadow: 0 0 10px color-mix(in srgb, var(--md-accent) 34%, transparent);
-    opacity: 0;
-    animation: md-dexter-pill-particle 1.65s cubic-bezier(0.22, 1, 0.36, 1) infinite;
-    animation-play-state: paused;
+    inset: 0;
+    z-index: 1;
+    border-radius: inherit;
+    background: linear-gradient(110deg, rgba(0, 34, 28, 0.38), rgba(0, 50, 43, 0.14) 56%, rgba(0, 20, 18, 0.34));
+    pointer-events: none;
+    transition: opacity 180ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
-  .md-dexter-pill:hover .md-dexter-pill__particle,
-  .md-dexter-pill:focus-visible .md-dexter-pill__particle {
-    animation-play-state: running;
+  .md-dexter-pill:hover .md-dexter-pill__contrast,
+  .md-dexter-pill:focus-visible .md-dexter-pill__contrast {
+    opacity: 1;
   }
 
-  .md-dexter-pill__particle--one {
-    left: 18%;
-    top: 58%;
+  .md-dexter-pill__slot {
+    display: inline-flex;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
   }
 
-  .md-dexter-pill__particle--two {
-    left: 48%;
-    top: 38%;
-    width: 2px;
-    height: 2px;
-    animation-delay: 220ms;
+  .md-dexter-pill__slot-character {
+    --md-dexter-character-index: 0;
+    position: relative;
+    display: inline-block;
+    flex: 0 0 auto;
+    overflow: hidden;
+    line-height: 1.15;
   }
 
-  .md-dexter-pill__particle--three {
-    left: 76%;
-    top: 62%;
-    animation-delay: 440ms;
+  .md-dexter-pill__slot-glyph {
+    display: block;
+    transition: transform 135ms cubic-bezier(0.22, 1, 0.36, 1);
+    transition-delay: calc(var(--md-dexter-character-index) * 12ms);
+    will-change: transform;
+  }
+
+  .md-dexter-pill__slot-glyph--next {
+    position: absolute;
+    inset: 0;
+    transform: translateY(112%);
+  }
+
+  .md-dexter-pill:hover .md-dexter-pill__slot-glyph--initial,
+  .md-dexter-pill:focus-visible .md-dexter-pill__slot-glyph--initial {
+    transform: translateY(-112%);
+  }
+
+  .md-dexter-pill:hover .md-dexter-pill__slot-glyph--next,
+  .md-dexter-pill:focus-visible .md-dexter-pill__slot-glyph--next {
+    transform: translateY(0);
+  }
+
+  .md-dexter-pill[data-icon-only="true"] {
+    min-width: 0;
+  }
+
+  .md-dexter-brand-mark__shader {
+    display: block;
+    width: 32px;
+    height: 24px;
+    overflow: hidden;
+    filter: brightness(1.12) saturate(1.18) drop-shadow(0 3px 7px rgba(6, 70, 62, 0.26));
+    mask-position: center;
+    mask-repeat: no-repeat;
+    mask-size: contain;
+    pointer-events: none;
+    transform: translateZ(0);
+    -webkit-mask-position: center;
+    -webkit-mask-repeat: no-repeat;
+    -webkit-mask-size: contain;
+  }
+
+  .md-dexter-brand-mark__shader,
+  .md-dexter-brand-mark__shader > *,
+  .md-dexter-brand-mark__shader canvas {
+    width: 100% !important;
+    height: 100% !important;
   }
 
   .md-dexter-page {
@@ -1909,22 +1978,6 @@ button {
     }
   }
 
-  @keyframes md-dexter-pill-particle {
-    0% {
-      opacity: 0;
-      transform: translate3d(0, 5px, 0) scale(0.7);
-    }
-
-    32% {
-      opacity: 0.62;
-    }
-
-    100% {
-      opacity: 0;
-      transform: translate3d(9px, -8px, 0) scale(1);
-    }
-  }
-
   @media (max-width: 640px) {
     .md-toast {
       min-height: 64px;
@@ -1934,9 +1987,21 @@ button {
 
   @media (prefers-reduced-motion: reduce) {
     .md-ai-edge-glow__signal,
-    .md-ai-edge-glow__frame,
-    .md-dexter-pill__particle {
+    .md-ai-edge-glow__frame {
       animation: none !important;
+    }
+
+    .md-dexter-pill,
+    .md-dexter-pill__shader,
+    .md-dexter-pill__contrast,
+    .md-dexter-pill__slot-glyph {
+      transition-duration: 0.01ms !important;
+      transition-delay: 0ms !important;
+    }
+
+    .md-dexter-pill:hover .md-dexter-pill__shader,
+    .md-dexter-pill:focus-visible .md-dexter-pill__shader {
+      transform: scale(1.04);
     }
   }
 }

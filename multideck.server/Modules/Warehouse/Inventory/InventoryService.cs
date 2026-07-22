@@ -14,14 +14,27 @@ public sealed class InventoryService(MultideckContext db, IWarehouseContext cont
         bool includeZero,
         CancellationToken cancellationToken)
     {
-        var current = await context.RequireCurrentUserAsync(user, cancellationToken);
+        var current = await context.RequireCurrentActorAsync(user, cancellationToken);
+        if (current.IsCustomer) context.RequireCapability(current, WarehouseCapabilities.InventoryReadOwn);
         var query = db.WmsInventoryBalances
             .AsNoTracking()
             .Where(balance =>
                 balance.WmsbalanceFacility.WmsfacilityOrgOffice != null &&
-                balance.WmsbalanceFacility.WmsfacilityOrgOffice.CompanyId == current.CompanyId &&
                 !balance.WmsbalanceFacility.WmsfacilityIsDeleted &&
                 !balance.WmsbalanceItem.WmsitemIsDeleted);
+
+        if (current.IsInternal)
+        {
+            query = query.Where(balance => balance.WmsbalanceFacility.WmsfacilityOrgOffice!.CompanyId == current.CompanyId);
+        }
+        else
+        {
+            var organisationIds = current.OrganisationIds;
+            var facilityIds = current.FacilityIds;
+            query = query.Where(balance => balance.WmsbalanceCustomerOrgId.HasValue &&
+                organisationIds.Contains(balance.WmsbalanceCustomerOrgId.Value) &&
+                facilityIds.Contains(balance.WmsbalanceFacilityId));
+        }
 
         if (facilityId.HasValue)
         {
@@ -45,6 +58,10 @@ public sealed class InventoryService(MultideckContext db, IWarehouseContext cont
             query = query.Where(balance =>
                 EF.Functions.ILike(balance.WmsbalanceItem.WmsitemSku, pattern) ||
                 EF.Functions.ILike(balance.WmsbalanceItem.WmsitemDescription, pattern) ||
+                (balance.WmsbalanceCustomerOrg != null && EF.Functions.ILike(balance.WmsbalanceCustomerOrg.OrgName, pattern)) ||
+                EF.Functions.ILike(balance.WmsbalanceFacility.WmsfacilityName, pattern) ||
+                EF.Functions.ILike(balance.WmsbalanceInventoryStatusCodeNavigation.WmsinventoryStatusName, pattern) ||
+                EF.Functions.ILike(balance.WmsbalanceCustomsStatusCode, pattern) ||
                 (balance.WmsbalanceLocation != null && EF.Functions.ILike(balance.WmsbalanceLocation.WmslocationCode, pattern)) ||
                 (balance.WmsbalanceLot != null &&
                     (EF.Functions.ILike(balance.WmsbalanceLot.WmslotLotNumber, pattern) ||
@@ -93,15 +110,29 @@ public sealed class InventoryService(MultideckContext db, IWarehouseContext cont
         ClaimsPrincipal user,
         Guid? facilityId,
         Guid? itemId,
+        string? search,
         int take,
         CancellationToken cancellationToken)
     {
-        var current = await context.RequireCurrentUserAsync(user, cancellationToken);
+        var current = await context.RequireCurrentActorAsync(user, cancellationToken);
+        if (current.IsCustomer) context.RequireCapability(current, WarehouseCapabilities.InventoryReadOwn);
         var query = db.WmsInventoryTransactions
             .AsNoTracking()
             .Where(transaction =>
-                transaction.WmstransactionFacility.WmsfacilityOrgOffice != null &&
-                transaction.WmstransactionFacility.WmsfacilityOrgOffice.CompanyId == current.CompanyId);
+                transaction.WmstransactionFacility.WmsfacilityOrgOffice != null);
+
+        if (current.IsInternal)
+        {
+            query = query.Where(transaction => transaction.WmstransactionFacility.WmsfacilityOrgOffice!.CompanyId == current.CompanyId);
+        }
+        else
+        {
+            var organisationIds = current.OrganisationIds;
+            var facilityIds = current.FacilityIds;
+            query = query.Where(transaction => transaction.WmstransactionCustomerOrgId.HasValue &&
+                organisationIds.Contains(transaction.WmstransactionCustomerOrgId.Value) &&
+                facilityIds.Contains(transaction.WmstransactionFacilityId));
+        }
 
         if (facilityId.HasValue)
         {
@@ -111,6 +142,23 @@ public sealed class InventoryService(MultideckContext db, IWarehouseContext cont
         if (itemId.HasValue)
         {
             query = query.Where(transaction => transaction.WmstransactionItemId == itemId.Value);
+        }
+
+        var term = search?.Trim();
+        if (!string.IsNullOrWhiteSpace(term))
+        {
+            var pattern = $"%{term}%";
+            query = query.Where(transaction =>
+                EF.Functions.ILike(transaction.WmstransactionItem.WmsitemSku, pattern) ||
+                EF.Functions.ILike(transaction.WmstransactionItem.WmsitemDescription, pattern) ||
+                EF.Functions.ILike(transaction.WmstransactionFacility.WmsfacilityName, pattern) ||
+                (transaction.WmstransactionReference != null && EF.Functions.ILike(transaction.WmstransactionReference, pattern)) ||
+                (transaction.WmstransactionNotes != null && EF.Functions.ILike(transaction.WmstransactionNotes, pattern)) ||
+                (transaction.WmstransactionFromLocation != null && EF.Functions.ILike(transaction.WmstransactionFromLocation.WmslocationCode, pattern)) ||
+                (transaction.WmstransactionToLocation != null && EF.Functions.ILike(transaction.WmstransactionToLocation.WmslocationCode, pattern)) ||
+                (transaction.WmstransactionLot != null &&
+                    (EF.Functions.ILike(transaction.WmstransactionLot.WmslotLotNumber, pattern) ||
+                     (transaction.WmstransactionLot.WmslotBatchNumber != null && EF.Functions.ILike(transaction.WmstransactionLot.WmslotBatchNumber, pattern)))));
         }
 
         return await query
@@ -137,4 +185,3 @@ public sealed class InventoryService(MultideckContext db, IWarehouseContext cont
             .ToListAsync(cancellationToken);
     }
 }
-
