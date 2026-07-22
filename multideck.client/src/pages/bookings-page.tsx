@@ -15,12 +15,16 @@ import {
 } from "@/components/multideck/booking-components"
 import { Pagination } from "@/components/multideck/pagination"
 import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
-import { SegmentedControl } from "@/components/multideck/workflow-components"
-import { currentOperator, initialFavouriteBookingIds, bookingFilters, bookingScopeTabs, bookings } from "@/data/multideck-data"
+import { FilterChips, SegmentedControl } from "@/components/multideck/workflow-components"
+import { currentOperator, getBookingShape, initialFavouriteBookingIds, bookingFilters, bookingScopeTabs, bookings } from "@/data/multideck-data"
+import { useLanguage } from "@/i18n/language-provider"
 
 const rowsPerPageOptions = [10, 20, 30, 50]
 type BookingScope = (typeof bookingScopeTabs)[number]
 const initialSearchCriteria: BookingSearchCriterion[] = [{ id: "booking-search-any", field: "any", value: "", valueTo: "" }]
+const directionFilters = ["All directions", "Import", "Export", "Domestic", "Cross trade"] as const
+const modeFilters = ["All modes", "OCEAN", "AIR", "ROAD"] as const
+const shipmentTypeFilters = ["All types", "FCL", "LCL", "ULD", "FTL", "LTL", "Pallet"] as const
 
 function normalized(value: string) {
   return value.trim().toLocaleLowerCase()
@@ -140,6 +144,7 @@ function bookingMatchesSearch(booking: Booking, criteria: BookingSearchCriterion
 }
 
 export function BookingsPage({ navigate }: { navigate: (path: string) => void }) {
+  const { t } = useLanguage()
   const [scope, setScope] = useState<BookingScope>("All Jobs")
   const [activeFilter, setActiveFilter] = useState<string>(bookingFilters[0])
   const [viewMode, setViewMode] = useState<BookingViewMode>(bookingViewModes[0])
@@ -149,6 +154,9 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
   const [page, setPage] = useState(1)
   const [rowsPerPage, setRowsPerPage] = useState(10)
   const [dexterOpen, setDexterOpen] = useState(false)
+  const [directionFilter, setDirectionFilter] = useState<(typeof directionFilters)[number]>(directionFilters[0])
+  const [modeFilter, setModeFilter] = useState<(typeof modeFilters)[number]>(modeFilters[0])
+  const [shipmentTypeFilter, setShipmentTypeFilter] = useState<(typeof shipmentTypeFilters)[number]>(shipmentTypeFilters[0])
 
   const statusFilteredBookings = useMemo(() => {
     const filter = activeFilter.split(" · ")[0]
@@ -165,15 +173,22 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
   }, [activeFilter, favouriteIds, scope])
 
   const visibleBookings = useMemo(() => {
-    return statusFilteredBookings.filter((booking) => bookingMatchesSearch(booking, searchCriteria))
-  }, [searchCriteria, statusFilteredBookings])
+    return statusFilteredBookings.filter((booking) => {
+      const shape = getBookingShape(booking.id)
+      const matchesShape =
+        (directionFilter === "All directions" || shape.direction === directionFilter) &&
+        (modeFilter === "All modes" || booking.mode === modeFilter) &&
+        (shipmentTypeFilter === "All types" || shape.shipmentType === shipmentTypeFilter)
+      return matchesShape && bookingMatchesSearch(booking, searchCriteria)
+    })
+  }, [directionFilter, modeFilter, searchCriteria, shipmentTypeFilter, statusFilteredBookings])
 
   const pageCount = Math.max(Math.ceil(visibleBookings.length / rowsPerPage), 1)
   const paginatedBookings = visibleBookings.slice((page - 1) * rowsPerPage, page * rowsPerPage)
 
   useEffect(() => {
     setPage(1)
-  }, [activeFilter, scope, viewMode, searchCriteria])
+  }, [activeFilter, directionFilter, modeFilter, scope, shipmentTypeFilter, viewMode, searchCriteria])
 
   useEffect(() => {
     if (page > pageCount) setPage(pageCount)
@@ -207,6 +222,11 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
       <div className="flex justify-start">
         <SegmentedControl options={bookingScopeTabs} value={scope} onChange={setScope} />
       </div>
+      <section aria-label={t("Booking shape")} className="grid gap-3 rounded-[var(--md-radius-xl)] bg-white/32 p-3 shadow-[var(--md-shadow-line)] xl:grid-cols-3">
+        <ShapeFilter label={t("Direction")} options={directionFilters} value={directionFilter} onChange={setDirectionFilter} />
+        <ShapeFilter label={t("Mode")} options={modeFilters} value={modeFilter} onChange={setModeFilter} />
+        <ShapeFilter label={t("Shipment type")} options={shipmentTypeFilters} value={shipmentTypeFilter} onChange={setShipmentTypeFilter} />
+      </section>
       <BookingMetricStrip />
       <BookingFilterBar
         activeFilter={activeFilter}
@@ -248,5 +268,14 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
         }}
       />
     </DexterDockedPage>
+  )
+}
+
+function ShapeFilter<T extends string>({ label, options, value, onChange }: { label: string; options: readonly T[]; value: T; onChange: (value: T) => void }) {
+  return (
+    <div className="min-w-0">
+      <p className="mb-2 text-[11px] font-medium text-[var(--md-subtle)]">{label}</p>
+      <FilterChips options={options} activeOption={value} onChange={(next) => onChange(next as T)} labelForOption={useLanguage().t} className="gap-1.5" />
+    </div>
   )
 }

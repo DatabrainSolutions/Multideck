@@ -65,12 +65,14 @@ export function FilterChips({
   onChange,
   auxiliaryOptions = [],
   className,
+  labelForOption = (option) => option,
 }: {
   options: readonly string[]
   activeOption: string
   onChange: (option: string) => void
   auxiliaryOptions?: readonly string[]
   className?: string
+  labelForOption?: (option: string) => string
 }) {
   return (
     <div className={cn("flex flex-wrap items-center gap-2", className)}>
@@ -89,7 +91,7 @@ export function FilterChips({
           onClick={() => onChange(option)}
         >
           {activeOption === option ? <Check className="size-3.5" strokeWidth={1.6} /> : null}
-          {option}
+          {labelForOption(option)}
         </button>
       ))}
       {auxiliaryOptions.length ? <span className="mx-2 hidden h-7 w-px bg-[rgba(11,20,19,0.08)] sm:block" /> : null}

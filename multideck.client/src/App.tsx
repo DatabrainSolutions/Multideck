@@ -31,6 +31,7 @@ const BookingDetailPage = lazy(() => import("@/pages/booking-detail-page").then(
 const BookingWizardPage = lazy(() => import("@/pages/booking-wizard-page").then((module) => ({ default: module.BookingWizardPage })))
 const ProvisionalBookingPage = lazy(() => import("@/pages/provisional-booking-page").then((module) => ({ default: module.ProvisionalBookingPage })))
 const BookingsPage = lazy(() => import("@/pages/bookings-page").then((module) => ({ default: module.BookingsPage })))
+const RoadControlPage = lazy(() => import("@/pages/road-control-page").then((module) => ({ default: module.RoadControlPage })))
 const CrmOverviewPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmOverviewPage })))
 const CrmLeadsPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmLeadsPage })))
 const CrmLeadDetailPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmLeadDetailPage })))
@@ -81,6 +82,7 @@ const validRoutes = new Set([
   "/warehouse/orders",
   "/warehouse/users",
   "/bookings",
+  "/road-control",
   "/bookings/new",
   "/bookings/provisional",
 ])
@@ -322,6 +324,7 @@ export default function App() {
                   {route === "/settings" ? <SettingsPage navigate={navigate} /> : null}
                   {route.startsWith("/warehouse") ? <WarehousePage route={route} currentUser={currentUser} /> : null}
                   {route === "/bookings" ? <BookingsPage navigate={navigate} /> : null}
+                  {route === "/road-control" ? <RoadControlPage navigate={navigate} /> : null}
                   {route === "/bookings/new" ? <BookingWizardPage navigate={navigate} /> : null}
                   {route === "/bookings/provisional" ? <ProvisionalBookingPage navigate={navigate} /> : null}
                   {route === "/" ? <OverviewPage navigate={navigate} /> : null}

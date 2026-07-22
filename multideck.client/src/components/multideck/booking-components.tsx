@@ -38,6 +38,7 @@ import {
   bookings,
   bookingTimeline,
   currentOperator,
+  getBookingShape,
   operatorJobs,
   type BookingMode,
   type BookingStatus,
@@ -156,6 +157,20 @@ export function BookingStatusPill({ status }: { status: BookingStatus }) {
 
 export function BookingModePill({ mode }: { mode: BookingMode }) {
   return <StatusPill tone={modeTone[mode]} className="min-w-[88px] justify-center">{mode}</StatusPill>
+}
+
+export function BookingShapeCell({ booking }: { booking: Booking }) {
+  const shape = getBookingShape(booking.id)
+
+  return (
+    <div className="min-w-0">
+      <p className="text-[13px] font-medium text-[var(--md-ink)]">{shape.direction}</p>
+      <div className="mt-1 flex items-center gap-1.5">
+        <BookingModePill mode={booking.mode} />
+        <span className="truncate text-[11px] text-[var(--md-text)]">{shape.shipmentType}</span>
+      </div>
+    </div>
+  )
 }
 
 export function BookingMetricCard({ label, value, tone }: (typeof bookingMetrics)[number]) {
@@ -861,8 +876,8 @@ export function BookingRow({
         <p className="text-[14px] font-medium text-[var(--md-ink)]">{booking.carrier}</p>
         <p className="mt-1 text-[13px] text-[var(--md-text)]">{booking.container}</p>
       </TableCell>
-      <TableCell>
-        <BookingModePill mode={booking.mode} />
+      <TableCell className="min-w-[178px]">
+        <BookingShapeCell booking={booking} />
       </TableCell>
       <TableCell className="text-right text-[14px] font-medium text-[var(--md-ink)]">{booking.value}</TableCell>
       <TableCell className="text-right">
@@ -914,7 +929,7 @@ export function BookingsTable({
             <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Booking</TableHead>
             <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Customer · route</TableHead>
             <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Carrier · container</TableHead>
-            <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Mode</TableHead>
+            <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Direction · mode · type</TableHead>
             <TableHead className="text-right text-[12px] font-medium text-[var(--md-text)]">Value</TableHead>
             <TableHead className="text-right text-[12px] font-medium text-[var(--md-text)]">ETA</TableHead>
             <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Status</TableHead>

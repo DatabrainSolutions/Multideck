@@ -46,6 +46,7 @@ import {
   Sparkles,
   Type,
   TriangleAlert,
+  Truck,
   Users,
   type LucideIcon,
 } from "lucide-react"
@@ -134,6 +135,7 @@ export const sidebarAreas: SidebarArea[] = [
         icon: Ship,
         children: [
           { label: "Bookings overview", icon: LayoutDashboard, route: "/bookings" },
+          { label: "Road control", icon: Truck, route: "/road-control" },
           { label: "New booking", icon: PackageCheck, route: "/bookings/new" },
           { label: "Provisional booking", icon: Clock3, route: "/bookings/provisional" },
         ],
@@ -960,8 +962,17 @@ export const warehouseCalendarEvents: WarehouseCalendarEvent[] = [
 
 export type BookingStatus = "On track" | "Delayed" | "Exception"
 export type BookingMode = "OCEAN" | "AIR" | "ROAD"
+export type BookingDirection = "Import" | "Export" | "Domestic" | "Cross trade"
+export type BookingShipmentType = "FCL" | "LCL" | "ULD" | "FTL" | "LTL" | "Pallet"
 
 export const bookings = [
+  { id: "MD-22682", customer: "Jenkar", route: "Leicester → Bristol", carrier: "Unassigned", container: "Pallet network", mode: "ROAD" as BookingMode, value: "£1,240", eta: "Awaiting date", time: "—", status: "Exception" as BookingStatus, progress: 8, owner: "EM", tone: "amber" as StatusTone, invoice: "", jobRef: "RD-10682", customerRef: "JK-PO-48216", supplierRef: "", origin: "Leicester, United Kingdom", destination: "Bristol, United Kingdom", vessel: "", departureDate: "2026-07-23", arrivalDate: "2026-07-24", vin: "", customFields: [{ label: "Planning blocker", value: "Collection date missing" }, { label: "Road service", value: "Pallet network" }] },
+  { id: "MD-22683", customer: "Jenkar", route: "Dartford → Manchester", carrier: "Unassigned", container: "LTL", mode: "ROAD" as BookingMode, value: "£1,680", eta: "Jul 23", time: "10:00", status: "Exception" as BookingStatus, progress: 12, owner: "EM", tone: "amber" as StatusTone, invoice: "", jobRef: "RD-10683", customerRef: "JK-PO-48228", supplierRef: "", origin: "Dartford, United Kingdom", destination: "Manchester, United Kingdom", vessel: "", departureDate: "2026-07-23", arrivalDate: "2026-07-24", vin: "", customFields: [{ label: "Planning blocker", value: "Pallet height not supplied" }, { label: "Road service", value: "LTL" }] },
+  { id: "MD-22676", customer: "Jenkar", route: "Birmingham → Glasgow", carrier: "Pending selection", container: "Dedicated 7.5t", mode: "ROAD" as BookingMode, value: "£1,980", eta: "Today", time: "14:00", status: "On track" as BookingStatus, progress: 24, owner: "EM", tone: "teal" as StatusTone, invoice: "", jobRef: "RD-10676", customerRef: "JK-PO-48191", supplierRef: "", origin: "Birmingham, United Kingdom", destination: "Glasgow, United Kingdom", vessel: "", departureDate: "2026-07-22", arrivalDate: "2026-07-23", vin: "", customFields: [{ label: "Planning state", value: "Carrier shortlist ready" }, { label: "Estimated margin", value: "18.4%" }] },
+  { id: "MD-22679", customer: "Jenkar", route: "Coventry → Leeds", carrier: "Pending selection", container: "Next-day pallet", mode: "ROAD" as BookingMode, value: "£1,560", eta: "Jul 23", time: "09:00", status: "On track" as BookingStatus, progress: 24, owner: "EM", tone: "teal" as StatusTone, invoice: "", jobRef: "RD-10679", customerRef: "JK-PO-48203", supplierRef: "", origin: "Coventry, United Kingdom", destination: "Leeds, United Kingdom", vessel: "", departureDate: "2026-07-23", arrivalDate: "2026-07-24", vin: "", customFields: [{ label: "Planning state", value: "Carrier shortlist ready" }, { label: "Estimated margin", value: "22.1%" }] },
+  { id: "MD-22671", customer: "Jenkar", route: "Rugby → Exeter", carrier: "Redline Transport", container: "Dedicated van", mode: "ROAD" as BookingMode, value: "£1,460", eta: "Today", time: "17:00", status: "On track" as BookingStatus, progress: 42, owner: "EM", tone: "blue" as StatusTone, invoice: "", jobRef: "RD-10671", customerRef: "JK-PO-48172", supplierRef: "RLT-10671", origin: "Rugby, United Kingdom", destination: "Exeter, United Kingdom", vessel: "", departureDate: "2026-07-22", arrivalDate: "2026-07-23", vin: "", customFields: [{ label: "Carrier state", value: "Confirmation due 11:30" }, { label: "Estimated margin", value: "20.7%" }] },
+  { id: "MD-22664", customer: "Jenkar", route: "Milton Keynes → Newcastle", carrier: "Grove Haulage", container: "Dedicated 18t", mode: "ROAD" as BookingMode, value: "£2,380", eta: "Today", time: "15:20", status: "On track" as BookingStatus, progress: 84, owner: "EM", tone: "green" as StatusTone, invoice: "", jobRef: "RD-10664", customerRef: "JK-PO-48126", supplierRef: "GRV-10664", origin: "Milton Keynes, United Kingdom", destination: "Newcastle, United Kingdom", vessel: "", departureDate: "2026-07-21", arrivalDate: "2026-07-22", vin: "", customFields: [{ label: "Delivery state", value: "Out for delivery" }, { label: "Estimated margin", value: "19.6%" }] },
+  { id: "MD-22658", customer: "Jenkar", route: "Derby → Cardiff", carrier: "PalletLine", container: "Pallet network", mode: "ROAD" as BookingMode, value: "£1,180", eta: "Delivered", time: "Yesterday", status: "On track" as BookingStatus, progress: 100, owner: "EM", tone: "green" as StatusTone, invoice: "", jobRef: "RD-10658", customerRef: "JK-PO-48094", supplierRef: "PL-10658", origin: "Derby, United Kingdom", destination: "Cardiff, United Kingdom", vessel: "", departureDate: "2026-07-20", arrivalDate: "2026-07-21", vin: "", customFields: [{ label: "Proof of delivery", value: "Received" }, { label: "Estimated margin", value: "16.8%" }] },
   { id: "MD-22481", customer: "Marlow Apparel Ltd", route: "Yantian → Felixstowe", carrier: "COSCO", container: "40HC", mode: "OCEAN" as BookingMode, value: "€84,200", eta: "Jun 04", time: "06:20", status: "On track" as BookingStatus, progress: 64, owner: "EM", tone: "green" as StatusTone, invoice: "INV-MAR-8841", jobRef: "JOB-LON-22481", customerRef: "MAR-PO-7781", supplierRef: "YH-SO-1440", origin: "Yantian, China", destination: "Felixstowe, United Kingdom", vessel: "COSCO Pride", departureDate: "2026-05-25", arrivalDate: "2026-06-04", vin: "", customFields: [{ label: "Season", value: "SS26 launch" }, { label: "Buyer", value: "Sandra Hale" }] },
   { id: "MD-22479", customer: "Bauhaus Importe GmbH", route: "Ningbo → Rotterdam", carrier: "MAERSK", container: "40GP", mode: "OCEAN" as BookingMode, value: "€41,820", eta: "Jun 06", time: "11:45", status: "Delayed" as BookingStatus, progress: 41, owner: "EM", tone: "amber" as StatusTone, invoice: "INV-BAU-4420", jobRef: "JOB-RTM-22479", customerRef: "BAU-CREF-912", supplierRef: "NB-FAC-302", origin: "Ningbo, China", destination: "Rotterdam, Netherlands", vessel: "Maersk Girona", departureDate: "2026-05-23", arrivalDate: "2026-06-06", vin: "", customFields: [{ label: "Delay reason", value: "Rotterdam berth queue" }, { label: "Incoterms", value: "FOB Ningbo" }] },
   { id: "MD-22466", customer: "Black Forest Foods", route: "Frankfurt → JFK", carrier: "LH 8841", container: "1 ULD", mode: "AIR" as BookingMode, value: "€18,400", eta: "May 28", time: "21:10", status: "On track" as BookingStatus, progress: 88, owner: "JL", tone: "green" as StatusTone, invoice: "INV-BFF-1198", jobRef: "JOB-JFK-22466", customerRef: "BFF-CHILL-44", supplierRef: "FRA-COLD-18", origin: "Frankfurt, Germany", destination: "JFK, United States", vessel: "LH 8841", departureDate: "2026-05-28", arrivalDate: "2026-05-28", vin: "", customFields: [{ label: "Temperature", value: "Chilled 2-8C" }, { label: "FDA prior notice", value: "PN-8841" }] },
@@ -972,6 +983,14 @@ export const bookings = [
   { id: "MD-22399", customer: "Marlow Apparel Ltd", route: "Ningbo → Southampton", carrier: "ONE", container: "40HC", mode: "OCEAN" as BookingMode, value: "€72,100", eta: "Jun 13", time: "04:00", status: "On track" as BookingStatus, progress: 28, owner: "EM", tone: "green" as StatusTone, invoice: "INV-MAR-8755", jobRef: "JOB-SOU-22399", customerRef: "MAR-PO-7688", supplierRef: "NB-TEX-205", origin: "Ningbo, China", destination: "Southampton, United Kingdom", vessel: "ONE Innovation", departureDate: "2026-05-30", arrivalDate: "2026-06-13", vin: "", customFields: [{ label: "Range", value: "Outlet replenishment" }, { label: "Priority", value: "Standard" }] },
   { id: "MD-22388", customer: "Atlas Office Supply", route: "Shenzhen → Hamburg", carrier: "HMM", container: "20GP", mode: "OCEAN" as BookingMode, value: "€16,300", eta: "Jun 02", time: "11:00", status: "On track" as BookingStatus, progress: 60, owner: "JL", tone: "green" as StatusTone, invoice: "INV-AOS-5108", jobRef: "JOB-HAM-22388", customerRef: "AOS-DESK-301", supplierRef: "SZ-OFF-77", origin: "Shenzhen, China", destination: "Hamburg, Germany", vessel: "HMM Oslo", departureDate: "2026-05-22", arrivalDate: "2026-06-02", vin: "SALGA2BFXGA234567", customFields: [{ label: "Commodity", value: "Office furniture" }, { label: "Assembly kit", value: "Desk pod A12" }] },
 ]
+
+export const bookingShapeById: Record<string, { direction: BookingDirection; shipmentType: BookingShipmentType }> = {
+  "MD-22682": { direction: "Domestic", shipmentType: "Pallet" }, "MD-22683": { direction: "Domestic", shipmentType: "LTL" }, "MD-22676": { direction: "Domestic", shipmentType: "FTL" }, "MD-22679": { direction: "Domestic", shipmentType: "Pallet" }, "MD-22671": { direction: "Domestic", shipmentType: "FTL" }, "MD-22664": { direction: "Domestic", shipmentType: "FTL" }, "MD-22658": { direction: "Domestic", shipmentType: "Pallet" }, "MD-22481": { direction: "Import", shipmentType: "FCL" }, "MD-22479": { direction: "Import", shipmentType: "FCL" }, "MD-22466": { direction: "Export", shipmentType: "ULD" }, "MD-22455": { direction: "Import", shipmentType: "FCL" }, "MD-22441": { direction: "Cross trade", shipmentType: "LTL" }, "MD-22429": { direction: "Cross trade", shipmentType: "FCL" }, "MD-22414": { direction: "Import", shipmentType: "FCL" }, "MD-22399": { direction: "Import", shipmentType: "FCL" }, "MD-22388": { direction: "Export", shipmentType: "FCL" },
+}
+
+export function getBookingShape(bookingId: string) {
+  return bookingShapeById[bookingId] ?? { direction: "Cross trade" as const, shipmentType: "LTL" as const }
+}
 
 export const currentOperator = {
   name: "Elena Moreno",
@@ -2797,6 +2816,26 @@ export const galleryComponents = [
     usageCode: `<BookingBoardPreview onOpenBooking={openBooking} />`,
   },
   {
+    id: "domestic-job-stage-rail",
+    name: "Domestic Job Stage Rail",
+    category: "Operations",
+    description: "A five-stage operational rail for domestic road work, from incomplete order intake through carrier confirmation and financial close.",
+    details: "Use above a focused domestic transport queue. It keeps work that is not ready to plan visible without mixing it into live carrier or delivery monitoring.",
+    foundOn: [{ label: "Road control", route: "/road-control" }, { label: "Components", route: "/components?component=domestic-job-stage-rail" }],
+    componentCode: `export function DomesticJobStageRail({ stages, activeStage, onStageChange }) {\n  return (\n    <nav aria-label="Road job stages">\n      {stages.map((stage) => (\n        <button key={stage.id} aria-current={activeStage === stage.id ? "step" : undefined} onClick={() => onStageChange(stage.id)}>\n          <stage.icon />\n          <span>{stage.label}</span>\n          <span>{stage.helper}</span>\n        </button>\n      ))}\n    </nav>\n  )\n}`,
+    usageCode: `<DomesticJobStageRail stages={roadJobStages} activeStage={activeStage} onStageChange={setActiveStage} />`,
+  },
+  {
+    id: "domestic-road-job-card",
+    name: "Domestic Road Job Card",
+    category: "Operations",
+    description: "A compact domestic job row for scanning collection and delivery points, operational status, service, carrier and estimated margin.",
+    details: "Use in a domestic planning queue. Selecting a row opens the shared parent booking, keeping the specialist queue lean while the full record stays in one place.",
+    foundOn: [{ label: "Road control", route: "/road-control" }, { label: "Components", route: "/components?component=domestic-road-job-card" }],
+    componentCode: `export function DomesticRoadJobCard({ job, onOpenBooking }) {\n  return <button onClick={() => onOpenBooking?.(job)}>{job.bookingId} · {job.customer}</button>\n}`,
+    usageCode: `<DomesticRoadJobCard job={domesticRoadJobs[0]} onOpenBooking={(job) => navigate(\`/bookings/\${job.bookingId.toLowerCase()}\`)} />`,
+  },
+  {
     id: "report-template-card",
     name: "Report Template Card",
     category: "Data",
@@ -3376,6 +3415,8 @@ export const galleryIcons = {
   "booking-advanced-search": Search,
   "bookings-table": Ship,
   "booking-board-preview": LayoutDashboard,
+  "domestic-job-stage-rail": Truck,
+  "domestic-road-job-card": Truck,
   "report-template-card": BarChart3,
   "generated-report-table": FileText,
   "report-document-page": FileText,

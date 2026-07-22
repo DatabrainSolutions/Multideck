@@ -399,6 +399,19 @@ const defaultBooking: BookingWizardData = {
   operationalNotes: "",
 }
 
+function getInitialBookingData(): BookingWizardData {
+  if (typeof window === "undefined") return defaultBooking
+  if (new URLSearchParams(window.location.search).get("preset") !== "domestic-road") return defaultBooking
+
+  return {
+    ...defaultBooking,
+    source: "scratch",
+    direction: "Domestic",
+    mode: "Road",
+    internalReference: "RD-LON-22618",
+  }
+}
+
 const optionMotion = {
   hidden: { opacity: 0, y: 8 },
   visible: { opacity: 1, y: 0 },
@@ -3120,7 +3133,7 @@ function SuccessState({ data, navigate, onRestart }: { data: BookingWizardData; 
 }
 
 export function BookingWizardPage({ navigate }: { navigate: (path: string) => void }) {
-  const [data, setData] = useState<BookingWizardData>(defaultBooking)
+  const [data, setData] = useState<BookingWizardData>(getInitialBookingData)
   const [activeStep, setActiveStep] = useState(0)
   const [showSuccess, setShowSuccess] = useState(false)
   const [focusFieldLabel, setFocusFieldLabel] = useState("")
