@@ -1,5 +1,5 @@
 import { useId, useMemo, useState, type ReactNode } from "react"
-import { Check, ClipboardCheck, ExternalLink, Network, Package, Plus, Save, Search, SlidersHorizontal, Trash2, Truck } from "lucide-react"
+import { ArrowRight, Check, CircleCheckBig, CircleDollarSign, ClipboardCheck, Clock3, ExternalLink, FileText, MapPin, Network, Package, Plus, Save, Search, SlidersHorizontal, Trash2, Truck, UserRound } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -7,10 +7,15 @@ import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { AuditWorkspace, type QuoteAuditRecord } from "@/components/multideck/audit-workspace"
 import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
-import { domesticRoadJobs } from "@/components/multideck/domestic-road-components"
+import { domesticRoadJobs, type DomesticRoadJob } from "@/components/multideck/domestic-road-components"
+import { DocumentWorkspace, type DocumentWorkspaceDocument } from "@/components/multideck/document-workspace"
+import { StatusPill } from "@/components/multideck/status-pill"
 import { Surface } from "@/components/multideck/surface"
+import { UnifiedQuoteChargesWorkspace, type UnifiedQuoteChargeRow } from "@/components/multideck/unified-quote-charges-workspace"
 import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
 
@@ -90,6 +95,11 @@ const roadCustomerAccounts: RoadCustomerAccount[] = [
 
 const inputClass = "h-9 rounded-[var(--md-radius-md)] text-[13px]"
 const fieldLabelClass = "text-[11px] font-medium text-[var(--md-text)]"
+const initialRoadJobCharges: UnifiedQuoteChargeRow[] = [
+  { id: "road-haulage", code: "HAUL", description: "Domestic road haulage", cost: 860, costCurrency: "GBP", sell: 1240, sellCurrency: "GBP" },
+  { id: "fuel-supplement", code: "FSC", description: "Fuel surcharge", cost: 64, costCurrency: "GBP", sell: 92, sellCurrency: "GBP" },
+  { id: "collection", code: "COLL", description: "Collection handling", cost: 42, costCurrency: "GBP", sell: 68, sellCurrency: "GBP" },
+]
 
 function Field({
   label,
@@ -105,6 +115,139 @@ function Field({
       <span className={fieldLabelClass}>{label}</span>
       {children}
     </label>
+  )
+}
+
+function RoadJobOverview({
+  job,
+  onOpenDetails,
+  onOpenPricing,
+}: {
+  job: DomesticRoadJob
+  onOpenDetails: () => void
+  onOpenPricing: () => void
+}) {
+  const { t } = useLanguage()
+  const stageIndex = ["intake", "ready", "carrier", "live", "close"].indexOf(job.stage)
+  const stageLabel = {
+    intake: "Intake",
+    ready: "Ready to plan",
+    carrier: "Carrier confirmation",
+    live: "Live movement",
+    close: "Financial close",
+  }[job.stage]
+  const movementSteps = [
+    { label: t("Collection"), detail: `${job.collection} · ${job.timing}`, complete: stageIndex > 0, active: stageIndex === 0 },
+    { label: t("Carrier allocation"), detail: job.carrier, complete: stageIndex > 1, active: stageIndex === 1 },
+    { label: t("Delivery"), detail: job.delivery, complete: stageIndex > 3, active: stageIndex >= 2 },
+  ]
+
+  return (
+    <div className="grid gap-4">
+      <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)] p-4 md:p-5">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[12px] font-medium text-[var(--md-text)]">{t("Domestic Road job")}</span>
+              <StatusPill tone={job.tone}>{t(job.status)}</StatusPill>
+              <bdi dir="ltr" className="text-[12px] font-medium text-[var(--md-accent)]">{job.id}</bdi>
+            </div>
+            <div className="mt-3 flex min-w-0 items-start gap-3">
+              <span className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[color-mix(in_srgb,var(--md-accent)_10%,var(--md-surface))] text-[var(--md-accent)]"><MapPin className="size-4" strokeWidth={1.5} /></span>
+              <div className="min-w-0">
+                <h2 className="text-[20px] font-medium leading-7 text-[var(--md-ink)] md:text-[24px]" dir="auto">{job.collection} <span className="text-[var(--md-subtle)]">→</span> {job.delivery}</h2>
+                <p className="mt-1 text-[13px] text-[var(--md-text)]">{job.customer} · {job.service} · {job.timing}</p>
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" className="h-9 rounded-[var(--md-radius-md)] px-3 text-[12px]" onClick={onOpenDetails}>{t("Open job details")}</Button>
+            <Button type="button" className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[12px] text-white hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]" onClick={onOpenPricing}>{t("Review pricing")}<ArrowRight className="size-3.5" strokeWidth={1.5} /></Button>
+          </div>
+        </div>
+      </Surface>
+
+      <section aria-label={t("Road job summary")} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          { label: t("Job stage"), value: t(stageLabel), helper: t("Current operational stage"), tone: "text-[var(--md-accent)]" },
+          { label: t("Collection"), value: t("Today"), helper: job.timing, tone: "text-[var(--md-amber)]" },
+          { label: t("Service"), value: job.service, helper: job.carrier, tone: "text-[var(--md-blue)]" },
+          { label: t("Expected margin"), value: job.margin, helper: t("Pricing ready to review"), tone: "text-[var(--md-green)]" },
+        ].map((metric) => (
+          <Surface key={metric.label} padding="none" className="rounded-[var(--md-radius-xl)] p-4">
+            <p className="text-[12px] font-medium text-[var(--md-text)]">{metric.label}</p>
+            <p className={cn("mt-2 truncate text-[21px] font-medium leading-none", metric.tone)} dir="auto">{metric.value}</p>
+            <p className="mt-2 truncate text-[11px] text-[var(--md-text)]" dir="auto">{metric.helper}</p>
+          </Surface>
+        ))}
+      </section>
+
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(280px,0.75fr)]">
+        <div className="grid gap-4">
+          <Surface padding="none" className="rounded-[var(--md-radius-xl)] p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-[15px] font-medium text-[var(--md-ink)]">{t("Movement plan")}</h2>
+                <p className="mt-1 text-[12px] text-[var(--md-text)]">{t("Current handoffs and progress through the domestic movement.")}</p>
+              </div>
+              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[color-mix(in_srgb,var(--md-accent)_9%,var(--md-surface))] px-2.5 py-1 text-[11px] font-medium text-[var(--md-accent)]"><CircleCheckBig className="size-3.5" strokeWidth={1.5} />{t(stageLabel)}</span>
+            </div>
+            <ol className="mt-5 grid gap-3 md:grid-cols-3">
+              {movementSteps.map((step, index) => (
+                <li key={step.label} className="relative min-w-0 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3">
+                  <span className={cn("grid size-6 place-items-center rounded-full text-[11px] font-medium", step.complete ? "bg-[var(--md-green)] text-white" : step.active ? "bg-[var(--md-accent)] text-white" : "bg-[var(--md-surface)] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]")}>{step.complete ? <Check className="size-3.5" strokeWidth={1.8} /> : index + 1}</span>
+                  <p className="mt-3 text-[13px] font-medium text-[var(--md-ink)]">{step.label}</p>
+                  <p className="mt-1 min-h-8 text-[11px] leading-4 text-[var(--md-text)]" dir="auto">{step.detail}</p>
+                </li>
+              ))}
+            </ol>
+          </Surface>
+
+          <Surface padding="none" className="rounded-[var(--md-radius-xl)] p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-[15px] font-medium text-[var(--md-ink)]">{t("Recent activity")}</h2>
+                <p className="mt-1 text-[12px] text-[var(--md-text)]">{t("Latest changes to this Road job.")}</p>
+              </div>
+              <Button type="button" variant="ghost" className="h-8 rounded-[var(--md-radius-md)] px-2.5 text-[12px]" onClick={() => onOpenDetails()}>{t("View details")}</Button>
+            </div>
+            <div className="mt-4 divide-y divide-[rgba(11,20,19,0.08)]">
+              {[
+                { title: t("Road job created"), detail: t("Created from booking") + ` ${job.bookingId}`, time: "08:42" },
+                { title: t("Route confirmed"), detail: `${job.collection} → ${job.delivery}`, time: "09:06" },
+                { title: t("Pricing refreshed"), detail: t("Charges and expected margin updated"), time: "09:24" },
+              ].map((activity) => (
+                <div key={activity.title} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-3 first:pt-0 last:pb-0">
+                  <div className="min-w-0"><p className="text-[13px] font-medium text-[var(--md-ink)]">{activity.title}</p><p className="mt-0.5 truncate text-[12px] text-[var(--md-text)]" dir="auto">{activity.detail}</p></div>
+                  <time className="text-[11px] text-[var(--md-subtle)]" dir="ltr">{activity.time}</time>
+                </div>
+              ))}
+            </div>
+          </Surface>
+        </div>
+
+        <aside className="grid gap-4">
+          <Surface padding="none" className="rounded-[var(--md-radius-xl)] p-4">
+            <div className="flex items-center gap-2"><span className="grid size-8 place-items-center rounded-[var(--md-radius-md)] bg-[rgba(74,125,156,0.1)] text-[var(--md-blue)]"><UserRound className="size-4" strokeWidth={1.5} /></span><div><h2 className="text-[15px] font-medium text-[var(--md-ink)]">{t("Job details")}</h2><p className="text-[12px] text-[var(--md-text)]">{t("Booking and ownership")}</p></div></div>
+            <dl className="mt-4 grid gap-3 border-t border-[rgba(11,20,19,0.08)] pt-4 text-[12px]">
+              {[
+                [t("Customer"), job.customer],
+                [t("Booking"), job.bookingId],
+                [t("Customer reference"), job.reference],
+                [t("Office"), job.office],
+                [t("Owner"), job.owner],
+              ].map(([label, value]) => <div key={label} className="flex items-center justify-between gap-3"><dt className="text-[var(--md-text)]">{label}</dt><dd className="truncate text-end font-medium text-[var(--md-ink)]" dir="auto">{value}</dd></div>)}
+            </dl>
+          </Surface>
+          <Surface padding="none" className="rounded-[var(--md-radius-xl)] bg-[color-mix(in_srgb,var(--md-amber)_8%,var(--md-surface))] p-4">
+            <p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Next action")}</p>
+            <p className="mt-2 text-[15px] font-medium leading-5 text-[var(--md-ink)]">{t("Confirm the selected carrier")}</p>
+            <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Review the carrier shortlist, then confirm the collection commitment before the collection window.")}</p>
+            <Button type="button" variant="outline" className="mt-3 h-8 rounded-[var(--md-radius-md)] bg-white/55 px-2.5 text-[12px] hover:bg-white" onClick={onOpenDetails}>{t("Go to job details")}</Button>
+          </Surface>
+        </aside>
+      </div>
+    </div>
   )
 }
 
@@ -206,6 +349,7 @@ export function DomesticRoadBookingPage({ navigate, roadJobId }: { navigate: (pa
   const { t } = useLanguage()
   const viewedJob = roadJobId ? domesticRoadJobs.find((job) => job.id.toLocaleLowerCase() === roadJobId.toLocaleLowerCase()) : undefined
   const isExistingRoadJob = Boolean(viewedJob)
+  const [activeJobTab, setActiveJobTab] = useState(() => isExistingRoadJob ? "overview" : "details")
   const [dexterOpen, setDexterOpen] = useState(false)
   const [networkDistribution, setNetworkDistribution] = useState(() => !viewedJob || /pallet|next-day/i.test(viewedJob.service))
   const [network, setNetwork] = useState("Palletline")
@@ -232,6 +376,7 @@ export function DomesticRoadBookingPage({ navigate, roadJobId }: { navigate: (pa
   const [manualCollectionAddress, setManualCollectionAddress] = useState(roadCustomerAccounts[0].addresses[0].address)
   const [manualDeliveryAddress, setManualDeliveryAddress] = useState(roadCustomerAccounts[0].addresses[1].address)
   const [legs, setLegs] = useState<RoadLeg[]>(initialLegs)
+  const [roadJobCharges, setRoadJobCharges] = useState<UnifiedQuoteChargeRow[]>(initialRoadJobCharges)
 
   const account = roadCustomerAccounts.find((item) => item.id === accountId) ?? roadCustomerAccounts[0]
   const contact = account.contacts.find((item) => item.id === contactId) ?? account.contacts[0]
@@ -242,6 +387,18 @@ export function DomesticRoadBookingPage({ navigate, roadJobId }: { navigate: (pa
     if (viewedJob) return `${viewedJob.collection} → ${viewedJob.delivery}`
     return collectionAddress && deliveryAddress ? `${collectionAddress.shortName} → ${deliveryAddress.shortName}` : t("Route to be confirmed")
   }, [collectionAddress, deliveryAddress, t, viewedJob])
+
+  const roadJobDocuments = useMemo<readonly DocumentWorkspaceDocument[]>(() => viewedJob ? [
+    { id: `${viewedJob.id}-instruction`, fileName: `${viewedJob.id}-collection-instruction.pdf`, description: t("Collection address, service and collection window for the assigned haulier."), documentType: t("Collection instruction"), uploadedAt: "22 Jul 2026 · 09:14", lastModifiedAt: "22 Jul 2026 · 09:14", source: "routing", relationship: { label: t("Road job"), reference: viewedJob.id }, preview: { kind: "pdf", mimeType: "application/pdf", fileSize: "186 KB", pageCount: 1, reference: viewedJob.id, accent: "teal" } },
+    { id: `${viewedJob.id}-packing-list`, fileName: `${viewedJob.bookingId}-packing-list.pdf`, description: t("Confirmed goods description, pallet count and gross weight for collection."), documentType: t("Packing list"), uploadedAt: "22 Jul 2026 · 08:52", lastModifiedAt: "22 Jul 2026 · 08:52", source: "customer", relationship: { label: t("Customer"), reference: viewedJob.customer }, preview: { kind: "pdf", mimeType: "application/pdf", fileSize: "242 KB", pageCount: 2, reference: viewedJob.bookingId, accent: "blue" } },
+    { id: `${viewedJob.id}-carrier`, fileName: `${viewedJob.id}-carrier-update.pdf`, description: t("Carrier allocation and delivery handover confirmation."), documentType: t("Carrier update"), uploadedAt: "22 Jul 2026 · 10:08", lastModifiedAt: "22 Jul 2026 · 10:08", source: "supplier", relationship: { label: t("Carrier"), reference: viewedJob.carrier }, preview: { kind: "document", mimeType: "application/pdf", fileSize: "118 KB", pageCount: 1, reference: viewedJob.id, accent: "amber" } },
+  ] : [], [t, viewedJob])
+
+  const roadJobAuditRecords = useMemo<readonly QuoteAuditRecord[]>(() => viewedJob ? [
+    { id: `${viewedJob.id}-created`, timestamp: "2026-07-22T08:42:17+01:00", actor: "Elena Moreno", actorRole: t("Operations coordinator"), action: t("Road job created"), detail: `${viewedJob.id} ${t("was created from the domestic Road booking.")}`, eventType: "record", field: t("Road job"), oldValue: t("Not created"), newValue: viewedJob.id, source: t("Road control"), state: "completed" },
+    { id: `${viewedJob.id}-routing`, timestamp: "2026-07-22T09:06:42+01:00", actor: "Elena Moreno", actorRole: t("Operations coordinator"), action: t("Collection and delivery confirmed"), detail: `${viewedJob.collection} → ${viewedJob.delivery}`, eventType: "routing", field: t("Route"), oldValue: t("Pending confirmation"), newValue: t("Confirmed"), source: t("Road job details"), state: "completed" },
+    { id: `${viewedJob.id}-pricing`, timestamp: "2026-07-22T09:24:10+01:00", actor: "Multideck", actorRole: t("Pricing engine"), action: t("Road pricing refreshed"), detail: t("Supplier cost and customer sell were recalculated for the selected service."), eventType: "pricing", field: t("Expected margin"), oldValue: "—", newValue: viewedJob.margin, source: t("Pricing"), state: "completed" },
+  ] : [], [t, viewedJob])
 
   function selectAccount(nextAccountId: string) {
     const nextAccount = roadCustomerAccounts.find((item) => item.id === nextAccountId)
@@ -334,6 +491,20 @@ export function DomesticRoadBookingPage({ navigate, roadJobId }: { navigate: (pa
         </div>
       </header>
 
+      <Tabs value={activeJobTab} onValueChange={setActiveJobTab} className="grid gap-4">
+        {isExistingRoadJob ? <Surface padding="none" tone="soft" className="min-w-0 overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)]">
+          <TabsList variant="line" className="h-auto w-full max-w-full justify-start gap-1 overflow-x-auto bg-transparent p-0">
+            <TabsTrigger value="overview" className="h-8 rounded-[var(--md-radius-lg)] px-2.5 text-[12px]"><CircleCheckBig data-icon="inline-start" className="size-4" strokeWidth={1.3} />{t("Overview")}</TabsTrigger>
+            <TabsTrigger value="details" className="h-8 rounded-[var(--md-radius-lg)] px-2.5 text-[12px]"><Truck data-icon="inline-start" className="size-4" strokeWidth={1.3} />{t("Details")}</TabsTrigger>
+            <TabsTrigger value="pricing" className="h-8 rounded-[var(--md-radius-lg)] px-2.5 text-[12px]"><CircleDollarSign data-icon="inline-start" className="size-4" strokeWidth={1.3} />{t("Pricing")}</TabsTrigger>
+            <TabsTrigger value="documents" className="h-8 rounded-[var(--md-radius-lg)] px-2.5 text-[12px]"><FileText data-icon="inline-start" className="size-4" strokeWidth={1.3} />{t("Documents")}</TabsTrigger>
+            <TabsTrigger value="audit" className="h-8 rounded-[var(--md-radius-lg)] px-2.5 text-[12px]"><Clock3 data-icon="inline-start" className="size-4" strokeWidth={1.3} />{t("Audit")}</TabsTrigger>
+          </TabsList>
+        </Surface> : null}
+
+        {isExistingRoadJob && viewedJob ? <TabsContent value="overview" className="mt-0"><RoadJobOverview job={viewedJob} onOpenDetails={() => setActiveJobTab("details")} onOpenPricing={() => setActiveJobTab("pricing")} /></TabsContent> : null}
+
+        <TabsContent value="details" className="mt-0">
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_290px]">
         <div className="grid gap-4">
           <Surface padding="none" className="rounded-[var(--md-radius-xl)] p-4">
@@ -543,6 +714,14 @@ export function DomesticRoadBookingPage({ navigate, roadJobId }: { navigate: (pa
           </Surface>
         </aside>
       </div>
+        </TabsContent>
+
+        {isExistingRoadJob ? <>
+          <TabsContent value="pricing" className="mt-0"><UnifiedQuoteChargesWorkspace rows={roadJobCharges} onRowsChange={setRoadJobCharges} baseCurrency="GBP" storageKey={`road-job-charges-${viewedJob?.id ?? "draft"}`} /></TabsContent>
+          <TabsContent value="documents" className="mt-0"><DocumentWorkspace documents={roadJobDocuments} title="Road job documents" description="Documents connected to the domestic Road job, its customer and its carrier handoff." /></TabsContent>
+          <TabsContent value="audit" className="mt-0"><AuditWorkspace records={roadJobAuditRecords} title="Road job audit" description="Changes, pricing updates and operational events for this domestic Road job." /></TabsContent>
+        </> : null}
+      </Tabs>
 
       <Dialog open={palletDetailsOpen} onOpenChange={setPalletDetailsOpen}>
         <DialogContent className="w-[calc(100vw-32px)] max-w-[960px] rounded-[var(--md-radius-xl)] p-0 sm:max-w-[960px]">

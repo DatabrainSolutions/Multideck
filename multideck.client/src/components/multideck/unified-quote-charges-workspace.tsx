@@ -361,7 +361,7 @@ function CurrencyAmountInput({
 
   const prefix = currency.symbolPosition !== "suffix"
   return (
-    <label className="relative block min-w-0" title={moneyText(value, currency, locale)}>
+    <label className="relative isolate block min-w-0" title={moneyText(value, currency, locale)}>
       <span className={cn("pointer-events-none absolute top-1/2 z-10 -translate-y-1/2 text-[10px] font-medium text-[var(--md-subtle)]", prefix ? "start-2" : "end-2")} data-i18n-skip dir="ltr">
         {currency.symbol}
       </span>
