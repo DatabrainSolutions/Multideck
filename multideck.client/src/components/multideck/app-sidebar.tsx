@@ -3,6 +3,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { ArrowLeft, Bell, CheckCircle2, Clock3, LogOut, PanelLeftClose, PanelLeftOpen, Settings, Sparkles, TriangleAlert, type LucideIcon } from "lucide-react"
 import { motion, useReducedMotion } from "motion/react"
 import { Button, buttonVariants } from "@/components/ui/button"
+import { SpectralBloomShader } from "@/components/multideck/dexter-action-pill"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
@@ -20,9 +21,10 @@ const sidebarItemTransition = {
 }
 
 const sidebarActiveTransition = {
-  type: "tween" as const,
-  duration: 0.34,
-  ease: [0.16, 1, 0.3, 1] as [number, number, number, number],
+  type: "spring" as const,
+  stiffness: 430,
+  damping: 42,
+  mass: 0.7,
 }
 
 type SidebarActiveTarget = {
@@ -222,8 +224,8 @@ export function SidebarNavItem({
   const Icon = item.icon
   const { t } = useLanguage()
   const aiAgentName = useAiAgentName()
-  const shouldReduceMotion = useReducedMotion()
   const isDisabled = !onClick
+  const isDexterItem = accent === "dexter"
   const valueTone =
     accent === "dexter" ? "bg-[var(--md-accent)] text-white" :
     item.label === "Documents" ? "bg-[var(--md-accent)] text-white" :
@@ -233,7 +235,7 @@ export function SidebarNavItem({
     "bg-transparent text-[var(--md-text)]"
 
   return (
-    <motion.button
+    <button
       type="button"
       data-sidebar-active-target={isActive ? "true" : undefined}
       aria-current={isActive ? "page" : undefined}
@@ -242,46 +244,76 @@ export function SidebarNavItem({
       title={collapsed ? t(item.label) : undefined}
       className={cn(
         buttonVariants({ variant: "ghost", size: "sm" }),
-        "group relative h-10 w-full justify-start gap-2 overflow-hidden rounded-[var(--md-radius-md)] px-2.5 text-[14px] font-medium text-[var(--md-text)] transition-[color,opacity] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
+        "group relative h-9 w-full justify-start gap-2 overflow-hidden rounded-[var(--md-radius-md)] px-2 text-[13px] font-medium text-[var(--md-text)] transition-[color,opacity,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
         "bg-transparent hover:bg-transparent hover:text-[var(--md-ink)] aria-expanded:bg-transparent dark:hover:bg-transparent focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
+        isDexterItem && "md-sidebar-dexter-item !text-white hover:!text-white focus-visible:!text-white",
         collapsed && "justify-center px-0",
         isActive && "text-[var(--md-ink)]",
-        accent === "dexter" && isActive && "text-[var(--md-accent)]",
+        accent === "dexter" && isActive && "!text-white",
         isDisabled && "cursor-default opacity-55 hover:text-[var(--md-text)]",
+        !isDisabled && !collapsed && !isDexterItem && "hover:scale-[1.004] active:scale-[0.986] motion-reduce:hover:scale-100 motion-reduce:active:scale-100",
       )}
+      style={{
+        transitionDuration: "150ms",
+        transitionProperty: "color, opacity, scale, box-shadow",
+        transitionTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1)",
+      }}
       disabled={isDisabled}
       onClick={onClick}
-      whileHover={isDisabled || shouldReduceMotion ? undefined : { x: 3, scale: 1.01 }}
-      whileTap={isDisabled || shouldReduceMotion ? undefined : { scale: 0.985 }}
-      transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.micro)}
     >
-      {isActive ? null : <span className="absolute inset-0 rounded-[var(--md-radius-md)] bg-[var(--md-hover)] opacity-0 transition-opacity duration-200 group-hover:opacity-100" />}
-      <motion.span
+      {isDexterItem ? (
+        <>
+          <span className="md-dexter-pill__shader" aria-hidden="true">
+            <SpectralBloomShader />
+          </span>
+          <span className="md-dexter-pill__contrast" aria-hidden="true" />
+          {isActive ? (
+            <span
+              data-sidebar-active-surface
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 z-[1] rounded-[var(--md-radius-md)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.48),0_7px_16px_rgba(42,52,50,0.12)]"
+            />
+          ) : null}
+        </>
+      ) : isActive ? null : !isDisabled ? (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 scale-[0.985] rounded-[var(--md-radius-md)] bg-[var(--md-hover)] opacity-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_1px_2px_rgba(11,20,19,0.035)] transition-[opacity,transform] duration-100 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-100 group-hover:opacity-100 group-focus-visible:scale-100 group-focus-visible:opacity-100 motion-reduce:transition-none"
+        />
+      ) : null}
+      <span
         className={cn(
-          "relative grid size-5 place-items-center rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] transition-[background,color] duration-200 group-hover:bg-[var(--md-icon-well)] group-hover:text-[var(--md-ink)]",
-          isActive && "bg-[var(--md-icon-well)] text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
-          accent === "dexter" && isActive && "text-[var(--md-accent)]",
+          "relative grid size-5 place-items-center text-[var(--md-subtle)] transition-[background,color] duration-200",
+          !isActive && "rounded-[var(--md-radius-sm)] group-hover:bg-[var(--md-icon-well)] group-hover:text-[var(--md-ink)]",
+          isActive && "text-[var(--md-accent)]",
+          isDexterItem && "z-10 !text-white group-hover:bg-white/10 group-hover:!text-white",
         )}
-        animate={isActive && !shouldReduceMotion ? { scale: 1 } : undefined}
-        initial={false}
       >
-        <Icon data-icon="inline-start" strokeWidth={1.2} />
-      </motion.span>
-      <span className={cn("relative min-w-0 flex-1 truncate text-start", collapsed && "sr-only")}>{t(item.label)}</span>
+        <span
+          aria-hidden="true"
+          className="grid size-full place-items-center transition-transform duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:-translate-y-px group-hover:scale-[1.06] group-active:translate-y-0 group-active:scale-[0.94] motion-reduce:transition-none motion-reduce:group-hover:translate-y-0 motion-reduce:group-hover:scale-100 motion-reduce:group-active:scale-100"
+          style={{
+            transitionDuration: "150ms",
+            transitionProperty: "translate, scale",
+            transitionTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1)",
+          }}
+        >
+          <Icon data-icon={collapsed ? undefined : "inline-start"} strokeWidth={1.2} />
+        </span>
+      </span>
+      <span className={cn("min-w-0 flex-1 truncate text-start", isDexterItem && "z-10", collapsed ? "sr-only !absolute" : "relative")}>{t(item.label)}</span>
       {item.value ? (
-        <motion.span
-          layout
+        <span
           className={cn(
             "relative rounded-full px-2 py-0.5 text-[11px] font-medium shadow-[inset_0_0_0_1px_rgba(255,255,255,0.38)]",
             valueTone,
             collapsed && "absolute end-1 top-1 min-w-2 px-0 text-[0px] leading-none",
           )}
-          transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.layout)}
         >
           {t(item.value)}
-        </motion.span>
+        </span>
       ) : null}
-    </motion.button>
+    </button>
   )
 }
 
@@ -298,7 +330,7 @@ function SidebarSection({
 
   return (
     <motion.nav
-      className={cn("flex flex-col gap-[var(--md-gap-sm)]", className)}
+      className={cn("flex flex-col gap-1", className)}
       variants={shouldReduceMotion ? undefined : navReveal}
       initial={shouldReduceMotion ? undefined : "hidden"}
       animate={shouldReduceMotion ? undefined : "show"}
@@ -402,7 +434,7 @@ export function AppSidebar({
       ref={sidebarRef}
       data-sidebar-collapsed={collapsed ? "true" : undefined}
       className={cn(
-        "relative isolate flex h-full min-h-0 shrink-0 flex-col bg-[var(--md-sidebar-bg)] py-[var(--md-page-stack-gap)] shadow-[var(--md-stroke-right)] transition-[width,padding] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
+        "relative isolate flex h-full min-h-0 shrink-0 flex-col bg-[var(--md-sidebar-bg)] py-3 shadow-[var(--md-stroke-right)] transition-[width,padding] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
         collapsed ? "w-[var(--md-sidebar-collapsed-width)] px-2" : "w-[var(--md-sidebar-width)] px-[var(--md-gap-lg)]",
         className,
       )}
@@ -481,7 +513,7 @@ export function AppSidebar({
         </>
       ) : (
         <>
-          <SidebarSection className="relative z-10 mt-[var(--md-page-section-gap)]" onRevealComplete={updateActiveTarget}>
+          <SidebarSection className="relative z-10 mt-4" onRevealComplete={updateActiveTarget}>
             {sidebarPrimary.slice(0, 1).map((item) => (
               <SidebarSectionItem key={item.label}>
                 <SidebarNavItem
@@ -513,7 +545,7 @@ export function AppSidebar({
             ))}
           </SidebarSection>
 
-          <Separator className="relative z-10 my-[var(--md-page-stack-gap)] bg-[rgba(11,20,19,0.06)]" />
+          <Separator className="relative z-10 my-2.5 bg-[rgba(11,20,19,0.06)]" />
 
           <SidebarSection className="relative z-10" onRevealComplete={updateActiveTarget}>
             {sidebarSecondary.map((item) => (

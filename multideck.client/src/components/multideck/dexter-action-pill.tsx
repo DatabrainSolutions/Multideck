@@ -1,4 +1,4 @@
-import type { ComponentProps, CSSProperties } from "react"
+import { memo, type ComponentProps, type CSSProperties } from "react"
 import { Sparkles, type LucideIcon } from "lucide-react"
 import { useReducedMotion } from "motion/react"
 import { ColorWheel, Halftone, Shader, SunBurst } from "shaders/react"
@@ -14,7 +14,7 @@ type DexterActionPillProps = Omit<ComponentProps<typeof Button>, "children"> & {
   label?: string
 }
 
-export function SpectralBloomShader({ tone = "button" }: { tone?: "button" | "brand" }) {
+export const SpectralBloomShader = memo(function SpectralBloomShader({ tone = "button" }: { tone?: "button" | "brand" }) {
   const reduceMotion = useReducedMotion()
   const isBrandMark = tone === "brand"
 
@@ -58,7 +58,7 @@ export function SpectralBloomShader({ tone = "button" }: { tone?: "button" | "br
       <Halftone frequency={125} misprint={0.0055} opacity={isBrandMark ? 0.025 : 0.05} style="cmyk" />
     </Shader>
   )
-}
+})
 
 function SlotLabel({ label, direction }: { label: string; direction: "ltr" | "rtl" }) {
   return (
