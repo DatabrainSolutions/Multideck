@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils"
 import type { StatusTone } from "@/data/multideck-data"
 import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
 import { Surface } from "@/components/multideck/surface"
+import { useLanguage } from "@/i18n/language-provider"
 
 export type DexterSpecialistId = "auto" | "customs" | "customer" | "sales" | "ops" | "analytics"
 
@@ -122,6 +123,8 @@ export function DexterPromptComposer({
   compact?: boolean
   className?: string
 }) {
+  const { t } = useLanguage()
+
   return (
     <div
       className={cn(
@@ -199,7 +202,7 @@ export function DexterPromptComposer({
             label={t("Send prompt")}
             className="ms-auto size-10 min-w-0 rounded-[var(--md-radius-lg)] p-0 sm:ms-0"
             onClick={onSend}
-            disabled={disabled || !value.trim()}
+            disabled={!value.trim()}
           />
         </div>
       </div>

@@ -39,11 +39,7 @@ import {
   type WarehouseOrderReference,
 } from "@/lib/warehouse-api"
 
-<<<<<<< Updated upstream
 const controlClass = "!h-10 !w-full rounded-[var(--md-radius-lg)] border-0 bg-white/68 !px-3 !text-[13px] leading-5 text-[var(--md-ink)] shadow-[var(--md-shadow-line)] placeholder:text-[var(--md-subtle)] active:!scale-100 focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]"
-=======
-const controlClass = "h-10 w-full rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-field-bg)] px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] placeholder:text-[var(--md-subtle)] hover:bg-[var(--md-field-bg-hover)] focus-visible:bg-[var(--md-field-bg-hover)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]"
->>>>>>> Stashed changes
 const allValue = "__all__"
 const allOrderTypes: ("inbound" | "outbound")[] = ["inbound", "outbound"]
 const maxOrderDocumentBytes = 25 * 1024 * 1024

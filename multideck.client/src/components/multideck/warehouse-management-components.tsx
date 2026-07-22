@@ -59,7 +59,6 @@ import {
 // ---------------------------------------------------------------------------
 
 const fieldControlClass =
-<<<<<<< Updated upstream
   "!h-10 !w-full rounded-[var(--md-radius-lg)] border-0 bg-white/68 !px-3 !text-[13px] leading-5 text-[var(--md-ink)] shadow-[var(--md-shadow-line)] placeholder:text-[var(--md-subtle)] active:!scale-100 focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]"
 
 export const warehouseDialogHeaderClass =
@@ -67,9 +66,6 @@ export const warehouseDialogHeaderClass =
 
 export const warehouseDialogFooterClass =
   "!mx-0 !mb-0 bg-[var(--md-surface-soft)] px-6 py-4 shadow-[var(--md-stroke-top)]"
-=======
-  "h-10 w-full rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-field-bg)] px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] placeholder:text-[var(--md-subtle)] hover:bg-[var(--md-field-bg-hover)] focus-visible:bg-[var(--md-field-bg-hover)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]"
->>>>>>> Stashed changes
 
 /**
  * WarehouseFormField

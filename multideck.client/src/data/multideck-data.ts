@@ -86,7 +86,6 @@ export type SidebarArea = {
   destinations: SidebarDestination[]
 }
 
-<<<<<<< Updated upstream
 export const warehouseNavigation: SidebarDestination[] = [
   { id: "warehouse-dashboard", label: "Dashboard", value: "Live", icon: LayoutDashboard, route: "/warehouse" },
   { id: "warehouse-calendar", label: "Calendar", value: "7d", icon: CalendarDays, route: "/warehouse/calendar" },
@@ -112,9 +111,6 @@ export const customerWarehouseNavigation: SidebarDestination[] = [
   { id: "warehouse-items", label: "Items", icon: Package, route: "/warehouse/items" },
   { id: "warehouse-users", label: "Users", icon: Users, route: "/warehouse/users" },
 ]
-
-=======
->>>>>>> Stashed changes
 export const sidebarAreas: SidebarArea[] = [
   {
     id: "home-work",
@@ -202,18 +198,7 @@ export const sidebarAreas: SidebarArea[] = [
     id: "warehouse",
     label: "Warehouse",
     icon: Boxes,
-<<<<<<< Updated upstream
     destinations: [...warehouseNavigation],
-=======
-    destinations: [
-      { id: "inventory", label: "Inventory", icon: Boxes, route: "/warehouse" },
-      { id: "inbound", label: "Inbound", icon: PackageCheck },
-      { id: "outbound", label: "Outbound", icon: Plane },
-      { id: "warehouse-work", label: "Warehouse work", icon: ListOrdered },
-      { id: "bonded-warehouse", label: "Bonded warehouse", icon: BadgeCheck },
-      { id: "facilities-locations", label: "Facilities & locations", icon: Globe2 },
-    ],
->>>>>>> Stashed changes
   },
   {
     id: "finance",
@@ -2445,13 +2430,8 @@ export const galleryComponents = [
     id: "sidebar",
     name: "Area Sidebar Navigation",
     category: "Navigation",
-<<<<<<< Updated upstream
     description: "The two-level Multideck navigation pattern: Dexter stays first in every rail, followed by stable product areas or area-specific destinations with optional dropdown groups.",
     details: "Keep Dexter permanently mounted at the top and use its shared shader treatment in both navigation levels, so changing areas never restarts the shader. Selecting a CSV-backed area replaces only the remaining rail without changing the page; destinations can link directly or disclose smaller page links. The shared active surface, motion, collapsed state and RTL behavior remain consistent across both levels.",
-=======
-    description: "The route-aware product navigation system for moving between top-level areas and focused operational sub-sidebars.",
-    details: "Use the area cells as the stable product map. Opening an area reveals its destinations and expandable child routes while Dexter, scrolling, active-state motion, and the profile control remain persistent.",
->>>>>>> Stashed changes
     foundOn: [{ label: "App shell", route: "/" }, { label: "Operations", route: "/bookings" }, { label: "Sales & CRM", route: "/crm" }, { label: "Components", route: "/components?component=sidebar" }],
     componentCode: `export function AppSidebar({ route, navigate }) {\n  const [activeAreaId, setActiveAreaId] = useState(findAreaForRoute(route)?.id ?? null)\n  const [expandedIds, setExpandedIds] = useState(new Set())\n  const activeArea = sidebarAreas.find((area) => area.id === activeAreaId)\n\n  return (\n    <aside className="relative flex h-full flex-col bg-[var(--md-sidebar-bg)]">\n      <SidebarNavItem\n        item={{ label: "Agent Dexter", icon: Sparkles, route: "/agent-dexter" }}\n        accent="dexter"\n        onClick={() => navigate("/agent-dexter")}\n      />\n      <AnimatePresence mode="popLayout" initial={false}>\n        {activeArea ? (\n          <motion.nav key={activeArea.id}>\n            <button onClick={() => setActiveAreaId(null)}>All areas</button>\n            {activeArea.destinations.map((destination) => (\n              <div key={destination.id}>\n                <SidebarNavItem\n                  item={destination}\n                  expanded={destination.children ? expandedIds.has(destination.id) : undefined}\n                  onClick={destination.children\n                    ? () => toggleExpanded(destination.id)\n                    : destination.route ? () => navigate(destination.route) : undefined}\n                />\n                {expandedIds.has(destination.id)\n                  ? destination.children?.map((child) => (\n                      <SidebarNavItem key={child.label} item={child} nested onClick={() => navigate(child.route)} />\n                    ))\n                  : null}\n              </div>\n            ))}\n          </motion.nav>\n        ) : (\n          <motion.nav key="areas">\n            {sidebarAreas.map((area) => (\n              <SidebarNavItem key={area.id} item={area} onClick={() => setActiveAreaId(area.id)} />\n            ))}\n          </motion.nav>\n        )}\n      </AnimatePresence>\n    </aside>\n  )\n}`,
     usageCode: `<AppSidebar route={route} navigate={navigate} />`,
