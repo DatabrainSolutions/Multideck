@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react"
+import bookingShapeIconSprite from "@/assets/booking-shape-icons/booking-shape-icons.png"
 import {
   BookingAdvancedSearch,
   BookingBoardPreview,
-  BookingFilterBar,
   BookingListHeader,
   BookingMetricStrip,
   BookingsTable,
@@ -15,16 +15,35 @@ import {
 } from "@/components/multideck/booking-components"
 import { Pagination } from "@/components/multideck/pagination"
 import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
-import { FilterChips, SegmentedControl } from "@/components/multideck/workflow-components"
-import { currentOperator, getBookingShape, initialFavouriteBookingIds, bookingFilters, bookingScopeTabs, bookings } from "@/data/multideck-data"
+import { FilterChips } from "@/components/multideck/workflow-components"
+import { currentOperator, getBookingShape, initialFavouriteBookingIds, bookingScopeTabs, bookings } from "@/data/multideck-data"
 import { useLanguage } from "@/i18n/language-provider"
+import { getSavedView, saveView } from "@/lib/view-preferences"
 
 const rowsPerPageOptions = [10, 20, 30, 50]
+const bookingViewStorageKey = "multideck.view.bookings"
 type BookingScope = (typeof bookingScopeTabs)[number]
 const initialSearchCriteria: BookingSearchCriterion[] = [{ id: "booking-search-any", field: "any", value: "", valueTo: "" }]
 const directionFilters = ["All directions", "Import", "Export", "Domestic", "Cross trade"] as const
-const modeFilters = ["All modes", "OCEAN", "AIR", "ROAD"] as const
-const shipmentTypeFilters = ["All types", "FCL", "LCL", "ULD", "FTL", "LTL", "Pallet"] as const
+const modeFilters = ["All modes", "OCEAN", "AIR", "ROAD", "FAS", "FSA"] as const
+const shipmentTypeFiltersByMode = {
+  "All modes": ["All types"],
+  OCEAN: ["All types", "FCL", "LCL", "Breakbulk", "RoRo", "Dry bulk", "Liquid bulk", "Project cargo"],
+  AIR: ["All types", "General cargo", "ULD", "Air consolidation", "Back-to-back", "Express / courier", "Charter"],
+  ROAD: ["All types", "FTL", "LTL", "Groupage", "Pallet network", "Dedicated vehicle", "Parcel / express"],
+  FAS: ["All types", "Multiple"],
+  FSA: ["All types", "Multiple"],
+} as const
+type ShipmentTypeFilter = (typeof shipmentTypeFiltersByMode)[keyof typeof shipmentTypeFiltersByMode][number]
+
+const bookingShapeIconCells: Record<string, readonly [column: number, row: number]> = {
+  "All directions": [0, 0], Import: [1, 0], Export: [2, 0], Domestic: [3, 0], "Cross trade": [4, 0],
+  OCEAN: [0, 1], AIR: [1, 1], ROAD: [2, 1], FAS: [3, 1], FSA: [3, 1], "All modes": [3, 1], "All types": [3, 1], Multiple: [3, 1], FCL: [4, 1],
+  LCL: [0, 2], ULD: [1, 2], FTL: [2, 2], LTL: [3, 2], "Pallet network": [4, 2],
+  Breakbulk: [4, 1], RoRo: [0, 2], "Dry bulk": [0, 2], "Liquid bulk": [0, 2], "Project cargo": [4, 1],
+  "General cargo": [1, 2], "Air consolidation": [1, 2], "Back-to-back": [1, 2], "Express / courier": [1, 2], Charter: [1, 2],
+  Groupage: [3, 2], "Dedicated vehicle": [2, 2], "Parcel / express": [4, 2],
+}
 
 function normalized(value: string) {
   return value.trim().toLocaleLowerCase()
@@ -146,8 +165,7 @@ function bookingMatchesSearch(booking: Booking, criteria: BookingSearchCriterion
 export function BookingsPage({ navigate }: { navigate: (path: string) => void }) {
   const { t } = useLanguage()
   const [scope, setScope] = useState<BookingScope>("All Jobs")
-  const [activeFilter, setActiveFilter] = useState<string>(bookingFilters[0])
-  const [viewMode, setViewMode] = useState<BookingViewMode>(bookingViewModes[0])
+  const [viewMode, setViewMode] = useState<BookingViewMode>(() => getSavedView(bookingViewStorageKey, bookingViewModes, bookingViewModes[0]))
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [favouriteIds, setFavouriteIds] = useState<Set<string>>(() => new Set(initialFavouriteBookingIds))
   const [searchCriteria, setSearchCriteria] = useState<BookingSearchCriterion[]>(initialSearchCriteria)
@@ -156,24 +174,19 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
   const [dexterOpen, setDexterOpen] = useState(false)
   const [directionFilter, setDirectionFilter] = useState<(typeof directionFilters)[number]>(directionFilters[0])
   const [modeFilter, setModeFilter] = useState<(typeof modeFilters)[number]>(modeFilters[0])
-  const [shipmentTypeFilter, setShipmentTypeFilter] = useState<(typeof shipmentTypeFilters)[number]>(shipmentTypeFilters[0])
+  const [shipmentTypeFilter, setShipmentTypeFilter] = useState<ShipmentTypeFilter>("All types")
+  const shipmentTypeFilters = shipmentTypeFiltersByMode[modeFilter]
 
-  const statusFilteredBookings = useMemo(() => {
-    const filter = activeFilter.split(" · ")[0]
-    const scopedBookings =
+  const scopedBookings = useMemo(() => {
+    return (
       scope === "My Jobs" ? bookings.filter((booking) => booking.owner === currentOperator.initials) :
         scope === "Starred Jobs" ? bookings.filter((booking) => favouriteIds.has(booking.id)) :
           bookings
-
-    if (filter === "Open") return scopedBookings
-    if (filter === "On-track") return scopedBookings.filter((booking) => booking.status === "On track")
-    if (filter === "Delayed") return scopedBookings.filter((booking) => booking.status === "Delayed")
-    if (filter === "Exceptions") return scopedBookings.filter((booking) => booking.status === "Exception")
-    return scopedBookings
-  }, [activeFilter, favouriteIds, scope])
+    )
+  }, [favouriteIds, scope])
 
   const visibleBookings = useMemo(() => {
-    return statusFilteredBookings.filter((booking) => {
+    return scopedBookings.filter((booking) => {
       const shape = getBookingShape(booking.id)
       const matchesShape =
         (directionFilter === "All directions" || shape.direction === directionFilter) &&
@@ -181,14 +194,18 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
         (shipmentTypeFilter === "All types" || shape.shipmentType === shipmentTypeFilter)
       return matchesShape && bookingMatchesSearch(booking, searchCriteria)
     })
-  }, [directionFilter, modeFilter, searchCriteria, shipmentTypeFilter, statusFilteredBookings])
+  }, [directionFilter, modeFilter, scopedBookings, searchCriteria, shipmentTypeFilter])
 
   const pageCount = Math.max(Math.ceil(visibleBookings.length / rowsPerPage), 1)
   const paginatedBookings = visibleBookings.slice((page - 1) * rowsPerPage, page * rowsPerPage)
 
   useEffect(() => {
     setPage(1)
-  }, [activeFilter, directionFilter, modeFilter, scope, shipmentTypeFilter, viewMode, searchCriteria])
+  }, [directionFilter, modeFilter, scope, shipmentTypeFilter, viewMode, searchCriteria])
+
+  useEffect(() => {
+    saveView(bookingViewStorageKey, viewMode)
+  }, [viewMode])
 
   useEffect(() => {
     if (page > pageCount) setPage(pageCount)
@@ -216,29 +233,27 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
     navigate(getBookingDetailPath(booking.id))
   }
 
+  function changeMode(nextMode: (typeof modeFilters)[number]) {
+    setModeFilter(nextMode)
+    if (!shipmentTypeFiltersByMode[nextMode].includes(shipmentTypeFilter as never)) setShipmentTypeFilter("All types")
+  }
+
   return (
     <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel="Bookings" className="md-page md-page-stack">
-      <BookingListHeader viewMode={viewMode} onViewModeChange={setViewMode} onSpeakToDexter={() => setDexterOpen(true)} />
-      <div className="flex justify-start">
-        <SegmentedControl options={bookingScopeTabs} value={scope} onChange={setScope} />
-      </div>
-      <section aria-label={t("Booking shape")} className="grid gap-3 rounded-[var(--md-radius-xl)] bg-white/32 p-3 shadow-[var(--md-shadow-line)] xl:grid-cols-3">
+      <BookingListHeader viewMode={viewMode} onViewModeChange={setViewMode} onSpeakToDexter={() => setDexterOpen(true)} scopeOptions={bookingScopeTabs} scope={scope} onScopeChange={setScope} />
+      <section aria-label={t("Booking shape")} className="flex flex-wrap items-center gap-2 rounded-[var(--md-radius-xl)] bg-white/32 p-2.5 shadow-[var(--md-shadow-line)]">
         <ShapeFilter label={t("Direction")} options={directionFilters} value={directionFilter} onChange={setDirectionFilter} />
-        <ShapeFilter label={t("Mode")} options={modeFilters} value={modeFilter} onChange={setModeFilter} />
-        <ShapeFilter label={t("Shipment type")} options={shipmentTypeFilters} value={shipmentTypeFilter} onChange={setShipmentTypeFilter} />
+        <span className="hidden h-7 w-px bg-[rgba(11,20,19,0.08)] sm:block" aria-hidden="true" />
+        <ShapeFilter label={t("Mode")} options={modeFilters} value={modeFilter} onChange={changeMode} />
+        <span className="hidden h-7 w-px bg-[rgba(11,20,19,0.08)] sm:block" aria-hidden="true" />
+        <ShapeFilter label={t("Type")} options={shipmentTypeFilters} value={shipmentTypeFilter} onChange={setShipmentTypeFilter} />
       </section>
       <BookingMetricStrip />
-      <BookingFilterBar
-        activeFilter={activeFilter}
-        onFilterChange={setActiveFilter}
-        controls={(
-          <BookingAdvancedSearch
-            criteria={searchCriteria}
-            onCriteriaChange={setSearchCriteria}
-            resultCount={visibleBookings.length}
-            totalCount={statusFilteredBookings.length}
-          />
-        )}
+      <BookingAdvancedSearch
+        criteria={searchCriteria}
+        onCriteriaChange={setSearchCriteria}
+        resultCount={visibleBookings.length}
+        totalCount={scopedBookings.length}
       />
 
       {viewMode === "Table" ? (
@@ -272,10 +287,30 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
 }
 
 function ShapeFilter<T extends string>({ label, options, value, onChange }: { label: string; options: readonly T[]; value: T; onChange: (value: T) => void }) {
+  const { t } = useLanguage()
+
   return (
     <div className="min-w-0">
-      <p className="mb-2 text-[11px] font-medium text-[var(--md-subtle)]">{label}</p>
-      <FilterChips options={options} activeOption={value} onChange={(next) => onChange(next as T)} labelForOption={useLanguage().t} className="gap-1.5" />
+      <p className="mb-1.5 px-0.5 text-[11px] font-medium text-[var(--md-subtle)]">{label}</p>
+      <FilterChips options={options} activeOption={value} onChange={(next) => onChange(next as T)} tooltipForOption={t} renderOption={(option, active) => {
+        return <BookingShapeIcon option={option} active={active} />
+      }} buttonClassName="size-11 justify-center rounded-[var(--md-radius-lg)] px-0" className="gap-1.5" />
     </div>
+  )
+}
+
+function BookingShapeIcon({ option, active }: { option: string; active: boolean }) {
+  const [column, row] = bookingShapeIconCells[option] ?? bookingShapeIconCells["All directions"]
+
+  return (
+    <span
+      aria-hidden="true"
+      className={`block size-7 bg-no-repeat transition-[opacity,filter] ${active ? "brightness-0 invert" : "opacity-90"}`}
+      style={{
+        backgroundImage: `url(${bookingShapeIconSprite})`,
+        backgroundPosition: `${((column * 1.2 + 0.1) / 5) * 100}% ${((row * 1.2 + 0.1) / 2.6) * 100}%`,
+        backgroundSize: "600% 360%",
+      }}
+    />
   )
 }

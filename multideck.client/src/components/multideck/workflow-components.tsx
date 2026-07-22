@@ -1,6 +1,7 @@
 import { useId, type ReactNode } from "react"
 import { Check } from "lucide-react"
 import { motion, useReducedMotion } from "motion/react"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import { mdMotion, reduceMotion } from "@/lib/motion"
 
@@ -66,6 +67,9 @@ export function FilterChips({
   auxiliaryOptions = [],
   className,
   labelForOption = (option) => option,
+  renderOption,
+  tooltipForOption,
+  buttonClassName,
 }: {
   options: readonly string[]
   activeOption: string
@@ -73,27 +77,41 @@ export function FilterChips({
   auxiliaryOptions?: readonly string[]
   className?: string
   labelForOption?: (option: string) => string
+  renderOption?: (option: string, active: boolean) => ReactNode
+  tooltipForOption?: (option: string) => string
+  buttonClassName?: string
 }) {
   return (
     <div className={cn("flex flex-wrap items-center gap-2", className)}>
-      {options.map((option) => (
-        <button
+      {options.map((option) => {
+        const active = activeOption === option
+        const chip = (
+          <button
           key={option}
           type="button"
-          aria-pressed={activeOption === option}
+          aria-label={tooltipForOption?.(option)}
+          aria-pressed={active}
           className={cn(
             "inline-flex h-9 items-center gap-2 rounded-full px-4 text-[13px] font-medium shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,color,opacity,scale,transform] active:scale-[0.96]",
-            activeOption === option
+            active
               ? "bg-[var(--md-accent)] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_0_0_3px_rgba(14,125,116,0.13)]"
               : "bg-white/25 text-[var(--md-text)] hover:bg-white/50",
-            option.includes("!") && activeOption !== option && "text-[var(--md-amber)]",
+            option.includes("!") && !active && "text-[var(--md-amber)]",
+            buttonClassName,
           )}
           onClick={() => onChange(option)}
         >
-          {activeOption === option ? <Check className="size-3.5" strokeWidth={1.6} /> : null}
-          {labelForOption(option)}
+          {renderOption ? renderOption(option, active) : <>{active ? <Check className="size-3.5" strokeWidth={1.6} /> : null}{labelForOption(option)}</>}
         </button>
-      ))}
+        )
+
+        return tooltipForOption ? (
+          <Tooltip key={option}>
+            <TooltipTrigger asChild>{chip}</TooltipTrigger>
+            <TooltipContent>{tooltipForOption(option)}</TooltipContent>
+          </Tooltip>
+        ) : chip
+      })}
       {auxiliaryOptions.length ? <span className="mx-2 hidden h-7 w-px bg-[rgba(11,20,19,0.08)] sm:block" /> : null}
       {auxiliaryOptions.map((option) => (
         <button key={option} type="button" className="h-9 rounded-full bg-white/25 px-4 text-[13px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,color,opacity,scale,transform] active:scale-[0.96] hover:bg-white/50">

@@ -38,7 +38,7 @@ import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
 import { CodeInput, FreightNarrative, SignInPanel, SignedOutPanel, VerifyPanel, WorkspaceRouterPanel } from "@/components/multideck/auth-flow"
 import { AuthIdentityManager, AuthProviderSelector } from "@/components/multideck/auth-provider-selector"
 import { BookingAdvancedSearch, BookingArrivalCard, BookingAskPanel, BookingBoardPreview, BookingExceptionPanel, BookingMetricCard, BookingResolutionChecklist, BookingsTable, YourJobsPanel, bookingViewModes, bookingViewOptions, type BookingSearchCriterion, type BookingViewMode } from "@/components/multideck/booking-components"
-import { DomesticJobStageRail, DomesticRoadJobCard, domesticRoadJobs, roadJobStages } from "@/components/multideck/domestic-road-components"
+import { DomesticJobStageRail, DomesticRoadJobCard, DomesticRoadKanbanBoard, domesticRoadJobs, roadJobStageStatus, roadJobStages } from "@/components/multideck/domestic-road-components"
 import { WarehouseKanbanBoardPreview, WarehouseOrdersTable, WarehouseProductsTable, WarehouseStockTable } from "@/components/multideck/warehouse-components"
 import { WarehouseFormField } from "@/components/multideck/warehouse-management-components"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -153,7 +153,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["paper-tray-stack", "document-viewer", "document-workspace", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-kanban-board", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "lane-mix-panel", "booking-metric-card", "booking-advanced-search", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
+    ids: ["paper-tray-stack", "document-viewer", "document-workspace", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-kanban-board", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "lane-mix-panel", "booking-metric-card", "booking-advanced-search", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
   },
   {
     label: "CRM",
@@ -532,6 +532,8 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewDataEditorOpen, setPreviewDataEditorOpen] = useState(false)
   const [previewBookingSelectedIds, setPreviewBookingSelectedIds] = useState<Set<string>>(new Set(["MD-22455"]))
   const [previewFavouriteBookingIds, setPreviewFavouriteBookingIds] = useState<Set<string>>(() => new Set(initialFavouriteBookingIds))
+  const [previewRoadFavouriteBookingIds, setPreviewRoadFavouriteBookingIds] = useState<Set<string>>(() => new Set(["MD-22676"]))
+  const [previewRoadJobs, setPreviewRoadJobs] = useState(() => [...domesticRoadJobs])
   const [previewDateRange, setPreviewDateRange] = useState<MultideckDateRange>({ start: "2026-05-25", end: "2026-06-04" })
   const [previewBookingSearchCriteria, setPreviewBookingSearchCriteria] = useState<BookingSearchCriterion[]>([
     { id: "preview-booking-search-invoice", field: "invoice", groupId: "preview-search-main", value: "INV-MAR", valueTo: "" },
@@ -1382,8 +1384,37 @@ function ComponentPreview({ id }: { id: string }) {
 
       {id === "domestic-road-job-card" ? (
         <div className="grid w-full max-w-[980px] gap-2.5">
-          <DomesticRoadJobCard job={domesticRoadJobs[2]} onOpenBooking={(job) => toast.success(`${job.bookingId} opened`)} />
-          <DomesticRoadJobCard job={domesticRoadJobs[0]} onOpenBooking={(job) => toast.success(`${job.bookingId} opened`)} />
+          {[domesticRoadJobs[2], domesticRoadJobs[0]].map((job) => (
+            <DomesticRoadJobCard
+              key={job.id}
+              job={job}
+              favourite={previewRoadFavouriteBookingIds.has(job.bookingId)}
+              onToggleFavourite={() => setPreviewRoadFavouriteBookingIds((current) => {
+                const next = new Set(current)
+                if (next.has(job.bookingId)) next.delete(job.bookingId)
+                else next.add(job.bookingId)
+                return next
+              })}
+              onOpenBooking={(roadJob) => toast.success(`${roadJob.bookingId} opened`)}
+            />
+          ))}
+        </div>
+      ) : null}
+
+      {id === "domestic-road-kanban-board" ? (
+        <div className="w-full overflow-hidden">
+          <DomesticRoadKanbanBoard
+            jobs={previewRoadJobs}
+            favouriteIds={previewRoadFavouriteBookingIds}
+            onMoveJob={(jobId, stage) => setPreviewRoadJobs((current) => current.map((job) => job.id === jobId && job.stage !== stage ? { ...job, stage, ...roadJobStageStatus[stage] } : job))}
+            onToggleFavourite={(job) => setPreviewRoadFavouriteBookingIds((current) => {
+              const next = new Set(current)
+              if (next.has(job.bookingId)) next.delete(job.bookingId)
+              else next.add(job.bookingId)
+              return next
+            })}
+            onOpenBooking={(job) => toast.success(`${job.bookingId} opened`)}
+          />
         </div>
       ) : null}
 

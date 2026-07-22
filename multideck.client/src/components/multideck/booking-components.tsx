@@ -29,6 +29,7 @@ import { Progress } from "@/components/ui/progress"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
+import { useLanguage } from "@/i18n/language-provider"
 import {
   bookingCargo,
   bookingDocuments,
@@ -44,7 +45,7 @@ import {
   type BookingStatus,
   type StatusTone,
 } from "@/data/multideck-data"
-import { FilterChips, TabsRail } from "./workflow-components"
+import { FilterChips, SegmentedControl, TabsRail } from "./workflow-components"
 import { StatusPill, toneToVar } from "./status-pill"
 import { Surface } from "./surface"
 import { AnimatedList } from "./animated-list"
@@ -119,6 +120,8 @@ const modeTone: Record<BookingMode, StatusTone> = {
   OCEAN: "blue",
   AIR: "green",
   ROAD: "amber",
+  FAS: "teal",
+  FSA: "blue",
 }
 
 const customsEntries: readonly [string, string, string, StatusTone][] = [
@@ -363,30 +366,28 @@ export function BookingViewSwitch({
   return <PageSettingsMenu viewOptions={bookingViewOptions} value={value} onViewChange={onChange} />
 }
 
-export function BookingListHeader({
+export function BookingListHeader<T extends string>({
   viewMode,
   onViewModeChange,
   onSpeakToDexter,
+  scopeOptions,
+  scope,
+  onScopeChange,
 }: {
   viewMode: BookingViewMode
   onViewModeChange: (mode: BookingViewMode) => void
   onSpeakToDexter: () => void
+  scopeOptions: readonly T[]
+  scope: T
+  onScopeChange: (scope: T) => void
 }) {
+  const { t } = useLanguage()
+
   return (
-    <div className="flex flex-col gap-[var(--md-page-stack-gap)] xl:flex-row xl:items-end xl:justify-between">
-      <div>
-        <h1 className="text-[32px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">Bookings</h1>
-        <p className="mt-2 text-[16px] leading-6 text-[var(--md-ink)]">
-          <span className="font-medium">23 in transit</span>
-          <span className="text-[var(--md-text)]"> · </span>
-          <span className="font-medium text-[var(--md-red)]">2 exceptions</span>
-          <span className="text-[var(--md-text)]"> · </span>
-          <span className="font-medium text-[var(--md-amber)]">3 delayed</span>
-          <span className="text-[var(--md-text)]"> · </span>
-          <span className="font-medium">4 delivered today</span>
-        </p>
-      </div>
+    <div className="flex justify-end">
+      <h1 className="sr-only">{t("Bookings")}</h1>
       <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <SegmentedControl options={scopeOptions} value={scope} onChange={onScopeChange} ariaLabel={t("Booking scope")} />
         <DexterActionPill onClick={onSpeakToDexter} />
         <BookingViewSwitch value={viewMode} onChange={onViewModeChange} />
       </div>

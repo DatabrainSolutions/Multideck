@@ -961,9 +961,9 @@ export const warehouseCalendarEvents: WarehouseCalendarEvent[] = [
 ]
 
 export type BookingStatus = "On track" | "Delayed" | "Exception"
-export type BookingMode = "OCEAN" | "AIR" | "ROAD"
+export type BookingMode = "OCEAN" | "AIR" | "ROAD" | "FAS" | "FSA"
 export type BookingDirection = "Import" | "Export" | "Domestic" | "Cross trade"
-export type BookingShipmentType = "FCL" | "LCL" | "ULD" | "FTL" | "LTL" | "Pallet"
+export type BookingShipmentType = "FCL" | "LCL" | "Breakbulk" | "RoRo" | "Dry bulk" | "Liquid bulk" | "Project cargo" | "General cargo" | "ULD" | "Air consolidation" | "Back-to-back" | "Express / courier" | "Charter" | "FTL" | "LTL" | "Groupage" | "Pallet network" | "Dedicated vehicle" | "Parcel / express" | "Multiple"
 
 export const bookings = [
   { id: "MD-22682", customer: "Jenkar", route: "Leicester → Bristol", carrier: "Unassigned", container: "Pallet network", mode: "ROAD" as BookingMode, value: "£1,240", eta: "Awaiting date", time: "—", status: "Exception" as BookingStatus, progress: 8, owner: "EM", tone: "amber" as StatusTone, invoice: "", jobRef: "RD-10682", customerRef: "JK-PO-48216", supplierRef: "", origin: "Leicester, United Kingdom", destination: "Bristol, United Kingdom", vessel: "", departureDate: "2026-07-23", arrivalDate: "2026-07-24", vin: "", customFields: [{ label: "Planning blocker", value: "Collection date missing" }, { label: "Road service", value: "Pallet network" }] },
@@ -985,7 +985,7 @@ export const bookings = [
 ]
 
 export const bookingShapeById: Record<string, { direction: BookingDirection; shipmentType: BookingShipmentType }> = {
-  "MD-22682": { direction: "Domestic", shipmentType: "Pallet" }, "MD-22683": { direction: "Domestic", shipmentType: "LTL" }, "MD-22676": { direction: "Domestic", shipmentType: "FTL" }, "MD-22679": { direction: "Domestic", shipmentType: "Pallet" }, "MD-22671": { direction: "Domestic", shipmentType: "FTL" }, "MD-22664": { direction: "Domestic", shipmentType: "FTL" }, "MD-22658": { direction: "Domestic", shipmentType: "Pallet" }, "MD-22481": { direction: "Import", shipmentType: "FCL" }, "MD-22479": { direction: "Import", shipmentType: "FCL" }, "MD-22466": { direction: "Export", shipmentType: "ULD" }, "MD-22455": { direction: "Import", shipmentType: "FCL" }, "MD-22441": { direction: "Cross trade", shipmentType: "LTL" }, "MD-22429": { direction: "Cross trade", shipmentType: "FCL" }, "MD-22414": { direction: "Import", shipmentType: "FCL" }, "MD-22399": { direction: "Import", shipmentType: "FCL" }, "MD-22388": { direction: "Export", shipmentType: "FCL" },
+  "MD-22682": { direction: "Domestic", shipmentType: "Pallet network" }, "MD-22683": { direction: "Domestic", shipmentType: "LTL" }, "MD-22676": { direction: "Domestic", shipmentType: "FTL" }, "MD-22679": { direction: "Domestic", shipmentType: "Pallet network" }, "MD-22671": { direction: "Domestic", shipmentType: "FTL" }, "MD-22664": { direction: "Domestic", shipmentType: "FTL" }, "MD-22658": { direction: "Domestic", shipmentType: "Pallet network" }, "MD-22481": { direction: "Import", shipmentType: "FCL" }, "MD-22479": { direction: "Import", shipmentType: "FCL" }, "MD-22466": { direction: "Export", shipmentType: "ULD" }, "MD-22455": { direction: "Import", shipmentType: "FCL" }, "MD-22441": { direction: "Cross trade", shipmentType: "LTL" }, "MD-22429": { direction: "Cross trade", shipmentType: "FCL" }, "MD-22414": { direction: "Import", shipmentType: "FCL" }, "MD-22399": { direction: "Import", shipmentType: "FCL" }, "MD-22388": { direction: "Export", shipmentType: "FCL" },
 }
 
 export function getBookingShape(bookingId: string) {
@@ -2439,11 +2439,11 @@ export const galleryComponents = [
     id: "command",
     name: "Command Input",
     category: "Navigation",
-    description: "The search and jump control that lets operators move quickly without hunting through menus.",
-    details: "Use in the app header. Keep placeholder text action-led and include the keyboard hint.",
-    foundOn: [{ label: "Overview", route: "/" }, { label: "Reports", route: "/reports" }, { label: "Components", route: "/components" }],
-    componentCode: `export function CommandInput({ placeholder = "Ask Multideck or jump to anything...", className }) {\n  return (\n    <div className={cn("relative w-full", className)}>\n      <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.2} />\n      <Input\n        aria-label="Search Multideck"\n        className="h-9 rounded-[var(--md-radius-lg)] border-0 bg-white/70 pl-9 pr-16 text-[13px] shadow-[var(--md-shadow-line)]"\n        placeholder={placeholder}\n      />\n      <span className="absolute right-2 top-1/2 -translate-y-1/2 rounded-[var(--md-radius-sm)] bg-[var(--md-surface-tint)] px-2 py-1 text-[11px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)]">\n        ⌘ K\n      </span>\n    </div>\n  )\n}`,
-    usageCode: `<CommandInput placeholder="Ask Multideck or jump to anything..." />`,
+    description: "The shared search and jump control, with rich booking and quote matches that make a record recognisable before opening it.",
+    details: "Use in the app header across operational modules. Each result should show its reference, customer, route and current operational context rather than a bare identifier.",
+    foundOn: [{ label: "Bookings", route: "/bookings" }, { label: "Quotes", route: "/quotes" }, { label: "Road control", route: "/road-control" }, { label: "Components", route: "/components" }],
+    componentCode: `export function CommandInput({ placeholder, onNavigate }) {\n  const [query, setQuery] = useState("")\n  const results = findBookingsAndQuotes(query)\n\n  return (\n    <div className="relative">\n      <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={placeholder} />\n      {query ? results.map((result) => (\n        <button key={result.id} onClick={() => onNavigate?.(result.path)}>\n          <strong>{result.reference}</strong>\n          <span>{result.customer} · {result.route}</span>\n          <small>{result.mode} · {result.service} · {result.status}</small>\n        </button>\n      )) : null}\n    </div>\n  )\n}`,
+    usageCode: `<CommandInput placeholder="Job, reference, customer, route..." onNavigate={navigate} />`,
   },
   {
     id: "sidebar",
@@ -2649,8 +2649,8 @@ export const galleryComponents = [
     id: "filter-chips",
     name: "Filter Chips",
     category: "Navigation",
-    description: "A reusable filter chip row with a strong selected state and optional secondary filters.",
-    details: "Use at the top of list, table, and map workflows. The active filter should be unmistakable on mobile and desktop.",
+    description: "A reusable filter chip row with a strong selected state, optional secondary filters, and an icon-only tooltip mode.",
+    details: "Use at the top of list, table, and map workflows. The active filter should be unmistakable on mobile and desktop; use icon-only chips with tooltips where labels would otherwise make a compact filter too dense.",
     foundOn: [{ label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Warehouse", route: "/warehouse" }, { label: "Components", route: "/components" }],
     componentCode: `export function FilterChips({ options, activeOption, onChange, auxiliaryOptions = [] }) {\n  return (\n    <div className="flex flex-wrap items-center gap-2">\n      {options.map((option) => (\n        <button\n          key={option}\n          aria-pressed={activeOption === option}\n          className={cn("rounded-full px-4", activeOption === option && "bg-[var(--md-accent)] text-white")}\n          onClick={() => onChange(option)}\n        >\n          {activeOption === option ? <Check /> : null}\n          {option}\n        </button>\n      ))}\n      {auxiliaryOptions.map((option) => <button key={option}>{option}</button>)}\n    </div>\n  )\n}`,
     usageCode: `<FilterChips\n  options={bookingFilters}\n  activeOption={activeFilter}\n  onChange={setActiveFilter}\n  auxiliaryOptions={["+ Mode", "+ Carrier", "+ Customer", "+ Owner", "+ ETA range"]}\n/>`,
@@ -2822,18 +2822,28 @@ export const galleryComponents = [
     description: "A five-stage operational rail for domestic road work, from incomplete order intake through carrier confirmation and financial close.",
     details: "Use above a focused domestic transport queue. It keeps work that is not ready to plan visible without mixing it into live carrier or delivery monitoring.",
     foundOn: [{ label: "Road control", route: "/road-control" }, { label: "Components", route: "/components?component=domestic-job-stage-rail" }],
-    componentCode: `export function DomesticJobStageRail({ stages, activeStage, onStageChange }) {\n  return (\n    <nav aria-label="Road job stages">\n      {stages.map((stage) => (\n        <button key={stage.id} aria-current={activeStage === stage.id ? "step" : undefined} onClick={() => onStageChange(stage.id)}>\n          <stage.icon />\n          <span>{stage.label}</span>\n          <span>{stage.helper}</span>\n        </button>\n      ))}\n    </nav>\n  )\n}`,
+    componentCode: `export function DomesticJobStageRail({ stages, activeStage, onStageChange }) {\n  return (\n    <nav aria-label="Road job stages">\n      {stages.map((stage) => (\n        <button key={stage.id} aria-current={activeStage === stage.id ? "step" : undefined} onClick={() => onStageChange(stage.id)}>\n          <span>{stage.label}</span>\n          <strong>{stage.count}</strong>\n        </button>\n      ))}\n    </nav>\n  )\n}`,
     usageCode: `<DomesticJobStageRail stages={roadJobStages} activeStage={activeStage} onStageChange={setActiveStage} />`,
   },
   {
     id: "domestic-road-job-card",
     name: "Domestic Road Job Card",
     category: "Operations",
-    description: "A compact domestic job row for scanning collection and delivery points, operational status, service, carrier and estimated margin.",
-    details: "Use in a domestic planning queue. Selecting a row opens the shared parent booking, keeping the specialist queue lean while the full record stays in one place.",
+    description: "A compact domestic job row for scanning collection and delivery points, operational status, service, carrier and estimated margin, with a familiar favourite action.",
+    details: "Use in a domestic planning queue. Selecting a row opens the shared parent booking, while its independent star lets an operator keep important jobs close.",
     foundOn: [{ label: "Road control", route: "/road-control" }, { label: "Components", route: "/components?component=domestic-road-job-card" }],
-    componentCode: `export function DomesticRoadJobCard({ job, onOpenBooking }) {\n  return <button onClick={() => onOpenBooking?.(job)}>{job.bookingId} · {job.customer}</button>\n}`,
-    usageCode: `<DomesticRoadJobCard job={domesticRoadJobs[0]} onOpenBooking={(job) => navigate(\`/bookings/\${job.bookingId.toLowerCase()}\`)} />`,
+    componentCode: `export function DomesticRoadJobCard({ job, favourite, onOpenBooking, onToggleFavourite }) {\n  return (\n    <div>\n      <button onClick={() => onOpenBooking?.(job)}>{job.bookingId} · {job.customer}</button>\n      <button aria-pressed={favourite} onClick={() => onToggleFavourite?.(job)}>\n        <Star fill={favourite ? "currentColor" : "none"} />\n      </button>\n    </div>\n  )\n}`,
+    usageCode: `<DomesticRoadJobCard\n  job={domesticRoadJobs[0]}\n  favourite={favouriteIds.has(domesticRoadJobs[0].bookingId)}\n  onToggleFavourite={(job) => toggleFavourite(job.bookingId)}\n  onOpenBooking={(job) => navigate(\`/bookings/\${job.bookingId.toLowerCase()}\`)}\n/>`,
+  },
+  {
+    id: "domestic-road-kanban-board",
+    name: "Domestic Road Kanban Board",
+    category: "Operations",
+    description: "A five-lane board that shows domestic road jobs by operating stage, with controlled drag-and-drop status updates and favourite actions.",
+    details: "Use as an alternative to the Road control queue when planners need to scan the whole operation from intake to financial close. Dragging a card moves its stage and updates its operational status; open the parent booking for full detail.",
+    foundOn: [{ label: "Road control", route: "/road-control" }, { label: "Components", route: "/components?component=domestic-road-kanban-board" }],
+    componentCode: `export function DomesticRoadKanbanBoard({ jobs, favouriteIds, onMoveJob, onOpenBooking, onToggleFavourite }) {\n  return (\n    <div className="grid grid-cols-5">\n      {roadJobStages.map((stage) => {\n        const stageJobs = jobs.filter((job) => job.stage === stage.id)\n        return <RoadKanbanLane key={stage.id} stage={stage} jobs={stageJobs} favouriteIds={favouriteIds} onMoveJob={onMoveJob} onOpenBooking={onOpenBooking} onToggleFavourite={onToggleFavourite} />\n      })}\n    </div>\n  )\n}`,
+    usageCode: `<DomesticRoadKanbanBoard\n  jobs={scopedJobs}\n  favouriteIds={favouriteIds}\n  onMoveJob={(jobId, stage) => moveRoadJob(jobId, stage)}\n  onToggleFavourite={(job) => toggleFavourite(job.bookingId)}\n  onOpenBooking={(job) => navigate(\`/bookings/\${job.bookingId.toLowerCase()}\`)}\n/>`,
   },
   {
     id: "report-template-card",
@@ -3417,6 +3427,7 @@ export const galleryIcons = {
   "booking-board-preview": LayoutDashboard,
   "domestic-job-stage-rail": Truck,
   "domestic-road-job-card": Truck,
+  "domestic-road-kanban-board": LayoutDashboard,
   "report-template-card": BarChart3,
   "generated-report-table": FileText,
   "report-document-page": FileText,
