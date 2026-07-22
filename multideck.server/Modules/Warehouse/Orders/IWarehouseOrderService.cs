@@ -4,7 +4,7 @@ namespace Multideck.Server.Modules.Warehouse.Orders;
 
 public interface IWarehouseOrderService
 {
-    Task<IReadOnlyList<WarehouseOrderDto>> ListAsync(ClaimsPrincipal user, Guid? facilityId, string? typeCode, string? statusCode, string? search, CancellationToken cancellationToken);
+    Task<IReadOnlyList<WarehouseOrderDto>> ListAsync(ClaimsPrincipal user, Guid? facilityId, string? typeCode, string? statusCode, bool openOnly, string? search, CancellationToken cancellationToken);
     Task<WarehouseOrderDto> GetAsync(ClaimsPrincipal user, Guid orderId, CancellationToken cancellationToken);
     Task<WarehouseOrderReferenceResponse> GetReferenceAsync(ClaimsPrincipal user, CancellationToken cancellationToken);
     Task<WarehouseOrderDto> CreateAsync(ClaimsPrincipal user, CreateWarehouseOrderRequest request, CancellationToken cancellationToken);
@@ -12,4 +12,3 @@ public interface IWarehouseOrderService
     Task<WarehouseOrderDto> DispatchAsync(ClaimsPrincipal user, Guid orderId, DispatchWarehouseOrderRequest request, CancellationToken cancellationToken);
     Task<WarehouseOrderDto> CancelAsync(ClaimsPrincipal user, Guid orderId, CancellationToken cancellationToken);
 }
-

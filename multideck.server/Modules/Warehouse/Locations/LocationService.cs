@@ -30,7 +30,13 @@ public sealed class LocationService(MultideckContext db, IWarehouseContext conte
             query = query.Where(location =>
                 EF.Functions.ILike(location.WmslocationCode, pattern) ||
                 (location.WmslocationBarcode != null && EF.Functions.ILike(location.WmslocationBarcode, pattern)) ||
-                (location.WmslocationAisle != null && EF.Functions.ILike(location.WmslocationAisle, pattern)));
+                (location.WmslocationAisle != null && EF.Functions.ILike(location.WmslocationAisle, pattern)) ||
+                (location.WmslocationBay != null && EF.Functions.ILike(location.WmslocationBay, pattern)) ||
+                (location.WmslocationLevel != null && EF.Functions.ILike(location.WmslocationLevel, pattern)) ||
+                (location.WmslocationPosition != null && EF.Functions.ILike(location.WmslocationPosition, pattern)) ||
+                (location.WmslocationZone != null && EF.Functions.ILike(location.WmslocationZone.WmszoneName, pattern)) ||
+                EF.Functions.ILike(location.WmslocationTypeCodeNavigation.WmslocationTypeName, pattern) ||
+                EF.Functions.ILike(location.WmslocationStatusCodeNavigation.WmslocationStatusName, pattern));
         }
 
         var locations = await query

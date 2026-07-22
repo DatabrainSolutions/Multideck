@@ -1,22 +1,22 @@
-import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from "react"
+import { useEffect, useState, type ReactNode } from "react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { ArrowLeft, Bell, CheckCircle2, Clock3, LogOut, PanelLeftClose, PanelLeftOpen, Settings, Sparkles, TriangleAlert, type LucideIcon } from "lucide-react"
-import { motion, useReducedMotion } from "motion/react"
+import { ArrowLeft, Bell, Boxes, CheckCircle2, ChevronDown, Clock3, LogOut, PanelLeftClose, PanelLeftOpen, Settings, Sparkles, TriangleAlert, type LucideIcon } from "lucide-react"
+import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { SpectralBloomShader } from "@/components/multideck/dexter-action-pill"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
 import { mdMotion, reduceMotion } from "@/lib/motion"
-import type { AuthUserSummary } from "@/lib/auth-user"
+import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
 import { supabase } from "@/lib/supabase"
 import { useAiAgentName } from "@/lib/user-preferences"
-import { crmSidebarItems, sidebarPrimary, sidebarSecondary, type NavItem } from "@/data/multideck-data"
+import { customerWarehouseNavigation, sidebarAreas, type NavItem, type SidebarArea, type SidebarDestination } from "@/data/multideck-data"
 import { useLanguage } from "@/i18n/language-provider"
 import multideckFullLogo from "@/assets/brand/multideck-full-logo.svg"
 
 const sidebarItemTransition = {
-  duration: 0.24,
+  duration: 0.18,
   ease: [0.22, 1, 0.36, 1] as [number, number, number, number],
 }
 
@@ -34,16 +34,20 @@ type SidebarActiveTarget = {
   height: number
   borderRadius: string
 }
+const sidebarPaneTransition = {
+  duration: 0.18,
+  ease: [0.22, 1, 0.36, 1] as [number, number, number, number],
+}
 
 const navReveal = {
   hidden: { opacity: 0 },
   show: {
     opacity: 1,
     transition: {
-      duration: 0.24,
+      duration: 0.18,
       ease: [0.22, 1, 0.36, 1] as [number, number, number, number],
-      staggerChildren: 0.035,
-      delayChildren: 0.03,
+      staggerChildren: 0.018,
+      delayChildren: 0.01,
     },
   },
 }
@@ -122,7 +126,7 @@ function NotificationBell() {
           type="button"
           aria-label={t("Open notifications")}
           title={t("Open notifications")}
-          className="group relative grid size-10 place-items-center overflow-hidden rounded-full bg-[var(--md-glass)] text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] hover:shadow-[var(--md-shadow-soft)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)] data-[state=open]:bg-[var(--md-bg-strong)] data-[state=open]:text-[var(--md-accent)]"
+          className="group relative grid size-10 shrink-0 place-items-center overflow-hidden rounded-full bg-[var(--md-glass)] text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] hover:shadow-[var(--md-shadow-soft)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)] data-[state=open]:bg-[var(--md-bg-strong)] data-[state=open]:text-[var(--md-accent)]"
         >
           <motion.span
             aria-hidden="true"
@@ -214,12 +218,18 @@ export function SidebarNavItem({
   onClick,
   accent = "default",
   collapsed = false,
+  expanded,
+  trailing,
+  nested = false,
 }: {
   item: NavItem
   isActive?: boolean
   onClick?: () => void
   accent?: "default" | "dexter"
   collapsed?: boolean
+  expanded?: boolean
+  trailing?: ReactNode
+  nested?: boolean
 }) {
   const Icon = item.icon
   const { t } = useLanguage()
@@ -237,14 +247,15 @@ export function SidebarNavItem({
   return (
     <button
       type="button"
-      data-sidebar-active-target={isActive ? "true" : undefined}
       aria-current={isActive ? "page" : undefined}
       aria-disabled={isDisabled || undefined}
+      aria-expanded={expanded}
       aria-label={collapsed ? t(item.label) : undefined}
-      title={collapsed ? t(item.label) : undefined}
+      title={t(item.label)}
       className={cn(
         buttonVariants({ variant: "ghost", size: "sm" }),
-        "group relative h-9 w-full justify-start gap-2 overflow-hidden rounded-[var(--md-radius-md)] px-2 text-[13px] font-medium text-[var(--md-text)] transition-[color,opacity,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+        "group relative h-10 w-full justify-start gap-2 overflow-hidden rounded-[var(--md-radius-md)] px-2.5 text-[14px] font-medium text-[var(--md-text)] transition-[color,opacity,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+        nested && "h-9 text-[13px]",
         "bg-transparent hover:bg-transparent hover:text-[var(--md-ink)] aria-expanded:bg-transparent dark:hover:bg-transparent focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
         isDexterItem && "md-sidebar-dexter-item !text-white hover:!text-white focus-visible:!text-white",
         collapsed && "justify-center px-0",
@@ -275,10 +286,21 @@ export function SidebarNavItem({
             />
           ) : null}
         </>
-      ) : isActive ? null : !isDisabled ? (
+      ) : isActive ? (
+        <span
+          data-sidebar-active-surface
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 rounded-[var(--md-radius-md)] bg-[var(--md-bg-strong)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.68),0_8px_18px_rgba(42,52,50,0.08)]"
+        />
+      ) : !isDisabled ? (
         <span
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 scale-[0.985] rounded-[var(--md-radius-md)] bg-[var(--md-hover)] opacity-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_1px_2px_rgba(11,20,19,0.035)] transition-[opacity,transform] duration-100 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-100 group-hover:opacity-100 group-focus-visible:scale-100 group-focus-visible:opacity-100 motion-reduce:transition-none"
+          style={{
+            transitionDuration: "100ms",
+            transitionProperty: "opacity, scale",
+            transitionTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1)",
+          }}
         />
       ) : null}
       <span
@@ -313,6 +335,7 @@ export function SidebarNavItem({
           {t(item.value)}
         </span>
       ) : null}
+      {trailing && !collapsed ? <span className="relative ms-auto grid size-5 shrink-0 place-items-center text-[var(--md-subtle)]">{trailing}</span> : null}
     </button>
   )
 }
@@ -320,11 +343,9 @@ export function SidebarNavItem({
 function SidebarSection({
   children,
   className,
-  onRevealComplete,
 }: {
   children: ReactNode
   className?: string
-  onRevealComplete?: () => void
 }) {
   const shouldReduceMotion = useReducedMotion()
 
@@ -334,7 +355,6 @@ function SidebarSection({
       variants={shouldReduceMotion ? undefined : navReveal}
       initial={shouldReduceMotion ? undefined : "hidden"}
       animate={shouldReduceMotion ? undefined : "show"}
-      onAnimationComplete={onRevealComplete}
     >
       {children}
     </motion.nav>
@@ -343,6 +363,30 @@ function SidebarSection({
 
 function SidebarSectionItem({ children }: { children: ReactNode }) {
   return <motion.div variants={navItemReveal}>{children}</motion.div>
+}
+
+function routeMatches(item: NavItem, route: string) {
+  if (!item.route) return false
+  if (item.route === "/") return route === "/"
+  if (item.route === "/bookings") {
+    return route === "/bookings" || (/^\/bookings\/[^/]+$/.test(route) && route !== "/bookings/new" && route !== "/bookings/provisional")
+  }
+  if (item.route === "/crm") return route === "/crm"
+  if (item.route === "/warehouse") return route === "/warehouse"
+  return route === item.route || route.startsWith(`${item.route}/`)
+}
+
+function destinationMatches(destination: SidebarDestination, route: string) {
+  return routeMatches(destination, route) || destination.children?.some((child) => routeMatches(child, route)) === true
+}
+
+function findAreaForRoute(route: string, areas: SidebarArea[] = sidebarAreas) {
+  return areas.find((area) => area.destinations.some((destination) => destinationMatches(destination, route)))
+}
+
+function activeDestinationIds(area: SidebarArea | undefined, route: string) {
+  if (!area) return []
+  return area.destinations.filter((destination) => destination.children && destinationMatches(destination, route)).map((destination) => destination.id)
 }
 
 export function AppSidebar({
@@ -360,102 +404,77 @@ export function AppSidebar({
   collapsed?: boolean
   onCollapsedChange?: (collapsed: boolean) => void
 }) {
-  const isCrmMode = route.startsWith("/crm")
   const { direction, t } = useLanguage()
   const aiAgentName = useAiAgentName()
   const shouldReduceMotion = useReducedMotion()
-  const sidebarRef = useRef<HTMLElement>(null)
-  const sidebarModeRef = useRef<"crm" | "main">(isCrmMode ? "crm" : "main")
-  const [activeTarget, setActiveTarget] = useState<SidebarActiveTarget | null>(null)
+  const isCustomer = currentUser?.actorType === "customer"
+  const canManageWarehouseUsers = hasPermission(currentUser, "Warehouse.Users.ManageOwn")
+  const customerDestinations = customerWarehouseNavigation.filter((item) =>
+    item.route !== "/warehouse/users" || canManageWarehouseUsers)
+  const availableAreas = isCustomer
+    ? [{ id: "warehouse", label: "Warehouse", icon: Boxes, destinations: customerDestinations } satisfies SidebarArea]
+    : sidebarAreas
+  const initialArea = isCustomer ? availableAreas[0] : route === "/" || route === "/agent-dexter" ? undefined : findAreaForRoute(route, availableAreas)
+  const [activeAreaId, setActiveAreaId] = useState<string | null>(initialArea?.id ?? null)
+  const [expandedDestinationIds, setExpandedDestinationIds] = useState<Set<string>>(
+    () => new Set(activeDestinationIds(initialArea, route)),
+  )
+  const activeArea = availableAreas.find((area) => area.id === activeAreaId)
+  const ActiveAreaIcon = activeArea?.icon
   const accountName = currentUser?.name ?? currentUser?.email ?? t("Signed in")
   const accountDetail = currentUser?.name && currentUser.email ? currentUser.email : t("Signed in")
   const accountInitials = currentUser?.initials ?? "MD"
+  const profileIsActive = route === "/settings" && activeArea?.id !== "administration"
 
-  const updateActiveTarget = useCallback(() => {
-    const sidebar = sidebarRef.current
-    const activeNode = sidebar?.querySelector<HTMLElement>('[data-sidebar-active-target="true"]')
+  useEffect(() => {
+    const routeArea = isCustomer ? availableAreas[0] : route === "/" || route === "/agent-dexter" ? undefined : findAreaForRoute(route, availableAreas)
+    setActiveAreaId(routeArea?.id ?? null)
+    setExpandedDestinationIds((current) => {
+      const requiredIds = activeDestinationIds(routeArea, route)
+      if (requiredIds.every((id) => current.has(id))) return current
 
-    if (!sidebar || !activeNode) {
-      setActiveTarget(null)
-      return
-    }
-
-    const sidebarRect = sidebar.getBoundingClientRect()
-    const activeRect = activeNode.getBoundingClientRect()
-    const borderRadius = window.getComputedStyle(activeNode).borderRadius
-
-    setActiveTarget({
-      top: activeRect.top - sidebarRect.top,
-      left: activeRect.left - sidebarRect.left,
-      width: activeRect.width,
-      height: activeRect.height,
-      borderRadius,
+      const next = new Set(current)
+      requiredIds.forEach((id) => next.add(id))
+      return next
     })
-  }, [])
+  }, [route, isCustomer, canManageWarehouseUsers]) // availableAreas is intentionally derived from the account type and permissions.
 
-  useLayoutEffect(() => {
-    const nextMode = isCrmMode ? "crm" : "main"
-    const sidebarModeChanged = sidebarModeRef.current !== nextMode
-    sidebarModeRef.current = nextMode
-
-    if (sidebarModeChanged) {
-      setActiveTarget(null)
-    }
-
-    const frame = requestAnimationFrame(() => {
-      requestAnimationFrame(updateActiveTarget)
-    })
-    const settledMeasure = window.setTimeout(updateActiveTarget, sidebarModeChanged ? 300 : 80)
-
-    window.addEventListener("resize", updateActiveTarget)
-    return () => {
-      cancelAnimationFrame(frame)
-      window.clearTimeout(settledMeasure)
-      window.removeEventListener("resize", updateActiveTarget)
-    }
-  }, [collapsed, isCrmMode, route, updateActiveTarget])
-
-  const isActiveRoute = (item: NavItem) => {
-    if (!item.route) return false
-    if (item.route === "/") return route === "/"
-    if (item.route === "/bookings" && route === "/bookings/provisional") return false
-    return route === item.route || route.startsWith(`${item.route}/`)
+  function openArea(area: SidebarArea) {
+    setActiveAreaId(area.id)
+    setExpandedDestinationIds(new Set(activeDestinationIds(area, route)))
   }
 
-  const isActiveCrmRoute = (item: NavItem) => {
-    if (!item.route) return false
-    if (item.route === "/crm/leads" && route === "/crm/accounts") return true
-    if (item.route === "/crm") return route === "/crm"
-    return route === item.route || route.startsWith(`${item.route}/`)
+  function toggleDestination(destinationId: string) {
+    setExpandedDestinationIds((current) => {
+      const next = new Set(current)
+      if (next.has(destinationId)) next.delete(destinationId)
+      else next.add(destinationId)
+      return next
+    })
   }
+
+  const dexterSidebarItem = (
+    <SidebarSectionItem>
+      <SidebarNavItem
+        item={{ label: `Agent ${aiAgentName}`, icon: Sparkles, route: "/agent-dexter" }}
+        isActive={route === "/agent-dexter"}
+        onClick={() => navigate("/agent-dexter")}
+        accent="dexter"
+        collapsed={collapsed}
+      />
+    </SidebarSectionItem>
+  )
 
   return (
     <aside
-      ref={sidebarRef}
       data-sidebar-collapsed={collapsed ? "true" : undefined}
+      data-sidebar-mode={activeArea?.id ?? "areas"}
       className={cn(
         "relative isolate flex h-full min-h-0 shrink-0 flex-col bg-[var(--md-sidebar-bg)] py-3 shadow-[var(--md-stroke-right)] transition-[width,padding] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
         collapsed ? "w-[var(--md-sidebar-collapsed-width)] px-2" : "w-[var(--md-sidebar-width)] px-[var(--md-gap-lg)]",
         className,
       )}
     >
-      {activeTarget ? (
-        <motion.span
-          data-sidebar-active-surface
-          aria-hidden="true"
-          className="pointer-events-none absolute z-0 bg-[var(--md-bg-strong)] shadow-[var(--md-shadow-line),0_8px_18px_rgba(42,52,50,0.08)]"
-          style={{ top: 0, left: 0 }}
-          initial={false}
-          animate={{
-            x: activeTarget.left,
-            y: activeTarget.top,
-            width: activeTarget.width,
-            height: activeTarget.height,
-            borderRadius: activeTarget.borderRadius,
-          }}
-          transition={shouldReduceMotion ? { duration: 0 } : sidebarActiveTransition}
-        />
-      ) : null}
       <div className={cn("relative z-10 flex h-10 items-center gap-2", collapsed ? "justify-center px-0" : "justify-between px-1")}>
         {collapsed ? null : (
           <img
@@ -483,105 +502,156 @@ export function AppSidebar({
         ) : null}
       </div>
 
-      {isCrmMode ? (
-        <>
-          <div className="relative z-10 mt-[var(--md-page-stack-gap)]">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-9 w-full justify-start gap-2 rounded-[var(--md-radius-md)] px-2 text-[13px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,opacity,transform] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]"
-              onClick={() => navigate("/")}
+      <div
+        className="relative z-10 mt-[var(--md-page-stack-gap)] min-h-0 flex-1 overflow-y-auto overflow-x-hidden md-scrollbar"
+        style={{ contain: "layout paint" }}
+      >
+        {isCustomer ? null : <SidebarSection>{dexterSidebarItem}</SidebarSection>}
+
+        <AnimatePresence mode="popLayout" initial={false}>
+          {activeArea ? (
+            <motion.div
+              key={activeArea.id}
+              className="mt-2 origin-top"
+              initial={shouldReduceMotion ? false : { opacity: 0, scale: 0.992 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.996 }}
+              transition={shouldReduceMotion ? { duration: 0 } : sidebarPaneTransition}
             >
-              <ArrowLeft data-icon="inline-start" strokeWidth={1.2} />
-              <span className={cn(collapsed && "sr-only")}>{t("Back")}</span>
-            </Button>
-          </div>
+              {isCustomer ? null : <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                aria-label={collapsed ? t("Back to all areas") : undefined}
+                title={collapsed ? t("Back to all areas") : undefined}
+                className={cn(
+                  "h-9 w-full justify-start gap-2 rounded-[var(--md-radius-md)] px-2 text-[13px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,opacity,transform] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]",
+                  collapsed && "justify-center px-0",
+                )}
+                onClick={() => {
+                  setActiveAreaId(null)
+                }}
+              >
+                <ArrowLeft data-icon="inline-start" className="size-4" strokeWidth={1.2} />
+                <span className={cn(collapsed && "sr-only")}>{t("All areas")}</span>
+              </Button>}
 
-          <SidebarSection className="relative z-10 mt-[var(--md-page-stack-gap)]" onRevealComplete={updateActiveTarget}>
-            {crmSidebarItems.map((item) => (
-              <SidebarSectionItem key={item.label}>
-                <SidebarNavItem
-                  item={item}
-                  isActive={isActiveCrmRoute(item)}
-                  onClick={item.route ? () => navigate(item.route!) : undefined}
-                  collapsed={collapsed}
-                />
-              </SidebarSectionItem>
-            ))}
-          </SidebarSection>
-        </>
-      ) : (
-        <>
-          <SidebarSection className="relative z-10 mt-4" onRevealComplete={updateActiveTarget}>
-            {sidebarPrimary.slice(0, 1).map((item) => (
-              <SidebarSectionItem key={item.label}>
-                <SidebarNavItem
-                  item={item}
-                  isActive={isActiveRoute(item)}
-                  onClick={item.route ? () => navigate(item.route!) : undefined}
-                  collapsed={collapsed}
-                />
-              </SidebarSectionItem>
-            ))}
-            <SidebarSectionItem>
-              <SidebarNavItem
-                item={{ label: `Agent ${aiAgentName}`, value: "NEW", icon: Sparkles, route: "/agent-dexter" }}
-                isActive={route === "/agent-dexter"}
-                onClick={() => navigate("/agent-dexter")}
-                accent="dexter"
-                collapsed={collapsed}
-              />
-            </SidebarSectionItem>
-            {sidebarPrimary.slice(1).map((item) => (
-              <SidebarSectionItem key={item.label}>
-                <SidebarNavItem
-                  item={item}
-                  isActive={isActiveRoute(item)}
-                  onClick={item.route ? () => navigate(item.route!) : undefined}
-                  collapsed={collapsed}
-                />
-              </SidebarSectionItem>
-            ))}
-          </SidebarSection>
+    <div className={cn("mt-3 flex items-center gap-2 px-2", collapsed && "justify-center px-0")}>
+      {ActiveAreaIcon ? <ActiveAreaIcon className="size-4 shrink-0 text-[var(--md-accent)]" strokeWidth={1.2} /> : null}
+      <p className={cn("truncate text-[12px] font-medium uppercase tracking-[0.08em] text-[var(--md-subtle)]", collapsed && "sr-only")}>
+        {t(activeArea.label)}
+      </p>
+    </div>
 
-          <Separator className="relative z-10 my-2.5 bg-[rgba(11,20,19,0.06)]" />
+    <SidebarSection className="mt-3">
+      {activeArea.destinations.map((destination) => {
+        const hasChildren = Boolean(destination.children?.length)
+        const isExpanded = expandedDestinationIds.has(destination.id)
+        const destinationActive = destinationMatches(destination, route)
 
-          <SidebarSection className="relative z-10" onRevealComplete={updateActiveTarget}>
-            {sidebarSecondary.map((item) => (
-              <SidebarSectionItem key={item.label}>
-                <SidebarNavItem
-                  item={item}
-                  isActive={isActiveRoute(item)}
-                  onClick={item.route ? () => navigate(item.route!) : undefined}
-                  collapsed={collapsed}
-                />
-              </SidebarSectionItem>
-            ))}
-          </SidebarSection>
-        </>
-      )}
+        return (
+          <SidebarSectionItem key={destination.id}>
+            <SidebarNavItem
+              item={destination}
+              isActive={!hasChildren && destinationActive}
+              onClick={hasChildren ? () => toggleDestination(destination.id) : destination.route ? () => navigate(destination.route!) : undefined}
+              collapsed={collapsed}
+              expanded={hasChildren ? isExpanded : undefined}
+              trailing={
+                hasChildren ? (
+                  <motion.span animate={{ rotate: isExpanded ? 180 : 0 }} transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.micro)}>
+                    <ChevronDown className="size-3.5" strokeWidth={1.2} />
+                  </motion.span>
+                ) : undefined
+              }
+            />
 
-      <div className="relative z-10 mt-auto">
+            <AnimatePresence initial={false}>
+              {hasChildren && isExpanded ? (
+                <motion.div
+                  className={cn("overflow-hidden", collapsed ? "mt-1" : "mt-1 ps-4")}
+                  initial={shouldReduceMotion ? false : { height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={shouldReduceMotion ? undefined : { height: 0, opacity: 0 }}
+                  transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.fast)}
+                >
+                  <div className="flex flex-col gap-1 rounded-[var(--md-radius-lg)] bg-[rgba(255,255,255,0.3)] p-1 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.48),0_1px_0_rgba(11,20,19,0.03)] dark:bg-[rgba(255,255,255,0.03)]">
+                    {destination.children?.map((child) => (
+                      <SidebarNavItem
+                        key={`${destination.id}-${child.label}`}
+                        item={child}
+                        isActive={routeMatches(child, route)}
+                        onClick={child.route ? () => navigate(child.route!) : undefined}
+                        collapsed={collapsed}
+                        nested
+                      />
+                    ))}
+                  </div>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
+          </SidebarSectionItem>
+        )
+      })}
+    </SidebarSection>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="areas"
+              className="origin-top"
+              initial={shouldReduceMotion ? false : { opacity: 0, scale: 0.992 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.996 }}
+              transition={shouldReduceMotion ? { duration: 0 } : sidebarPaneTransition}
+            >
+              <SidebarSection className="mt-[var(--md-gap-sm)]">
+                {availableAreas.map((area) => (
+                  <SidebarSectionItem key={area.id}>
+                    <SidebarNavItem item={{ label: area.label, icon: area.icon }} onClick={() => openArea(area)} collapsed={collapsed} />
+                  </SidebarSectionItem>
+                ))}
+              </SidebarSection>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      <div className="relative z-10 mt-[var(--md-page-stack-gap)]">
         <Separator className="mb-[var(--md-page-stack-gap)] bg-[var(--md-line-strong)]" />
         <Popover>
           <PopoverTrigger asChild>
-            <motion.button
-              data-sidebar-active-target={route === "/settings" ? "true" : undefined}
+            <button
               type="button"
-              aria-current={route === "/settings" ? "page" : undefined}
+              aria-current={profileIsActive ? "page" : undefined}
               aria-label={collapsed ? t("Account menu") : undefined}
               title={collapsed ? accountName : undefined}
               className={cn(
-                "group relative flex min-w-0 w-full items-center gap-3 overflow-hidden rounded-[var(--md-radius-lg)] px-2 py-2 text-left transition-[color,opacity] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
+                "group relative flex min-w-0 w-full items-center gap-3 overflow-hidden rounded-[var(--md-radius-lg)] px-2 py-2 text-left transition-[color,opacity,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.004] hover:text-[var(--md-ink)] active:scale-[0.986] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)] motion-reduce:transition-none motion-reduce:hover:scale-100 motion-reduce:active:scale-100",
                 collapsed && "justify-center px-0",
-                route === "/settings" && "text-[var(--md-ink)]",
+                profileIsActive && "text-[var(--md-ink)]",
               )}
-              whileHover={shouldReduceMotion ? undefined : { scale: 1.01 }}
-              whileTap={shouldReduceMotion ? undefined : { scale: 0.985 }}
-              transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.micro)}
+              style={{
+                transitionDuration: "150ms",
+                transitionProperty: "color, opacity, scale, box-shadow",
+                transitionTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1)",
+              }}
             >
-              {route === "/settings" ? null : <span className="absolute inset-0 rounded-[var(--md-radius-lg)] bg-[var(--md-hover)] opacity-0 transition-opacity duration-200 group-hover:opacity-100" />}
+              {profileIsActive ? (
+                <span
+                  data-sidebar-active-surface
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 rounded-[var(--md-radius-lg)] bg-[var(--md-bg-strong)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.68),0_8px_18px_rgba(42,52,50,0.08)]"
+                />
+              ) : (
+                <span
+                  className="pointer-events-none absolute inset-0 scale-[0.985] rounded-[var(--md-radius-lg)] bg-[var(--md-hover)] opacity-0 transition-[opacity,transform] duration-100 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-100 group-hover:opacity-100 group-focus-visible:scale-100 group-focus-visible:opacity-100 motion-reduce:transition-none"
+                  style={{
+                    transitionDuration: "100ms",
+                    transitionProperty: "opacity, scale",
+                    transitionTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1)",
+                  }}
+                />
+              )}
               <Avatar className="relative size-10 rounded-full">
                 <AvatarFallback className="rounded-full bg-[var(--md-avatar-bg)] text-[13px] font-medium text-[var(--md-ink)]" data-i18n-skip>{accountInitials}</AvatarFallback>
               </Avatar>
@@ -589,7 +659,7 @@ export function AppSidebar({
                 <p className="truncate text-[14px] font-medium text-[var(--md-ink)]" dir="auto" data-i18n-skip>{accountName}</p>
                 <p className="truncate text-[12px] text-[var(--md-text)]" dir={currentUser?.email ? "ltr" : "auto"} data-i18n-skip={currentUser?.email ? true : undefined}>{accountDetail}</p>
               </div>
-            </motion.button>
+            </button>
           </PopoverTrigger>
           <PopoverContent
             side={direction === "rtl" ? "left" : "right"}
@@ -604,14 +674,14 @@ export function AppSidebar({
               <p className="mt-0.5 truncate text-[12px] text-[var(--md-text)]" dir={currentUser?.email ? "ltr" : "auto"} data-i18n-skip={currentUser?.email ? true : undefined}>{accountDetail}</p>
             </div>
             <Separator className="my-1 bg-[var(--md-line-strong)]" />
-            <button
+            {!isCustomer ? <button
               type="button"
               className="flex h-9 w-full items-center gap-2 rounded-[var(--md-radius-md)] px-2 text-left text-[13px] font-medium text-[var(--md-text)] transition-[background,color,opacity,transform] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]"
               onClick={() => navigate("/settings")}
             >
               <Settings data-icon="inline-start" className="size-4" strokeWidth={1.4} />
               <span className="min-w-0 flex-1 truncate">{t("Account settings")}</span>
-            </button>
+            </button> : null}
             <button
               type="button"
               className="flex h-9 w-full items-center gap-2 rounded-[var(--md-radius-md)] px-2 text-left text-[13px] font-medium text-[var(--md-red)] transition-[background,color,opacity,transform] hover:bg-[rgba(209,78,78,0.08)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(209,78,78,0.14)]"

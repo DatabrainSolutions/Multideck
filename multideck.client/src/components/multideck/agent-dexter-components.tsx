@@ -196,9 +196,10 @@ export function DexterPromptComposer({
             type="button"
             icon={ArrowUp}
             iconOnly
-            label="Send prompt"
-            className="ml-auto size-10 min-w-0 rounded-[var(--md-radius-lg)] p-0 sm:ml-0"
+            label={t("Send prompt")}
+            className="ms-auto size-10 min-w-0 rounded-[var(--md-radius-lg)] p-0 sm:ms-0"
             onClick={onSend}
+            disabled={disabled || !value.trim()}
           />
         </div>
       </div>

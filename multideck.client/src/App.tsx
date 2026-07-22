@@ -9,6 +9,7 @@ import { LanguageProvider } from "@/i18n/language-provider"
 import { mdMotion } from "@/lib/motion"
 import { rememberAuthReturnPath, takeAuthReturnPath } from "@/lib/auth-routing"
 import { summarizeAuthUser, type AuthUserSummary } from "@/lib/auth-user"
+import { getApiAuthSession } from "@/lib/api"
 import { isSupabaseConfigured, supabase } from "@/lib/supabase"
 import { OverviewPage } from "@/pages/overview-page"
 
@@ -69,6 +70,15 @@ const validRoutes = new Set([
   "/reports/templates/monthly-client-review",
   "/settings",
   "/warehouse",
+  "/warehouse/calendar",
+  "/warehouse/facilities",
+  "/warehouse/goods-in",
+  "/warehouse/goods-out",
+  "/warehouse/inventory",
+  "/warehouse/items",
+  "/warehouse/locations",
+  "/warehouse/orders",
+  "/warehouse/users",
   "/bookings",
   "/bookings/new",
   "/bookings/provisional",
@@ -117,6 +127,11 @@ function getRoute() {
   return validRoutes.has(window.location.pathname) ? window.location.pathname : "/"
 }
 
+function canCustomerOpenRoute(user: AuthUserSummary, path: string) {
+  if (["/warehouse/inventory", "/warehouse/orders", "/warehouse/items"].includes(path)) return true
+  return path === "/warehouse/users" && user.permissions.includes("Warehouse.Users.ManageOwn")
+}
+
 function RouteFallback() {
   return (
     <div aria-hidden="true" className="min-h-[320px] bg-transparent">
@@ -150,8 +165,10 @@ export default function App() {
 
     let cancelled = false
 
+    let sessionRequest = 0
     const applySession = (session: Session | null) => {
       if (cancelled) return
+      const requestId = ++sessionRequest
 
       if (!session?.user) {
         setCurrentUser(null)
@@ -159,8 +176,17 @@ export default function App() {
         return
       }
 
-      setCurrentUser(summarizeAuthUser(session.user))
-      setAuthStatus("authenticated")
+      setAuthStatus("checking")
+      getApiAuthSession(session.access_token).then((apiSession) => {
+        if (cancelled || requestId !== sessionRequest) return
+        setCurrentUser(summarizeAuthUser(session.user, apiSession.profile))
+        setAuthStatus("authenticated")
+      }).catch((error) => {
+        if (cancelled || requestId !== sessionRequest) return
+        console.error("The application profile could not be loaded.", error)
+        setCurrentUser(summarizeAuthUser(session.user))
+        setAuthStatus("authenticated")
+      })
     }
 
     supabase.auth.getSession().then(({ data, error }) => {
@@ -223,7 +249,17 @@ export default function App() {
     }
   }, [authStatus, route])
 
+  useEffect(() => {
+    if (authStatus !== "authenticated" || currentUser?.actorType !== "customer") return
+    if (canCustomerOpenRoute(currentUser, route)) return
+    window.history.replaceState({}, "", currentUser.landingPath)
+    startTransition(() => setRoute(getRoute()))
+  }, [authStatus, currentUser, route])
+
   function navigate(path: string) {
+    if (currentUser?.actorType === "customer" && !canCustomerOpenRoute(currentUser, path)) {
+      path = currentUser.landingPath
+    }
     if (path === route) return
     window.history.pushState({}, "", path)
     startTransition(() => setRoute(getRoute()))
@@ -277,7 +313,7 @@ export default function App() {
                   {route === "/quotes" || route === "/quotes/3" ? <QuotesPage variant="cargowise" /> : null}
                   {route === "/reports" ? <ReportsPage navigate={navigate} /> : null}
                   {route === "/settings" ? <SettingsPage navigate={navigate} /> : null}
-                  {route === "/warehouse" ? <WarehousePage /> : null}
+                  {route.startsWith("/warehouse") ? <WarehousePage route={route} currentUser={currentUser} /> : null}
                   {route === "/bookings" ? <BookingsPage navigate={navigate} /> : null}
                   {route === "/bookings/new" ? <BookingWizardPage navigate={navigate} /> : null}
                   {route === "/bookings/provisional" ? <ProvisionalBookingPage navigate={navigate} /> : null}

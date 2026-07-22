@@ -47,6 +47,7 @@ import {
 import { useClockDisplayMode, type ClockDisplayMode } from "@/lib/user-preferences"
 import { AnimatedList } from "./animated-list"
 import { MultideckDateRangePicker, getDefaultDateRange } from "./date-picker"
+import { DexterActionPill } from "./dexter-action-pill"
 import { MetricCard } from "./metric-card"
 import { SectionHeader, Surface } from "./surface"
 import { StatusPill, toneToVar } from "./status-pill"
@@ -1000,9 +1001,7 @@ export function TimezoneFocusPanel({ selectedCode }: { selectedCode: string }) {
             <Sparkles className="mr-2 inline size-3.5 text-[var(--md-accent)]" strokeWidth={1.2} />
             Dexter can quote the <span className="font-medium text-[var(--md-ink)]">{queue.readyToQuote} ready RFQs</span> and chase the <span className="font-medium text-[var(--md-ink)]">{queue.needAction} blockers</span> before the {city.city} cutoff.
           </p>
-          <Button variant="ghost" className="h-9 rounded-[var(--md-radius-lg)] bg-white/56 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/78">
-            Let Dexter handle it
-          </Button>
+          <DexterActionPill label="Let Dexter handle it" className="h-9 min-w-[158px] px-4 text-[13px]" />
         </div>
       </Surface>
     </motion.div>
@@ -1151,9 +1150,13 @@ export function DashboardDrilldownPanel({
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {detail.primaryAction ? (
-                <Button type="button" className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3 text-[13px] font-medium text-white hover:bg-[var(--md-accent)]/90">
-                  {detail.primaryAction}
-                </Button>
+                detail.primaryAction.includes("Dexter") ? (
+                  <DexterActionPill label={detail.primaryAction} className="h-9 min-w-[178px] px-3 text-[13px]" />
+                ) : (
+                  <Button type="button" className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3 text-[13px] font-medium text-white hover:bg-[var(--md-accent)]/90">
+                    {detail.primaryAction}
+                  </Button>
+                )
               ) : null}
               <StatusPill tone={detail.tone}>{detail.tone === "red" ? "Action needed" : detail.tone === "amber" ? "Watch today" : "Ready"}</StatusPill>
             </div>

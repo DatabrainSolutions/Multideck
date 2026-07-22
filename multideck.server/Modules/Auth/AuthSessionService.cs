@@ -1,10 +1,15 @@
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using Multideck.Persistence;
+using Multideck.Server.Authorization;
+using Multideck.Server.Modules.Warehouse;
 
 namespace Multideck.Server.Modules.Auth;
 
-public sealed class AuthSessionService(MultideckContext db) : IAuthSessionService
+public sealed class AuthSessionService(
+    MultideckContext db,
+    IWarehouseContext warehouseContext,
+    IUserPermissionService permissionService) : IAuthSessionService
 {
     public object CreateSessionResponse(ClaimsPrincipal user, object? profile)
     {
@@ -41,7 +46,55 @@ public sealed class AuthSessionService(MultideckContext db) : IAuthSessionServic
 
         if (cmpUser is null)
         {
-            return null;
+            try
+            {
+                var actor = await warehouseContext.RequireCurrentActorAsync(user, cancellationToken);
+                if (!actor.IsCustomer)
+                {
+                    return null;
+                }
+
+                var organisationIds = actor.OrganisationIds;
+                var organisationRows = await db.OrgMasters
+                    .AsNoTracking()
+                    .Where(organisation => organisationIds.Contains(organisation.OrgId))
+                    .OrderBy(organisation => organisation.OrgName)
+                    .Select(organisation => new
+                    {
+                        id = organisation.OrgId,
+                        name = organisation.OrgName,
+                    })
+                    .ToListAsync(cancellationToken);
+                var organisations = organisationRows.Select(organisation => new
+                {
+                    organisation.id,
+                    organisation.name,
+                    canManageWarehouseUsers = actor.HasCapability(WarehouseCapabilities.UsersManageOwn, organisation.id),
+                }).ToList();
+                var permissions = await permissionService.GetGrantedPermissionValuesAsync(user, cancellationToken);
+
+                return new
+                {
+                    id = actor.PortalUserId,
+                    authUserId,
+                    displayName = actor.DisplayName,
+                    firstName = (string?)null,
+                    lastName = (string?)null,
+                    email = actor.Email,
+                    actorType = "customer",
+                    company = (object?)null,
+                    offices = Array.Empty<object>(),
+                    organisations,
+                    roles = Array.Empty<object>(),
+                    permissions = permissions.OrderBy(value => value).ToArray(),
+                    landingPath = "/warehouse/inventory",
+                    status = "Active",
+                };
+            }
+            catch (WarehouseException)
+            {
+                return null;
+            }
         }
 
         var nameParts = new[] { cmpUser.UserFirstname, cmpUser.UserLastname }
@@ -57,6 +110,7 @@ public sealed class AuthSessionService(MultideckContext db) : IAuthSessionServic
             firstName = cmpUser.UserFirstname,
             lastName = cmpUser.UserLastname,
             email = cmpUser.UserEmail,
+            actorType = "internal",
             company = cmpUser.Company is null ? null : new
             {
                 id = cmpUser.Company.CompanyId,
@@ -77,6 +131,9 @@ public sealed class AuthSessionService(MultideckContext db) : IAuthSessionServic
                     id = role.SysUserRoleId,
                     name = role.SysUserRoleName,
                 }),
+            organisations = Array.Empty<object>(),
+            permissions = (await permissionService.GetGrantedPermissionValuesAsync(user, cancellationToken)).OrderBy(value => value).ToArray(),
+            landingPath = "/",
             status = cmpUser.AuthUserId.HasValue ? "Active" : "Profile only",
         };
     }

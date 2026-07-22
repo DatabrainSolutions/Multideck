@@ -2,6 +2,7 @@ import {
   BadgeCheck,
   BarChart3,
   Bell,
+  Building2,
   Boxes,
   BriefcaseBusiness,
   CalendarDays,
@@ -22,12 +23,17 @@ import {
   Globe2,
   Grid3X3,
   KeyRound,
+  Layers3,
   LayoutDashboard,
   ListOrdered,
   Mail,
+  MapPin,
   MessageCircle,
   MoonStar,
+  Package,
   PackageCheck,
+  PackageMinus,
+  PackagePlus,
   Palette,
   Plane,
   ReceiptText,
@@ -66,6 +72,193 @@ export type NavItem = {
   icon: LucideIcon
   route?: string
 }
+
+export type SidebarDestination = NavItem & {
+  id: string
+  children?: NavItem[]
+}
+
+export type SidebarArea = {
+  id: string
+  label: string
+  icon: LucideIcon
+  destinations: SidebarDestination[]
+}
+
+export const warehouseNavigation: SidebarDestination[] = [
+  { id: "warehouse-dashboard", label: "Dashboard", value: "Live", icon: LayoutDashboard, route: "/warehouse" },
+  { id: "warehouse-calendar", label: "Calendar", value: "7d", icon: CalendarDays, route: "/warehouse/calendar" },
+  { id: "warehouse-inventory", label: "Inventory", icon: Boxes, route: "/warehouse/inventory" },
+  { id: "warehouse-goods-in", label: "Goods in", icon: PackagePlus, route: "/warehouse/goods-in" },
+  { id: "warehouse-goods-out", label: "Goods out", icon: PackageMinus, route: "/warehouse/goods-out" },
+  { id: "warehouse-orders", label: "Orders", icon: ClipboardCheck, route: "/warehouse/orders" },
+  {
+    id: "warehouse-setup",
+    label: "Setup",
+    icon: Settings2,
+    children: [
+      { label: "Facilities", icon: Building2, route: "/warehouse/facilities" },
+      { label: "Locations", icon: MapPin, route: "/warehouse/locations" },
+      { label: "Items", icon: Package, route: "/warehouse/items" },
+    ],
+  },
+]
+
+export const customerWarehouseNavigation: SidebarDestination[] = [
+  { id: "warehouse-inventory", label: "Inventory", icon: Boxes, route: "/warehouse/inventory" },
+  { id: "warehouse-orders", label: "Orders", icon: ClipboardCheck, route: "/warehouse/orders" },
+  { id: "warehouse-items", label: "Items", icon: Package, route: "/warehouse/items" },
+  { id: "warehouse-users", label: "Users", icon: Users, route: "/warehouse/users" },
+]
+
+export const sidebarAreas: SidebarArea[] = [
+  {
+    id: "home-work",
+    label: "Home & Work",
+    icon: LayoutDashboard,
+    destinations: [
+      { id: "overview-watchlists", label: "Overview & watchlists", icon: LayoutDashboard, route: "/" },
+      { id: "my-work", label: "My Work", icon: ListOrdered },
+      { id: "search-recent", label: "Search & recent", icon: Search },
+      { id: "notifications", label: "Notifications", icon: Bell },
+    ],
+  },
+  {
+    id: "operations",
+    label: "Operations",
+    icon: Ship,
+    destinations: [
+      {
+        id: "bookings-jobs",
+        label: "Bookings & jobs",
+        icon: Ship,
+        children: [
+          { label: "Bookings overview", icon: LayoutDashboard, route: "/bookings" },
+          { label: "New booking", icon: PackageCheck, route: "/bookings/new" },
+          { label: "Provisional booking", icon: Clock3, route: "/bookings/provisional" },
+        ],
+      },
+      { id: "transport-planning", label: "Transport planning", icon: Plane },
+      { id: "tracking-milestones", label: "Tracking & milestones", icon: Globe2 },
+      { id: "operational-documents", label: "Operational documents", icon: FileText },
+      { id: "exceptions-service-recovery", label: "Exceptions & service recovery", icon: TriangleAlert },
+      { id: "claims", label: "Claims", icon: ClipboardCheck },
+    ],
+  },
+  {
+    id: "sales-crm",
+    label: "Sales & CRM",
+    icon: BriefcaseBusiness,
+    destinations: [
+      {
+        id: "accounts-contacts",
+        label: "Accounts & contacts",
+        icon: Users,
+        children: [
+          { label: "Accounts", icon: BriefcaseBusiness, route: "/crm/accounts" },
+          { label: "Customers", value: "39", icon: Users, route: "/customers" },
+          { label: "Contacts", value: "112", icon: Mail, route: "/crm/contacts" },
+        ],
+      },
+      {
+        id: "leads-opportunities",
+        label: "Leads & opportunities",
+        icon: BriefcaseBusiness,
+        children: [
+          { label: "Sales overview", icon: LayoutDashboard, route: "/crm" },
+          { label: "Leads", value: "39", icon: Users, route: "/crm/leads" },
+          { label: "Deals", value: "12", icon: BriefcaseBusiness, route: "/crm/deals" },
+        ],
+      },
+      { id: "quotes", label: "Quotes", icon: ReceiptText, route: "/quotes" },
+      { id: "activities-follow-up", label: "Activities & follow-up", icon: Clock3, route: "/crm/activity" },
+      {
+        id: "campaigns-growth-signals",
+        label: "Campaigns & growth signals",
+        icon: Palette,
+        children: [
+          { label: "Marketing", icon: Palette, route: "/crm/marketing" },
+          { label: "Emails", icon: Mail, route: "/crm/emails" },
+          { label: "Lists", icon: ListOrdered, route: "/crm/lists" },
+        ],
+      },
+    ],
+  },
+  {
+    id: "rates-contracts",
+    label: "Rates & Contracts",
+    icon: ReceiptText,
+    destinations: [
+      { id: "rate-contracts", label: "Rate contracts", icon: FileText },
+      { id: "tariffs-charges", label: "Tariffs & charges", icon: SlidersHorizontal },
+      { id: "rate-results", label: "Rate results", icon: ChartLine },
+    ],
+  },
+  {
+    id: "warehouse",
+    label: "Warehouse",
+    icon: Boxes,
+    destinations: [...warehouseNavigation],
+  },
+  {
+    id: "finance",
+    label: "Finance",
+    icon: ChartNoAxesCombined,
+    destinations: [
+      { id: "invoicing-receivables", label: "Invoicing & receivables", icon: ReceiptText },
+      { id: "supplier-costs-payables", label: "Supplier costs & payables", icon: SlidersHorizontal },
+      { id: "credit-control-approvals", label: "Credit control & approvals", icon: BadgeCheck },
+      { id: "cash-reconciliation", label: "Cash & reconciliation", icon: Layers3 },
+      { id: "profitability", label: "Profitability", icon: ChartLine },
+      { id: "tax-fx", label: "Tax & FX", icon: Globe2 },
+    ],
+  },
+  {
+    id: "customs-compliance",
+    label: "Customs & Compliance",
+    icon: BadgeCheck,
+    destinations: [
+      { id: "customs-cases", label: "Customs cases", icon: ClipboardCheck },
+      { id: "transit-t1", label: "Transit (T1)", icon: Ship },
+      { id: "classification-licences", label: "Classification & licences", icon: ScanText },
+      { id: "compliance-controls", label: "Compliance controls", icon: BadgeCheck },
+    ],
+  },
+  {
+    id: "documents-service",
+    label: "Documents & Service",
+    icon: FileText,
+    destinations: [
+      { id: "document-builder", label: "Document builder", icon: FileText, route: "/paper-tray" },
+      { id: "signatures-security", label: "Signatures & security", icon: KeyRound },
+      { id: "customer-portal", label: "Customer portal", icon: Globe2 },
+      { id: "communications", label: "Communications", icon: MessageCircle },
+    ],
+  },
+  {
+    id: "insights-ai",
+    label: "Insights & AI",
+    icon: Sparkles,
+    destinations: [
+      { id: "dashboards", label: "Dashboards", icon: LayoutDashboard, route: "/" },
+      { id: "reports-exports", label: "Reports & exports", icon: BarChart3, route: "/reports" },
+      { id: "ai-workspace", label: "AI workspace", icon: Sparkles, route: "/agent-dexter" },
+      { id: "data-quality-observability", label: "Data quality & observability", icon: Gauge },
+    ],
+  },
+  {
+    id: "administration",
+    label: "Administration",
+    icon: Settings2,
+    destinations: [
+      { id: "organisation-offices", label: "Organisation & offices", icon: Globe2, route: "/settings" },
+      { id: "users-roles-permissions", label: "Users, roles & permissions", icon: Users },
+      { id: "integrations", label: "Integrations", icon: Cloud },
+      { id: "subscription-feature-flags", label: "Subscription & feature flags", icon: SlidersHorizontal },
+      { id: "security-audit-retention", label: "Security, audit & retention", icon: KeyRound },
+    ],
+  },
+]
 
 export const sidebarPrimary: NavItem[] = [
   { label: "Overview", value: "G O", icon: LayoutDashboard, route: "/" },
@@ -410,18 +603,6 @@ export const liveBookings = [
 ]
 
 export const bookingFilters = ["Open · 34", "On-track · 26", "Delayed · 3", "Exceptions · 2", "Delivered · 48"] as const
-
-export const warehouseTabs = [
-  { label: "Dashboard", value: "Live" },
-  { label: "Facilities" },
-  { label: "Locations" },
-  { label: "Items" },
-  { label: "Inventory" },
-  { label: "Goods in" },
-  { label: "Goods out" },
-  { label: "Orders" },
-  { label: "Calendar", value: "7d" },
-] as const
 
 export const warehouseProductFilters = ["All · 128", "Low stock · 8", "Inbound · 12", "Quarantine · 3"] as const
 export const warehouseOrderFilters = ["All orders · 6", "Inbound · 2", "Outbound · 3", "Hold · 1"] as const
@@ -2010,7 +2191,7 @@ export const galleryComponents = [
     category: "Foundation",
     description: "The base Multideck panel. It gives workflow areas quiet depth without creating heavy card clutter.",
     details: "Use for primary panels, side panels, preview wells, and command areas. Radius and shadow come from tokens.",
-    foundOn: [{ label: "Overview", route: "/" }, { label: "CRM", route: "/crm" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Overview", route: "/" }, { label: "CRM", route: "/crm" }, { label: "Customers", route: "/customers" }, { label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Components", route: "/components" }],
     componentCode: `export function Surface({ tone = "panel", padding = "md", className, children }) {\n  return (\n    <section className={cn("rounded-[var(--md-radius-lg)]", toneClass[tone], paddingClass[padding], className)}>\n      {children}\n    </section>\n  )\n}\n\nexport function SectionHeader({ eyebrow, title, meta, action, className }) {\n  return (\n    <div className={cn("flex items-start justify-between gap-3", className)}>\n      <div className="min-w-0">\n        {eyebrow ? <p className="mb-1 text-xs font-medium text-[var(--md-subtle)]">{eyebrow}</p> : null}\n        <h2 className="truncate text-[14px] font-medium text-[var(--md-ink)]">{title}</h2>\n        {meta ? <p className="mt-1 text-[12px] text-[var(--md-text)]">{meta}</p> : null}\n      </div>\n      {action ? <div className="shrink-0">{action}</div> : null}\n    </div>\n  )\n}`,
     usageCode: `<Surface tone="panel" padding="md">\n  <SectionHeader title="Live bookings" meta="updated 41s ago" />\n  <BookingRow booking={booking} />\n</Surface>`,
   },
@@ -2020,7 +2201,7 @@ export const galleryComponents = [
     category: "Feedback",
     description: "Compact status language for freight workflows, exceptions, and document states.",
     details: "Use green for good, amber for review, red for action, blue for information, teal for AI or customs flow.",
-    foundOn: [{ label: "Overview", route: "/" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Overview", route: "/" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "Customers", route: "/customers" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
     componentCode: `export function StatusPill({ tone = "neutral", children, className }) {\n  return (\n    <Badge\n      variant="secondary"\n      className={cn("h-[21px] rounded-full px-[9px] text-[11.5px] font-medium leading-none", toneClass[tone], className)}\n    >\n      {children}\n    </Badge>\n  )\n}`,
     usageCode: `<StatusPill tone="amber">Under review</StatusPill>\n<StatusPill tone="red">Action req.</StatusPill>`,
   },
@@ -2046,11 +2227,14 @@ export const galleryComponents = [
   },
   {
     id: "dexter-action-pill",
-    name: "Dexter Action Pill",
+    name: "Ask Dexter Shader Button",
     category: "Agent Dexter",
-    description: "A distinctive universal toolbar pill that opens Agent Dexter from operational pages without making the page feel heavier.",
-    details: "Use beside always-needed page controls when the operator may want to ask Dexter about the current screen. Keep view switches and utility actions in Page Settings when the header would otherwise feel crowded.",
+    description: "A universal Ask Dexter action with the Spectral Bloom shader, white text, and a calm letter-by-letter slot transition.",
+    details: "Use beside always-needed page controls when the operator may want Dexter's help with the current screen. The shared component also supports icon-only send controls, keeping the shader, readable contrast, focus state, reduced-motion fallback, and hover lettering consistent everywhere.",
     foundOn: [
+      { label: "Agent Dexter", route: "/agent-dexter" },
+      { label: "Overview", route: "/" },
+      { label: "Quotes", route: "/quotes" },
       { label: "Customers", route: "/customers" },
       { label: "Bookings", route: "/bookings" },
       { label: "CRM overview", route: "/crm" },
@@ -2060,8 +2244,8 @@ export const galleryComponents = [
       { label: "CRM lists", route: "/crm/lists" },
       { label: "Components", route: "/components?component=dexter-action-pill" },
     ],
-    componentCode: `export function DexterActionPill({ label = "Speak to Dexter", icon: Icon = Sparkles, onClick }) {\n  return (\n    <Button\n      type="button"\n      variant="ghost"\n      aria-label={label}\n      className="md-dexter-pill relative h-10 min-w-[148px] overflow-hidden rounded-full px-3.5 text-[13px] font-medium text-[var(--md-ink)]"\n      onClick={onClick}\n    >\n      <span className="md-dexter-pill__wash" aria-hidden />\n      <span className="md-dexter-pill__particle md-dexter-pill__particle--one" aria-hidden />\n      <span className="md-dexter-pill__particle md-dexter-pill__particle--two" aria-hidden />\n      <span className="md-dexter-pill__particle md-dexter-pill__particle--three" aria-hidden />\n      <Icon className="relative z-10 size-3.5" strokeWidth={1.25} />\n      <span className="relative z-10 truncate">{label}</span>\n    </Button>\n  )\n}`,
-    usageCode: `const [dexterOpen, setDexterOpen] = useState(false)\n\n<div className="flex flex-wrap items-center gap-2">\n  <SegmentedControl options={customerScopeTabs} value={scope} onChange={setScope} />\n  <DexterActionPill onClick={() => setDexterOpen(true)} />\n  <PageSettingsMenu\n    viewOptions={customerViewOptions}\n    value={viewMode}\n    onViewChange={setViewMode}\n    actions={[{ id: "export-customers", label: "Export CSV", icon: Download, onSelect: exportCustomers }]}\n  />\n</div>\n\n<DexterCompanionSidebar open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel="Customers" />`,
+    componentCode: `export function DexterActionPill({ label = "Ask Dexter", icon: Icon = Sparkles, iconOnly = false, onClick }) {\n  return (\n    <Button\n      type="button"\n      variant="ghost"\n      aria-label={label}\n      data-icon-only={iconOnly || undefined}\n      className="md-dexter-pill relative h-10 min-w-[132px] overflow-hidden rounded-[var(--md-radius-lg)] px-3.5 text-[13px] font-medium text-white"\n      onClick={onClick}\n    >\n      <span className="md-dexter-pill__shader" aria-hidden>\n        <SpectralBloomShader />\n      </span>\n      <span className="md-dexter-pill__contrast" aria-hidden />\n      <Icon className="relative z-10 size-3.5" strokeWidth={1.25} />\n      {iconOnly ? null : <SlotLabel label={label} />}\n    </Button>\n  )\n}`,
+    usageCode: `const [dexterOpen, setDexterOpen] = useState(false)\n\n<div className="flex flex-wrap items-center gap-2">\n  <SegmentedControl options={customerScopeTabs} value={scope} onChange={setScope} />\n  <DexterActionPill onClick={() => setDexterOpen(true)} />\n  <PageSettingsMenu\n    viewOptions={customerViewOptions}\n    value={viewMode}\n    onViewChange={setViewMode}\n    actions={[{ id: "export-customers", label: "Export CSV", icon: Download, onSelect: exportCustomers }]}\n  />\n</div>\n\n<DexterActionPill\n  icon={ArrowUp}\n  iconOnly\n  label="Send prompt"\n  onClick={sendPrompt}\n/>\n\n<DexterCompanionSidebar open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel="Customers" />`,
   },
   {
     id: "dexter-companion-sidebar",
@@ -2244,12 +2428,12 @@ export const galleryComponents = [
   },
   {
     id: "sidebar",
-    name: "Sidebar Item",
+    name: "Area Sidebar Navigation",
     category: "Navigation",
-    description: "The animated navigation unit for module movement, counts, and active state.",
-    details: "Use icon, label, optional count, and the shared moving active surface. Counts should only appear when useful, and inactive future modules should feel calm rather than clickable.",
-    foundOn: [{ label: "Overview", route: "/" }, { label: "Components", route: "/components" }],
-    componentCode: `function AppSidebar({ activeTarget }) {\n  return (\n    <aside className="relative isolate">\n      <motion.span\n        aria-hidden\n        className="pointer-events-none absolute z-0 bg-[var(--md-bg-strong)] shadow-[var(--md-shadow-line)]"\n        animate={activeTarget}\n        transition={{ duration: 0.34, ease: [0.16, 1, 0.3, 1] }}\n      />\n      <nav className="relative z-10">\n        <SidebarNavItem item={bookingsItem} isActive activeTargetRef={setActiveNode} />\n        <SidebarNavItem item={customersItem} onClick={() => navigate("/customers")} />\n      </nav>\n    </aside>\n  )\n}\n\nexport function SidebarNavItem({ item, isActive, onClick, activeTargetRef }) {\n  const Icon = item.icon\n  const isDisabled = !onClick\n\n  return (\n    <motion.button\n      ref={activeTargetRef}\n      type="button"\n      aria-current={isActive ? "page" : undefined}\n      disabled={isDisabled}\n      className={cn(\n        "group relative h-10 w-full overflow-hidden rounded-[var(--md-radius-md)] px-2.5",\n        "flex items-center justify-start gap-2 text-[14px] font-medium text-[var(--md-text)]",\n        isActive && "text-[var(--md-ink)]",\n      )}\n      onClick={onClick}\n      whileHover={isDisabled ? undefined : { x: 3, scale: 1.01 }}\n      whileTap={isDisabled ? undefined : { scale: 0.985 }}\n    >\n      {isActive ? null : <span className="absolute inset-0 rounded-[var(--md-radius-md)] bg-[var(--md-hover)] opacity-0 transition-opacity group-hover:opacity-100" />}\n      <span className="relative grid size-5 place-items-center rounded-[var(--md-radius-sm)]">\n        <Icon data-icon="inline-start" strokeWidth={1.2} />\n      </span>\n      <span className="relative min-w-0 flex-1 truncate text-left">{item.label}</span>\n      {item.value ? <span className="relative rounded-full px-2 py-0.5 text-[11px] font-medium">{item.value}</span> : null}\n    </motion.button>\n  )\n}`,
+    description: "The two-level Multideck navigation pattern: Dexter stays first in every rail, followed by stable product areas or area-specific destinations with optional dropdown groups.",
+    details: "Keep Dexter permanently mounted at the top and use its shared shader treatment in both navigation levels, so changing areas never restarts the shader. Selecting a CSV-backed area replaces only the remaining rail without changing the page; destinations can link directly or disclose smaller page links. The shared active surface, motion, collapsed state and RTL behavior remain consistent across both levels.",
+    foundOn: [{ label: "App shell", route: "/" }, { label: "Operations", route: "/bookings" }, { label: "Sales & CRM", route: "/crm" }, { label: "Components", route: "/components?component=sidebar" }],
+    componentCode: `export function AppSidebar({ route, navigate }) {\n  const [activeAreaId, setActiveAreaId] = useState(findAreaForRoute(route)?.id ?? null)\n  const [expandedIds, setExpandedIds] = useState(new Set())\n  const activeArea = sidebarAreas.find((area) => area.id === activeAreaId)\n\n  return (\n    <aside className="relative flex h-full flex-col bg-[var(--md-sidebar-bg)]">\n      <SidebarNavItem\n        item={{ label: "Agent Dexter", icon: Sparkles, route: "/agent-dexter" }}\n        accent="dexter"\n        onClick={() => navigate("/agent-dexter")}\n      />\n      <AnimatePresence mode="popLayout" initial={false}>\n        {activeArea ? (\n          <motion.nav key={activeArea.id}>\n            <button onClick={() => setActiveAreaId(null)}>All areas</button>\n            {activeArea.destinations.map((destination) => (\n              <div key={destination.id}>\n                <SidebarNavItem\n                  item={destination}\n                  expanded={destination.children ? expandedIds.has(destination.id) : undefined}\n                  onClick={destination.children\n                    ? () => toggleExpanded(destination.id)\n                    : destination.route ? () => navigate(destination.route) : undefined}\n                />\n                {expandedIds.has(destination.id)\n                  ? destination.children?.map((child) => (\n                      <SidebarNavItem key={child.label} item={child} nested onClick={() => navigate(child.route)} />\n                    ))\n                  : null}\n              </div>\n            ))}\n          </motion.nav>\n        ) : (\n          <motion.nav key="areas">\n            {sidebarAreas.map((area) => (\n              <SidebarNavItem key={area.id} item={area} onClick={() => setActiveAreaId(area.id)} />\n            ))}\n          </motion.nav>\n        )}\n      </AnimatePresence>\n    </aside>\n  )\n}`,
     usageCode: `<AppSidebar route={route} navigate={navigate} />`,
   },
   {

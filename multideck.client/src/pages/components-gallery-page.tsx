@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from "react"
-import { ArrowLeft, ArrowRight, Bell, Check, Clipboard, Cloud, Component, Download, FileText, Folder, Image, KeyRound, Mail, Search, Ship, Sparkles, UserRound } from "lucide-react"
+import { ArrowLeft, ArrowRight, Bell, Check, ChevronDown, Clipboard, Cloud, Component, Download, FileText, Folder, Image, KeyRound, Mail, Search, Ship, Sparkles, UserRound } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -927,17 +927,32 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "sidebar" ? (
-        <div className="w-full max-w-[300px] rounded-[var(--md-radius-xl)] bg-[var(--md-sidebar-bg)] p-4 shadow-[var(--md-shadow-line)]">
-          <div className="mb-[var(--md-gap-xl)] flex h-10 items-center px-1">
-            <img
-              src={multideckFullLogo}
-              alt="Multideck"
-              className="h-[34px] w-auto max-w-[172px] object-contain transition-[filter,opacity] duration-200 dark:brightness-0 dark:invert"
-            />
+        <div className="grid w-full max-w-[660px] gap-4 sm:grid-cols-2">
+          <div className="rounded-[var(--md-radius-xl)] bg-[var(--md-sidebar-bg)] p-4 shadow-[var(--md-shadow-line)]">
+            <SidebarNavItem item={{ label: "Agent Dexter", icon: Sparkles }} accent="dexter" onClick={() => undefined} />
+            <SidebarNavItem item={{ label: "Home & Work", icon: galleryIcons.sidebar }} onClick={() => undefined} />
+            <SidebarNavItem item={{ label: "Operations", icon: Ship }} onClick={() => undefined} />
+            <SidebarNavItem item={{ label: "Sales & CRM", icon: galleryIcons["crm-pipeline-board"] }} onClick={() => undefined} />
           </div>
-          <SidebarNavItem item={{ label: "Bookings", value: "7", icon: Ship }} isActive />
-          <SidebarNavItem item={{ label: "CRM", value: "6", icon: galleryIcons["crm-pipeline-board"] }} />
-          <SidebarNavItem item={{ label: "Components", icon: galleryIcons.sidebar }} />
+          <div className="rounded-[var(--md-radius-xl)] bg-[var(--md-sidebar-bg)] p-4 shadow-[var(--md-shadow-line)]">
+            <SidebarNavItem item={{ label: "Agent Dexter", icon: Sparkles }} accent="dexter" onClick={() => undefined} />
+            <div className="mb-3 flex items-center gap-2 px-2 text-[12px] font-medium text-[var(--md-subtle)]">
+              <ArrowLeft data-icon="inline-start" className="size-3.5" strokeWidth={1.2} />
+              <span>Operations</span>
+            </div>
+            <SidebarNavItem
+              item={{ label: "Bookings & jobs", icon: Ship }}
+              onClick={() => undefined}
+              expanded
+              trailing={<ChevronDown className="size-3.5 rotate-180" strokeWidth={1.2} />}
+            />
+            <div className="mt-1 ps-4">
+              <div className="rounded-[var(--md-radius-lg)] bg-white/40 p-1 shadow-[var(--md-shadow-line)]">
+                <SidebarNavItem item={{ label: "Bookings overview", value: "7", icon: Ship }} isActive onClick={() => undefined} nested />
+                <SidebarNavItem item={{ label: "New booking", icon: FileText }} onClick={() => undefined} nested />
+              </div>
+            </div>
+          </div>
         </div>
       ) : null}
 

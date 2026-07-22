@@ -6,6 +6,41 @@ Original source file was not modified.
 
 Included scope: Warehouse module, Warehouse Management System (WMS) module, warehouse/WMS lookup rows, `sys_Warehouse_LocationTypes`, and WMS read-model views.
 
+## Shared Azure Document Catalogue
+
+Binary files are stored in private Azure Blob containers. PostgreSQL stores the authoritative
+business link and audit metadata in `DOC_StoredObjects`; SAS URLs are temporary and are never
+stored. Warehouse documents keep their workflow rows in `WMS_Documents` and
+`Portal_FileUploads`, whose storage bucket/path fields contain the Azure container/blob name.
+
+### `DOC_StoredObjects`
+
+Function: Canonical metadata catalogue for Azure Blob objects used by warehouse, jobs, customs,
+finance, communications, generated documents and processing concerns.
+
+| Field | Purpose | Required | Key / Relation |
+|---|---|---:|---|
+| `DOCStoredObject_ID` | Stable document object ID. | Yes | PK |
+| `DOCStoredObject_ConcernCode` | Storage/business concern such as `warehouse`, `jobs` or `finance`. | Yes | Indexed scope |
+| `DOCStoredObject_OrganisationID` | Customer organisation owning the document, when applicable. | No | FK -> `Org_Master.Org_ID` |
+| `DOCStoredObject_AggregateType` | Parent record type, for example `warehouse-order`. | Yes | Indexed scope |
+| `DOCStoredObject_AggregateID` | Parent business record ID. | Yes | Indexed scope |
+| `DOCStoredObject_ProviderCode` | Storage provider; currently `azure_blob`. | Yes |  |
+| `DOCStoredObject_Container` | Private Azure container name. | Yes | Unique with blob name |
+| `DOCStoredObject_BlobName` | Full versioned virtual-directory object name. | Yes | Unique with container |
+| `DOCStoredObject_OriginalFileName` | User-facing filename retained outside the blob key. | Yes |  |
+| `DOCStoredObject_MimeType` | Validated content type. | Yes |  |
+| `DOCStoredObject_FileSizeBytes` | Uploaded binary size. | Yes |  |
+| `DOCStoredObject_SHA256` | Integrity/deduplication checksum. | Yes | Indexed |
+| `DOCStoredObject_ETag` | Azure object version/concurrency token. | No |  |
+| `DOCStoredObject_VersionID` | Azure version identifier when account versioning is enabled. | No |  |
+| `DOCStoredObject_StatusCode` | Storage lifecycle: `active`, `quarantined` or `deleted`. | Yes | Check constraint |
+| `DOCStoredObject_CreatedAt` | Upload timestamp. | Yes |  |
+| `DOCStoredObject_CreatedBy` | Internal user who uploaded the file. | No | FK -> `cmp_Users.User_ID` |
+| `DOCStoredObject_CreatedByPortalUserID` | Portal user who uploaded the file. | No | FK -> `Portal_Users.PortalUser_ID` |
+| `DOCStoredObject_DeletedAt` | Soft-deletion timestamp. | No |  |
+| `DOCStoredObject_DeletedBy` | Internal user who deleted the object. | No | FK -> `cmp_Users.User_ID` |
+
 ## Warehouse Schema Coverage
 
 | Module | Tables |
@@ -470,6 +505,7 @@ AI agent guidance: Use table purpose, foreign keys and field aliases to determin
 | `WMS_BondedRemovals` | Operational master/header table that owns a business object or lifecycle record in its module. | Stores bonded removal/withdrawal headers for free circulation, re-export, transfer, temporary removal, destruction or other approved discharge. |
 | `WMS_BondedTemporaryRemovals` | Operational master/header table that owns a business object or lifecycle record in its module. | Stores temporary removals from bonded control, due-back dates, permission references and return status. |
 | `WMS_BondedUsualHandling` | Operational master/header table that owns a business object or lifecycle record in its module. | Stores authorised usual forms of handling allowed under the bonded/customs warehouse authorisation. |
+| `WMS_CustomerFacilityAccess` | Relationship bridge table that connects a warehouse customer organisation to the facilities it may use. | Enforces the facility boundary for customer portal inventory, items, inbound advice and outbound requests. |
 | `WMS_CustomerProfiles` | Configuration table that defines behaviour, reusable rules, governed templates or versioned setup. | Stores warehouse customer rules, default facility, allocation/pick method, portal stock visibility, ASN requirements and bonded-stock permission. |
 | `WMS_CycleCountLines` | Detail-line table for grids, repeating rows, financial/cargo lines or child records under a parent transaction. | Stores counted stock lines, system quantity, counted quantity and variance. |
 | `WMS_CycleCountPlans` | Operational master/header table that owns a business object or lifecycle record in its module. | Stores physical/cycle count plans by facility, customer, zone and planned dates. |
@@ -1147,6 +1183,24 @@ AI agent guidance: Use table purpose, foreign keys and field aliases to determin
 | `WMSBondHandling_Description` | Description shown in forms, grids or support screens. | WMSBond Handling Description; Description; details | `text` |  | No |  |  |  |
 | `WMSBondHandling_RequiresPriorApproval` | WMSBond Handling Requires Prior Approval field for wms bonded usual handling. | WMSBond Handling Requires Prior Approval; Requires Prior Approval | `boolean` | true/false | Yes |  |  | `false` |
 | `WMSBondHandling_IsActive` | Availability flag for new use in the application. | WMSBond Handling Is Active; Is Active; active flag; enabled | `boolean` | true/false | Yes |  |  | `true` |
+
+### `WMS_CustomerFacilityAccess`
+
+Function: Relationship bridge table connecting a customer organisation to explicitly assigned warehouse facilities.
+
+Purpose: Provides the tenant boundary used by customer portal APIs. A customer can only view or create warehouse records where both the customer organisation and facility are assigned and active.
+
+Primary UI/API use: Managed from the Warehouse customer access panel on a customer account. Always combine this scope with portal role permissions; facility access alone does not grant an action.
+
+| Field | Purpose | Type | Required | Key / Relation | Default |
+|---|---|---|---|---|---|
+| `WMSCustomerFacilityAccess_ID` | Primary identifier. | `uuid` | Yes | PK | `gen_random_uuid()` |
+| `WMSCustomerFacilityAccess_CustomerOrgID` | Customer organisation receiving access. | `uuid` | Yes | Unique group; FK -> Org_Master.Org_ID | |
+| `WMSCustomerFacilityAccess_FacilityID` | Warehouse facility the customer may use. | `uuid` | Yes | Unique group; FK -> WMS_Facilities.WMSFacility_ID | |
+| `WMSCustomerFacilityAccess_IsActive` | Enables or suspends the customer/facility scope. | `boolean` | Yes | | `true` |
+| `WMSCustomerFacilityAccess_CreatedAt` | Creation timestamp. | `timestamp with time zone` | Yes | | `now()` |
+| `WMSCustomerFacilityAccess_CreatedBy` | Internal user who assigned access. | `uuid` | No | FK -> cmp_Users.User_ID | |
+| `WMSCustomerFacilityAccess_UpdatedAt` | Last update timestamp. | `timestamp with time zone` | Yes | | `now()` |
 
 ### `WMS_CustomerProfiles`
 
@@ -3722,5 +3776,3 @@ AI agent guidance: Use this view to find and explain records. If the user asks t
 | `TargetLocationCode` | Code value used for lookup, external schema mapping or integration payloads. | Target Location Code; code; lookup code; location; place | `character varying(80)` | 80 chars |
 | `WMSTask_DueAt` | Date/time used for workflow, validity, routing or external reporting. | WMSTask Due At; Due At; due date; deadline | `timestamp with time zone` | timestamp |
 | `WMSTask_CreatedAt` | Timestamp/date when the row was created. | WMSTask Created At; Created At; created date; created by | `timestamp with time zone` | timestamp |
-
-

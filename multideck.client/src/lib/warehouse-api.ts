@@ -579,16 +579,16 @@ export function listWarehouseInventory(options: { facilityId?: string; itemId?: 
   )
 }
 
-export function listWarehouseInventoryMovements(options: { facilityId?: string; itemId?: string; take?: number } = {}) {
+export function listWarehouseInventoryMovements(options: { facilityId?: string; itemId?: string; search?: string; take?: number } = {}) {
   return requestWarehouse<WarehouseInventoryMovement[]>(
-    `/api/v1/warehouse/inventory/movements${toQuery({ facilityId: options.facilityId, itemId: options.itemId, take: options.take === undefined ? undefined : String(options.take) })}`,
+    `/api/v1/warehouse/inventory/movements${toQuery({ facilityId: options.facilityId, itemId: options.itemId, search: options.search, take: options.take === undefined ? undefined : String(options.take) })}`,
     "GET",
   )
 }
 
-export function listOperationalWarehouseOrders(options: { facilityId?: string; typeCode?: string; statusCode?: string; search?: string } = {}) {
+export function listOperationalWarehouseOrders(options: { facilityId?: string; typeCode?: string; statusCode?: string; openOnly?: boolean; search?: string } = {}) {
   return requestWarehouse<WarehouseOperationalOrder[]>(
-    `/api/v1/warehouse/orders${toQuery({ facilityId: options.facilityId, typeCode: options.typeCode, statusCode: options.statusCode, search: options.search })}`,
+    `/api/v1/warehouse/orders${toQuery({ facilityId: options.facilityId, typeCode: options.typeCode, statusCode: options.statusCode, openOnly: options.openOnly, search: options.search })}`,
     "GET",
   )
 }
@@ -611,6 +611,97 @@ export function dispatchOperationalWarehouseOrder(orderId: string, input: Dispat
 
 export function cancelOperationalWarehouseOrder(orderId: string) {
   return requestWarehouse<WarehouseOperationalOrder>(`/api/v1/warehouse/orders/${orderId}/cancel`, "POST")
+}
+
+export type WarehouseOrderDocument = {
+  id: string
+  orderId: string
+  title: string
+  documentTypeCode: string
+  statusCode: string
+  fileName: string | null
+  mimeType: string | null
+  fileSizeBytes: number | null
+  createdAt: string
+}
+
+export function listWarehouseOrderDocuments(orderId: string) {
+  return requestWarehouse<WarehouseOrderDocument[]>(`/api/v1/warehouse/orders/${orderId}/documents`, "GET")
+}
+
+export async function uploadWarehouseOrderDocument(orderId: string, file: File, documentType = "customer_document") {
+  const session = await getSupabaseSession()
+  if (!session?.access_token) throw new WarehouseApiError("Sign in again to upload a document.")
+
+  const form = new FormData()
+  form.set("documentTypeCode", documentType)
+  form.set("file", file)
+  const response = await apiFetch(`/api/v1/warehouse/orders/${orderId}/documents`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${session.access_token}` },
+    body: form,
+  })
+  if (!response.ok) {
+    const fallback = `${response.status} ${response.statusText}`.trim()
+    try {
+      const problem = await response.json()
+      throw new WarehouseApiError(problem.detail || problem.title || problem.message || fallback)
+    } catch (error) {
+      if (error instanceof WarehouseApiError) throw error
+      throw new WarehouseApiError(fallback)
+    }
+  }
+  return response.json() as Promise<WarehouseOrderDocument>
+}
+
+export async function downloadWarehouseOrderDocument(orderId: string, orderDocument: WarehouseOrderDocument) {
+  const access = await requestWarehouse<{ url: string; expiresAt: string }>(`/api/v1/warehouse/orders/${orderId}/documents/${orderDocument.id}/url`, "GET")
+  const link = document.createElement("a")
+  link.href = access.url
+  link.download = orderDocument.fileName || orderDocument.title
+  link.rel = "noopener"
+  window.document.body.appendChild(link)
+  link.click()
+  link.remove()
+}
+
+export function reviewWarehouseOrderDocument(orderId: string, documentId: string, statusCode: "accepted" | "rejected", notes: string | null = null) {
+  return requestWarehouse<WarehouseOrderDocument>(`/api/v1/warehouse/orders/${orderId}/documents/${documentId}/review`, "POST", { statusCode, notes })
+}
+
+export type WarehousePortalReference = {
+  roles: { code: string; name: string; description: string }[]
+  facilities: { id: string; code: string; name: string }[]
+}
+
+export type WarehousePortalUser = {
+  id: string
+  displayName: string
+  email: string
+  status: string
+  roleCode: string
+  facilityIds: string[]
+  lastLoginAt: string | null
+}
+
+export function getWarehousePortalReference() {
+  return requestWarehouse<WarehousePortalReference>("/api/v1/warehouse/portal/reference", "GET")
+}
+
+export function listWarehousePortalUsers(customerOrgId: string) {
+  return requestWarehouse<WarehousePortalUser[]>(`/api/v1/warehouse/portal/customers/${customerOrgId}/users`, "GET")
+}
+
+export function inviteWarehousePortalUser(input: { customerOrgId: string; email: string; displayName: string | null; roleCode: string; facilityIds: string[] }) {
+  return requestWarehouse<{ user: WarehousePortalUser; invited: boolean }>("/api/v1/warehouse/portal/invitations", "POST", input)
+}
+
+export function updateWarehousePortalUser(customerOrgId: string, portalUserId: string, input: { roleCode: string; facilityIds: string[] }) {
+  return requestWarehouse<WarehousePortalUser>(`/api/v1/warehouse/portal/customers/${customerOrgId}/users/${portalUserId}`, "PUT", input)
+}
+
+export function revokeWarehousePortalUser(customerOrgId: string, portalUserId: string) {
+  return requestWarehouse<void>(`/api/v1/warehouse/portal/customers/${customerOrgId}/users/${portalUserId}`, "DELETE")
 }
 
 const finalOrderStatuses = new Set(["complete", "cancelled"])

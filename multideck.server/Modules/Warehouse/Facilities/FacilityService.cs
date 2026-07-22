@@ -25,7 +25,11 @@ public sealed class FacilityService(MultideckContext db, IWarehouseContext conte
             query = query.Where(facility =>
                 EF.Functions.ILike(facility.WmsfacilityCode, pattern) ||
                 EF.Functions.ILike(facility.WmsfacilityName, pattern) ||
-                (facility.WmsfacilityTownCity != null && EF.Functions.ILike(facility.WmsfacilityTownCity, pattern)));
+                (facility.WmsfacilityTownCity != null && EF.Functions.ILike(facility.WmsfacilityTownCity, pattern)) ||
+                (facility.WmsfacilityCountryCode != null && EF.Functions.ILike(facility.WmsfacilityCountryCode, pattern)) ||
+                (facility.WmsfacilityUnlocode != null && EF.Functions.ILike(facility.WmsfacilityUnlocode, pattern)) ||
+                (facility.WmsfacilityPostZipCode != null && EF.Functions.ILike(facility.WmsfacilityPostZipCode, pattern)) ||
+                (facility.WmsfacilityAddress1 != null && EF.Functions.ILike(facility.WmsfacilityAddress1, pattern)));
         }
 
         var facilities = await query

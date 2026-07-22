@@ -28,6 +28,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\multideck.documents\multideck.documents.csproj" />
     <ProjectReference Include="..\multideck.intelligence\multideck.intelligence.csproj" />
     <ProjectReference Include="..\multideck.persistence\multideck.persistence.csproj" />
   </ItemGroup>

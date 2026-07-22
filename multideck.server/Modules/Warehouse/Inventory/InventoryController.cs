@@ -27,10 +27,11 @@ public sealed class InventoryController(IInventoryService inventory) : Warehouse
     public async Task<ActionResult<IReadOnlyList<InventoryMovementDto>>> Movements(
         [FromQuery] Guid? facilityId,
         [FromQuery] Guid? itemId,
+        [FromQuery] string? search,
         [FromQuery] int take = 100,
         CancellationToken cancellationToken = default)
     {
-        var result = await inventory.ListMovementsAsync(User, facilityId, itemId, take, cancellationToken);
+        var result = await inventory.ListMovementsAsync(User, facilityId, itemId, search, take, cancellationToken);
         return Ok(result);
     }
 }
