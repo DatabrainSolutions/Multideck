@@ -101,12 +101,14 @@ import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import { DexterCompanionSidebar } from "@/components/multideck/dexter-companion-sidebar"
 import { PageSettingsMenu } from "@/components/multideck/page-settings-menu"
 import { AuditTimeline } from "@/components/multideck/audit-timeline"
+import { AuditWorkspace, QUOTE_AUDIT_SAMPLE_DATA } from "@/components/multideck/audit-workspace"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
-import { QuoteSearchBuilder, quoteMatchesSearch, type QuoteSearchQuery } from "@/components/multideck/quote-search-builder"
+import { UnifiedQuoteChargesWorkspace, type UnifiedQuoteChargeRow } from "@/components/multideck/unified-quote-charges-workspace"
+import { QuoteSearchBuilder, type QuoteSearchQuery } from "@/components/multideck/quote-search-builder"
 import { MultiSelectMenu } from "@/components/multideck/multi-select-menu"
 import { DocumentViewer, PaperTrayStack } from "@/components/multideck/paper-tray"
+import { DocumentWorkspace, documentWorkspaceSampleDocuments } from "@/components/multideck/document-workspace"
 import { createInitialPaperTrays } from "@/data/paper-tray-data"
-import { quoteRegisterRecords } from "@/data/quote-register-data"
 
 type GalleryIconKey = keyof typeof galleryIcons
 
@@ -150,7 +152,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["paper-tray-stack", "document-viewer", "audit-timeline", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-kanban-board", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "lane-mix-panel", "booking-metric-card", "booking-advanced-search", "bookings-table", "booking-board-preview", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
+    ids: ["paper-tray-stack", "document-viewer", "document-workspace", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-kanban-board", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "lane-mix-panel", "booking-metric-card", "booking-advanced-search", "bookings-table", "booking-board-preview", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
   },
   {
     label: "CRM",
@@ -188,6 +190,12 @@ const previewChargeRows: PreviewChargeRow[] = [
   { id: "FRT", description: "International freight", supplier: "Bluewave Ocean", cost: 840, sell: 980 },
   { id: "OCART", description: "Pickup transport", supplier: "Severn Road Logistics", cost: 610, sell: 630 },
   { id: "DTHC", description: "Destination handling", supplier: "Kobe Gateway Agency", cost: 304, sell: 360 },
+]
+
+const previewUnifiedChargeRowsSeed: UnifiedQuoteChargeRow[] = [
+  { id: "preview-frt", code: "FRT", description: "International freight", supplierId: "supplier-bluewave", customerId: "customer-harbourworks", cost: 840, costCurrency: "USD", sell: 980, sellCurrency: "USD", costRoe: 1.25, sellRoe: 1.25, costRoeSource: "rate", sellRoeSource: "rate" },
+  { id: "preview-ocart", code: "OCART", description: "Pickup transport", supplierId: "supplier-severn", customerId: "customer-harbourworks", cost: 610, costCurrency: "GBP", sell: 630, sellCurrency: "GBP", costRoe: 1, sellRoe: 1, costRoeSource: "rate", sellRoeSource: "rate" },
+  { id: "preview-dthc", code: "DTHC", description: "Destination handling", supplierId: "supplier-kobe", customerId: "customer-harbourworks", cost: 380, costCurrency: "USD", sell: 450, sellCurrency: "USD", costRoe: 1.25, sellRoe: 1.25, costRoeSource: "rate", sellRoeSource: "rate" },
 ]
 
 const previewChargeColumns: DataTableColumn<PreviewChargeRow>[] = [
@@ -551,6 +559,7 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewMarketingFolderId, setPreviewMarketingFolderId] = useState(previewMarketingFolders[0].id)
   const [previewPaperDocumentId, setPreviewPaperDocumentId] = useState<string | null>(null)
   const [previewTransportModes, setPreviewTransportModes] = useState(["Sea FCL", "Road"])
+  const [previewUnifiedChargeRows, setPreviewUnifiedChargeRows] = useState<UnifiedQuoteChargeRow[]>(previewUnifiedChargeRowsSeed)
   const previewNow = useLiveNow()
   const previewPaperDocument = previewPaperTrays.flatMap((tray) => tray.documents).find((document) => document.id === previewPaperDocumentId) ?? null
   const previewPaperDocumentTrayId = previewPaperTrays.find((tray) => tray.documents.some((document) => document.id === previewPaperDocumentId))?.id ?? null
@@ -613,11 +622,6 @@ function ComponentPreview({ id }: { id: string }) {
       }, true)
     }).length
   }, [previewBookingSearchCriteria])
-  const previewQuoteSearchCount = useMemo(
-    () => quoteRegisterRecords.filter((quote) => quoteMatchesSearch(quote, previewQuoteSearch)).length,
-    [previewQuoteSearch],
-  )
-
   useEffect(() => {
     if (!previewScreenGlow) return undefined
 
@@ -1009,9 +1013,21 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "document-workspace" ? (
+        <div className="w-full max-w-[1120px]">
+          <DocumentWorkspace documents={documentWorkspaceSampleDocuments} />
+        </div>
+      ) : null}
+
       {id === "audit-timeline" ? (
         <div className="w-full max-w-[820px]">
           <AuditTimeline events={quoteAuditEvents} title="Audit and workflow" description="Quote changes and next actions" />
+        </div>
+      ) : null}
+
+      {id === "audit-workspace" ? (
+        <div className="w-full max-w-[1120px]">
+          <AuditWorkspace records={QUOTE_AUDIT_SAMPLE_DATA} />
         </div>
       ) : null}
 
@@ -1218,13 +1234,17 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "unified-quote-charges-workspace" ? (
+        <div className="w-full max-w-[1320px]">
+          <UnifiedQuoteChargesWorkspace rows={previewUnifiedChargeRows} onRowsChange={setPreviewUnifiedChargeRows} storageKey="gallery-unified-quote-charges" />
+        </div>
+      ) : null}
+
       {id === "quote-search-builder" ? (
         <div className="w-full max-w-[1120px]">
           <QuoteSearchBuilder
             value={previewQuoteSearch}
             onChange={setPreviewQuoteSearch}
-            resultCount={previewQuoteSearchCount}
-            totalCount={quoteRegisterRecords.length}
           />
         </div>
       ) : null}

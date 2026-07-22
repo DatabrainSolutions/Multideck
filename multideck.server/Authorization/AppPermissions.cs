@@ -24,7 +24,9 @@ public static class AppPermissions
 
     public static class Quotes
     {
-        public static readonly PermissionDefinition Read = new("Quotes.Read", "Quotes", "Read quotes", "View quotes, revisions, costs, and customer revenue options.");
+        public const string ReadValue = "Quotes.Read";
+
+        public static readonly PermissionDefinition Read = new(ReadValue, "Quotes", "Read quotes", "View quotes, revisions, costs, and customer revenue options.");
         public static readonly PermissionDefinition Write = new("Quotes.Write", "Quotes", "Create and update quotes", "Create quotes, revise options, and update quote charges.");
         public static readonly PermissionDefinition Delete = new("Quotes.Delete", "Quotes", "Delete quotes", "Delete quotes and quote revisions.", IsDangerous: true);
     }
@@ -66,8 +68,10 @@ public static class AppPermissions
 
     public static class Integrations
     {
+        public const string ManageValue = "Integrations.Manage";
+
         public static readonly PermissionDefinition Read = new("Integrations.Read", "Integrations", "Read integrations", "View connected systems, API keys, and webhook configuration.");
-        public static readonly PermissionDefinition Manage = new("Integrations.Manage", "Integrations", "Manage integrations", "Create and update integrations, API keys, and webhook configuration.", IsDangerous: true);
+        public static readonly PermissionDefinition Manage = new(ManageValue, "Integrations", "Manage integrations", "Create and update integrations, API keys, and webhook configuration.", IsDangerous: true);
     }
 
     public static class AgentDexter

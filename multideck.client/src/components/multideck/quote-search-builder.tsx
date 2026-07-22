@@ -1,5 +1,4 @@
-import { useMemo, useState } from "react"
-import { ChevronDown, ChevronUp, Plus, RotateCcw, Search, Trash2 } from "lucide-react"
+import { Plus, RotateCcw, Search, Trash2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -171,19 +170,11 @@ function MatchControl({ value, onChange, allLabel, anyLabel }: { value: QuoteSea
 export function QuoteSearchBuilder({
   value,
   onChange,
-  resultCount,
-  totalCount,
-  initialExpanded = true,
 }: {
   value: QuoteSearchQuery
   onChange: (value: QuoteSearchQuery) => void
-  resultCount: number
-  totalCount: number
-  initialExpanded?: boolean
 }) {
   const { t } = useLanguage()
-  const [expanded, setExpanded] = useState(initialExpanded)
-  const activeConditionCount = useMemo(() => countActiveQuoteConditions(value), [value])
 
   function updateGroup(groupId: string, updater: (group: QuoteSearchGroup) => QuoteSearchGroup) {
     onChange({ ...value, groups: value.groups.map((group) => group.id === groupId ? updater(group) : group) })
@@ -220,46 +211,8 @@ export function QuoteSearchBuilder({
   }
 
   return (
-    <section className="overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)]" aria-labelledby="quote-search-title">
-      <div className="flex flex-col gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] px-4 py-3 md:flex-row md:items-center md:justify-between">
-        <div className="flex min-w-0 items-start gap-3">
-          <span className="grid size-9 shrink-0 place-items-center rounded-[var(--md-radius-lg)] bg-white text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">
-            <Search className="size-4" strokeWidth={1.35} />
-          </span>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 id="quote-search-title" className="text-[14px] font-medium text-[var(--md-ink)]">{t("Quote search")}</h2>
-              {activeConditionCount ? (
-                <span className="inline-flex h-6 items-center rounded-full bg-[rgba(14,125,116,0.1)] px-2 text-[11px] font-medium text-[var(--md-accent)]">
-                  {activeConditionCount} {t(activeConditionCount === 1 ? "condition" : "conditions")}
-                </span>
-              ) : null}
-            </div>
-            <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">
-              {t("Build precise searches with conditions and condition groups.")}
-            </p>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 md:justify-end">
-          <span className="inline-flex h-8 items-center rounded-full bg-white px-3 text-[12px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)]" aria-live="polite">
-            <span data-i18n-skip dir="ltr">{resultCount}/{totalCount}</span>
-            <span className="ms-1">{t("quotes shown")}</span>
-          </span>
-          <Button
-            type="button"
-            variant="ghost"
-            className="h-8 rounded-[var(--md-radius-lg)] bg-white px-3 text-[12px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-white hover:text-[var(--md-ink)]"
-            aria-expanded={expanded}
-            onClick={() => setExpanded((current) => !current)}
-          >
-            {expanded ? <ChevronUp className="size-3.5" strokeWidth={1.4} /> : <ChevronDown className="size-3.5" strokeWidth={1.4} />}
-            {t(expanded ? "Collapse search" : "Expand search")}
-          </Button>
-        </div>
-      </div>
-
-      {expanded ? (
-        <div className="grid gap-3 px-3 pb-3 pt-4 sm:px-4 sm:pb-4">
+    <section className="overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)]" aria-label={t("Advanced quote search")}>
+        <div className="grid gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] px-3 py-3 sm:px-4 sm:py-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-[12px] font-medium text-[var(--md-text)]">{t("Match condition groups")}</p>
             <MatchControl
@@ -380,7 +333,6 @@ export function QuoteSearchBuilder({
             </Button>
           </div>
         </div>
-      ) : null}
     </section>
   )
 }

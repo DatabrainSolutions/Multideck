@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react"
-import { ArrowUpRight, Search } from "lucide-react"
+import { ArrowUpRight, Search, SlidersHorizontal, X } from "lucide-react"
 
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
 import { Pagination } from "@/components/multideck/pagination"
+import { Input } from "@/components/ui/input"
 import {
   QuoteSearchBuilder,
+  countActiveQuoteConditions,
   createEmptyQuoteSearch,
   quoteMatchesSearch,
   type QuoteSearchQuery,
@@ -14,6 +16,7 @@ import {
 import { StatusPill } from "@/components/multideck/status-pill"
 import { quoteRegisterRecords, type QuoteRegisterRecord } from "@/data/quote-register-data"
 import { useLanguage } from "@/i18n/language-provider"
+import { cn } from "@/lib/utils"
 
 const rowsPerPageOptions = [10, 20, 30, 50]
 
@@ -30,14 +33,23 @@ function ltrValue(value: ReactNode, className = "") {
 export function QuotesRegisterPage({ navigate }: { navigate: (path: string) => void }) {
   const { language, t } = useLanguage()
   const [search, setSearch] = useState<QuoteSearchQuery>(createEmptyQuoteSearch)
+  const [quickSearch, setQuickSearch] = useState("")
+  const [advancedSearchOpen, setAdvancedSearchOpen] = useState(false)
   const [page, setPage] = useState(1)
   const [rowsPerPage, setRowsPerPage] = useState(10)
   const [dexterOpen, setDexterOpen] = useState(false)
 
-  const filteredQuotes = useMemo(
-    () => quoteRegisterRecords.filter((quote) => quoteMatchesSearch(quote, search)),
-    [search],
-  )
+  const filteredQuotes = useMemo(() => {
+    const quickQuery = quickSearch.trim().toLocaleLowerCase()
+    return quoteRegisterRecords.filter((quote) => {
+      if (!quoteMatchesSearch(quote, search)) return false
+      if (!quickQuery) return true
+      return Object.entries(quote)
+        .filter(([key]) => key !== "statusTone" && key !== "priorityTone")
+        .some(([, value]) => String(value ?? "").toLocaleLowerCase().includes(quickQuery))
+    })
+  }, [quickSearch, search])
+  const activeConditionCount = useMemo(() => countActiveQuoteConditions(search), [search])
   const pageCount = Math.max(Math.ceil(filteredQuotes.length / rowsPerPage), 1)
   const paginatedQuotes = filteredQuotes.slice((page - 1) * rowsPerPage, page * rowsPerPage)
 
@@ -143,12 +155,7 @@ export function QuotesRegisterPage({ navigate }: { navigate: (path: string) => v
         <DexterActionPill onClick={() => setDexterOpen(true)} />
       </header>
 
-      <QuoteSearchBuilder
-        value={search}
-        onChange={setSearch}
-        resultCount={filteredQuotes.length}
-        totalCount={quoteRegisterRecords.length}
-      />
+      {advancedSearchOpen ? <QuoteSearchBuilder value={search} onChange={setSearch} /> : null}
 
       <DataTable
         ariaLabel="Quote register"
@@ -165,13 +172,53 @@ export function QuotesRegisterPage({ navigate }: { navigate: (path: string) => v
             <span className="text-[11px] text-[var(--md-subtle)]" data-i18n-skip dir="ltr">{filteredQuotes.length}</span>
           </div>
         )}
+        toolbarActions={(
+          <div className="flex min-w-0 flex-1 items-center justify-end gap-1.5">
+            <div className="relative min-w-[128px] max-w-[280px] flex-1 sm:min-w-[200px] sm:flex-none">
+              <Search className="pointer-events-none absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.35} aria-hidden="true" />
+              <Input
+                type="text"
+                role="searchbox"
+                value={quickSearch}
+                dir="auto"
+                aria-label={t("Search quotes")}
+                placeholder={t("Search quotes")}
+                className="h-8 rounded-[var(--md-radius-md)] border-0 bg-white ps-8 pe-8 text-[12px] shadow-[var(--md-shadow-line)] placeholder:text-[var(--md-subtle)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]"
+                onChange={(event) => setQuickSearch(event.target.value)}
+              />
+              {quickSearch ? (
+                <button
+                  type="button"
+                  aria-label={t("Clear quick search")}
+                  className="absolute end-1 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] transition-[background,color,transform] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.94]"
+                  onClick={() => setQuickSearch("")}
+                >
+                  <X className="size-3.5" strokeWidth={1.4} />
+                </button>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              aria-expanded={advancedSearchOpen}
+              className={cn(
+                "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[var(--md-radius-md)] px-2.5 text-[12px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,transform] duration-200 hover:bg-white hover:text-[var(--md-ink)] hover:shadow-[var(--md-shadow-line)] active:scale-[0.97]",
+                advancedSearchOpen && "bg-white text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
+              )}
+              onClick={() => setAdvancedSearchOpen((current) => !current)}
+            >
+              <SlidersHorizontal className="size-3.5" strokeWidth={1.4} />
+              <span className="hidden lg:inline">{t("Advanced search")}</span>
+              {activeConditionCount ? <span className="grid min-w-4 place-items-center rounded-full bg-[rgba(14,125,116,0.11)] px-1 text-[10px] font-medium text-[var(--md-accent)]" data-i18n-skip>{activeConditionCount}</span> : null}
+            </button>
+          </div>
+        )}
         emptyState={(
           <div className="mx-auto grid max-w-sm place-items-center py-3 text-center">
             <span className="grid size-9 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]">
               <Search className="size-4" strokeWidth={1.3} />
             </span>
             <p className="mt-3 text-[13px] font-medium text-[var(--md-ink)]">{t("No quotes match this search")}</p>
-            <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Change or clear a condition to see more quotes.")}</p>
+            <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Change or clear the search to see more quotes.")}</p>
           </div>
         )}
       />

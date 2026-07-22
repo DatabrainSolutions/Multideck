@@ -13,6 +13,7 @@ import {
   Gauge,
   Info,
   ListChecks,
+  Mail,
   Maximize2,
   MoreHorizontal,
   Plus,
@@ -37,15 +38,28 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
-import { PaperDocumentFace, type TrayDocument } from "@/components/multideck/paper-tray"
-import { AuditTimeline } from "@/components/multideck/audit-timeline"
+import { DocumentWorkspace, documentWorkspaceSampleDocuments } from "@/components/multideck/document-workspace"
+import { AuditWorkspace, QUOTE_AUDIT_SAMPLE_DATA } from "@/components/multideck/audit-workspace"
+import {
+  UnifiedQuoteChargesWorkspace,
+  type QuoteChargeCurrency,
+  type QuoteChargeExchangeRate,
+  type QuoteChargeParty,
+  type UnifiedQuoteChargeRow,
+} from "@/components/multideck/unified-quote-charges-workspace"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { DexterActionPill, SpectralBloomShader } from "@/components/multideck/dexter-action-pill"
 import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
 import { MultiSelectMenu } from "@/components/multideck/multi-select-menu"
 import { cn } from "@/lib/utils"
+import {
+  getFinanceExchangeRates,
+  listFinanceCurrencies,
+  type ApiFinanceCurrency,
+  type ApiFinanceExchangeRate,
+} from "@/lib/finance-api"
 import { useLanguage } from "@/i18n/language-provider"
-import { quoteAuditEvents, systemPeople, type StatusTone } from "@/data/multideck-data"
+import { systemPeople, type StatusTone } from "@/data/multideck-data"
 import { quoteRegisterRecords, type QuoteRegisterRecord } from "@/data/quote-register-data"
 
 type QuoteParty = {
@@ -67,9 +81,12 @@ type JobRoe = {
 }
 
 type QuoteCharge = {
+  id?: string
   code: string
   description: string
   creditor: string
+  supplierId?: string | null
+  customerId?: string | null
   costCurrency: QuoteCurrency
   costAmount: number
   localCost: number
@@ -163,7 +180,7 @@ type QuoteRecord = {
   profit: number
   cost: number
   revenue: number
-  currency: string
+  currency: QuoteCurrency
   baseRoe?: number
   costRoe?: number
   revenueRoe?: number
@@ -374,42 +391,42 @@ const quoteCharges: QuoteCharge[] = [
 
 const chargeCatalogue = quoteCharges.map(({ code, description }) => ({ code, description }))
 const supportedQuoteCurrencies: QuoteCurrency[] = ["GBP", "USD", "EUR", "JPY", "AUD", "CAD"]
-
-const quoteDocuments: TrayDocument[] = [
-  {
-    id: "quote-customer-pdf",
-    name: "Customer quote PDF",
-    kind: "sample",
-    mimeType: "application/pdf",
-    sizeLabel: "184 KB",
-    addedAt: "Ready now",
-    reference: "Q-19158",
-    sampleType: "invoice",
-    accent: "teal",
-  },
-  {
-    id: "quote-shipment-definition",
-    name: "Shipment definition",
-    kind: "sample",
-    mimeType: "application/pdf",
-    sizeLabel: "96 KB",
-    addedAt: "Quote source",
-    reference: "SEA FCL",
-    sampleType: "bill-of-lading",
-    accent: "blue",
-  },
-  {
-    id: "quote-container-detail",
-    name: "Container detail",
-    kind: "sample",
-    mimeType: "application/pdf",
-    sizeLabel: "72 KB",
-    addedAt: "Equipment",
-    reference: "1 x 40HC",
-    sampleType: "inspection",
-    accent: "amber",
-  },
+const quoteChargeCurrencyDefinitions: readonly QuoteChargeCurrency[] = [
+  { code: "GBP", name: "British pound", symbol: "£", decimalPlaces: 2, subUnitRatio: 100 },
+  { code: "USD", name: "US dollar", symbol: "$", decimalPlaces: 2, subUnitRatio: 100 },
+  { code: "EUR", name: "Euro", symbol: "€", decimalPlaces: 2, subUnitRatio: 100 },
+  { code: "JPY", name: "Japanese yen", symbol: "¥", decimalPlaces: 0, subUnitRatio: 1 },
+  { code: "AUD", name: "Australian dollar", symbol: "A$", decimalPlaces: 2, subUnitRatio: 100 },
+  { code: "CAD", name: "Canadian dollar", symbol: "C$", decimalPlaces: 2, subUnitRatio: 100 },
 ]
+
+const quoteChargeSupplierParties: readonly QuoteChargeParty[] = [
+  { id: "supplier-hellmann", code: "HELWLG", name: "Hellmann Worldwide Logistics", roles: ["supplier"] },
+  { id: "supplier-harbourline", code: "HARFWD", name: "Harbourline Forwarding Ltd", roles: ["supplier"] },
+  { id: "supplier-quayline", code: "QUAPRT", name: "Quayline Port Services", roles: ["supplier"] },
+  { id: "supplier-kobe", code: "KOBGAT", name: "Kobe Gateway Agency", roles: ["supplier"] },
+  { id: "supplier-harbourpoint", code: "HARBRO", name: "Harbourpoint Brokerage", roles: ["supplier"] },
+  { id: "supplier-eastgate", code: "EASCAR", name: "Eastgate Cartage", roles: ["supplier"] },
+  { id: "supplier-carrier-pending", code: "PENDING", name: "Carrier pending", roles: ["supplier"] },
+  { id: "supplier-severn", code: "SEVLOG", name: "Severn Road Logistics", roles: ["supplier"] },
+]
+
+const quoteChargeReferenceRates: Readonly<Record<QuoteCurrency, number>> = {
+  GBP: 1,
+  USD: 1.25,
+  EUR: 1.16,
+  JPY: 193.5,
+  AUD: 1.92,
+  CAD: 1.72,
+}
+
+function quoteChargeReferenceRoe(currency: string, baseCurrency: string) {
+  const rate = quoteChargeReferenceRates[currency as QuoteCurrency]
+  const baseRate = quoteChargeReferenceRates[baseCurrency as QuoteCurrency]
+  return typeof rate === "number" && typeof baseRate === "number" && baseRate > 0
+    ? rate / baseRate
+    : null
+}
 
 const carriers = [
   { code: "BWO", name: "Bluewave Ocean", service: "Singapore relay", days: "55" },
@@ -431,11 +448,11 @@ const recentQuotes = [
   { date: "06 Jul", lane: "Manchester -> Dubai", mode: "Air", revenue: 1240.0, cost: 1098.2, profit: 141.8, margin: "11.44%", status: "Pending", tone: "amber" },
   { date: "05 Jul", lane: "Leeds -> Rotterdam", mode: "Road", revenue: 695.0, cost: 522.4, profit: 172.6, margin: "24.83%", status: "Won", tone: "green" },
   { date: "05 Jul", lane: "Glasgow -> Hamburg", mode: "Sea FCL", revenue: 1890.0, cost: 1718.0, profit: 172.0, margin: "9.10%", status: "Lost", tone: "red" },
-  { date: "04 Jul", lane: "Cardiff -> Valencia", mode: "Road", revenue: 940.0, cost: 746.25, profit: 193.75, margin: "20.61%", status: "Won", tone: "green" },
-  { date: "04 Jul", lane: "London -> New York", mode: "Air", revenue: 2115.0, cost: 1844.2, profit: 270.8, margin: "12.80%", status: "Pending", tone: "amber" },
-  { date: "03 Jul", lane: "Liverpool -> Osaka", mode: "Sea FCL", revenue: 2760.0, cost: 2295.7, profit: 464.3, margin: "16.82%", status: "Won", tone: "green" },
-  { date: "03 Jul", lane: "Birmingham -> Milan", mode: "Road", revenue: 780.0, cost: 731.4, profit: 48.6, margin: "6.23%", status: "Lost", tone: "red" },
-  { date: "02 Jul", lane: "Southampton -> Auckland", mode: "Sea LCL", revenue: 1125.0, cost: 928.0, profit: 197.0, margin: "17.51%", status: "Won", tone: "green" },
+  { date: "04 Jul", lane: "Southampton -> Kobe", mode: "Sea FCL", revenue: 940.0, cost: 746.25, profit: 193.75, margin: "20.61%", status: "Won", tone: "green" },
+  { date: "04 Jul", lane: "London Heathrow -> Kobe", mode: "Air", revenue: 2115.0, cost: 1844.2, profit: 270.8, margin: "12.80%", status: "Pending", tone: "amber" },
+  { date: "03 Jul", lane: "Liverpool -> Kobe", mode: "Sea FCL", revenue: 2760.0, cost: 2295.7, profit: 464.3, margin: "16.82%", status: "Won", tone: "green" },
+  { date: "03 Jul", lane: "Felixstowe -> Kobe", mode: "Sea LCL", revenue: 780.0, cost: 731.4, profit: 48.6, margin: "6.23%", status: "Lost", tone: "red" },
+  { date: "02 Jul", lane: "Bristol -> Kobe", mode: "Sea LCL", revenue: 1125.0, cost: 928.0, profit: 197.0, margin: "17.51%", status: "Won", tone: "green" },
 ] satisfies Array<{
   date: string
   lane: string
@@ -875,33 +892,62 @@ function ClientPricingIntelligence() {
   )
 }
 
-function RecentQuotesSummary() {
+function RecentQuotesSummary({ quote }: { quote: QuoteRecord }) {
   const { t } = useLanguage()
+  const [scope, setScope] = useState<"customer" | "destination">("customer")
+  const scopedQuotes = scope === "customer" ? recentQuotes.slice(0, 5) : recentQuotes.slice(5, 10)
+  const scopeDetail = scope === "customer"
+    ? quote.customer
+    : quote.destination || "JPUKB - Kobe"
 
   return (
-    <Table className="h-full bg-transparent">
-      <TableHeader>
-        <TableRow className="bg-[var(--md-surface-tint)] hover:bg-[var(--md-surface-tint)]">
-          {["Date", "Origin -> Dest", "Mode", "Revenue", "Cost", "Profit", "Profit %", "Status"].map((heading) => (
-            <TableHead key={heading} className="h-5 px-1 text-[9px] font-medium text-[var(--md-text)]">{t(heading)}</TableHead>
+    <Surface padding="none" className="h-full min-w-0 overflow-hidden rounded-[var(--md-radius-xl)] bg-white dark:bg-[var(--md-surface)]">
+      <div className="flex min-h-10 flex-wrap items-center justify-between gap-2 bg-white px-2.5 py-1.5 shadow-[inset_0_-1px_0_rgba(11,20,19,0.05)] dark:bg-[var(--md-surface)]">
+        <div className="min-w-0">
+          <p className="text-[11px] font-medium text-[var(--md-ink)]">{t("Last five quotes")}</p>
+          <p data-i18n-skip dir="auto" className="truncate text-[9.5px] text-[var(--md-subtle)]">{scopeDetail}</p>
+        </div>
+        <div className="inline-flex shrink-0 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-0.5 shadow-[var(--md-shadow-line)]" role="group" aria-label={t("Recent quote scope")}>
+          {(["customer", "destination"] as const).map((option) => (
+            <button
+              key={option}
+              type="button"
+              aria-pressed={scope === option}
+              onClick={() => setScope(option)}
+              className={cn(
+                "h-6 rounded-[var(--md-radius-md)] px-2 text-[9.5px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.97]",
+                scope === option && "bg-white text-[var(--md-ink)] shadow-[var(--md-shadow-line)] dark:bg-[var(--md-surface-soft)]",
+              )}
+            >
+              {t(option === "customer" ? "Customer" : "Destination")}
+            </button>
           ))}
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {recentQuotes.slice(0, 5).map((quote) => (
-          <TableRow key={`${quote.date}-${quote.lane}-${quote.mode}`} className="hover:bg-[var(--md-hover)]">
-            <TableCell data-i18n-skip dir="ltr" className="px-1 py-0.5 text-[9.5px] font-medium text-[var(--md-subtle)]">{quote.date}</TableCell>
-            <TableCell data-i18n-skip dir="ltr" className="min-w-[106px] px-1 py-0.5 text-[9.5px] font-medium text-[var(--md-ink)]">{quote.lane}</TableCell>
-            <TableCell className="px-1 py-0.5 text-[9.5px] text-[var(--md-text)]">{t(quote.mode)}</TableCell>
-            <TableCell data-i18n-skip dir="ltr" className="px-1 py-0.5 text-right text-[9.5px] tabular-nums text-[var(--md-ink)]">{money(quote.revenue)}</TableCell>
-            <TableCell data-i18n-skip dir="ltr" className="px-1 py-0.5 text-right text-[9.5px] tabular-nums text-[var(--md-text)]">{money(quote.cost)}</TableCell>
-            <TableCell data-i18n-skip dir="ltr" className="px-1 py-0.5 text-right text-[9.5px] font-medium tabular-nums text-[var(--md-ink)]">{money(quote.profit)}</TableCell>
-            <TableCell data-i18n-skip dir="ltr" className="px-1 py-0.5 text-right text-[9.5px] tabular-nums text-[var(--md-text)]">{quote.margin}</TableCell>
-            <TableCell className="px-1 py-0.5 text-right"><StatusPill tone={quote.tone} className="h-4 px-1.5 text-[9px]">{t(quote.status)}</StatusPill></TableCell>
+        </div>
+      </div>
+      <Table className="h-[calc(100%-2.5rem)] bg-white dark:bg-[var(--md-surface)]">
+        <TableHeader>
+          <TableRow className="bg-[var(--md-surface-tint)] hover:bg-[var(--md-surface-tint)]">
+            {["Date", "Origin -> Dest", "Mode", "Revenue", "Cost", "Profit", "Profit %", "Status"].map((heading) => (
+              <TableHead key={heading} className="h-5 px-1 text-[9px] font-medium text-[var(--md-text)]">{t(heading)}</TableHead>
+            ))}
           </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+        </TableHeader>
+        <TableBody>
+          {scopedQuotes.map((recentQuote) => (
+            <TableRow key={`${scope}-${recentQuote.date}-${recentQuote.lane}-${recentQuote.mode}`} className="bg-white hover:bg-[var(--md-hover)] dark:bg-[var(--md-surface)]">
+              <TableCell data-i18n-skip dir="ltr" className="px-1 py-0.5 text-[9.5px] font-medium text-[var(--md-subtle)]">{recentQuote.date}</TableCell>
+              <TableCell data-i18n-skip dir="ltr" className="min-w-[106px] px-1 py-0.5 text-[9.5px] font-medium text-[var(--md-ink)]">{recentQuote.lane}</TableCell>
+              <TableCell className="px-1 py-0.5 text-[9.5px] text-[var(--md-text)]">{t(recentQuote.mode)}</TableCell>
+              <TableCell data-i18n-skip dir="ltr" className="px-1 py-0.5 text-right text-[9.5px] tabular-nums text-[var(--md-ink)]">{money(recentQuote.revenue)}</TableCell>
+              <TableCell data-i18n-skip dir="ltr" className="px-1 py-0.5 text-right text-[9.5px] tabular-nums text-[var(--md-text)]">{money(recentQuote.cost)}</TableCell>
+              <TableCell data-i18n-skip dir="ltr" className="px-1 py-0.5 text-right text-[9.5px] font-medium tabular-nums text-[var(--md-ink)]">{money(recentQuote.profit)}</TableCell>
+              <TableCell data-i18n-skip dir="ltr" className="px-1 py-0.5 text-right text-[9.5px] tabular-nums text-[var(--md-text)]">{recentQuote.margin}</TableCell>
+              <TableCell className="px-1 py-0.5 text-right"><StatusPill tone={recentQuote.tone} className="h-4 px-1.5 text-[9px]">{t(recentQuote.status)}</StatusPill></TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </Surface>
   )
 }
 
@@ -1405,6 +1451,205 @@ function QuoteChargesPanel({
   )
 }
 
+function UnifiedQuoteChargesPanel({
+  quote,
+  charges,
+  editable,
+  onRowsChange,
+}: {
+  quote: QuoteRecord
+  charges: QuoteCharge[]
+  editable: boolean
+  onRowsChange: (charges: QuoteCharge[]) => void
+}) {
+  const [financeCurrencies, setFinanceCurrencies] = useState<QuoteChargeCurrency[] | null>(null)
+  const [financeRates, setFinanceRates] = useState<ApiFinanceExchangeRate[] | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setFinanceCurrencies(null)
+    setFinanceRates(null)
+
+    void Promise.allSettled([
+      listFinanceCurrencies(),
+      getFinanceExchangeRates(quote.currency),
+    ]).then(([currencyResult, rateResult]) => {
+      if (cancelled) return
+
+      if (currencyResult.status === "fulfilled") {
+        const nextCurrencies = currencyResult.value.currencies
+          .filter((currency: ApiFinanceCurrency) => currency.isActive && /^[A-Z]{3}$/.test(currency.code.trim().toUpperCase()))
+          .map((currency: ApiFinanceCurrency): QuoteChargeCurrency => ({
+            code: currency.code.trim().toUpperCase(),
+            name: currency.name.trim() || currency.code.trim().toUpperCase(),
+            symbol: currency.symbol.trim() || currency.code.trim().toUpperCase(),
+            decimalPlaces: Math.max(0, Math.min(6, Math.trunc(currency.decimalPlaces))),
+            subUnitRatio: currency.decimalPlaces > 0 ? 10 ** Math.min(6, Math.trunc(currency.decimalPlaces)) : 1,
+          }))
+
+        if (nextCurrencies.some((currency) => currency.code === quote.currency)) {
+          setFinanceCurrencies(nextCurrencies)
+        }
+      }
+
+      if (rateResult.status === "fulfilled" && rateResult.value.baseCurrency.trim().toUpperCase() === quote.currency) {
+        setFinanceRates(rateResult.value.rates)
+      }
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [quote.currency])
+
+  const parties = useMemo<QuoteChargeParty[]>(() => [
+    ...quoteChargeSupplierParties,
+    { id: "customer-current", code: quote.clientCode ?? "CUSTOMER", name: quote.customer, roles: ["customer"] },
+    { id: "customer-cedar", code: "CEDLOO", name: "Cedar & Loom Trading", roles: ["customer"] },
+    { id: "customer-asterline", code: "ASTCOM", name: "Asterline Components", roles: ["customer"] },
+    { id: "customer-northstar", code: "NORTRA", name: "Northstar Trading", roles: ["customer"] },
+  ], [quote.clientCode, quote.customer])
+
+  const currencies = financeCurrencies ?? quoteChargeCurrencyDefinitions
+
+  const exchangeRates = useMemo<QuoteChargeExchangeRate[]>(() => {
+    const jobRates = (quote.jobRoes ?? []).map((rate) => ({
+      currency: rate.currency,
+      baseCurrency: quote.currency,
+      costRoe: rate.costRate,
+      sellRoe: rate.revenueRate,
+      provider: "FIN job ROE",
+      source: "job" as const,
+      status: "current" as const,
+    }))
+    const coveredCurrencies = new Set<string>(jobRates.map((rate) => rate.currency))
+    const apiRatesByCurrency = new Map(
+      (financeRates ?? []).map((rate) => [rate.currency.trim().toUpperCase(), rate]),
+    )
+    const supplementalRates = currencies
+      .map((currency) => currency.code)
+      .filter((currency) => currency !== quote.currency && !coveredCurrencies.has(currency))
+      .map((currency): QuoteChargeExchangeRate => {
+        const apiRate = apiRatesByCurrency.get(currency)
+        if (apiRate) {
+          const fallbackRate = typeof apiRate.rate === "number" && Number.isFinite(apiRate.rate) && apiRate.rate > 0 ? apiRate.rate : null
+          const costRoe = typeof apiRate.costRate === "number" && Number.isFinite(apiRate.costRate) && apiRate.costRate > 0 ? apiRate.costRate : fallbackRate
+          const sellRoe = typeof apiRate.sellRate === "number" && Number.isFinite(apiRate.sellRate) && apiRate.sellRate > 0 ? apiRate.sellRate : fallbackRate
+          const status = apiRate.status === "unavailable" || costRoe === null || sellRoe === null
+            ? "unavailable" as const
+            : apiRate.status
+          return {
+            currency,
+            baseCurrency: quote.currency,
+            costRoe: costRoe ?? 0,
+            sellRoe: sellRoe ?? 0,
+            provider: apiRate.provider ?? undefined,
+            updatedAt: apiRate.effectiveAt ?? undefined,
+            source: apiRate.source,
+            status,
+          }
+        }
+
+        const demoRate = import.meta.env.DEV && financeRates === null
+          ? quoteChargeReferenceRoe(currency, quote.currency)
+          : null
+        if (demoRate !== null) {
+          return {
+            currency,
+            baseCurrency: quote.currency,
+            costRoe: demoRate,
+            sellRoe: demoRate,
+            provider: "Demo reference set — not live",
+            source: "reference",
+            status: "stale",
+          }
+        }
+
+        return {
+          currency,
+          baseCurrency: quote.currency,
+          costRoe: 0,
+          sellRoe: 0,
+          provider: financeRates === null ? "Finance rate service unavailable" : undefined,
+          source: "reference",
+          status: "unavailable",
+        }
+      })
+
+    return [
+      ...jobRates,
+      ...supplementalRates,
+      { currency: quote.currency, baseCurrency: quote.currency, costRoe: 1, sellRoe: 1, provider: "FIN job ROE", source: "job", status: "current" },
+    ]
+  }, [currencies, financeRates, quote.currency, quote.jobRoes])
+
+  const rows = useMemo<UnifiedQuoteChargeRow[]>(() => charges.map((charge, index) => {
+    const supplier = quoteChargeSupplierParties.find((party) => party.name === charge.creditor)
+    return {
+      id: charge.id ?? `quote-charge-${index + 1}`,
+      code: charge.code,
+      description: charge.description,
+      supplierId: charge.supplierId ?? supplier?.id ?? null,
+      customerId: charge.customerId ?? "customer-current",
+      cost: charge.costAmount,
+      costCurrency: charge.costCurrency,
+      sell: charge.sellAmount,
+      sellCurrency: charge.sellCurrency,
+      costRoe: charge.costExchange,
+      sellRoe: charge.sellExchange,
+      costRoeSource: charge.costRoeSource === "override" ? "manual" : "rate",
+      sellRoeSource: charge.sellRoeSource === "override" ? "manual" : "rate",
+      baseCost: charge.localCost,
+      baseSell: charge.localSell,
+      profit: charge.localSell - charge.localCost,
+    }
+  }), [charges])
+
+  function updateCharges(nextRows: UnifiedQuoteChargeRow[]) {
+    onRowsChange(nextRows.map((row, index) => {
+      const current = charges.find((charge) => charge.id === row.id) ?? charges[index]
+      const supplier = parties.find((party) => party.id === row.supplierId)
+      const costRoe = row.costRoe && row.costRoe > 0 ? row.costRoe : 0
+      const sellRoe = row.sellRoe && row.sellRoe > 0 ? row.sellRoe : 0
+      return {
+        ...current,
+        id: row.id,
+        code: row.code,
+        description: row.description,
+        creditor: supplier?.name ?? current?.creditor ?? "Supplier pending",
+        supplierId: row.supplierId,
+        customerId: row.customerId,
+        costCurrency: row.costCurrency as QuoteCurrency,
+        costAmount: row.cost,
+        costExchange: costRoe,
+        costRoeSource: row.costRoeSource === "manual" ? "override" : "job",
+        localCost: row.baseCost ?? (costRoe > 0 ? row.cost / costRoe : 0),
+        sellCurrency: row.sellCurrency as QuoteCurrency,
+        sellAmount: row.sell,
+        sellExchange: sellRoe,
+        sellRoeSource: row.sellRoeSource === "manual" ? "override" : "job",
+        localSell: row.baseSell ?? (sellRoe > 0 ? row.sell / sellRoe : 0),
+        department: current?.department ?? quote.department ?? "SEA",
+        internalNotes: current?.internalNotes ?? "",
+        additionalDetail: current?.additionalDetail ?? "",
+      }
+    }))
+  }
+
+  return (
+    <UnifiedQuoteChargesWorkspace
+      rows={rows}
+      onRowsChange={updateCharges}
+      parties={parties}
+      currencies={currencies}
+      exchangeRates={exchangeRates}
+      baseCurrency={quote.currency}
+      readOnly={!editable}
+      storageKey={`quote-${quote.id}-charges`}
+    />
+  )
+}
+
 function QuoteOverviewPanel({ quote }: { quote: QuoteRecord }) {
   const { t } = useLanguage()
   const profitRatio = quote.revenue > 0 ? (quote.profit / quote.revenue) * 100 : 0
@@ -1569,6 +1814,8 @@ function CargoWiseField({
   compactLabel = "fixed",
   compactPadding = "default",
   editable = false,
+  className,
+  action,
   onChange,
 }: {
   label: string
@@ -1579,6 +1826,8 @@ function CargoWiseField({
   compactLabel?: "fixed" | "content" | "tight"
   compactPadding?: "default" | "square"
   editable?: boolean
+  className?: string
+  action?: ReactNode
   onChange?: (value: string) => void
 }) {
   const { t } = useLanguage()
@@ -1594,27 +1843,31 @@ function CargoWiseField({
           : "grid-cols-[64px_minmax(0,1fr)] gap-1"
         : "grid-cols-[var(--md-field-label-width,76px)_minmax(0,1fr)] gap-1.5",
       span && "md:col-span-2",
+      className,
     )}>
       <span className={cn("min-w-0 whitespace-normal break-words text-[11px] font-medium leading-[1.15] text-[var(--md-text)]", compactLabel === "content" ? "text-start" : "text-end")}>{t(label)}</span>
-      {editable ? <input
-        data-i18n-skip
-        dir="auto"
-        value={value}
-        onChange={(event) => onChange?.(event.target.value)}
-        className={cn(
-          "min-w-0 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] text-[11px] font-medium text-[var(--md-ink)] outline-none shadow-[var(--md-shadow-line)] hover:bg-[var(--md-field-bg-hover)] focus-visible:bg-[var(--md-field-bg-hover)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
-          compact ? "min-h-7 px-1.5 py-1 leading-5" : "min-h-8 px-2 py-1.5 leading-5",
+      <div className={cn("grid min-w-0", action && "grid-cols-[minmax(0,1fr)_auto] gap-0.5")}>
+        {editable ? <input
+          data-i18n-skip
+          dir="auto"
+          value={value}
+          onChange={(event) => onChange?.(event.target.value)}
+          className={cn(
+            "min-w-0 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] text-[11px] font-medium text-[var(--md-ink)] outline-none shadow-[var(--md-shadow-line)] hover:bg-[var(--md-field-bg-hover)] focus-visible:bg-[var(--md-field-bg-hover)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
+            compact ? "min-h-7 px-1.5 py-1 leading-5" : "min-h-8 px-2 py-1.5 leading-5",
+            fitValue && "w-fit max-w-full",
+          )}
+        /> : <span data-i18n-skip dir="auto" className={cn(
+          "min-w-0 truncate rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] text-[11px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
+          compact
+            ? compactPadding === "square"
+              ? "min-h-7 p-1 leading-5"
+              : "min-h-7 px-1.5 py-1 leading-5"
+            : "min-h-8 px-2 py-1.5 leading-5",
           fitValue && "w-fit max-w-full",
-        )}
-      /> : <span data-i18n-skip dir="auto" className={cn(
-        "min-w-0 truncate rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] text-[11px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
-        compact
-          ? compactPadding === "square"
-            ? "min-h-7 p-1 leading-5"
-            : "min-h-7 px-1.5 py-1 leading-5"
-          : "min-h-8 px-2 py-1.5 leading-5",
-        fitValue && "w-fit max-w-full",
-      )}>{value || "—"}</span>}
+        )}>{value || "—"}</span>}
+        {action}
+      </div>
     </div>
   )
 }
@@ -1629,6 +1882,7 @@ function CargoWiseLookupField({
   maxLength,
   required = false,
   invalid = false,
+  className,
   onChange,
 }: {
   label: string
@@ -1640,6 +1894,7 @@ function CargoWiseLookupField({
   maxLength?: number
   required?: boolean
   invalid?: boolean
+  className?: string
   onChange?: (value: string) => void
 }) {
   const { t } = useLanguage()
@@ -1650,6 +1905,7 @@ function CargoWiseLookupField({
       "md-cargowise-lookup-field grid min-w-0 items-center",
       compact ? "grid-cols-[64px_minmax(0,1fr)_28px] gap-1" : "grid-cols-[var(--md-field-label-width,76px)_minmax(0,1fr)_32px] gap-1.5",
       span && "md:col-span-2",
+      className,
     )}>
       <span className="min-w-0 whitespace-normal break-words text-end text-[11px] font-medium leading-[1.15] text-[var(--md-text)]">{t(label)}</span>
       {editable ? (
@@ -1835,7 +2091,7 @@ function QuoteCargoWiseOverviewPanel({ quote }: { quote: QuoteRecord }) {
 
       <div className="grid gap-2 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
         <ClientPricingIntelligence />
-        <RecentQuotesSummary />
+        <RecentQuotesSummary quote={quote} />
       </div>
     </div>
   )
@@ -1864,12 +2120,74 @@ function QuoteCargoWiseDetailsPanel({
   const [addressDialogTarget, setAddressDialogTarget] = useState<"collection" | "delivery">("collection")
   const [newSavedAddress, setNewSavedAddress] = useState("")
   const [newSavedAddressType, setNewSavedAddressType] = useState<SavedPartyAddress["type"]>("Collection address")
+  const [emailCopied, setEmailCopied] = useState(false)
+  const emailCopyResetTimerRef = useRef<number | null>(null)
   const selectedCarrier = quote.carrier && carrierOfficeOptions[quote.carrier] ? quote.carrier : carrierOptions[0]
   const selectedCarrierOffices = carrierOfficeOptions[selectedCarrier]
   const selectedCarrierOffice = quote.carrierOffice && selectedCarrierOffices.includes(quote.carrierOffice) ? quote.carrierOffice : selectedCarrierOffices[0]
   const selectedSupplier = quote.supplier && supplierOfficeOptions[quote.supplier] ? quote.supplier : supplierOptions[0]
   const selectedSupplierOffices = supplierOfficeOptions[selectedSupplier]
   const selectedSupplierOffice = quote.supplierOffice && selectedSupplierOffices.includes(quote.supplierOffice) ? quote.supplierOffice : selectedSupplierOffices[0]
+
+  useEffect(() => () => {
+    if (emailCopyResetTimerRef.current !== null) window.clearTimeout(emailCopyResetTimerRef.current)
+  }, [])
+
+  async function copyCustomerEmail() {
+    const email = customerEmail.trim()
+    if (!email) return
+
+    try {
+      await navigator.clipboard.writeText(email)
+      if (emailCopyResetTimerRef.current !== null) window.clearTimeout(emailCopyResetTimerRef.current)
+      setEmailCopied(true)
+      emailCopyResetTimerRef.current = window.setTimeout(() => {
+        setEmailCopied(false)
+        emailCopyResetTimerRef.current = null
+      }, 1800)
+    } catch {
+      setEmailCopied(false)
+    }
+  }
+
+  const customerEmail = quote.customerEmail ?? "rates@harbourworks.example"
+  const customerEmailActions = (
+    <div className="flex shrink-0 items-center gap-0.5">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="size-[26px] rounded-[var(--md-radius-sm)] bg-[var(--md-surface-soft)] p-0 text-[var(--md-subtle)] shadow-[var(--md-shadow-line)] transition-[background,color,transform] duration-200 hover:bg-[var(--md-field-bg-hover)] hover:text-[var(--md-accent)] active:scale-[0.96] motion-reduce:transition-none motion-reduce:active:scale-100"
+            aria-label={t(emailCopied ? "Email copied" : "Copy email")}
+            onClick={() => void copyCustomerEmail()}
+          >
+            <span aria-hidden="true" className="relative size-3.5">
+              <Copy className={cn("absolute inset-0 size-3.5 transition-[opacity,transform] duration-200 motion-reduce:transition-none", emailCopied ? "scale-75 opacity-0" : "scale-100 opacity-100")} strokeWidth={1.4} />
+              <CheckCircle2 className={cn("absolute inset-0 size-3.5 text-[var(--md-accent)] transition-[opacity,transform] duration-200 motion-reduce:transition-none", emailCopied ? "scale-100 opacity-100" : "scale-75 opacity-0")} strokeWidth={1.6} />
+            </span>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{t(emailCopied ? "Copied" : "Copy email")}</TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            asChild
+            variant="ghost"
+            size="icon-sm"
+            className="size-[26px] rounded-[var(--md-radius-sm)] bg-[var(--md-surface-soft)] p-0 text-[var(--md-subtle)] shadow-[var(--md-shadow-line)] transition-[background,color,transform] duration-200 hover:bg-[var(--md-field-bg-hover)] hover:text-[var(--md-accent)] active:scale-[0.96] motion-reduce:transition-none motion-reduce:active:scale-100"
+          >
+            <a href={`mailto:${customerEmail}`} aria-label={t("Send email")}>
+              <Mail className="size-3.5" strokeWidth={1.4} />
+            </a>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{t("Send email")}</TooltipContent>
+      </Tooltip>
+    </div>
+  )
 
   function updateCarrier(company: string) {
     onQuoteChange("carrier", company)
@@ -2083,10 +2401,11 @@ function QuoteCargoWiseDetailsPanel({
       </CargoWiseGroup>
 
       <section>
-        <div className="grid items-stretch gap-[var(--md-page-stack-gap-compact)] xl:grid-cols-3">
+        <div className="grid items-stretch gap-[var(--md-page-stack-gap-compact)] xl:grid-cols-[1.26fr_1.08fr_1fr]">
           <CargoWiseGroup
             title="Customer"
-            contentClassName="min-[1700px]:grid-cols-2"
+            className="[--md-field-label-width:64px]"
+            contentClassName="md:grid-cols-[minmax(130px,0.64fr)_minmax(0,1.36fr)]"
             headerAction={(
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -2105,17 +2424,22 @@ function QuoteCargoWiseDetailsPanel({
               </Tooltip>
             )}
           >
-            <div className="grid min-w-0 gap-2 min-[1700px]:col-span-2 min-[1700px]:grid-cols-[210px_minmax(0,1fr)]">
+            <div className="grid min-w-0 gap-2 md:col-span-2 md:grid-cols-[minmax(160px,0.76fr)_minmax(0,1.24fr)]">
               <CargoWiseLookupField label="Code" value={quote.clientCode ?? "HWSBRI"} maxLength={12} editable={editable} onChange={(value) => onQuoteChange("clientCode", value)} />
               <CargoWiseField label="Name" value={quote.customer} editable={editable} onChange={(value) => onQuoteChange("customer", value)} />
             </div>
             <CargoWiseField label="Address" value={quote.customerAddress ?? "RIVERGATE WORKS, BRISTOL, UNITED KINGDOM"} span editable={editable} onChange={(value) => onQuoteChange("customerAddress", value)} />
-            <CargoWiseLookupField label="Contact" value={quote.customerContact ?? "Nora Vale - Logistics Lead"} editable={editable} onChange={(value) => onQuoteChange("customerContact", value)} />
-            <CargoWiseField label="Email" value={quote.customerEmail ?? "rates@harbourworks.example"} editable={editable} onChange={(value) => onQuoteChange("customerEmail", value)} />
+            <CargoWiseLookupField label="Contact" value={quote.customerContact ?? "Nora Vale - Logistics Lead"} className="[--md-field-label-width:46px]" editable={editable} onChange={(value) => onQuoteChange("customerContact", value)} />
+            <CargoWiseField label="Email" value={customerEmail} className="[--md-field-label-width:38px]" action={customerEmailActions} editable={editable} onChange={(value) => onQuoteChange("customerEmail", value)} />
           </CargoWiseGroup>
 
-          <CargoWiseGroup title="Shipper" contentClassName="min-[1700px]:grid-cols-2" headerAction={partyHeaderActions("Shipper")}>
-            <div className="grid min-w-0 gap-2 min-[1700px]:col-span-2 min-[1700px]:grid-cols-[210px_minmax(0,1fr)]">
+          <CargoWiseGroup
+            title="Shipper"
+            className="[--md-field-label-width:64px]"
+            contentClassName="md:grid-cols-[minmax(146px,0.72fr)_minmax(0,1.28fr)]"
+            headerAction={partyHeaderActions("Shipper")}
+          >
+            <div className="grid min-w-0 gap-2 md:col-span-2 md:grid-cols-[minmax(160px,0.76fr)_minmax(0,1.24fr)]">
               <CargoWiseLookupField label="Code" value={quote.shipperCode ?? "HWSBRI"} maxLength={12} editable={editable} onChange={(value) => onQuoteChange("shipperCode", value)} />
               <CargoWiseField label="Name" value={quote.shipperName ?? "HarbourWorks Safety"} editable={editable} onChange={(value) => onQuoteChange("shipperName", value)} />
             </div>
@@ -2126,7 +2450,7 @@ function QuoteCargoWiseDetailsPanel({
               editable={quote.shipperAddressOverride === "Yes"}
               onChange={(value) => onQuoteChange("shipperAddress", value)}
             />
-            <CargoWiseLookupField label="Contact" value={quote.shipperContact ?? "Dispatch desk"} editable={editable} onChange={(value) => onQuoteChange("shipperContact", value)} />
+            <CargoWiseLookupField label="Contact" value={quote.shipperContact ?? "Dispatch desk"} className="[--md-field-label-width:46px]" editable={editable} onChange={(value) => onQuoteChange("shipperContact", value)} />
             <CargoWiseSelectField
               label="Collection"
               value={quote.collectionAddress ?? "RIVERGATE WORKS, NORTH QUAY INDUSTRIAL ESTATE, BRISTOL, UNITED KINGDOM"}
@@ -2138,8 +2462,13 @@ function QuoteCargoWiseDetailsPanel({
             />
           </CargoWiseGroup>
 
-          <CargoWiseGroup title="Consignee" contentClassName="min-[1700px]:grid-cols-2" headerAction={partyHeaderActions("Consignee")}>
-            <div className="grid min-w-0 gap-2 min-[1700px]:col-span-2 min-[1700px]:grid-cols-[210px_minmax(0,1fr)]">
+          <CargoWiseGroup
+            title="Consignee"
+            className="[--md-field-label-width:64px]"
+            contentClassName="md:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)]"
+            headerAction={partyHeaderActions("Consignee")}
+          >
+            <div className="grid min-w-0 gap-2 md:col-span-2 md:grid-cols-[minmax(160px,0.76fr)_minmax(0,1.24fr)]">
               <CargoWiseLookupField label="Code" value={quote.consigneeCode ?? "Not selected"} maxLength={12} editable={editable} onChange={(value) => onQuoteChange("consigneeCode", value)} />
               <CargoWiseField label="Name" value={quote.consigneeName ?? "No organisation selected"} editable={editable} onChange={(value) => onQuoteChange("consigneeName", value)} />
             </div>
@@ -2160,6 +2489,7 @@ function QuoteCargoWiseDetailsPanel({
               editable={editable}
               dataOptions
               action={addAddressAction("delivery")}
+              span
               onChange={(value) => onQuoteChange("deliveryAddress", value)}
             />
           </CargoWiseGroup>
@@ -2537,24 +2867,25 @@ function QuoteWorkspaceContext({
 
   if (activeTab === "charges") {
     return (
-      <Surface padding="none" className="flex h-full min-h-[124px] flex-col overflow-hidden rounded-[var(--md-radius-xl)]">
-        <div className="flex items-center justify-between gap-3 bg-[var(--md-surface-tint)] px-3 py-1 shadow-[var(--md-shadow-line)]">
+      <Surface padding="none" className="flex h-[82px] min-h-0 flex-col overflow-hidden rounded-[var(--md-radius-xl)]">
+        <div className="flex h-7 shrink-0 items-center justify-between gap-2 bg-[var(--md-surface-tint)] px-2 shadow-[var(--md-shadow-line)]">
           <div className="min-w-0">
             <p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Job ROE")}</p>
-            <p className="truncate text-[10px] text-[var(--md-subtle)]">{t("Shared exchange rates used by every charge line.")}</p>
+            <p className="sr-only">{t("Shared exchange rates used by every charge line.")}</p>
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            <Button type="button" variant="ghost" size="xs" onClick={onAddJobRoe} disabled={!editable} className="h-7 rounded-[var(--md-radius-md)] px-2 text-[10px] shadow-[var(--md-shadow-line)]"><Plus data-icon="inline-start" className="size-3" />{t("Add")}</Button>
-            <Button type="button" variant="ghost" size="xs" onClick={() => selectedJobRoe && onRemoveJobRoe(selectedJobRoe)} disabled={!editable || selectedJobRoe === null} className="h-7 rounded-[var(--md-radius-md)] px-2 text-[10px] shadow-[var(--md-shadow-line)]"><Trash2 data-icon="inline-start" className="size-3" />{t("Remove")}</Button>
+            <Button type="button" variant="ghost" size="xs" onClick={onAddJobRoe} disabled={!editable} className="h-6 rounded-[var(--md-radius-sm)] px-1.5 text-[9.5px] shadow-[var(--md-shadow-line)]"><Plus data-icon="inline-start" className="size-3" />{t("Add")}</Button>
+            <Button type="button" variant="ghost" size="xs" onClick={() => selectedJobRoe && onRemoveJobRoe(selectedJobRoe)} disabled={!editable || selectedJobRoe === null} className="h-6 rounded-[var(--md-radius-sm)] px-1.5 text-[9.5px] shadow-[var(--md-shadow-line)]"><Trash2 data-icon="inline-start" className="size-3" />{t("Remove")}</Button>
           </div>
         </div>
-        <Table aria-label={t("Job ROE")} className="h-full table-fixed text-[10px]">
+        <div className="min-h-0 flex-1 overflow-y-auto md-scrollbar">
+        <Table aria-label={t("Job ROE")} className="table-fixed text-[9px]">
           <TableHeader>
             <TableRow className="border-[rgba(11,20,19,0.05)] bg-white hover:bg-white">
-              <TableHead className="h-4 w-[18%] px-2 text-[9px] text-[var(--md-text)]">{t("CCY")}</TableHead>
-              <TableHead className="h-4 w-[27%] px-2 text-[9px] text-[var(--md-text)]">{t("Base")}</TableHead>
-              <TableHead className="h-4 w-[27%] px-2 text-[9px] text-[var(--md-text)]">{t("Cost")}</TableHead>
-              <TableHead className="h-4 w-[28%] px-2 text-[9px] text-[var(--md-text)]">{t("Revenue")}</TableHead>
+              <TableHead className="h-3.5 w-[18%] px-1.5 text-[8px] text-[var(--md-text)]">{t("CCY")}</TableHead>
+              <TableHead className="h-3.5 w-[27%] px-1.5 text-[8px] text-[var(--md-text)]">{t("Base")}</TableHead>
+              <TableHead className="h-3.5 w-[27%] px-1.5 text-[8px] text-[var(--md-text)]">{t("Cost")}</TableHead>
+              <TableHead className="h-3.5 w-[28%] px-1.5 text-[8px] text-[var(--md-text)]">{t("Revenue")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -2562,15 +2893,16 @@ function QuoteWorkspaceContext({
               const selected = selectedJobRoe === roe.currency
               return (
                 <TableRow key={roe.currency} data-state={selected ? "selected" : undefined} aria-selected={selected || undefined} onClick={() => setSelectedJobRoe(roe.currency)} className="cursor-pointer border-[rgba(11,20,19,0.045)] data-[state=selected]:bg-[color-mix(in_srgb,var(--md-accent)_8%,white)]">
-                  <TableCell data-i18n-skip dir="ltr" className="h-7 px-2 py-px font-medium tabular-nums text-[var(--md-ink)]">{roe.currency}</TableCell>
-                  <TableCell className="h-7 px-2 py-px"><EditableChargeCell value={roe.baseRate} editable={editable} numeric className="h-7 text-[10px]" onChange={(value) => onJobRoeBaseChange(roe.currency, value)} /></TableCell>
-                  <TableCell className="h-7 px-2 py-px"><EditableChargeCell value={roe.costRate} editable={editable} numeric className="h-7 text-[10px]" onChange={(value) => onJobRoeChange(roe.currency, "costRate", value)} /></TableCell>
-                  <TableCell className="h-7 px-2 py-px"><EditableChargeCell value={roe.revenueRate} editable={editable} numeric className="h-7 text-[10px]" onChange={(value) => onJobRoeChange(roe.currency, "revenueRate", value)} /></TableCell>
+                  <TableCell data-i18n-skip dir="ltr" className="h-5 px-1.5 py-0 font-medium tabular-nums text-[var(--md-ink)]">{roe.currency}</TableCell>
+                  <TableCell className="h-5 px-1 py-0"><EditableChargeCell value={roe.baseRate} editable={editable} numeric className="h-5 px-1 text-[9px]" onChange={(value) => onJobRoeBaseChange(roe.currency, value)} /></TableCell>
+                  <TableCell className="h-5 px-1 py-0"><EditableChargeCell value={roe.costRate} editable={editable} numeric className="h-5 px-1 text-[9px]" onChange={(value) => onJobRoeChange(roe.currency, "costRate", value)} /></TableCell>
+                  <TableCell className="h-5 px-1 py-0"><EditableChargeCell value={roe.revenueRate} editable={editable} numeric className="h-5 px-1 text-[9px]" onChange={(value) => onJobRoeChange(roe.currency, "revenueRate", value)} /></TableCell>
                 </TableRow>
               )
             })}
           </TableBody>
         </Table>
+        </div>
       </Surface>
     )
   }
@@ -2868,9 +3200,9 @@ export function QuoteDetailPage({ variant = "operator", quoteId }: { variant?: Q
               <div className="grid items-stretch gap-2 xl:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
                 <div className="grid min-w-0 grid-rows-[auto_auto] gap-1.5">
                 <section
-                  className="flex flex-col gap-2 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] px-3 py-1.5 shadow-[var(--md-shadow-line)] lg:flex-row lg:flex-nowrap lg:items-center lg:justify-between"
+                  className="flex min-w-0 flex-col gap-2 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] px-3 py-1.5 shadow-[var(--md-shadow-line)] lg:flex-row lg:flex-nowrap lg:items-center lg:justify-between"
                 >
-          <div className="flex min-w-0 shrink-0 items-center gap-1.5">
+          <div className="flex w-full min-w-0 items-center gap-1.5 lg:w-auto lg:shrink-0">
             <div className="min-w-0">
               <div className="flex flex-nowrap items-center gap-1.5">
                 <h1 className="shrink-0 text-[14px] font-medium leading-5 text-[var(--md-ink)]">{t(heading)}</h1>
@@ -2896,7 +3228,7 @@ export function QuoteDetailPage({ variant = "operator", quoteId }: { variant?: Q
               </div>
             </div>
           </div>
-          <div className="flex shrink-0 flex-nowrap items-center gap-1">
+          <div className="flex w-full min-w-0 flex-nowrap items-center gap-1 overflow-x-auto lg:w-auto lg:shrink-0 lg:overflow-visible">
             {isDirty ? (
               <>
                 <Button type="button" variant="ghost" onClick={discardChanges} className="h-8 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-2.5 text-[12px] shadow-[var(--md-shadow-line)]">
@@ -2941,9 +3273,9 @@ export function QuoteDetailPage({ variant = "operator", quoteId }: { variant?: Q
                 <Surface
                   padding="none"
                   tone="soft"
-                  className="w-full rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)]"
+                  className="min-w-0 w-full overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)]"
                 >
-                  <TabsList variant="line" className="h-auto gap-1 bg-transparent p-0">
+                  <TabsList variant="line" className="h-auto w-full max-w-full justify-start gap-1 overflow-x-auto bg-transparent p-0">
                   <TabsTrigger value="overview" className="h-8 rounded-[var(--md-radius-lg)] px-2.5 text-[12px]">
                     <ReceiptText data-icon="inline-start" className="size-4" strokeWidth={1.3} />
                     {t("Overview")}
@@ -2967,31 +3299,16 @@ export function QuoteDetailPage({ variant = "operator", quoteId }: { variant?: Q
                   </TabsList>
                 </Surface>
               </div>
-                {activeTab !== "charges" ? (
-                  <QuoteWorkspaceContext
-                    activeTab={activeTab}
-                    quote={activeQuote}
-                    editable
-                    onJobRoeBaseChange={updateJobRoeBase}
-                    onAddJobRoe={addJobRoe}
-                    onRemoveJobRoe={removeJobRoe}
-                    onJobRoeChange={updateJobRoe}
-                  />
-                ) : null}
+                <QuoteWorkspaceContext
+                  activeTab={activeTab}
+                  quote={activeQuote}
+                  editable
+                  onJobRoeBaseChange={updateJobRoeBase}
+                  onAddJobRoe={addJobRoe}
+                  onRemoveJobRoe={removeJobRoe}
+                  onJobRoeChange={updateJobRoe}
+                />
               </div>
-              {activeTab === "charges" ? (
-                <div className="xl:absolute xl:top-0 xl:end-0 xl:h-[169px] xl:w-[calc((100%-0.5rem)*0.3)]">
-                  <QuoteWorkspaceContext
-                    activeTab={activeTab}
-                    quote={activeQuote}
-                    editable
-                    onJobRoeBaseChange={updateJobRoeBase}
-                    onAddJobRoe={addJobRoe}
-                    onRemoveJobRoe={removeJobRoe}
-                    onJobRoeChange={updateJobRoe}
-                  />
-                </div>
-              ) : null}
             </div>
 
               <TabsContent value="overview" className="mt-0">
@@ -3001,48 +3318,18 @@ export function QuoteDetailPage({ variant = "operator", quoteId }: { variant?: Q
                 {variant === "cargowise" ? <QuoteCargoWiseDetailsPanel quote={activeQuote} editable onQuoteChange={updateDraftQuote} onCustomerCreate={createAndAssignCustomer} validationAttempted={validationAttempted} /> : <QuoteSetupPanel quote={activeQuote} editable onQuoteChange={updateDraftQuote} onJobRoeChange={updateJobRoe} validationAttempted={validationAttempted} />}
               </TabsContent>
               <TabsContent value="charges" className="mt-0">
-                <QuoteChargesPanel
+                <UnifiedQuoteChargesPanel
+                  quote={activeQuote}
                   charges={activeCharges}
-                  customer={activeQuote.customer}
                   editable
-                  onChargeChange={updateDraftCharge}
-                  onAddCharge={addDraftCharge}
-                  onRemoveCharge={removeDraftCharge}
+                  onRowsChange={setDraftCharges}
                 />
               </TabsContent>
               <TabsContent value="documents" className="mt-0">
-                <Surface padding="md" className="rounded-[var(--md-radius-xl)]">
-                  <SectionHeader title="Document selection" meta="Customer copy, internal costing, and supporting eDocs will live here." />
-                  <div className="mt-4 grid grid-cols-[repeat(auto-fill,minmax(148px,176px))] gap-3">
-                    {quoteDocuments.map((document) => (
-                      <button
-                        key={document.id}
-                        type="button"
-                        aria-label={t(`Preview ${document.name}`)}
-                        className="group aspect-square min-w-0 text-start focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]"
-                      >
-                        <span className="flex h-full min-h-0 flex-col">
-                          <span className="min-h-0 flex-1 overflow-hidden rounded-[var(--md-radius-md)] transition-[box-shadow,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:-translate-y-1 group-hover:shadow-[var(--md-shadow-soft)]">
-                            <PaperDocumentFace item={document} className="md-quote-document-preview" />
-                          </span>
-                          <span className="mt-2 block min-w-0 px-0.5">
-                            <span className="block truncate text-[11.5px] font-medium text-[var(--md-ink)]">{t(document.name)}</span>
-                            <span className="mt-0.5 flex items-center justify-between gap-2 text-[10px] text-[var(--md-subtle)]">
-                              <span>{t(document.addedAt)}</span>
-                              <span data-i18n-skip dir="ltr" className="shrink-0">{document.sizeLabel}</span>
-                            </span>
-                          </span>
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </Surface>
+                <DocumentWorkspace documents={documentWorkspaceSampleDocuments} />
               </TabsContent>
               <TabsContent value="audit" className="mt-0">
-                <AuditTimeline
-                  events={quoteAuditEvents}
-                  description="A live operational history of quote changes, decisions, and next actions."
-                />
+                <AuditWorkspace records={QUOTE_AUDIT_SAMPLE_DATA} />
               </TabsContent>
           </Tabs>
         </div>

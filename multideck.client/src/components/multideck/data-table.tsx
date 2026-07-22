@@ -49,6 +49,7 @@ type DataTableProps<Row> = {
   ariaLabel?: string
   columnsButtonLabel?: string
   toolbarLeading?: ReactNode
+  toolbarActions?: ReactNode
   emptyState?: ReactNode
   className?: string
   tableClassName?: string
@@ -92,6 +93,7 @@ export function DataTable<Row>({
   ariaLabel,
   columnsButtonLabel,
   toolbarLeading,
+  toolbarActions,
   emptyState,
   className,
   tableClassName,
@@ -305,10 +307,12 @@ export function DataTable<Row>({
   }
 
   return (
-    <div className={cn("overflow-hidden rounded-[var(--md-radius-xl)] bg-white shadow-[var(--md-shadow-line)]", className)}>
-      <div className={cn("flex h-10 items-center gap-2 bg-[color-mix(in_srgb,var(--md-surface)_92%,transparent)] px-2 shadow-[inset_0_-1px_0_rgba(11,20,19,0.05)]", toolbarLeading ? "justify-between" : "justify-end")}>
-        {toolbarLeading ? <div className="flex min-w-0 items-center gap-1">{toolbarLeading}</div> : null}
-        <Popover>
+    <div className={cn("w-full min-w-0 overflow-hidden rounded-[var(--md-radius-xl)] bg-white shadow-[var(--md-shadow-line)]", className)}>
+      <div className={cn("flex min-h-10 flex-wrap items-center gap-2 bg-[color-mix(in_srgb,var(--md-surface)_92%,transparent)] px-2 py-1 shadow-[inset_0_-1px_0_rgba(11,20,19,0.05)] sm:flex-nowrap", toolbarLeading ? "justify-between" : "justify-end")}>
+        {toolbarLeading ? <div className="flex min-w-0 shrink-0 items-center gap-1">{toolbarLeading}</div> : null}
+        <div className="ms-auto flex min-w-0 flex-1 items-center justify-end gap-1.5">
+          {toolbarActions ? <div className="flex min-w-0 flex-1 items-center justify-end">{toolbarActions}</div> : null}
+          <Popover>
           <PopoverTrigger asChild>
             <button
               type="button"
@@ -360,7 +364,8 @@ export function DataTable<Row>({
               </AnimatePresence>
             </div>
           </PopoverContent>
-        </Popover>
+          </Popover>
+        </div>
       </div>
 
       <Table aria-label={ariaLabel ? t(ariaLabel) : undefined} className={tableClassName} style={{ minWidth: Math.max(minimumWidth, 720) }}>
@@ -420,8 +425,14 @@ export function DataTable<Row>({
                 key={rowKey}
                 data-state={isSelected ? "selected" : undefined}
                 aria-selected={isSelected || undefined}
-                className={cn(typeof rowClassName === "function" ? rowClassName(row) : rowClassName, onRowClick && "cursor-pointer")}
+                className={cn(typeof rowClassName === "function" ? rowClassName(row) : rowClassName, onRowClick && "cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[color-mix(in_srgb,var(--md-accent)_30%,transparent)]")}
+                tabIndex={onRowClick ? 0 : undefined}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
+                onKeyDown={onRowClick ? (event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return
+                  event.preventDefault()
+                  onRowClick(row)
+                } : undefined}
               >
                 {visibleColumns.map((column) => {
                   const isPinned = pinned.has(column.id)

@@ -14,6 +14,7 @@ using Multideck.Server.Modules.Users.Supabase;
 using Multideck.Server.Modules.Warehouse;
 using Multideck.Server.Modules.Customers;
 using Multideck.Server.Modules.Documents;
+using Multideck.Server.Modules.Finance;
 
 namespace Multideck.Server.Extensions;
 
@@ -29,6 +30,13 @@ public static class ServiceCollectionExtensions
         services.AddMultideckIntelligence(configuration);
         services.AddMultideckPersistence(configuration);
         services.AddDocumentStorage(configuration);
+        services.AddHttpClient<IFinanceRateService, FinanceRateService>(client =>
+        {
+            client.BaseAddress = new Uri("https://www.ecb.europa.eu/");
+            client.Timeout = TimeSpan.FromSeconds(20);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("Multideck/1.0 (+https://multideck.app)");
+            client.DefaultRequestHeaders.Accept.ParseAdd("application/xml");
+        });
         services.AddWarehouseModule();
         services.AddScoped<ICustomerService, CustomerService>();
 
