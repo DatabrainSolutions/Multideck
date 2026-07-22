@@ -12,12 +12,10 @@ import {
   Cloud,
   Copy,
   CreditCard,
-  FileKey2,
   Globe2,
   History,
   KeyRound,
   LifeBuoy,
-  LockKeyhole,
   Mail,
   Megaphone,
   MessageCircle,
@@ -38,6 +36,7 @@ import {
 import { toast } from "sonner"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
+import { AuthIdentityManager } from "@/components/multideck/auth-provider-selector"
 import { Pagination } from "@/components/multideck/pagination"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { ThemeToggle } from "@/components/multideck/theme-toggle"
@@ -160,7 +159,7 @@ function MobileSettingsTabs({
   const active = settingsGroups.flatMap((group) => group.items).find((item) => item.id === activeTab)
 
   return (
-    <div className="bg-[rgba(213,228,225,0.72)] px-4 py-4 shadow-[inset_0_-1px_0_rgba(11,20,19,0.05)] lg:hidden">
+    <div className="bg-[var(--md-surface-tint)] px-4 py-4 shadow-[inset_0_-1px_0_rgba(11,20,19,0.05)] lg:hidden">
       <div className="flex items-center justify-between gap-3">
         <button type="button" className="text-[13px] font-medium text-[var(--md-text)]" onClick={onBack}>
           Back
@@ -727,10 +726,11 @@ function SecurityTab() {
         actions={primaryAction("Save security", () => toast.success("Security settings saved"))}
       />
       <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
-        <SettingsPanel title="Sign-in methods" description="Keep at least two recovery routes active for operational continuity.">
-          <IconRow icon={LockKeyhole} title="Password" description="Last changed 32 days ago. Strong enough for admin access." right={compactAction("Change")} />
+        <SettingsPanel title="Sign-in methods" description="Your account is created by a Multideck administrator. Connect optional identities here for future sign-ins.">
+          <AuthIdentityManager embedded />
+        </SettingsPanel>
+        <SettingsPanel title="Security rules" description="Extra checks for new devices and sensitive workspace actions.">
           <ToggleSetting title="Two-factor authentication" description="Require a code for new devices, billing changes, and API key creation." initialChecked />
-          <IconRow icon={FileKey2} title="Passkeys" description="MacBook Pro and iPhone 15 are approved for passwordless sign-in." right={compactAction("Manage")} />
           <ToggleSetting title="Require SSO for admins" description="Admins must sign in with the Northwind Google Workspace account." initialChecked={false} />
         </SettingsPanel>
         <SettingsPanel title="Recovery" description="Backup access if your phone or identity provider is unavailable.">
@@ -1221,7 +1221,7 @@ function TeamTab() {
                     data-i18n-skip
                     dir="auto"
                     aria-label={t("Office")}
-                    className="h-9 w-full rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-tint)] px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]"
+                    className="h-9 w-full rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] outline-none hover:bg-[var(--md-field-bg-hover)] focus-visible:bg-[var(--md-field-bg-hover)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]"
                     value={inviteForm.officeId}
                     onChange={(event) => setInviteForm((current) => ({ ...current, officeId: event.target.value }))}
                   >
@@ -1243,7 +1243,7 @@ function TeamTab() {
                   <select
                     dir="auto"
                     aria-label={t("Role")}
-                    className="h-9 w-full rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-tint)] px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]"
+                    className="h-9 w-full rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] outline-none hover:bg-[var(--md-field-bg-hover)] focus-visible:bg-[var(--md-field-bg-hover)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]"
                     value={inviteForm.roleId}
                     onChange={(event) => {
                       const nextRole = roleOptions.find((role) => role.id === event.target.value)
@@ -1331,7 +1331,7 @@ function TeamTab() {
                       <select
                         dir="auto"
                         aria-label={t("Change role")}
-                        className="h-8 w-full min-w-[170px] rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-tint)] px-2.5 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] outline-none transition-opacity focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)] disabled:cursor-not-allowed disabled:opacity-55 sm:w-[210px]"
+                        className="h-8 w-full min-w-[170px] rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] px-2.5 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] outline-none transition-opacity hover:bg-[var(--md-field-bg-hover)] focus-visible:bg-[var(--md-field-bg-hover)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)] disabled:cursor-not-allowed disabled:opacity-55 sm:w-[210px]"
                         value={selectedMemberRoleId}
                         disabled={isChangingRole}
                         onChange={(event) => void handleChangeUserRole(member, event.target.value)}
@@ -1347,7 +1347,7 @@ function TeamTab() {
                         data-i18n-skip
                         dir="auto"
                         aria-label={t("Change office")}
-                        className="h-8 w-full min-w-[190px] rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-tint)] px-2.5 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] outline-none transition-opacity focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)] disabled:cursor-not-allowed disabled:opacity-55 sm:w-[230px]"
+                        className="h-8 w-full min-w-[190px] rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] px-2.5 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] outline-none transition-opacity hover:bg-[var(--md-field-bg-hover)] focus-visible:bg-[var(--md-field-bg-hover)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)] disabled:cursor-not-allowed disabled:opacity-55 sm:w-[230px]"
                         value={selectedOfficeId}
                         disabled={isChangingOffice}
                         onChange={(event) => void handleChangeUserOffice(member, event.target.value)}
@@ -1563,7 +1563,7 @@ function PermissionsTab() {
                 <select
                   dir="auto"
                   aria-label={t("Role")}
-                  className="h-9 w-full rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-tint)] px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)] sm:max-w-[360px]"
+                  className="h-9 w-full rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] outline-none hover:bg-[var(--md-field-bg-hover)] focus-visible:bg-[var(--md-field-bg-hover)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)] sm:max-w-[360px]"
                   value={selectedRole.id}
                   onChange={(event) => setSelectedRoleId(event.target.value)}
                 >

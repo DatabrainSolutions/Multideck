@@ -35,7 +35,8 @@ import { CrmActivityTimeline, CrmAssetFolderCard, CrmAssetRow, CrmContactTable, 
 import { FilterChips, SegmentedControl, TabsRail } from "@/components/multideck/workflow-components"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
-import { CodeInput, FreightNarrative, SignInPanel, SignedOutPanel, VerifyPanel } from "@/components/multideck/auth-flow"
+import { CodeInput, FreightNarrative, SignInPanel, SignedOutPanel, VerifyPanel, WorkspaceRouterPanel } from "@/components/multideck/auth-flow"
+import { AuthIdentityManager, AuthProviderSelector } from "@/components/multideck/auth-provider-selector"
 import { BookingAdvancedSearch, BookingArrivalCard, BookingAskPanel, BookingBoardPreview, BookingExceptionPanel, BookingMetricCard, BookingResolutionChecklist, BookingsTable, YourJobsPanel, bookingViewModes, bookingViewOptions, type BookingSearchCriterion, type BookingViewMode } from "@/components/multideck/booking-components"
 import { WarehouseKanbanBoardPreview, WarehouseOrdersTable, WarehouseProductsTable, WarehouseStockTable } from "@/components/multideck/warehouse-components"
 import { WarehouseFormField } from "@/components/multideck/warehouse-management-components"
@@ -101,9 +102,11 @@ import { DexterCompanionSidebar } from "@/components/multideck/dexter-companion-
 import { PageSettingsMenu } from "@/components/multideck/page-settings-menu"
 import { AuditTimeline } from "@/components/multideck/audit-timeline"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
+import { QuoteSearchBuilder, quoteMatchesSearch, type QuoteSearchQuery } from "@/components/multideck/quote-search-builder"
 import { MultiSelectMenu } from "@/components/multideck/multi-select-menu"
 import { DocumentViewer, PaperTrayStack } from "@/components/multideck/paper-tray"
 import { createInitialPaperTrays } from "@/data/paper-tray-data"
+import { quoteRegisterRecords } from "@/data/quote-register-data"
 
 type GalleryIconKey = keyof typeof galleryIcons
 
@@ -137,7 +140,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Auth components",
     helper: "Sign-in and return states",
-    ids: ["auth-narrative-panel", "auth-sign-in-panel", "auth-verification-panel", "auth-code-input", "auth-signed-out-panel"],
+    ids: ["auth-narrative-panel", "auth-workspace-router", "auth-provider-selector", "auth-sign-in-panel", "auth-identity-manager", "auth-verification-panel", "auth-code-input", "auth-signed-out-panel"],
   },
   {
     label: "Reports",
@@ -147,7 +150,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["paper-tray-stack", "document-viewer", "audit-timeline", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "warehouse-table", "warehouse-form-field", "warehouse-kanban-board", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "lane-mix-panel", "booking-metric-card", "booking-advanced-search", "bookings-table", "booking-board-preview", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
+    ids: ["paper-tray-stack", "document-viewer", "audit-timeline", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-kanban-board", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "lane-mix-panel", "booking-metric-card", "booking-advanced-search", "bookings-table", "booking-board-preview", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
   },
   {
     label: "CRM",
@@ -315,14 +318,16 @@ const introNotes = [
 ]
 const colourTokens = [
   ["Ink", "--md-ink", "#0b1413"],
-  ["Text", "--md-text", "#5a6764"],
-  ["Subtle", "--md-subtle", "#94a09c"],
-  ["Background", "--md-bg", "#c9ddd8"],
-  ["Strong bg", "--md-bg-strong", "#aec9c1"],
+  ["Text", "--md-text", "#4f5b58"],
+  ["Subtle", "--md-subtle", "#687570"],
+  ["Background", "--md-bg", "#f3f4f4"],
+  ["Strong bg", "--md-bg-strong", "#eef1f0"],
   ["Surface", "--md-surface", "#ffffff"],
-  ["Tint", "--md-surface-tint", "#d7e9e4"],
-  ["Accent", "--md-accent", "#0e7d74"],
-  ["Green", "--md-green", "#0e7d74"],
+  ["Tint", "--md-surface-tint", "#eef1f0"],
+  ["Field", "--md-field-bg", "#e5e9e7"],
+  ["Selected", "--md-selected-bg", "#c8dcd6"],
+  ["Accent", "--md-accent", "#0a7068"],
+  ["Green", "--md-green", "#0a7068"],
   ["Amber", "--md-amber", "#dd8a2b"],
   ["Red", "--md-red", "#d14e4e"],
   ["Blue", "--md-blue", "#4a7d9c"],
@@ -506,7 +511,6 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewSelectedIds, setPreviewSelectedIds] = useState<Set<string>>(new Set(["marlow-apparel"]))
   const [previewCustomerTab, setPreviewCustomerTab] = useState("Overview")
   const [previewAuthEmail, setPreviewAuthEmail] = useState("john.doe@multideck.app")
-  const [previewAuthMethod, setPreviewAuthMethod] = useState<"magic-link" | "password" | null>(null)
   const [previewAuthCode, setPreviewAuthCode] = useState("742")
   const [previewSettingsTab, setPreviewSettingsTab] = useState("profile")
   const [previewSettingsChoice, setPreviewSettingsChoice] = useState("Always ask")
@@ -525,6 +529,17 @@ function ComponentPreview({ id }: { id: string }) {
     { id: "preview-booking-search-destination", connector: "and", field: "destination", groupId: "preview-search-main", value: "Felixstowe", valueTo: "" },
     { id: "preview-booking-search-vin", field: "vin", groupConnector: "or", groupId: "preview-search-vin", value: "WVW", valueTo: "" },
   ])
+  const [previewQuoteSearch, setPreviewQuoteSearch] = useState<QuoteSearchQuery>({
+    match: "all",
+    groups: [{
+      id: "preview-quote-search-main",
+      match: "all",
+      conditions: [
+        { id: "preview-quote-status", field: "status", operator: "is-not", value: "Expired" },
+        { id: "preview-quote-origin", field: "origin", operator: "contains", value: "GB" },
+      ],
+    }],
+  })
   const [previewContactEmail, setPreviewContactEmail] = useState(marlowContacts[0].email)
   const [previewDexterPrompt, setPreviewDexterPrompt] = useState("Prep Marlow's QBR and attach the latest open booking context.")
   const [previewDexterSpecialistId, setPreviewDexterSpecialistId] = useState<DexterSpecialistId>("auto")
@@ -598,6 +613,10 @@ function ComponentPreview({ id }: { id: string }) {
       }, true)
     }).length
   }, [previewBookingSearchCriteria])
+  const previewQuoteSearchCount = useMemo(
+    () => quoteRegisterRecords.filter((quote) => quoteMatchesSearch(quote, previewQuoteSearch)).length,
+    [previewQuoteSearch],
+  )
 
   useEffect(() => {
     if (!previewScreenGlow) return undefined
@@ -1195,6 +1214,17 @@ function ComponentPreview({ id }: { id: string }) {
             getRowKey={(row) => row.id}
             storageKey="gallery-charge-table"
             ariaLabel="Quote charges preview"
+          />
+        </div>
+      ) : null}
+
+      {id === "quote-search-builder" ? (
+        <div className="w-full max-w-[1120px]">
+          <QuoteSearchBuilder
+            value={previewQuoteSearch}
+            onChange={setPreviewQuoteSearch}
+            resultCount={previewQuoteSearchCount}
+            totalCount={quoteRegisterRecords.length}
           />
         </div>
       ) : null}
@@ -1804,11 +1834,29 @@ function ComponentPreview({ id }: { id: string }) {
         <div className="w-full max-w-[620px] rounded-[var(--md-radius-xl)] bg-[var(--md-bg)] p-[var(--md-page-section-gap)] shadow-[var(--md-shadow-line)]">
           <SignInPanel
             email={previewAuthEmail}
-            signInMethod={previewAuthMethod}
             onEmailChange={setPreviewAuthEmail}
-            onSignInMethodChange={setPreviewAuthMethod}
-            onContinue={() => undefined}
           />
+        </div>
+      ) : null}
+
+      {id === "auth-workspace-router" ? (
+        <div className="w-full max-w-[620px] rounded-[var(--md-radius-xl)] bg-[var(--md-bg)] p-[var(--md-page-section-gap)] shadow-[var(--md-shadow-line)]">
+          <WorkspaceRouterPanel
+            initialWorkspace="jenkar"
+            onContinue={(workspace) => toast.success(`${workspace}.multideck.app selected`)}
+          />
+        </div>
+      ) : null}
+
+      {id === "auth-provider-selector" ? (
+        <div className="w-full max-w-[620px] rounded-[var(--md-radius-xl)] bg-[var(--md-bg)] p-[var(--md-page-section-gap)] shadow-[var(--md-shadow-line)]">
+          <AuthProviderSelector onSelect={(provider) => { toast.success(`${provider} sign-in selected`) }} />
+        </div>
+      ) : null}
+
+      {id === "auth-identity-manager" ? (
+        <div className="w-full max-w-[720px] rounded-[var(--md-radius-xl)] bg-[var(--md-bg)] p-[var(--md-page-section-gap)] shadow-[var(--md-shadow-line)]">
+          <AuthIdentityManager preview />
         </div>
       ) : null}
 

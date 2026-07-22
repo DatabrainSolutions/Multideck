@@ -40,6 +40,7 @@ import {
   Search,
   ScanText,
   Settings2,
+  ShieldCheck,
   Ship,
   SlidersHorizontal,
   Sparkles,
@@ -85,6 +86,7 @@ export type SidebarArea = {
   destinations: SidebarDestination[]
 }
 
+<<<<<<< Updated upstream
 export const warehouseNavigation: SidebarDestination[] = [
   { id: "warehouse-dashboard", label: "Dashboard", value: "Live", icon: LayoutDashboard, route: "/warehouse" },
   { id: "warehouse-calendar", label: "Calendar", value: "7d", icon: CalendarDays, route: "/warehouse/calendar" },
@@ -111,6 +113,8 @@ export const customerWarehouseNavigation: SidebarDestination[] = [
   { id: "warehouse-users", label: "Users", icon: Users, route: "/warehouse/users" },
 ]
 
+=======
+>>>>>>> Stashed changes
 export const sidebarAreas: SidebarArea[] = [
   {
     id: "home-work",
@@ -198,7 +202,18 @@ export const sidebarAreas: SidebarArea[] = [
     id: "warehouse",
     label: "Warehouse",
     icon: Boxes,
+<<<<<<< Updated upstream
     destinations: [...warehouseNavigation],
+=======
+    destinations: [
+      { id: "inventory", label: "Inventory", icon: Boxes, route: "/warehouse" },
+      { id: "inbound", label: "Inbound", icon: PackageCheck },
+      { id: "outbound", label: "Outbound", icon: Plane },
+      { id: "warehouse-work", label: "Warehouse work", icon: ListOrdered },
+      { id: "bonded-warehouse", label: "Bonded warehouse", icon: BadgeCheck },
+      { id: "facilities-locations", label: "Facilities & locations", icon: Globe2 },
+    ],
+>>>>>>> Stashed changes
   },
   {
     id: "finance",
@@ -2172,7 +2187,7 @@ export const galleryComponents = [
     description: "The Multideck colour tokens for shell backgrounds, product surfaces, text, accents, and operational status.",
     details: "Use tokens from `src/styles.css` instead of one-off colour values. Colours should support calm scanning, not decoration.",
     foundOn: [{ label: "Overview", route: "/" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
-    componentCode: `:root {\n  --md-ink: #0b1413;\n  --md-text: #5a6764;\n  --md-subtle: #94a09c;\n  --md-hairline: #9fb8b0;\n  --md-bg: #c9ddd8;\n  --md-bg-strong: #aec9c1;\n  --md-sidebar-bg: #f6fbfa;\n  --md-surface: #ffffff;\n  --md-surface-soft: #f8fcfb;\n  --md-surface-tint: #d7e9e4;\n  --md-accent: #0e7d74;\n  --md-green: #2e8e60;\n  --md-amber: #dd8a2b;\n  --md-red: #d14e4e;\n  --md-blue: #4a7d9c;\n}`,
+    componentCode: `:root {\n  --md-ink: #0b1413;\n  --md-text: #4f5b58;\n  --md-subtle: #687570;\n  --md-hairline: #ccd4d1;\n  --md-bg: #ffffff;\n  --md-bg-strong: #eef1f0;\n  --md-sidebar-bg: #f7f8f8;\n  --md-surface: #ffffff;\n  --md-surface-soft: #f7f9f8;\n  --md-surface-tint: #eef1f0;\n  --md-field-bg: #e5e9e7;\n  --md-accent: #0a7068;\n  --md-green: #0a7068;\n  --md-amber: #dd8a2b;\n  --md-red: #d14e4e;\n  --md-blue: #4a7d9c;\n}`,
     usageCode: `<Surface className="bg-[var(--md-surface)] text-[var(--md-ink)]">\n  <StatusPill tone="teal">AI prepared</StatusPill>\n  <p className="text-[var(--md-text)]">Use token colours for calm operational hierarchy.</p>\n</Surface>`,
   },
   {
@@ -2430,8 +2445,13 @@ export const galleryComponents = [
     id: "sidebar",
     name: "Area Sidebar Navigation",
     category: "Navigation",
+<<<<<<< Updated upstream
     description: "The two-level Multideck navigation pattern: Dexter stays first in every rail, followed by stable product areas or area-specific destinations with optional dropdown groups.",
     details: "Keep Dexter permanently mounted at the top and use its shared shader treatment in both navigation levels, so changing areas never restarts the shader. Selecting a CSV-backed area replaces only the remaining rail without changing the page; destinations can link directly or disclose smaller page links. The shared active surface, motion, collapsed state and RTL behavior remain consistent across both levels.",
+=======
+    description: "The route-aware product navigation system for moving between top-level areas and focused operational sub-sidebars.",
+    details: "Use the area cells as the stable product map. Opening an area reveals its destinations and expandable child routes while Dexter, scrolling, active-state motion, and the profile control remain persistent.",
+>>>>>>> Stashed changes
     foundOn: [{ label: "App shell", route: "/" }, { label: "Operations", route: "/bookings" }, { label: "Sales & CRM", route: "/crm" }, { label: "Components", route: "/components?component=sidebar" }],
     componentCode: `export function AppSidebar({ route, navigate }) {\n  const [activeAreaId, setActiveAreaId] = useState(findAreaForRoute(route)?.id ?? null)\n  const [expandedIds, setExpandedIds] = useState(new Set())\n  const activeArea = sidebarAreas.find((area) => area.id === activeAreaId)\n\n  return (\n    <aside className="relative flex h-full flex-col bg-[var(--md-sidebar-bg)]">\n      <SidebarNavItem\n        item={{ label: "Agent Dexter", icon: Sparkles, route: "/agent-dexter" }}\n        accent="dexter"\n        onClick={() => navigate("/agent-dexter")}\n      />\n      <AnimatePresence mode="popLayout" initial={false}>\n        {activeArea ? (\n          <motion.nav key={activeArea.id}>\n            <button onClick={() => setActiveAreaId(null)}>All areas</button>\n            {activeArea.destinations.map((destination) => (\n              <div key={destination.id}>\n                <SidebarNavItem\n                  item={destination}\n                  expanded={destination.children ? expandedIds.has(destination.id) : undefined}\n                  onClick={destination.children\n                    ? () => toggleExpanded(destination.id)\n                    : destination.route ? () => navigate(destination.route) : undefined}\n                />\n                {expandedIds.has(destination.id)\n                  ? destination.children?.map((child) => (\n                      <SidebarNavItem key={child.label} item={child} nested onClick={() => navigate(child.route)} />\n                    ))\n                  : null}\n              </div>\n            ))}\n          </motion.nav>\n        ) : (\n          <motion.nav key="areas">\n            {sidebarAreas.map((area) => (\n              <SidebarNavItem key={area.id} item={area} onClick={() => setActiveAreaId(area.id)} />\n            ))}\n          </motion.nav>\n        )}\n      </AnimatePresence>\n    </aside>\n  )\n}`,
     usageCode: `<AppSidebar route={route} navigate={navigate} />`,
@@ -2553,7 +2573,7 @@ export const galleryComponents = [
     description: "A branded date-range selector for paired dates, with one trigger, a two-month calendar, and highlighted days between the start and end.",
     details: "Use for date pairs such as cargo ready/requested collection, requested delivery/cargo required by, ETD/ETA, dashboard custom ranges, and booking search ranges. Avoid two separate native browser date inputs for paired dates.",
     foundOn: [{ label: "Overview", route: "/" }, { label: "New booking", route: "/bookings/new" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components?component=date-range-picker" }],
-    componentCode: `export function MultideckDateRangePicker({ value, onChange }) {\n  return (\n    <Popover>\n      <PopoverTrigger asChild>\n        <Button className="h-11 rounded-[var(--md-radius-lg)] bg-[#F4F9F7] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.15)]">\n          <CalendarDays />\n          {formatDateRangeLabel(value)}\n        </Button>\n      </PopoverTrigger>\n      <PopoverContent>\n        <CalendarMonth />\n        <CalendarMonth />\n        <Button onClick={() => closePicker()}>Apply dates</Button>\n      </PopoverContent>\n    </Popover>\n  )\n}`,
+    componentCode: `export function MultideckDateRangePicker({ value, onChange }) {\n  return (\n    <Popover>\n      <PopoverTrigger asChild>\n        <Button className="h-11 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.15)]">\n          <CalendarDays />\n          {formatDateRangeLabel(value)}\n        </Button>\n      </PopoverTrigger>\n      <PopoverContent>\n        <CalendarMonth />\n        <CalendarMonth />\n        <Button onClick={() => closePicker()}>Apply dates</Button>\n      </PopoverContent>\n    </Popover>\n  )\n}`,
     usageCode: `const [collectionDates, setCollectionDates] = useState({\n  start: "2026-05-25",\n  end: "2026-06-04",\n})\n\n<MultideckDateRangePicker\n  value={collectionDates}\n  onChange={setCollectionDates}\n  placeholder="Select collection dates"\n  title="Collection dates"\n  description="Pick when cargo is ready, then the requested collection date."\n  startLabel="Cargo ready from"\n  endLabel="Requested collection date"\n/>`,
   },
   {
@@ -2603,7 +2623,7 @@ export const galleryComponents = [
     description: "A compact mode switch for changing views without leaving the current workflow.",
     details: "Use for mutually exclusive view modes such as list, cards, map, table, board, timeline, preview, or code. Keep labels short and selected state obvious.",
     foundOn: [{ label: "Paper Tray", route: "/paper-tray" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components" }],
-    componentCode: `export function SegmentedControl({ options, value, onChange }) {\n  return (\n    <div className="flex rounded-[var(--md-radius-lg)] bg-white/60 p-1 shadow-[var(--md-shadow-line)]">\n      {options.map((option) => (\n        <button\n          key={option}\n          className={cn("h-8 rounded-[var(--md-radius-md)] px-4", value === option && "bg-[var(--md-sidebar-bg)]")}\n          onClick={() => onChange(option)}\n        >\n          {option}\n        </button>\n      ))}\n    </div>\n  )\n}`,
+    componentCode: `export function SegmentedControl({ options, value, onChange }) {\n  return (\n    <div className="flex rounded-[var(--md-radius-lg)] bg-white/60 p-1 shadow-[var(--md-shadow-line)]">\n      {options.map((option) => (\n        <button\n          key={option}\n          className={cn("h-8 rounded-[var(--md-radius-md)] px-4", value === option && "bg-[var(--md-selected-bg)] text-[var(--md-selected-text)]")}\n          onClick={() => onChange(option)}\n        >\n          {option}\n        </button>\n      ))}\n    </div>\n  )\n}`,
     usageCode: `<SegmentedControl\n  options={["Table", "Board"]}\n  value={viewMode}\n  onChange={setViewMode}\n/>`,
   },
   {
@@ -2625,6 +2645,16 @@ export const galleryComponents = [
     foundOn: [{ label: "Quotes", route: "/quotes" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components" }],
     componentCode: `export function DataTable({ columns, rows, getRowKey, storageKey, selectedRowKey, onRowClick }) {\n  return (\n    <Table>\n      <TableHeader>{/* sortable, resizable, draggable columns */}</TableHeader>\n      <TableBody>{/* rows follow the saved live column layout */}</TableBody>\n    </Table>\n  )\n}`,
     usageCode: `<DataTable\n  ariaLabel="Supplier charges"\n  columns={chargeColumns}\n  rows={charges}\n  getRowKey={(charge) => charge.id}\n  storageKey="quote-charges-in"\n  onRowClick={selectCharge}\n/>`,
+  },
+  {
+    id: "quote-search-builder",
+    name: "Quote Search Builder",
+    category: "Operations",
+    description: "An always-available advanced search surface for quote registers, with nested condition groups and precise field operators.",
+    details: "Use above the quotes table when operators need to combine commercial, route, ownership, timing, and workflow conditions. Groups can match all or any conditions, while the register updates immediately.",
+    foundOn: [{ label: "Quotes", route: "/quotes" }, { label: "Components", route: "/components?component=quote-search-builder" }],
+    componentCode: `export function QuoteSearchBuilder({ value, onChange, resultCount, totalCount }) {\n  return (\n    <section>\n      <MatchControl\n        value={value.match}\n        onChange={(match) => onChange({ ...value, match })}\n        allLabel="All groups"\n        anyLabel="Any group"\n      />\n      {value.groups.map((group) => (\n        <ConditionGroup\n          key={group.id}\n          group={group}\n          fields={quoteSearchFieldOptions}\n          operators={["contains", "is", "is-not", "starts-with", "is-empty", "is-not-empty"]}\n          onChange={updateGroup}\n        />\n      ))}\n      <span>{resultCount}/{totalCount} quotes shown</span>\n    </section>\n  )\n}`,
+    usageCode: `const [search, setSearch] = useState(createEmptyQuoteSearch)\nconst visibleQuotes = quotes.filter((quote) => quoteMatchesSearch(quote, search))\n\n<QuoteSearchBuilder\n  value={search}\n  onChange={setSearch}\n  resultCount={visibleQuotes.length}\n  totalCount={quotes.length}\n/>`,
   },
   {
     id: "warehouse-table",
@@ -3093,7 +3123,7 @@ export const galleryComponents = [
     description: "The left settings navigation used to move between account, workspace, organisation, and support pages.",
     details: "Use for dense settings areas where grouped navigation should stay visible while the main panel changes. Keep section labels quiet and selected state obvious.",
     foundOn: [{ label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
-    componentCode: `export function SettingsRail({ groups, activeTab, onChange, onBack }) {\n  return (\n    <aside className="flex min-h-screen w-[260px] flex-col bg-[rgba(213,228,225,0.72)] px-5 py-6">\n      <button onClick={onBack}>Back</button>\n      <h1>Settings</h1>\n      {groups.map((group) => (\n        <nav key={group.label}>\n          <p>{group.label}</p>\n          {group.items.map((item) => (\n            <button aria-current={activeTab === item.id ? "page" : undefined} onClick={() => onChange(item.id)}>\n              {item.label}\n            </button>\n          ))}\n        </nav>\n      ))}\n    </aside>\n  )\n}`,
+    componentCode: `export function SettingsRail({ groups, activeTab, onChange, onBack }) {\n  return (\n    <aside className="flex min-h-screen w-[260px] flex-col bg-[var(--md-surface-tint)] px-5 py-6">\n      <button onClick={onBack}>Back</button>\n      <h1>Settings</h1>\n      {groups.map((group) => (\n        <nav key={group.label}>\n          <p>{group.label}</p>\n          {group.items.map((item) => (\n            <button aria-current={activeTab === item.id ? "page" : undefined} onClick={() => onChange(item.id)}>\n              {item.label}\n            </button>\n          ))}\n        </nav>\n      ))}\n    </aside>\n  )\n}`,
     usageCode: `<SettingsRail\n  groups={settingsGroups}\n  activeTab={activeTab}\n  onChange={setActiveTab}\n  onBack={() => navigate("/")}\n/>`,
   },
   {
@@ -3147,24 +3177,104 @@ export const galleryComponents = [
     usageCode: `<SettingsSummaryCard\n  title="At a glance"\n  rows={[\n    ["Member since", "Jan 2024"],\n    ["Bookings handled", "1,847"],\n    ["Role", "Admin - Ops"],\n  ]}\n/>`,
   },
   {
+    id: "auth-workspace-router",
+    name: "Auth Workspace Router",
+    category: "Navigation",
+    description: "A private workspace doorway that routes operators from multideck.app to their company subdomain without exposing tenant data.",
+    details: "Use only on the root Multideck domain. It validates the supplied workspace name locally and opens that exact tenant host; sign-in and all Supabase access happen after the redirect inside the isolated tenant deployment.",
+    foundOn: [{ label: "Workspace access", route: "/auth" }, { label: "Components", route: "/components?component=auth-workspace-router" }],
+    componentCode: `export function WorkspaceRouterPanel({ onContinue }) {
+  const [workspace, setWorkspace] = useState("")
+
+  function openWorkspace() {
+    const slug = normalizeWorkspaceSlug(workspace)
+    if (!isValidWorkspaceSlug(slug)) return
+    onContinue?.(slug) ?? window.location.assign("https://" + slug + ".multideck.app/auth")
+  }
+
+  return <WorkspaceField value={workspace} onChange={setWorkspace} onSubmit={openWorkspace} />
+}`,
+    usageCode: `<WorkspaceRouterPanel
+  initialWorkspace="jenkar"
+  onContinue={(workspace) => {
+    window.location.assign(\`https://\${workspace}.multideck.app/auth\`)
+  }}
+/>`,
+  },
+  {
+    id: "auth-provider-selector",
+    name: "Auth Provider Selector",
+    category: "Navigation",
+    description: "A compact provider chooser for Google, passkeys, LinkedIn, Facebook, and Microsoft.",
+    details: "Use on invite-only sign-in screens. Each option starts authentication for an identity that has already been connected to a Multideck account.",
+    foundOn: [{ label: "Auth", route: "/auth" }, { label: "Components", route: "/components?component=auth-provider-selector" }],
+    componentCode: `export function AuthProviderSelector({ busyProvider, onSelect }) {
+  return (
+    <div className="grid grid-cols-5 gap-2.5" role="group" aria-label="Sign-in providers">
+      {authProviderDefinitions.map((provider) => (
+        <button
+          key={provider.id}
+          aria-label={"Continue with " + provider.label}
+          onClick={() => onSelect(provider.id)}
+        >
+          <AuthProviderMark provider={provider.id} />
+        </button>
+      ))}
+    </div>
+  )
+}`,
+    usageCode: `<AuthProviderSelector
+  busyProvider={busyProvider}
+  onSelect={signInWithProvider}
+/>`,
+  },
+  {
+    id: "auth-identity-manager",
+    name: "Auth Identity Manager",
+    category: "Operations",
+    description: "The account-security list for connecting Google, passkeys, LinkedIn, Facebook, and Microsoft after an administrator creates the user.",
+    details: "Use in Login & security for invite-only workspaces. It reads real Supabase identities and registers passkeys against the signed-in user.",
+    foundOn: [{ label: "Login & security", route: "/settings?tab=security" }, { label: "Components", route: "/components?component=auth-identity-manager" }],
+    componentCode: `export function AuthIdentityManager() {
+  async function connectProvider(provider) {
+    await supabase.auth.linkIdentity({
+      provider,
+      options: { redirectTo: window.location.origin + "/settings?tab=security" },
+    })
+  }
+
+  async function registerPasskey() {
+    await supabase.auth.registerPasskey()
+  }
+
+  return <SignInMethodList onConnect={connectProvider} onRegisterPasskey={registerPasskey} />
+}`,
+    usageCode: `<SettingsPanel
+  title="Sign-in methods"
+  description="Connect optional identities here for future sign-ins."
+>
+  <AuthIdentityManager embedded />
+</SettingsPanel>`,
+  },
+  {
     id: "auth-narrative-panel",
     name: "Auth Narrative Panel",
     category: "Operations",
-    description: "The branded freight context panel used beside auth forms, with step-specific copy and live booking cards.",
-    details: "Use as the left-side context module for auth and session handoff states. It is a panel component, not the whole auth route.",
+    description: "The branded freight context panel used beside auth forms, with the same animated shader as Dexter surfaces.",
+    details: "Use as the left-side context module for auth and session handoff states. It reuses the shared Dexter shader rather than introducing a separate visual effect.",
     foundOn: [{ label: "Auth", route: "/auth" }, { label: "Components", route: "/components?component=auth-narrative-panel" }],
-    componentCode: `export function FreightNarrative({ step = "signin", className }) {\n  const copy = authCopyByStep[step]\n\n  return (\n    <aside className={cn("relative flex min-h-[720px] overflow-hidden bg-[#062420] text-white", className)}>\n      <BrandLockup inverted />\n      <h1>{copy.title}</h1>\n      <p>{copy.body}</p>\n      {authBookings.map((booking) => <AuthBookingCard key={booking.id} booking={booking} />)}\n      <p>{copy.footnote}</p>\n    </aside>\n  )\n}`,
+    componentCode: `export function FreightNarrative({ step = "signin", className }) {\n  const copy = authCopyByStep[step]\n\n  return (\n    <aside className={cn("relative flex min-h-[720px] overflow-hidden bg-[#062420] text-white", className)}>\n      <div className="absolute inset-0"><SpectralBloomShader /></div>\n      <BrandLockup inverted />\n      <h1>{copy.title}</h1>\n      <p>{copy.body}</p>\n      {authBookings.map((booking) => <AuthBookingCard key={booking.id} booking={booking} />)}\n      <p>{copy.footnote}</p>\n    </aside>\n  )\n}`,
     usageCode: `<FreightNarrative step="signin" />\n<FreightNarrative step="verify" />\n<FreightNarrative step="signed-out" />`,
   },
   {
     id: "auth-sign-in-panel",
     name: "Auth Sign In Panel",
     category: "Navigation",
-    description: "The focused sign-in panel with email link, password fallback, provider actions, workspace copy, and team handoff link.",
-    details: "Use for the first auth step. Keep password fallback inside this panel so operators can still log in when email OTP rate limits are hit.",
+    description: "The invite-only sign-in panel with connected identity providers and a simple email-and-password fallback.",
+    details: "Use for the first auth step. It deliberately offers no sign-up action: workspace administrators create accounts and users connect additional identities from Login & security.",
     foundOn: [{ label: "Auth", route: "/auth" }, { label: "Components", route: "/components" }],
-    componentCode: `export function SignInPanel({ email, password, signInMethod = null, onEmailChange, onPasswordChange, onSignInMethodChange, onContinue, onPasswordSignIn }) {\n  return (\n    <div className="w-full max-w-[540px]">\n      <h2>Welcome back</h2>\n      <p>Sign in to your workspace. Northwind Forwarding</p>\n      <button onClick={() => onSignInMethodChange("magic-link")}>Email link</button>\n      <button onClick={() => onSignInMethodChange("password")}>Password</button>\n      {signInMethod === "magic-link" ? (\n        <AuthField label="Work email" value={email} onChange={onEmailChange} onSubmit={onContinue} submitLabel="Send email link" />\n      ) : signInMethod === "password" ? (\n        <PasswordSignInForm email={email} password={password} onEmailChange={onEmailChange} onPasswordChange={onPasswordChange} onSubmit={onPasswordSignIn} />\n      ) : (\n        <p>Choose how you want to sign in. Nothing is sent until you confirm.</p>\n      )}\n    </div>\n  )\n}`,
-    usageCode: `<SignInPanel\n  email={email}\n  password={password}\n  signInMethod={signInMethod}\n  onEmailChange={setEmail}\n  onPasswordChange={setPassword}\n  onSignInMethodChange={setSignInMethod}\n  onContinue={sendMagicLink}\n  onPasswordSignIn={signInWithPassword}\n  onProviderSignIn={signInWithProvider}\n  isSubmitting={isSubmitting}\n  error={authError}\n/>`,
+    componentCode: `export function SignInPanel({ email, password, onEmailChange, onPasswordChange, onPasswordSignIn, onProviderSignIn }) {\n  return (\n    <div className="w-full max-w-[520px]">\n      <BrandLockup />\n      <h2>Sign in to Multideck</h2>\n      <AuthProviderSelector onSelect={onProviderSignIn} />\n      <p>or use email and password</p>\n      <PasswordSignInForm email={email} password={password} onEmailChange={onEmailChange} onPasswordChange={onPasswordChange} onSubmit={onPasswordSignIn} />\n      <p>Accounts are created by your workspace administrator.</p>\n    </div>\n  )\n}`,
+    usageCode: `<SignInPanel\n  email={email}\n  password={password}\n  onEmailChange={setEmail}\n  onPasswordChange={setPassword}\n  onPasswordSignIn={signInWithPassword}\n  onProviderSignIn={signInWithProvider}\n  busyProvider={busyProvider}\n  isSubmitting={isSubmitting}\n  error={authError}\n/>`,
   },
   {
     id: "auth-verification-panel",
@@ -3292,7 +3402,10 @@ export const galleryIcons = {
   "settings-option-card": Sparkles,
   "settings-summary-card": BarChart3,
   "auth-narrative-panel": LayoutDashboard,
+  "auth-workspace-router": Building2,
+  "auth-provider-selector": KeyRound,
   "auth-sign-in-panel": KeyRound,
+  "auth-identity-manager": KeyRound,
   "auth-verification-panel": Mail,
   "auth-code-input": KeyRound,
   "auth-signed-out-panel": BarChart3,

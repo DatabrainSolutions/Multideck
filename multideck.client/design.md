@@ -18,7 +18,7 @@ The first screen should answer:
 
 The design uses a soft freight operations palette:
 
-- `--md-bg`: soft green shell background with enough depth for white panels to read clearly.
+- `--md-bg`: subtle neutral-grey shell background with enough depth for white panels to read clearly.
 - `--md-bg-strong`: deeper green for selected states and nested operational surfaces.
 - `--md-surface`: white product panels with layered shadow separation.
 - `--md-ink`: primary readable text.

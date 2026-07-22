@@ -18,7 +18,7 @@ The first screen should answer:
 
 The design uses a soft freight operations palette:
 
-- `--md-bg`: soft green shell background with enough depth for white panels to read clearly.
+- `--md-bg`: subtle neutral-grey shell background with enough depth for white panels to read clearly.
 - `--md-bg-strong`: deeper green for selected states and nested operational surfaces.
 - `--md-surface`: white product panels with layered shadow separation.
 - `--md-ink`: primary readable text.
@@ -198,6 +198,14 @@ Controls should be real:
 - Map controls pan and zoom the real route layer.
 - Copy action writes code snippets to clipboard.
 - Sidebar switches between Overview and Components.
+
+Dropdowns should feel anchored, compact, and unambiguous:
+
+- Field menus anchor to the trigger edge rather than aligning the selected option with the trigger. They open below the field by default and may flip above when viewport space requires it.
+- Keep 4px menu padding, 32px minimum option rows, and a small gap between rows so dense forms remain easy to scan.
+- Hover uses the neutral interaction surface; selected options keep the selected surface, stronger text, and a check indicator.
+- Menus enter in 220ms with a subtle fade, blur, and scale. Options follow top-to-bottom with a short stagger. Reduced-motion mode removes these transitions.
+- Use logical inline spacing and start alignment so the same component remains direction-safe in right-to-left languages.
 
 ## Build Rule
 

@@ -1,16 +1,17 @@
 import { useCallback, useState } from "react"
-import { ArrowRight, Clock3, Loader2, LockKeyhole, Mail, TriangleAlert } from "lucide-react"
+import type { Provider } from "@supabase/supabase-js"
+import { ArrowRight, Building2, Clock3, Loader2, Mail, ShieldCheck, TriangleAlert } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { AuthProviderSelector, type AuthProviderId } from "@/components/multideck/auth-provider-selector"
+import { SpectralBloomShader } from "@/components/multideck/dexter-action-pill"
 import { takeAuthReturnPath } from "@/lib/auth-routing"
 import { cn } from "@/lib/utils"
-import { isSupabaseConfigured, supabase } from "@/lib/supabase"
+import { isSupabaseConfigured, isWorkspaceRouterHost, multideckRootHost, supabase, supabaseConfigurationError } from "@/lib/supabase"
 import multideckLogoMark from "@/assets/brand/multideck-logo-mark.svg"
 
 export type AuthFlowStep = "signin" | "verify" | "signed-out"
-type AuthProvider = "google" | "microsoft" | "sso"
-type AuthSignInMethod = "magic-link" | "password" | null
 
 type AuthCopy = {
   title: string
@@ -20,9 +21,9 @@ type AuthCopy = {
 
 const authCopyByStep: Record<AuthFlowStep, AuthCopy> = {
   signin: {
-    title: "Every booking,\nin formation.",
-    body: "Your whole book of freight - tracked, triaged, and explained - the moment you sign in.",
-    footnote: "",
+    title: "Freight keeps moving.\nDexter keeps watch.",
+    body: "A private operating workspace for the people responsible for every booking, exception, and customer promise.",
+    footnote: "Invite-only access for your team",
   },
   verify: {
     title: "One link.\nNo passwords.",
@@ -52,9 +53,19 @@ function getAuthRedirectUrl() {
   return `${window.location.origin}/auth`
 }
 
-function getEmailDomain(email: string) {
-  const [, domain] = email.trim().toLowerCase().split("@")
-  return domain?.includes(".") ? domain : ""
+const reservedWorkspaceSlugs = new Set(["admin", "api", "auth", "data", "support", "www"])
+
+function normalizeWorkspaceSlug(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 63)
+}
+
+function isValidWorkspaceSlug(value: string) {
+  return /^(?=.{1,63}$)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(value) && !reservedWorkspaceSlugs.has(value)
 }
 
 function isValidEmail(email: string) {
@@ -89,36 +100,42 @@ function FreightNarrative({
   return (
     <aside
       className={cn(
-        "relative flex min-h-[720px] overflow-hidden bg-[#062420] text-white",
+        "relative flex min-h-[360px] overflow-hidden bg-[#062420] text-white",
         componentPreview ? "min-h-[900px] lg:min-h-[900px]" : "lg:min-h-screen",
         className,
       )}
     >
-      <div className="absolute -right-[140px] top-[-10px] h-[156px] w-[720px] rounded-b-[38px] bg-white/[0.055]" />
-      <div className="absolute right-[-220px] top-[185px] h-[146px] w-[650px] rounded-l-[34px] bg-white/[0.06]" />
-      <div className="absolute right-[-155px] top-[360px] h-[162px] w-[560px] rounded-l-[34px] bg-white/[0.065]" />
+      <div className="absolute inset-0 scale-[1.08]" aria-hidden="true">
+        <SpectralBloomShader />
+      </div>
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(2,14,12,0.12),rgba(2,14,12,0.34)_58%,rgba(2,14,12,0.78))]" aria-hidden="true" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_22%,rgba(255,255,255,0.12),transparent_36%)]" aria-hidden="true" />
 
       <div
         className={cn(
-          "relative z-10 flex min-h-[720px] w-full flex-col px-[clamp(28px,5vw,86px)] py-[clamp(28px,5vw,82px)]",
+          "relative z-10 flex min-h-[360px] w-full flex-col px-[clamp(24px,4vw,64px)] py-[clamp(24px,4vw,56px)]",
           componentPreview ? "min-h-[900px] lg:min-h-[900px]" : "lg:min-h-screen",
         )}
       >
         <BrandLockup inverted />
 
-        <div className="mt-auto max-w-[570px] pb-[var(--md-page-bottom-pad)] pt-20 lg:pt-0">
-          <h1 className="whitespace-pre-line text-[clamp(38px,4.2vw,66px)] font-medium leading-[1.08] tracking-normal">{copy.title}</h1>
-          <p className="mt-[var(--md-page-section-gap)] max-w-[540px] text-[22px] leading-[1.55] text-white/58">{copy.body}</p>
+        <div className="mt-auto max-w-[500px] pb-[var(--md-page-bottom-pad)] pt-20 lg:pt-0">
+          <div className="mb-5 inline-flex items-center gap-2 rounded-full bg-black/12 px-3 py-1.5 text-[12px] font-medium text-white/78 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)] backdrop-blur-xl">
+            <ShieldCheck className="size-3.5" strokeWidth={1.5} />
+            Private workspace
+          </div>
+          <h1 className="whitespace-pre-line text-[24px] font-medium leading-[1.22] tracking-normal">{copy.title}</h1>
+          <p className="mt-4 max-w-[470px] text-[14px] leading-6 text-white/64">{copy.body}</p>
 
-          <div className="mt-[clamp(48px,6.2vw,86px)] flex max-w-[690px] flex-col gap-4">
+          <div className="mt-8 flex max-w-[520px] flex-col gap-2.5">
             {authBookings.map((booking, index) => (
               <div
                 key={booking.id}
                 className={cn(
-                  "grid h-[84px] w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 rounded-[20px] px-5 text-[16px] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08),0_22px_44px_rgba(0,0,0,0.12)] transition-[background,color,box-shadow,opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] sm:h-[92px] sm:w-[86%] sm:gap-5 sm:px-8 sm:text-[18px]",
-                  index === 0 && "bg-white/[0.055]",
-                  index === 1 && "bg-white/[0.09] sm:ms-[44px]",
-                  index === 2 && "bg-[var(--md-accent)] sm:ms-[88px]",
+                  "grid h-[54px] w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-[var(--md-radius-2xl)] px-4 text-[13px] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1),0_16px_32px_rgba(0,0,0,0.1)] backdrop-blur-xl transition-[background,color,box-shadow,opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] sm:w-[88%]",
+                  index === 0 && "bg-black/10",
+                  index === 1 && "bg-black/14 sm:ms-5",
+                  index === 2 && "bg-white/12 sm:ms-10",
                   muted && "opacity-60",
                 )}
               >
@@ -136,7 +153,7 @@ function FreightNarrative({
                 </div>
                 <span
                   className={cn(
-                    "shrink-0 text-[14px] font-medium sm:text-[16px]",
+                    "shrink-0 text-[12px] font-medium",
                     booking.tone === "green" && "text-[#80caa3]",
                     booking.tone === "amber" && "text-[var(--md-amber)]",
                     booking.tone === "teal" && "text-white",
@@ -150,8 +167,8 @@ function FreightNarrative({
         </div>
 
         {copy.footnote ? (
-          <p className={cn("mt-auto flex items-center gap-4 text-[18px] text-white/50", muted && "text-white/55")}>
-            <span className="size-2.5 rounded-full bg-[#79d9a7]" />
+          <p className={cn("mt-auto flex items-center gap-3 text-[12px] text-white/58", muted && "text-white/55")}>
+            <span className="size-2 rounded-full bg-[#79d9a7] shadow-[0_0_0_4px_rgba(121,217,167,0.12)]" />
             {copy.footnote}
           </p>
         ) : null}
@@ -225,7 +242,7 @@ function AuthField({
       <Button type="submit" disabled={disabled || isSubmitting} className="mt-[var(--md-page-stack-gap)] h-[64px] w-full rounded-[14px] bg-[var(--md-accent)] text-[18px] font-medium text-white hover:bg-[#0b6f67]">
         {isSubmitting ? <Loader2 data-icon="inline-start" className="me-2 size-5 animate-spin" strokeWidth={1.5} /> : null}
         {submitLabel}
-        {!isSubmitting ? <ArrowRight data-icon="inline-end" className="ms-2 size-5 rtl:-scale-x-100" strokeWidth={1.4} /> : null}
+        {!isSubmitting ? <ArrowRight data-icon="inline-end" className="ms-2 size-5" strokeWidth={1.4} /> : null}
       </Button>
     </form>
   )
@@ -250,13 +267,13 @@ function PasswordSignInForm({
 }) {
   return (
     <form
-      className="mt-[var(--md-page-section-gap)]"
+      className="mt-5"
       onSubmit={(event) => {
         event.preventDefault()
         void onSubmit()
       }}
     >
-      <label className="text-[16px] font-medium text-[var(--md-ink)]" htmlFor="auth-password-email">
+      <label className="text-[13px] font-medium text-[var(--md-ink)]" htmlFor="auth-password-email">
         Work email
       </label>
       <Input
@@ -272,10 +289,10 @@ function PasswordSignInForm({
         placeholder="john.doe@multideck.app"
         spellCheck={false}
         type="email"
-        className="mt-3 h-[64px] rounded-[14px] border-0 bg-white px-5 text-[21px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-0 disabled:bg-white/72"
+        className="mt-2 h-12 rounded-[var(--md-radius-xl)] border-0 bg-white px-4 text-[14px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)] disabled:bg-white/72"
       />
 
-      <label className="mt-[var(--md-page-stack-gap)] block text-[16px] font-medium text-[var(--md-ink)]" htmlFor="auth-password">
+      <label className="mt-4 block text-[13px] font-medium text-[var(--md-ink)]" htmlFor="auth-password">
         Password
       </label>
       <Input
@@ -287,166 +304,167 @@ function PasswordSignInForm({
         dir="ltr"
         disabled={disabled || isSubmitting}
         type="password"
-        className="mt-3 h-[64px] rounded-[14px] border-0 bg-white px-5 text-[21px] text-[var(--md-ink)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.42),0_0_0_4px_rgba(14,125,116,0.16)] focus-visible:ring-0 disabled:bg-white/72"
+        className="mt-2 h-12 rounded-[var(--md-radius-xl)] border-0 bg-white px-4 text-[14px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)] disabled:bg-white/72"
       />
 
-      <Button type="submit" disabled={disabled || isSubmitting} className="mt-[var(--md-page-stack-gap)] h-[64px] w-full rounded-[14px] bg-[var(--md-accent)] text-[18px] font-medium text-white hover:bg-[#0b6f67]">
-        {isSubmitting ? <Loader2 data-icon="inline-start" className="me-2 size-5 animate-spin" strokeWidth={1.5} /> : null}
+      <Button type="submit" disabled={disabled || isSubmitting} className="mt-5 h-12 w-full rounded-[var(--md-radius-xl)] bg-[var(--md-accent)] text-[13px] font-medium text-white hover:bg-[#0b6f67]">
+        {isSubmitting ? <Loader2 data-icon="inline-start" className="me-2 size-4 animate-spin" strokeWidth={1.5} /> : null}
         {isSubmitting ? "Signing in" : "Sign in with password"}
-        {!isSubmitting ? <ArrowRight data-icon="inline-end" className="ms-2 size-5 rtl:-scale-x-100" strokeWidth={1.4} /> : null}
+        {!isSubmitting ? <ArrowRight data-icon="inline-end" className="ms-2 size-4" strokeWidth={1.4} /> : null}
       </Button>
     </form>
   )
 }
 
-function ProviderButton({
-  label,
-  icon,
-  disabled = false,
-  onClick,
+export function WorkspaceRouterPanel({
+  initialWorkspace = "",
+  onContinue,
 }: {
-  label: string
-  icon: "google" | "microsoft" | "sso"
-  disabled?: boolean
-  onClick?: () => void | Promise<void>
+  initialWorkspace?: string
+  onContinue?: (workspace: string) => void
 }) {
+  const [workspace, setWorkspace] = useState(() => normalizeWorkspaceSlug(initialWorkspace))
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null)
+
+  function openWorkspace() {
+    const workspaceSlug = normalizeWorkspaceSlug(workspace)
+
+    if (!isValidWorkspaceSlug(workspaceSlug)) {
+      setWorkspaceError("Enter the workspace name supplied by your Multideck administrator.")
+      return
+    }
+
+    setWorkspaceError(null)
+
+    if (onContinue) {
+      onContinue(workspaceSlug)
+      return
+    }
+
+    window.location.assign(`https://${workspaceSlug}.${multideckRootHost}/auth`)
+  }
+
   return (
-    <Button
-      type="button"
-      variant="ghost"
-      disabled={disabled}
-      className="h-[60px] rounded-[13px] bg-white px-[var(--md-gap-xl)] text-[18px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/82"
-      onClick={() => void onClick?.()}
-    >
-      {icon === "google" ? <span className="text-[22px] font-medium text-[#4285f4]" data-i18n-skip>G</span> : null}
-      {icon === "microsoft" ? (
-        <span className="grid size-5 grid-cols-2 gap-0.5" aria-hidden="true">
-          <span className="bg-[#f25022]" />
-          <span className="bg-[#7fba00]" />
-          <span className="bg-[#00a4ef]" />
-          <span className="bg-[#ffb900]" />
-        </span>
-      ) : null}
-      {icon === "sso" ? <LockKeyhole data-icon="inline-start" className="size-5" strokeWidth={1.6} /> : null}
-      {label}
-    </Button>
+    <div className="w-full max-w-[520px]">
+      <BrandLockup />
+      <div className="mt-10 grid size-11 place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]" aria-hidden="true">
+        <Building2 className="size-5" strokeWidth={1.4} />
+      </div>
+      <h2 className="mt-5 text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">Open your workspace</h2>
+      <p className="mt-2 text-[14px] leading-6 text-[var(--md-text)]">
+        Each company has its own private Multideck workspace and secure sign-in.
+      </p>
+
+      <form
+        className="mt-7"
+        onSubmit={(event) => {
+          event.preventDefault()
+          openWorkspace()
+        }}
+      >
+        <label htmlFor="multideck-workspace" className="text-[12px] font-medium text-[var(--md-text)]">
+          Workspace
+        </label>
+        <div className="relative mt-2 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)] focus-within:shadow-[inset_0_0_0_1px_rgba(14,125,116,0.48),0_0_0_4px_rgba(14,125,116,0.12)]">
+          <Input
+            id="multideck-workspace"
+            value={workspace}
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            placeholder="jenkar"
+            data-i18n-skip
+            dir="ltr"
+            className="h-12 rounded-[calc(var(--md-radius-xl)-4px)] border-0 bg-transparent pe-[152px] ps-3 text-[14px] font-medium text-[var(--md-ink)] shadow-none focus-visible:ring-0"
+            onChange={(event) => {
+              setWorkspace(normalizeWorkspaceSlug(event.target.value))
+              setWorkspaceError(null)
+            }}
+          />
+          <span className="pointer-events-none absolute inset-y-1 end-3 flex items-center text-[13px] text-[var(--md-subtle)]" data-i18n-skip dir="ltr">
+            .{multideckRootHost}
+          </span>
+        </div>
+
+        <AuthAlert tone="error">{workspaceError}</AuthAlert>
+
+        <Button
+          type="submit"
+          className="mt-5 h-12 w-full rounded-[var(--md-radius-xl)] bg-[var(--md-ink)] px-5 text-[14px] font-medium text-white shadow-[var(--md-shadow-soft)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:-translate-y-px hover:bg-[var(--md-strong)]"
+        >
+          Continue to workspace
+          <ArrowRight className="ms-2 size-4 rtl:rotate-180" strokeWidth={1.4} />
+        </Button>
+      </form>
+
+      <p className="mt-6 text-[12px] leading-5 text-[var(--md-text)]">
+        Your workspace name is included in the access details sent by your administrator.
+      </p>
+    </div>
   )
 }
 
 function SignInPanel({
   email,
   password = "",
-  signInMethod = null,
   onEmailChange,
   onPasswordChange = () => undefined,
-  onContinue,
   onPasswordSignIn = () => undefined,
   onProviderSignIn,
-  onSignInMethodChange = () => undefined,
   disabled = false,
   isSubmitting = false,
+  busyProvider = null,
   message,
   error,
-  workspaceName = "Northwind Forwarding",
 }: {
   email: string
   password?: string
-  signInMethod?: AuthSignInMethod
   onEmailChange: (value: string) => void
   onPasswordChange?: (value: string) => void
-  onContinue: () => void | Promise<void>
   onPasswordSignIn?: () => void | Promise<void>
-  onProviderSignIn?: (provider: AuthProvider) => void | Promise<void>
-  onSignInMethodChange?: (method: Exclude<AuthSignInMethod, null>) => void
+  onProviderSignIn?: (provider: AuthProviderId) => void | Promise<void>
   disabled?: boolean
   isSubmitting?: boolean
+  busyProvider?: AuthProviderId | null
   message?: string | null
   error?: string | null
-  workspaceName?: string
 }) {
   return (
-    <div className="w-full max-w-[540px]">
-      <h2 className="text-[36px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">Welcome back</h2>
-      <p className="mt-4 text-[18px] leading-7 text-[var(--md-text)]">
-        <span>Sign in to your workspace.</span> <span className="font-medium text-[var(--md-ink)]" data-i18n-skip>{workspaceName}</span>
+    <div className="w-full max-w-[520px]">
+      <BrandLockup />
+      <h2 className="mt-10 text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">Sign in to Multideck</h2>
+      <p className="mt-2 text-[14px] leading-6 text-[var(--md-text)]">
+        Use a sign-in method already connected to your account.
       </p>
 
-      <div className="mt-[var(--md-page-section-gap)] grid grid-cols-2 rounded-[14px] bg-white/52 p-1 shadow-[var(--md-shadow-line)]">
-        <button
-          type="button"
-          aria-pressed={signInMethod === "magic-link"}
-          className={cn(
-            "h-11 rounded-[10px] text-[15px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,opacity] disabled:opacity-55",
-            signInMethod === "magic-link" && "bg-white text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
-          )}
-          disabled={disabled || isSubmitting}
-          onClick={() => onSignInMethodChange("magic-link")}
-        >
-          Email link
-        </button>
-        <button
-          type="button"
-          aria-pressed={signInMethod === "password"}
-          className={cn(
-            "h-11 rounded-[10px] text-[15px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,opacity] disabled:opacity-55",
-            signInMethod === "password" && "bg-white text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
-          )}
-          disabled={disabled || isSubmitting}
-          onClick={() => onSignInMethodChange("password")}
-        >
-          Password
-        </button>
-      </div>
-
-      {signInMethod === "magic-link" ? (
-        <AuthField
-          label="Work email"
-          value={email}
-          onChange={onEmailChange}
-          onSubmit={onContinue}
-          disabled={disabled}
-          isSubmitting={isSubmitting}
-          submitLabel={isSubmitting ? "Sending email link" : "Send email link"}
-        />
-      ) : signInMethod === "password" ? (
-        <PasswordSignInForm
-          email={email}
-          password={password}
-          onEmailChange={onEmailChange}
-          onPasswordChange={onPasswordChange}
-          onSubmit={onPasswordSignIn}
-          disabled={disabled}
-          isSubmitting={isSubmitting}
-        />
-      ) : (
-        <p className="mt-[var(--md-page-section-gap)] text-center text-[16px] leading-6 text-[var(--md-text)]">
-          Choose how you want to sign in. Nothing is sent until you confirm.
-        </p>
-      )}
+      <AuthProviderSelector
+        className="mt-7"
+        disabled={disabled || isSubmitting}
+        busyProvider={busyProvider}
+        onSelect={onProviderSignIn}
+      />
 
       <AuthAlert tone="error">{error}</AuthAlert>
       <AuthAlert tone="info">{message}</AuthAlert>
 
-      {signInMethod === "magic-link" ? (
-        <p className="mt-[var(--md-gap-xl)] px-[var(--md-page-stack-gap)] text-center text-[16px] leading-6 text-[var(--md-text)]">
-          We'll email you a one-time link. No password to remember.
-        </p>
-      ) : null}
-
-      <div className="my-[var(--md-page-section-gap)] grid grid-cols-[1fr_auto_1fr] items-center gap-[var(--md-page-stack-gap)] text-[15px] text-[var(--md-subtle)]">
+      <div className="my-6 grid grid-cols-[1fr_auto_1fr] items-center gap-3 text-[12px] text-[var(--md-subtle)]">
         <span className="h-px bg-[rgba(11,20,19,0.08)]" />
-        or
+        or use email and password
         <span className="h-px bg-[rgba(11,20,19,0.08)]" />
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <ProviderButton label="Google" icon="google" disabled={disabled || isSubmitting} onClick={() => onProviderSignIn?.("google")} />
-        <ProviderButton label="Microsoft" icon="microsoft" disabled={disabled || isSubmitting} onClick={() => onProviderSignIn?.("microsoft")} />
-        <ProviderButton label="SSO" icon="sso" disabled={disabled || isSubmitting} onClick={() => onProviderSignIn?.("sso")} />
-      </div>
+      <PasswordSignInForm
+        email={email}
+        password={password}
+        onEmailChange={onEmailChange}
+        onPasswordChange={onPasswordChange}
+        onSubmit={onPasswordSignIn}
+        disabled={disabled || Boolean(busyProvider)}
+        isSubmitting={isSubmitting}
+      />
 
-      <p className="mt-[var(--md-page-section-gap)] text-[17px] leading-7 text-[var(--md-text)]">
-        New to Multideck? <button type="button" className="font-medium text-[var(--md-accent)]">Talk to our team</button> - workspaces are set up with you, not by a form.
+      <p className="mt-6 text-[12px] leading-5 text-[var(--md-text)]">
+        Need access? Ask your workspace administrator. Multideck accounts are created for your team and cannot be opened from this screen.
       </p>
     </div>
   )
@@ -608,10 +626,10 @@ export function AuthFlow({
   const [step, setStep] = useState<AuthFlowStep>(initialStep)
   const [email, setEmail] = useState(galleryMode ? "john.doe@multideck.app" : "")
   const [password, setPassword] = useState("")
-  const [signInMethod, setSignInMethod] = useState<AuthSignInMethod>(null)
   const [code, setCode] = useState(galleryMode ? "742" : "")
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [message, setMessage] = useState<string | null>(!galleryMode && !isSupabaseConfigured ? "Supabase credentials are needed before operators can sign in." : null)
+  const [busyProvider, setBusyProvider] = useState<AuthProviderId | null>(null)
+  const [message, setMessage] = useState<string | null>(!galleryMode && !isSupabaseConfigured ? supabaseConfigurationError : null)
   const [error, setError] = useState<string | null>(null)
 
   const goToApp = useCallback(() => {
@@ -637,11 +655,6 @@ export function AuthFlow({
     setMessage(null)
   }
 
-  function chooseSignInMethod(method: Exclude<AuthSignInMethod, null>) {
-    clearFeedback()
-    setSignInMethod(method)
-  }
-
   async function sendMagicLink() {
     clearFeedback()
     const normalizedEmail = email.trim().toLowerCase()
@@ -652,7 +665,7 @@ export function AuthFlow({
     }
 
     if (!supabase) {
-      setError("Supabase credentials are missing. Add them to the client environment first.")
+      setError(supabaseConfigurationError ?? "Supabase is not configured for this workspace.")
       return
     }
 
@@ -697,7 +710,7 @@ export function AuthFlow({
     }
 
     if (!supabase) {
-      setError("Supabase credentials are missing. Add them to the client environment first.")
+      setError(supabaseConfigurationError ?? "Supabase is not configured for this workspace.")
       return
     }
 
@@ -722,46 +735,51 @@ export function AuthFlow({
     }
   }
 
-  async function signInWithProvider(provider: AuthProvider) {
+  async function signInWithProvider(provider: AuthProviderId) {
     clearFeedback()
 
     if (!supabase) {
-      setError("Supabase credentials are missing. Add them to the client environment first.")
+      setError(supabaseConfigurationError ?? "Supabase is not configured for this workspace.")
       return
     }
 
-    setIsSubmitting(true)
+    setBusyProvider(provider)
 
     try {
-      if (provider === "sso") {
-        const domain = getEmailDomain(email)
-
-        if (!domain) {
-          setError("Enter your work email first so we can find your SSO domain.")
-          setIsSubmitting(false)
-          return
+      if (provider === "passkey") {
+        if (!("PublicKeyCredential" in window)) {
+          throw new Error("Passkeys are not supported in this browser.")
         }
 
-        const { error: ssoError } = await supabase.auth.signInWithSSO({
-          domain,
-          options: { redirectTo: getAuthRedirectUrl() },
-        })
+        const { data, error: passkeyError } = await supabase.auth.signInWithPasskey()
+        if (passkeyError) throw passkeyError
+        if (!data.session) throw new Error("Supabase did not return a session.")
 
-        if (ssoError) throw ssoError
+        completeSignedInSession()
         return
       }
 
-      const oauthProvider = provider === "microsoft" ? "azure" : "google"
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
-        provider: oauthProvider,
-        options: { redirectTo: getAuthRedirectUrl() },
+        provider: provider as Provider,
+        options: {
+          redirectTo: getAuthRedirectUrl(),
+          ...(provider === "azure" ? { scopes: "email" } : {}),
+        },
       })
 
       if (oauthError) throw oauthError
     } catch (providerError) {
       console.error(providerError)
-      setError("We could not start that sign-in method. Check the provider setup in Supabase.")
-      setIsSubmitting(false)
+      const providerCode = typeof providerError === "object" && providerError && "code" in providerError ? String(providerError.code) : ""
+      setError(
+        providerCode === "passkey_disabled"
+          ? "Passkey sign-in is not enabled for this workspace yet."
+          : providerCode === "webauthn_credential_not_found"
+            ? "No Multideck passkey was found on this device. Connect one from Login & security after signing in."
+            : "We could not start that sign-in method. Check that it is connected to your account.",
+      )
+    } finally {
+      setBusyProvider(null)
     }
   }
 
@@ -782,7 +800,7 @@ export function AuthFlow({
     }
 
     if (!supabase) {
-      setError("Supabase credentials are missing. Add them to the client environment first.")
+      setError(supabaseConfigurationError ?? "Supabase is not configured for this workspace.")
       return
     }
 
@@ -813,25 +831,26 @@ export function AuthFlow({
     if (resetEmail) {
       setEmail("")
       setPassword("")
-      setSignInMethod(null)
     }
-    if (!galleryMode && !isSupabaseConfigured) setMessage("Supabase credentials are needed before operators can sign in.")
+    if (!galleryMode && !isSupabaseConfigured) setMessage(supabaseConfigurationError)
   }
 
-  const authPanel = (
+  const showWorkspaceRouter = !galleryMode && isWorkspaceRouterHost
+
+  const authPanel = showWorkspaceRouter ? (
+    <WorkspaceRouterPanel />
+  ) : (
     <>
       {step === "signin" ? (
         <SignInPanel
           email={email}
           password={password}
-          signInMethod={signInMethod}
           onEmailChange={setEmail}
           onPasswordChange={setPassword}
-          onSignInMethodChange={chooseSignInMethod}
-          onContinue={sendMagicLink}
           onPasswordSignIn={signInWithPassword}
           onProviderSignIn={signInWithProvider}
           isSubmitting={isSubmitting}
+          busyProvider={busyProvider}
           message={message}
           error={error}
         />
@@ -855,9 +874,9 @@ export function AuthFlow({
 
   if (galleryMode) {
     return (
-      <div className="grid min-h-[720px] overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-bg)] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] lg:grid-cols-[43.4%_56.6%]">
+      <div className="grid min-h-[720px] overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-bg)] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] lg:grid-cols-[44%_56%]">
         <FreightNarrative step={step} className="min-h-[720px]" />
-        <main className="grid min-h-[720px] place-items-center px-[clamp(var(--md-gap-xl),6vw,120px)] py-[calc(var(--md-page-section-gap)*2)]">
+        <main className="grid min-h-[720px] place-items-center px-[clamp(var(--md-gap-xl),5vw,88px)] py-[calc(var(--md-page-section-gap)*2)]">
           {authPanel}
         </main>
       </div>
@@ -865,10 +884,10 @@ export function AuthFlow({
   }
 
   return (
-    <div className="grid min-h-screen bg-[var(--md-bg)] text-[var(--md-ink)] lg:grid-cols-[43.4%_56.6%]">
-      <FreightNarrative step={step} />
-      <main className="grid min-h-[720px] place-items-center px-[clamp(var(--md-gap-xl),6vw,120px)] py-[calc(var(--md-page-section-gap)*2)] lg:min-h-screen">
-        <div className="min-h-[680px] w-full max-w-[600px]">
+    <div className="grid min-h-screen bg-[var(--md-bg)] text-[var(--md-ink)] lg:grid-cols-[44%_56%]">
+      <FreightNarrative step={step} className="order-2 lg:order-1" />
+      <main className="order-1 grid min-h-[720px] place-items-center px-[clamp(var(--md-gap-xl),5vw,88px)] py-[calc(var(--md-page-section-gap)*2)] lg:order-2 lg:min-h-screen">
+        <div className="w-full max-w-[520px]">
           {authPanel}
         </div>
       </main>

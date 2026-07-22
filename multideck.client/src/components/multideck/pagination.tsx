@@ -7,6 +7,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
+import { useLanguage } from "@/i18n/language-provider"
 
 type PaginationProps = {
   page: number
@@ -36,6 +37,7 @@ export function Pagination({
   itemLabel = "items",
   className,
 }: PaginationProps) {
+  const { direction, t } = useLanguage()
   const safePageCount = Math.max(pageCount, 1)
   const currentPage = Math.min(Math.max(page, 1), safePageCount)
   const startItem = totalItems === 0 ? 0 : (currentPage - 1) * pageSize + 1
@@ -45,22 +47,22 @@ export function Pagination({
   return (
     <nav
       className={cn("flex flex-col gap-3 rounded-[var(--md-radius-xl)] bg-white/35 p-2 shadow-[var(--md-shadow-line)] sm:flex-row sm:items-center sm:justify-between", className)}
-      aria-label={`${itemLabel} pagination`}
+      aria-label={t(`${itemLabel} pagination`)}
     >
       <div className="flex flex-col gap-2 px-2 sm:flex-row sm:items-center sm:gap-4">
         <p className="text-[13px] font-medium text-[var(--md-text)]">
-          Showing <span className="text-[var(--md-ink)]">{startItem}-{endItem}</span> of{" "}
-          <span className="text-[var(--md-ink)]">{totalItems}</span> {itemLabel}
+          {t("Showing")} <span className="text-[var(--md-ink)]" data-i18n-skip dir="ltr">{startItem}-{endItem}</span> {t("of")}{" "}
+          <span className="text-[var(--md-ink)]" data-i18n-skip dir="ltr">{totalItems}</span> {t(itemLabel)}
         </p>
 
         {pageSizeOptions?.length && onPageSizeChange ? (
           <div className="flex items-center gap-2">
-            <span className="text-[12px] font-medium text-[var(--md-subtle)]">Rows</span>
+            <span className="text-[12px] font-medium text-[var(--md-subtle)]">{t("Rows")}</span>
             <Select value={String(pageSize)} onValueChange={(value) => onPageSizeChange(Number(value))}>
               <SelectTrigger
                 size="sm"
                 className="h-8 rounded-[var(--md-radius-md)] border-0 bg-white/55 px-2 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]"
-                aria-label="Rows per page"
+                aria-label={t("Rows per page")}
               >
                 <SelectValue />
               </SelectTrigger>
@@ -79,12 +81,12 @@ export function Pagination({
       <div className="flex items-center gap-1">
         <button
           type="button"
-          aria-label="Previous page"
+          aria-label={t("Previous page")}
           disabled={currentPage === 1}
           className="grid size-8 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-text)] transition-[background,color,box-shadow,opacity,transform] duration-200 hover:bg-white/70 hover:text-[var(--md-ink)] disabled:pointer-events-none disabled:opacity-35"
           onClick={() => onPageChange(currentPage - 1)}
         >
-          <ChevronLeft className="size-4" strokeWidth={1.2} />
+          {direction === "rtl" ? <ChevronRight className="size-4" strokeWidth={1.2} /> : <ChevronLeft className="size-4" strokeWidth={1.2} />}
         </button>
 
         {visiblePages.map((pageNumber, index) => {
@@ -111,12 +113,12 @@ export function Pagination({
 
         <button
           type="button"
-          aria-label="Next page"
+          aria-label={t("Next page")}
           disabled={currentPage === safePageCount}
           className="grid size-8 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-text)] transition-[background,color,box-shadow,opacity,transform] duration-200 hover:bg-white/70 hover:text-[var(--md-ink)] disabled:pointer-events-none disabled:opacity-35"
           onClick={() => onPageChange(currentPage + 1)}
         >
-          <ChevronRight className="size-4" strokeWidth={1.2} />
+          {direction === "rtl" ? <ChevronLeft className="size-4" strokeWidth={1.2} /> : <ChevronRight className="size-4" strokeWidth={1.2} />}
         </button>
       </div>
     </nav>

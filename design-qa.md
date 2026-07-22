@@ -43,3 +43,44 @@ Findings:
 - P3 follow-up: if operators regularly handle dense multi-way overlaps, the next upgrade would be keyboard shortcuts for moving between events inside the week grid.
 
 final result: passed
+
+---
+
+# Design QA
+
+Feature: Quote Details compact field layout and sidebar preference persistence
+
+Source visual truth:
+- `/var/folders/lb/stflsq1d6llcfy2t4f_q0ny40000gn/T/codex-clipboard-b15ffb98-619b-4ab9-9853-182458c1d253.png`
+
+Implementation evidence:
+- Local URL: `http://127.0.0.1:3000/quotes`, Details tab.
+- Implementation screenshot: `/tmp/multideck-quotes-details-fixed.png`.
+- Normalized side-by-side comparison: `/tmp/multideck-quotes-reference-vs-fixed.png`.
+- Browser viewport: `1800x1165` at device pixel ratio `1.1`; the reference browser chrome was cropped before comparison.
+
+Checks:
+- Fonts and typography retain the existing Multideck system treatment, compact 11px field labels, and restrained medium weights from the reference.
+- Spacing and layout now match the reference structure: labels sit beside their controls, party cards use dense horizontal rows, and Service and Goods fit cleanly above the fold.
+- All 18 rendered lookup controls were measured in the browser; every input and lookup button shares the same top position and height. No lookup button falls below its field.
+- Non-compact field grids now have a stable 76px label track fallback, so their three-column label/input/action structure cannot collapse when a page-level custom property is absent.
+- The newer neutral field contrast tokens remain intact and are applied consistently across text, select, and lookup controls.
+- No image assets were introduced or changed. Existing Nucleo/Lucide-style interface icons remain aligned and legible.
+- Copy and visible labels are unchanged, so the existing localisation coverage is preserved. Logical text alignment keeps the layout direction-safe for RTL.
+- Expanded sidebar state remained open at 220px after navigating Home -> Sales & CRM -> Quotes.
+- User-selected collapsed state remained at 56px after navigating Quotes -> Home. The sidebar was returned to its expanded state for handoff.
+- The production build passes. The only browser error observed was the existing Dashboard API connection check on Overview, unrelated to these UI changes.
+
+Patches made after QA:
+- Removed the party-card stacked field mode that caused labels and controls to split vertically.
+- Added a resilient label-column fallback to the shared CargoWise field primitives.
+- Removed route-driven sidebar collapsing from the app shell, leaving collapse state controlled by the user and persisted locally.
+
+Focused region comparison:
+- The side-by-side comparison focuses on Job data, party cards, Service & carrier, and Goods. This is the relevant fidelity region because the request concerns dense form alignment rather than the surrounding browser or page chrome.
+
+Findings:
+- No actionable P0/P1/P2 findings remain.
+- P3 follow-up: long live customer or carrier names will continue to truncate inside the compact fields, consistent with the source layout.
+
+final result: passed

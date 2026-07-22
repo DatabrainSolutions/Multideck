@@ -17,7 +17,7 @@ export function AppShell({
 }) {
   const isSettingsRoute = route === "/settings"
   const isAgentRoute = route === "/agent-dexter"
-  const isChromeTightRoute = route === "/quotes" || route.startsWith("/quotes/") || route === "/bookings/provisional"
+  const isChromeTightRoute = route.startsWith("/quotes/") || route === "/bookings/provisional"
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try {
       return window.localStorage.getItem("multideck.sidebarCollapsed") === "true"
@@ -33,10 +33,6 @@ export function AppShell({
       // Local storage is a convenience only; the shell still works without it.
     }
   }, [sidebarCollapsed])
-
-  useEffect(() => {
-    if (isChromeTightRoute) setSidebarCollapsed(true)
-  }, [isChromeTightRoute])
 
   return (
     <div className="h-screen overflow-hidden bg-[var(--md-bg)] text-[var(--md-ink)]">

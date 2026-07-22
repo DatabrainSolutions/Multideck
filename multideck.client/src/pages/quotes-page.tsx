@@ -46,6 +46,7 @@ import { MultiSelectMenu } from "@/components/multideck/multi-select-menu"
 import { cn } from "@/lib/utils"
 import { useLanguage } from "@/i18n/language-provider"
 import { quoteAuditEvents, systemPeople, type StatusTone } from "@/data/multideck-data"
+import { quoteRegisterRecords, type QuoteRegisterRecord } from "@/data/quote-register-data"
 
 type QuoteParty = {
   label: string
@@ -1591,7 +1592,7 @@ function CargoWiseField({
           : compactLabel === "tight"
             ? "grid-cols-[44px_minmax(0,1fr)] gap-1"
           : "grid-cols-[64px_minmax(0,1fr)] gap-1"
-        : "grid-cols-[var(--md-field-label-width)_minmax(0,1fr)] gap-1.5",
+        : "grid-cols-[var(--md-field-label-width,76px)_minmax(0,1fr)] gap-1.5",
       span && "md:col-span-2",
     )}>
       <span className={cn("min-w-0 whitespace-normal break-words text-[11px] font-medium leading-[1.15] text-[var(--md-text)]", compactLabel === "content" ? "text-start" : "text-end")}>{t(label)}</span>
@@ -1601,12 +1602,12 @@ function CargoWiseField({
         value={value}
         onChange={(event) => onChange?.(event.target.value)}
         className={cn(
-          "min-w-0 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-soft)] text-[11px] font-medium text-[var(--md-ink)] outline-none shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
+          "min-w-0 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] text-[11px] font-medium text-[var(--md-ink)] outline-none shadow-[var(--md-shadow-line)] hover:bg-[var(--md-field-bg-hover)] focus-visible:bg-[var(--md-field-bg-hover)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
           compact ? "min-h-7 px-1.5 py-1 leading-5" : "min-h-8 px-2 py-1.5 leading-5",
           fitValue && "w-fit max-w-full",
         )}
       /> : <span data-i18n-skip dir="auto" className={cn(
-        "min-w-0 truncate rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] text-[11px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
+        "min-w-0 truncate rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] text-[11px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
         compact
           ? compactPadding === "square"
             ? "min-h-7 p-1 leading-5"
@@ -1646,8 +1647,8 @@ function CargoWiseLookupField({
 
   return (
     <div className={cn(
-      "grid min-w-0 items-center",
-      compact ? "grid-cols-[64px_minmax(0,1fr)_28px] gap-1" : "grid-cols-[var(--md-field-label-width)_minmax(0,1fr)_32px] gap-1.5",
+      "md-cargowise-lookup-field grid min-w-0 items-center",
+      compact ? "grid-cols-[64px_minmax(0,1fr)_28px] gap-1" : "grid-cols-[var(--md-field-label-width,76px)_minmax(0,1fr)_32px] gap-1.5",
       span && "md:col-span-2",
     )}>
       <span className="min-w-0 whitespace-normal break-words text-end text-[11px] font-medium leading-[1.15] text-[var(--md-text)]">{t(label)}</span>
@@ -1663,21 +1664,21 @@ function CargoWiseLookupField({
           placeholder={required ? t("Required") : undefined}
           onChange={(event) => onChange?.(event.target.value)}
           className={cn(
-            "min-w-0 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-soft)] text-[11px] font-medium text-[var(--md-ink)] outline-none shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
+            "min-w-0 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] text-[11px] font-medium text-[var(--md-ink)] outline-none shadow-[var(--md-shadow-line)] hover:bg-[var(--md-field-bg-hover)] focus-visible:bg-[var(--md-field-bg-hover)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
             compact ? "min-h-7 px-1.5 py-1 leading-5" : "min-h-8 px-2 py-1.5 leading-5",
             invalid && "ring-1 ring-[var(--md-red)]",
           )}
         />
       ) : (
         <span data-i18n-skip dir="auto" className={cn(
-          "min-w-0 truncate rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] text-[11px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
+          "min-w-0 truncate rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] text-[11px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
           compact ? "min-h-7 px-1.5 py-1 leading-5" : "min-h-8 px-2 py-1.5 leading-5",
           invalid && "ring-1 ring-[var(--md-red)]",
         )}>
           {value || "—"}
         </span>
       )}
-      <Button type="button" variant="ghost" disabled={!editable} className={cn("rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] p-0 text-[var(--md-accent)] shadow-[var(--md-shadow-line)]", compact ? "size-7" : "size-8")} aria-label={t(`Search ${label}`)}>
+      <Button type="button" variant="ghost" disabled={!editable} className={cn("rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] p-0 text-[var(--md-accent)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-field-bg-hover)]", compact ? "size-7" : "size-8")} aria-label={t(`Search ${label}`)}>
         <Icon className="size-3.5" strokeWidth={1.4} />
       </Button>
     </div>
@@ -1716,7 +1717,7 @@ function CargoWiseSelectField({
       "grid min-w-0 items-center",
       compact
         ? action ? "grid-cols-[64px_minmax(0,1fr)_28px] gap-1" : "grid-cols-[64px_minmax(0,1fr)] gap-1"
-        : action ? "grid-cols-[var(--md-field-label-width)_minmax(0,1fr)_32px] gap-1.5" : "grid-cols-[var(--md-field-label-width)_minmax(0,1fr)] gap-1.5",
+        : action ? "grid-cols-[var(--md-field-label-width,76px)_minmax(0,1fr)_32px] gap-1.5" : "grid-cols-[var(--md-field-label-width,76px)_minmax(0,1fr)] gap-1.5",
       span && "md:col-span-2",
     )}>
       <span className="min-w-0 whitespace-normal break-words text-end text-[11px] font-medium leading-[1.15] text-[var(--md-text)]">{t(label)}</span>
@@ -1727,7 +1728,7 @@ function CargoWiseSelectField({
           aria-required={required || undefined}
           aria-invalid={invalid || undefined}
           className={cn(
-            "w-full min-w-0 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-soft)] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
+            "w-full min-w-0 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-field-bg-hover)] focus-visible:bg-[var(--md-field-bg-hover)]",
             compact ? "h-7 px-1.5 text-[10.5px]" : "h-8 px-2 text-[11px]",
             invalid && "ring-1 ring-[var(--md-red)]",
           )}
@@ -2604,11 +2605,61 @@ function QuoteWorkspaceContext({
   )
 }
 
-export function QuotesPage({ variant = "operator" }: { variant?: QuotePageVariant }) {
+function quoteRecordFromRegister(quote: QuoteRegisterRecord): QuoteRecord {
+  return {
+    id: quote.reference,
+    status: quote.status,
+    statusTone: quote.statusTone,
+    quoteType: quote.quoteType,
+    source: quote.quoteSource,
+    workflowStatus: quote.workflowStage,
+    priority: quote.priority,
+    customerPO: quote.customerPurchaseOrder,
+    shipperReference: quote.shipperReference,
+    docsStatus: quote.documentStatus,
+    workflow: quote.workflowStage,
+    customer: quote.customer,
+    route: `${quote.origin} to ${quote.destination}`,
+    mode: quote.transportMode,
+    container: quote.equipmentLoad,
+    incoterm: quote.incoterms,
+    incotermPlace: quote.incotermsPlace,
+    origin: quote.origin,
+    destination: quote.destination,
+    via: quote.routingVia,
+    startDate: quote.estimatedDeparture,
+    endDate: quote.estimatedArrival,
+    validity: quote.validity,
+    direction: quote.direction,
+    serviceLevel: quote.serviceLevel,
+    shipmentType: quote.shipmentType,
+    carrier: quote.carrier,
+    supplier: quote.supplier,
+    salesRep: quote.salesOwner,
+    opsRep: quote.operationsOwner,
+    margin: quote.estimatedMargin === null ? "Pending" : `${quote.estimatedMargin.toFixed(2)}%`,
+    profit: quote.estimatedProfit,
+    cost: quote.estimatedCost,
+    revenue: quote.sellValue,
+    currency: quote.currency,
+  }
+}
+
+function getInitialQuoteRecord(quoteId?: string) {
+  const normalizedId = quoteId?.toUpperCase()
+  if (!normalizedId || normalizedId === "3") return quoteQueue[0]
+  const workspaceQuote = quoteQueue.find((quote) => quote.id.toUpperCase() === normalizedId)
+  if (workspaceQuote) return workspaceQuote
+  const registerQuote = quoteRegisterRecords.find((quote) => quote.reference.toUpperCase() === normalizedId)
+  return registerQuote ? quoteRecordFromRegister(registerQuote) : quoteQueue[0]
+}
+
+export function QuoteDetailPage({ variant = "operator", quoteId }: { variant?: QuotePageVariant; quoteId?: string }) {
   const { t, direction } = useLanguage()
+  const initialQuote = getInitialQuoteRecord(quoteId)
   const [activeTab, setActiveTab] = useState<QuoteWorkspaceTab>("overview")
-  const [savedQuote, setSavedQuote] = useState<QuoteRecord>(quoteQueue[0])
-  const [draftQuote, setDraftQuote] = useState<QuoteRecord>(quoteQueue[0])
+  const [savedQuote, setSavedQuote] = useState<QuoteRecord>(initialQuote)
+  const [draftQuote, setDraftQuote] = useState<QuoteRecord>(initialQuote)
   const [savedCharges, setSavedCharges] = useState<QuoteCharge[]>(quoteCharges)
   const [draftCharges, setDraftCharges] = useState<QuoteCharge[]>(quoteCharges)
   const [quoteRefCopied, setQuoteRefCopied] = useState(false)

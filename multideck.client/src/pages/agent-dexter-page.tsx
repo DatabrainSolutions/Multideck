@@ -152,7 +152,7 @@ function ConversationStream({
   if (conversationMode === "customer") {
     return (
       <div className={cn("mx-auto flex w-full min-w-0 flex-col gap-[var(--md-page-stack-gap)] px-[var(--md-page-stack-gap)] py-[var(--md-page-section-gap)]", streamWidth)}>
-        <div className="ml-auto max-w-[620px] rounded-[var(--md-radius-xl)] bg-[rgba(213,228,225,0.72)] px-5 py-4 text-[15px] leading-6 text-[var(--md-ink)]">
+        <div className="ml-auto max-w-[620px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] px-5 py-4 text-[15px] leading-6 text-[var(--md-ink)]">
           <DexterSpecialistChip specialist={specialistById("customer")} />
           <span className="ml-2">Prep me for Thursday's QBR with Sandra - what should I know, and what should we ask for?</span>
         </div>
@@ -196,7 +196,7 @@ function ConversationStream({
 
   return (
     <div className={cn("mx-auto flex w-full min-w-0 flex-col gap-[var(--md-page-stack-gap)] px-[var(--md-page-stack-gap)] py-[var(--md-page-section-gap)]", streamWidth)}>
-      <div className="ml-auto max-w-[620px] rounded-[var(--md-radius-xl)] bg-[rgba(213,228,225,0.72)] px-5 py-4 text-[15px] leading-6 text-[var(--md-ink)]">
+      <div className="ml-auto max-w-[620px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] px-5 py-4 text-[15px] leading-6 text-[var(--md-ink)]">
         Find bookings at risk of customs delay this week, and draft notifications to the customers.
       </div>
 

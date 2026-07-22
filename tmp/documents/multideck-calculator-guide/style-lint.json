@@ -1,0 +1,69 @@
+{
+  "input": "/Users/harryphillips/Databrain/GitHub/Multideck/tmp/documents/multideck-calculator-guide/Multideck Calculator Guide Template.docx",
+  "fonts_by_char_count": {
+    "Arial": 11741
+  },
+  "direct_run_formatting_runs": 426,
+  "direct_paragraph_formatting_paragraphs": 478,
+  "heading_like_paragraphs_not_heading_style": [],
+  "examples": {
+    "direct_paragraph_formatting": [
+      {
+        "para_index": 14,
+        "text": "",
+        "style": "Normal"
+      },
+      {
+        "para_index": 15,
+        "text": "",
+        "style": "Normal"
+      },
+      {
+        "para_index": 22,
+        "text": "",
+        "style": "Normal"
+      },
+      {
+        "para_index": 23,
+        "text": "",
+        "style": "Normal"
+      },
+      {
+        "para_index": 30,
+        "text": "",
+        "style": "Normal"
+      }
+    ],
+    "direct_run_formatting": [
+      {
+        "para_index": 216,
+        "run_text": "Calculator Guide",
+        "style": "Normal"
+      },
+      {
+        "para_index": 217,
+        "run_text": "Clear pricing logic for freight, customs, transport and warehouse operations.",
+        "style": "Normal"
+      },
+      {
+        "para_index": 219,
+        "run_text": "Multideck product reference  |  July 2026",
+        "style": "Normal"
+      },
+      {
+        "para_index": 220,
+        "run_text": "Independent sides",
+        "style": "Normal"
+      },
+      {
+        "para_index": 221,
+        "run_text": "Supplier cost and customer sell are separate charge lists. Copying creates a new",
+        "style": "Normal"
+      }
+    ]
+  },
+  "notes": [
+    "Direct formatting is not always wrong, but it often causes inconsistent output when templates change.",
+    "Heading-like paragraphs not using Heading styles can break TOC and accessibility."
+  ]
+}

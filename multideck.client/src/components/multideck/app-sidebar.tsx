@@ -1,6 +1,12 @@
+<<<<<<< Updated upstream
 import { useEffect, useState, type ReactNode } from "react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { ArrowLeft, Bell, Boxes, CheckCircle2, ChevronDown, Clock3, LogOut, PanelLeftClose, PanelLeftOpen, Settings, Sparkles, TriangleAlert, type LucideIcon } from "lucide-react"
+=======
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { ArrowLeft, Bell, CheckCircle2, ChevronDown, Clock3, LogOut, PanelLeftClose, PanelLeftOpen, Settings, Sparkles, TriangleAlert, type LucideIcon } from "lucide-react"
+>>>>>>> Stashed changes
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { SpectralBloomShader } from "@/components/multideck/dexter-action-pill"
@@ -11,7 +17,11 @@ import { mdMotion, reduceMotion } from "@/lib/motion"
 import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
 import { supabase } from "@/lib/supabase"
 import { useAiAgentName } from "@/lib/user-preferences"
+<<<<<<< Updated upstream
 import { customerWarehouseNavigation, sidebarAreas, type NavItem, type SidebarArea, type SidebarDestination } from "@/data/multideck-data"
+=======
+import { sidebarAreas, type NavItem, type SidebarArea, type SidebarDestination } from "@/data/multideck-data"
+>>>>>>> Stashed changes
 import { useLanguage } from "@/i18n/language-provider"
 import multideckFullLogo from "@/assets/brand/multideck-full-logo.svg"
 
@@ -25,6 +35,11 @@ const sidebarActiveTransition = {
   stiffness: 430,
   damping: 42,
   mass: 0.7,
+}
+
+const sidebarPaneTransition = {
+  duration: 0.18,
+  ease: [0.22, 1, 0.36, 1] as [number, number, number, number],
 }
 
 type SidebarActiveTarget = {
@@ -254,12 +269,17 @@ export function SidebarNavItem({
       title={t(item.label)}
       className={cn(
         buttonVariants({ variant: "ghost", size: "sm" }),
+<<<<<<< Updated upstream
         "group relative h-10 w-full justify-start gap-2 overflow-hidden rounded-[var(--md-radius-md)] px-2.5 text-[14px] font-medium text-[var(--md-text)] transition-[color,opacity,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
         nested && "h-9 text-[13px]",
+=======
+        "group relative h-9 w-full justify-start gap-2 overflow-hidden rounded-[var(--md-radius-md)] px-2 text-[13px] font-medium text-[var(--md-text)] transition-[color,opacity,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+        nested && "h-8 text-[12px]",
+>>>>>>> Stashed changes
         "bg-transparent hover:bg-transparent hover:text-[var(--md-ink)] aria-expanded:bg-transparent dark:hover:bg-transparent focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
         isDexterItem && "md-sidebar-dexter-item !text-white hover:!text-white focus-visible:!text-white",
         collapsed && "justify-center px-0",
-        isActive && "text-[var(--md-ink)]",
+        isActive && "text-[var(--md-selected-text)]",
         accent === "dexter" && isActive && "!text-white",
         isDisabled && "cursor-default opacity-55 hover:text-[var(--md-text)]",
         !isDisabled && !collapsed && !isDexterItem && "hover:scale-[1.004] active:scale-[0.986] motion-reduce:hover:scale-100 motion-reduce:active:scale-100",
@@ -307,7 +327,7 @@ export function SidebarNavItem({
         className={cn(
           "relative grid size-5 place-items-center text-[var(--md-subtle)] transition-[background,color] duration-200",
           !isActive && "rounded-[var(--md-radius-sm)] group-hover:bg-[var(--md-icon-well)] group-hover:text-[var(--md-ink)]",
-          isActive && "text-[var(--md-accent)]",
+          isActive && "text-[var(--md-selected-text)]",
           isDexterItem && "z-10 !text-white group-hover:bg-white/10 group-hover:!text-white",
         )}
       >
@@ -372,7 +392,10 @@ function routeMatches(item: NavItem, route: string) {
     return route === "/bookings" || (/^\/bookings\/[^/]+$/.test(route) && route !== "/bookings/new" && route !== "/bookings/provisional")
   }
   if (item.route === "/crm") return route === "/crm"
+<<<<<<< Updated upstream
   if (item.route === "/warehouse") return route === "/warehouse"
+=======
+>>>>>>> Stashed changes
   return route === item.route || route.startsWith(`${item.route}/`)
 }
 
@@ -380,13 +403,24 @@ function destinationMatches(destination: SidebarDestination, route: string) {
   return routeMatches(destination, route) || destination.children?.some((child) => routeMatches(child, route)) === true
 }
 
+<<<<<<< Updated upstream
 function findAreaForRoute(route: string, areas: SidebarArea[] = sidebarAreas) {
   return areas.find((area) => area.destinations.some((destination) => destinationMatches(destination, route)))
+=======
+function findAreaForRoute(route: string) {
+  return sidebarAreas.find((area) => area.destinations.some((destination) => destinationMatches(destination, route)))
+>>>>>>> Stashed changes
 }
 
 function activeDestinationIds(area: SidebarArea | undefined, route: string) {
   if (!area) return []
+<<<<<<< Updated upstream
   return area.destinations.filter((destination) => destination.children && destinationMatches(destination, route)).map((destination) => destination.id)
+=======
+  return area.destinations
+    .filter((destination) => destination.children && destinationMatches(destination, route))
+    .map((destination) => destination.id)
+>>>>>>> Stashed changes
 }
 
 export function AppSidebar({
@@ -407,6 +441,7 @@ export function AppSidebar({
   const { direction, t } = useLanguage()
   const aiAgentName = useAiAgentName()
   const shouldReduceMotion = useReducedMotion()
+<<<<<<< Updated upstream
   const isCustomer = currentUser?.actorType === "customer"
   const canManageWarehouseUsers = hasPermission(currentUser, "Warehouse.Users.ManageOwn")
   const customerDestinations = customerWarehouseNavigation.filter((item) =>
@@ -415,16 +450,63 @@ export function AppSidebar({
     ? [{ id: "warehouse", label: "Warehouse", icon: Boxes, destinations: customerDestinations } satisfies SidebarArea]
     : sidebarAreas
   const initialArea = isCustomer ? availableAreas[0] : route === "/" || route === "/agent-dexter" ? undefined : findAreaForRoute(route, availableAreas)
+=======
+  const initialArea = route === "/" || route === "/agent-dexter" ? undefined : findAreaForRoute(route)
+  const sidebarRef = useRef<HTMLElement>(null)
+>>>>>>> Stashed changes
   const [activeAreaId, setActiveAreaId] = useState<string | null>(initialArea?.id ?? null)
   const [expandedDestinationIds, setExpandedDestinationIds] = useState<Set<string>>(
     () => new Set(activeDestinationIds(initialArea, route)),
   )
+<<<<<<< Updated upstream
   const activeArea = availableAreas.find((area) => area.id === activeAreaId)
   const ActiveAreaIcon = activeArea?.icon
+=======
+  const activeArea = sidebarAreas.find((area) => area.id === activeAreaId)
+  const ActiveAreaIcon = activeArea?.icon
+  const sidebarModeRef = useRef<string | null>(initialArea?.id ?? null)
+  const [activeTarget, setActiveTarget] = useState<SidebarActiveTarget | null>(null)
+>>>>>>> Stashed changes
   const accountName = currentUser?.name ?? currentUser?.email ?? t("Signed in")
   const accountDetail = currentUser?.name && currentUser.email ? currentUser.email : t("Signed in")
   const accountInitials = currentUser?.initials ?? "MD"
   const profileIsActive = route === "/settings" && activeArea?.id !== "administration"
+<<<<<<< Updated upstream
+=======
+
+  useEffect(() => {
+    const routeArea = route === "/" || route === "/agent-dexter" ? undefined : findAreaForRoute(route)
+    setActiveAreaId(routeArea?.id ?? null)
+    setExpandedDestinationIds((current) => {
+      const requiredIds = activeDestinationIds(routeArea, route)
+      if (requiredIds.every((id) => current.has(id))) return current
+
+      const next = new Set(current)
+      requiredIds.forEach((id) => next.add(id))
+      return next
+    })
+  }, [route])
+
+  function openArea(area: SidebarArea) {
+    setActiveTarget(null)
+    setActiveAreaId(area.id)
+    setExpandedDestinationIds(new Set(activeDestinationIds(area, route)))
+  }
+
+  function showAllAreas() {
+    setActiveTarget(null)
+    setActiveAreaId(null)
+  }
+
+  function toggleDestination(destinationId: string) {
+    setExpandedDestinationIds((current) => {
+      const next = new Set(current)
+      if (next.has(destinationId)) next.delete(destinationId)
+      else next.add(destinationId)
+      return next
+    })
+  }
+>>>>>>> Stashed changes
 
   useEffect(() => {
     const routeArea = isCustomer ? availableAreas[0] : route === "/" || route === "/agent-dexter" ? undefined : findAreaForRoute(route, availableAreas)
@@ -439,6 +521,7 @@ export function AppSidebar({
     })
   }, [route, isCustomer, canManageWarehouseUsers]) // availableAreas is intentionally derived from the account type and permissions.
 
+<<<<<<< Updated upstream
   function openArea(area: SidebarArea) {
     setActiveAreaId(area.id)
     setExpandedDestinationIds(new Set(activeDestinationIds(area, route)))
@@ -452,6 +535,28 @@ export function AppSidebar({
       return next
     })
   }
+=======
+  useLayoutEffect(() => {
+    const sidebarModeChanged = sidebarModeRef.current !== activeAreaId
+    sidebarModeRef.current = activeAreaId
+
+    if (sidebarModeChanged) {
+      setActiveTarget(null)
+    }
+
+    const frame = requestAnimationFrame(() => {
+      requestAnimationFrame(updateActiveTarget)
+    })
+    const settledMeasure = window.setTimeout(updateActiveTarget, sidebarModeChanged ? 300 : 80)
+
+    window.addEventListener("resize", updateActiveTarget)
+    return () => {
+      cancelAnimationFrame(frame)
+      window.clearTimeout(settledMeasure)
+      window.removeEventListener("resize", updateActiveTarget)
+    }
+  }, [activeAreaId, collapsed, route, updateActiveTarget])
+>>>>>>> Stashed changes
 
   const dexterSidebarItem = (
     <SidebarSectionItem>
@@ -475,7 +580,28 @@ export function AppSidebar({
         className,
       )}
     >
+<<<<<<< Updated upstream
       <div className={cn("relative z-10 flex h-10 items-center gap-2", collapsed ? "justify-center px-0" : "justify-between px-1")}>
+=======
+      {activeTarget ? (
+        <motion.span
+          data-sidebar-active-surface
+          aria-hidden="true"
+          className="pointer-events-none absolute z-0 bg-[var(--md-selected-bg)] shadow-[var(--md-shadow-line),0_8px_18px_rgba(42,52,50,0.08)]"
+          style={{ top: 0, left: 0 }}
+          initial={false}
+          animate={{
+            x: activeTarget.left,
+            y: activeTarget.top,
+            width: activeTarget.width,
+            height: activeTarget.height,
+            borderRadius: activeTarget.borderRadius,
+          }}
+          transition={shouldReduceMotion ? { duration: 0 } : sidebarActiveTransition}
+        />
+      ) : null}
+      <div className={cn("relative z-20 flex h-10 items-center gap-2 bg-[var(--md-sidebar-bg)]", collapsed ? "justify-center px-0" : "justify-between px-1")}>
+>>>>>>> Stashed changes
         {collapsed ? null : (
           <img
             src={multideckFullLogo}
@@ -502,6 +628,7 @@ export function AppSidebar({
         ) : null}
       </div>
 
+<<<<<<< Updated upstream
       <div
         className="relative z-10 mt-[var(--md-page-stack-gap)] min-h-0 flex-1 overflow-y-auto overflow-x-hidden md-scrollbar"
         style={{ contain: "layout paint" }}
@@ -621,6 +748,138 @@ export function AppSidebar({
         <Popover>
           <PopoverTrigger asChild>
             <button
+=======
+      <div className="relative z-10 min-h-0 flex-1">
+        <div
+          className="md-sidebar-scroll-region h-full min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain pb-5"
+          onScroll={updateActiveTarget}
+        >
+          <SidebarSection className="relative z-10 mt-4" onRevealComplete={updateActiveTarget}>
+            <SidebarSectionItem>
+              <SidebarNavItem
+                item={{ label: `Agent ${aiAgentName}`, value: "NEW", icon: Sparkles, route: "/agent-dexter" }}
+                isActive={route === "/agent-dexter"}
+                onClick={() => navigate("/agent-dexter")}
+                accent="dexter"
+                collapsed={collapsed}
+              />
+            </SidebarSectionItem>
+          </SidebarSection>
+
+          <AnimatePresence mode="popLayout" initial={false}>
+            {activeArea ? (
+              <motion.div
+                key={activeArea.id}
+                className="relative z-10 mt-2 origin-top"
+                initial={shouldReduceMotion ? false : { opacity: 0, scale: 0.992 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.996 }}
+                transition={shouldReduceMotion ? { duration: 0 } : sidebarPaneTransition}
+                onAnimationComplete={updateActiveTarget}
+              >
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-label={collapsed ? t("Back to all areas") : undefined}
+                  title={collapsed ? t("Back to all areas") : undefined}
+                  className={cn(
+                    "h-8 w-full justify-start gap-2 rounded-[var(--md-radius-md)] px-2 text-[12px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,opacity,transform] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]",
+                    collapsed && "justify-center px-0",
+                  )}
+                  onClick={showAllAreas}
+                >
+                  <ArrowLeft data-icon="inline-start" className="size-3.5" strokeWidth={1.2} />
+                  <span className={cn(collapsed && "sr-only")}>{t("All areas")}</span>
+                </Button>
+
+                <div className={cn("mt-2.5 flex items-center gap-2 px-2", collapsed && "justify-center px-0")}>
+                  {ActiveAreaIcon ? <ActiveAreaIcon className="size-3.5 shrink-0 text-[var(--md-accent)]" strokeWidth={1.2} /> : null}
+                  <p className={cn("truncate text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--md-subtle)]", collapsed && "sr-only")}>
+                    {t(activeArea.label)}
+                  </p>
+                </div>
+
+                <SidebarSection className="mt-2" onRevealComplete={updateActiveTarget}>
+                  {activeArea.destinations.map((destination) => {
+                    const hasChildren = Boolean(destination.children?.length)
+                    const isExpanded = expandedDestinationIds.has(destination.id)
+                    const destinationActive = destinationMatches(destination, route)
+
+                    return (
+                      <SidebarSectionItem key={destination.id}>
+                        <SidebarNavItem
+                          item={destination}
+                          isActive={!hasChildren && destinationActive}
+                          onClick={hasChildren ? () => toggleDestination(destination.id) : destination.route ? () => navigate(destination.route!) : undefined}
+                          collapsed={collapsed}
+                          expanded={hasChildren ? isExpanded : undefined}
+                          trailing={hasChildren ? (
+                            <motion.span animate={{ rotate: isExpanded ? 180 : 0 }} transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.micro)}>
+                              <ChevronDown className="size-3.5" strokeWidth={1.2} />
+                            </motion.span>
+                          ) : undefined}
+                        />
+
+                        <AnimatePresence initial={false}>
+                          {hasChildren && isExpanded ? (
+                            <motion.div
+                              className={cn("overflow-hidden", collapsed ? "mt-1" : "mt-1 ps-3")}
+                              initial={shouldReduceMotion ? false : { height: 0, opacity: 0 }}
+                              animate={{ height: "auto", opacity: 1 }}
+                              exit={shouldReduceMotion ? undefined : { height: 0, opacity: 0 }}
+                              transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.fast)}
+                              onAnimationComplete={updateActiveTarget}
+                            >
+                              <div className="flex flex-col gap-1 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-surface)_46%,transparent)] p-1 shadow-[var(--md-shadow-line)]">
+                                {destination.children?.map((child) => (
+                                  <SidebarNavItem
+                                    key={`${destination.id}-${child.label}`}
+                                    item={child}
+                                    isActive={routeMatches(child, route)}
+                                    onClick={child.route ? () => navigate(child.route!) : undefined}
+                                    collapsed={collapsed}
+                                    nested
+                                  />
+                                ))}
+                              </div>
+                            </motion.div>
+                          ) : null}
+                        </AnimatePresence>
+                      </SidebarSectionItem>
+                    )
+                  })}
+                </SidebarSection>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="areas"
+                className="relative z-10 origin-top"
+                initial={shouldReduceMotion ? false : { opacity: 0, scale: 0.992 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.996 }}
+                transition={shouldReduceMotion ? { duration: 0 } : sidebarPaneTransition}
+              >
+                <SidebarSection className="mt-1.5" onRevealComplete={updateActiveTarget}>
+                  {sidebarAreas.map((area) => (
+                    <SidebarSectionItem key={area.id}>
+                      <SidebarNavItem item={{ label: area.label, icon: area.icon }} onClick={() => openArea(area)} collapsed={collapsed} />
+                    </SidebarSectionItem>
+                  ))}
+                </SidebarSection>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+        <div aria-hidden="true" className="md-sidebar-scroll-fade pointer-events-none absolute inset-x-0 bottom-0 z-20 h-8" />
+      </div>
+
+      <div className="relative z-20 shrink-0 bg-[var(--md-sidebar-bg)]">
+        <Separator className="mb-[var(--md-page-stack-gap)] bg-[var(--md-line-strong)]" />
+        <Popover>
+          <PopoverTrigger asChild>
+            <motion.button
+>>>>>>> Stashed changes
               type="button"
               aria-current={profileIsActive ? "page" : undefined}
               aria-label={collapsed ? t("Account menu") : undefined}
@@ -628,7 +887,11 @@ export function AppSidebar({
               className={cn(
                 "group relative flex min-w-0 w-full items-center gap-3 overflow-hidden rounded-[var(--md-radius-lg)] px-2 py-2 text-left transition-[color,opacity,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.004] hover:text-[var(--md-ink)] active:scale-[0.986] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)] motion-reduce:transition-none motion-reduce:hover:scale-100 motion-reduce:active:scale-100",
                 collapsed && "justify-center px-0",
+<<<<<<< Updated upstream
                 profileIsActive && "text-[var(--md-ink)]",
+=======
+                profileIsActive && "text-[var(--md-selected-text)]",
+>>>>>>> Stashed changes
               )}
               style={{
                 transitionDuration: "150ms",
@@ -640,6 +903,7 @@ export function AppSidebar({
                 <span
                   data-sidebar-active-surface
                   aria-hidden="true"
+<<<<<<< Updated upstream
                   className="pointer-events-none absolute inset-0 rounded-[var(--md-radius-lg)] bg-[var(--md-bg-strong)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.68),0_8px_18px_rgba(42,52,50,0.08)]"
                 />
               ) : (
@@ -651,6 +915,12 @@ export function AppSidebar({
                     transitionTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1)",
                   }}
                 />
+=======
+                  className="pointer-events-none absolute inset-0 rounded-[var(--md-radius-lg)] bg-[var(--md-selected-bg)] shadow-[var(--md-shadow-line),0_8px_18px_rgba(42,52,50,0.08)]"
+                />
+              ) : (
+                <span className="absolute inset-0 rounded-[var(--md-radius-lg)] bg-[var(--md-hover)] opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
+>>>>>>> Stashed changes
               )}
               <Avatar className="relative size-10 rounded-full">
                 <AvatarFallback className="rounded-full bg-[var(--md-avatar-bg)] text-[13px] font-medium text-[var(--md-ink)]" data-i18n-skip>{accountInitials}</AvatarFallback>

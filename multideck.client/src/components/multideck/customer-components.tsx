@@ -151,7 +151,7 @@ export function CustomerRow({
       data-state={selected ? "selected" : undefined}
       className={cn(
         "h-[72px] cursor-pointer border-[rgba(11,20,19,0.045)] bg-white shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] hover:bg-[#f8faf9]",
-        selected && "bg-[#f4faf8] shadow-[inset_3px_0_0_var(--md-accent),inset_0_1px_0_rgba(255,255,255,0.92),inset_0_-1px_0_rgba(11,20,19,0.04)] hover:bg-[#f2f8f6]",
+        selected && "bg-[var(--md-surface-tint)] shadow-[inset_3px_0_0_var(--md-accent),inset_0_1px_0_rgba(255,255,255,0.92),inset_0_-1px_0_rgba(11,20,19,0.04)] hover:bg-[var(--md-hover)]",
       )}
       onClick={onOpen}
     >

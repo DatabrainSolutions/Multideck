@@ -21,7 +21,8 @@ const CustomersPage = lazy(() => import("@/pages/customers-page").then((module) 
 const ReportsPage = lazy(() => import("@/pages/reports-page").then((module) => ({ default: module.ReportsPage })))
 const PaperTrayPage = lazy(() => import("@/pages/paper-tray-page").then((module) => ({ default: module.PaperTrayPage })))
 const NavigationLabPage = lazy(() => import("@/pages/navigation-lab-page").then((module) => ({ default: module.NavigationLabPage })))
-const QuotesPage = lazy(() => import("@/pages/quotes-page").then((module) => ({ default: module.QuotesPage })))
+const QuoteDetailPage = lazy(() => import("@/pages/quotes-page").then((module) => ({ default: module.QuoteDetailPage })))
+const QuotesRegisterPage = lazy(() => import("@/pages/quotes-register-page").then((module) => ({ default: module.QuotesRegisterPage })))
 const ReportTemplateBuilderPage = lazy(() => import("@/pages/report-template-builder-page").then((module) => ({ default: module.ReportTemplateBuilderPage })))
 const ReportViewerPage = lazy(() => import("@/pages/report-viewer-page").then((module) => ({ default: module.ReportViewerPage })))
 const SettingsPage = lazy(() => import("@/pages/settings-page").then((module) => ({ default: module.SettingsPage })))
@@ -88,6 +89,10 @@ function isBookingDetailRoute(path: string) {
   return /^\/bookings\/[^/]+$/.test(path) && path !== "/bookings/new" && path !== "/bookings/provisional"
 }
 
+function isQuoteDetailRoute(path: string) {
+  return /^\/quotes\/[^/]+$/.test(path)
+}
+
 function getLegacyBookingRoute(path: string) {
   if (path === "/shipments") return "/bookings"
   const detailMatch = path.match(/^\/shipments\/([^/]+)$/)
@@ -119,6 +124,7 @@ function getRoute() {
   if (legacyBookingRoute) return legacyBookingRoute
   if (window.location.pathname.startsWith("/reports/rpt-")) return window.location.pathname
   if (isBookingDetailRoute(window.location.pathname)) return window.location.pathname
+  if (isQuoteDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCustomerDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCrmLeadDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCrmListDetailRoute(window.location.pathname)) return window.location.pathname
@@ -310,7 +316,8 @@ export default function App() {
                   {isCustomerDetailRoute(route) ? <CustomerDetailPage customerId={route.split("/").at(-1) ?? ""} /> : null}
                   {route === "/paper-tray" ? <PaperTrayPage /> : null}
                   {route === "/playground/navigation" ? <NavigationLabPage /> : null}
-                  {route === "/quotes" || route === "/quotes/3" ? <QuotesPage variant="cargowise" /> : null}
+                  {route === "/quotes" ? <QuotesRegisterPage navigate={navigate} /> : null}
+                  {isQuoteDetailRoute(route) ? <QuoteDetailPage key={route} variant="cargowise" quoteId={route.split("/").at(-1)} /> : null}
                   {route === "/reports" ? <ReportsPage navigate={navigate} /> : null}
                   {route === "/settings" ? <SettingsPage navigate={navigate} /> : null}
                   {route.startsWith("/warehouse") ? <WarehousePage route={route} currentUser={currentUser} /> : null}

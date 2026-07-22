@@ -423,11 +423,11 @@ const fieldMotion = {
   visible: { opacity: 1, y: 0 },
 }
 
-const bookingStepSurfaceClass = "bg-[#F4F9F7] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.12),0_18px_42px_rgba(14,125,116,0.08)]"
-const fieldBoundaryShadow = "shadow-[inset_0_0_0_1px_rgba(14,125,116,0.15),0_1px_1px_rgba(14,125,116,0.04)]"
-const fieldControlClass = cn("!h-11 w-full min-w-0 rounded-[var(--md-radius-lg)] border-0 bg-[#F4F9F7] px-3 text-[13px]", fieldBoundaryShadow)
-const fieldPanelClass = "rounded-[var(--md-radius-xl)] bg-[#F4F9F7] p-3 shadow-[inset_0_0_0_1px_rgba(14,125,116,0.13),0_10px_24px_rgba(14,125,116,0.06)]"
-const tablePanelClass = "overflow-hidden rounded-[var(--md-radius-xl)] bg-[#F4F9F7] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.13),0_10px_24px_rgba(14,125,116,0.06)]"
+const bookingStepSurfaceClass = "bg-[var(--md-surface-tint)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.12),0_18px_42px_rgba(14,125,116,0.08)]"
+const fieldBoundaryShadow = "shadow-[var(--md-shadow-line)]"
+const fieldControlClass = cn("!h-11 w-full min-w-0 rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-field-bg)] px-3 text-[13px] hover:bg-[var(--md-field-bg-hover)] focus-visible:bg-[var(--md-field-bg-hover)]", fieldBoundaryShadow)
+const fieldPanelClass = "rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-3 shadow-[inset_0_0_0_1px_rgba(14,125,116,0.13),0_10px_24px_rgba(14,125,116,0.06)]"
+const tablePanelClass = "overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.13),0_10px_24px_rgba(14,125,116,0.06)]"
 
 const partyCompanies = [
   {
@@ -938,7 +938,7 @@ function TextAreaField({
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
         className={cn(
-          "min-h-[92px] rounded-[var(--md-radius-lg)] border-0 bg-[#F4F9F7] px-3 py-2.5 text-[13px] leading-[18px]",
+          "min-h-[92px] rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-surface-tint)] px-3 py-2.5 text-[13px] leading-[18px]",
           fieldBoundaryShadow,
         )}
         dir="auto"
@@ -1289,7 +1289,7 @@ function ToggleTile({
       type="button"
       aria-pressed={checked}
       className={cn(
-        "flex min-h-10 items-center justify-between gap-3 rounded-[var(--md-radius-lg)] bg-[#F4F9F7] px-3 py-1.5 text-left text-[13px] font-medium text-[var(--md-ink)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.14),0_1px_1px_rgba(14,125,116,0.04)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-white/78",
+        "flex min-h-10 items-center justify-between gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 py-1.5 text-left text-[13px] font-medium text-[var(--md-ink)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.14),0_1px_1px_rgba(14,125,116,0.04)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-white/78",
         checked && "bg-[var(--md-accent)] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_10px_20px_rgba(14,125,116,0.18)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]",
       )}
       onClick={() => onChange(!checked)}
@@ -1320,7 +1320,7 @@ function BrandedCheckbox({
       aria-checked={checked}
       whileTap={{ scale: 0.98 }}
       className={cn(
-        "inline-flex min-h-8 items-center gap-2 rounded-[var(--md-radius-lg)] bg-[#F4F9F7] px-2.5 text-left text-[12px] font-medium text-[var(--md-text)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.14),0_1px_1px_rgba(14,125,116,0.04)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white/82",
+        "inline-flex min-h-8 items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-2.5 text-left text-[12px] font-medium text-[var(--md-text)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.14),0_1px_1px_rgba(14,125,116,0.04)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white/82",
         checked && "bg-[var(--md-accent)] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_10px_20px_rgba(14,125,116,0.18)] hover:bg-[#0b6f67]",
         className,
       )}
@@ -1401,7 +1401,7 @@ function CompactOptionGroup<T extends string>({
                 "h-11 rounded-[var(--md-radius-xl)] px-4 text-[13px] font-medium transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01]",
                 selected
                   ? "bg-[var(--md-accent)] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_10px_22px_rgba(14,125,116,0.2)] hover:bg-[#0b6f67]"
-                  : "bg-[#F4F9F7] text-[var(--md-text)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.14),0_1px_1px_rgba(14,125,116,0.04)] hover:bg-white/82",
+                  : "bg-[var(--md-surface-tint)] text-[var(--md-text)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.14),0_1px_1px_rgba(14,125,116,0.04)] hover:bg-white/82",
               )}
               onClick={() => onChange(option)}
             >
@@ -1441,7 +1441,7 @@ function ModePicker({
                 "h-11 rounded-[var(--md-radius-xl)] px-4 text-[13px] font-medium transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01]",
                 selected
                   ? "bg-[var(--md-accent)] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_10px_22px_rgba(14,125,116,0.2)] hover:bg-[#0b6f67]"
-                  : "bg-[#F4F9F7] text-[var(--md-text)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.14),0_1px_1px_rgba(14,125,116,0.04)] hover:bg-white/82",
+                  : "bg-[var(--md-surface-tint)] text-[var(--md-text)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.14),0_1px_1px_rgba(14,125,116,0.04)] hover:bg-white/82",
               )}
               onClick={() => onChange(mode)}
             >
@@ -1524,7 +1524,7 @@ function PartyRow({
       aria-label={`Add address for ${label}`}
       title={addAddressDisabled ? "Select a company first" : `Add address for ${label}`}
       disabled={addAddressDisabled}
-      className="grid size-6 place-items-center rounded-[var(--md-radius-sm)] bg-[#F4F9F7] text-[var(--md-text)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.14),0_1px_1px_rgba(14,125,116,0.04)] transition-[background,color,opacity] hover:bg-white/78 hover:text-[var(--md-accent)] disabled:cursor-not-allowed disabled:opacity-40"
+      className="grid size-6 place-items-center rounded-[var(--md-radius-sm)] bg-[var(--md-surface-tint)] text-[var(--md-text)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.14),0_1px_1px_rgba(14,125,116,0.04)] transition-[background,color,opacity] hover:bg-white/78 hover:text-[var(--md-accent)] disabled:cursor-not-allowed disabled:opacity-40"
       onClick={() => setAddressDialogOpen(true)}
     >
       <Plus className="size-3.5" strokeWidth={1.8} />
@@ -1537,7 +1537,7 @@ function PartyRow({
       aria-label={`Add contact for ${label}`}
       title={addContactDisabled ? "Select an office first" : `Add contact for ${label}`}
       disabled={addContactDisabled}
-      className="grid size-6 place-items-center rounded-[var(--md-radius-sm)] bg-[#F4F9F7] text-[var(--md-text)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.14),0_1px_1px_rgba(14,125,116,0.04)] transition-[background,color,opacity] hover:bg-white/78 hover:text-[var(--md-accent)] disabled:cursor-not-allowed disabled:opacity-40"
+      className="grid size-6 place-items-center rounded-[var(--md-radius-sm)] bg-[var(--md-surface-tint)] text-[var(--md-text)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.14),0_1px_1px_rgba(14,125,116,0.04)] transition-[background,color,opacity] hover:bg-white/78 hover:text-[var(--md-accent)] disabled:cursor-not-allowed disabled:opacity-40"
       onClick={() => setContactDialogOpen(true)}
     >
       <Plus className="size-3.5" strokeWidth={1.8} />
@@ -1547,7 +1547,7 @@ function PartyRow({
   return (
     <motion.div
       variants={fieldMotion}
-      className={cn("relative z-0 grid gap-3 rounded-[var(--md-radius-xl)] bg-[#F4F9F7] p-3 focus-within:z-[300]", fieldBoundaryShadow)}
+      className={cn("relative z-0 grid gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-3 focus-within:z-[300]", fieldBoundaryShadow)}
     >
       <div className="flex flex-wrap items-baseline gap-2">
         <p className="text-[14px] font-medium text-[var(--md-ink)]">{label}</p>
@@ -1696,7 +1696,7 @@ function SourceChoiceCard({
       type="button"
       variants={optionMotion}
       whileTap={{ scale: 0.985 }}
-      className="group grid min-h-[148px] content-between gap-4 rounded-[var(--md-radius-2xl)] bg-[#F4F9F7] p-4 text-left shadow-[inset_0_0_0_1px_rgba(14,125,116,0.13),0_10px_24px_rgba(14,125,116,0.06)] transition-[background,box-shadow,transform] hover:scale-[1.01] hover:bg-white/82 hover:shadow-[inset_0_0_0_1px_rgba(14,125,116,0.2),0_14px_30px_rgba(14,125,116,0.1)]"
+      className="group grid min-h-[148px] content-between gap-4 rounded-[var(--md-radius-2xl)] bg-[var(--md-surface-tint)] p-4 text-left shadow-[inset_0_0_0_1px_rgba(14,125,116,0.13),0_10px_24px_rgba(14,125,116,0.06)] transition-[background,box-shadow,transform] hover:scale-[1.01] hover:bg-white/82 hover:shadow-[inset_0_0_0_1px_rgba(14,125,116,0.2),0_14px_30px_rgba(14,125,116,0.1)]"
       onClick={onClick}
     >
       <span className="grid gap-3">
@@ -2579,7 +2579,7 @@ function StepContent({
                     readOnly={!data.collectionAddressManual}
                     placeholder="Enter the full collection address"
                     className={cn(
-                      "min-h-[132px] rounded-[var(--md-radius-lg)] border-0 bg-[#F4F9F7] px-3 py-2.5 text-[13px] leading-[18px]",
+                      "min-h-[132px] rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-surface-tint)] px-3 py-2.5 text-[13px] leading-[18px]",
                       fieldBoundaryShadow,
                       missing.has("Collection address") && missingFieldClass,
                       !data.collectionAddressManual && "text-[var(--md-text)]",
@@ -2646,7 +2646,7 @@ function StepContent({
                     readOnly={!data.deliveryAddressManual}
                     placeholder="Enter the full delivery address"
                     className={cn(
-                      "min-h-[132px] rounded-[var(--md-radius-lg)] border-0 bg-[#F4F9F7] px-3 py-2.5 text-[13px] leading-[18px]",
+                      "min-h-[132px] rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-surface-tint)] px-3 py-2.5 text-[13px] leading-[18px]",
                       fieldBoundaryShadow,
                       missing.has("Delivery address") && missingFieldClass,
                       !data.deliveryAddressManual && "text-[var(--md-text)]",
@@ -2832,18 +2832,18 @@ function StepContent({
                 <p className="text-[12px] font-medium uppercase text-[var(--md-subtle)]">{label}</p>
                 <p className="mt-1 truncate text-[14px] font-medium text-[var(--md-ink)]">{address || "Not set"}</p>
                 <div className="mt-3 grid grid-cols-3 gap-2">
-                  <span className={cn("rounded-[var(--md-radius-md)] bg-[#F4F9F7] px-2.5 py-2", fieldBoundaryShadow)}>
+                  <span className={cn("rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] px-2.5 py-2", fieldBoundaryShadow)}>
                     <span className="flex items-center justify-between gap-2 text-[10px] font-medium uppercase text-[var(--md-subtle)]">
                       UN/LOCODE
                       <DexterCodeHint />
                     </span>
                     <span className="mt-1 block truncate text-[12px] font-medium text-[var(--md-ink)]">{location.code || "-"}</span>
                   </span>
-                  <span className={cn("rounded-[var(--md-radius-md)] bg-[#F4F9F7] px-2.5 py-2", fieldBoundaryShadow)}>
+                  <span className={cn("rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] px-2.5 py-2", fieldBoundaryShadow)}>
                     <span className="block text-[10px] font-medium uppercase text-[var(--md-subtle)]">Name</span>
                     <span className="mt-1 block truncate text-[12px] font-medium text-[var(--md-ink)]">{location.name || "-"}</span>
                   </span>
-                  <span className={cn("rounded-[var(--md-radius-md)] bg-[#F4F9F7] px-2.5 py-2", fieldBoundaryShadow)}>
+                  <span className={cn("rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] px-2.5 py-2", fieldBoundaryShadow)}>
                     <span className="block text-[10px] font-medium uppercase text-[var(--md-subtle)]">Country</span>
                     <span className="mt-1 block truncate text-[12px] font-medium text-[var(--md-ink)]">{location.country || "-"}</span>
                   </span>
@@ -2871,7 +2871,7 @@ function StepContent({
               </FieldGroup>
 
               <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_36px_minmax(0,1fr)] xl:items-start">
-                <div className={cn("grid gap-3 rounded-[var(--md-radius-lg)] bg-[#F4F9F7] p-3", fieldBoundaryShadow)}>
+                <div className={cn("grid gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3", fieldBoundaryShadow)}>
                   <p className="text-[13px] font-medium text-[var(--md-ink)]">From</p>
                   <div className="grid gap-3">
                     <div className="grid gap-3 md:grid-cols-[88px_minmax(0,1fr)_minmax(0,1fr)]">
@@ -2888,7 +2888,7 @@ function StepContent({
                   </span>
                 </div>
 
-                <div className={cn("grid gap-3 rounded-[var(--md-radius-lg)] bg-[#F4F9F7] p-3", fieldBoundaryShadow)}>
+                <div className={cn("grid gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3", fieldBoundaryShadow)}>
                   <p className="text-[13px] font-medium text-[var(--md-ink)]">To</p>
                   <div className="grid gap-3">
                     <div className="grid gap-3 md:grid-cols-[88px_minmax(0,1fr)_minmax(0,1fr)]">

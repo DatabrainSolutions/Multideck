@@ -94,8 +94,24 @@ Copy `multideck.client/.env.example` to `multideck.client/.env` and fill in:
 
 ```bash
 VITE_SUPABASE_URL=https://xxxx.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-public-key
+VITE_SUPABASE_PUBLISHABLE_KEY=your-publishable-key
+VITE_MULTIDECK_TENANT_HOST=jenkar.multideck.app
 VITE_API_BASE_URL=http://localhost:5273
 ```
 
-In Supabase Auth settings, add `http://localhost:5173/auth` to allowed redirect URLs for magic links and OAuth providers.
+`VITE_SUPABASE_ANON_KEY` remains supported for older deployments, but new environments should use the publishable key.
+
+Each company is an isolated deployment backed by its own Supabase project and database. Bind every production build to one exact hostname with `VITE_MULTIDECK_TENANT_HOST`; the client fails closed if that build is opened from another company’s subdomain. Never put a Supabase secret or service-role key in the client.
+
+In Supabase Auth settings:
+
+- Turn off public user signups. Multideck accounts are created by an administrator or invitation only.
+- Enable manual identity linking so signed-in users can connect optional providers from **Settings → Login & security**.
+- Enable Google, LinkedIn (OIDC), Facebook, and Azure (Microsoft) with credentials from each provider's developer console.
+- Use the tenant’s exact URL as the Site URL, for example `https://jenkar.multideck.app`. Do not add a cross-tenant wildcard.
+- Use the same exact tenant hostname as the passkey relying-party ID and its HTTPS origin as the allowed origin. Keep it stable because changing it invalidates existing passkeys.
+- Allow only that tenant’s exact production URL plus the local development redirects: `http://localhost:3000/**` and `http://127.0.0.1:3000/**`.
+
+During the domain cutover, the current exact Vercel production URL may remain on the redirect allow list temporarily. Remove it after the tenant subdomain is serving the app; never replace it with a broad `*.vercel.app` rule.
+
+`multideck.app` is the workspace router, not a shared customer database. It sends the user to the correct company subdomain before that tenant’s Supabase session is created. `jenkar.multideck.app` therefore uses the Jenkar Supabase project, while `databrain.multideck.app` uses a different project, database, Auth user store, API configuration, and set of provider credentials.

@@ -20,6 +20,7 @@ export type DataTableColumn<Row> = {
   canHide?: boolean
   canPin?: boolean
   defaultPinned?: boolean
+  defaultHidden?: boolean
   resizable?: boolean
   sortValue?: (row: Row) => string | number | null | undefined
 }
@@ -56,7 +57,7 @@ type DataTableProps<Row> = {
 function readLayout(storageKey: string | undefined, columns: DataTableColumn<unknown>[]): SavedTableLayout {
   const fallback = {
     order: columns.map((column) => column.id),
-    hidden: [],
+    hidden: columns.filter((column) => column.defaultHidden).map((column) => column.id),
     pinned: columns.filter((column) => column.defaultPinned).map((column) => column.id),
     widths: {},
   }
@@ -99,6 +100,7 @@ export function DataTable<Row>({
   const reduceMotion = useReducedMotion()
   const columnIds = useMemo(() => columns.map((column) => column.id), [columns])
   const defaultPinned = useMemo(() => columns.filter((column) => column.defaultPinned).map((column) => column.id), [columns])
+  const defaultHidden = useMemo(() => columns.filter((column) => column.defaultHidden).map((column) => column.id), [columns])
   const initialLayout = useMemo(() => readLayout(storageKey, columns as DataTableColumn<unknown>[]), [columns, storageKey])
   const [order, setOrder] = useState(initialLayout.order)
   const [hidden, setHidden] = useState(() => new Set(initialLayout.hidden))
@@ -193,7 +195,7 @@ export function DataTable<Row>({
   })
 
   const minimumWidth = visibleColumns.reduce((width, column) => width + columnWidth(column), 0)
-  const hasCustomLayout = hidden.size > 0 || Object.keys(widths).length > 0 || pinned.size !== defaultPinned.length || [...pinned].some((id) => !defaultPinned.includes(id)) || order.some((id, index) => id !== columnIds[index])
+  const hasCustomLayout = hidden.size !== defaultHidden.length || [...hidden].some((id) => !defaultHidden.includes(id)) || Object.keys(widths).length > 0 || pinned.size !== defaultPinned.length || [...pinned].some((id) => !defaultPinned.includes(id)) || order.some((id, index) => id !== columnIds[index])
   const contextColumn = contextMenu ? columns.find((column) => column.id === contextMenu.columnId) : undefined
   const sortedRows = useMemo(() => {
     if (!sort) return rows
@@ -251,7 +253,7 @@ export function DataTable<Row>({
 
   function resetLayout() {
     setOrder(columnIds)
-    setHidden(new Set())
+    setHidden(new Set(defaultHidden))
     setPinned(new Set(defaultPinned))
     setWidths({})
     setSort(null)
