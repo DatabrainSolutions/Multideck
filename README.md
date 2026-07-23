@@ -5,12 +5,18 @@ A freight forwarding system with a .NET server and web client.
 ## Project Structure
 
 ```
-multideck.client/   → Web client
-multideck.server/   → .NET 10 Web API backend
-AGENTS.md           → AI working instructions
-design.md           → Multideck design system direction
-README.md           → Project overview and run notes
+multideck.client/                  → Web client and all browser-facing code
+multideck.server/                  → .NET 10 Web API backend
+multideck.server/Backend/          → Backend libraries and infrastructure
+multideck.server/Backend/supabase/ → Supabase functions and migrations
+AGENTS.md                          → AI working instructions
+design.md                          → Multideck design system direction
+README.md                          → Project overview and run notes
 ```
+
+Keep browser-facing application code inside `multideck.client`. Keep API code,
+server-side libraries, database migrations, and Edge Functions inside
+`multideck.server`.
 
 ## Running the Server
 

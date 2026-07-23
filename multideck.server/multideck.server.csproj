@@ -5,6 +5,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>multideck-server-development</UserSecretsId>
+    <DefaultItemExcludes>$(DefaultItemExcludes);Backend/**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>
@@ -28,9 +29,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\multideck.documents\multideck.documents.csproj" />
-    <ProjectReference Include="..\multideck.intelligence\multideck.intelligence.csproj" />
-    <ProjectReference Include="..\multideck.persistence\multideck.persistence.csproj" />
+    <ProjectReference Include="Backend\Documents\multideck.documents.csproj" />
+    <ProjectReference Include="Backend\Intelligence\multideck.intelligence.csproj" />
+    <ProjectReference Include="Backend\Persistence\multideck.persistence.csproj" />
   </ItemGroup>
 
 </Project>

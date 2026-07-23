@@ -36,6 +36,21 @@ Use the existing structure:
 
 Do not place client components, design docs, or frontend config in the server folder.
 
+## Backend Scope
+
+Keep all backend implementation inside `multideck.server`.
+
+Use the existing structure:
+- `multideck.server` for the .NET Web API.
+- `multideck.server/Backend/Documents` for server-side document storage and path policies.
+- `multideck.server/Backend/Intelligence` for provider-neutral AI services.
+- `multideck.server/Backend/Persistence` for Entity Framework data access and migrations.
+- `multideck.server/Backend/Shared` for backend-only shared .NET types.
+- `multideck.server/Backend/supabase` for Supabase Edge Functions and database migrations.
+
+Do not place API endpoints, server credentials, service-role code, Edge Functions,
+database migrations, or other backend implementation in `multideck.client`.
+
 ## Component Reuse Rule
 
 When adding any new section, screen, panel, workflow, or UI feature:
