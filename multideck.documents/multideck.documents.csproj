@@ -7,8 +7,4 @@
     <RootNamespace>Multideck.Documents</RootNamespace>
   </PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="Azure.Storage.Blobs" Version="12.27.0" />
-  </ItemGroup>
-
 </Project>

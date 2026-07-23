@@ -2,7 +2,12 @@ namespace Multideck.Documents;
 
 public sealed record DocumentStorageAddress(string Container, string BlobName)
 {
-    public override string ToString() => $"azure-blob://{Container}/{BlobName}";
+    // These names are retained because they are already persisted in DOC_StoredObjects.
+    // For Supabase Storage they represent the bucket and object path respectively.
+    public string Bucket => Container;
+    public string ObjectPath => BlobName;
+
+    public override string ToString() => $"supabase-storage://{Bucket}/{ObjectPath}";
 }
 
 public sealed record DocumentStorageRequest(
@@ -20,8 +25,8 @@ public sealed record DocumentStorageRequest(
 
 public sealed record StoredDocument(
     DocumentStorageAddress Address,
-    Uri BlobUri,
-    string ETag,
+    Uri ObjectUri,
+    string? ETag,
     string? VersionId,
     DateTimeOffset CreatedAt);
 

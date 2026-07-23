@@ -1,5 +1,5 @@
 -- Canonical metadata catalogue for files stored outside PostgreSQL. Binary content lives in
--- Azure Blob Storage; this table keeps every object discoverable, auditable and relinkable.
+-- Supabase Storage; this table keeps every object discoverable, auditable and relinkable.
 
 create table if not exists public."DOC_StoredObjects" (
   "DOCStoredObject_ID" uuid primary key default gen_random_uuid(),
@@ -7,7 +7,7 @@ create table if not exists public."DOC_StoredObjects" (
   "DOCStoredObject_OrganisationID" uuid null references public."Org_Master"("Org_ID") on delete set null,
   "DOCStoredObject_AggregateType" varchar(80) not null,
   "DOCStoredObject_AggregateID" uuid not null,
-  "DOCStoredObject_ProviderCode" varchar(40) not null default 'azure_blob',
+  "DOCStoredObject_ProviderCode" varchar(40) not null default 'supabase_storage',
   "DOCStoredObject_Container" varchar(63) not null,
   "DOCStoredObject_BlobName" varchar(1024) not null,
   "DOCStoredObject_OriginalFileName" varchar(255) not null,
@@ -35,10 +35,10 @@ alter table public."DOC_StoredObjects" enable row level security;
 
 drop policy if exists "Internal users can read document objects" on public."DOC_StoredObjects";
 -- Internal access is intentionally API-only. The backend authorises company scope before
--- issuing a short-lived Azure SAS; no broad authenticated database policy is created here.
+-- issuing a short-lived Supabase signed URL; no broad authenticated database policy is created here.
 
 drop policy if exists "Portal users can read own document objects" on public."DOC_StoredObjects";
 -- Portal access is API-only too. Business services enforce the specific order/job scope;
 -- organisation membership alone is deliberately not enough to enumerate document metadata.
 
-comment on table public."DOC_StoredObjects" is 'Canonical catalogue for document binaries stored in Azure Blob Storage.';
+comment on table public."DOC_StoredObjects" is 'Canonical catalogue for document binaries stored in Supabase Storage.';

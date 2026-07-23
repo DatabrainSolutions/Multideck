@@ -1,9 +1,9 @@
 using System.Text;
-using Multideck.Documents.Azure;
+using Multideck.Documents.Supabase;
 
 namespace Multideck.Documents.Paths;
 
-public sealed class ConcernDocumentPathPolicy(AzureDocumentStorageOptions options) : IDocumentPathPolicy
+public sealed class ConcernDocumentPathPolicy(SupabaseDocumentStorageOptions options) : IDocumentPathPolicy
 {
     public DocumentStorageAddress Resolve(DocumentStorageRequest request)
     {
@@ -12,7 +12,7 @@ public sealed class ConcernDocumentPathPolicy(AzureDocumentStorageOptions option
         var aggregateType = ToSegment(request.AggregateType, "general");
         var extension = SafeExtension(request.FileName);
         var created = request.CreatedAt.UtcDateTime;
-        var blobName = string.Join('/',
+        var objectPath = string.Join('/',
             "v1",
             environment,
             organisation,
@@ -22,7 +22,7 @@ public sealed class ConcernDocumentPathPolicy(AzureDocumentStorageOptions option
             created.ToString("yyyy"),
             created.ToString("MM"),
             $"{request.DocumentId:N}{extension}");
-        return new DocumentStorageAddress(options.ContainerFor(request.Concern), blobName);
+        return new DocumentStorageAddress(options.BucketFor(request.Concern), objectPath);
     }
 
     private static string ToSegment(string value, string fallback)

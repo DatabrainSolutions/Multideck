@@ -17,6 +17,7 @@ public sealed record StoreDocumentObjectCommand(
 
 public sealed record DocumentObjectReference(
     Guid Id,
+    string ProviderCode,
     string ConcernCode,
     Guid? OrganisationId,
     string AggregateType,

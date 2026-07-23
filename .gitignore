@@ -40,8 +40,12 @@ output/
 Thumbs.db
 nul
 /supabase/migrations/*
+!/supabase/migrations/20260625083908_warehouse_backend_foundation.sql
+!/supabase/migrations/20260625084450_warehouse_backend_seed_data.sql
 !/supabase/migrations/202607210001_warehouse_customer_portal.sql
 !/supabase/migrations/202607220001_document_storage_catalogue.sql
+!/supabase/migrations/202607220002_warehouse_customer_user_management.sql
+!/supabase/migrations/202607230001_use_supabase_document_storage.sql
 !/supabase/migrations/20260723101203_notification_email_preferences.sql
 !/supabase/migrations/20260723103000_optimize_notification_email_policies.sql
 !/supabase/migrations/20260723104500_dispatch_notification_emails.sql

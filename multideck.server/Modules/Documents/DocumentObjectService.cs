@@ -30,7 +30,7 @@ public sealed class DocumentObjectService(MultideckContext db, IDocumentStorage 
             DocStoredObjectOrganisationId = command.OrganisationId,
             DocStoredObjectAggregateType = command.AggregateType.Trim().ToLowerInvariant(),
             DocStoredObjectAggregateId = command.AggregateId,
-            DocStoredObjectProviderCode = "azure_blob",
+            DocStoredObjectProviderCode = "supabase_storage",
             DocStoredObjectContainer = stored.Address.Container,
             DocStoredObjectBlobName = stored.Address.BlobName,
             DocStoredObjectOriginalFileName = SafeFileName(command.FileName),
@@ -50,6 +50,7 @@ public sealed class DocumentObjectService(MultideckContext db, IDocumentStorage 
 
     public async Task<byte[]> DownloadAsync(DocumentObjectReference document, CancellationToken cancellationToken)
     {
+        EnsureSupabaseDocument(document);
         await using var output = new MemoryStream(document.FileSizeBytes is > 0 and <= int.MaxValue ? (int)document.FileSizeBytes : 0);
         await storage.DownloadToAsync(document.Address, output, cancellationToken);
         return output.ToArray();
@@ -57,6 +58,7 @@ public sealed class DocumentObjectService(MultideckContext db, IDocumentStorage 
 
     public async Task<DocumentObjectReadUrl> CreateReadUrlAsync(DocumentObjectReference document, TimeSpan? lifetime, CancellationToken cancellationToken)
     {
+        EnsureSupabaseDocument(document);
         var access = await storage.CreateReadAccessAsync(document.Address, document.OriginalFileName, lifetime, cancellationToken);
         return new DocumentObjectReadUrl(access.Uri.ToString(), access.ExpiresAt);
     }
@@ -77,11 +79,15 @@ public sealed class DocumentObjectService(MultideckContext db, IDocumentStorage 
         return entity is null ? null : ToReference(entity);
     }
 
-    public Task DeleteContentIfExistsAsync(DocumentObjectReference document, CancellationToken cancellationToken) =>
-        storage.DeleteIfExistsAsync(document.Address, cancellationToken);
+    public Task DeleteContentIfExistsAsync(DocumentObjectReference document, CancellationToken cancellationToken)
+    {
+        EnsureSupabaseDocument(document);
+        return storage.DeleteIfExistsAsync(document.Address, cancellationToken);
+    }
 
     private static DocumentObjectReference ToReference(DocStoredObject value) => new(
         value.DocStoredObjectId,
+        value.DocStoredObjectProviderCode,
         value.DocStoredObjectConcernCode,
         value.DocStoredObjectOrganisationId,
         value.DocStoredObjectAggregateType,
@@ -94,6 +100,15 @@ public sealed class DocumentObjectService(MultideckContext db, IDocumentStorage 
         value.DocStoredObjectSha256,
         value.DocStoredObjectStatusCode,
         value.DocStoredObjectCreatedAt);
+
+    private static void EnsureSupabaseDocument(DocumentObjectReference document)
+    {
+        if (!string.Equals(document.ProviderCode, "supabase_storage", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"Document '{document.Id}' uses the legacy '{document.ProviderCode}' storage provider and must be migrated before Supabase Storage can serve it.");
+        }
+    }
 
     private static string SafeFileName(string value)
     {

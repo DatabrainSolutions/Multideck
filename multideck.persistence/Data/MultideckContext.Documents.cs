@@ -22,7 +22,7 @@ public partial class MultideckContext
             entity.Property(value => value.DocStoredObjectOrganisationId).HasColumnName("DOCStoredObject_OrganisationID");
             entity.Property(value => value.DocStoredObjectAggregateType).HasColumnName("DOCStoredObject_AggregateType").HasMaxLength(80);
             entity.Property(value => value.DocStoredObjectAggregateId).HasColumnName("DOCStoredObject_AggregateID");
-            entity.Property(value => value.DocStoredObjectProviderCode).HasColumnName("DOCStoredObject_ProviderCode").HasMaxLength(40).HasDefaultValue("azure_blob");
+            entity.Property(value => value.DocStoredObjectProviderCode).HasColumnName("DOCStoredObject_ProviderCode").HasMaxLength(40).HasDefaultValue("supabase_storage");
             entity.Property(value => value.DocStoredObjectContainer).HasColumnName("DOCStoredObject_Container").HasMaxLength(63);
             entity.Property(value => value.DocStoredObjectBlobName).HasColumnName("DOCStoredObject_BlobName").HasMaxLength(1024);
             entity.Property(value => value.DocStoredObjectOriginalFileName).HasColumnName("DOCStoredObject_OriginalFileName").HasMaxLength(255);

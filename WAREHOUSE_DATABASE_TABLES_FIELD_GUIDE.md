@@ -6,16 +6,16 @@ Original source file was not modified.
 
 Included scope: Warehouse module, Warehouse Management System (WMS) module, warehouse/WMS lookup rows, `sys_Warehouse_LocationTypes`, and WMS read-model views.
 
-## Shared Azure Document Catalogue
+## Shared Supabase Document Catalogue
 
-Binary files are stored in private Azure Blob containers. PostgreSQL stores the authoritative
-business link and audit metadata in `DOC_StoredObjects`; SAS URLs are temporary and are never
+Binary files are stored in private Supabase Storage buckets. PostgreSQL stores the authoritative
+business link and audit metadata in `DOC_StoredObjects`; signed URLs are temporary and are never
 stored. Warehouse documents keep their workflow rows in `WMS_Documents` and
-`Portal_FileUploads`, whose storage bucket/path fields contain the Azure container/blob name.
+`Portal_FileUploads`, whose storage bucket/path fields contain the Supabase bucket/object path.
 
 ### `DOC_StoredObjects`
 
-Function: Canonical metadata catalogue for Azure Blob objects used by warehouse, jobs, customs,
+Function: Canonical metadata catalogue for Supabase Storage objects used by warehouse, jobs, customs,
 finance, communications, generated documents and processing concerns.
 
 | Field | Purpose | Required | Key / Relation |
@@ -25,15 +25,15 @@ finance, communications, generated documents and processing concerns.
 | `DOCStoredObject_OrganisationID` | Customer organisation owning the document, when applicable. | No | FK -> `Org_Master.Org_ID` |
 | `DOCStoredObject_AggregateType` | Parent record type, for example `warehouse-order`. | Yes | Indexed scope |
 | `DOCStoredObject_AggregateID` | Parent business record ID. | Yes | Indexed scope |
-| `DOCStoredObject_ProviderCode` | Storage provider; currently `azure_blob`. | Yes |  |
-| `DOCStoredObject_Container` | Private Azure container name. | Yes | Unique with blob name |
-| `DOCStoredObject_BlobName` | Full versioned virtual-directory object name. | Yes | Unique with container |
+| `DOCStoredObject_ProviderCode` | Storage provider; currently `supabase_storage`. | Yes |  |
+| `DOCStoredObject_Container` | Private Supabase bucket name; legacy column name retained for compatibility. | Yes | Unique with object path |
+| `DOCStoredObject_BlobName` | Full versioned object path; legacy column name retained for compatibility. | Yes | Unique with bucket |
 | `DOCStoredObject_OriginalFileName` | User-facing filename retained outside the blob key. | Yes |  |
 | `DOCStoredObject_MimeType` | Validated content type. | Yes |  |
 | `DOCStoredObject_FileSizeBytes` | Uploaded binary size. | Yes |  |
 | `DOCStoredObject_SHA256` | Integrity/deduplication checksum. | Yes | Indexed |
-| `DOCStoredObject_ETag` | Azure object version/concurrency token. | No |  |
-| `DOCStoredObject_VersionID` | Azure version identifier when account versioning is enabled. | No |  |
+| `DOCStoredObject_ETag` | Provider object concurrency token when supplied. | No |  |
+| `DOCStoredObject_VersionID` | Provider object identifier when supplied. | No |  |
 | `DOCStoredObject_StatusCode` | Storage lifecycle: `active`, `quarantined` or `deleted`. | Yes | Check constraint |
 | `DOCStoredObject_CreatedAt` | Upload timestamp. | Yes |  |
 | `DOCStoredObject_CreatedBy` | Internal user who uploaded the file. | No | FK -> `cmp_Users.User_ID` |
