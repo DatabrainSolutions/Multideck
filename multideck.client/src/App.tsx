@@ -162,6 +162,7 @@ export default function App() {
   const [authStatus, setAuthStatus] = useState<AuthStatus>(isSupabaseConfigured ? "checking" : "unauthenticated")
   const [currentUser, setCurrentUser] = useState<AuthUserSummary | null>(null)
   const isLocalNavigationLab = import.meta.env.DEV && route === "/playground/navigation"
+  const isPasswordRecoveryRoute = route === "/auth" && new URLSearchParams(window.location.search).get("mode") === "reset-password"
 
   useEffect(() => {
     const onPopState = () => {
@@ -258,11 +259,11 @@ export default function App() {
       return
     }
 
-    if (authStatus === "authenticated" && route === "/auth") {
+    if (authStatus === "authenticated" && route === "/auth" && !isPasswordRecoveryRoute) {
       window.history.replaceState({}, "", takeAuthReturnPath())
       startTransition(() => setRoute(getRoute()))
     }
-  }, [authStatus, route])
+  }, [authStatus, isPasswordRecoveryRoute, route])
 
   useEffect(() => {
     if (authStatus !== "authenticated" || currentUser?.actorType !== "customer") return
@@ -285,7 +286,7 @@ export default function App() {
       <LanguageProvider>
         <TooltipProvider>
           <MotionConfig reducedMotion="user" transition={mdMotion.fast}>
-            {(!isLocalNavigationLab && ((authStatus === "checking" && route !== "/auth") || (authStatus === "authenticated" && route === "/auth"))) ? (
+            {(!isLocalNavigationLab && ((authStatus === "checking" && route !== "/auth") || (authStatus === "authenticated" && route === "/auth" && !isPasswordRecoveryRoute))) ? (
               <RouteFallback />
             ) : !isLocalNavigationLab && (authStatus === "unauthenticated" || route === "/auth") ? (
               <Suspense fallback={<RouteFallback />}>

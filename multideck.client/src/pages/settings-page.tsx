@@ -75,6 +75,14 @@ import {
 } from "@/lib/api"
 import { clockDisplayLabelFromMode, clockDisplayLabels, clockDisplayModeFromLabel, readClockDisplayMode, resetAiAgentName, useAiAgentName, writeAiAgentName, writeClockDisplayMode } from "@/lib/user-preferences"
 import { getSupabaseSession, supabase } from "@/lib/supabase"
+import {
+  defaultNotificationEmailPreferences,
+  loadNotificationEmailPreferences,
+  saveNotificationEmailPreferences,
+  sendNotificationTestEmail,
+  type NotificationEmailPreferences,
+  type NotificationEventType,
+} from "@/lib/notification-preferences"
 import { cn } from "@/lib/utils"
 
 const settingsGroups: SettingsTabGroup[] = [
@@ -90,7 +98,7 @@ const settingsGroups: SettingsTabGroup[] = [
     label: "Workspace",
     items: [
       { id: "preferences", label: "Preferences", icon: BriefcaseBusiness },
-      { id: "notifications", label: "Notifications", badge: "3", icon: Bell },
+      { id: "notifications", label: "Notifications", icon: Bell },
       { id: "agent-dexter", label: "Agent Dexter", icon: Sparkles },
     ],
   },
@@ -838,43 +846,203 @@ function PreferencesTab() {
 }
 
 function NotificationsTab() {
+  const { language } = useLanguage()
+  const [preferences, setPreferences] = useState<NotificationEmailPreferences>(defaultNotificationEmailPreferences)
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
+  const [isTesting, setIsTesting] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    loadNotificationEmailPreferences()
+      .then((savedPreferences) => {
+        if (cancelled) return
+        setPreferences(savedPreferences)
+        setLoadError(null)
+      })
+      .catch((error) => {
+        if (cancelled) return
+        console.error("Notification preferences could not be loaded.", error)
+        setLoadError("Your saved email preferences could not be loaded. Try refreshing this page.")
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  function setEmailPreference(eventType: NotificationEventType, isEnabled: boolean) {
+    setPreferences((current) => ({ ...current, [eventType]: isEnabled }))
+  }
+
+  async function savePreferences() {
+    setIsSaving(true)
+    try {
+      await saveNotificationEmailPreferences(preferences)
+      setLoadError(null)
+      toast.success("Notification settings saved", {
+        description: "Future operational emails will follow these preferences.",
+      })
+    } catch (error) {
+      console.error("Notification preferences could not be saved.", error)
+      toast.error("Notification settings were not saved", {
+        description: "Your previous preferences are still in place. Please try again.",
+      })
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  async function sendTestEmail() {
+    setIsTesting(true)
+    try {
+      await sendNotificationTestEmail(language)
+      toast.success("Test email sent", {
+        description: "Check the inbox connected to your Multideck account.",
+      })
+    } catch (error) {
+      console.error("The test email could not be sent.", error)
+      toast.error("Test email could not be sent", {
+        description: "Your preferences are unchanged. Try again in a moment.",
+      })
+    } finally {
+      setIsTesting(false)
+    }
+  }
+
+  const enabledEmailCount = [
+    preferences.customs_hold,
+    preferences.eta_delay,
+    preferences.customer_message,
+    preferences.document_parse,
+    preferences.daily_digest,
+    preferences.quote_reminder,
+    preferences.product_updates,
+  ].filter(Boolean).length
+
   return (
     <>
       <SettingsPageHeader
         eyebrow="Workspace / Notifications"
         title="Notifications"
-        description="Choose when Multideck should interrupt you, and which updates should roll into a calmer digest."
-        actions={primaryAction("Save notifications", () => toast.success("Notification settings saved"))}
+        description="Choose which operational updates arrive by email. Account security notices are always sent."
+        actions={
+          <>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={isLoading || isTesting}
+              className="h-9 rounded-[var(--md-radius-lg)] bg-white/45 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/70"
+              onClick={() => void sendTestEmail()}
+            >
+              <Mail className="me-2 size-3.5" strokeWidth={1.5} />
+              {isTesting ? "Sending test" : "Send test email"}
+            </Button>
+            <Button
+              type="button"
+              disabled={isLoading || isSaving}
+              className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]"
+              onClick={() => void savePreferences()}
+            >
+              {isSaving ? "Saving" : "Save notifications"}
+            </Button>
+          </>
+        }
       />
+      {loadError ? (
+        <div role="alert" className="mt-[var(--md-page-stack-gap)] flex items-start gap-3 rounded-[var(--md-radius-lg)] bg-[rgba(194,91,65,0.08)] px-4 py-3 text-[13px] leading-5 text-[var(--md-danger)] shadow-[var(--md-shadow-line)]">
+          <CircleAlert className="mt-0.5 size-4 shrink-0" strokeWidth={1.5} />
+          <span>{loadError}</span>
+        </div>
+      ) : null}
       <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1fr)_310px]">
         <div className="space-y-[var(--md-page-stack-gap)]">
-          <SettingsPanel title="Urgent alerts" description="These can break quiet hours when customer risk is high.">
-            <ToggleSetting title="Customs holds" description="Ping immediately when a hold is raised or a licence is missing." initialChecked meta={<StatusPill tone="amber">3 pending</StatusPill>} />
-            <ToggleSetting title="ETA slips over 6 hours" description="Notify the owner before Dexter drafts the customer update." initialChecked />
-            <ToggleSetting title="Customer message unanswered" description="Escalate when a premium account waits more than 2 working hours." initialChecked />
-            <ToggleSetting title="Document parse below 80%" description="Keep this in digest unless the booking is due within 24 hours." initialChecked={false} />
+          <SettingsPanel title="Operational alerts" description="Email the updates that need attention away from the Multideck workspace.">
+            <SettingsToggleRow
+              title="Customs holds"
+              description="Email when a hold is raised or a required licence is missing."
+              checked={preferences.customs_hold}
+              onCheckedChange={(checked) => setEmailPreference("customs_hold", checked)}
+            />
+            <SettingsToggleRow
+              title="ETA slips over 6 hours"
+              description="Email the booking owner before a customer update is prepared."
+              checked={preferences.eta_delay}
+              onCheckedChange={(checked) => setEmailPreference("eta_delay", checked)}
+            />
+            <SettingsToggleRow
+              title="Customer message unanswered"
+              description="Escalate when a customer has waited more than two working hours."
+              checked={preferences.customer_message}
+              onCheckedChange={(checked) => setEmailPreference("customer_message", checked)}
+            />
+            <SettingsToggleRow
+              title="Document parse below 80%"
+              description="Email when a document needs a person to check the extracted data."
+              checked={preferences.document_parse}
+              onCheckedChange={(checked) => setEmailPreference("document_parse", checked)}
+            />
           </SettingsPanel>
-          <SettingsPanel title="Delivery channels" description="Where updates should land by default.">
-            <SettingsFieldRow label="Daily digest">
-              <SettingsSelect value="Email at 07:30" options={["Email at 07:30", "Slack at 08:00", "In-app only", "Off"]} />
+          <SettingsPanel title="Digest and reminders" description="Keep routine updates useful without turning them into interruptions.">
+            <SettingsToggleRow
+              title="Daily digest"
+              description="A calm summary of open exceptions, due work, and customer risk."
+              checked={preferences.daily_digest}
+              onCheckedChange={(checked) => setEmailPreference("daily_digest", checked)}
+            />
+            <SettingsFieldRow label="Digest delivery time" description="Uses the timezone saved below.">
+              <SettingsSelect
+                value={preferences.digestTime}
+                options={["06:30", "07:00", "07:30", "08:00", "08:30", "09:00"]}
+                onChange={(digestTime) => setPreferences((current) => ({ ...current, digestTime }))}
+                ariaLabel="Digest delivery time"
+              />
             </SettingsFieldRow>
-            <SettingsFieldRow label="Exception alerts">
-              <ChoiceSetting options={["In-app", "Email", "Slack", "All"]} initialValue="All" />
+            <SettingsFieldRow label="Digest timezone">
+              <SettingsSelect
+                value={preferences.timezone}
+                options={["Europe/London", "Europe/Berlin", "America/New_York", "Asia/Singapore"]}
+                onChange={(timezone) => setPreferences((current) => ({ ...current, timezone }))}
+                ariaLabel="Digest timezone"
+              />
             </SettingsFieldRow>
-            <SettingsFieldRow label="Quote reminders">
-              <ChoiceSetting options={["Digest", "Email", "Off"]} initialValue="Digest" />
+            <SettingsToggleRow
+              title="Quote reminders"
+              description="Email when an open quote needs a follow-up."
+              checked={preferences.quote_reminder}
+              onCheckedChange={(checked) => setEmailPreference("quote_reminder", checked)}
+            />
+            <SettingsToggleRow
+              title="Product updates"
+              description="Occasional release notes for changes that affect your work."
+              checked={preferences.product_updates}
+              onCheckedChange={(checked) => setEmailPreference("product_updates", checked)}
+            />
+          </SettingsPanel>
+          <SettingsPanel title="Account security" description="Critical account notices protect your workspace and cannot be switched off.">
+            <SettingsFieldRow label="Security emails" description="Password, email, identity, and multi-factor authentication changes.">
+              <div className="flex items-center justify-end gap-2 text-[13px] text-[var(--md-text)]">
+                <ShieldCheck className="size-4 text-[var(--md-accent)]" strokeWidth={1.5} />
+                Always on
+              </div>
             </SettingsFieldRow>
           </SettingsPanel>
         </div>
         <SettingsSummaryCard
-          title="Notification load"
+          title="Email delivery"
           rows={[
-            ["Today", "9 alerts"],
-            ["Muted by schedule", "14"],
-            ["Digest items", "27"],
-            ["Escalations", "3"],
+            ["Provider", "Resend"],
+            ["Operational emails", `${enabledEmailCount} of 7 on`],
+            ["Daily digest", preferences.daily_digest ? preferences.digestTime : "Off"],
+            ["Security notices", "Always on"],
           ]}
-          actionLabel="Review"
+          actionLabel="Send test"
+          onAction={() => void sendTestEmail()}
         />
       </div>
     </>

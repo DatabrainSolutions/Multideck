@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react"
 import type { Provider } from "@supabase/supabase-js"
-import { ArrowRight, Building2, Clock3, Loader2, Mail, ShieldCheck, TriangleAlert } from "lucide-react"
+import { ArrowRight, Building2, Clock3, KeyRound, Loader2, Mail, ShieldCheck, TriangleAlert } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils"
 import { isSupabaseConfigured, isWorkspaceRouterHost, multideckRootHost, supabase, supabaseConfigurationError } from "@/lib/supabase"
 import multideckLogoMark from "@/assets/brand/multideck-logo-mark.svg"
 
-export type AuthFlowStep = "signin" | "verify" | "signed-out"
+export type AuthFlowStep = "signin" | "verify" | "forgot-password" | "reset-password" | "signed-out"
 
 export type WorkspaceDirectoryEntry = {
   slug: string
@@ -35,6 +35,16 @@ const authCopyByStep: Record<AuthFlowStep, AuthCopy> = {
     title: "One link.\nNo passwords.",
     body: "We sent a six-digit code and a sign-in link to your inbox. Either one gets you in.",
     footnote: "Codes expire after 10 minutes",
+  },
+  "forgot-password": {
+    title: "Back in control.\nWithout the wait.",
+    body: "Request a private recovery link for the administrator-created account connected to your workspace.",
+    footnote: "Recovery links expire and can only be used once",
+  },
+  "reset-password": {
+    title: "A fresh key.\nThe same workspace.",
+    body: "Choose a strong new password. Your bookings, customer promises, and workspace access stay exactly where they are.",
+    footnote: "Security changes are confirmed by email",
   },
   "signed-out": {
     title: "Lights off.\nDexter keeps watch.",
@@ -282,6 +292,7 @@ function PasswordSignInForm({
   onEmailChange,
   onPasswordChange,
   onSubmit,
+  onForgotPassword,
   disabled = false,
   isSubmitting = false,
 }: {
@@ -290,6 +301,7 @@ function PasswordSignInForm({
   onEmailChange: (value: string) => void
   onPasswordChange: (value: string) => void
   onSubmit: () => void | Promise<void>
+  onForgotPassword?: () => void
   disabled?: boolean
   isSubmitting?: boolean
 }) {
@@ -320,9 +332,19 @@ function PasswordSignInForm({
         className="mt-2 h-12 rounded-[var(--md-radius-xl)] border-0 bg-white px-4 text-[14px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)] disabled:bg-white/72"
       />
 
-      <label className="mt-4 block text-[13px] font-medium text-[var(--md-ink)]" htmlFor="auth-password">
-        Password
-      </label>
+      <div className="mt-4 flex items-center justify-between gap-4">
+        <label className="text-[13px] font-medium text-[var(--md-ink)]" htmlFor="auth-password">
+          Password
+        </label>
+        <button
+          type="button"
+          disabled={disabled || isSubmitting}
+          className="text-[12px] font-medium text-[var(--md-accent)] disabled:opacity-50"
+          onClick={onForgotPassword}
+        >
+          Forgot password?
+        </button>
+      </div>
       <Input
         id="auth-password"
         value={password}
@@ -482,6 +504,7 @@ function SignInPanel({
   onPasswordChange = () => undefined,
   onPasswordSignIn = () => undefined,
   onProviderSignIn,
+  onForgotPassword,
   disabled = false,
   isSubmitting = false,
   busyProvider = null,
@@ -494,6 +517,7 @@ function SignInPanel({
   onPasswordChange?: (value: string) => void
   onPasswordSignIn?: () => void | Promise<void>
   onProviderSignIn?: (provider: AuthProviderId) => void | Promise<void>
+  onForgotPassword?: () => void
   disabled?: boolean
   isSubmitting?: boolean
   busyProvider?: AuthProviderId | null
@@ -530,6 +554,7 @@ function SignInPanel({
         onEmailChange={onEmailChange}
         onPasswordChange={onPasswordChange}
         onSubmit={onPasswordSignIn}
+        onForgotPassword={onForgotPassword}
         disabled={disabled || Boolean(busyProvider)}
         isSubmitting={isSubmitting}
       />
@@ -537,6 +562,145 @@ function SignInPanel({
       <p className="mt-6 text-[12px] leading-5 text-[var(--md-text)]">
         Need access? Ask your workspace administrator. Multideck accounts are created for your team and cannot be opened from this screen.
       </p>
+    </div>
+  )
+}
+
+function ForgotPasswordPanel({
+  email,
+  onEmailChange,
+  onSubmit,
+  onBack,
+  isSubmitting,
+  message,
+  error,
+}: {
+  email: string
+  onEmailChange: (value: string) => void
+  onSubmit: () => void | Promise<void>
+  onBack: () => void
+  isSubmitting: boolean
+  message?: string | null
+  error?: string | null
+}) {
+  return (
+    <div className="w-full max-w-[520px]">
+      <BrandLockup />
+      <div className="mt-10 grid size-11 place-items-center rounded-[var(--md-radius-xl)] bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)]">
+        <KeyRound className="size-5" strokeWidth={1.4} />
+      </div>
+      <h2 className="mt-5 text-[24px] font-medium leading-tight text-[var(--md-ink)]">Reset your password</h2>
+      <p className="mt-2 text-[14px] leading-6 text-[var(--md-text)]">
+        Enter the work email for your existing Multideck account. We’ll send a secure recovery link.
+      </p>
+
+      <AuthAlert tone="error">{error}</AuthAlert>
+      <AuthAlert tone="info">{message}</AuthAlert>
+
+      <form
+        className="mt-7"
+        onSubmit={(event) => {
+          event.preventDefault()
+          void onSubmit()
+        }}
+      >
+        <label className="text-[13px] font-medium text-[var(--md-ink)]" htmlFor="recovery-email">Work email</label>
+        <Input
+          id="recovery-email"
+          value={email}
+          onChange={(event) => onEmailChange(event.target.value)}
+          autoCapitalize="none"
+          autoComplete="email"
+          data-i18n-skip
+          dir="ltr"
+          disabled={isSubmitting}
+          inputMode="email"
+          placeholder="john.doe@multideck.app"
+          spellCheck={false}
+          type="email"
+          className="mt-2 h-12 rounded-[var(--md-radius-xl)] border-0 bg-white px-4 text-[14px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]"
+        />
+        <Button type="submit" disabled={isSubmitting} className="mt-5 h-12 w-full rounded-[var(--md-radius-xl)] bg-[var(--md-accent)] text-[13px] font-medium text-white hover:bg-[#0b6f67]">
+          {isSubmitting ? <Loader2 data-icon="inline-start" className="me-2 size-4 animate-spin" strokeWidth={1.5} /> : null}
+          {isSubmitting ? "Sending recovery link" : "Send recovery link"}
+        </Button>
+      </form>
+      <button type="button" disabled={isSubmitting} className="mt-6 text-[13px] font-medium text-[var(--md-accent)] disabled:opacity-50" onClick={onBack}>
+        Back to sign in
+      </button>
+    </div>
+  )
+}
+
+function ResetPasswordPanel({
+  password,
+  confirmation,
+  onPasswordChange,
+  onConfirmationChange,
+  onSubmit,
+  isSubmitting,
+  message,
+  error,
+}: {
+  password: string
+  confirmation: string
+  onPasswordChange: (value: string) => void
+  onConfirmationChange: (value: string) => void
+  onSubmit: () => void | Promise<void>
+  isSubmitting: boolean
+  message?: string | null
+  error?: string | null
+}) {
+  return (
+    <div className="w-full max-w-[520px]">
+      <BrandLockup />
+      <div className="mt-10 grid size-11 place-items-center rounded-[var(--md-radius-xl)] bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)]">
+        <ShieldCheck className="size-5" strokeWidth={1.4} />
+      </div>
+      <h2 className="mt-5 text-[24px] font-medium leading-tight text-[var(--md-ink)]">Choose a new password</h2>
+      <p className="mt-2 text-[14px] leading-6 text-[var(--md-text)]">
+        Use at least 12 characters. A unique passphrase is easier to remember and harder to guess.
+      </p>
+
+      <AuthAlert tone="error">{error}</AuthAlert>
+      <AuthAlert tone="info">{message}</AuthAlert>
+
+      <form
+        className="mt-7"
+        onSubmit={(event) => {
+          event.preventDefault()
+          void onSubmit()
+        }}
+      >
+        <label className="text-[13px] font-medium text-[var(--md-ink)]" htmlFor="new-password">New password</label>
+        <Input
+          id="new-password"
+          value={password}
+          onChange={(event) => onPasswordChange(event.target.value)}
+          autoComplete="new-password"
+          data-i18n-skip
+          dir="ltr"
+          disabled={isSubmitting}
+          type="password"
+          className="mt-2 h-12 rounded-[var(--md-radius-xl)] border-0 bg-white px-4 text-[14px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]"
+        />
+        <label className="mt-4 block text-[13px] font-medium text-[var(--md-ink)]" htmlFor="confirm-password">Confirm new password</label>
+        <Input
+          id="confirm-password"
+          value={confirmation}
+          onChange={(event) => onConfirmationChange(event.target.value)}
+          autoComplete="new-password"
+          data-i18n-skip
+          dir="ltr"
+          disabled={isSubmitting}
+          type="password"
+          className="mt-2 h-12 rounded-[var(--md-radius-xl)] border-0 bg-white px-4 text-[14px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]"
+        />
+        <Button type="submit" disabled={isSubmitting} className="mt-5 h-12 w-full rounded-[var(--md-radius-xl)] bg-[var(--md-accent)] text-[13px] font-medium text-white hover:bg-[#0b6f67]">
+          {isSubmitting ? <Loader2 data-icon="inline-start" className="me-2 size-4 animate-spin" strokeWidth={1.5} /> : null}
+          {isSubmitting ? "Updating password" : "Update password"}
+        </Button>
+      </form>
     </div>
   )
 }
@@ -697,6 +861,7 @@ export function AuthFlow({
   const [step, setStep] = useState<AuthFlowStep>(initialStep)
   const [email, setEmail] = useState(galleryMode ? "john.doe@multideck.app" : "")
   const [password, setPassword] = useState("")
+  const [passwordConfirmation, setPasswordConfirmation] = useState("")
   const [code, setCode] = useState(galleryMode ? "742" : "")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [busyProvider, setBusyProvider] = useState<AuthProviderId | null>(null)
@@ -802,6 +967,69 @@ export function AuthFlow({
       console.error(passwordError)
       setError("We could not sign you in with that email and password.")
       setMessage("Password is enabled for users who already have a Supabase password.")
+      setIsSubmitting(false)
+    }
+  }
+
+  async function sendPasswordRecovery() {
+    clearFeedback()
+    const normalizedEmail = email.trim().toLowerCase()
+
+    if (!isValidEmail(normalizedEmail)) {
+      setError("Enter your work email to continue.")
+      return
+    }
+    if (!supabase) {
+      setError(supabaseConfigurationError ?? "Supabase is not configured for this workspace.")
+      return
+    }
+
+    setIsSubmitting(true)
+    try {
+      const { error: recoveryError } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+        redirectTo: `${window.location.origin}/auth?mode=reset-password`,
+      })
+      if (recoveryError) throw recoveryError
+
+      setEmail(normalizedEmail)
+      setMessage("If this address belongs to an approved Multideck account, a recovery link is on its way.")
+      toast.success("Check your inbox", { description: "The recovery link expires and can only be used once." })
+    } catch (recoveryError) {
+      console.error(recoveryError)
+      setError("We could not send a recovery email. Check the address and try again.")
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  async function updatePassword() {
+    clearFeedback()
+
+    if (password.length < 12) {
+      setError("Use at least 12 characters for your new password.")
+      return
+    }
+    if (password !== passwordConfirmation) {
+      setError("The two passwords do not match.")
+      return
+    }
+    if (!supabase) {
+      setError(supabaseConfigurationError ?? "Supabase is not configured for this workspace.")
+      return
+    }
+
+    setIsSubmitting(true)
+    try {
+      const { error: updateError } = await supabase.auth.updateUser({ password })
+      if (updateError) throw updateError
+
+      toast.success("Password updated", { description: "Your new password is ready to use." })
+      window.history.replaceState({}, "", "/settings?tab=security")
+      if (navigate) navigate("/settings?tab=security")
+      else window.location.assign("/settings?tab=security")
+    } catch (updateError) {
+      console.error(updateError)
+      setError("We could not update your password. Request a fresh recovery link and try again.")
       setIsSubmitting(false)
     }
   }
@@ -919,6 +1147,10 @@ export function AuthFlow({
           onEmailChange={setEmail}
           onPasswordChange={setPassword}
           onPasswordSignIn={signInWithPassword}
+          onForgotPassword={() => {
+            clearFeedback()
+            setStep("forgot-password")
+          }}
           onProviderSignIn={signInWithProvider}
           isSubmitting={isSubmitting}
           busyProvider={busyProvider}
@@ -934,6 +1166,29 @@ export function AuthFlow({
           onBack={() => goToSignIn(false)}
           onComplete={verifyCode}
           onResend={sendMagicLink}
+          isSubmitting={isSubmitting}
+          message={message}
+          error={error}
+        />
+      ) : null}
+      {step === "forgot-password" ? (
+        <ForgotPasswordPanel
+          email={email}
+          onEmailChange={setEmail}
+          onSubmit={sendPasswordRecovery}
+          onBack={() => goToSignIn(false)}
+          isSubmitting={isSubmitting}
+          message={message}
+          error={error}
+        />
+      ) : null}
+      {step === "reset-password" ? (
+        <ResetPasswordPanel
+          password={password}
+          confirmation={passwordConfirmation}
+          onPasswordChange={setPassword}
+          onConfirmationChange={setPasswordConfirmation}
+          onSubmit={updatePassword}
           isSubmitting={isSubmitting}
           message={message}
           error={error}
