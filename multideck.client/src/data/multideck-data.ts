@@ -3239,22 +3239,30 @@ export const galleryComponents = [
     id: "auth-workspace-router",
     name: "Auth Workspace Router",
     category: "Navigation",
-    description: "A private workspace doorway that routes operators from multideck.app to their company subdomain without exposing tenant data.",
-    details: "Use only on the root Multideck domain. It validates the supplied workspace name locally and opens that exact tenant host; sign-in and all Supabase access happen after the redirect inside the isolated tenant deployment.",
+    description: "A configurable company chooser that routes customers and Databrain testers from multideck.app to the correct isolated workspace.",
+    details: "Use only on the root Multideck domain. It lists only provisioned companies supplied by configuration; before any companies are live, it remains a workspace-name field for internal testing. Sign-in and all Supabase access happen only after the redirect inside the selected tenant deployment.",
     foundOn: [{ label: "Workspace access", route: "/auth" }, { label: "Components", route: "/components?component=auth-workspace-router" }],
     componentCode: `export function WorkspaceRouterPanel({ onContinue }) {
   const [workspace, setWorkspace] = useState("")
 
-  function openWorkspace() {
-    const slug = normalizeWorkspaceSlug(workspace)
+  function openWorkspace(value = workspace) {
+    const slug = parseWorkspaceSlug(value)
     if (!isValidWorkspaceSlug(slug)) return
-    onContinue?.(slug) ?? window.location.assign("https://" + slug + ".multideck.app/auth")
+    onContinue?.(slug) ?? window.location.assign(
+      new URL("/auth", "https://" + slug + ".multideck.app").toString()
+    )
   }
 
-  return <WorkspaceField value={workspace} onChange={setWorkspace} onSubmit={openWorkspace} />
+  return <WorkspaceDirectory
+    workspaces={configuredWorkspaces}
+    onSelect={openWorkspace}
+    fallback={<WorkspaceField value={workspace} onChange={setWorkspace} onSubmit={openWorkspace} />}
+  />
 }`,
     usageCode: `<WorkspaceRouterPanel
-  initialWorkspace="jenkar"
+  workspaces={[
+    { slug: "example", name: "Example company" },
+  ]}
   onContinue={(workspace) => {
     window.location.assign(\`https://\${workspace}.multideck.app/auth\`)
   }}

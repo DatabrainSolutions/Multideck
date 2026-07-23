@@ -42,3 +42,4 @@ nul
 /supabase/migrations/*
 !/supabase/migrations/202607210001_warehouse_customer_portal.sql
 !/supabase/migrations/202607220001_document_storage_catalogue.sql
+.vercel

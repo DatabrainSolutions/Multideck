@@ -13,6 +13,12 @@ import multideckLogoMark from "@/assets/brand/multideck-logo-mark.svg"
 
 export type AuthFlowStep = "signin" | "verify" | "signed-out"
 
+export type WorkspaceDirectoryEntry = {
+  slug: string
+  name: string
+  description?: string
+}
+
 type AuthCopy = {
   title: string
   body: string
@@ -55,17 +61,39 @@ function getAuthRedirectUrl() {
 
 const reservedWorkspaceSlugs = new Set(["admin", "api", "auth", "data", "support", "www"])
 
-function normalizeWorkspaceSlug(value: string) {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 63)
+function parseWorkspaceSlug(value: string) {
+  const normalizedValue = value.trim().toLowerCase().replace(/^https?:\/\//, "")
+  const hostname = normalizedValue.split(/[/?#]/, 1)[0]?.replace(/\.$/, "") ?? ""
+  const tenantSuffix = `.${multideckRootHost}`
+  const slug = hostname.endsWith(tenantSuffix) ? hostname.slice(0, -tenantSuffix.length) : hostname
+
+  return slug.includes(".") ? "" : slug
 }
 
 function isValidWorkspaceSlug(value: string) {
   return /^(?=.{1,63}$)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(value) && !reservedWorkspaceSlugs.has(value)
+}
+
+function parseWorkspaceDirectory(value: string): WorkspaceDirectoryEntry[] {
+  return value
+    .split(",")
+    .map((entry) => {
+      const [rawSlug, ...nameParts] = entry.split(":")
+      const slug = parseWorkspaceSlug(rawSlug ?? "")
+      const name = nameParts.join(":").trim()
+
+      return isValidWorkspaceSlug(slug) && name ? { slug, name } : null
+    })
+    .filter((entry): entry is WorkspaceDirectoryEntry => Boolean(entry))
+}
+
+const configuredWorkspaces = parseWorkspaceDirectory(import.meta.env.VITE_MULTIDECK_WORKSPACES?.trim() ?? "")
+
+function getWorkspaceAuthUrl(workspaceSlug: string) {
+  const protocol = import.meta.env.DEV ? window.location.protocol : "https:"
+  const port = import.meta.env.DEV && window.location.port ? `:${window.location.port}` : ""
+
+  return `${protocol}//${workspaceSlug}.${multideckRootHost}${port}/auth`
 }
 
 function isValidEmail(email: string) {
@@ -319,15 +347,19 @@ function PasswordSignInForm({
 export function WorkspaceRouterPanel({
   initialWorkspace = "",
   onContinue,
+  workspaces = configuredWorkspaces,
 }: {
   initialWorkspace?: string
   onContinue?: (workspace: string) => void
+  workspaces?: WorkspaceDirectoryEntry[]
 }) {
-  const [workspace, setWorkspace] = useState(() => normalizeWorkspaceSlug(initialWorkspace))
+  const [workspace, setWorkspace] = useState(() => parseWorkspaceSlug(initialWorkspace))
   const [workspaceError, setWorkspaceError] = useState<string | null>(null)
+  const availableWorkspaces = workspaces.filter((entry) => isValidWorkspaceSlug(entry.slug) && entry.name.trim())
+  const hasAvailableWorkspaces = availableWorkspaces.length > 0
 
-  function openWorkspace() {
-    const workspaceSlug = normalizeWorkspaceSlug(workspace)
+  function openWorkspace(workspaceValue = workspace) {
+    const workspaceSlug = parseWorkspaceSlug(workspaceValue)
 
     if (!isValidWorkspaceSlug(workspaceSlug)) {
       setWorkspaceError("Enter the workspace name supplied by your Multideck administrator.")
@@ -341,7 +373,7 @@ export function WorkspaceRouterPanel({
       return
     }
 
-    window.location.assign(`https://${workspaceSlug}.${multideckRootHost}/auth`)
+    window.location.assign(getWorkspaceAuthUrl(workspaceSlug))
   }
 
   return (
@@ -350,13 +382,52 @@ export function WorkspaceRouterPanel({
       <div className="mt-10 grid size-11 place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]" aria-hidden="true">
         <Building2 className="size-5" strokeWidth={1.4} />
       </div>
-      <h2 className="mt-5 text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">Open your workspace</h2>
+      <h2 className="mt-5 text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">
+        {hasAvailableWorkspaces ? "Choose a company" : "Open your workspace"}
+      </h2>
       <p className="mt-2 text-[14px] leading-6 text-[var(--md-text)]">
-        Each company has its own private Multideck workspace and secure sign-in.
+        {hasAvailableWorkspaces
+          ? "Select the company workspace you need. Sign-in happens securely inside that company's Multideck account."
+          : "Each company has its own private Multideck workspace and secure sign-in."}
       </p>
 
+      {hasAvailableWorkspaces ? (
+        <>
+          <div className="mt-7 space-y-2">
+            {availableWorkspaces.map((entry) => (
+              <button
+                key={entry.slug}
+                type="button"
+                className="group grid w-full grid-cols-[40px_minmax(0,1fr)_auto] items-center gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-3 text-start shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:-translate-y-px hover:bg-[var(--md-surface-tint)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.16)]"
+                onClick={() => openWorkspace(entry.slug)}
+              >
+                <span className="grid size-10 place-items-center rounded-[calc(var(--md-radius-xl)-4px)] bg-[var(--md-accent)] text-[14px] font-medium text-white" aria-hidden="true" data-i18n-skip>
+                  {entry.name.slice(0, 1).toUpperCase()}
+                </span>
+                <span className="min-w-0">
+                  <strong className="block truncate text-[14px] font-medium text-[var(--md-ink)]" data-i18n-skip>{entry.name}</strong>
+                  <span className="mt-0.5 block text-[12px] text-[var(--md-text)]">
+                    {entry.description ?? "Private company workspace"}
+                  </span>
+                </span>
+                <span className="flex items-center gap-2 text-[12px] text-[var(--md-subtle)]" data-i18n-skip dir="ltr">
+                  {entry.slug}.{multideckRootHost}
+                  <ArrowRight className="size-4 text-[var(--md-text)] transition-transform duration-200 group-hover:translate-x-0.5 rtl:rotate-180" strokeWidth={1.4} />
+                </span>
+              </button>
+            ))}
+          </div>
+
+          <div className="my-6 grid grid-cols-[1fr_auto_1fr] items-center gap-3 text-[12px] text-[var(--md-subtle)]">
+            <span className="h-px bg-[rgba(11,20,19,0.08)]" />
+            or use a workspace name
+            <span className="h-px bg-[rgba(11,20,19,0.08)]" />
+          </div>
+        </>
+      ) : null}
+
       <form
-        className="mt-7"
+        className={hasAvailableWorkspaces ? undefined : "mt-7"}
         onSubmit={(event) => {
           event.preventDefault()
           openWorkspace()
@@ -372,12 +443,12 @@ export function WorkspaceRouterPanel({
             autoCapitalize="none"
             autoCorrect="off"
             spellCheck={false}
-            placeholder="jenkar"
+            placeholder="dev"
             data-i18n-skip
             dir="ltr"
             className="h-12 rounded-[calc(var(--md-radius-xl)-4px)] border-0 bg-transparent pe-[152px] ps-3 text-[14px] font-medium text-[var(--md-ink)] shadow-none focus-visible:ring-0"
             onChange={(event) => {
-              setWorkspace(normalizeWorkspaceSlug(event.target.value))
+              setWorkspace(event.target.value)
               setWorkspaceError(null)
             }}
           />
@@ -392,7 +463,7 @@ export function WorkspaceRouterPanel({
           type="submit"
           className="mt-5 h-12 w-full rounded-[var(--md-radius-xl)] bg-[var(--md-ink)] px-5 text-[14px] font-medium text-white shadow-[var(--md-shadow-soft)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:-translate-y-px hover:bg-[var(--md-strong)]"
         >
-          Continue to workspace
+          Open workspace
           <ArrowRight className="ms-2 size-4 rtl:rotate-180" strokeWidth={1.4} />
         </Button>
       </form>

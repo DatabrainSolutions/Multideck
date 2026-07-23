@@ -1907,7 +1907,8 @@ function ComponentPreview({ id }: { id: string }) {
       {id === "auth-workspace-router" ? (
         <div className="w-full max-w-[620px] rounded-[var(--md-radius-xl)] bg-[var(--md-bg)] p-[var(--md-page-section-gap)] shadow-[var(--md-shadow-line)]">
           <WorkspaceRouterPanel
-            initialWorkspace="jenkar"
+            initialWorkspace="dev"
+            workspaces={[{ slug: "example", name: "Example company" }]}
             onContinue={(workspace) => toast.success(`${workspace}.multideck.app selected`)}
           />
         </div>

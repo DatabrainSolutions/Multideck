@@ -238,10 +238,26 @@ const phrases: PhraseDictionary = {
   "Account": { de: "Konto", fr: "Compte", ar: "الحساب" },
   "Workspace": { de: "Arbeitsbereich", fr: "Espace de travail", ar: "مساحة العمل" },
   "Open your workspace": { de: "Arbeitsbereich öffnen", fr: "Ouvrir votre espace de travail", ar: "افتح مساحة عملك" },
+  "Choose a company": { de: "Unternehmen auswählen", fr: "Choisir une entreprise", ar: "اختر شركة" },
   "Each company has its own private Multideck workspace and secure sign-in.": {
     de: "Jedes Unternehmen hat einen eigenen privaten Multideck-Arbeitsbereich mit sicherer Anmeldung.",
     fr: "Chaque entreprise dispose de son propre espace Multideck privé et d’une connexion sécurisée.",
     ar: "لكل شركة مساحة عمل Multideck خاصة بها وتسجيل دخول آمن.",
+  },
+  "Select the company workspace you need. Sign-in happens securely inside that company's Multideck account.": {
+    de: "Wähle den benötigten Unternehmensarbeitsbereich aus. Die sichere Anmeldung erfolgt im Multideck-Konto dieses Unternehmens.",
+    fr: "Sélectionnez l’espace de l’entreprise dont vous avez besoin. La connexion sécurisée s’effectue dans le compte Multideck de cette entreprise.",
+    ar: "اختر مساحة عمل الشركة التي تحتاجها. يتم تسجيل الدخول بأمان داخل حساب Multideck الخاص بتلك الشركة.",
+  },
+  "Private company workspace": {
+    de: "Privater Unternehmensarbeitsbereich",
+    fr: "Espace d’entreprise privé",
+    ar: "مساحة عمل خاصة بالشركة",
+  },
+  "or use a workspace name": {
+    de: "oder einen Arbeitsbereichsnamen verwenden",
+    fr: "ou utiliser un nom d’espace",
+    ar: "أو استخدم اسم مساحة العمل",
   },
   "Enter the workspace name supplied by your Multideck administrator.": {
     de: "Gib den Namen ein, den du von deinem Multideck-Administrator erhalten hast.",
@@ -249,6 +265,7 @@ const phrases: PhraseDictionary = {
     ar: "أدخل اسم مساحة العمل الذي زودك به مسؤول Multideck.",
   },
   "Continue to workspace": { de: "Zum Arbeitsbereich", fr: "Continuer vers l’espace", ar: "المتابعة إلى مساحة العمل" },
+  "Open workspace": { de: "Arbeitsbereich öffnen", fr: "Ouvrir l’espace", ar: "افتح مساحة العمل" },
   "Your workspace name is included in the access details sent by your administrator.": {
     de: "Der Name deines Arbeitsbereichs steht in den Zugangsdaten deines Administrators.",
     fr: "Le nom de votre espace figure dans les informations d’accès envoyées par votre administrateur.",
