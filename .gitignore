@@ -44,5 +44,6 @@ nul
 !/supabase/migrations/202607220001_document_storage_catalogue.sql
 !/supabase/migrations/20260723101203_notification_email_preferences.sql
 !/supabase/migrations/20260723103000_optimize_notification_email_policies.sql
+!/supabase/migrations/20260723104500_dispatch_notification_emails.sql
 /supabase/.temp/
 .vercel

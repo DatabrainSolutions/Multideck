@@ -21,6 +21,15 @@ function json(body: Record<string, unknown>, status = 200) {
   })
 }
 
+function secretsMatch(left: string | null, right: string | null) {
+  if (!left || !right || left.length !== right.length) return false
+  let difference = 0
+  for (let index = 0; index < left.length; index += 1) {
+    difference |= left.charCodeAt(index) ^ right.charCodeAt(index)
+  }
+  return difference === 0
+}
+
 async function sendWithResend(to: string, subject: string, html: string, text: string) {
   const apiKey = Deno.env.get("RESEND_API_KEY")
   if (!apiKey) throw new Error("RESEND_API_KEY is not configured")
@@ -64,10 +73,17 @@ Deno.serve(async (request) => {
     const requestBody = await request.json() as { action?: string; notificationId?: string; locale?: string }
     const bearerToken = authorization.replace(/^Bearer\s+/i, "")
     const isServiceRequest = bearerToken === serviceRoleKey
-    const { data: authData, error: authError } = isServiceRequest
+    const { data: expectedWebhookSecret } = await adminClient.rpc("Comm_GetNotificationWebhookSecret")
+    const isDatabaseWebhook = secretsMatch(
+      request.headers.get("x-multideck-notification-secret"),
+      typeof expectedWebhookSecret === "string" ? expectedWebhookSecret : null,
+    )
+    const { data: authData, error: authError } = isServiceRequest || isDatabaseWebhook
       ? { data: { user: null }, error: null }
       : await userClient.auth.getUser()
-    if (!isServiceRequest && (authError || !authData.user)) return json({ error: "Authentication required" }, 401)
+    if (!isServiceRequest && !isDatabaseWebhook && (authError || !authData.user)) {
+      return json({ error: "Authentication required" }, 401)
+    }
 
     const { data: currentWorkspaceUser, error: currentWorkspaceError } = authData.user
       ? await adminClient
@@ -76,7 +92,7 @@ Deno.serve(async (request) => {
         .eq("Auth_User_ID", authData.user.id)
         .single()
       : { data: null, error: null }
-    if (!isServiceRequest && (currentWorkspaceError || !currentWorkspaceUser)) {
+    if (!isServiceRequest && !isDatabaseWebhook && (currentWorkspaceError || !currentWorkspaceUser)) {
       return json({ error: "Workspace profile not found" }, 403)
     }
 
@@ -113,7 +129,7 @@ Deno.serve(async (request) => {
       .eq("CommNotif_ID", requestBody.notificationId)
       .single<NotificationRow>()
     if (notificationError || !notification) return json({ error: "Notification not found" }, 404)
-    if (!isServiceRequest && notification.CommNotif_UserID !== currentWorkspaceUser?.User_ID) {
+    if (!isServiceRequest && !isDatabaseWebhook && notification.CommNotif_UserID !== currentWorkspaceUser?.User_ID) {
       return json({ error: "Notification access denied" }, 403)
     }
 
