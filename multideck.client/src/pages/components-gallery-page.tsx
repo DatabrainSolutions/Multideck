@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from "re
 import { ArrowLeft, ArrowRight, Bell, Check, ChevronDown, Clipboard, Cloud, Component, Download, FileText, Folder, Image, KeyRound, Mail, Search, Ship, Sparkles, UserRound } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -32,12 +33,13 @@ import {
   PrimaryContactsPanel,
 } from "@/components/multideck/customer-components"
 import { CrmActivityTimeline, CrmAssetFolderCard, CrmAssetRow, CrmContactTable, CrmForecastPanel, CrmLeadDetailPanel, CrmLeadSignalList, CrmMetricsGrid, CrmPipelineBoard, CrmPriorityActionsPanel, CrmRevenueMixPanel, CrmSalesCommandCenter, CrmSalesFunnelPanel, CrmSettingsBuilder } from "@/components/multideck/crm-components"
-import { FilterChips, SegmentedControl, TabsRail } from "@/components/multideck/workflow-components"
+import { ChoiceControl, FilterChips, SegmentedControl, TabsRail } from "@/components/multideck/workflow-components"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
 import { CodeInput, FreightNarrative, SignInPanel, SignedOutPanel, VerifyPanel, WorkspaceRouterPanel } from "@/components/multideck/auth-flow"
 import { AuthIdentityManager, AuthProviderSelector } from "@/components/multideck/auth-provider-selector"
-import { BookingAdvancedSearch, BookingArrivalCard, BookingAskPanel, BookingBoardPreview, BookingExceptionPanel, BookingMetricCard, BookingResolutionChecklist, BookingsTable, YourJobsPanel, bookingViewModes, bookingViewOptions, type BookingSearchCriterion, type BookingViewMode } from "@/components/multideck/booking-components"
+import { BookingArrivalCard, BookingAskPanel, BookingBoardPreview, BookingExceptionPanel, BookingMetricCard, BookingResolutionChecklist, BookingsTable, YourJobsPanel, bookingViewModes, bookingViewOptions, type BookingSearchCriterion, type BookingViewMode } from "@/components/multideck/booking-components"
+import { BookingSearchBuilder } from "@/components/multideck/booking-search-builder"
 import { DomesticJobStageRail, DomesticRoadJobCard, DomesticRoadKanbanBoard, domesticRoadJobs, roadJobStageStatus, roadJobStages } from "@/components/multideck/domestic-road-components"
 import { WarehouseKanbanBoardPreview, WarehouseOrdersTable, WarehouseProductsTable, WarehouseStockTable } from "@/components/multideck/warehouse-components"
 import { WarehouseFormField } from "@/components/multideck/warehouse-management-components"
@@ -138,7 +140,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Button & control components",
     helper: "Navigation and input controls",
-    ids: ["command", "sidebar", "theme-toggle", "page-settings-menu", "date-range-picker", "segmented-control", "filter-chips", "tabs", "multi-select-menu", "pagination", "settings-controls", "settings-option-card"],
+    ids: ["command", "sidebar", "theme-toggle", "page-settings-menu", "date-range-picker", "segmented-control", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "pagination", "settings-controls", "settings-option-card"],
   },
   {
     label: "Auth components",
@@ -153,7 +155,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["paper-tray-stack", "document-viewer", "document-workspace", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-kanban-board", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "lane-mix-panel", "booking-metric-card", "booking-advanced-search", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
+    ids: ["paper-tray-stack", "document-viewer", "document-workspace", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-kanban-board", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
   },
   {
     label: "CRM",
@@ -516,6 +518,8 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewPageSize, setPreviewPageSize] = useState(20)
   const [previewBookingFilter, setPreviewBookingFilter] = useState<string>(bookingFilters[0])
   const [previewBookingView, setPreviewBookingView] = useState<BookingViewMode>("Table")
+  const [previewChoiceMode, setPreviewChoiceMode] = useState("OCEAN")
+  const [previewCheckbox, setPreviewCheckbox] = useState(true)
   const [previewCustomerView, setPreviewCustomerView] = useState<CustomerViewMode>("List")
   const [previewSelectedIds, setPreviewSelectedIds] = useState<Set<string>>(new Set(["marlow-apparel"]))
   const [previewCustomerTab, setPreviewCustomerTab] = useState("Overview")
@@ -1180,6 +1184,26 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "choice-control" ? (
+        <div className="grid w-full max-w-[620px] gap-5 rounded-[var(--md-radius-xl)] bg-white/50 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          <div className="grid gap-2">
+            <span className="text-[12px] font-medium text-[var(--md-text)]">Two choices</span>
+            <ChoiceControl options={bookingViewModes} value={previewBookingView} onChange={setPreviewBookingView} ariaLabel="Booking view" />
+          </div>
+          <div className="grid gap-2">
+            <span className="text-[12px] font-medium text-[var(--md-text)]">Five or more choices</span>
+            <ChoiceControl options={["OCEAN", "AIR", "ROAD", "FAS", "FSA"]} value={previewChoiceMode} onChange={setPreviewChoiceMode} ariaLabel="Transport mode" />
+          </div>
+        </div>
+      ) : null}
+
+      {id === "checkbox" ? (
+        <label className="flex w-full max-w-[420px] cursor-pointer items-center gap-3 rounded-[var(--md-radius-xl)] bg-white/50 p-[var(--md-gap-xl)] text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]">
+          <Checkbox checked={previewCheckbox} onCheckedChange={(checked) => setPreviewCheckbox(checked === true)} />
+          Include customs documents
+        </label>
+      ) : null}
+
       {id === "multi-select-menu" ? (
         <div className="grid min-h-[280px] w-full max-w-[520px] place-items-center rounded-[var(--md-radius-xl)] bg-white/55 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
           <div className="grid w-full max-w-[320px] gap-2">
@@ -1346,11 +1370,11 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
-      {id === "booking-advanced-search" ? (
+      {id === "booking-search-builder" ? (
         <div className="w-full max-w-[1120px]">
-          <BookingAdvancedSearch
-            criteria={previewBookingSearchCriteria}
-            onCriteriaChange={setPreviewBookingSearchCriteria}
+          <BookingSearchBuilder
+            value={previewBookingSearchCriteria}
+            onChange={setPreviewBookingSearchCriteria}
             resultCount={previewBookingSearchCount}
             totalCount={bookings.length}
           />

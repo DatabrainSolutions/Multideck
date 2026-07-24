@@ -2,6 +2,7 @@ import { useId, useMemo, useState, type ReactNode } from "react"
 import { ArrowRight, Check, CircleCheckBig, CircleDollarSign, ClipboardCheck, Clock3, ExternalLink, FileText, MapPin, Network, Package, Plus, Save, Search, SlidersHorizontal, Trash2, Truck, UserRound } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -569,7 +570,7 @@ export function DomesticRoadBookingPage({ navigate, roadJobId }: { navigate: (pa
             <div className="grid gap-3 lg:grid-cols-2">
               <div className="grid gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3">
                 <Field label={t("Saved collection address")}><select value={collectionAddress.id} disabled={collectionOverride} onChange={(event) => { setCollectionAddressId(event.target.value); const next = account.addresses.find((item) => item.id === event.target.value); if (next) setManualCollectionAddress(next.address) }} className={cn(inputClass, "premium-stroke-soft w-full bg-[var(--md-field-bg)] px-2.5 outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-55")}>{account.addresses.map((address) => <option key={address.id} value={address.id}>{address.shortName}</option>)}</select></Field>
-                <label className="flex items-center gap-2 text-[11px] font-medium text-[var(--md-text)]"><input type="checkbox" checked={collectionOverride} onChange={(event) => setCollectionOverride(event.target.checked)} className="size-3.5 rounded border-[var(--md-subtle)] accent-[var(--md-accent)]" />{t("Override saved address")}</label>
+                <label className="flex items-center gap-2 text-[11px] font-medium text-[var(--md-text)]"><Checkbox checked={collectionOverride} onCheckedChange={(checked) => setCollectionOverride(checked === true)} className="size-4" />{t("Override saved address")}</label>
                 <Textarea className="min-h-[88px] rounded-[var(--md-radius-md)] text-[13px]" value={collectionOverride ? manualCollectionAddress : collectionAddress.address} readOnly={!collectionOverride} onChange={(event) => setManualCollectionAddress(event.target.value)} dir="auto" />
                 {!collectionOverride ? <p className="-mt-1 text-[11px] text-[var(--md-text)]">{collectionAddress.contact}</p> : <p className="-mt-1 text-[11px] text-[var(--md-amber)]">{t("Manual address override — this does not amend the account record.")}</p>}
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -579,7 +580,7 @@ export function DomesticRoadBookingPage({ navigate, roadJobId }: { navigate: (pa
               </div>
               <div className="grid gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3">
                 <Field label={t("Saved delivery address")}><select value={deliveryAddress.id} disabled={deliveryOverride} onChange={(event) => { setDeliveryAddressId(event.target.value); const next = account.addresses.find((item) => item.id === event.target.value); if (next) setManualDeliveryAddress(next.address) }} className={cn(inputClass, "premium-stroke-soft w-full bg-[var(--md-field-bg)] px-2.5 outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-55")}>{account.addresses.map((address) => <option key={address.id} value={address.id}>{address.shortName}</option>)}</select></Field>
-                <label className="flex items-center gap-2 text-[11px] font-medium text-[var(--md-text)]"><input type="checkbox" checked={deliveryOverride} onChange={(event) => setDeliveryOverride(event.target.checked)} className="size-3.5 rounded border-[var(--md-subtle)] accent-[var(--md-accent)]" />{t("Override saved address")}</label>
+                <label className="flex items-center gap-2 text-[11px] font-medium text-[var(--md-text)]"><Checkbox checked={deliveryOverride} onCheckedChange={(checked) => setDeliveryOverride(checked === true)} className="size-4" />{t("Override saved address")}</label>
                 <Textarea className="min-h-[88px] rounded-[var(--md-radius-md)] text-[13px]" value={deliveryOverride ? manualDeliveryAddress : deliveryAddress.address} readOnly={!deliveryOverride} onChange={(event) => setManualDeliveryAddress(event.target.value)} dir="auto" />
                 {!deliveryOverride ? <p className="-mt-1 text-[11px] text-[var(--md-text)]">{deliveryAddress.contact}</p> : <p className="-mt-1 text-[11px] text-[var(--md-amber)]">{t("Manual address override — this does not amend the account record.")}</p>}
                 <div className="grid gap-3 sm:grid-cols-2">

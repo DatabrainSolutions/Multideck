@@ -29,6 +29,7 @@ import {
   TriangleAlert,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -2303,43 +2304,20 @@ function QuoteCargoWiseDetailsPanel({
     return (
       <Tooltip>
         <TooltipTrigger asChild>
-          <button
-            type="button"
-            role="checkbox"
-            aria-checked={checked}
-            aria-label={`${t("Address override")}: ${t(party)}`}
+          <label
             className={cn(
-              "group inline-flex h-6 items-center gap-1.5 rounded-[var(--md-radius-sm)] px-1.5 text-[10.5px] font-medium text-[var(--md-subtle)] outline-none transition-[background,color,transform] duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-surface-soft)] hover:text-[var(--md-ink)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)] active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100",
+              "group inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-[var(--md-radius-sm)] px-1.5 text-[10.5px] font-medium text-[var(--md-subtle)] outline-none transition-[background,color,transform] duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-surface-soft)] hover:text-[var(--md-ink)] active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100",
               checked && "bg-[rgba(14,125,116,0.07)] text-[var(--md-ink)]",
             )}
-            onClick={() => onQuoteChange(field, checked ? "No" : "Yes")}
           >
-            <span
-              aria-hidden="true"
-              className={cn(
-                "grid size-3.5 shrink-0 scale-[0.92] place-items-center rounded-[4px] bg-[var(--md-surface)] text-white shadow-[var(--md-shadow-line)] transition-[background,box-shadow,transform] duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
-                checked && "scale-100 bg-[var(--md-accent)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_0_0_3px_rgba(14,125,116,0.11),0_2px_5px_rgba(14,125,116,0.16)]",
-              )}
-            >
-              <svg viewBox="0 0 16 16" className="size-2.5" fill="none" aria-hidden="true">
-                <path
-                  d="M3.5 8.25 6.5 11l6-6.25"
-                  pathLength="1"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeDasharray="1"
-                  strokeDashoffset={checked ? 0 : 1}
-                  style={{
-                    opacity: checked ? 1 : 0,
-                    transition: reduceMotion ? "none" : "stroke-dashoffset 220ms cubic-bezier(0.22, 1, 0.36, 1), opacity 120ms ease-out",
-                  }}
-                />
-              </svg>
-            </span>
+            <Checkbox
+              checked={checked}
+              onCheckedChange={(next) => onQuoteChange(field, next === true ? "Yes" : "No")}
+              aria-label={`${t("Address override")}: ${t(party)}`}
+              className="size-4"
+            />
             <span>{t("Override address")}</span>
-          </button>
+          </label>
         </TooltipTrigger>
         <TooltipContent>{t("Allow a manual address for this party")}</TooltipContent>
       </Tooltip>

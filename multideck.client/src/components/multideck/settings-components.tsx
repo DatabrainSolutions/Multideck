@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
+import { ChoiceControl } from "@/components/multideck/workflow-components"
 import { cn } from "@/lib/utils"
 
 export type SettingsTabItem = {
@@ -378,31 +379,13 @@ export function SettingsChoiceGroup({
   className?: string
 }) {
   return (
-    <div
-      className={cn(
-        "inline-flex max-w-full flex-wrap rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-1 shadow-[var(--md-shadow-line)]",
-        className,
-      )}
-    >
-      {options.map((option) => {
-        const selected = option === value
-
-        return (
-          <button
-            key={option}
-            type="button"
-            className={cn(
-              "h-8 rounded-[var(--md-radius-md)] px-3 text-[12px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,opacity,transform] duration-200",
-              "hover:text-[var(--md-ink)]",
-              selected && "bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
-            )}
-            onClick={() => onChange?.(option)}
-          >
-            {option}
-          </button>
-        )
-      })}
-    </div>
+    <ChoiceControl
+      options={options}
+      value={value}
+      onChange={(nextValue) => onChange?.(nextValue)}
+      ariaLabel="Choose an option"
+      className={className}
+    />
   )
 }
 

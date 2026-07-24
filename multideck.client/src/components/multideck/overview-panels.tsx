@@ -22,7 +22,6 @@ import {
 import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
 import { TableCell } from "@/components/ui/table"
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { useLanguage } from "@/i18n/language-provider"
 import type { LanguageCode } from "@/i18n/languages"
 import { getApiAuthSession } from "@/lib/api"
@@ -51,6 +50,7 @@ import { DexterActionPill } from "./dexter-action-pill"
 import { MetricCard } from "./metric-card"
 import { SectionHeader, Surface } from "./surface"
 import { StatusPill, toneToVar } from "./status-pill"
+import { SegmentedControl } from "./workflow-components"
 
 const InteractiveBookingMap = lazy(() =>
   import("./interactive-booking-map").then((module) => ({
@@ -453,13 +453,13 @@ export function OverviewHero({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <ToggleGroup type="single" value={range} onValueChange={(value) => value && onRangeChange(value as DashboardRange)} className="rounded-[var(--md-radius-lg)] bg-transparent p-0">
-          {dashboardRangeOptions.map((value) => (
-            <ToggleGroupItem key={value} value={value} className="h-10 rounded-[var(--md-radius-lg)] px-4 text-[13px] font-medium capitalize text-[var(--md-text)] data-[state=on]:bg-[var(--md-glass-strong)] data-[state=on]:text-[var(--md-ink)] data-[state=on]:shadow-[var(--md-shadow-line)]">
-              {dashboardSnapshots[value].label}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
+        <SegmentedControl
+          options={dashboardRangeOptions}
+          value={range}
+          onChange={onRangeChange}
+          ariaLabel="Dashboard date range"
+          renderOption={(value) => dashboardSnapshots[value].label}
+        />
         <CustomDashboardRangePicker active={range === "custom"} customRange={customRange} onRangeChange={onRangeChange} onCustomRangeChange={onCustomRangeChange} />
         <Button
           type="button"
@@ -1368,18 +1368,20 @@ export function MorningDigestPanel({
 }
 
 export function ActivityPanel({ onOpenDrilldown }: { onOpenDrilldown?: (id: DashboardDrilldownId) => void }) {
+  const [activityView, setActivityView] = useState<"all" | "ai">("all")
+
   return (
     <Surface className="md-activity-panel flex min-h-[320px] flex-col">
       <SectionHeader
         title="Activity"
         action={
-          <ToggleGroup type="single" defaultValue="all" className="rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] p-0.5">
-            {["all", "ai"].map((value) => (
-              <ToggleGroupItem key={value} value={value} className="h-6 rounded-[var(--md-radius-sm)] px-2 text-[11px] uppercase data-[state=on]:bg-[var(--md-glass-strong)] data-[state=on]:shadow-[var(--md-shadow-line)]">
-                {value}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
+          <SegmentedControl
+            options={["all", "ai"] as const}
+            value={activityView}
+            onChange={setActivityView}
+            ariaLabel="Activity view"
+            className="[&_button]:h-6 [&_button]:px-2 [&_button]:text-[11px] [&_button]:uppercase"
+          />
         }
       />
       <AnimatedList

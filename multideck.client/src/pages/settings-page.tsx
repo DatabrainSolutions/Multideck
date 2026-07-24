@@ -36,6 +36,7 @@ import {
 import { toast } from "sonner"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { AuthIdentityManager } from "@/components/multideck/auth-provider-selector"
 import { Pagination } from "@/components/multideck/pagination"
 import { StatusPill } from "@/components/multideck/status-pill"
@@ -1800,12 +1801,11 @@ function PermissionsTab() {
                             disabled && "cursor-not-allowed opacity-65",
                           )}
                         >
-                          <input
-                            type="checkbox"
-                            className="mt-0.5 size-4 shrink-0 accent-[var(--md-accent)] md:mt-0"
+                          <Checkbox
+                            className="mt-0.5 md:mt-0"
                             checked={checked}
                             disabled={disabled}
-                            onChange={() => void handleToggleRolePermission(selectedRole, permission.value)}
+                            onCheckedChange={() => void handleToggleRolePermission(selectedRole, permission.value)}
                           />
                           <span className="min-w-0">
                             <span className="block truncate text-[13px] font-medium text-[var(--md-ink)]">{permission.name}</span>

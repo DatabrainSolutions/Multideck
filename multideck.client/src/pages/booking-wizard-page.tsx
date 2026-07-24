@@ -20,12 +20,14 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { Switch } from "@/components/ui/switch"
 import { MultideckDateRangePicker } from "@/components/multideck/date-picker"
 import { Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
@@ -1297,21 +1299,16 @@ function ToggleTile({
   onChange: (checked: boolean) => void
 }) {
   return (
-    <motion.button
+    <motion.label
       variants={fieldMotion}
-      type="button"
-      aria-pressed={checked}
       className={cn(
-        "flex min-h-10 items-center justify-between gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 py-1.5 text-left text-[13px] font-medium text-[var(--md-ink)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.14),0_1px_1px_rgba(14,125,116,0.04)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-white/78",
-        checked && "bg-[var(--md-accent)] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_10px_20px_rgba(14,125,116,0.18)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]",
+        "flex min-h-10 cursor-pointer items-center justify-between gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 py-1.5 text-left text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] transition-[background,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-white/78",
+        checked && "bg-[rgba(14,125,116,0.08)]",
       )}
-      onClick={() => onChange(!checked)}
     >
       <span>{label}</span>
-      <span className={cn("grid size-5 place-items-center rounded-[var(--md-radius-sm)] bg-white shadow-[var(--md-shadow-line)]", checked && "text-[var(--md-accent)]")}>
-        {checked ? <Check className="size-3.5" strokeWidth={1.8} /> : null}
-      </span>
-    </motion.button>
+      <Switch checked={checked} onCheckedChange={onChange} aria-label={label} />
+    </motion.label>
   )
 }
 
@@ -1327,41 +1324,17 @@ function BrandedCheckbox({
   className?: string
 }) {
   return (
-    <motion.button
-      type="button"
-      role="checkbox"
-      aria-checked={checked}
+    <motion.label
       whileTap={{ scale: 0.98 }}
       className={cn(
-        "inline-flex min-h-8 items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-2.5 text-left text-[12px] font-medium text-[var(--md-text)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.14),0_1px_1px_rgba(14,125,116,0.04)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white/82",
-        checked && "bg-[var(--md-accent)] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_10px_20px_rgba(14,125,116,0.18)] hover:bg-[#0b6f67]",
+        "inline-flex min-h-8 cursor-pointer items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-2.5 text-left text-[12px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white/82",
+        checked && "text-[var(--md-ink)]",
         className,
       )}
-      onClick={() => onChange(!checked)}
     >
-      <span
-        className={cn(
-          "grid size-4 shrink-0 place-items-center rounded-[var(--md-radius-sm)] bg-white/82 text-transparent shadow-[var(--md-shadow-line)]",
-          checked && "text-[var(--md-accent)]",
-        )}
-        aria-hidden="true"
-      >
-        <AnimatePresence initial={false}>
-          {checked ? (
-            <motion.span
-              key="tick"
-              initial={{ opacity: 0, scale: 0.5, rotate: -12 }}
-              animate={{ opacity: 1, scale: 1, rotate: 0 }}
-              exit={{ opacity: 0, scale: 0.5, rotate: 12 }}
-              transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-            >
-              <Check className="size-3" strokeWidth={2.2} />
-            </motion.span>
-          ) : null}
-        </AnimatePresence>
-      </span>
+      <Checkbox checked={checked} onCheckedChange={(next) => onChange(next === true)} aria-label={label} />
       <span className="min-w-0 whitespace-nowrap">{label}</span>
-    </motion.button>
+    </motion.label>
   )
 }
 

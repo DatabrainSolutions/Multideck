@@ -395,7 +395,7 @@ export function BookingListHeader<T extends string>({
   )
 }
 
-export function BookingAdvancedSearch({
+function BookingAdvancedSearch({
   criteria,
   onCriteriaChange,
   resultCount,
@@ -736,6 +736,8 @@ export function BookingAdvancedSearch({
     </div>
   )
 }
+
+void BookingAdvancedSearch
 
 function hasSearchValue(criterion: BookingSearchCriterion) {
   return Boolean(criterion.value.trim() || criterion.valueTo?.trim())

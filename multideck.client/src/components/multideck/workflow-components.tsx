@@ -1,6 +1,8 @@
 import { useId, type ReactNode } from "react"
 import { Check } from "lucide-react"
 import { motion, useReducedMotion } from "motion/react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import { mdMotion, reduceMotion } from "@/lib/motion"
@@ -10,6 +12,12 @@ export type LabelOption = {
   value?: string
 }
 
+export type ChoiceOption<T extends string> = {
+  value: T
+  label: string
+  disabled?: boolean
+}
+
 export function SegmentedControl<T extends string>({
   options,
   value,
@@ -17,6 +25,7 @@ export function SegmentedControl<T extends string>({
   className,
   ariaLabel,
   renderOption,
+  disabled = false,
 }: {
   options: readonly T[]
   value: T
@@ -24,6 +33,7 @@ export function SegmentedControl<T extends string>({
   className?: string
   ariaLabel?: string
   renderOption?: (option: T) => ReactNode
+  disabled?: boolean
 }) {
   const controlId = useId()
   const shouldReduceMotion = useReducedMotion()
@@ -32,15 +42,20 @@ export function SegmentedControl<T extends string>({
     <div
       role="group"
       aria-label={ariaLabel}
-      className={cn("relative isolate flex rounded-[var(--md-radius-lg)] bg-white/60 p-1 shadow-[var(--md-shadow-line)]", className)}
+      className={cn(
+        "relative isolate inline-flex max-w-full rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-1 shadow-[var(--md-shadow-line)]",
+        disabled && "opacity-50",
+        className,
+      )}
     >
       {options.map((option) => (
         <button
           key={option}
           type="button"
           aria-pressed={value === option}
+          disabled={disabled}
           className={cn(
-            "relative h-8 rounded-[var(--md-radius-md)] px-4 text-[13px] font-medium text-[var(--md-text)] transition-[color,opacity,scale,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.96] hover:text-[var(--md-ink)]",
+            "relative h-8 min-w-0 rounded-[var(--md-radius-md)] px-3 text-[13px] font-medium text-[var(--md-text)] outline-none transition-[color,opacity,scale,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.96] hover:text-[var(--md-ink)] focus-visible:ring-2 focus-visible:ring-[rgba(14,125,116,0.24)] disabled:cursor-not-allowed disabled:active:scale-100",
             value === option && "text-[var(--md-selected-text)]",
           )}
           onClick={() => onChange(option)}
@@ -50,13 +65,89 @@ export function SegmentedControl<T extends string>({
               aria-hidden="true"
               layoutId={`${controlId}-active-segment`}
               className="absolute inset-0 -z-10 rounded-[var(--md-radius-md)] bg-[var(--md-selected-bg)] shadow-[inset_0_0_0_1px_rgba(10,112,104,0.14),0_2px_5px_rgba(11,20,19,0.06)]"
-              transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.page)}
+              transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.spring)}
             />
           ) : null}
           <span className="relative inline-flex items-center gap-1.5">{renderOption ? renderOption(option) : option}</span>
         </button>
       ))}
     </div>
+  )
+}
+
+type BooleanChoiceControlProps = {
+  checked: boolean
+  onCheckedChange: (checked: boolean) => void
+  ariaLabel: string
+  disabled?: boolean
+  className?: string
+}
+
+type SelectionChoiceControlProps<T extends string> = {
+  options: readonly (T | ChoiceOption<T>)[]
+  value: T
+  onChange: (value: T) => void
+  ariaLabel: string
+  disabled?: boolean
+  className?: string
+  renderOption?: (option: T) => ReactNode
+}
+
+export function ChoiceControl<T extends string>(
+  props: BooleanChoiceControlProps | SelectionChoiceControlProps<T>,
+) {
+  if ("checked" in props) {
+    return (
+      <Switch
+        checked={props.checked}
+        onCheckedChange={props.onCheckedChange}
+        aria-label={props.ariaLabel}
+        disabled={props.disabled}
+        className={props.className}
+      />
+    )
+  }
+
+  const normalizedOptions = props.options.map((option) => (
+    typeof option === "string" ? { value: option, label: option, disabled: false } : option
+  ))
+
+  if (normalizedOptions.length <= 4) {
+    return (
+      <SegmentedControl
+        options={normalizedOptions.map((option) => option.value)}
+        value={props.value}
+        onChange={props.onChange}
+        ariaLabel={props.ariaLabel}
+        disabled={props.disabled}
+        className={props.className}
+        renderOption={(value) => {
+          const option = normalizedOptions.find((candidate) => candidate.value === value)
+          return props.renderOption?.(value) ?? option?.label ?? value
+        }}
+      />
+    )
+  }
+
+  return (
+    <Select value={props.value} onValueChange={(value) => props.onChange(value as T)} disabled={props.disabled}>
+      <SelectTrigger
+        aria-label={props.ariaLabel}
+        className={cn(
+          "h-9 min-w-[180px] rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-tint)] px-3 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
+          props.className,
+        )}
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent className="rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)]">
+        {normalizedOptions.map((option) => (
+          <SelectItem key={option.value} value={option.value} disabled={option.disabled} className="text-[13px]">
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   )
 }
 

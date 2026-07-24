@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from "react"
-import bookingShapeIconSprite from "@/assets/booking-shape-icons/booking-shape-icons.png"
+import { useEffect, useMemo, useState, type CSSProperties } from "react"
+import { Search, SlidersHorizontal, Star, X } from "lucide-react"
 import {
-  BookingAdvancedSearch,
   BookingBoardPreview,
   BookingListHeader,
   BookingMetricStrip,
-  BookingsTable,
+  BookingShapeCell,
+  BookingStatusPill,
   getBookingDetailPath,
   bookingViewModes,
   type Booking,
@@ -13,9 +13,16 @@ import {
   type BookingSearchField,
   type BookingViewMode,
 } from "@/components/multideck/booking-components"
+import { BookingSearchBuilder } from "@/components/multideck/booking-search-builder"
+import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { Pagination } from "@/components/multideck/pagination"
 import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
-import { FilterChips } from "@/components/multideck/workflow-components"
+import { ChoiceControl } from "@/components/multideck/workflow-components"
+import { toneToVar } from "@/components/multideck/status-pill"
+import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Input } from "@/components/ui/input"
+import { Progress } from "@/components/ui/progress"
 import { currentOperator, getBookingShape, initialFavouriteBookingIds, bookingScopeTabs, bookings } from "@/data/multideck-data"
 import { useLanguage } from "@/i18n/language-provider"
 import { getSavedView, saveView } from "@/lib/view-preferences"
@@ -35,15 +42,6 @@ const shipmentTypeFiltersByMode = {
   FSA: ["All types", "Multiple"],
 } as const
 type ShipmentTypeFilter = (typeof shipmentTypeFiltersByMode)[keyof typeof shipmentTypeFiltersByMode][number]
-
-const bookingShapeIconCells: Record<string, readonly [column: number, row: number]> = {
-  "All directions": [0, 0], Import: [1, 0], Export: [2, 0], Domestic: [3, 0], "Cross trade": [4, 0],
-  OCEAN: [0, 1], AIR: [1, 1], ROAD: [2, 1], FAS: [3, 1], FSA: [3, 1], "All modes": [3, 1], "All types": [3, 1], Multiple: [3, 1], FCL: [4, 1],
-  LCL: [0, 2], ULD: [1, 2], FTL: [2, 2], LTL: [3, 2], "Pallet network": [4, 2],
-  Breakbulk: [4, 1], RoRo: [0, 2], "Dry bulk": [0, 2], "Liquid bulk": [0, 2], "Project cargo": [4, 1],
-  "General cargo": [1, 2], "Air consolidation": [1, 2], "Back-to-back": [1, 2], "Express / courier": [1, 2], Charter: [1, 2],
-  Groupage: [3, 2], "Dedicated vehicle": [2, 2], "Parcel / express": [4, 2],
-}
 
 function normalized(value: string) {
   return value.trim().toLocaleLowerCase()
@@ -169,6 +167,8 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [favouriteIds, setFavouriteIds] = useState<Set<string>>(() => new Set(initialFavouriteBookingIds))
   const [searchCriteria, setSearchCriteria] = useState<BookingSearchCriterion[]>(initialSearchCriteria)
+  const [quickSearch, setQuickSearch] = useState("")
+  const [advancedSearchOpen, setAdvancedSearchOpen] = useState(false)
   const [page, setPage] = useState(1)
   const [rowsPerPage, setRowsPerPage] = useState(10)
   const [dexterOpen, setDexterOpen] = useState(false)
@@ -186,22 +186,24 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
   }, [favouriteIds, scope])
 
   const visibleBookings = useMemo(() => {
+    const quickQuery = normalized(quickSearch)
     return scopedBookings.filter((booking) => {
       const shape = getBookingShape(booking.id)
       const matchesShape =
         (directionFilter === "All directions" || shape.direction === directionFilter) &&
         (modeFilter === "All modes" || booking.mode === modeFilter) &&
         (shipmentTypeFilter === "All types" || shape.shipmentType === shipmentTypeFilter)
-      return matchesShape && bookingMatchesSearch(booking, searchCriteria)
+      const matchesQuickSearch = !quickQuery || getBookingSearchValues(booking, "any").some((candidate) => normalized(candidate).includes(quickQuery))
+      return matchesShape && matchesQuickSearch && bookingMatchesSearch(booking, searchCriteria)
     })
-  }, [directionFilter, modeFilter, scopedBookings, searchCriteria, shipmentTypeFilter])
+  }, [directionFilter, modeFilter, quickSearch, scopedBookings, searchCriteria, shipmentTypeFilter])
 
   const pageCount = Math.max(Math.ceil(visibleBookings.length / rowsPerPage), 1)
   const paginatedBookings = visibleBookings.slice((page - 1) * rowsPerPage, page * rowsPerPage)
 
   useEffect(() => {
     setPage(1)
-  }, [directionFilter, modeFilter, scope, shipmentTypeFilter, viewMode, searchCriteria])
+  }, [directionFilter, modeFilter, quickSearch, scope, shipmentTypeFilter, viewMode, searchCriteria])
 
   useEffect(() => {
     saveView(bookingViewStorageKey, viewMode)
@@ -238,6 +240,166 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
     if (!shipmentTypeFiltersByMode[nextMode].includes(shipmentTypeFilter as never)) setShipmentTypeFilter("All types")
   }
 
+  const columns = useMemo<DataTableColumn<Booking>[]>(() => [
+    {
+      id: "select",
+      label: t("Select"),
+      width: 54,
+      minWidth: 54,
+      maxWidth: 54,
+      canHide: false,
+      canPin: false,
+      resizable: false,
+      cell: (booking) => (
+        <span onClick={(event) => event.stopPropagation()}>
+          <Checkbox
+            checked={selectedIds.has(booking.id)}
+            onCheckedChange={() => toggleBooking(booking.id)}
+            aria-label={t(`Select ${booking.id}`)}
+          />
+        </span>
+      ),
+    },
+    {
+      id: "star",
+      label: t("Star"),
+      width: 64,
+      minWidth: 64,
+      maxWidth: 64,
+      resizable: false,
+      cell: (booking) => {
+        const favourite = favouriteIds.has(booking.id)
+        return (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label={t(`${favourite ? "Remove" : "Add"} ${booking.id} favourite`)}
+            className={favourite ? "size-8 text-[var(--md-amber)]" : "size-8 text-[var(--md-subtle)]"}
+            onClick={(event) => {
+              event.stopPropagation()
+              toggleFavourite(booking.id)
+            }}
+          >
+            <Star className={favourite ? "size-4 fill-current" : "size-4"} strokeWidth={1.35} />
+          </Button>
+        )
+      },
+    },
+    {
+      id: "booking",
+      label: t("Booking"),
+      width: 142,
+      minWidth: 120,
+      resizable: true,
+      defaultPinned: true,
+      sortValue: (booking) => booking.id,
+      cell: (booking) => (
+        <div className="flex items-center gap-3" dir="ltr">
+          <span className="size-2.5 rounded-full" style={{ background: toneToVar(booking.tone) }} />
+          <span className="text-[13px] font-medium text-[var(--md-accent)]">{booking.id}</span>
+        </div>
+      ),
+    },
+    {
+      id: "customer",
+      label: t("Customer and route"),
+      width: 300,
+      minWidth: 220,
+      maxWidth: 420,
+      resizable: true,
+      sortValue: (booking) => booking.customer,
+      cell: (booking) => (
+        <div className="min-w-0">
+          <p className="truncate text-[13px] font-medium text-[var(--md-ink)]">{booking.customer}</p>
+          <p className="mt-1 truncate text-[12px] text-[var(--md-text)]">{booking.route}</p>
+        </div>
+      ),
+    },
+    {
+      id: "carrier",
+      label: t("Carrier and container"),
+      width: 210,
+      minWidth: 170,
+      resizable: true,
+      sortValue: (booking) => booking.carrier,
+      cell: (booking) => (
+        <div className="min-w-0">
+          <p className="truncate text-[13px] font-medium text-[var(--md-ink)]">{booking.carrier}</p>
+          <p className="mt-1 truncate text-[12px] text-[var(--md-text)]" dir="ltr">{booking.container}</p>
+        </div>
+      ),
+    },
+    {
+      id: "shape",
+      label: t("Direction and mode"),
+      width: 190,
+      minWidth: 170,
+      resizable: true,
+      sortValue: (booking) => `${getBookingShape(booking.id).direction} ${booking.mode}`,
+      cell: (booking) => <BookingShapeCell booking={booking} />,
+    },
+    {
+      id: "value",
+      label: t("Value"),
+      width: 120,
+      minWidth: 100,
+      resizable: true,
+      sortValue: (booking) => Number(booking.value.replace(/[^0-9.-]/g, "")),
+      cell: (booking) => <span className="text-[13px] font-medium tabular-nums text-[var(--md-ink)]" dir="ltr">{booking.value}</span>,
+    },
+    {
+      id: "eta",
+      label: t("ETA"),
+      width: 122,
+      minWidth: 104,
+      resizable: true,
+      sortValue: (booking) => booking.arrivalDate,
+      cell: (booking) => (
+        <div dir="ltr">
+          <p className="text-[13px] font-medium text-[var(--md-ink)]">{booking.eta}</p>
+          <p className="text-[11px] text-[var(--md-text)]">{booking.time}</p>
+        </div>
+      ),
+    },
+    {
+      id: "status",
+      label: t("Status"),
+      width: 120,
+      minWidth: 110,
+      resizable: true,
+      sortValue: (booking) => booking.status,
+      cell: (booking) => <BookingStatusPill status={booking.status} />,
+    },
+    {
+      id: "progress",
+      label: t("Progress"),
+      width: 172,
+      minWidth: 140,
+      resizable: true,
+      sortValue: (booking) => booking.progress,
+      cell: (booking) => (
+        <div className="flex items-center gap-3">
+          <Progress
+            value={booking.progress}
+            className="h-1.5 flex-1 rounded-full bg-[rgba(90,103,100,0.12)] [&>div]:bg-[var(--progress-color)]"
+            style={{ "--progress-color": toneToVar(booking.tone) } as CSSProperties}
+          />
+          <span className="w-8 text-right text-[12px] tabular-nums text-[var(--md-text)]">{booking.progress}%</span>
+        </div>
+      ),
+    },
+    {
+      id: "owner",
+      label: t("Owner"),
+      width: 88,
+      minWidth: 76,
+      resizable: true,
+      sortValue: (booking) => booking.owner,
+      cell: (booking) => <span className="grid size-8 place-items-center rounded-full bg-[rgba(14,125,116,0.12)] text-[12px] font-medium text-[var(--md-accent)]">{booking.owner}</span>,
+    },
+  ], [favouriteIds, selectedIds, t])
+
   return (
     <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel="Bookings" className="md-page md-page-stack">
       <BookingListHeader viewMode={viewMode} onViewModeChange={setViewMode} onSpeakToDexter={() => setDexterOpen(true)} scopeOptions={bookingScopeTabs} scope={scope} onScopeChange={setScope} />
@@ -245,25 +407,75 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
         <ShapeFilter label={t("Direction")} options={directionFilters} value={directionFilter} onChange={setDirectionFilter} />
         <span className="hidden h-7 w-px bg-[rgba(11,20,19,0.08)] sm:block" aria-hidden="true" />
         <ShapeFilter label={t("Mode")} options={modeFilters} value={modeFilter} onChange={changeMode} />
-        <span className="hidden h-7 w-px bg-[rgba(11,20,19,0.08)] sm:block" aria-hidden="true" />
-        <ShapeFilter label={t("Type")} options={shipmentTypeFilters} value={shipmentTypeFilter} onChange={setShipmentTypeFilter} />
+        {shipmentTypeFilters.length > 1 ? (
+          <>
+            <span className="hidden h-7 w-px bg-[rgba(11,20,19,0.08)] sm:block" aria-hidden="true" />
+            <ShapeFilter label={t("Type")} options={shipmentTypeFilters} value={shipmentTypeFilter} onChange={setShipmentTypeFilter} />
+          </>
+        ) : null}
       </section>
       <BookingMetricStrip />
-      <BookingAdvancedSearch
-        criteria={searchCriteria}
-        onCriteriaChange={setSearchCriteria}
-        resultCount={visibleBookings.length}
-        totalCount={scopedBookings.length}
-      />
+      {advancedSearchOpen ? (
+        <BookingSearchBuilder
+          value={searchCriteria}
+          onChange={setSearchCriteria}
+          resultCount={visibleBookings.length}
+          totalCount={scopedBookings.length}
+        />
+      ) : null}
 
       {viewMode === "Table" ? (
-        <BookingsTable
+        <DataTable
+          ariaLabel={t("Booking register")}
+          columnsButtonLabel={t("Manage booking columns")}
+          columns={columns}
           rows={paginatedBookings}
-          selectedIds={selectedIds}
-          favouriteIds={favouriteIds}
-          onToggleBooking={toggleBooking}
-          onToggleFavourite={toggleFavourite}
-          onOpenBooking={openBooking}
+          getRowKey={(booking) => booking.id}
+          storageKey="booking-register"
+          rowClassName={(booking) => selectedIds.has(booking.id) ? "bg-[var(--md-surface-tint)]" : "hover:bg-[var(--md-hover)]"}
+          onRowClick={openBooking}
+          toolbarLeading={(
+            <div className="flex min-w-0 items-center gap-2 px-1.5">
+              <span className="text-[12px] font-medium text-[var(--md-ink)]">{t("Booking register")}</span>
+              <span className="text-[11px] text-[var(--md-subtle)]" data-i18n-skip dir="ltr">{visibleBookings.length}</span>
+            </div>
+          )}
+          toolbarActions={(
+            <div className="flex min-w-0 flex-1 items-center justify-end gap-1.5">
+              <div className="relative min-w-[128px] max-w-[280px] flex-1 sm:min-w-[200px] sm:flex-none">
+                <Search className="pointer-events-none absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.35} />
+                <Input
+                  type="search"
+                  value={quickSearch}
+                  dir="auto"
+                  aria-label={t("Search bookings")}
+                  placeholder={t("Search bookings")}
+                  className="h-8 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface)] ps-8 pe-8 text-[12px] shadow-[var(--md-shadow-line)]"
+                  onChange={(event) => setQuickSearch(event.target.value)}
+                />
+                {quickSearch ? (
+                  <Button type="button" variant="ghost" size="icon" aria-label={t("Clear quick search")} className="absolute end-1 top-1/2 size-6 -translate-y-1/2 rounded-[var(--md-radius-sm)]" onClick={() => setQuickSearch("")}>
+                    <X className="size-3.5" strokeWidth={1.4} />
+                  </Button>
+                ) : null}
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                aria-expanded={advancedSearchOpen}
+                className={advancedSearchOpen ? "h-8 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] px-2.5 text-[12px] shadow-[var(--md-shadow-line)]" : "h-8 rounded-[var(--md-radius-md)] px-2.5 text-[12px]"}
+                onClick={() => setAdvancedSearchOpen((current) => !current)}
+              >
+                <SlidersHorizontal className="size-3.5" strokeWidth={1.4} />
+                <span className="hidden lg:inline">{t("Advanced search")}</span>
+                {searchCriteria.filter(criterionHasValue).length ? (
+                  <span className="grid min-w-4 place-items-center rounded-full bg-[rgba(14,125,116,0.11)] px-1 text-[10px] font-medium text-[var(--md-accent)]" data-i18n-skip>
+                    {searchCriteria.filter(criterionHasValue).length}
+                  </span>
+                ) : null}
+              </Button>
+            </div>
+          )}
         />
       ) : null}
 
@@ -292,25 +504,12 @@ function ShapeFilter<T extends string>({ label, options, value, onChange }: { la
   return (
     <div className="min-w-0">
       <p className="mb-1.5 px-0.5 text-[11px] font-medium text-[var(--md-subtle)]">{label}</p>
-      <FilterChips options={options} activeOption={value} onChange={(next) => onChange(next as T)} tooltipForOption={t} renderOption={(option, active) => {
-        return <BookingShapeIcon option={option} active={active} />
-      }} buttonClassName="size-11 justify-center rounded-[var(--md-radius-lg)] px-0" className="gap-1.5" />
+      <ChoiceControl
+        options={options.map((option) => ({ value: option, label: t(option) }))}
+        value={value}
+        onChange={onChange}
+        ariaLabel={label}
+      />
     </div>
-  )
-}
-
-function BookingShapeIcon({ option, active }: { option: string; active: boolean }) {
-  const [column, row] = bookingShapeIconCells[option] ?? bookingShapeIconCells["All directions"]
-
-  return (
-    <span
-      aria-hidden="true"
-      className={`block size-7 bg-no-repeat transition-[opacity,filter] ${active ? "brightness-0 invert" : "opacity-90"}`}
-      style={{
-        backgroundImage: `url(${bookingShapeIconSprite})`,
-        backgroundPosition: `${((column * 1.2 + 0.1) / 5) * 100}% ${((row * 1.2 + 0.1) / 2.6) * 100}%`,
-        backgroundSize: "600% 360%",
-      }}
-    />
   )
 }

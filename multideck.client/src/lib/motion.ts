@@ -11,6 +11,7 @@ export const mdMotion = {
   layout: { duration: 0.22, ease: mdEase },
 }
 
-export function reduceMotion(shouldReduce: boolean, transition = mdMotion.fast) {
+export function reduceMotion(shouldReduce: boolean, transition: Transition = mdMotion.fast): Transition {
   return shouldReduce ? { duration: 0 } : transition
 }
+import type { Transition } from "motion/react"

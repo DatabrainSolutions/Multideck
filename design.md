@@ -114,7 +114,9 @@ Current Multideck components:
 - `LineChartCard`, `AreaChartCard`, `BarChartCard`, `StackedBarChartCard`, `DonutChartCard`, `FunnelChartCard`, `HeatmapChartCard`, `RadialGoalChartCard`, `ScatterChartCard`, and `MixedChartCard`: reusable report-ready visualization components.
 - `ReportVisualizationBlock`: report-builder adapter for chart variants such as single bars, comparison bars, pie charts with or without keys, and variable-step funnels.
 - `CommandInput`: search and jump entry point.
-- `SegmentedControl`: generic mutually-exclusive mode switch.
+- `SegmentedControl`: spring-animated mutually-exclusive mode switch for two to four short choices.
+- `ChoiceControl`: adaptive exclusive-choice control. Use a switch for a boolean, the segmented pill for two to four choices, and a dropdown for five or more.
+- `Checkbox`: independent multi-select control for rows, permissions, overrides, and checklist choices.
 - `FilterChips`: generic filter chip row with clear selected state.
 - `TabsRail`: generic tab rail for switching in-record sections.
 - `BookingRow`: live booking row.
@@ -198,6 +200,12 @@ Controls should be real:
 - Map controls pan and zoom the real route layer.
 - Copy action writes code snippets to clipboard.
 - Sidebar switches between Overview and Components.
+
+Canonical register behaviour:
+
+- Primary registers use `DataTable` for search, sorting, column visibility, resizing, pinning, ordering, and saved layouts.
+- Advanced filters open inline above the register and update results immediately; do not move this work into a modal with a separate Apply step.
+- Quotes and Bookings are the reference implementations for this shared register behaviour.
 
 Dropdowns should feel anchored, compact, and unambiguous:
 
