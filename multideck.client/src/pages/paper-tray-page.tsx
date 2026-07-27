@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent as ReactDragEvent } from "react"
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
+import { createPortal } from "react-dom"
 import { ChevronDown, ChevronUp, Columns3, FileImage, FilePlus2, FileText, Layers3, List as ListIcon, Plus, Search, Settings2, StickyNote, Trash2, Upload } from "lucide-react"
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
 import { toast } from "sonner"
@@ -13,14 +14,13 @@ import { createInitialPaperTrays } from "@/data/paper-tray-data"
 import { bookings } from "@/data/multideck-data"
 import { useLanguage } from "@/i18n/language-provider"
 import { mdMotion, reduceMotion } from "@/lib/motion"
-import { useKanbanReflow } from "@/lib/kanban-drag"
+import { useKanbanPointerDrag } from "@/lib/kanban-drag"
 
 const maximumTrayCount = 5
 const paperTrayViewModes = ["Tray", "List", "Kanban"] as const
 type PaperTrayViewMode = (typeof paperTrayViewModes)[number]
 type DocumentTypeFilter = "all" | "pdf" | "image"
 
-const kanbanDocumentDragType = "application/x-multideck-paper-kanban-document"
 const paperTrayColorOptions = [
   { value: "#0e7d74", label: "Teal" },
   { value: "#4d6f91", label: "Blue" },
@@ -485,94 +485,77 @@ function PaperTrayKanbanView({
 }: {
   trays: PaperTray[]
   onSelectDocument: (document: TrayDocument, trayId: string) => void
-  onMoveDocument: (documentId: string, sourceTrayId: string, destinationTrayId: string) => void
+  onMoveDocument: (documentId: string, sourceTrayId: string, destinationTrayId: string, orderedTrays?: PaperTray[]) => void
   onEditNote: (document: TrayDocument) => void
 }) {
   const { t } = useLanguage()
-  const shouldReduceMotion = useReducedMotion()
-  const [dropTargetId, setDropTargetId] = useState<string | null>(null)
-  const boardRef = useRef<HTMLDivElement>(null)
-  const layoutSignature = trays.map((tray) => `${tray.id}:${tray.documents.map((document) => document.id).join(",")}`).join("|")
-  useKanbanReflow(boardRef, layoutSignature)
-
-  function handleDrop(event: ReactDragEvent<HTMLElement>, destinationTrayId: string) {
-    event.preventDefault()
-    setDropTargetId(null)
-    const rawValue = event.dataTransfer.getData(kanbanDocumentDragType)
-    if (!rawValue) return
-
-    try {
-      const value = JSON.parse(rawValue) as { documentId: string; sourceTrayId: string }
-      if (value.sourceTrayId !== destinationTrayId) onMoveDocument(value.documentId, value.sourceTrayId, destinationTrayId)
-    } catch {
-      return
-    }
-  }
+  const columns = trays.map((tray) => ({ id: tray.id, tasks: tray.documents }))
+  const kanban = useKanbanPointerDrag({
+    columns,
+    getId: (document) => document.id,
+    onCommit: ({ cardId, columnId, columns: committedColumns }) => {
+      const sourceTrayId = trays.find((tray) => tray.documents.some((document) => document.id === cardId))?.id
+      if (!sourceTrayId) return
+      const orderedTrays = trays.map((tray) => ({
+        ...tray,
+        documents: committedColumns.find((column) => column.id === tray.id)?.tasks ?? tray.documents,
+      }))
+      onMoveDocument(cardId, sourceTrayId, columnId, orderedTrays)
+    },
+    formatKeyboardAnnouncement: (document, columnId) => `${document.name} ${t("moved to")} ${t(trays.find((tray) => tray.id === columnId)?.name ?? columnId)}`,
+  })
 
   return (
     <div className="md-paper-kanban-view">
-      <div ref={boardRef} className="md-paper-kanban-view__board" style={{ "--md-paper-kanban-columns": trays.length } as CSSProperties}>
-        {trays.map((tray, trayIndex) => (
-          <motion.section
-            layout
+      <div ref={kanban.boardRef} className="md-paper-kanban-view__board" style={{ "--md-paper-kanban-columns": trays.length } as CSSProperties}>
+        {kanban.previewColumns.map((column, trayIndex) => {
+          const tray = trays.find((candidate) => candidate.id === column.id)
+          if (!tray) return null
+          return (
+          <section
             key={tray.id}
-            className="md-paper-kanban-column"
+            className="md-kanban-column md-paper-kanban-column"
             data-column-id={tray.id}
             style={{ "--md-tray-color": tray.color ?? "#0e7d74" } as CSSProperties}
-            data-drop-target={dropTargetId === tray.id ? "true" : undefined}
-            onDragEnter={(event) => {
-              event.preventDefault()
-              setDropTargetId(tray.id)
-            }}
-            onDragOver={(event) => {
-              event.preventDefault()
-              event.dataTransfer.dropEffect = "move"
-            }}
-            onDragLeave={(event) => {
-              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTargetId(null)
-            }}
-            onDrop={(event) => handleDrop(event, tray.id)}
+            data-drop-target={kanban.activeCardId && kanban.activeColumnId === tray.id ? "true" : undefined}
           >
             <header className="md-paper-kanban-column__header">
               <div>
                 <span className="md-paper-kanban-column__index" data-i18n-skip>{String(trayIndex + 1).padStart(2, "0")}</span>
                 <div className="min-w-0">
                   <h2>{t(tray.name)}</h2>
-                  <p>{tray.documents.length} {t(tray.documents.length === 1 ? "document" : "documents")}</p>
+                  <p>{column.tasks.length} {t(column.tasks.length === 1 ? "document" : "documents")}</p>
                 </div>
               </div>
-              <span className="md-paper-kanban-column__count" data-i18n-skip>{tray.documents.length}</span>
+              <span className="md-paper-kanban-column__count" data-i18n-skip>{column.tasks.length}</span>
             </header>
 
             <div data-kanban-list className="md-paper-kanban-column__documents">
-              <AnimatePresence initial={false} mode="popLayout">
-                {tray.documents.map((document, index) => {
+                {column.tasks.map((document) => {
                   const imageDocument = isImageDocument(document)
                   const Icon = imageDocument ? FileImage : FileText
                   return (
-                    <motion.div
-                      layout
-                      layoutId={`paper-document-${document.id}`}
+                    <div
                       key={document.id}
-                      draggable
                       data-kanban-card={document.id}
                       data-task-id={document.id}
-                      className="md-paper-kanban-card-shell"
-                      initial={shouldReduceMotion ? false : { opacity: 0, y: 8, scale: 0.99 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.985 }}
-                      transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.24, delay: Math.min(index * 0.025, 0.12), ease: [0.22, 1, 0.36, 1] }}
-                      onDragStartCapture={(event: ReactDragEvent<HTMLDivElement>) => {
-                        if ((event.target as HTMLElement).closest("[data-paper-note-button]")) {
-                          event.preventDefault()
-                          return
-                        }
-                        event.dataTransfer.effectAllowed = "move"
-                        event.dataTransfer.setData(kanbanDocumentDragType, JSON.stringify({ documentId: document.id, sourceTrayId: tray.id }))
-                        event.dataTransfer.setData("text/plain", document.name)
+                      data-kanban-dragging={kanban.activeCardId === document.id ? "true" : undefined}
+                      className="md-kanban-card md-paper-kanban-card-shell"
+                      onPointerDown={(event) => {
+                        if ((event.target as HTMLElement).closest("[data-paper-note-button]")) return
+                        kanban.handlePointerDown(event, document.id)
                       }}
                     >
-                      <button type="button" className="md-paper-kanban-card" onClick={() => onSelectDocument(document, tray.id)}>
+                      <button
+                        type="button"
+                        className="md-kanban-card__primary md-paper-kanban-card"
+                        aria-grabbed={kanban.activeCardId === document.id}
+                        aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown Alt+ArrowLeft Alt+ArrowRight"
+                        onClick={() => {
+                          if (!kanban.isClickSuppressed()) onSelectDocument(document, tray.id)
+                        }}
+                        onKeyDown={(event) => kanban.handleKeyDown(event, document.id)}
+                      >
                         <span className="md-paper-kanban-card__topline">
                           <span className="md-paper-kanban-card__icon"><Icon strokeWidth={1.2} /></span>
                           <span>{t(imageDocument ? "Image" : "PDF")}</span>
@@ -589,41 +572,50 @@ function PaperTrayKanbanView({
                         data-has-note={document.note?.trim() ? "true" : undefined}
                         aria-label={`${t(document.note?.trim() ? "Edit note for" : "Add note for")} ${document.name}`}
                         title={t(document.note?.trim() ? "View or edit note" : "Add note")}
-                        draggable={false}
                         onPointerDown={(event) => event.stopPropagation()}
-                        onDragStart={(event) => event.preventDefault()}
                         onClick={() => onEditNote(document)}
                       >
                         <StickyNote strokeWidth={1.2} />
                       </button>
-                    </motion.div>
+                    </div>
                   )
                 })}
-              </AnimatePresence>
 
-              {tray.documents.length === 0 ? (
-                <div className="md-paper-kanban-column__empty">
+              {column.tasks.length === 0 ? (
+                <div className="md-kanban-empty md-paper-kanban-column__empty">
                   <Upload className="size-4" strokeWidth={1.2} />
                   <span>{t("Drop documents here")}</span>
                 </div>
               ) : null}
             </div>
-
-            <AnimatePresence>
-              {dropTargetId === tray.id ? (
-                <motion.div
-                  className="md-paper-kanban-column__drop"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                >
-                  {t("Move to this tray")}
-                </motion.div>
-              ) : null}
-            </AnimatePresence>
-          </motion.section>
-        ))}
+          </section>
+          )
+        })}
       </div>
+      <p className="sr-only" aria-live="polite">{kanban.keyboardAnnouncement}</p>
+      {kanban.activeTask && kanban.overlayStyle ? createPortal(
+        <div className="md-kanban-drag-preview" style={kanban.overlayStyle}>
+          <div className="md-kanban-drag-preview-card md-paper-kanban-card-shell">
+            {(() => {
+              const imageDocument = isImageDocument(kanban.activeTask)
+              const Icon = imageDocument ? FileImage : FileText
+              return (
+                <div className="md-paper-kanban-card">
+                  <span className="md-paper-kanban-card__topline">
+                    <span className="md-paper-kanban-card__icon"><Icon strokeWidth={1.2} /></span>
+                    <span>{t(imageDocument ? "Image" : "PDF")}</span>
+                    <small data-i18n-skip dir="ltr">{kanban.activeTask.reference}</small>
+                  </span>
+                  <strong data-i18n-skip dir="ltr">{kanban.activeTask.name}</strong>
+                  <span className="md-paper-kanban-card__customer" data-i18n-skip>{kanban.activeTask.customer ?? t("No customer")}</span>
+                  <span className="md-paper-kanban-card__added">{t(kanban.activeTask.addedAt)}</span>
+                </div>
+              )
+            })()}
+          </div>
+        </div>,
+        document.body,
+      ) : null}
     </div>
   )
 }
@@ -706,22 +698,26 @@ export function PaperTrayPage() {
     })
   }
 
-  function moveDocument(documentId: string, sourceTrayId: string, destinationTrayId: string) {
-    if (sourceTrayId === destinationTrayId) return
-    let movingDocument: TrayDocument | undefined
+  function moveDocument(documentId: string, sourceTrayId: string, destinationTrayId: string, orderedTrays?: PaperTray[]) {
+    const movingDocument = trays.flatMap((tray) => tray.documents).find((item) => item.id === documentId)
+    if (!movingDocument) return
 
-    setTrays((current) => {
-      const withoutDocument = current.map((tray) => {
-        if (tray.id !== sourceTrayId) return tray
-        movingDocument = tray.documents.find((item) => item.id === documentId)
-        return { ...tray, documents: tray.documents.filter((item) => item.id !== documentId) }
+    if (orderedTrays) {
+      setTrays(orderedTrays)
+    } else {
+      if (sourceTrayId === destinationTrayId) return
+      setTrays((current) => {
+        const withoutDocument = current.map((tray) => tray.id === sourceTrayId
+          ? { ...tray, documents: tray.documents.filter((item) => item.id !== documentId) }
+          : tray)
+        return withoutDocument.map((tray) => tray.id === destinationTrayId
+          ? { ...tray, documents: [...tray.documents, movingDocument] }
+          : tray)
       })
-      if (!movingDocument) return current
-      return withoutDocument.map((tray) => tray.id === destinationTrayId ? { ...tray, documents: [...tray.documents, movingDocument!] } : tray)
-    })
+    }
 
     if (selectedDocumentId === documentId) setSelectedTrayId(destinationTrayId)
-    toast.success(t("Document moved"), { description: `${movingDocument?.name ?? t("Document")} ${t("is now in")} ${t(trays.find((tray) => tray.id === destinationTrayId)?.name ?? "tray")}.` })
+    toast.success(t("Document moved"), { description: `${movingDocument.name} ${t("is now in")} ${t(trays.find((tray) => tray.id === destinationTrayId)?.name ?? "tray")}.` })
   }
 
   function removeDocument(documentId: string) {

@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react"
+import { useEffect, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from "react"
+import { createPortal } from "react-dom"
 import {
   ArrowRight,
   BarChart3,
@@ -31,7 +32,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
-import { useKanbanReflow } from "@/lib/kanban-drag"
+import { useKanbanPointerDrag } from "@/lib/kanban-drag"
 import {
   crmAccountSignals,
   crmActivities,
@@ -94,28 +95,6 @@ export type CrmAssetFile = {
   icon?: LucideIcon
 }
 
-type DragState = {
-  dealId: string
-  originStageId: string
-  pointerId: number
-  startX: number
-  startY: number
-  x: number
-  y: number
-  tilt: number
-  anchor: number
-  left: number
-  top: number
-  width: number
-  height: number
-  moved: boolean
-}
-
-type DropPreview = {
-  stageId: string
-  index: number
-}
-
 function cloneStages(stages: readonly CrmPipelineStage[]) {
   return stages.map((stage) => ({ ...stage, deals: [...stage.deals] }))
 }
@@ -126,39 +105,6 @@ function clamp(value: number, min: number, max: number) {
 
 function stageMeta(count: number) {
   return count === 1 ? "1 deal" : `${count} deals`
-}
-
-function getStageIdFromPoint(clientX: number, clientY: number, draggedDealId?: string) {
-  return document.elementsFromPoint(clientX, clientY).reduce<string | null>((match, element) => {
-    if (match) return match
-    if (draggedDealId && element.closest<HTMLElement>("[data-crm-deal-id]")?.dataset.crmDealId === draggedDealId) return null
-    return element.closest<HTMLElement>("[data-crm-stage-id]")?.dataset.crmStageId ?? null
-  }, null)
-}
-
-function getStageElement(stageId: string) {
-  return (
-    Array.from(document.querySelectorAll<HTMLElement>("[data-crm-stage-id]")).find((element) => element.dataset.crmStageId === stageId) ?? null
-  )
-}
-
-function getDropPreviewFromPoint(clientX: number, clientY: number, draggedDealId: string): DropPreview | null {
-  const stageId = getStageIdFromPoint(clientX, clientY, draggedDealId)
-  if (!stageId) return null
-
-  const stageElement = getStageElement(stageId)
-  if (!stageElement) return { stageId, index: 0 }
-
-  const dealElements = Array.from(stageElement.querySelectorAll<HTMLElement>("[data-crm-deal-id]")).filter(
-    (element) => element.dataset.crmDealId !== draggedDealId,
-  )
-
-  const index = dealElements.findIndex((element) => {
-    const rect = element.getBoundingClientRect()
-    return clientY < rect.top + rect.height / 2
-  })
-
-  return { stageId, index: index === -1 ? dealElements.length : index }
 }
 
 function customerTone(status: CrmLead["status"]): StatusTone {
@@ -486,154 +432,68 @@ function DealCard({
   deal,
   selected,
   isDragging,
-  suppressClick,
-  dragStyle,
+  isClickSuppressed,
   onSelect,
   onPointerDown,
-  onPointerMove,
-  onPointerUp,
+  onKeyDown,
 }: {
   deal: CrmDeal
   selected?: boolean
   isDragging?: boolean
-  suppressClick?: boolean
-  dragStyle?: CSSProperties
+  isClickSuppressed: () => boolean
   onSelect?: (deal: CrmDeal) => void
   onPointerDown?: (event: PointerEvent<HTMLButtonElement>, deal: CrmDeal) => void
-  onPointerMove?: (event: PointerEvent<HTMLButtonElement>) => void
-  onPointerUp?: (event: PointerEvent<HTMLButtonElement>) => void
+  onKeyDown?: (event: KeyboardEvent<HTMLButtonElement>, deal: CrmDeal) => void
 }) {
   return (
     <button
       type="button"
       data-crm-deal-id={deal.id}
       data-kanban-card={deal.id}
-      data-kanban-dragging={isDragging || undefined}
+      data-task-id={deal.id}
+      data-kanban-dragging={isDragging ? "true" : undefined}
       aria-pressed={selected}
       aria-grabbed={isDragging}
+      aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown Alt+ArrowLeft Alt+ArrowRight"
       className={cn(
-        "group relative w-full touch-none select-none overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-crm-deal-bg)] p-4 text-left shadow-[var(--md-crm-deal-shadow)] transition-[background,box-shadow,transform,opacity] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-[var(--md-crm-deal-hover-bg)] hover:shadow-[var(--md-crm-deal-hover-shadow)]",
-        selected && "bg-[var(--md-crm-deal-selected-bg)] shadow-[var(--md-crm-deal-selected-shadow)]",
-        isDragging && "z-20 cursor-grabbing opacity-95 transition-none",
+        "md-kanban-card group overflow-hidden",
+        selected && "bg-[var(--md-crm-deal-selected-bg)]",
       )}
-      style={dragStyle}
       onClick={() => {
-        if (suppressClick) return
+        if (isClickSuppressed()) return
         onSelect?.(deal)
       }}
       onPointerDown={(event) => onPointerDown?.(event, deal)}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
+      onKeyDown={(event) => onKeyDown?.(event, deal)}
     >
-      <span className="absolute inset-y-3 left-0 w-1 rounded-r-full" style={{ background: toneToVar(deal.tone) }} />
+      <DealCardBody deal={deal} />
+    </button>
+  )
+}
+
+function DealCardBody({ deal }: { deal: CrmDeal }) {
+  return (
+    <>
+      <span className="absolute inset-y-3 start-0 w-1 rounded-e-full" style={{ background: toneToVar(deal.tone) }} />
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="text-[14px] font-medium leading-5 text-[var(--md-ink)]">{deal.title}</h3>
-          <p className="mt-1 truncate text-[12px] text-[var(--md-text)]">{deal.account}</p>
+          <h3 className="text-[13.5px] font-medium leading-5 text-[var(--md-ink)]">{deal.title}</h3>
+          <p className="mt-1 truncate text-[11.5px] text-[var(--md-text)]">{deal.account}</p>
         </div>
         <StatusPill tone={deal.tone}>{deal.status}</StatusPill>
       </div>
-      <p className="mt-3 line-clamp-2 text-[12px] leading-5 text-[var(--md-text)]">{deal.summary}</p>
-      <div className="mt-4 flex items-center justify-between gap-3 shadow-[inset_0_1px_0_rgba(11,20,19,0.06)] pt-3">
+      <p className="line-clamp-2 text-[11.5px] leading-5 text-[var(--md-text)]">{deal.summary}</p>
+      <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-[16px] font-medium leading-none text-[var(--md-ink)]">{deal.value}</p>
+          <p className="text-[14px] font-medium leading-none text-[var(--md-ink)]">{deal.value}</p>
           <p className="mt-1 text-[11px] text-[var(--md-subtle)]">{deal.owner} · {deal.due}</p>
         </div>
         <span className="grid size-7 place-items-center rounded-full bg-[var(--md-surface-tint)] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)] transition-colors group-hover:text-[var(--md-accent)]">
           <ArrowRight data-icon="inline-end" className="size-4" strokeWidth={1.2} />
         </span>
       </div>
-    </button>
+    </>
   )
-}
-
-function DealDropPlaceholder({ height }: { height?: number }) {
-  return (
-    <div
-      aria-hidden="true"
-      className="grid place-items-center rounded-[var(--md-radius-lg)] bg-[rgba(14,125,116,0.08)] opacity-95 shadow-[inset_0_0_0_1px_rgba(14,125,116,0.22),0_8px_18px_rgba(14,125,116,0.06)] transition-[min-height,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]"
-      style={{ minHeight: height ? Math.max(112, height) : 156 }}
-    >
-      <span className="h-1 w-12 rounded-full bg-[rgba(14,125,116,0.38)]" />
-    </div>
-  )
-}
-
-function buildDealNodes({
-  stage,
-  dragState,
-  dropPreview,
-  selectedDealId,
-  suppressClickId,
-  onSelectDeal,
-  onDragStart,
-  onDragMove,
-  onDragEnd,
-}: {
-  stage: CrmPipelineStage
-  dragState: DragState | null
-  dropPreview: DropPreview | null
-  selectedDealId?: string
-  suppressClickId: string | null
-  onSelectDeal?: (deal: CrmDeal) => void
-  onDragStart: (event: PointerEvent<HTMLButtonElement>, deal: CrmDeal, stageId: string) => void
-  onDragMove: (event: PointerEvent<HTMLButtonElement>) => void
-  onDragEnd: (event: PointerEvent<HTMLButtonElement>) => void
-}) {
-  const nodes: ReactNode[] = []
-  const activeDealId = dragState?.dealId
-  const shouldShowPlaceholder = Boolean(dragState && dropPreview?.stageId === stage.id)
-  let visibleIndex = 0
-  let placeholderPlaced = false
-
-  const addPlaceholder = () => {
-    nodes.push(<DealDropPlaceholder key="drop-preview" height={dragState?.height} />)
-    placeholderPlaced = true
-  }
-
-  stage.deals.forEach((deal) => {
-    if (shouldShowPlaceholder && !placeholderPlaced && visibleIndex === dropPreview?.index) {
-      addPlaceholder()
-    }
-
-    const activeDrag = activeDealId === deal.id ? dragState : null
-    const isDragging = Boolean(activeDrag)
-    const dragStyle: CSSProperties | undefined = activeDrag
-      ? {
-          position: "fixed",
-          left: activeDrag.left,
-          top: activeDrag.top,
-          width: activeDrag.width,
-          transform: `translate3d(${activeDrag.x}px, ${activeDrag.y}px, 0) rotate(${activeDrag.tilt}deg) scale(1.015)`,
-          transformOrigin: `${50 + activeDrag.anchor * 100}% 50%`,
-          willChange: "transform",
-        }
-      : undefined
-
-    nodes.push(
-      <DealCard
-        key={deal.id}
-        deal={deal}
-        selected={selectedDealId === deal.id}
-        isDragging={isDragging}
-        suppressClick={suppressClickId === deal.id}
-        dragStyle={dragStyle}
-        onSelect={onSelectDeal}
-        onPointerDown={(event, draggedDeal) => onDragStart(event, draggedDeal, stage.id)}
-        onPointerMove={onDragMove}
-        onPointerUp={onDragEnd}
-      />,
-    )
-
-    if (!isDragging) visibleIndex += 1
-  })
-
-  if (shouldShowPlaceholder && !placeholderPlaced) {
-    addPlaceholder()
-  }
-
-  return nodes
 }
 
 export function CrmPipelineBoard({
@@ -655,19 +515,21 @@ export function CrmPipelineBoard({
   const activePipeline = pipelines.find((pipeline) => pipeline.id === activePipelineId) ?? pipelines[0]
   const activeStages = activePipeline?.stages ?? stages
   const [boardStages, setBoardStages] = useState(() => cloneStages(activeStages))
-  const [dragState, setDragState] = useState<DragState | null>(null)
-  const [dropPreview, setDropPreview] = useState<DropPreview | null>(null)
-  const [overStageId, setOverStageId] = useState<string | null>(null)
-  const [suppressClickId, setSuppressClickId] = useState<string | null>(null)
-  const boardRef = useRef<HTMLDivElement>(null)
-  const boardSignature = boardStages.map((stage) => `${stage.id}:${stage.deals.map((deal) => deal.id).join(",")}`).join("|")
-  useKanbanReflow(boardRef, boardSignature)
+  const kanbanColumns = boardStages.map((stage) => ({ id: stage.id, tasks: stage.deals }))
+  const kanban = useKanbanPointerDrag({
+    columns: kanbanColumns,
+    getId: (deal) => deal.id,
+    onCommit: ({ columns }) => {
+      setBoardStages((currentStages) => currentStages.map((stage) => ({
+        ...stage,
+        deals: columns.find((column) => column.id === stage.id)?.tasks ?? stage.deals,
+      })))
+    },
+    formatKeyboardAnnouncement: (deal, columnId) => `${deal.title} moved to ${boardStages.find((stage) => stage.id === columnId)?.title ?? columnId}`,
+  })
 
   useEffect(() => {
     setBoardStages(cloneStages(activeStages))
-    setDragState(null)
-    setDropPreview(null)
-    setOverStageId(null)
   }, [activeStages])
 
   function switchPipeline(pipeline: CrmPipelineBoardData) {
@@ -675,104 +537,8 @@ export function CrmPipelineBoard({
     onPipelineChange?.(pipeline)
   }
 
-  function updateDropPreview(clientX: number, clientY: number, draggedDealId: string) {
-    const nextDropPreview = getDropPreviewFromPoint(clientX, clientY, draggedDealId)
-    setDropPreview((current) => {
-      if (current?.stageId === nextDropPreview?.stageId && current?.index === nextDropPreview?.index) return current
-      return nextDropPreview
-    })
-    setOverStageId((current) => (current === nextDropPreview?.stageId ? current : nextDropPreview?.stageId ?? null))
-  }
-
-  function moveDeal(dealId: string, destinationStageId: string, destinationIndex: number) {
-    setBoardStages((currentStages) => {
-      let movedDeal: CrmDeal | null = null
-      const withoutDeal = currentStages.map((stage) => {
-        const nextDeals = stage.deals.filter((deal) => {
-          if (deal.id !== dealId) return true
-          movedDeal = deal
-          return false
-        })
-        return { ...stage, deals: nextDeals }
-      })
-
-      if (!movedDeal) return currentStages
-
-      return withoutDeal.map((stage) => {
-        if (stage.id !== destinationStageId) return stage
-        const insertAt = clamp(destinationIndex, 0, stage.deals.length)
-        return {
-          ...stage,
-          deals: [...stage.deals.slice(0, insertAt), movedDeal as CrmDeal, ...stage.deals.slice(insertAt)],
-        }
-      })
-    })
-  }
-
-  function handleDragStart(event: PointerEvent<HTMLButtonElement>, deal: CrmDeal, stageId: string) {
-    if (event.button !== 0) return
-
-    const rect = event.currentTarget.getBoundingClientRect()
-    const anchor = clamp((event.clientX - rect.left) / rect.width - 0.5, -0.5, 0.5)
-    event.currentTarget.setPointerCapture(event.pointerId)
-    setDragState({
-      dealId: deal.id,
-      originStageId: stageId,
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      x: 0,
-      y: 0,
-      tilt: anchor * -10,
-      anchor,
-      left: rect.left,
-      top: rect.top,
-      width: rect.width,
-      height: rect.height,
-      moved: false,
-    })
-    updateDropPreview(event.clientX, event.clientY, deal.id)
-  }
-
-  function handleDragMove(event: PointerEvent<HTMLButtonElement>) {
-    setDragState((current) => {
-      if (!current || current.pointerId !== event.pointerId) return current
-
-      const x = event.clientX - current.startX
-      const y = event.clientY - current.startY
-      const moved = current.moved || Math.hypot(x, y) > 6
-      const tilt = clamp(current.anchor * -10 + x / 55, -8, 8)
-      return { ...current, x, y, tilt, moved }
-    })
-    const activeDealId = dragState?.dealId ?? event.currentTarget.dataset.crmDealId
-    if (activeDealId) {
-      updateDropPreview(event.clientX, event.clientY, activeDealId)
-    }
-  }
-
-  function handleDragEnd(event: PointerEvent<HTMLButtonElement>) {
-    if (!dragState || dragState.pointerId !== event.pointerId) return
-
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId)
-    }
-
-    const destinationPreview =
-      dropPreview ?? getDropPreviewFromPoint(event.clientX, event.clientY, dragState.dealId) ?? { stageId: dragState.originStageId, index: 0 }
-
-    if (dragState.moved) {
-      moveDeal(dragState.dealId, destinationPreview.stageId, destinationPreview.index)
-      setSuppressClickId(dragState.dealId)
-      window.setTimeout(() => setSuppressClickId(null), 80)
-    }
-
-    setDragState(null)
-    setDropPreview(null)
-    setOverStageId(null)
-  }
-
   return (
-    <div ref={boardRef} className="grid min-w-0 gap-3">
+    <div ref={kanban.boardRef} className="grid min-w-0 gap-3">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <p className="text-[13px] font-medium text-[var(--md-ink)]">{activePipeline?.name ?? "Pipeline"}</p>
@@ -822,46 +588,56 @@ export function CrmPipelineBoard({
             gridTemplateColumns: `repeat(${boardStages.length}, minmax(235px, 1fr))`,
           }}
         >
-        {boardStages.map((stage) => {
-          const stageIsTarget = Boolean(dragState && overStageId === stage.id)
+        {kanban.previewColumns.map((column) => {
+          const stage = boardStages.find((candidate) => candidate.id === column.id)
+          if (!stage) return null
 
           return (
             <Surface
               key={stage.id}
               data-crm-stage-id={stage.id}
               data-column-id={stage.id}
+              data-drop-target={kanban.activeColumnId === stage.id ? "true" : undefined}
               padding="none"
-              tone="soft"
-              className={cn(
-                "rounded-[var(--md-radius-xl)] bg-[var(--md-crm-stage-bg)] px-4 py-4 sm:px-5",
-                stageIsTarget && "shadow-[inset_0_0_0_1px_rgba(14,125,116,0.2),0_0_0_3px_rgba(14,125,116,0.08)]",
-              )}
+              className="md-kanban-column"
+              style={{ "--md-kanban-status-color": toneToVar(stage.tone) } as CSSProperties}
             >
-              <div className="flex items-center justify-between gap-3 pb-3">
+              <header>
                 <div className="min-w-0">
-                  <h2 className="truncate text-[14px] font-medium text-[var(--md-ink)]">{stage.title}</h2>
-                  <p className="mt-1 text-[12px] text-[var(--md-text)]">{stageMeta(stage.deals.length)}</p>
+                  <h2 className="truncate">{stage.title}</h2>
+                  <p className="mt-0.5 text-[11px] text-[var(--md-text)]">{stageMeta(column.tasks.length)}</p>
                 </div>
                 <span className="size-2.5 rounded-full" style={{ background: toneToVar(stage.tone) }} />
-              </div>
-              <div data-kanban-list className="grid min-h-[128px] gap-3">
-                {buildDealNodes({
-                  stage,
-                  dragState,
-                  dropPreview,
-                  selectedDealId,
-                  suppressClickId,
-                  onSelectDeal,
-                  onDragStart: handleDragStart,
-                  onDragMove: handleDragMove,
-                  onDragEnd: handleDragEnd,
-                })}
+              </header>
+              <div data-kanban-list>
+                {column.tasks.map((deal) => (
+                  <DealCard
+                    key={deal.id}
+                    deal={deal}
+                    selected={selectedDealId === deal.id}
+                    isDragging={kanban.activeCardId === deal.id}
+                    isClickSuppressed={kanban.isClickSuppressed}
+                    onSelect={onSelectDeal}
+                    onPointerDown={(event) => kanban.handlePointerDown(event, deal.id)}
+                    onKeyDown={(event) => kanban.handleKeyDown(event, deal.id)}
+                  />
+                ))}
+                {column.tasks.length === 0 ? <p className="md-kanban-empty">No deals in this stage</p> : null}
               </div>
             </Surface>
           )
         })}
         </div>
       </div>
+      <p className="sr-only" aria-live="polite">{kanban.keyboardAnnouncement}</p>
+      {kanban.activeTask && kanban.overlayStyle ? createPortal(
+        <div className="md-kanban-drag-preview" style={kanban.overlayStyle}>
+          <div className="md-kanban-drag-preview-card group">
+            <DealCardBody deal={kanban.activeTask} />
+          </div>
+        </div>,
+        document.body,
+      ) : null}
     </div>
   )
 }

@@ -1430,7 +1430,7 @@ function ComponentPreview({ id }: { id: string }) {
           <DomesticRoadKanbanBoard
             jobs={previewRoadJobs}
             favouriteIds={previewRoadFavouriteBookingIds}
-            onMoveJob={(jobId, stage) => setPreviewRoadJobs((current) => current.map((job) => job.id === jobId && job.stage !== stage ? { ...job, stage, ...roadJobStageStatus[stage] } : job))}
+            onMoveJob={(_jobId, _stage, orderedJobs) => setPreviewRoadJobs(orderedJobs)}
             onToggleFavourite={(job) => setPreviewRoadFavouriteBookingIds((current) => {
               const next = new Set(current)
               if (next.has(job.bookingId)) next.delete(job.bookingId)

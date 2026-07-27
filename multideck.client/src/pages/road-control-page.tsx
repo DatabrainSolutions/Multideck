@@ -57,8 +57,16 @@ export function RoadControlPage({ navigate }: { navigate: (path: string) => void
     })
   }
 
-  function moveRoadJob(jobId: string, stage: RoadJobStageId) {
-    setRoadJobs((current) => current.map((job) => job.id === jobId && job.stage !== stage ? { ...job, stage, ...roadJobStageStatus[stage] } : job))
+  function moveRoadJob(jobId: string, stage: RoadJobStageId, orderedJobs?: typeof domesticRoadJobs) {
+    setRoadJobs((current) => {
+      if (!orderedJobs) {
+        return current.map((job) => job.id === jobId && job.stage !== stage ? { ...job, stage, ...roadJobStageStatus[stage] } : job)
+      }
+
+      const orderedIds = new Set(orderedJobs.map((job) => job.id))
+      const orderedIterator = orderedJobs[Symbol.iterator]()
+      return current.map((job) => orderedIds.has(job.id) ? orderedIterator.next().value ?? job : job)
+    })
   }
 
   return (

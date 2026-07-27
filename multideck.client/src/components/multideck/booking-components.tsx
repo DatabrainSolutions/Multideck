@@ -1,4 +1,5 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react"
+import { createPortal } from "react-dom"
 import { motion } from "motion/react"
 import { toast } from "sonner"
 import {
@@ -29,6 +30,7 @@ import { Progress } from "@/components/ui/progress"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
+import { useKanbanPointerDrag } from "@/lib/kanban-drag"
 import { useLanguage } from "@/i18n/language-provider"
 import {
   bookingCargo,
@@ -972,40 +974,108 @@ export function BookingsTable({
 export function BookingBoardPreview({
   rows = bookings,
   onOpenBooking,
+  onMoveBooking,
 }: {
   rows?: Booking[]
   onOpenBooking: (booking: Booking) => void
+  onMoveBooking?: (bookingId: string, status: BookingStatus, orderedRows: Booking[]) => void
 }) {
-  const columns = [
-    ["Open", rows.slice(0, 3)],
-    ["Exception", rows.filter((booking) => booking.status === "Exception")],
-    ["Delivered soon", rows.slice(4, 7)],
-  ] as const
+  const { t } = useLanguage()
+  const [boardRows, setBoardRows] = useState<Booking[]>(() => rows.map((booking) => ({ ...booking })))
+  const laneDefinitions = [
+    { id: "On track" as const, label: "On track" },
+    { id: "Delayed" as const, label: "Delayed" },
+    { id: "Exception" as const, label: "Exception" },
+  ]
+  const columns = laneDefinitions.map((lane) => ({
+    id: lane.id,
+    tasks: boardRows.filter((booking) => booking.status === lane.id),
+  }))
+  const kanban = useKanbanPointerDrag({
+    columns,
+    getId: (booking) => booking.id,
+    onCommit: ({ cardId, columnId, columns: committedColumns }) => {
+      const status = columnId as BookingStatus
+      const nextRows = committedColumns.flatMap((column) => column.tasks.map((booking) => (
+        booking.status === column.id ? booking : { ...booking, status: column.id as BookingStatus, tone: statusTone[column.id as BookingStatus] }
+      )))
+      setBoardRows(nextRows)
+      onMoveBooking?.(cardId, status, nextRows)
+    },
+    formatKeyboardAnnouncement: (booking, columnId) => `${booking.id} ${t("moved to")} ${t(columnId)}`,
+  })
+
+  useEffect(() => {
+    setBoardRows(rows.map((booking) => ({ ...booking })))
+  }, [rows])
 
   return (
-    <div className="grid gap-4 lg:grid-cols-3">
-      {columns.map(([label, rows]) => (
-        <Surface key={label} padding="md" className="rounded-[var(--md-radius-xl)]">
-          <h2 className="text-[14px] font-medium text-[var(--md-ink)]">{label}</h2>
-          <div className="mt-4 flex flex-col gap-3">
-            {rows.length ? rows.map((booking) => (
-              <button key={booking.id} type="button" className="rounded-[var(--md-radius-lg)] bg-white/55 p-3 text-left shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white" onClick={() => onOpenBooking(booking)}>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-[13px] font-medium text-[var(--md-ink)]">{booking.id}</span>
-                  <BookingStatusPill status={booking.status} />
-                </div>
-                <p className="mt-2 truncate text-[14px] font-medium text-[var(--md-ink)]">{booking.customer}</p>
-                <p className="mt-1 truncate text-[12px] text-[var(--md-text)]">{booking.route}</p>
-              </button>
-            )) : (
-              <p className="rounded-[var(--md-radius-lg)] bg-white/35 px-3 py-4 text-[13px] leading-5 text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
-                No matching bookings in this lane.
-              </p>
-            )}
+    <div ref={kanban.boardRef}>
+      <div className="grid gap-4 lg:grid-cols-3">
+        {kanban.previewColumns.map((column) => {
+          const lane = laneDefinitions.find((candidate) => candidate.id === column.id)
+          if (!lane) return null
+          return (
+            <section
+              key={column.id}
+              className="md-kanban-column min-h-[240px]"
+              data-column-id={column.id}
+              data-drop-target={kanban.activeCardId && kanban.activeColumnId === column.id ? "true" : undefined}
+              style={{ "--md-kanban-status-color": toneToVar(statusTone[column.id as BookingStatus]) } as CSSProperties}
+            >
+              <header>
+                <h2>{t(lane.label)}</h2>
+                <strong className="tabular-nums">{column.tasks.length}</strong>
+              </header>
+              <div data-kanban-list>
+                {column.tasks.map((booking) => (
+                  <button
+                    key={booking.id}
+                    type="button"
+                    className="md-kanban-card group"
+                    data-kanban-card={booking.id}
+                    data-task-id={booking.id}
+                    data-kanban-dragging={kanban.activeCardId === booking.id ? "true" : undefined}
+                    aria-grabbed={kanban.activeCardId === booking.id}
+                    aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown Alt+ArrowLeft Alt+ArrowRight"
+                    onClick={() => {
+                      if (!kanban.isClickSuppressed()) onOpenBooking(booking)
+                    }}
+                    onPointerDown={(event) => kanban.handlePointerDown(event, booking.id)}
+                    onKeyDown={(event) => kanban.handleKeyDown(event, booking.id)}
+                  >
+                    <BookingKanbanCardBody booking={booking} />
+                  </button>
+                ))}
+                {column.tasks.length === 0 ? <p className="md-kanban-empty text-center">{t("No matching bookings in this lane.")}</p> : null}
+              </div>
+            </section>
+          )
+        })}
+      </div>
+      <p className="sr-only" aria-live="polite">{kanban.keyboardAnnouncement}</p>
+      {kanban.activeTask && kanban.overlayStyle ? createPortal(
+        <div className="md-kanban-drag-preview" style={kanban.overlayStyle}>
+          <div className="md-kanban-drag-preview-card group">
+            <BookingKanbanCardBody booking={kanban.activeTask} />
           </div>
-        </Surface>
-      ))}
+        </div>,
+        document.body,
+      ) : null}
     </div>
+  )
+}
+
+function BookingKanbanCardBody({ booking }: { booking: Booking }) {
+  return (
+    <>
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-[13px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="ltr">{booking.id}</span>
+        <BookingStatusPill status={booking.status} />
+      </div>
+      <p className="truncate text-[13.5px] font-medium text-[var(--md-ink)]">{booking.customer}</p>
+      <p className="truncate text-[11.5px] text-[var(--md-text)]" dir="auto">{booking.route}</p>
+    </>
   )
 }
 

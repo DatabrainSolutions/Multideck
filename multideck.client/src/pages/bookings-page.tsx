@@ -164,6 +164,7 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
   const { t } = useLanguage()
   const [scope, setScope] = useState<BookingScope>("All Jobs")
   const [viewMode, setViewMode] = useState<BookingViewMode>(() => getSavedView(bookingViewStorageKey, bookingViewModes, bookingViewModes[0]))
+  const [bookingRecords, setBookingRecords] = useState<Booking[]>(() => bookings.map((booking) => ({ ...booking })))
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [favouriteIds, setFavouriteIds] = useState<Set<string>>(() => new Set(initialFavouriteBookingIds))
   const [searchCriteria, setSearchCriteria] = useState<BookingSearchCriterion[]>(initialSearchCriteria)
@@ -179,11 +180,11 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
 
   const scopedBookings = useMemo(() => {
     return (
-      scope === "My Jobs" ? bookings.filter((booking) => booking.owner === currentOperator.initials) :
-        scope === "Starred Jobs" ? bookings.filter((booking) => favouriteIds.has(booking.id)) :
-          bookings
+      scope === "My Jobs" ? bookingRecords.filter((booking) => booking.owner === currentOperator.initials) :
+        scope === "Starred Jobs" ? bookingRecords.filter((booking) => favouriteIds.has(booking.id)) :
+          bookingRecords
     )
-  }, [favouriteIds, scope])
+  }, [bookingRecords, favouriteIds, scope])
 
   const visibleBookings = useMemo(() => {
     const quickQuery = normalized(quickSearch)
@@ -479,7 +480,17 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
         />
       ) : null}
 
-      {viewMode === "Board" ? <BookingBoardPreview rows={visibleBookings} onOpenBooking={openBooking} /> : null}
+      {viewMode === "Board" ? (
+        <BookingBoardPreview
+          rows={visibleBookings}
+          onOpenBooking={openBooking}
+          onMoveBooking={(_bookingId, _status, orderedRows) => {
+            const orderedIds = new Set(orderedRows.map((booking) => booking.id))
+            const orderedIterator = orderedRows[Symbol.iterator]()
+            setBookingRecords((current) => current.map((booking) => orderedIds.has(booking.id) ? orderedIterator.next().value ?? booking : booking))
+          }}
+        />
+      ) : null}
 
       <Pagination
         page={page}

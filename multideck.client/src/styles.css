@@ -2119,6 +2119,235 @@ button {
     }
   }
 
+  /* Shared Kanban system ported from the Databrain OS source authority. */
+  .md-kanban-column {
+    display: grid;
+    align-content: start;
+    gap: 0;
+    min-width: 0;
+    padding: 0;
+    overflow: hidden;
+    border-radius: var(--md-radius-lg);
+    background: var(--md-surface);
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--md-ink) 9%, transparent),
+      0 1px 2px color-mix(in srgb, var(--md-ink) 4%, transparent),
+      0 10px 28px color-mix(in srgb, var(--md-ink) 4%, transparent);
+    transition:
+      background-color var(--md-motion-fast),
+      box-shadow var(--md-motion-fast);
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .md-kanban-column[data-drop-target="true"] {
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--md-kanban-status-color, var(--md-accent)) 46%, transparent),
+      0 1px 2px color-mix(in srgb, var(--md-ink) 4%, transparent),
+      0 14px 34px color-mix(in srgb, var(--md-kanban-status-color, var(--md-accent)) 14%, transparent);
+  }
+
+  .md-kanban-column[data-drop-target="true"] > [data-kanban-list] {
+    background: color-mix(in srgb, var(--md-kanban-status-color, var(--md-accent)) 5%, transparent);
+  }
+
+  .md-kanban-column > header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+    margin: 0;
+    padding: 11px 14px;
+    background: color-mix(in srgb, var(--md-surface-soft) 52%, var(--md-surface));
+    box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--md-ink) 8%, transparent);
+  }
+
+  .md-kanban-column > header h2,
+  .md-kanban-column > header strong {
+    color: var(--md-ink);
+    font-size: 12.5px;
+    font-weight: 600;
+  }
+
+  .md-kanban-column > [data-kanban-list] {
+    display: grid;
+    align-content: start;
+    gap: 0;
+    min-height: 42px;
+    transition: background-color var(--md-motion-fast);
+  }
+
+  .md-kanban-card {
+    position: relative;
+    display: grid;
+    gap: 7px;
+    width: 100%;
+    min-width: 0;
+    padding: 12px 14px 13px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--md-ink);
+    text-align: start;
+    box-shadow: none;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: grab;
+    transition:
+      background-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+      transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .md-kanban-card + .md-kanban-card {
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--md-ink) 8%, transparent);
+  }
+
+  .md-kanban-card:hover {
+    background: color-mix(in srgb, var(--md-ink) 2.5%, transparent);
+  }
+
+  .md-kanban-card:focus-visible,
+  .md-kanban-card:has(.md-kanban-card__primary:focus-visible) {
+    z-index: 1;
+    outline: none;
+    box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--md-accent) 48%, transparent);
+  }
+
+  .md-kanban-card__primary {
+    display: grid;
+    width: 100%;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    text-align: start;
+    outline: none;
+  }
+
+  /* The lifted copy follows the pointer, so what stays behind is just the slot
+     the card will drop back into. */
+  .md-kanban-card[data-kanban-dragging="true"] {
+    opacity: 0.34;
+    transform: scale(0.9);
+    transform-origin: 50% 50%;
+    cursor: grabbing;
+  }
+
+  .md-kanban-card[data-kanban-dragging="true"]::after {
+    position: absolute;
+    inset: 4px 8px;
+    border: 1px dashed color-mix(in srgb, var(--md-ink) 22%, transparent);
+    border-radius: var(--md-radius-md);
+    content: "";
+  }
+
+  .md-kanban-empty {
+    min-height: 42px;
+    margin: 10px 14px 14px;
+    padding: 10px;
+    border-radius: var(--md-radius-md);
+    background: color-mix(in srgb, var(--md-ink) 3%, transparent);
+    color: var(--md-subtle);
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  /* The dragged card is the real card, lifted: it ramps up fast then settles, so
+     the pickup reads as weight rather than a pop. */
+  .md-kanban-drag-preview {
+    position: fixed;
+    pointer-events: none;
+    transform-origin: 50% 50%;
+    will-change: left, top, transform;
+    z-index: 90;
+  }
+
+  .md-kanban-drag-preview-card {
+    --md-kanban-lift-hairline: inset 0 0 0 1px color-mix(in srgb, var(--md-ink) 10%, transparent);
+    --md-kanban-lift-rest: 0 2px 6px rgba(12, 20, 28, 0.1);
+    --md-kanban-lift-raised: 0 4px 10px rgba(12, 20, 28, 0.12), 0 24px 48px rgba(12, 20, 28, 0.2);
+    display: grid;
+    gap: 7px;
+    padding: 12px 14px 13px;
+    border-radius: var(--md-radius-lg);
+    background: var(--md-surface);
+    color: var(--md-ink);
+    box-shadow: var(--md-kanban-lift-hairline), var(--md-kanban-lift-raised);
+    transform: scale(1.04);
+    transform-origin: 50% 50%;
+    animation: md-kanban-drag-lift 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  /* Paper Tray keeps its document content, but its old floating-card shell must
+     not override the Databrain row and pickup treatment. */
+  .md-kanban-card.md-paper-kanban-card-shell:hover,
+  .md-kanban-card.md-paper-kanban-card-shell:focus-within {
+    transform: none;
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--md-ink) 8%, transparent);
+  }
+
+  .md-kanban-card .md-paper-kanban-card,
+  [dir="rtl"] .md-kanban-card .md-paper-kanban-card {
+    min-height: 0;
+    padding: 0 30px 0 0;
+  }
+
+  [dir="rtl"] .md-kanban-card .md-paper-kanban-card {
+    padding: 0 0 0 30px;
+  }
+
+  [data-theme="dark"] .md-kanban-column {
+    background: var(--md-surface-soft);
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, #ffffff 10%, transparent),
+      0 12px 30px rgba(0, 0, 0, 0.36);
+  }
+
+  [data-theme="dark"] .md-kanban-column[data-drop-target="true"] {
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--md-kanban-status-color, var(--md-accent)) 54%, transparent),
+      0 14px 34px rgba(0, 0, 0, 0.4);
+  }
+
+  [data-theme="dark"] .md-kanban-column > header {
+    background: color-mix(in srgb, #ffffff 3%, transparent);
+    box-shadow: inset 0 -1px 0 color-mix(in srgb, #ffffff 10%, transparent);
+  }
+
+  [data-theme="dark"] .md-kanban-card + .md-kanban-card {
+    box-shadow: inset 0 1px 0 color-mix(in srgb, #ffffff 9%, transparent);
+  }
+
+  [data-theme="dark"] .md-kanban-card:hover {
+    background: color-mix(in srgb, #ffffff 5%, transparent);
+  }
+
+  [data-theme="dark"] .md-kanban-drag-preview-card {
+    --md-kanban-lift-hairline: inset 0 0 0 1px color-mix(in srgb, #ffffff 14%, transparent);
+    --md-kanban-lift-rest: 0 2px 6px rgba(0, 0, 0, 0.34);
+    --md-kanban-lift-raised: 0 4px 12px rgba(0, 0, 0, 0.4), 0 26px 52px rgba(0, 0, 0, 0.52);
+    background: color-mix(in srgb, #ffffff 6%, var(--md-surface-soft));
+  }
+
+  [data-theme="dark"] .md-kanban-card[data-kanban-dragging="true"]::after {
+    border-color: color-mix(in srgb, #ffffff 26%, transparent);
+  }
+
+  @keyframes md-kanban-drag-lift {
+    from {
+      box-shadow: var(--md-kanban-lift-hairline), var(--md-kanban-lift-rest);
+      transform: scale(1);
+    }
+
+    to {
+      box-shadow: var(--md-kanban-lift-hairline), var(--md-kanban-lift-raised);
+      transform: scale(1.04);
+    }
+  }
+
   @media (max-width: 640px) {
     .md-toast {
       min-height: 64px;
@@ -2127,6 +2356,17 @@ button {
   }
 
   @media (prefers-reduced-motion: reduce) {
+    .md-kanban-column,
+    .md-kanban-column > [data-kanban-list],
+    .md-kanban-card {
+      transition-duration: 0.01ms !important;
+    }
+
+    .md-kanban-drag-preview-card {
+      animation: none;
+      transform: none;
+    }
+
     .md-ai-edge-glow__signal,
     .md-ai-edge-glow__frame {
       animation: none !important;
@@ -2145,4 +2385,53 @@ button {
       transform: scale(1.04);
     }
   }
+}
+
+/*
+ * Kanban spacing is intentionally unlayered. The imported component library
+ * registers its component layer before Tailwind's reset layer, which otherwise
+ * wins the cascade and zeroes the copied Databrain padding at runtime.
+ */
+.md-kanban-column > header {
+  padding: 11px 14px;
+}
+
+.md-kanban-card {
+  padding: 12px 14px 13px;
+  transition:
+    background-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-kanban-card[data-kanban-dragging="true"] {
+  opacity: 0.34;
+  transform: scale(0.9);
+  transform-origin: 50% 50%;
+}
+
+.md-kanban-card[data-kanban-dragging="true"]::after {
+  border: 1px dashed color-mix(in srgb, var(--md-ink) 22%, transparent);
+}
+
+.md-kanban-empty {
+  margin: 10px 14px 14px;
+  padding: 10px;
+}
+
+.md-kanban-drag-preview-card {
+  padding: 12px 14px 13px;
+}
+
+.md-kanban-card .md-paper-kanban-card,
+.md-kanban-drag-preview-card .md-paper-kanban-card,
+[dir="rtl"] .md-kanban-card .md-paper-kanban-card,
+[dir="rtl"] .md-kanban-drag-preview-card .md-paper-kanban-card {
+  min-height: 0;
+  padding: 0 30px 0 0;
+}
+
+[dir="rtl"] .md-kanban-card .md-paper-kanban-card,
+[dir="rtl"] .md-kanban-drag-preview-card .md-paper-kanban-card {
+  padding: 0 0 0 30px;
 }

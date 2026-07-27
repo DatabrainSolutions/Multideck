@@ -1,25 +1,5 @@
 import { Fragment, useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react"
-import {
-  DndContext,
-  DragOverlay,
-  KeyboardSensor,
-  PointerSensor,
-  closestCorners,
-  useDroppable,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-  type DragOverEvent,
-  type DragStartEvent,
-} from "@dnd-kit/core"
-import {
-  SortableContext,
-  arrayMove,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable"
-import { CSS } from "@dnd-kit/utilities"
+import { createPortal } from "react-dom"
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
 import {
   ArrowDownToLine,
@@ -45,6 +25,7 @@ import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
 import { FilterChips, SegmentedControl } from "@/components/multideck/workflow-components"
 import { cn } from "@/lib/utils"
 import { mdMotion } from "@/lib/motion"
+import { useKanbanPointerDrag } from "@/lib/kanban-drag"
 import { useLanguage } from "@/i18n/language-provider"
 import {
   warehouseCalendarCustomers,
@@ -104,8 +85,6 @@ const warehouseTableRowTransition = {
 const stockMorphTransition = { duration: 0.38, ease: [0.22, 1, 0.36, 1] as const }
 const tableHeadClass = "h-9 border-r border-[rgba(90,103,100,0.12)] bg-[rgba(90,103,100,0.06)] px-3 py-2 text-[11.5px] font-medium text-[var(--md-text)] last:border-r-0"
 const tableCellClass = "border-r border-[rgba(90,103,100,0.09)] px-3 py-2 last:border-r-0"
-const kanbanLiftShadow = "var(--md-premium-stroke), 0 20px 42px rgba(42,52,50,0.16)"
-
 export type WarehouseKanbanCardData = {
   id: string
   title: string
@@ -126,11 +105,6 @@ type SortableWarehouseKanbanColumn = {
   title: string
   meta?: string
   cards: WarehouseKanbanCardData[]
-}
-
-type WarehouseKanbanPickup = {
-  transformOrigin: string
-  rotate: number
 }
 
 type WarehouseCalendarViewMode = (typeof warehouseCalendarViewModes)[number]
@@ -192,20 +166,6 @@ type WarehouseCalendarDay = {
   dayNumber: string
   outsideMonth: boolean
   events: WarehouseCalendarEvent[]
-}
-
-const defaultKanbanPickup: WarehouseKanbanPickup = {
-  transformOrigin: "50% 50%",
-  rotate: 0,
-}
-
-const kanbanCardToneClass: Record<StatusTone, string> = {
-  green: "bg-[color-mix(in_srgb,var(--md-green)_12%,white)] hover:bg-[color-mix(in_srgb,var(--md-green)_16%,white)]",
-  amber: "bg-[color-mix(in_srgb,var(--md-amber)_13%,white)] hover:bg-[color-mix(in_srgb,var(--md-amber)_17%,white)]",
-  red: "bg-[color-mix(in_srgb,var(--md-red)_10%,white)] hover:bg-[color-mix(in_srgb,var(--md-red)_14%,white)]",
-  blue: "bg-[color-mix(in_srgb,var(--md-blue)_13%,white)] hover:bg-[color-mix(in_srgb,var(--md-blue)_17%,white)]",
-  neutral: "bg-[rgba(248,252,251,0.88)] hover:bg-white",
-  teal: "bg-[color-mix(in_srgb,var(--md-accent)_12%,white)] hover:bg-[color-mix(in_srgb,var(--md-accent)_16%,white)]",
 }
 
 const warehouseCalendarGridStartHour = 5
@@ -384,18 +344,6 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
 }
 
-function getKanbanPickup(event: ReactPointerEvent<HTMLElement>) {
-  const rect = event.currentTarget.getBoundingClientRect()
-  const x = clamp((event.clientX - rect.left) / rect.width, 0, 1)
-  const y = clamp((event.clientY - rect.top) / rect.height, 0, 1)
-  const rotate = clamp((x - 0.5) * 12 + (0.5 - y) * 3, -8, 8)
-
-  return {
-    transformOrigin: `${Math.round(x * 100)}% ${Math.round(y * 100)}%`,
-    rotate,
-  }
-}
-
 function slugifyKanbanId(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")
 }
@@ -411,18 +359,6 @@ function createKanbanColumns(columns: readonly WarehouseKanbanColumnSource[], bo
 
 function countKanbanCards(columns: readonly WarehouseKanbanColumnSource[] | readonly SortableWarehouseKanbanColumn[]) {
   return columns.reduce((total, column) => total + column.cards.length, 0)
-}
-
-function findCardColumnId(columns: readonly SortableWarehouseKanbanColumn[], cardId: string) {
-  return columns.find((column) => column.cards.some((card) => card.id === cardId))?.id ?? null
-}
-
-function findColumnIndex(columns: readonly SortableWarehouseKanbanColumn[], columnId: string) {
-  return columns.findIndex((column) => column.id === columnId)
-}
-
-function findCard(columns: readonly SortableWarehouseKanbanColumn[], cardId: string) {
-  return columns.flatMap((column) => column.cards).find((card) => card.id === cardId) ?? null
 }
 
 function alignClass(align: WarehouseTableColumn<unknown>["align"]) {
@@ -1518,55 +1454,6 @@ function WarehouseBoardSummary({
   )
 }
 
-function moveCardToColumn(
-  currentColumns: SortableWarehouseKanbanColumn[],
-  activeId: string,
-  overId: string,
-) {
-  const activeColumnId = findCardColumnId(currentColumns, activeId)
-  const overIsColumn = currentColumns.some((column) => column.id === overId)
-  const overColumnId = overIsColumn ? overId : findCardColumnId(currentColumns, overId)
-
-  if (!activeColumnId || !overColumnId || activeColumnId === overColumnId) return currentColumns
-
-  const activeColumnIndex = findColumnIndex(currentColumns, activeColumnId)
-  const overColumnIndex = findColumnIndex(currentColumns, overColumnId)
-  const activeCardIndex = currentColumns[activeColumnIndex]?.cards.findIndex((card) => card.id === activeId) ?? -1
-
-  if (activeColumnIndex < 0 || overColumnIndex < 0 || activeCardIndex < 0) return currentColumns
-
-  const nextColumns = currentColumns.map((column) => ({ ...column, cards: [...column.cards] }))
-  const [movingCard] = nextColumns[activeColumnIndex].cards.splice(activeCardIndex, 1)
-  const overCardIndex = overIsColumn ? nextColumns[overColumnIndex].cards.length : nextColumns[overColumnIndex].cards.findIndex((card) => card.id === overId)
-  const insertIndex = overCardIndex >= 0 ? overCardIndex : nextColumns[overColumnIndex].cards.length
-
-  nextColumns[overColumnIndex].cards.splice(insertIndex, 0, movingCard)
-  return nextColumns
-}
-
-function reorderCardInsideColumn(
-  currentColumns: SortableWarehouseKanbanColumn[],
-  activeId: string,
-  overId: string,
-) {
-  if (activeId === overId || currentColumns.some((column) => column.id === overId)) return currentColumns
-
-  const activeColumnId = findCardColumnId(currentColumns, activeId)
-  const overColumnId = findCardColumnId(currentColumns, overId)
-
-  if (!activeColumnId || activeColumnId !== overColumnId) return currentColumns
-
-  const columnIndex = findColumnIndex(currentColumns, activeColumnId)
-  const activeCardIndex = currentColumns[columnIndex].cards.findIndex((card) => card.id === activeId)
-  const overCardIndex = currentColumns[columnIndex].cards.findIndex((card) => card.id === overId)
-
-  if (activeCardIndex < 0 || overCardIndex < 0 || activeCardIndex === overCardIndex) return currentColumns
-
-  return currentColumns.map((column, index) => (
-    index === columnIndex ? { ...column, cards: arrayMove(column.cards, activeCardIndex, overCardIndex) } : column
-  ))
-}
-
 function SortableWarehouseKanbanBoard({
   ariaLabel,
   boardId,
@@ -1580,155 +1467,100 @@ function SortableWarehouseKanbanBoard({
   gridClassName: string
   onReorder?: (columns: SortableWarehouseKanbanColumn[]) => void
 }) {
-  const shouldReduceMotion = useReducedMotion()
   const [columns, setColumns] = useState(() => createKanbanColumns(columnsSource, boardId))
-  const [activeCard, setActiveCard] = useState<WarehouseKanbanCardData | null>(null)
-  const [pickup, setPickup] = useState<WarehouseKanbanPickup>(defaultKanbanPickup)
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  )
-  const columnIds = useMemo(() => columns.map((column) => column.id), [columns])
+  const kanbanColumns = columns.map((column) => ({ id: column.id, tasks: column.cards }))
+  const kanban = useKanbanPointerDrag({
+    columns: kanbanColumns,
+    getId: (card) => card.id,
+    onCommit: ({ columns: committedColumns }) => {
+      const nextColumns = columns.map((column) => ({
+        ...column,
+        cards: committedColumns.find((candidate) => candidate.id === column.id)?.tasks ?? column.cards,
+      }))
+      setColumns(nextColumns)
+      onReorder?.(nextColumns)
+    },
+    formatKeyboardAnnouncement: (card, columnId) => `${card.id} moved to ${columns.find((column) => column.id === columnId)?.title ?? columnId}`,
+  })
 
   useEffect(() => {
     setColumns(createKanbanColumns(columnsSource, boardId))
   }, [boardId, columnsSource])
 
-  function handleDragStart(event: DragStartEvent) {
-    const activeId = String(event.active.id)
-    setActiveCard(findCard(columns, activeId))
-  }
-
-  function handleDragOver(event: DragOverEvent) {
-    const overId = event.over?.id ? String(event.over.id) : null
-    if (!overId) return
-
-    const activeId = String(event.active.id)
-    setColumns((currentColumns) => reorderCardInsideColumn(moveCardToColumn(currentColumns, activeId, overId), activeId, overId))
-  }
-
-  function handleDragEnd(event: DragEndEvent) {
-    const activeId = String(event.active.id)
-    const overId = event.over?.id ? String(event.over.id) : null
-
-    if (overId && activeId !== overId) {
-      setColumns((currentColumns) => {
-        const activeColumnId = findCardColumnId(currentColumns, activeId)
-        const overColumnId = currentColumns.some((column) => column.id === overId) ? overId : findCardColumnId(currentColumns, overId)
-
-        if (!activeColumnId || !overColumnId || activeColumnId !== overColumnId || activeColumnId === overId) return currentColumns
-
-        const columnIndex = findColumnIndex(currentColumns, activeColumnId)
-        const activeCardIndex = currentColumns[columnIndex].cards.findIndex((card) => card.id === activeId)
-        const overCardIndex = currentColumns[columnIndex].cards.findIndex((card) => card.id === overId)
-
-        if (activeCardIndex < 0 || overCardIndex < 0 || activeCardIndex === overCardIndex) return currentColumns
-
-        const nextColumns = currentColumns.map((column, index) => (
-          index === columnIndex ? { ...column, cards: arrayMove(column.cards, activeCardIndex, overCardIndex) } : column
-        ))
-        onReorder?.(nextColumns)
-        return nextColumns
-      })
-    } else {
-      onReorder?.(columns)
-    }
-
-    setActiveCard(null)
-    setPickup(defaultKanbanPickup)
-  }
-
-  function handleDragCancel() {
-    setActiveCard(null)
-    setPickup(defaultKanbanPickup)
-  }
-
   return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={closestCorners}
-      onDragStart={handleDragStart}
-      onDragOver={handleDragOver}
-      onDragEnd={handleDragEnd}
-      onDragCancel={handleDragCancel}
-    >
+    <div ref={kanban.boardRef}>
       <div className={cn("grid gap-3", gridClassName)} aria-label={ariaLabel}>
-        <SortableContext items={columnIds}>
-          {columns.map((column) => (
-            <SortableWarehouseKanbanLane
+        {kanban.previewColumns.map((previewColumn) => {
+          const column = columns.find((candidate) => candidate.id === previewColumn.id)
+          if (!column) return null
+          return (
+            <WarehouseKanbanLane
               key={column.id}
-              column={column}
-              activeCardId={activeCard?.id ?? null}
-              onPickup={setPickup}
-              shouldReduceMotion={Boolean(shouldReduceMotion)}
+              column={{ ...column, cards: previewColumn.tasks }}
+              activeCardId={kanban.activeCardId}
+              activeColumnId={kanban.activeColumnId}
+              isClickSuppressed={kanban.isClickSuppressed}
+              onPointerDown={kanban.handlePointerDown}
+              onKeyDown={kanban.handleKeyDown}
             />
-          ))}
-        </SortableContext>
+          )
+        })}
       </div>
-      <DragOverlay dropAnimation={{ duration: shouldReduceMotion ? 0 : 220, easing: "cubic-bezier(0.22, 1, 0.36, 1)" }}>
-        {activeCard ? (
-          <WarehouseKanbanDragPreview card={activeCard} pickup={pickup} shouldReduceMotion={Boolean(shouldReduceMotion)} />
-        ) : null}
-      </DragOverlay>
-    </DndContext>
+      <p className="sr-only" aria-live="polite">{kanban.keyboardAnnouncement}</p>
+      {kanban.activeTask && kanban.overlayStyle ? createPortal(
+        <div className="md-kanban-drag-preview" style={kanban.overlayStyle} data-testid="warehouse-kanban-drag-preview">
+          <div className="md-kanban-drag-preview-card group" style={{ "--warehouse-card-accent": toneToVar(kanban.activeTask.tone) } as CSSProperties}>
+            <WarehouseKanbanCardBody card={kanban.activeTask} />
+          </div>
+        </div>,
+        document.body,
+      ) : null}
+    </div>
   )
 }
 
-function SortableWarehouseKanbanLane({
+function WarehouseKanbanLane({
   column,
   activeCardId,
-  onPickup,
-  shouldReduceMotion,
+  activeColumnId,
+  isClickSuppressed,
+  onPointerDown,
+  onKeyDown,
 }: {
   column: SortableWarehouseKanbanColumn
   activeCardId: string | null
-  onPickup: (pickup: WarehouseKanbanPickup) => void
-  shouldReduceMotion: boolean
+  activeColumnId: string | null
+  isClickSuppressed: () => boolean
+  onPointerDown: (event: ReactPointerEvent<HTMLElement>, cardId: string) => void
+  onKeyDown: (event: ReactKeyboardEvent<HTMLElement>, cardId: string) => boolean
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: column.id })
-  const cardIds = useMemo(() => column.cards.map((card) => card.id), [column.cards])
-
   return (
-    <Surface key={column.id} padding="sm" className="rounded-[var(--md-radius-xl)]">
-      <div
-        ref={setNodeRef}
-        className={cn(
-          "flex h-full min-h-[230px] flex-col rounded-[var(--md-radius-lg)] p-1 transition-[background,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
-          isOver && "bg-white/38 shadow-[inset_0_0_0_1px_rgba(14,125,116,0.12)]",
-        )}
-      >
-        <div className="flex items-start justify-between gap-3 px-1 py-1">
-          <div className="min-w-0">
-            <h2 className="text-[13px] font-medium text-[var(--md-ink)]">{column.title}</h2>
-            {column.meta ? <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-[var(--md-text)]">{column.meta}</p> : null}
-          </div>
-          <span className="rounded-full bg-white/62 px-2 py-0.5 text-[11px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)]">{column.cards.length}</span>
+    <section
+      className="md-kanban-column min-h-[230px]"
+      data-column-id={column.id}
+      data-drop-target={activeCardId && activeColumnId === column.id ? "true" : undefined}
+    >
+      <header>
+        <div className="min-w-0">
+          <h2 className="truncate">{column.title}</h2>
+          {column.meta ? <p className="mt-0.5 line-clamp-2 text-[11px] leading-4 text-[var(--md-text)]">{column.meta}</p> : null}
         </div>
-        <SortableContext items={cardIds} strategy={verticalListSortingStrategy}>
-          <motion.div
-            className="mt-3 grid flex-1 content-start gap-2"
-            variants={shouldReduceMotion ? undefined : tableBodyReveal}
-            initial={shouldReduceMotion ? undefined : "hidden"}
-            animate={shouldReduceMotion ? undefined : "show"}
-          >
-            {column.cards.map((card) => (
-              <SortableWarehouseKanbanCard
-                key={card.id}
-                card={card}
-                isActive={activeCardId === card.id}
-                onPickup={onPickup}
-                shouldReduceMotion={shouldReduceMotion}
-              />
-            ))}
-            {column.cards.length ? null : (
-              <div className="grid min-h-[104px] place-items-center rounded-[var(--md-radius-lg)] bg-white/36 px-3 py-6 text-center shadow-[var(--md-shadow-line)]">
-                <p className="text-[12px] font-medium text-[var(--md-text)]">Drop work here</p>
-              </div>
-            )}
-          </motion.div>
-        </SortableContext>
+        <strong className="tabular-nums">{column.cards.length}</strong>
+      </header>
+      <div data-kanban-list>
+        {column.cards.map((card) => (
+          <WarehouseKanbanCard
+            key={card.id}
+            card={card}
+            isDragging={activeCardId === card.id}
+            isClickSuppressed={isClickSuppressed}
+            onPointerDown={onPointerDown}
+            onKeyDown={onKeyDown}
+          />
+        ))}
+        {column.cards.length ? null : <p className="md-kanban-empty text-center">Drop work here</p>}
       </div>
-    </Surface>
+    </section>
   )
 }
 
@@ -1746,72 +1578,38 @@ function WarehouseKanbanCardBody({ card }: { card: WarehouseKanbanCardData }) {
   )
 }
 
-function SortableWarehouseKanbanCard({
+function WarehouseKanbanCard({
   card,
-  isActive,
-  onPickup,
-  shouldReduceMotion,
+  isDragging,
+  isClickSuppressed,
+  onPointerDown,
+  onKeyDown,
 }: {
   card: WarehouseKanbanCardData
-  isActive: boolean
-  onPickup: (pickup: WarehouseKanbanPickup) => void
-  shouldReduceMotion: boolean
+  isDragging: boolean
+  isClickSuppressed: () => boolean
+  onPointerDown: (event: ReactPointerEvent<HTMLElement>, cardId: string) => void
+  onKeyDown: (event: ReactKeyboardEvent<HTMLElement>, cardId: string) => boolean
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: card.id })
-
   return (
-    <motion.button
-      ref={setNodeRef}
+    <button
       type="button"
-      variants={shouldReduceMotion ? undefined : rowReveal}
       aria-label={`${card.id} ${card.title}`}
-      {...attributes}
-      {...listeners}
-      className={cn(
-        "group relative min-h-[116px] !cursor-grab touch-none overflow-hidden rounded-[var(--md-radius-lg)] p-3 text-left shadow-[var(--md-shadow-line)] outline-none",
-        "transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] active:!cursor-grabbing",
-        "focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
-        (isDragging || isActive) && "opacity-30",
-        kanbanCardToneClass[card.tone],
-      )}
-      style={{
-        transform: CSS.Transform.toString(transform),
-        transition,
-        "--warehouse-card-accent": toneToVar(card.tone),
-      } as CSSProperties}
-      onPointerDownCapture={(event) => onPickup(getKanbanPickup(event))}
-      whileHover={shouldReduceMotion || isDragging ? undefined : { y: -1, scale: 1.01 }}
-      whileTap={shouldReduceMotion ? undefined : { scale: 0.985 }}
-      transition={mdMotion.spring}
+      aria-grabbed={isDragging}
+      aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown Alt+ArrowLeft Alt+ArrowRight"
+      data-kanban-card={card.id}
+      data-task-id={card.id}
+      data-kanban-dragging={isDragging ? "true" : undefined}
+      className="md-kanban-card group min-h-[116px] overflow-hidden"
+      style={{ "--warehouse-card-accent": toneToVar(card.tone) } as CSSProperties}
+      onClick={(event) => {
+        if (isClickSuppressed()) event.preventDefault()
+      }}
+      onPointerDown={(event) => onPointerDown(event, card.id)}
+      onKeyDown={(event) => onKeyDown(event, card.id)}
     >
       <WarehouseKanbanCardBody card={card} />
-    </motion.button>
-  )
-}
-
-function WarehouseKanbanDragPreview({
-  card,
-  pickup,
-  shouldReduceMotion,
-}: {
-  card: WarehouseKanbanCardData
-  pickup: WarehouseKanbanPickup
-  shouldReduceMotion: boolean
-}) {
-  return (
-    <motion.div
-      data-testid="warehouse-kanban-drag-preview"
-      className={cn(
-        "group relative min-h-[116px] w-[min(260px,72vw)] overflow-hidden rounded-[var(--md-radius-lg)] p-3 text-left shadow-[var(--md-shadow-line)]",
-        kanbanCardToneClass[card.tone],
-      )}
-      style={{ transformOrigin: pickup.transformOrigin, "--warehouse-card-accent": toneToVar(card.tone), boxShadow: kanbanLiftShadow } as CSSProperties}
-      initial={false}
-      animate={shouldReduceMotion ? { scale: 1 } : { scale: 1.035, rotate: pickup.rotate }}
-      transition={mdMotion.spring}
-    >
-      <WarehouseKanbanCardBody card={card} />
-    </motion.div>
+    </button>
   )
 }
 
