@@ -1,4 +1,21 @@
-import { useRef, useState, type DragEvent } from "react"
+import { useEffect, useMemo, useState, type CSSProperties } from "react"
+import {
+  DndContext,
+  DragOverlay,
+  KeyboardSensor,
+  PointerSensor,
+  closestCorners,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragOverEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core"
+import { sortableKeyboardCoordinates } from "@dnd-kit/sortable"
+import { CSS } from "@dnd-kit/utilities"
+import { motion, useReducedMotion } from "motion/react"
 import { ArrowUpRight, MapPin, Star, Truck } from "lucide-react"
 import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
 import type { StatusTone } from "@/data/multideck-data"
@@ -115,114 +132,92 @@ export function DomesticRoadKanbanBoard({
   onMoveJob?: (jobId: string, stage: RoadJobStageId) => void
 }) {
   const { t } = useLanguage()
-  const [draggedJobId, setDraggedJobId] = useState<string | null>(null)
-  const draggedJobIdRef = useRef<string | null>(null)
-  const [dropStage, setDropStage] = useState<RoadJobStageId | null>(null)
+  const shouldReduceMotion = useReducedMotion()
+  const [activeJobId, setActiveJobId] = useState<string | null>(null)
+  const [previewStageByJobId, setPreviewStageByJobId] = useState<Record<string, RoadJobStageId>>({})
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+  const displayJobs = useMemo(() => jobs.map((job) => ({ ...job, stage: previewStageByJobId[job.id] ?? job.stage })), [jobs, previewStageByJobId])
+  const activeJob = displayJobs.find((job) => job.id === activeJobId) ?? null
 
-  function beginMove(jobId: string) {
-    draggedJobIdRef.current = jobId
-    setDraggedJobId(jobId)
+  useEffect(() => setPreviewStageByJobId({}), [jobs])
+
+  function stageFromOverId(overId: string | number | null | undefined) {
+    const stage = roadJobStages.find((candidate) => candidate.id === overId)
+    if (stage) return stage.id
+    return displayJobs.find((job) => job.id === overId)?.stage
   }
 
-  function endMove() {
-    draggedJobIdRef.current = null
-    setDraggedJobId(null)
-    setDropStage(null)
+  function handleDragStart(event: DragStartEvent) {
+    setActiveJobId(String(event.active.id))
   }
 
-  function moveJob(stage: RoadJobStageId) {
-    const jobId = draggedJobIdRef.current
-    if (jobId) onMoveJob?.(jobId, stage)
-    endMove()
+  function handleDragOver(event: DragOverEvent) {
+    const jobId = String(event.active.id)
+    const destinationStage = stageFromOverId(event.over?.id)
+    if (destinationStage) setPreviewStageByJobId((current) => current[jobId] === destinationStage ? current : { ...current, [jobId]: destinationStage })
   }
 
-  function startDrag(event: DragEvent<HTMLElement>, jobId: string) {
-    beginMove(jobId)
-    event.dataTransfer.effectAllowed = "move"
-    event.dataTransfer.setData("application/x-multideck-road-job", jobId)
-    event.dataTransfer.setData("text/plain", jobId)
+  function finishDrag(event: DragEndEvent) {
+    const jobId = String(event.active.id)
+    const destinationStage = stageFromOverId(event.over?.id)
+    const job = jobs.find((candidate) => candidate.id === jobId)
+    if (job && destinationStage && job.stage !== destinationStage) onMoveJob?.(jobId, destinationStage)
+    setActiveJobId(null)
+    setPreviewStageByJobId({})
   }
 
-  function dropJob(event: DragEvent<HTMLElement>, stage: RoadJobStageId) {
-    event.preventDefault()
-    const jobId = event.dataTransfer.getData("application/x-multideck-road-job") || draggedJobIdRef.current
-    if (jobId) onMoveJob?.(jobId, stage)
-    endMove()
+  function cancelDrag() {
+    setActiveJobId(null)
+    setPreviewStageByJobId({})
   }
 
   return (
-    <div className="overflow-x-auto pb-2">
-      <div className="grid w-full min-w-[1120px] grid-cols-[repeat(5,minmax(0,1fr))] gap-3" aria-label={t("Road job Kanban board")}>
-        {roadJobStages.map((stage) => {
-          const stageJobs = jobs.filter((job) => job.stage === stage.id)
-
-          return (
-            <section
-              key={stage.id}
-              onDragEnter={() => setDropStage(stage.id)}
-              onDragOver={(event) => {
-                event.preventDefault()
-                event.dataTransfer.dropEffect = "move"
-                setDropStage(stage.id)
-              }}
-              onPointerEnter={() => {
-                if (draggedJobIdRef.current) setDropStage(stage.id)
-              }}
-              onPointerUp={() => {
-                if (draggedJobIdRef.current) moveJob(stage.id)
-              }}
-              onDragLeave={(event) => {
-                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropStage(null)
-              }}
-              onDrop={(event) => dropJob(event, stage.id)}
-              className={cn(
-                "min-h-[330px] min-w-0 overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-3 shadow-[var(--md-shadow-line)] transition-[background,box-shadow] duration-150",
-                dropStage === stage.id && "bg-[color-mix(in_srgb,var(--md-accent)_12%,var(--md-surface-tint))] shadow-[inset_0_0_0_2px_color-mix(in_srgb,var(--md-accent)_35%,transparent),var(--md-shadow-line)]",
-              )}
-            >
-              <header className="flex items-start justify-between gap-3 px-1 pb-3">
-                <div className="min-w-0">
-                  <h2 className="text-[13px] font-medium text-[var(--md-ink)]">{t(stage.label)}</h2>
-                  <p className="mt-0.5 truncate text-[11px] text-[var(--md-text)]">{t(stage.helper)}</p>
-                </div>
-                <strong className={cn("text-[22px] font-medium leading-none tabular-nums", stage.tone === "neutral" && "text-[var(--md-ink)]")} style={{ color: stage.tone === "neutral" ? undefined : toneToVar(stage.tone) }}>{stageJobs.length}</strong>
-              </header>
-              <div className="grid content-start gap-2">
-                {stageJobs.map((job) => <DomesticRoadKanbanCard key={job.id} job={job} favourite={favouriteIds.has(job.bookingId)} dragging={draggedJobId === job.id} onPointerDown={beginMove} onDragStart={startDrag} onDragEnd={endMove} onOpenBooking={onOpenBooking} onToggleFavourite={onToggleFavourite} />)}
-                {stageJobs.length === 0 ? <p className="rounded-[var(--md-radius-lg)] border border-dashed border-[rgba(11,20,19,0.12)] px-3 py-5 text-center text-[11px] text-[var(--md-subtle)]">{t("No jobs")}</p> : null}
-              </div>
-            </section>
-          )
-        })}
+    <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={finishDrag} onDragCancel={cancelDrag}>
+      <div className="overflow-x-auto pb-2">
+        <div className="grid w-full min-w-[1120px] grid-cols-[repeat(5,minmax(0,1fr))] gap-3" aria-label={t("Road job Kanban board")}>
+          {roadJobStages.map((stage) => <DomesticRoadKanbanLane key={stage.id} stage={stage} jobs={displayJobs.filter((job) => job.stage === stage.id)} active={Boolean(activeJobId)} favouriteIds={favouriteIds} onOpenBooking={onOpenBooking} onToggleFavourite={onToggleFavourite} />)}
+        </div>
       </div>
-    </div>
+      <DragOverlay dropAnimation={{ duration: shouldReduceMotion ? 0 : 220, easing: "cubic-bezier(0.16, 1, 0.3, 1)" }}>
+        {activeJob ? <DomesticRoadKanbanDragPreview job={activeJob} favourite={favouriteIds.has(activeJob.bookingId)} /> : null}
+      </DragOverlay>
+    </DndContext>
   )
 }
 
-function DomesticRoadKanbanCard({
+function DomesticRoadKanbanLane({ stage, jobs, active, favouriteIds, onOpenBooking, onToggleFavourite }: { stage: RoadJobStage; jobs: DomesticRoadJob[]; active: boolean; favouriteIds: Set<string>; onOpenBooking?: (job: DomesticRoadJob) => void; onToggleFavourite?: (job: DomesticRoadJob) => void }) {
+  const { t } = useLanguage()
+  const { setNodeRef, isOver } = useDroppable({ id: stage.id })
+  return <section ref={setNodeRef} className={cn("min-h-[330px] min-w-0 overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-3 shadow-[var(--md-shadow-line)] transition-[background,box-shadow] duration-200", isOver && active && "bg-[color-mix(in_srgb,var(--md-accent)_12%,var(--md-surface-tint))] shadow-[inset_0_0_0_2px_color-mix(in_srgb,var(--md-accent)_35%,transparent),var(--md-shadow-line)]")}>
+    <header className="flex items-start justify-between gap-3 px-1 pb-3"><div className="min-w-0"><h2 className="text-[13px] font-medium text-[var(--md-ink)]">{t(stage.label)}</h2><p className="mt-0.5 truncate text-[11px] text-[var(--md-text)]">{t(stage.helper)}</p></div><strong className={cn("text-[22px] font-medium leading-none tabular-nums", stage.tone === "neutral" && "text-[var(--md-ink)]")} style={{ color: stage.tone === "neutral" ? undefined : toneToVar(stage.tone) }}>{jobs.length}</strong></header>
+    <div className="grid content-start gap-2">{jobs.map((job) => <SortableDomesticRoadKanbanCard key={job.id} job={job} favourite={favouriteIds.has(job.bookingId)} onOpenBooking={onOpenBooking} onToggleFavourite={onToggleFavourite} />)}{jobs.length === 0 ? <p className="rounded-[var(--md-radius-lg)] border border-dashed border-[rgba(11,20,19,0.12)] px-3 py-5 text-center text-[11px] text-[var(--md-subtle)]">{t("Drop a job here")}</p> : null}</div>
+  </section>
+}
+
+function SortableDomesticRoadKanbanCard({
   job,
   favourite,
-  dragging,
-  onPointerDown,
-  onDragStart,
-  onDragEnd,
   onOpenBooking,
   onToggleFavourite,
 }: {
   job: DomesticRoadJob
   favourite: boolean
-  dragging: boolean
-  onPointerDown: (jobId: string) => void
-  onDragStart: (event: DragEvent<HTMLElement>, jobId: string) => void
-  onDragEnd: () => void
   onOpenBooking?: (job: DomesticRoadJob) => void
   onToggleFavourite?: (job: DomesticRoadJob) => void
 }) {
   const { t } = useLanguage()
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: job.id })
+  const cardStyle: CSSProperties = {
+    transform: CSS.Translate.toString(transform),
+    transition: isDragging ? undefined : "transform 260ms cubic-bezier(0.16, 1, 0.3, 1)",
+  }
 
   return (
-    <div className="relative min-w-0">
-      <button draggable type="button" onPointerDown={() => onPointerDown(job.id)} onDragStart={(event) => onDragStart(event, job.id)} onDragEnd={onDragEnd} onClick={() => onOpenBooking?.(job)} title={t("Drag job to another stage")} className={cn("group w-full min-w-0 max-w-full cursor-grab overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-3 ps-10 text-start shadow-[var(--md-shadow-line)] transition-[transform,box-shadow,background,opacity] duration-200 hover:-translate-y-px hover:shadow-[var(--md-shadow-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(14,125,116,0.24)] active:cursor-grabbing", dragging && "opacity-60")}>
+    <motion.div ref={setNodeRef} layout="position" transition={{ duration: 0.26, ease: [0.16, 1, 0.3, 1] }} style={cardStyle} className={cn("relative min-w-0", isDragging && "z-10 opacity-25")}>
+      <button {...attributes} {...listeners} type="button" onClick={() => onOpenBooking?.(job)} title={t("Drag job to another stage")} className="group w-full min-w-0 max-w-full cursor-grab touch-none overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-3 ps-10 text-start shadow-[var(--md-shadow-line)] transition-[transform,box-shadow,background,opacity] duration-200 hover:-translate-y-px hover:shadow-[var(--md-shadow-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(14,125,116,0.24)] active:cursor-grabbing">
         <span className="flex min-w-0 items-center gap-2"><span dir="ltr" className="shrink-0 font-mono text-[11px] font-medium text-[var(--md-accent)]">{job.bookingId}</span><StatusPill tone={job.tone} className="min-w-0 truncate">{t(job.status)}</StatusPill></span>
         <span className="mt-2 block truncate text-[13px] font-medium text-[var(--md-ink)]">{job.customer}</span>
         <span className="mt-1 block truncate text-[11px] text-[var(--md-text)]">{job.collection} <span aria-hidden="true">→</span> {job.delivery}</span>
@@ -230,8 +225,12 @@ function DomesticRoadKanbanCard({
         <span className="mt-0.5 block truncate text-[11px] text-[var(--md-text)]">{t(job.carrier)} · {t(job.timing)}</span>
       </button>
       <button type="button" aria-label={t(favourite ? "Remove job from favourites" : "Add job to favourites")} aria-pressed={favourite} title={t(favourite ? "Remove from favourites" : "Add to favourites")} onClick={() => onToggleFavourite?.(job)} className={cn("absolute start-2 top-3 grid size-6 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-subtle)] transition-[background,color,box-shadow,opacity,transform] duration-200 hover:bg-white hover:text-[var(--md-amber)] hover:shadow-[var(--md-shadow-line)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(221,138,43,0.2)]", favourite && "bg-[rgba(221,138,43,0.12)] text-[var(--md-amber)] shadow-[var(--md-shadow-line)]")}><Star className={cn("size-3.5", favourite && "fill-current")} strokeWidth={1.35} /></button>
-    </div>
+    </motion.div>
   )
+}
+
+function DomesticRoadKanbanDragPreview({ job, favourite }: { job: DomesticRoadJob; favourite: boolean }) {
+  return <div className="w-[min(320px,calc(100vw-32px))] rotate-[1deg] rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-3 ps-10 shadow-[var(--md-premium-stroke),0_24px_48px_rgba(18,30,28,0.22)]"><span className="flex min-w-0 items-center gap-2"><span dir="ltr" className="shrink-0 font-mono text-[11px] font-medium text-[var(--md-accent)]">{job.bookingId}</span><StatusPill tone={job.tone} className="min-w-0 truncate">{job.status}</StatusPill></span><span className="mt-2 block truncate text-[13px] font-medium text-[var(--md-ink)]">{job.customer}</span><span className="mt-1 block truncate text-[11px] text-[var(--md-text)]">{job.collection} <span aria-hidden="true">→</span> {job.delivery}</span><span className="mt-3 block truncate text-[11px] font-medium text-[var(--md-ink)]">{job.service}</span><span className="mt-0.5 block truncate text-[11px] text-[var(--md-text)]">{job.carrier} · {job.timing}</span><span className={cn("absolute start-2 top-3 grid size-6 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-subtle)]", favourite && "bg-[rgba(221,138,43,0.12)] text-[var(--md-amber)]")}><Star className={cn("size-3.5", favourite && "fill-current")} strokeWidth={1.35} /></span></div>
 }
 
 export function DomesticRoadJobCard({
