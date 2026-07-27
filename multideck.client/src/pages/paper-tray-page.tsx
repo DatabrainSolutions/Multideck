@@ -13,6 +13,7 @@ import { createInitialPaperTrays } from "@/data/paper-tray-data"
 import { bookings } from "@/data/multideck-data"
 import { useLanguage } from "@/i18n/language-provider"
 import { mdMotion, reduceMotion } from "@/lib/motion"
+import { useKanbanReflow } from "@/lib/kanban-drag"
 
 const maximumTrayCount = 5
 const paperTrayViewModes = ["Tray", "List", "Kanban"] as const
@@ -490,6 +491,9 @@ function PaperTrayKanbanView({
   const { t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
   const [dropTargetId, setDropTargetId] = useState<string | null>(null)
+  const boardRef = useRef<HTMLDivElement>(null)
+  const layoutSignature = trays.map((tray) => `${tray.id}:${tray.documents.map((document) => document.id).join(",")}`).join("|")
+  useKanbanReflow(boardRef, layoutSignature)
 
   function handleDrop(event: ReactDragEvent<HTMLElement>, destinationTrayId: string) {
     event.preventDefault()
@@ -507,12 +511,13 @@ function PaperTrayKanbanView({
 
   return (
     <div className="md-paper-kanban-view">
-      <div className="md-paper-kanban-view__board" style={{ "--md-paper-kanban-columns": trays.length } as CSSProperties}>
+      <div ref={boardRef} className="md-paper-kanban-view__board" style={{ "--md-paper-kanban-columns": trays.length } as CSSProperties}>
         {trays.map((tray, trayIndex) => (
           <motion.section
             layout
             key={tray.id}
             className="md-paper-kanban-column"
+            data-column-id={tray.id}
             style={{ "--md-tray-color": tray.color ?? "#0e7d74" } as CSSProperties}
             data-drop-target={dropTargetId === tray.id ? "true" : undefined}
             onDragEnter={(event) => {
@@ -539,7 +544,7 @@ function PaperTrayKanbanView({
               <span className="md-paper-kanban-column__count" data-i18n-skip>{tray.documents.length}</span>
             </header>
 
-            <div className="md-paper-kanban-column__documents">
+            <div data-kanban-list className="md-paper-kanban-column__documents">
               <AnimatePresence initial={false} mode="popLayout">
                 {tray.documents.map((document, index) => {
                   const imageDocument = isImageDocument(document)
@@ -550,6 +555,8 @@ function PaperTrayKanbanView({
                       layoutId={`paper-document-${document.id}`}
                       key={document.id}
                       draggable
+                      data-kanban-card={document.id}
+                      data-task-id={document.id}
                       className="md-paper-kanban-card-shell"
                       initial={shouldReduceMotion ? false : { opacity: 0, y: 8, scale: 0.99 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}

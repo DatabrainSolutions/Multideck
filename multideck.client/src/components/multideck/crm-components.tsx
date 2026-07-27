@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react"
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react"
 import {
   ArrowRight,
   BarChart3,
@@ -31,6 +31,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
+import { useKanbanReflow } from "@/lib/kanban-drag"
 import {
   crmAccountSignals,
   crmActivities,
@@ -506,6 +507,8 @@ function DealCard({
     <button
       type="button"
       data-crm-deal-id={deal.id}
+      data-kanban-card={deal.id}
+      data-kanban-dragging={isDragging || undefined}
       aria-pressed={selected}
       aria-grabbed={isDragging}
       className={cn(
@@ -656,6 +659,9 @@ export function CrmPipelineBoard({
   const [dropPreview, setDropPreview] = useState<DropPreview | null>(null)
   const [overStageId, setOverStageId] = useState<string | null>(null)
   const [suppressClickId, setSuppressClickId] = useState<string | null>(null)
+  const boardRef = useRef<HTMLDivElement>(null)
+  const boardSignature = boardStages.map((stage) => `${stage.id}:${stage.deals.map((deal) => deal.id).join(",")}`).join("|")
+  useKanbanReflow(boardRef, boardSignature)
 
   useEffect(() => {
     setBoardStages(cloneStages(activeStages))
@@ -766,7 +772,7 @@ export function CrmPipelineBoard({
   }
 
   return (
-    <div className="grid min-w-0 gap-3">
+    <div ref={boardRef} className="grid min-w-0 gap-3">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <p className="text-[13px] font-medium text-[var(--md-ink)]">{activePipeline?.name ?? "Pipeline"}</p>
@@ -823,6 +829,7 @@ export function CrmPipelineBoard({
             <Surface
               key={stage.id}
               data-crm-stage-id={stage.id}
+              data-column-id={stage.id}
               padding="none"
               tone="soft"
               className={cn(
@@ -837,7 +844,7 @@ export function CrmPipelineBoard({
                 </div>
                 <span className="size-2.5 rounded-full" style={{ background: toneToVar(stage.tone) }} />
               </div>
-              <div className="grid min-h-[128px] gap-3">
+              <div data-kanban-list className="grid min-h-[128px] gap-3">
                 {buildDealNodes({
                   stage,
                   dragState,
