@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react"
 import "@/quotes-transfer.css"
 import { DotLottieReact } from "@lottiefiles/dotlottie-react"
-import { useReducedMotion } from "motion/react"
+import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
 import {
   BrainCircuit,
   CheckCircle2,
@@ -52,6 +52,8 @@ import { DataTable, type DataTableColumn } from "@/components/multideck/data-tab
 import { DexterActionPill, SpectralBloomShader } from "@/components/multideck/dexter-action-pill"
 import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
 import { MultiSelectMenu } from "@/components/multideck/multi-select-menu"
+import { CopyFeedbackTransition, CopyStatusIcon } from "@/components/multideck/copyable-field"
+import { mdMotion, reduceMotion } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 import {
   getFinanceExchangeRates,
@@ -73,6 +75,8 @@ type QuoteParty = {
 
 type QuoteCurrency = "GBP" | "USD" | "EUR" | "JPY" | "AUD" | "CAD"
 type QuoteWorkspaceTab = "overview" | "details" | "charges" | "documents" | "audit"
+
+const quoteWorkspaceTabs: QuoteWorkspaceTab[] = ["overview", "details", "charges", "documents", "audit"]
 
 type JobRoe = {
   currency: Exclude<QuoteCurrency, "GBP">
@@ -709,7 +713,7 @@ function InsightRow({
     <div className="grid grid-cols-[28px_minmax(0,1fr)_auto] items-start gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-2.5 py-2 shadow-[var(--md-shadow-line)]">
       <span className={cn(
         "grid size-7 place-items-center rounded-[var(--md-radius-md)] shadow-[var(--md-shadow-line)]",
-        tone === "green" ? "bg-[rgba(14,125,116,0.11)] text-[var(--md-green)]" : tone === "amber" ? "bg-[rgba(221,138,43,0.12)] text-[var(--md-amber)]" : tone === "red" ? "bg-[rgba(209,78,78,0.11)] text-[var(--md-red)]" : "bg-[rgba(74,125,156,0.12)] text-[var(--md-blue)]",
+        tone === "green" ? "bg-[var(--md-accent-a11)] text-[var(--md-green)]" : tone === "amber" ? "bg-[rgba(221,138,43,0.12)] text-[var(--md-amber)]" : tone === "red" ? "bg-[rgba(209,78,78,0.11)] text-[var(--md-red)]" : "bg-[rgba(74,125,156,0.12)] text-[var(--md-blue)]",
       )}>
         <Icon className="size-3" strokeWidth={1.4} />
       </span>
@@ -723,8 +727,8 @@ function InsightRow({
 }
 
 function QuoteOverviewSignals({ compact = false }: { compact?: boolean }) {
-  const { t } = useLanguage()
-  const reduceMotion = useReducedMotion()
+  const { t, direction } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
   const successScore = 68
   const needleAngle = -90 + (successScore / 100) * 180
 
@@ -742,7 +746,7 @@ function QuoteOverviewSignals({ compact = false }: { compact?: boolean }) {
           <span className="md-quote-stage-panel__count" data-i18n-skip>3 / 6</span>
         </div>
         <div className="md-quote-stage-panel__steps" role="list" aria-label={t("Quote progress")}>
-          {quoteStages.map((stage) => (
+          {quoteStages.map((stage, index) => (
             <div
               key={stage.label}
               className="md-quote-stage-panel__step"
@@ -754,7 +758,14 @@ function QuoteOverviewSignals({ compact = false }: { compact?: boolean }) {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button type="button" aria-label={`${t(stage.label)}: ${t(stage.summary)}`}>
-                    <span className="md-quote-stage-panel__rail"><i /></span>
+                    <span className="md-quote-stage-panel__rail">
+                      <motion.i
+                        initial={shouldReduceMotion ? false : { scaleX: 0 }}
+                        animate={{ scaleX: 1 }}
+                        transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.32, delay: index * 0.035, ease: [0.16, 1, 0.3, 1] }}
+                        style={{ transformOrigin: direction === "rtl" ? "right center" : "left center" }}
+                      />
+                    </span>
                     <p>{t(stage.label)}</p>
                   </button>
                 </TooltipTrigger>
@@ -768,7 +779,7 @@ function QuoteOverviewSignals({ compact = false }: { compact?: boolean }) {
         </div>
       </Surface>
 
-      <Surface padding="none" className="relative overflow-hidden rounded-[var(--md-radius-xl)] bg-[#061b17] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_0_0_1px_rgba(3,31,26,0.12),0_10px_22px_rgba(4,42,35,0.18)]">
+      <Surface padding="none" className="relative overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-accent-abyss-deep)] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_0_0_1px_var(--md-accent-veil-ring-a12),0_10px_22px_var(--md-accent-veil-cast-a18)]">
         <span aria-hidden="true" className="pointer-events-none absolute inset-0">
           <SpectralBloomShader />
         </span>
@@ -791,15 +802,20 @@ function QuoteOverviewSignals({ compact = false }: { compact?: boolean }) {
               </linearGradient>
             </defs>
             <path className="md-quote-temperature-gradient" d="M 30 104 A 80 80 0 0 1 190 104" fill="none" stroke="url(#quote-temperature-gradient)" strokeWidth="14" strokeLinecap="round" />
-            <g style={{ transform: `rotate(${needleAngle}deg)`, transformOrigin: "110px 104px" }}>
+            <motion.g
+              initial={shouldReduceMotion ? false : { rotate: -90 }}
+              animate={{ rotate: needleAngle }}
+              transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.page)}
+              style={{ transformOrigin: "110px 104px" }}
+            >
               <line x1="110" y1="104" x2="110" y2="40" stroke="white" strokeWidth="4" strokeLinecap="round" />
               <circle cx="110" cy="104" r="8" fill="white" stroke="rgba(2,13,11,0.72)" strokeWidth="3" />
-            </g>
+            </motion.g>
           </svg>
           <DotLottieReact
             src="/animations/fire.lottie"
-            autoplay={!reduceMotion}
-            loop={!reduceMotion}
+            autoplay={!shouldReduceMotion}
+            loop={!shouldReduceMotion}
             className="md-quote-temperature-fire"
             aria-hidden="true"
           />
@@ -856,7 +872,7 @@ function ClientPricingIntelligence() {
   return (
     <div className="grid h-full gap-1.5 sm:grid-cols-3">
         {metrics.map(([label, value, detail, infoTitle, infoDetail, valueSize, isAi]) => (
-          <div key={label} className="relative flex min-h-[96px] min-w-0 flex-col justify-between overflow-hidden rounded-[var(--md-radius-lg)] bg-[#061b17] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_0_0_1px_rgba(3,31,26,0.12),0_10px_22px_rgba(4,42,35,0.18)]">
+          <div key={label} className="relative flex min-h-[96px] min-w-0 flex-col justify-between overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-accent-abyss-deep)] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_0_0_1px_var(--md-accent-veil-ring-a12),0_10px_22px_var(--md-accent-veil-cast-a18)]">
             <span aria-hidden="true" className="pointer-events-none absolute inset-0">
               <SpectralBloomShader />
             </span>
@@ -1073,7 +1089,7 @@ function EditableChargeCell({
         placeholder={placeholder}
         data-i18n-skip
         dir={numeric ? "ltr" : "auto"}
-        className={cn("h-8 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-2 text-[11px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]", numeric && "text-right tabular-nums", className)}
+        className={cn("h-8 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-2 text-[11px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]", numeric && "text-right tabular-nums", className)}
       />
     )
   }
@@ -1335,7 +1351,7 @@ function QuoteChargesPanel({
       </Tabs>
       {chargeView === "split" ? <Tooltip>
         <TooltipTrigger asChild>
-          <Button type="button" variant="ghost" onClick={() => setIsSplitFullscreen(true)} className="size-8 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] p-0 text-white shadow-[var(--md-shadow-line)] hover:opacity-90" aria-label={t("Expand charge workspace")}>
+          <Button type="button" variant="ghost" onClick={() => setIsSplitFullscreen(true)} className="size-8 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] p-0 text-[var(--md-accent-ink)] shadow-[var(--md-shadow-line)] hover:opacity-90" aria-label={t("Expand charge workspace")}>
             <Maximize2 className="size-3.5" />
           </Button>
         </TooltipTrigger>
@@ -1398,7 +1414,7 @@ function QuoteChargesPanel({
             { label: "Revenue", value: money(totals.revenue), detail: "Customer sell total" },
             { label: "Profit", value: money(totals.profit), detail: `Margin ${totals.margin}` },
           ].map((metric) => (
-            <div key={metric.label} className="min-w-0 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_0_0_1px_rgba(14,125,116,0.1),0_8px_18px_rgba(14,125,116,0.16)]">
+            <div key={metric.label} className="min-w-0 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_0_0_1px_var(--md-accent-a10),0_8px_18px_var(--md-accent-a16)]">
               <span className="block text-[10px] font-medium text-white/65">{t(metric.label)}</span>
               <span data-i18n-skip dir="ltr" className="mt-0.5 block truncate text-[14px] font-semibold leading-4 tabular-nums text-white">{metric.value}</span>
               <span className="mt-1 block truncate text-[10px] text-white/78">{t(metric.detail)}</span>
@@ -1736,7 +1752,7 @@ function QuoteAiOverviewPanel({ quote }: { quote: QuoteRecord }) {
   return (
     <div className="grid gap-1.5">
       <div className="grid gap-1.5 xl:grid-cols-[1.15fr_0.85fr]">
-        <Surface padding="xs" className="rounded-[var(--md-radius-md)] bg-[linear-gradient(135deg,rgba(14,125,116,0.13),rgba(255,255,255,0.86)_42%,rgba(74,125,156,0.12))]">
+        <Surface padding="xs" className="rounded-[var(--md-radius-md)] bg-[linear-gradient(135deg,var(--md-accent-a13),rgba(255,255,255,0.86)_42%,rgba(74,125,156,0.12))]">
           <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_220px]">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-1.5">
@@ -1854,7 +1870,7 @@ function CargoWiseField({
           value={value}
           onChange={(event) => onChange?.(event.target.value)}
           className={cn(
-            "min-w-0 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] text-[11px] font-medium text-[var(--md-ink)] outline-none shadow-[var(--md-shadow-line)] hover:bg-[var(--md-field-bg-hover)] focus-visible:bg-[var(--md-field-bg-hover)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
+            "min-w-0 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] text-[11px] font-medium text-[var(--md-ink)] outline-none shadow-[var(--md-shadow-line)] hover:bg-[var(--md-field-bg-hover)] focus-visible:bg-[var(--md-field-bg-hover)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]",
             compact ? "min-h-7 px-1.5 py-1 leading-5" : "min-h-8 px-2 py-1.5 leading-5",
             fitValue && "w-fit max-w-full",
           )}
@@ -1921,7 +1937,7 @@ function CargoWiseLookupField({
           placeholder={required ? t("Required") : undefined}
           onChange={(event) => onChange?.(event.target.value)}
           className={cn(
-            "min-w-0 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] text-[11px] font-medium text-[var(--md-ink)] outline-none shadow-[var(--md-shadow-line)] hover:bg-[var(--md-field-bg-hover)] focus-visible:bg-[var(--md-field-bg-hover)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
+            "min-w-0 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] text-[11px] font-medium text-[var(--md-ink)] outline-none shadow-[var(--md-shadow-line)] hover:bg-[var(--md-field-bg-hover)] focus-visible:bg-[var(--md-field-bg-hover)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]",
             compact ? "min-h-7 px-1.5 py-1 leading-5" : "min-h-8 px-2 py-1.5 leading-5",
             invalid && "ring-1 ring-[var(--md-red)]",
           )}
@@ -2164,10 +2180,7 @@ function QuoteCargoWiseDetailsPanel({
             aria-label={t(emailCopied ? "Email copied" : "Copy email")}
             onClick={() => void copyCustomerEmail()}
           >
-            <span aria-hidden="true" className="relative size-3.5">
-              <Copy className={cn("absolute inset-0 size-3.5 transition-[opacity,transform] duration-200 motion-reduce:transition-none", emailCopied ? "scale-75 opacity-0" : "scale-100 opacity-100")} strokeWidth={1.4} />
-              <CheckCircle2 className={cn("absolute inset-0 size-3.5 text-[var(--md-accent)] transition-[opacity,transform] duration-200 motion-reduce:transition-none", emailCopied ? "scale-100 opacity-100" : "scale-75 opacity-0")} strokeWidth={1.6} />
-            </span>
+            <CopyStatusIcon copied={emailCopied} iconClassName="size-3.5" className={emailCopied ? "text-[var(--md-accent)]" : undefined} />
           </Button>
         </TooltipTrigger>
         <TooltipContent>{t(emailCopied ? "Copied" : "Copy email")}</TooltipContent>
@@ -2307,7 +2320,7 @@ function QuoteCargoWiseDetailsPanel({
           <label
             className={cn(
               "group inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-[var(--md-radius-sm)] px-1.5 text-[10.5px] font-medium text-[var(--md-subtle)] outline-none transition-[background,color,transform] duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-surface-soft)] hover:text-[var(--md-ink)] active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100",
-              checked && "bg-[rgba(14,125,116,0.07)] text-[var(--md-ink)]",
+              checked && "bg-[var(--md-accent-a07)] text-[var(--md-ink)]",
             )}
           >
             <Checkbox
@@ -2757,71 +2770,6 @@ function QuoteOverviewVariantSwitch({
   )
 }
 
-function QuoteReferenceCopyLabel({
-  reference,
-  copiedLabel,
-  copied,
-  direction,
-}: {
-  reference: string
-  copiedLabel: string
-  copied: boolean
-  direction: "ltr" | "rtl"
-}) {
-  const referenceCharacters = Array.from(reference)
-  const copiedCharacters = direction === "rtl" ? [copiedLabel] : Array.from(copiedLabel)
-
-  return (
-    <span
-      aria-hidden="true"
-      data-copied={copied}
-      data-i18n-skip
-      className="md-quote-copy-slot"
-    >
-      <span className="md-quote-copy-slot__layer md-quote-copy-slot__layer--reference" dir="ltr">
-        {referenceCharacters.map((character, index) => (
-          <span key={`${character}-${index}`} style={{ "--md-copy-character-index": index } as CSSProperties}>{character}</span>
-        ))}
-      </span>
-      <span className="md-quote-copy-slot__layer md-quote-copy-slot__layer--copied" dir={direction}>
-        {copiedCharacters.map((character, index) => (
-          <span key={`${character}-${index}`} style={{ "--md-copy-character-index": index } as CSSProperties}>{character}</span>
-        ))}
-      </span>
-    </span>
-  )
-}
-
-function BookingConfirmationLabel({
-  initialLabel,
-  confirmationLabel,
-  confirming,
-  direction,
-}: {
-  initialLabel: string
-  confirmationLabel: string
-  confirming: boolean
-  direction: "ltr" | "rtl"
-}) {
-  const initialCharacters = direction === "rtl" ? [initialLabel] : Array.from(initialLabel)
-  const confirmationCharacters = direction === "rtl" ? [confirmationLabel] : Array.from(confirmationLabel)
-
-  return (
-    <span aria-hidden="true" data-confirming={confirming} className="md-booking-confirm-slot">
-      <span className="md-booking-confirm-slot__layer md-booking-confirm-slot__layer--initial" dir={direction}>
-        {initialCharacters.map((character, index) => (
-          <span key={`${character}-${index}`} style={{ "--md-confirm-character-index": index } as CSSProperties}>{character}</span>
-        ))}
-      </span>
-      <span className="md-booking-confirm-slot__layer md-booking-confirm-slot__layer--confirmation" dir={direction}>
-        {confirmationCharacters.map((character, index) => (
-          <span key={`${character}-${index}`} style={{ "--md-confirm-character-index": index } as CSSProperties}>{character}</span>
-        ))}
-      </span>
-    </span>
-  )
-}
-
 function QuoteWorkspaceContext({
   activeTab,
   quote,
@@ -2966,20 +2914,26 @@ function getInitialQuoteRecord(quoteId?: string) {
 
 export function QuoteDetailPage({ variant = "operator", quoteId }: { variant?: QuotePageVariant; quoteId?: string }) {
   const { t, direction } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
   const initialQuote = getInitialQuoteRecord(quoteId)
   const [activeTab, setActiveTab] = useState<QuoteWorkspaceTab>("overview")
+  const [tabTravelDirection, setTabTravelDirection] = useState(1)
   const [savedQuote, setSavedQuote] = useState<QuoteRecord>(initialQuote)
   const [draftQuote, setDraftQuote] = useState<QuoteRecord>(initialQuote)
   const [savedCharges, setSavedCharges] = useState<QuoteCharge[]>(quoteCharges)
   const [draftCharges, setDraftCharges] = useState<QuoteCharge[]>(quoteCharges)
   const [quoteRefCopied, setQuoteRefCopied] = useState(false)
+  const [saveFeedbackVisible, setSaveFeedbackVisible] = useState(false)
   const [bookingConfirmationPending, setBookingConfirmationPending] = useState(false)
+  const [bookingNotReadyVisible, setBookingNotReadyVisible] = useState(false)
   const [validationAttempted, setValidationAttempted] = useState(false)
   const [dexterOpen, setDexterOpen] = useState(false)
   const quoteCopyResetTimerRef = useRef<number | null>(null)
+  const saveFeedbackTimerRef = useRef<number | null>(null)
 
   useEffect(() => () => {
     if (quoteCopyResetTimerRef.current !== null) window.clearTimeout(quoteCopyResetTimerRef.current)
+    if (saveFeedbackTimerRef.current !== null) window.clearTimeout(saveFeedbackTimerRef.current)
   }, [])
 
   const activeCharges = draftCharges
@@ -2995,6 +2949,18 @@ export function QuoteDetailPage({ variant = "operator", quoteId }: { variant?: Q
   const heading = variant === "ai" ? "AI spot quote command" : "Spot quote"
   const missingRequiredFields = [draftQuote.origin, draftQuote.destination, draftQuote.direction, draftQuote.mode, draftQuote.incoterm, draftQuote.currency]
     .filter((value) => !value?.trim()).length
+  const bookingBlocked = missingRequiredFields > 0
+  const visualTabTravelDirection = shouldReduceMotion
+    ? 0
+    : tabTravelDirection * (direction === "rtl" ? -1 : 1)
+
+  function changeWorkspaceTab(nextTab: QuoteWorkspaceTab) {
+    if (nextTab === activeTab) return
+    const currentIndex = quoteWorkspaceTabs.indexOf(activeTab)
+    const nextIndex = quoteWorkspaceTabs.indexOf(nextTab)
+    setTabTravelDirection(nextIndex > currentIndex ? 1 : -1)
+    setActiveTab(nextTab)
+  }
 
   async function copyQuoteReference() {
     try {
@@ -3161,19 +3127,56 @@ export function QuoteDetailPage({ variant = "operator", quoteId }: { variant?: Q
     setDraftQuote(nextQuote)
     setSavedCharges(draftCharges)
     setValidationAttempted(false)
+    setSaveFeedbackVisible(true)
+    if (saveFeedbackTimerRef.current !== null) window.clearTimeout(saveFeedbackTimerRef.current)
+    saveFeedbackTimerRef.current = window.setTimeout(() => {
+      setSaveFeedbackVisible(false)
+      saveFeedbackTimerRef.current = null
+    }, 1800)
   }
 
   function discardChanges() {
     setDraftQuote(savedQuote)
     setDraftCharges(savedCharges)
     setValidationAttempted(false)
+    setSaveFeedbackVisible(false)
+  }
+
+  function renderActiveWorkspacePanel() {
+    if (activeTab === "overview") {
+      if (variant === "ai") return <QuoteAiOverviewPanel quote={savedQuote} />
+      if (variant === "cargowise") return <QuoteCargoWiseOverviewPanel quote={savedQuote} />
+      return <QuoteOverviewPanel quote={savedQuote} />
+    }
+
+    if (activeTab === "details") {
+      if (variant === "cargowise") {
+        return <QuoteCargoWiseDetailsPanel quote={activeQuote} editable onQuoteChange={updateDraftQuote} onCustomerCreate={createAndAssignCustomer} validationAttempted={validationAttempted} />
+      }
+
+      return <QuoteSetupPanel quote={activeQuote} editable onQuoteChange={updateDraftQuote} onJobRoeChange={updateJobRoe} validationAttempted={validationAttempted} />
+    }
+
+    if (activeTab === "charges") {
+      return (
+        <UnifiedQuoteChargesPanel
+          quote={activeQuote}
+          charges={activeCharges}
+          editable
+          onRowsChange={setDraftCharges}
+        />
+      )
+    }
+
+    if (activeTab === "documents") return <DocumentWorkspace documents={documentWorkspaceSampleDocuments} />
+    return <AuditWorkspace records={QUOTE_AUDIT_SAMPLE_DATA} />
   }
 
   return (
     <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={`${t("Quote")} ${activeQuote.id}`}>
       <main className="min-h-full bg-[var(--md-analytics-bg)] px-4 py-4 sm:px-5">
         <div className="grid w-full gap-2">
-          <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as QuoteWorkspaceTab)} className="gap-2">
+          <Tabs value={activeTab} onValueChange={(value) => changeWorkspaceTab(value as QuoteWorkspaceTab)} className="gap-2">
             <div className="relative">
               <div className="grid items-stretch gap-2 xl:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
                 <div className="grid min-w-0 grid-rows-[auto_auto] gap-1.5">
@@ -3188,64 +3191,124 @@ export function QuoteDetailPage({ variant = "operator", quoteId }: { variant?: Q
                   type="button"
                   aria-label={t(quoteRefCopied ? "Quote reference copied" : "Copy quote reference")}
                   title={t(quoteRefCopied ? "Copied" : "Copy quote reference")}
-                  className="group inline-flex h-7 shrink-0 items-center gap-1.5 rounded-[var(--md-radius-md)] bg-[rgba(14,125,116,0.1)] px-2 text-[14px] font-medium text-[var(--md-accent)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,transform] duration-200 hover:bg-[rgba(14,125,116,0.16)] hover:shadow-[var(--md-shadow-soft)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)] active:scale-[0.985]"
+                  className="group inline-flex h-7 shrink-0 items-center gap-1.5 rounded-[var(--md-radius-md)] bg-[var(--md-accent-a10)] px-2 text-[14px] font-medium text-[var(--md-accent)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,transform] duration-200 hover:bg-[var(--md-accent-a16)] hover:shadow-[var(--md-shadow-soft)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] active:scale-[0.985]"
                   onClick={() => void copyQuoteReference()}
                 >
-                  <QuoteReferenceCopyLabel
-                    reference={activeQuote.id}
-                    copiedLabel={t("Copied")}
-                    copied={quoteRefCopied}
-                    direction={direction}
+                  <CopyFeedbackTransition
+                    value={activeQuote.id}
+                    copiedValue={t("Copied")}
+                    active={quoteRefCopied}
+                    effect="slot"
+                    inline
+                    ariaHidden
+                    className="h-[1em] leading-none"
+                    originalDirection="ltr"
+                    copiedDirection={direction}
                   />
-                  <span aria-hidden="true" className="relative size-3.5 shrink-0">
-                    <Copy className={cn("absolute inset-0 size-3.5 transition-[opacity,transform] duration-200", quoteRefCopied ? "scale-75 opacity-0" : "scale-100 opacity-100")} strokeWidth={1.5} />
-                    <CheckCircle2 className={cn("absolute inset-0 size-3.5 transition-[opacity,transform] duration-200", quoteRefCopied ? "scale-100 opacity-100" : "scale-75 opacity-0")} strokeWidth={1.7} />
-                  </span>
+                  <CopyStatusIcon copied={quoteRefCopied} iconClassName="size-3.5" className="shrink-0" />
                 </button>
                 <StatusPill tone={activeQuote.statusTone} className="h-6 shrink-0 px-2 text-[10px]">{activeQuote.status}</StatusPill>
               </div>
             </div>
           </div>
           <div className="flex w-full min-w-0 flex-nowrap items-center gap-1 overflow-x-auto lg:w-auto lg:shrink-0 lg:overflow-visible">
-            {isDirty ? (
-              <>
-                <Button type="button" variant="ghost" onClick={discardChanges} className="h-8 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-2.5 text-[12px] shadow-[var(--md-shadow-line)]">
-                  <RotateCcw data-icon="inline-start" className="size-3.5" strokeWidth={1.4} />
-                  {t("Discard")}
+            <LayoutGroup id={`quote-actions-${activeQuote.id}`}>
+              <AnimatePresence initial={false} mode="popLayout">
+                {isDirty ? (
+                  <motion.div
+                    key="dirty-actions"
+                    layout
+                    className="flex shrink-0 items-center gap-1"
+                    initial={{ opacity: 0, x: direction === "rtl" ? 6 : -6 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: direction === "rtl" ? 4 : -4 }}
+                    transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.fast)}
+                  >
+                    <Button type="button" variant="ghost" onClick={discardChanges} className="h-8 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-2.5 text-[12px] shadow-[var(--md-shadow-line)]">
+                      <RotateCcw data-icon="inline-start" className="size-3.5" strokeWidth={1.4} />
+                      {t("Discard")}
+                    </Button>
+                    <Button type="button" onClick={saveChanges} className="h-8 rounded-[var(--md-radius-lg)] px-2.5 text-[12px]">
+                      <Save data-icon="inline-start" className="size-3.5" strokeWidth={1.4} />
+                      {t("Save")}
+                    </Button>
+                  </motion.div>
+                ) : saveFeedbackVisible ? (
+                  <motion.div
+                    key="saved-feedback"
+                    layout
+                    role="status"
+                    className="flex h-8 shrink-0 items-center gap-1.5 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-accent)_10%,transparent)] px-2.5 text-[11px] font-medium text-[var(--md-accent)] shadow-[var(--md-shadow-line)]"
+                    initial={{ opacity: 0, scale: 0.94 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.96 }}
+                    transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.fast)}
+                  >
+                    <CheckCircle2 aria-hidden="true" className="size-3.5" strokeWidth={1.7} />
+                    {t("Saved")}
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
+              <motion.div layout="position" className="flex shrink-0 items-center gap-1" transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.layout)}>
+                <DexterActionPill
+                  className="h-8 min-w-[102px] rounded-[var(--md-radius-lg)] px-2.5 text-[11px]"
+                  onClick={() => setDexterOpen(true)}
+                />
+                <Button type="button" variant="ghost" className="h-8 shrink-0 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-2 text-[11px] shadow-[var(--md-shadow-line)]">
+                  <Printer data-icon="inline-start" className="size-4" strokeWidth={1.4} />
+                  {t("Print")}
                 </Button>
-                <Button type="button" onClick={saveChanges} className="h-8 rounded-[var(--md-radius-lg)] px-2.5 text-[12px]">
-                  <Save data-icon="inline-start" className="size-3.5" strokeWidth={1.4} />
-                  {t("Save")}
+                <Button
+                  type="button"
+                  aria-label={bookingBlocked ? `${t("Convert to booking")}: ${t("Not ready")}` : t(bookingConfirmationPending ? "Confirm" : "Convert to booking")}
+                  aria-disabled={bookingBlocked}
+                  className={cn(
+                    "h-8 min-w-[145px] shrink-0 rounded-[var(--md-radius-lg)] px-2.5 text-[11px]",
+                    bookingBlocked && "cursor-not-allowed active:scale-100",
+                    bookingBlocked && !bookingNotReadyVisible && "opacity-50",
+                    bookingBlocked && bookingNotReadyVisible && "gap-0 border-[color-mix(in_srgb,var(--md-amber)_24%,transparent)] bg-[color-mix(in_srgb,var(--md-amber)_14%,var(--md-surface))] text-[var(--md-amber-strong)] opacity-100 shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--md-amber)_18%,transparent)] hover:bg-[color-mix(in_srgb,var(--md-amber)_14%,var(--md-surface))] focus-visible:border-[color-mix(in_srgb,var(--md-amber)_42%,transparent)] focus-visible:ring-[color-mix(in_srgb,var(--md-amber)_18%,transparent)]",
+                  )}
+                  title={bookingBlocked ? t("Complete required fields before converting") : undefined}
+                  onMouseEnter={() => {
+                    if (bookingBlocked) setBookingNotReadyVisible(true)
+                  }}
+                  onMouseLeave={() => setBookingNotReadyVisible(false)}
+                  onFocus={() => {
+                    if (bookingBlocked) setBookingNotReadyVisible(true)
+                  }}
+                  onBlur={() => setBookingNotReadyVisible(false)}
+                  onClick={() => {
+                    if (bookingBlocked) {
+                      setBookingNotReadyVisible(true)
+                      return
+                    }
+                    setBookingConfirmationPending((pending) => !pending)
+                  }}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "relative h-4 w-4 shrink-0 overflow-hidden opacity-100 transition-[width,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
+                      bookingBlocked && bookingNotReadyVisible && "w-0 -translate-y-1 scale-75 opacity-0",
+                    )}
+                  >
+                    <Send data-icon="inline-start" className={cn("absolute inset-0 size-4 transition-[opacity,transform] duration-200", bookingConfirmationPending ? "-translate-y-1 scale-75 opacity-0" : "translate-y-0 scale-100 opacity-100")} strokeWidth={1.4} />
+                    <CheckCircle2 data-icon="inline-start" className={cn("absolute inset-0 size-4 transition-[opacity,transform] duration-200", bookingConfirmationPending ? "translate-y-0 scale-100 opacity-100" : "translate-y-1 scale-75 opacity-0")} strokeWidth={1.7} />
+                  </span>
+                  <CopyFeedbackTransition
+                    value={t("Convert to booking")}
+                    copiedValue={t(bookingBlocked ? "Not ready" : "Confirm")}
+                    active={bookingBlocked ? bookingNotReadyVisible : bookingConfirmationPending}
+                    effect="slot"
+                    inline
+                    ariaHidden
+                    className="md-booking-confirm-label h-[1em] leading-none"
+                    originalDirection={direction}
+                    copiedDirection={direction}
+                  />
                 </Button>
-              </>
-            ) : null}
-            <DexterActionPill
-              className="h-8 min-w-[102px] rounded-[var(--md-radius-lg)] px-2.5 text-[11px]"
-              onClick={() => setDexterOpen(true)}
-            />
-            <Button type="button" variant="ghost" className="h-8 shrink-0 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-2 text-[11px] shadow-[var(--md-shadow-line)]">
-              <Printer data-icon="inline-start" className="size-4" strokeWidth={1.4} />
-              {t("Print")}
-            </Button>
-            <Button
-              type="button"
-              aria-label={t(bookingConfirmationPending ? "Confirm" : "Convert to booking")}
-              className="h-8 shrink-0 rounded-[var(--md-radius-lg)] px-2.5 text-[11px]"
-              disabled={missingRequiredFields > 0}
-              title={missingRequiredFields > 0 ? t("Complete required fields before converting") : undefined}
-              onClick={() => setBookingConfirmationPending((pending) => !pending)}
-            >
-              <span aria-hidden="true" className="relative size-4 shrink-0">
-                <Send data-icon="inline-start" className={cn("absolute inset-0 size-4 transition-[opacity,transform] duration-200", bookingConfirmationPending ? "-translate-y-1 scale-75 opacity-0" : "translate-y-0 scale-100 opacity-100")} strokeWidth={1.4} />
-                <CheckCircle2 data-icon="inline-start" className={cn("absolute inset-0 size-4 transition-[opacity,transform] duration-200", bookingConfirmationPending ? "translate-y-0 scale-100 opacity-100" : "translate-y-1 scale-75 opacity-0")} strokeWidth={1.7} />
-              </span>
-              <BookingConfirmationLabel
-                initialLabel={t("Convert to booking")}
-                confirmationLabel={t("Confirm")}
-                confirming={bookingConfirmationPending}
-                direction={direction}
-              />
-            </Button>
+              </motion.div>
+            </LayoutGroup>
           </div>
                 </section>
                 <Surface
@@ -3289,25 +3352,25 @@ export function QuoteDetailPage({ variant = "operator", quoteId }: { variant?: Q
               </div>
             </div>
 
-              <TabsContent value="overview" className="mt-0">
-                {variant === "ai" ? <QuoteAiOverviewPanel quote={savedQuote} /> : variant === "cargowise" ? <QuoteCargoWiseOverviewPanel quote={savedQuote} /> : <QuoteOverviewPanel quote={savedQuote} />}
-              </TabsContent>
-              <TabsContent value="details" className="mt-0">
-                {variant === "cargowise" ? <QuoteCargoWiseDetailsPanel quote={activeQuote} editable onQuoteChange={updateDraftQuote} onCustomerCreate={createAndAssignCustomer} validationAttempted={validationAttempted} /> : <QuoteSetupPanel quote={activeQuote} editable onQuoteChange={updateDraftQuote} onJobRoeChange={updateJobRoe} validationAttempted={validationAttempted} />}
-              </TabsContent>
-              <TabsContent value="charges" className="mt-0">
-                <UnifiedQuoteChargesPanel
-                  quote={activeQuote}
-                  charges={activeCharges}
-                  editable
-                  onRowsChange={setDraftCharges}
-                />
-              </TabsContent>
-              <TabsContent value="documents" className="mt-0">
-                <DocumentWorkspace documents={documentWorkspaceSampleDocuments} />
-              </TabsContent>
-              <TabsContent value="audit" className="mt-0">
-                <AuditWorkspace records={QUOTE_AUDIT_SAMPLE_DATA} />
+              <TabsContent value={activeTab} forceMount className="relative mt-0 min-h-px overflow-x-clip">
+                <AnimatePresence initial={false} mode="popLayout" custom={visualTabTravelDirection}>
+                  <motion.div
+                    key={activeTab}
+                    data-quote-workspace-tab={activeTab}
+                    custom={visualTabTravelDirection}
+                    variants={{
+                      enter: (travel: number) => ({ opacity: 0, x: travel * 12 }),
+                      active: { opacity: 1, x: 0 },
+                      exit: (travel: number) => ({ opacity: 0, x: travel * -8 }),
+                    }}
+                    initial="enter"
+                    animate="active"
+                    exit="exit"
+                    transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.panel)}
+                  >
+                    {renderActiveWorkspacePanel()}
+                  </motion.div>
+                </AnimatePresence>
               </TabsContent>
           </Tabs>
         </div>

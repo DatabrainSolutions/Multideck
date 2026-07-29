@@ -24,8 +24,11 @@ import { Progress } from "@/components/ui/progress"
 import { TableCell } from "@/components/ui/table"
 import { useLanguage } from "@/i18n/language-provider"
 import type { LanguageCode } from "@/i18n/languages"
-import { getApiAuthSession } from "@/lib/api"
-import { getSupabaseSession } from "@/lib/supabase"
+import {
+  checkDashboardConnection,
+  createDashboardConnectionState,
+  type DashboardConnectionState,
+} from "@/lib/dashboard-connection"
 import { cn } from "@/lib/utils"
 import {
   activityItems,
@@ -169,38 +172,6 @@ function getCityClock(city: (typeof cityQueues)[number], now: Date) {
 
 function getSnapshot(range: DashboardRange) {
   return dashboardSnapshots[range] ?? dashboardSnapshots.today
-}
-
-type DashboardConnectionStatus = "checking" | "connected" | "signed-out" | "error"
-
-type DashboardConnectionState = {
-  status: DashboardConnectionStatus
-  email: string | null
-}
-
-function createDashboardConnectionState(status: DashboardConnectionStatus, email: string | null = null): DashboardConnectionState {
-  return { status, email }
-}
-
-async function checkDashboardConnection(): Promise<DashboardConnectionState> {
-  try {
-    const session = await getSupabaseSession()
-
-    if (!session?.access_token) {
-      return createDashboardConnectionState("signed-out")
-    }
-
-    const apiSession = await getApiAuthSession(session.access_token)
-
-    if (!apiSession.authenticated) {
-      return createDashboardConnectionState("error")
-    }
-
-    return createDashboardConnectionState("connected", apiSession.user.email ?? session.user.email ?? null)
-  } catch (error) {
-    console.error("Dashboard API connection check failed", error)
-    return createDashboardConnectionState("error")
-  }
 }
 
 function getLanguageLocale(language: LanguageCode) {
@@ -403,7 +374,7 @@ export function OverviewHero({
   }, [])
 
   const connectionToneClass = cn(
-    connectionState.status === "connected" && "bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)]",
+    connectionState.status === "connected" && "bg-[var(--md-accent-a10)] text-[var(--md-accent)]",
     connectionState.status === "checking" && "bg-[rgba(74,125,156,0.1)] text-[var(--md-blue)]",
     (connectionState.status === "error" || connectionState.status === "signed-out") && "bg-[rgba(209,78,78,0.1)] text-[var(--md-red)]",
   )
@@ -535,7 +506,7 @@ export function OverviewHero({
                 Cancel
               </Button>
             </DialogClose>
-            <Button type="button" className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[13px] font-medium text-white hover:bg-[var(--md-accent)]/88" disabled={!newDashboardName.trim()} onClick={createDashboard}>
+            <Button type="button" className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent)]/88" disabled={!newDashboardName.trim()} onClick={createDashboard}>
               Create
             </Button>
           </DialogFooter>
@@ -575,7 +546,7 @@ export function MetricsGrid({
               layoutId={getDashboardDrilldownLayoutId(drilldownId)}
               layout
               type="button"
-              className="min-w-0 rounded-[var(--md-radius-xl)] text-left outline-none transition-transform duration-200 hover:scale-[1.01] focus-visible:ring-2 focus-visible:ring-[rgba(14,125,116,0.18)]"
+              className="min-w-0 rounded-[var(--md-radius-xl)] text-left outline-none transition-transform duration-200 hover:scale-[1.01] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a18)]"
               onClick={() => onOpenDrilldown?.(drilldownId)}
               transition={{ layout: { duration: 0.3, ease: [0.16, 1, 0.3, 1] } }}
             >
@@ -684,7 +655,7 @@ function TimezoneLeadCard({
         <div className="flex flex-wrap items-center gap-2">
           <span className="size-2.5 rounded-full" style={{ background: toneToVar(clock.tone) }} />
           <span className="text-[12px] font-medium uppercase text-[var(--md-accent)]">{city.code}</span>
-          <span className="rounded-full bg-[rgba(14,125,116,0.1)] px-2 py-1 text-[12px] font-medium text-[var(--md-accent)]">{clock.comparison}</span>
+          <span className="rounded-full bg-[var(--md-accent-a10)] px-2 py-1 text-[12px] font-medium text-[var(--md-accent)]">{clock.comparison}</span>
         </div>
         <div className={cn("mt-2 flex items-end gap-4", displayMode === "analogue" && "items-center")}>
           {displayMode === "analogue" ? <AnalogueClockFace time={clock.time} tone={clock.tone} size="lg" /> : null}
@@ -824,7 +795,7 @@ export function TimezoneWorkRow({ item }: { item: TimezoneWorkItem }) {
         className={cn(
           "h-9 justify-between rounded-[var(--md-radius-lg)] px-3 text-[13px] font-medium",
           item.tone === "green"
-            ? "bg-[var(--md-accent)] text-white hover:bg-[var(--md-accent)]/90"
+            ? "bg-[var(--md-accent)] text-[var(--md-accent-ink)] hover:bg-[var(--md-accent)]/90"
             : "bg-white/58 text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/78",
         )}
       >
@@ -946,7 +917,7 @@ function getMetricActionItems(metricLabel: string): DashboardActionItem[] {
   if (metricLabel === "Emails waiting") return dashboardEmailThreads
   if (metricLabel === "Quotes due" || metricLabel === "Quotes sent") return dashboardQuoteActions
   if (metricLabel === "Watched bookings") return dashboardWatchedBookingActions
-  if (metricLabel === "Your jobs") {
+  if (metricLabel === "Active jobs") {
     return operatorJobs.slice(0, 4).map((job) => ({
       title: `${job.bookingId} - ${job.customer}`,
       meta: job.task,
@@ -1025,7 +996,7 @@ function getDashboardDrilldownDetail(id: DashboardDrilldownId, range: DashboardR
       rows: [
         ["Current", metric.value],
         ["Status", metric.change],
-        ["Next step", metric.label === "Emails waiting" ? "Open the customer replies first" : metric.label === "Quotes due" ? "Send ready quotes before local cutoff" : metric.label === "Your jobs" ? "Work the due-soon tasks in order" : "Keep these starred bookings visible"],
+        ["Next step", metric.label === "Emails waiting" ? "Open the customer replies first" : metric.label === "Quotes due" ? "Send ready quotes before local cutoff" : metric.label === "Active jobs" ? "Work the due-soon tasks in order" : "Keep these starred bookings visible"],
       ],
     }
   }
@@ -1153,7 +1124,7 @@ export function DashboardDrilldownPanel({
                 detail.primaryAction.includes("Dexter") ? (
                   <DexterActionPill label={detail.primaryAction} className="h-9 min-w-[178px] px-3 text-[13px]" />
                 ) : (
-                  <Button type="button" className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3 text-[13px] font-medium text-white hover:bg-[var(--md-accent)]/90">
+                  <Button type="button" className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3 text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent)]/90">
                     {detail.primaryAction}
                   </Button>
                 )
@@ -1180,7 +1151,7 @@ export function DashboardDrilldownPanel({
                           {item.secondaryAction}
                         </Button>
                       ) : null}
-                      <Button type="button" className="h-8 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[12px] font-medium text-white hover:bg-[var(--md-accent)]/90">
+                      <Button type="button" className="h-8 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[12px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent)]/90">
                         {item.action}
                       </Button>
                     </div>
@@ -1268,13 +1239,13 @@ export function LiveBookingsPanel() {
 function LiveBookingsMapFallback() {
   return (
     <div className="relative min-h-[310px] flex-1 overflow-hidden bg-[var(--md-bg-strong)]">
-      <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.22),rgba(255,255,255,0)_48%,rgba(14,125,116,0.12))]" />
+      <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.22),rgba(255,255,255,0)_48%,var(--md-accent-a12))]" />
       <div className="absolute left-5 top-5 flex items-center gap-2 rounded-[var(--md-radius-lg)] bg-white/58 px-3 py-2 text-[12px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
         <span className="size-2 rounded-full bg-[var(--md-accent)]" />
         Loading live routes
       </div>
-      <div className="absolute inset-x-[8%] top-[46%] h-px rotate-[-7deg] bg-[rgba(14,125,116,0.18)]" />
-      <div className="absolute inset-x-[18%] top-[58%] h-px rotate-[9deg] bg-[rgba(14,125,116,0.12)]" />
+      <div className="absolute inset-x-[8%] top-[46%] h-px rotate-[-7deg] bg-[var(--md-accent-a18)]" />
+      <div className="absolute inset-x-[18%] top-[58%] h-px rotate-[9deg] bg-[var(--md-accent-a12)]" />
       {[
         { left: "20%", top: "42%", width: "7rem" },
         { left: "46%", top: "34%", width: "8rem" },
@@ -1309,7 +1280,7 @@ export function MorningDigestPanel({
     <Surface className="md-morning-digest-panel flex min-h-[320px] flex-col rounded-[var(--md-radius-xl)] p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2">
-          <span className="grid size-8 place-items-center rounded-full bg-[var(--md-accent)] text-white">
+          <span className="grid size-8 place-items-center rounded-full bg-[var(--md-accent)] text-[var(--md-accent-ink)]">
             <Sparkles className="size-4" strokeWidth={1.2} />
           </span>
           <h2 className="text-[15px] font-medium text-[var(--md-ink)]">Today's action list</h2>

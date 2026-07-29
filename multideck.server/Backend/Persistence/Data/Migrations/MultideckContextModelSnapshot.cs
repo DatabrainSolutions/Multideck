@@ -16426,6 +16426,29 @@ namespace Multideck.Persistence.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("Company_ID");
 
+                    b.Property<string>("UserCoverPhotoBucket")
+                        .HasMaxLength(63)
+                        .HasColumnType("character varying(63)")
+                        .HasColumnName("User_CoverPhotoBucket");
+
+                    b.Property<string>("UserCoverPhotoMimeType")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("User_CoverPhotoMimeType");
+
+                    b.Property<string>("UserCoverPhotoPath")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("User_CoverPhotoPath");
+
+                    b.Property<long?>("UserCoverPhotoSizeBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("User_CoverPhotoSizeBytes");
+
+                    b.Property<DateTime?>("UserCoverPhotoUpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("User_CoverPhotoUpdatedAt");
+
                     b.Property<string>("UserEmail")
                         .IsRequired()
                         .HasMaxLength(320)
@@ -16437,10 +16460,46 @@ namespace Multideck.Persistence.Data.Migrations
                         .HasColumnType("character varying(50)")
                         .HasColumnName("User_Firstname");
 
+                    b.Property<string>("UserJobTitle")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("User_JobTitle");
+
                     b.Property<string>("UserLastname")
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)")
                         .HasColumnName("User_Lastname");
+
+                    b.Property<string>("UserProfilePhotoBucket")
+                        .HasMaxLength(63)
+                        .HasColumnType("character varying(63)")
+                        .HasColumnName("User_ProfilePhotoBucket");
+
+                    b.Property<string>("UserProfilePhotoMimeType")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("User_ProfilePhotoMimeType");
+
+                    b.Property<string>("UserProfilePhotoPath")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("User_ProfilePhotoPath");
+
+                    b.Property<long?>("UserProfilePhotoSizeBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("User_ProfilePhotoSizeBytes");
+
+                    b.Property<DateTime?>("UserProfilePhotoUpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("User_ProfilePhotoUpdatedAt");
+
+                    b.Property<bool?>("UserSidebarCollapsed")
+                        .HasColumnType("boolean")
+                        .HasColumnName("User_SidebarCollapsed");
+
+                    b.Property<string>("UserSidebarLayout")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("User_SidebarLayout");
 
                     b.HasKey("UserId")
                         .HasName("PK_tbl_cmp_Users");
@@ -26768,6 +26827,79 @@ namespace Multideck.Persistence.Data.Migrations
                     b.ToTable("CRM_LeadConversions", (string)null);
                 });
 
+            modelBuilder.Entity("Multideck.Persistence.Entities.CrmLeadFieldSetting", b =>
+                {
+                    b.Property<Guid>("CrmLeadFieldId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("CRMLeadField_ID")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("Company_ID");
+
+                    b.Property<string>("CrmLeadFieldActiveOptionsJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("CRMLeadField_ActiveOptionsJSON")
+                        .HasDefaultValueSql("'[]'::jsonb");
+
+                    b.Property<DateTime>("CrmLeadFieldCreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("Created_At")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<bool>("CrmLeadFieldIsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("Is_Deleted");
+
+                    b.Property<string>("CrmLeadFieldLabel")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("CRMLeadField_Label");
+
+                    b.Property<string>("CrmLeadFieldOptionsJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("CRMLeadField_OptionsJSON")
+                        .HasDefaultValueSql("'[]'::jsonb");
+
+                    b.Property<int>("CrmLeadFieldSortOrder")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("CRMLeadField_SortOrder");
+
+                    b.Property<string>("CrmLeadFieldTypeCode")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("Dropdown")
+                        .HasColumnName("CRMLeadField_TypeCode");
+
+                    b.Property<DateTime>("CrmLeadFieldUpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("Updated_At")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid?>("CrmLeadFieldUpdatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("Updated_By_User_ID");
+
+                    b.HasKey("CrmLeadFieldId");
+
+                    b.HasIndex("CompanyId", "CrmLeadFieldSortOrder");
+
+                    b.ToTable("CRM_LeadFieldSettings", (string)null);
+                });
+
             modelBuilder.Entity("Multideck.Persistence.Entities.CrmLeadInteraction", b =>
                 {
                     b.Property<Guid>("CrmleadInteractId")
@@ -28520,6 +28652,14 @@ namespace Multideck.Persistence.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("CRMOppty_OwnerUserID");
 
+                    b.Property<Guid?>("CrmopptyPipelineId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("CRMOppty_PipelineID");
+
+                    b.Property<Guid?>("CrmopptyPipelineStageId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("CRMOppty_PipelineStageID");
+
                     b.Property<Guid?>("CrmopptyPrimaryContactId")
                         .HasColumnType("uuid")
                         .HasColumnName("CRMOppty_PrimaryContactID");
@@ -28614,6 +28754,8 @@ namespace Multideck.Persistence.Data.Migrations
 
                     b.HasIndex("CrmopptyOwnerUserId");
 
+                    b.HasIndex("CrmopptyPipelineStageId");
+
                     b.HasIndex("CrmopptyPrimaryContactId");
 
                     b.HasIndex("CrmopptySourceLeadId");
@@ -28623,6 +28765,8 @@ namespace Multideck.Persistence.Data.Migrations
                     b.HasIndex("CrmopptyTypeCode");
 
                     b.HasIndex("CrmopptyUpdatedBy");
+
+                    b.HasIndex("CrmopptyPipelineId", "CrmopptyPipelineStageId");
 
                     b.HasIndex(new[] { "CrmopptyOrgId", "CrmopptyIsDeleted" }, "IX_CRM_Opportunities_org");
 
@@ -29537,6 +29681,152 @@ namespace Multideck.Persistence.Data.Migrations
                     b.HasIndex("CrmpersProfileUserId");
 
                     b.ToTable("CRM_PersonalisationProfiles", (string)null);
+                });
+
+            modelBuilder.Entity("Multideck.Persistence.Entities.CrmPipeline", b =>
+                {
+                    b.Property<Guid>("CrmPipelineId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("CRMPipeline_ID")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("Company_ID");
+
+                    b.Property<string>("CrmPipelineAutomation")
+                        .HasColumnType("text")
+                        .HasColumnName("CRMPipeline_Automation");
+
+                    b.Property<DateTime>("CrmPipelineCreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("Created_At")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid?>("CrmPipelineCreatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("Created_By_User_ID");
+
+                    b.Property<bool>("CrmPipelineIsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("Is_Deleted");
+
+                    b.Property<string>("CrmPipelineName")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("CRMPipeline_Name");
+
+                    b.Property<string>("CrmPipelineOwner")
+                        .HasColumnType("text")
+                        .HasColumnName("CRMPipeline_Owner");
+
+                    b.Property<int>("CrmPipelineSortOrder")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("CRMPipeline_SortOrder");
+
+                    b.Property<DateTime>("CrmPipelineUpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("Updated_At")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid?>("CrmPipelineUpdatedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("Updated_By_User_ID");
+
+                    b.HasKey("CrmPipelineId");
+
+                    b.HasIndex("CompanyId", "CrmPipelineSortOrder");
+
+                    b.ToTable("CRM_Pipelines", (string)null);
+                });
+
+            modelBuilder.Entity("Multideck.Persistence.Entities.CrmPipelineStage", b =>
+                {
+                    b.Property<Guid>("CrmPipelineStageId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("CRMPipelineStage_ID")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("Company_ID");
+
+                    b.Property<Guid>("CrmPipelineId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("CRMPipeline_ID");
+
+                    b.Property<DateTime>("CrmPipelineStageCreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("Created_At")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("CrmPipelineStageEntryRule")
+                        .HasColumnType("text")
+                        .HasColumnName("CRMPipelineStage_EntryRule");
+
+                    b.Property<bool>("CrmPipelineStageIsConversion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("CRMPipelineStage_IsConversion");
+
+                    b.Property<bool>("CrmPipelineStageIsDefaultEntry")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("CRMPipelineStage_IsDefaultEntry");
+
+                    b.Property<bool>("CrmPipelineStageIsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("Is_Deleted");
+
+                    b.Property<string>("CrmPipelineStageName")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("CRMPipelineStage_Name");
+
+                    b.Property<decimal>("CrmPipelineStageProbabilityPct")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(5,2)")
+                        .HasDefaultValue(0m)
+                        .HasColumnName("CRMPipelineStage_ProbabilityPct");
+
+                    b.Property<int>("CrmPipelineStageSortOrder")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("CRMPipelineStage_SortOrder");
+
+                    b.Property<string>("CrmPipelineStageTone")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("neutral")
+                        .HasColumnName("CRMPipelineStage_Tone");
+
+                    b.Property<DateTime>("CrmPipelineStageUpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("Updated_At")
+                        .HasDefaultValueSql("now()");
+
+                    b.HasKey("CrmPipelineStageId");
+
+                    b.HasIndex("CrmPipelineId", "CrmPipelineStageSortOrder");
+
+                    b.ToTable("CRM_PipelineStages", (string)null);
                 });
 
             modelBuilder.Entity("Multideck.Persistence.Entities.CrmPipelineSummary", b =>
@@ -34134,6 +34424,136 @@ namespace Multideck.Persistence.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("Customs_Versions", (string)null);
+                });
+
+            modelBuilder.Entity("Multideck.Persistence.Entities.DocStoredObject", b =>
+                {
+                    b.Property<Guid>("DocStoredObjectId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("DOCStoredObject_ID")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<Guid>("DocStoredObjectAggregateId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("DOCStoredObject_AggregateID");
+
+                    b.Property<string>("DocStoredObjectAggregateType")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("DOCStoredObject_AggregateType");
+
+                    b.Property<string>("DocStoredObjectBlobName")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)")
+                        .HasColumnName("DOCStoredObject_BlobName");
+
+                    b.Property<string>("DocStoredObjectConcernCode")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("DOCStoredObject_ConcernCode");
+
+                    b.Property<string>("DocStoredObjectContainer")
+                        .IsRequired()
+                        .HasMaxLength(63)
+                        .HasColumnType("character varying(63)")
+                        .HasColumnName("DOCStoredObject_Container");
+
+                    b.Property<DateTime>("DocStoredObjectCreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("DOCStoredObject_CreatedAt")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid?>("DocStoredObjectCreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("DOCStoredObject_CreatedBy");
+
+                    b.Property<Guid?>("DocStoredObjectCreatedByPortalUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("DOCStoredObject_CreatedByPortalUserID");
+
+                    b.Property<DateTime?>("DocStoredObjectDeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("DOCStoredObject_DeletedAt");
+
+                    b.Property<Guid?>("DocStoredObjectDeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("DOCStoredObject_DeletedBy");
+
+                    b.Property<string>("DocStoredObjectEtag")
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("DOCStoredObject_ETag");
+
+                    b.Property<long>("DocStoredObjectFileSizeBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("DOCStoredObject_FileSizeBytes");
+
+                    b.Property<string>("DocStoredObjectMimeType")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("DOCStoredObject_MimeType");
+
+                    b.Property<Guid?>("DocStoredObjectOrganisationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("DOCStoredObject_OrganisationID");
+
+                    b.Property<string>("DocStoredObjectOriginalFileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("DOCStoredObject_OriginalFileName");
+
+                    b.Property<string>("DocStoredObjectProviderCode")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasDefaultValue("supabase_storage")
+                        .HasColumnName("DOCStoredObject_ProviderCode");
+
+                    b.Property<string>("DocStoredObjectSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("DOCStoredObject_SHA256");
+
+                    b.Property<string>("DocStoredObjectStatusCode")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasDefaultValue("active")
+                        .HasColumnName("DOCStoredObject_StatusCode");
+
+                    b.Property<string>("DocStoredObjectVersionId")
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("DOCStoredObject_VersionID");
+
+                    b.HasKey("DocStoredObjectId");
+
+                    b.HasIndex("DocStoredObjectCreatedBy");
+
+                    b.HasIndex("DocStoredObjectCreatedByPortalUserId");
+
+                    b.HasIndex("DocStoredObjectDeletedBy");
+
+                    b.HasIndex("DocStoredObjectOrganisationId");
+
+                    b.HasIndex("DocStoredObjectSha256");
+
+                    b.HasIndex("DocStoredObjectContainer", "DocStoredObjectBlobName")
+                        .IsUnique();
+
+                    b.HasIndex("DocStoredObjectConcernCode", "DocStoredObjectOrganisationId", "DocStoredObjectAggregateType", "DocStoredObjectAggregateId");
+
+                    b.ToTable("DOC_StoredObjects", (string)null);
                 });
 
             modelBuilder.Entity("Multideck.Persistence.Entities.DocbAssetLibrary", b =>
@@ -95270,6 +95690,56 @@ namespace Multideck.Persistence.Data.Migrations
                     b.ToTable("WMS_BondedUsualHandling", (string)null);
                 });
 
+            modelBuilder.Entity("Multideck.Persistence.Entities.WmsCustomerFacilityAccess", b =>
+                {
+                    b.Property<Guid>("WmscustomerFacilityAccessId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("WMSCustomerFacilityAccess_ID")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTime>("WmscustomerFacilityAccessCreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("WMSCustomerFacilityAccess_CreatedAt")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid?>("WmscustomerFacilityAccessCreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("WMSCustomerFacilityAccess_CreatedBy");
+
+                    b.Property<Guid>("WmscustomerFacilityAccessCustomerOrgId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("WMSCustomerFacilityAccess_CustomerOrgID");
+
+                    b.Property<Guid>("WmscustomerFacilityAccessFacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("WMSCustomerFacilityAccess_FacilityID");
+
+                    b.Property<bool>("WmscustomerFacilityAccessIsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("WMSCustomerFacilityAccess_IsActive");
+
+                    b.Property<DateTime>("WmscustomerFacilityAccessUpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("WMSCustomerFacilityAccess_UpdatedAt")
+                        .HasDefaultValueSql("now()");
+
+                    b.HasKey("WmscustomerFacilityAccessId");
+
+                    b.HasIndex("WmscustomerFacilityAccessCreatedBy");
+
+                    b.HasIndex("WmscustomerFacilityAccessFacilityId");
+
+                    b.HasIndex("WmscustomerFacilityAccessCustomerOrgId", "WmscustomerFacilityAccessFacilityId")
+                        .IsUnique();
+
+                    b.ToTable("WMS_CustomerFacilityAccess", (string)null);
+                });
+
             modelBuilder.Entity("Multideck.Persistence.Entities.WmsCustomerPortalStock", b =>
                 {
                     b.Property<string>("CustomerName")
@@ -114599,6 +115069,16 @@ namespace Multideck.Persistence.Data.Migrations
                         .OnDelete(DeleteBehavior.SetNull)
                         .HasConstraintName("CRM_Opportunities_CRMOppty_OwnerUserID_fkey");
 
+                    b.HasOne("Multideck.Persistence.Entities.CrmPipeline", "CrmopptyPipeline")
+                        .WithMany("CrmOpportunities")
+                        .HasForeignKey("CrmopptyPipelineId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Multideck.Persistence.Entities.CrmPipelineStage", "CrmopptyPipelineStage")
+                        .WithMany("CrmOpportunities")
+                        .HasForeignKey("CrmopptyPipelineStageId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Multideck.Persistence.Entities.OrgContact", "CrmopptyPrimaryContact")
                         .WithMany("CrmOpportunities")
                         .HasForeignKey("CrmopptyPrimaryContactId")
@@ -114652,6 +115132,10 @@ namespace Multideck.Persistence.Data.Migrations
                     b.Navigation("CrmopptyOrgOffice");
 
                     b.Navigation("CrmopptyOwnerUser");
+
+                    b.Navigation("CrmopptyPipeline");
+
+                    b.Navigation("CrmopptyPipelineStage");
 
                     b.Navigation("CrmopptyPrimaryContact");
 
@@ -115066,6 +115550,17 @@ namespace Multideck.Persistence.Data.Migrations
                     b.Navigation("CrmpersProfileOrgOffice");
 
                     b.Navigation("CrmpersProfileUser");
+                });
+
+            modelBuilder.Entity("Multideck.Persistence.Entities.CrmPipelineStage", b =>
+                {
+                    b.HasOne("Multideck.Persistence.Entities.CrmPipeline", "CrmPipeline")
+                        .WithMany("CrmPipelineStages")
+                        .HasForeignKey("CrmPipelineId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("CrmPipeline");
                 });
 
             modelBuilder.Entity("Multideck.Persistence.Entities.CrmQuickTask", b =>
@@ -116547,6 +117042,37 @@ namespace Multideck.Persistence.Data.Migrations
                     b.Navigation("CustvnCustoms");
 
                     b.Navigation("CustvnStatusNavigation");
+                });
+
+            modelBuilder.Entity("Multideck.Persistence.Entities.DocStoredObject", b =>
+                {
+                    b.HasOne("Multideck.Persistence.Entities.CmpUser", "DocStoredObjectCreatedByNavigation")
+                        .WithMany()
+                        .HasForeignKey("DocStoredObjectCreatedBy")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Multideck.Persistence.Entities.PortalUser", "DocStoredObjectCreatedByPortalUser")
+                        .WithMany()
+                        .HasForeignKey("DocStoredObjectCreatedByPortalUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Multideck.Persistence.Entities.CmpUser", "DocStoredObjectDeletedByNavigation")
+                        .WithMany()
+                        .HasForeignKey("DocStoredObjectDeletedBy")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Multideck.Persistence.Entities.OrgMaster", "DocStoredObjectOrganisation")
+                        .WithMany()
+                        .HasForeignKey("DocStoredObjectOrganisationId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("DocStoredObjectCreatedByNavigation");
+
+                    b.Navigation("DocStoredObjectCreatedByPortalUser");
+
+                    b.Navigation("DocStoredObjectDeletedByNavigation");
+
+                    b.Navigation("DocStoredObjectOrganisation");
                 });
 
             modelBuilder.Entity("Multideck.Persistence.Entities.DocbAssetLibrary", b =>
@@ -132422,6 +132948,32 @@ namespace Multideck.Persistence.Data.Migrations
                     b.Navigation("WmsbondHandlingAuthorisation");
                 });
 
+            modelBuilder.Entity("Multideck.Persistence.Entities.WmsCustomerFacilityAccess", b =>
+                {
+                    b.HasOne("Multideck.Persistence.Entities.CmpUser", "WmscustomerFacilityAccessCreatedByNavigation")
+                        .WithMany()
+                        .HasForeignKey("WmscustomerFacilityAccessCreatedBy")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Multideck.Persistence.Entities.OrgMaster", "WmscustomerFacilityAccessCustomerOrg")
+                        .WithMany()
+                        .HasForeignKey("WmscustomerFacilityAccessCustomerOrgId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Multideck.Persistence.Entities.WmsFacility", "WmscustomerFacilityAccessFacility")
+                        .WithMany()
+                        .HasForeignKey("WmscustomerFacilityAccessFacilityId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("WmscustomerFacilityAccessCreatedByNavigation");
+
+                    b.Navigation("WmscustomerFacilityAccessCustomerOrg");
+
+                    b.Navigation("WmscustomerFacilityAccessFacility");
+                });
+
             modelBuilder.Entity("Multideck.Persistence.Entities.WmsCustomerProfile", b =>
                 {
                     b.HasOne("Multideck.Persistence.Entities.CmpUser", "WmscustomerProfileCreatedByNavigation")
@@ -139346,6 +139898,18 @@ namespace Multideck.Persistence.Data.Migrations
                     b.Navigation("CrmMessageVariationHistories");
 
                     b.Navigation("CrmQuickTaskOptions");
+                });
+
+            modelBuilder.Entity("Multideck.Persistence.Entities.CrmPipeline", b =>
+                {
+                    b.Navigation("CrmOpportunities");
+
+                    b.Navigation("CrmPipelineStages");
+                });
+
+            modelBuilder.Entity("Multideck.Persistence.Entities.CrmPipelineStage", b =>
+                {
+                    b.Navigation("CrmOpportunities");
                 });
 
             modelBuilder.Entity("Multideck.Persistence.Entities.CrmQuickTask", b =>

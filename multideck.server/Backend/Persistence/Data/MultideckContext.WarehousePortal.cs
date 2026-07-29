@@ -10,6 +10,7 @@ public partial class MultideckContext
     partial void OnModelCreatingPartial(ModelBuilder modelBuilder)
     {
         ConfigureDocumentStorage(modelBuilder);
+        ConfigureCrmPipelines(modelBuilder);
         modelBuilder.Entity<WmsCustomerFacilityAccess>(entity =>
         {
             entity.HasKey(value => value.WmscustomerFacilityAccessId);

@@ -278,13 +278,13 @@ function DashboardTilePlaceholder({ columns, rows }: { columns?: number; rows?: 
       layout
       aria-hidden="true"
       data-md-dashboard-placeholder
-      className="relative z-10 grid place-items-center rounded-[var(--md-radius-lg)] bg-[rgba(14,125,116,0.08)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.22),0_8px_18px_rgba(14,125,116,0.06)]"
+      className="relative z-10 grid place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-accent-a08)] shadow-[inset_0_0_0_1px_var(--md-accent-a22),0_8px_18px_var(--md-accent-a06)]"
       style={{ gridColumn: `span ${tileColumns}`, gridRow: `span ${tileRows}` }}
       initial={{ opacity: 0, scale: 0.98 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
     >
-      <span className="h-1 w-12 rounded-full bg-[rgba(14,125,116,0.38)]" />
+      <span className="h-1 w-12 rounded-full bg-[var(--md-accent-a38)]" />
     </motion.div>
   )
 }
@@ -298,7 +298,7 @@ function DashboardBentoGridOverlay() {
       style={{ gridAutoRows: dashboardBentoRowHeight }}
     >
       {Array.from({ length: 120 }).map((_, index) => (
-        <span key={index} className="rounded-[var(--md-radius-sm)] bg-[rgba(14,125,116,0.035)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.08)]" />
+        <span key={index} className="rounded-[var(--md-radius-sm)] bg-[var(--md-accent-a035)] shadow-[inset_0_0_0_1px_var(--md-accent-a08)]" />
       ))}
     </div>
   )
@@ -381,7 +381,7 @@ function DashboardResizeGuide({ presets, activeSize, allowedSizes }: { presets: 
     <div
       aria-hidden="true"
       data-md-resize-guide
-      className="pointer-events-none absolute inset-0 z-30 rounded-[inherit] shadow-[inset_0_0_0_2px_rgba(14,125,116,0.42),0_0_0_9999px_rgba(14,125,116,0.025)]"
+      className="pointer-events-none absolute inset-0 z-30 rounded-[inherit] shadow-[inset_0_0_0_2px_var(--md-accent-a42),0_0_0_9999px_var(--md-accent-a025)]"
     >
       <div className="absolute -top-9 start-0 rounded-[var(--md-radius-md)] bg-[var(--md-ink)] px-2.5 py-1.5 text-[11px] font-medium text-white shadow-[var(--md-shadow-lift)]">
         {dashboardTileSizeLabels[activeSize]} · {preset.columns}/12 · {preset.rows} rows
@@ -392,7 +392,7 @@ function DashboardResizeGuide({ presets, activeSize, allowedSizes }: { presets: 
             key={size}
             className={cn(
               "rounded-[calc(var(--md-radius-md)-4px)] px-2 py-0.5 text-[11px] font-medium text-[var(--md-subtle)] transition-colors",
-              size === activeSize && "bg-[rgba(14,125,116,0.12)] text-[var(--md-accent)]",
+              size === activeSize && "bg-[var(--md-accent-a12)] text-[var(--md-accent)]",
             )}
           >
             {dashboardTileSizeLabels[size]}
@@ -532,7 +532,7 @@ function DashboardLayoutTile({
           className={cn(
             "size-8 rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] hover:bg-[var(--md-surface-soft)] hover:text-[var(--md-ink)]",
             isModule && "pointer-events-auto bg-white/88 shadow-[var(--md-shadow-line)] backdrop-blur-[10px]",
-            drilldownOpen && "bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)]",
+            drilldownOpen && "bg-[var(--md-accent-a10)] text-[var(--md-accent)]",
           )}
           onClick={(event) => {
             event.stopPropagation()
@@ -572,9 +572,9 @@ function DashboardLayoutTile({
         isModule
           ? "rounded-[var(--md-radius-2xl)]"
           : "flex min-h-0 flex-col rounded-[var(--md-radius-lg)] bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(243,248,247,0.88))] p-3 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.88),0_0_0_1px_rgba(11,20,19,0.06),0_10px_24px_rgba(42,52,50,0.055)]",
-        selected && (isModule ? "shadow-[0_0_0_3px_rgba(14,125,116,0.1)]" : "shadow-[inset_0_0_0_1px_rgba(14,125,116,0.28),0_0_0_3px_rgba(14,125,116,0.1),0_12px_24px_rgba(42,52,50,0.07)]"),
+        selected && (isModule ? "shadow-[0_0_0_3px_var(--md-accent-a10)]" : "shadow-[inset_0_0_0_1px_var(--md-accent-a28),0_0_0_3px_var(--md-accent-a10),0_12px_24px_rgba(42,52,50,0.07)]"),
         isDragging && "z-40 cursor-grabbing opacity-95 transition-none",
-        isResizing && (isModule ? "shadow-[0_0_0_3px_rgba(14,125,116,0.08)]" : "shadow-[inset_0_0_0_1px_rgba(14,125,116,0.26),0_0_0_3px_rgba(14,125,116,0.08),0_14px_30px_rgba(42,52,50,0.08)]"),
+        isResizing && (isModule ? "shadow-[0_0_0_3px_var(--md-accent-a08)]" : "shadow-[inset_0_0_0_1px_var(--md-accent-a26),0_0_0_3px_var(--md-accent-a08),0_14px_30px_rgba(42,52,50,0.08)]"),
       )}
       style={{ gridColumn: `span ${columns}`, gridRow: `span ${rows}`, ...dragStyle }}
       transition={{ layout: { duration: 0.16, ease: [0.22, 1, 0.36, 1] } }}
@@ -1275,7 +1275,7 @@ export function DashboardCustomisePanel({
     >
       <header className="flex h-[62px] shrink-0 items-center justify-between px-5 shadow-[inset_0_-1px_0_rgba(11,20,19,0.06)]">
         <div className="flex items-center gap-2">
-          <span className="grid size-8 place-items-center rounded-[var(--md-radius-md)] bg-[rgba(14,125,116,0.1)] shadow-[var(--md-shadow-line)]">
+          <span className="grid size-8 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-accent-a10)] shadow-[var(--md-shadow-line)]">
             <Sparkles className="size-4 text-[var(--md-accent)]" strokeWidth={1.4} />
           </span>
           <div>
@@ -1289,7 +1289,7 @@ export function DashboardCustomisePanel({
             variant="ghost"
             className={cn(
               "h-8 rounded-[var(--md-radius-md)] px-2.5 text-[12px] font-medium text-[var(--md-subtle)] hover:bg-[var(--md-surface-soft)] hover:text-[var(--md-ink)]",
-              activeMode === "manual" && "bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]",
+              activeMode === "manual" && "bg-[var(--md-accent-a10)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]",
             )}
             onClick={() => setDashboardMode((value) => (value === "manual" ? "ai" : "manual"))}
           >
@@ -1339,7 +1339,7 @@ export function DashboardCustomisePanel({
             </Surface>
 
             <div className="flex items-center gap-2 text-[13px] font-medium italic text-[var(--md-text)]">
-              <span className="size-2 rounded-full bg-[var(--md-accent)] shadow-[0_0_18px_rgba(14,125,116,0.32)]" />
+              <span className="size-2 rounded-full bg-[var(--md-accent)] shadow-[0_0_18px_var(--md-accent-a32)]" />
               Pulling Multideck workspace data...
             </div>
 
@@ -1417,7 +1417,7 @@ export function DashboardCustomisePanel({
               placeholder="Ask about your operation..."
               className="min-h-[58px] resize-none bg-transparent px-1 py-1 text-[14px] leading-5 text-[var(--md-ink)] outline-none placeholder:text-[var(--md-subtle)]"
             />
-            <Button type="submit" size="icon" className="mt-auto size-[42px] rounded-[var(--md-radius-xl)] bg-[var(--md-accent)] text-white shadow-[var(--md-shadow-line)] hover:bg-[var(--md-ink)]" disabled={!prompt.trim()}>
+            <Button type="submit" size="icon" className="mt-auto size-[42px] rounded-[var(--md-radius-xl)] bg-[var(--md-accent)] text-[var(--md-accent-ink)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-ink)]" disabled={!prompt.trim()}>
               <CornerDownLeft className="size-4" strokeWidth={1.35} />
               <span className="sr-only">Run dashboard prompt</span>
             </Button>

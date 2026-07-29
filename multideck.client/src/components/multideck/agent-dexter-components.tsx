@@ -59,12 +59,12 @@ export type DexterMonitor = {
 }
 
 const specialistTone: Record<DexterSpecialistId, string> = {
-  auto: "bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)]",
-  customs: "bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)]",
+  auto: "bg-[var(--md-accent-a10)] text-[var(--md-accent)]",
+  customs: "bg-[var(--md-accent-a10)] text-[var(--md-accent)]",
   customer: "bg-[rgba(74,125,156,0.1)] text-[var(--md-blue)]",
   sales: "bg-[rgba(221,138,43,0.12)] text-[var(--md-amber)]",
   ops: "bg-[rgba(90,103,100,0.1)] text-[var(--md-text)]",
-  analytics: "bg-[rgba(46,142,96,0.1)] text-[var(--md-green)]",
+  analytics: "bg-[var(--md-accent-a10)] text-[var(--md-green)]",
 }
 
 function AttachmentIcon({ attachment }: { attachment: DexterAttachment }) {
@@ -89,7 +89,7 @@ export function DexterSpecialistChip({
   return (
     <button
       type="button"
-      className="inline-flex h-8 items-center gap-2 rounded-full bg-[rgba(14,125,116,0.08)] px-3 text-[13px] font-medium text-[var(--md-accent)] shadow-[0_0_0_1px_rgba(14,125,116,0.18)] transition-[background,color,box-shadow,opacity,transform] duration-200 hover:bg-[rgba(14,125,116,0.12)]"
+      className="inline-flex h-8 items-center gap-2 rounded-full bg-[var(--md-accent-a08)] px-3 text-[13px] font-medium text-[var(--md-accent)] shadow-[0_0_0_1px_var(--md-accent-a18)] transition-[background,color,box-shadow,opacity,transform] duration-200 hover:bg-[var(--md-accent-a12)]"
       onClick={onClick}
     >
       <Icon className="size-3.5" strokeWidth={1.2} />
@@ -128,7 +128,7 @@ export function DexterPromptComposer({
   return (
     <div
       className={cn(
-        "rounded-[22px] bg-[var(--md-surface)] p-1.5 shadow-[0_0_0_1px_rgba(14,125,116,0.36),0_18px_44px_rgba(42,52,50,0.12),inset_0_0_0_1px_rgba(255,255,255,0.92)]",
+        "rounded-[22px] bg-[var(--md-surface)] p-1.5 shadow-[0_0_0_1px_var(--md-accent-a36),0_18px_44px_rgba(42,52,50,0.12),inset_0_0_0_1px_rgba(255,255,255,0.92)]",
         className,
       )}
     >
@@ -141,7 +141,7 @@ export function DexterPromptComposer({
               return (
                 <span
                   key={attachment.id}
-                  className="inline-flex h-8 max-w-full items-center gap-2 rounded-[var(--md-radius-md)] bg-[rgba(14,125,116,0.08)] px-3 text-[13px] font-medium text-[var(--md-ink)] shadow-[0_0_0_1px_rgba(14,125,116,0.2)]"
+                  className="inline-flex h-8 max-w-full items-center gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-accent-a08)] px-3 text-[13px] font-medium text-[var(--md-ink)] shadow-[0_0_0_1px_var(--md-accent-a20)]"
                 >
                   <Icon className="size-3.5 text-[var(--md-accent)]" strokeWidth={1.2} />
                   <span className="truncate">{attachment.title}</span>
@@ -185,7 +185,7 @@ export function DexterPromptComposer({
           <Button
             type="button"
             variant="ghost"
-            className="h-9 rounded-full bg-white/70 px-3 text-[13px] font-medium text-[var(--md-accent)] shadow-[0_0_0_1px_rgba(14,125,116,0.18)] hover:bg-white"
+            className="h-9 rounded-full bg-white/70 px-3 text-[13px] font-medium text-[var(--md-accent)] shadow-[0_0_0_1px_var(--md-accent-a18)] hover:bg-white"
             onClick={onOpenSpecialists}
           >
             <selectedSpecialist.icon data-icon="inline-start" strokeWidth={1.2} />
@@ -249,7 +249,7 @@ export function DexterSpecialistPicker({
                 <span className="flex min-w-0 items-center gap-2">
                   <span className="truncate text-[14px] font-medium text-[var(--md-ink)]">{specialist.name}</span>
                   {specialist.label ? (
-                    <span className="rounded-full bg-[rgba(14,125,116,0.1)] px-2 py-0.5 text-[10.5px] font-medium text-[var(--md-accent)]">
+                    <span className="rounded-full bg-[var(--md-accent-a10)] px-2 py-0.5 text-[10.5px] font-medium text-[var(--md-accent)]">
                       {specialist.label}
                     </span>
                   ) : null}
@@ -456,7 +456,7 @@ export function DexterHistoryList({
     <aside className="relative flex h-screen min-h-0 flex-col overflow-hidden bg-[var(--md-sidebar-bg)] shadow-[inset_-1px_0_0_rgba(11,20,19,0.07)]">
       <div className="flex h-[72px] items-center justify-between gap-3 border-b border-[rgba(11,20,19,0.07)] px-5">
         <h2 className="text-[18px] font-medium text-[var(--md-ink)]">History</h2>
-        <Button className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[13px] text-white hover:bg-[var(--md-accent)]/90" onClick={onNew}>
+        <Button className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[13px] text-[var(--md-accent-ink)] hover:bg-[var(--md-accent)]/90" onClick={onNew}>
           <Plus data-icon="inline-start" strokeWidth={1.2} />
           New
         </Button>
@@ -703,7 +703,7 @@ export function DexterCustomerSnapshot() {
   return (
     <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-glass-strong)]">
       <div className="flex flex-wrap items-center gap-4 px-5 py-4">
-        <span className="grid size-9 place-items-center rounded-[var(--md-radius-md)] bg-[rgba(14,125,116,0.1)] text-[12px] font-medium text-[var(--md-accent)]">MA</span>
+        <span className="grid size-9 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-accent-a10)] text-[12px] font-medium text-[var(--md-accent)]">MA</span>
         <div className="min-w-0 flex-1">
           <p className="text-[14px] font-medium text-[var(--md-ink)]">Marlow Apparel Ltd</p>
           <p className="mt-1 text-[12px] text-[var(--md-text)]">Customer since 2023 - contact Sandra Hale - next QBR Thu 14:00</p>

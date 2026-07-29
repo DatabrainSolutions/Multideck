@@ -357,7 +357,7 @@ function DocumentList({
                   onClick={() => onSelect(document)}
                   onKeyDown={(event) => handleRowKeyDown(event, document)}
                   className={cn(
-                    "cursor-pointer border-0 shadow-[var(--md-stroke-bottom)] outline-none transition-[background-color,box-shadow] duration-200 focus-visible:relative focus-visible:z-10 focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
+                    "cursor-pointer border-0 shadow-[var(--md-stroke-bottom)] outline-none transition-[background-color,box-shadow] duration-200 focus-visible:relative focus-visible:z-10 focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]",
                     isSelected ? "bg-[var(--md-selected-bg)] hover:bg-[var(--md-selected-bg)]" : "hover:bg-[var(--md-hover)]",
                   )}
                 >
@@ -387,7 +387,7 @@ function DocumentList({
                 aria-pressed={isSelected}
                 onClick={() => onSelect(document)}
                 className={cn(
-                  "w-full px-3 py-3 text-start outline-none transition-colors duration-200 focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
+                  "w-full px-3 py-3 text-start outline-none transition-colors duration-200 focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]",
                   isSelected ? "bg-[var(--md-selected-bg)]" : "hover:bg-[var(--md-hover)]",
                 )}
               >
@@ -439,7 +439,7 @@ function DocumentGrid({
               aria-pressed={isSelected}
               onClick={() => onSelect(document)}
               className={cn(
-                "group w-full min-w-0 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-2 text-start shadow-[var(--md-shadow-line)] outline-none transition-[background-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:bg-[var(--md-surface-soft)] hover:shadow-[var(--md-shadow-soft)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
+                "group w-full min-w-0 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-2 text-start shadow-[var(--md-shadow-line)] outline-none transition-[background-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:bg-[var(--md-surface-soft)] hover:shadow-[var(--md-shadow-soft)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]",
                 isSelected && "bg-[var(--md-green-card-selected)] shadow-[var(--md-shadow-green-card-selected)]",
               )}
             >
@@ -650,7 +650,7 @@ export function DocumentWorkspace({
               aria-pressed={isActive}
               onClick={() => updateSource(filter)}
               className={cn(
-                "inline-flex h-7 items-center gap-1.5 rounded-[var(--md-radius-md)] px-2.5 text-[11px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] outline-none transition-[background-color,color,box-shadow] duration-200 hover:bg-[var(--md-hover)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
+                "inline-flex h-7 items-center gap-1.5 rounded-[var(--md-radius-md)] px-2.5 text-[11px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] outline-none transition-[background-color,color,box-shadow] duration-200 hover:bg-[var(--md-hover)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]",
                 isActive ? "bg-[var(--md-selected-bg)] text-[var(--md-selected-text)]" : "bg-[var(--md-surface)]",
               )}
             >

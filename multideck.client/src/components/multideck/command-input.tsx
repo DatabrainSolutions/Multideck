@@ -1,10 +1,29 @@
 import { useMemo, useState } from "react"
 import { FileText, Search, Ship } from "lucide-react"
 import { Input } from "@/components/ui/input"
-import { bookings } from "@/data/multideck-data"
-import { quoteRegisterRecords } from "@/data/quote-register-data"
 import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
+
+type SearchBooking = (typeof import("@/data/multideck-data"))["bookings"][number]
+type SearchQuote = (typeof import("@/data/quote-register-data"))["quoteRegisterRecords"][number]
+type CommandSearchData = {
+  bookings: SearchBooking[]
+  quotes: SearchQuote[]
+}
+
+let commandSearchDataPromise: Promise<CommandSearchData> | null = null
+
+function loadCommandSearchData() {
+  commandSearchDataPromise ??= Promise.all([
+    import("@/data/multideck-data"),
+    import("@/data/quote-register-data"),
+  ]).then(([multideckData, quoteData]) => ({
+    bookings: multideckData.bookings,
+    quotes: quoteData.quoteRegisterRecords,
+  }))
+
+  return commandSearchDataPromise
+}
 
 export function CommandInput({
   placeholder = "Ask Multideck or jump to anything...",
@@ -17,16 +36,23 @@ export function CommandInput({
 }) {
   const { t } = useLanguage()
   const [query, setQuery] = useState("")
+  const [searchData, setSearchData] = useState<CommandSearchData | null>(null)
   const normalizedQuery = query.trim().toLocaleLowerCase()
+
+  function prepareSearch() {
+    if (searchData) return
+    void loadCommandSearchData().then(setSearchData)
+  }
+
   const results = useMemo(() => {
-    if (!normalizedQuery) return { jobs: [], quotes: [] }
+    if (!normalizedQuery || !searchData) return { jobs: [], quotes: [] }
 
     const matches = (values: readonly string[]) => values.some((value) => value.toLocaleLowerCase().includes(normalizedQuery))
     return {
-      jobs: bookings.filter((booking) => matches([booking.id, booking.jobRef, booking.customer, booking.route, booking.carrier, booking.container, booking.invoice, booking.customerRef])).slice(0, 4),
-      quotes: quoteRegisterRecords.filter((quote) => matches([quote.reference, quote.customer, quote.origin, quote.destination, quote.carrier, quote.customerPurchaseOrder, quote.shipperReference])).slice(0, 3),
+      jobs: searchData.bookings.filter((booking) => matches([booking.id, booking.jobRef, booking.customer, booking.route, booking.carrier, booking.container, booking.invoice, booking.customerRef])).slice(0, 4),
+      quotes: searchData.quotes.filter((quote) => matches([quote.reference, quote.customer, quote.origin, quote.destination, quote.carrier, quote.customerPurchaseOrder, quote.shipperReference])).slice(0, 3),
     }
-  }, [normalizedQuery])
+  }, [normalizedQuery, searchData])
   const hasResults = results.jobs.length > 0 || results.quotes.length > 0
 
   function open(path: string) {
@@ -41,10 +67,14 @@ export function CommandInput({
         aria-label="Search Multideck"
         aria-expanded={Boolean(normalizedQuery)}
         aria-controls="multideck-command-results"
-        className="h-9 rounded-[var(--md-radius-lg)] border-0 bg-white/70 pl-9 pr-16 text-[13px] shadow-[var(--md-shadow-line)] placeholder:text-[var(--md-subtle)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]"
+        className="h-9 rounded-[var(--md-radius-lg)] border-0 bg-white/70 pl-9 pr-16 text-[13px] shadow-[var(--md-shadow-line)] placeholder:text-[var(--md-subtle)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
         placeholder={placeholder}
         value={query}
-        onChange={(event) => setQuery(event.target.value)}
+        onFocus={prepareSearch}
+        onChange={(event) => {
+          setQuery(event.target.value)
+          prepareSearch()
+        }}
         onKeyDown={(event) => {
           if (event.key === "Escape") setQuery("")
         }}
@@ -54,7 +84,9 @@ export function CommandInput({
       </span>
       {normalizedQuery ? (
         <div id="multideck-command-results" role="listbox" className="absolute inset-x-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-[var(--md-radius-xl)] bg-[rgba(255,255,255,0.98)] p-1.5 shadow-[var(--md-shadow-lift)] ring-1 ring-[rgba(11,20,19,0.08)] backdrop-blur-xl">
-          {hasResults ? (
+          {!searchData ? (
+            <p className="px-3 py-4 text-center text-[12px] text-[var(--md-text)]">{t("Loading search results…")}</p>
+          ) : hasResults ? (
             <>
               {results.jobs.length ? (
                 <CommandResultGroup label={t("Jobs")}>
@@ -102,7 +134,7 @@ function CommandResultGroup({ label, className, children }: { label: string; cla
 
 function CommandResult({ icon, title, badge, detail, meta, onSelect }: { icon: React.ReactNode; title: string; badge: string; detail: string; meta: string; onSelect: () => void }) {
   return (
-    <button type="button" role="option" onClick={onSelect} className="grid w-full grid-cols-[32px_minmax(0,1fr)] gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 py-2 text-start transition-colors hover:bg-[var(--md-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(14,125,116,0.2)]">
+    <button type="button" role="option" onClick={onSelect} className="grid w-full grid-cols-[32px_minmax(0,1fr)] gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 py-2 text-start transition-colors hover:bg-[var(--md-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)]">
       <span className="mt-0.5 grid size-8 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] text-[var(--md-accent)]">{icon}</span>
       <span className="min-w-0">
         <span className="flex items-center gap-2"><span dir="ltr" className="font-mono text-[12px] font-medium text-[var(--md-accent)]">{title}</span><span className="truncate rounded-full bg-[var(--md-surface-tint)] px-2 py-0.5 text-[10px] font-medium text-[var(--md-text)]">{badge}</span></span>

@@ -175,7 +175,7 @@ export function CustomersPage({ navigate }: { navigate: (path: string) => void }
             <CustomerInput label={t("Customer name")} required value={newCustomer.name} onChange={(value) => updateNewCustomer("name", value)} />
             <label className="grid gap-1.5 text-start text-[13px] font-medium text-[var(--md-ink)]">
               <span>{t("Organisation type")} <span className="text-[var(--md-red)]">*</span></span>
-              <select value={newCustomer.orgTypeId} onChange={(event) => updateNewCustomer("orgTypeId", event.target.value)} required className="h-10 w-full rounded-[var(--md-radius-md)] border border-[rgba(11,20,19,0.12)] bg-white/65 px-3 text-[14px] outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]">
+              <select value={newCustomer.orgTypeId} onChange={(event) => updateNewCustomer("orgTypeId", event.target.value)} required className="h-10 w-full rounded-[var(--md-radius-md)] border border-[rgba(11,20,19,0.12)] bg-white/65 px-3 text-[14px] outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]">
                 {customerReference?.organisationTypes.length ? customerReference.organisationTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>) : <option value="">{t("Loading organisation types")}</option>}
               </select>
             </label>

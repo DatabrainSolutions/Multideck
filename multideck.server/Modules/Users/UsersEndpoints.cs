@@ -27,6 +27,83 @@ public static class UsersEndpoints
 
     private static void MapAuthenticatedEndpoints(RouteGroupBuilder usersApi)
     {
+        usersApi.MapGet("me", async (
+                ClaimsPrincipal user,
+                IUserManagementService users,
+                CancellationToken cancellationToken) =>
+            {
+                try
+                {
+                    return Results.Ok(await users.GetCurrentUserAsync(user, cancellationToken));
+                }
+                catch (UserCreationException ex)
+                {
+                    return Results.Problem(title: ex.Title, detail: ex.Message, statusCode: ex.StatusCode);
+                }
+            })
+            .RequireAuthorization();
+
+        usersApi.MapPatch("me", async (
+                UpdateCurrentUserProfileRequest request,
+                ClaimsPrincipal user,
+                IUserManagementService users,
+                CancellationToken cancellationToken) =>
+            {
+                try
+                {
+                    return Results.Ok(await users.UpdateCurrentUserProfileAsync(request, user, cancellationToken));
+                }
+                catch (UserValidationException ex)
+                {
+                    return Results.ValidationProblem(ex.Errors);
+                }
+                catch (UserCreationException ex)
+                {
+                    return Results.Problem(title: ex.Title, detail: ex.Message, statusCode: ex.StatusCode);
+                }
+            })
+            .RequireAuthorization();
+
+        usersApi.MapPut("me/cover-photo", async (
+                SaveCurrentUserCoverPhotoRequest request,
+                ClaimsPrincipal user,
+                IUserManagementService users,
+                CancellationToken cancellationToken) =>
+            {
+                try
+                {
+                    return Results.Ok(await users.SaveCurrentUserCoverPhotoAsync(request, user, cancellationToken));
+                }
+                catch (UserValidationException ex)
+                {
+                    return Results.ValidationProblem(ex.Errors);
+                }
+                catch (UserCreationException ex)
+                {
+                    return Results.Problem(title: ex.Title, detail: ex.Message, statusCode: ex.StatusCode);
+                }
+            })
+            .RequireAuthorization();
+
+        usersApi.MapDelete("me/cover-photo", async (
+                string expectedPath,
+                ClaimsPrincipal user,
+                IUserManagementService users,
+                CancellationToken cancellationToken) =>
+            {
+                try
+                {
+                    return await users.RemoveCurrentUserCoverPhotoAsync(expectedPath, user, cancellationToken)
+                        ? Results.NoContent()
+                        : Results.Conflict(new { detail = "This cover photo changed elsewhere. Refresh and try again." });
+                }
+                catch (UserCreationException ex)
+                {
+                    return Results.Problem(title: ex.Title, detail: ex.Message, statusCode: ex.StatusCode);
+                }
+            })
+            .RequireAuthorization();
+
         usersApi.MapGet("", async (
                 ClaimsPrincipal user,
                 IUserManagementService users,
@@ -92,6 +169,23 @@ public static class UsersEndpoints
 
     private static void MapUnavailableEndpoints(RouteGroupBuilder usersApi)
     {
+        usersApi.MapGet("me", () => Results.Problem(
+            title: "Supabase authentication is not configured.",
+            detail: "Set Supabase:Url before profiles can be loaded.",
+            statusCode: StatusCodes.Status503ServiceUnavailable));
+        usersApi.MapPatch("me", () => Results.Problem(
+            title: "Supabase authentication is not configured.",
+            detail: "Set Supabase:Url before profiles can be updated.",
+            statusCode: StatusCodes.Status503ServiceUnavailable));
+        usersApi.MapPut("me/cover-photo", () => Results.Problem(
+            title: "Supabase authentication is not configured.",
+            detail: "Set Supabase:Url before cover photos can be updated.",
+            statusCode: StatusCodes.Status503ServiceUnavailable));
+        usersApi.MapDelete("me/cover-photo", () => Results.Problem(
+            title: "Supabase authentication is not configured.",
+            detail: "Set Supabase:Url before cover photos can be removed.",
+            statusCode: StatusCodes.Status503ServiceUnavailable));
+
         usersApi.MapGet("", () => Results.Problem(
             title: "Supabase authentication is not configured.",
             detail: "Set Supabase:Url before team users can be loaded.",

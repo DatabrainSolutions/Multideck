@@ -319,169 +319,7 @@
     opacity: 1;
   }
 
-  .md-quote-copy-slot {
-    display: inline-grid;
-    height: 1em;
-    min-width: 0;
-    overflow: hidden;
-    line-height: 1;
-  }
-
-  .md-quote-copy-slot__layer {
-    grid-area: 1 / 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    white-space: pre;
-  }
-
-  .md-quote-copy-slot__layer > span {
-    display: inline-block;
-    opacity: 1;
-    transform: translateY(0);
-    filter: blur(0);
-    transition:
-      opacity 180ms ease,
-      filter 240ms ease,
-      transform 360ms cubic-bezier(0.22, 1, 0.36, 1);
-    transition-delay: calc(var(--md-copy-character-index) * 34ms);
-    will-change: opacity, filter, transform;
-  }
-
-  .md-quote-copy-slot__layer--copied > span {
-    opacity: 0;
-    transform: translateY(115%);
-    filter: blur(2px);
-  }
-
-  .md-quote-copy-slot[data-copied="true"] .md-quote-copy-slot__layer--reference > span {
-    opacity: 0;
-    transform: translateY(-115%);
-    filter: blur(2px);
-  }
-
-  .md-quote-copy-slot[data-copied="true"] .md-quote-copy-slot__layer--copied > span {
-    opacity: 1;
-    transform: translateY(0);
-    filter: blur(0);
-  }
-
-  .md-quote-copy-slot {
-    display: inline-grid;
-    height: 1em;
-    min-width: 0;
-    overflow: hidden;
-    line-height: 1;
-  }
-
-  .md-quote-copy-slot__layer {
-    grid-area: 1 / 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    white-space: pre;
-  }
-
-  .md-quote-copy-slot__layer > span {
-    display: inline-block;
-    opacity: 1;
-    transform: translateY(0);
-    filter: blur(0);
-    transition:
-      opacity 180ms ease,
-      filter 240ms ease,
-      transform 360ms cubic-bezier(0.22, 1, 0.36, 1);
-    transition-delay: calc(var(--md-copy-character-index) * 34ms);
-    will-change: opacity, filter, transform;
-  }
-
-  .md-quote-copy-slot__layer--copied > span {
-    opacity: 0;
-    transform: translateY(115%);
-    filter: blur(2px);
-  }
-
-  .md-quote-copy-slot[data-copied="true"] .md-quote-copy-slot__layer--reference > span {
-    opacity: 0;
-    transform: translateY(-115%);
-    filter: blur(2px);
-  }
-
-  .md-quote-copy-slot[data-copied="true"] .md-quote-copy-slot__layer--copied > span {
-    opacity: 1;
-    transform: translateY(0);
-    filter: blur(0);
-  }
-
-  .md-booking-confirm-slot {
-    position: relative;
-    display: inline-flex;
-    height: 1em;
-    overflow: hidden;
-    line-height: 1;
-  }
-
-  .md-booking-confirm-slot__layer {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    white-space: pre;
-  }
-
-  .md-booking-confirm-slot__layer--confirmation {
-    position: absolute;
-    inset: 0 auto auto 0;
-  }
-
-  .md-booking-confirm-slot[data-confirming="true"] .md-booking-confirm-slot__layer--initial {
-    position: absolute;
-    inset: 0 auto auto 0;
-  }
-
-  .md-booking-confirm-slot[data-confirming="true"] .md-booking-confirm-slot__layer--confirmation {
-    position: relative;
-    inset: auto;
-  }
-
-  .md-booking-confirm-slot__layer > span {
-    display: inline-block;
-    opacity: 1;
-    transform: translateY(0);
-    filter: blur(0);
-    transition:
-      opacity 140ms ease,
-      filter 220ms ease,
-      transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
-    transition-delay: calc(var(--md-confirm-character-index) * 22ms);
-    will-change: opacity, filter, transform;
-  }
-
-  .md-booking-confirm-slot__layer--confirmation > span {
-    opacity: 0;
-    transform: translateY(110%);
-    filter: blur(2px);
-  }
-
-  .md-booking-confirm-slot[data-confirming="true"] .md-booking-confirm-slot__layer--initial > span {
-    opacity: 0;
-    transform: translateY(-110%);
-    filter: blur(2px);
-  }
-
-  .md-booking-confirm-slot[data-confirming="true"] .md-booking-confirm-slot__layer--confirmation > span {
-    opacity: 1;
-    transform: translateY(0);
-    filter: blur(0);
-  }
-
   @media (prefers-reduced-motion: reduce) {
-    .md-quote-copy-slot__layer > span,
-    .md-booking-confirm-slot__layer > span {
-      transition-duration: 0.01ms !important;
-      transition-delay: 0ms !important;
-      filter: none !important;
-    }
-
     .md-quote-stage-panel__step,
     .md-quote-stage-panel__rail,
     .md-quote-stage-panel__rail i {
@@ -495,4 +333,12 @@
       transform: none;
     }
   }
+}
+.md-booking-confirm-label [data-copy-layer="copied"] {
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+}
+
+[dir="rtl"] .md-booking-confirm-label [data-copy-layer="copied"] {
+  transform: translateX(50%);
 }

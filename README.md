@@ -124,7 +124,7 @@ During the domain cutover, the current exact Vercel production URL may remain on
 
 ## Databrain support tickets
 
-The authenticated **Settings → Support** form submits through the Multideck server to Databrain OS. Configure these values only on the server or in Azure Web App settings:
+The authenticated **Settings → Support** form submits through the Multideck server to Databrain OS. Configure these values only on the server or in the Azure Web App deployment settings:
 
 | Key | Required | Notes |
 |---|---:|---|

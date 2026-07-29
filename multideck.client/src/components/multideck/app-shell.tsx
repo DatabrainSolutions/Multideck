@@ -1,5 +1,6 @@
-import { useEffect, useState, type ReactNode } from "react"
+import { type ReactNode } from "react"
 import type { AuthUserSummary } from "@/lib/auth-user"
+import { useSidebarCollapsed } from "@/lib/sidebar-preferences"
 import { AppSidebar } from "./app-sidebar"
 import { TopBar } from "./top-bar"
 import { cn } from "@/lib/utils"
@@ -18,21 +19,7 @@ export function AppShell({
   const isSettingsRoute = route === "/settings"
   const isAgentRoute = route === "/agent-dexter"
   const isChromeTightRoute = route.startsWith("/quotes/") || route === "/bookings/provisional"
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    try {
-      return window.localStorage.getItem("multideck.sidebarCollapsed") === "true"
-    } catch {
-      return false
-    }
-  })
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem("multideck.sidebarCollapsed", sidebarCollapsed ? "true" : "false")
-    } catch {
-      // Local storage is a convenience only; the shell still works without it.
-    }
-  }, [sidebarCollapsed])
+  const [sidebarCollapsed, setSidebarCollapsed] = useSidebarCollapsed()
 
   return (
     <div className="h-screen overflow-hidden bg-[var(--md-bg)] text-[var(--md-ink)]">

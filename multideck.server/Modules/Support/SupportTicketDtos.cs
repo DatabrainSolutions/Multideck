@@ -31,7 +31,9 @@ internal sealed record DatabrainTicketRequest(
 
 internal sealed record DatabrainRequester(string Name, string Email);
 
-internal sealed record DatabrainTicketResponse(DatabrainTicket? Ticket, bool Duplicate);
+internal sealed record DatabrainTicketResponse(
+    DatabrainTicket? Ticket,
+    bool Duplicate);
 
 internal sealed record DatabrainTicket(
     string? TicketNumber,

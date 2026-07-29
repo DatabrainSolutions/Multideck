@@ -7,21 +7,24 @@ import {
   Folder,
   Image,
   LayoutTemplate,
+  LoaderCircle,
   PenLine,
   Plus,
+  RefreshCw,
+  RotateCcw,
+  Search,
   Settings2,
+  SlidersHorizontal,
   Upload,
   UploadCloud,
   X,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import {
-  ContactProfileModule,
-  CustomerFilterBar,
-  CustomerListTable,
-} from "@/components/multideck/customer-components"
+import { ContactProfileModule } from "@/components/multideck/customer-components"
 import {
   CrmActivityTimeline,
   CrmAssetFolderCard,
@@ -29,6 +32,8 @@ import {
   CrmContactTable,
   CrmDealDetailPanel,
   CrmForecastPanel,
+  CrmLeadDetailPanel,
+  CrmLeadQualificationTable,
   CrmLeadSignalList,
   CrmMetricsGrid,
   CrmPipelineBoard,
@@ -37,31 +42,134 @@ import {
   CrmSalesCommandCenter,
   CrmSalesFunnelPanel,
   CrmSettingsBuilder,
+  type CrmDeal,
+  type CrmPipelineBoardData,
   type CrmAssetFile,
   type CrmAssetFolder,
 } from "@/components/multideck/crm-components"
 import { Pagination } from "@/components/multideck/pagination"
 import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
+import { SideDrawer } from "@/components/multideck/side-drawer"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
-import { TabsRail } from "@/components/multideck/workflow-components"
 import {
   crmActivities,
   crmContacts,
   crmPipelineBoards,
   crmPipelineStages,
-  currentOperator,
-  customerFilters,
-  customers,
   type StatusTone,
 } from "@/data/multideck-data"
+import { useLanguage } from "@/i18n/language-provider"
+import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
+import { getApiTeamUsers } from "@/lib/api"
+import { listDeals, moveDealStage, type ApiDeal } from "@/lib/deal-api"
+import { getLead, listLeads, type ApiLead, type ApiLeadDetail } from "@/lib/lead-api"
+import { getPipelineSettings, type ApiPipeline } from "@/lib/pipeline-api"
+import { createProfilePhotoSignedUrls } from "@/lib/profile-photo"
+import { getSupabaseSession } from "@/lib/supabase"
 
 const rowsPerPageOptions = [10, 20, 30, 50]
-type CrmDeal = (typeof crmPipelineStages)[number]["deals"][number]
-type CrmPipeline = (typeof crmPipelineBoards)[number]
+type CrmPipeline = CrmPipelineBoardData
 type CrmContact = (typeof crmContacts)[number]
-type Lead = (typeof customers)[number]
+type Lead = ApiLead
+
+const dealCloseDateFormatter = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" })
+const dealNextActionFormatter = new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short" })
+const dealValueFormatters = new Map<string, Intl.NumberFormat>()
+
+function getDealValueFormatter(currency: string, compact: boolean) {
+  const key = `${currency}:${compact ? "compact" : "standard"}`
+  let formatter = dealValueFormatters.get(key)
+  if (!formatter) {
+    formatter = new Intl.NumberFormat("en-GB", {
+      style: "currency",
+      currency,
+      notation: compact ? "compact" : "standard",
+      maximumFractionDigits: 0,
+    })
+    dealValueFormatters.set(key, formatter)
+  }
+  return formatter
+}
+
+function apiDealTone(deal: ApiDeal): StatusTone {
+  const stage = `${deal.stageCode} ${deal.stageName} ${deal.statusCode}`.toLowerCase()
+  if (stage.includes("lost") || stage.includes("cancel")) return "red"
+  if (stage.includes("won") || stage.includes("commit")) return "green"
+  if (stage.includes("negotiat")) return "amber"
+  if (stage.includes("quote") || stage.includes("proposal")) return "teal"
+  return "blue"
+}
+
+function apiDealToBoardDeal(deal: ApiDeal, tone: StatusTone): CrmDeal {
+  const due = deal.expectedCloseDate
+    ? dealCloseDateFormatter.format(new Date(`${deal.expectedCloseDate}T12:00:00`))
+    : "No close date"
+  const value = deal.expectedValueAmount === null
+    ? "Value pending"
+    : getDealValueFormatter(
+      deal.currencyCode || "GBP",
+      deal.expectedValueAmount >= 100_000,
+    ).format(deal.expectedValueAmount)
+  const owner = deal.ownerName
+    ? deal.ownerName.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()
+    : "—"
+
+  return {
+    id: deal.id,
+    title: deal.name,
+    account: deal.companyName,
+    contact: deal.primaryContactName || "Contact pending",
+    value,
+    due,
+    owner,
+    status: deal.statusName,
+    summary: deal.customerNeed || deal.serviceInterest || "Commercial scope ready for qualification.",
+    nextStep: deal.nextActionDueAt
+      ? `Next action due ${dealNextActionFormatter.format(new Date(deal.nextActionDueAt))}.`
+      : "Set the next customer-facing action.",
+    tone: tone === "neutral" ? apiDealTone(deal) : tone,
+  }
+}
+
+function buildDealPipelines(pipelines: ApiPipeline[], deals: ApiDeal[]): CrmPipelineBoardData[] {
+  const dealsByStage = new Map<string, ApiDeal[]>()
+  for (const deal of deals) {
+    const key = `${deal.pipelineId}:${deal.pipelineStageId}`
+    const groupedDeals = dealsByStage.get(key)
+    if (groupedDeals) groupedDeals.push(deal)
+    else dealsByStage.set(key, [deal])
+  }
+
+  return pipelines.map((pipeline) => ({
+    id: pipeline.id,
+    name: pipeline.name,
+    stages: pipeline.stages.map((stage) => ({
+      id: stage.id,
+      title: stage.name,
+      tone: stage.tone,
+      deals: (dealsByStage.get(`${pipeline.id}:${stage.id}`) ?? [])
+        .map((deal) => apiDealToBoardDeal(deal, stage.tone)),
+    })),
+  }))
+}
+
+async function loadLeadOwnerPhotoUrls() {
+  const session = await getSupabaseSession()
+  if (!session?.access_token) return new Map<string, string>()
+
+  const team = await getApiTeamUsers(session.access_token)
+  const usersWithPhotos = team.users.filter((user) => user.profilePhoto !== null)
+  const signedUrlsByPath = await createProfilePhotoSignedUrls(usersWithPhotos.map((user) => user.profilePhoto!))
+
+  return new Map(
+    usersWithPhotos.flatMap((user) => {
+      const signedUrl = user.profilePhoto ? signedUrlsByPath.get(user.profilePhoto.path) : null
+      return signedUrl ? [[user.id, signedUrl] as const] : []
+    }),
+  )
+}
 
 const crmEmailLists = [
   {
@@ -550,7 +658,7 @@ function CrmPageHeader({
 function PrimaryActionButton({ children, onClick }: { children: ReactNode; onClick: () => void }) {
   return (
     <Button
-      className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]"
+      className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]"
       onClick={onClick}
     >
       <Plus data-icon="inline-start" strokeWidth={1.2} />
@@ -568,44 +676,12 @@ function DealDetailDrawer({
   open: boolean
   onClose: () => void
 }) {
-  useEffect(() => {
-    if (!open) return undefined
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose()
-    }
-
-    window.addEventListener("keydown", handleKeyDown)
-    return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [onClose, open])
-
-  if (!open) return null
+  const { t } = useLanguage()
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-[rgba(11,20,19,0.14)] p-3 backdrop-blur-[6px] sm:p-[var(--md-page-stack-gap)]" role="dialog" aria-modal="true" aria-label="Deal details">
-      <button type="button" className="absolute inset-0 cursor-default" aria-label="Close deal details" onClick={onClose} />
-      <aside className="relative z-10 flex h-full w-full max-w-[480px] flex-col overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-bg)] p-3 shadow-[var(--md-shadow-lift)]">
-        <div className="mb-3 flex items-center justify-between gap-3 px-1">
-          <div className="min-w-0">
-            <p className="text-[12px] font-medium uppercase tracking-normal text-[var(--md-subtle)]">Deal details</p>
-            <p className="mt-1 truncate text-[14px] font-medium text-[var(--md-ink)]">{deal.account}</p>
-          </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            aria-label="Close deal details"
-            className="size-9 shrink-0 rounded-[var(--md-radius-md)] bg-white/55 shadow-[var(--md-shadow-line)] hover:bg-white/80"
-            onClick={onClose}
-          >
-            <X data-icon="inline-start" strokeWidth={1.2} />
-          </Button>
-        </div>
-        <div className="md-scrollbar min-h-0 flex-1 overflow-y-auto">
-          <CrmDealDetailPanel deal={deal} />
-        </div>
-      </aside>
-    </div>
+    <SideDrawer open={open} onClose={onClose} eyebrow={t("Deal details")} title={deal.account} width={480}>
+      <CrmDealDetailPanel deal={deal} />
+    </SideDrawer>
   )
 }
 
@@ -671,142 +747,449 @@ export function CrmOverviewPage() {
 
 function PipelineSettingsDrawer({
   open,
+  canEdit,
+  addStageRequestKey,
   onClose,
 }: {
   open: boolean
+  canEdit: boolean
+  addStageRequestKey: number
   onClose: () => void
 }) {
-  useEffect(() => {
-    if (!open) return undefined
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose()
-    }
-
-    window.addEventListener("keydown", handleKeyDown)
-    return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [onClose, open])
-
-  if (!open) return null
+  const { t } = useLanguage()
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-[rgba(11,20,19,0.14)] p-3 backdrop-blur-[6px] sm:p-[var(--md-page-stack-gap)]" role="dialog" aria-modal="true" aria-label="Pipeline settings">
-      <button type="button" className="absolute inset-0 cursor-default" aria-label="Close pipeline settings" onClick={onClose} />
-      <aside className="relative z-10 flex h-full w-full max-w-[980px] flex-col overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-bg)] p-3 shadow-[var(--md-shadow-lift)]">
-        <div className="mb-3 flex items-center justify-between gap-3 px-1">
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="grid size-10 shrink-0 place-items-center rounded-[var(--md-radius-lg)] bg-white/60 text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">
-              <Settings2 className="size-4" strokeWidth={1.2} />
-            </span>
-            <div className="min-w-0">
-              <p className="text-[12px] font-medium uppercase tracking-normal text-[var(--md-subtle)]">Deals</p>
-              <p className="mt-1 truncate text-[14px] font-medium text-[var(--md-ink)]">Pipeline settings</p>
-            </div>
-          </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            aria-label="Close pipeline settings"
-            className="size-9 shrink-0 rounded-[var(--md-radius-md)] bg-white/55 shadow-[var(--md-shadow-line)] hover:bg-white/80"
-            onClick={onClose}
-          >
-            <X data-icon="inline-start" strokeWidth={1.2} />
-          </Button>
-        </div>
-        <div className="md-scrollbar min-h-0 flex-1 overflow-y-auto rounded-[var(--md-radius-xl)]">
-          <CrmSettingsBuilder />
-        </div>
-      </aside>
-    </div>
+    <SideDrawer
+      open={open}
+      onClose={onClose}
+      eyebrow={t("Deals")}
+      title={t("Pipeline settings")}
+      icon={Settings2}
+      width={980}
+      bodyClassName="overflow-x-hidden rounded-[var(--md-radius-xl)]"
+    >
+      <CrmSettingsBuilder canEdit={canEdit} addStageRequestKey={addStageRequestKey} stacked />
+    </SideDrawer>
   )
 }
 
 export function CrmLeadsPage({ navigate }: { navigate: (path: string) => void }) {
-  const [activeFilter, setActiveFilter] = useState(customerFilters[0])
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [activeFilter, setActiveFilter] = useState("All stages")
+  const [searchQuery, setSearchQuery] = useState("")
   const [page, setPage] = useState(1)
   const [rowsPerPage, setRowsPerPage] = useState(20)
+  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false)
+  const [sourceFilter, setSourceFilter] = useState("all")
+  const [ownerFilter, setOwnerFilter] = useState("all")
+  const [ratingFilter, setRatingFilter] = useState("all")
+  const [followUpFilter, setFollowUpFilter] = useState("all")
+  const [valueFilter, setValueFilter] = useState("all")
   const [dexterOpen, setDexterOpen] = useState(false)
+  const [leads, setLeads] = useState<Lead[]>([])
+  const [ownerPhotoUrls, setOwnerPhotoUrls] = useState<Map<string, string>>(new Map())
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading")
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [reloadToken, setReloadToken] = useState(0)
+  const { language, t } = useLanguage()
+
+  useEffect(() => {
+    let isMounted = true
+    setLoadState("loading")
+    setLoadError(null)
+
+    Promise.all([
+      listLeads(),
+      loadLeadOwnerPhotoUrls().catch(() => new Map<string, string>()),
+    ])
+      .then(([data, nextOwnerPhotoUrls]) => {
+        if (!isMounted) return
+        setLeads(data)
+        setOwnerPhotoUrls(nextOwnerPhotoUrls)
+        setLoadState("ready")
+      })
+      .catch((error: unknown) => {
+        if (!isMounted) return
+        setLoadError(error instanceof Error ? error.message : t("We could not load CRM leads."))
+        setLoadState("error")
+      })
+
+    return () => {
+      isMounted = false
+    }
+  }, [reloadToken, t])
+
+  const {
+    filterOptions,
+    sourceOptions,
+    ownerOptions,
+    ratingOptions,
+    dueFollowUps,
+    recentLeads,
+    valuedLeads,
+    openLeads,
+    qualifiedLeads,
+  } = useMemo(() => {
+    const statuses = new Set<string>()
+    const sources = new Set<string>()
+    const owners = new Set<string>()
+    const ratings = new Set<string>()
+    const now = Date.now()
+    let dueFollowUpCount = 0
+    let recentLeadCount = 0
+    let valuedLeadCount = 0
+    let openLeadCount = 0
+    let qualifiedLeadCount = 0
+
+    for (const lead of leads) {
+      statuses.add(lead.statusName)
+      sources.add(lead.sourceName)
+      ratings.add(lead.ratingName)
+      if (lead.ownerName) owners.add(lead.ownerName)
+      if (lead.isOpen) {
+        openLeadCount += 1
+        if (lead.nextFollowUpAt && new Date(lead.nextFollowUpAt).getTime() < now) dueFollowUpCount += 1
+      }
+      if (now - new Date(lead.createdAt).getTime() <= 30 * 86_400_000) recentLeadCount += 1
+      if (lead.valueAmount !== null || lead.openOpportunityCount > 0) valuedLeadCount += 1
+      if (lead.qualificationScore !== null && lead.qualificationScore >= 70) qualifiedLeadCount += 1
+    }
+
+    const sortLabels = (values: Set<string>) =>
+      Array.from(values).sort((first, second) => first.localeCompare(second, language))
+
+    return {
+      filterOptions: [t("All stages"), ...sortLabels(statuses)],
+      sourceOptions: sortLabels(sources),
+      ownerOptions: sortLabels(owners),
+      ratingOptions: sortLabels(ratings),
+      dueFollowUps: dueFollowUpCount,
+      recentLeads: recentLeadCount,
+      valuedLeads: valuedLeadCount,
+      openLeads: openLeadCount,
+      qualifiedLeads: qualifiedLeadCount,
+    }
+  }, [language, leads, t])
 
   const visibleLeads = useMemo(() => {
-    const filter = activeFilter.split(" · ")[0]
-    if (filter === "All") return customers
-    return customers.filter((customer) => customer.status === filter)
-  }, [activeFilter])
+    const term = searchQuery.trim().toLocaleLowerCase(language)
+    const now = Date.now()
+
+    return leads.filter((lead) => {
+      const stageMatches = activeFilter === t("All stages") || lead.statusName === activeFilter
+      if (!stageMatches) return false
+      if (sourceFilter !== "all" && lead.sourceName !== sourceFilter) return false
+      if (ownerFilter !== "all" && lead.ownerName !== ownerFilter) return false
+      if (ratingFilter !== "all" && lead.ratingName !== ratingFilter) return false
+      const followUpTime = lead.nextFollowUpAt ? new Date(lead.nextFollowUpAt).getTime() : null
+      if (followUpFilter === "overdue" && (followUpTime === null || followUpTime >= now)) return false
+      if (followUpFilter === "scheduled" && followUpTime === null) return false
+      if (followUpFilter === "unscheduled" && followUpTime !== null) return false
+      const hasValue = lead.valueAmount !== null || lead.openOpportunityCount > 0
+      if (valueFilter === "valued" && !hasValue) return false
+      if (valueFilter === "unvalued" && hasValue) return false
+      if (!term) return true
+
+      return [
+        lead.companyName,
+        lead.primaryContactName,
+        lead.primaryContactEmail,
+        lead.sourceName,
+        lead.ownerName,
+        lead.tradeLane,
+        lead.serviceInterest,
+      ].some((value) => value?.toLocaleLowerCase(language).includes(term))
+    })
+  }, [activeFilter, followUpFilter, language, leads, ownerFilter, ratingFilter, searchQuery, sourceFilter, t, valueFilter])
+  const activeAdvancedFilterCount = [sourceFilter, ownerFilter, ratingFilter, followUpFilter, valueFilter].filter((value) => value !== "all").length
+    + (activeFilter === t("All stages") ? 0 : 1)
 
   const pageCount = Math.max(Math.ceil(visibleLeads.length / rowsPerPage), 1)
   const paginatedLeads = visibleLeads.slice((page - 1) * rowsPerPage, page * rowsPerPage)
 
   useEffect(() => {
     setPage(1)
-  }, [activeFilter])
+  }, [activeFilter, followUpFilter, ownerFilter, ratingFilter, searchQuery, sourceFilter, valueFilter])
 
   useEffect(() => {
     if (page > pageCount) setPage(pageCount)
   }, [page, pageCount])
 
-  function toggleLead(id: string) {
-    setSelectedIds((current) => {
-      const next = new Set(current)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
+  useEffect(() => {
+    if (!filterOptions.includes(activeFilter)) setActiveFilter(t("All stages"))
+  }, [activeFilter, filterOptions, t])
 
   function openLeadDetail(lead: Lead) {
     navigate(getLeadCrmPath(lead))
   }
 
+  function clearLeadFilters() {
+    setSearchQuery("")
+    setActiveFilter(t("All stages"))
+    setSourceFilter("all")
+    setOwnerFilter("all")
+    setRatingFilter("all")
+    setFollowUpFilter("all")
+    setValueFilter("all")
+    setPage(1)
+  }
+
+  function exportLeads() {
+    if (!visibleLeads.length) {
+      toast.error(t("No leads to export"))
+      return
+    }
+
+    const escapeCsv = (value: string | number | null | undefined) => {
+      const text = value === null || value === undefined ? "" : String(value)
+      return `"${text.replaceAll("\"", "\"\"")}"`
+    }
+    const rows = visibleLeads.map((lead) => [
+      lead.companyName,
+      lead.primaryContactName,
+      lead.primaryContactEmail,
+      lead.sourceName,
+      lead.ownerName,
+      lead.statusName,
+      lead.ratingName,
+      lead.qualificationScore,
+      lead.lastActivityAt,
+      lead.nextFollowUpAt,
+      lead.createdAt,
+      lead.valueAmount,
+      lead.valueCurrencyCode,
+      lead.valueContext,
+    ])
+    const csv = [
+      [t("Company"), t("Primary contact"), t("Email"), t("Source"), t("Owner"), t("Stage"), t("Rating"), t("Qualification score"), t("Last activity"), t("Next follow-up"), t("Created"), t("Value"), t("Currency"), t("Opportunity context")],
+      ...rows,
+    ].map((row) => row.map(escapeCsv).join(",")).join("\n")
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }))
+    const anchor = document.createElement("a")
+    anchor.href = url
+    anchor.download = `multideck-leads-${new Date().toISOString().slice(0, 10)}.csv`
+    anchor.click()
+    URL.revokeObjectURL(url)
+    toast.success(t("Lead export downloaded"))
+  }
+
   return (
-    <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel="Leads" className="md-page md-page-stack">
+    <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t("Leads")} className="md-page md-page-stack">
       <CrmPageHeader
-        title="Leads"
+        title={t("Leads")}
         summary={
           <>
-            CRM leads reuse the customer system, with commercial context close to live bookings and service health.
+            {t("Qualify prospects using their source, engagement, next action, commercial fit, and real opportunity context.")}
           </>
         }
-        meta={`${customers.length} leads · ${customers.filter((customer) => customer.owner === currentOperator.initials).length} owned by ${currentOperator.name}`}
+        meta={loadState === "ready"
+          ? `${new Intl.NumberFormat(language).format(leads.length)} ${t("leads")} · ${new Intl.NumberFormat(language).format(dueFollowUps)} ${t("follow-ups due")} · ${new Intl.NumberFormat(language).format(recentLeads)} ${t("created in the last 30 days")}`
+          : t("Live CRM qualification data")}
         onSpeakToDexter={() => setDexterOpen(true)}
         action={
-          <>
-            <Button
-              variant="ghost"
-              className="h-10 rounded-[var(--md-radius-lg)] bg-white/45 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/70"
-              onClick={() => toast.success("Lead export prepared")}
-            >
-              <Download data-icon="inline-start" strokeWidth={1.2} />
-              Export
-            </Button>
-            <PrimaryActionButton onClick={() => toast.success("Lead draft created")}>New lead</PrimaryActionButton>
-          </>
+          <Button
+            variant="ghost"
+            disabled={loadState !== "ready" || !visibleLeads.length}
+            className="h-10 rounded-[var(--md-radius-lg)] bg-white/45 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/70"
+            onClick={exportLeads}
+          >
+            <Download data-icon="inline-start" strokeWidth={1.2} />
+            {t("Export current view")}
+          </Button>
         }
       />
 
-      <CustomerFilterBar activeFilter={activeFilter} onFilterChange={setActiveFilter} />
+      {loadState === "ready" ? (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
+          {[
+            [t("Total leads"), leads.length, t("all recorded prospects")],
+            [t("Open leads"), openLeads, t("still in qualification")],
+            [t("Due follow-ups"), dueFollowUps, t("need attention now")],
+            [t("Valued leads"), valuedLeads, t("with value or opportunity context")],
+            [t("Recent leads"), recentLeads, t("created in the last 30 days")],
+            [t("Qualified leads"), qualifiedLeads, t("score 70 or above")],
+          ].map(([label, value, detail]) => (
+            <Surface key={String(label)} padding="none" className="h-[44px] min-w-0 rounded-[var(--md-radius-lg)] px-3 py-1.5">
+              <div className="flex h-full min-w-0 items-center gap-2.5">
+                <p className="shrink-0 text-[19px] font-medium leading-none tabular-nums text-[var(--md-ink)]" data-i18n-skip dir="ltr">
+                  {new Intl.NumberFormat(language).format(Number(value))}
+                </p>
+                <div className="min-w-0">
+                  <p className="truncate text-[10.5px] font-medium leading-[13px] text-[var(--md-text)]">{label}</p>
+                  <p className="truncate text-[9px] leading-[11px] text-[var(--md-subtle)]">{detail}</p>
+                </div>
+              </div>
+            </Surface>
+          ))}
+        </div>
+      ) : null}
 
-      <CustomerListTable
-        customers={paginatedLeads}
-        selectedIds={selectedIds}
-        onToggleCustomer={toggleLead}
-        onOpenCustomer={openLeadDetail}
-      />
+      {loadState === "loading" ? (
+        <Surface padding="lg" className="flex min-h-[240px] items-center justify-center rounded-[var(--md-radius-xl)]" role="status" aria-live="polite">
+          <div className="text-center">
+            <LoaderCircle className="mx-auto size-6 animate-spin text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" />
+            <p className="mt-3 text-[13px] text-[var(--md-text)]">{t("Loading CRM leads…")}</p>
+          </div>
+        </Surface>
+      ) : null}
 
-      <Pagination
-        page={page}
-        pageCount={pageCount}
-        totalItems={visibleLeads.length}
-        pageSize={rowsPerPage}
-        pageSizeOptions={rowsPerPageOptions}
-        itemLabel="leads"
-        onPageChange={setPage}
-        onPageSizeChange={(nextRowsPerPage) => {
-          setRowsPerPage(nextRowsPerPage)
-          setPage(1)
-        }}
-      />
+      {loadState === "error" ? (
+        <Surface padding="lg" className="rounded-[var(--md-radius-xl)]" role="alert">
+          <p className="text-[15px] font-medium text-[var(--md-ink)]">{t("We could not load CRM leads.")}</p>
+          <p className="mt-2 text-[13px] leading-5 text-[var(--md-text)]" dir="auto">{loadError ? t(loadError) : null}</p>
+          <Button
+            variant="ghost"
+            className="mt-4 h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]"
+            onClick={() => setReloadToken((token) => token + 1)}
+          >
+            <RefreshCw data-icon="inline-start" strokeWidth={1.2} />
+            {t("Retry")}
+          </Button>
+        </Surface>
+      ) : null}
+
+      {loadState === "ready" ? (
+        <>
+          {advancedFiltersOpen ? (
+            <section
+              className="overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)]"
+              aria-label={t("Advanced lead filters")}
+            >
+              <div className="grid gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] px-3 py-3 sm:px-4 sm:py-4">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-[12px] font-medium text-[var(--md-text)]">{t("Advanced lead filters")}</p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={!activeAdvancedFilterCount && !searchQuery}
+                    className="h-8 w-fit rounded-[var(--md-radius-md)] px-2.5 text-[12px] font-medium text-[var(--md-text)] hover:bg-[var(--md-surface-tint)] hover:text-[var(--md-ink)] disabled:opacity-45"
+                    onClick={clearLeadFilters}
+                  >
+                    <RotateCcw className="size-3.5" strokeWidth={1.4} />
+                    {t("Clear filters")}
+                  </Button>
+                </div>
+
+                <fieldset className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                  <legend className="sr-only">{t("Advanced lead filters")}</legend>
+                  {([
+                    ["Stage", activeFilter, setActiveFilter, filterOptions.slice(1), t("All stages")],
+                    ["Source", sourceFilter, setSourceFilter, sourceOptions, t("All sources")],
+                    ["Owner", ownerFilter, setOwnerFilter, ownerOptions, t("All owners")],
+                    ["Rating", ratingFilter, setRatingFilter, ratingOptions, t("All ratings")],
+                  ] as const).map(([label, value, onChange, options, allLabel]) => (
+                    <label key={label} className="grid gap-1.5 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-3 text-[11px] font-medium text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]">
+                      {t(label)}
+                      <Select value={value} onValueChange={onChange}>
+                        <SelectTrigger className="h-9 w-full rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] px-3 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-surface)] shadow-[var(--md-shadow-popover)]">
+                          <SelectItem value={label === "Stage" ? t("All stages") : "all"} className="text-[12px]">{allLabel}</SelectItem>
+                          {options.map((option) => <SelectItem key={option} value={option} className="text-[12px]"><span data-i18n-skip dir="auto">{option}</span></SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </label>
+                  ))}
+                  <label className="grid gap-1.5 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-3 text-[11px] font-medium text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]">
+                    {t("Follow-up")}
+                    <Select value={followUpFilter} onValueChange={setFollowUpFilter}>
+                      <SelectTrigger className="h-9 w-full rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] px-3 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]"><SelectValue /></SelectTrigger>
+                      <SelectContent className="rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-surface)] shadow-[var(--md-shadow-popover)]">
+                        <SelectItem value="all" className="text-[12px]">{t("All follow-ups")}</SelectItem>
+                        <SelectItem value="overdue" className="text-[12px]">{t("Overdue")}</SelectItem>
+                        <SelectItem value="scheduled" className="text-[12px]">{t("Scheduled")}</SelectItem>
+                        <SelectItem value="unscheduled" className="text-[12px]">{t("Not scheduled")}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </label>
+                  <label className="grid gap-1.5 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-3 text-[11px] font-medium text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]">
+                    {t("Value")}
+                    <Select value={valueFilter} onValueChange={setValueFilter}>
+                      <SelectTrigger className="h-9 w-full rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] px-3 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]"><SelectValue /></SelectTrigger>
+                      <SelectContent className="rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-surface)] shadow-[var(--md-shadow-popover)]">
+                        <SelectItem value="all" className="text-[12px]">{t("All values")}</SelectItem>
+                        <SelectItem value="valued" className="text-[12px]">{t("Value recorded")}</SelectItem>
+                        <SelectItem value="unvalued" className="text-[12px]">{t("No value recorded")}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </label>
+                </fieldset>
+              </div>
+            </section>
+          ) : null}
+          <CrmLeadQualificationTable
+            leads={paginatedLeads}
+            onOpenLead={openLeadDetail}
+            emptyMessage={leads.length ? t("No leads match this view.") : t("No leads have been recorded yet.")}
+            ownerPhotoUrls={ownerPhotoUrls}
+            toolbarLeading={(
+              <div className="flex min-w-0 items-center gap-2 px-1.5">
+                <span className="text-[12px] font-medium text-[var(--md-ink)]">{t("Lead register")}</span>
+                <span className="text-[11px] text-[var(--md-subtle)]" data-i18n-skip dir="ltr">{visibleLeads.length}</span>
+              </div>
+            )}
+            toolbarActions={(
+              <div className="flex min-w-0 flex-1 items-center justify-end gap-1.5">
+                <div className="relative min-w-[128px] max-w-[280px] flex-1 sm:min-w-[200px] sm:flex-none">
+                  <Search className="pointer-events-none absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.35} aria-hidden="true" />
+                  <Input
+                    type="search"
+                    value={searchQuery}
+                    dir="auto"
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    aria-label={t("Search leads")}
+                    placeholder={t("Search leads")}
+                    className="h-8 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface)] ps-8 pe-8 text-base shadow-[var(--md-shadow-line)] md:text-[12px]"
+                  />
+                  {searchQuery ? (
+                    <Button type="button" variant="ghost" size="icon" aria-label={t("Clear quick search")} className="absolute end-1 top-1/2 size-6 -translate-y-1/2 rounded-[var(--md-radius-sm)]" onClick={() => setSearchQuery("")}>
+                      <X className="size-3.5" strokeWidth={1.4} />
+                    </Button>
+                  ) : null}
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  aria-label={t("Advanced filters")}
+                  aria-expanded={advancedFiltersOpen}
+                  className={advancedFiltersOpen ? "h-8 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] px-2.5 text-[12px] shadow-[var(--md-shadow-line)]" : "h-8 rounded-[var(--md-radius-md)] px-2.5 text-[12px]"}
+                  onClick={() => setAdvancedFiltersOpen((current) => !current)}
+                >
+                  <SlidersHorizontal className="size-3.5" strokeWidth={1.4} />
+                  <span className="hidden lg:inline">{t("Advanced filters")}</span>
+                  {activeAdvancedFilterCount ? <span className="grid min-w-4 place-items-center rounded-full bg-[var(--md-accent-a11)] px-1 text-[10px] font-medium text-[var(--md-accent)]" data-i18n-skip>{activeAdvancedFilterCount}</span> : null}
+                </Button>
+              </div>
+            )}
+            emptyState={leads.length ? (
+              <div className="mx-auto grid max-w-sm place-items-center py-3 text-center">
+                <span className="grid size-9 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]">
+                  <Search className="size-4" strokeWidth={1.3} aria-hidden="true" />
+                </span>
+                <p className="mt-3 text-[13px] font-medium text-[var(--md-ink)]">{t("No leads match this view.")}</p>
+                <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Change or clear a filter to see more leads.")}</p>
+                <Button type="button" variant="outline" className="mt-3 h-8 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface)] px-3 text-[12px] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]" onClick={clearLeadFilters}>
+                  {t("Clear filters")}
+                </Button>
+              </div>
+            ) : undefined}
+          />
+
+          <Pagination
+            page={page}
+            pageCount={pageCount}
+            totalItems={visibleLeads.length}
+            pageSize={rowsPerPage}
+            pageSizeOptions={rowsPerPageOptions}
+            itemLabel="leads"
+            onPageChange={setPage}
+            onPageSizeChange={(nextRowsPerPage) => {
+              setRowsPerPage(nextRowsPerPage)
+              setPage(1)
+            }}
+          />
+        </>
+      ) : null}
     </DexterDockedPage>
   )
 }
@@ -818,227 +1201,86 @@ export function CrmLeadDetailPage({
   navigate: (path: string) => void
   leadId: string
 }) {
-  const lead = customers.find((customer) => customer.id === leadId) ?? customers[0]
-  const [activeLeadTab, setActiveLeadTab] = useState("Overview")
-  const leadContacts = [
-    {
-      initials: lead.initials,
-      name: lead.name.includes("Hartmann") ? "Petra Hartmann" : `${lead.name.split(" ")[0]} lead`,
-      role: "Head of Supply Chain · prefers Email",
-      email: `p.${lead.id.replaceAll("-", "")}@example.com`,
-      badge: "Primary",
-      activity: "opened email 2h ago",
-    },
-    {
-      initials: "JK",
-      name: "Jens Krüger",
-      role: "Procurement manager · prefers Phone",
-      email: "j.krueger@example.com",
-      badge: "",
-      activity: "on intro call Mon",
-    },
-  ]
-  const laneRows = [
-    ["Shanghai → Hamburg · FCL", 0.9, "9 TEU/mo"],
-    ["Ningbo → Hamburg · FCL", 0.42, "4 TEU/mo"],
-    ["Hong Kong → HAM · Air", 0.12, "ad hoc"],
-  ] as const
-  const activityRows = [
-    ["Today 09:12", "Petra opened “June ocean rates” twice · clicked Asia–EU table", "Email · June rates campaign", "teal"],
-    ["Tue 16:40", "Rates newsletter delivered", "Email · June rates campaign", "neutral"],
-    ["Mon 11:05", "Intro call · 22 min — moving from spot to contract, decision in July", "Call · Elena Moreno", "blue"],
-    ["Jun 4", "Dexter qualified the lead — lane & volume fit ICP, score 86/100", "AI · lead scoring", "green"],
-  ] as const
-  const leadTabs = [
-    { label: "Overview" },
-    { label: "Contacts", value: "2" },
-    { label: "Emails", value: "5" },
-    { label: "Quotes", value: "1 draft" },
-    { label: "Activity" },
-    { label: "Notes" },
-  ] as const
-  const metricCards = [
-    ["Dexter score", "86", "strong ICP fit", "green"],
-    ["Est. annual value", "€168k", "14 TEU/mo · FCL", "ink"],
-    ["Engagement", "4 of 5", "emails opened · 2 clicks", "teal"],
-    ["Days to decision", "19", "targets Jul 1 contract", "amber"],
-    ["Current setup", "Spot", "via DSV · no contract", "ink"],
-  ] as const
+  const [lead, setLead] = useState<ApiLeadDetail | null>(null)
+  const [ownerPhotoUrls, setOwnerPhotoUrls] = useState<Map<string, string>>(new Map())
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading")
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [reloadToken, setReloadToken] = useState(0)
+  const { t } = useLanguage()
+
+  useEffect(() => {
+    let isMounted = true
+    setLoadState("loading")
+    setLoadError(null)
+
+    Promise.all([
+      getLead(leadId),
+      loadLeadOwnerPhotoUrls().catch(() => new Map<string, string>()),
+    ])
+      .then(([data, nextOwnerPhotoUrls]) => {
+        if (!isMounted) return
+        setLead(data)
+        setOwnerPhotoUrls(nextOwnerPhotoUrls)
+        setLoadState("ready")
+      })
+      .catch((error: unknown) => {
+        if (!isMounted) return
+        setLoadError(error instanceof Error ? error.message : t("We could not load this lead."))
+        setLoadState("error")
+      })
+
+    return () => {
+      isMounted = false
+    }
+  }, [leadId, reloadToken, t])
+
+  if (loadState === "loading") {
+    return (
+      <div className="md-page">
+        <Surface padding="lg" className="flex min-h-[300px] items-center justify-center rounded-[var(--md-radius-xl)]" role="status">
+          <div className="text-center">
+            <LoaderCircle className="mx-auto size-6 animate-spin text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" />
+            <p className="mt-3 text-[13px] text-[var(--md-text)]">{t("Loading lead qualification…")}</p>
+          </div>
+        </Surface>
+      </div>
+    )
+  }
+
+  if (loadState === "error" || !lead) {
+    return (
+      <div className="md-page md-page-stack">
+        <Button
+          variant="ghost"
+          className="w-fit rounded-[var(--md-radius-md)] bg-white/45 shadow-[var(--md-shadow-line)]"
+          onClick={() => navigate("/crm/leads")}
+        >
+          <ArrowLeft data-icon="inline-start" strokeWidth={1.2} />
+          {t("Back to leads")}
+        </Button>
+        <Surface padding="lg" className="rounded-[var(--md-radius-xl)]" role="alert">
+          <p className="text-[15px] font-medium text-[var(--md-ink)]">{t("We could not load this lead.")}</p>
+          <p className="mt-2 text-[13px] text-[var(--md-text)]" dir="auto">{loadError ? t(loadError) : null}</p>
+          <Button
+            variant="ghost"
+            className="mt-4 h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]"
+            onClick={() => setReloadToken((token) => token + 1)}
+          >
+            <RefreshCw data-icon="inline-start" strokeWidth={1.2} />
+            {t("Retry")}
+          </Button>
+        </Surface>
+      </div>
+    )
+  }
 
   return (
-    <div className="md-page md-page-stack">
-      <section className="flex flex-col gap-[var(--md-page-stack-gap)]">
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-center">
-          <div className="grid size-[100px] shrink-0 place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-bg-strong)] text-[32px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
-            {lead.initials}
-          </div>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)] sm:text-[34px]">{lead.name}</h1>
-              <StatusPill tone="green">Qualified</StatusPill>
-              <StatusPill tone="amber">Hot</StatusPill>
-              <StatusPill tone="neutral">Lead</StatusPill>
-            </div>
-            <div className="mt-3 flex flex-wrap gap-x-8 gap-y-2 text-[14px] text-[var(--md-text)]">
-              <span>{lead.industry}</span>
-              <span>HQ {lead.location}</span>
-              <span>Lead since Jun 3, 2026</span>
-              <span>Source Trade show · transport logistic</span>
-              <span>Owner Elena Moreno</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid gap-[var(--md-gap-md)] md:grid-cols-2 xl:grid-cols-5">
-          {metricCards.map(([label, value, detail, tone]) => (
-            <Surface key={label} padding="lg" className="rounded-[var(--md-radius-xl)]">
-              <p className="text-[12px] font-medium text-[var(--md-subtle)]">{label}</p>
-              <p className={tone === "green" ? "mt-3 text-[30px] font-medium leading-none text-[var(--md-green)]" : tone === "teal" ? "mt-3 text-[30px] font-medium leading-none text-[var(--md-accent)]" : tone === "amber" ? "mt-3 text-[30px] font-medium leading-none text-[var(--md-amber)]" : "mt-3 text-[30px] font-medium leading-none text-[var(--md-ink)]"}>{value}</p>
-              <p className="mt-3 text-[13px] text-[var(--md-text)]">{detail}</p>
-            </Surface>
-          ))}
-        </div>
-
-        <TabsRail tabs={leadTabs} activeTab={activeLeadTab} onChange={setActiveLeadTab} />
-      </section>
-
-      {activeLeadTab === "Overview" ? (
-        <div className="grid gap-[var(--md-page-stack-gap)] 2xl:grid-cols-[minmax(0,1fr)_560px]">
-          <div className="md-panel-column">
-            <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-              <div className="flex items-center justify-between gap-4 px-5 py-4 shadow-[inset_0_-1px_0_rgba(11,20,19,0.06)]">
-                <div className="flex flex-wrap items-baseline gap-3">
-                  <h2 className="text-[16px] font-medium text-[var(--md-ink)]">Lane interest</h2>
-                  <span className="text-[13px] text-[var(--md-text)]">from intro call · Jun 9</span>
-                </div>
-                <Button
-                  variant="ghost"
-                  className="h-9 rounded-[var(--md-radius-md)] px-3 text-[13px] font-medium text-[var(--md-accent)] hover:bg-[rgba(14,125,116,0.08)]"
-                  onClick={() => toast.success("Quote draft opened")}
-                >
-                  Draft a quote →
-                </Button>
-              </div>
-              <div className="grid gap-0 px-5 py-5">
-                {laneRows.map(([lane, progress, volume]) => (
-                  <div key={lane} className="grid gap-3 py-3 shadow-[inset_0_1px_0_rgba(11,20,19,0.06)] first:pt-0 first:shadow-none sm:grid-cols-[240px_minmax(0,1fr)_96px] sm:items-center">
-                    <p className="text-[14px] font-medium text-[var(--md-ink)]">{lane}</p>
-                    <div className="h-2 overflow-hidden rounded-full bg-[rgba(91,113,108,0.16)]">
-                      <div className="h-full rounded-full bg-[var(--md-accent)]" style={{ width: `${progress * 100}%` }} />
-                    </div>
-                    <p className="text-[13px] text-[var(--md-text)] sm:text-right">{volume}</p>
-                  </div>
-                ))}
-                <div className="mt-4 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-4 shadow-[var(--md-shadow-line)]">
-                  <p className="text-[14px] leading-6 text-[var(--md-text)]">
-                    Pricing context: similar apparel accounts on Shanghai → Hamburg average <span className="font-medium text-[var(--md-ink)]">€1,180/TEU</span> with 18% margin. Hamburg consolidation has space from week 27.
-                  </p>
-                </div>
-              </div>
-            </Surface>
-
-            <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-              <div className="flex items-baseline gap-3 px-5 py-4 shadow-[inset_0_-1px_0_rgba(11,20,19,0.06)]">
-                <h2 className="text-[16px] font-medium text-[var(--md-ink)]">Activity</h2>
-                <span className="text-[13px] text-[var(--md-text)]">since Jun 3</span>
-              </div>
-              <div className="px-5 py-4">
-                {activityRows.map(([time, title, source, tone]) => (
-                  <div key={title} className="grid gap-3 py-4 shadow-[inset_0_1px_0_rgba(11,20,19,0.06)] first:pt-0 first:shadow-none sm:grid-cols-[110px_18px_minmax(0,1fr)]">
-                    <p className="text-[13px] text-[var(--md-text)]">{time}</p>
-                    <span className={tone === "teal" ? "mt-1.5 size-2 rounded-full bg-[var(--md-accent)]" : tone === "blue" ? "mt-1.5 size-2 rounded-full bg-[var(--md-blue)]" : tone === "green" ? "mt-1.5 size-2 rounded-full bg-[var(--md-green)]" : "mt-1.5 size-2 rounded-full bg-[var(--md-text)]"} />
-                    <div>
-                      <p className="text-[14px] font-medium text-[var(--md-ink)]">{title}</p>
-                      <p className="mt-1 text-[12px] text-[var(--md-text)]">{source}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </Surface>
-          </div>
-
-          <div className="md-panel-column">
-            <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-              <div className="flex items-center justify-between gap-4 px-5 py-4 shadow-[inset_0_-1px_0_rgba(11,20,19,0.06)]">
-                <div className="flex items-baseline gap-3">
-                  <h2 className="text-[16px] font-medium text-[var(--md-ink)]">Contacts</h2>
-                  <span className="text-[13px] text-[var(--md-text)]">2</span>
-                </div>
-                <Button
-                  variant="ghost"
-                  className="h-9 rounded-[var(--md-radius-md)] px-3 text-[13px] font-medium text-[var(--md-accent)] hover:bg-[rgba(14,125,116,0.08)]"
-                  onClick={() => setActiveLeadTab("Contacts")}
-                >
-                  View all →
-                </Button>
-              </div>
-              <div>
-                {leadContacts.map((contact) => (
-                  <div key={contact.email} className="grid gap-4 px-5 py-5 shadow-[inset_0_1px_0_rgba(11,20,19,0.06)] first:shadow-none sm:grid-cols-[48px_minmax(0,1fr)_auto] sm:items-center">
-                    <span className="grid size-12 place-items-center rounded-full bg-[var(--md-surface-tint)] text-[13px] font-medium text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">{contact.initials}</span>
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-[14px] font-medium text-[var(--md-ink)]">{contact.name}</p>
-                        {contact.badge ? <StatusPill tone="teal">{contact.badge}</StatusPill> : null}
-                      </div>
-                      <p className="mt-1 text-[13px] text-[var(--md-text)]">{contact.role}</p>
-                      <p className="mt-1 truncate text-[12px] text-[var(--md-text)]" data-i18n-skip dir="ltr">{contact.email}</p>
-                    </div>
-                    <p className="text-[13px] text-[var(--md-text)] sm:text-right">{contact.activity}</p>
-                  </div>
-                ))}
-              </div>
-              <div className="px-5 pb-5">
-                <Button
-                  variant="ghost"
-                  className="h-11 w-full rounded-[var(--md-radius-lg)] border-0 bg-white/20 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/45"
-                  onClick={() => toast.success("Contact draft created")}
-                >
-                  <Plus data-icon="inline-start" strokeWidth={1.2} />
-                  Add contact
-                </Button>
-              </div>
-            </Surface>
-
-            <Surface padding="lg" className="rounded-[var(--md-radius-xl)] bg-[rgba(191,222,217,0.72)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.26)]">
-              <SectionHeader title="Dexter · lead pulse" meta="" />
-              <p className="mt-4 text-[15px] leading-7 text-[var(--md-ink)]">
-                Ready to quote. Petra opened the rates email twice and lingered on Asia–EU. Their July decision window means a quote this week lands while they're comparing — I've pre-filled one from the intro-call notes.
-              </p>
-              <div className="mt-5 flex flex-wrap gap-2">
-                <Button variant="ghost" className="h-10 rounded-[var(--md-radius-lg)] bg-white/25 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/45" onClick={() => toast.success("Draft quote opened")}>Review drafted quote</Button>
-                <Button variant="ghost" className="h-10 rounded-[var(--md-radius-lg)] bg-white/25 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/45" onClick={() => toast.success("Rates one-pager queued")}>Send rates one-pager</Button>
-              </div>
-            </Surface>
-
-            <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-              <div className="px-5 py-4 shadow-[inset_0_-1px_0_rgba(11,20,19,0.06)]">
-                <h2 className="text-[16px] font-medium text-[var(--md-ink)]">Qualification</h2>
-              </div>
-              <div className="px-5 py-3">
-                {[
-                  ["ICP fit", "Strong · 86/100"],
-                  ["Decision owner", "Petra Hartmann"],
-                  ["Need", "Spot to contract by July"],
-                  ["Next step", "Quote this week"],
-                ].map(([label, value]) => (
-                  <div key={label} className="grid grid-cols-[1fr_auto] gap-4 py-3 shadow-[inset_0_1px_0_rgba(11,20,19,0.06)] first:shadow-none">
-                    <p className="text-[13px] text-[var(--md-text)]">{label}</p>
-                    <p className="text-right text-[13px] font-medium text-[var(--md-accent)]">{value}</p>
-                  </div>
-                ))}
-              </div>
-            </Surface>
-          </div>
-        </div>
-      ) : (
-        <Surface padding="lg" className="rounded-[var(--md-radius-xl)]">
-          <SectionHeader title={activeLeadTab} meta={`Focused ${activeLeadTab.toLowerCase()} view for this lead`} />
-          <p className="mt-4 text-[14px] leading-6 text-[var(--md-text)]">
-            The lead workspace keeps this tab available from the same detail view so reps do not need to jump back to the CRM list.
-          </p>
-        </Surface>
-      )}
+    <div className="md-page">
+      <CrmLeadDetailPanel
+        lead={lead}
+        ownerPhotoUrl={lead.ownerId ? ownerPhotoUrls.get(lead.ownerId) : undefined}
+        onBack={() => navigate("/crm/leads")}
+      />
     </div>
   )
 }
@@ -1085,7 +1327,7 @@ function EmailTemplatePreview({ variant }: { variant: string }) {
     <div className="rounded-[calc(var(--md-radius-xl)-4px)] bg-[var(--md-surface-tint)] p-4 shadow-[var(--md-shadow-line)]">
       <div className="h-1.5 w-12 rounded-full bg-[var(--md-accent)]" />
       <div className="mt-3 grid gap-2">
-        {variant === "wide" ? <div className="h-7 rounded-[var(--md-radius-sm)] bg-[rgba(14,125,116,0.14)]" /> : null}
+        {variant === "wide" ? <div className="h-7 rounded-[var(--md-radius-sm)] bg-[var(--md-accent-a14)]" /> : null}
         <div className="h-1.5 w-4/5 rounded-full bg-[rgba(91,113,108,0.18)]" />
         <div className="h-1.5 w-2/3 rounded-full bg-[rgba(91,113,108,0.14)]" />
         <div className="h-1.5 w-1/2 rounded-full bg-[rgba(91,113,108,0.12)]" />
@@ -1158,7 +1400,7 @@ export function CrmListsPage({ navigate }: { navigate: (path: string) => void })
           onClick={() => toast.success("New list draft created")}
         >
           <span>
-            <span className="mx-auto grid size-10 place-items-center rounded-full bg-[rgba(14,125,116,0.12)] text-[22px] font-medium text-[var(--md-accent)]">+</span>
+            <span className="mx-auto grid size-10 place-items-center rounded-full bg-[var(--md-accent-a12)] text-[22px] font-medium text-[var(--md-accent)]">+</span>
             <span className="mt-4 block text-[14px] font-medium text-[var(--md-ink)]">New list</span>
             <span className="mt-2 block text-[13px] text-[var(--md-text)]">or describe one to Dexter</span>
           </span>
@@ -1519,7 +1761,7 @@ export function CrmEmailEditPage({ navigate, campaignId }: { navigate: (path: st
               Back to emails
             </Button>
             <Button
-              className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]"
+              className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]"
               onClick={() => toast.success("Email changes saved")}
             >
               Save changes
@@ -1734,11 +1976,45 @@ export function CrmMarketingPage() {
   )
 }
 
-export function CrmDealsPage() {
-  const [selectedDeal, setSelectedDeal] = useState<CrmDeal>(() => firstDeal())
+export function CrmDealsPage({ currentUser }: { currentUser?: AuthUserSummary | null }) {
+  const { t } = useLanguage()
+  const [selectedDeal, setSelectedDeal] = useState<CrmDeal | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [dexterOpen, setDexterOpen] = useState(false)
+  const [liveDeals, setLiveDeals] = useState<ApiDeal[]>([])
+  const [livePipelines, setLivePipelines] = useState<ApiPipeline[]>([])
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
+  const canManagePipelines = hasPermission(currentUser, "Settings.Manage")
+
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    setLoadError(null)
+    Promise.all([getPipelineSettings(), listDeals()])
+      .then(([settings, deals]) => {
+        if (!active) return
+        setLivePipelines(settings.pipelines)
+        setLiveDeals(deals)
+      })
+      .catch((error) => {
+        if (!active) return
+        setLoadError(error instanceof Error ? error.message : t("The CRM service could not be reached."))
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [reloadKey, t])
+
+  const dealPipelines = useMemo(
+    () => buildDealPipelines(livePipelines, liveDeals),
+    [liveDeals, livePipelines],
+  )
 
   function openDealDetail(deal: CrmDeal) {
     setSelectedDeal(deal)
@@ -1746,27 +2022,74 @@ export function CrmDealsPage() {
   }
 
   function switchPipeline(pipeline: CrmPipeline) {
-    setSelectedDeal(firstDeal(pipeline))
+    setSelectedDeal(pipeline.stages.flatMap((stage) => stage.deals)[0] ?? null)
     setDetailOpen(false)
   }
 
-  return (
-    <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel="Deals" className="md-page md-page-stack">
-      <CrmPageHeader
-        title="Deals"
-        meta="Drag cards between stages"
-        onSpeakToDexter={() => setDexterOpen(true)}
-        action={<PrimaryActionButton onClick={() => toast.success("Deal draft created")}>New deal</PrimaryActionButton>}
-      />
+  async function persistDealMove(dealId: string, pipelineId: string, stageId: string) {
+    try {
+      const updated = await moveDealStage(dealId, pipelineId, stageId)
+      setLiveDeals((deals) => deals.map((deal) => deal.id === updated.id ? updated : deal))
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("This deal could not be moved."))
+      setReloadKey((key) => key + 1)
+    }
+  }
 
-      <CrmPipelineBoard
-        selectedDealId={detailOpen ? selectedDeal.id : undefined}
-        onSelectDeal={openDealDetail}
-        onPipelineChange={switchPipeline}
-        onOpenSettings={() => setSettingsOpen(true)}
+  return (
+    <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t("Deals")} className="md-page md-page-stack-compact">
+      {loading ? (
+        <Surface padding="lg" className="min-h-[280px] animate-pulse rounded-[var(--md-radius-xl)] bg-[var(--md-surface)]">
+          <span className="sr-only">{t("Loading deals")}</span>
+        </Surface>
+      ) : loadError ? (
+        <Surface padding="lg" className="rounded-[var(--md-radius-xl)]">
+          <SectionHeader title={t("Deals could not be loaded")} meta={loadError} />
+          <Button className="mt-5" variant="outline" onClick={() => setReloadKey((key) => key + 1)}>
+            <RefreshCw className="size-4" strokeWidth={1.2} />
+            {t("Retry")}
+          </Button>
+        </Surface>
+      ) : dealPipelines.length === 0 ? (
+        <Surface padding="lg" className="rounded-[var(--md-radius-xl)]">
+          <SectionHeader title={t("No deal pipelines yet")} meta={t("Create the first pipeline to start organising deals.")} />
+          {canManagePipelines ? (
+            <Button className="mt-5" onClick={() => setSettingsOpen(true)}>
+              <Settings2 className="size-4" strokeWidth={1.2} />
+              {t("Open pipeline settings")}
+            </Button>
+          ) : null}
+        </Surface>
+      ) : (
+        <CrmPipelineBoard
+          pipelines={dealPipelines}
+          commandHeader={{
+            title: t("Deals"),
+            instruction: t("Drag cards between stages"),
+            actions: (
+              <>
+                <DexterActionPill onClick={() => setDexterOpen(true)} />
+                <PrimaryActionButton onClick={() => toast.success(t("Deal draft created"))}>{t("New deal")}</PrimaryActionButton>
+              </>
+            ),
+          }}
+          selectedDealId={detailOpen && selectedDeal ? selectedDeal.id : undefined}
+          onSelectDeal={openDealDetail}
+          onPipelineChange={switchPipeline}
+          onOpenSettings={() => setSettingsOpen(true)}
+          onMoveDeal={persistDealMove}
+        />
+      )}
+      {selectedDeal ? <DealDetailDrawer deal={selectedDeal} open={detailOpen} onClose={() => setDetailOpen(false)} /> : null}
+      <PipelineSettingsDrawer
+        open={settingsOpen}
+        canEdit={canManagePipelines}
+        addStageRequestKey={0}
+        onClose={() => {
+          setSettingsOpen(false)
+          setReloadKey((key) => key + 1)
+        }}
       />
-      <DealDetailDrawer deal={selectedDeal} open={detailOpen} onClose={() => setDetailOpen(false)} />
-      <PipelineSettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </DexterDockedPage>
   )
 }
@@ -1785,7 +2108,7 @@ export function CrmActivityPage({ navigate }: { navigate: (path: string) => void
       />
 
       <div className="md-panel-grid 2xl:grid-cols-[minmax(0,1fr)_390px]">
-        <CrmActivityTimeline />
+        <CrmActivityTimeline onOpenContext={navigate} />
         <div className="md-panel-column">
           <CrmLeadSignalList onOpenLead={() => navigate("/crm/leads")} />
           <Surface padding="lg" className="rounded-[var(--md-radius-xl)]">
@@ -1810,21 +2133,22 @@ export function CrmActivityPage({ navigate }: { navigate: (path: string) => void
   )
 }
 
-export function CrmSettingsPage() {
+export function CrmSettingsPage({ currentUser }: { currentUser?: AuthUserSummary | null }) {
+  const { t } = useLanguage()
+
   return (
     <div className="md-page md-page-stack">
       <CrmPageHeader
-        title="CRM settings"
+        title={t("CRM settings")}
         summary={
           <>
-            Configure the commercial workflow: lead pipelines, dropdown fields, multi-select dropdowns, and the point where a lead becomes a customer.
+            {t("Build and refine the sales stages that move a lead towards becoming a customer.")}
           </>
         }
-        meta="UI only for now · designed for pipeline, field, and conversion settings"
-        action={<PrimaryActionButton onClick={() => toast.success("CRM setting draft created")}>New pipeline</PrimaryActionButton>}
+        meta={t("Drag stages to reorder, or use the move buttons.")}
       />
 
-      <CrmSettingsBuilder />
+      <CrmSettingsBuilder canEdit={hasPermission(currentUser, "Settings.Manage")} />
     </div>
   )
 }

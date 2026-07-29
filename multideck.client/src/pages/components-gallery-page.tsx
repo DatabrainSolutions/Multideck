@@ -1,5 +1,6 @@
-import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from "react"
-import { ArrowLeft, ArrowRight, Bell, Check, ChevronDown, Clipboard, Cloud, Component, Download, FileText, Folder, Image, KeyRound, Mail, Search, Ship, Sparkles, UserRound } from "lucide-react"
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { useTheme } from "next-themes"
+import { ArrowLeft, ArrowRight, Bell, Check, Clipboard, Cloud, Component, Download, FileText, Folder, Image, KeyRound, Mail, Pin, Search, Ship, Sparkles, UserRound } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -7,8 +8,10 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
+import { accentShiftDurationMs, useAccentPresetId } from "@/lib/accent-theme"
 import { cn } from "@/lib/utils"
-import { activityItems, cityQueues, crmAccountSignals, crmActivities, crmContacts, crmPipelineStages, crmSummaryMetrics, customerFilters, customerScopeTabs, customers, customsQueue, galleryComponents, galleryIcons, generatedReports, initialFavouriteBookingIds, liveBookings, marlowContacts, marlowMetrics, metricCards, quoteAuditEvents, reportTemplates, bookingFilters, bookingMetrics, bookings, warehouseOrders, warehouseProducts, warehouseStockRows } from "@/data/multideck-data"
+import type { ApiLead, ApiLeadDetail } from "@/lib/lead-api"
+import { activityItems, cityQueues, crmAccountSignals, crmActivities, crmContacts, crmLeadFieldSettings, crmPipelineSettings, crmPipelineStages, crmSummaryMetrics, customerFilters, customerScopeTabs, customers, customsQueue, galleryComponents, galleryIcons, generatedReports, initialFavouriteBookingIds, liveBookings, marlowContacts, marlowMetrics, metricCards, quoteAuditEvents, reportTemplates, bookingFilters, bookingMetrics, bookings, warehouseOrders, warehouseProducts, warehouseStockRows } from "@/data/multideck-data"
 import { AnimatedList } from "@/components/multideck/animated-list"
 import { CommandInput } from "@/components/multideck/command-input"
 import { SidebarNavItem } from "@/components/multideck/app-sidebar"
@@ -32,7 +35,9 @@ import {
   LaneMixPanel,
   PrimaryContactsPanel,
 } from "@/components/multideck/customer-components"
-import { CrmActivityTimeline, CrmAssetFolderCard, CrmAssetRow, CrmContactTable, CrmForecastPanel, CrmLeadDetailPanel, CrmLeadSignalList, CrmMetricsGrid, CrmPipelineBoard, CrmPriorityActionsPanel, CrmRevenueMixPanel, CrmSalesCommandCenter, CrmSalesFunnelPanel, CrmSettingsBuilder } from "@/components/multideck/crm-components"
+import { CrmActivityTimeline, CrmAssetFolderCard, CrmAssetRow, CrmContactTable, CrmForecastPanel, CrmLeadDetailPanel, CrmLeadQualificationTable, CrmLeadSignalList, CrmMetricsGrid, CrmPipelineBoard, CrmPriorityActionsPanel, CrmRevenueMixPanel, CrmSalesCommandCenter, CrmSalesFunnelPanel, CrmSettingsBuilder } from "@/components/multideck/crm-components"
+import { CopyableField } from "@/components/multideck/copyable-field"
+import { CrmPipelineEditor } from "@/components/multideck/crm-pipeline-editor"
 import { ChoiceControl, FilterChips, SegmentedControl, TabsRail } from "@/components/multideck/workflow-components"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
@@ -90,6 +95,7 @@ import {
   SettingsIntegrationRow,
   SettingsOptionCard,
   SettingsPanel,
+  SettingsProgressRing,
   SettingsRail,
   SettingsSummaryCard,
   type SettingsTabGroup,
@@ -100,6 +106,8 @@ import { AIEdgeGlow } from "@/components/multideck/ai-edge-glow"
 import { DashboardCustomisePanel } from "@/components/multideck/dashboard-customise-panel"
 import { MultideckDateRangePicker, type MultideckDateRange } from "@/components/multideck/date-picker"
 import { ThemeToggle } from "@/components/multideck/theme-toggle"
+import { SidebarItemMenu } from "@/components/multideck/sidebar-item-menu"
+import { SidebarArrangeCanvas, type SidebarArrangeItem } from "@/components/multideck/sidebar-arrange"
 import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import { DexterCompanionSidebar } from "@/components/multideck/dexter-companion-sidebar"
 import { PageSettingsMenu } from "@/components/multideck/page-settings-menu"
@@ -140,7 +148,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Button & control components",
     helper: "Navigation and input controls",
-    ids: ["command", "sidebar", "theme-toggle", "page-settings-menu", "date-range-picker", "segmented-control", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "pagination", "settings-controls", "settings-option-card"],
+    ids: ["command", "sidebar", "sidebar-item-menu", "sidebar-arrange-canvas", "theme-toggle", "page-settings-menu", "date-range-picker", "segmented-control", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "pagination", "settings-controls", "settings-option-card"],
   },
   {
     label: "Auth components",
@@ -160,7 +168,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "CRM",
     helper: "Leads, contacts, deals, activity, marketing, settings",
-    ids: ["crm-sales-command-center", "crm-metrics-grid", "crm-sales-funnel-panel", "crm-revenue-mix-panel", "crm-forecast-panel", "crm-priority-actions-panel", "crm-pipeline-board", "crm-asset-folder-card", "crm-asset-row", "crm-lead-detail-panel", "crm-contact-table", "crm-activity-timeline", "crm-lead-signals", "crm-settings-builder"],
+    ids: ["crm-sales-command-center", "crm-metrics-grid", "crm-sales-funnel-panel", "crm-revenue-mix-panel", "crm-forecast-panel", "crm-priority-actions-panel", "crm-pipeline-board", "crm-pipeline-editor", "crm-asset-folder-card", "crm-asset-row", "crm-lead-qualification-table", "copyable-field", "crm-lead-detail-panel", "crm-contact-table", "crm-activity-timeline", "crm-lead-signals", "crm-settings-builder"],
   },
   {
     label: "Agent Dexter",
@@ -175,7 +183,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Settings",
     helper: "Configuration surfaces",
-    ids: ["settings-rail", "settings-panel-row", "settings-integration-row", "settings-summary-card"],
+    ids: ["settings-rail", "settings-panel-row", "settings-integration-row", "settings-summary-card", "settings-progress-ring"],
   },
 ]
 
@@ -284,6 +292,109 @@ const previewMarketingAssets = [
   },
 ]
 
+const previewCrmLeads: ApiLead[] = [
+  {
+    id: "lead-northstar",
+    companyName: "Northstar Components",
+    initials: "NC",
+    primaryContactName: "Amelia Hart",
+    primaryContactEmail: "amelia@northstar.example",
+    countryCode: "GB",
+    sourceCode: "REFERRAL",
+    sourceName: "Customer referral",
+    ownerId: "owner-elena",
+    ownerName: "Elena Moreno",
+    ownerInitials: "EM",
+    statusCode: "QUALIFYING",
+    statusName: "Qualifying",
+    isOpen: true,
+    isConverted: false,
+    isDisqualified: false,
+    ratingCode: "WARM",
+    ratingName: "Warm",
+    qualificationScore: 72,
+    qualificationCriteriaMet: 3,
+    conversionProbability: 64,
+    lastActivityAt: "2026-07-28T14:30:00Z",
+    lastActivitySubject: "Discovery call completed",
+    nextFollowUpAt: "2026-07-30T09:00:00Z",
+    createdAt: "2026-07-08T10:00:00Z",
+    valueAmount: 92000,
+    valueCurrencyCode: "GBP",
+    valueContext: "UK–Benelux road tender · Discovery",
+    tradeLane: "UK–Benelux",
+    serviceInterest: "Road freight",
+    openOpportunityCount: 1,
+  },
+  {
+    id: "lead-atlas",
+    companyName: "Atlas Retail Supply",
+    initials: "AR",
+    primaryContactName: "Ravi Shah",
+    primaryContactEmail: "ravi@atlasretail.example",
+    countryCode: "NL",
+    sourceCode: "INBOUND",
+    sourceName: "Website enquiry",
+    ownerId: null,
+    ownerName: null,
+    ownerInitials: null,
+    statusCode: "NEW",
+    statusName: "New",
+    isOpen: true,
+    isConverted: false,
+    isDisqualified: false,
+    ratingCode: "UNRATED",
+    ratingName: "Unrated",
+    qualificationScore: null,
+    qualificationCriteriaMet: 0,
+    conversionProbability: null,
+    lastActivityAt: null,
+    lastActivitySubject: null,
+    nextFollowUpAt: null,
+    createdAt: "2026-07-27T08:10:00Z",
+    valueAmount: null,
+    valueCurrencyCode: null,
+    valueContext: "Ocean FCL enquiry",
+    tradeLane: "Shanghai–Rotterdam",
+    serviceInterest: "Ocean FCL",
+    openOpportunityCount: 0,
+  },
+]
+
+const previewCrmLeadDetails: ApiLeadDetail[] = previewCrmLeads.map((lead, index) => ({
+  ...lead,
+  company: index === 0
+    ? {
+        organisationId: "org-northstar",
+        email: "hello@northstar.example",
+        website: "https://northstar.example",
+        phone: "+44 121 555 0142",
+        address: "Foundry House, Birmingham B4 6QE, United Kingdom",
+      }
+    : {
+        organisationId: null,
+        email: null,
+        website: null,
+        phone: null,
+        address: null,
+      },
+  contacts: index === 0
+    ? [
+        { id: "contact-amelia", name: "Amelia Hart", initials: "AH", roleCode: "primary_contact", email: "amelia@northstar.example", phone: "+44 121 555 0188", isPrimary: true, lastContactAt: "2026-07-28T14:30:00Z" },
+        { id: "contact-james", name: "James Harrison", initials: "JH", roleCode: "procurement_director", email: "james@northstar.example", phone: null, isPrimary: false, lastContactAt: "2026-07-25T10:00:00Z" },
+        { id: "contact-maya", name: "Maya Chen", initials: "MC", roleCode: "logistics_manager", email: "maya@northstar.example", phone: null, isPrimary: false, lastContactAt: "2026-07-21T09:00:00Z" },
+      ]
+    : [
+        { id: "contact-ravi", name: "Ravi Shah", initials: "RS", roleCode: "primary_contact", email: "ravi@atlasretail.example", phone: null, isPrimary: true, lastContactAt: null },
+      ],
+  activities: index === 0
+    ? [
+        { id: "activity-discovery", typeCode: "call", subject: "Discovery call completed", summary: "Confirmed weekly import profile and decision process.", activityAt: "2026-07-28T14:30:00Z" },
+        { id: "activity-follow-up", typeCode: "email", subject: "Service overview shared", summary: "Road tender scope and next-step options sent.", activityAt: "2026-07-24T09:15:00Z" },
+      ]
+    : [],
+}))
+
 function groupGalleryComponents(filtered: GalleryComponent[]) {
   const byId = new Map(filtered.map((component) => [component.id, component]))
   const used = new Set<string>()
@@ -327,22 +438,75 @@ const introNotes = [
     body: "Start with the live preview, read the purpose, then use the code and usage tabs when a screen needs the same pattern. Compose these pieces before inventing a new one.",
   },
 ]
+/* The value beside each swatch is read back off the page rather than written down
+   here: the accent tokens are operator-chosen now, and the neutrals already
+   differed between light and dark, so a literal in this list could only ever be
+   right for one of the four combinations. */
 const colourTokens = [
-  ["Ink", "--md-ink", "#0b1413"],
-  ["Text", "--md-text", "#4f5b58"],
-  ["Subtle", "--md-subtle", "#687570"],
-  ["Background", "--md-bg", "#f3f4f4"],
-  ["Strong bg", "--md-bg-strong", "#eef1f0"],
-  ["Surface", "--md-surface", "#ffffff"],
-  ["Tint", "--md-surface-tint", "#eef1f0"],
-  ["Field", "--md-field-bg", "#e5e9e7"],
-  ["Selected", "--md-selected-bg", "#c8dcd6"],
-  ["Accent", "--md-accent", "#0a7068"],
-  ["Green", "--md-green", "#0a7068"],
-  ["Amber", "--md-amber", "#dd8a2b"],
-  ["Red", "--md-red", "#d14e4e"],
-  ["Blue", "--md-blue", "#4a7d9c"],
+  ["Ink", "--md-ink"],
+  ["Text", "--md-text"],
+  ["Subtle", "--md-subtle"],
+  ["Background", "--md-bg"],
+  ["Strong bg", "--md-bg-strong"],
+  ["Surface", "--md-surface"],
+  ["Tint", "--md-surface-tint"],
+  ["Field", "--md-field-bg"],
+  ["Selected", "--md-selected-bg"],
+  ["Accent", "--md-accent"],
+  ["Green", "--md-green"],
+  ["Amber", "--md-amber"],
+  ["Red", "--md-red"],
+  ["Blue", "--md-blue"],
+  ["AI cyan", "--md-ai-cyan"],
+  ["AI magenta", "--md-ai-magenta"],
+  ["AI gold", "--md-ai-gold"],
+  ["AI orange", "--md-ai-orange"],
 ]
+
+function rgbToHex(value: string) {
+  const channels = value.match(/[\d.]+/g)
+  if (!channels || channels.length < 3) return value
+
+  return `#${channels
+    .slice(0, 3)
+    .map((channel) => Math.round(Number(channel)).toString(16).padStart(2, "0"))
+    .join("")}`
+}
+
+function ColourTokenSwatch({ label, token }: { label: string; token: string }) {
+  const accentPresetId = useAccentPresetId()
+  const { resolvedTheme } = useTheme()
+  const swatchRef = useRef<HTMLDivElement>(null)
+  const [resolved, setResolved] = useState("")
+
+  useEffect(() => {
+    const element = swatchRef.current
+    if (!element) return
+
+    const read = () => setResolved(rgbToHex(window.getComputedStyle(element).backgroundColor))
+
+    read()
+    // Read again once the accent cross-fade has landed, so the caption reports the
+    // colour that settled rather than one sampled mid-transition.
+    const timer = window.setTimeout(read, accentShiftDurationMs + 80)
+    return () => window.clearTimeout(timer)
+  }, [accentPresetId, resolvedTheme])
+
+  return (
+    <div className="rounded-[var(--md-radius-lg)] bg-white/60 p-2 shadow-[var(--md-shadow-line)]">
+      <div
+        ref={swatchRef}
+        className="h-20 rounded-[var(--md-radius-md)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.42)]"
+        style={{ background: `var(${token})` }}
+      />
+      <div className="mt-3 px-1 pb-1">
+        <p className="text-[13px] font-medium text-[var(--md-ink)]">{label}</p>
+        <p className="mt-1 font-mono text-[11px] text-[var(--md-text)]">{token}</p>
+        <p className="mt-1 font-mono text-[11px] text-[var(--md-subtle)]">{resolved}</p>
+      </div>
+    </div>
+  )
+}
 const typographyRows = [
   ["24px / Medium", "Main page headings", "Northwind operations"],
   ["18px / Medium", "Subheads and important summaries", "Two bookings need attention"],
@@ -513,7 +677,19 @@ function FoundOnLinks({ links }: { links: (typeof galleryComponents)[number]["fo
   )
 }
 
+const previewSidebarRows: SidebarArrangeItem[] = [
+  { id: "overview", label: "Overview", icon: galleryIcons.sidebar },
+  { id: "bookings", label: "Bookings", icon: Ship },
+  { id: "documents", label: "Documents", icon: FileText },
+  { id: "customers", label: "Customers", icon: UserRound },
+]
+
+const previewSidebarOrder = previewSidebarRows.map((row) => row.id)
+
 function ComponentPreview({ id }: { id: string }) {
+  const [previewSidebarPinnedIds, setPreviewSidebarPinnedIds] = useState<string[]>([])
+  const [previewArrangeOrder, setPreviewArrangeOrder] = useState<string[]>(previewSidebarOrder)
+  const [previewArrangePinned, setPreviewArrangePinned] = useState<string[]>([])
   const [previewPage, setPreviewPage] = useState(1)
   const [previewPageSize, setPreviewPageSize] = useState(20)
   const [previewBookingFilter, setPreviewBookingFilter] = useState<string>(bookingFilters[0])
@@ -561,7 +737,7 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewDexterAttachmentQuery, setPreviewDexterAttachmentQuery] = useState("")
   const [previewDexterAttachmentIds, setPreviewDexterAttachmentIds] = useState<Set<string>>(new Set(["marlow", "md-22414"]))
   const [previewCrmDealId, setPreviewCrmDealId] = useState(crmPipelineStages[0].deals[0].id)
-  const [previewCrmLeadId, setPreviewCrmLeadId] = useState(customers[0].id)
+  const [previewCrmLeadId, setPreviewCrmLeadId] = useState(previewCrmLeads[0].id)
   const [previewCrmContactEmail, setPreviewCrmContactEmail] = useState(crmContacts[0].email)
   const [previewMarketingFolderId, setPreviewMarketingFolderId] = useState(previewMarketingFolders[0].id)
   const [previewPaperDocumentId, setPreviewPaperDocumentId] = useState<string | null>(null)
@@ -674,7 +850,7 @@ function ComponentPreview({ id }: { id: string }) {
 
   const previewDexterSpecialist = defaultDexterSpecialists.find((specialist) => specialist.id === previewDexterSpecialistId) ?? defaultDexterSpecialists[0]
   const previewDexterAttachments = defaultDexterAttachments.filter((attachment) => previewDexterAttachmentIds.has(attachment.id))
-  const previewCrmLead = customers.find((customer) => customer.id === previewCrmLeadId) ?? customers[0]
+  const previewCrmLead = previewCrmLeadDetails.find((lead) => lead.id === previewCrmLeadId) ?? previewCrmLeadDetails[0]
 
   return (
     <div className="grid min-h-[430px] min-w-0 place-items-center overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-bg-strong)] p-[var(--md-gap-xl)]">
@@ -687,15 +863,8 @@ function ComponentPreview({ id }: { id: string }) {
       {id === "colours" ? (
         <div className="w-full max-w-[720px]">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {colourTokens.map(([label, token, hex]) => (
-              <div key={token} className="rounded-[var(--md-radius-lg)] bg-white/60 p-2 shadow-[var(--md-shadow-line)]">
-                <div className="h-20 rounded-[var(--md-radius-md)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.42)]" style={{ background: `var(${token})` }} />
-                <div className="mt-3 px-1 pb-1">
-                  <p className="text-[13px] font-medium text-[var(--md-ink)]">{label}</p>
-                  <p className="mt-1 font-mono text-[11px] text-[var(--md-text)]">{token}</p>
-                  <p className="mt-1 font-mono text-[11px] text-[var(--md-subtle)]">{hex}</p>
-                </div>
-              </div>
+            {colourTokens.map(([label, token]) => (
+              <ColourTokenSwatch key={token} label={label} token={token} />
             ))}
           </div>
         </div>
@@ -829,11 +998,11 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "toast" ? (
-        <div className="relative flex min-h-[340px] w-full max-w-[760px] items-center justify-center overflow-hidden rounded-[var(--md-radius-xl)] bg-[linear-gradient(135deg,rgba(251,253,253,0.72),rgba(233,242,240,0.72))] p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+        <div className="relative flex min-h-[340px] w-full max-w-[760px] items-center justify-center overflow-hidden rounded-[var(--md-radius-xl)] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--md-surface)_72%,transparent),color-mix(in_srgb,var(--md-surface-tint)_72%,transparent))] p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
           <Button
             type="button"
             variant="ghost"
-            className="h-10 rounded-[var(--md-radius-lg)] bg-white/70 px-4 text-[13px] font-medium shadow-[var(--md-shadow-line)]"
+            className="h-10 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-surface)_78%,transparent)] px-4 text-[13px] font-medium shadow-[var(--md-shadow-line)]"
             onClick={() =>
               toast.success("Customer CSV prepared", {
                 description: "The export is ready for Northwind Forwarding.",
@@ -960,9 +1129,10 @@ function ComponentPreview({ id }: { id: string }) {
         <div className="grid w-full max-w-[660px] gap-4 sm:grid-cols-2">
           <div className="rounded-[var(--md-radius-xl)] bg-[var(--md-sidebar-bg)] p-4 shadow-[var(--md-shadow-line)]">
             <SidebarNavItem item={{ label: "Agent Dexter", icon: Sparkles }} accent="dexter" onClick={() => undefined} />
-            <SidebarNavItem item={{ label: "Home & Work", icon: galleryIcons.sidebar }} onClick={() => undefined} />
-            <SidebarNavItem item={{ label: "Operations", icon: Ship }} onClick={() => undefined} />
-            <SidebarNavItem item={{ label: "Sales & CRM", icon: galleryIcons["crm-pipeline-board"] }} onClick={() => undefined} />
+            <SidebarNavItem item={{ label: "Home", icon: galleryIcons.sidebar }} onClick={() => undefined} affordance="branch" />
+            <SidebarNavItem item={{ label: "Operations", icon: Ship }} onClick={() => undefined} affordance="branch" />
+            <SidebarNavItem item={{ label: "Sales", icon: galleryIcons["crm-pipeline-board"] }} onClick={() => undefined} affordance="branch" />
+            <SidebarNavItem item={{ label: "CRM", icon: galleryIcons["crm-metrics-grid"] }} onClick={() => undefined} affordance="branch" />
           </div>
           <div className="rounded-[var(--md-radius-xl)] bg-[var(--md-sidebar-bg)] p-4 shadow-[var(--md-shadow-line)]">
             <SidebarNavItem item={{ label: "Agent Dexter", icon: Sparkles }} accent="dexter" onClick={() => undefined} />
@@ -974,7 +1144,7 @@ function ComponentPreview({ id }: { id: string }) {
               item={{ label: "Bookings & jobs", icon: Ship }}
               onClick={() => undefined}
               expanded
-              trailing={<ChevronDown className="size-3.5 rotate-180" strokeWidth={1.2} />}
+              affordance="group"
             />
             <div className="mt-1 ps-4">
               <div className="rounded-[var(--md-radius-lg)] bg-white/40 p-1 shadow-[var(--md-shadow-line)]">
@@ -983,6 +1153,50 @@ function ComponentPreview({ id }: { id: string }) {
               </div>
             </div>
           </div>
+        </div>
+      ) : null}
+
+      {id === "sidebar-item-menu" ? (
+        <div className="w-full max-w-[300px] rounded-[var(--md-radius-xl)] bg-[var(--md-sidebar-bg)] p-4 shadow-[var(--md-shadow-line)]">
+          <p className="mb-2 px-2 text-[11px] text-[var(--md-subtle)]">Right-click a row to pin or reorder it.</p>
+          {previewSidebarRows.map((row) => {
+            const pinned = previewSidebarPinnedIds.includes(row.id)
+
+            return (
+              <SidebarItemMenu
+                key={row.id}
+                pinned={pinned}
+                onTogglePin={() =>
+                  setPreviewSidebarPinnedIds((current) =>
+                    current.includes(row.id) ? current.filter((entry) => entry !== row.id) : [...current, row.id],
+                  )
+                }
+                onReorder={() => undefined}
+              >
+                <SidebarNavItem
+                  item={{ label: row.label, icon: row.icon }}
+                  trailing={pinned ? <Pin className="size-3 -rotate-[32deg] text-[var(--md-accent)]" strokeWidth={1.6} /> : undefined}
+                  onClick={() => undefined}
+                />
+              </SidebarItemMenu>
+            )
+          })}
+        </div>
+      ) : null}
+
+      {id === "sidebar-arrange-canvas" ? (
+        <div className="w-full max-w-[300px] rounded-[var(--md-radius-xl)] bg-[var(--md-sidebar-bg)] px-4 pb-4 pt-1 shadow-[var(--md-shadow-line)]">
+          <SidebarArrangeCanvas
+            items={previewSidebarRows}
+            order={previewArrangeOrder}
+            pinned={previewArrangePinned}
+            defaultOrder={previewSidebarOrder}
+            onSave={(next) => {
+              setPreviewArrangeOrder(next.order)
+              setPreviewArrangePinned(next.pinned)
+            }}
+            onCancel={() => undefined}
+          />
         </div>
       ) : null}
 
@@ -1287,7 +1501,7 @@ function ComponentPreview({ id }: { id: string }) {
       {id === "warehouse-form-field" ? (
         <div className="grid w-full max-w-[520px] gap-4 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
           <WarehouseFormField label="Facility code" htmlFor="gallery-facility-code" required hint="A short unique code, e.g. FXT-DC1.">
-            <Input id="gallery-facility-code" dir="ltr" defaultValue="FXT-DC1" className="h-10 w-full rounded-[var(--md-radius-lg)] border-0 bg-white/68 px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]" />
+            <Input id="gallery-facility-code" dir="ltr" defaultValue="FXT-DC1" className="h-10 w-full rounded-[var(--md-radius-lg)] border-0 bg-white/68 px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]" />
           </WarehouseFormField>
           <WarehouseFormField label="Facility type" required>
             <Select defaultValue="bonded">
@@ -1299,7 +1513,7 @@ function ComponentPreview({ id }: { id: string }) {
             </Select>
           </WarehouseFormField>
           <WarehouseFormField label="Country code" htmlFor="gallery-country" error="Country code must be a 2-letter ISO code.">
-            <Input id="gallery-country" dir="ltr" defaultValue="GBR" className="h-10 w-full rounded-[var(--md-radius-lg)] border-0 bg-white/68 px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]" />
+            <Input id="gallery-country" dir="ltr" defaultValue="GBR" className="h-10 w-full rounded-[var(--md-radius-lg)] border-0 bg-white/68 px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]" />
           </WarehouseFormField>
         </div>
       ) : null}
@@ -1506,7 +1720,7 @@ function ComponentPreview({ id }: { id: string }) {
           <div className="w-full max-w-[420px] rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-4 shadow-[var(--md-shadow-line)]">
             <p className="text-[14px] font-medium text-[var(--md-ink)]">Graph data picker</p>
             <p className="mt-2 text-[13px] leading-5 text-[var(--md-text)]">Used after a graph is dropped into a report or manual dashboard.</p>
-            <Button type="button" className="mt-4 h-10 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white hover:bg-[var(--md-accent)]/88" onClick={() => setPreviewDataEditorOpen(true)}>
+            <Button type="button" className="mt-4 h-10 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent)]/88" onClick={() => setPreviewDataEditorOpen(true)}>
               Open data editor
             </Button>
           </div>
@@ -1751,39 +1965,53 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "crm-lead-qualification-table" ? (
+        <div className="w-full max-w-[1240px]">
+          <CrmLeadQualificationTable
+            leads={previewCrmLeads}
+            onOpenLead={(lead) => setPreviewCrmLeadId(lead.id)}
+            emptyMessage="No leads have been recorded yet."
+          />
+        </div>
+      ) : null}
+
+      {id === "copyable-field" ? (
+        <div className="grid w-full max-w-[520px] gap-4 rounded-[var(--md-radius-xl)] bg-white/60 p-5 shadow-[var(--md-shadow-line)]">
+          <div>
+            <p className="text-[11px] font-medium text-[var(--md-subtle)]">Company email</p>
+            <CopyableField label="Company email" value="ops@northstar.example" className="mt-1">
+              <a href="mailto:ops@northstar.example" className="truncate text-[14px] font-medium text-[var(--md-accent)] hover:underline">
+                ops@northstar.example
+              </a>
+            </CopyableField>
+          </div>
+          <div>
+            <p className="text-[11px] font-medium text-[var(--md-subtle)]">Open opportunities</p>
+            <CopyableField label="Open opportunities" value="4" className="mt-1">
+              <p className="text-[14px] font-medium text-[var(--md-ink)]">4</p>
+            </CopyableField>
+          </div>
+          <div>
+            <p className="text-[11px] font-medium text-[var(--md-subtle)]">Address</p>
+            <CopyableField
+              label="Address"
+              value="Unit 14, Northgate Logistics Park, Trafford Way, Manchester M17 8QP, United Kingdom"
+              className="mt-1 max-w-full"
+              contentClassName="max-w-full"
+            >
+              <span className="break-words text-[14px] font-medium text-[var(--md-ink)]">
+                Unit 14, Northgate Logistics Park, Trafford Way, Manchester M17 8QP, United Kingdom
+              </span>
+            </CopyableField>
+          </div>
+        </div>
+      ) : null}
+
       {id === "crm-lead-detail-panel" ? (
-        <div className="grid w-full max-w-[980px] gap-4 xl:grid-cols-[minmax(0,1fr)_390px]">
-          <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-            <div className="px-5 py-4">
-              <SectionHeader title="Lead selector" meta="pick a lead to inspect the detail panel" />
-            </div>
-            <div className="px-5 pb-5">
-              <div className="grid gap-2">
-                {customers.slice(0, 4).map((customer) => (
-                  <button
-                    key={customer.id}
-                    type="button"
-                    className={cn(
-                      "grid grid-cols-[44px_1fr_auto] items-center gap-3 rounded-[var(--md-radius-lg)] bg-white/55 px-3 py-3 text-left shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white/80",
-                      previewCrmLeadId === customer.id && "bg-white shadow-[inset_0_0_0_1px_rgba(14,125,116,0.24),0_0_0_3px_rgba(14,125,116,0.08)]",
-                    )}
-                    onClick={() => setPreviewCrmLeadId(customer.id)}
-                  >
-                    <CustomerAvatar initials={customer.initials} tone={customer.avatarTone} />
-                    <span className="min-w-0">
-                      <span className="block truncate text-[14px] font-medium text-[var(--md-ink)]">{customer.name}</span>
-                      <span className="block truncate text-[12px] text-[var(--md-text)]">{customer.location}</span>
-                    </span>
-                    <StatusPill tone={customer.status === "Premium" ? "teal" : customer.status === "Trial" ? "amber" : "neutral"}>{customer.status}</StatusPill>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </Surface>
+        <div className="w-full max-w-[1320px]">
           <CrmLeadDetailPanel
             lead={previewCrmLead}
-            onOpenCustomer={(lead) => toast.success(`${lead.name} opened in Customers`)}
-            onConvertToCustomer={(lead) => toast.success(`${lead.name} moved to Customers`)}
+            onStartQualification={(lead) => toast.success(`${lead.companyName} qualification opened`)}
           />
         </div>
       ) : null}
@@ -1802,7 +2030,13 @@ function ComponentPreview({ id }: { id: string }) {
 
       {id === "crm-settings-builder" ? (
         <div className="w-full max-w-[1180px]">
-          <CrmSettingsBuilder />
+          <CrmSettingsBuilder pipelines={crmPipelineSettings} fields={crmLeadFieldSettings} />
+        </div>
+      ) : null}
+
+      {id === "crm-pipeline-editor" ? (
+        <div className="w-full max-w-[1380px]">
+          <CrmPipelineEditor pipelines={crmPipelineSettings} />
         </div>
       ) : null}
 
@@ -1911,8 +2145,15 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "settings-progress-ring" ? (
+        <div className="grid w-full max-w-[820px] gap-4 rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-soft)] sm:grid-cols-2">
+          <SettingsProgressRing value={86} label="Profile readiness" detail="Identity details are ready for customer-facing ownership." />
+          <SettingsProgressRing value={68} label="Monthly AI budget" detail="EUR 1,024 of EUR 1,500 used." tone="blue" />
+        </div>
+      ) : null}
+
       {id === "auth-narrative-panel" ? (
-        <div className="relative h-[520px] w-full max-w-[620px] overflow-hidden rounded-[var(--md-radius-xl)] bg-[#062420] shadow-[var(--md-shadow-line)]">
+        <div className="relative h-[520px] w-full max-w-[620px] overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-accent-abyss)] shadow-[var(--md-shadow-line)]">
           <div className="absolute left-1/2 top-0 h-[900px] w-[860px] origin-top -translate-x-1/2 scale-[0.56]">
             <FreightNarrative step="signin" componentPreview className="min-h-[900px] w-[860px]" />
           </div>

@@ -517,7 +517,7 @@ function BookingAdvancedSearch({
         <SlidersHorizontal className="size-4" strokeWidth={1.35} />
         Filters
         {activeCriteria.length ? (
-          <span className="ms-1 grid min-w-5 place-items-center rounded-full bg-[var(--md-accent)] px-1.5 text-[11px] text-white" data-i18n-skip dir="ltr">
+          <span className="ms-1 grid min-w-5 place-items-center rounded-full bg-[var(--md-accent)] px-1.5 text-[11px] text-[var(--md-accent-ink)]" data-i18n-skip dir="ltr">
             {activeCriteria.length}
           </span>
         ) : null}
@@ -597,7 +597,7 @@ function BookingAdvancedSearch({
                       <Button
                         type="button"
                         variant="ghost"
-                        className="h-7 rounded-[var(--md-radius-md)] px-2.5 text-[12px] font-medium text-[var(--md-accent)] hover:bg-[rgba(14,125,116,0.08)]"
+                        className="h-7 rounded-[var(--md-radius-md)] px-2.5 text-[12px] font-medium text-[var(--md-accent)] hover:bg-[var(--md-accent-a08)]"
                         onClick={() => addCriterionToGroup(group.id)}
                       >
                         <Plus className="size-3.5" strokeWidth={1.45} />
@@ -715,7 +715,7 @@ function BookingAdvancedSearch({
               <Button
                 type="button"
                 variant="ghost"
-                className="h-8 rounded-[var(--md-radius-md)] px-3 text-[12px] font-medium text-[var(--md-accent)] hover:bg-[rgba(14,125,116,0.08)]"
+                className="h-8 rounded-[var(--md-radius-md)] px-3 text-[12px] font-medium text-[var(--md-accent)] hover:bg-[var(--md-accent-a08)]"
                 onClick={addGroup}
               >
                 <Plus className="size-3.5" strokeWidth={1.45} />
@@ -805,10 +805,10 @@ function SelectionBox({ selected }: { selected?: boolean }) {
     <span
       className={cn(
         "grid size-5 place-items-center rounded-[var(--md-radius-sm)] bg-white shadow-[var(--md-shadow-line)]",
-        selected && "bg-[var(--md-accent)] shadow-[0_0_0_3px_rgba(14,125,116,0.12)]",
+        selected && "bg-[var(--md-accent)] shadow-[0_0_0_3px_var(--md-accent-a12)]",
       )}
     >
-      {selected ? <Check className="size-3 text-white" strokeWidth={1.8} /> : null}
+      {selected ? <Check className="size-3 text-[var(--md-accent-ink)]" strokeWidth={1.8} /> : null}
     </span>
   )
 }
@@ -903,7 +903,7 @@ export function BookingRow({
         </div>
       </TableCell>
       <TableCell>
-        <span className="grid size-8 place-items-center rounded-full bg-[rgba(14,125,116,0.12)] text-[12px] font-medium text-[var(--md-accent)]">{booking.owner}</span>
+        <span className="grid size-8 place-items-center rounded-full bg-[var(--md-accent-a12)] text-[12px] font-medium text-[var(--md-accent)]">{booking.owner}</span>
       </TableCell>
     </TableRow>
   )
@@ -1137,7 +1137,7 @@ function BookingDetailHeader({
           <Button variant="ghost" className="h-11 rounded-[var(--md-radius-lg)] bg-white/35 px-4 text-[14px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/65">
             Notify shipper
           </Button>
-          <Button className="h-11 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-5 text-[14px] font-medium text-white hover:bg-[#0b6f67]">
+          <Button className="h-11 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-5 text-[14px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]">
             Resolve hold
           </Button>
         </div>
@@ -1256,7 +1256,7 @@ export function BookingExceptionPanel() {
             type="button"
             className={cn(
               "rounded-[var(--md-radius-lg)] bg-white/36 px-4 py-4 text-left shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white/65",
-              index === 0 && "shadow-[inset_0_0_0_1px_rgba(14,125,116,0.65),0_0_0_1px_rgba(14,125,116,0.08)]",
+              index === 0 && "shadow-[inset_0_0_0_1px_var(--md-accent-a65),0_0_0_1px_var(--md-accent-a08)]",
             )}
           >
             <p className="text-[14px] font-medium text-[var(--md-ink)]">{title}</p>
@@ -1313,10 +1313,10 @@ export function BookingResolutionChecklist() {
               <span
                 className={cn(
                   "mt-0.5 grid size-5 place-items-center rounded-[var(--md-radius-sm)] bg-white shadow-[var(--md-shadow-line)]",
-                  checked && "bg-[var(--md-accent)] shadow-[0_0_0_3px_rgba(14,125,116,0.12)]",
+                  checked && "bg-[var(--md-accent)] shadow-[0_0_0_3px_var(--md-accent-a12)]",
                 )}
               >
-                {checked ? <Check className="size-3.5 text-white" strokeWidth={1.8} /> : null}
+                {checked ? <Check className="size-3.5 text-[var(--md-accent-ink)]" strokeWidth={1.8} /> : null}
               </span>
               <span>
                 <span className={cn("block text-[14px] font-medium text-[var(--md-ink)]", checked && "text-[var(--md-text)] line-through")}>{label}</span>
@@ -1466,7 +1466,7 @@ function DocumentsPage() {
       </div>
 
       <Surface padding="md" className="h-fit rounded-[var(--md-radius-xl)]">
-        <div className="grid size-10 place-items-center rounded-[var(--md-radius-lg)] bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)]">
+        <div className="grid size-10 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-accent-a10)] text-[var(--md-accent)]">
           <FileText className="size-5" strokeWidth={1.4} />
         </div>
         <h2 className="mt-4 text-[16px] font-medium text-[var(--md-ink)]">Extraction summary</h2>
@@ -1559,7 +1559,7 @@ function CommsPage() {
         <div className="px-5 pb-5">
           {commMessages.map(([sender, body, time]) => (
             <div key={`${sender}-${time}`} className="grid grid-cols-[42px_1fr_auto] gap-3 border-t border-[rgba(11,20,19,0.08)] py-4">
-              <span className="grid size-9 place-items-center rounded-full bg-[rgba(14,125,116,0.1)] text-[12px] font-medium text-[var(--md-accent)]">
+              <span className="grid size-9 place-items-center rounded-full bg-[var(--md-accent-a10)] text-[12px] font-medium text-[var(--md-accent)]">
                 {sender.split(" ").map((part) => part[0]).join("").slice(0, 2)}
               </span>
               <div>
@@ -1581,7 +1581,7 @@ function CommsPage() {
           Yong Hua Logistics needs to send the CN export licence for HS code 8517.62.00. Once attached, Wei Chen can resubmit the CDS entry.
         </p>
         <Button
-          className="mt-[var(--md-page-stack-gap)] h-10 w-full rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] text-[13px] font-medium text-white hover:bg-[#0b6f67]"
+          className="mt-[var(--md-page-stack-gap)] h-10 w-full rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]"
           onClick={() =>
             toast.success("Prepared email sent", {
               description: "Yong Hua Logistics has the licence request for MD-22455.",
@@ -1682,12 +1682,12 @@ export function BookingAskPanel({
         type="button"
         aria-label="Open booking chat"
         className={cn(
-          "relative grid size-14 place-items-center overflow-visible rounded-full bg-[var(--md-accent)] text-white shadow-[0_0_0_1px_rgba(255,255,255,0.34),0_16px_38px_rgba(14,125,116,0.32),0_0_30px_rgba(14,125,116,0.28)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.04] hover:bg-[#0b6f67]",
+          "relative grid size-14 place-items-center overflow-visible rounded-full bg-[var(--md-accent)] text-[var(--md-accent-ink)] shadow-[0_0_0_1px_rgba(255,255,255,0.34),0_16px_38px_var(--md-accent-a32),0_0_30px_var(--md-accent-a28)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.04] hover:bg-[var(--md-accent-hover)]",
           className,
         )}
         onClick={() => onCollapsedChange?.(false)}
       >
-        <span className="absolute inset-[-9px] -z-10 rounded-full bg-[rgba(14,125,116,0.18)] blur-md" />
+        <span className="absolute inset-[-9px] -z-10 rounded-full bg-[var(--md-accent-a18)] blur-md" />
         <Sparkles className="size-5" strokeWidth={1.5} />
       </button>
     )
@@ -1697,7 +1697,7 @@ export function BookingAskPanel({
     <aside className={cn("flex h-full min-h-[560px] flex-col overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-sidebar-bg)] shadow-[var(--md-shadow-soft)]", className)}>
       <div className="flex items-center justify-between gap-3 px-5 py-4 shadow-[inset_0_-1px_0_rgba(11,20,19,0.08)]">
         <div className="flex min-w-0 items-center gap-3">
-          <span className="grid size-8 place-items-center rounded-full bg-[var(--md-accent)] text-white">
+          <span className="grid size-8 place-items-center rounded-full bg-[var(--md-accent)] text-[var(--md-accent-ink)]">
             <Sparkles className="size-4" strokeWidth={1.4} />
           </span>
           <div className="min-w-0">
@@ -1726,7 +1726,7 @@ export function BookingAskPanel({
               "max-w-[92%] rounded-[var(--md-radius-lg)] px-4 py-3 text-[13px] leading-6 shadow-[var(--md-shadow-line)]",
               message.role === "assistant"
                 ? "bg-white/62 text-[var(--md-ink)]"
-                : "ml-auto bg-[var(--md-accent)] text-white shadow-[0_0_0_1px_rgba(14,125,116,0.06),0_12px_24px_rgba(14,125,116,0.16)]",
+                : "ml-auto bg-[var(--md-accent)] text-[var(--md-accent-ink)] shadow-[0_0_0_1px_var(--md-accent-a06),0_12px_24px_var(--md-accent-a16)]",
             )}
           >
             {message.text}
@@ -1761,7 +1761,7 @@ export function BookingAskPanel({
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
           />
-          <Button type="submit" size="icon" className="size-[46px] rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] text-white hover:bg-[#0b6f67]">
+          <Button type="submit" size="icon" className="size-[46px] rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]">
             <SendHorizontal data-icon="inline-start" strokeWidth={1.4} />
           </Button>
         </form>

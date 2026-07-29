@@ -23,6 +23,14 @@ export type ApiTeamRole = {
   name: string
 }
 
+export type ApiUserProfilePhoto = {
+  bucket: "profile-photos"
+  path: string
+  mimeType: "image/jpeg" | "image/png" | "image/webp"
+  sizeBytes: number
+  updatedAt: string
+}
+
 export type ApiTeamUser = {
   id: string
   authUserId: string | null
@@ -38,6 +46,9 @@ export type ApiTeamUser = {
   organisations?: ApiOrganisation[]
   permissions?: string[]
   landingPath?: string
+  jobTitle: string | null
+  profilePhoto: ApiUserProfilePhoto | null
+  coverPhoto: ApiUserProfilePhoto | null
 }
 
 export type ApiAuthSession = {
@@ -77,6 +88,17 @@ export type CreateTeamUserResponse = {
 
 export type ChangeTeamUserOfficeRequest = {
   officeId: string
+}
+
+export type UpdateCurrentUserProfileRequest = {
+  jobTitle: string | null
+}
+
+export type SaveCurrentUserCoverPhotoRequest = {
+  bucket: "profile-photos"
+  path: string
+  mimeType: "image/jpeg" | "image/png" | "image/webp"
+  sizeBytes: number
 }
 
 export type ApiPermission = {
@@ -130,13 +152,15 @@ export type CreateSupportTicketRequest = {
   applicationUrl: string
 }
 
+export type ApiSupportTicket = {
+  ticketNumber: string
+  status: string
+  createdAt: string
+  statusUrl: string | null
+}
+
 export type CreateSupportTicketResponse = {
-  ticket: {
-    ticketNumber: string
-    status: string
-    createdAt: string
-    statusUrl: string | null
-  }
+  ticket: ApiSupportTicket
   duplicate: boolean
 }
 
@@ -174,6 +198,62 @@ export async function apiFetch(path: string, init: RequestInit = {}) {
     ...init,
     headers,
   })
+}
+
+export async function getApiAuthSession(accessToken: string): Promise<ApiAuthSession> {
+  const controller = new AbortController()
+  const timeoutId = window.setTimeout(() => controller.abort(), 8000)
+  let response: Response
+
+  try {
+    response = await apiFetch("/api/auth/session", {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+      signal: controller.signal,
+    })
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("The API session check timed out.")
+    }
+    throw error
+  } finally {
+    window.clearTimeout(timeoutId)
+  }
+
+  if (!response.ok) {
+    throw new Error(await parseApiError(response))
+  }
+
+  return response.json() as Promise<ApiAuthSession>
+}
+
+export async function getApiTeamUsers(accessToken: string): Promise<ApiTeamUsersResponse> {
+  const response = await apiFetch("/api/v1/users", {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(await parseApiError(response))
+  }
+
+  return response.json() as Promise<ApiTeamUsersResponse>
+}
+
+export async function getApiCurrentUser(accessToken: string): Promise<ApiTeamUser> {
+  const response = await apiFetch("/api/v1/users/me", {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(await parseApiError(response))
+  }
+
+  return response.json() as Promise<ApiTeamUser>
 }
 
 export async function createApiSupportTicket(
@@ -240,36 +320,49 @@ export async function createApiSupportTicket(
   return result
 }
 
-export async function getApiAuthSession(accessToken: string): Promise<ApiAuthSession> {
-  const controller = new AbortController()
-  const timeoutId = window.setTimeout(() => controller.abort(), 8000)
-  let response: Response
-
-  try {
-    response = await apiFetch("/api/auth/session", {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-      signal: controller.signal,
-    })
-  } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") {
-      throw new Error("The API session check timed out.")
-    }
-    throw error
-  } finally {
-    window.clearTimeout(timeoutId)
-  }
+export async function updateApiCurrentUserProfile(
+  accessToken: string,
+  request: UpdateCurrentUserProfileRequest,
+): Promise<ApiTeamUser> {
+  const response = await apiFetch("/api/v1/users/me", {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(request),
+  })
 
   if (!response.ok) {
     throw new Error(await parseApiError(response))
   }
 
-  return response.json() as Promise<ApiAuthSession>
+  return response.json() as Promise<ApiTeamUser>
 }
 
-export async function getApiTeamUsers(accessToken: string): Promise<ApiTeamUsersResponse> {
-  const response = await apiFetch("/api/v1/users", {
+export async function saveApiCurrentUserCoverPhoto(
+  accessToken: string,
+  request: SaveCurrentUserCoverPhotoRequest,
+): Promise<ApiUserProfilePhoto> {
+  const response = await apiFetch("/api/v1/users/me/cover-photo", {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(request),
+  })
+
+  if (!response.ok) {
+    throw new Error(await parseApiError(response))
+  }
+
+  return response.json() as Promise<ApiUserProfilePhoto>
+}
+
+export async function removeApiCurrentUserCoverPhoto(accessToken: string, expectedPath: string): Promise<void> {
+  const response = await apiFetch(`/api/v1/users/me/cover-photo?expectedPath=${encodeURIComponent(expectedPath)}`, {
+    method: "DELETE",
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -278,8 +371,6 @@ export async function getApiTeamUsers(accessToken: string): Promise<ApiTeamUsers
   if (!response.ok) {
     throw new Error(await parseApiError(response))
   }
-
-  return response.json() as Promise<ApiTeamUsersResponse>
 }
 
 export async function createApiTeamUser(accessToken: string, user: CreateTeamUserRequest): Promise<CreateTeamUserResponse> {

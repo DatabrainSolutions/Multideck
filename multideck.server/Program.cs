@@ -2,6 +2,8 @@ using Multideck.Server.Modules.Users;
 using Multideck.Server.Configuration;
 using Multideck.Server.Modules.Auth;
 using Multideck.Server.Modules.Authorization;
+using Multideck.Server.Modules.Leads;
+using Multideck.Server.Modules.Deals;
 using Multideck.Server.Modules.Support;
 using Multideck.Server.Extensions;
 using Serilog;
@@ -29,6 +31,9 @@ try
     {
         await app.SeedMultideckAuthorizationAsync();
     }
+
+    await app.SeedDevelopmentCrmLeadsAsync();
+    await app.SeedDevelopmentCrmDealsAsync();
 
     app.UseMultideckServer(supabaseAuth);
 

@@ -241,7 +241,7 @@ export function QuoteSearchBuilder({
                       <Button
                         type="button"
                         variant="ghost"
-                        className="h-8 rounded-[var(--md-radius-md)] px-2.5 text-[12px] font-medium text-[var(--md-accent)] hover:bg-[rgba(14,125,116,0.08)]"
+                        className="h-8 rounded-[var(--md-radius-md)] px-2.5 text-[12px] font-medium text-[var(--md-accent)] hover:bg-[var(--md-accent-a08)]"
                         onClick={() => addCondition(group.id)}
                       >
                         <Plus className="size-3.5" strokeWidth={1.4} />

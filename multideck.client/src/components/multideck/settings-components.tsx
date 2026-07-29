@@ -1,4 +1,4 @@
-import type { ReactNode } from "react"
+import { useId, type CSSProperties, type ReactNode } from "react"
 import type { LucideIcon } from "lucide-react"
 import { ArrowLeft, Check, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -80,7 +80,7 @@ export function SettingsRail({
                     className={cn(
                       "group flex min-h-8 items-center gap-2 rounded-[var(--md-radius-md)] px-2.5 py-1.5 text-left text-[13px] font-medium text-[var(--md-ink)] transition-[background,color,box-shadow,opacity,transform] duration-200",
                       "hover:bg-[rgba(251,253,253,0.44)] hover:text-[var(--md-accent)]",
-                      selected && "bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]",
+                      selected && "bg-[var(--md-accent-a10)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]",
                     )}
                     onClick={() => onChange(item.id)}
                   >
@@ -114,13 +114,20 @@ export function SettingsPageHeader({
   actions?: ReactNode
 }) {
   return (
-    <header className="flex flex-col gap-[var(--md-page-stack-gap)] lg:flex-row lg:items-start lg:justify-between">
-      <div className="max-w-[720px]">
-        <p className="text-[12px] font-medium text-[var(--md-text)]">{eyebrow}</p>
-        <h2 className="mt-2 text-[24px] font-medium leading-tight text-[var(--md-ink)]">{title}</h2>
-        <p className="mt-2 text-[14px] leading-6 text-[var(--md-text)]">{description}</p>
+    <header className="md-settings-masthead relative isolate overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] px-5 py-5 shadow-[var(--md-shadow-soft)] sm:px-6 sm:py-6">
+      <span className="md-settings-masthead__glow" aria-hidden="true" />
+      <span className="md-settings-masthead__track" aria-hidden="true" />
+      <div className="relative flex flex-col gap-[var(--md-page-stack-gap)] lg:flex-row lg:items-start lg:justify-between">
+        <div className="max-w-[680px]">
+          <p className="flex items-center gap-2 text-[12px] font-medium text-[var(--md-text)]">
+            <span className="size-1.5 rounded-full bg-[var(--md-accent)] shadow-[0_0_0_4px_var(--md-accent-a08)]" aria-hidden="true" />
+            {eyebrow}
+          </p>
+          <h1 className="mt-3 text-balance text-[24px] font-medium leading-[1.1] tracking-[-0.02em] text-[var(--md-ink)]">{title}</h1>
+          <p className="mt-2 max-w-[65ch] text-pretty text-[14px] leading-6 text-[var(--md-text)]">{description}</p>
+        </div>
+        {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
       </div>
-      {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
     </header>
   )
 }
@@ -141,13 +148,13 @@ export function SettingsPanel({
   return (
     <section
       className={cn(
-        "overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-soft)]",
+        "md-settings-panel overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-soft)]",
         className,
       )}
     >
       <div className="flex items-start justify-between gap-4 px-5 py-4">
         <div className="min-w-0">
-          <h3 className="text-[14px] font-medium text-[var(--md-ink)]">{title}</h3>
+          <h2 className="text-[14px] font-medium text-[var(--md-ink)]">{title}</h2>
           {description ? <p className="mt-1 text-[13px] leading-5 text-[var(--md-text)]">{description}</p> : null}
         </div>
         {action ? <div className="shrink-0">{action}</div> : null}
@@ -162,15 +169,15 @@ export function SettingsFieldRow({
   description,
   children,
   align = "center",
-  className,
   labelFor,
+  className,
 }: {
   label: string
   description?: string
   children: ReactNode
   align?: "center" | "start"
-  className?: string
   labelFor?: string
+  className?: string
 }) {
   return (
     <div
@@ -202,7 +209,7 @@ export function SettingsInput({
     <Input
       dir={dir ?? "auto"}
       className={cn(
-        "h-9 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-tint)] px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
+        "h-10 rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-field-bg)] px-3 text-[16px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow] hover:bg-[var(--md-field-bg-hover)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] sm:text-[13px]",
         className,
       )}
       {...props}
@@ -219,7 +226,7 @@ export function SettingsTextarea({
     <Textarea
       dir={dir ?? "auto"}
       className={cn(
-        "min-h-[88px] rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-tint)] px-3 py-2 text-[13px] leading-5 text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
+        "min-h-[104px] rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-field-bg)] px-3 py-2.5 text-[16px] leading-6 text-[var(--md-ink)] shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow] hover:bg-[var(--md-field-bg-hover)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] sm:text-[13px] sm:leading-5",
         className,
       )}
       {...props}
@@ -230,12 +237,14 @@ export function SettingsTextarea({
 export function SettingsSelect({
   value,
   options,
+  optionLabels,
   onChange,
   className,
   ariaLabel,
 }: {
   value: string
   options: string[]
+  optionLabels?: Record<string, string>
   onChange?: (value: string) => void
   className?: string
   ariaLabel?: string
@@ -245,7 +254,7 @@ export function SettingsSelect({
       <SelectTrigger
         aria-label={ariaLabel}
         className={cn(
-          "h-9 min-w-[220px] rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-tint)] px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
+          "h-10 min-w-[220px] rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-field-bg)] px-3 text-[16px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow] hover:bg-[var(--md-field-bg-hover)] sm:text-[13px]",
           className,
         )}
       >
@@ -254,7 +263,7 @@ export function SettingsSelect({
       <SelectContent className="border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)]">
         {options.map((option) => (
           <SelectItem key={option} value={option} className="text-[13px]">
-            {option}
+            {optionLabels?.[option] ?? option}
           </SelectItem>
         ))}
       </SelectContent>
@@ -275,13 +284,20 @@ export function SettingsToggleRow({
   onCheckedChange?: (checked: boolean) => void
   meta?: ReactNode
 }) {
+  const switchId = useId()
+  const descriptionId = `${switchId}-description`
+
   return (
-    <SettingsFieldRow label={title} description={description}>
-      <div className="flex items-center justify-between gap-4">
-        {meta ? <div className="min-w-0 text-[12px] text-[var(--md-text)]">{meta}</div> : <span />}
-        <Switch checked={checked} onCheckedChange={onCheckedChange} />
+    <div className="grid gap-3 px-5 py-4 md:grid-cols-[minmax(160px,260px)_minmax(0,1fr)] md:items-center">
+      <div className="min-w-0">
+        <label htmlFor={switchId} className="cursor-pointer text-[13px] font-medium text-[var(--md-ink)]">{title}</label>
+        <p id={descriptionId} className="mt-1 max-w-[260px] text-[12px] leading-5 text-[var(--md-text)]">{description}</p>
       </div>
-    </SettingsFieldRow>
+      <div className="flex min-w-0 items-center justify-between gap-4">
+        {meta ? <div className="min-w-0 text-[12px] text-[var(--md-text)]">{meta}</div> : <span />}
+        <Switch id={switchId} aria-describedby={descriptionId} checked={checked} onCheckedChange={onCheckedChange} />
+      </div>
+    </div>
   )
 }
 
@@ -303,7 +319,7 @@ export function SettingsIntegrationRow({
   onAction?: () => void
 }) {
   const statusClass = {
-    connected: "bg-[rgba(46,142,96,0.1)] text-[var(--md-green)] shadow-[inset_0_0_0_1px_rgba(46,142,96,0.18)]",
+    connected: "bg-[var(--md-accent-a10)] text-[var(--md-green)] shadow-[inset_0_0_0_1px_var(--md-accent-a18)]",
     ready: "bg-[rgba(74,125,156,0.1)] text-[var(--md-blue)] shadow-[inset_0_0_0_1px_rgba(74,125,156,0.18)]",
     review: "bg-[rgba(221,138,43,0.12)] text-[var(--md-amber)] shadow-[inset_0_0_0_1px_rgba(221,138,43,0.18)]",
     workspace: "bg-[rgba(90,103,100,0.09)] text-[var(--md-text)] shadow-[inset_0_0_0_1px_rgba(90,103,100,0.16)]",
@@ -352,8 +368,8 @@ export function SettingsOptionCard({
       aria-pressed={selected}
       className={cn(
         "min-h-[100px] rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-4 text-left shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200",
-        "hover:bg-[rgba(233,242,240,0.78)] hover:shadow-[inset_0_0_0_1px_rgba(14,125,116,0.16),0_0_0_1px_rgba(11,20,19,0.04)]",
-        selected && "bg-[rgba(14,125,116,0.08)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.55),0_0_0_1px_rgba(14,125,116,0.12)]",
+        "hover:bg-[rgba(233,242,240,0.78)] hover:shadow-[inset_0_0_0_1px_var(--md-accent-a16),0_0_0_1px_rgba(11,20,19,0.04)]",
+        selected && "bg-[var(--md-accent-a08)] shadow-[inset_0_0_0_1px_var(--md-accent-a55),0_0_0_1px_var(--md-accent-a12)]",
       )}
       onClick={onClick}
     >
@@ -364,7 +380,7 @@ export function SettingsOptionCard({
             selected && "bg-[var(--md-accent)] shadow-none",
           )}
         >
-          {selected ? <Check className="size-2.5 text-white" strokeWidth={2} /> : null}
+          {selected ? <Check className="size-2.5 text-[var(--md-accent-ink)]" strokeWidth={2} /> : null}
         </span>
         <p className="text-[13px] font-medium text-[var(--md-ink)]">{label}</p>
       </div>
@@ -377,21 +393,21 @@ export function SettingsChoiceGroup({
   options,
   value,
   onChange,
+  ariaLabel = "Choose an option",
   className,
-  ariaLabel,
 }: {
   options: string[]
   value: string
   onChange?: (value: string) => void
-  className?: string
   ariaLabel?: string
+  className?: string
 }) {
   return (
     <ChoiceControl
       options={options}
       value={value}
       onChange={(nextValue) => onChange?.(nextValue)}
-      ariaLabel={ariaLabel ?? "Choose an option"}
+      ariaLabel={ariaLabel}
       className={className}
     />
   )
@@ -417,7 +433,7 @@ export function SettingsSummaryCard({
             type="button"
             variant="ghost"
             size="sm"
-            className="h-7 rounded-[var(--md-radius-md)] px-2 text-[12px] text-[var(--md-accent)] hover:bg-[rgba(14,125,116,0.08)]"
+            className="h-7 rounded-[var(--md-radius-md)] px-2 text-[12px] text-[var(--md-accent)] hover:bg-[var(--md-accent-a08)]"
             onClick={onAction}
           >
             {actionLabel}
@@ -434,5 +450,50 @@ export function SettingsSummaryCard({
         ))}
       </div>
     </aside>
+  )
+}
+
+export function SettingsProgressRing({
+  value,
+  label,
+  detail,
+  tone = "accent",
+  className,
+}: {
+  value: number
+  label: string
+  detail?: string
+  tone?: "accent" | "green" | "amber" | "blue"
+  className?: string
+}) {
+  const clampedValue = Math.max(0, Math.min(100, value))
+  const toneValue = {
+    accent: "var(--md-accent)",
+    green: "var(--md-green)",
+    amber: "var(--md-amber)",
+    blue: "var(--md-blue)",
+  }[tone]
+  const style = {
+    "--md-settings-progress": `${clampedValue}%`,
+    "--md-settings-progress-color": toneValue,
+  } as CSSProperties
+
+  return (
+    <div
+      role="img"
+      aria-label={`${label}: ${clampedValue}%${detail ? `. ${detail}` : ""}`}
+      className={cn("flex items-center gap-4", className)}
+    >
+      <span className="md-settings-progress-ring relative grid size-[74px] shrink-0 place-items-center rounded-full" style={style}>
+        <span className="absolute inset-[7px] rounded-full bg-[var(--md-surface)] shadow-[inset_0_0_0_1px_rgba(11,20,19,0.05)]" aria-hidden="true" />
+        <span className="relative text-[15px] font-medium tabular-nums text-[var(--md-ink)]" data-i18n-skip>
+          {clampedValue}%
+        </span>
+      </span>
+      <span className="min-w-0">
+        <span className="block text-[13px] font-medium text-[var(--md-ink)]">{label}</span>
+        {detail ? <span className="mt-1 block text-pretty text-[12px] leading-5 text-[var(--md-text)]">{detail}</span> : null}
+      </span>
+    </div>
   )
 }

@@ -55,7 +55,7 @@ export function SegmentedControl<T extends string>({
           aria-pressed={value === option}
           disabled={disabled}
           className={cn(
-            "relative h-8 min-w-0 rounded-[var(--md-radius-md)] px-3 text-[13px] font-medium text-[var(--md-text)] outline-none transition-[color,opacity,scale,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.96] hover:text-[var(--md-ink)] focus-visible:ring-2 focus-visible:ring-[rgba(14,125,116,0.24)] disabled:cursor-not-allowed disabled:active:scale-100",
+            "relative h-8 min-w-0 rounded-[var(--md-radius-md)] px-3 text-[13px] font-medium text-[var(--md-text)] outline-none transition-[color,opacity,scale,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.96] hover:text-[var(--md-ink)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a24)] disabled:cursor-not-allowed disabled:active:scale-100",
             value === option && "text-[var(--md-selected-text)]",
           )}
           onClick={() => onChange(option)}
@@ -64,7 +64,7 @@ export function SegmentedControl<T extends string>({
             <motion.span
               aria-hidden="true"
               layoutId={`${controlId}-active-segment`}
-              className="absolute inset-0 -z-10 rounded-[var(--md-radius-md)] bg-[var(--md-selected-bg)] shadow-[inset_0_0_0_1px_rgba(10,112,104,0.14),0_2px_5px_rgba(11,20,19,0.06)]"
+              className="absolute inset-0 -z-10 rounded-[var(--md-radius-md)] bg-[var(--md-selected-bg)] shadow-[inset_0_0_0_1px_var(--md-accent-a14),0_2px_5px_rgba(11,20,19,0.06)]"
               transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.spring)}
             />
           ) : null}
@@ -185,7 +185,7 @@ export function FilterChips({
           className={cn(
             "inline-flex h-9 items-center gap-2 rounded-full px-4 text-[13px] font-medium shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,color,opacity,scale,transform] active:scale-[0.96]",
             active
-              ? "bg-[var(--md-accent)] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_0_0_3px_rgba(14,125,116,0.13)]"
+              ? "bg-[var(--md-accent)] text-[var(--md-accent-ink)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_0_0_3px_var(--md-accent-a13)]"
               : "bg-white/25 text-[var(--md-text)] hover:bg-white/50",
             option.includes("!") && !active && "text-[var(--md-amber)]",
             buttonClassName,

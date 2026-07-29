@@ -1,4 +1,5 @@
 import {
+  ArrowUpDown,
   BadgeCheck,
   BarChart3,
   Bell,
@@ -22,6 +23,7 @@ import {
   Gauge,
   Globe2,
   Grid3X3,
+  House,
   KeyRound,
   Layers3,
   LayoutDashboard,
@@ -30,6 +32,7 @@ import {
   MapPin,
   MessageCircle,
   MoonStar,
+  MousePointerClick,
   Package,
   PackageCheck,
   PackageMinus,
@@ -68,229 +71,16 @@ export const systemPeople = [
   { code: "JL", name: "Julia Lee", roles: ["operations", "sales"] },
 ] as const
 
-export type NavItem = {
-  label: string
-  value?: string
-  icon: LucideIcon
-  route?: string
-}
-
-export type SidebarDestination = NavItem & {
-  id: string
-  children?: NavItem[]
-}
-
-export type SidebarArea = {
-  id: string
-  label: string
-  icon: LucideIcon
-  destinations: SidebarDestination[]
-}
-
-export const warehouseNavigation: SidebarDestination[] = [
-  { id: "warehouse-dashboard", label: "Dashboard", value: "Live", icon: LayoutDashboard, route: "/warehouse" },
-  { id: "warehouse-calendar", label: "Calendar", value: "7d", icon: CalendarDays, route: "/warehouse/calendar" },
-  { id: "warehouse-inventory", label: "Inventory", icon: Boxes, route: "/warehouse/inventory" },
-  { id: "warehouse-goods-in", label: "Goods in", icon: PackagePlus, route: "/warehouse/goods-in" },
-  { id: "warehouse-goods-out", label: "Goods out", icon: PackageMinus, route: "/warehouse/goods-out" },
-  { id: "warehouse-orders", label: "Orders", icon: ClipboardCheck, route: "/warehouse/orders" },
-  {
-    id: "warehouse-setup",
-    label: "Setup",
-    icon: Settings2,
-    children: [
-      { label: "Facilities", icon: Building2, route: "/warehouse/facilities" },
-      { label: "Locations", icon: MapPin, route: "/warehouse/locations" },
-      { label: "Items", icon: Package, route: "/warehouse/items" },
-    ],
-  },
-]
-
-export const customerWarehouseNavigation: SidebarDestination[] = [
-  { id: "warehouse-inventory", label: "Inventory", icon: Boxes, route: "/warehouse/inventory" },
-  { id: "warehouse-orders", label: "Orders", icon: ClipboardCheck, route: "/warehouse/orders" },
-  { id: "warehouse-items", label: "Items", icon: Package, route: "/warehouse/items" },
-  { id: "warehouse-users", label: "Users", icon: Users, route: "/warehouse/users" },
-]
-export const sidebarAreas: SidebarArea[] = [
-  {
-    id: "home-work",
-    label: "Home & Work",
-    icon: LayoutDashboard,
-    destinations: [
-      { id: "overview-watchlists", label: "Overview & watchlists", icon: LayoutDashboard, route: "/" },
-      { id: "my-work", label: "My Work", icon: ListOrdered },
-      { id: "search-recent", label: "Search & recent", icon: Search },
-      { id: "notifications", label: "Notifications", icon: Bell },
-    ],
-  },
-  {
-    id: "operations",
-    label: "Operations",
-    icon: Ship,
-    destinations: [
-      {
-        id: "bookings-jobs",
-        label: "Bookings & jobs",
-        icon: Ship,
-        children: [
-          { label: "Bookings overview", icon: LayoutDashboard, route: "/bookings" },
-          { label: "Road control", icon: Truck, route: "/road-control" },
-          { label: "New booking", icon: PackageCheck, route: "/bookings/new" },
-          { label: "Provisional booking", icon: Clock3, route: "/bookings/provisional" },
-        ],
-      },
-      { id: "transport-planning", label: "Transport planning", icon: Plane },
-      { id: "tracking-milestones", label: "Tracking & milestones", icon: Globe2 },
-      { id: "operational-documents", label: "Operational documents", icon: FileText },
-      { id: "exceptions-service-recovery", label: "Exceptions & service recovery", icon: TriangleAlert },
-      { id: "claims", label: "Claims", icon: ClipboardCheck },
-    ],
-  },
-  {
-    id: "sales-crm",
-    label: "Sales & CRM",
-    icon: BriefcaseBusiness,
-    destinations: [
-      {
-        id: "accounts-contacts",
-        label: "Accounts & contacts",
-        icon: Users,
-        children: [
-          { label: "Accounts", icon: BriefcaseBusiness, route: "/crm/accounts" },
-          { label: "Customers", value: "39", icon: Users, route: "/customers" },
-          { label: "Contacts", value: "112", icon: Mail, route: "/crm/contacts" },
-        ],
-      },
-      {
-        id: "leads-opportunities",
-        label: "Leads & opportunities",
-        icon: BriefcaseBusiness,
-        children: [
-          { label: "Sales overview", icon: LayoutDashboard, route: "/crm" },
-          { label: "Leads", value: "39", icon: Users, route: "/crm/leads" },
-          { label: "Deals", value: "12", icon: BriefcaseBusiness, route: "/crm/deals" },
-        ],
-      },
-      { id: "quotes", label: "Quotes", icon: ReceiptText, route: "/quotes" },
-      { id: "activities-follow-up", label: "Activities & follow-up", icon: Clock3, route: "/crm/activity" },
-      {
-        id: "campaigns-growth-signals",
-        label: "Campaigns & growth signals",
-        icon: Palette,
-        children: [
-          { label: "Marketing", icon: Palette, route: "/crm/marketing" },
-          { label: "Emails", icon: Mail, route: "/crm/emails" },
-          { label: "Lists", icon: ListOrdered, route: "/crm/lists" },
-        ],
-      },
-    ],
-  },
-  {
-    id: "rates-contracts",
-    label: "Rates & Contracts",
-    icon: ReceiptText,
-    destinations: [
-      { id: "rate-contracts", label: "Rate contracts", icon: FileText },
-      { id: "tariffs-charges", label: "Tariffs & charges", icon: SlidersHorizontal },
-      { id: "rate-results", label: "Rate results", icon: ChartLine },
-    ],
-  },
-  {
-    id: "warehouse",
-    label: "Warehouse",
-    icon: Boxes,
-    destinations: [...warehouseNavigation],
-  },
-  {
-    id: "finance",
-    label: "Finance",
-    icon: ChartNoAxesCombined,
-    destinations: [
-      { id: "invoicing-receivables", label: "Invoicing & receivables", icon: ReceiptText },
-      { id: "supplier-costs-payables", label: "Supplier costs & payables", icon: SlidersHorizontal },
-      { id: "credit-control-approvals", label: "Credit control & approvals", icon: BadgeCheck },
-      { id: "cash-reconciliation", label: "Cash & reconciliation", icon: Layers3 },
-      { id: "profitability", label: "Profitability", icon: ChartLine },
-      { id: "tax-fx", label: "Tax & FX", icon: Globe2 },
-    ],
-  },
-  {
-    id: "customs-compliance",
-    label: "Customs & Compliance",
-    icon: BadgeCheck,
-    destinations: [
-      { id: "customs-cases", label: "Customs cases", icon: ClipboardCheck },
-      { id: "transit-t1", label: "Transit (T1)", icon: Ship },
-      { id: "classification-licences", label: "Classification & licences", icon: ScanText },
-      { id: "compliance-controls", label: "Compliance controls", icon: BadgeCheck },
-    ],
-  },
-  {
-    id: "documents-service",
-    label: "Documents & Service",
-    icon: FileText,
-    destinations: [
-      { id: "document-builder", label: "Document builder", icon: FileText, route: "/paper-tray" },
-      { id: "signatures-security", label: "Signatures & security", icon: KeyRound },
-      { id: "customer-portal", label: "Customer portal", icon: Globe2 },
-      { id: "communications", label: "Communications", icon: MessageCircle },
-    ],
-  },
-  {
-    id: "insights-ai",
-    label: "Insights & AI",
-    icon: Sparkles,
-    destinations: [
-      { id: "dashboards", label: "Dashboards", icon: LayoutDashboard, route: "/" },
-      { id: "reports-exports", label: "Reports & exports", icon: BarChart3, route: "/reports" },
-      { id: "ai-workspace", label: "AI workspace", icon: Sparkles, route: "/agent-dexter" },
-      { id: "data-quality-observability", label: "Data quality & observability", icon: Gauge },
-    ],
-  },
-  {
-    id: "administration",
-    label: "Administration",
-    icon: Settings2,
-    destinations: [
-      { id: "organisation-offices", label: "Organisation & offices", icon: Globe2, route: "/settings" },
-      { id: "users-roles-permissions", label: "Users, roles & permissions", icon: Users },
-      { id: "integrations", label: "Integrations", icon: Cloud },
-      { id: "subscription-feature-flags", label: "Subscription & feature flags", icon: SlidersHorizontal },
-      { id: "security-audit-retention", label: "Security, audit & retention", icon: KeyRound },
-    ],
-  },
-]
-
-export const sidebarPrimary: NavItem[] = [
-  { label: "Overview", value: "G O", icon: LayoutDashboard, route: "/" },
-  { label: "Bookings", value: "7", icon: Ship, route: "/bookings" },
-  { label: "Warehouse", value: "12", icon: Boxes, route: "/warehouse" },
-  { label: "Customers", value: "39", icon: Users, route: "/customers" },
-  { label: "CRM", value: "9", icon: BriefcaseBusiness, route: "/crm" },
-  { label: "Paper Tray", value: "184", icon: FileText, route: "/paper-tray" },
-  { label: "Exceptions", value: "2", icon: TriangleAlert },
-]
-
-export const sidebarSecondary: NavItem[] = [
-  { label: "Quotes", icon: ReceiptText, route: "/quotes" },
-  { label: "Pre-booking", icon: PackageCheck, route: "/bookings/provisional" },
-  { label: "Customs", icon: ClipboardCheck },
-  { label: "Reports", icon: BarChart3, route: "/reports" },
-  { label: "Components", icon: Component, route: "/components" },
-  { label: "Navigation lab", icon: Grid3X3, route: "/playground/navigation" },
-]
-
-export const crmSidebarItems: NavItem[] = [
-  { label: "CRM overview", value: "Live", icon: LayoutDashboard, route: "/crm" },
-  { label: "Leads", value: "39", icon: Users, route: "/crm/leads" },
-  { label: "Contacts", value: "112", icon: Mail, route: "/crm/contacts" },
-  { label: "Deals", value: "12", icon: BriefcaseBusiness, route: "/crm/deals" },
-  { label: "Emails", icon: Mail, route: "/crm/emails" },
-  { label: "Lists", icon: ListOrdered, route: "/crm/lists" },
-  { label: "Marketing", icon: Palette, route: "/crm/marketing" },
-  { label: "Activity", value: "24h", icon: Clock3, route: "/crm/activity" },
-]
+export {
+  crmSidebarItems,
+  customerWarehouseNavigation,
+  homeNavItem,
+  sidebarAreas,
+  sidebarPrimary,
+  sidebarSecondary,
+  warehouseNavigation,
+} from "./navigation-data"
+export type { NavItem, SidebarArea, SidebarDestination } from "./navigation-data"
 
 export const metricCards = [
   {
@@ -369,7 +159,7 @@ export const dashboardSnapshots: Record<DashboardRange, {
       { label: "Notify Bauhaus ETA slip", value: "Notify", detail: "Rotterdam berth queue moved MD-22479 by 36h. Use the customer-safe draft and attach the new ETA.", source: "Booking update", tone: "teal" },
     ],
     kpis: [
-      { label: "Your jobs", scope: "today", value: "10", change: "5 need action", detail: "before 15:00", tone: "amber", series: [3, 4, 4, 5, 6, 7, 8, 8, 9, 10] },
+      { label: "Active jobs", scope: "today", value: "10", change: "5 need action", detail: "before 15:00", tone: "amber", series: [3, 4, 4, 5, 6, 7, 8, 8, 9, 10] },
       { label: "Emails waiting", scope: "Outlook", value: "6", change: "3 customer", detail: "reply first", tone: "red", series: [8, 7, 9, 6, 7, 5, 6, 4, 6, 6] },
       { label: "Quotes due", scope: "today", value: "4", change: "2 ready", detail: "send now", tone: "green", series: [1, 2, 2, 3, 4, 3, 5, 4, 4, 4] },
       { label: "Watched bookings", scope: "favourites", value: "7", change: "2 exceptions", detail: "keep close", tone: "teal", series: [4, 4, 5, 6, 6, 7, 7, 8, 7, 7] },
@@ -388,7 +178,7 @@ export const dashboardSnapshots: Record<DashboardRange, {
       { label: "Schedule customer updates", value: "Fri", detail: "Bundle the non-urgent ETA and milestone updates into account-level summaries.", source: "Dexter brief", tone: "teal" },
     ],
     kpis: [
-      { label: "Your jobs", scope: "week", value: "18", change: "5 at risk", detail: "3 customs", tone: "amber", series: [9, 10, 12, 11, 15, 16, 18, 17, 18, 18] },
+      { label: "Active jobs", scope: "week", value: "18", change: "5 at risk", detail: "3 customs", tone: "amber", series: [9, 10, 12, 11, 15, 16, 18, 17, 18, 18] },
       { label: "Emails waiting", scope: "week", value: "21", change: "-8 cleared", detail: "since Monday", tone: "green", series: [32, 29, 27, 25, 24, 22, 21, 23, 20, 21] },
       { label: "Quotes due", scope: "week", value: "14", change: "7 ready", detail: "4 high value", tone: "teal", series: [5, 8, 11, 12, 15, 13, 14, 13, 14, 14] },
       { label: "Watched bookings", scope: "favourites", value: "9", change: "3 changed", detail: "since Monday", tone: "blue", series: [5, 5, 6, 8, 8, 9, 10, 9, 9, 9] },
@@ -407,7 +197,7 @@ export const dashboardSnapshots: Record<DashboardRange, {
       { label: "Reduce detention risk", value: "9", detail: "Most open risks are customs holds or containers nearing free-time expiry.", source: "Dexter brief", tone: "red" },
     ],
     kpis: [
-      { label: "Your jobs", scope: "month", value: "42", change: "31 clean", detail: "month to date", tone: "teal", series: [12, 16, 21, 24, 28, 31, 35, 38, 40, 42] },
+      { label: "Active jobs", scope: "month", value: "42", change: "31 clean", detail: "month to date", tone: "teal", series: [12, 16, 21, 24, 28, 31, 35, 38, 40, 42] },
       { label: "Emails waiting", scope: "month", value: "84", change: "1h 42m", detail: "avg reply", tone: "green", series: [11, 22, 31, 39, 46, 58, 66, 72, 79, 84] },
       { label: "Quotes sent", scope: "month", value: "38", change: "62% accepted", detail: "or negotiating", tone: "green", series: [4, 7, 11, 14, 18, 23, 27, 31, 35, 38] },
       { label: "Watched bookings", scope: "favourites", value: "12", change: "4 exceptions", detail: "this month", tone: "amber", series: [4, 6, 7, 8, 9, 9, 10, 11, 12, 12] },
@@ -426,7 +216,7 @@ export const dashboardSnapshots: Record<DashboardRange, {
       { label: "Fix repeated customs patterns", value: "7", detail: "Licence, HS-code, and detention issues repeat by lane. These should become watchers, not surprises.", source: "Dexter brief", tone: "red" },
     ],
     kpis: [
-      { label: "Your jobs", scope: "quarter", value: "148", change: "84% clean", detail: "handled", tone: "teal", series: [22, 36, 48, 61, 76, 89, 104, 121, 136, 148] },
+      { label: "Active jobs", scope: "quarter", value: "148", change: "84% clean", detail: "handled", tone: "teal", series: [22, 36, 48, 61, 76, 89, 104, 121, 136, 148] },
       { label: "Emails waiting", scope: "quarter", value: "286", change: "91% SLA", detail: "premium replies", tone: "green", series: [38, 69, 91, 121, 149, 177, 203, 231, 260, 286] },
       { label: "Quotes sent", scope: "quarter", value: "112", change: "+18%", detail: "vs last qtr", tone: "green", series: [12, 22, 31, 45, 56, 69, 82, 91, 103, 112] },
       { label: "Watched bookings", scope: "favourites", value: "16", change: "7 patterns", detail: "worth review", tone: "amber", series: [7, 8, 9, 10, 12, 13, 14, 15, 16, 16] },
@@ -445,7 +235,7 @@ export const dashboardSnapshots: Record<DashboardRange, {
       { label: "Prepare customer recap", value: "Draft", detail: "Summarise movement, risk, and next steps for the selected operating period.", source: "Dexter brief", tone: "teal" },
     ],
     kpis: [
-      { label: "Your jobs", scope: "custom", value: "24", change: "6 need action", detail: "in range", tone: "amber", series: [8, 11, 12, 14, 17, 18, 20, 22, 23, 24] },
+      { label: "Active jobs", scope: "custom", value: "24", change: "6 need action", detail: "in range", tone: "amber", series: [8, 11, 12, 14, 17, 18, 20, 22, 23, 24] },
       { label: "Emails waiting", scope: "custom", value: "17", change: "5 customer", detail: "reply first", tone: "red", series: [21, 19, 18, 16, 18, 15, 17, 14, 16, 17] },
       { label: "Quotes due", scope: "custom", value: "9", change: "4 ready", detail: "send now", tone: "green", series: [3, 4, 5, 6, 7, 8, 7, 9, 8, 9] },
       { label: "Watched bookings", scope: "custom", value: "11", change: "3 exceptions", detail: "keep close", tone: "teal", series: [6, 7, 7, 8, 9, 10, 10, 11, 10, 11] },
@@ -602,6 +392,66 @@ export const liveBookings = [
   { id: "MD-22466", from: "Frankfurt", to: "JFK", mode: "Air", eta: "May 28", time: "21:10", progress: 86, tone: "green" as StatusTone, origin: [50.04, 8.56] as const, destination: [40.64, -73.78] as const },
   { id: "MD-22455", from: "Long Beach", to: "Felixstowe", mode: "Ocean", eta: "Jun 09", time: "03:00", progress: 39, tone: "red" as StatusTone, origin: [33.75, -118.21] as const, destination: [51.95, 1.35] as const },
   { id: "MD-22441", from: "Hamburg", to: "Milano", mode: "Road", eta: "May 27", time: "14:00", progress: 64, tone: "blue" as StatusTone, origin: [53.55, 9.99] as const, destination: [45.46, 9.19] as const },
+]
+
+export type DashboardTrendPoint = { period: string; value: number; target: number }
+
+function makeTrendPeriods(range: DashboardRange, length: number): string[] {
+  const bases: Record<DashboardRange, string[]> = {
+    today: ["08:00", "10:00", "12:00", "14:00", "16:00", "18:00", "20:00", "22:00", "00:00", "Now", "+1", "+2", "+3"],
+    week: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun", "+1", "+2", "+3", "+4", "+5", "+6"],
+    month: ["W1", "W2", "W3", "W4", "W5", "W6", "W7", "W8", "W9", "W10", "W11", "W12", "W13"],
+    quarter: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "+1"],
+    custom: ["D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "D9", "D10", "D11", "D12", "D13"],
+  }
+  const labels = bases[range] ?? bases.custom
+  return Array.from({ length }, (_, index) => labels[index] ?? `${index + 1}`)
+}
+
+/**
+ * Per-range, per-KPI trend series for the dashboard graph. Derived from each
+ * snapshot KPI's own sparkline so the tile value and the expanded graph always
+ * tell the same story, with a gently rising target line for context.
+ */
+export const dashboardTrends: Record<DashboardRange, Record<string, DashboardTrendPoint[]>> =
+  Object.fromEntries(
+    (Object.keys(dashboardSnapshots) as DashboardRange[]).map((range) => {
+      const entries = dashboardSnapshots[range].kpis.map((kpi) => {
+        const series = kpi.series ?? []
+        const periods = makeTrendPeriods(range, series.length)
+        const max = Math.max(...series, 1)
+        const points: DashboardTrendPoint[] = series.map((value, index) => ({
+          period: periods[index] ?? `${index + 1}`,
+          value,
+          target: Math.round(max * (0.55 + (index / Math.max(series.length - 1, 1)) * 0.4)),
+        }))
+        return [kpi.label, points] as const
+      })
+      return [range, Object.fromEntries(entries)] as const
+    }),
+  ) as Record<DashboardRange, Record<string, DashboardTrendPoint[]>>
+
+export type LiveBookingFeedItem = {
+  id: string
+  lane: string
+  mode: string
+  customer: string
+  milestone: string
+  progress: number
+  eta: string
+  updated: string
+  tone: StatusTone
+}
+
+export const liveBookingFeed: LiveBookingFeedItem[] = [
+  { id: "MD-22481", lane: "Yantian → Felixstowe", mode: "Ocean", customer: "Marlow Apparel", milestone: "Sailing · on schedule", progress: 72, eta: "Jun 04 06:20", updated: "41s ago", tone: "teal" },
+  { id: "MD-22479", lane: "Ningbo → Rotterdam", mode: "Ocean", customer: "Bauhaus Importe", milestone: "ETA shifted +36h", progress: 58, eta: "Jun 06 11:45", updated: "2m ago", tone: "amber" },
+  { id: "MD-22466", lane: "Frankfurt → JFK", mode: "Air", customer: "Black Forest Foods", milestone: "Customs cleared", progress: 86, eta: "May 28 21:10", updated: "3m ago", tone: "green" },
+  { id: "MD-22455", lane: "Long Beach → Felixstowe", mode: "Ocean", customer: "Marlow Apparel", milestone: "Customs hold · licence", progress: 39, eta: "Jun 09 03:00", updated: "5m ago", tone: "red" },
+  { id: "MD-22441", lane: "Hamburg → Milano", mode: "Road", customer: "Northwind GmbH", milestone: "In transit · border cleared", progress: 64, eta: "May 27 14:00", updated: "6m ago", tone: "blue" },
+  { id: "MD-22468", lane: "Tilbury → Hamburg", mode: "Ocean", customer: "Aldridge & Sons", milestone: "CDS submitted", progress: 48, eta: "May 29 09:30", updated: "8m ago", tone: "teal" },
+  { id: "MD-22502", lane: "Dubai → JFK", mode: "Air", customer: "Meridian Medical", milestone: "Temperature doc pending", progress: 31, eta: "May 30 18:40", updated: "11m ago", tone: "amber" },
+  { id: "MD-22508", lane: "Singapore → Hamburg", mode: "Ocean", customer: "Tallinn Tech", milestone: "DG check in progress", progress: 22, eta: "Jun 12 07:15", updated: "14m ago", tone: "blue" },
 ]
 
 export const bookingFilters = ["Open · 34", "On-track · 26", "Delayed · 3", "Exceptions · 2", "Delivered · 48"] as const
@@ -2456,6 +2306,26 @@ export const galleryComponents = [
     usageCode: `<AppSidebar route={route} navigate={navigate} />`,
   },
   {
+    id: "sidebar-item-menu",
+    name: "Sidebar Item Menu",
+    category: "Navigation",
+    description: "The right-click menu on a navigation row, holding the pin and reorder actions so the sidebar itself stays free of permanent controls.",
+    details: "Wrap any row the operator is allowed to customise. Right-click on desktop and long-press on touch both open it, and it follows the app language direction so the menu opens on the correct side in Arabic. Pass `disabled` for rows that must keep their place.",
+    foundOn: [{ label: "App shell", route: "/" }, { label: "Operations", route: "/bookings" }, { label: "Sales & CRM", route: "/crm" }, { label: "Components", route: "/components?component=sidebar-item-menu" }],
+    componentCode: `export function SidebarItemMenu({ children, pinned = false, onTogglePin, onReorder, disabled = false, className }) {\n  const { direction, t } = useLanguage()\n\n  if (disabled) return <>{children}</>\n\n  return (\n    <ContextMenuPrimitive.Root dir={direction}>\n      <ContextMenuPrimitive.Trigger asChild>\n        <div className={cn("relative", className)}>{children}</div>\n      </ContextMenuPrimitive.Trigger>\n      <ContextMenuPrimitive.Portal>\n        <ContextMenuPrimitive.Content collisionPadding={14} className="md-sidebar-menu premium-stroke z-50 rounded-[var(--md-radius-xl)] p-1 shadow-[var(--md-shadow-lift)] backdrop-blur-xl">\n          <SidebarItemMenuAction\n            icon={pinned ? PinOff : Pin}\n            label={t(pinned ? "Unpin" : "Pin to top")}\n            hint={t(pinned ? "Restore place" : "Keep first")}\n            onSelect={onTogglePin}\n          />\n          <SidebarItemMenuAction icon={ArrowUpDown} label={t("Reorder")} hint={t("Drag to arrange")} onSelect={onReorder} />\n        </ContextMenuPrimitive.Content>\n      </ContextMenuPrimitive.Portal>\n    </ContextMenuPrimitive.Root>\n  )\n}`,
+    usageCode: `const { scope, togglePin } = useSidebarLayoutScope("areas")\n\n<SidebarItemMenu\n  pinned={scope.pinned.includes(destination.id)}\n  onTogglePin={() => togglePin(destination.id)}\n  onReorder={() => setArranging(true)}\n>\n  <SidebarNavItem item={destination} onClick={() => navigate(destination.route)} />\n</SidebarItemMenu>`,
+  },
+  {
+    id: "sidebar-arrange-canvas",
+    name: "Sidebar Arrange Canvas",
+    category: "Navigation",
+    description: "The drag-to-reorder editor that temporarily replaces a navigation list so the operator can rearrange and pin its rows.",
+    details: "Use for any list the operator owns. Order and pins are edited as a draft and only committed on Save, so an abandoned rearrangement never changes the saved layout. Rows can also be moved with the arrow keys from the grip handle, and every move is announced for screen readers. Saved layouts persist per user through `useSidebarLayoutScope`.",
+    foundOn: [{ label: "App shell", route: "/" }, { label: "Operations", route: "/bookings" }, { label: "Sales & CRM", route: "/crm" }, { label: "Components", route: "/components?component=sidebar-arrange-canvas" }],
+    componentCode: `export function SidebarArrangeCanvas({ items, order, pinned, defaultOrder, onSave, onCancel }) {\n  const [draftOrder, setDraftOrder] = useState(order)\n  const [draftPinned, setDraftPinned] = useState(pinned)\n  const [heldId, setHeldId] = useState(null)\n  const dragOffset = useMotionValue(0)\n\n  return (\n    <div className="mt-3">\n      <ul role="list" className="flex flex-col" onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp}>\n        {draftOrder.map((id, index) => (\n          <ArrangeRow\n            key={id}\n            item={itemsById.get(id)}\n            position={index}\n            y={heldId === id ? dragOffset : rowValue(id)}\n            held={heldId === id}\n            pinned={draftPinned.includes(id)}\n            onTogglePin={() => togglePin(id)}\n            onKeyboardMove={(direction) => moveByKeyboard(id, direction)}\n          />\n        ))}\n      </ul>\n      <div className="mt-3 flex items-center gap-2">\n        <button onClick={resetToDefault}>{t("Reset")}</button>\n        <button onClick={() => onSave({ order: draftOrder, pinned: draftPinned })}>{t("Save")}</button>\n      </div>\n    </div>\n  )\n}`,
+    usageCode: `const { scope, save } = useSidebarLayoutScope("areas")\nconst { orderedIds } = resolveSidebarOrder(baseIds, scope)\n\n{arranging ? (\n  <SidebarArrangeCanvas\n    items={arrangeItems}\n    order={orderedIds}\n    pinned={scope.pinned}\n    defaultOrder={baseIds}\n    onSave={(next) => {\n      save(isDefaultScope(baseIds, next) ? null : next)\n      setArranging(false)\n    }}\n    onCancel={() => setArranging(false)}\n  />\n) : null}`,
+  },
+  {
     id: "theme-toggle",
     name: "Theme Toggle",
     category: "Navigation",
@@ -2671,7 +2541,7 @@ export const galleryComponents = [
     category: "Navigation",
     description: "A reusable filter chip row with a strong selected state, optional secondary filters, and an icon-only tooltip mode.",
     details: "Use at the top of list, table, and map workflows. The active filter should be unmistakable on mobile and desktop; use icon-only chips with tooltips where labels would otherwise make a compact filter too dense.",
-    foundOn: [{ label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Warehouse", route: "/warehouse" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Customers", route: "/customers" }, { label: "Bookings", route: "/bookings" }, { label: "Warehouse", route: "/warehouse" }, { label: "Components", route: "/components" }],
     componentCode: `export function FilterChips({ options, activeOption, onChange, auxiliaryOptions = [] }) {\n  return (\n    <div className="flex flex-wrap items-center gap-2">\n      {options.map((option) => (\n        <button\n          key={option}\n          aria-pressed={activeOption === option}\n          className={cn("rounded-full px-4", activeOption === option && "bg-[var(--md-accent)] text-white")}\n          onClick={() => onChange(option)}\n        >\n          {activeOption === option ? <Check /> : null}\n          {option}\n        </button>\n      ))}\n      {auxiliaryOptions.map((option) => <button key={option}>{option}</button>)}\n    </div>\n  )\n}`,
     usageCode: `<FilterChips\n  options={bookingFilters}\n  activeOption={activeFilter}\n  onChange={setActiveFilter}\n  auxiliaryOptions={["+ Mode", "+ Carrier", "+ Customer", "+ Owner", "+ ETA range"]}\n/>`,
   },
@@ -2680,9 +2550,9 @@ export const galleryComponents = [
     name: "Data Table",
     category: "Data",
     description: "A configurable operational table with pinning, pointer and keyboard reordering, keyboard-accessible resizing, sorting, selection, and visibility controls.",
-    details: "Use for dense operational records where each operator may need a different working view. Saved layouts are restored per table, and every column-layout action remains available without a pointer.",
+    details: "Use for dense operational records where each operator may need a different working view. Saved layouts and sorting are restored per table, and every column-layout action remains available without a pointer.",
     foundOn: [{ label: "Quotes", route: "/quotes" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components" }],
-    componentCode: `export function DataTable({ columns, rows, getRowKey, storageKey, selectedRowKey, onRowClick }) {\n  return (\n    <Table>\n      <TableHeader>{/* sortable, resizable, draggable columns */}</TableHeader>\n      <TableBody>{/* rows follow the saved live column layout */}</TableBody>\n    </Table>\n  )\n}`,
+    componentCode: `export function DataTable({ columns, rows, getRowKey, storageKey, selectedRowKey, selectedRowKeys, onRowClick }) {\n  return (\n    <Table>\n      <TableHeader>{/* sortable, resizable, draggable columns */}</TableHeader>\n      <TableBody>{/* rows follow the saved live column layout and selection */}</TableBody>\n    </Table>\n  )\n}`,
     usageCode: `<DataTable\n  ariaLabel="Supplier charges"\n  columns={chargeColumns}\n  rows={charges}\n  getRowKey={(charge) => charge.id}\n  storageKey="quote-charges-in"\n  onRowClick={selectCharge}\n/>`,
   },
   {
@@ -3046,6 +2916,53 @@ export const galleryComponents = [
     usageCode: `<div className="grid grid-cols-[38px_1fr] gap-4">\n  <DexterBrandMark />\n  <div>\n    <p>Dexter</p>\n    <DexterRiskTable />\n  </div>\n</div>`,
   },
   {
+    id: "side-drawer",
+    name: "Side Drawer",
+    category: "Operations",
+    description: "The inset slide-in panel used for detail and settings surfaces, with its own backdrop, motion, Escape handling, scroll lock, and focus restore.",
+    details: "Use when a record or a settings surface should open over the current page without losing the operator's place. The panel leans in from the edge it is docked to and blurs out on exit, so opening and closing read as one movement rather than a hard cut. It flips to the opposite edge under right-to-left, collapses to an instant show and hide when the operator prefers reduced motion, locks page scroll while open, and hands focus back to whatever opened it on close. Pass an icon only when the drawer is a settings surface rather than a record.",
+    foundOn: [{ label: "CRM deals", route: "/crm/deals" }, { label: "Components", route: "/components" }],
+    componentCode: `export function SideDrawer({ open, onClose, eyebrow, title, icon: Icon, width = 480, children }) {
+  const { direction, t } = useLanguage()
+  const reduce = Boolean(useReducedMotion())
+
+  // The panel leans in from whichever edge it is docked to, which flips under right-to-left.
+  const offset = direction === "rtl" ? -40 : 40
+
+  return (
+    <AnimatePresence>
+      {open ? (
+        <div className="fixed inset-0 z-50 flex justify-end p-3" dir={direction}>
+          <motion.button
+            className="absolute inset-0 bg-[rgba(11,20,19,0.14)] backdrop-blur-[6px]"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={reduceMotion(reduce, mdMotion.fast)}
+            onClick={onClose}
+          />
+          <motion.aside
+            role="dialog"
+            aria-modal="true"
+            aria-label={title}
+            className="relative z-10 flex h-full w-full flex-col rounded-[var(--md-radius-2xl)] bg-[var(--md-bg)] p-3"
+            style={{ maxWidth: width }}
+            initial={{ x: offset, opacity: 0, filter: "blur(8px)" }}
+            animate={{ x: 0, opacity: 1, filter: "blur(0px)" }}
+            exit={{ x: offset * 0.7, opacity: 0, filter: "blur(8px)" }}
+            transition={reduceMotion(reduce, mdMotion.panel)}
+          >
+            <DrawerHeader eyebrow={eyebrow} title={title} icon={Icon} onClose={onClose} />
+            <div className="md-scrollbar min-h-0 flex-1 overflow-y-auto">{children}</div>
+          </motion.aside>
+        </div>
+      ) : null}
+    </AnimatePresence>
+  )
+}`,
+    usageCode: `<SideDrawer\n  open={settingsOpen}\n  onClose={() => setSettingsOpen(false)}\n  eyebrow={t("Deals")}\n  title={t("Pipeline settings")}\n  icon={Settings2}\n  width={980}\n>\n  <CrmSettingsBuilder canEdit={canEdit} />\n</SideDrawer>`,
+  },
+  {
     id: "side-panels",
     name: "Side Panels",
     category: "Operations",
@@ -3156,24 +3073,103 @@ export const galleryComponents = [
     usageCode: `<CrmContactTable\n  contacts={crmContacts}\n  selectedEmail={selectedEmail}\n  onSelectContact={(contact) => setSelectedEmail(contact.email)}\n/>`,
   },
   {
-    id: "crm-lead-detail-panel",
-    name: "CRM Lead Detail Panel",
+    id: "crm-lead-qualification-table",
+    name: "CRM Lead Qualification Table",
     category: "CRM",
-    description: "A compact lead detail panel that bridges CRM qualification into the main Multideck customer record.",
-    details: "Use beside lead lists and signal panels. The conversion action should open Customers so operators do not maintain two separate customer systems.",
+    description: "A lead worklist for qualification, ownership, engagement, follow-up, age, and genuine opportunity context.",
+    details: "Use on the Leads route instead of customer-performance tables. Values come from CRM lead, activity, qualification, owner, and source-linked opportunity records; never infer bookings or customer revenue for a prospect.",
     foundOn: [{ label: "CRM leads", route: "/crm/leads" }, { label: "Components", route: "/components" }],
-    componentCode: `export function CrmLeadDetailPanel({ lead, onOpenCustomer, onConvertToCustomer }) {\n  return (\n    <Surface padding="none">\n      <SectionHeader title="Lead detail" meta={lead.location} />\n      <CustomerAvatar initials={lead.initials} tone={lead.avatarTone} />\n      <h2>{lead.name}</h2>\n      <StatusPill>{lead.status}</StatusPill>\n      <button onClick={onOpenCustomer}>Open in Customers</button>\n      <button onClick={onConvertToCustomer}>Turn into customer</button>\n    </Surface>\n  )\n}`,
-    usageCode: `<CrmLeadDetailPanel\n  lead={selectedLead}\n  onOpenCustomer={() => navigate("/customers/marlow-apparel")}\n  onConvertToCustomer={() => navigate("/customers/marlow-apparel")}\n/>`,
+    componentCode: `export function CrmLeadQualificationTable({ leads, onOpenLead, ownerPhotoUrls }) {
+  return (
+    <Table>
+      <TableHeader>{/* lead, primary contact, source, owner, qualification, engagement, follow-up, age, value */}</TableHeader>
+      <TableBody>
+        {leads.map((lead) => (
+          <TableRow key={lead.id} onClick={() => onOpenLead(lead)}>
+            <TableCell>{lead.companyName}</TableCell>
+            <TableCell>{lead.primaryContactName}</TableCell>
+            <TableCell>{lead.sourceName}</TableCell>
+            <TableCell>{lead.ownerName}</TableCell>
+            <TableCell><StatusPill>{lead.statusName}</StatusPill></TableCell>
+            <TableCell>{lead.lastActivitySubject}</TableCell>
+            <TableCell>{lead.nextFollowUpAt}</TableCell>
+            <TableCell>{lead.createdAt}</TableCell>
+            <TableCell>{lead.valueAmount}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  )
+}`,
+    usageCode: `<CrmLeadQualificationTable
+  leads={liveLeads}
+  ownerPhotoUrls={signedOwnerPhotoUrls}
+  onOpenLead={(lead) => navigate(\`/crm/leads/\${lead.id}\`)}
+  emptyMessage="No leads have been recorded yet."
+/>`,
+  },
+  {
+    id: "copyable-field",
+    name: "Copyable Field",
+    category: "CRM",
+    description: "A text value with a nearby hover and keyboard copy affordance, then the shared blur-slot feedback that changes the value to Copied.",
+    details: "Use for useful text values such as emails, websites, phone numbers, addresses, references, dates, and commercial figures. The transition is chosen from the value itself, so no page has to pick one: short single-line text uses the same letter-by-letter blur slot as the Quotes header reference, while wrapped, very long, and right-to-left values fade and wipe as one block so feedback stays fast and text shaping stays intact. Values narrower than the word Copied grow their box first and hold it open until the value has slotted back, so nothing overlaps or clips. The control sits on the first line of the value. Keep links functional, copy the canonical value, and leave images and missing values non-interactive.",
+    foundOn: [{ label: "CRM lead detail", route: "/crm/leads" }, { label: "Quote detail header", route: "/quotes/3" }, { label: "Components", route: "/components?component=copyable-field" }],
+    componentCode: `export function CopyableField({ label, value, copyValue = value, children }) {
+  const [copied, setCopied] = useState(false)
+
+  async function copyField() {
+    await navigator.clipboard.writeText(copyValue)
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1600)
+  }
+
+  return (
+    <div data-copied={copied || undefined} className="group/copy inline-flex max-w-full items-center">
+      <div className="relative min-w-0 overflow-hidden">
+        <CopyFeedbackTransition
+          value={copyValue}
+          copiedValue="Copied"
+          active={copied}
+          effect="auto"
+        >
+          {children ?? value}
+        </CopyFeedbackTransition>
+      </div>
+      <button type="button" aria-label={copied ? \`\${label}: Copied\` : \`Copy \${label}\`} onClick={copyField}>
+        <Copy />
+      </button>
+    </div>
+  )
+}`,
+    usageCode: `<CopyableField
+  label="Company email"
+  value={lead.company.email}
+>
+  <a href={\`mailto:\${lead.company.email}\`}>
+    {lead.company.email}
+  </a>
+</CopyableField>`,
+  },
+  {
+    id: "crm-lead-detail-panel",
+    name: "CRM Lead Detail Workspace",
+    category: "CRM",
+    description: "A company-focused lead workspace with qualification context, customer information, contacts, activity, and a compact sticky company overview.",
+    details: "Use on a live CRM lead route. Keep the right overview short enough to remain above the fold, with direct shader treatment and the most useful company fields. Put the complete customer record in the main workspace, return all contacts linked to the lead organisation, and preserve the captured primary-contact fallback for unlinked leads.",
+    foundOn: [{ label: "CRM leads", route: "/crm/leads" }, { label: "Components", route: "/components" }],
+    componentCode: `export function CrmLeadDetailPanel({ lead, ownerPhotoUrl, onBack, onStartQualification }) {\n  return (\n    <div className="grid xl:grid-cols-[minmax(0,1fr)_400px] 2xl:grid-cols-[minmax(0,1fr)_440px]">\n      <Surface padding="none">\n        <LeadRecordHeader lead={lead} ownerPhotoUrl={ownerPhotoUrl} onBack={onBack} />\n        <LeadQualificationSummary lead={lead} />\n        <LeadContacts lead={lead} />\n        <LeadCustomerInformation lead={lead} />\n        <LeadActivityAndContext lead={lead} />\n      </Surface>\n      <LeadCompanyOverview lead={lead} className="xl:sticky xl:top-[76px]" />\n    </div>\n  )\n}`,
+    usageCode: `<CrmLeadDetailPanel\n  lead={liveLeadDetail}\n  ownerPhotoUrl={signedOwnerPhotoUrl}\n  onBack={() => navigate("/crm/leads")}\n  onStartQualification={(lead) => openQualification(lead.id)}\n/>`,
   },
   {
     id: "crm-activity-timeline",
     name: "CRM Activity Timeline",
     category: "CRM",
     description: "A relationship timeline that blends email, AI signals, quotes, booking exceptions, and account notes.",
-    details: "Use when the operator needs to understand what changed across leads. Compact mode is useful beside another primary workflow.",
+    details: "Use when the operator needs to understand what changed across leads. It adapts the shared Audit Timeline so chronology, interaction, accessibility, and responsive behaviour stay consistent with Core activity. Compact mode is useful beside another primary workflow.",
     foundOn: [{ label: "CRM", route: "/crm" }, { label: "CRM activity", route: "/crm/activity" }, { label: "Components", route: "/components" }],
-    componentCode: `export function CrmActivityTimeline({ activities = crmActivities, compact }) {\n  return (\n    <Surface padding="none">\n      <SectionHeader title="Relationship activity" />\n      {activities.map((item) => (\n        <div key={item.title} className="grid grid-cols-[120px_18px_1fr]">\n          <span>{item.time}</span>\n          <span style={{ background: toneToVar(item.tone) }} />\n          <div>\n            <p>{item.title}</p>\n            <StatusPill tone={item.tone}>{item.account}</StatusPill>\n            {!compact ? <p>{item.detail}</p> : null}\n          </div>\n        </div>\n      ))}\n    </Surface>\n  )\n}`,
-    usageCode: `<CrmActivityTimeline />\n<CrmActivityTimeline activities={crmActivities.slice(0, 3)} compact />`,
+    componentCode: `export function CrmActivityTimeline({ activities = crmActivities, compact, loading, error, onRetry, onOpenContext }) {\n  const timelineEvents = activities.map(toAuditTimelineEvent)\n\n  return (\n    <AuditTimeline\n      events={timelineEvents}\n      title="Relationship activity"\n      description={compact ? "Latest customer signals" : "AI, email, sales, and booking events"}\n      loading={loading}\n      error={error}\n      emptyMessage="No relationship activity yet."\n      onRetry={onRetry}\n      onContextSelect={(event) => onOpenContext?.(event.contextRoute)}\n      groupConsecutiveDates\n      showCompletedCheck={false}\n      compact={compact}\n    />\n  )\n}`,
+    usageCode: `<CrmActivityTimeline onOpenContext={navigate} />\n<CrmActivityTimeline activities={crmActivities.slice(0, 3)} compact />\n<CrmActivityTimeline activities={[]} />`,
   },
   {
     id: "crm-lead-signals",
@@ -3186,22 +3182,77 @@ export const galleryComponents = [
     usageCode: `<CrmLeadSignalList\n  signals={crmAccountSignals}\n  onOpenLead={(signal) => navigate("/crm/leads")}\n/>`,
   },
   {
+    id: "crm-pipeline-editor",
+    name: "CRM Pipeline Editor",
+    category: "CRM",
+    description: "A direct-manipulation canvas for shaping a sales process: drag stages to reorder, insert between them, rename in place, and tune the selected stage below.",
+    details: "Use when an operator needs to shape the sales process itself. Stage cards sit on a flow line over a faint canvas grid and all share one width, so reordering resolves to exact slots instead of guessing from whatever sits under the pointer. Dragging lifts the card with a velocity-led tilt while its neighbours part in a staggered wave, edge scrolling ramps in when you reach past the rail, and the new order is only committed once the drop spring has settled so nothing snaps. An accent tether under the rail slides to the selected card and links it to the inspector below. Pointer drag, the move buttons, and Alt with the arrow keys are equivalent reorder paths.",
+    foundOn: [{ label: "CRM deals", route: "/crm/deals" }, { label: "CRM settings", route: "/crm/settings" }, { label: "Components", route: "/components" }],
+    componentCode: `export function CrmPipelineEditor({ pipelines }) {
+  const [selectedStageId, setSelectedStageId] = useState(stages[0]?.id)
+  const [heldId, setHeldId] = useState(null)
+
+  // Uniform slots, so a stage's resting position is always an exact multiple of the pitch.
+  const dragOffset = useMotionValue(0)
+  const rotate = useTransform(useSpring(useVelocity(dragOffset)), [-2600, 0, 2600], [-2, 0, 2], { clamp: true })
+
+  function handlePointerMove(event) {
+    const travelled = (event.clientX - active.startX) * dirSign
+    dragOffset.set(withEdgeResistance(travelled, min, max) * dirSign)
+
+    // Hysteresis stops a card oscillating while the pointer sits on a slot boundary.
+    const slots = clamp(travelled, min, max) / CARD_PITCH
+    while (slots > slot + 0.5 + SLOT_HYSTERESIS) slot += 1
+    while (slots < slot - 0.5 - SLOT_HYSTERESIS) slot -= 1
+    applySlotShift(active.from, active.to = clamp(active.from + slot, 0, stages.length - 1))
+  }
+
+  function handlePointerUp() {
+    // The card glides home first, so the reorder commit is never visible as a jump.
+    void animate(dragOffset, (to - from) * CARD_PITCH * dirSign, dropSpring)
+      .then(() => updatePipeline((p) => ({ ...p, stages: moveItem(p.stages, from, to) })))
+  }
+
+  return (
+    <Surface padding="none">
+      <PipelineToolbar name={pipeline.name} dirty={dirty} onSave={saveChanges} />
+      <ol onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp}>
+        {stages.map((stage, index) => (
+          <StageCard
+            key={stage.id}
+            stage={stage}
+            x={stage.id === heldId ? dragOffset : cardValue(stage.id)}
+            rotate={rotate}
+            presence={presenceValue(stage.id)}
+            onInsertBefore={() => insertStage(index)}
+          />
+        ))}
+        <AddStageCard onClick={() => insertStage(stages.length)} />
+      </ol>
+      <SelectionTether x={tetherX} hidden={dragging} />
+      <StageInspector stage={selectedStage} onChange={updateStage} onRemove={removeStage} />
+    </Surface>
+  )
+}`,
+    usageCode: `<CrmPipelineEditor pipelines={crmPipelineSettings} />\n<CrmPipelineEditor pipelines={[]} loading />\n<CrmPipelineEditor pipelines={[]} error="Pipelines could not load." onRetry={refetch} />`,
+  },
+  {
     id: "crm-settings-builder",
     name: "CRM Settings Builder",
     category: "CRM",
-    description: "A settings panel for pipeline names, column count, column names, lead fields, dropdown fields, and customer-conversion rules.",
-    details: "Use from the Deals pipeline settings drawer or the direct settings route. It should make pipeline names and columns editable while keeping dropdown and multi-select dropdown field behaviour explicit.",
+    description: "The composed CRM settings surface combining the visual pipeline editor with lead fields and customer-conversion rules.",
+    details: "Use from the Deals pipeline settings drawer or the direct settings route. The visual pipeline editor owns pipeline changes while field and conversion settings remain secondary below it.",
     foundOn: [{ label: "CRM deals", route: "/crm/deals" }, { label: "CRM settings", route: "/crm/settings" }, { label: "Components", route: "/components" }],
-    componentCode: `export function CrmSettingsBuilder({ pipelines = crmPipelineSettings, fields = crmLeadFieldSettings }) {\n  return (\n    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_390px]">\n      <Surface padding="none">\n        <SectionHeader title="Pipeline builder" meta="Stages, defaults, and conversion rules" />\n        <Input aria-label="Pipeline name" value={pipelineName} onChange={updatePipelineName} />\n        <Input aria-label="Columns" type="number" value={stageNames.length} onChange={updateColumnCount} />\n        {stageNames.map((stageName, index) => (\n          <Input key={index} aria-label="Column name" value={stageName} onChange={(event) => updateStageName(index, event.target.value)} />\n        ))}\n      </Surface>\n      <Surface padding="none">\n        <SectionHeader title="Lead fields" meta="Dropdown and multi-select dropdown fields" />\n        {fields.map((field) => <DropdownFieldRow key={field.label} field={field} />)}\n      </Surface>\n    </div>\n  )\n}`,
+    componentCode: `export function CrmSettingsBuilder({ pipelines = crmPipelineSettings, fields = crmLeadFieldSettings }) {\n  return (\n    <div className="grid gap-5">\n      <CrmPipelineEditor pipelines={pipelines} />\n      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">\n        <LeadFieldSettings fields={fields} />\n        <CustomerConversionRule pipeline={pipelines[0]} />\n      </div>\n    </div>\n  )\n}`,
     usageCode: `<CrmSettingsBuilder\n  pipelines={crmPipelineSettings}\n  fields={crmLeadFieldSettings}\n/>`,
   },
   {
     id: "settings-rail",
     name: "Settings Rail",
     category: "Navigation",
-    description: "The left settings navigation used to move between account, workspace, organisation, and support pages.",
-    details: "Use for dense settings areas where grouped navigation should stay visible while the main panel changes. Keep section labels quiet and selected state obvious.",
-    foundOn: [{ label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
+    description: "A grouped secondary rail for embedded configuration areas that cannot use the product's primary sidebar.",
+    details: "Use only for an embedded configuration workspace. Full account settings now drill into the main application sidebar so the product never shows two competing navigation rails.",
+    foundOn: [{ label: "Components", route: "/components?component=settings-rail" }],
     componentCode: `export function SettingsRail({ groups, activeTab, onChange, onBack }) {\n  return (\n    <aside className="flex min-h-screen w-[260px] flex-col bg-[var(--md-surface-tint)] px-5 py-6">\n      <button onClick={onBack}>Back</button>\n      <h1>Settings</h1>\n      {groups.map((group) => (\n        <nav key={group.label}>\n          <p>{group.label}</p>\n          {group.items.map((item) => (\n            <button aria-current={activeTab === item.id ? "page" : undefined} onClick={() => onChange(item.id)}>\n              {item.label}\n            </button>\n          ))}\n        </nav>\n      ))}\n    </aside>\n  )\n}`,
     usageCode: `<SettingsRail\n  groups={settingsGroups}\n  activeTab={activeTab}\n  onChange={setActiveTab}\n  onBack={() => navigate("/")}\n/>`,
   },
@@ -3221,7 +3272,7 @@ export const galleryComponents = [
     category: "Foundation",
     description: "A compact connector row for personal tools such as Gmail, Outlook, calendars, file storage, chat, and project systems.",
     details: "Use inside profile or settings panels when a user needs to connect, manage, or review one external tool. Keep the row factual: tool, why it matters, status, and the next action.",
-    foundOn: [{ label: "Profile settings", route: "/settings" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Components", route: "/components?component=settings-integration-row" }],
     componentCode: `export function SettingsIntegrationRow({ icon: Icon, title, description, status, actionLabel, onAction }) {\n  return (\n    <div className="grid gap-3 px-5 py-4 sm:grid-cols-[36px_minmax(0,1fr)_auto] sm:items-center">\n      <div className="grid size-9 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] shadow-[var(--md-shadow-line)]">\n        <Icon />\n      </div>\n      <div>\n        <p>{title}</p>\n        <span>{status}</span>\n        <p>{description}</p>\n      </div>\n      <button onClick={onAction}>{actionLabel}</button>\n    </div>\n  )\n}`,
     usageCode: `<SettingsPanel title="Connected tools">\n  <SettingsIntegrationRow\n    icon={Mail}\n    title="Gmail"\n    description="Connect your Google inbox for customer replies, quote follow-ups, and approved Dexter drafts."\n    status="Ready"\n    actionLabel="Connect"\n    onAction={connectGmail}\n  />\n</SettingsPanel>`,
   },
@@ -3241,7 +3292,7 @@ export const galleryComponents = [
     category: "Navigation",
     description: "A larger selectable setting for choices that need short explanatory copy, such as Agent Dexter's autonomy level.",
     details: "Use when the operator is choosing a mode and needs to understand the behaviour before selecting it.",
-    foundOn: [{ label: "Settings", route: "/settings?tab=agent-dexter" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Components", route: "/components?component=settings-option-card" }],
     componentCode: `export function SettingsOptionCard({ label, description, selected, onClick }) {\n  return (\n    <button aria-pressed={selected} onClick={onClick} className={cn("rounded-[var(--md-radius-lg)] p-4", selected && "bg-[rgba(14,125,116,0.08)]")}>\n      <span>{selected ? <Check /> : null}</span>\n      <p>{label}</p>\n      <p>{description}</p>\n    </button>\n  )\n}`,
     usageCode: `<SettingsOptionCard\n  label="Suggest"\n  description="Drafts and proposes. Always asks before sending or changing data."\n  selected={autonomy === "Suggest"}\n  onClick={() => setAutonomy("Suggest")}\n/>`,
   },
@@ -3254,6 +3305,43 @@ export const galleryComponents = [
     foundOn: [{ label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
     componentCode: `export function SettingsSummaryCard({ title, rows }) {\n  return (\n    <aside className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-soft)]">\n      <p>{title}</p>\n      {rows.map(([label, value]) => (\n        <div key={label}>\n          <span>{label}</span>\n          <span>{value}</span>\n        </div>\n      ))}\n    </aside>\n  )\n}`,
     usageCode: `<SettingsSummaryCard\n  title="At a glance"\n  rows={[\n    ["Member since", "Jan 2024"],\n    ["Bookings handled", "1,847"],\n    ["Role", "Admin - Ops"],\n  ]}\n/>`,
+  },
+  {
+    id: "settings-progress-ring",
+    name: "Settings Progress Ring",
+    category: "Data",
+    description: "A compact, labelled progress signal for profile readiness, security posture, seat use, and AI budgets.",
+    details: "Use for one bounded percentage where the label and supporting detail explain what the number means. The ring is redundant to visible text, uses semantic colour sparingly, and remains static under reduced motion.",
+    foundOn: [
+      { label: "Profile", route: "/settings" },
+      { label: "Security", route: "/settings?tab=security" },
+      { label: "AI usage", route: "/settings?tab=ai-usage" },
+      { label: "Components", route: "/components?component=settings-progress-ring" },
+    ],
+    componentCode: `export function SettingsProgressRing({ value, label, detail, tone = "accent" }) {
+  const clampedValue = Math.max(0, Math.min(100, value))
+
+  return (
+    <div role="img" aria-label={label + ": " + clampedValue + "%. " + detail}>
+      <span
+        className="md-settings-progress-ring"
+        style={{ "--md-settings-progress": clampedValue + "%" }}
+      >
+        <span>{clampedValue}%</span>
+      </span>
+      <span>
+        <strong>{label}</strong>
+        <span>{detail}</span>
+      </span>
+    </div>
+  )
+}`,
+    usageCode: `<SettingsProgressRing
+  value={68}
+  label="Monthly AI budget"
+  detail="EUR 1,024 of EUR 1,500 used"
+  tone="blue"
+/>`,
   },
   {
     id: "auth-workspace-router",
@@ -3425,6 +3513,8 @@ export const galleryIcons = {
   "interactive-map": Globe2,
   command: ScanText,
   sidebar: LayoutDashboard,
+  "sidebar-item-menu": MousePointerClick,
+  "sidebar-arrange-canvas": ArrowUpDown,
   "theme-toggle": MoonStar,
   "page-settings-menu": Settings2,
   "date-range-picker": CalendarDays,
@@ -3472,6 +3562,7 @@ export const galleryIcons = {
   "crm-asset-folder-card": Boxes,
   "crm-asset-row": FileText,
   "crm-contact-table": Mail,
+  "crm-lead-qualification-table": Users,
   "crm-lead-detail-panel": Users,
   "crm-activity-timeline": Clock3,
   "crm-lead-signals": Sparkles,
@@ -3491,6 +3582,7 @@ export const galleryIcons = {
   "settings-controls": KeyRound,
   "settings-option-card": Sparkles,
   "settings-summary-card": BarChart3,
+  "settings-progress-ring": Gauge,
   "auth-narrative-panel": LayoutDashboard,
   "auth-workspace-router": Building2,
   "auth-provider-selector": KeyRound,
