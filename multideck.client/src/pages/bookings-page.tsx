@@ -241,6 +241,15 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
     if (!shipmentTypeFiltersByMode[nextMode].includes(shipmentTypeFilter as never)) setShipmentTypeFilter("All types")
   }
 
+  function clearFilters() {
+    setQuickSearch("")
+    setSearchCriteria(initialSearchCriteria)
+    setDirectionFilter(directionFilters[0])
+    setModeFilter(modeFilters[0])
+    setShipmentTypeFilter("All types")
+    setPage(1)
+  }
+
   const columns = useMemo<DataTableColumn<Booking>[]>(() => [
     {
       id: "select",
@@ -402,15 +411,15 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
   ], [favouriteIds, selectedIds, t])
 
   return (
-    <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel="Bookings" className="md-page md-page-stack">
+    <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t("Bookings")} className="md-page md-page-stack">
       <BookingListHeader viewMode={viewMode} onViewModeChange={setViewMode} onSpeakToDexter={() => setDexterOpen(true)} scopeOptions={bookingScopeTabs} scope={scope} onScopeChange={setScope} />
-      <section aria-label={t("Booking shape")} className="flex flex-wrap items-center gap-2 rounded-[var(--md-radius-xl)] bg-white/32 p-2.5 shadow-[var(--md-shadow-line)]">
+      <section aria-label={t("Booking shape")} className="flex flex-wrap items-center gap-2 rounded-[var(--md-radius-xl)] bg-[color-mix(in_srgb,var(--md-surface)_32%,transparent)] p-2.5 shadow-[var(--md-shadow-line)]">
         <ShapeFilter label={t("Direction")} options={directionFilters} value={directionFilter} onChange={setDirectionFilter} />
-        <span className="hidden h-7 w-px bg-[rgba(11,20,19,0.08)] sm:block" aria-hidden="true" />
+        <span className="hidden h-7 w-px bg-[var(--md-line-strong)] sm:block" aria-hidden="true" />
         <ShapeFilter label={t("Mode")} options={modeFilters} value={modeFilter} onChange={changeMode} />
         {shipmentTypeFilters.length > 1 ? (
           <>
-            <span className="hidden h-7 w-px bg-[rgba(11,20,19,0.08)] sm:block" aria-hidden="true" />
+            <span className="hidden h-7 w-px bg-[var(--md-line-strong)] sm:block" aria-hidden="true" />
             <ShapeFilter label={t("Type")} options={shipmentTypeFilters} value={shipmentTypeFilter} onChange={setShipmentTypeFilter} />
           </>
         ) : null}
@@ -451,7 +460,7 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
                   dir="auto"
                   aria-label={t("Search bookings")}
                   placeholder={t("Search bookings")}
-                  className="h-8 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface)] ps-8 pe-8 text-[12px] shadow-[var(--md-shadow-line)]"
+                  className="h-8 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface)] ps-8 pe-8 text-base shadow-[var(--md-shadow-line)] md:text-[12px]"
                   onChange={(event) => setQuickSearch(event.target.value)}
                 />
                 {quickSearch ? (
@@ -474,6 +483,18 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
                     {searchCriteria.filter(criterionHasValue).length}
                   </span>
                 ) : null}
+              </Button>
+            </div>
+          )}
+          emptyState={(
+            <div className="mx-auto grid max-w-sm place-items-center py-3 text-center">
+              <span className="grid size-9 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]">
+                <Search className="size-4" strokeWidth={1.3} aria-hidden="true" />
+              </span>
+              <p className="mt-3 text-[13px] font-medium text-[var(--md-ink)]">{t("No bookings match this search")}</p>
+              <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Change or clear a filter to see more bookings.")}</p>
+              <Button type="button" variant="outline" className="mt-3 h-8 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface)] px-3 text-[12px] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]" onClick={clearFilters}>
+                {t("Clear filters")}
               </Button>
             </div>
           )}

@@ -15,6 +15,7 @@ import {
 } from "@/components/multideck/quote-search-builder"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { quoteRegisterRecords, type QuoteRegisterRecord } from "@/data/quote-register-data"
+import { Button } from "@/components/ui/button"
 import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
 
@@ -52,6 +53,12 @@ export function QuotesRegisterPage({ navigate }: { navigate: (path: string) => v
   const activeConditionCount = useMemo(() => countActiveQuoteConditions(search), [search])
   const pageCount = Math.max(Math.ceil(filteredQuotes.length / rowsPerPage), 1)
   const paginatedQuotes = filteredQuotes.slice((page - 1) * rowsPerPage, page * rowsPerPage)
+
+  function clearSearch() {
+    setQuickSearch("")
+    setSearch(createEmptyQuoteSearch())
+    setPage(1)
+  }
 
   useEffect(() => setPage(1), [rowsPerPage, search])
   useEffect(() => {
@@ -183,26 +190,28 @@ export function QuotesRegisterPage({ navigate }: { navigate: (path: string) => v
                 dir="auto"
                 aria-label={t("Search quotes")}
                 placeholder={t("Search quotes")}
-                className="h-8 rounded-[var(--md-radius-md)] border-0 bg-white ps-8 pe-8 text-[12px] shadow-[var(--md-shadow-line)] placeholder:text-[var(--md-subtle)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]"
+                className="h-8 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface)] ps-8 pe-8 text-base shadow-[var(--md-shadow-line)] placeholder:text-[var(--md-subtle)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)] md:text-[12px]"
                 onChange={(event) => setQuickSearch(event.target.value)}
               />
               {quickSearch ? (
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="icon"
                   aria-label={t("Clear quick search")}
-                  className="absolute end-1 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] transition-[background,color,transform] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.94]"
+                  className="absolute end-1 top-1/2 size-6 -translate-y-1/2 rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]"
                   onClick={() => setQuickSearch("")}
                 >
                   <X className="size-3.5" strokeWidth={1.4} />
-                </button>
+                </Button>
               ) : null}
             </div>
             <button
               type="button"
               aria-expanded={advancedSearchOpen}
               className={cn(
-                "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[var(--md-radius-md)] px-2.5 text-[12px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,transform] duration-200 hover:bg-white hover:text-[var(--md-ink)] hover:shadow-[var(--md-shadow-line)] active:scale-[0.97]",
-                advancedSearchOpen && "bg-white text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
+                "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[var(--md-radius-md)] px-2.5 text-[12px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,transform] duration-200 hover:bg-[var(--md-surface)] hover:text-[var(--md-ink)] hover:shadow-[var(--md-shadow-line)] active:scale-[0.96] motion-reduce:transform-none",
+                advancedSearchOpen && "bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
               )}
               onClick={() => setAdvancedSearchOpen((current) => !current)}
             >
@@ -219,6 +228,9 @@ export function QuotesRegisterPage({ navigate }: { navigate: (path: string) => v
             </span>
             <p className="mt-3 text-[13px] font-medium text-[var(--md-ink)]">{t("No quotes match this search")}</p>
             <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Change or clear the search to see more quotes.")}</p>
+            <Button type="button" variant="outline" className="mt-3 h-8 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface)] px-3 text-[12px] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]" onClick={clearSearch}>
+              {t("Clear search")}
+            </Button>
           </div>
         )}
       />

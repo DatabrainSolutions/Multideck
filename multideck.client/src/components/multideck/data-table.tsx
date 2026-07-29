@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { ArrowDown, ArrowUp, ArrowUpDown, Eye, EyeOff, GripVertical, Pin, PinOff, RotateCcw, SlidersHorizontal, type LucideIcon } from "lucide-react"
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronUp, Eye, EyeOff, GripVertical, Pin, PinOff, RotateCcw, SlidersHorizontal, type LucideIcon } from "lucide-react"
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -226,6 +226,26 @@ export function DataTable<Row>({
     })
   }
 
+  function moveColumnByStep(columnId: string, step: -1 | 1) {
+    const columnIsPinned = pinned.has(columnId)
+    const groupOrder = orderedColumns
+      .filter((column) => pinned.has(column.id) === columnIsPinned)
+      .map((column) => column.id)
+    const currentIndex = groupOrder.indexOf(columnId)
+    const targetIndex = currentIndex + step
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= groupOrder.length) return
+
+    const nextGroupOrder = [...groupOrder]
+    const [movedColumn] = nextGroupOrder.splice(currentIndex, 1)
+    nextGroupOrder.splice(targetIndex, 0, movedColumn)
+    const groupIds = new Set(groupOrder)
+
+    setOrder((current) => {
+      let nextGroupIndex = 0
+      return current.map((id) => groupIds.has(id) ? nextGroupOrder[nextGroupIndex++] : id)
+    })
+  }
+
   function toggleHidden(column: DataTableColumn<Row>) {
     if (column.canHide === false) return
     setHidden((current) => {
@@ -286,7 +306,7 @@ export function DataTable<Row>({
     setContextMenu({ columnId: column.id, x: left, y: top })
   }
 
-  function startResize(column: DataTableColumn<Row>, event: ReactPointerEvent<HTMLButtonElement>) {
+  function startResize(column: DataTableColumn<Row>, event: ReactPointerEvent<HTMLElement>) {
     event.preventDefault()
     event.stopPropagation()
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -300,6 +320,24 @@ export function DataTable<Row>({
     setResizingId(column.id)
   }
 
+  function resizeColumnFromKeyboard(column: DataTableColumn<Row>, event: React.KeyboardEvent<HTMLElement>) {
+    const min = column.minWidth ?? 84
+    const max = column.maxWidth ?? 480
+    const currentWidth = columnWidth(column)
+    const step = event.shiftKey ? 24 : 8
+    let nextWidth = currentWidth
+
+    if (event.key === "ArrowLeft") nextWidth = currentWidth - step
+    else if (event.key === "ArrowRight") nextWidth = currentWidth + step
+    else if (event.key === "Home") nextWidth = min
+    else if (event.key === "End") nextWidth = max
+    else return
+
+    event.preventDefault()
+    event.stopPropagation()
+    setWidths((current) => ({ ...current, [column.id]: Math.max(min, Math.min(max, nextWidth)) }))
+  }
+
   function stickyStyle(column: DataTableColumn<Row>): CSSProperties | undefined {
     const offset = pinnedOffsets.get(column.id)
     if (offset === undefined) return undefined
@@ -307,7 +345,7 @@ export function DataTable<Row>({
   }
 
   return (
-    <div className={cn("w-full min-w-0 overflow-hidden rounded-[var(--md-radius-xl)] bg-white shadow-[var(--md-shadow-line)]", className)}>
+    <div className={cn("w-full min-w-0 overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]", className)}>
       <div className={cn("flex min-h-10 flex-wrap items-center gap-2 bg-[color-mix(in_srgb,var(--md-surface)_92%,transparent)] px-2 py-1 shadow-[inset_0_-1px_0_rgba(11,20,19,0.05)] sm:flex-nowrap", toolbarLeading ? "justify-between" : "justify-end")}>
         {toolbarLeading ? <div className="flex min-w-0 shrink-0 items-center gap-1">{toolbarLeading}</div> : null}
         <div className="ms-auto flex min-w-0 flex-1 items-center justify-end gap-1.5">
@@ -316,7 +354,7 @@ export function DataTable<Row>({
           <PopoverTrigger asChild>
             <button
               type="button"
-              className="group inline-flex h-8 items-center gap-2 rounded-[var(--md-radius-md)] px-2.5 text-[12px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-white hover:text-[var(--md-ink)] hover:shadow-[var(--md-shadow-line)] active:scale-[0.97]"
+              className="group inline-flex h-8 items-center gap-2 rounded-[var(--md-radius-md)] px-2.5 text-[12px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-surface)] hover:text-[var(--md-ink)] hover:shadow-[var(--md-shadow-line)] active:scale-[0.96] motion-reduce:transform-none"
               aria-label={t(columnsButtonLabel ?? "Manage table columns")}
             >
               <SlidersHorizontal className="size-3.5" strokeWidth={1.45} />
@@ -328,9 +366,9 @@ export function DataTable<Row>({
             <div className="flex items-start justify-between gap-3 px-3 py-2.5">
               <div>
                 <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Table columns")}</p>
-                <p className="mt-0.5 text-[11px] leading-4 text-[var(--md-text)]">{t("Drag to reorder. Right-click a header for quick actions.")}</p>
+                <p className="mt-0.5 text-[11px] leading-4 text-[var(--md-text)]">{t("Drag or use the arrow controls to reorder. Right-click a header for quick actions.")}</p>
               </div>
-              <button type="button" onClick={resetLayout} className="grid size-7 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-subtle)] transition-[background,color,transform] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.94]" aria-label={t("Reset columns")}>
+              <button type="button" onClick={resetLayout} className="grid size-7 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-subtle)] transition-[background,color,transform] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.96] motion-reduce:transform-none" aria-label={t("Reset columns")}>
                 <RotateCcw className="size-3.5" strokeWidth={1.4} />
               </button>
             </div>
@@ -352,10 +390,16 @@ export function DataTable<Row>({
                     >
                       <GripVertical className="size-3.5 shrink-0 text-[var(--md-subtle)]" strokeWidth={1.35} aria-hidden="true" />
                       <span className={cn("min-w-0 flex-1 truncate font-medium text-[var(--md-ink)]", isHidden && "text-[var(--md-subtle)]")}>{t(column.label)}</span>
-                      <button type="button" disabled={column.canPin === false} onClick={() => togglePinned(column)} className={cn("grid size-7 place-items-center rounded-[var(--md-radius-sm)] transition-[background,color,transform] active:scale-[0.92]", isPinned ? "bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)]" : "text-[var(--md-subtle)] hover:bg-white hover:text-[var(--md-ink)]", column.canPin === false && "cursor-not-allowed opacity-25")} aria-label={t(`${isPinned ? "Unpin" : "Pin"} ${column.label} column`)}>
+                      <button type="button" disabled={orderedColumns.filter((candidate) => pinned.has(candidate.id) === isPinned)[0]?.id === column.id} onClick={() => moveColumnByStep(column.id, -1)} className="grid size-7 place-items-center rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] opacity-0 transition-[background,color,opacity,transform] hover:bg-[var(--md-surface)] hover:text-[var(--md-ink)] focus-visible:opacity-100 group-hover:opacity-100 active:scale-[0.96] disabled:pointer-events-none disabled:opacity-20 motion-reduce:transform-none" aria-label={`${t("Move column earlier")}: ${t(column.label)}`}>
+                        <ChevronUp className="size-3.5" strokeWidth={1.4} />
+                      </button>
+                      <button type="button" disabled={orderedColumns.filter((candidate) => pinned.has(candidate.id) === isPinned).at(-1)?.id === column.id} onClick={() => moveColumnByStep(column.id, 1)} className="grid size-7 place-items-center rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] opacity-0 transition-[background,color,opacity,transform] hover:bg-[var(--md-surface)] hover:text-[var(--md-ink)] focus-visible:opacity-100 group-hover:opacity-100 active:scale-[0.96] disabled:pointer-events-none disabled:opacity-20 motion-reduce:transform-none" aria-label={`${t("Move column later")}: ${t(column.label)}`}>
+                        <ChevronDown className="size-3.5" strokeWidth={1.4} />
+                      </button>
+                      <button type="button" disabled={column.canPin === false} onClick={() => togglePinned(column)} className={cn("grid size-7 place-items-center rounded-[var(--md-radius-sm)] transition-[background,color,transform] active:scale-[0.96] motion-reduce:transform-none", isPinned ? "bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)]" : "text-[var(--md-subtle)] hover:bg-[var(--md-surface)] hover:text-[var(--md-ink)]", column.canPin === false && "cursor-not-allowed opacity-25")} aria-label={t(`${isPinned ? "Unpin" : "Pin"} ${column.label} column`)}>
                         {isPinned ? <PinOff className="size-3.5" strokeWidth={1.4} /> : <Pin className="size-3.5" strokeWidth={1.4} />}
                       </button>
-                      <button type="button" disabled={column.canHide === false} onClick={() => toggleHidden(column)} className={cn("grid size-7 place-items-center rounded-[var(--md-radius-sm)] transition-[background,color,transform] active:scale-[0.92]", !isHidden ? "text-[var(--md-ink)]" : "text-[var(--md-subtle)]", column.canHide === false ? "cursor-not-allowed opacity-25" : "hover:bg-white")} aria-label={t(`${isHidden ? "Show" : "Hide"} ${column.label} column`)}>
+                      <button type="button" disabled={column.canHide === false} onClick={() => toggleHidden(column)} className={cn("grid size-7 place-items-center rounded-[var(--md-radius-sm)] transition-[background,color,transform] active:scale-[0.96] motion-reduce:transform-none", !isHidden ? "text-[var(--md-ink)]" : "text-[var(--md-subtle)]", column.canHide === false ? "cursor-not-allowed opacity-25" : "hover:bg-[var(--md-surface)]")} aria-label={t(`${isHidden ? "Show" : "Hide"} ${column.label} column`)}>
                         {isHidden ? <EyeOff className="size-3.5" strokeWidth={1.4} /> : <Eye className="size-3.5" strokeWidth={1.4} />}
                       </button>
                     </motion.div>
@@ -390,7 +434,7 @@ export function DataTable<Row>({
                   onContextMenu={(event) => openColumnContextMenu(column, event)}
                   aria-sort={sort?.id === column.id ? (sort.direction === "asc" ? "ascending" : "descending") : undefined}
                   style={{ width: columnWidth(column), minWidth: columnWidth(column), ...stickyStyle(column) }}
-                  className={cn("group/header relative z-[1] bg-white pe-3 text-[12px] font-medium text-[var(--md-text)] transition-[background,box-shadow,opacity] duration-200", isPinned && "z-[3] bg-[rgba(255,255,255,0.94)] shadow-[2px_0_0_rgba(11,20,19,0.055)] backdrop-blur-xl", draggingId === column.id && "opacity-40", resizingId === column.id && "bg-[var(--md-surface-tint)]", column.headerClassName)}
+                  className={cn("group/header relative z-[1] bg-[var(--md-surface)] pe-3 text-[12px] font-medium text-[var(--md-text)] transition-[background,box-shadow,opacity] duration-200", isPinned && "z-[3] bg-[color-mix(in_srgb,var(--md-surface)_94%,transparent)] backdrop-blur-xl", isPinned && (direction === "rtl" ? "shadow-[-2px_0_0_var(--md-line)]" : "shadow-[2px_0_0_var(--md-line)]"), draggingId === column.id && "opacity-40", resizingId === column.id && "bg-[var(--md-surface-tint)]", column.headerClassName)}
                 >
                   <span className="inline-flex min-w-0 items-center gap-1.5">
                     <GripVertical className="size-3 -ms-1 text-[var(--md-subtle)] opacity-0 transition-opacity group-hover/header:opacity-70" strokeWidth={1.3} aria-hidden="true" />
@@ -403,12 +447,18 @@ export function DataTable<Row>({
                     {isPinned ? <Pin className="size-3 text-[var(--md-accent)]" strokeWidth={1.3} aria-label={t("Pinned column")} /> : null}
                   </span>
                   {column.resizable ? (
-                    <button
-                      type="button"
+                    <span
+                      role="separator"
+                      tabIndex={0}
+                      aria-orientation="vertical"
+                      aria-valuemin={column.minWidth ?? 84}
+                      aria-valuemax={column.maxWidth ?? 480}
+                      aria-valuenow={columnWidth(column)}
                       draggable={false}
                       className={cn("absolute inset-y-0 end-0 z-[5] w-2 cursor-col-resize touch-none outline-none after:absolute after:inset-y-0 after:start-1/2 after:w-px after:-translate-x-1/2 after:bg-[var(--md-accent)] after:opacity-0 after:transition-opacity hover:after:opacity-100 focus-visible:after:opacity-100", resizingId === column.id && "after:opacity-100")}
                       aria-label={t(`Resize ${column.label} column`)}
                       onPointerDown={(event) => startResize(column, event)}
+                      onKeyDown={(event) => resizeColumnFromKeyboard(column, event)}
                     />
                   ) : null}
                 </TableHead>
@@ -429,7 +479,7 @@ export function DataTable<Row>({
                 tabIndex={onRowClick ? 0 : undefined}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
                 onKeyDown={onRowClick ? (event) => {
-                  if (event.key !== "Enter" && event.key !== " ") return
+                  if (event.target !== event.currentTarget || (event.key !== "Enter" && event.key !== " ")) return
                   event.preventDefault()
                   onRowClick(row)
                 } : undefined}
@@ -442,8 +492,9 @@ export function DataTable<Row>({
                       style={{ width: columnWidth(column), minWidth: columnWidth(column), ...stickyStyle(column) }}
                       className={cn(
                         "transition-[background,box-shadow,opacity] duration-200",
-                        isPinned && "z-[2] shadow-[2px_0_0_rgba(11,20,19,0.055)] backdrop-blur-xl",
-                        isPinned && (isSelected ? "bg-[color-mix(in_srgb,var(--md-accent)_8%,rgba(255,255,255,0.94))]" : "bg-[rgba(255,255,255,0.94)]"),
+                        isPinned && "z-[2] backdrop-blur-xl",
+                        isPinned && (direction === "rtl" ? "shadow-[-2px_0_0_var(--md-line)]" : "shadow-[2px_0_0_var(--md-line)]"),
+                        isPinned && (isSelected ? "bg-[color-mix(in_srgb,var(--md-accent)_8%,var(--md-surface))]" : "bg-[color-mix(in_srgb,var(--md-surface)_94%,transparent)]"),
                         column.cellClassName,
                       )}
                     >
@@ -506,7 +557,7 @@ export function DataTable<Row>({
                     }}
                     className={cn("group flex h-9 w-full items-center gap-2.5 rounded-[var(--md-radius-md)] px-2 text-[11.5px] font-medium text-[var(--md-text)] outline-none transition-[background,color,opacity] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:bg-[var(--md-hover)] disabled:cursor-not-allowed disabled:opacity-35", item.active && "bg-[color-mix(in_srgb,var(--md-accent)_9%,transparent)] text-[var(--md-accent)]")}
                   >
-                    <span className={cn("grid size-7 shrink-0 place-items-center rounded-[var(--md-radius-sm)] bg-[var(--md-surface-soft)] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)] transition-colors group-hover:text-[var(--md-ink)]", item.active && "bg-[color-mix(in_srgb,var(--md-accent)_12%,white)] text-[var(--md-accent)]")}>
+                    <span className={cn("grid size-7 shrink-0 place-items-center rounded-[var(--md-radius-sm)] bg-[var(--md-surface-soft)] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)] transition-colors group-hover:text-[var(--md-ink)]", item.active && "bg-[color-mix(in_srgb,var(--md-accent)_12%,var(--md-surface))] text-[var(--md-accent)]")}>
                       <Icon className="size-3.5" strokeWidth={1.4} />
                     </span>
                     <span className="min-w-0 flex-1 text-start">{t(item.label)}</span>
@@ -538,7 +589,7 @@ export function DataTable<Row>({
                     }}
                     className={cn("group flex h-9 w-full items-center gap-2.5 rounded-[var(--md-radius-md)] px-2 text-[11.5px] font-medium text-[var(--md-text)] outline-none transition-[background,color,opacity] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:bg-[var(--md-hover)] disabled:cursor-not-allowed disabled:opacity-35", item.active && "text-[var(--md-accent)]")}
                   >
-                    <span className={cn("grid size-7 shrink-0 place-items-center rounded-[var(--md-radius-sm)] bg-[var(--md-surface-soft)] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)] transition-colors group-hover:text-[var(--md-ink)]", item.active && "bg-[color-mix(in_srgb,var(--md-accent)_12%,white)] text-[var(--md-accent)]")}>
+                    <span className={cn("grid size-7 shrink-0 place-items-center rounded-[var(--md-radius-sm)] bg-[var(--md-surface-soft)] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)] transition-colors group-hover:text-[var(--md-ink)]", item.active && "bg-[color-mix(in_srgb,var(--md-accent)_12%,var(--md-surface))] text-[var(--md-accent)]")}>
                       <Icon className="size-3.5" strokeWidth={1.4} />
                     </span>
                     <span className="min-w-0 flex-1 text-start">{t(item.label)}</span>

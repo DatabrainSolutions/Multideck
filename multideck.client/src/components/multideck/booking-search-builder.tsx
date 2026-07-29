@@ -192,7 +192,7 @@ export function BookingSearchBuilder({
                         placeholder={t(meta.placeholder)}
                         aria-label={t(meta.label)}
                         dir="auto"
-                        className="h-9 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface)] ps-9 text-[13px] shadow-[var(--md-shadow-line)]"
+                        className="h-9 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface)] ps-9 text-base shadow-[var(--md-shadow-line)] md:text-[13px]"
                       />
                     </div>
                   )}

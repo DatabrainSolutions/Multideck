@@ -155,8 +155,8 @@ function MatchControl({ value, onChange, allLabel, anyLabel }: { value: QuoteSea
           type="button"
           aria-pressed={value === option.value}
           className={cn(
-            "h-8 rounded-[var(--md-radius-md)] px-3 text-[12px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:text-[var(--md-ink)] active:scale-[0.98]",
-            value === option.value && "bg-white text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
+            "h-8 rounded-[var(--md-radius-md)] px-3 text-[12px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:text-[var(--md-ink)] active:scale-[0.96] motion-reduce:transform-none",
+            value === option.value && "bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
           )}
           onClick={() => onChange(option.value)}
         >
@@ -252,7 +252,7 @@ export function QuoteSearchBuilder({
                           type="button"
                           variant="ghost"
                           size="icon"
-                          className="size-8 rounded-[var(--md-radius-md)] text-[var(--md-subtle)] hover:bg-white hover:text-[var(--md-red)]"
+                          className="size-8 rounded-[var(--md-radius-md)] text-[var(--md-subtle)] hover:bg-[var(--md-surface)] hover:text-[var(--md-red)]"
                           aria-label={t(`Remove condition group ${groupIndex + 1}`)}
                           onClick={() => removeGroup(group.id)}
                         >
@@ -266,7 +266,7 @@ export function QuoteSearchBuilder({
                     {group.conditions.map((condition, conditionIndex) => {
                       const valueDisabled = condition.operator === "is-empty" || condition.operator === "is-not-empty"
                       return (
-                        <div key={condition.id} className="grid gap-2 rounded-[var(--md-radius-lg)] bg-white p-1.5 shadow-[var(--md-shadow-line)] md:grid-cols-[32px_minmax(180px,1.15fr)_minmax(150px,0.8fr)_minmax(180px,1.4fr)_32px] md:items-center">
+                        <div key={condition.id} className="grid gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-1.5 shadow-[var(--md-shadow-line)] md:grid-cols-[32px_minmax(180px,1.15fr)_minmax(150px,0.8fr)_minmax(180px,1.4fr)_32px] md:items-center">
                           <span className="hidden text-center text-[11px] font-medium tabular-nums text-[var(--md-subtle)] md:block" aria-hidden="true">{conditionIndex + 1}</span>
 
                           <label className="sr-only" htmlFor={`${condition.id}-field`}>{t("Condition field")}</label>
@@ -298,7 +298,7 @@ export function QuoteSearchBuilder({
                               disabled={valueDisabled}
                               dir="auto"
                               placeholder={valueDisabled ? t("No value needed") : t("Enter a value")}
-                              className="h-9 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] ps-9 text-[12px] shadow-[var(--md-shadow-line)] disabled:cursor-default disabled:opacity-60"
+                              className="h-9 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] ps-9 text-base shadow-[var(--md-shadow-line)] disabled:cursor-default disabled:opacity-60 md:text-[12px]"
                               onChange={(event) => updateCondition(group.id, condition.id, { value: event.target.value })}
                             />
                           </div>
@@ -327,7 +327,7 @@ export function QuoteSearchBuilder({
               <RotateCcw className="size-3.5" strokeWidth={1.4} />
               {t("Clear search")}
             </Button>
-            <Button type="button" variant="outline" className="h-9 rounded-[var(--md-radius-lg)] border-0 bg-white px-3 text-[12px] font-medium text-[var(--md-accent)] shadow-[var(--md-shadow-line)]" onClick={addGroup}>
+            <Button type="button" variant="outline" className="h-9 rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-surface)] px-3 text-[12px] font-medium text-[var(--md-accent)] shadow-[var(--md-shadow-line)]" onClick={addGroup}>
               <Plus className="size-3.5" strokeWidth={1.4} />
               {t("Add condition group")}
             </Button>
