@@ -75,6 +75,22 @@ public sealed class UserManagementService(
             users.Select(ToTeamUserDto).ToList());
     }
 
+    public async Task<TeamUserDto> GetCurrentUserAsync(
+        ClaimsPrincipal user,
+        CancellationToken cancellationToken)
+    {
+        var currentUser = await GetCurrentCmpUser(user, trackChanges: false, cancellationToken);
+        if (currentUser is null)
+        {
+            throw new UserCreationException(
+                "User profile is not linked",
+                "Your Supabase account is not linked to a Multideck user profile yet.",
+                StatusCodes.Status403Forbidden);
+        }
+
+        return ToTeamUserDto(currentUser);
+    }
+
     public async Task<CreateUserResponse> CreateUserAsync(CreateUserRequest request, ClaimsPrincipal user, CancellationToken cancellationToken)
     {
         var normalizedEmail = NormalizeEmail(request.Email);

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react"
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react"
 import type { User } from "@supabase/supabase-js"
 import {
   BadgeCheck,
@@ -12,10 +12,12 @@ import {
   Cloud,
   Copy,
   CreditCard,
+  ExternalLink,
   Globe2,
   History,
   KeyRound,
   LifeBuoy,
+  LoaderCircle,
   Mail,
   Megaphone,
   MessageCircle,
@@ -25,6 +27,7 @@ import {
   ReceiptText,
   ShieldCheck,
   Sparkles,
+  TicketCheck,
   Trash2,
   Upload,
   UserRound,
@@ -58,7 +61,9 @@ import {
 import { languageOptions, getLanguageOption } from "@/i18n/languages"
 import { useLanguage } from "@/i18n/language-provider"
 import {
+  ApiSupportTicketError,
   changeApiTeamUserOffice,
+  createApiSupportTicket,
   createApiAuthorizationRole,
   createApiTeamUser,
   deleteApiAuthorizationRole,
@@ -72,6 +77,7 @@ import {
   type ApiTeamRole,
   type ApiTeamUser,
   type ApiTeamUsersResponse,
+  type CreateSupportTicketResponse,
 } from "@/lib/api"
 import { clockDisplayLabelFromMode, clockDisplayLabels, clockDisplayModeFromLabel, readClockDisplayMode, resetAiAgentName, useAiAgentName, writeAiAgentName, writeClockDisplayMode } from "@/lib/user-preferences"
 import { getSupabaseSession, supabase } from "@/lib/supabase"
@@ -2044,41 +2050,218 @@ function DocsTab() {
 }
 
 function SupportTab() {
+  const { t } = useLanguage()
+  const [topic, setTopic] = useState("Workflow question")
+  const [priority, setPriority] = useState("Normal")
+  const [subject, setSubject] = useState("")
+  const [message, setMessage] = useState("")
+  const [formError, setFormError] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [ticketResult, setTicketResult] = useState<CreateSupportTicketResponse | null>(null)
+  const [canStartNewTicket, setCanStartNewTicket] = useState(false)
+  const idempotencyKeyRef = useRef<string | null>(null)
+
+  function getIdempotencyKey() {
+    idempotencyKeyRef.current ??= `support-form-${crypto.randomUUID()}`
+    return idempotencyKeyRef.current
+  }
+
+  async function submitSupportTicket(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (isSubmitting) return
+
+    const trimmedSubject = subject.trim()
+    const trimmedMessage = message.trim()
+
+    if (!trimmedSubject) {
+      setFormError(t("Add a short subject so support can route the request."))
+      document.getElementById("support-subject")?.focus()
+      return
+    }
+
+    if (trimmedMessage.length < 20) {
+      setFormError(t("Add at least 20 characters explaining what happened and what you expected."))
+      document.getElementById("support-message")?.focus()
+      return
+    }
+
+    setFormError(null)
+    setCanStartNewTicket(false)
+    setTicketResult(null)
+    setIsSubmitting(true)
+
+    try {
+      const session = await getSupabaseSession()
+      if (!session) throw new Error(t("Sign in again before creating a support ticket."))
+
+      const result = await createApiSupportTicket(session.access_token, {
+        idempotencyKey: getIdempotencyKey(),
+        topic,
+        priority,
+        title: trimmedSubject,
+        description: trimmedMessage,
+        applicationUrl: window.location.href,
+      })
+
+      setTicketResult(result)
+      setSubject("")
+      setMessage("")
+      idempotencyKeyRef.current = null
+      toast.success(
+        result.duplicate ? t("Ticket already received") : t("Support ticket created"),
+        { description: `${result.ticket.ticketNumber} · ${t("Databrain OS confirmed the ticket.")}` },
+      )
+    } catch (error) {
+      console.error("Support ticket submission failed.", error instanceof ApiSupportTicketError ? error.code : "unknown")
+      if (error instanceof ApiSupportTicketError) {
+        setFormError(t(error.message))
+        setCanStartNewTicket(error.code === "idempotency_conflict")
+      } else {
+        setFormError(error instanceof Error ? error.message : t("Support is temporarily unavailable. Your ticket details are still here; try again."))
+      }
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  function startNewTicket() {
+    idempotencyKeyRef.current = null
+    setCanStartNewTicket(false)
+    setFormError(null)
+    setTicketResult(null)
+  }
+
   return (
     <>
       <SettingsPageHeader
-        eyebrow="Support / Contact support"
-        title="Contact support"
-        description="Send the Multideck team enough operational context to help without slowing your day down."
-        actions={primaryAction("Send request", () => toast.success("Support request sent"))}
+        eyebrow={t("Resources / Support")}
+        title={t("Support")}
+        description={t("Get an answer quickly, or create a support ticket with enough context for the team to act on the first reply.")}
       />
       <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1fr)_310px]">
-        <SettingsPanel title="Request details" description="Include a booking ID or customer name when the issue is workflow-specific.">
-          <SettingsFieldRow label="Topic">
-            <SettingsSelect value="Dexter action review" options={["Dexter action review", "Booking sync issue", "Billing question", "Security concern", "Product feedback"]} />
-          </SettingsFieldRow>
-          <SettingsFieldRow label="Priority">
-            <ChoiceSetting options={["Normal", "High", "Urgent"]} initialValue="High" />
-          </SettingsFieldRow>
-          <SettingsFieldRow label="Message" align="start">
-            <SettingsTextarea defaultValue="Dexter drafted a customer ETA note correctly, but the approval rule did not mention the value threshold. Please review our configuration." />
-          </SettingsFieldRow>
-          <SettingsFieldRow label="Attachment">
-            <div className="flex flex-wrap gap-2">
-              {compactAction("Attach screenshot")}
-              {compactAction("Attach booking log")}
+        <form onSubmit={submitSupportTicket}>
+          <SettingsPanel title={t("Create a support ticket")} description={t("Include a booking ID, customer, or visible error when the issue is workflow-specific.")}>
+            <SettingsFieldRow label={t("Topic")}>
+              <SettingsSelect
+                value={topic}
+                options={["Workflow question", "Booking sync issue", "Billing question", "Security concern", "Product feedback"]}
+                ariaLabel={t("Support topic")}
+                onChange={setTopic}
+              />
+            </SettingsFieldRow>
+            <SettingsFieldRow label={t("Priority")}>
+              <SettingsChoiceGroup
+                options={["Normal", "High", "Urgent"]}
+                value={priority}
+                ariaLabel={t("Support priority")}
+                onChange={setPriority}
+              />
+            </SettingsFieldRow>
+            <SettingsFieldRow label={t("Subject")} labelFor="support-subject">
+              <SettingsInput
+                id="support-subject"
+                value={subject}
+                disabled={isSubmitting}
+                aria-invalid={Boolean(formError && !subject.trim()) || undefined}
+                aria-describedby={formError ? "support-form-error" : undefined}
+                placeholder={t("What needs help?")}
+                onChange={(event) => setSubject(event.target.value)}
+              />
+            </SettingsFieldRow>
+            <SettingsFieldRow
+              label={t("What happened?")}
+              description={t("Describe what you did, what you expected, and what you saw.")}
+              align="start"
+              labelFor="support-message"
+            >
+              <SettingsTextarea
+                id="support-message"
+                value={message}
+                disabled={isSubmitting}
+                aria-invalid={Boolean(formError && message.trim().length < 20) || undefined}
+                aria-describedby={formError ? "support-form-error" : undefined}
+                placeholder={t("Include the booking ID, customer, or error message if you have one.")}
+                onChange={(event) => setMessage(event.target.value)}
+              />
+            </SettingsFieldRow>
+            {ticketResult ? (
+              <div className="mx-5 mt-4 rounded-[var(--md-radius-xl)] bg-[color-mix(in_srgb,var(--md-green)_10%,var(--md-surface))] p-4 text-[var(--md-ink)] shadow-[var(--md-shadow-line)]" role="status" aria-live="polite">
+                <div className="flex items-start gap-3">
+                  <span className="grid size-8 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[color-mix(in_srgb,var(--md-green)_14%,var(--md-surface))] text-[var(--md-green)]">
+                    <TicketCheck className="size-4" strokeWidth={1.5} aria-hidden="true" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-medium">
+                      {ticketResult.duplicate ? t("Ticket already received") : t("Support ticket created")} · <span className="tabular-nums" data-i18n-skip>{ticketResult.ticket.ticketNumber}</span>
+                    </p>
+                    <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">
+                      {ticketResult.duplicate
+                        ? t("No duplicate was created. Your original ticket is still active.")
+                        : t("Databrain OS confirmed the ticket and the support team can now act on it.")}
+                    </p>
+                    {ticketResult.ticket.statusUrl ? (
+                      <a
+                        href={ticketResult.ticket.statusUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-2 inline-flex min-h-8 items-center gap-1.5 text-[12px] font-medium text-[var(--md-accent)] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
+                      >
+                        {t("View ticket status")}
+                        <ExternalLink className="size-3.5" strokeWidth={1.4} aria-hidden="true" />
+                      </a>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+            <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p id="support-form-error" role={formError ? "alert" : "status"} className={cn("text-[12px] leading-5", formError ? "text-[var(--md-red)]" : "text-[var(--md-text)]")}>
+                  {formError ?? t("Your ticket is sent securely to Databrain support. Nothing is marked successful until a ticket number is confirmed.")}
+                </p>
+                {canStartNewTicket ? (
+                  <button
+                    type="button"
+                    className="mt-2 min-h-8 text-[12px] font-medium text-[var(--md-accent)] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
+                    onClick={startNewTicket}
+                  >
+                    {t("Use these details for a new ticket")}
+                  </button>
+                ) : null}
+              </div>
+              <Button
+                type="submit"
+                disabled={isSubmitting}
+                className="h-10 shrink-0 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)]"
+              >
+                {isSubmitting
+                  ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" strokeWidth={1.4} aria-hidden="true" />
+                  : <TicketCheck className="size-3.5" strokeWidth={1.4} aria-hidden="true" />}
+                {isSubmitting ? t("Submitting ticket…") : t("Submit ticket")}
+              </Button>
             </div>
-          </SettingsFieldRow>
-        </SettingsPanel>
-        <SettingsSummaryCard
-          title="Support cover"
-          rows={[
-            ["Plan", "Operations"],
-            ["Response target", "4 working hours"],
-            ["Success manager", "Marta Klein"],
-            ["Open tickets", "1"],
-          ]}
-        />
+          </SettingsPanel>
+        </form>
+        <aside className="space-y-[var(--md-page-stack-gap)] xl:sticky xl:top-[var(--md-page-pad)] xl:self-start">
+          <SettingsSummaryCard
+            title={t("Support cover")}
+            rows={[
+              [t("Plan"), t("Operations")],
+              [t("Response target"), t("4 working hours")],
+              [t("Coverage"), t("Mon–Fri, 08:00–18:00")],
+              [t("Open tickets"), "1"],
+            ]}
+          />
+          <section className="rounded-[var(--md-radius-2xl)] bg-[var(--md-ink)] p-5 text-white shadow-[var(--md-shadow-soft)]">
+            <LifeBuoy className="size-5 text-white/70" strokeWidth={1.3} aria-hidden="true" />
+            <p className="mt-5 text-[15px] font-medium">{t("Security incident?")}</p>
+            <p className="mt-2 text-pretty text-[12px] leading-5 text-white/65">{t("Mark the ticket as urgent. The subject will be routed with security context included.")}</p>
+            <a href="mailto:security@multideck.app" className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-[var(--md-radius-lg)] bg-white/10 px-3 text-[12px] font-medium text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)] transition-[background-color,scale] hover:bg-white/15 active:scale-[0.96] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-white/30 motion-reduce:active:scale-100">
+              {t("Contact security")}
+              <ExternalLink className="size-3.5" strokeWidth={1.4} aria-hidden="true" />
+            </a>
+          </section>
+        </aside>
       </div>
     </>
   )
