@@ -163,12 +163,14 @@ export function SettingsFieldRow({
   children,
   align = "center",
   className,
+  labelFor,
 }: {
   label: string
   description?: string
   children: ReactNode
   align?: "center" | "start"
   className?: string
+  labelFor?: string
 }) {
   return (
     <div
@@ -179,7 +181,11 @@ export function SettingsFieldRow({
       )}
     >
       <div className="min-w-0">
-        <p className="text-[13px] font-medium text-[var(--md-ink)]">{label}</p>
+        {labelFor ? (
+          <label htmlFor={labelFor} className="text-[13px] font-medium text-[var(--md-ink)]">{label}</label>
+        ) : (
+          <p className="text-[13px] font-medium text-[var(--md-ink)]">{label}</p>
+        )}
         {description ? <p className="mt-1 max-w-[260px] text-[12px] leading-5 text-[var(--md-text)]">{description}</p> : null}
       </div>
       <div className="min-w-0">{children}</div>
@@ -372,18 +378,20 @@ export function SettingsChoiceGroup({
   value,
   onChange,
   className,
+  ariaLabel,
 }: {
   options: string[]
   value: string
   onChange?: (value: string) => void
   className?: string
+  ariaLabel?: string
 }) {
   return (
     <ChoiceControl
       options={options}
       value={value}
       onChange={(nextValue) => onChange?.(nextValue)}
-      ariaLabel="Choose an option"
+      ariaLabel={ariaLabel ?? "Choose an option"}
       className={className}
     />
   )
