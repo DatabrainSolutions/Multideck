@@ -1,9 +1,13 @@
 import { createClient } from "npm:@supabase/supabase-js@2.108.2"
 import {
+  buildDatabrainTicketPayload,
+  mapDatabrainFailure,
+  parseConfirmedTicketResponse,
+} from "./contract.ts"
+import {
   cleanString,
   isEmail,
   isPlainObject,
-  normalizeStatusUrl,
   validateSupportTicketRequest,
   type JsonObject,
 } from "./validation.ts"
@@ -51,26 +55,8 @@ function validationError(request: Request, message: string) {
 }
 
 function upstreamError(request: Request, status: number) {
-  if (status === 400) {
-    return validationError(request, "Check the ticket details and try again.")
-  }
-  if (status === 409) {
-    return json(request, {
-      code: "idempotency_conflict",
-      message: "This ticket changed after it first reached support. Start a new ticket to send the updated details.",
-    }, 409)
-  }
-  if (status === 413) {
-    return json(request, {
-      code: "ticket_too_large",
-      message: "Shorten the ticket details and try again.",
-    }, 413)
-  }
-
-  return json(request, {
-    code: "support_service_unavailable",
-    message: "Support is temporarily unavailable. Your ticket details are still here; try again.",
-  }, 503)
+  const failure = mapDatabrainFailure(status)
+  return json(request, failure.body, failure.status)
 }
 
 Deno.serve(async (request) => {
@@ -210,11 +196,21 @@ Deno.serve(async (request) => {
     companyName = cleanString(company?.Company_Name, 180) || null
   }
 
-  const metadata: Record<string, string> = {
-    topic,
-    requestedPriority: normalizedPriority,
-  }
-  if (applicationUrl) metadata.applicationUrl = applicationUrl
+  const databrainPayload = buildDatabrainTicketPayload(
+    {
+      idempotencyKey,
+      topic,
+      title,
+      description,
+      priority: normalizedPriority,
+      applicationUrl,
+    },
+    {
+      name: requesterName,
+      email: requesterEmail,
+      companyName,
+    },
+  )
 
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), 10_000)
@@ -227,20 +223,7 @@ Deno.serve(async (request) => {
         "Content-Type": "application/json",
         "X-Databrain-Webhook-Secret": ticketWebhookSecret,
       },
-      body: JSON.stringify({
-        idempotencyKey,
-        sourceApplication: "multideck",
-        title,
-        description,
-        requester: {
-          name: requesterName,
-          email: requesterEmail,
-        },
-        clientName: companyName,
-        categorySlug: "general",
-        priority: normalizedPriority,
-        metadata,
-      }),
+      body: JSON.stringify(databrainPayload),
       signal: controller.signal,
     })
   } catch (error) {
@@ -274,23 +257,13 @@ Deno.serve(async (request) => {
     return upstreamError(request, upstream.status)
   }
 
-  const ticket = isPlainObject(upstreamBody.ticket) ? upstreamBody.ticket : {}
-  const ticketNumber = cleanString(ticket.ticketNumber, 80)
-  const createdAt = cleanString(ticket.createdAt, 80)
-  if (!ticketNumber || !createdAt) {
+  const confirmed = parseConfirmedTicketResponse(upstreamBody)
+  if (!confirmed) {
     return json(request, {
       code: "support_service_invalid_response",
       message: "Support did not confirm a ticket number. Your ticket details are still here; try again.",
     }, 502)
   }
 
-  return json(request, {
-    ticket: {
-      ticketNumber,
-      status: cleanString(ticket.status, 40) || "open",
-      createdAt,
-      statusUrl: normalizeStatusUrl(ticket.statusUrl),
-    },
-    duplicate: upstreamBody.duplicate === true,
-  }, upstreamBody.duplicate === true ? 200 : 201)
+  return json(request, confirmed.body, confirmed.status)
 })
