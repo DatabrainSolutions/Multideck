@@ -1,0 +1,567 @@
+Calculator Guide
+Clear pricing logic for freight, customs, transport and warehouse operations.
+WHAT THIS GUIDE DOES
+Explains 25 pricing methods in operator language.
+Shows required inputs, calculation behaviour and safeguards.
+Keeps supplier cost and customer sell rules independent by design.
+Provides a common vocabulary for future freight-calculator design.
+Multideck product reference  |  July 2026
+HOW TO USE THIS GUIDE
+Pricing methods should be understandable beforethey are configurable.
+CargoWise-style calculator codes and dense forms are deliberately not reproduced here. Multideck uses a plain-language pricing method, context-aware inputs and a readable outcome explanation. The same underlying commercial capability remains available without requiring operators to memorise internal abbreviations.
+Independent sides
+Supplier cost and customer sell are separate charge lists. Copying creates a new, unlinked charge and requires confirmation.
+One source of truth
+Every calculation names its quantity, value, tariff, rate source and effective date so its result can be audited.
+Explain the outcome
+The result panel shows the formula, selected band or rule, inputs used, rounding and any applied minimum or maximum.
+Prevent unsafe rating
+Missing data, expired tariffs, restricted bands and incompatible units block or warn before a charge is used.
+Standard result panel
+Every calculator should return the calculated amount in the selected currency, the local/base-currency equivalent, the applied exchange rate, a short calculation explanation and a compact audit trail. The product should show the relevant controls only; advanced constraints are disclosed when the selected method needs them.
+CALCULATOR CATALOGUE
+25 plain-language pricing methods
+#
+Pricing method
+Primary use
+01
+Fixed charge
+Core pricing
+02
+Rate per unit
+Core pricing
+03
+Minimum charge
+Core pricing
+04
+Minimum with unit rate
+Core pricing
+05
+Rate bands
+Freight pricing
+06
+Base plus unit rate
+Freight pricing
+07
+Cost-linked sell rule
+Commercial controls
+08
+Tariff adjustment
+Commercial controls
+09
+Customs clearance fee
+Customs
+10
+Percentage uplift
+Commercial controls
+11
+Distance zone pricing
+Transport
+12
+Transport band pricing
+Transport
+13
+First plus additional
+Operations
+14
+Quote note
+Presentation
+15
+Package profile pricing
+Warehouse
+16
+Location profile pricing
+Warehouse
+17
+Time period pricing
+Warehouse
+18
+Percentage bands
+Commercial controls
+19
+Best outcome rate
+Freight pricing
+20
+Disbursement finance charge
+Finance
+21
+Value bands
+Commercial controls
+22
+Volume balance discount
+Contract pricing
+23
+Package count pricing
+Operations
+24
+Release service pricing
+Operations
+25
+Month split storage
+Warehouse
+CALCULATOR 01 / CORE PRICING
+Fixed charge
+Apply one agreed amount regardless of shipment quantity, weight or volume.
+Pricing method
+How it behaves
+One amount
+Result = fixed amount.
+Inputs
+Charge amount
+Charge currency
+Scope: shipment, file or service
+Operator safeguard
+Use only where the charge genuinely does not vary with activity. Show the scope so operators know when it applies.
+Example
+Documentation fee: GBP 45.00 per shipment.
+Multideck interaction pattern
+Choose this pricing method from a plain-language selector. Multideck then reveals only the relevant inputs, validates missing data before rating, and keeps a live explanation beside the result. The charge remains independent on the supplier and customer sides unless an operator explicitly copies it.
+CALCULATOR 02 / CORE PRICING
+Rate per unit
+Price a charge against a selected measurable unit such as kg, cbm, pallet, container or hour.
+Pricing method
+How it behaves
+Quantity x rate
+Result = quantity x unit rate.
+Inputs
+Rate per unit
+Unit of measure
+Quantity source
+Operator safeguard
+The quantity source must be explicit: actual weight, chargeable weight, volume, package count or a user-entered figure.
+Example
+Handling: USD 0.18 per chargeable kg.
+Multideck interaction pattern
+Choose this pricing method from a plain-language selector. Multideck then reveals only the relevant inputs, validates missing data before rating, and keeps a live explanation beside the result. The charge remains independent on the supplier and customer sides unless an operator explicitly copies it.
+CALCULATOR 03 / CORE PRICING
+Minimum charge
+Protect a minimum return when a calculated rate would otherwise be too low.
+Pricing method
+How it behaves
+Floor
+Result = greater of the calculated charge and the minimum.
+Inputs
+Minimum amount
+Applies to: line or shipment
+Currency
+Operator safeguard
+Show whether the minimum is assessed per charge line or across a shipment. Do not silently combine unrelated charges.
+Example
+Origin handling: minimum GBP 85.00 per shipment.
+Multideck interaction pattern
+Choose this pricing method from a plain-language selector. Multideck then reveals only the relevant inputs, validates missing data before rating, and keeps a live explanation beside the result. The charge remains independent on the supplier and customer sides unless an operator explicitly copies it.
+CALCULATOR 04 / CORE PRICING
+Minimum with unit rate
+Apply a rate per unit while retaining a commercial floor.
+Pricing method
+How it behaves
+Rate with floor
+Result = greater of quantity x rate and minimum.
+Inputs
+Rate per unit
+Unit
+Minimum amount
+Quantity source
+Operator safeguard
+The calculation preview should state which outcome won: the unit rate or the minimum.
+Example
+Terminal handling: USD 12.00 per cbm, minimum USD 95.00.
+Multideck interaction pattern
+Choose this pricing method from a plain-language selector. Multideck then reveals only the relevant inputs, validates missing data before rating, and keeps a live explanation beside the result. The charge remains independent on the supplier and customer sides unless an operator explicitly copies it.
+CALCULATOR 05 / FREIGHT PRICING
+Rate bands
+Apply different rates at defined weight, volume, count or distance thresholds.
+Pricing method
+How it behaves
+Tiered scale
+Result follows the matching band, or accumulates across bands when progressive pricing is selected.
+Inputs
+Band thresholds
+Band rates
+Unit
+Band treatment
+Operator safeguard
+Make the band treatment visible: single winning band, progressive bands, inclusive thresholds or best available rate.
+Example
+Air freight: 0-99 kg at USD 4.20; 100-299 kg at USD 3.70; 300+ kg at USD 3.25.
+Multideck interaction pattern
+Choose this pricing method from a plain-language selector. Multideck then reveals only the relevant inputs, validates missing data before rating, and keeps a live explanation beside the result. The charge remains independent on the supplier and customer sides unless an operator explicitly copies it.
+CALCULATOR 06 / FREIGHT PRICING
+Base plus unit rate
+Combine an access or administration amount with a volume-driven charge.
+Pricing method
+How it behaves
+Fixed + variable
+Result = base amount + quantity x unit rate.
+Inputs
+Base amount
+Rate per unit
+Unit
+Quantity source
+Operator safeguard
+Keep the two elements visible in the calculation explanation so an operator can explain the total.
+Example
+Collection: GBP 45.00 base plus GBP 0.12 per kg.
+Multideck interaction pattern
+Choose this pricing method from a plain-language selector. Multideck then reveals only the relevant inputs, validates missing data before rating, and keeps a live explanation beside the result. The charge remains independent on the supplier and customer sides unless an operator explicitly copies it.
+CALCULATOR 07 / COMMERCIAL CONTROLS
+Cost-linked sell rule
+Create a customer sell charge from an independently sourced supplier cost using an agreed commercial rule.
+Pricing method
+How it behaves
+Margin rule
+Sell result = supplier cost adjusted by the selected markup rule.
+Inputs
+Cost source
+Markup percent or amount
+Minimum or maximum
+Rounding rule
+Operator safeguard
+Supplier and customer charges stay independent. The preview must identify the cost used, timing and whether a manual override exists.
+Example
+Carrier surcharge: supplier USD 380.00 plus 12 percent, rounded to nearest USD 1.00.
+Multideck interaction pattern
+Choose this pricing method from a plain-language selector. Multideck then reveals only the relevant inputs, validates missing data before rating, and keeps a live explanation beside the result. The charge remains independent on the supplier and customer sides unless an operator explicitly copies it.
+CALCULATOR 08 / COMMERCIAL CONTROLS
+Tariff adjustment
+Derive a sell or cost rate from a named reference tariff, then apply controlled changes.
+Pricing method
+How it behaves
+Reference uplift
+Result starts with the selected tariff outcome, then applies the approved adjustments in the stated order.
+Inputs
+Reference tariff
+Base adjustment
+Unit adjustment
+Minimum or maximum
+Order of operations
+Operator safeguard
+Show the tariff version, effective date and any missing-match warning. Never calculate silently from an unverified tariff.
+Example
+Contract sea freight plus USD 15.00 per container and a 5 percent fuel uplift.
+Multideck interaction pattern
+Choose this pricing method from a plain-language selector. Multideck then reveals only the relevant inputs, validates missing data before rating, and keeps a live explanation beside the result. The charge remains independent on the supplier and customer sides unless an operator explicitly copies it.
+CALCULATOR 09 / CUSTOMS
+Customs clearance fee
+Price customs work from declaration type, fee structure, number of entries or number of invoice lines.
+Pricing method
+How it behaves
+Declaration logic
+Result follows the selected declaration and line-count structure, subject to its cap.
+Inputs
+Base clearance fee
+Entry type
+Included entries or lines
+Additional-entry rate
+Maximum
+Operator safeguard
+Duties and taxes are separate from the service fee. Show the chosen declaration type and country-specific availability.
+Example
+Import clearance: GBP 68.00 including one entry, GBP 14.00 per additional line, capped at GBP 180.00.
+Multideck interaction pattern
+Choose this pricing method from a plain-language selector. Multideck then reveals only the relevant inputs, validates missing data before rating, and keeps a live explanation beside the result. The charge remains independent on the supplier and customer sides unless an operator explicitly copies it.
+CALCULATOR 10 / COMMERCIAL CONTROLS
+Percentage uplift
+Apply a percentage to a defined base such as selected charges, goods value, insured value or customs value.
+Pricing method
+How it behaves
+Percent of value
+Result = selected base x percentage, subject to the chosen floor or cap.
+Inputs
+Percentage
+Calculation base
+Minimum or maximum
+Included charge scope
+Operator safeguard
+The calculation explanation must name every included amount. Operators should never have to infer the percentage base.
+Example
+Cargo insurance: 0.38 percent of declared goods value, minimum GBP 25.00.
+Multideck interaction pattern
+Choose this pricing method from a plain-language selector. Multideck then reveals only the relevant inputs, validates missing data before rating, and keeps a live explanation beside the result. The charge remains independent on the supplier and customer sides unless an operator explicitly copies it.
+CALCULATOR 11 / TRANSPORT
+Distance zone pricing
+Price cartage using origin and destination zones, distance, equipment and optional volumetric conversion.
+Pricing method
+How it behaves
+Zone + distance
+Result uses the matching zone pair and the selected distance or quantity bands.
+Inputs
+Origin and destination zones
+Distance source
+Vehicle or equipment
+Base, bands and minimum
+Operator safeguard
+Identify the route and distance source in the result. A fallback zone must be explicit rather than hidden.
+Example
+Bristol to London zone: GBP 95.00 base plus GBP 1.20 per road mile after 35 miles.
+Multideck interaction pattern
+Choose this pricing method from a plain-language selector. Multideck then reveals only the relevant inputs, validates missing data before rating, and keeps a live explanation beside the result. The charge remains independent on the supplier and customer sides unless an operator explicitly copies it.
+CALCULATOR 12 / TRANSPORT
+Transport band pricing
+Apply freight or transport rates by a measure such as chargeable weight, cbm, packages or equipment count.
+Pricing method
+How it behaves
+Mode-aware bands
+Result follows the applicable transport band and its stated treatment.
+Inputs
+Transport mode
+Measure source
+Bands
+Minimum, maximum and restrictions
+Operator safeguard
+Use warnings for out-of-range values, restricted bands and disagreement between rated and invoiced measures.
+Example
+LCL freight by cbm with an origin-port restriction.
+Multideck interaction pattern
+Choose this pricing method from a plain-language selector. Multideck then reveals only the relevant inputs, validates missing data before rating, and keeps a live explanation beside the result. The charge remains independent on the supplier and customer sides unless an operator explicitly copies it.
+CALCULATOR 13 / OPERATIONS
+First plus additional
+Charge a different rate for the first item and each additional item.
+Pricing method
+How it behaves
+First item + extras
+Result = first-item amount + max(item count - 1, 0) x additional-item amount.
+Inputs
+First-item amount
+Additional-item amount
+Item count
+Item definition
+Operator safeguard
+Define the counted item clearly: consignment, document, line, pallet or package.
+Example
+Delivery booking: GBP 18.00 first booking plus GBP 6.00 per additional booking.
+Multideck interaction pattern
+Choose this pricing method from a plain-language selector. Multideck then reveals only the relevant inputs, validates missing data before rating, and keeps a live explanation beside the result. The charge remains independent on the supplier and customer sides unless an operator explicitly copies it.
+CALCULATOR 14 / PRESENTATION
+Quote note
+Add a controlled explanatory note and optional amount to a customer quote without pretending it is an operational cost.
+Pricing method
+How it behaves
+Text + amount
+Result adds the approved text line and optional amount to the selected quote output.
+Inputs
+Customer-facing description
+Optional amount
+Visibility setting
+Operator safeguard
+Clearly distinguish a presentation note from a calculated charge. Notes should not create supplier cost or margin automatically.
+Example
+Optional weekend delivery cover - GBP 65.00.
+Multideck interaction pattern
+Choose this pricing method from a plain-language selector. Multideck then reveals only the relevant inputs, validates missing data before rating, and keeps a live explanation beside the result. The charge remains independent on the supplier and customer sides unless an operator explicitly copies it.
+CALCULATOR 15 / WAREHOUSE
+Package profile pricing
+Apply warehouse handling rates by package profile, such as full pallet, carton, case or loose unit.
+Pricing method
+How it behaves
+Pack-aware
+Result converts the ordered quantity through the approved package hierarchy and applies the matching profile rates.
+Inputs
+Package profile
+Conversion hierarchy
+Rate per profile
+Quantity source
+Operator safeguard
+Show the conversion path and any remainder so the result can be checked quickly on the warehouse floor.
+Example
+Pick: GBP 2.10 per full pallet, GBP 0.34 per carton and GBP 0.08 per loose unit.
+Multideck interaction pattern
+Choose this pricing method from a plain-language selector. Multideck then reveals only the relevant inputs, validates missing data before rating, and keeps a live explanation beside the result. The charge remains independent on the supplier and customer sides unless an operator explicitly copies it.
+CALCULATOR 16 / WAREHOUSE
+Location profile pricing
+Apply a charge based on a warehouse location profile, regardless of the product held there.
+Pricing method
+How it behaves
+Location-aware
+Result charges each qualifying location once for the configured billing period.
+Inputs
+Location profile
+Rate
+Billing period
+Occupancy rule
+Operator safeguard
+Avoid double counting mixed-product locations. The guide should state whether a location was active during the period.
+Example
+Temperature-controlled bay: GBP 14.00 per occupied location per week.
+Multideck interaction pattern
+Choose this pricing method from a plain-language selector. Multideck then reveals only the relevant inputs, validates missing data before rating, and keeps a live explanation beside the result. The charge remains independent on the supplier and customer sides unless an operator explicitly copies it.
+CALCULATOR 17 / WAREHOUSE
+Time period pricing
+Apply time-based storage or service charges by day, week, hour or another agreed period.
+Pricing method
+How it behaves
+Storage time
+Result uses elapsed eligible time x the applicable rate or band.
+Inputs
+Start and end event
+Time unit
+Bands
+Calendar exclusions
+Operator safeguard
+State which events start and stop the clock, and whether weekends and public holidays are excluded.
+Example
+Storage: GBP 0.42 per pallet per day after two free days, excluding Sundays.
+Multideck interaction pattern
+Choose this pricing method from a plain-language selector. Multideck then reveals only the relevant inputs, validates missing data before rating, and keeps a live explanation beside the result. The charge remains independent on the supplier and customer sides unless an operator explicitly copies it.
+CALCULATOR 18 / COMMERCIAL CONTROLS
+Percentage bands
+Apply different percentage rules at defined value, weight or volume thresholds.
+Pricing method
+How it behaves
+Tiered percent
+Result applies the percentage associated with the matching or progressive band.
+Inputs
+Break thresholds
+Percentages
+Calculation base
+Target charge or group
+Operator safeguard
+Show whether bands are based on values or measures, and list the charges or groups affected.
+Example
+Hazardous-goods supplement: 8 percent under GBP 2,000 value, 5 percent at GBP 2,000 and above.
+Multideck interaction pattern
+Choose this pricing method from a plain-language selector. Multideck then reveals only the relevant inputs, validates missing data before rating, and keeps a live explanation beside the result. The charge remains independent on the supplier and customer sides unless an operator explicitly copies it.
+CALCULATOR 19 / FREIGHT PRICING
+Best outcome rate
+Select the highest outcome from independently calculated minimum, weight, volume and fixed-price rules.
+Pricing method
+How it behaves
+Highest charge wins
+Result = highest eligible outcome among the configured charge tests.
+Inputs
+Minimum rate
+Weight rate
+Volume rate
+Flat amount
+Multiples
+Operator safeguard
+Show every candidate calculation and clearly identify the winning one. Do not hide a lower alternative.
+Example
+Air handling: maximum of GBP 60.00 minimum, GBP 0.35/kg, GBP 85.00/cbm or GBP 45.00 flat.
+Multideck interaction pattern
+Choose this pricing method from a plain-language selector. Multideck then reveals only the relevant inputs, validates missing data before rating, and keeps a live explanation beside the result. The charge remains independent on the supplier and customer sides unless an operator explicitly copies it.
+CALCULATOR 20 / FINANCE
+Disbursement finance charge
+Calculate a finance charge for duties, taxes or other disbursements funded before customer settlement.
+Pricing method
+How it behaves
+Time + rate
+Result = eligible amount x effective annual rate x eligible days / 365.
+Inputs
+Prime rate
+Uplift
+Effective annual rate
+Credit terms
+Eligible days
+Target amount
+Operator safeguard
+Use an approved finance-rate source and show the date, credit terms and whether only overdue days are included.
+Example
+Duty advance: 9.5 percent annual rate over 21 eligible days.
+Multideck interaction pattern
+Choose this pricing method from a plain-language selector. Multideck then reveals only the relevant inputs, validates missing data before rating, and keeps a live explanation beside the result. The charge remains independent on the supplier and customer sides unless an operator explicitly copies it.
+CALCULATOR 21 / COMMERCIAL CONTROLS
+Value bands
+Apply rate bands based on a declared financial value such as goods, insurance, customs or invoice value.
+Pricing method
+How it behaves
+Value-driven scale
+Result uses the selected value source and its matching band.
+Inputs
+Value source
+Breaks
+Rates
+Minimum or maximum
+Operator safeguard
+The value source must be versioned and visible. Warn when the selected value has not been supplied or is stale.
+Example
+Insurance administration: GBP 18.00 below GBP 10,000 goods value; GBP 32.00 at GBP 10,000 and above.
+Multideck interaction pattern
+Choose this pricing method from a plain-language selector. Multideck then reveals only the relevant inputs, validates missing data before rating, and keeps a live explanation beside the result. The charge remains independent on the supplier and customer sides unless an operator explicitly copies it.
+CALCULATOR 22 / CONTRACT PRICING
+Volume balance discount
+Apply an agreed discount when cumulative contracted volume reaches a defined performance threshold.
+Pricing method
+How it behaves
+Period performance
+Result uses the achieved average or total contracted volume to determine whether the discount is eligible.
+Inputs
+Contract
+Period
+Pivot volume
+Discount rate
+Eligible jobs
+Operator safeguard
+Show the contract period, contributing shipments and whether the discount is provisional or final.
+Example
+ULD air freight discount becomes eligible once monthly average chargeable weight reaches 1,500 kg.
+Multideck interaction pattern
+Choose this pricing method from a plain-language selector. Multideck then reveals only the relevant inputs, validates missing data before rating, and keeps a live explanation beside the result. The charge remains independent on the supplier and customer sides unless an operator explicitly copies it.
+CALCULATOR 23 / OPERATIONS
+Package count pricing
+Combine a base amount, rate per kg, first-package amount and additional-package amount.
+Pricing method
+How it behaves
+Count + weight
+Result = base + weight element + first package + additional packages.
+Inputs
+Base amount
+Rate per kg
+First-package amount
+Additional-package amount
+Weight and count
+Operator safeguard
+Display each component in the result so users can check the selected count and weight sources.
+Example
+Security screening: GBP 12.00 base, GBP 0.03/kg and GBP 1.50 per package after the first.
+Multideck interaction pattern
+Choose this pricing method from a plain-language selector. Multideck then reveals only the relevant inputs, validates missing data before rating, and keeps a live explanation beside the result. The charge remains independent on the supplier and customer sides unless an operator explicitly copies it.
+CALCULATOR 24 / OPERATIONS
+Release service pricing
+Apply an amount based on the release or collection service requested.
+Pricing method
+How it behaves
+Release type
+Result uses the rate assigned to the selected release service.
+Inputs
+Release service
+Rate
+Eligibility conditions
+Operator safeguard
+Only show release services that are valid for the shipment, carrier and origin or destination process.
+Example
+Express cargo release: GBP 35.00; standard release: GBP 15.00.
+Multideck interaction pattern
+Choose this pricing method from a plain-language selector. Multideck then reveals only the relevant inputs, validates missing data before rating, and keeps a live explanation beside the result. The charge remains independent on the supplier and customer sides unless an operator explicitly copies it.
+CALCULATOR 25 / WAREHOUSE
+Month split storage
+Use different storage rates before and after a defined point in the billing month.
+Pricing method
+How it behaves
+Date threshold
+Result divides eligible storage time across the configured calendar threshold and applies each rate.
+Inputs
+Split day
+Rate before split
+Rate after split
+Storage events
+Operator safeguard
+Show the exact date split and the days charged at each rate. This must be tied to the warehouse billing policy.
+Example
+Pallet storage: GBP 0.38/day through day 14, then GBP 0.27/day for the remainder of the month.
+Multideck interaction pattern
+Choose this pricing method from a plain-language selector. Multideck then reveals only the relevant inputs, validates missing data before rating, and keeps a live explanation beside the result. The charge remains independent on the supplier and customer sides unless an operator explicitly copies it.
+MODELLING STANDARDS
+What every Multideck calculator must carry
+Context
+Organisation, legal entity, branch, trade lane, service, mode, equipment and the charge side where relevant.
+Commercial terms
+Currency, tax treatment, rounding, minimum, maximum, effective dates, rate owner and approval status.
+Calculation basis
+The precise source of weight, volume, distance, time, value, count, tariff or supplier cost.
+Outcome
+Calculated amount, local/base amount, exchange rate, formula explanation and the winning band or constraint.
+Audit
+Who created or changed the rule, when it was effective, which inputs were used and why any override occurred.
+Design direction
+This guide is a product foundation, not a request to expose every option at once. Multideck should introduce calculator methods progressively, prioritising the freight, transport and commercial controls that operators use most. Each new method should reuse the same result panel, audit contract and independent supplier/customer model.
