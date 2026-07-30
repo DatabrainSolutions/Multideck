@@ -1,5 +1,4 @@
-import { apiFetch } from "@/lib/api"
-import { getSupabaseSession } from "@/lib/supabase"
+import { callCrmRpc, CrmSupabaseError } from "@/lib/crm-supabase"
 import type { StatusTone } from "@/data/multideck-data"
 
 export type ApiPipelineStage = {
@@ -69,114 +68,101 @@ export type CreateLeadField = {
   activeOptions?: string[]
 }
 
-export class PipelineApiError extends Error {}
+export class PipelineApiError extends CrmSupabaseError {}
 
-async function readPipelineResponse<T>(response: Response, fallback: string) {
-  if (response.ok) return response.json() as Promise<T>
-  throw new PipelineApiError((await readPipelineError(response)) || fallback)
-}
-
-/** Delete returns 204, so there is no body to parse on the way through. */
-async function readEmptyPipelineResponse(response: Response, fallback: string) {
-  if (response.ok) return
-  throw new PipelineApiError((await readPipelineError(response)) || fallback)
-}
-
-async function readPipelineError(response: Response) {
-  let message = `${response.status} ${response.statusText}`.trim()
-  try {
-    const problem = await response.json()
-    message = problem.detail || problem.title || message
-  } catch {
-    // Keep the HTTP status fallback for non-JSON failures.
-  }
-  return message
-}
-
-async function authorizedPipelineRequest(path: string, init: RequestInit = {}) {
-  const session = await getSupabaseSession()
-  if (!session?.access_token) throw new PipelineApiError("Sign in again to manage pipeline settings.")
-
-  try {
-    return await apiFetch(path, {
-      ...init,
-      headers: {
-        ...(init.body ? { "Content-Type": "application/json" } : {}),
-        Authorization: `Bearer ${session.access_token}`,
-      },
-    })
-  } catch (error) {
-    throw new PipelineApiError(
-      "The CRM service could not be reached. Check that the local API is running and try again.",
-      { cause: error },
-    )
-  }
+async function mutatePipelineSettings<T>(
+  action: string,
+  id: string | null,
+  payload: unknown,
+  fallback: string,
+) {
+  return callCrmRpc<T>(
+    "multideck_crm_mutate_pipeline_settings",
+    { p_action: action, p_id: id, p_payload: payload },
+    fallback,
+    "Sign in again to manage pipeline settings.",
+    action === "delete_pipeline" || action === "delete_field",
+  )
 }
 
 export async function getPipelineSettings() {
-  const response = await authorizedPipelineRequest("/api/v1/crm/pipeline-settings")
-  return readPipelineResponse<ApiPipelineSettings>(response, "We could not load pipeline settings.")
+  return callCrmRpc<ApiPipelineSettings>(
+    "multideck_crm_pipeline_settings",
+    undefined,
+    "We could not load pipeline settings.",
+    "Sign in again to manage pipeline settings.",
+  )
 }
 
 export async function createPipeline(pipeline: SavePipeline) {
-  const response = await authorizedPipelineRequest("/api/v1/crm/pipeline-settings/pipelines", {
-    method: "POST",
-    body: JSON.stringify(pipeline),
-  })
-  return readPipelineResponse<ApiPipeline>(response, "We could not create this pipeline.")
+  return mutatePipelineSettings<ApiPipeline>(
+    "create_pipeline",
+    null,
+    pipeline,
+    "We could not create this pipeline.",
+  )
 }
 
 export async function savePipeline(pipelineId: string, pipeline: SavePipeline) {
-  const response = await authorizedPipelineRequest(`/api/v1/crm/pipeline-settings/pipelines/${encodeURIComponent(pipelineId)}`, {
-    method: "PUT",
-    body: JSON.stringify(pipeline),
-  })
-  return readPipelineResponse<ApiPipeline>(response, "We could not save this pipeline.")
+  return mutatePipelineSettings<ApiPipeline>(
+    "save_pipeline",
+    pipelineId,
+    pipeline,
+    "We could not save this pipeline.",
+  )
 }
 
 export async function deletePipeline(pipelineId: string) {
-  const response = await authorizedPipelineRequest(`/api/v1/crm/pipeline-settings/pipelines/${encodeURIComponent(pipelineId)}`, {
-    method: "DELETE",
-  })
-  return readEmptyPipelineResponse(response, "We could not delete this pipeline.")
+  await mutatePipelineSettings<null>(
+    "delete_pipeline",
+    pipelineId,
+    null,
+    "We could not delete this pipeline.",
+  )
 }
 
 /** The workspace's pipeline order. The list has to name every saved pipeline, first to last. */
 export async function reorderPipelines(pipelineIds: string[]) {
-  const response = await authorizedPipelineRequest("/api/v1/crm/pipeline-settings/pipelines/order", {
-    method: "PUT",
-    body: JSON.stringify({ pipelineIds }),
-  })
-  return readPipelineResponse<ApiPipeline[]>(response, "We could not save the pipeline order.")
+  return mutatePipelineSettings<ApiPipeline[]>(
+    "reorder_pipelines",
+    null,
+    pipelineIds,
+    "We could not save the pipeline order.",
+  )
 }
 
 export async function createLeadField(field: CreateLeadField) {
-  const response = await authorizedPipelineRequest("/api/v1/crm/pipeline-settings/fields", {
-    method: "POST",
-    body: JSON.stringify(field),
-  })
-  return readPipelineResponse<ApiLeadField>(response, "We could not create this lead field.")
+  return mutatePipelineSettings<ApiLeadField>(
+    "create_field",
+    null,
+    field,
+    "We could not create this lead field.",
+  )
 }
 
 export async function saveLeadField(fieldId: string, field: SaveLeadField) {
-  const response = await authorizedPipelineRequest(`/api/v1/crm/pipeline-settings/fields/${encodeURIComponent(fieldId)}`, {
-    method: "PUT",
-    body: JSON.stringify(field),
-  })
-  return readPipelineResponse<ApiLeadField>(response, "We could not save this lead field.")
+  return mutatePipelineSettings<ApiLeadField>(
+    "save_field",
+    fieldId,
+    field,
+    "We could not save this lead field.",
+  )
 }
 
 export async function deleteLeadField(fieldId: string) {
-  const response = await authorizedPipelineRequest(`/api/v1/crm/pipeline-settings/fields/${encodeURIComponent(fieldId)}`, {
-    method: "DELETE",
-  })
-  return readEmptyPipelineResponse(response, "We could not delete this lead field.")
+  await mutatePipelineSettings<null>(
+    "delete_field",
+    fieldId,
+    null,
+    "We could not delete this lead field.",
+  )
 }
 
 export async function reorderLeadFields(fieldIds: string[]) {
-  const response = await authorizedPipelineRequest("/api/v1/crm/pipeline-settings/fields/order", {
-    method: "PUT",
-    body: JSON.stringify({ fieldIds }),
-  })
-  return readPipelineResponse<ApiLeadField[]>(response, "We could not save the field order.")
+  return mutatePipelineSettings<ApiLeadField[]>(
+    "reorder_fields",
+    null,
+    fieldIds,
+    "We could not save the field order.",
+  )
 }
