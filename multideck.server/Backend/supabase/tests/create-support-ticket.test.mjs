@@ -5,6 +5,11 @@ import {
   normalizeStatusUrl,
   validateSupportTicketRequest,
 } from "../functions/create-support-ticket/validation.ts"
+import {
+  buildDatabrainTicketPayload,
+  mapDatabrainFailure,
+  parseConfirmedTicketResponse,
+} from "../functions/create-support-ticket/contract.ts"
 
 const validRequest = {
   idempotencyKey: "support-form-stable-key",
@@ -69,4 +74,104 @@ test("only returns HTTPS ticket status links", () => {
   )
   assert.equal(normalizeStatusUrl("http://example.com/ticket"), null)
   assert.equal(normalizeStatusUrl("javascript:alert(1)"), null)
+})
+
+test("maps the authenticated requester and keeps credentials out of the Databrain payload", () => {
+  const normalized = validateSupportTicketRequest(validRequest)
+  assert.ok(normalized.value)
+
+  const payload = buildDatabrainTicketPayload(normalized.value, {
+    name: "Alex Operator",
+    email: "alex@example.com",
+    companyName: "Example Logistics",
+  })
+
+  assert.deepEqual(payload, {
+    idempotencyKey: "support-form-stable-key",
+    sourceApplication: "multideck",
+    title: "Cannot complete the booking",
+    description: "The Continue button stays disabled after adding cargo.",
+    requester: {
+      name: "Alex Operator",
+      email: "alex@example.com",
+    },
+    clientName: "Example Logistics",
+    categorySlug: "general",
+    priority: "medium",
+    metadata: {
+      topic: "Security concern",
+      requestedPriority: "medium",
+      applicationUrl: "https://dev.multideck.app/settings?tab=support",
+    },
+  })
+
+  const serialized = JSON.stringify(payload).toLowerCase()
+  assert.equal(serialized.includes("secret"), false)
+  assert.equal(serialized.includes("authorization"), false)
+  assert.equal(serialized.includes("cookie"), false)
+})
+
+test("keeps the stable idempotency key on every mapping", () => {
+  const normalized = validateSupportTicketRequest(validRequest)
+  assert.ok(normalized.value)
+  const requester = {
+    name: "Alex Operator",
+    email: "alex@example.com",
+    companyName: "Example Logistics",
+  }
+
+  assert.equal(
+    buildDatabrainTicketPayload(normalized.value, requester).idempotencyKey,
+    buildDatabrainTicketPayload(normalized.value, requester).idempotencyKey,
+  )
+})
+
+test("maps upstream validation, configuration, conflict, size, and availability failures", () => {
+  assert.deepEqual(mapDatabrainFailure(400), {
+    status: 400,
+    body: {
+      code: "validation_error",
+      message: "Check the ticket details and try again.",
+    },
+  })
+  assert.equal(mapDatabrainFailure(401).status, 503)
+  assert.equal(mapDatabrainFailure(409).body.code, "idempotency_conflict")
+  assert.equal(mapDatabrainFailure(413).body.code, "ticket_too_large")
+  assert.equal(mapDatabrainFailure(500).status, 503)
+  assert.equal(mapDatabrainFailure(502).status, 503)
+})
+
+test("returns only confirmed success and preserves duplicate responses", () => {
+  const created = parseConfirmedTicketResponse({
+    ticket: {
+      ticketNumber: "TK-2048",
+      status: "open",
+      createdAt: "2026-07-30T10:00:00Z",
+      statusUrl: "https://os.databrain.solutions/ticket-status/example",
+    },
+    duplicate: false,
+  })
+  assert.equal(created.status, 201)
+  assert.equal(created.body.ticket.ticketNumber, "TK-2048")
+  assert.equal(created.body.duplicate, false)
+
+  const duplicate = parseConfirmedTicketResponse({
+    ticket: {
+      ticketNumber: "TK-2048",
+      status: "open",
+      createdAt: "2026-07-30T10:00:00Z",
+      statusUrl: null,
+    },
+    duplicate: true,
+  })
+  assert.equal(duplicate.status, 200)
+  assert.equal(duplicate.body.duplicate, true)
+
+  assert.equal(parseConfirmedTicketResponse({
+    ticket: {
+      status: "open",
+      createdAt: "2026-07-30T10:00:00Z",
+    },
+    duplicate: false,
+  }), null)
 })
