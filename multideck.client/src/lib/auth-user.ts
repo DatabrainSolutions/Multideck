@@ -6,6 +6,7 @@ export type AuthUserSummary = {
   email: string | null
   initials: string
   profilePhoto: ApiTeamUser["profilePhoto"]
+  profilePhotoUrl: string | null
   actorType: "internal" | "customer" | "unknown"
   organisations: { id: string; name: string; canManageWarehouseUsers?: boolean }[]
   permissions: string[]
@@ -43,6 +44,7 @@ export function summarizeAuthUser(user: User, profile?: ApiTeamUser | null): Aut
     email,
     initials: makeInitials(name ?? email),
     profilePhoto: profile?.profilePhoto ?? null,
+    profilePhotoUrl: null,
     actorType: profile?.actorType ?? "unknown",
     organisations: profile?.organisations ?? [],
     permissions: profile?.permissions ?? [],

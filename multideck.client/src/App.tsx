@@ -10,7 +10,7 @@ import { mdMotion } from "@/lib/motion"
 import { rememberAuthReturnPath, takeAuthReturnPath } from "@/lib/auth-routing"
 import { summarizeAuthUser, type AuthUserSummary } from "@/lib/auth-user"
 import { getApiAuthSession } from "@/lib/api"
-import type { UserProfilePhoto } from "@/lib/profile-photo"
+import { createProfilePhotoSignedUrl, loadCurrentUserProfilePhoto, type UserProfilePhoto } from "@/lib/profile-photo"
 import { isSupabaseConfigured, supabase } from "@/lib/supabase"
 
 const OverviewPage = lazy(() => import("@/pages/overview-page").then((module) => ({ default: module.OverviewPage })))
@@ -164,14 +164,23 @@ function RouteFallback() {
   )
 }
 
+function preloadImage(url: string) {
+  return new Promise<void>((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => resolve()
+    image.onerror = () => reject(new Error("The profile photo could not be preloaded."))
+    image.src = url
+  })
+}
+
 export default function App() {
   const [route, setRoute] = useState(getRoute)
   const [authStatus, setAuthStatus] = useState<AuthStatus>(isSupabaseConfigured ? "checking" : "unauthenticated")
   const [currentUser, setCurrentUser] = useState<AuthUserSummary | null>(null)
   const isLocalNavigationLab = import.meta.env.DEV && (route === "/playground/navigation" || route === "/settings")
   const isPasswordRecoveryRoute = route === "/auth" && new URLSearchParams(window.location.search).get("mode") === "reset-password"
-  const handleProfilePhotoChange = useCallback((profilePhoto: UserProfilePhoto | null) => {
-    setCurrentUser((user) => user ? { ...user, profilePhoto } : user)
+  const handleProfilePhotoChange = useCallback((profilePhoto: UserProfilePhoto | null, profilePhotoUrl: string | null) => {
+    setCurrentUser((user) => user ? { ...user, profilePhoto, profilePhotoUrl } : user)
   }, [])
 
   useEffect(() => {
@@ -203,14 +212,37 @@ export default function App() {
       }
 
       setAuthStatus("checking")
-      getApiAuthSession(session.access_token).then((apiSession) => {
+      Promise.allSettled([
+        getApiAuthSession(session.access_token),
+        loadCurrentUserProfilePhoto(),
+      ]).then(async ([apiSessionResult, profilePhotoResult]) => {
         if (cancelled || requestId !== sessionRequest) return
-        setCurrentUser(summarizeAuthUser(session.user, apiSession.profile))
-        setAuthStatus("authenticated")
-      }).catch((error) => {
+
+        if (apiSessionResult.status === "rejected") {
+          console.error("The application profile could not be loaded.", apiSessionResult.reason)
+        }
+        if (profilePhotoResult.status === "rejected") {
+          console.error("The profile photo metadata could not be loaded.", profilePhotoResult.reason)
+        }
+
+        const apiProfile = apiSessionResult.status === "fulfilled" ? apiSessionResult.value.profile : null
+        const nextUser = summarizeAuthUser(session.user, apiProfile)
+        if (profilePhotoResult.status === "fulfilled") {
+          nextUser.profilePhoto = profilePhotoResult.value
+        }
+
+        if (nextUser.profilePhoto) {
+          try {
+            const signedUrl = await createProfilePhotoSignedUrl(nextUser.profilePhoto)
+            await preloadImage(signedUrl)
+            nextUser.profilePhotoUrl = signedUrl
+          } catch (error) {
+            console.error("The profile photo preview could not be prepared.", error)
+          }
+        }
+
         if (cancelled || requestId !== sessionRequest) return
-        console.error("The application profile could not be loaded.", error)
-        setCurrentUser(summarizeAuthUser(session.user))
+        setCurrentUser(nextUser)
         setAuthStatus("authenticated")
       })
     }
