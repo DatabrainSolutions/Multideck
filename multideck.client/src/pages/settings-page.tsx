@@ -86,7 +86,6 @@ import { languageOptions, getLanguageOption } from "@/i18n/languages"
 import { useLanguage } from "@/i18n/language-provider"
 import {
   changeApiTeamUserOffice,
-  createApiSupportTicket,
   createApiAuthorizationRole,
   createApiTeamUser,
   deleteApiAuthorizationRole,
@@ -96,15 +95,18 @@ import {
   updateApiCurrentUserProfile,
   updateApiRolePermissions,
   updateApiUserRoles,
-  ApiSupportTicketError,
   type ApiAuthorizationRole,
   type ApiAuthorizationState,
   type ApiPermission,
   type ApiTeamRole,
   type ApiTeamUser,
   type ApiTeamUsersResponse,
-  type CreateSupportTicketResponse,
 } from "@/lib/api"
+import {
+  createSupportTicket,
+  SupportTicketError,
+  type CreateSupportTicketResponse,
+} from "@/lib/support-ticket"
 import { clockDisplayLabelFromMode, clockDisplayLabels, clockDisplayModeFromLabel, readClockDisplayMode, resetAiAgentName, useAiAgentName, writeAiAgentName, writeClockDisplayMode } from "@/lib/user-preferences"
 import { getSupabaseSession, supabase } from "@/lib/supabase"
 import {
@@ -3555,7 +3557,7 @@ function SupportTab() {
       const session = await getSupabaseSession()
       if (!session) throw new Error(t("Sign in again before creating a support ticket."))
 
-      const result = await createApiSupportTicket(session.access_token, {
+      const result = await createSupportTicket({
         idempotencyKey: getIdempotencyKey(),
         topic,
         priority,
@@ -3575,8 +3577,8 @@ function SupportTab() {
         { description: `${result.ticket.ticketNumber} · ${t("Databrain OS confirmed the ticket.")}` },
       )
     } catch (error) {
-      console.error("Support ticket submission failed.", error instanceof ApiSupportTicketError ? error.code : "unknown")
-      if (error instanceof ApiSupportTicketError) {
+      console.error("Support ticket submission failed.", error instanceof SupportTicketError ? error.code : "unknown")
+      if (error instanceof SupportTicketError) {
         setFormError(t(error.message))
         setCanStartNewTicket(error.code === "idempotency_conflict")
       } else {
