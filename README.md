@@ -124,13 +124,18 @@ During the domain cutover, the current exact Vercel production URL may remain on
 
 ## Databrain support tickets
 
-The authenticated **Settings → Support** form submits through the Multideck server to Databrain OS. Configure these values only on the server or in the Azure Web App deployment settings:
+The authenticated **Settings → Support** form invokes the tenant's `create-support-ticket` Supabase Edge Function. The function resolves the requester and company from the signed-in Supabase account, then sends the ticket to Databrain OS. The browser never receives the Databrain webhook secret and this workflow does not depend on the Azure-hosted Multideck API.
 
 | Key | Required | Notes |
 |---|---:|---|
-| `SupportTickets__Endpoint` | Yes | Keep this set to `https://os.databrain.solutions/api/tickets`. |
-| `SupportTickets__WebhookSecret` | Yes | Server-only integration secret. Never expose it through a `VITE_` variable. |
-| `SupportTickets__SourceApplication` | Yes | Stable source name used for Databrain idempotency, normally `multideck`. |
-| `SupportTickets__TimeoutSeconds` | No | Upstream timeout from 1–30 seconds; defaults to 10. |
+| `DATABRAIN_TICKET_WEBHOOK_URL` | Yes | Store the Databrain Supabase ticket-intake function URL as a Supabase project secret. |
+| `DATABRAIN_TICKET_WEBHOOK_SECRET` | Yes | Store the shared integration secret only in Supabase Edge Function secrets. Never expose it through a `VITE_` variable. |
+| `APP_URL` | Yes | Exact tenant application origin used for the Edge Function CORS response, for example `https://dev.multideck.app`. |
 
-Multideck resolves the requester and company from the signed-in account. Browser cookies, access tokens, and unrelated headers are not forwarded to Databrain OS.
+Deploy the function from `multideck.server/Backend`:
+
+```sh
+npx supabase functions deploy create-support-ticket --project-ref <tenant-project-ref>
+```
+
+The function accepts a valid tenant Supabase session only. Browser cookies, access tokens, and unrelated headers are not forwarded to Databrain OS.

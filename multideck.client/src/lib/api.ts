@@ -143,38 +143,6 @@ export type UpdateUserRolesRequest = {
   roleIds: string[]
 }
 
-export type CreateSupportTicketRequest = {
-  idempotencyKey: string
-  topic: string
-  priority: string
-  title: string
-  description: string
-  applicationUrl: string
-}
-
-export type ApiSupportTicket = {
-  ticketNumber: string
-  status: string
-  createdAt: string
-  statusUrl: string | null
-}
-
-export type CreateSupportTicketResponse = {
-  ticket: ApiSupportTicket
-  duplicate: boolean
-}
-
-export class ApiSupportTicketError extends Error {
-  constructor(
-    public readonly code: string,
-    message: string,
-    public readonly status: number,
-  ) {
-    super(message)
-    this.name = "ApiSupportTicketError"
-  }
-}
-
 function getApiUrl(path: string) {
   if (/^https?:\/\//i.test(path)) return path
   return `${apiBaseUrl}${path.startsWith("/") ? path : `/${path}`}`
@@ -254,70 +222,6 @@ export async function getApiCurrentUser(accessToken: string): Promise<ApiTeamUse
   }
 
   return response.json() as Promise<ApiTeamUser>
-}
-
-export async function createApiSupportTicket(
-  accessToken: string,
-  request: CreateSupportTicketRequest,
-): Promise<CreateSupportTicketResponse> {
-  const controller = new AbortController()
-  const timeoutId = window.setTimeout(() => controller.abort(), 13_000)
-  let response: Response
-
-  try {
-    response = await apiFetch("/api/v1/support/tickets", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(request),
-      signal: controller.signal,
-    })
-  } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") {
-      throw new ApiSupportTicketError(
-        "support_service_timeout",
-        "Support took too long to respond. Your ticket details are still here; try again.",
-        504,
-      )
-    }
-
-    throw new ApiSupportTicketError(
-      "support_service_unavailable",
-      "Support is temporarily unavailable. Your ticket details are still here; try again.",
-      503,
-    )
-  } finally {
-    window.clearTimeout(timeoutId)
-  }
-
-  if (!response.ok) {
-    let code = "support_service_unavailable"
-    let message = `${response.status} ${response.statusText}`.trim()
-
-    try {
-      const body = await response.json()
-      if (typeof body.code === "string") code = body.code
-      if (typeof body.message === "string") message = body.message
-      else if (typeof body.detail === "string") message = body.detail
-    } catch {
-      // Keep the safe API fallback. Never surface an unparsed upstream response.
-    }
-
-    throw new ApiSupportTicketError(code, message, response.status)
-  }
-
-  const result = await response.json() as CreateSupportTicketResponse
-  if (!result.ticket?.ticketNumber) {
-    throw new ApiSupportTicketError(
-      "support_service_invalid_response",
-      "Support did not confirm a ticket number. Your ticket details are still here; try again.",
-      502,
-    )
-  }
-
-  return result
 }
 
 export async function updateApiCurrentUserProfile(

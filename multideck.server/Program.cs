@@ -4,7 +4,6 @@ using Multideck.Server.Modules.Auth;
 using Multideck.Server.Modules.Authorization;
 using Multideck.Server.Modules.Leads;
 using Multideck.Server.Modules.Deals;
-using Multideck.Server.Modules.Support;
 using Multideck.Server.Extensions;
 using Serilog;
 
@@ -41,7 +40,6 @@ try
     app.MapAuthModule(supabaseAuth);
     app.MapAuthorizationModule(supabaseAuth);
     app.MapUsersModule(supabaseAuth);
-    app.MapSupportModule(supabaseAuth);
     app.MapControllers();
 
     await app.RunAsync();

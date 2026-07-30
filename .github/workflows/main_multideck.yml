@@ -59,7 +59,7 @@ jobs:
         run: dotnet build --configuration Release --no-restore
         working-directory: multideck.server
 
-      - name: Test support integration
+      - name: Run server tests
         run: dotnet test multideck.server.tests/multideck.server.tests.csproj --configuration Release
 
       - name: dotnet publish
@@ -91,35 +91,6 @@ jobs:
           client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_47002B3A036547CA8985AC1F5827C63F }}
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_0E709D96C8EE4385B81C033B027AA266 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_7F539F6B90804E4CB6811E13B8645EBA }}
-
-      - name: Configure Databrain support integration
-        uses: azure/appservice-settings@v1
-        with:
-          app-name: 'multideck'
-          slot-name: 'Production'
-          app-settings-json: |
-            [
-              {
-                "name": "SupportTickets__Endpoint",
-                "value": "https://os.databrain.solutions/api/tickets",
-                "slotSetting": false
-              },
-              {
-                "name": "SupportTickets__WebhookSecret",
-                "value": "${{ secrets.DATABRAIN_TICKET_WEBHOOK_SECRET }}",
-                "slotSetting": false
-              },
-              {
-                "name": "SupportTickets__SourceApplication",
-                "value": "multideck",
-                "slotSetting": false
-              },
-              {
-                "name": "SupportTickets__TimeoutSeconds",
-                "value": "10",
-                "slotSetting": false
-              }
-            ]
 
       - name: Deploy to Azure Web App
         id: deploy-to-webapp
