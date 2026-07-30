@@ -1,5 +1,4 @@
-import { apiFetch } from "@/lib/api"
-import { getSupabaseSession } from "@/lib/supabase"
+import { callCrmRpc, CrmSupabaseError } from "@/lib/crm-supabase"
 
 export type ApiLead = {
   id: string
@@ -62,63 +61,28 @@ export type ApiLeadActivity = {
   activityAt: string
 }
 
-type ApiLeadDetailResponse = {
-  lead: ApiLead
-  company: ApiLeadCompany
-  contacts: ApiLeadContact[]
-  activities: ApiLeadActivity[]
-}
-
 export type ApiLeadDetail = ApiLead & {
   company: ApiLeadCompany
   contacts: ApiLeadContact[]
   activities: ApiLeadActivity[]
 }
 
-export class LeadApiError extends Error {}
-
-async function readLeadResponse<T>(response: Response, fallback: string) {
-  if (response.ok) return response.json() as Promise<T>
-
-  let message = `${response.status} ${response.statusText}`.trim()
-  try {
-    const problem = await response.json()
-    message = problem.detail || problem.title || message
-  } catch {
-    // Keep the HTTP status fallback for non-JSON failures.
-  }
-  throw new LeadApiError(message || fallback)
-}
-
-async function authorizedLeadRequest(path: string) {
-  const session = await getSupabaseSession()
-  if (!session?.access_token) throw new LeadApiError("Sign in again to view CRM leads.")
-
-  try {
-    return await apiFetch(path, {
-      headers: { Authorization: `Bearer ${session.access_token}` },
-    })
-  } catch (error) {
-    throw new LeadApiError(
-      "The CRM service could not be reached. Check that the local API is running and try again.",
-      { cause: error },
-    )
-  }
-}
+export class LeadApiError extends CrmSupabaseError {}
 
 export async function listLeads(search?: string) {
-  const query = search?.trim() ? `?search=${encodeURIComponent(search.trim())}` : ""
-  const response = await authorizedLeadRequest(`/api/v1/crm/leads${query}`)
-  return readLeadResponse<ApiLead[]>(response, "We could not load CRM leads.")
+  return callCrmRpc<ApiLead[]>(
+    "multideck_crm_list_leads",
+    { p_search: search?.trim() || null },
+    "We could not load CRM leads.",
+    "Sign in again to view CRM leads.",
+  )
 }
 
 export async function getLead(leadId: string) {
-  const response = await authorizedLeadRequest(`/api/v1/crm/leads/${encodeURIComponent(leadId)}`)
-  const detail = await readLeadResponse<ApiLeadDetailResponse>(response, "We could not load this lead.")
-  return {
-    ...detail.lead,
-    company: detail.company,
-    contacts: detail.contacts,
-    activities: detail.activities,
-  } satisfies ApiLeadDetail
+  return callCrmRpc<ApiLeadDetail>(
+    "multideck_crm_get_lead",
+    { p_lead_id: leadId },
+    "We could not load this lead.",
+    "Sign in again to view CRM leads.",
+  )
 }

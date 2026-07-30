@@ -1,5 +1,4 @@
-import { apiFetch } from "@/lib/api"
-import { getSupabaseSession } from "@/lib/supabase"
+import { callCrmRpc, CrmSupabaseError } from "@/lib/crm-supabase"
 
 export type ApiDealOption = {
   code: string
@@ -70,61 +69,44 @@ export type ApiDeal = {
   wasAlreadyConverted: boolean
 }
 
-export class DealApiError extends Error {}
-
-async function authorizedDealRequest(path: string, init?: RequestInit) {
-  const session = await getSupabaseSession()
-  if (!session?.access_token) throw new DealApiError("Sign in again to manage CRM deals.")
-
-  try {
-    return await apiFetch(path, {
-      ...init,
-      headers: {
-        ...init?.headers,
-        Authorization: `Bearer ${session.access_token}`,
-        "Content-Type": "application/json",
-      },
-    })
-  } catch (error) {
-    throw new DealApiError("The CRM service could not be reached. Try again.", { cause: error })
-  }
-}
-
-async function readDealResponse<T>(response: Response, fallback: string) {
-  if (response.ok) return response.json() as Promise<T>
-
-  let message = fallback
-  try {
-    const problem = await response.json()
-    message = problem.detail || problem.title || message
-  } catch {
-    // Keep the product-safe fallback when the server does not return ProblemDetails.
-  }
-  throw new DealApiError(message)
-}
+export class DealApiError extends CrmSupabaseError {}
 
 export async function getDealConversionOptions() {
-  const response = await authorizedDealRequest("/api/v1/crm/deals/conversion-options")
-  return readDealResponse<ApiDealConversionOptions>(response, "Deal options could not be loaded.")
+  return callCrmRpc<ApiDealConversionOptions>(
+    "multideck_crm_deal_conversion_options",
+    undefined,
+    "Deal options could not be loaded.",
+    "Sign in again to manage CRM deals.",
+  )
 }
 
 export async function convertLeadToDeal(leadId: string, input: ConvertLeadToDealInput) {
-  const response = await authorizedDealRequest(`/api/v1/crm/deals/from-lead/${encodeURIComponent(leadId)}`, {
-    method: "POST",
-    body: JSON.stringify(input),
-  })
-  return readDealResponse<ApiDeal>(response, "This lead could not be converted.")
+  return callCrmRpc<ApiDeal>(
+    "multideck_crm_convert_lead",
+    { p_lead_id: leadId, p_input: input },
+    "This lead could not be converted.",
+    "Sign in again to manage CRM deals.",
+  )
 }
 
 export async function listDeals() {
-  const response = await authorizedDealRequest("/api/v1/crm/deals")
-  return readDealResponse<ApiDeal[]>(response, "CRM deals could not be loaded.")
+  return callCrmRpc<ApiDeal[]>(
+    "multideck_crm_list_deals",
+    undefined,
+    "CRM deals could not be loaded.",
+    "Sign in again to manage CRM deals.",
+  )
 }
 
 export async function moveDealStage(dealId: string, pipelineId: string, pipelineStageId: string) {
-  const response = await authorizedDealRequest(`/api/v1/crm/deals/${encodeURIComponent(dealId)}/stage`, {
-    method: "PUT",
-    body: JSON.stringify({ pipelineId, pipelineStageId }),
-  })
-  return readDealResponse<ApiDeal>(response, "This deal could not be moved.")
+  return callCrmRpc<ApiDeal>(
+    "multideck_crm_move_deal_stage",
+    {
+      p_deal_id: dealId,
+      p_pipeline_id: pipelineId,
+      p_pipeline_stage_id: pipelineStageId,
+    },
+    "This deal could not be moved.",
+    "Sign in again to manage CRM deals.",
+  )
 }

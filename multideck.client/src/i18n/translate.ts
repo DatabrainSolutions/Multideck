@@ -178,7 +178,7 @@ const phrases: PhraseDictionary = {
   "Opportunity context": { de: "Chancenkontext", fr: "Contexte de l’opportunité", ar: "سياق الفرصة" },
   "leads pagination": { de: "Seitennavigation für Leads", fr: "Pagination des prospects", ar: "ترقيم صفحات العملاء المحتملين" },
   "Sign in again to view CRM leads.": { de: "Melde dich erneut an, um CRM-Leads anzuzeigen.", fr: "Reconnectez-vous pour afficher les prospects CRM.", ar: "سجّل الدخول مرة أخرى لعرض العملاء المحتملين." },
-  "The CRM service could not be reached. Check that the local API is running and try again.": { de: "Der CRM-Dienst ist nicht erreichbar. Prüfe, ob die lokale API läuft, und versuche es erneut.", fr: "Le service CRM est inaccessible. Vérifiez que l’API locale fonctionne, puis réessayez.", ar: "تعذر الوصول إلى خدمة إدارة علاقات العملاء. تحقق من تشغيل واجهة API المحلية ثم أعد المحاولة." },
+  "The CRM data request timed out. Try again.": { de: "Die CRM-Datenanfrage hat zu lange gedauert. Versuche es erneut.", fr: "La demande de données CRM a expiré. Réessayez.", ar: "انتهت مهلة طلب بيانات إدارة علاقات العملاء. أعد المحاولة." },
   "Created": { de: "Erstellt", fr: "Créé", ar: "تاريخ الإنشاء" },
   "Currency": { de: "Währung", fr: "Devise", ar: "العملة" },
   "Last activity": { de: "Letzte Aktivität", fr: "Dernière activité", ar: "آخر نشاط" },
