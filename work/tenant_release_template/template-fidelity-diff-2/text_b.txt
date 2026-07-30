@@ -1,0 +1,44 @@
+Tenant isolation and releases
+How Multideck keeps customer data separate while safely shipping one evolving platform.
+WHAT THIS REFERENCE COVERS
+Keeps each customer’s Supabase data isolated.
+Explains how one Multideck release updates every tenant safely.
+Preserves approved customer-specific configuration and extensions.
+Sets the operating rules for controlled migration and recovery.
+Multideck product reference  |  July 2026
+TENANT OPERATING MODEL
+Each customer stays isolated.Every release stays controlled.
+Every Multideck customer receives its own dedicated Supabase project. Their application connects only to that project; customer projects never connect to one another. The shared platform evolves through a private Multideck release service, not through customer action.
+Customer data
+Each tenant has its own Supabase project, users, storage and records.
+Customer app
+ABC Freight can only connect to ABC Freight’s project; the same is true for every tenant.
+Tenant configuration
+Customer-specific fields, views and workflows remain in place when the core product updates.
+Private operations
+Multideck’s release service applies approved migrations; credentials never reach a browser.
+What stays separate
+The customer-facing app, authentication, storage and business data remain inside the customer’s own tenant. Only the private release service has operational access for approved platform changes.
+CONTROLLED RELEASES
+One release, safely appliedto every tenant
+Step
+Release activity
+Outcome
+01
+Build and test
+Feature and migration are validated before release.
+02
+Approve release
+An operator starts the controlled rollout.
+03
+Canary tenant
+An internal tenant proves the change first.
+04
+Tenant rollout
+Each project is migrated, checked and recorded in sequence.
+05
+Deploy app
+The compatible Multideck version is deployed for that tenant.
+06
+Monitor and recover
+Failures pause only the affected tenant for safe retry.
