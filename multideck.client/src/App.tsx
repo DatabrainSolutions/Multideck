@@ -1,4 +1,4 @@
-import { lazy, startTransition, Suspense, useEffect, useState } from "react"
+import { lazy, startTransition, Suspense, useCallback, useEffect, useState } from "react"
 import type { Session } from "@supabase/supabase-js"
 import { MotionConfig } from "motion/react"
 import { ThemeProvider } from "next-themes"
@@ -10,9 +10,10 @@ import { mdMotion } from "@/lib/motion"
 import { rememberAuthReturnPath, takeAuthReturnPath } from "@/lib/auth-routing"
 import { summarizeAuthUser, type AuthUserSummary } from "@/lib/auth-user"
 import { getApiAuthSession } from "@/lib/api"
+import type { UserProfilePhoto } from "@/lib/profile-photo"
 import { isSupabaseConfigured, supabase } from "@/lib/supabase"
-import { OverviewPage } from "@/pages/overview-page"
 
+const OverviewPage = lazy(() => import("@/pages/overview-page").then((module) => ({ default: module.OverviewPage })))
 const AgentDexterPage = lazy(() => import("@/pages/agent-dexter-page").then((module) => ({ default: module.AgentDexterPage })))
 const AuthFlowPage = lazy(() => import("@/pages/auth-flow-page").then((module) => ({ default: module.AuthFlowPage })))
 const ComponentsGalleryPage = lazy(() => import("@/pages/components-gallery-page").then((module) => ({ default: module.ComponentsGalleryPage })))
@@ -36,6 +37,7 @@ const DomesticRoadBookingPage = lazy(() => import("@/pages/domestic-road-booking
 const CrmOverviewPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmOverviewPage })))
 const CrmLeadsPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmLeadsPage })))
 const CrmLeadDetailPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmLeadDetailPage })))
+const LeadConversionPage = lazy(() => import("@/pages/lead-conversion-page").then((module) => ({ default: module.LeadConversionPage })))
 const CrmActivityPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmActivityPage })))
 const CrmContactsPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmContactsPage })))
 const CrmDealsPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmDealsPage })))
@@ -111,6 +113,10 @@ function isCrmLeadDetailRoute(path: string) {
   return /^\/crm\/leads\/[^/]+$/.test(path)
 }
 
+function isCrmLeadConversionRoute(path: string) {
+  return /^\/crm\/leads\/[^/]+\/convert$/.test(path)
+}
+
 function isCustomerDetailRoute(path: string) {
   return /^\/customers\/[^/]+$/.test(path)
 }
@@ -135,6 +141,7 @@ function getRoute() {
   if (isRoadJobDetailRoute(window.location.pathname)) return window.location.pathname
   if (isQuoteDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCustomerDetailRoute(window.location.pathname)) return window.location.pathname
+  if (isCrmLeadConversionRoute(window.location.pathname)) return window.location.pathname
   if (isCrmLeadDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCrmListDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCrmEmailStatsRoute(window.location.pathname)) return window.location.pathname
@@ -150,8 +157,8 @@ function canCustomerOpenRoute(user: AuthUserSummary, path: string) {
 function RouteFallback() {
   return (
     <div aria-hidden="true" className="min-h-[320px] bg-transparent">
-      <div className="h-1 w-full overflow-hidden bg-[rgba(14,125,116,0.06)]">
-        <div className="h-full w-1/3 animate-pulse rounded-r-full bg-[rgba(14,125,116,0.22)]" />
+      <div className="h-1 w-full overflow-hidden bg-[var(--md-accent-a06)]">
+        <div className="h-full w-1/3 animate-pulse rounded-r-full bg-[var(--md-accent-a22)]" />
       </div>
     </div>
   )
@@ -161,8 +168,11 @@ export default function App() {
   const [route, setRoute] = useState(getRoute)
   const [authStatus, setAuthStatus] = useState<AuthStatus>(isSupabaseConfigured ? "checking" : "unauthenticated")
   const [currentUser, setCurrentUser] = useState<AuthUserSummary | null>(null)
-  const isLocalNavigationLab = import.meta.env.DEV && route === "/playground/navigation"
+  const isLocalNavigationLab = import.meta.env.DEV && (route === "/playground/navigation" || route === "/settings")
   const isPasswordRecoveryRoute = route === "/auth" && new URLSearchParams(window.location.search).get("mode") === "reset-password"
+  const handleProfilePhotoChange = useCallback((profilePhoto: UserProfilePhoto | null) => {
+    setCurrentUser((user) => user ? { ...user, profilePhoto } : user)
+  }, [])
 
   useEffect(() => {
     const onPopState = () => {
@@ -252,7 +262,7 @@ export default function App() {
   useEffect(() => {
     if (authStatus === "checking") return
 
-    if (authStatus === "unauthenticated" && route !== "/auth") {
+    if (authStatus === "unauthenticated" && route !== "/auth" && !isLocalNavigationLab) {
       rememberAuthReturnPath()
       window.history.replaceState({}, "", "/auth")
       startTransition(() => setRoute(getRoute()))
@@ -311,17 +321,18 @@ export default function App() {
                   {route === "/agent-dexter" ? <AgentDexterPage /> : null}
                   {route === "/crm" ? <CrmOverviewPage /> : null}
                   {route === "/crm/accounts" || route === "/crm/leads" ? <CrmLeadsPage navigate={navigate} /> : null}
+                  {isCrmLeadConversionRoute(route) ? <LeadConversionPage navigate={navigate} leadId={route.split("/").at(-2) ?? ""} /> : null}
                   {isCrmLeadDetailRoute(route) ? <CrmLeadDetailPage navigate={navigate} leadId={route.split("/").at(-1) ?? ""} /> : null}
                   {route === "/crm/activity" ? <CrmActivityPage navigate={navigate} /> : null}
                   {route === "/crm/contacts" ? <CrmContactsPage /> : null}
-                  {route === "/crm/deals" ? <CrmDealsPage /> : null}
+                  {route === "/crm/deals" ? <CrmDealsPage currentUser={currentUser} /> : null}
                   {route === "/crm/emails" ? <CrmEmailsPage navigate={navigate} /> : null}
                   {isCrmEmailStatsRoute(route) ? <CrmEmailStatsPage navigate={navigate} campaignId={route.split("/").at(-2) ?? ""} /> : null}
                   {isCrmEmailEditRoute(route) ? <CrmEmailEditPage navigate={navigate} campaignId={route.split("/").at(-2) ?? ""} /> : null}
                   {route === "/crm/lists" ? <CrmListsPage navigate={navigate} /> : null}
                   {isCrmListDetailRoute(route) ? <CrmListDetailPage navigate={navigate} listId={route.split("/").at(-1) ?? ""} /> : null}
                   {route === "/crm/marketing" ? <CrmMarketingPage /> : null}
-                  {route === "/crm/settings" ? <CrmSettingsPage /> : null}
+                  {route === "/crm/settings" ? <CrmSettingsPage currentUser={currentUser} /> : null}
                   {route === "/customers" ? <CustomersPage navigate={navigate} /> : null}
                   {isCustomerDetailRoute(route) ? <CustomerDetailPage customerId={route.split("/").at(-1) ?? ""} /> : null}
                   {route === "/paper-tray" ? <PaperTrayPage /> : null}
@@ -329,7 +340,7 @@ export default function App() {
                   {route === "/quotes" ? <QuotesRegisterPage navigate={navigate} /> : null}
                   {isQuoteDetailRoute(route) ? <QuoteDetailPage key={route} variant="cargowise" quoteId={route.split("/").at(-1)} /> : null}
                   {route === "/reports" ? <ReportsPage navigate={navigate} /> : null}
-                  {route === "/settings" ? <SettingsPage navigate={navigate} /> : null}
+                  {route === "/settings" ? <SettingsPage navigate={navigate} onProfilePhotoChange={handleProfilePhotoChange} /> : null}
                   {route.startsWith("/warehouse") ? <WarehousePage route={route} currentUser={currentUser} /> : null}
                   {route === "/bookings" ? <BookingsPage navigate={navigate} /> : null}
                   {route === "/road-control" ? <RoadControlPage navigate={navigate} /> : null}

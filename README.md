@@ -121,3 +121,16 @@ In Supabase Auth settings:
 During the domain cutover, the current exact Vercel production URL may remain on the redirect allow list temporarily. Remove it after the tenant subdomain is serving the app; never replace it with a broad `*.vercel.app` rule.
 
 `multideck.app` is the workspace router, not a shared customer database. It sends the user to the correct company subdomain before that tenant’s Supabase session is created. `jenkar.multideck.app` therefore uses the Jenkar Supabase project, while `databrain.multideck.app` uses a different project, database, Auth user store, API configuration, and set of provider credentials.
+
+## Databrain support tickets
+
+The authenticated **Settings → Support** form submits through the Multideck server to Databrain OS. Configure these values only on the server or in the Azure Web App deployment settings:
+
+| Key | Required | Notes |
+|---|---:|---|
+| `SupportTickets__Endpoint` | Yes | Keep this set to `https://os.databrain.solutions/api/tickets`. |
+| `SupportTickets__WebhookSecret` | Yes | Server-only integration secret. Never expose it through a `VITE_` variable. |
+| `SupportTickets__SourceApplication` | Yes | Stable source name used for Databrain idempotency, normally `multideck`. |
+| `SupportTickets__TimeoutSeconds` | No | Upstream timeout from 1–30 seconds; defaults to 10. |
+
+Multideck resolves the requester and company from the signed-in account. Browser cookies, access tokens, and unrelated headers are not forwarded to Databrain OS.

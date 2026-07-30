@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils"
 export type DataTableColumn<Row> = {
   id: string
   label: string
+  headerContent?: ReactNode
   cell: (row: Row) => ReactNode
   width?: number
   minWidth?: number
@@ -30,6 +31,7 @@ type SavedTableLayout = {
   hidden: string[]
   pinned: string[]
   widths: Record<string, number>
+  sort: { id: string; direction: "asc" | "desc" } | null
 }
 
 type ColumnContextMenu = {
@@ -46,6 +48,7 @@ type DataTableProps<Row> = {
   rowClassName?: string | ((row: Row) => string)
   onRowClick?: (row: Row) => void
   selectedRowKey?: string | null
+  selectedRowKeys?: ReadonlySet<string>
   ariaLabel?: string
   columnsButtonLabel?: string
   toolbarLeading?: ReactNode
@@ -61,6 +64,7 @@ function readLayout(storageKey: string | undefined, columns: DataTableColumn<unk
     hidden: columns.filter((column) => column.defaultHidden).map((column) => column.id),
     pinned: columns.filter((column) => column.defaultPinned).map((column) => column.id),
     widths: {},
+    sort: null,
   }
 
   if (!storageKey || typeof window === "undefined") return fallback
@@ -76,6 +80,9 @@ function readLayout(storageKey: string | undefined, columns: DataTableColumn<unk
       widths: Object.fromEntries(
         Object.entries(stored.widths ?? {}).filter(([id, width]) => available.has(id) && Number.isFinite(width)),
       ),
+      sort: stored.sort && available.has(stored.sort.id) && (stored.sort.direction === "asc" || stored.sort.direction === "desc")
+        ? stored.sort
+        : null,
     }
   } catch {
     return fallback
@@ -90,6 +97,7 @@ export function DataTable<Row>({
   rowClassName,
   onRowClick,
   selectedRowKey,
+  selectedRowKeys,
   ariaLabel,
   columnsButtonLabel,
   toolbarLeading,
@@ -110,7 +118,7 @@ export function DataTable<Row>({
   const [widths, setWidths] = useState(initialLayout.widths)
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [resizingId, setResizingId] = useState<string | null>(null)
-  const [sort, setSort] = useState<{ id: string; direction: "asc" | "desc" } | null>(null)
+  const [sort, setSort] = useState<{ id: string; direction: "asc" | "desc" } | null>(initialLayout.sort)
   const [contextMenu, setContextMenu] = useState<ColumnContextMenu | null>(null)
   const resizeStart = useRef<{ columnId: string; x: number; width: number; min: number; max: number } | null>(null)
   const contextMenuRef = useRef<HTMLDivElement>(null)
@@ -127,9 +135,9 @@ export function DataTable<Row>({
     if (!storageKey) return
     window.localStorage.setItem(
       `multideck.table.${storageKey}`,
-      JSON.stringify({ order, hidden: [...hidden], pinned: [...pinned], widths } satisfies SavedTableLayout),
+      JSON.stringify({ order, hidden: [...hidden], pinned: [...pinned], widths, sort } satisfies SavedTableLayout),
     )
-  }, [hidden, order, pinned, storageKey, widths])
+  }, [hidden, order, pinned, sort, storageKey, widths])
 
   useEffect(() => {
     if (!contextMenu) return
@@ -197,7 +205,7 @@ export function DataTable<Row>({
   })
 
   const minimumWidth = visibleColumns.reduce((width, column) => width + columnWidth(column), 0)
-  const hasCustomLayout = hidden.size !== defaultHidden.length || [...hidden].some((id) => !defaultHidden.includes(id)) || Object.keys(widths).length > 0 || pinned.size !== defaultPinned.length || [...pinned].some((id) => !defaultPinned.includes(id)) || order.some((id, index) => id !== columnIds[index])
+  const hasCustomLayout = Boolean(sort) || hidden.size !== defaultHidden.length || [...hidden].some((id) => !defaultHidden.includes(id)) || Object.keys(widths).length > 0 || pinned.size !== defaultPinned.length || [...pinned].some((id) => !defaultPinned.includes(id)) || order.some((id, index) => id !== columnIds[index])
   const contextColumn = contextMenu ? columns.find((column) => column.id === contextMenu.columnId) : undefined
   const sortedRows = useMemo(() => {
     if (!sort) return rows
@@ -248,6 +256,7 @@ export function DataTable<Row>({
 
   function toggleHidden(column: DataTableColumn<Row>) {
     if (column.canHide === false) return
+    if (!hidden.has(column.id) && visibleColumns.length <= 1) return
     setHidden((current) => {
       const next = new Set(current)
       if (next.has(column.id)) next.delete(column.id)
@@ -396,10 +405,10 @@ export function DataTable<Row>({
                       <button type="button" disabled={orderedColumns.filter((candidate) => pinned.has(candidate.id) === isPinned).at(-1)?.id === column.id} onClick={() => moveColumnByStep(column.id, 1)} className="grid size-7 place-items-center rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] opacity-0 transition-[background,color,opacity,transform] hover:bg-[var(--md-surface)] hover:text-[var(--md-ink)] focus-visible:opacity-100 group-hover:opacity-100 active:scale-[0.96] disabled:pointer-events-none disabled:opacity-20 motion-reduce:transform-none" aria-label={`${t("Move column later")}: ${t(column.label)}`}>
                         <ChevronDown className="size-3.5" strokeWidth={1.4} />
                       </button>
-                      <button type="button" disabled={column.canPin === false} onClick={() => togglePinned(column)} className={cn("grid size-7 place-items-center rounded-[var(--md-radius-sm)] transition-[background,color,transform] active:scale-[0.96] motion-reduce:transform-none", isPinned ? "bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)]" : "text-[var(--md-subtle)] hover:bg-[var(--md-surface)] hover:text-[var(--md-ink)]", column.canPin === false && "cursor-not-allowed opacity-25")} aria-label={t(`${isPinned ? "Unpin" : "Pin"} ${column.label} column`)}>
+                      <button type="button" disabled={column.canPin === false} onClick={() => togglePinned(column)} className={cn("grid size-7 place-items-center rounded-[var(--md-radius-sm)] transition-[background,color,transform] active:scale-[0.96] motion-reduce:transform-none", isPinned ? "bg-[var(--md-accent-a10)] text-[var(--md-accent)]" : "text-[var(--md-subtle)] hover:bg-[var(--md-surface)] hover:text-[var(--md-ink)]", column.canPin === false && "cursor-not-allowed opacity-25")} aria-label={t(`${isPinned ? "Unpin" : "Pin"} ${column.label} column`)}>
                         {isPinned ? <PinOff className="size-3.5" strokeWidth={1.4} /> : <Pin className="size-3.5" strokeWidth={1.4} />}
                       </button>
-                      <button type="button" disabled={column.canHide === false} onClick={() => toggleHidden(column)} className={cn("grid size-7 place-items-center rounded-[var(--md-radius-sm)] transition-[background,color,transform] active:scale-[0.96] motion-reduce:transform-none", !isHidden ? "text-[var(--md-ink)]" : "text-[var(--md-subtle)]", column.canHide === false ? "cursor-not-allowed opacity-25" : "hover:bg-[var(--md-surface)]")} aria-label={t(`${isHidden ? "Show" : "Hide"} ${column.label} column`)}>
+                      <button type="button" disabled={column.canHide === false || (!isHidden && visibleColumns.length <= 1)} onClick={() => toggleHidden(column)} className={cn("grid size-7 place-items-center rounded-[var(--md-radius-sm)] transition-[background,color,transform] active:scale-[0.96] motion-reduce:transform-none", !isHidden ? "text-[var(--md-ink)]" : "text-[var(--md-subtle)]", (column.canHide === false || (!isHidden && visibleColumns.length <= 1)) ? "cursor-not-allowed opacity-25" : "hover:bg-[var(--md-surface)]")} aria-label={t(`${isHidden ? "Show" : "Hide"} ${column.label} column`)}>
                         {isHidden ? <EyeOff className="size-3.5" strokeWidth={1.4} /> : <Eye className="size-3.5" strokeWidth={1.4} />}
                       </button>
                     </motion.div>
@@ -440,10 +449,10 @@ export function DataTable<Row>({
                     <GripVertical className="size-3 -ms-1 text-[var(--md-subtle)] opacity-0 transition-opacity group-hover/header:opacity-70" strokeWidth={1.3} aria-hidden="true" />
                     {column.sortValue ? (
                       <button type="button" onClick={() => toggleSort(column)} className="inline-flex min-w-0 items-center gap-1.5 rounded-[var(--md-radius-xs)] text-start outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--md-accent)_24%,transparent)]" aria-label={t(`Sort by ${column.label}`)}>
-                        <span className="truncate">{t(column.label)}</span>
+                        <span className="truncate">{column.headerContent ?? t(column.label)}</span>
                         {sort?.id === column.id ? (sort.direction === "asc" ? <ArrowUp className="size-3 shrink-0 text-[var(--md-accent)]" strokeWidth={1.4} /> : <ArrowDown className="size-3 shrink-0 text-[var(--md-accent)]" strokeWidth={1.4} />) : <ArrowUpDown className="size-3 shrink-0 text-[var(--md-subtle)] opacity-55" strokeWidth={1.35} />}
                       </button>
-                    ) : <span className="truncate">{t(column.label)}</span>}
+                    ) : <span className="truncate">{column.headerContent ?? t(column.label)}</span>}
                     {isPinned ? <Pin className="size-3 text-[var(--md-accent)]" strokeWidth={1.3} aria-label={t("Pinned column")} /> : null}
                   </span>
                   {column.resizable ? (
@@ -469,7 +478,7 @@ export function DataTable<Row>({
         <TableBody>
           {sortedRows.length ? sortedRows.map((row) => {
             const rowKey = getRowKey(row)
-            const isSelected = selectedRowKey === rowKey
+            const isSelected = selectedRowKey === rowKey || selectedRowKeys?.has(rowKey) === true
             return (
               <TableRow
                 key={rowKey}

@@ -46,6 +46,10 @@ nul
 !/multideck.server/Backend/supabase/migrations/202607220001_document_storage_catalogue.sql
 !/multideck.server/Backend/supabase/migrations/202607220002_warehouse_customer_user_management.sql
 !/multideck.server/Backend/supabase/migrations/202607230001_use_supabase_document_storage.sql
+!/multideck.server/Backend/supabase/migrations/202607290001_user_profile_photos.sql
+!/multideck.server/Backend/supabase/migrations/202607290002_harden_profile_photo_policies.sql
+!/multideck.server/Backend/supabase/migrations/202607290003_crm_pipeline_settings.sql
+!/multideck.server/Backend/supabase/migrations/202607290004_link_deals_to_tenant_pipelines.sql
 !/multideck.server/Backend/supabase/migrations/20260723101203_notification_email_preferences.sql
 !/multideck.server/Backend/supabase/migrations/20260723103000_optimize_notification_email_policies.sql
 !/multideck.server/Backend/supabase/migrations/20260723104500_dispatch_notification_emails.sql

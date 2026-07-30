@@ -406,7 +406,7 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
       minWidth: 76,
       resizable: true,
       sortValue: (booking) => booking.owner,
-      cell: (booking) => <span className="grid size-8 place-items-center rounded-full bg-[rgba(14,125,116,0.12)] text-[12px] font-medium text-[var(--md-accent)]">{booking.owner}</span>,
+      cell: (booking) => <span className="grid size-8 place-items-center rounded-full bg-[var(--md-accent-a12)] text-[12px] font-medium text-[var(--md-accent)]">{booking.owner}</span>,
     },
   ], [favouriteIds, selectedIds, t])
 
@@ -479,7 +479,7 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
                 <SlidersHorizontal className="size-3.5" strokeWidth={1.4} />
                 <span className="hidden lg:inline">{t("Advanced search")}</span>
                 {searchCriteria.filter(criterionHasValue).length ? (
-                  <span className="grid min-w-4 place-items-center rounded-full bg-[rgba(14,125,116,0.11)] px-1 text-[10px] font-medium text-[var(--md-accent)]" data-i18n-skip>
+                  <span className="grid min-w-4 place-items-center rounded-full bg-[var(--md-accent-a11)] px-1 text-[10px] font-medium text-[var(--md-accent)]" data-i18n-skip>
                     {searchCriteria.filter(criterionHasValue).length}
                   </span>
                 ) : null}

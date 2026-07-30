@@ -29,7 +29,7 @@ export function ThemeToggle({ className, compact = false }: ThemeToggleProps) {
       title={label}
       data-theme-toggle-state={isDark ? "dark" : "light"}
       className={cn(
-        "group/theme-toggle flex h-10 w-full items-center justify-between gap-3 rounded-[var(--md-radius-lg)] px-2.5 text-left text-[13px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,color,opacity,scale,transform] duration-200 active:scale-[0.96] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
+        "group/theme-toggle flex h-10 w-full items-center justify-between gap-3 rounded-[var(--md-radius-lg)] px-2.5 text-left text-[13px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,color,opacity,scale,transform] duration-200 active:scale-[0.96] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]",
         compact && "size-10 justify-center rounded-[var(--md-radius-md)] p-0",
         className,
       )}

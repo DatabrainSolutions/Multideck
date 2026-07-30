@@ -95,7 +95,7 @@ function DexterPageHeader({
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-[18px] font-medium leading-6 text-[var(--md-ink)]">{title}</h1>
-          <span className="inline-flex h-7 items-center gap-1.5 rounded-full bg-[rgba(14,125,116,0.1)] px-3 text-[12px] font-medium text-[var(--md-accent)]">
+          <span className="inline-flex h-7 items-center gap-1.5 rounded-full bg-[var(--md-accent-a10)] px-3 text-[12px] font-medium text-[var(--md-accent)]">
             <span className="size-1.5 rounded-full bg-[var(--md-accent)]" />
             {isWorking ? t("Working") : t("Ready")}
           </span>
@@ -549,7 +549,7 @@ export function AgentDexterPage() {
                 onOpenSpecialists={() => setShowSpecialists((value) => !value)}
                 onRemoveAttachment={(id) => toggleAttachment(id)}
                 onSend={() => void submitPrompt()}
-                className="shadow-[0_0_0_1px_rgba(14,125,116,0.42),0_16px_38px_rgba(42,52,50,0.16)]"
+                className="shadow-[0_0_0_1px_var(--md-accent-a42),0_16px_38px_rgba(42,52,50,0.16)]"
               />
             </motion.div>
 

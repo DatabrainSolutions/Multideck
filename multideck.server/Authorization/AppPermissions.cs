@@ -62,8 +62,11 @@ public static class AppPermissions
 
     public static class Settings
     {
-        public static readonly PermissionDefinition Read = new("Settings.Read", "Settings", "Read workspace settings", "View workspace preferences, branding, integrations, and billing settings.");
-        public static readonly PermissionDefinition Manage = new("Settings.Manage", "Settings", "Manage workspace settings", "Change workspace preferences, branding, integrations, and billing settings.");
+        public const string ReadValue = "Settings.Read";
+        public const string ManageValue = "Settings.Manage";
+
+        public static readonly PermissionDefinition Read = new(ReadValue, "Settings", "Read workspace settings", "View workspace preferences, branding, integrations, and billing settings.");
+        public static readonly PermissionDefinition Manage = new(ManageValue, "Settings", "Manage workspace settings", "Change workspace preferences, branding, integrations, and billing settings.");
     }
 
     public static class Integrations

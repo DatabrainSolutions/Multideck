@@ -70,7 +70,7 @@ function PreviewBars({ bars = [[82, 38, 24], [64, 44, 30], [74, 52, 28]] }: { ba
       {bars.map((bar, index) => (
         <div key={`${bar.join("-")}-${index}`} className="flex h-3 overflow-hidden rounded-full bg-[rgba(90,103,100,0.1)]">
           <span className="bg-[var(--md-accent)]" style={{ width: `${bar[0]}%` }} />
-          <span className="bg-[rgba(14,125,116,0.38)]" style={{ width: `${bar[1]}%` }} />
+          <span className="bg-[var(--md-accent-a38)]" style={{ width: `${bar[1]}%` }} />
           <span className="bg-[rgba(90,103,100,0.12)]" style={{ width: `${bar[2]}%` }} />
         </div>
       ))}
@@ -149,8 +149,8 @@ export function ReportTemplateCard({
         <h3 className="text-[17px] font-medium leading-6 text-[var(--md-ink)]">{template.title}</h3>
         <p className="mt-1 text-[14px] leading-5 text-[var(--md-text)]">{template.description}</p>
         <div className="mt-4 flex flex-wrap gap-2">
-          <span className="rounded-full bg-[rgba(14,125,116,0.1)] px-3 py-1 text-[12px] font-medium text-[var(--md-text)]">{template.cadence}</span>
-          <span className="rounded-full bg-[rgba(14,125,116,0.1)] px-3 py-1 text-[12px] font-medium text-[var(--md-text)]">{template.format}</span>
+          <span className="rounded-full bg-[var(--md-accent-a10)] px-3 py-1 text-[12px] font-medium text-[var(--md-text)]">{template.cadence}</span>
+          <span className="rounded-full bg-[var(--md-accent-a10)] px-3 py-1 text-[12px] font-medium text-[var(--md-text)]">{template.format}</span>
         </div>
       </div>
       <div className="mt-4 flex items-center justify-between border-t border-[rgba(11,20,19,0.06)] pt-4">
@@ -170,12 +170,12 @@ export function NewReportTemplateCard({ onCreate, className }: { onCreate?: () =
     <button
       type="button"
       className={cn(
-        "group flex min-h-[336px] flex-col items-center justify-center rounded-[var(--md-radius-xl)] border-0 border-dashed bg-transparent p-[var(--md-page-stack-gap)] text-center shadow-[inset_0_0_0_1px_rgba(90,103,100,0.16)] transition-[background,color,box-shadow,opacity,transform] duration-200 hover:bg-white/24 hover:shadow-[inset_0_0_0_1px_rgba(14,125,116,0.22),0_0_0_3px_rgba(14,125,116,0.06)]",
+        "group flex min-h-[336px] flex-col items-center justify-center rounded-[var(--md-radius-xl)] border-0 border-dashed bg-transparent p-[var(--md-page-stack-gap)] text-center shadow-[inset_0_0_0_1px_rgba(90,103,100,0.16)] transition-[background,color,box-shadow,opacity,transform] duration-200 hover:bg-white/24 hover:shadow-[inset_0_0_0_1px_var(--md-accent-a22),0_0_0_3px_var(--md-accent-a06)]",
         className,
       )}
       onClick={onCreate}
     >
-      <span className="grid size-[52px] place-items-center rounded-full bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)] transition-transform duration-200 group-hover:scale-[1.03]">
+      <span className="grid size-[52px] place-items-center rounded-full bg-[var(--md-accent-a10)] text-[var(--md-accent)] transition-transform duration-200 group-hover:scale-[1.03]">
         <Plus className="size-5" strokeWidth={1.5} />
       </span>
       <span className="mt-[var(--md-page-section-gap)] text-[15px] font-medium text-[var(--md-ink)]">New template</span>
@@ -670,7 +670,7 @@ function MiniTable() {
     <span className="grid gap-2 p-4" aria-hidden="true">
       {[0, 1, 2].map((row) => (
         <span key={row} className="grid grid-cols-[1fr_0.7fr_0.45fr] gap-2">
-          <span className="h-2 rounded-full bg-[rgba(14,125,116,0.28)]" />
+          <span className="h-2 rounded-full bg-[var(--md-accent-a28)]" />
           <span className="h-2 rounded-full bg-[rgba(90,103,100,0.14)]" />
           <span className="h-2 rounded-full bg-[rgba(90,103,100,0.12)]" />
         </span>
@@ -1414,7 +1414,7 @@ export function ReportBlockDataEditorDialog({
           </DialogClose>
           <Button
             type="button"
-            className="h-10 w-full rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white shadow-[0_10px_20px_rgba(14,125,116,0.18)] hover:bg-[var(--md-accent)]/88 sm:w-auto"
+            className="h-10 w-full rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] shadow-[0_10px_20px_var(--md-accent-a18)] hover:bg-[var(--md-accent)]/88 sm:w-auto"
             onClick={() => {
               onSave(applyReportBlockDataSelection(block, draft))
               onOpenChange(false)

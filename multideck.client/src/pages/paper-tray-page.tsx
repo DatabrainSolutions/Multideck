@@ -308,7 +308,7 @@ function TrayManagerDialog({
         ) : null}
 
         <DialogFooter className="px-5 pb-5 sm:px-6 sm:pb-6">
-          <Button type="button" className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-4 text-[12px] text-white hover:bg-[var(--md-accent)]/90" onClick={() => onOpenChange(false)}>
+          <Button type="button" className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-4 text-[12px] text-[var(--md-accent-ink)] hover:bg-[var(--md-accent)]/90" onClick={() => onOpenChange(false)}>
             {t("Done")}
           </Button>
         </DialogFooter>
@@ -827,7 +827,7 @@ export function PaperTrayPage() {
             </Button>
             <Button
               type="button"
-              className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3.5 text-[12px] font-medium text-white shadow-[0_10px_24px_rgba(14,125,116,0.18)] hover:scale-[1.01] hover:bg-[var(--md-accent)]/92"
+              className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3.5 text-[12px] font-medium text-[var(--md-accent-ink)] shadow-[0_10px_24px_var(--md-accent-a18)] hover:scale-[1.01] hover:bg-[var(--md-accent)]/92"
               onClick={() => globalUploadRef.current?.click()}
             >
               <FilePlus2 data-icon="inline-start" strokeWidth={1.2} />

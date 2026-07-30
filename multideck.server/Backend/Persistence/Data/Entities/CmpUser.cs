@@ -15,7 +15,33 @@ public partial class CmpUser
 
     public string UserEmail { get; set; } = null!;
 
+    public string? UserJobTitle { get; set; }
+
     public Guid? AuthUserId { get; set; }
+
+    public string? UserProfilePhotoBucket { get; set; }
+
+    public string? UserProfilePhotoPath { get; set; }
+
+    public string? UserProfilePhotoMimeType { get; set; }
+
+    public long? UserProfilePhotoSizeBytes { get; set; }
+
+    public DateTime? UserProfilePhotoUpdatedAt { get; set; }
+
+    public string? UserCoverPhotoBucket { get; set; }
+
+    public string? UserCoverPhotoPath { get; set; }
+
+    public string? UserCoverPhotoMimeType { get; set; }
+
+    public long? UserCoverPhotoSizeBytes { get; set; }
+
+    public DateTime? UserCoverPhotoUpdatedAt { get; set; }
+
+    public bool? UserSidebarCollapsed { get; set; }
+
+    public string? UserSidebarLayout { get; set; }
 
     public virtual ICollection<AcciConnection> AcciConnectionAccicCreatedByNavigations { get; set; } = new List<AcciConnection>();
 

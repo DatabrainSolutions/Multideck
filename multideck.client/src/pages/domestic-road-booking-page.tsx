@@ -163,7 +163,7 @@ function RoadJobOverview({
           </div>
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant="outline" className="h-9 rounded-[var(--md-radius-md)] px-3 text-[12px]" onClick={onOpenDetails}>{t("Open job details")}</Button>
-            <Button type="button" className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[12px] text-white hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]" onClick={onOpenPricing}>{t("Review pricing")}<ArrowRight className="size-3.5" strokeWidth={1.5} /></Button>
+            <Button type="button" className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[12px] text-[var(--md-accent-ink)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]" onClick={onOpenPricing}>{t("Review pricing")}<ArrowRight className="size-3.5" strokeWidth={1.5} /></Button>
           </div>
         </div>
       </Surface>
@@ -196,7 +196,7 @@ function RoadJobOverview({
             <ol className="mt-5 grid gap-3 md:grid-cols-3">
               {movementSteps.map((step, index) => (
                 <li key={step.label} className="relative min-w-0 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3">
-                  <span className={cn("grid size-6 place-items-center rounded-full text-[11px] font-medium", step.complete ? "bg-[var(--md-green)] text-white" : step.active ? "bg-[var(--md-accent)] text-white" : "bg-[var(--md-surface)] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]")}>{step.complete ? <Check className="size-3.5" strokeWidth={1.8} /> : index + 1}</span>
+                  <span className={cn("grid size-6 place-items-center rounded-full text-[11px] font-medium", step.complete ? "bg-[var(--md-green)] text-[var(--md-accent-ink)]" : step.active ? "bg-[var(--md-accent)] text-[var(--md-accent-ink)]" : "bg-[var(--md-surface)] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]")}>{step.complete ? <Check className="size-3.5" strokeWidth={1.8} /> : index + 1}</span>
                   <p className="mt-3 text-[13px] font-medium text-[var(--md-ink)]">{step.label}</p>
                   <p className="mt-1 min-h-8 text-[11px] leading-4 text-[var(--md-text)]" dir="auto">{step.detail}</p>
                 </li>
@@ -485,7 +485,7 @@ export function DomesticRoadBookingPage({ navigate, roadJobId }: { navigate: (pa
             <Save className="size-3.5" strokeWidth={1.5} />
             {isExistingRoadJob ? t("Save changes") : t("Save draft")}
           </Button>
-          <Button type="button" className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[12px] text-white hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]" onClick={createRoadJob}>
+          <Button type="button" className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[12px] text-[var(--md-accent-ink)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]" onClick={createRoadJob}>
             <Check className="size-3.5" strokeWidth={1.7} />
             {isExistingRoadJob ? t("Update road job") : t("Create road job")}
           </Button>
@@ -604,7 +604,7 @@ export function DomesticRoadBookingPage({ navigate, roadJobId }: { navigate: (pa
           <Surface padding="none" className="rounded-[var(--md-radius-xl)] p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="flex items-center gap-2">
-                <span className="grid size-8 place-items-center rounded-[var(--md-radius-md)] bg-[rgba(46,142,96,0.1)] text-[var(--md-green)]"><Network className="size-4" strokeWidth={1.5} /></span>
+                <span className="grid size-8 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-accent-a10)] text-[var(--md-green)]"><Network className="size-4" strokeWidth={1.5} /></span>
                 <div>
                   <h2 className="text-[14px] font-medium text-[var(--md-ink)]">{t("Service model")}</h2>
                   <p className="mt-0.5 text-[12px] text-[var(--md-text)]">{t("Choose direct capacity or a consolidated distribution network.")}</p>
@@ -682,7 +682,7 @@ export function DomesticRoadBookingPage({ navigate, roadJobId }: { navigate: (pa
             <div className="grid gap-2.5">
               {legs.map((leg, index) => (
                 <div key={leg.id} className="relative rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3 ps-12">
-                  <span className="absolute start-3 top-3 grid size-6 place-items-center rounded-full bg-[var(--md-accent)] text-[11px] font-medium text-white">{index + 1}</span>
+                  <span className="absolute start-3 top-3 grid size-6 place-items-center rounded-full bg-[var(--md-accent)] text-[11px] font-medium text-[var(--md-accent-ink)]">{index + 1}</span>
                   <div className="grid min-w-0 gap-3 pe-10 sm:grid-cols-2 xl:grid-cols-3">
                     <Field label={t("Leg role")}><Input className={inputClass} value={leg.role} onChange={(event) => updateLeg(leg.id, "role", event.target.value)} /></Field>
                     <Field label={t("From")}><Input className={inputClass} value={leg.from} onChange={(event) => updateLeg(leg.id, "from", event.target.value)} dir="auto" /></Field>
@@ -737,7 +737,7 @@ export function DomesticRoadBookingPage({ navigate, roadJobId }: { navigate: (pa
               </div>
               {palletDetails.map((pallet, index) => (
                 <div key={pallet.id} className="grid gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3 md:grid-cols-[32px_minmax(120px,1fr)_repeat(4,minmax(76px,0.6fr))_32px] md:items-end">
-                  <span className="self-start grid size-6 place-items-center rounded-full bg-[var(--md-accent)] text-[11px] font-medium text-white">{index + 1}</span>
+                  <span className="self-start grid size-6 place-items-center rounded-full bg-[var(--md-accent)] text-[11px] font-medium text-[var(--md-accent-ink)]">{index + 1}</span>
                   <Field label={t("Pallet type")}><select value={pallet.type} onChange={(event) => updatePallet(pallet.id, "type", event.target.value)} className={cn(inputClass, "premium-stroke-soft w-full bg-[var(--md-field-bg)] px-2.5 outline-none focus-visible:ring-3 focus-visible:ring-ring/50")}><option>{t("Standard")}</option><option>{t("Euro")}</option><option>{t("Half pallet")}</option><option>{t("Oversize")}</option></select></Field>
                   <Field label={`${t("Length")} (cm)`}><Input className={inputClass} type="number" min="0" value={pallet.length} onChange={(event) => updatePallet(pallet.id, "length", event.target.value)} /></Field>
                   <Field label={`${t("Width")} (cm)`}><Input className={inputClass} type="number" min="0" value={pallet.width} onChange={(event) => updatePallet(pallet.id, "width", event.target.value)} /></Field>
@@ -751,7 +751,7 @@ export function DomesticRoadBookingPage({ navigate, roadJobId }: { navigate: (pa
           </div>
           <DialogFooter className="border-t border-[rgba(11,20,19,0.08)] px-5 py-4">
             <Button type="button" variant="outline" className="h-9 rounded-[var(--md-radius-md)] px-3 text-[12px]" onClick={() => setPalletDetailsOpen(false)}>{t("Cancel")}</Button>
-            <Button type="button" className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[12px] text-white hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]" onClick={applyPalletDetails}>{t("Apply pallet details")}</Button>
+            <Button type="button" className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[12px] text-[var(--md-accent-ink)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]" onClick={applyPalletDetails}>{t("Apply pallet details")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

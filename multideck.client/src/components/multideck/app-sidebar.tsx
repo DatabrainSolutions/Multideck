@@ -1,17 +1,23 @@
-import { useEffect, useState, type ReactNode } from "react"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { ArrowLeft, Bell, Boxes, CheckCircle2, ChevronDown, Clock3, LogOut, PanelLeftClose, PanelLeftOpen, Settings, Sparkles, TriangleAlert, type LucideIcon } from "lucide-react"
+import { useEffect, useMemo, useState, type ReactNode } from "react"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { ArrowLeft, Bell, Boxes, CheckCircle2, ChevronDown, ChevronRight, Clock3, CreditCard, LifeBuoy, LogOut, PanelLeftClose, PanelLeftOpen, Pin, Settings, Sparkles, TriangleAlert, X, type LucideIcon } from "lucide-react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { SpectralBloomShader } from "@/components/multideck/dexter-action-pill"
+import { SidebarArrangeCanvas, type SidebarArrangeItem } from "@/components/multideck/sidebar-arrange"
+import { SidebarItemMenu } from "@/components/multideck/sidebar-item-menu"
+import { ThemeToggle } from "@/components/multideck/theme-toggle"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
 import { mdMotion, reduceMotion } from "@/lib/motion"
+import { isDefaultScope, mergeSavedOrder, useSidebarLayoutScope } from "@/lib/sidebar-preferences"
 import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
+import { createProfilePhotoSignedUrl } from "@/lib/profile-photo"
 import { supabase } from "@/lib/supabase"
 import { useAiAgentName } from "@/lib/user-preferences"
-import { customerWarehouseNavigation, sidebarAreas, type NavItem, type SidebarArea, type SidebarDestination } from "@/data/multideck-data"
+import { customerWarehouseNavigation, homeNavItem, sidebarAreas, type NavItem, type SidebarArea, type SidebarDestination } from "@/data/navigation-data"
+import { readSettingsSectionFromUrl, settingsNavigationGroups, type SettingsSectionId } from "@/data/settings-navigation"
 import { useLanguage } from "@/i18n/language-provider"
 import multideckFullLogo from "@/assets/brand/multideck-full-logo.svg"
 
@@ -30,6 +36,14 @@ const sidebarActiveTransition = {
 const sidebarPaneTransition = {
   duration: 0.18,
   ease: [0.22, 1, 0.36, 1] as [number, number, number, number],
+}
+
+/** Pinning re-slots a row, so it travels on a spring rather than jumping to the top. */
+const sidebarPinTransition = {
+  type: "spring" as const,
+  stiffness: 520,
+  damping: 42,
+  mass: 0.9,
 }
 
 const navReveal = {
@@ -119,11 +133,11 @@ function NotificationBell() {
           type="button"
           aria-label={t("Open notifications")}
           title={t("Open notifications")}
-          className="group relative grid size-10 shrink-0 place-items-center overflow-hidden rounded-full bg-[var(--md-glass)] text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] hover:shadow-[var(--md-shadow-soft)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)] data-[state=open]:bg-[var(--md-bg-strong)] data-[state=open]:text-[var(--md-accent)]"
+          className="group relative grid size-10 shrink-0 place-items-center overflow-hidden rounded-full bg-[var(--md-glass)] text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] hover:shadow-[var(--md-shadow-soft)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] data-[state=open]:bg-[var(--md-bg-strong)] data-[state=open]:text-[var(--md-accent)]"
         >
           <motion.span
             aria-hidden="true"
-            className="absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(14,125,116,0.14),transparent_58%)] opacity-0 transition-opacity duration-200 group-hover:opacity-100"
+            className="absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,var(--md-accent-a14),transparent_58%)] opacity-0 transition-opacity duration-200 group-hover:opacity-100"
           />
           <motion.span
             animate={shouldReduceMotion ? undefined : { rotate: [0, -7, 6, 0] }}
@@ -135,7 +149,7 @@ function NotificationBell() {
           <motion.span
             className="absolute end-2.5 top-2.5 size-1.5 rounded-full bg-[var(--md-amber)] shadow-[0_0_0_2px_var(--md-glass)]"
             animate={shouldReduceMotion ? undefined : { scale: [1, 1.35, 1] }}
-            transition={{ duration: 1.8, ease: [0.22, 1, 0.36, 1], repeat: Infinity, repeatDelay: 1.4 }}
+            transition={{ duration: 0.54, delay: 0.32, ease: [0.22, 1, 0.36, 1] }}
           />
         </button>
       </PopoverTrigger>
@@ -168,7 +182,7 @@ function NotificationBell() {
               notification.tone === "amber"
                 ? "bg-[rgba(221,138,43,0.12)] text-[var(--md-amber)]"
                 : notification.tone === "teal"
-                  ? "bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)]"
+                  ? "bg-[var(--md-accent-a10)] text-[var(--md-accent)]"
                   : "bg-[var(--md-surface-tint)] text-[var(--md-text)]"
 
             return (
@@ -205,6 +219,28 @@ function NotificationBell() {
   )
 }
 
+/**
+ * `branch` rows push a whole new sidebar pane, `group` rows unfold in place. The
+ * glyph is the only cue for which one a row is, so it is owned here rather than
+ * passed in as `trailing`: every arrow then shares one slot, one column and one
+ * set of ramps regardless of the caller.
+ */
+export type SidebarNavAffordance = "branch" | "group"
+
+function SidebarNavArrow({ affordance }: { affordance: SidebarNavAffordance }) {
+  return (
+    <span className="md-nav-arrow" data-affordance={affordance} aria-hidden="true">
+      <span className="md-nav-arrow__glyph">
+        {affordance === "branch" ? (
+          <ChevronRight className="size-3.5" strokeWidth={1.35} />
+        ) : (
+          <ChevronDown className="size-3.5" strokeWidth={1.35} />
+        )}
+      </span>
+    </span>
+  )
+}
+
 export function SidebarNavItem({
   item,
   isActive,
@@ -212,8 +248,10 @@ export function SidebarNavItem({
   accent = "default",
   collapsed = false,
   expanded,
+  affordance,
   trailing,
   nested = false,
+  className,
 }: {
   item: NavItem
   isActive?: boolean
@@ -221,8 +259,10 @@ export function SidebarNavItem({
   accent?: "default" | "dexter"
   collapsed?: boolean
   expanded?: boolean
+  affordance?: SidebarNavAffordance
   trailing?: ReactNode
   nested?: boolean
+  className?: string
 }) {
   const Icon = item.icon
   const { t } = useLanguage()
@@ -230,16 +270,18 @@ export function SidebarNavItem({
   const isDisabled = !onClick
   const isDexterItem = accent === "dexter"
   const valueTone =
-    accent === "dexter" ? "bg-[var(--md-accent)] text-white" :
-    item.label === "Documents" ? "bg-[var(--md-accent)] text-white" :
+    accent === "dexter" ? "bg-[var(--md-accent)] text-[var(--md-accent-ink)]" :
+    item.label === "Documents" ? "bg-[var(--md-accent)] text-[var(--md-accent-ink)]" :
     item.label === "Exceptions" || item.value === "2" ? "bg-[rgba(209,78,78,0.1)] text-[var(--md-red)]" :
     item.label === "Bookings" ? "bg-[rgba(221,138,43,0.12)] text-[var(--md-amber)]" :
     item.label === "Customers" ? "bg-[rgba(90,103,100,0.1)] text-[var(--md-text)]" :
     "bg-transparent text-[var(--md-text)]"
+  const trailingSlot = trailing ?? (affordance ? <SidebarNavArrow affordance={affordance} /> : null)
 
   return (
     <button
       type="button"
+      data-sidebar-row=""
       aria-current={isActive ? "page" : undefined}
       aria-disabled={isDisabled || undefined}
       aria-expanded={expanded}
@@ -249,13 +291,14 @@ export function SidebarNavItem({
         buttonVariants({ variant: "ghost", size: "sm" }),
         "group relative h-10 w-full justify-start gap-2 overflow-hidden rounded-[var(--md-radius-md)] px-2.5 text-[14px] font-medium text-[var(--md-text)] transition-[color,opacity,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
         nested && "h-9 text-[13px]",
-        "bg-transparent hover:bg-transparent hover:text-[var(--md-ink)] aria-expanded:bg-transparent dark:hover:bg-transparent focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
+        "bg-transparent hover:bg-transparent hover:text-[var(--md-ink)] aria-expanded:bg-transparent dark:hover:bg-transparent focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]",
         isDexterItem && "md-sidebar-dexter-item !text-white hover:!text-white focus-visible:!text-white",
         collapsed && "justify-center px-0",
         isActive && "text-[var(--md-selected-text)]",
         accent === "dexter" && isActive && "!text-white",
         isDisabled && "cursor-default opacity-55 hover:text-[var(--md-text)]",
         !isDisabled && !collapsed && !isDexterItem && "hover:scale-[1.004] active:scale-[0.986] motion-reduce:hover:scale-100 motion-reduce:active:scale-100",
+        className,
       )}
       style={{
         transitionDuration: "150ms",
@@ -306,7 +349,7 @@ export function SidebarNavItem({
       >
         <span
           aria-hidden="true"
-          className="grid size-full place-items-center transition-transform duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:-translate-y-px group-hover:scale-[1.06] group-active:translate-y-0 group-active:scale-[0.94] motion-reduce:transition-none motion-reduce:group-hover:translate-y-0 motion-reduce:group-hover:scale-100 motion-reduce:group-active:scale-100"
+          className="grid size-full place-items-center transition-transform duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.04] group-active:scale-[0.94] motion-reduce:transition-none motion-reduce:group-hover:scale-100 motion-reduce:group-active:scale-100"
           style={{
             transitionDuration: "150ms",
             transitionProperty: "translate, scale",
@@ -328,7 +371,11 @@ export function SidebarNavItem({
           {t(item.value)}
         </span>
       ) : null}
-      {trailing && !collapsed ? <span className="relative ms-auto grid size-5 shrink-0 place-items-center text-[var(--md-subtle)]">{trailing}</span> : null}
+      {/* One fixed 20px slot holds either the pin or the arrow, so the glyph column
+          never drifts with the label's length or type size. */}
+      {trailingSlot && !collapsed ? (
+        <span className="relative ms-auto grid size-5 shrink-0 place-items-center text-[var(--md-subtle)]">{trailingSlot}</span>
+      ) : null}
     </button>
   )
 }
@@ -354,8 +401,151 @@ function SidebarSection({
   )
 }
 
-function SidebarSectionItem({ children }: { children: ReactNode }) {
-  return <motion.div variants={navItemReveal}>{children}</motion.div>
+function SidebarSectionItem({ children, layout = false }: { children: ReactNode; layout?: boolean }) {
+  const shouldReduceMotion = useReducedMotion()
+
+  return (
+    <motion.div
+      variants={navItemReveal}
+      layout={layout && !shouldReduceMotion ? "position" : false}
+      transition={{ layout: sidebarPinTransition }}
+    >
+      {children}
+    </motion.div>
+  )
+}
+
+const areasScopeId = "areas"
+
+function SidebarArrangeHeader({ label, onExit }: { label: string; onExit: () => void }) {
+  const { t } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
+
+  return (
+    <motion.div
+      className="mt-3 flex items-center gap-2 ps-2 pe-1"
+      initial={shouldReduceMotion ? false : { opacity: 0, y: -4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.fast)}
+    >
+      <p className="min-w-0 flex-1 truncate text-[12px] font-medium uppercase tracking-[0.08em] text-[var(--md-accent)]">
+        {t("Arranging")} · {label}
+      </p>
+      <button
+        type="button"
+        aria-label={t("Stop arranging")}
+        title={t("Stop arranging")}
+        className="grid size-6 shrink-0 place-items-center rounded-full text-[var(--md-subtle)] transition-[background,color,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-90 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
+        onClick={onExit}
+      >
+        <X className="size-3.5" strokeWidth={1.5} />
+      </button>
+    </motion.div>
+  )
+}
+
+/**
+ * Wraps one sidebar list with its right-click actions, pinned group and arrange canvas.
+ * Every list gets its own scope, so pinning inside Sales & CRM never touches the areas rail.
+ */
+function CustomisableSidebarSection({
+  scopeId,
+  baseIds,
+  promotedIds = [],
+  arrangeItems,
+  labelForId,
+  renderItem,
+  collapsed,
+  arranging,
+  onArrangingChange,
+  className,
+}: {
+  scopeId: string
+  baseIds: string[]
+  promotedIds?: string[]
+  arrangeItems: SidebarArrangeItem[]
+  labelForId: (id: string) => string
+  renderItem: (id: string, pinned: boolean) => ReactNode
+  collapsed: boolean
+  arranging: boolean
+  onArrangingChange: (arranging: boolean) => void
+  className?: string
+}) {
+  const { t } = useLanguage()
+  const { scope, save, togglePin } = useSidebarLayoutScope(scopeId)
+
+  const { pinnedIds, restIds, orderedIds } = useMemo(() => {
+    const topLevelOrder = mergeSavedOrder(baseIds, scope.order)
+    const validIds = new Set([...baseIds, ...promotedIds])
+    const nextPinnedIds = scope.pinned.filter((id) => validIds.has(id))
+    const pinnedSet = new Set(nextPinnedIds)
+    const nextRestIds = topLevelOrder.filter((id) => !pinnedSet.has(id))
+
+    return {
+      pinnedIds: nextPinnedIds,
+      restIds: nextRestIds,
+      orderedIds: [...nextPinnedIds, ...nextRestIds],
+    }
+  }, [baseIds, promotedIds, scope.order, scope.pinned])
+  const savedOrder = useMemo(() => mergeSavedOrder(baseIds, scope.order), [baseIds, scope.order])
+  const savedPinned = useMemo(() => {
+    const validIds = new Set([...baseIds, ...promotedIds])
+    return scope.pinned.filter((id) => validIds.has(id))
+  }, [baseIds, promotedIds, scope.pinned])
+
+  if (arranging) {
+    return (
+      <SidebarArrangeCanvas
+        items={arrangeItems}
+        order={savedOrder}
+        pinned={savedPinned}
+        defaultOrder={baseIds}
+        onSave={(next) => {
+          save(isDefaultScope(baseIds, next) ? null : next)
+          onArrangingChange(false)
+        }}
+        onCancel={() => onArrangingChange(false)}
+      />
+    )
+  }
+
+  const rows: ReactNode[] = []
+  orderedIds.forEach((id, index) => {
+    const pinned = index < pinnedIds.length
+
+    rows.push(
+      <SidebarSectionItem key={id} layout>
+        <SidebarItemMenu pinned={pinned} onTogglePin={() => togglePin(id)} onReorder={() => onArrangingChange(true)}>
+          {renderItem(id, pinned)}
+          {pinned && !collapsed ? (
+            <button
+              type="button"
+              aria-label={`${t("Unpin")}: ${t(labelForId(id))}`}
+              title={t("Unpin")}
+              className="absolute end-1.5 top-5 z-20 grid size-6 -translate-y-1/2 place-items-center rounded-full text-[var(--md-accent)] opacity-70 transition-[opacity,background,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-hover)] hover:opacity-100 active:scale-90 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
+              onClick={() => togglePin(id)}
+            >
+              <Pin className="size-3 -rotate-[32deg]" strokeWidth={1.6} />
+            </button>
+          ) : null}
+        </SidebarItemMenu>
+      </SidebarSectionItem>,
+    )
+
+    if (pinnedIds.length > 0 && index === pinnedIds.length - 1 && restIds.length > 0) {
+      rows.push(
+        <motion.div
+          key="pinned-divider"
+          aria-hidden="true"
+          layout="position"
+          transition={{ layout: sidebarPinTransition }}
+          className="mx-2 my-1 h-px bg-[var(--md-line-strong)]"
+        />,
+      )
+    }
+  })
+
+  return <SidebarSection className={className}>{rows}</SidebarSection>
 }
 
 function routeMatches(item: NavItem, route: string) {
@@ -382,6 +572,10 @@ function activeDestinationIds(area: SidebarArea | undefined, route: string) {
   return area.destinations.filter((destination) => destination.children && destinationMatches(destination, route)).map((destination) => destination.id)
 }
 
+function nestedDestinationId(parentId: string, item: NavItem) {
+  return `${parentId}::${item.route ?? item.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`
+}
+
 export function AppSidebar({
   route,
   navigate,
@@ -401,14 +595,24 @@ export function AppSidebar({
   const aiAgentName = useAiAgentName()
   const shouldReduceMotion = useReducedMotion()
   const isCustomer = currentUser?.actorType === "customer"
+  const isSettingsRoute = route === "/settings"
   const canManageWarehouseUsers = hasPermission(currentUser, "Warehouse.Users.ManageOwn")
-  const customerDestinations = customerWarehouseNavigation.filter((item) =>
-    item.route !== "/warehouse/users" || canManageWarehouseUsers)
-  const availableAreas = isCustomer
-    ? [{ id: "warehouse", label: "Warehouse", icon: Boxes, destinations: customerDestinations } satisfies SidebarArea]
-    : sidebarAreas
-  const initialArea = isCustomer ? availableAreas[0] : route === "/" || route === "/agent-dexter" ? undefined : findAreaForRoute(route, availableAreas)
+  const availableAreas = useMemo<SidebarArea[]>(() => {
+    if (!isCustomer) return sidebarAreas
+
+    const destinations = customerWarehouseNavigation.filter((item) =>
+      item.route !== "/warehouse/users" || canManageWarehouseUsers)
+    return [{ id: "warehouse", label: "Warehouse", icon: Boxes, destinations }]
+  }, [isCustomer, canManageWarehouseUsers])
+  const initialArea = isSettingsRoute
+    ? undefined
+    : isCustomer
+      ? availableAreas[0]
+      : route === "/" || route === "/agent-dexter"
+        ? undefined
+        : findAreaForRoute(route, availableAreas)
   const [activeAreaId, setActiveAreaId] = useState<string | null>(initialArea?.id ?? null)
+  const [activeSettingsSection, setActiveSettingsSection] = useState<SettingsSectionId>(readSettingsSectionFromUrl)
   const [expandedDestinationIds, setExpandedDestinationIds] = useState<Set<string>>(
     () => new Set(activeDestinationIds(initialArea, route)),
   )
@@ -417,10 +621,72 @@ export function AppSidebar({
   const accountName = currentUser?.name ?? currentUser?.email ?? t("Signed in")
   const accountDetail = currentUser?.name && currentUser.email ? currentUser.email : t("Signed in")
   const accountInitials = currentUser?.initials ?? "MD"
-  const profileIsActive = route === "/settings" && activeArea?.id !== "administration"
+  const [accountPhotoUrl, setAccountPhotoUrl] = useState<string | null>(null)
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false)
+  const profileIsActive = false
+  const [arrangingScopeId, setArrangingScopeId] = useState<string | null>(null)
+
+  const areaBaseIds = useMemo(() => availableAreas.map((area) => area.id), [availableAreas])
+  const areaArrangeItems = useMemo<SidebarArrangeItem[]>(
+    () => availableAreas.map((area) => ({ id: area.id, label: area.label, icon: area.icon })),
+    [availableAreas],
+  )
+  const destinationBaseIds = useMemo(
+    () => activeArea?.destinations.map((destination) => destination.id) ?? [],
+    [activeArea],
+  )
+  const destinationArrangeItems = useMemo<SidebarArrangeItem[]>(
+    () => activeArea?.destinations.map(({ id, label, icon }) => ({ id, label, icon })) ?? [],
+    [activeArea],
+  )
+  const destinationsById = useMemo(
+    () => new Map((activeArea?.destinations ?? []).map((destination) => [destination.id, destination])),
+    [activeArea],
+  )
+  const nestedDestinationsById = useMemo(
+    () =>
+      new Map(
+        (activeArea?.destinations ?? []).flatMap((destination) =>
+          (destination.children ?? []).map((item) => [
+            nestedDestinationId(destination.id, item),
+            { parentId: destination.id, item },
+          ] as const),
+        ),
+      ),
+    [activeArea],
+  )
+  const promotedDestinationIds = useMemo(() => [...nestedDestinationsById.keys()], [nestedDestinationsById])
+  const { scope: activeAreaScope, togglePin: toggleActiveAreaPin } = useSidebarLayoutScope(activeArea?.id ?? null)
+  const activeAreaPinnedIds = useMemo(() => new Set(activeAreaScope.pinned), [activeAreaScope.pinned])
 
   useEffect(() => {
-    const routeArea = isCustomer ? availableAreas[0] : route === "/" || route === "/agent-dexter" ? undefined : findAreaForRoute(route, availableAreas)
+    const profilePhoto = currentUser?.profilePhoto
+    if (!profilePhoto) {
+      setAccountPhotoUrl(null)
+      return
+    }
+
+    let cancelled = false
+    createProfilePhotoSignedUrl(profilePhoto).then((signedUrl) => {
+      if (!cancelled) setAccountPhotoUrl(signedUrl)
+    }).catch((error) => {
+      console.error("The sidebar profile photo could not be loaded.", error)
+      if (!cancelled) setAccountPhotoUrl(null)
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [currentUser?.profilePhoto])
+
+  useEffect(() => {
+    const routeArea = isSettingsRoute
+      ? undefined
+      : isCustomer
+        ? availableAreas[0]
+        : route === "/" || route === "/agent-dexter"
+          ? undefined
+          : findAreaForRoute(route, availableAreas)
     setActiveAreaId(routeArea?.id ?? null)
     setExpandedDestinationIds((current) => {
       const requiredIds = activeDestinationIds(routeArea, route)
@@ -430,11 +696,30 @@ export function AppSidebar({
       requiredIds.forEach((id) => next.add(id))
       return next
     })
-  }, [route, isCustomer, canManageWarehouseUsers]) // availableAreas is intentionally derived from the account type and permissions.
+  }, [route, isCustomer, isSettingsRoute, canManageWarehouseUsers]) // availableAreas is intentionally derived from the account type and permissions.
+
+  useEffect(() => {
+    if (!isSettingsRoute) return
+
+    const syncSettingsSection = () => setActiveSettingsSection(readSettingsSectionFromUrl())
+    syncSettingsSection()
+    window.addEventListener("popstate", syncSettingsSection)
+    return () => window.removeEventListener("popstate", syncSettingsSection)
+  }, [isSettingsRoute])
+
+  useEffect(() => {
+    setArrangingScopeId(null)
+  }, [activeAreaId])
 
   function openArea(area: SidebarArea) {
     setActiveAreaId(area.id)
     setExpandedDestinationIds(new Set(activeDestinationIds(area, route)))
+  }
+
+  function setArranging(scopeId: string, arranging: boolean) {
+    // Rows need their labels to be arrangeable, so a collapsed rail opens first.
+    if (arranging && collapsed) onCollapsedChange?.(false)
+    setArrangingScopeId(arranging ? scopeId : null)
   }
 
   function toggleDestination(destinationId: string) {
@@ -445,6 +730,23 @@ export function AppSidebar({
       return next
     })
   }
+
+  function openSettingsSection(sectionId: SettingsSectionId) {
+    const nextPath = sectionId === "profile" ? "/settings" : `/settings?tab=${sectionId}`
+    window.history.pushState({}, "", nextPath)
+    window.dispatchEvent(new PopStateEvent("popstate"))
+  }
+
+  const homeSidebarItem = (
+    <SidebarSectionItem>
+      <SidebarNavItem
+        item={homeNavItem}
+        isActive={route === "/"}
+        onClick={() => navigate("/")}
+        collapsed={collapsed}
+      />
+    </SidebarSectionItem>
+  )
 
   const dexterSidebarItem = (
     <SidebarSectionItem>
@@ -461,7 +763,7 @@ export function AppSidebar({
   return (
     <aside
       data-sidebar-collapsed={collapsed ? "true" : undefined}
-      data-sidebar-mode={activeArea?.id ?? "areas"}
+      data-sidebar-mode={isSettingsRoute ? "settings" : activeArea?.id ?? "areas"}
       className={cn(
         "relative isolate flex h-full min-h-0 shrink-0 flex-col bg-[var(--md-sidebar-bg)] py-3 shadow-[var(--md-stroke-right)] transition-[width,padding] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
         collapsed ? "w-[var(--md-sidebar-collapsed-width)] px-2" : "w-[var(--md-sidebar-width)] px-[var(--md-gap-lg)]",
@@ -499,10 +801,69 @@ export function AppSidebar({
         className="relative z-10 mt-[var(--md-page-stack-gap)] min-h-0 flex-1 overflow-y-auto overflow-x-hidden md-scrollbar"
         style={{ contain: "layout paint" }}
       >
-        {isCustomer ? null : <SidebarSection>{dexterSidebarItem}</SidebarSection>}
+        {isSettingsRoute || isCustomer ? null : <SidebarSection>{homeSidebarItem}{dexterSidebarItem}</SidebarSection>}
 
         <AnimatePresence mode="popLayout" initial={false}>
-          {activeArea ? (
+          {isSettingsRoute ? (
+            <motion.div
+              key="settings"
+              className="origin-top"
+              initial={shouldReduceMotion ? false : { opacity: 0, scale: 0.992 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.996 }}
+              transition={shouldReduceMotion ? { duration: 0 } : sidebarPaneTransition}
+            >
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                aria-label={collapsed ? t("Back to all areas") : undefined}
+                title={collapsed ? t("Back to all areas") : undefined}
+                className={cn(
+                  "h-9 w-full justify-start gap-2 rounded-[var(--md-radius-md)] px-2 text-[13px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,opacity,transform] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]",
+                  collapsed && "justify-center px-0",
+                )}
+                onClick={() => navigate("/")}
+              >
+                <ArrowLeft data-icon="inline-start" className="size-4" strokeWidth={1.2} />
+                <span className={cn(collapsed && "sr-only")}>{t("All areas")}</span>
+              </Button>
+
+              <div className={cn("mt-3 flex items-center gap-2 px-2", collapsed && "justify-center px-0")}>
+                <Settings className="size-4 shrink-0 text-[var(--md-accent)]" strokeWidth={1.2} aria-hidden="true" />
+                <p className={cn("truncate text-[12px] font-medium uppercase tracking-[0.08em] text-[var(--md-subtle)]", collapsed && "sr-only")}>
+                  {t("Settings")}
+                </p>
+              </div>
+
+              <nav aria-label={t("Settings")} className="mt-3 flex flex-col gap-[var(--md-page-stack-gap)]">
+                {settingsNavigationGroups.map((group) => (
+                  <div key={group.label}>
+                    <p className={cn("mb-1.5 px-2 text-[11px] font-medium text-[var(--md-subtle)]", collapsed && "sr-only")}>
+                      {t(group.label)}
+                    </p>
+                    <SidebarSection>
+                      {group.items.map((item) => (
+                        <SidebarSectionItem key={item.id}>
+                          <SidebarNavItem
+                            item={{ label: item.label, icon: item.icon }}
+                            isActive={activeSettingsSection === item.id}
+                            onClick={() => openSettingsSection(item.id)}
+                            collapsed={collapsed}
+                            trailing={item.badge ? (
+                              <span className="rounded-[var(--md-radius-sm)] bg-[var(--md-accent-a10)] px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-[var(--md-accent)]">
+                                {item.badge}
+                              </span>
+                            ) : undefined}
+                          />
+                        </SidebarSectionItem>
+                      ))}
+                    </SidebarSection>
+                  </div>
+                ))}
+              </nav>
+            </motion.div>
+          ) : activeArea ? (
             <motion.div
               key={activeArea.id}
               className="mt-2 origin-top"
@@ -511,7 +872,7 @@ export function AppSidebar({
               exit={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.996 }}
               transition={shouldReduceMotion ? { duration: 0 } : sidebarPaneTransition}
             >
-              {isCustomer ? null : <Button
+              {isCustomer || arrangingScopeId === activeArea.id ? null : <Button
                 type="button"
                 variant="ghost"
                 size="sm"
@@ -529,64 +890,109 @@ export function AppSidebar({
                 <span className={cn(collapsed && "sr-only")}>{t("All areas")}</span>
               </Button>}
 
-    <div className={cn("mt-3 flex items-center gap-2 px-2", collapsed && "justify-center px-0")}>
-      {ActiveAreaIcon ? <ActiveAreaIcon className="size-4 shrink-0 text-[var(--md-accent)]" strokeWidth={1.2} /> : null}
-      <p className={cn("truncate text-[12px] font-medium uppercase tracking-[0.08em] text-[var(--md-subtle)]", collapsed && "sr-only")}>
-        {t(activeArea.label)}
-      </p>
-    </div>
+              {arrangingScopeId === activeArea.id ? (
+                <SidebarArrangeHeader label={t(activeArea.label)} onExit={() => setArranging(activeArea.id, false)} />
+              ) : (
+                <div className={cn("mt-3 flex items-center gap-2 px-2", collapsed && "justify-center px-0")}>
+                  {ActiveAreaIcon ? <ActiveAreaIcon className="size-4 shrink-0 text-[var(--md-accent)]" strokeWidth={1.2} /> : null}
+                  <p className={cn("truncate text-[12px] font-medium uppercase tracking-[0.08em] text-[var(--md-subtle)]", collapsed && "sr-only")}>
+                    {t(activeArea.label)}
+                  </p>
+                </div>
+              )}
 
-    <SidebarSection className="mt-3">
-      {activeArea.destinations.map((destination) => {
-        const hasChildren = Boolean(destination.children?.length)
-        const isExpanded = expandedDestinationIds.has(destination.id)
-        const destinationActive = destinationMatches(destination, route)
+              <CustomisableSidebarSection
+                className="mt-3"
+                scopeId={activeArea.id}
+                baseIds={destinationBaseIds}
+                promotedIds={promotedDestinationIds}
+                arrangeItems={destinationArrangeItems}
+                labelForId={(id) => destinationsById.get(id)?.label ?? nestedDestinationsById.get(id)?.item.label ?? id}
+                collapsed={collapsed}
+                arranging={arrangingScopeId === activeArea.id}
+                onArrangingChange={(next) => setArranging(activeArea.id, next)}
+                renderItem={(id, pinned) => {
+                  const promotedDestination = nestedDestinationsById.get(id)
+                  if (promotedDestination) {
+                    const { item } = promotedDestination
 
-        return (
-          <SidebarSectionItem key={destination.id}>
-            <SidebarNavItem
-              item={destination}
-              isActive={!hasChildren && destinationActive}
-              onClick={hasChildren ? () => toggleDestination(destination.id) : destination.route ? () => navigate(destination.route!) : undefined}
-              collapsed={collapsed}
-              expanded={hasChildren ? isExpanded : undefined}
-              trailing={
-                hasChildren ? (
-                  <motion.span animate={{ rotate: isExpanded ? 180 : 0 }} transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.micro)}>
-                    <ChevronDown className="size-3.5" strokeWidth={1.2} />
-                  </motion.span>
-                ) : undefined
-              }
-            />
-
-            <AnimatePresence initial={false}>
-              {hasChildren && isExpanded ? (
-                <motion.div
-                  className={cn("overflow-hidden", collapsed ? "mt-1" : "mt-1 ps-4")}
-                  initial={shouldReduceMotion ? false : { height: 0, opacity: 0 }}
-                  animate={{ height: "auto", opacity: 1 }}
-                  exit={shouldReduceMotion ? undefined : { height: 0, opacity: 0 }}
-                  transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.fast)}
-                >
-                  <div className="flex flex-col gap-1 rounded-[var(--md-radius-lg)] bg-[rgba(255,255,255,0.3)] p-1 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.48),0_1px_0_rgba(11,20,19,0.03)] dark:bg-[rgba(255,255,255,0.03)]">
-                    {destination.children?.map((child) => (
+                    return (
                       <SidebarNavItem
-                        key={`${destination.id}-${child.label}`}
-                        item={child}
-                        isActive={routeMatches(child, route)}
-                        onClick={child.route ? () => navigate(child.route!) : undefined}
+                        item={item}
+                        isActive={routeMatches(item, route)}
+                        onClick={item.route ? () => navigate(item.route!) : undefined}
                         collapsed={collapsed}
-                        nested
+                        className={pinned && !collapsed ? "pe-9" : undefined}
                       />
-                    ))}
-                  </div>
-                </motion.div>
-              ) : null}
-            </AnimatePresence>
-          </SidebarSectionItem>
-        )
-      })}
-    </SidebarSection>
+                    )
+                  }
+
+                  const destination = destinationsById.get(id)
+                  if (!destination) return null
+
+                  const hasChildren = Boolean(destination.children?.length)
+                  const isExpanded = expandedDestinationIds.has(destination.id)
+                  const destinationActive = destinationMatches(destination, route)
+
+                  return (
+                    <>
+                      <SidebarNavItem
+                        item={destination}
+                        isActive={!hasChildren && destinationActive}
+                        onClick={hasChildren ? () => toggleDestination(destination.id) : destination.route ? () => navigate(destination.route!) : undefined}
+                        collapsed={collapsed}
+                        expanded={hasChildren ? isExpanded : undefined}
+                        className={pinned && !collapsed ? "pe-9" : undefined}
+                        // A pinned row hands the slot to its unpin button instead.
+                        affordance={hasChildren && !pinned ? "group" : undefined}
+                      />
+
+                      <AnimatePresence initial={false}>
+                        {hasChildren && isExpanded ? (
+                          <motion.div
+                            className="mt-1 overflow-hidden"
+                            initial={shouldReduceMotion ? false : { height: 0, opacity: 0 }}
+                            animate={{ height: "auto", opacity: 1 }}
+                            exit={shouldReduceMotion ? undefined : { height: 0, opacity: 0 }}
+                            transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.fast)}
+                          >
+                            <div className="flex flex-col gap-1 rounded-[var(--md-radius-lg)] bg-[rgba(255,255,255,0.3)] p-1 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.48),0_1px_0_rgba(11,20,19,0.03)] dark:bg-[rgba(255,255,255,0.03)]">
+                              <AnimatePresence initial={false}>
+                                {destination.children?.map((child) => {
+                                  const childId = nestedDestinationId(destination.id, child)
+                                  if (activeAreaPinnedIds.has(childId)) return null
+
+                                  return (
+                                    <motion.div
+                                      key={childId}
+                                      layout={shouldReduceMotion ? false : "position"}
+                                      initial={shouldReduceMotion ? false : { height: 0, opacity: 0 }}
+                                      animate={{ height: "auto", opacity: 1 }}
+                                      exit={shouldReduceMotion ? undefined : { height: 0, opacity: 0 }}
+                                      transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.fast)}
+                                      className="overflow-hidden"
+                                    >
+                                      <SidebarItemMenu onTogglePin={() => toggleActiveAreaPin(childId)}>
+                                        <SidebarNavItem
+                                          item={child}
+                                          isActive={routeMatches(child, route)}
+                                          onClick={child.route ? () => navigate(child.route!) : undefined}
+                                          collapsed={collapsed}
+                                          nested
+                                        />
+                                      </SidebarItemMenu>
+                                    </motion.div>
+                                  )
+                                })}
+                              </AnimatePresence>
+                            </div>
+                          </motion.div>
+                        ) : null}
+                      </AnimatePresence>
+                    </>
+                  )
+                }}
+              />
             </motion.div>
           ) : (
             <motion.div
@@ -597,13 +1003,34 @@ export function AppSidebar({
               exit={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.996 }}
               transition={shouldReduceMotion ? { duration: 0 } : sidebarPaneTransition}
             >
-              <SidebarSection className="mt-[var(--md-gap-sm)]">
-                {availableAreas.map((area) => (
-                  <SidebarSectionItem key={area.id}>
-                    <SidebarNavItem item={{ label: area.label, icon: area.icon }} onClick={() => openArea(area)} collapsed={collapsed} />
-                  </SidebarSectionItem>
-                ))}
-              </SidebarSection>
+              {arrangingScopeId === areasScopeId ? (
+                <SidebarArrangeHeader label={t("All areas")} onExit={() => setArranging(areasScopeId, false)} />
+              ) : null}
+
+              <CustomisableSidebarSection
+                className="mt-[var(--md-gap-sm)]"
+                scopeId={areasScopeId}
+                baseIds={areaBaseIds}
+                arrangeItems={areaArrangeItems}
+                labelForId={(id) => availableAreas.find((area) => area.id === id)?.label ?? id}
+                collapsed={collapsed}
+                arranging={arrangingScopeId === areasScopeId}
+                onArrangingChange={(next) => setArranging(areasScopeId, next)}
+                renderItem={(id, pinned) => {
+                  const area = availableAreas.find((entry) => entry.id === id)
+                  if (!area) return null
+
+                  return (
+                    <SidebarNavItem
+                      item={{ label: area.label, icon: area.icon }}
+                      onClick={() => openArea(area)}
+                      collapsed={collapsed}
+                      className={pinned && !collapsed ? "pe-9" : undefined}
+                      affordance={pinned ? undefined : "branch"}
+                    />
+                  )
+                }}
+              />
             </motion.div>
           )}
         </AnimatePresence>
@@ -611,7 +1038,7 @@ export function AppSidebar({
 
       <div className="relative z-10 mt-[var(--md-page-stack-gap)]">
         <Separator className="mb-[var(--md-page-stack-gap)] bg-[var(--md-line-strong)]" />
-        <Popover>
+        <Popover open={accountMenuOpen} onOpenChange={setAccountMenuOpen}>
           <PopoverTrigger asChild>
             <button
               type="button"
@@ -619,7 +1046,7 @@ export function AppSidebar({
               aria-label={collapsed ? t("Account menu") : undefined}
               title={collapsed ? accountName : undefined}
               className={cn(
-                "group relative flex min-w-0 w-full items-center gap-3 overflow-hidden rounded-[var(--md-radius-lg)] px-2 py-2 text-left transition-[color,opacity,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.004] hover:text-[var(--md-ink)] active:scale-[0.986] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)] motion-reduce:transition-none motion-reduce:hover:scale-100 motion-reduce:active:scale-100",
+                "group relative flex min-w-0 w-full items-center gap-3 overflow-hidden rounded-[var(--md-radius-lg)] px-2 py-2 text-left transition-[color,opacity,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.004] hover:text-[var(--md-ink)] active:scale-[0.986] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] motion-reduce:transition-none motion-reduce:hover:scale-100 motion-reduce:active:scale-100",
                 collapsed && "justify-center px-0",
                 profileIsActive && "text-[var(--md-ink)]",
               )}
@@ -646,6 +1073,7 @@ export function AppSidebar({
                 />
               )}
               <Avatar className="relative size-10 rounded-full">
+                {accountPhotoUrl ? <AvatarImage src={accountPhotoUrl} alt="" /> : null}
                 <AvatarFallback className="rounded-full bg-[var(--md-avatar-bg)] text-[13px] font-medium text-[var(--md-ink)]" data-i18n-skip>{accountInitials}</AvatarFallback>
               </Avatar>
               <div className={cn("relative min-w-0 flex-1", collapsed && "sr-only")}>
@@ -667,18 +1095,66 @@ export function AppSidebar({
               <p className="mt-0.5 truncate text-[12px] text-[var(--md-text)]" dir={currentUser?.email ? "ltr" : "auto"} data-i18n-skip={currentUser?.email ? true : undefined}>{accountDetail}</p>
             </div>
             <Separator className="my-1 bg-[var(--md-line-strong)]" />
+            <div onClick={() => setAccountMenuOpen(false)}>
+              <ThemeToggle className="h-11 rounded-[var(--md-radius-md)] shadow-none" />
+            </div>
+            <Separator className="my-1 bg-[var(--md-line-strong)]" />
             {!isCustomer ? <button
               type="button"
-              className="flex h-9 w-full items-center gap-2 rounded-[var(--md-radius-md)] px-2 text-left text-[13px] font-medium text-[var(--md-text)] transition-[background,color,opacity,transform] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]"
-              onClick={() => navigate("/settings")}
+              className="flex h-9 w-full items-center gap-2 rounded-[var(--md-radius-md)] px-2 text-left text-[13px] font-medium text-[var(--md-text)] transition-[background,color,opacity,transform] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
+              onClick={() => {
+                setAccountMenuOpen(false)
+                openSettingsSection("profile")
+              }}
             >
               <Settings data-icon="inline-start" className="size-4" strokeWidth={1.4} />
               <span className="min-w-0 flex-1 truncate">{t("Account settings")}</span>
             </button> : null}
+            {!isCustomer ? (
+              <>
+                <button
+                  type="button"
+                  className="flex h-9 w-full items-center gap-2 rounded-[var(--md-radius-md)] px-2 text-left text-[13px] font-medium text-[var(--md-text)] transition-[background,color,opacity,transform] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
+                  onClick={() => {
+                    setAccountMenuOpen(false)
+                    openSettingsSection("ai-usage")
+                  }}
+                >
+                  <Sparkles data-icon="inline-start" className="size-4" strokeWidth={1.4} />
+                  <span className="min-w-0 flex-1 truncate">{t("AI usage")}</span>
+                </button>
+                <button
+                  type="button"
+                  className="flex h-9 w-full items-center gap-2 rounded-[var(--md-radius-md)] px-2 text-left text-[13px] font-medium text-[var(--md-text)] transition-[background,color,opacity,transform] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
+                  onClick={() => {
+                    setAccountMenuOpen(false)
+                    openSettingsSection("billing")
+                  }}
+                >
+                  <CreditCard data-icon="inline-start" className="size-4" strokeWidth={1.4} />
+                  <span className="min-w-0 flex-1 truncate">{t("Payment & billing")}</span>
+                </button>
+              </>
+            ) : null}
+            <button
+              type="button"
+              className="flex h-9 w-full items-center gap-2 rounded-[var(--md-radius-md)] px-2 text-left text-[13px] font-medium text-[var(--md-text)] transition-[background,color,opacity,transform] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
+              onClick={() => {
+                setAccountMenuOpen(false)
+                openSettingsSection("support")
+              }}
+            >
+              <LifeBuoy data-icon="inline-start" className="size-4" strokeWidth={1.4} />
+              <span className="min-w-0 flex-1 truncate">{t("Support")}</span>
+            </button>
+            <Separator className="my-1 bg-[var(--md-line-strong)]" />
             <button
               type="button"
               className="flex h-9 w-full items-center gap-2 rounded-[var(--md-radius-md)] px-2 text-left text-[13px] font-medium text-[var(--md-red)] transition-[background,color,opacity,transform] hover:bg-[rgba(209,78,78,0.08)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(209,78,78,0.14)]"
-              onClick={() => void supabase?.auth.signOut()}
+              onClick={() => {
+                setAccountMenuOpen(false)
+                void supabase?.auth.signOut()
+              }}
             >
               <LogOut data-icon="inline-start" className="size-4" strokeWidth={1.4} />
               <span className="min-w-0 flex-1 truncate">{t("Sign out")}</span>

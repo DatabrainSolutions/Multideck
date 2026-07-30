@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useState, type CSSProperties } from "reac
 import L, { type LatLngExpression } from "leaflet"
 import { ArrowRight, ChevronLeft, ChevronRight, Maximize2, Route, X } from "lucide-react"
 import { MapContainer, Marker, Polyline, TileLayer, Tooltip, useMap, ZoomControl } from "react-leaflet"
+import "leaflet/dist/leaflet.css"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import { Progress } from "@/components/ui/progress"
 import { liveBookings } from "@/data/multideck-data"
@@ -220,7 +221,7 @@ function BookingMapCard({
       aria-pressed={selected}
       className={cn(
         "min-w-[170px] border-r border-[rgba(11,20,19,0.08)] bg-white px-4 py-3 text-left transition-[background,color,box-shadow,opacity,transform] duration-200 last:border-r-0 hover:bg-[var(--md-surface-soft)]",
-        "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.12)]",
+        "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a12)]",
         selected && "bg-[var(--md-surface-soft)]",
       )}
       onClick={onSelect}
@@ -311,8 +312,8 @@ function FullscreenRouteSidebar({
               aria-pressed={selected}
               className={cn(
                 "min-w-[260px] rounded-[var(--md-radius-lg)] bg-white/64 p-3 text-left shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white md:min-w-0",
-                "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.12)]",
-                selected && "bg-[var(--md-surface-tint)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.18),0_0_0_1px_rgba(11,20,19,0.04)]",
+                "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a12)]",
+                selected && "bg-[var(--md-surface-tint)] shadow-[inset_0_0_0_1px_var(--md-accent-a18),0_0_0_1px_rgba(11,20,19,0.04)]",
               )}
               onClick={() => onSelect(booking.id)}
             >
@@ -367,7 +368,7 @@ export function InteractiveBookingMap({ className }: { className?: string }) {
         <button
           type="button"
           aria-label="Open full-screen route map"
-          className="absolute right-4 top-4 z-[500] grid size-9 place-items-center rounded-[var(--md-radius-lg)] bg-white/82 text-[var(--md-ink)] shadow-[var(--md-shadow-line)] backdrop-blur-md transition-[background,color,box-shadow,opacity,transform] hover:bg-white focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.12)]"
+          className="absolute right-4 top-4 z-[500] grid size-9 place-items-center rounded-[var(--md-radius-lg)] bg-white/82 text-[var(--md-ink)] shadow-[var(--md-shadow-line)] backdrop-blur-md transition-[background,color,box-shadow,opacity,transform] hover:bg-white focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a12)]"
           onClick={() => setFullscreenOpen(true)}
         >
           <Maximize2 className="size-4" strokeWidth={1.3} />
@@ -391,7 +392,7 @@ export function InteractiveBookingMap({ className }: { className?: string }) {
             <button
               type="button"
               aria-label="Close full-screen route map"
-              className="absolute left-4 top-[58px] z-[570] grid size-9 place-items-center rounded-[var(--md-radius-lg)] bg-white/82 text-[var(--md-ink)] shadow-[var(--md-shadow-line)] backdrop-blur-md transition-[background,color,box-shadow,opacity,transform] hover:bg-white focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.12)] md:left-4 md:top-16"
+              className="absolute left-4 top-[58px] z-[570] grid size-9 place-items-center rounded-[var(--md-radius-lg)] bg-white/82 text-[var(--md-ink)] shadow-[var(--md-shadow-line)] backdrop-blur-md transition-[background,color,box-shadow,opacity,transform] hover:bg-white focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a12)] md:left-4 md:top-16"
               onClick={() => setFullscreenOpen(false)}
             >
               <X className="size-4" strokeWidth={1.3} />

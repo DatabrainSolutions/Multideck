@@ -23,6 +23,10 @@ public partial class CrmOpportunity
 
     public Guid? CrmopptyBrandId { get; set; }
 
+    public Guid? CrmopptyPipelineId { get; set; }
+
+    public Guid? CrmopptyPipelineStageId { get; set; }
+
     public string CrmopptyName { get; set; } = null!;
 
     public string CrmopptyTypeCode { get; set; } = null!;
@@ -158,6 +162,10 @@ public partial class CrmOpportunity
     public virtual CmpOffice? CrmopptyOrgOffice { get; set; }
 
     public virtual CmpUser? CrmopptyOwnerUser { get; set; }
+
+    public virtual CrmPipeline? CrmopptyPipeline { get; set; }
+
+    public virtual CrmPipelineStage? CrmopptyPipelineStage { get; set; }
 
     public virtual OrgContact? CrmopptyPrimaryContact { get; set; }
 

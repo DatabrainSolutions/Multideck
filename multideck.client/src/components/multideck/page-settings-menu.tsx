@@ -116,7 +116,7 @@ export function PageSettingsMenu<T extends string>({
           className={cn(
             "group grid size-10 place-items-center rounded-[var(--md-radius-lg)] bg-white/45 text-[var(--md-text)] shadow-[var(--md-shadow-line)]",
             "transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-white/70 hover:text-[var(--md-ink)] hover:shadow-[var(--md-shadow-soft)]",
-            "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)] data-[state=open]:bg-[var(--md-accent)] data-[state=open]:text-white data-[state=open]:shadow-[0_0_0_3px_rgba(14,125,116,0.13),var(--md-shadow-line)]",
+            "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] data-[state=open]:bg-[var(--md-accent)] data-[state=open]:text-[var(--md-accent-ink)] data-[state=open]:shadow-[0_0_0_3px_var(--md-accent-a13),var(--md-shadow-line)]",
             className,
           )}
           whileTap={shouldReduceMotion ? undefined : { scale: 0.98 }}
@@ -157,7 +157,7 @@ export function PageSettingsMenu<T extends string>({
                       aria-pressed={selected}
                       className={cn(
                         "group/item relative flex h-10 w-full items-center gap-2.5 overflow-hidden rounded-[var(--md-radius-lg)] px-2.5 text-start text-[13px] font-medium text-[var(--md-text)]",
-                        "transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.12)]",
+                        "transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a12)]",
                         selected && "text-[var(--md-ink)]",
                       )}
                       onClick={() => selectView(option.value)}
@@ -195,7 +195,7 @@ export function PageSettingsMenu<T extends string>({
                       {selected ? (
                         <motion.span
                           layout
-                          className="relative grid size-5 shrink-0 place-items-center rounded-full bg-[var(--md-accent)] text-white shadow-[0_0_0_3px_rgba(14,125,116,0.11)]"
+                          className="relative grid size-5 shrink-0 place-items-center rounded-full bg-[var(--md-accent)] text-[var(--md-accent-ink)] shadow-[0_0_0_3px_var(--md-accent-a11)]"
                           transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.layout)}
                         >
                           <Check className="size-3" strokeWidth={1.6} />
@@ -218,7 +218,7 @@ export function PageSettingsMenu<T extends string>({
                   <motion.button
                     key={action.id}
                     type="button"
-                    className="group/item flex h-10 w-full items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 text-start text-[13px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.12)]"
+                    className="group/item flex h-10 w-full items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 text-start text-[13px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a12)]"
                     onClick={() => selectAction(action)}
                     whileHover={shouldReduceMotion ? undefined : { scale: 1.01 }}
                     whileTap={shouldReduceMotion ? undefined : { scale: 0.985 }}

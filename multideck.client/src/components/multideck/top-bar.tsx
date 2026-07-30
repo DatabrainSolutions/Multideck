@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react"
 import { ArrowLeft, Menu, MoreHorizontal, Plus, Upload, UserRoundPlus } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -8,7 +9,6 @@ import type { LanguageCode } from "@/i18n/languages"
 import { cn } from "@/lib/utils"
 import { CommandInput } from "./command-input"
 import { AppSidebar } from "./app-sidebar"
-import { customers } from "@/data/multideck-data"
 
 function getTopBarDateLabel(language: LanguageCode, todayLabel: string) {
   const locale: Record<LanguageCode, string> = {
@@ -28,16 +28,16 @@ function getTopBarDateLabel(language: LanguageCode, todayLabel: string) {
 }
 
 const topBarBackButtonClass =
-  "-mx-2 flex min-w-0 items-center gap-3 rounded-[var(--md-radius-md)] px-2 py-1.5 text-[14px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-white/42 hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(14,125,116,0.16)]"
+  "-mx-2 flex min-w-0 items-center gap-3 rounded-[var(--md-radius-md)] px-2 py-1.5 text-[14px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-white/42 hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a16)]"
 
 const topBarGhostActionClass =
-  "h-10 rounded-[var(--md-radius-lg)] bg-white/42 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-white/70 hover:shadow-[var(--md-shadow-soft)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]"
+  "h-10 rounded-[var(--md-radius-lg)] bg-white/42 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-white/70 hover:shadow-[var(--md-shadow-soft)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
 
 const topBarPrimaryActionClass =
-  "h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white shadow-[0_10px_22px_rgba(14,125,116,0.14)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)] hover:shadow-[0_14px_26px_rgba(14,125,116,0.18)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.16)]"
+  "h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] shadow-[0_10px_22px_var(--md-accent-a14)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)] hover:shadow-[0_14px_26px_var(--md-accent-a18)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a16)]"
 
 const topBarIconActionClass =
-  "rounded-[var(--md-radius-md)] bg-white/42 text-[var(--md-ink)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-white/70 hover:shadow-[var(--md-shadow-soft)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]"
+  "rounded-[var(--md-radius-md)] bg-white/42 text-[var(--md-ink)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-white/70 hover:shadow-[var(--md-shadow-soft)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
 
 export function TopBar({
   route,
@@ -50,6 +50,7 @@ export function TopBar({
   const isCustomerDetail = route.startsWith("/customers/")
   const isCrmRoute = route.startsWith("/crm")
   const isCrmLeadDetail = /^\/crm\/leads\/[^/]+$/.test(route)
+  const isCrmLeadConversion = /^\/crm\/leads\/[^/]+\/convert$/.test(route)
   const isBookingList = route === "/bookings"
   const isBookingWizard = route === "/bookings/new"
   const isRoadControl = route === "/road-control"
@@ -86,7 +87,24 @@ export function TopBar({
     "/warehouse/orders": "Orders",
     "/warehouse/calendar": "Calendar",
   }
-  const currentLead = isCrmLeadDetail ? customers.find((customer) => customer.id === route.split("/").at(-1)) : undefined
+  const [currentLeadName, setCurrentLeadName] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!isCrmLeadDetail) {
+      setCurrentLeadName(null)
+      return
+    }
+
+    let active = true
+    const leadId = route.split("/").at(-1)
+    void import("@/data/multideck-data").then(({ customers }) => {
+      if (active) setCurrentLeadName(customers.find((customer) => customer.id === leadId)?.name ?? null)
+    })
+
+    return () => {
+      active = false
+    }
+  }, [isCrmLeadDetail, route])
 
   return (
     <header className="sticky top-0 z-10 -mx-[var(--md-page-pad)] mb-[var(--md-page-stack-gap)] flex min-h-[56px] items-center gap-[var(--md-gap-lg)] bg-[var(--md-topbar-bg)] px-[var(--md-page-pad)] py-[var(--md-gap-sm)] shadow-[var(--md-stroke-bottom)] backdrop-blur-xl">
@@ -138,6 +156,15 @@ export function TopBar({
             </Button>
           </div>
         </>
+      ) : isCrmLeadConversion ? (
+        <>
+          <button type="button" className={topBarBackButtonClass} onClick={() => navigate(route.replace(/\/convert$/, ""))}>
+            <ArrowLeft className="size-4" strokeWidth={1.2} />
+            <span>{t("Lead detail")}</span>
+          </button>
+          <span className="hidden text-[var(--md-subtle)] md:inline">/</span>
+          <p className="hidden truncate text-[14px] font-medium text-[var(--md-ink)] md:block">{t("Convert to deal")}</p>
+        </>
       ) : isCrmLeadDetail ? (
         <>
           <button type="button" className={topBarBackButtonClass} onClick={() => navigate("/crm/leads")}>
@@ -145,12 +172,12 @@ export function TopBar({
             <span>Leads</span>
           </button>
           <span className="hidden text-[var(--md-subtle)] md:inline">/</span>
-          <p className="hidden truncate text-[14px] font-medium text-[var(--md-ink)] md:block">{currentLead?.name ?? "Lead detail"}</p>
+          <p className="hidden truncate text-[14px] font-medium text-[var(--md-ink)] md:block">{currentLeadName ?? "Lead detail"}</p>
           <div className="ml-auto flex items-center gap-2">
             <Button
               variant="ghost"
               className={topBarGhostActionClass}
-              onClick={() => toast.success("Activity logged", { description: `${currentLead?.name ?? "Lead"} has a new CRM note.` })}
+              onClick={() => toast.success("Activity logged", { description: `${currentLeadName ?? "Lead"} has a new CRM note.` })}
             >
               Log activity
             </Button>
@@ -159,9 +186,9 @@ export function TopBar({
             </Button>
             <Button
               className={topBarPrimaryActionClass}
-              onClick={() => toast.success("Deal draft created", { description: `${currentLead?.name ?? "Lead"} is ready for quote and pricing setup.` })}
+              onClick={() => navigate(`${route}/convert`)}
             >
-              Convert to deal
+              {t("Convert to deal")}
             </Button>
           </div>
         </>

@@ -13058,6 +13058,40 @@ public partial class MultideckContext : DbContext
             entity.Property(e => e.UserLastname)
                 .HasMaxLength(50)
                 .HasColumnName("User_Lastname");
+            entity.Property(e => e.UserJobTitle)
+                .HasMaxLength(120)
+                .HasColumnName("User_JobTitle");
+            entity.Property(e => e.UserCoverPhotoBucket)
+                .HasMaxLength(63)
+                .HasColumnName("User_CoverPhotoBucket");
+            entity.Property(e => e.UserCoverPhotoMimeType)
+                .HasMaxLength(100)
+                .HasColumnName("User_CoverPhotoMimeType");
+            entity.Property(e => e.UserCoverPhotoPath)
+                .HasMaxLength(255)
+                .HasColumnName("User_CoverPhotoPath");
+            entity.Property(e => e.UserCoverPhotoSizeBytes)
+                .HasColumnName("User_CoverPhotoSizeBytes");
+            entity.Property(e => e.UserCoverPhotoUpdatedAt)
+                .HasColumnName("User_CoverPhotoUpdatedAt");
+            entity.Property(e => e.UserProfilePhotoBucket)
+                .HasMaxLength(63)
+                .HasColumnName("User_ProfilePhotoBucket");
+            entity.Property(e => e.UserProfilePhotoMimeType)
+                .HasMaxLength(100)
+                .HasColumnName("User_ProfilePhotoMimeType");
+            entity.Property(e => e.UserProfilePhotoPath)
+                .HasMaxLength(255)
+                .HasColumnName("User_ProfilePhotoPath");
+            entity.Property(e => e.UserProfilePhotoSizeBytes)
+                .HasColumnName("User_ProfilePhotoSizeBytes");
+            entity.Property(e => e.UserProfilePhotoUpdatedAt)
+                .HasColumnName("User_ProfilePhotoUpdatedAt");
+            entity.Property(e => e.UserSidebarCollapsed)
+                .HasColumnName("User_SidebarCollapsed");
+            entity.Property(e => e.UserSidebarLayout)
+                .HasColumnType("jsonb")
+                .HasColumnName("User_SidebarLayout");
 
             entity.HasOne(d => d.Company).WithMany(p => p.CmpUsers)
                 .HasForeignKey(d => d.CompanyId)

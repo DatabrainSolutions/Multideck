@@ -15,6 +15,10 @@ public sealed class UserManagementService(
     SupabaseAuthOptions supabaseAuth,
     ISupabaseAdminClient supabaseAdminClient) : IUserManagementService
 {
+    private const string ProfilePhotoBucket = "profile-photos";
+    private const long ProfilePhotoMaxBytes = 5 * 1024 * 1024;
+    private static readonly string[] ProfilePhotoMimeTypes = ["image/jpeg", "image/png", "image/webp"];
+
     public async Task<TeamUsersResponse> GetTeamUsersAsync(ClaimsPrincipal user, CancellationToken cancellationToken)
     {
         var currentUser = await GetCurrentCmpUser(user, trackChanges: false, cancellationToken);
@@ -73,6 +77,111 @@ public sealed class UserManagementService(
             company is null ? null : new TeamCompanyDto(company.CompanyId, company.CompanyName),
             offices,
             users.Select(ToTeamUserDto).ToList());
+    }
+
+    public async Task<TeamUserDto> GetCurrentUserAsync(ClaimsPrincipal user, CancellationToken cancellationToken)
+    {
+        var currentUser = await GetCurrentCmpUser(user, trackChanges: false, cancellationToken);
+        if (currentUser is null)
+        {
+            throw new UserCreationException("User profile is not linked", "Your Supabase account is not linked to a Multideck user profile yet.", StatusCodes.Status403Forbidden);
+        }
+
+        return ToTeamUserDto(currentUser);
+    }
+
+    public async Task<TeamUserDto> UpdateCurrentUserProfileAsync(
+        UpdateCurrentUserProfileRequest request,
+        ClaimsPrincipal user,
+        CancellationToken cancellationToken)
+    {
+        var currentUser = await GetCurrentCmpUser(user, trackChanges: true, cancellationToken);
+        if (currentUser is null)
+        {
+            throw new UserCreationException("User profile is not linked", "Your Supabase account is not linked to a Multideck user profile yet.", StatusCodes.Status403Forbidden);
+        }
+
+        var jobTitle = NormalizeText(request.JobTitle);
+        if (jobTitle?.Length > 120)
+        {
+            throw new UserValidationException(new Dictionary<string, string[]>
+            {
+                [nameof(request.JobTitle)] = ["Keep the job title to 120 characters or fewer."],
+            });
+        }
+
+        currentUser.UserJobTitle = jobTitle;
+        await db.SaveChangesAsync(cancellationToken);
+        return ToTeamUserDto(currentUser);
+    }
+
+    public async Task<UserProfilePhotoDto> SaveCurrentUserCoverPhotoAsync(
+        SaveCurrentUserCoverPhotoRequest request,
+        ClaimsPrincipal user,
+        CancellationToken cancellationToken)
+    {
+        var currentUser = await GetCurrentCmpUser(user, trackChanges: true, cancellationToken);
+        if (currentUser is null || !currentUser.AuthUserId.HasValue)
+        {
+            throw new UserCreationException("User profile is not linked", "Your Supabase account is not linked to a Multideck user profile yet.", StatusCodes.Status403Forbidden);
+        }
+
+        var expectedPrefix = $"{currentUser.AuthUserId.Value:D}/";
+        var expectedExtension = request.MimeType switch
+        {
+            "image/jpeg" => ".jpg",
+            "image/png" => ".png",
+            "image/webp" => ".webp",
+            _ => null,
+        };
+
+        if (request.Bucket != ProfilePhotoBucket
+            || !ProfilePhotoMimeTypes.Contains(request.MimeType, StringComparer.Ordinal)
+            || request.SizeBytes is < 1 or > ProfilePhotoMaxBytes
+            || !request.Path.StartsWith(expectedPrefix, StringComparison.Ordinal)
+            || expectedExtension is null
+            || !request.Path.EndsWith(expectedExtension, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new UserValidationException(new Dictionary<string, string[]>
+            {
+                [nameof(request.Path)] = ["Choose a valid cover photo before saving."],
+            });
+        }
+
+        currentUser.UserCoverPhotoBucket = request.Bucket;
+        currentUser.UserCoverPhotoPath = request.Path;
+        currentUser.UserCoverPhotoMimeType = request.MimeType;
+        currentUser.UserCoverPhotoSizeBytes = request.SizeBytes;
+        currentUser.UserCoverPhotoUpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(cancellationToken);
+
+        return ToCoverPhotoDto(currentUser)
+            ?? throw new InvalidOperationException("The cover photo metadata was not saved.");
+    }
+
+    public async Task<bool> RemoveCurrentUserCoverPhotoAsync(
+        string expectedPath,
+        ClaimsPrincipal user,
+        CancellationToken cancellationToken)
+    {
+        var currentUser = await GetCurrentCmpUser(user, trackChanges: true, cancellationToken);
+        if (currentUser is null)
+        {
+            throw new UserCreationException("User profile is not linked", "Your Supabase account is not linked to a Multideck user profile yet.", StatusCodes.Status403Forbidden);
+        }
+
+        if (!string.Equals(currentUser.UserCoverPhotoPath, expectedPath, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        currentUser.UserCoverPhotoBucket = null;
+        currentUser.UserCoverPhotoPath = null;
+        currentUser.UserCoverPhotoMimeType = null;
+        currentUser.UserCoverPhotoSizeBytes = null;
+        currentUser.UserCoverPhotoUpdatedAt = null;
+        await db.SaveChangesAsync(cancellationToken);
+        return true;
     }
 
     public async Task<CreateUserResponse> CreateUserAsync(CreateUserRequest request, ClaimsPrincipal user, CancellationToken cancellationToken)
@@ -316,6 +425,7 @@ public sealed class UserManagementService(
                 UserEmail = normalizedEmail,
                 UserFirstname = NormalizeText(request.FirstName),
                 UserLastname = NormalizeText(request.LastName),
+                UserJobTitle = NormalizeText(request.RoleTitle),
             };
             cmpUser.Offices.Add(office);
             db.CmpUsers.Add(cmpUser);
@@ -328,6 +438,7 @@ public sealed class UserManagementService(
             cmpUser.UserEmail = normalizedEmail;
             cmpUser.UserFirstname = NormalizeText(request.FirstName) ?? cmpUser.UserFirstname;
             cmpUser.UserLastname = NormalizeText(request.LastName) ?? cmpUser.UserLastname;
+            cmpUser.UserJobTitle = NormalizeText(request.RoleTitle) ?? cmpUser.UserJobTitle;
 
             if (cmpUser.Offices.All(item => item.OfficeId != office.OfficeId))
             {
@@ -365,7 +476,48 @@ public sealed class UserManagementService(
                 .OrderBy(role => role.SysUserRoleName)
                 .Select(role => new TeamRoleDto(role.SysUserRoleId, role.SysUserRoleName))
                 .ToList(),
-            user.AuthUserId.HasValue ? "Active" : "Profile only");
+            user.AuthUserId.HasValue ? "Active" : "Profile only",
+            user.UserJobTitle,
+            ToProfilePhotoDto(user),
+            ToCoverPhotoDto(user));
+    }
+
+    private static UserProfilePhotoDto? ToProfilePhotoDto(CmpUser user)
+    {
+        if (string.IsNullOrWhiteSpace(user.UserProfilePhotoBucket)
+            || string.IsNullOrWhiteSpace(user.UserProfilePhotoPath)
+            || string.IsNullOrWhiteSpace(user.UserProfilePhotoMimeType)
+            || !user.UserProfilePhotoSizeBytes.HasValue
+            || !user.UserProfilePhotoUpdatedAt.HasValue)
+        {
+            return null;
+        }
+
+        return new UserProfilePhotoDto(
+            user.UserProfilePhotoBucket,
+            user.UserProfilePhotoPath,
+            user.UserProfilePhotoMimeType,
+            user.UserProfilePhotoSizeBytes.Value,
+            user.UserProfilePhotoUpdatedAt.Value);
+    }
+
+    private static UserProfilePhotoDto? ToCoverPhotoDto(CmpUser user)
+    {
+        if (string.IsNullOrWhiteSpace(user.UserCoverPhotoBucket)
+            || string.IsNullOrWhiteSpace(user.UserCoverPhotoPath)
+            || string.IsNullOrWhiteSpace(user.UserCoverPhotoMimeType)
+            || !user.UserCoverPhotoSizeBytes.HasValue
+            || !user.UserCoverPhotoUpdatedAt.HasValue)
+        {
+            return null;
+        }
+
+        return new UserProfilePhotoDto(
+            user.UserCoverPhotoBucket,
+            user.UserCoverPhotoPath,
+            user.UserCoverPhotoMimeType,
+            user.UserCoverPhotoSizeBytes.Value,
+            user.UserCoverPhotoUpdatedAt.Value);
     }
 
     private static string? NormalizeEmail(string? email)

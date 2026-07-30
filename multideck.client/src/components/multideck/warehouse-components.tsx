@@ -438,7 +438,7 @@ function WarehouseProductDetail({ product }: { product: WarehouseProduct }) {
         <WarehouseDetailField label={t("Customer")}>{product.customer}</WarehouseDetailField>
         <WarehouseDetailField label={t("Category")}>{product.category}</WarehouseDetailField>
         <WarehouseDetailField label={t("Owner")}>
-          <span data-i18n-skip dir="ltr" className="inline-grid size-6 place-items-center rounded-full bg-[rgba(14,125,116,0.1)] text-[11px] font-medium text-[var(--md-accent)]">
+          <span data-i18n-skip dir="ltr" className="inline-grid size-6 place-items-center rounded-full bg-[var(--md-accent-a10)] text-[11px] font-medium text-[var(--md-accent)]">
             {product.owner}
           </span>
         </WarehouseDetailField>
@@ -486,7 +486,7 @@ function WarehouseSearch({ placeholder = "Search SKU, order, customer, bin..." }
       <Input
         aria-label={placeholder}
         placeholder={placeholder}
-        className="h-10 rounded-[var(--md-radius-lg)] border-0 bg-white/68 pl-9 pr-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] placeholder:text-[var(--md-subtle)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]"
+        className="h-10 rounded-[var(--md-radius-lg)] border-0 bg-white/68 pl-9 pr-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] placeholder:text-[var(--md-subtle)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
       />
     </div>
   )
@@ -515,7 +515,7 @@ function WarehouseFilterSelect({
       <Select value={value} onValueChange={onChange}>
         <SelectTrigger
           aria-label={label}
-          className="h-9 w-full rounded-[var(--md-radius-lg)] border-0 bg-white/42 px-3 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/64 focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]"
+          className="h-9 w-full rounded-[var(--md-radius-lg)] border-0 bg-white/42 px-3 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/64 focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
         >
           <SelectValue />
         </SelectTrigger>
@@ -629,9 +629,9 @@ export function WarehouseInventoryTable<T extends { id: string }>({
                 aria-expanded={hasRowDetail ? isDetailOpen : undefined}
                 aria-label={hasRowDetail ? rowDetailLabel?.(row) ?? `Open details for ${row.id}` : undefined}
                 className={cn(
-                  "h-[52px] border-b border-[rgba(90,103,100,0.09)] bg-[var(--md-surface)] transition-[background,color,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[rgba(90,103,100,0.045)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
+                  "h-[52px] border-b border-[rgba(90,103,100,0.09)] bg-[var(--md-surface)] transition-[background,color,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[rgba(90,103,100,0.045)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]",
                   isInteractiveRow && "cursor-pointer",
-                  isDetailOpen && "bg-[rgba(14,125,116,0.055)]",
+                  isDetailOpen && "bg-[var(--md-accent-a055)]",
                   rowClassName?.(row),
                 )}
                 onClick={isInteractiveRow ? () => activateRow(row) : undefined}
@@ -794,7 +794,7 @@ const productColumns = [
     label: "Owner",
     align: "center" as const,
     render: (product: WarehouseProduct) => (
-      <span className="inline-grid size-7 place-items-center rounded-full bg-[rgba(14,125,116,0.1)] text-[11px] font-medium text-[var(--md-accent)]">{product.owner}</span>
+      <span className="inline-grid size-7 place-items-center rounded-full bg-[var(--md-accent-a10)] text-[11px] font-medium text-[var(--md-accent)]">{product.owner}</span>
     ),
   },
 ] satisfies WarehouseTableColumn<WarehouseProduct>[]
@@ -952,7 +952,7 @@ const movementColumns = [
     className: "min-w-[190px]",
     render: (movement: WarehouseMovement) => (
       <div className="flex items-center gap-3">
-        <span className={cn("grid size-8 place-items-center rounded-[var(--md-radius-md)] shadow-[var(--md-shadow-line)]", movement.direction === "In" ? "bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)]" : "bg-[rgba(74,125,156,0.1)] text-[var(--md-blue)]")}>
+        <span className={cn("grid size-8 place-items-center rounded-[var(--md-radius-md)] shadow-[var(--md-shadow-line)]", movement.direction === "In" ? "bg-[var(--md-accent-a10)] text-[var(--md-accent)]" : "bg-[rgba(74,125,156,0.1)] text-[var(--md-blue)]")}>
           {movement.direction === "In" ? <ArrowDownToLine className="size-4" strokeWidth={1.25} /> : <ArrowUpFromLine className="size-4" strokeWidth={1.25} />}
         </span>
         <div>
@@ -1163,7 +1163,7 @@ export function WarehouseStockTable({
       rowLabel="stock rows"
       emptyMessage="No stock rows match this view."
       onRowClick={onSelectStock}
-      rowClassName={(row) => row.id === selectedStockId ? "bg-[rgba(14,125,116,0.055)] shadow-[inset_3px_0_0_var(--md-accent)]" : undefined}
+      rowClassName={(row) => row.id === selectedStockId ? "bg-[var(--md-accent-a055)] shadow-[inset_3px_0_0_var(--md-accent)]" : undefined}
     />
   )
 }
@@ -1242,7 +1242,7 @@ export function WarehousePageHeader({ customer = false }: { customer?: boolean }
           <SlidersHorizontal data-icon="inline-start" className="size-4" strokeWidth={1.25} />
           {t("Filters")}
         </Button>
-        <Button className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white shadow-[0_10px_22px_rgba(14,125,116,0.14)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]">
+        <Button className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] shadow-[0_10px_22px_var(--md-accent-a14)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]">
           <Plus data-icon="inline-start" className="size-4" strokeWidth={1.25} />
           {t("New pick")}
         </Button>
@@ -1268,7 +1268,7 @@ function WarehouseActivityPanel({ rows = warehouseGoodsMovements }: { rows?: rea
       >
         {rows.slice(0, 5).map((movement) => (
           <motion.div key={movement.id} variants={shouldReduceMotion ? undefined : rowReveal} className="grid grid-cols-[34px_minmax(0,1fr)_auto] gap-3 px-5 py-3">
-            <span className={cn("grid size-[34px] place-items-center rounded-[var(--md-radius-md)] shadow-[var(--md-shadow-line)]", movement.direction === "In" ? "bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)]" : "bg-[rgba(74,125,156,0.1)] text-[var(--md-blue)]")}>
+            <span className={cn("grid size-[34px] place-items-center rounded-[var(--md-radius-md)] shadow-[var(--md-shadow-line)]", movement.direction === "In" ? "bg-[var(--md-accent-a10)] text-[var(--md-accent)]" : "bg-[rgba(74,125,156,0.1)] text-[var(--md-blue)]")}>
               {movement.direction === "In" ? <ArrowDownToLine className="size-4" strokeWidth={1.25} /> : <ArrowUpFromLine className="size-4" strokeWidth={1.25} />}
             </span>
             <div className="min-w-0">
@@ -1652,7 +1652,7 @@ function WarehouseCalendarCustomerKey({
             data-i18n-skip
             dir="auto"
             className={cn(
-              "inline-flex h-7 items-center gap-2 rounded-[var(--md-radius-md)] pe-2.5 ps-2 text-[12px] font-medium text-[var(--md-ink)] outline-none shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,opacity,scale] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-[var(--md-surface)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
+              "inline-flex h-7 items-center gap-2 rounded-[var(--md-radius-md)] pe-2.5 ps-2 text-[12px] font-medium text-[var(--md-ink)] outline-none shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,opacity,scale] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-[var(--md-surface)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]",
               isSelected ? "bg-[var(--md-surface)]" : "bg-[color-mix(in_srgb,var(--md-surface)_82%,transparent)]",
               isDimmed && "opacity-45 hover:opacity-80",
             )}
@@ -1756,7 +1756,7 @@ function WarehouseCalendarEventCard({
           type="button"
           aria-label={`${t("Open calendar event details")}: ${event.title}`}
           className={cn(
-            "relative overflow-hidden rounded-[var(--md-radius-md)] text-left outline-none transition-[background-color,box-shadow,opacity,scale,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]",
+            "relative overflow-hidden rounded-[var(--md-radius-md)] text-left outline-none transition-[background-color,box-shadow,opacity,scale,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]",
             compact ? "min-h-[82px] p-2 ps-3" : "min-h-[112px] p-3 ps-4",
           )}
           style={eventStyle}
@@ -1808,7 +1808,7 @@ function WarehouseCalendarTimedEvent({
         <button
           type="button"
           aria-label={`${t("Open calendar event details")}: ${event.title}`}
-          className="absolute z-10 overflow-hidden rounded-[var(--md-radius-md)] p-2 ps-3 text-left outline-none transition-[box-shadow,scale,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:z-20 hover:scale-[1.01] focus-visible:z-20 focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]"
+          className="absolute z-10 overflow-hidden rounded-[var(--md-radius-md)] p-2 ps-3 text-left outline-none transition-[box-shadow,scale,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:z-20 hover:scale-[1.01] focus-visible:z-20 focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
           style={eventStyle}
           title={`${event.title} ${event.time}-${event.endTime}`}
         >

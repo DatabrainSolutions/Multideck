@@ -29,7 +29,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
       }}
       style={
         {
-          "--normal-bg": "rgba(251, 253, 253, 0.92)",
+          "--normal-bg": "color-mix(in srgb, var(--md-surface) 92%, transparent)",
           "--normal-text": "var(--md-ink)",
           "--normal-border": "transparent",
           "--border-radius": "var(--md-radius-xl)",

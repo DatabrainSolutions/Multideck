@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using Multideck.Persistence;
+using Multideck.Persistence.Entities;
 using Multideck.Server.Authorization;
 using Multideck.Server.Modules.Warehouse;
 
@@ -89,6 +90,9 @@ public sealed class AuthSessionService(
                     permissions = permissions.OrderBy(value => value).ToArray(),
                     landingPath = "/warehouse/inventory",
                     status = "Active",
+                    jobTitle = (string?)null,
+                    profilePhoto = (object?)null,
+                    coverPhoto = (object?)null,
                 };
             }
             catch (WarehouseException)
@@ -135,6 +139,51 @@ public sealed class AuthSessionService(
             permissions = (await permissionService.GetGrantedPermissionValuesAsync(user, cancellationToken)).OrderBy(value => value).ToArray(),
             landingPath = "/",
             status = cmpUser.AuthUserId.HasValue ? "Active" : "Profile only",
+            jobTitle = cmpUser.UserJobTitle,
+            profilePhoto = CreateProfilePhotoResponse(cmpUser),
+            coverPhoto = CreateCoverPhotoResponse(cmpUser),
+        };
+    }
+
+    private static object? CreateProfilePhotoResponse(CmpUser user)
+    {
+        if (string.IsNullOrWhiteSpace(user.UserProfilePhotoBucket)
+            || string.IsNullOrWhiteSpace(user.UserProfilePhotoPath)
+            || string.IsNullOrWhiteSpace(user.UserProfilePhotoMimeType)
+            || !user.UserProfilePhotoSizeBytes.HasValue
+            || !user.UserProfilePhotoUpdatedAt.HasValue)
+        {
+            return null;
+        }
+
+        return new
+        {
+            bucket = user.UserProfilePhotoBucket,
+            path = user.UserProfilePhotoPath,
+            mimeType = user.UserProfilePhotoMimeType,
+            sizeBytes = user.UserProfilePhotoSizeBytes.Value,
+            updatedAt = user.UserProfilePhotoUpdatedAt.Value,
+        };
+    }
+
+    private static object? CreateCoverPhotoResponse(CmpUser user)
+    {
+        if (string.IsNullOrWhiteSpace(user.UserCoverPhotoBucket)
+            || string.IsNullOrWhiteSpace(user.UserCoverPhotoPath)
+            || string.IsNullOrWhiteSpace(user.UserCoverPhotoMimeType)
+            || !user.UserCoverPhotoSizeBytes.HasValue
+            || !user.UserCoverPhotoUpdatedAt.HasValue)
+        {
+            return null;
+        }
+
+        return new
+        {
+            bucket = user.UserCoverPhotoBucket,
+            path = user.UserCoverPhotoPath,
+            mimeType = user.UserCoverPhotoMimeType,
+            sizeBytes = user.UserCoverPhotoSizeBytes.Value,
+            updatedAt = user.UserCoverPhotoUpdatedAt.Value,
         };
     }
 

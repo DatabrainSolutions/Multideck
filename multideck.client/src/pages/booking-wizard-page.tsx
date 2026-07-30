@@ -438,11 +438,11 @@ const fieldMotion = {
   visible: { opacity: 1, y: 0 },
 }
 
-const bookingStepSurfaceClass = "bg-[var(--md-surface-tint)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.12),0_18px_42px_rgba(14,125,116,0.08)]"
+const bookingStepSurfaceClass = "bg-[var(--md-surface-tint)] shadow-[inset_0_0_0_1px_var(--md-accent-a12),0_18px_42px_var(--md-accent-a08)]"
 const fieldBoundaryShadow = "shadow-[var(--md-shadow-line)]"
 const fieldControlClass = cn("!h-11 w-full min-w-0 rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-field-bg)] px-3 text-[13px] hover:bg-[var(--md-field-bg-hover)] focus-visible:bg-[var(--md-field-bg-hover)]", fieldBoundaryShadow)
-const fieldPanelClass = "rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-3 shadow-[inset_0_0_0_1px_rgba(14,125,116,0.13),0_10px_24px_rgba(14,125,116,0.06)]"
-const tablePanelClass = "overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.13),0_10px_24px_rgba(14,125,116,0.06)]"
+const fieldPanelClass = "rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-3 shadow-[inset_0_0_0_1px_var(--md-accent-a13),0_10px_24px_var(--md-accent-a06)]"
+const tablePanelClass = "overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] shadow-[inset_0_0_0_1px_var(--md-accent-a13),0_10px_24px_var(--md-accent-a06)]"
 
 const partyCompanies = [
   {
@@ -910,11 +910,11 @@ function NumberStepperField({
             </AnimatePresence>
           </span>
         </div>
-        <div className="grid border-l border-[rgba(14,125,116,0.14)] bg-[rgba(14,125,116,0.04)]">
+        <div className="grid border-l border-[var(--md-accent-a14)] bg-[var(--md-accent-a04)]">
           <button
             type="button"
             aria-label={`Increase ${label}`}
-            className="grid place-items-center text-[var(--md-subtle)] transition-colors hover:bg-[rgba(14,125,116,0.08)] hover:text-[var(--md-accent)]"
+            className="grid place-items-center text-[var(--md-subtle)] transition-colors hover:bg-[var(--md-accent-a08)] hover:text-[var(--md-accent)]"
             onClick={() => updateBy(1)}
           >
             <ChevronUp className="size-3" strokeWidth={1.7} />
@@ -922,7 +922,7 @@ function NumberStepperField({
           <button
             type="button"
             aria-label={`Decrease ${label}`}
-            className="grid place-items-center border-t border-[rgba(14,125,116,0.14)] text-[var(--md-subtle)] transition-colors hover:bg-[rgba(14,125,116,0.08)] hover:text-[var(--md-accent)]"
+            className="grid place-items-center border-t border-[var(--md-accent-a14)] text-[var(--md-subtle)] transition-colors hover:bg-[var(--md-accent-a08)] hover:text-[var(--md-accent)]"
             onClick={() => updateBy(-1)}
           >
             <ChevronDown className="size-3" strokeWidth={1.7} />
@@ -1123,7 +1123,7 @@ function ComboField({
               <button
                 key={option}
                 type="button"
-                className="block w-full truncate rounded-[var(--md-radius-md)] px-2.5 py-2 text-left text-[13px] text-[var(--md-ink)] transition-colors hover:bg-[rgba(14,125,116,0.08)]"
+                className="block w-full truncate rounded-[var(--md-radius-md)] px-2.5 py-2 text-left text-[13px] text-[var(--md-ink)] transition-colors hover:bg-[var(--md-accent-a08)]"
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => {
                   onChange(option)
@@ -1219,7 +1219,7 @@ function AddressLookupField({
               <button
                 key={`${record.company}-${record.office}`}
                 type="button"
-                className="grid w-full gap-1 rounded-[var(--md-radius-lg)] px-2.5 py-2 text-left transition-colors hover:bg-[rgba(14,125,116,0.08)]"
+                className="grid w-full gap-1 rounded-[var(--md-radius-lg)] px-2.5 py-2 text-left transition-colors hover:bg-[var(--md-accent-a08)]"
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => {
                   onSelect(record.office)
@@ -1268,12 +1268,12 @@ function OptionGroup<T extends string>({
               aria-pressed={selected}
               className={cn(
                 "rounded-[var(--md-radius-lg)] bg-white/56 p-3 text-left shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-white/78",
-                selected && "bg-[var(--md-accent)] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_14px_28px_rgba(14,125,116,0.22)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]",
+                selected && "bg-[var(--md-accent)] text-[var(--md-accent-ink)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_14px_28px_var(--md-accent-a22)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]",
               )}
               onClick={() => onChange(option.value)}
             >
               <span className="flex items-center justify-between gap-3">
-                <span className={cn("text-[14px] font-medium text-[var(--md-ink)]", selected && "text-white")}>{option.title}</span>
+                <span className={cn("text-[14px] font-medium text-[var(--md-ink)]", selected && "text-[var(--md-accent-ink)]")}>{option.title}</span>
                 {selected ? (
                   <span className="grid size-6 place-items-center rounded-full bg-white text-[var(--md-accent)] shadow-[0_0_0_3px_rgba(255,255,255,0.16)]">
                     <Check className="size-3.5" strokeWidth={1.8} />
@@ -1303,7 +1303,7 @@ function ToggleTile({
       variants={fieldMotion}
       className={cn(
         "flex min-h-10 cursor-pointer items-center justify-between gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 py-1.5 text-left text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] transition-[background,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-white/78",
-        checked && "bg-[rgba(14,125,116,0.08)]",
+        checked && "bg-[var(--md-accent-a08)]",
       )}
     >
       <span>{label}</span>
@@ -1345,7 +1345,7 @@ function DexterCodeHint() {
         <span
           tabIndex={0}
           aria-label="Dexter auto-population note"
-          className="grid size-6 place-items-center rounded-[var(--md-radius-md)] bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)] outline-none transition-[background,box-shadow,transform] hover:scale-[1.04] hover:bg-[rgba(14,125,116,0.16)] focus-visible:ring-2 focus-visible:ring-[rgba(14,125,116,0.22)]"
+          className="grid size-6 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-accent-a10)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)] outline-none transition-[background,box-shadow,transform] hover:scale-[1.04] hover:bg-[var(--md-accent-a16)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a22)]"
         >
           <Bot className="size-3.5" strokeWidth={1.5} />
         </span>
@@ -1386,8 +1386,8 @@ function CompactOptionGroup<T extends string>({
               className={cn(
                 "h-11 rounded-[var(--md-radius-xl)] px-4 text-[13px] font-medium transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01]",
                 selected
-                  ? "bg-[var(--md-accent)] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_10px_22px_rgba(14,125,116,0.2)] hover:bg-[#0b6f67]"
-                  : "bg-[var(--md-surface-tint)] text-[var(--md-text)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.14),0_1px_1px_rgba(14,125,116,0.04)] hover:bg-white/82",
+                  ? "bg-[var(--md-accent)] text-[var(--md-accent-ink)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_10px_22px_var(--md-accent-a20)] hover:bg-[var(--md-accent-hover)]"
+                  : "bg-[var(--md-surface-tint)] text-[var(--md-text)] shadow-[inset_0_0_0_1px_var(--md-accent-a14),0_1px_1px_var(--md-accent-a04)] hover:bg-white/82",
               )}
               onClick={() => onChange(option)}
             >
@@ -1426,8 +1426,8 @@ function ModePicker({
               className={cn(
                 "h-11 rounded-[var(--md-radius-xl)] px-4 text-[13px] font-medium transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01]",
                 selected
-                  ? "bg-[var(--md-accent)] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_10px_22px_rgba(14,125,116,0.2)] hover:bg-[#0b6f67]"
-                  : "bg-[var(--md-surface-tint)] text-[var(--md-text)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.14),0_1px_1px_rgba(14,125,116,0.04)] hover:bg-white/82",
+                  ? "bg-[var(--md-accent)] text-[var(--md-accent-ink)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_10px_22px_var(--md-accent-a20)] hover:bg-[var(--md-accent-hover)]"
+                  : "bg-[var(--md-surface-tint)] text-[var(--md-text)] shadow-[inset_0_0_0_1px_var(--md-accent-a14),0_1px_1px_var(--md-accent-a04)] hover:bg-white/82",
               )}
               onClick={() => onChange(mode)}
             >
@@ -1510,7 +1510,7 @@ function PartyRow({
       aria-label={`Add address for ${label}`}
       title={addAddressDisabled ? "Select a company first" : `Add address for ${label}`}
       disabled={addAddressDisabled}
-      className="grid size-6 place-items-center rounded-[var(--md-radius-sm)] bg-[var(--md-surface-tint)] text-[var(--md-text)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.14),0_1px_1px_rgba(14,125,116,0.04)] transition-[background,color,opacity] hover:bg-white/78 hover:text-[var(--md-accent)] disabled:cursor-not-allowed disabled:opacity-40"
+      className="grid size-6 place-items-center rounded-[var(--md-radius-sm)] bg-[var(--md-surface-tint)] text-[var(--md-text)] shadow-[inset_0_0_0_1px_var(--md-accent-a14),0_1px_1px_var(--md-accent-a04)] transition-[background,color,opacity] hover:bg-white/78 hover:text-[var(--md-accent)] disabled:cursor-not-allowed disabled:opacity-40"
       onClick={() => setAddressDialogOpen(true)}
     >
       <Plus className="size-3.5" strokeWidth={1.8} />
@@ -1523,7 +1523,7 @@ function PartyRow({
       aria-label={`Add contact for ${label}`}
       title={addContactDisabled ? "Select an office first" : `Add contact for ${label}`}
       disabled={addContactDisabled}
-      className="grid size-6 place-items-center rounded-[var(--md-radius-sm)] bg-[var(--md-surface-tint)] text-[var(--md-text)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.14),0_1px_1px_rgba(14,125,116,0.04)] transition-[background,color,opacity] hover:bg-white/78 hover:text-[var(--md-accent)] disabled:cursor-not-allowed disabled:opacity-40"
+      className="grid size-6 place-items-center rounded-[var(--md-radius-sm)] bg-[var(--md-surface-tint)] text-[var(--md-text)] shadow-[inset_0_0_0_1px_var(--md-accent-a14),0_1px_1px_var(--md-accent-a04)] transition-[background,color,opacity] hover:bg-white/78 hover:text-[var(--md-accent)] disabled:cursor-not-allowed disabled:opacity-40"
       onClick={() => setContactDialogOpen(true)}
     >
       <Plus className="size-3.5" strokeWidth={1.8} />
@@ -1598,7 +1598,7 @@ function PartyRow({
             <Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-md)] px-3 text-[13px]" onClick={() => setAddressDialogOpen(false)}>
               Cancel
             </Button>
-            <Button type="button" className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[13px] text-white hover:bg-[#0b6f67]" disabled={!draftAddressName.trim()} onClick={saveAddress}>
+            <Button type="button" className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[13px] text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]" disabled={!draftAddressName.trim()} onClick={saveAddress}>
               Add address
             </Button>
           </DialogFooter>
@@ -1621,7 +1621,7 @@ function PartyRow({
             <Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-md)] px-3 text-[13px]" onClick={() => setContactDialogOpen(false)}>
               Cancel
             </Button>
-            <Button type="button" className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[13px] text-white hover:bg-[#0b6f67]" disabled={!draftContactName.trim()} onClick={saveContact}>
+            <Button type="button" className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[13px] text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]" disabled={!draftContactName.trim()} onClick={saveContact}>
               Add contact
             </Button>
           </DialogFooter>
@@ -1682,11 +1682,11 @@ function SourceChoiceCard({
       type="button"
       variants={optionMotion}
       whileTap={{ scale: 0.985 }}
-      className="group grid min-h-[148px] content-between gap-4 rounded-[var(--md-radius-2xl)] bg-[var(--md-surface-tint)] p-4 text-left shadow-[inset_0_0_0_1px_rgba(14,125,116,0.13),0_10px_24px_rgba(14,125,116,0.06)] transition-[background,box-shadow,transform] hover:scale-[1.01] hover:bg-white/82 hover:shadow-[inset_0_0_0_1px_rgba(14,125,116,0.2),0_14px_30px_rgba(14,125,116,0.1)]"
+      className="group grid min-h-[148px] content-between gap-4 rounded-[var(--md-radius-2xl)] bg-[var(--md-surface-tint)] p-4 text-left shadow-[inset_0_0_0_1px_var(--md-accent-a13),0_10px_24px_var(--md-accent-a06)] transition-[background,box-shadow,transform] hover:scale-[1.01] hover:bg-white/82 hover:shadow-[inset_0_0_0_1px_var(--md-accent-a20),0_14px_30px_var(--md-accent-a10)]"
       onClick={onClick}
     >
       <span className="grid gap-3">
-        <span className="grid size-10 place-items-center rounded-[var(--md-radius-lg)] bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">
+        <span className="grid size-10 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-accent-a10)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">
           {icon}
         </span>
         <span className="grid gap-1.5">
@@ -1694,7 +1694,7 @@ function SourceChoiceCard({
           <span className="text-[13px] leading-5 text-[var(--md-text)]">{body}</span>
         </span>
       </span>
-      <span className="inline-flex h-8 w-fit items-center gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[12px] font-medium text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_10px_22px_rgba(14,125,116,0.18)] transition-transform group-hover:scale-[1.02]">
+      <span className="inline-flex h-8 w-fit items-center gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[12px] font-medium text-[var(--md-accent-ink)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_10px_22px_var(--md-accent-a18)] transition-transform group-hover:scale-[1.02]">
         Select
         <ChevronRight className="size-3.5" strokeWidth={1.35} />
       </span>
@@ -1812,7 +1812,7 @@ function SourceDetailPanel({
                 aria-pressed={selected}
                 className={cn(
                   "grid gap-2 rounded-[var(--md-radius-lg)] bg-white/58 px-3 py-2.5 text-left shadow-[var(--md-shadow-line)] transition-[background,box-shadow,transform] hover:bg-white/82 sm:grid-cols-[96px_minmax(0,1fr)_auto] sm:items-center",
-                  selected && "bg-[rgba(14,125,116,0.1)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.35),0_8px_18px_rgba(14,125,116,0.08)]",
+                  selected && "bg-[var(--md-accent-a10)] shadow-[inset_0_0_0_1px_var(--md-accent-a35),0_8px_18px_var(--md-accent-a08)]",
                 )}
                 onClick={() => onApplyCustomerQuote(quote.id)}
               >
@@ -1891,7 +1891,7 @@ function SourceDetailPanel({
                 aria-pressed={selected}
                 className={cn(
                   "grid gap-3 rounded-[var(--md-radius-lg)] bg-white/58 px-3 py-3 text-left shadow-[var(--md-shadow-line)] transition-[background,box-shadow,transform] hover:bg-white/82 sm:grid-cols-[88px_minmax(0,1fr)_auto] sm:items-center",
-                  selected && "bg-[rgba(14,125,116,0.1)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.35),0_8px_18px_rgba(14,125,116,0.08)]",
+                  selected && "bg-[var(--md-accent-a10)] shadow-[inset_0_0_0_1px_var(--md-accent-a35),0_8px_18px_var(--md-accent-a08)]",
                 )}
                 onClick={() => onApplyExistingBooking(booking.id)}
               >
@@ -1945,13 +1945,13 @@ function BookingTypeMiniSteps({
             className={cn(
               "inline-flex h-8 items-center gap-2 rounded-[var(--md-radius-lg)] px-2.5 text-[12px] font-medium shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform]",
               active
-                ? "bg-[var(--md-accent)] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_10px_20px_rgba(14,125,116,0.18)]"
+                ? "bg-[var(--md-accent)] text-[var(--md-accent-ink)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_10px_20px_var(--md-accent-a18)]"
                 : "bg-white/58 text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-white/82",
               disabled && "cursor-not-allowed opacity-45",
             )}
             onClick={() => onStageChange(item.id)}
           >
-            <span className={cn("grid size-4 place-items-center rounded-full text-[10px]", active ? "bg-white text-[var(--md-accent)]" : "bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)]")}>
+            <span className={cn("grid size-4 place-items-center rounded-full text-[10px]", active ? "bg-white text-[var(--md-accent)]" : "bg-[var(--md-accent-a10)] text-[var(--md-accent)]")}>
               {item.complete ? <Check className="size-3" strokeWidth={1.8} /> : index + 1}
             </span>
             {item.label}
@@ -2000,7 +2000,7 @@ function WizardProgress({
         <StatusPill tone={completeCount >= requiredStepCount ? "green" : "teal"}>{completeCount}/{requiredStepCount} complete</StatusPill>
       </div>
       <div className="mt-3">
-        <div className="grid grid-cols-7 gap-1 rounded-full bg-[rgba(14,125,116,0.06)] p-1 shadow-[inset_0_0_0_1px_rgba(14,125,116,0.1),0_1px_1px_rgba(14,125,116,0.04)]" aria-label="Booking progress">
+        <div className="grid grid-cols-7 gap-1 rounded-full bg-[var(--md-accent-a06)] p-1 shadow-[inset_0_0_0_1px_var(--md-accent-a10),0_1px_1px_var(--md-accent-a04)]" aria-label="Booking progress">
           {steps.map((step, index) => {
             const missing = index < requiredStepCount ? missingFieldsForStep(data, index).length : allMissingFields(data).length
             const active = index === activeStep
@@ -2015,15 +2015,15 @@ function WizardProgress({
                 aria-current={active ? "step" : undefined}
                 aria-label={`${step.name}${missing ? `, ${missing} missing` : ""}`}
                 className={cn(
-                  "relative h-2.5 min-w-0 overflow-hidden rounded-full bg-[rgba(90,103,100,0.14)] transition-[background,box-shadow,transform,opacity] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[rgba(14,125,116,0.18)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(14,125,116,0.28)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
-                  active && "scale-y-125 shadow-[0_0_0_1px_rgba(14,125,116,0.18),0_8px_18px_rgba(14,125,116,0.14)]",
+                  "relative h-2.5 min-w-0 overflow-hidden rounded-full bg-[rgba(90,103,100,0.14)] transition-[background,box-shadow,transform,opacity] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-accent-a18)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a28)] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
+                  active && "scale-y-125 shadow-[0_0_0_1px_var(--md-accent-a18),0_8px_18px_var(--md-accent-a14)]",
                 )}
                 onClick={() => onStepChange(index)}
               >
                 <span
                   className={cn(
                     "block h-full rounded-full transition-[width,background] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
-                    active || complete ? "bg-[var(--md-accent)]" : visited ? "bg-[rgba(14,125,116,0.42)]" : "bg-transparent",
+                    active || complete ? "bg-[var(--md-accent)]" : visited ? "bg-[var(--md-accent-a42)]" : "bg-transparent",
                   )}
                   style={{ width: `${fill}%` }}
                 />
@@ -2043,7 +2043,7 @@ function WizardProgress({
                 type="button"
                 title={step.name}
                 className={cn(
-                  "flex min-w-0 items-center justify-center gap-1 py-0.5 text-center text-[10px] font-medium transition-[color,opacity] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(14,125,116,0.22)]",
+                  "flex min-w-0 items-center justify-center gap-1 py-0.5 text-center text-[10px] font-medium transition-[color,opacity] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a22)]",
                   active ? "text-[var(--md-accent)]" : "text-[var(--md-subtle)] hover:text-[var(--md-text)]",
                   complete && !active && "text-[var(--md-accent)]",
                 )}
@@ -2682,7 +2682,7 @@ function StepContent({
                 <p className="text-[14px] font-medium text-[var(--md-ink)]">Add cargo line</p>
                 <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">Build the shipment from outer packages, inner packages, commodity and weights.</p>
               </div>
-              <Button type="button" className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3 text-[13px] font-medium text-white hover:bg-[#0b6f67] disabled:opacity-45" disabled={!canAddCargoLine} onClick={addCargoLine}>
+              <Button type="button" className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3 text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)] disabled:opacity-45" disabled={!canAddCargoLine} onClick={addCargoLine}>
                 <Plus className="size-4" strokeWidth={1.6} />
                 Add line
               </Button>
@@ -2844,7 +2844,7 @@ function StepContent({
                 <p className="text-[14px] font-medium text-[var(--md-ink)]">Add route leg</p>
                 <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">Use UN/LOCODEs for ports and airport codes where relevant. Add legs for air-sea and sea-air routings.</p>
               </div>
-              <Button type="button" className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3 text-[13px] font-medium text-white hover:bg-[#0b6f67] disabled:opacity-45" disabled={!canAddTransportLeg} onClick={addTransportLeg}>
+              <Button type="button" className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3 text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)] disabled:opacity-45" disabled={!canAddTransportLeg} onClick={addTransportLeg}>
                 <Plus className="size-4" strokeWidth={1.6} />
                 Add leg
               </Button>
@@ -3043,9 +3043,9 @@ function StepContent({
             </div>
           </div>
         ) : (
-          <div className="rounded-[var(--md-radius-xl)] bg-[rgba(46,142,96,0.1)] p-3 shadow-[inset_0_0_0_1px_rgba(46,142,96,0.24),0_0_0_1px_rgba(46,142,96,0.06)]">
+          <div className="rounded-[var(--md-radius-xl)] bg-[var(--md-accent-a10)] p-3 shadow-[inset_0_0_0_1px_var(--md-accent-a24),0_0_0_1px_var(--md-accent-a06)]">
             <div className="flex items-center gap-3">
-              <span className="grid size-9 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-green)] text-white">
+              <span className="grid size-9 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-green)] text-[var(--md-accent-ink)]">
                 <Check className="size-4" strokeWidth={1.8} />
               </span>
               <div>
@@ -3067,7 +3067,7 @@ function StepContent({
             >
               <p className="text-[14px] font-medium text-[var(--md-ink)]">{title}</p>
               <p className="text-[13px] leading-5 text-[var(--md-text)]" dir="auto">{value}</p>
-              <Button type="button" variant="ghost" className="h-8 rounded-[var(--md-radius-md)] px-3 text-[12px] font-medium text-[var(--md-accent)] hover:bg-[rgba(14,125,116,0.08)]" onClick={() => goToStep(index)}>
+              <Button type="button" variant="ghost" className="h-8 rounded-[var(--md-radius-md)] px-3 text-[12px] font-medium text-[var(--md-accent)] hover:bg-[var(--md-accent-a08)]" onClick={() => goToStep(index)}>
                 Edit
               </Button>
             </motion.div>
@@ -3083,7 +3083,7 @@ function SuccessState({ data, navigate, onRestart }: { data: BookingWizardData; 
     <Surface padding="lg" className="overflow-hidden rounded-[var(--md-radius-2xl)]">
       <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
         <div>
-          <span className="grid size-12 place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-accent)] text-white shadow-[0_18px_36px_rgba(14,125,116,0.22)]">
+          <span className="grid size-12 place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-accent)] text-[var(--md-accent-ink)] shadow-[0_18px_36px_var(--md-accent-a22)]">
             <PackageCheck className="size-6" strokeWidth={1.45} />
           </span>
           <h1 className="mt-5 text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">Booking created</h1>
@@ -3091,7 +3091,7 @@ function SuccessState({ data, navigate, onRestart }: { data: BookingWizardData; 
             {data.internalReference} is ready as a local prototype record. The flow can be restarted or the operator can return to the Bookings list.
           </p>
           <div className="mt-6 flex flex-wrap gap-2">
-            <Button className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white hover:bg-[#0b6f67]" onClick={() => navigate("/bookings")}>
+            <Button className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]" onClick={() => navigate("/bookings")}>
               View bookings
             </Button>
             <Button variant="ghost" className="h-10 rounded-[var(--md-radius-lg)] bg-white/56 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/76" onClick={onRestart}>
@@ -3459,7 +3459,7 @@ export function BookingWizardPage({ navigate }: { navigate: (path: string) => vo
                   {missingCurrent.length ? <p className="hidden text-[12px] font-medium text-[var(--md-amber)] md:block">{missingCurrent.length} required field{missingCurrent.length === 1 ? "" : "s"} still missing</p> : null}
                   <Button
                     type="button"
-                    className="h-10 shrink-0 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3 text-[13px] font-medium text-white hover:bg-[#0b6f67] sm:px-4"
+                    className="h-10 shrink-0 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3 text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)] sm:px-4"
                     onClick={goNext}
                     disabled={activeStep === steps.length - 1 && !canCreate}
                   >

@@ -138,7 +138,7 @@ function FreightNarrative({
   return (
     <aside
       className={cn(
-        "relative flex min-h-[360px] overflow-hidden bg-[#062420] text-white",
+        "relative flex min-h-[360px] overflow-hidden bg-[var(--md-accent-abyss)] text-white",
         componentPreview ? "min-h-[900px] lg:min-h-[900px]" : "lg:min-h-screen",
         className,
       )}
@@ -180,9 +180,9 @@ function FreightNarrative({
                 <span
                   className={cn(
                     "size-2.5 rounded-full",
-                    booking.tone === "green" && "bg-[#7bdcae]",
+                    booking.tone === "green" && "bg-[var(--md-accent-lift-warm)]",
                     booking.tone === "amber" && "bg-[var(--md-amber)]",
-                    booking.tone === "teal" && "bg-[#8ed2cb]",
+                    booking.tone === "teal" && "bg-[var(--md-accent-lift)]",
                   )}
                 />
                 <div className="flex min-w-0 items-center gap-[var(--md-page-stack-gap)]">
@@ -192,7 +192,7 @@ function FreightNarrative({
                 <span
                   className={cn(
                     "shrink-0 text-[12px] font-medium",
-                    booking.tone === "green" && "text-[#80caa3]",
+                    booking.tone === "green" && "text-[var(--md-accent-lift-warm)]",
                     booking.tone === "amber" && "text-[var(--md-amber)]",
                     booking.tone === "teal" && "text-white",
                   )}
@@ -206,7 +206,7 @@ function FreightNarrative({
 
         {copy.footnote ? (
           <p className={cn("mt-auto flex items-center gap-3 text-[12px] text-white/58", muted && "text-white/55")}>
-            <span className="size-2 rounded-full bg-[#79d9a7] shadow-[0_0_0_4px_rgba(121,217,167,0.12)]" />
+            <span className="size-2 rounded-full bg-[var(--md-accent-lift-warm)] shadow-[0_0_0_4px_color-mix(in_srgb,var(--md-accent-lift-warm)_12%,transparent)]" />
             {copy.footnote}
           </p>
         ) : null}
@@ -275,9 +275,9 @@ function AuthField({
         placeholder="john.doe@multideck.app"
         spellCheck={false}
         type="email"
-        className="mt-3 h-[64px] rounded-[14px] border-0 bg-white px-5 text-[21px] text-[var(--md-ink)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.42),0_0_0_4px_rgba(14,125,116,0.16)] focus-visible:ring-0 disabled:bg-white/72"
+        className="mt-3 h-[64px] rounded-[14px] border-0 bg-white px-5 text-[21px] text-[var(--md-ink)] shadow-[inset_0_0_0_1px_var(--md-accent-a42),0_0_0_4px_var(--md-accent-a16)] focus-visible:ring-0 disabled:bg-white/72"
       />
-      <Button type="submit" disabled={disabled || isSubmitting} className="mt-[var(--md-page-stack-gap)] h-[64px] w-full rounded-[14px] bg-[var(--md-accent)] text-[18px] font-medium text-white hover:bg-[#0b6f67]">
+      <Button type="submit" disabled={disabled || isSubmitting} className="mt-[var(--md-page-stack-gap)] h-[64px] w-full rounded-[14px] bg-[var(--md-accent)] text-[18px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]">
         {isSubmitting ? <Loader2 data-icon="inline-start" className="me-2 size-5 animate-spin" strokeWidth={1.5} /> : null}
         {submitLabel}
         {!isSubmitting ? <ArrowRight data-icon="inline-end" className="ms-2 size-5" strokeWidth={1.4} /> : null}
@@ -329,7 +329,7 @@ function PasswordSignInForm({
         placeholder="john.doe@multideck.app"
         spellCheck={false}
         type="email"
-        className="mt-2 h-12 rounded-[var(--md-radius-xl)] border-0 bg-white px-4 text-[14px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)] disabled:bg-white/72"
+        className="mt-2 h-12 rounded-[var(--md-radius-xl)] border-0 bg-white px-4 text-[14px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] disabled:bg-white/72"
       />
 
       <div className="mt-4 flex items-center justify-between gap-4">
@@ -354,10 +354,10 @@ function PasswordSignInForm({
         dir="ltr"
         disabled={disabled || isSubmitting}
         type="password"
-        className="mt-2 h-12 rounded-[var(--md-radius-xl)] border-0 bg-white px-4 text-[14px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)] disabled:bg-white/72"
+        className="mt-2 h-12 rounded-[var(--md-radius-xl)] border-0 bg-white px-4 text-[14px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] disabled:bg-white/72"
       />
 
-      <Button type="submit" disabled={disabled || isSubmitting} className="mt-5 h-12 w-full rounded-[var(--md-radius-xl)] bg-[var(--md-accent)] text-[13px] font-medium text-white hover:bg-[#0b6f67]">
+      <Button type="submit" disabled={disabled || isSubmitting} className="mt-5 h-12 w-full rounded-[var(--md-radius-xl)] bg-[var(--md-accent)] text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]">
         {isSubmitting ? <Loader2 data-icon="inline-start" className="me-2 size-4 animate-spin" strokeWidth={1.5} /> : null}
         {isSubmitting ? "Signing in" : "Sign in with password"}
         {!isSubmitting ? <ArrowRight data-icon="inline-end" className="ms-2 size-4" strokeWidth={1.4} /> : null}
@@ -420,10 +420,10 @@ export function WorkspaceRouterPanel({
               <button
                 key={entry.slug}
                 type="button"
-                className="group grid w-full grid-cols-[40px_minmax(0,1fr)_auto] items-center gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-3 text-start shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:-translate-y-px hover:bg-[var(--md-surface-tint)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.16)]"
+                className="group grid w-full grid-cols-[40px_minmax(0,1fr)_auto] items-center gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-3 text-start shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:-translate-y-px hover:bg-[var(--md-surface-tint)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a16)]"
                 onClick={() => openWorkspace(entry.slug)}
               >
-                <span className="grid size-10 place-items-center rounded-[calc(var(--md-radius-xl)-4px)] bg-[var(--md-accent)] text-[14px] font-medium text-white" aria-hidden="true" data-i18n-skip>
+                <span className="grid size-10 place-items-center rounded-[calc(var(--md-radius-xl)-4px)] bg-[var(--md-accent)] text-[14px] font-medium text-[var(--md-accent-ink)]" aria-hidden="true" data-i18n-skip>
                   {entry.name.slice(0, 1).toUpperCase()}
                 </span>
                 <span className="min-w-0">
@@ -458,7 +458,7 @@ export function WorkspaceRouterPanel({
         <label htmlFor="multideck-workspace" className="text-[12px] font-medium text-[var(--md-text)]">
           Workspace
         </label>
-        <div className="relative mt-2 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)] focus-within:shadow-[inset_0_0_0_1px_rgba(14,125,116,0.48),0_0_0_4px_rgba(14,125,116,0.12)]">
+        <div className="relative mt-2 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)] focus-within:shadow-[inset_0_0_0_1px_var(--md-accent-a48),0_0_0_4px_var(--md-accent-a12)]">
           <Input
             id="multideck-workspace"
             value={workspace}
@@ -586,7 +586,7 @@ function ForgotPasswordPanel({
   return (
     <div className="w-full max-w-[520px]">
       <BrandLockup />
-      <div className="mt-10 grid size-11 place-items-center rounded-[var(--md-radius-xl)] bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)]">
+      <div className="mt-10 grid size-11 place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-accent-a10)] text-[var(--md-accent)]">
         <KeyRound className="size-5" strokeWidth={1.4} />
       </div>
       <h2 className="mt-5 text-[24px] font-medium leading-tight text-[var(--md-ink)]">Reset your password</h2>
@@ -618,9 +618,9 @@ function ForgotPasswordPanel({
           placeholder="john.doe@multideck.app"
           spellCheck={false}
           type="email"
-          className="mt-2 h-12 rounded-[var(--md-radius-xl)] border-0 bg-white px-4 text-[14px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]"
+          className="mt-2 h-12 rounded-[var(--md-radius-xl)] border-0 bg-white px-4 text-[14px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
         />
-        <Button type="submit" disabled={isSubmitting} className="mt-5 h-12 w-full rounded-[var(--md-radius-xl)] bg-[var(--md-accent)] text-[13px] font-medium text-white hover:bg-[#0b6f67]">
+        <Button type="submit" disabled={isSubmitting} className="mt-5 h-12 w-full rounded-[var(--md-radius-xl)] bg-[var(--md-accent)] text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]">
           {isSubmitting ? <Loader2 data-icon="inline-start" className="me-2 size-4 animate-spin" strokeWidth={1.5} /> : null}
           {isSubmitting ? "Sending recovery link" : "Send recovery link"}
         </Button>
@@ -654,7 +654,7 @@ function ResetPasswordPanel({
   return (
     <div className="w-full max-w-[520px]">
       <BrandLockup />
-      <div className="mt-10 grid size-11 place-items-center rounded-[var(--md-radius-xl)] bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)]">
+      <div className="mt-10 grid size-11 place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-accent-a10)] text-[var(--md-accent)]">
         <ShieldCheck className="size-5" strokeWidth={1.4} />
       </div>
       <h2 className="mt-5 text-[24px] font-medium leading-tight text-[var(--md-ink)]">Choose a new password</h2>
@@ -682,7 +682,7 @@ function ResetPasswordPanel({
           dir="ltr"
           disabled={isSubmitting}
           type="password"
-          className="mt-2 h-12 rounded-[var(--md-radius-xl)] border-0 bg-white px-4 text-[14px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]"
+          className="mt-2 h-12 rounded-[var(--md-radius-xl)] border-0 bg-white px-4 text-[14px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
         />
         <label className="mt-4 block text-[13px] font-medium text-[var(--md-ink)]" htmlFor="confirm-password">Confirm new password</label>
         <Input
@@ -694,9 +694,9 @@ function ResetPasswordPanel({
           dir="ltr"
           disabled={isSubmitting}
           type="password"
-          className="mt-2 h-12 rounded-[var(--md-radius-xl)] border-0 bg-white px-4 text-[14px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]"
+          className="mt-2 h-12 rounded-[var(--md-radius-xl)] border-0 bg-white px-4 text-[14px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
         />
-        <Button type="submit" disabled={isSubmitting} className="mt-5 h-12 w-full rounded-[var(--md-radius-xl)] bg-[var(--md-accent)] text-[13px] font-medium text-white hover:bg-[#0b6f67]">
+        <Button type="submit" disabled={isSubmitting} className="mt-5 h-12 w-full rounded-[var(--md-radius-xl)] bg-[var(--md-accent)] text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]">
           {isSubmitting ? <Loader2 data-icon="inline-start" className="me-2 size-4 animate-spin" strokeWidth={1.5} /> : null}
           {isSubmitting ? "Updating password" : "Update password"}
         </Button>
@@ -756,7 +756,7 @@ function CodeInput({
           }}
           className={cn(
             "size-[74px] rounded-[14px] border-0 bg-white p-0 text-center text-[34px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-0 disabled:bg-white/72",
-            index === Math.min(code.length, 5) && "shadow-[inset_0_0_0_1px_rgba(14,125,116,0.48),0_0_0_4px_rgba(14,125,116,0.14)]",
+            index === Math.min(code.length, 5) && "shadow-[inset_0_0_0_1px_var(--md-accent-a48),0_0_0_4px_var(--md-accent-a14)]",
           )}
         />
       ))}
@@ -789,7 +789,7 @@ function VerifyPanel({
 }) {
   return (
     <div className="w-full max-w-[600px]">
-      <div className="grid size-[64px] place-items-center rounded-[16px] bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)]">
+      <div className="grid size-[64px] place-items-center rounded-[16px] bg-[var(--md-accent-a10)] text-[var(--md-accent)]">
         <Mail className="size-7" strokeWidth={1.4} />
       </div>
 
@@ -834,7 +834,7 @@ function SignedOutPanel({ onSignBackIn, onSwitchAccount, operatorName = "Emma" }
         ))}
       </div>
 
-      <Button type="button" className="mt-[var(--md-page-section-gap)] h-[64px] w-full rounded-[14px] bg-[var(--md-accent)] text-[18px] font-medium text-white hover:bg-[#0b6f67]" onClick={onSignBackIn}>
+      <Button type="button" className="mt-[var(--md-page-section-gap)] h-[64px] w-full rounded-[14px] bg-[var(--md-accent)] text-[18px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]" onClick={onSignBackIn}>
         Sign back in
       </Button>
       <Button

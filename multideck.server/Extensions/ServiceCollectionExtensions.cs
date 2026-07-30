@@ -15,6 +15,10 @@ using Multideck.Server.Modules.Warehouse;
 using Multideck.Server.Modules.Customers;
 using Multideck.Server.Modules.Documents;
 using Multideck.Server.Modules.Finance;
+using Multideck.Server.Modules.CrmPipelines;
+using Multideck.Server.Modules.Leads;
+using Multideck.Server.Modules.Deals;
+using Multideck.Server.Modules.Support;
 
 namespace Multideck.Server.Extensions;
 
@@ -39,6 +43,16 @@ public static class ServiceCollectionExtensions
         });
         services.AddWarehouseModule();
         services.AddScoped<ICustomerService, CustomerService>();
+        services.AddScoped<ILeadService, LeadService>();
+        services.AddScoped<IDealService, DealService>();
+        services.AddScoped<ICrmPipelineService, CrmPipelineService>();
+        services
+            .AddOptions<SupportTicketOptions>()
+            .Bind(configuration.GetSection(SupportTicketOptions.SectionName));
+        services.AddHttpClient<ISupportTicketService, SupportTicketService>(client =>
+        {
+            client.Timeout = Timeout.InfiniteTimeSpan;
+        });
 
         services.AddSingleton(supabaseAuth);
         services.AddScoped<IAuthSessionService, AuthSessionService>();

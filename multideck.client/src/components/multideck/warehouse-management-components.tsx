@@ -59,7 +59,7 @@ import {
 // ---------------------------------------------------------------------------
 
 const fieldControlClass =
-  "!h-10 !w-full rounded-[var(--md-radius-lg)] border-0 bg-white/68 !px-3 !text-[13px] leading-5 text-[var(--md-ink)] shadow-[var(--md-shadow-line)] placeholder:text-[var(--md-subtle)] active:!scale-100 focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]"
+  "!h-10 !w-full rounded-[var(--md-radius-lg)] border-0 bg-white/68 !px-3 !text-[13px] leading-5 text-[var(--md-ink)] shadow-[var(--md-shadow-line)] placeholder:text-[var(--md-subtle)] active:!scale-100 focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
 
 export const warehouseDialogHeaderClass =
   "bg-[var(--md-surface-soft)] px-6 py-5 pe-14 text-start shadow-[var(--md-stroke-bottom)] [&_[data-slot=dialog-title]]:text-[17px] [&_[data-slot=dialog-title]]:leading-6"
@@ -169,7 +169,7 @@ function ManagementSearch({
         placeholder={placeholder}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-10 rounded-[var(--md-radius-lg)] border-0 bg-white/68 pe-3 ps-9 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] placeholder:text-[var(--md-subtle)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]"
+        className="h-10 rounded-[var(--md-radius-lg)] border-0 bg-white/68 pe-3 ps-9 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] placeholder:text-[var(--md-subtle)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
       />
     </div>
   )
@@ -504,7 +504,7 @@ function FacilityDialog({
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} className="h-10 rounded-[var(--md-radius-lg)] bg-white/48 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/74">
               Cancel
             </Button>
-            <Button type="button" onClick={handleSubmit} disabled={saving} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white shadow-[0_10px_22px_rgba(14,125,116,0.14)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]">
+            <Button type="button" onClick={handleSubmit} disabled={saving} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] shadow-[0_10px_22px_var(--md-accent-a14)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]">
               {saving ? <Loader2 data-icon="inline-start" className="size-4 animate-spin" /> : null}
               {isEditing ? "Save changes" : "Create facility"}
             </Button>
@@ -625,7 +625,7 @@ export function WarehouseFacilitiesView() {
       <ManagementToolbar title="Facilities" meta="Create and manage the warehouse locations where customer stock is stored.">
         <FilterChips className="shrink-0 flex-nowrap" options={facilityFilters} activeOption={activeFilter} onChange={setActiveFilter} />
         <ManagementSearch value={search} onChange={setSearch} placeholder="Search code, name, city..." />
-        <Button onClick={openCreate} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white shadow-[0_10px_22px_rgba(14,125,116,0.14)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]">
+        <Button onClick={openCreate} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] shadow-[0_10px_22px_var(--md-accent-a14)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]">
           <Plus data-icon="inline-start" className="size-4" strokeWidth={1.4} />
           New facility
         </Button>
@@ -651,7 +651,7 @@ export function WarehouseFacilitiesView() {
           title="No facilities yet"
           detail="Create your first warehouse location to start storing customer stock."
           action={
-            <Button onClick={openCreate} className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white shadow-[0_10px_22px_rgba(14,125,116,0.14)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]">
+            <Button onClick={openCreate} className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] shadow-[0_10px_22px_var(--md-accent-a14)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]">
               <Plus data-icon="inline-start" className="size-4" strokeWidth={1.4} />
               New facility
             </Button>
@@ -936,7 +936,7 @@ function ItemDialog({
           </WarehouseFormField>
 
           <WarehouseFormField label="Commodity description" htmlFor="item-commodity" hint="Optional customs-facing description.">
-            <Textarea id="item-commodity" value={form.commodityDescription} onChange={(event) => update("commodityDescription", event.target.value)} className="min-h-[64px] rounded-[var(--md-radius-lg)] border-0 bg-white/68 px-3 py-2 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)]" />
+            <Textarea id="item-commodity" value={form.commodityDescription} onChange={(event) => update("commodityDescription", event.target.value)} className="min-h-[64px] rounded-[var(--md-radius-lg)] border-0 bg-white/68 px-3 py-2 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]" />
           </WarehouseFormField>
 
           <div className="grid gap-4 sm:grid-cols-2">
@@ -1011,7 +1011,7 @@ function ItemDialog({
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} className="h-10 rounded-[var(--md-radius-lg)] bg-white/48 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/74">
               Cancel
             </Button>
-            <Button type="button" onClick={handleSubmit} disabled={saving} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white shadow-[0_10px_22px_rgba(14,125,116,0.14)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]">
+            <Button type="button" onClick={handleSubmit} disabled={saving} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] shadow-[0_10px_22px_var(--md-accent-a14)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]">
               {saving ? <Loader2 data-icon="inline-start" className="size-4 animate-spin" /> : null}
               {isEditing ? "Save changes" : "Create item"}
             </Button>
@@ -1136,7 +1136,7 @@ function ImportItemsDialog({
           <div className="grid gap-2">
             <span className="text-[12.5px] font-medium text-[var(--md-ink)]">Step 2 - Upload the filled-in file</span>
             <label className="flex cursor-pointer items-center gap-3 rounded-[var(--md-radius-lg)] bg-white/48 px-3 py-3 shadow-[var(--md-shadow-line)] transition-colors hover:bg-white/68">
-              <span className="grid size-9 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)]">
+              <span className="grid size-9 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-accent-a10)] text-[var(--md-accent)]">
                 <FileSpreadsheet className="size-4" strokeWidth={1.4} aria-hidden="true" />
               </span>
               <span className="min-w-0 flex-1">
@@ -1183,7 +1183,7 @@ function ImportItemsDialog({
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} className="h-10 rounded-[var(--md-radius-lg)] bg-white/48 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/74">
             {result ? "Close" : "Cancel"}
           </Button>
-          <Button type="button" onClick={handleImport} disabled={!canImport} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white shadow-[0_10px_22px_rgba(14,125,116,0.14)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)] disabled:opacity-50">
+          <Button type="button" onClick={handleImport} disabled={!canImport} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] shadow-[0_10px_22px_var(--md-accent-a14)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)] disabled:opacity-50">
             {importing ? <Loader2 data-icon="inline-start" className="size-4 animate-spin" /> : <Upload data-icon="inline-start" className="size-4" strokeWidth={1.4} />}
             Import items
           </Button>
@@ -1329,7 +1329,7 @@ export function WarehouseItemsView({ canManage = true }: { canManage?: boolean }
           <Upload data-icon="inline-start" className="size-4" strokeWidth={1.4} />
           {t("Import stock")}
         </Button> : null}
-        {canManage ? <Button onClick={openCreate} disabled={!canCreate} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white shadow-[0_10px_22px_rgba(14,125,116,0.14)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)] disabled:opacity-50">
+        {canManage ? <Button onClick={openCreate} disabled={!canCreate} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] shadow-[0_10px_22px_var(--md-accent-a14)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)] disabled:opacity-50">
           <Plus data-icon="inline-start" className="size-4" strokeWidth={1.4} />
           New item
         </Button> : null}
@@ -1355,7 +1355,7 @@ export function WarehouseItemsView({ canManage = true }: { canManage?: boolean }
           title="No items yet"
           detail={canCreate ? "Add your first item to store customer stock in a facility." : "Create a facility first, then add the items stored inside it."}
           action={canManage && canCreate ? (
-            <Button onClick={openCreate} className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white shadow-[0_10px_22px_rgba(14,125,116,0.14)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]">
+            <Button onClick={openCreate} className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] shadow-[0_10px_22px_var(--md-accent-a14)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]">
               <Plus data-icon="inline-start" className="size-4" strokeWidth={1.4} />
               New item
             </Button>
@@ -1755,7 +1755,7 @@ function LocationDialog({
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} className="h-10 rounded-[var(--md-radius-lg)] bg-white/48 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/74">
               Cancel
             </Button>
-            <Button type="button" onClick={handleSubmit} disabled={saving} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white shadow-[0_10px_22px_rgba(14,125,116,0.14)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]">
+            <Button type="button" onClick={handleSubmit} disabled={saving} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] shadow-[0_10px_22px_var(--md-accent-a14)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]">
               {saving ? <Loader2 data-icon="inline-start" className="size-4 animate-spin" /> : null}
               {isEditing ? "Save changes" : "Create location"}
             </Button>
@@ -1896,7 +1896,7 @@ export function WarehouseLocationsView() {
               </SelectContent>
             </Select>
             <ManagementSearch value={search} onChange={setSearch} placeholder="Search code, zone, position..." />
-            <Button onClick={openCreate} className="h-10 self-end rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white shadow-[0_10px_22px_rgba(14,125,116,0.14)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]">
+            <Button onClick={openCreate} className="h-10 self-end rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] shadow-[0_10px_22px_var(--md-accent-a14)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]">
               <Plus data-icon="inline-start" className="size-4" strokeWidth={1.4} />
               New location
             </Button>
@@ -1932,7 +1932,7 @@ export function WarehouseLocationsView() {
           title="No locations yet"
           detail="Add the first bin, rack, or position for this facility."
           action={
-            <Button onClick={openCreate} className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white shadow-[0_10px_22px_rgba(14,125,116,0.14)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]">
+            <Button onClick={openCreate} className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] shadow-[0_10px_22px_var(--md-accent-a14)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]">
               <Plus data-icon="inline-start" className="size-4" strokeWidth={1.4} />
               New location
             </Button>

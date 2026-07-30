@@ -236,11 +236,11 @@ const eventTypeIcons: Record<QuoteAuditEventType, LucideIcon> = {
 
 const eventTypeClasses: Record<QuoteAuditEventType, string> = {
   record: "bg-[rgba(90,103,100,0.08)] text-[var(--md-text)] shadow-[0_0_0_1px_rgba(90,103,100,0.08)]",
-  pricing: "bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)] shadow-[0_0_0_1px_rgba(14,125,116,0.1)]",
+  pricing: "bg-[var(--md-accent-a10)] text-[var(--md-accent)] shadow-[0_0_0_1px_var(--md-accent-a10)]",
   routing: "bg-[rgba(74,125,156,0.1)] text-[var(--md-blue)] shadow-[0_0_0_1px_rgba(74,125,156,0.1)]",
   document: "bg-[rgba(90,103,100,0.08)] text-[var(--md-text)] shadow-[0_0_0_1px_rgba(90,103,100,0.08)]",
   approval: "bg-[rgba(221,138,43,0.1)] text-[var(--md-amber)] shadow-[0_0_0_1px_rgba(221,138,43,0.1)]",
-  communication: "bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)] shadow-[0_0_0_1px_rgba(14,125,116,0.1)]",
+  communication: "bg-[var(--md-accent-a10)] text-[var(--md-accent)] shadow-[0_0_0_1px_var(--md-accent-a10)]",
   booking: "bg-[rgba(74,125,156,0.1)] text-[var(--md-blue)] shadow-[0_0_0_1px_rgba(74,125,156,0.1)]",
 }
 

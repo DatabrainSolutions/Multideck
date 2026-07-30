@@ -190,7 +190,7 @@ export function QuotesRegisterPage({ navigate }: { navigate: (path: string) => v
                 dir="auto"
                 aria-label={t("Search quotes")}
                 placeholder={t("Search quotes")}
-                className="h-8 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface)] ps-8 pe-8 text-base shadow-[var(--md-shadow-line)] placeholder:text-[var(--md-subtle)] focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)] md:text-[12px]"
+                className="h-8 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface)] ps-8 pe-8 text-base shadow-[var(--md-shadow-line)] placeholder:text-[var(--md-subtle)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] md:text-[12px]"
                 onChange={(event) => setQuickSearch(event.target.value)}
               />
               {quickSearch ? (
@@ -217,7 +217,7 @@ export function QuotesRegisterPage({ navigate }: { navigate: (path: string) => v
             >
               <SlidersHorizontal className="size-3.5" strokeWidth={1.4} />
               <span className="hidden lg:inline">{t("Advanced search")}</span>
-              {activeConditionCount ? <span className="grid min-w-4 place-items-center rounded-full bg-[rgba(14,125,116,0.11)] px-1 text-[10px] font-medium text-[var(--md-accent)]" data-i18n-skip>{activeConditionCount}</span> : null}
+              {activeConditionCount ? <span className="grid min-w-4 place-items-center rounded-full bg-[var(--md-accent-a11)] px-1 text-[10px] font-medium text-[var(--md-accent)]" data-i18n-skip>{activeConditionCount}</span> : null}
             </button>
           </div>
         )}

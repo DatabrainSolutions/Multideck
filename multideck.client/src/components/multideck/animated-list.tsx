@@ -92,7 +92,7 @@ function AnimatedListItem({
       style={{ willChange: shouldAnimate ? "transform, opacity" : undefined }}
       className={cn(
         "w-full rounded-[var(--md-radius-lg)] px-3 py-3 text-left transition-[background,box-shadow,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
-        "hover:bg-white/55 hover:shadow-[var(--md-shadow-line)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(14,125,116,0.18)]",
+        "hover:bg-white/55 hover:shadow-[var(--md-shadow-line)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a18)]",
         selected && "bg-white/68 shadow-[var(--md-shadow-line)]",
         itemClassName,
       )}

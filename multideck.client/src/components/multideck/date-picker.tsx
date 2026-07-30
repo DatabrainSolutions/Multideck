@@ -146,10 +146,10 @@ function CalendarMonth({
               aria-pressed={isStart || isEnd || isInPreview}
               aria-label={new Intl.DateTimeFormat(locale, { dateStyle: "full" }).format(date)}
               className={cn(
-                "grid size-9 place-items-center rounded-[10px] text-[13px] font-medium text-[var(--md-text)] transition-[background-color,box-shadow,color,opacity,scale,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.96] hover:bg-white/78 hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(14,125,116,0.18)]",
-                isToday && "shadow-[inset_0_0_0_1px_rgba(14,125,116,0.22)]",
-                isInPreview && "bg-[rgba(14,125,116,0.1)] text-[var(--md-ink)]",
-                (isStart || isEnd) && "scale-[1.03] bg-[var(--md-accent)] text-white shadow-[0_0_0_3px_rgba(14,125,116,0.14),var(--md-shadow-line)] hover:bg-[var(--md-accent)] hover:text-white",
+                "grid size-9 place-items-center rounded-[10px] text-[13px] font-medium text-[var(--md-text)] transition-[background-color,box-shadow,color,opacity,scale,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.96] hover:bg-white/78 hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a18)]",
+                isToday && "shadow-[inset_0_0_0_1px_var(--md-accent-a22)]",
+                isInPreview && "bg-[var(--md-accent-a10)] text-[var(--md-ink)]",
+                (isStart || isEnd) && "scale-[1.03] bg-[var(--md-accent)] text-[var(--md-accent-ink)] shadow-[0_0_0_3px_var(--md-accent-a14),var(--md-shadow-line)] hover:bg-[var(--md-accent)] hover:text-[var(--md-accent-ink)]",
               )}
               onMouseEnter={() => onPreviewDate(dateKey)}
               onFocus={() => onPreviewDate(dateKey)}
@@ -256,7 +256,7 @@ export function MultideckDateRangePicker({
           disabled={disabled}
           aria-invalid={missing || undefined}
           className={cn(
-            "h-11 w-full min-w-0 justify-between gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-field-bg)] px-3 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,color,opacity,scale,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-field-bg-hover)] focus-visible:bg-[var(--md-field-bg-hover)] focus-visible:ring-[rgba(14,125,116,0.18)]",
+            "h-11 w-full min-w-0 justify-between gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-field-bg)] px-3 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,color,opacity,scale,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-field-bg-hover)] focus-visible:bg-[var(--md-field-bg-hover)] focus-visible:ring-[var(--md-accent-a18)]",
             active && "bg-[var(--md-glass-strong)]",
             missing && "ring-1 ring-[rgba(192,57,43,0.78)] shadow-[var(--md-shadow-line),0_0_0_4px_rgba(192,57,43,0.12),0_0_18px_rgba(192,57,43,0.16)]",
             triggerClassName,
@@ -334,7 +334,7 @@ export function MultideckDateRangePicker({
             <Button type="button" variant="ghost" className="h-8 rounded-[var(--md-radius-md)] bg-white/45 px-3 text-[12px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-white/70" onClick={resetRange}>
               {t("Reset")}
             </Button>
-            <Button type="button" className="h-8 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[12px] font-medium text-white hover:bg-[var(--md-accent)]/88" disabled={!resolvedRange.start} onClick={() => setOpen(false)}>
+            <Button type="button" className="h-8 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[12px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent)]/88" disabled={!resolvedRange.start} onClick={() => setOpen(false)}>
               {t(hasCompleteRange ? "Apply dates" : "Apply start")}
             </Button>
           </div>

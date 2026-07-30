@@ -108,7 +108,7 @@ export function ReportViewerPage({ navigate, reportId }: { navigate: (path: stri
           </Button>
           <Button
             type="button"
-            className="h-11 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[14px] font-medium text-white shadow-[var(--md-shadow-line)] hover:bg-[var(--md-accent)]/88"
+            className="h-11 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[14px] font-medium text-[var(--md-accent-ink)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-accent)]/88"
             onClick={() => toast.success("PDF prepared", { description: `${report.title} is ready to download.` })}
           >
             <Download data-icon="inline-start" strokeWidth={1.4} />

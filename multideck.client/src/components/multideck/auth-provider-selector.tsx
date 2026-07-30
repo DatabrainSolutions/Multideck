@@ -121,7 +121,7 @@ export function AuthProviderSelector({
             title={provider.label}
             className={cn(
               "group grid h-14 min-w-0 place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
-              "hover:-translate-y-px hover:bg-white hover:shadow-[var(--md-shadow-soft)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.14)] disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-55",
+              "hover:-translate-y-px hover:bg-white hover:shadow-[var(--md-shadow-soft)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-55",
             )}
             onClick={() => void onSelect?.(provider.id)}
           >

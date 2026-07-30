@@ -15,16 +15,21 @@ public static class DocumentServiceCollectionExtensions
             options.ApiKey,
             configuration["Supabase:SecretKey"],
             configuration["Supabase:ServiceRoleKey"]);
-        options.Validate();
 
         services.AddSingleton(options);
         services.AddSingleton<IDocumentPathPolicy, ConcernDocumentPathPolicy>();
         services.AddHttpClient("SupabaseDocumentStorage", client =>
             client.Timeout = TimeSpan.FromMinutes(10));
-        services.AddSingleton<IDocumentStorage>(provider => new SupabaseDocumentStorage(
-            options,
-            provider.GetRequiredService<IHttpClientFactory>().CreateClient("SupabaseDocumentStorage"),
-            provider.GetRequiredService<IDocumentPathPolicy>()));
+        services.AddSingleton<IDocumentStorage>(provider =>
+        {
+            // Keep unrelated API modules available when local document-storage credentials have
+            // not been configured. The storage module still fails closed when it is first used.
+            options.Validate();
+            return new SupabaseDocumentStorage(
+                options,
+                provider.GetRequiredService<IHttpClientFactory>().CreateClient("SupabaseDocumentStorage"),
+                provider.GetRequiredService<IDocumentPathPolicy>());
+        });
         services.AddScoped<IDocumentObjectService, DocumentObjectService>();
         return services;
     }

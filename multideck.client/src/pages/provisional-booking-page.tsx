@@ -117,7 +117,7 @@ function Panel({ title, children, className }: { title: string; children: ReactN
   const { t } = useLanguage()
 
   return (
-    <section className={cn("min-w-0 rounded-[6px] bg-[var(--md-surface-soft)] p-2 shadow-[inset_0_0_0_1px_rgba(14,125,116,0.18)]", className)}>
+    <section className={cn("min-w-0 rounded-[6px] bg-[var(--md-surface-soft)] p-2 shadow-[inset_0_0_0_1px_var(--md-accent-a18)]", className)}>
       <h2 className="mb-1.5 text-[11px] font-semibold leading-4 text-[var(--md-ink)]">{t(title)}</h2>
       {children}
     </section>
@@ -151,7 +151,7 @@ function Field({
         onChange={(event) => onChange(event.target.value)}
         data-i18n-skip
         dir="auto"
-        className="h-6 min-w-0 rounded-[3px] border-0 bg-[var(--md-surface)] px-1.5 text-[11px] font-medium text-[var(--md-ink)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.18)] disabled:cursor-default disabled:opacity-100"
+        className="h-6 min-w-0 rounded-[3px] border-0 bg-[var(--md-surface)] px-1.5 text-[11px] font-medium text-[var(--md-ink)] shadow-[inset_0_0_0_1px_var(--md-accent-a18)] disabled:cursor-default disabled:opacity-100"
       />
     </label>
   )
@@ -182,7 +182,7 @@ function LookupField({
         onChange={(event) => onChange(event.target.value)}
         data-i18n-skip
         dir="auto"
-        className="h-6 min-w-0 rounded-[3px] border-0 bg-[var(--md-surface)] px-1.5 text-[11px] font-medium text-[var(--md-ink)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.18)] disabled:cursor-default disabled:opacity-100"
+        className="h-6 min-w-0 rounded-[3px] border-0 bg-[var(--md-surface)] px-1.5 text-[11px] font-medium text-[var(--md-ink)] shadow-[inset_0_0_0_1px_var(--md-accent-a18)] disabled:cursor-default disabled:opacity-100"
       />
       <Button
         type="button"
@@ -217,7 +217,7 @@ function SelectField({
     <div className="grid min-w-0 grid-cols-[88px_minmax(0,1fr)] items-center gap-1">
       <span className="truncate text-end text-[10.5px] font-medium text-[var(--md-text)]">{t(label)}</span>
       <Select value={value} onValueChange={onChange} disabled={disabled}>
-        <SelectTrigger className="h-6 min-w-0 rounded-[3px] border-0 bg-[var(--md-surface)] px-1.5 text-[11px] font-medium text-[var(--md-ink)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.18)] disabled:cursor-default disabled:opacity-100">
+        <SelectTrigger className="h-6 min-w-0 rounded-[3px] border-0 bg-[var(--md-surface)] px-1.5 text-[11px] font-medium text-[var(--md-ink)] shadow-[inset_0_0_0_1px_var(--md-accent-a18)] disabled:cursor-default disabled:opacity-100">
           <SelectValue />
         </SelectTrigger>
         <SelectContent className="rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface)] shadow-[var(--md-shadow-lift)]">
@@ -275,7 +275,7 @@ function PlaceholderPanel({ title, detail, actionLabel }: { title: string; detai
   const { t } = useLanguage()
   return (
     <Panel title={title} className="min-h-[300px]">
-      <div className="flex h-[244px] flex-col items-start justify-between rounded-[4px] bg-[var(--md-surface)] p-3 shadow-[inset_0_0_0_1px_rgba(14,125,116,0.14)]">
+      <div className="flex h-[244px] flex-col items-start justify-between rounded-[4px] bg-[var(--md-surface)] p-3 shadow-[inset_0_0_0_1px_var(--md-accent-a14)]">
         <p className="max-w-[440px] text-[12px] leading-5 text-[var(--md-text)]">{t(detail)}</p>
         <Button type="button" variant="ghost" className="h-7 rounded-[var(--md-radius-sm)] bg-[var(--md-surface-tint)] px-2 text-[11px] shadow-[var(--md-shadow-line)]">
           <Plus data-icon="inline-start" className="size-3.5" />
@@ -317,9 +317,9 @@ export function ProvisionalBookingPage({ navigate }: { navigate: (path: string) 
   return (
     <main dir={direction} className="min-h-full bg-[var(--md-bg-strong)] px-1.5 py-1.5 sm:px-2">
       <div className="grid w-full gap-1.5">
-        <header className="flex flex-col gap-1.5 rounded-[4px] bg-[var(--md-surface-tint)] px-2 py-1.5 shadow-[inset_0_0_0_1px_rgba(14,125,116,0.24)] lg:flex-row lg:items-center lg:justify-between">
+        <header className="flex flex-col gap-1.5 rounded-[4px] bg-[var(--md-surface-tint)] px-2 py-1.5 shadow-[inset_0_0_0_1px_var(--md-accent-a24)] lg:flex-row lg:items-center lg:justify-between">
           <div className="flex min-w-0 items-center gap-2">
-            <span className="grid size-7 shrink-0 place-items-center rounded-[3px] bg-[rgba(14,125,116,0.12)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]"><FileText className="size-3.5" /></span>
+            <span className="grid size-7 shrink-0 place-items-center rounded-[3px] bg-[var(--md-accent-a12)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]"><FileText className="size-3.5" /></span>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-1.5">
                 <h1 className="text-[15px] font-medium leading-5 text-[var(--md-ink)]">{t("Provisional booking")}</h1>
@@ -352,7 +352,7 @@ export function ProvisionalBookingPage({ navigate }: { navigate: (path: string) 
         </header>
 
         <Tabs defaultValue="details" className="grid min-w-0 gap-1.5 xl:grid-cols-[188px_minmax(0,1fr)]">
-          <aside className="hidden self-start rounded-[4px] bg-[var(--md-surface-tint)] p-1.5 shadow-[inset_0_0_0_1px_rgba(14,125,116,0.2)] xl:block">
+          <aside className="hidden self-start rounded-[4px] bg-[var(--md-surface-tint)] p-1.5 shadow-[inset_0_0_0_1px_var(--md-accent-a20)] xl:block">
               <p className="px-1 py-1 text-[10px] font-semibold uppercase tracking-[0.04em] text-[var(--md-subtle)]">{t("Booking checks")}</p>
               <div className="grid gap-0.5">
                 {bookingRail.map(([label, detail, state]) => (
@@ -362,13 +362,13 @@ export function ProvisionalBookingPage({ navigate }: { navigate: (path: string) 
                   </button>
                 ))}
               </div>
-              <div className="mt-2 rounded-[3px] bg-[rgba(14,125,116,0.09)] p-1.5">
+              <div className="mt-2 rounded-[3px] bg-[var(--md-accent-a09)] p-1.5">
                 <p className="text-[10px] font-semibold text-[var(--md-ink)]">{t("Quote linkage")}</p>
                 <p className="mt-0.5 text-[10px] leading-3 text-[var(--md-text)]">{t("Costs and selling lines carry over when you confirm the provisional booking.")}</p>
               </div>
           </aside>
           <div className="min-w-0">
-            <TabsList variant="line" className="h-auto flex-wrap justify-start gap-0.5 rounded-[4px] bg-[var(--md-surface-tint)] p-0.5 shadow-[inset_0_0_0_1px_rgba(14,125,116,0.22)]">
+            <TabsList variant="line" className="h-auto flex-wrap justify-start gap-0.5 rounded-[4px] bg-[var(--md-surface-tint)] p-0.5 shadow-[inset_0_0_0_1px_var(--md-accent-a22)]">
               {bookingTabs.map(([value, label, Icon]) => <TabsTrigger key={value} value={value} className="h-7 rounded-[3px] px-2 text-[11px]"><Icon data-icon="inline-start" className="size-3.5" />{t(label)}</TabsTrigger>)}
             </TabsList>
 
@@ -415,7 +415,7 @@ export function ProvisionalBookingPage({ navigate }: { navigate: (path: string) 
                   <Panel title="Job management links">
                     <div className="grid gap-1">
                       <div className="flex items-center justify-between gap-1"><span className="text-[10.5px] font-medium text-[var(--md-text)]">{t("Order refs")}</span><Button type="button" variant="ghost" disabled={!editable} className="h-5 rounded-[3px] bg-[var(--md-surface)] px-1.5 text-[10px] shadow-[var(--md-shadow-line)]"><MoreHorizontal className="size-3" />{t("More")}</Button></div>
-                      <div className="overflow-hidden rounded-[3px] bg-[var(--md-surface)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.16)]">
+                      <div className="overflow-hidden rounded-[3px] bg-[var(--md-surface)] shadow-[inset_0_0_0_1px_var(--md-accent-a16)]">
                         <div className="grid grid-cols-[minmax(0,1fr)_74px] bg-[var(--md-surface-tint)] px-1.5 py-1 text-[9.5px] font-semibold text-[var(--md-text)]"><span>{t("Job number")}</span><span>{t("Type")}</span></div>
                         <div className="grid min-h-11 grid-cols-[minmax(0,1fr)_74px] px-1.5 py-1.5 text-[10.5px] text-[var(--md-subtle)]"><span>{t("No linked orders")}</span><span>-</span></div>
                       </div>

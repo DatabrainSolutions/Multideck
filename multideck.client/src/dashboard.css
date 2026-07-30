@@ -1,0 +1,1902 @@
+/* Home dashboard. Every surface here is tuned for density first: the operator
+   should be able to read the whole day without scrolling past the fold. */
+
+@layer md-dashboard {
+  .md-dashboard {
+    --md-dashboard-band-gap: var(--md-page-stack-gap-compact);
+    --md-chart-grid: rgba(90, 103, 100, 0.14);
+    --md-dashboard-ring: 0 0 0 2px var(--md-accent-a20);
+    /* Neutral fills and rules, themed once here so nothing below hard-codes a
+       light-mode grey that would disappear or invert on a dark surface. */
+    --md-dashboard-track: rgba(90, 103, 100, 0.14);
+    --md-dashboard-hush: rgba(11, 20, 19, 0.05);
+    --md-dashboard-hush-hover: rgba(11, 20, 19, 0.075);
+  }
+
+  .md-dashboard-main {
+    min-width: 0;
+    container: md-dash / inline-size;
+  }
+
+  .dark .md-dashboard {
+    --md-chart-grid: rgba(182, 196, 189, 0.13);
+    --md-dashboard-track: rgba(182, 196, 189, 0.2);
+    --md-dashboard-hush: rgba(255, 255, 255, 0.055);
+    --md-dashboard-hush-hover: rgba(255, 255, 255, 0.085);
+  }
+
+  .md-dashboard-band + .md-dashboard-band,
+  .md-dashboard-band {
+    margin-top: var(--md-dashboard-band-gap);
+  }
+
+  /* Live bookings sits below the fold on most screens. Skipping its layout and
+     paint until it approaches the viewport keeps first paint cheap, and the
+     size hint stops the scrollbar from jumping when it does render. */
+  .md-dashboard-deferred {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 480px;
+  }
+
+  /* The lead band. Slightly taller panels and a heavier lift than anything
+     below, because this is the pair the operator is meant to work from. */
+  .md-dashboard-primary {
+    display: grid;
+    gap: var(--md-dashboard-band-gap);
+  }
+
+  @container md-dash (min-width: 900px) {
+    .md-dashboard-primary {
+      grid-template-columns: minmax(0, 1.06fr) minmax(400px, 0.94fr);
+    }
+
+    .md-dashboard-primary > * {
+      height: 396px;
+      min-height: 0;
+    }
+  }
+
+  .md-dashboard-primary > * {
+    box-shadow: var(--md-shadow-lift);
+  }
+
+  .md-dashboard-back {
+    display: inline-flex;
+    align-items: center;
+    height: 32px;
+    margin-bottom: var(--md-gap-md);
+    padding-inline: 12px;
+    border-radius: var(--md-radius-lg);
+    background: var(--md-glass);
+    box-shadow: var(--md-shadow-line);
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--md-ink);
+    transition: background var(--md-motion), transform var(--md-motion-fast);
+  }
+
+  .md-dashboard-back:hover {
+    background: var(--md-glass-strong);
+    transform: translateX(-2px);
+  }
+
+  /* ── Shared panel typography ─────────────────────────────────────────── */
+
+  .md-panel-title {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.25;
+    color: var(--md-ink);
+  }
+
+  .md-panel-meta {
+    margin-top: 2px;
+    font-size: 11.5px;
+    line-height: 1.35;
+    color: var(--md-subtle);
+  }
+
+  .md-panel-eyebrow {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--md-subtle);
+  }
+
+  /* ── Header ──────────────────────────────────────────────────────────── */
+
+  .md-dashboard-header {
+    display: flex;
+    flex-direction: column;
+    gap: var(--md-gap-md);
+    margin-bottom: 2px;
+  }
+
+  @container md-dash (min-width: 1210px) {
+    .md-dashboard-header {
+      flex-direction: row;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: var(--md-gap-lg);
+    }
+  }
+
+  .md-dashboard-header-lead {
+    display: flex;
+    flex: 1;
+    align-items: flex-start;
+    gap: 13px;
+    min-width: 0;
+  }
+
+  .md-dashboard-header-copy {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .md-dashboard-header-dial {
+    flex-shrink: 0;
+    margin-top: 3px;
+  }
+
+  @container md-dash (max-width: 520px) {
+    .md-dashboard-header-dial {
+      display: none;
+    }
+  }
+
+  .md-dashboard-greeting {
+    font-size: clamp(24px, 2.4vw, 30px);
+    font-weight: 500;
+    line-height: 1.15;
+    letter-spacing: -0.012em;
+    color: var(--md-ink);
+  }
+
+  /* The summary swaps on every range change. Reserving its height means the
+     rest of the page never shifts while the two lines crossfade. */
+  .md-dashboard-summary-shell {
+    position: relative;
+    min-height: 34px;
+    margin-top: 4px;
+    max-width: 62ch;
+  }
+
+  .md-dashboard-summary {
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: var(--md-text);
+  }
+
+  .md-dashboard-header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--md-gap-sm);
+  }
+
+  @container md-dash (min-width: 1210px) {
+    .md-dashboard-header-actions {
+      flex-shrink: 0;
+      justify-content: flex-end;
+      padding-top: 4px;
+    }
+  }
+
+  .md-dashboard-header-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 36px;
+    padding-inline: 12px;
+    border-radius: var(--md-radius-lg);
+    background: var(--md-glass);
+    box-shadow: var(--md-shadow-line);
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--md-ink);
+    transition:
+      background var(--md-motion),
+      box-shadow var(--md-motion),
+      transform var(--md-motion-fast);
+  }
+
+  .md-dashboard-header-control:hover {
+    background: var(--md-glass-strong);
+    box-shadow: var(--md-shadow-soft);
+  }
+
+  .md-dashboard-header-control:active {
+    transform: scale(0.982);
+  }
+
+  .md-dashboard-header-control-active {
+    background: var(--md-glass-strong);
+    color: var(--md-ink);
+  }
+
+  .md-dashboard-views {
+    min-width: 168px;
+    justify-content: space-between;
+  }
+
+  @container md-dash (max-width: 1360px) {
+    .md-dashboard-customise-text {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
+  }
+
+  .md-dashboard-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 36px;
+    padding-inline: 11px;
+    border-radius: var(--md-radius-lg);
+    background: rgba(209, 78, 78, 0.1);
+    color: var(--md-red);
+    box-shadow: var(--md-shadow-line);
+    font-size: 12px;
+    font-weight: 500;
+    transition: background var(--md-motion), color var(--md-motion);
+  }
+
+  .md-dashboard-status-ok {
+    background: var(--md-accent-a10);
+    color: var(--md-accent);
+  }
+
+  .md-dashboard-status-checking {
+    background: rgba(74, 125, 156, 0.1);
+    color: var(--md-blue);
+  }
+
+  .md-dashboard-status-text {
+    letter-spacing: 0.01em;
+  }
+
+  /* ── Radials ─────────────────────────────────────────────────────────── */
+
+  .md-radial,
+  .md-arc {
+    position: relative;
+    display: inline-grid;
+    place-items: center;
+    flex-shrink: 0;
+  }
+
+  /* Rotated so the sweep starts at twelve o'clock, which is what a dial implies. */
+  .md-radial-svg,
+  .md-arc-svg {
+    rotate: -90deg;
+  }
+
+  [dir="rtl"] .md-radial-svg,
+  [dir="rtl"] .md-arc-svg {
+    scale: -1 1;
+    rotate: 90deg;
+  }
+
+  .md-radial-center,
+  .md-arc-center {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    text-align: center;
+  }
+
+  .md-day-dial {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+  }
+
+  .md-day-dial-core {
+    display: grid;
+    place-items: center;
+  }
+
+  .md-day-dial-count {
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    color: var(--md-ink);
+  }
+
+  .md-day-dial-off {
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--md-subtle);
+  }
+
+  .md-day-dial-copy {
+    min-width: 0;
+  }
+
+  .md-day-dial-label {
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--md-subtle);
+  }
+
+  .md-day-dial-detail {
+    margin-top: 2px;
+    font-size: 11.5px;
+    color: var(--md-text);
+  }
+
+  /* A nine-hour ladder. Past hours read solid, the rest recede — the same
+     information as the ring, at a glance, without another number. */
+  .md-day-dial-ticks {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 9px;
+    margin-top: 6px;
+  }
+
+  .md-day-dial-tick {
+    display: block;
+    width: 2px;
+    height: 100%;
+    border-radius: 999px;
+    background: var(--md-subtle);
+    opacity: 0.24;
+    transform-origin: bottom center;
+    transition: background var(--md-motion), opacity var(--md-motion);
+  }
+
+  .md-day-dial-tick[data-past="true"] {
+    background: var(--md-accent);
+    opacity: 0.85;
+  }
+
+  .md-day-dial[data-state="closing"] .md-day-dial-tick[data-past="true"] {
+    background: var(--md-amber);
+  }
+
+  /* ── Clock rail ──────────────────────────────────────────────────────── */
+
+  .md-clock-rail {
+    min-width: 0;
+  }
+
+  .md-clock-rail-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--md-gap-sm);
+    padding-inline: 2px;
+    padding-bottom: 7px;
+  }
+
+  .md-clock-rail-title {
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    color: var(--md-subtle);
+  }
+
+  .md-clock-rail-meta,
+  .md-clock-rail-count {
+    display: inline-flex;
+    align-items: center;
+    height: 18px;
+    padding-inline: 7px;
+    border-radius: 999px;
+    background: var(--md-icon-well);
+    font-size: 10.5px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-text);
+  }
+
+  .md-clock-rail-legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    font-size: 10.5px;
+    font-weight: 500;
+    color: var(--md-subtle);
+  }
+
+  /* One tight row of cities. It only scrolls when the viewport genuinely cannot
+     fit them, and the mask hints at the overflow instead of a hard cut. */
+  .md-clock-rail-track {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(112px, 1fr);
+    gap: 6px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    /*
+     * The chips lift on hover and draw an outer focus ring. Keep that paint
+     * inside the scrolling viewport so neither state is sliced off, then
+     * cancel the extra box height with margins to preserve dashboard density.
+     */
+    margin: -6px -4px -9px;
+    padding: 6px 4px 12px;
+    contain: layout paint;
+  }
+
+  @media (max-width: 1080px) {
+    .md-clock-rail-track {
+      grid-auto-columns: 118px;
+      mask-image: linear-gradient(to right, transparent 0, #000 14px, #000 calc(100% - 18px), transparent 100%);
+    }
+  }
+
+  .md-clock-chip {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    width: 100%;
+    min-width: 0;
+    padding: 7px 9px 8px;
+    border-radius: var(--md-radius-lg);
+    background: var(--md-glass);
+    box-shadow: var(--md-shadow-line), inset 0 0 0 1px var(--md-accent-a11);
+    scroll-snap-align: start;
+    text-align: start;
+    outline: none;
+    transition:
+      background var(--md-motion),
+      box-shadow var(--md-motion);
+  }
+
+  .md-clock-chip:hover {
+    background: var(--md-glass-strong);
+    box-shadow: var(--md-shadow-soft), inset 0 0 0 1px var(--md-accent-a18);
+  }
+
+  .md-clock-chip:focus-visible {
+    box-shadow: var(--md-shadow-soft), var(--md-dashboard-ring);
+  }
+
+  .md-clock-chip[data-tone="amber"] {
+    background: rgba(221, 138, 43, 0.08);
+    box-shadow: var(--md-shadow-line), inset 0 0 0 1px rgba(221, 138, 43, 0.26);
+  }
+
+  .md-clock-chip[data-tone="amber"]:hover {
+    background: rgba(221, 138, 43, 0.13);
+  }
+
+  /* Clocked-off cities recede: flatter surface, quieter type, no tinted ring.
+     Scanning the rail should surface the offices that can still act. */
+  .md-clock-chip[data-tone="neutral"] {
+    background: var(--md-icon-well);
+    box-shadow: var(--md-shadow-line), inset 0 0 0 1px var(--md-dashboard-hush);
+  }
+
+  .md-clock-chip[data-tone="neutral"] .md-clock-chip-time {
+    color: var(--md-ink-soft);
+    opacity: 0.72;
+  }
+
+  .md-clock-chip[data-tone="neutral"]:hover {
+    background: var(--md-dashboard-hush-hover);
+  }
+
+  .md-clock-chip-top,
+  .md-clock-chip-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .md-clock-chip-code {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--md-text);
+  }
+
+  .md-clock-chip-you {
+    display: inline-flex;
+    align-items: center;
+    height: 13px;
+    padding-inline: 4px;
+    border-radius: 3px;
+    background: var(--md-accent-a14);
+    font-size: 8.5px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--md-accent);
+  }
+
+  .md-clock-chip-main {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+  }
+
+  .md-clock-chip-time {
+    font-size: 19px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    color: var(--md-ink);
+    transition: color var(--md-motion);
+  }
+
+  .md-clock-chip-city {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10.5px;
+    line-height: 1.2;
+    color: var(--md-subtle);
+  }
+
+  .md-clock-chip-delta {
+    flex-shrink: 0;
+    font-size: 9.5px;
+    font-weight: 500;
+    color: var(--md-subtle);
+  }
+
+  .md-clock-chip[data-tone="green"] .md-clock-chip-delta {
+    color: var(--md-accent);
+  }
+
+  .md-clock-chip[data-tone="amber"] .md-clock-chip-delta {
+    color: var(--md-amber-strong);
+  }
+
+  /* How far through 08:00-17:00 the city is. A two-pixel rule carries the whole
+     idea without adding another number to read. */
+  .md-clock-chip-track {
+    position: relative;
+    display: block;
+    height: 2px;
+    margin-top: 2px;
+    border-radius: 999px;
+    background: var(--md-dashboard-track);
+    overflow: hidden;
+  }
+
+  .md-clock-chip-fill {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    transform-origin: left center;
+    will-change: transform;
+  }
+
+  [dir="rtl"] .md-clock-chip-fill {
+    transform-origin: right center;
+  }
+
+  .md-clock-face {
+    position: relative;
+    display: block;
+    border-radius: 999px;
+    background: var(--md-glass-strong);
+    box-shadow: var(--md-shadow-line), inset 0 0 0 1px var(--md-accent-a12);
+  }
+
+  .md-clock-face-ooh {
+    background: var(--md-icon-well);
+    box-shadow: var(--md-shadow-line), inset 0 0 0 1px var(--md-dashboard-hush);
+  }
+
+  .md-clock-hand {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    display: block;
+    width: 1.6px;
+    border-radius: 999px;
+    transform-origin: 50% 100%;
+    translate: -50% -100%;
+    will-change: rotate;
+  }
+
+  .md-clock-hand-hour {
+    width: 2px;
+    background: var(--md-ink);
+  }
+
+  .md-clock-pin {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 4px;
+    height: 4px;
+    border-radius: 999px;
+    translate: -50% -50%;
+  }
+
+  .md-clock-popover-band {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 9px 10px 10px;
+    border-radius: var(--md-radius-md);
+    background: var(--md-surface-soft);
+    box-shadow: var(--md-shadow-line);
+  }
+
+  .md-clock-popover-band-label {
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--md-subtle);
+  }
+
+  .md-clock-popover-track {
+    height: 4px;
+    margin-top: 0;
+  }
+
+  .md-clock-popover-band-scale {
+    display: flex;
+    justify-content: space-between;
+    font-size: 9.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-subtle);
+  }
+
+  .md-clock-popover-metric {
+    padding: 7px 6px;
+    border-radius: var(--md-radius-md);
+    background: var(--md-surface-soft);
+    box-shadow: var(--md-shadow-line);
+    text-align: center;
+  }
+
+  .md-clock-popover-action {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    height: 32px;
+    padding-inline: 12px;
+    border-radius: var(--md-radius-md);
+    background: var(--md-glass);
+    box-shadow: var(--md-shadow-line);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--md-ink);
+  }
+
+  .md-clock-popover-action:hover {
+    background: var(--md-glass-strong);
+  }
+
+  /* ── Your jobs ───────────────────────────────────────────────────────── */
+
+  .md-jobs-panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: var(--md-radius-xl);
+    contain: layout paint;
+  }
+
+  .md-jobs-panel-head {
+    display: flex;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--md-gap-md);
+    padding: 11px 14px 10px;
+  }
+
+  /* The job mix used to be a card of its own. Inline beside the count it costs
+     forty pixels instead of a hundred and thirty. */
+  .md-jobs-mix {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .md-jobs-mix-legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .md-jobs-mix-legend li {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+    font-size: 11px;
+    color: var(--md-subtle);
+  }
+
+  .md-jobs-mix-swatch {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+  }
+
+  .md-jobs-mix-value {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-ink);
+  }
+
+  .md-jobs-panel-body {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-height: 0;
+    max-height: 292px;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    padding: 0 11px 12px;
+  }
+
+  .md-job-row {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 30px;
+    align-items: center;
+    border-radius: var(--md-radius-lg);
+    background: var(--md-glass);
+    box-shadow: var(--md-shadow-line);
+    transition: background var(--md-motion), box-shadow var(--md-motion);
+  }
+
+  .md-job-row:hover {
+    background: var(--md-glass-strong);
+    box-shadow: var(--md-shadow-soft);
+  }
+
+  .md-job-row-open {
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr) auto auto 13px;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    padding: 8px 4px 8px 11px;
+    text-align: start;
+    outline: none;
+  }
+
+  @container md-dash (min-width: 820px) {
+    .md-job-row-open {
+      grid-template-columns: 22px 132px minmax(0, 1fr) 132px 104px 13px;
+    }
+  }
+
+  .md-job-row-open:focus-visible {
+    border-radius: var(--md-radius-lg);
+    box-shadow: var(--md-dashboard-ring);
+  }
+
+  .md-job-row-ring-dot {
+    display: block;
+    width: 4px;
+    height: 4px;
+    border-radius: 999px;
+  }
+
+  .md-job-row-ident,
+  .md-job-row-task-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+  }
+
+  .md-job-row-ident {
+    display: none;
+  }
+
+  @container md-dash (min-width: 820px) {
+    .md-job-row-ident {
+      display: flex;
+    }
+  }
+
+  .md-job-row-ref {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.045em;
+    color: var(--md-ink);
+  }
+
+  .md-job-row-route,
+  .md-job-row-customer {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10.5px;
+    color: var(--md-subtle);
+  }
+
+  .md-job-row-task {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--md-ink);
+  }
+
+  .md-job-row-due {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    color: var(--md-text);
+  }
+
+  .md-job-row-countdown {
+    color: var(--md-subtle);
+  }
+
+  .md-job-row-due-soon,
+  .md-job-row-due-soon .md-job-row-countdown {
+    color: var(--md-amber-strong);
+  }
+
+  .md-job-row-due-overdue,
+  .md-job-row-due-overdue .md-job-row-countdown {
+    color: var(--md-red);
+  }
+
+  .md-job-row-status {
+    justify-self: start;
+  }
+
+  .md-job-row-arrow {
+    width: 13px;
+    height: 13px;
+    color: var(--md-subtle);
+    opacity: 0;
+    translate: -4px 0;
+    transition: opacity var(--md-motion), translate var(--md-motion);
+  }
+
+  [dir="rtl"] .md-job-row-arrow {
+    rotate: 180deg;
+    translate: 4px 0;
+  }
+
+  .md-job-row:hover .md-job-row-arrow {
+    opacity: 1;
+    translate: 0 0;
+  }
+
+  .md-job-row-star {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    margin-inline-end: 5px;
+    border-radius: var(--md-radius-md);
+    color: var(--md-subtle);
+    outline: none;
+    transition: background var(--md-motion), color var(--md-motion);
+  }
+
+  .md-job-row-star:hover {
+    background: rgba(221, 138, 43, 0.13);
+    color: var(--md-amber);
+  }
+
+  .md-job-row-star-on {
+    color: var(--md-amber);
+  }
+
+  .md-job-row-star:focus-visible {
+    box-shadow: 0 0 0 2px rgba(221, 138, 43, 0.28);
+  }
+
+  /* ── KPI strip ───────────────────────────────────────────────────────── */
+
+  /* Four metrics in a single row. Each cell carries the label, the figure, what
+     changed, and the shape of the trend — nothing else. */
+  .md-kpi-strip {
+    display: grid;
+    gap: var(--md-gap-sm);
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  @container md-dash (min-width: 560px) {
+    .md-kpi-strip {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @container md-dash (min-width: 930px) {
+    .md-kpi-strip {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+  }
+
+  .md-kpi-cell {
+    position: relative;
+    min-width: 0;
+  }
+
+  .md-kpi-cell-button {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    height: 84px;
+    min-width: 0;
+    padding: 8px 12px 9px;
+    border-radius: var(--md-radius-xl);
+    background: var(--md-surface);
+    box-shadow: var(--md-shadow-soft);
+    text-align: start;
+    overflow: hidden;
+    outline: none;
+    transition: box-shadow var(--md-motion);
+  }
+
+  .md-kpi-cell-button:hover {
+    box-shadow: var(--md-shadow-lift);
+  }
+
+  .md-kpi-cell-button:focus-visible {
+    box-shadow: var(--md-shadow-soft), var(--md-dashboard-ring);
+  }
+
+  .md-kpi-cell-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+  }
+
+  .md-kpi-cell-label {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--md-subtle);
+  }
+
+  .md-kpi-cell-figure {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    column-gap: 7px;
+    row-gap: 1px;
+    min-width: 0;
+  }
+
+  .md-kpi-cell-value {
+    font-size: 25px;
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-ink);
+  }
+
+  .md-kpi-cell-detail {
+    grid-column: 1 / -1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+    line-height: 14px;
+    color: var(--md-subtle);
+  }
+
+  .md-kpi-cell-spark {
+    display: block;
+    flex-shrink: 0;
+    opacity: 0.8;
+    transition: opacity var(--md-motion);
+  }
+
+  .md-kpi-cell-button:hover .md-kpi-cell-spark,
+  .md-kpi-cell[data-selected="true"] .md-kpi-cell-spark {
+    opacity: 1;
+  }
+
+  /* The selected metric is the one the trend panel below is drawing. A rule
+     along the bottom edge says so without adding a box. */
+  .md-kpi-cell-marker {
+    position: absolute;
+    inset-inline: 12px;
+    inset-block-end: 0;
+    height: 2px;
+    border-radius: 999px;
+    background: var(--md-kpi-accent, var(--md-accent));
+    transform-origin: left center;
+    scale: 0 1;
+    transition: scale var(--md-motion-panel);
+  }
+
+  [dir="rtl"] .md-kpi-cell-marker {
+    transform-origin: right center;
+  }
+
+  .md-kpi-cell[data-selected="true"] .md-kpi-cell-marker {
+    scale: 1 1;
+  }
+
+  .md-kpi-cell-expand {
+    position: absolute;
+    inset-block-start: 8px;
+    inset-inline-end: 8px;
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: var(--md-radius-sm);
+    background: var(--md-glass-strong);
+    color: var(--md-subtle);
+    box-shadow: var(--md-shadow-line);
+    opacity: 0;
+    outline: none;
+    transition: opacity var(--md-motion), color var(--md-motion);
+  }
+
+  .md-kpi-cell:hover .md-kpi-cell-expand,
+  .md-kpi-cell-expand:focus-visible {
+    opacity: 1;
+  }
+
+  .md-kpi-cell-expand:hover {
+    color: var(--md-ink);
+  }
+
+  .md-kpi-cell-expand:focus-visible {
+    box-shadow: var(--md-shadow-line), var(--md-dashboard-ring);
+  }
+
+  /* ── Action list ─────────────────────────────────────────────────────── */
+
+  .md-action-list {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: var(--md-radius-xl);
+    contain: layout paint;
+  }
+
+  .md-action-list-head {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 9px;
+    padding: 12px 14px 11px;
+  }
+
+  .md-action-list-badge {
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 26px;
+    height: 26px;
+    border-radius: 999px;
+    background: var(--md-accent);
+    color: #fff;
+  }
+
+  .md-action-list-reset {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    flex-shrink: 0;
+    height: 24px;
+    padding-inline: 8px;
+    border-radius: var(--md-radius-md);
+    background: var(--md-glass);
+    box-shadow: var(--md-shadow-line);
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--md-text);
+    transition: background var(--md-motion), color var(--md-motion);
+  }
+
+  .md-action-list-reset:hover {
+    background: var(--md-glass-strong);
+    color: var(--md-ink);
+  }
+
+  .md-action-list-body {
+    min-height: 0;
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px 11px 12px;
+  }
+
+  .md-action-list-lead {
+    padding-inline: 3px;
+    padding-bottom: 8px;
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: var(--md-text);
+  }
+
+  .md-action-list-empty {
+    padding: 22px 4px;
+    text-align: center;
+    font-size: 12.5px;
+    color: var(--md-subtle);
+  }
+
+  /* The list is a route through the day: nodes on a spine that fills as items
+     are cleared. The spine sits behind the rows and shows through the gaps. */
+  .md-action-timeline {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .md-action-timeline-spine {
+    position: absolute;
+    inset-block: 21px;
+    inset-inline-start: 22px;
+    width: 2px;
+    border-radius: 999px;
+    background: var(--md-dashboard-track);
+    overflow: hidden;
+  }
+
+  .md-action-timeline-spine-fill {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: 999px;
+    background: var(--md-accent);
+    transform-origin: top center;
+    will-change: transform;
+  }
+
+  .md-action-row {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: 26px minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 10px;
+    padding: 8px 10px 9px;
+    border-radius: var(--md-radius-lg);
+    background: var(--md-glass);
+    box-shadow: var(--md-shadow-line);
+    transition:
+      background var(--md-motion),
+      box-shadow var(--md-motion),
+      opacity var(--md-motion);
+  }
+
+  .md-action-row:hover {
+    background: var(--md-glass-strong);
+    box-shadow: var(--md-shadow-soft);
+  }
+
+  .md-action-row[data-striking="true"] {
+    opacity: 0.52;
+  }
+
+  .md-action-row-node {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    margin-top: 1px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--md-action-accent, var(--md-accent)) 13%, var(--md-surface));
+    color: var(--md-action-accent, var(--md-accent));
+    box-shadow: 0 0 0 3px var(--md-surface);
+    transition: box-shadow var(--md-motion), scale var(--md-motion);
+  }
+
+  .md-action-row:hover .md-action-row-node {
+    scale: 1.06;
+    box-shadow:
+      0 0 0 3px var(--md-surface),
+      0 0 0 5px color-mix(in srgb, var(--md-action-accent, var(--md-accent)) 18%, transparent);
+  }
+
+  .md-action-row-open {
+    min-width: 0;
+    text-align: start;
+    outline: none;
+  }
+
+  .md-action-row-open:focus-visible .md-action-row-title {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  .md-action-row-line {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .md-action-row-title-wrap {
+    position: relative;
+    display: inline-block;
+    min-width: 0;
+  }
+
+  .md-action-row-title {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--md-ink);
+  }
+
+  .md-action-row-strike {
+    position: absolute;
+    inset-inline-start: 0;
+    top: 50%;
+    display: block;
+    width: 100%;
+    height: 1px;
+    background: var(--md-ink);
+    will-change: transform;
+  }
+
+  .md-action-row-detail {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    margin-top: 2px;
+    font-size: 11.5px;
+    line-height: 1.4;
+    color: var(--md-text);
+  }
+
+  .md-action-row-source {
+    flex-shrink: 0;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    color: var(--md-subtle);
+  }
+
+  .md-action-row-tail {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+  }
+
+  .md-action-row-value {
+    padding: 3px 7px;
+    border-radius: var(--md-radius-sm);
+    background: var(--md-glass-strong);
+    box-shadow: var(--md-shadow-line);
+    font-size: 10.5px;
+    font-weight: 500;
+    line-height: 1.2;
+    color: var(--md-action-accent, var(--md-accent));
+    transition: opacity var(--md-motion);
+  }
+
+  .md-action-row:hover .md-action-row-value,
+  .md-action-row:focus-within .md-action-row-value {
+    opacity: 0;
+  }
+
+  .md-action-row-actions {
+    position: absolute;
+    inset-block-start: 8px;
+    inset-inline-end: 9px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    opacity: 0;
+    translate: 5px 0;
+    transition: opacity var(--md-motion), translate var(--md-motion);
+  }
+
+  [dir="rtl"] .md-action-row-actions {
+    translate: -5px 0;
+  }
+
+  .md-action-row:hover .md-action-row-actions,
+  .md-action-row:focus-within .md-action-row-actions {
+    opacity: 1;
+    translate: 0 0;
+  }
+
+  .md-action-row-button {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border-radius: var(--md-radius-md);
+    background: var(--md-surface);
+    color: var(--md-subtle);
+    box-shadow: var(--md-shadow-line);
+    outline: none;
+    transition: background var(--md-motion), color var(--md-motion), transform var(--md-motion-fast);
+  }
+
+  .md-action-row-button:hover {
+    color: var(--md-ink);
+  }
+
+  .md-action-row-button:active {
+    transform: scale(0.92);
+  }
+
+  .md-action-row-button-done:hover {
+    background: var(--md-accent-a12);
+    color: var(--md-accent);
+  }
+
+  .md-action-row-button:focus-visible {
+    opacity: 1;
+    box-shadow: var(--md-shadow-line), var(--md-dashboard-ring);
+  }
+
+  /* ── Trend panel ─────────────────────────────────────────────────────── */
+
+  .md-trend-panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: var(--md-radius-xl);
+    contain: layout paint;
+  }
+
+  .md-trend-panel-head {
+    display: flex;
+    flex-shrink: 0;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--md-gap-md);
+    padding: 11px 14px 0;
+  }
+
+  .md-trend-panel-title {
+    margin-top: 3px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 14.5px;
+    font-weight: 500;
+    line-height: 1.2;
+    color: var(--md-ink);
+  }
+
+  /* Where it stands, its high point, and which way the last period moved —
+     three readings the curve alone does not give quickly. */
+  .md-trend-facts {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 18px;
+    padding: 10px 14px 0;
+  }
+
+  .md-trend-facts > div {
+    min-width: 0;
+  }
+
+  .md-trend-facts dt {
+    font-size: 9.5px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--md-subtle);
+  }
+
+  .md-trend-facts dd {
+    margin-top: 3px;
+    font-size: 17px;
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: -0.015em;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-ink);
+  }
+
+  .md-trend-facts dd[data-direction="up"] {
+    color: var(--md-accent);
+  }
+
+  .md-trend-facts dd[data-direction="down"] {
+    color: var(--md-red);
+  }
+
+  .md-trend-facts-legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-inline-start: auto;
+    padding-bottom: 2px;
+    font-size: 10.5px;
+    font-weight: 500;
+    color: var(--md-subtle);
+  }
+
+  .md-trend-facts-legend > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .md-trend-panel-canvas {
+    min-height: 0;
+    flex: 1;
+    padding: 2px 6px 6px;
+  }
+
+  /* ── Chart chrome ────────────────────────────────────────────────────── */
+
+  .md-trend-legend {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 10.5px;
+    font-weight: 500;
+    color: var(--md-subtle);
+  }
+
+  .md-trend-legend > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .md-trend-legend-swatch {
+    display: inline-block;
+    width: 10px;
+    height: 2px;
+    border-radius: 999px;
+    background: var(--md-accent);
+  }
+
+  .md-trend-legend-swatch-dashed {
+    background: repeating-linear-gradient(to right, var(--md-blue) 0 3px, transparent 3px 6px);
+  }
+
+  .md-flush-spark {
+    width: 100%;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .md-area-chart-canvas:focus-visible {
+    border-radius: var(--md-radius-md);
+    box-shadow: var(--md-dashboard-ring);
+  }
+
+  .md-area-chart-axis {
+    fill: var(--md-subtle);
+    font-size: 10px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    transition: fill var(--md-motion);
+  }
+
+  .md-area-chart-axis-active {
+    fill: var(--md-ink);
+  }
+
+  .md-area-chart-tooltip-card {
+    translate: -50% 0;
+    min-width: 118px;
+    padding: 7px 9px 8px;
+    border-radius: var(--md-radius-md);
+    background: var(--md-surface);
+    box-shadow: var(--md-shadow-lift);
+  }
+
+  .md-area-chart-tooltip-label {
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--md-subtle);
+  }
+
+  .md-area-chart-tooltip-value {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin-top: 3px;
+    font-size: 15px;
+    font-weight: 500;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .md-area-chart-tooltip-muted {
+    font-size: 12px;
+    color: var(--md-text);
+  }
+
+  .md-area-chart-tooltip-series {
+    font-size: 9.5px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--md-subtle);
+  }
+
+
+  /* ── Live bookings ───────────────────────────────────────────────────── */
+
+  /* The board now shares a row with the action list, so it sizes its own rows
+     against the panel rather than the viewport. */
+  .md-live-board {
+    display: flex;
+    flex-direction: column;
+    min-height: 420px;
+    overflow: hidden;
+    border-radius: var(--md-radius-xl);
+    container: live-board / inline-size;
+  }
+
+  .md-live-board-head {
+    display: flex;
+    flex-shrink: 0;
+    flex-direction: column;
+    gap: var(--md-gap-sm);
+    padding: 12px 14px 11px;
+  }
+
+  @container live-board (min-width: 520px) {
+    .md-live-board-head {
+      flex-direction: row;
+      align-items: flex-start;
+      justify-content: space-between;
+    }
+  }
+
+  .md-live-board-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--md-gap-sm);
+  }
+
+  .md-live-mode-filters {
+    display: none;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+
+  @container live-board (min-width: 640px) {
+    .md-live-mode-filters {
+      display: flex;
+    }
+  }
+
+  .md-live-mode-chip {
+    border-radius: 999px;
+    outline: none;
+    transition: transform var(--md-motion-fast), opacity var(--md-motion);
+  }
+
+  .md-live-mode-chip:hover {
+    transform: translateY(-1px);
+  }
+
+  .md-live-mode-chip:active {
+    transform: scale(0.96);
+  }
+
+  .md-live-mode-chip[aria-pressed="false"] {
+    opacity: 0.78;
+  }
+
+  .md-live-mode-chip:focus-visible {
+    box-shadow: var(--md-dashboard-ring);
+  }
+
+  .md-live-pulse {
+    position: relative;
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    margin-top: 6px;
+  }
+
+  .md-live-pulse-core {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--md-green);
+  }
+
+  .md-live-pulse-ring {
+    position: absolute;
+    inset: 0;
+    border-radius: 999px;
+    box-shadow: 0 0 0 2px var(--md-accent-a32);
+  }
+
+  .md-live-board-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    height: 100%;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    padding: 0 11px 12px;
+  }
+
+  .md-live-board-empty {
+    padding: 30px 4px;
+    text-align: center;
+    font-size: 12.5px;
+    color: var(--md-subtle);
+  }
+
+  .md-live-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 9px 11px;
+    border-radius: var(--md-radius-lg);
+    background: var(--md-glass);
+    box-shadow: var(--md-shadow-line);
+    text-align: start;
+    outline: none;
+    transition: background var(--md-motion), box-shadow var(--md-motion);
+  }
+
+  @container live-board (min-width: 400px) {
+    .md-live-row {
+      grid-template-columns: 86px minmax(0, 1.5fr) auto;
+    }
+  }
+
+  @container live-board (min-width: 680px) {
+    .md-live-row {
+      grid-template-columns: 92px minmax(0, 1.5fr) minmax(0, 1fr) auto;
+    }
+  }
+
+  .md-live-row:hover {
+    background: var(--md-glass-strong);
+    box-shadow: var(--md-shadow-soft);
+  }
+
+  .md-live-row:focus-visible {
+    box-shadow: var(--md-shadow-line), var(--md-dashboard-ring);
+  }
+
+  .md-live-row-ref,
+  .md-live-row-lane,
+  .md-live-row-milestone {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .md-live-row-milestone {
+    display: none;
+  }
+
+  @container live-board (min-width: 680px) {
+    .md-live-row-milestone {
+      display: flex;
+    }
+  }
+
+  .md-live-row-id {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    color: var(--md-ink);
+  }
+
+  .md-live-row-mode,
+  .md-live-row-customer {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10.5px;
+    color: var(--md-subtle);
+  }
+
+  .md-live-row-lane-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12.5px;
+    color: var(--md-ink);
+  }
+
+  .md-live-row-progress {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 5px;
+  }
+
+  .md-live-row-track {
+    display: block;
+    min-width: 0;
+    flex: 1;
+    height: 3px;
+    border-radius: 999px;
+    background: var(--md-dashboard-track);
+    overflow: hidden;
+  }
+
+  .md-live-row-fill {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: var(--md-live-accent, var(--md-accent));
+    transform-origin: left center;
+    will-change: transform;
+  }
+
+  [dir="rtl"] .md-live-row-fill {
+    transform-origin: right center;
+  }
+
+  .md-live-row-percent {
+    flex-shrink: 0;
+    font-size: 10px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-subtle);
+  }
+
+  .md-live-row-milestone-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11.5px;
+    color: var(--md-text);
+  }
+
+  .md-live-row-tail {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 9px;
+  }
+
+  .md-live-row-eta {
+    text-align: end;
+  }
+
+  .md-live-row-eta-label {
+    display: block;
+    font-size: 9.5px;
+    line-height: 1;
+    letter-spacing: 0.04em;
+    color: var(--md-subtle);
+  }
+
+  .md-live-row-eta-value {
+    display: block;
+    margin-top: 3px;
+    font-size: 11.5px;
+    font-weight: 500;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-ink);
+  }
+
+  .md-live-row-arrow {
+    flex-shrink: 0;
+    width: 13px;
+    height: 13px;
+    color: var(--md-subtle);
+    transition: translate var(--md-motion), color var(--md-motion);
+  }
+
+  [dir="rtl"] .md-live-row-arrow {
+    rotate: 180deg;
+  }
+
+  .md-live-row:hover .md-live-row-arrow {
+    translate: 3px 0;
+    color: var(--md-ink);
+  }
+
+  [dir="rtl"] .md-live-row:hover .md-live-row-arrow {
+    translate: -3px 0;
+  }
+
+  .md-live-map-fallback {
+    position: relative;
+    min-height: 320px;
+    flex: 1;
+    overflow: hidden;
+    border-radius: var(--md-radius-lg);
+    background: var(--md-bg-strong);
+  }
+
+  .md-live-map-fallback-sheen {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0) 48%, var(--md-accent-a12));
+  }
+
+  .md-live-map-fallback-badge {
+    position: absolute;
+    inset-block-start: 20px;
+    inset-inline-start: 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 11px;
+    border-radius: var(--md-radius-lg);
+    background: var(--md-glass);
+    box-shadow: var(--md-shadow-line);
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--md-text);
+  }
+}
+
+/* Nothing on this page should animate for operators who asked for stillness.
+   The transforms above are all decorative; the information is in the markup. */
+@media (prefers-reduced-motion: reduce) {
+  .md-dashboard *,
+  .md-dashboard *::before,
+  .md-dashboard *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .md-dashboard-back:hover,
+  .md-job-row-arrow,
+  .md-kpi-cell-marker,
+  .md-action-row-actions,
+  .md-live-row:hover .md-live-row-arrow {
+    translate: 0 0;
+    transform: none;
+  }
+}

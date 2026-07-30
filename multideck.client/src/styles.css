@@ -1,7 +1,15 @@
+/* The bundler can hoist an imported `@layer components` block above Tailwind's
+   own layer statement, which registers `components` first and therefore lowest —
+   below `base`, so the preflight reset silently wins over any padding declared
+   in it. Declaring a dedicated layer up front pins the dashboard's styles above
+   `base` and `utilities` without disturbing the existing layer order. */
+@layer theme, base, components, utilities, md-dashboard;
+
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "./feature-workspaces.css";
+@import "./dashboard.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -50,6 +58,104 @@
   --radius-2xl: var(--md-radius-2xl);
 }
 
+/* The accent is one hue the whole product reads from. Every green surface — solid
+   fills, alpha washes, focus rings, selected rows, brand shadows and the Dexter
+   shader ramps — derives from the eight colours below, which `lib/accent-theme.ts`
+   rewrites when the operator picks a different accent in Settings.
+
+   Registering them as `<color>` is what makes the swap watchable: a transition on
+   these eight animates every `color-mix()` built on top of them in the same style
+   pass, so the app cross-fades as one surface instead of a few hundred properties
+   each easing on their own schedule. The initial values are the shipped teal, so
+   the tokens are already correct before any script runs. */
+@property --md-accent {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #0a7068;
+}
+
+@property --md-accent-hover {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #086f67;
+}
+
+@property --md-accent-ink {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #ffffff;
+}
+
+@property --md-accent-tint {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #0d7d74;
+}
+
+@property --md-accent-deep {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #05463e;
+}
+
+@property --md-accent-abyss {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #062420;
+}
+
+/* The AI edge glow's three stops. Kept as their own colours rather than mixes of
+   the accent because each one raises chroma above the base, which no `color-mix()`
+   against white or black can do. */
+@property --md-accent-glow-core {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #088b82;
+}
+
+@property --md-accent-glow-bright {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #31b29f;
+}
+
+@property --md-accent-glow-warm {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #688e53;
+}
+
+/* Bright enough to read on the near-black brand panels in both themes. */
+@property --md-accent-lift {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #8dd3ca;
+}
+
+@property --md-accent-lift-strong {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #9eecdd;
+}
+
+@property --md-accent-lift-warm {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #7bdbac;
+}
+
+@property --md-selected-bg {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #c8dcd6;
+}
+
+@property --md-selected-text {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #145b54;
+}
+
 :root {
   --md-ink: #0b1413;
   --md-ink-soft: #2a3432;
@@ -67,9 +173,22 @@
   --md-field-bg: #e5e9e7;
   --md-field-bg-hover: #dfe5e2;
   --md-selected-bg: #c8dcd6;
-  --md-selected-text: #155b54;
+  --md-selected-text: #145b54;
   --md-accent: #0a7068;
-  --md-green: #0a7068;
+  --md-accent-hover: #086f67;
+  --md-accent-ink: #ffffff;
+  --md-accent-tint: #0d7d74;
+  --md-accent-deep: #05463e;
+  --md-accent-abyss: #062420;
+  --md-accent-glow-core: #088b82;
+  --md-accent-glow-bright: #31b29f;
+  --md-accent-glow-warm: #688e53;
+  --md-accent-lift: #8dd3ca;
+  --md-accent-lift-strong: #9eecdd;
+  --md-accent-lift-warm: #7bdbac;
+  /* Kept as an alias so the long tail of `--md-green` references stays valid; the
+     accent has been the only green in the palette for a while. */
+  --md-green: var(--md-accent);
   --md-green-card: #f7f8f8;
   --md-green-card-hover: #f1f3f2;
   --md-green-card-selected: #e7ecea;
@@ -77,6 +196,10 @@
   --md-amber-strong: #b86108;
   --md-red: #d14e4e;
   --md-blue: #4a7d9c;
+  --md-ai-cyan: #219ebc;
+  --md-ai-magenta: #c95ccb;
+  --md-ai-gold: #e5b73b;
+  --md-ai-orange: #f47c20;
   --md-line: rgba(11, 20, 19, 0.06);
   --md-line-strong: rgba(11, 20, 19, 0.08);
   --md-hover: rgba(11, 20, 19, 0.055);
@@ -87,8 +210,8 @@
   --md-avatar-bg: #dfd1ad;
   --md-job-card-bg: #f7f8f8;
   --md-job-card-hover: #f1f3f2;
-  --md-job-card-shadow: var(--md-premium-stroke), 0 10px 22px rgba(46, 142, 96, 0.1);
-  --md-job-card-hover-shadow: var(--md-premium-stroke), 0 14px 28px rgba(46, 142, 96, 0.13);
+  --md-job-card-shadow: var(--md-premium-stroke), 0 10px 22px var(--md-accent-a10);
+  --md-job-card-hover-shadow: var(--md-premium-stroke), 0 14px 28px var(--md-accent-a13);
   --md-clock-selected-bg: rgba(11, 20, 19, 0.06);
   --md-crm-stage-bg: #ffffff;
   --md-crm-deal-bg: #ffffff;
@@ -96,7 +219,7 @@
   --md-crm-deal-selected-bg: #ffffff;
   --md-crm-deal-shadow: var(--md-premium-stroke), 0 10px 24px rgba(42, 52, 50, 0.075);
   --md-crm-deal-hover-shadow: var(--md-premium-stroke), 0 16px 32px rgba(42, 52, 50, 0.1);
-  --md-crm-deal-selected-shadow: var(--md-premium-stroke), 0 0 0 3px rgba(14, 125, 116, 0.1), 0 14px 28px rgba(42, 52, 50, 0.09);
+  --md-crm-deal-selected-shadow: var(--md-premium-stroke), 0 0 0 3px var(--md-accent-a10), 0 14px 28px rgba(42, 52, 50, 0.09);
   --md-report-preview-bg: #f1f3f2;
   --md-report-preview-hover-bg: #e9edeb;
   --md-report-donut-hole: inset 0 0 0 8px #f1f3f2;
@@ -130,9 +253,9 @@
   --md-shadow-line: var(--md-premium-stroke);
   --md-shadow-soft: var(--md-premium-stroke), 0 12px 28px rgba(42, 52, 50, 0.08);
   --md-shadow-lift: var(--md-premium-stroke), 0 18px 38px rgba(42, 52, 50, 0.14);
-  --md-shadow-green-card: var(--md-premium-stroke), 0 10px 24px rgba(14, 125, 116, 0.08);
-  --md-shadow-green-card-hover: var(--md-premium-stroke), 0 14px 30px rgba(14, 125, 116, 0.1);
-  --md-shadow-green-card-selected: var(--md-premium-stroke), 0 0 0 3px rgba(14, 125, 116, 0.13), 0 16px 34px rgba(14, 125, 116, 0.12);
+  --md-shadow-green-card: var(--md-premium-stroke), 0 10px 24px var(--md-accent-a08);
+  --md-shadow-green-card-hover: var(--md-premium-stroke), 0 14px 30px var(--md-accent-a10);
+  --md-shadow-green-card-selected: var(--md-premium-stroke), 0 0 0 3px var(--md-accent-a13), 0 16px 34px var(--md-accent-a12);
   --md-motion: 220ms cubic-bezier(0.22, 1, 0.36, 1);
   --md-motion-fast: 160ms cubic-bezier(0.22, 1, 0.36, 1);
   --md-motion-panel: 300ms cubic-bezier(0.16, 1, 0.3, 1);
@@ -191,7 +314,10 @@
   --md-selected-bg: #263b37;
   --md-selected-text: #b9e9df;
   --md-accent: #69d4c2;
-  --md-green: #69d4c2;
+  --md-accent-hover: #71dbc9;
+  --md-accent-ink: #08201c;
+  --md-accent-tint: #62cdbc;
+  --md-green: var(--md-accent);
   --md-green-card: #202426;
   --md-green-card-hover: #262a2d;
   --md-green-card-selected: #2c3233;
@@ -199,6 +325,10 @@
   --md-amber-strong: #f0bb6c;
   --md-red: #e07373;
   --md-blue: #7fb0cf;
+  --md-ai-cyan: #38bdf8;
+  --md-ai-magenta: #e264e2;
+  --md-ai-gold: #f2c94c;
+  --md-ai-orange: #ff7a1a;
   --md-line: rgba(232, 241, 235, 0.08);
   --md-line-strong: rgba(232, 241, 235, 0.12);
   --md-hover: rgba(255, 255, 255, 0.065);
@@ -218,7 +348,7 @@
   --md-crm-deal-selected-bg: color-mix(in srgb, var(--md-surface-soft) 96%, transparent);
   --md-crm-deal-shadow: var(--md-premium-stroke), 0 12px 28px rgba(0, 0, 0, 0.24);
   --md-crm-deal-hover-shadow: var(--md-premium-stroke), 0 16px 34px rgba(0, 0, 0, 0.28);
-  --md-crm-deal-selected-shadow: var(--md-premium-stroke), 0 0 0 3px rgba(104, 199, 184, 0.1), 0 16px 34px rgba(0, 0, 0, 0.3);
+  --md-crm-deal-selected-shadow: var(--md-premium-stroke), 0 0 0 3px var(--md-accent-a10), 0 16px 34px rgba(0, 0, 0, 0.3);
   --md-report-preview-bg: color-mix(in srgb, var(--md-surface-soft) 86%, transparent);
   --md-report-preview-hover-bg: color-mix(in srgb, var(--md-surface-soft) 94%, transparent);
   --md-report-donut-hole: inset 0 0 0 8px color-mix(in srgb, var(--md-surface-soft) 94%, transparent);
@@ -234,7 +364,7 @@
   --md-shadow-lift: var(--md-premium-stroke), 0 18px 38px rgba(0, 0, 0, 0.3);
   --md-shadow-green-card: var(--md-premium-stroke), 0 14px 32px rgba(0, 0, 0, 0.26);
   --md-shadow-green-card-hover: var(--md-premium-stroke), 0 18px 40px rgba(0, 0, 0, 0.3);
-  --md-shadow-green-card-selected: var(--md-premium-stroke), 0 0 0 3px rgba(104, 199, 184, 0.16), 0 20px 46px rgba(0, 0, 0, 0.34);
+  --md-shadow-green-card-selected: var(--md-premium-stroke), 0 0 0 3px var(--md-accent-a16), 0 20px 46px rgba(0, 0, 0, 0.34);
 
   --background: var(--md-bg);
   --foreground: var(--md-ink);
@@ -262,6 +392,106 @@
   --sidebar-accent-foreground: var(--md-ink);
   --sidebar-border: var(--md-line);
   --sidebar-ring: var(--md-accent);
+}
+
+/* Accent washes, in the alphas the interface actually uses. These exist so the
+   components can say `var(--md-accent-a14)` instead of hard-coding a green, and
+   so a single accent swap reaches every one of them.
+
+   Declared for `.dark` as well as `:root`: an unregistered custom property is
+   substituted where it is declared, so a block that only targeted `:root` would
+   hand the light tint to anything nested under a `.dark` scope. */
+:root,
+.dark {
+  --md-accent-a025: color-mix(in srgb, var(--md-accent-tint) 2.5%, transparent);
+  --md-accent-a035: color-mix(in srgb, var(--md-accent-tint) 3.5%, transparent);
+  --md-accent-a04: color-mix(in srgb, var(--md-accent-tint) 4%, transparent);
+  --md-accent-a055: color-mix(in srgb, var(--md-accent-tint) 5.5%, transparent);
+  --md-accent-a06: color-mix(in srgb, var(--md-accent-tint) 6%, transparent);
+  --md-accent-a07: color-mix(in srgb, var(--md-accent-tint) 7%, transparent);
+  --md-accent-a08: color-mix(in srgb, var(--md-accent-tint) 8%, transparent);
+  --md-accent-a09: color-mix(in srgb, var(--md-accent-tint) 9%, transparent);
+  --md-accent-a10: color-mix(in srgb, var(--md-accent-tint) 10%, transparent);
+  --md-accent-a11: color-mix(in srgb, var(--md-accent-tint) 11%, transparent);
+  --md-accent-a12: color-mix(in srgb, var(--md-accent-tint) 12%, transparent);
+  --md-accent-a13: color-mix(in srgb, var(--md-accent-tint) 13%, transparent);
+  --md-accent-a14: color-mix(in srgb, var(--md-accent-tint) 14%, transparent);
+  --md-accent-a15: color-mix(in srgb, var(--md-accent-tint) 15%, transparent);
+  --md-accent-a16: color-mix(in srgb, var(--md-accent-tint) 16%, transparent);
+  --md-accent-a18: color-mix(in srgb, var(--md-accent-tint) 18%, transparent);
+  --md-accent-a20: color-mix(in srgb, var(--md-accent-tint) 20%, transparent);
+  --md-accent-a22: color-mix(in srgb, var(--md-accent-tint) 22%, transparent);
+  --md-accent-a24: color-mix(in srgb, var(--md-accent-tint) 24%, transparent);
+  --md-accent-a26: color-mix(in srgb, var(--md-accent-tint) 26%, transparent);
+  --md-accent-a28: color-mix(in srgb, var(--md-accent-tint) 28%, transparent);
+  --md-accent-a32: color-mix(in srgb, var(--md-accent-tint) 32%, transparent);
+  --md-accent-a34: color-mix(in srgb, var(--md-accent-tint) 34%, transparent);
+  --md-accent-a35: color-mix(in srgb, var(--md-accent-tint) 35%, transparent);
+  --md-accent-a36: color-mix(in srgb, var(--md-accent-tint) 36%, transparent);
+  --md-accent-a38: color-mix(in srgb, var(--md-accent-tint) 38%, transparent);
+  --md-accent-a42: color-mix(in srgb, var(--md-accent-tint) 42%, transparent);
+  --md-accent-a44: color-mix(in srgb, var(--md-accent-tint) 44%, transparent);
+  --md-accent-a48: color-mix(in srgb, var(--md-accent-tint) 48%, transparent);
+  --md-accent-a55: color-mix(in srgb, var(--md-accent-tint) 55%, transparent);
+  --md-accent-a58: color-mix(in srgb, var(--md-accent-tint) 58%, transparent);
+  --md-accent-a65: color-mix(in srgb, var(--md-accent-tint) 65%, transparent);
+  --md-accent-a76: color-mix(in srgb, var(--md-accent-tint) 76%, transparent);
+
+  /* Brand-dark shadows. The Dexter pill casts light through its own colour, so it
+     needs a deeper source than the surface washes above. */
+  --md-accent-deep-a10: color-mix(in srgb, var(--md-accent-deep) 10%, transparent);
+  --md-accent-deep-a12: color-mix(in srgb, var(--md-accent-deep) 12%, transparent);
+  --md-accent-deep-a14: color-mix(in srgb, var(--md-accent-deep) 14%, transparent);
+  --md-accent-deep-a15: color-mix(in srgb, var(--md-accent-deep) 15%, transparent);
+  --md-accent-deep-a16: color-mix(in srgb, var(--md-accent-deep) 16%, transparent);
+  --md-accent-deep-a18: color-mix(in srgb, var(--md-accent-deep) 18%, transparent);
+  --md-accent-deep-a20: color-mix(in srgb, var(--md-accent-deep) 20%, transparent);
+  --md-accent-deep-a24: color-mix(in srgb, var(--md-accent-deep) 24%, transparent);
+  --md-accent-deep-a26: color-mix(in srgb, var(--md-accent-deep) 26%, transparent);
+
+  /* Veils darken the brand panels from underneath, so they are the accent walked
+     towards black rather than towards transparent. Nesting the mixes keeps them
+     tied to `--md-accent-deep`, which means they follow the accent for free
+     instead of needing three more registered colours. */
+  --md-accent-veil-near: color-mix(in srgb, color-mix(in srgb, var(--md-accent-deep) 48%, #000000) 38%, transparent);
+  --md-accent-veil-mid: color-mix(in srgb, color-mix(in srgb, var(--md-accent-deep) 71%, #000000) 14%, transparent);
+  --md-accent-veil-far: color-mix(in srgb, color-mix(in srgb, var(--md-accent-deep) 29%, #000000) 34%, transparent);
+  /* Hairline and drop shadow for the dark brand panels, which need a cast tinted
+     by the accent rather than plain black to sit on their own background. */
+  --md-accent-veil-ring-a12: color-mix(in srgb, color-mix(in srgb, var(--md-accent-deep) 44%, #000000) 12%, transparent);
+  --md-accent-veil-ring-a16: color-mix(in srgb, color-mix(in srgb, var(--md-accent-deep) 44%, #000000) 16%, transparent);
+  --md-accent-veil-cast-a18: color-mix(in srgb, color-mix(in srgb, var(--md-accent-deep) 60%, #000000) 18%, transparent);
+  /* One step below `--md-accent-abyss`, for panels that sit behind a lit shader. */
+  --md-accent-abyss-deep: color-mix(in srgb, var(--md-accent-abyss) 78%, #000000);
+}
+
+/* Armed only while an accent change is in flight, then dropped. Leaving it on
+   would make the light/dark switch cross-fade its accent over half a second while
+   every other colour changed instantly, which reads as a lag rather than a fade. */
+:root[data-accent-shift] {
+  --md-accent-shift: 460ms cubic-bezier(0.32, 0.06, 0.2, 1);
+
+  transition:
+    --md-accent var(--md-accent-shift),
+    --md-accent-hover var(--md-accent-shift),
+    --md-accent-ink var(--md-accent-shift),
+    --md-accent-tint var(--md-accent-shift),
+    --md-accent-deep var(--md-accent-shift),
+    --md-accent-abyss var(--md-accent-shift),
+    --md-accent-glow-core var(--md-accent-shift),
+    --md-accent-glow-bright var(--md-accent-shift),
+    --md-accent-glow-warm var(--md-accent-shift),
+    --md-accent-lift var(--md-accent-shift),
+    --md-accent-lift-strong var(--md-accent-shift),
+    --md-accent-lift-warm var(--md-accent-shift),
+    --md-selected-bg var(--md-accent-shift),
+    --md-selected-text var(--md-accent-shift);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-accent-shift] {
+    transition: none;
+  }
 }
 
 * {
@@ -524,6 +754,173 @@ button {
   }
 }
 
+.md-sidebar-menu {
+  min-width: 196px;
+  max-width: min(20rem, calc(100vw - 24px));
+  will-change: transform, opacity, filter;
+}
+
+/* Ramps in quickly, overshoots by a hair, then eases into rest so the menu reads as alive. */
+.md-sidebar-menu[data-state="open"] {
+  animation: md-sidebar-menu-in 280ms cubic-bezier(0.19, 1, 0.22, 1) both;
+}
+
+.md-sidebar-menu[data-state="closed"] {
+  pointer-events: none;
+  animation: md-sidebar-menu-out 110ms cubic-bezier(0.55, 0, 1, 0.45) both;
+}
+
+.md-sidebar-menu[data-state="open"] .md-sidebar-menu-item {
+  animation: md-sidebar-menu-item-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.md-sidebar-menu[data-state="open"] .md-sidebar-menu-item:nth-child(1) {
+  animation-delay: 34ms;
+}
+
+.md-sidebar-menu[data-state="open"] .md-sidebar-menu-item:nth-child(2) {
+  animation-delay: 74ms;
+}
+
+.md-sidebar-menu[data-state="open"] .md-sidebar-menu-item:nth-child(n + 3) {
+  animation-delay: 108ms;
+}
+
+.md-sidebar-menu-item__icon {
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ── Sidebar row affordance arrows ───────────────────────────────────────────
+   `branch` rows open another sidebar pane, `group` rows unfold in place. Both
+   sit in the same fixed 20px trailing slot, so the glyphs share one optical
+   column whatever the label says or how large the row's type is.
+
+   Nudge distance lives in custom properties, not in the rules, because the
+   arrow always leans the way it points: right for a branch, down for a closed
+   group, up once that group is open. RTL mirrors the horizontal component. */
+.md-nav-arrow {
+  --md-nav-arrow-x: 0px;
+  --md-nav-arrow-y: 0px;
+  display: grid;
+  place-items: center;
+  opacity: 0.5;
+  /* The row itself owns the pointer; the arrow must never re-trigger hover. */
+  pointer-events: none;
+  /* translate3d keeps the glyph on its own layer: a 2px slide across a 14px
+     icon shimmers if the browser repaints it instead of compositing. */
+  transform: translate3d(0, 0, 0);
+  will-change: transform, opacity;
+  /* Settling back to rest is the slow half of the ramp. A quick exit over a
+     distance this short reads as a snap, so the return coasts instead. */
+  transition:
+    opacity 280ms cubic-bezier(0.33, 0.02, 0.24, 1),
+    transform 320ms cubic-bezier(0.26, 0.03, 0.2, 1);
+}
+
+.md-nav-arrow__glyph {
+  display: grid;
+  place-items: center;
+  transform: rotate(0deg);
+  /* Closing is shorter than opening: the panel above is already collapsing, so
+     a lingering half-turn would still be moving after the content has gone. */
+  transition: transform 260ms cubic-bezier(0.34, 0.02, 0.2, 1);
+}
+
+.md-nav-arrow[data-affordance="branch"] {
+  --md-nav-arrow-x: 2.5px;
+}
+
+.md-nav-arrow[data-affordance="group"] {
+  --md-nav-arrow-y: 1.5px;
+}
+
+/* Arriving is the fast half: decelerating, so the acknowledgement lands at the
+   head of the ramp and the last pixel drifts in unhurried. */
+[data-sidebar-row]:hover .md-nav-arrow,
+[data-sidebar-row]:focus-visible .md-nav-arrow {
+  opacity: 1;
+  transform: translate3d(var(--md-nav-arrow-x), var(--md-nav-arrow-y), 0);
+  transition:
+    opacity 170ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Press compresses hard and briefly past the hover offset. Releasing falls back
+   to the hover rule above, so the rebound is a 200ms glide, never a bounce. */
+[data-sidebar-row]:active .md-nav-arrow {
+  opacity: 1;
+  transform: translate3d(calc(var(--md-nav-arrow-x) * 2.2), calc(var(--md-nav-arrow-y) * 2.2), 0) scale(0.88);
+  transition:
+    opacity 90ms linear,
+    transform 110ms cubic-bezier(0.32, 0, 0.66, 1);
+}
+
+/* Opening leads with speed and coasts a long way into the stop, so the half
+   turn arrives with the unfolding panel rather than clicking into place. */
+[data-sidebar-row][aria-expanded="true"] .md-nav-arrow__glyph {
+  transform: rotate(180deg);
+  transition: transform 340ms cubic-bezier(0.22, 0.86, 0.2, 1);
+}
+
+/* Once open the glyph points up, so the hover lean follows it. */
+[data-sidebar-row][aria-expanded="true"] .md-nav-arrow[data-affordance="group"] {
+  --md-nav-arrow-y: -1.5px;
+}
+
+/* The chevron's own scaleX(-1) mirror lives on the svg, so only the slot's lean
+   needs flipping here. */
+html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
+  --md-nav-arrow-x: -2.5px;
+}
+
+.md-sidebar-menu-item[data-highlighted] .md-sidebar-menu-item__icon {
+  transform: translateY(-1px) scale(1.08);
+}
+
+@keyframes md-sidebar-menu-in {
+  0% {
+    opacity: 0;
+    filter: blur(5px);
+    transform: scale(0.9);
+  }
+
+  52% {
+    opacity: 1;
+    filter: blur(0);
+    transform: scale(1.014);
+  }
+
+  100% {
+    opacity: 1;
+    filter: blur(0);
+    transform: scale(1);
+  }
+}
+
+@keyframes md-sidebar-menu-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: scale(0.972);
+  }
+}
+
+@keyframes md-sidebar-menu-item-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -5px, 0) scale(0.988);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -539,7 +936,9 @@ button {
   }
 
   .md-dropdown-content,
-  .md-dropdown-option {
+  .md-dropdown-option,
+  .md-sidebar-menu,
+  .md-sidebar-menu-item {
     animation: none !important;
     filter: none !important;
     transform: none !important;
@@ -547,7 +946,7 @@ button {
 }
 
 ::selection {
-  background: rgba(14, 125, 116, 0.16);
+  background: var(--md-accent-a16);
 }
 
 @layer base {
@@ -767,7 +1166,7 @@ button {
 
   .md-booking-map .leaflet-control-zoom a:focus {
     outline: none;
-    box-shadow: inset 0 0 0 2px rgba(14, 125, 116, 0.18);
+    box-shadow: inset 0 0 0 2px var(--md-accent-a18);
   }
 
   .md-booking-map .leaflet-control-attribution {
@@ -848,7 +1247,7 @@ button {
     border: 0;
     border-radius: var(--md-radius-xl);
     padding: 16px 18px;
-    background: rgba(251, 253, 253, 0.92);
+    background: color-mix(in srgb, var(--md-surface) 92%, transparent);
     color: var(--md-ink);
     box-shadow: var(--md-shadow-lift);
     backdrop-filter: blur(20px);
@@ -861,44 +1260,44 @@ button {
     border: 0 !important;
     border-radius: var(--md-radius-xl) !important;
     padding: 16px 18px !important;
-    background: rgba(251, 253, 253, 0.92) !important;
+    background: color-mix(in srgb, var(--md-surface) 92%, transparent) !important;
     color: var(--md-ink) !important;
     box-shadow: var(--md-shadow-lift) !important;
     backdrop-filter: blur(20px);
   }
 
   .md-toast[data-type="success"] {
-    background: color-mix(in srgb, var(--md-green) 8%, rgba(251, 253, 253, 0.94));
+    background: color-mix(in srgb, var(--md-green) 8%, var(--md-surface));
   }
 
   [data-sonner-toast].md-toast[data-type="success"] {
-    background: color-mix(in srgb, var(--md-green) 8%, rgba(251, 253, 253, 0.94)) !important;
+    background: color-mix(in srgb, var(--md-green) 8%, var(--md-surface)) !important;
   }
 
   .md-toast[data-type="info"],
   .md-toast[data-type="loading"] {
-    background: color-mix(in srgb, var(--md-accent) 7%, rgba(251, 253, 253, 0.94));
+    background: color-mix(in srgb, var(--md-blue) 8%, var(--md-surface));
   }
 
   [data-sonner-toast].md-toast[data-type="info"],
   [data-sonner-toast].md-toast[data-type="loading"] {
-    background: color-mix(in srgb, var(--md-accent) 7%, rgba(251, 253, 253, 0.94)) !important;
+    background: color-mix(in srgb, var(--md-blue) 8%, var(--md-surface)) !important;
   }
 
   .md-toast[data-type="warning"] {
-    background: color-mix(in srgb, var(--md-amber) 9%, rgba(251, 253, 253, 0.94));
+    background: color-mix(in srgb, var(--md-amber) 9%, var(--md-surface));
   }
 
   [data-sonner-toast].md-toast[data-type="warning"] {
-    background: color-mix(in srgb, var(--md-amber) 9%, rgba(251, 253, 253, 0.94)) !important;
+    background: color-mix(in srgb, var(--md-amber) 9%, var(--md-surface)) !important;
   }
 
   .md-toast[data-type="error"] {
-    background: color-mix(in srgb, var(--md-red) 8%, rgba(251, 253, 253, 0.94));
+    background: color-mix(in srgb, var(--md-red) 8%, var(--md-surface));
   }
 
   [data-sonner-toast].md-toast[data-type="error"] {
-    background: color-mix(in srgb, var(--md-red) 8%, rgba(251, 253, 253, 0.94)) !important;
+    background: color-mix(in srgb, var(--md-red) 8%, var(--md-surface)) !important;
   }
 
   .md-toast-icon {
@@ -907,7 +1306,7 @@ button {
     border-radius: var(--md-radius-lg);
     display: grid;
     place-items: center;
-    background: rgba(255, 255, 255, 0.72);
+    background: color-mix(in srgb, var(--md-surface-soft) 82%, transparent);
     color: var(--md-accent);
     box-shadow: var(--md-shadow-line);
   }
@@ -921,36 +1320,56 @@ button {
     display: grid !important;
     place-items: center !important;
     justify-content: center !important;
-    background: rgba(255, 255, 255, 0.72) !important;
+    background: color-mix(in srgb, var(--md-surface-soft) 82%, transparent) !important;
     color: var(--md-accent) !important;
     box-shadow: var(--md-shadow-line) !important;
   }
 
   .md-toast[data-type="success"] .md-toast-icon {
+    background: color-mix(in srgb, var(--md-green) 12%, var(--md-surface));
     color: var(--md-green);
   }
 
   [data-sonner-toast].md-toast[data-type="success"] .md-toast-icon,
   [data-sonner-toast].md-toast[data-type="success"] [data-icon] {
+    background: color-mix(in srgb, var(--md-green) 12%, var(--md-surface)) !important;
     color: var(--md-green) !important;
   }
 
   .md-toast[data-type="warning"] .md-toast-icon {
+    background: color-mix(in srgb, var(--md-amber) 12%, var(--md-surface));
     color: var(--md-amber);
   }
 
   [data-sonner-toast].md-toast[data-type="warning"] .md-toast-icon,
   [data-sonner-toast].md-toast[data-type="warning"] [data-icon] {
+    background: color-mix(in srgb, var(--md-amber) 12%, var(--md-surface)) !important;
     color: var(--md-amber) !important;
   }
 
   .md-toast[data-type="error"] .md-toast-icon {
+    background: color-mix(in srgb, var(--md-red) 12%, var(--md-surface));
     color: var(--md-red);
   }
 
   [data-sonner-toast].md-toast[data-type="error"] .md-toast-icon,
   [data-sonner-toast].md-toast[data-type="error"] [data-icon] {
+    background: color-mix(in srgb, var(--md-red) 12%, var(--md-surface)) !important;
     color: var(--md-red) !important;
+  }
+
+  .md-toast[data-type="info"] .md-toast-icon,
+  .md-toast[data-type="loading"] .md-toast-icon {
+    background: color-mix(in srgb, var(--md-blue) 12%, var(--md-surface));
+    color: var(--md-blue);
+  }
+
+  [data-sonner-toast].md-toast[data-type="info"] .md-toast-icon,
+  [data-sonner-toast].md-toast[data-type="info"] [data-icon],
+  [data-sonner-toast].md-toast[data-type="loading"] .md-toast-icon,
+  [data-sonner-toast].md-toast[data-type="loading"] [data-icon] {
+    background: color-mix(in srgb, var(--md-blue) 12%, var(--md-surface)) !important;
+    color: var(--md-blue) !important;
   }
 
   [data-sonner-toast].md-toast [data-content] {
@@ -1008,18 +1427,18 @@ button {
 
   .md-toast-action {
     background: var(--md-ink);
-    color: #ffffff;
+    color: var(--md-bg);
   }
 
   .md-toast-cancel {
-    background: rgba(255, 255, 255, 0.66);
+    background: color-mix(in srgb, var(--md-surface-soft) 82%, transparent);
     color: var(--md-text);
     box-shadow: var(--md-shadow-line);
   }
 
   .md-toast-close {
     border: 0;
-    background: rgba(255, 255, 255, 0.72);
+    background: color-mix(in srgb, var(--md-surface-soft) 82%, transparent);
     color: var(--md-text);
     box-shadow: var(--md-shadow-line);
   }
@@ -1058,10 +1477,10 @@ button {
 
   .md-ai-edge-glow__wash {
     background:
-      radial-gradient(ellipse at 0% 0%, rgba(14, 125, 116, 0.34), transparent 38%),
-      radial-gradient(ellipse at 100% 100%, rgba(7, 139, 130, 0.36), transparent 36%),
-      radial-gradient(ellipse at 16% 100%, rgba(104, 142, 83, 0.24), transparent 30%),
-      linear-gradient(180deg, rgba(14, 125, 116, 0.12), transparent 24%, transparent 74%, rgba(14, 125, 116, 0.14));
+      radial-gradient(ellipse at 0% 0%, var(--md-accent-a34), transparent 38%),
+      radial-gradient(ellipse at 100% 100%, color-mix(in srgb, var(--md-accent-glow-core) 36%, transparent), transparent 36%),
+      radial-gradient(ellipse at 16% 100%, color-mix(in srgb, var(--md-accent-glow-warm) 24%, transparent), transparent 30%),
+      linear-gradient(180deg, var(--md-accent-a12), transparent 24%, transparent 74%, var(--md-accent-a14));
     opacity: calc(0.7 * var(--md-ai-edge-strength));
   }
 
@@ -1072,9 +1491,9 @@ button {
   .md-ai-edge-glow__signal {
     inset: -18%;
     background:
-      radial-gradient(ellipse at 12% 8%, rgba(49, 178, 159, 0.68), transparent 26%),
-      radial-gradient(ellipse at 92% 92%, rgba(5, 143, 135, 0.72), transparent 28%),
-      radial-gradient(ellipse at 14% 100%, rgba(119, 145, 84, 0.54), transparent 23%);
+      radial-gradient(ellipse at 12% 8%, color-mix(in srgb, var(--md-accent-glow-bright) 68%, transparent), transparent 26%),
+      radial-gradient(ellipse at 92% 92%, color-mix(in srgb, var(--md-accent-glow-core) 72%, transparent), transparent 28%),
+      radial-gradient(ellipse at 14% 100%, color-mix(in srgb, var(--md-accent-glow-warm) 54%, transparent), transparent 23%);
     filter: blur(28px) saturate(1.2);
     opacity: calc(0.58 * var(--md-ai-edge-strength));
     transform: translate3d(-1.8%, -0.8%, 0) scale(1.02);
@@ -1087,10 +1506,10 @@ button {
   .md-ai-edge-glow__frame {
     box-shadow:
       inset 0 0 0 1px rgba(255, 255, 255, 0.24),
-      inset 40px 0 64px rgba(14, 125, 116, 0.42),
-      inset -40px 0 64px rgba(14, 125, 116, 0.32),
-      inset 0 38px 66px rgba(80, 139, 103, 0.32),
-      inset 0 -50px 78px rgba(8, 139, 130, 0.54);
+      inset 40px 0 64px var(--md-accent-a42),
+      inset -40px 0 64px var(--md-accent-a32),
+      inset 0 38px 66px color-mix(in srgb, var(--md-accent-glow-warm) 32%, transparent),
+      inset 0 -50px 78px color-mix(in srgb, var(--md-accent-glow-core) 54%, transparent);
     filter: blur(8px);
     opacity: calc(0.9 * var(--md-ai-edge-strength));
     transform: scale(1.012);
@@ -1099,10 +1518,10 @@ button {
   .md-ai-edge-glow--screen .md-ai-edge-glow__frame {
     box-shadow:
       inset 0 0 0 1px rgba(255, 255, 255, 0.18),
-      inset 54px 0 88px rgba(14, 125, 116, 0.44),
-      inset -54px 0 88px rgba(14, 125, 116, 0.34),
-      inset 0 48px 90px rgba(80, 139, 103, 0.34),
-      inset 0 -66px 110px rgba(8, 139, 130, 0.52);
+      inset 54px 0 88px var(--md-accent-a44),
+      inset -54px 0 88px var(--md-accent-a34),
+      inset 0 48px 90px color-mix(in srgb, var(--md-accent-glow-warm) 34%, transparent),
+      inset 0 -66px 110px color-mix(in srgb, var(--md-accent-glow-core) 52%, transparent);
     filter: blur(11px);
   }
 
@@ -1129,8 +1548,8 @@ button {
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.22),
       inset 0 0 0 1px rgba(255, 255, 255, 0.12),
-      0 0 0 1px rgba(6, 70, 62, 0.12),
-      0 10px 24px rgba(6, 70, 62, 0.18);
+      0 0 0 1px var(--md-accent-deep-a12),
+      0 10px 24px var(--md-accent-deep-a18);
     transition:
       box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1),
       transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -1142,8 +1561,8 @@ button {
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.22),
       inset 0 0 0 1px rgba(255, 255, 255, 0.12),
-      0 0 0 1px rgba(6, 70, 62, 0.1),
-      0 7px 18px rgba(6, 70, 62, 0.15);
+      0 0 0 1px var(--md-accent-deep-a10),
+      0 7px 18px var(--md-accent-deep-a15);
     transition:
       box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1),
       color 180ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -1155,8 +1574,8 @@ button {
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.26),
       inset 0 0 0 1px rgba(255, 255, 255, 0.18),
-      0 0 0 1px rgba(6, 70, 62, 0.14),
-      0 10px 22px rgba(6, 70, 62, 0.2);
+      0 0 0 1px var(--md-accent-deep-a14),
+      0 10px 22px var(--md-accent-deep-a20);
   }
 
   .md-dexter-pill:hover,
@@ -1164,8 +1583,8 @@ button {
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.26),
       inset 0 0 0 1px rgba(255, 255, 255, 0.18),
-      0 0 0 1px rgba(6, 70, 62, 0.16),
-      0 14px 30px rgba(6, 70, 62, 0.24);
+      0 0 0 1px var(--md-accent-deep-a16),
+      0 14px 30px var(--md-accent-deep-a24);
     transform: translateY(-1px);
   }
 
@@ -1197,7 +1616,7 @@ button {
     inset: 0;
     z-index: 1;
     border-radius: inherit;
-    background: linear-gradient(110deg, rgba(0, 34, 28, 0.38), rgba(0, 50, 43, 0.14) 56%, rgba(0, 20, 18, 0.34));
+    background: linear-gradient(110deg, var(--md-accent-veil-near), var(--md-accent-veil-mid) 56%, var(--md-accent-veil-far));
     pointer-events: none;
     transition: opacity 180ms cubic-bezier(0.22, 1, 0.36, 1);
   }
@@ -1255,7 +1674,7 @@ button {
     width: 32px;
     height: 24px;
     overflow: hidden;
-    filter: brightness(1.12) saturate(1.18) drop-shadow(0 3px 7px rgba(6, 70, 62, 0.26));
+    filter: brightness(1.12) saturate(1.18) drop-shadow(0 3px 7px var(--md-accent-deep-a26));
     mask-position: center;
     mask-repeat: no-repeat;
     mask-size: contain;
@@ -2209,6 +2628,14 @@ button {
     background: color-mix(in srgb, var(--md-ink) 2.5%, transparent);
   }
 
+  .md-crm-deal-card {
+    background: color-mix(in srgb, var(--md-crm-deal-tone, var(--md-ink)) 1.6%, transparent);
+  }
+
+  .md-crm-deal-card:hover {
+    background: color-mix(in srgb, var(--md-crm-deal-tone, var(--md-ink)) 3.5%, transparent);
+  }
+
   .md-kanban-card:focus-visible,
   .md-kanban-card:has(.md-kanban-card__primary:focus-visible) {
     z-index: 1;
@@ -2434,4 +2861,229 @@ button {
 [dir="rtl"] .md-kanban-card .md-paper-kanban-card,
 [dir="rtl"] .md-kanban-drag-preview-card .md-paper-kanban-card {
   padding: 0 0 0 30px;
+}
+
+/* Settings workspace ------------------------------------------------------ */
+
+.md-settings-page {
+  isolation: isolate;
+}
+
+.md-settings-page::before {
+  position: fixed;
+  z-index: -1;
+  inset-block-start: -16rem;
+  inset-inline-end: -10rem;
+  width: 38rem;
+  height: 38rem;
+  border-radius: 999px;
+  background: radial-gradient(circle, color-mix(in srgb, var(--md-accent) 7%, transparent), transparent 68%);
+  content: "";
+  pointer-events: none;
+}
+
+.md-settings-masthead__glow {
+  position: absolute;
+  inset-block-start: -8rem;
+  inset-inline-end: -4rem;
+  width: 22rem;
+  height: 22rem;
+  border-radius: 999px;
+  background: radial-gradient(circle, color-mix(in srgb, var(--md-accent) 10%, transparent), transparent 68%);
+  pointer-events: none;
+}
+
+.md-settings-masthead__track {
+  position: absolute;
+  inset-inline-end: 1.5rem;
+  inset-block-end: 0;
+  width: min(30rem, 46%);
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--md-accent) 32%, transparent));
+  transform-origin: 100% 50%;
+}
+
+[dir="rtl"] .md-settings-masthead__track {
+  background: linear-gradient(270deg, transparent, color-mix(in srgb, var(--md-accent) 32%, transparent));
+  transform-origin: 0 50%;
+}
+
+.md-settings-panel {
+  transition:
+    box-shadow var(--md-motion),
+    background-color var(--md-motion);
+}
+
+.md-settings-panel:focus-within {
+  box-shadow:
+    var(--md-premium-stroke),
+    0 16px 34px rgba(42, 52, 50, 0.1);
+}
+
+.md-settings-progress-ring {
+  background:
+    conic-gradient(
+      var(--md-settings-progress-color) 0 var(--md-settings-progress),
+      var(--md-surface-tint) var(--md-settings-progress) 100%
+    );
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--md-settings-progress-color) 12%, transparent),
+    0 8px 20px rgba(42, 52, 50, 0.08);
+}
+
+.md-settings-identity__orbit {
+  position: absolute;
+  inset-block-start: -10rem;
+  inset-inline-start: -7rem;
+  width: 24rem;
+  height: 24rem;
+  border: 1px solid color-mix(in srgb, var(--md-accent) 12%, transparent);
+  border-radius: 999px;
+  box-shadow:
+    0 0 0 2.5rem color-mix(in srgb, var(--md-accent) 2.5%, transparent),
+    0 0 0 5rem color-mix(in srgb, var(--md-accent) 1.8%, transparent);
+  pointer-events: none;
+}
+
+/* Sizing the preview bloom's canvas here keeps it off the React render path.
+   Deliberately inert: no transform and no transition, so ten canvases sitting on
+   the settings page cost nothing to hover across and never get promoted to ten
+   compositor layers. */
+.md-accent-card__shader,
+.md-accent-card__shader > *,
+.md-accent-card__shader canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.md-accent-card__shader {
+  border-radius: inherit;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.md-accent-card__dexter {
+  isolation: isolate;
+}
+
+.md-settings-preview::after {
+  position: absolute;
+  inset: auto 1.25rem 1.25rem auto;
+  width: 5rem;
+  height: 5rem;
+  border-radius: 999px;
+  background: radial-gradient(circle, color-mix(in srgb, var(--md-accent) 8%, transparent), transparent 72%);
+  content: "";
+  pointer-events: none;
+}
+
+.md-settings-preview__row {
+  min-height: 2.5rem;
+  transition: min-height var(--md-motion);
+}
+
+.md-settings-preview[data-density="compact"] .md-settings-preview__row {
+  min-height: 2rem;
+}
+
+.md-settings-preview[data-density="roomy"] .md-settings-preview__row {
+  min-height: 3rem;
+}
+
+.md-settings-signal-ping {
+  border: 1px solid color-mix(in srgb, var(--md-accent) 28%, transparent);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.md-settings-release-detail__number {
+  position: absolute;
+  inset-block-start: -1.25rem;
+  inset-inline-end: 1rem;
+  color: color-mix(in srgb, var(--md-accent) 5%, transparent);
+  font-size: clamp(8rem, 18vw, 14rem);
+  font-weight: 500;
+  letter-spacing: -0.08em;
+  line-height: 1;
+  pointer-events: none;
+  user-select: none;
+}
+
+.md-settings-ai-stage__grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--md-accent) 4.5%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--md-accent) 4.5%, transparent) 1px, transparent 1px);
+  background-position: center;
+  background-size: 32px 32px;
+  mask-image: linear-gradient(to right, transparent, black 18%, black 82%, transparent);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .md-settings-signal-ping {
+    animation: md-settings-signal-arrive 820ms cubic-bezier(0.16, 1, 0.3, 1) 180ms both;
+  }
+
+  .md-settings-masthead__track {
+    animation: md-settings-track-arrive 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+}
+
+@keyframes md-settings-signal-arrive {
+  0% {
+    opacity: 0.7;
+    transform: scale(0.7);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.5);
+  }
+}
+
+@keyframes md-settings-track-arrive {
+  from {
+    opacity: 0;
+    transform: scaleX(0.35);
+  }
+
+  to {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+
+@media (max-width: 47.99rem) {
+  .md-settings-page::before {
+    width: 24rem;
+    height: 24rem;
+  }
+
+  .md-settings-identity__orbit {
+    inset-block-start: -11rem;
+    inset-inline-start: -9rem;
+  }
+}
+
+@media (pointer: coarse) {
+  [data-settings-page] button,
+  [data-settings-page] input,
+  [data-settings-page] select,
+  [data-settings-page] [role="combobox"] {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-settings-signal-ping,
+  .md-settings-masthead__track {
+    animation: none;
+  }
+
+  .md-settings-preview__row,
+  .md-settings-panel {
+    transition-duration: 0.01ms;
+  }
 }

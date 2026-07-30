@@ -38,7 +38,7 @@ const avatarToneClass: Record<string, string> = {
   olive: "bg-[#dce1d6] text-[#786b37] dark:bg-[rgba(232,241,235,0.1)] dark:text-[var(--md-text)]",
   blue: "bg-[rgba(74,125,156,0.14)] text-[var(--md-blue)] dark:bg-[rgba(127,176,207,0.14)]",
   cream: "bg-[rgba(221,138,43,0.12)] text-[var(--md-amber)] dark:bg-[rgba(229,163,76,0.14)]",
-  teal: "bg-[rgba(14,125,116,0.12)] text-[var(--md-accent)] dark:bg-[rgba(104,199,184,0.14)]",
+  teal: "bg-[var(--md-accent-a12)] text-[var(--md-accent)] dark:bg-[var(--md-accent-a14)]",
 }
 
 const statusTone: Record<CustomerStatus, StatusTone> = {
@@ -52,10 +52,12 @@ export function CustomerAvatar({
   initials,
   tone = "teal",
   size = "md",
+  className,
 }: {
   initials: string
   tone?: string
   size?: "sm" | "md" | "lg"
+  className?: string
 }) {
   return (
     <span
@@ -65,6 +67,7 @@ export function CustomerAvatar({
         size === "sm" && "size-8 text-[12px]",
         size === "md" && "size-10 text-[13px]",
         size === "lg" && "size-[74px] rounded-[var(--md-radius-lg)] text-[30px]",
+        className,
       )}
     >
       {initials}
@@ -162,7 +165,7 @@ export function CustomerRow({
           aria-pressed={selected}
           className={cn(
             "grid size-[18px] place-items-center rounded-[var(--md-radius-sm)] bg-white shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform]",
-            selected && "bg-[var(--md-accent)] shadow-[0_0_0_3px_rgba(14,125,116,0.12)]",
+            selected && "bg-[var(--md-accent)] shadow-[0_0_0_3px_var(--md-accent-a12)]",
           )}
           onClick={(event) => {
             event.stopPropagation()
@@ -193,7 +196,7 @@ export function CustomerRow({
         <CustomerStatusPill status={customer.status} />
       </TableCell>
       <TableCell>
-        <span className="grid size-7 place-items-center rounded-full bg-[rgba(14,125,116,0.12)] text-[12px] font-medium text-[var(--md-accent)]">{customer.owner}</span>
+        <span className="grid size-7 place-items-center rounded-full bg-[var(--md-accent-a12)] text-[12px] font-medium text-[var(--md-accent)]">{customer.owner}</span>
       </TableCell>
     </TableRow>
   )
@@ -459,7 +462,7 @@ export function ContactRow({
       tabIndex={interactive ? 0 : undefined}
       className={cn(
         "grid grid-cols-[44px_1fr_auto] items-center gap-4 border-t border-[rgba(11,20,19,0.06)] px-5 py-4 transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
-        interactive && "cursor-pointer hover:bg-white/45 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.12)]",
+        interactive && "cursor-pointer hover:bg-white/45 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a12)]",
         selected && "bg-white/60",
       )}
       onClick={onOpen}
@@ -648,7 +651,7 @@ export function CustomerPanelHeader({
 
 export function AddContactButton() {
   return (
-    <button type="button" className="mx-[var(--md-page-stack-gap)] mb-[var(--md-page-stack-gap)] mt-[var(--md-gap-lg)] flex h-10 items-center justify-center gap-[var(--md-gap-sm)] rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white/70 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(14,125,116,0.12)]">
+    <button type="button" className="mx-[var(--md-page-stack-gap)] mb-[var(--md-page-stack-gap)] mt-[var(--md-gap-lg)] flex h-10 items-center justify-center gap-[var(--md-gap-sm)] rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white/70 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a12)]">
       <Plus className="size-4" strokeWidth={1.3} />
       Add contact
     </button>
@@ -657,7 +660,7 @@ export function AddContactButton() {
 
 export function ArrowTextButton({ children }: { children: ReactNode }) {
   return (
-    <Button variant="ghost" className="h-8 rounded-[var(--md-radius-md)] px-2 text-[13px] font-medium text-[var(--md-accent)] hover:bg-[rgba(14,125,116,0.08)]">
+    <Button variant="ghost" className="h-8 rounded-[var(--md-radius-md)] px-2 text-[13px] font-medium text-[var(--md-accent)] hover:bg-[var(--md-accent-a08)]">
       {children}
       <ArrowRight data-icon="inline-end" strokeWidth={1.2} />
     </Button>
@@ -748,7 +751,7 @@ export function PrimaryContactsPanel({
 
 export function DexterPulsePanel() {
   return (
-    <section className="rounded-[var(--md-radius-xl)] bg-[rgba(14,125,116,0.12)] p-[var(--md-page-stack-gap)] shadow-[inset_0_0_0_1px_rgba(14,125,116,0.22)]">
+    <section className="rounded-[var(--md-radius-xl)] bg-[var(--md-accent-a12)] p-[var(--md-page-stack-gap)] shadow-[inset_0_0_0_1px_var(--md-accent-a22)]">
       <div className="flex items-center gap-3">
         <Sparkles className="size-4 text-[var(--md-accent)]" strokeWidth={1.2} />
         <h2 className="text-[15px] font-medium text-[var(--md-ink)]">Dexter · customer pulse</h2>
