@@ -2075,6 +2075,16 @@ export const galleryComponents = [
     usageCode: `<StatusPill tone="amber">Under review</StatusPill>\n<StatusPill tone="red">Action req.</StatusPill>`,
   },
   {
+    id: "kbd",
+    name: "Keyboard Key",
+    category: "Controls",
+    description: "A compact keycap for keyboard shortcuts and command hints.",
+    details: "Use inside actionable controls or supporting hints when a keyboard route materially speeds up the workflow. Keep platform-specific modifiers accurate and pair keycaps with an accessible action label.",
+    foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components?component=kbd" }],
+    componentCode: `export function Kbd({ className, ...props }) {\n  return <kbd data-slot="kbd" className={cn("inline-flex h-5 min-w-5 items-center justify-center rounded-sm bg-muted px-1 text-xs font-medium text-muted-foreground", className)} {...props} />\n}\n\nexport function KbdGroup({ className, ...props }) {\n  return <span data-slot="kbd-group" className={cn("inline-flex items-center gap-1", className)} {...props} />\n}`,
+    usageCode: `<Button aria-label="Send prompt" aria-keyshortcuts="Meta+Enter Control+Enter">\n  <KbdGroup dir="ltr">\n    <Kbd>{isMac ? "⌘" : "Ctrl"}</Kbd>\n    <Kbd>↵</Kbd>\n  </KbdGroup>\n</Button>`,
+  },
+  {
     id: "ai-edge-glow",
     name: "AI Edge Glow",
     category: "Feedback",
@@ -2093,6 +2103,48 @@ export const galleryComponents = [
     foundOn: [{ label: "Overview", route: "/" }, { label: "Components", route: "/components?component=dashboard-customise-panel" }],
     componentCode: `export function DashboardCustomisePanel({ open, onOpenChange, presentation = "docked", selectedDashboard, mode, onModeChange }) {\n  const [manualItems] = useState(createInitialManualBlocks)\n  const [activeWidgetId, setActiveWidgetId] = useState()\n\n  return (\n    <AnimatePresence>\n      {open ? (\n        <aside role="dialog" aria-label="Dashboard AI customisation panel" data-presentation={presentation}>\n          <header>\n            <h2>Dashboard assistant</h2>\n            <button onClick={() => onModeChange(mode === "manual" ? "ai" : "manual")}>Manual</button>\n            <button onClick={() => onOpenChange(false)}>Close</button>\n          </header>\n          {mode === "manual" ? (\n            <ManualDashboardControl items={manualItems} activeWidgetId={activeWidgetId} onPreviewWidget={setActiveWidgetId} />\n          ) : (\n            <DashboardPromptComposer />\n          )}\n        </aside>\n      ) : null}\n    </AnimatePresence>\n  )\n}`,
     usageCode: `const [customiseOpen, setCustomiseOpen] = useState(false)\nconst [customiseMode, setCustomiseMode] = useState("ai")\nconst [selectedDashboard, setSelectedDashboard] = useState(savedDashboardViews[0])\n\n<OverviewHero\n  selectedDashboard={selectedDashboard}\n  onSelectDashboard={setSelectedDashboard}\n  onOpenCustomise={() => setCustomiseOpen(true)}\n/>\n<OverviewDashboard />\n<DashboardCustomisePanel\n  open={customiseOpen}\n  onOpenChange={setCustomiseOpen}\n  presentation="docked"\n  selectedDashboard={selectedDashboard}\n  mode={customiseMode}\n  onModeChange={setCustomiseMode}\n/>`,
+  },
+  {
+    id: "dexter-inline-citation",
+    name: "Dexter Inline Citation",
+    category: "Agent Dexter",
+    description: "A source-linked claim in a Dexter answer, with a compact record badge and an inspectable source card.",
+    details: "Use for facts Dexter read from connected workspace data. Link only the smallest supported phrase, keep advice and inference uncited, and use the exact source URL returned by the data tool so selecting the badge opens the underlying Multideck record.",
+    foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components?component=dexter-inline-citation" }],
+    componentCode: `export function DexterInlineCitation({ children, href, title }) {
+  const external = !href.startsWith("/")
+
+  return (
+    <InlineCitation>
+      <InlineCitationText>{children}</InlineCitationText>
+      <InlineCitationCard>
+        <InlineCitationCardTrigger sources={[href]} href={href} label="Lead" external={external} />
+        <InlineCitationCardBody>
+          <InlineCitationCarousel>
+            <InlineCitationCarouselHeader>
+              <InlineCitationCarouselPrev aria-label="Previous source" />
+              <InlineCitationCarouselNext aria-label="Next source" />
+              <InlineCitationCarouselIndex />
+            </InlineCitationCarouselHeader>
+            <InlineCitationCarouselContent>
+              <InlineCitationCarouselItem>
+                <InlineCitationSource title={title} url={href} external={external} />
+              </InlineCitationCarouselItem>
+            </InlineCitationCarouselContent>
+          </InlineCitationCarousel>
+        </InlineCitationCardBody>
+      </InlineCitationCard>
+    </InlineCitation>
+  )
+}`,
+    usageCode: `<p>
+  <DexterInlineCitation
+    href="/crm/leads/8f81256b-3f0a-4c48-9d95-bd40ec63dc66"
+    title="Northwind Logistics"
+  >
+    Northwind has a follow-up due today
+  </DexterInlineCitation>.
+</p>`,
   },
   {
     id: "dexter-action-pill",
@@ -3572,6 +3624,7 @@ export const galleryIcons = {
   typography: Type,
   surface: Gauge,
   "status-pill": BadgeCheck,
+  kbd: KeyRound,
   "ai-edge-glow": Sparkles,
   "dashboard-customise-panel": Sparkles,
   "dexter-action-pill": Sparkles,

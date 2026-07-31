@@ -34,7 +34,7 @@ function ltrValue(value: ReactNode, className = "") {
 export function QuotesRegisterPage({ navigate }: { navigate: (path: string) => void }) {
   const { language, t } = useLanguage()
   const [search, setSearch] = useState<QuoteSearchQuery>(createEmptyQuoteSearch)
-  const [quickSearch, setQuickSearch] = useState("")
+  const [quickSearch, setQuickSearch] = useState(() => new URLSearchParams(window.location.search).get("search") ?? "")
   const [advancedSearchOpen, setAdvancedSearchOpen] = useState(false)
   const [page, setPage] = useState(1)
   const [rowsPerPage, setRowsPerPage] = useState(10)

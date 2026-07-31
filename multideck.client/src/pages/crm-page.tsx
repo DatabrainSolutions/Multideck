@@ -3204,6 +3204,7 @@ export function CrmDealsPage({ currentUser }: { currentUser?: AuthUserSummary | 
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
+  const requestedDealIdRef = useRef(new URLSearchParams(window.location.search).get("record"))
   const canManagePipelines = hasPermission(currentUser, "Settings.Manage")
 
   useEffect(() => {
@@ -3232,6 +3233,20 @@ export function CrmDealsPage({ currentUser }: { currentUser?: AuthUserSummary | 
     () => buildDealPipelines(livePipelines, liveDeals),
     [liveDeals, livePipelines],
   )
+
+  useEffect(() => {
+    const requestedDealId = requestedDealIdRef.current
+    if (loading || !requestedDealId) return
+    requestedDealIdRef.current = null
+    const requestedDeal = dealPipelines
+      .flatMap((pipeline) => pipeline.stages)
+      .flatMap((stage) => stage.deals)
+      .find((deal) => deal.id === requestedDealId)
+    if (requestedDeal) {
+      setSelectedDeal(requestedDeal)
+      setDetailOpen(true)
+    }
+  }, [dealPipelines, loading])
 
   function openDealDetail(deal: CrmDeal) {
     setSelectedDeal(deal)

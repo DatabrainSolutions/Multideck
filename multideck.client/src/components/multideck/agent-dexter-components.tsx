@@ -9,6 +9,7 @@ import {
   ChevronDown,
   FileText,
   Hand,
+  Handshake,
   MessageCircle,
   PackageCheck,
   Plus,
@@ -23,6 +24,7 @@ import {
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
 import { createPortal } from "react-dom"
 import { Button } from "@/components/ui/button"
+import { Kbd, KbdGroup } from "@/components/ui/kbd"
 import {
   Context,
   ContextContent,
@@ -55,6 +57,22 @@ import { mdEaseOut, mdMotion, reduceMotion, staggerRamp } from "@/lib/motion"
 
 export type DexterSpecialistId = "auto" | "customs" | "customer" | "sales" | "ops" | "analytics"
 export type DexterAccessMode = "approve" | "full"
+
+function useSendShortcutModifier() {
+  const [modifier, setModifier] = useState<"⌘" | "Ctrl">("Ctrl")
+
+  useEffect(() => {
+    const navigatorWithPlatform = navigator as Navigator & {
+      userAgentData?: { platform?: string }
+    }
+    const platform = navigatorWithPlatform.userAgentData?.platform
+      ?? navigator.platform
+      ?? navigator.userAgent
+    setModifier(/Mac|iPhone|iPad|iPod/i.test(platform) ? "⌘" : "Ctrl")
+  }, [])
+
+  return modifier
+}
 
 export type DexterSpecialist = {
   id: DexterSpecialistId
@@ -529,7 +547,7 @@ function DexterAccessModeToggle({
         </motion.span>
       </span>
       <span
-        className="relative inline-grid h-5 min-w-0 shrink-0 overflow-hidden text-start leading-5 transition-[width] duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
+        className="relative inline-grid h-5 min-w-0 shrink-0 overflow-visible text-start leading-5 transition-[width] duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
         aria-hidden="true"
         style={labelWidths ? { width: labelWidths[mode] } : undefined}
       >
@@ -661,7 +679,7 @@ export function DexterMentionInput({
   canSend: boolean
   onChange: (value: string) => void
   onMentionsChange: (mentions: DexterMentionItem[]) => void
-  onSend: () => void
+  onSend: (value: string) => void
 }) {
   const { direction, t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
@@ -895,9 +913,10 @@ export function DexterMentionInput({
       return
     }
 
-    if (event.key !== "Enter" || event.shiftKey || event.altKey || event.metaKey || event.ctrlKey) return
+    if (event.key !== "Enter" || event.shiftKey || event.altKey) return
     event.preventDefault()
-    if (canSend) onSend()
+    const liveValue = editorRef.current ? readMentionEditorValue(editorRef.current) : value
+    if (liveValue.trim()) onSend(liveValue)
   }
 
   function handlePaste(event: ClipboardEvent<HTMLDivElement>) {
@@ -1067,12 +1086,13 @@ export function DexterPromptComposer({
   onSelectModel: (id: DexterModelId) => void
   onAccessModeChange: (mode: DexterAccessMode) => void
   onRemoveAttachment?: (id: string) => void
-  onSend: () => void
+  onSend: (value?: string) => void
   compact?: boolean
   className?: string
 }) {
   const { language, t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
+  const sendShortcutModifier = useSendShortcutModifier()
   const [internalMentions, setInternalMentions] = useState<DexterMentionItem[]>([])
   const canSend = value.trim().length > 0
   const minRows = compact ? 52 : 76
@@ -1155,7 +1175,7 @@ export function DexterPromptComposer({
             canSend={canSend}
             onChange={onChange}
             onMentionsChange={handleMentionsChange}
-            onSend={onSend}
+            onSend={(liveValue) => onSend(liveValue)}
           />
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -1186,22 +1206,29 @@ export function DexterPromptComposer({
               </ContextContent>
             </Context>
             <DexterAccessModeToggle mode={accessMode} onChange={onAccessModeChange} />
-            <span className="ms-auto hidden items-center gap-1.5 pe-1 text-[12px] text-[var(--md-subtle)] sm:inline-flex">
-              <kbd className="grid h-5 min-w-5 place-items-center rounded-[var(--md-radius-sm)] bg-[var(--md-icon-well)] px-1 text-[11px] font-medium leading-none">↵</kbd>
-              {t("to send")}
-            </span>
             <motion.div
-              className="ms-auto shrink-0 sm:ms-0"
+              className="ms-auto flex shrink-0 items-center gap-2"
               animate={{ scale: canSend ? 1 : 0.94, opacity: canSend ? 1 : 0.55 }}
               transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.spring)}
             >
+              <span
+                aria-hidden="true"
+                title={`${sendShortcutModifier} + Enter`}
+                className="hidden h-10 items-center rounded-[var(--md-radius-lg)] px-1.5 sm:inline-flex"
+              >
+                <KbdGroup dir="ltr" data-i18n-skip>
+                  <Kbd>{sendShortcutModifier}</Kbd>
+                  <Kbd>↵</Kbd>
+                </KbdGroup>
+              </span>
               <DexterActionPill
                 type="button"
                 icon={ArrowUp}
                 iconOnly
-                label={t("Send prompt")}
+                label={`${t("Send prompt")} (${sendShortcutModifier} + Enter)`}
+                aria-keyshortcuts="Meta+Enter Control+Enter"
                 className="size-10 min-w-0 rounded-full p-0"
-                onClick={onSend}
+                onClick={() => onSend()}
                 disabled={!canSend}
               />
             </motion.div>
@@ -1570,8 +1597,8 @@ export function DexterMonitorStack({
         </div>
       </div>
 
-      <ProgressiveBlur edge="top" tone="rail" height={88} tint="var(--md-bg-strong)" />
-      <ProgressiveBlur edge="bottom" tone="rail" height={72} offset={52} tint="var(--md-bg-strong)" />
+      <ProgressiveBlur className="md-watch-rail__edge-blur" edge="top" tone="rail" height={88} tint="var(--md-bg-strong)" />
+      <ProgressiveBlur className="md-watch-rail__edge-blur" edge="bottom" tone="rail" height={72} offset={52} tint="var(--md-bg-strong)" />
 
       <div className="pointer-events-none absolute inset-x-0 top-0 z-[2] flex items-center gap-2 px-4 pt-[22px]">
         <h2 className="flex min-w-0 items-center gap-2 text-[14px] font-medium text-[var(--md-ink)]">
@@ -1606,7 +1633,7 @@ export function DexterMonitorStack({
 
 /** Rail, fade, and detail widths. The pair is clamped so the thread is never buried. */
 const watchRailWidth = 336
-const watchRailFadeWidth = 128
+const watchRailFadeWidth = 176
 const watchDetailWidth = 512
 const watchMinThreadWidth = 420
 
@@ -1971,34 +1998,50 @@ export function DexterRiskTable() {
 
 export function DexterSuggestionGrid({
   onPick,
+  dealName,
+  bookingId,
 }: {
   onPick: (prompt: string, specialistId: DexterSpecialistId) => void
+  dealName?: string | null
+  bookingId?: string | null
 }) {
-  const suggestions = [
-    { title: "Triage my morning", body: "Which bookings need me first today?", icon: Zap, specialistId: "ops" as DexterSpecialistId },
-    { title: "Draft a quote", body: "Yantian to Felixstowe - 2x40HC - week 28", icon: PackageCheck, specialistId: "sales" as DexterSpecialistId },
-    { title: "Explain a delay", body: "Why is MD-22479 slipping in Rotterdam?", icon: BarChart3, specialistId: "analytics" as DexterSpecialistId },
-    { title: "Prep a customer review", body: "Summarize Marlow Apparel's last quarter", icon: MessageCircle, specialistId: "analytics" as DexterSpecialistId },
+  const { t } = useLanguage()
+  const personalised = [
+    dealName ? {
+      title: `${t("How can I close")} ${dealName}?`,
+      prompt: `${t("Review this deal and tell me the strongest next steps to close it")}: ${dealName}.`,
+      icon: Handshake,
+      specialistId: "sales" as DexterSpecialistId,
+    } : null,
+    bookingId ? {
+      title: `${t("Chase up information on")} ${bookingId}`,
+      prompt: `${t("Check what information is still missing and help me chase it up for booking")} ${bookingId}.`,
+      icon: MessageCircle,
+      specialistId: "ops" as DexterSpecialistId,
+    } : null,
+  ].filter((suggestion): suggestion is NonNullable<typeof suggestion> => Boolean(suggestion))
+  const standard = [
+    { title: t("Triage my morning"), prompt: t("Which bookings need me first today?"), icon: Zap, specialistId: "ops" as DexterSpecialistId },
+    { title: t("Draft a quote"), prompt: t("Draft a quote for my next priority opportunity."), icon: PackageCheck, specialistId: "sales" as DexterSpecialistId },
+    { title: t("Review at-risk bookings"), prompt: t("Show me the bookings most at risk and what I should do next."), icon: BarChart3, specialistId: "analytics" as DexterSpecialistId },
+    { title: t("Prepare a customer update"), prompt: t("Draft an update for the customer who most needs one today."), icon: MessageCircle, specialistId: "customer" as DexterSpecialistId },
   ]
+  const suggestions = [...personalised, ...standard].slice(0, 4)
 
   return (
-    <div className="grid gap-3 md:grid-cols-2">
+    <div className="flex flex-wrap justify-center gap-2" aria-label={t("Recommended actions")}>
       {suggestions.map((suggestion) => {
         const Icon = suggestion.icon
-        const prompt = `${suggestion.title}. ${suggestion.body}`
 
         return (
           <button
             key={suggestion.title}
             type="button"
-            className="grid grid-cols-[26px_1fr] items-start gap-3 rounded-[var(--md-radius-lg)] bg-white/70 px-5 py-4 text-left shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 hover:scale-[1.01] hover:bg-white"
-            onClick={() => onPick(prompt, suggestion.specialistId)}
+            className="group inline-flex min-h-9 max-w-full items-center gap-2 rounded-full bg-[var(--md-surface)] px-3.5 py-2 text-start text-[13px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 hover:-translate-y-px hover:bg-[var(--md-surface-raised)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a22)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--md-bg)] active:translate-y-0 motion-reduce:transform-none"
+            onClick={() => onPick(suggestion.prompt, suggestion.specialistId)}
           >
-            <Icon className="mt-1 size-4 text-[var(--md-accent)]" strokeWidth={1.2} />
-            <span>
-              <span className="block text-[14px] font-medium text-[var(--md-ink)]">{suggestion.title}</span>
-              <span className="mt-1 block text-[13px] text-[var(--md-text)]">{suggestion.body}</span>
-            </span>
+            <Icon className="size-3.5 shrink-0 text-[var(--md-accent)]" strokeWidth={1.35} aria-hidden />
+            <span className="min-w-0 break-words" dir="auto">{suggestion.title}</span>
           </button>
         )
       })}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { motion, useReducedMotion } from "motion/react"
 import { AlertCircle, ArrowDownToLine, ArrowUpFromLine, Boxes, CheckCircle2, Download, FileArchive, FileImage, FileText, Loader2, Mail, Plus, RefreshCw, Trash2, Upload, XCircle } from "lucide-react"
 import { toast } from "sonner"
@@ -112,7 +112,7 @@ export function WarehouseInventoryView() {
   const [reference, setReference] = useState<WarehouseOrderReference | null>(null)
   const [facilityId, setFacilityId] = useState("")
   const [mode, setMode] = useState("Stock balances")
-  const [search, setSearch] = useState("")
+  const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get("search") ?? "")
   const [balances, setBalances] = useState<WarehouseInventoryBalance[] | null>(null)
   const [movements, setMovements] = useState<WarehouseInventoryMovement[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -552,11 +552,12 @@ export function WarehouseOrdersManagementView({ typeFilter, isCustomer = false, 
   const [reference, setReference] = useState<WarehouseOrderReference | null>(null)
   const [orders, setOrders] = useState<WarehouseOperationalOrder[] | null>(null)
   const [facilityId, setFacilityId] = useState("")
-  const [search, setSearch] = useState("")
+  const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get("search") ?? "")
   const [statusFilter, setStatusFilter] = useState("__open__")
   const [error, setError] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [selected, setSelected] = useState<WarehouseOperationalOrder | null>(null)
+  const requestedRecordIdRef = useRef(new URLSearchParams(window.location.search).get("record"))
   const allowedTypes = useMemo<("inbound" | "outbound")[]>(() => [
     ...(canCreateInbound ? ["inbound" as const] : []),
     ...(canCreateOutbound ? ["outbound" as const] : []),
@@ -575,7 +576,13 @@ export function WarehouseOrdersManagementView({ typeFilter, isCustomer = false, 
         search: search.trim() || undefined,
       })])
       setReference(referenceData); setOrders(list)
-      if (selected) setSelected(list.find((order) => order.id === selected.id) ?? null)
+      const requestedRecordId = requestedRecordIdRef.current
+      if (requestedRecordId) {
+        requestedRecordIdRef.current = null
+        setSelected(list.find((order) => order.id === requestedRecordId) ?? null)
+      } else if (selected) {
+        setSelected(list.find((order) => order.id === selected.id) ?? null)
+      }
     } catch (cause) { setError(errorMessage(cause)); setOrders([]) }
   }
   useEffect(() => {

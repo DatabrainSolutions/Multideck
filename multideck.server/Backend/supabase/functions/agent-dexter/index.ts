@@ -33,7 +33,7 @@ const MAX_PROMPT_CHARACTERS = 4_000
 const MAX_HISTORY_MESSAGES = 30
 const MAX_TOOL_ROUNDS = 4
 const MAX_TOOL_CALLS = 6
-const PROMPT_VERSION = "freight-coworker-2026-07-31-lead-rows"
+const PROMPT_VERSION = "freight-coworker-2026-07-31-inline-citations"
 
 const MODEL_ROUTES: Record<DexterModelLane, { model: string; effort: "medium" | "high" }> = {
   fast: { model: "gpt-5.6-luna", effort: "medium" },
@@ -310,6 +310,112 @@ function parseActions(value: unknown): DataAction[] {
   })
 }
 
+function citationMetadata(title: string, url: string, description: string) {
+  return { title, url, description }
+}
+
+function cleanReference(value: unknown, maximum: number) {
+  if (typeof value === "number" && Number.isFinite(value)) return String(value).slice(0, maximum)
+  return cleanString(value, maximum)
+}
+
+function addRecordCitation(
+  value: unknown,
+  title: string,
+  url: string,
+  description: string,
+) {
+  return isObject(value)
+    ? { ...value, _citation: citationMetadata(title, url, description) }
+    : value
+}
+
+function addDomainCitations(domain: string, value: unknown) {
+  if (!isObject(value) || (!isObject(value.data) && !Array.isArray(value.data))) return value
+
+  const data = value.data
+  if (domain === "leads" && Array.isArray(data)) {
+    return {
+      ...value,
+      data: data.map((record) => {
+        if (!isObject(record)) return record
+        const recordId = cleanString(record.recordId, 80)
+        const title = cleanString(record.companyName, 240) || cleanString(record.contactName, 240) || "CRM lead"
+        return recordId
+          ? addRecordCitation(record, title, `/crm/leads/${encodeURIComponent(recordId)}`, "CRM lead record")
+          : record
+      }),
+    }
+  }
+
+  if (domain === "deals" && Array.isArray(data)) {
+    return {
+      ...value,
+      data: data.map((record) => {
+        if (!isObject(record)) return record
+        const recordId = cleanString(record.recordId, 80)
+        const title = cleanString(record.name, 240) || "CRM deal"
+        return recordId
+          ? addRecordCitation(record, title, `/crm/deals?record=${encodeURIComponent(recordId)}`, "CRM deal record")
+          : record
+      }),
+    }
+  }
+
+  if (domain === "quotes" && Array.isArray(data)) {
+    return {
+      ...value,
+      data: data.map((record) => {
+        if (!isObject(record)) return record
+        const quoteNumber = cleanReference(record.quoteNumber, 120)
+        return quoteNumber
+          ? addRecordCitation(record, quoteNumber, `/quotes?search=${encodeURIComponent(quoteNumber)}`, "Customer quote record")
+          : record
+      }),
+    }
+  }
+
+  if (domain !== "warehouse" || !isObject(data)) return value
+
+  const overview = isObject(data.overview)
+    ? addRecordCitation(data.overview, "Warehouse overview", "/warehouse", "Current warehouse workspace summary")
+    : data.overview
+  const orders = Array.isArray(data.orders)
+    ? data.orders.map((record) => {
+        if (!isObject(record)) return record
+        const recordId = cleanString(record.recordId, 80)
+        const orderNumber = cleanReference(record.orderNumber, 120) || "Warehouse order"
+        const query = new URLSearchParams()
+        if (recordId) query.set("record", recordId)
+        query.set("search", orderNumber)
+        return addRecordCitation(record, orderNumber, `/warehouse/orders?${query.toString()}`, "Warehouse order record")
+      })
+    : data.orders
+  const inventory = Array.isArray(data.inventory)
+    ? data.inventory.map((record) => {
+        if (!isObject(record)) return record
+        const sku = cleanString(record.sku, 120)
+        const facility = cleanString(record.facility, 120)
+        const title = [sku, facility].filter(Boolean).join(" · ") || "Warehouse inventory"
+        return sku
+          ? addRecordCitation(record, title, `/warehouse/inventory?search=${encodeURIComponent(sku)}`, "Warehouse inventory balance")
+          : record
+      })
+    : data.inventory
+  const exceptions = Array.isArray(data.exceptions)
+    ? data.exceptions.map((record) => {
+        if (!isObject(record)) return record
+        const title = cleanString(record.title, 240) || "Warehouse exception"
+        return addRecordCitation(record, title, "/warehouse", "Unresolved warehouse exception")
+      })
+    : data.exceptions
+
+  return {
+    ...value,
+    data: { ...data, overview, orders, inventory, exceptions },
+  }
+}
+
 const SPECIALIST_INSTRUCTIONS: Record<string, string> = {
   auto: `## Auto coordinator
 Act as Dexter's coordinating freight operator. Identify the main job behind the request, apply the most relevant specialist approach below, and bring in another discipline only when it materially changes the answer.
@@ -390,6 +496,11 @@ Never infer a rate, contract term, customs decision, carrier commitment, availab
 When information is missing, name the smallest missing input and say what the operator can do next.
 For customs, sanctions, tax, dangerous goods, or regulatory questions, explain the operational position without presenting uncertain guidance as legal certainty.
 Separate workspace facts from your inference or recommendation. Cite useful human-readable references from the records, but never raw UUIDs.
+Every queried record may include a trusted \`_citation\` object with a human-readable \`title\`, a Multideck \`url\`, and a short \`description\`.
+Whenever you state a fact taken from a queried workspace record, wrap the smallest readable phrase that makes that factual claim in a Markdown link to the record's exact \`_citation.url\`, and copy \`_citation.title\` into the Markdown link title.
+Example citation shape: \`[Northwind has a follow-up due today](/crm/leads/record-id "Northwind Logistics")\`.
+Use only citation URLs returned by the data tool. Never invent, shorten, correct, translate, or combine them. Never show a raw record ID as link text.
+Do not cite your own inference, recommendation, general knowledge, or a statement that the data did not support.
 
 # Connected workspace
 Available live data domains in this workspace:
@@ -742,7 +853,7 @@ async function runStreamedAgent(
           })
           toolOutput = error
             ? { error: "The selected data domain could not be read.", code: error.code ?? "unknown" }
-            : data
+            : addDomainCitations(domain, data)
         }
       } else {
         const action = actions.find((candidate) => candidate.code === call.name)
@@ -1331,7 +1442,7 @@ Deno.serve(async (request) => {
           })
           toolOutput = error
             ? { error: "The selected data domain could not be read.", code: error.code ?? "unknown" }
-            : data
+            : addDomainCitations(domain, data)
         }
       } else {
         const action = actions.find((candidate) => candidate.code === call.name)
