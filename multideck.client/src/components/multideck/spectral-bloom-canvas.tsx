@@ -5,6 +5,7 @@ import type { ShaderStops } from "@/lib/accent-theme"
 
 export type BloomCanvasProps = {
   tone?: "button" | "brand"
+  shape?: "compact" | "composer"
   stops: ShaderStops
   /** Off for previews: a static bloom shows the same colours with no render loop. */
   animated?: boolean
@@ -12,11 +13,13 @@ export type BloomCanvasProps = {
 
 const SpectralBloomCanvas = memo(function SpectralBloomCanvas({
   tone = "button",
+  shape = "compact",
   stops,
   animated = true,
 }: BloomCanvasProps) {
   const reduceMotion = useReducedMotion()
   const isBrandMark = tone === "brand"
+  const isComposer = shape === "composer"
   const [colorA, colorB, colorC] = stops
   const isStill = Boolean(reduceMotion) || !animated
   // The sunburst is addressed by id from the colour wheel's scale map. Each
@@ -28,20 +31,20 @@ const SpectralBloomCanvas = memo(function SpectralBloomCanvas({
       <SunBurst
         id={burstId}
         background="#00000000"
-        center={{ x: 0.94, y: 1.04 }}
+        center={isComposer ? { x: 0.52, y: 1.08 } : { x: 0.94, y: 1.04 }}
         color="#ffffff"
-        feather={2.5}
-        radius={2.35}
-        rayCount={8}
-        softness={0.92}
-        speed={isStill ? 0 : isBrandMark ? 0.24 : 0.16}
+        feather={isComposer ? 3.6 : 2.5}
+        radius={isComposer ? 3.8 : 2.35}
+        rayCount={isComposer ? 10 : 8}
+        softness={isComposer ? 0.96 : 0.92}
+        speed={isStill ? 0 : isComposer ? 0.18 : isBrandMark ? 0.24 : 0.16}
         visible={false}
       />
       <ColorWheel
         angle={{
           mode: "loop",
           type: "auto-animate",
-          speed: isStill ? 0 : isBrandMark ? 0.4 : 0.32,
+          speed: isStill ? 0 : isComposer ? 0.28 : isBrandMark ? 0.4 : 0.32,
           outputMax: 180,
           outputMin: -180,
         }}
@@ -60,7 +63,7 @@ const SpectralBloomCanvas = memo(function SpectralBloomCanvas({
           outputMin: 0.1,
         }}
       />
-      <Halftone frequency={125} misprint={0.0055} opacity={isBrandMark ? 0.025 : 0.05} style="cmyk" />
+      <Halftone frequency={125} misprint={0.0055} opacity={isBrandMark ? 0.025 : isComposer ? 0.04 : 0.05} style="cmyk" />
     </Shader>
   )
 })

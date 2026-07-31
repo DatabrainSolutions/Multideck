@@ -70,7 +70,6 @@ import {
   SettingsPageHeader,
   SettingsPanel,
   SettingsProgressRing,
-  SettingsRail,
   SettingsSelect,
   SettingsSummaryCard,
   SettingsTextarea,
@@ -107,7 +106,10 @@ import {
   SupportTicketError,
   type CreateSupportTicketResponse,
 } from "@/lib/support-ticket"
+import { getDexterUsage, type DexterUsage, type DexterUsageEntry } from "@/lib/dexter-api"
+import { DEXTER_CONVERSATIONS_CHANGED_EVENT } from "@/lib/dexter-navigation"
 import { clockDisplayLabelFromMode, clockDisplayLabels, clockDisplayModeFromLabel, readClockDisplayMode, resetAiAgentName, useAiAgentName, writeAiAgentName, writeClockDisplayMode } from "@/lib/user-preferences"
+import type { AuthUserSummary } from "@/lib/auth-user"
 import { getSupabaseSession, supabase } from "@/lib/supabase"
 import {
   ProfilePhotoValidationError,
@@ -386,21 +388,50 @@ function getProfileFullName(profile: ProfileFormState) {
   return `${profile.firstName.trim()} ${profile.lastName.trim()}`.trim()
 }
 
-function ProfileTab({ onProfilePhotoChange }: { onProfilePhotoChange: (photo: UserProfilePhoto | null) => void }) {
+type ProfileMediaUrls = {
+  profilePhotoPath: string | null
+  profilePhotoUrl: string | null
+  coverPhotoPath: string | null
+  coverPhotoUrl: string | null
+}
+
+function ProfileTab({
+  currentUser,
+  profileMediaUrls,
+  onProfilePhotoChange,
+  onCoverPhotoChange,
+}: {
+  currentUser?: AuthUserSummary | null
+  profileMediaUrls: ProfileMediaUrls
+  onProfilePhotoChange: (photo: UserProfilePhoto | null) => void
+  onCoverPhotoChange: (photo: UserProfilePhoto | null) => void
+}) {
   const { t } = useLanguage()
   const [profile, setProfile] = useState<ProfileFormState>(emptyProfileForm)
   const [savedProfile, setSavedProfile] = useState<ProfileFormState>(emptyProfileForm)
   const [isProfileLoading, setIsProfileLoading] = useState(true)
   const [isProfileSaving, setIsProfileSaving] = useState(false)
-  const [profilePhoto, setProfilePhoto] = useState<UserProfilePhoto | null>(null)
-  const [profilePhotoUrl, setProfilePhotoUrl] = useState<string | null>(null)
+  const initialProfilePhoto = currentUser?.profilePhoto ?? null
+  const initialCoverPhoto = currentUser?.coverPhoto ?? null
+  const initialProfilePhotoUrl = profileMediaUrls.profilePhotoPath === initialProfilePhoto?.path
+    ? profileMediaUrls.profilePhotoUrl
+    : null
+  const initialCoverPhotoUrl = profileMediaUrls.coverPhotoPath === initialCoverPhoto?.path
+    ? profileMediaUrls.coverPhotoUrl
+    : null
+  const [profilePhoto, setProfilePhoto] = useState<UserProfilePhoto | null>(initialProfilePhoto)
+  const [profilePhotoUrl, setProfilePhotoUrl] = useState<string | null>(initialProfilePhotoUrl)
   const [profilePhotoError, setProfilePhotoError] = useState<string | null>(null)
-  const [profilePhotoOperation, setProfilePhotoOperation] = useState<"loading" | "idle" | "uploading" | "removing">("loading")
+  const [profilePhotoOperation, setProfilePhotoOperation] = useState<"loading" | "idle" | "uploading" | "removing">(
+    initialProfilePhotoUrl ? "idle" : "loading",
+  )
   const [profilePhotoDialogOpen, setProfilePhotoDialogOpen] = useState(false)
-  const [coverPhoto, setCoverPhoto] = useState<UserProfilePhoto | null>(null)
-  const [coverPhotoUrl, setCoverPhotoUrl] = useState<string | null>(null)
+  const [coverPhoto, setCoverPhoto] = useState<UserProfilePhoto | null>(initialCoverPhoto)
+  const [coverPhotoUrl, setCoverPhotoUrl] = useState<string | null>(initialCoverPhotoUrl)
   const [coverPhotoError, setCoverPhotoError] = useState<string | null>(null)
-  const [coverPhotoOperation, setCoverPhotoOperation] = useState<"loading" | "idle" | "uploading" | "removing">("loading")
+  const [coverPhotoOperation, setCoverPhotoOperation] = useState<"loading" | "idle" | "uploading" | "removing">(
+    initialCoverPhotoUrl ? "idle" : "loading",
+  )
   const profilePhotoInputRef = useRef<HTMLInputElement>(null)
   const coverPhotoInputRef = useRef<HTMLInputElement>(null)
   const profileDirty = JSON.stringify(profile) !== JSON.stringify(savedProfile)
@@ -408,6 +439,23 @@ function ProfileTab({ onProfilePhotoChange }: { onProfilePhotoChange: (photo: Us
   const fullName = getProfileFullName(profile)
   const profilePhotoBusy = profilePhotoOperation !== "idle"
   const coverPhotoBusy = coverPhotoOperation !== "idle"
+
+  useEffect(() => {
+    if (initialProfilePhoto) setProfilePhoto(initialProfilePhoto)
+    if (initialProfilePhotoUrl) {
+      setProfilePhotoUrl(initialProfilePhotoUrl)
+      setProfilePhotoOperation("idle")
+    }
+  }, [initialProfilePhoto, initialProfilePhotoUrl])
+
+  useEffect(() => {
+    if (initialCoverPhoto) setCoverPhoto(initialCoverPhoto)
+    if (initialCoverPhotoUrl) {
+      setCoverPhotoUrl(initialCoverPhotoUrl)
+      setCoverPhotoOperation("idle")
+    }
+  }, [initialCoverPhoto, initialCoverPhotoUrl])
+
   useEffect(() => {
     if (!supabase) {
       setIsProfileLoading(false)
@@ -511,6 +559,7 @@ function ProfileTab({ onProfilePhotoChange }: { onProfilePhotoChange: (photo: Us
         setProfile((current) => ({ ...current, roleTitle: savedJobTitle }))
         setSavedProfile((current) => ({ ...current, roleTitle: savedJobTitle }))
         setCoverPhoto(currentUser.coverPhoto)
+        onCoverPhotoChange(currentUser.coverPhoto)
         setCoverPhotoError(null)
 
         if (currentUser.coverPhoto) {
@@ -536,7 +585,7 @@ function ProfileTab({ onProfilePhotoChange }: { onProfilePhotoChange: (photo: Us
     return () => {
       cancelled = true
     }
-  }, [t])
+  }, [onCoverPhotoChange, t])
 
   function updateProfileField(field: keyof ProfileFormState, value: string) {
     setProfile((current) => ({ ...current, [field]: value }))
@@ -666,6 +715,7 @@ function ProfileTab({ onProfilePhotoChange }: { onProfilePhotoChange: (photo: Us
 
       const nextPhoto = await uploadCurrentUserCoverPhoto(file, coverPhoto, session.access_token)
       setCoverPhoto(nextPhoto)
+      onCoverPhotoChange(nextPhoto)
 
       try {
         setCoverPhotoUrl(await createProfilePhotoSignedUrl(nextPhoto))
@@ -702,6 +752,7 @@ function ProfileTab({ onProfilePhotoChange }: { onProfilePhotoChange: (photo: Us
       const { storageCleanupPending } = await removeCurrentUserCoverPhoto(coverPhoto, session.access_token)
       setCoverPhoto(null)
       setCoverPhotoUrl(null)
+      onCoverPhotoChange(null)
 
       if (storageCleanupPending) {
         const message = t("Cover photo removed, but storage cleanup needs retry.")
@@ -747,7 +798,7 @@ function ProfileTab({ onProfilePhotoChange }: { onProfilePhotoChange: (photo: Us
 
           <div className="group/cover relative h-[190px] overflow-hidden bg-[color-mix(in_srgb,var(--md-accent)_10%,var(--md-surface-soft))] sm:h-[230px]">
             {coverPhotoUrl ? (
-              <img src={coverPhotoUrl} alt="" className="size-full object-cover" />
+              <img src={coverPhotoUrl} alt="" className="size-full object-cover" loading="eager" fetchPriority="high" decoding="async" />
             ) : (
               <div
                 className="absolute inset-0 opacity-55"
@@ -802,7 +853,7 @@ function ProfileTab({ onProfilePhotoChange }: { onProfilePhotoChange: (photo: Us
               onClick={() => setProfilePhotoDialogOpen(true)}
             >
               <Avatar className="size-[108px] rounded-full bg-[var(--md-surface)] p-[4px] shadow-[0_10px_32px_rgba(11,20,19,0.18)]">
-                {profilePhotoUrl ? <AvatarImage src={profilePhotoUrl} alt="" className="rounded-full object-cover" /> : null}
+                {profilePhotoUrl ? <AvatarImage src={profilePhotoUrl} alt="" className="rounded-full object-cover" loading="eager" fetchPriority="high" /> : null}
                 <AvatarFallback
                   className="rounded-full bg-[var(--md-accent)] text-[28px] font-medium text-[var(--md-accent-ink)]"
                   data-i18n-skip
@@ -2790,49 +2841,44 @@ function BillingTab() {
 }
 
 const aiUsageCategories = [
-  { id: "dexter", label: "Agent Dexter", share: 38, color: "var(--md-ai-cyan)" },
-  { id: "documents", label: "Document extraction", share: 29, color: "var(--md-ai-magenta)" },
-  { id: "drafting", label: "Customer drafting", share: 21, color: "var(--md-ai-gold)" },
-  { id: "analysis", label: "Reporting & analysis", share: 12, color: "var(--md-ai-orange)" },
+  { id: "dexter", label: "Agent Dexter", share: 100, color: "var(--md-ai-cyan)" },
 ]
 
-const aiUsageHistory = [
-  { id: "usage-01", units: 86, feature: "Agent Dexter", detail: "Workspace plan and morning summary", featureId: "dexter", action: "Spent", cost: "Included", date: "29 Jul 2026, 14:08" },
-  { id: "usage-02", units: 54, feature: "Document extraction", detail: "Commercial invoice · MD-22461", featureId: "documents", action: "Spent", cost: "Included", date: "29 Jul 2026, 13:42" },
-  { id: "usage-03", units: 18, feature: "Customer drafting", detail: "Customs delay update · Marlow Apparel", featureId: "drafting", action: "Spent", cost: "Included", date: "29 Jul 2026, 12:16" },
-  { id: "usage-04", units: 32, feature: "Reporting & analysis", detail: "Weekly exception performance", featureId: "analysis", action: "Spent", cost: "Included", date: "29 Jul 2026, 10:04" },
-  { id: "usage-05", units: 54, feature: "Document extraction", detail: "Unreadable packing list · MD-22458", featureId: "documents", action: "Refunded", cost: "Refunded", date: "29 Jul 2026, 09:31" },
-  { id: "usage-06", units: 12, feature: "Agent Dexter", detail: "Lead qualification summary", featureId: "dexter", action: "Spent", cost: "Included", date: "28 Jul 2026, 17:52" },
-  { id: "usage-07", units: 74, feature: "Document extraction", detail: "Customs entry · MD-22454", featureId: "documents", action: "Spent", cost: "EUR 9 extra", date: "28 Jul 2026, 16:18" },
-  { id: "usage-08", units: 22, feature: "Customer drafting", detail: "Quote follow-up · Meridian Medical", featureId: "drafting", action: "Spent", cost: "Included", date: "28 Jul 2026, 14:37" },
-  { id: "usage-09", units: 28, feature: "Reporting & analysis", detail: "Customer health report", featureId: "analysis", action: "Spent", cost: "Included", date: "28 Jul 2026, 11:46" },
-  { id: "usage-10", units: 96, feature: "Agent Dexter", detail: "Background queue review", featureId: "dexter", action: "Spent", cost: "EUR 18 extra", date: "28 Jul 2026, 08:05" },
-  { id: "usage-11", units: 16, feature: "Customer drafting", detail: "Booking confirmation · Fjord Living", featureId: "drafting", action: "Spent", cost: "Included", date: "27 Jul 2026, 17:23" },
-  { id: "usage-12", units: 41, feature: "Document extraction", detail: "Bill of lading · MD-22448", featureId: "documents", action: "Spent", cost: "Included", date: "27 Jul 2026, 15:02" },
-  { id: "usage-13", units: 20, feature: "Reporting & analysis", detail: "Customs hold summary", featureId: "analysis", action: "Spent", cost: "Included", date: "27 Jul 2026, 12:44" },
-  { id: "usage-14", units: 66, feature: "Agent Dexter", detail: "Overnight exception watch", featureId: "dexter", action: "Spent", cost: "EUR 12 extra", date: "27 Jul 2026, 07:58" },
-]
-
-function AiUsageOverview({ onViewHistory }: { onViewHistory: () => void }) {
+function AiUsageOverview({
+  usage,
+  isLoading,
+  error,
+  onRetry,
+  onViewHistory,
+}: {
+  usage: DexterUsage | null
+  isLoading: boolean
+  error: string | null
+  onRetry: () => void
+  onViewHistory: () => void
+}) {
   const { t } = useLanguage()
-  const totalUsage = 10_000
-  const usedUsage = 6_820
-  const remainingUsage = totalUsage - usedUsage
-  const usedPercent = Math.round((usedUsage / totalUsage) * 100)
-  const taskTrend = [
-    { label: "W1", value: 1680 },
-    { label: "W2", value: 1910 },
-    { label: "W3", value: 2140 },
-    { label: "W4", value: 2380 },
-    { label: "W5", value: 2670 },
-    { label: "W6", value: 3030 },
-  ]
-  const maxTaskValue = Math.max(...taskTrend.map((point) => point.value))
+  const totalUsage = usage?.includedActionsLimit ?? 10_000
+  const usedUsage = usage?.actionsUsed ?? 0
+  const remainingUsage = Math.max(0, totalUsage - usedUsage)
+  const usedPercent = Math.min(100, Math.round((usedUsage / Math.max(1, totalUsage)) * 100))
+  const taskTrend = usage?.trend.map((point) => ({
+    label: new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" }).format(new Date(`${point.weekStart}T00:00:00`)),
+    value: point.actions,
+    tokens: point.tokens,
+  })) ?? Array.from({ length: 6 }, (_, index) => ({ label: `W${index + 1}`, value: 0, tokens: 0 }))
+  const maxTaskValue = Math.max(1, ...taskTrend.map((point) => point.value))
+  const latestWeek = taskTrend.at(-1)?.value ?? 0
+  const daysRemaining = Math.max(0, Math.ceil((new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1).getTime() - Date.now()) / 86_400_000))
+  const trackedPercent = Math.min(100, Math.round(((usage?.trackedActions ?? 0) / Math.max(1, usedUsage)) * 100))
+  const totalTokens = usage?.totalTokens ?? 0
+  const inputPercent = totalTokens > 0 ? Math.round(((usage?.inputTokens ?? 0) / totalTokens) * 100) : 0
+  const outputPercent = totalTokens > 0 ? Math.max(0, 100 - inputPercent) : 0
   const metrics: Array<[LucideIcon, string, string, string]> = [
-    [Activity, "Time saved", "42.6 hrs", "+7.4 hrs vs last month"],
-    [BadgeCheck, "Tasks completed", "12,480", "91% accepted without rewrite"],
-    [WandSparkles, "Background actions", "3,806", "Completed by Dexter automatically"],
-    [CreditCard, "Extra usage", "EUR 84", "8% of this month's AI spend"],
+    [Activity, "Dexter actions", usedUsage.toLocaleString(), "Completed this month"],
+    [MessageCircle, "Conversations", (usage?.conversationCount ?? 0).toLocaleString(), "Used this month"],
+    [Cpu, "Input tokens", (usage?.inputTokens ?? 0).toLocaleString(), "Workspace context Dexter reviewed"],
+    [WandSparkles, "Output tokens", (usage?.outputTokens ?? 0).toLocaleString(), "Responses Dexter generated"],
   ]
 
   return (
@@ -2840,48 +2886,67 @@ function AiUsageOverview({ onViewHistory }: { onViewHistory: () => void }) {
       <SettingsPageHeader
         eyebrow="Workspace / AI usage"
         title="AI usage"
-        description="See how Dexter is working across the workspace, what it saves, and where the usage is going."
+        description="See Dexter's current workspace usage, token volume, and recent activity."
         actions={compactAction("Export usage", () => toast.success("AI usage export prepared"))}
       />
 
-      <section className="md-settings-ai-stage relative isolate mt-[var(--md-page-stack-gap)] overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-soft)] sm:p-6">
+      {error ? (
+        <div role="alert" className="mt-[var(--md-page-stack-gap)] flex flex-col gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)] sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Dexter usage is temporarily unavailable")}</p>
+            <p className="mt-1 text-[12px] text-[var(--md-text)]">{t(error)}</p>
+          </div>
+          <Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] px-4 text-[13px] font-medium" onClick={onRetry}>
+            {t("Try again")}
+          </Button>
+        </div>
+      ) : null}
+
+      <section
+        aria-busy={isLoading}
+        className="md-settings-ai-stage relative isolate mt-[var(--md-page-stack-gap)] overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-soft)] sm:p-6"
+      >
         <span className="md-settings-ai-stage__grid" aria-hidden="true" />
         <div className="relative grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)] lg:items-center">
           <div>
-            <SettingsProgressRing value={68} label={t("Monthly AI budget")} detail={t("EUR 1,024 of EUR 1,500 used")} tone="accent" />
+            <SettingsProgressRing
+              value={usedPercent}
+              label={t("Monthly Dexter usage")}
+              detail={`${usedUsage.toLocaleString()} / ${totalUsage.toLocaleString()} ${t("actions")}`}
+              tone="accent"
+            />
             <div className="mt-5 flex flex-wrap gap-2">
-              <StatusPill tone="teal">On track</StatusPill>
-              <span className="rounded-full bg-[var(--md-surface-soft)] px-2.5 py-1 text-[11px] text-[var(--md-text)] shadow-[var(--md-shadow-line)]">12 days left</span>
+              <StatusPill tone={error ? "amber" : isLoading ? "neutral" : "teal"}>
+                {t(error ? "Unavailable" : isLoading ? "Refreshing" : "Live usage")}
+              </StatusPill>
+              <span className="rounded-full bg-[var(--md-surface-soft)] px-2.5 py-1 text-[11px] text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
+                <span className="tabular-nums" data-i18n-skip>{daysRemaining}</span> {t("days left")}
+              </span>
             </div>
           </div>
           <div className="min-w-0">
             <div className="flex items-end justify-between gap-4">
               <div>
-                <p className="text-[12px] text-[var(--md-text)]">AI actions this month</p>
-                <p className="mt-1 text-[28px] font-medium tracking-[-0.03em] tabular-nums text-[var(--md-ink)]" data-i18n-skip>12,480</p>
+                <p className="text-[12px] text-[var(--md-text)]">{t("Dexter actions this month")}</p>
+                <p className="mt-1 text-[28px] font-medium tracking-[-0.03em] tabular-nums text-[var(--md-ink)]" data-i18n-skip>{usedUsage.toLocaleString()}</p>
               </div>
-              <p className="text-end text-[12px] font-medium text-[var(--md-green)]">+18.4% useful output</p>
+              <p className="text-end text-[12px] font-medium text-[var(--md-green)]">
+                <span className="tabular-nums" data-i18n-skip>{(usage?.totalTokens ?? 0).toLocaleString()}</span> {t("tokens processed")}
+              </p>
             </div>
-            <svg viewBox="0 0 520 128" className="mt-4 h-[128px] w-full overflow-visible" role="img" aria-label={t("AI action volume over the last 30 days")}>
-              <defs>
-                <linearGradient id="settings-ai-area" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="var(--md-accent)" stopOpacity="0.2" />
-                  <stop offset="100%" stopColor="var(--md-accent)" stopOpacity="0" />
-                </linearGradient>
-              </defs>
-              <path d="M0 112 C35 102,48 105,76 90 S128 76,153 85 S202 70,231 60 S283 73,309 48 S362 38,389 42 S443 19,520 14 L520 128 L0 128 Z" fill="url(#settings-ai-area)" />
-              <motion.path
-                d="M0 112 C35 102,48 105,76 90 S128 76,153 85 S202 70,231 60 S283 73,309 48 S362 38,389 42 S443 19,520 14"
-                fill="none"
-                stroke="var(--md-accent)"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                pathLength={1}
-                initial={{ pathLength: 0, opacity: 0 }}
-                animate={{ pathLength: 1, opacity: 1 }}
-                transition={mdMotion.morph}
-              />
-            </svg>
+            <div className="mt-4 flex h-[128px] items-end gap-2" role="img" aria-label={t("Dexter action volume over the last six weeks")}>
+              {taskTrend.map((point, index) => (
+                <div key={`${point.label}-${index}`} className="flex h-full min-w-0 flex-1 items-end">
+                  <motion.span
+                    className="block w-full min-h-1 rounded-t-[var(--md-radius-md)] bg-[linear-gradient(180deg,var(--md-accent),color-mix(in_srgb,var(--md-accent)_65%,var(--md-blue)))]"
+                    title={`${point.label}: ${point.value.toLocaleString()} ${t("actions")}, ${point.tokens.toLocaleString()} ${t("tokens")}`}
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: `${Math.max(4, (point.value / maxTaskValue) * 100)}%`, opacity: 1 }}
+                    transition={{ ...mdMotion.morph, delay: index * 0.04 }}
+                  />
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </section>
@@ -2900,7 +2965,7 @@ function AiUsageOverview({ onViewHistory }: { onViewHistory: () => void }) {
               <p className="text-[28px] font-medium tracking-[-0.03em] tabular-nums text-[var(--md-ink)]" dir="ltr" data-i18n-skip>
                 {usedUsage.toLocaleString()}<span className="text-[var(--md-subtle)]">/{totalUsage.toLocaleString()}</span>
               </p>
-              <p className="mt-1 text-[12px] text-[var(--md-text)]">{t("Category mix for this month")}</p>
+              <p className="mt-1 text-[12px] text-[var(--md-text)]">{t("Metered Dexter activity for this month")}</p>
             </div>
             <Button
               type="button"
@@ -2971,7 +3036,7 @@ function AiUsageOverview({ onViewHistory }: { onViewHistory: () => void }) {
       </div>
 
       <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
-        <SettingsPanel title="Tasks completed over time" description="Completed AI work across the last six weeks.">
+        <SettingsPanel title="Dexter actions over time" description="Completed Dexter responses across the last six weeks.">
           <div className="px-5 pb-5 pt-2">
             <div className="flex h-[164px] items-end gap-3 border-b border-[var(--md-line-strong)]">
               {taskTrend.map((point, index) => (
@@ -2990,19 +3055,19 @@ function AiUsageOverview({ onViewHistory }: { onViewHistory: () => void }) {
               <div>
                 <p className="text-[12px] text-[var(--md-text)]">Latest week</p>
                 <p className="mt-1 text-[18px] font-medium text-[var(--md-ink)]">
-                  <span className="tabular-nums" data-i18n-skip>3,030</span> {t("tasks")}
+                  <span className="tabular-nums" data-i18n-skip>{latestWeek.toLocaleString()}</span> {t("actions")}
                 </p>
               </div>
-              <StatusPill tone="teal">+13.5%</StatusPill>
+              <StatusPill tone="teal">Live</StatusPill>
             </div>
           </div>
         </SettingsPanel>
 
-        <SettingsPanel title="Quality and impact" description="Signals that show whether the work is genuinely useful.">
+        <SettingsPanel title="Token usage" description="How Dexter's metered context and responses make up this month's usage.">
           {[
-            ["Accepted without rewrite", "91%", 91],
-            ["Helpful operator rating", "94%", 94],
-            ["Background completion rate", "87%", 87],
+            ["Input tokens", `${inputPercent}%`, inputPercent],
+            ["Output tokens", `${outputPercent}%`, outputPercent],
+            ["Actions with token data", `${trackedPercent}%`, trackedPercent],
           ].map(([label, value, percentage]) => (
             <div key={label as string} className="px-5 py-4">
               <div className="flex items-center justify-between gap-4">
@@ -3021,9 +3086,9 @@ function AiUsageOverview({ onViewHistory }: { onViewHistory: () => void }) {
           ))}
           <div className="grid grid-cols-3 gap-2 bg-[var(--md-surface-soft)] px-5 py-4">
             {[
-              ["Documents parsed", "4,812"],
-              ["Drafts approved", "286"],
-              ["Median response", "2.4s"],
+              ["Total tokens", (usage?.totalTokens ?? 0).toLocaleString()],
+              ["Average per action", Math.round((usage?.totalTokens ?? 0) / Math.max(1, usedUsage)).toLocaleString()],
+              ["Conversations", (usage?.conversationCount ?? 0).toLocaleString()],
             ].map(([label, value]) => (
               <div key={label} className="min-w-0">
                 <p className="text-[15px] font-medium tabular-nums text-[var(--md-ink)]" data-i18n-skip>{value}</p>
@@ -3037,22 +3102,45 @@ function AiUsageOverview({ onViewHistory }: { onViewHistory: () => void }) {
   )
 }
 
-function AiUsageHistoryScreen({ onBack }: { onBack: () => void }) {
+function AiUsageHistoryScreen({
+  usage,
+  isLoading,
+  error,
+  onRetry,
+  onBack,
+}: {
+  usage: DexterUsage | null
+  isLoading: boolean
+  error: string | null
+  onRetry: () => void
+  onBack: () => void
+}) {
   const { t } = useLanguage()
   const [featureFilter, setFeatureFilter] = useState("all")
   const [actionFilter, setActionFilter] = useState("all")
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(6)
+  const aiUsageHistory = (usage?.recentEntries ?? []).map((entry: DexterUsageEntry) => ({
+    id: entry.id,
+    units: entry.totalTokens,
+    feature: "Agent Dexter",
+    detail: entry.title,
+    featureId: "dexter",
+    action: "Spent",
+    cost: "Included",
+    date: new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(entry.createdAt)),
+    inputTokens: entry.inputTokens,
+    outputTokens: entry.outputTokens,
+  }))
   const featureOptions = ["all", ...aiUsageCategories.map((category) => category.id)]
   const featureLabels = Object.fromEntries([
     ["all", t("All features")],
     ...aiUsageCategories.map((category) => [category.id, t(category.label)]),
   ])
-  const actionOptions = ["all", "spent", "refunded"]
+  const actionOptions = ["all", "spent"]
   const actionLabels = {
     all: t("All actions"),
     spent: t("Spent"),
-    refunded: t("Refunded"),
   }
   const filteredUsage = aiUsageHistory.filter((entry) => (
     (featureFilter === "all" || entry.featureId === featureFilter)
@@ -3070,7 +3158,7 @@ function AiUsageHistoryScreen({ onBack }: { onBack: () => void }) {
       <SettingsPageHeader
         eyebrow="Workspace / AI usage / History"
         title="Usage history"
-        description="Review every included action, extra charge, and refund across the workspace."
+        description="Review the latest metered Dexter responses for this workspace."
         actions={compactAction("Back to AI overview", onBack)}
       />
       <section className="mt-[var(--md-page-stack-gap)] overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-soft)]">
@@ -3080,8 +3168,8 @@ function AiUsageHistoryScreen({ onBack }: { onBack: () => void }) {
               <History className="size-4" strokeWidth={1.35} aria-hidden="true" />
             </span>
             <div>
-              <h2 className="text-[16px] font-medium text-[var(--md-ink)]">{t("All workspace usage")}</h2>
-              <p className="mt-0.5 text-[12px] text-[var(--md-text)]">{t("Filter the complete activity ledger by feature or action")}</p>
+              <h2 className="text-[16px] font-medium text-[var(--md-ink)]">{t("Recent Dexter usage")}</h2>
+              <p className="mt-0.5 text-[12px] text-[var(--md-text)]">{t("Filter this month's metered activity by feature or action")}</p>
             </div>
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
@@ -3104,7 +3192,15 @@ function AiUsageHistoryScreen({ onBack }: { onBack: () => void }) {
           </div>
         </div>
 
-        {visibleUsage.length > 0 ? (
+        {error ? (
+          <div role="alert" className="px-6 py-12 text-center">
+            <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Dexter usage is temporarily unavailable")}</p>
+            <p className="mt-1 text-[12px] text-[var(--md-text)]">{t(error)}</p>
+            <Button type="button" variant="ghost" className="mt-4 h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] px-4 text-[13px] font-medium" onClick={onRetry}>
+              {t("Try again")}
+            </Button>
+          </div>
+        ) : visibleUsage.length > 0 ? (
           <>
             <div className="hidden md:block">
               <Table>
@@ -3121,14 +3217,14 @@ function AiUsageHistoryScreen({ onBack }: { onBack: () => void }) {
                   {visibleUsage.map((entry) => (
                     <TableRow key={entry.id} className="h-[72px] border-[rgba(11,20,19,0.055)] hover:bg-[var(--md-hover)]">
                       <TableCell className="px-6 text-[14px] font-medium text-[var(--md-ink)]">
-                        <span className="tabular-nums" data-i18n-skip>{entry.units}</span> {t("actions")}
+                        <span className="tabular-nums" data-i18n-skip>{entry.units.toLocaleString()}</span> {t("tokens")}
                       </TableCell>
                       <TableCell className="max-w-[360px] px-6">
                         <p className="truncate text-[13px] font-medium text-[var(--md-ink)]">{t(entry.feature)}</p>
-                        <p className="mt-0.5 truncate text-[12px] text-[var(--md-text)]">{t(entry.detail)}</p>
+                        <p className="mt-0.5 truncate text-[12px] text-[var(--md-text)]" data-i18n-skip>{entry.detail}</p>
                       </TableCell>
                       <TableCell className="px-6">
-                        <StatusPill tone={entry.action === "Refunded" ? "teal" : "neutral"}>{t(entry.action)}</StatusPill>
+                        <StatusPill tone="neutral">{t(entry.action)}</StatusPill>
                       </TableCell>
                       <TableCell className="px-6 text-[13px] font-medium text-[var(--md-ink)]">{t(entry.cost)}</TableCell>
                       <TableCell className="px-6 text-[13px] tabular-nums text-[var(--md-ink)]" dir="ltr" data-i18n-skip>{entry.date}</TableCell>
@@ -3143,12 +3239,12 @@ function AiUsageHistoryScreen({ onBack }: { onBack: () => void }) {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="truncate text-[13px] font-medium text-[var(--md-ink)]">{t(entry.feature)}</p>
-                      <p className="mt-0.5 text-[12px] leading-5 text-[var(--md-text)]">{t(entry.detail)}</p>
+                      <p className="mt-0.5 text-[12px] leading-5 text-[var(--md-text)]" data-i18n-skip>{entry.detail}</p>
                     </div>
-                    <StatusPill tone={entry.action === "Refunded" ? "teal" : "neutral"}>{t(entry.action)}</StatusPill>
+                    <StatusPill tone="neutral">{t(entry.action)}</StatusPill>
                   </div>
                   <div className="mt-3 grid grid-cols-2 gap-3 text-[12px]">
-                    <p className="font-medium text-[var(--md-ink)]"><span className="tabular-nums" data-i18n-skip>{entry.units}</span> {t("actions")}</p>
+                    <p className="font-medium text-[var(--md-ink)]"><span className="tabular-nums" data-i18n-skip>{entry.units.toLocaleString()}</span> {t("tokens")}</p>
                     <p className="text-end font-medium text-[var(--md-ink)]">{t(entry.cost)}</p>
                     <p className="col-span-2 text-[var(--md-text)]" dir="ltr" data-i18n-skip>{entry.date}</p>
                   </div>
@@ -3158,8 +3254,10 @@ function AiUsageHistoryScreen({ onBack }: { onBack: () => void }) {
           </>
         ) : (
           <div className="px-6 py-12 text-center">
-            <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("No usage matches these filters")}</p>
-            <p className="mt-1 text-[12px] text-[var(--md-text)]">{t("Choose a different feature or action to see more activity.")}</p>
+            <p className="text-[13px] font-medium text-[var(--md-ink)]">{t(isLoading ? "Loading Dexter usage" : "No Dexter usage this month")}</p>
+            <p className="mt-1 text-[12px] text-[var(--md-text)]">
+              {t(isLoading ? "The latest metered activity will appear here shortly." : "Dexter responses will appear here after the first completed request.")}
+            </p>
           </div>
         )}
 
@@ -3182,13 +3280,46 @@ function AiUsageHistoryScreen({ onBack }: { onBack: () => void }) {
 }
 
 function AiUsageTab() {
+  const { t } = useLanguage()
   const readView = () => new URLSearchParams(window.location.search).get("view") === "history" ? "history" : "overview"
   const [view, setView] = useState<"overview" | "history">(readView)
+  const [usage, setUsage] = useState<DexterUsage | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  async function loadUsage() {
+    setIsLoading(true)
+    setError(null)
+    try {
+      setUsage(await getDexterUsage())
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : t("Dexter usage could not be loaded."))
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   useEffect(() => {
     const syncView = () => setView(readView())
     window.addEventListener("popstate", syncView)
     return () => window.removeEventListener("popstate", syncView)
+  }, [])
+
+  useEffect(() => {
+    const refreshUsage = () => void loadUsage()
+    const refreshVisibleUsage = () => {
+      if (document.visibilityState === "visible") refreshUsage()
+    }
+
+    void loadUsage()
+    window.addEventListener(DEXTER_CONVERSATIONS_CHANGED_EVENT, refreshUsage)
+    window.addEventListener("focus", refreshUsage)
+    document.addEventListener("visibilitychange", refreshVisibleUsage)
+    return () => {
+      window.removeEventListener(DEXTER_CONVERSATIONS_CHANGED_EVENT, refreshUsage)
+      window.removeEventListener("focus", refreshUsage)
+      document.removeEventListener("visibilitychange", refreshVisibleUsage)
+    }
   }, [])
 
   useEffect(() => {
@@ -3204,8 +3335,24 @@ function AiUsageTab() {
   }
 
   return view === "history"
-    ? <AiUsageHistoryScreen onBack={() => changeView("overview")} />
-    : <AiUsageOverview onViewHistory={() => changeView("history")} />
+    ? (
+        <AiUsageHistoryScreen
+          usage={usage}
+          isLoading={isLoading}
+          error={error}
+          onRetry={() => void loadUsage()}
+          onBack={() => changeView("overview")}
+        />
+      )
+    : (
+        <AiUsageOverview
+          usage={usage}
+          isLoading={isLoading}
+          error={error}
+          onRetry={() => void loadUsage()}
+          onViewHistory={() => changeView("history")}
+        />
+      )
 }
 
 function BrandingTab() {
@@ -3734,14 +3881,27 @@ function SupportTab() {
 
 function TabContent({
   activeTab,
+  currentUser,
+  profileMediaUrls,
   onProfilePhotoChange,
+  onCoverPhotoChange,
 }: {
   activeTab: SettingsSectionId
+  currentUser?: AuthUserSummary | null
+  profileMediaUrls: ProfileMediaUrls
   onProfilePhotoChange: (photo: UserProfilePhoto | null) => void
+  onCoverPhotoChange: (photo: UserProfilePhoto | null) => void
 }) {
   switch (activeTab) {
     case "profile":
-      return <ProfileTab onProfilePhotoChange={onProfilePhotoChange} />
+      return (
+        <ProfileTab
+          currentUser={currentUser}
+          profileMediaUrls={profileMediaUrls}
+          onProfilePhotoChange={onProfilePhotoChange}
+          onCoverPhotoChange={onCoverPhotoChange}
+        />
+      )
     case "security":
       return <SecurityTab />
     case "customisation":
@@ -3761,16 +3921,29 @@ function TabContent({
     case "support":
       return <SupportTab />
     default:
-      return <ProfileTab onProfilePhotoChange={onProfilePhotoChange} />
+      return (
+        <ProfileTab
+          currentUser={currentUser}
+          profileMediaUrls={profileMediaUrls}
+          onProfilePhotoChange={onProfilePhotoChange}
+          onCoverPhotoChange={onCoverPhotoChange}
+        />
+      )
   }
 }
 
 export function SettingsPage({
   navigate,
+  currentUser,
+  profileMediaUrls,
   onProfilePhotoChange,
+  onCoverPhotoChange,
 }: {
   navigate: (path: string) => void
+  currentUser?: AuthUserSummary | null
+  profileMediaUrls: ProfileMediaUrls
   onProfilePhotoChange: (photo: UserProfilePhoto | null) => void
+  onCoverPhotoChange: (photo: UserProfilePhoto | null) => void
 }) {
   const shouldReduceMotion = useReducedMotion()
   const [activeTab, setActiveTab] = useState<SettingsSectionId>(readSettingsSectionFromUrl)
@@ -3806,7 +3979,13 @@ export function SettingsPage({
               exit={shouldReduceMotion ? undefined : { opacity: 0, y: -5, filter: "blur(2px)" }}
               transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.smooth)}
             >
-              <TabContent activeTab={activeItem.id} onProfilePhotoChange={onProfilePhotoChange} />
+              <TabContent
+                activeTab={activeItem.id}
+                currentUser={currentUser}
+                profileMediaUrls={profileMediaUrls}
+                onProfilePhotoChange={onProfilePhotoChange}
+                onCoverPhotoChange={onCoverPhotoChange}
+              />
             </motion.div>
           </AnimatePresence>
         </div>

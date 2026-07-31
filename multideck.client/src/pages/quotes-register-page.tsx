@@ -151,15 +151,22 @@ export function QuotesRegisterPage({ navigate }: { navigate: (path: string) => v
   }, [language, t])
 
   return (
-    <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t("Quotes")} className="md-page md-page-stack">
-      <header className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-        <div>
-          <h1 className="text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">{t("Quotes")}</h1>
-          <p className="mt-2 max-w-2xl text-[14px] leading-6 text-[var(--md-text)]">
-            {t("Search, review and open every customer quote from one place.")}
-          </p>
+    <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t("Quotes")} className="md-page md-page-stack-compact">
+      <header className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+        <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:gap-5">
+          <h1 className="shrink-0 text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">{t("Quotes")}</h1>
+          <div className="min-w-0 text-[12px] leading-5">
+            <p className="font-medium text-[var(--md-text)]">
+              {t("Quote register")} · <span data-i18n-skip dir="ltr">{new Intl.NumberFormat(language).format(filteredQuotes.length)}</span> {t("quotes")}
+            </p>
+            <p className="text-[var(--md-subtle)]">
+              {t("Search, review and open every customer quote from one place.")}
+            </p>
+          </div>
         </div>
-        <DexterActionPill onClick={() => setDexterOpen(true)} />
+        <div className="lg:justify-self-end">
+          <DexterActionPill onClick={() => setDexterOpen(true)} />
+        </div>
       </header>
 
       {advancedSearchOpen ? <QuoteSearchBuilder value={search} onChange={setSearch} /> : null}

@@ -195,6 +195,8 @@
   --md-amber: #dd8a2b;
   --md-amber-strong: #b86108;
   --md-red: #d14e4e;
+  --md-comparison-positive: #19754f;
+  --md-comparison-negative: #c34854;
   --md-blue: #4a7d9c;
   --md-ai-cyan: #219ebc;
   --md-ai-magenta: #c95ccb;
@@ -224,6 +226,16 @@
   --md-report-preview-hover-bg: #e9edeb;
   --md-report-donut-hole: inset 0 0 0 8px #f1f3f2;
   --md-composer-inner-bg: rgba(255, 255, 255, 0.94);
+  /* The frame behind the shared Dexter shader. Kept a step deeper than the
+     prompt panel so the panel reads as lifted out of the agent treatment. */
+  --md-composer-shell-bg: #edf0ef;
+  /* Opaque on purpose: the shader belongs only to the header, never the
+     prompt field. */
+  --md-composer-panel-bg: #ffffff;
+  --md-composer-panel-line: rgba(11, 20, 19, 0.05);
+  --md-mention-bg: color-mix(in srgb, var(--md-accent-tint) 11%, #ffffff);
+  --md-mention-stroke: var(--md-accent-deep);
+  --md-mention-text: var(--md-accent-deep);
 
   --md-sidebar-width: 264px;
   --md-sidebar-collapsed-width: 56px;
@@ -324,6 +336,8 @@
   --md-amber: #e5a34c;
   --md-amber-strong: #f0bb6c;
   --md-red: #e07373;
+  --md-comparison-positive: #72d9ad;
+  --md-comparison-negative: #ff8d98;
   --md-blue: #7fb0cf;
   --md-ai-cyan: #38bdf8;
   --md-ai-magenta: #e264e2;
@@ -353,6 +367,12 @@
   --md-report-preview-hover-bg: color-mix(in srgb, var(--md-surface-soft) 94%, transparent);
   --md-report-donut-hole: inset 0 0 0 8px color-mix(in srgb, var(--md-surface-soft) 94%, transparent);
   --md-composer-inner-bg: color-mix(in srgb, var(--md-surface-soft) 90%, transparent);
+  --md-composer-shell-bg: #131618;
+  --md-composer-panel-bg: #1e2123;
+  --md-composer-panel-line: rgba(255, 255, 255, 0.075);
+  --md-mention-bg: color-mix(in srgb, var(--md-accent-deep) 78%, var(--md-surface));
+  --md-mention-stroke: var(--md-accent);
+  --md-mention-text: var(--md-accent-lift-strong);
   --md-premium-stroke: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.24);
   --md-premium-stroke-soft: var(--md-premium-stroke);
   --md-stroke-top: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 -1px 0 rgba(0, 0, 0, 0.24);
@@ -463,6 +483,73 @@
   --md-accent-veil-cast-a18: color-mix(in srgb, color-mix(in srgb, var(--md-accent-deep) 60%, #000000) 18%, transparent);
   /* One step below `--md-accent-abyss`, for panels that sit behind a lit shader. */
   --md-accent-abyss-deep: color-mix(in srgb, var(--md-accent-abyss) 78%, #000000);
+}
+
+/* Email marketing is a scanning surface: every delivery-status pill shares one
+   compact footprint so labels stay aligned down the register. */
+.md-email-status-pill {
+  justify-content: center;
+  text-align: center;
+}
+
+.md-email-status-pill.md-email-status-pill--subscribed {
+  background: color-mix(in srgb, var(--md-comparison-positive) 14%, var(--md-surface));
+  color: var(--md-comparison-positive);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--md-comparison-positive) 18%, transparent);
+}
+
+.md-email-status-pill.md-email-status-pill--unsubscribed {
+  background: color-mix(in srgb, var(--md-red) 12%, var(--md-surface));
+  color: var(--md-red);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--md-red) 16%, transparent);
+}
+
+.md-email-status-pill.md-email-status-pill--bounced {
+  background: color-mix(in srgb, var(--md-subtle) 12%, var(--md-surface));
+  color: var(--md-text);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--md-subtle) 16%, transparent);
+}
+
+.md-email-status-pill.md-email-status-pill--pending {
+  background: color-mix(in srgb, var(--md-amber) 13%, var(--md-surface));
+  color: var(--md-amber-strong);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--md-amber) 17%, transparent);
+}
+
+.md-email-status-pill.md-email-status-pill--replied {
+  background: color-mix(in srgb, var(--md-blue) 13%, var(--md-surface));
+  color: var(--md-blue);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--md-blue) 17%, transparent);
+}
+
+.dark .md-email-status-pill.md-email-status-pill--subscribed {
+  background: color-mix(in srgb, var(--md-comparison-positive) 24%, #03140f);
+  color: var(--md-comparison-positive);
+  box-shadow: none;
+}
+
+.dark .md-email-status-pill.md-email-status-pill--unsubscribed {
+  background: color-mix(in srgb, var(--md-red) 26%, #140407);
+  color: #ff9da5;
+  box-shadow: none;
+}
+
+.dark .md-email-status-pill.md-email-status-pill--bounced {
+  background: color-mix(in srgb, var(--md-subtle) 28%, #151719);
+  color: #c7cfcc;
+  box-shadow: none;
+}
+
+.dark .md-email-status-pill.md-email-status-pill--pending {
+  background: color-mix(in srgb, var(--md-amber) 26%, #1b1003);
+  color: #f4c16c;
+  box-shadow: none;
+}
+
+.dark .md-email-status-pill.md-email-status-pill--replied {
+  background: color-mix(in srgb, var(--md-blue) 30%, #06131c);
+  color: #91c5e3;
+  box-shadow: none;
 }
 
 /* Armed only while an accent change is in flight, then dropped. Leaving it on
@@ -617,7 +704,6 @@ html[dir="rtl"] textarea {
   unicode-bidi: plaintext;
 }
 
-button,
 input,
 textarea,
 select {
@@ -626,6 +712,10 @@ select {
 
 button {
   cursor: pointer;
+  font-family: inherit;
+  font-feature-settings: inherit;
+  font-variation-settings: inherit;
+  letter-spacing: inherit;
 }
 
 .md-dropdown-content {
@@ -790,6 +880,22 @@ button {
   transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/* Light mode needs the same clear group boundary as the dark sidebar, but with
+   the tenant accent instead of a neutral outline. This pseudo-element leaves
+   the existing dark treatment entirely unchanged. */
+:root:not(.dark) .md-sidebar-expanded-options {
+  position: relative;
+}
+
+:root:not(.dark) .md-sidebar-expanded-options::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-accent) 34%, transparent);
+  pointer-events: none;
+}
+
 /* ── Sidebar row affordance arrows ───────────────────────────────────────────
    `branch` rows open another sidebar pane, `group` rows unfold in place. Both
    sit in the same fixed 20px trailing slot, so the glyphs share one optical
@@ -875,6 +981,894 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
 
 .md-sidebar-menu-item[data-highlighted] .md-sidebar-menu-item__icon {
   transform: translateY(-1px) scale(1.08);
+}
+
+/* ── Composer Dexter bloom ─────────────────────────────────────────────────
+   One full-shell canvas supplies both treatments: the visible header is the
+   fill, while the opaque prompt panel masks the centre and leaves the same
+   shader moving around its side and bottom gutters as a continuous stroke. */
+.md-composer-bloom {
+  isolation: isolate;
+  background: var(--md-accent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 0 0 1px var(--md-accent-deep-a16),
+    0 18px 44px rgba(42, 52, 50, 0.12);
+}
+
+.md-composer-bloom__shader {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  pointer-events: none;
+  contain: paint;
+  transform: scale(1.04);
+}
+
+.md-composer-bloom__shader,
+.md-composer-bloom__shader > *,
+.md-composer-bloom__shader canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.md-composer-bloom__contrast {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(110deg, var(--md-accent-veil-near), var(--md-accent-veil-mid) 56%, var(--md-accent-veil-far));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-composer-bloom__shader {
+    transform: none;
+  }
+}
+
+/* ── Composer chips ──────────────────────────────────────────────────────────
+   The role, model and attach controls. All three are the same object at
+   different widths, so the surface, the press and the caret lean are declared
+   once here instead of three times in Tailwind strings.
+
+   The chip sits on frosted glass because the role chip lives over the shader:
+   a flat fill would either wash the pattern out or lose its own edge. */
+.md-composer-chip {
+  position: relative;
+  background: color-mix(in srgb, var(--md-surface) 76%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--md-surface) 60%, transparent),
+    0 1px 2px rgba(11, 20, 19, 0.05),
+    0 0 0 1px rgba(11, 20, 19, 0.05);
+  backdrop-filter: blur(10px) saturate(1.4);
+  /* Arriving decelerates and leaving is shorter, so a chip never feels like it
+     rebounds off the cursor. */
+  transition:
+    background-color 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    scale 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.dark .md-composer-chip {
+  background: color-mix(in srgb, var(--md-surface) 66%, transparent);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.09),
+    0 1px 2px rgba(0, 0, 0, 0.22),
+    0 0 0 1px rgba(0, 0, 0, 0.18);
+}
+
+.md-composer-chip:hover,
+.md-composer-chip[data-state="open"] {
+  background: color-mix(in srgb, var(--md-surface) 94%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--md-surface) 80%, transparent),
+    0 2px 6px rgba(11, 20, 19, 0.07),
+    0 0 0 1px var(--md-accent-a18);
+}
+
+.dark .md-composer-chip:hover,
+.dark .md-composer-chip[data-state="open"] {
+  background: color-mix(in srgb, var(--md-surface) 92%, transparent);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 2px 8px rgba(0, 0, 0, 0.26),
+    0 0 0 1px var(--md-accent-a22);
+}
+
+.md-composer-chip:active {
+  scale: 0.972;
+  transition-duration: 90ms;
+}
+
+.md-composer-chip:focus-visible {
+  outline: none;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--md-surface) 80%, transparent),
+    0 0 0 3px var(--md-accent-a20);
+}
+
+/* The role control is the one chip that sits on the pattern, so it carries no
+   surface of its own until it is reached for — a resting fill there would punch
+   a hole in the texture the band exists to show. */
+.md-composer-lead {
+  position: relative;
+  background: transparent;
+  transition:
+    background-color 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    scale 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-composer-lead:hover,
+.md-composer-lead[data-state="open"] {
+  background: color-mix(in srgb, var(--md-surface) 72%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--md-surface) 56%, transparent),
+    0 1px 3px rgba(11, 20, 19, 0.06);
+}
+
+.dark .md-composer-lead:hover,
+.dark .md-composer-lead[data-state="open"] {
+  background: color-mix(in srgb, var(--md-surface) 78%, transparent);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1),
+    0 1px 3px rgba(0, 0, 0, 0.26);
+}
+
+.md-composer-lead:active {
+  scale: 0.976;
+  transition-duration: 90ms;
+}
+
+.md-composer-lead:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, var(--md-surface) 88%, transparent);
+  box-shadow: 0 0 0 3px var(--md-accent-a20);
+}
+
+.md-dexter-role-container {
+  container-type: inline-size;
+}
+
+.md-dexter-role-menu--compact {
+  display: inline-flex;
+}
+
+.md-dexter-role-menu--wide {
+  display: none;
+}
+
+@container (min-width: 700px) {
+  .md-dexter-role-menu--compact {
+    display: none;
+  }
+
+  .md-dexter-role-menu--wide {
+    display: flex;
+  }
+}
+
+.md-dexter-role-strip {
+  scrollbar-width: none;
+  mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 28px), transparent 100%);
+}
+
+.md-dexter-role-strip::-webkit-scrollbar {
+  display: none;
+}
+
+[dir="rtl"] .md-dexter-role-strip {
+  mask-image: linear-gradient(to left, #000 0, #000 calc(100% - 28px), transparent 100%);
+}
+
+.md-dexter-role-option {
+  background: color-mix(in srgb, var(--md-surface) 20%, transparent);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(10px) saturate(1.15);
+  transition:
+    background-color 160ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-dexter-role-option:hover {
+  background: color-mix(in srgb, var(--md-surface) 34%, transparent);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.2),
+    0 2px 8px rgba(11, 20, 19, 0.08);
+}
+
+.md-dexter-role-option:focus-visible {
+  background: color-mix(in srgb, var(--md-surface) 38%, transparent);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.2),
+    0 0 0 3px var(--md-accent-a24);
+}
+
+.dark .md-dexter-role-option {
+  background: color-mix(in srgb, var(--md-surface) 62%, transparent);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.dark .md-dexter-role-option:hover,
+.dark .md-dexter-role-option:focus-visible {
+  background: color-mix(in srgb, var(--md-surface) 82%, transparent);
+}
+
+.md-composer-chip__caret {
+  transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Opening leads fast and coasts into the stop, so the half turn lands with the
+   menu rather than clicking over before it. */
+.md-composer-chip[data-state="open"] .md-composer-chip__caret {
+  transform: rotate(180deg);
+  transition-timing-function: cubic-bezier(0.22, 0.86, 0.2, 1);
+  transition-duration: 300ms;
+}
+
+/* The prompt box itself brightens its ring while the caret is in the field —
+   the only cue that Enter is armed. */
+.md-composer {
+  transition: box-shadow 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-composer:focus-within {
+  box-shadow:
+    0 0 0 1px var(--md-accent-a48),
+    0 22px 52px rgba(42, 52, 50, 0.16),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.92);
+}
+
+.dark .md-composer:focus-within {
+  box-shadow:
+    0 0 0 1px var(--md-accent-a48),
+    0 22px 52px rgba(0, 0, 0, 0.34),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+/* ── Dexter inline mentions ──────────────────────────────────────────────────
+   A selected workspace object keeps the footprint of text, but becomes a
+   durable reference. Light mode uses the pale fill/deep edge pairing; dark mode
+   reverses that contrast so the edge remains lit against a deep accent fill. */
+.md-dexter-mention-editor {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  caret-color: var(--md-accent);
+}
+
+.md-dexter-mention-editor:empty::before {
+  color: var(--md-subtle);
+  content: attr(data-placeholder);
+  opacity: var(--md-placeholder-opacity);
+  pointer-events: none;
+}
+
+.md-dexter-mention {
+  display: inline-block;
+  margin-inline: 2px;
+  padding-inline: 6px;
+  border-radius: 7px;
+  background: var(--md-mention-bg);
+  box-shadow: inset 0 0 0 1px var(--md-mention-stroke);
+  color: var(--md-mention-text);
+  font-weight: 500;
+  line-height: 21px;
+  unicode-bidi: isolate;
+  vertical-align: 1px;
+  animation: md-dexter-mention-settle 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-dexter-mention::selection {
+  background: var(--md-accent-a32);
+}
+
+.md-dexter-mention--static {
+  animation: none;
+}
+
+.md-dexter-mention-menu {
+  box-shadow:
+    var(--md-premium-stroke),
+    0 18px 42px rgba(42, 52, 50, 0.16);
+}
+
+.dark .md-dexter-mention-menu {
+  box-shadow:
+    var(--md-premium-stroke),
+    0 20px 48px rgba(0, 0, 0, 0.38);
+}
+
+@keyframes md-dexter-mention-settle {
+  from {
+    opacity: 0.45;
+    transform: scale(0.94);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-composer-chip,
+  .md-composer-lead,
+  .md-composer-chip__caret,
+  .md-composer,
+  .md-dexter-mention {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* ── Progressive blur veil ───────────────────────────────────────────────────
+   The band that dissolves whatever scrolls under a floating header or composer.
+   Three `backdrop-filter` passes with compounding radii, each masked to a
+   shallower depth than the last, plus a colour fade on top: near the edge the
+   sum of the three is a heavy blur landing on solid background, and by the far
+   side of the band every layer has already masked itself out, so the ramp has no
+   step in it and no hard line where it ends.
+
+   Radii and mask depths are the whole design here — they are tuned as a set. The
+   masks are written against a direction variable so one set of rules serves both
+   edges; `to bottom` starts the gradient at the top edge, `to top` at the bottom
+   one, which is the edge the veil is pinned to in each case.
+
+   Height and fade colour are read from custom properties *with fallbacks* rather
+   than declared here: these rules are unlayered, so a declaration in this block
+   would outrank the Tailwind arbitrary-property class a caller uses to override
+   it. Callers set `--md-progressive-blur-height` / `--md-progressive-blur-tint`.
+
+   Nothing in here animates or transitions, so the layers stay off the
+   compositor's dirty list and only re-rasterise when content behind them
+   actually moves. */
+.md-progressive-blur {
+  position: absolute;
+  inset-inline: 0;
+  z-index: 1;
+  display: block;
+  height: var(--md-progressive-blur-height, 96px);
+}
+
+.md-progressive-blur[data-edge="top"] {
+  top: var(--md-progressive-blur-offset, 0px);
+  --md-progressive-blur-dir: to bottom;
+}
+
+.md-progressive-blur[data-edge="bottom"] {
+  bottom: var(--md-progressive-blur-offset, 0px);
+  --md-progressive-blur-dir: to top;
+}
+
+.md-progressive-blur > span {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+.md-progressive-blur > span:nth-child(1) {
+  backdrop-filter: blur(1px);
+  -webkit-backdrop-filter: blur(1px);
+  mask-image: linear-gradient(var(--md-progressive-blur-dir), #000 0, #000 54%, transparent 100%);
+  -webkit-mask-image: linear-gradient(var(--md-progressive-blur-dir), #000 0, #000 54%, transparent 100%);
+}
+
+.md-progressive-blur > span:nth-child(2) {
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  mask-image: linear-gradient(var(--md-progressive-blur-dir), #000 0, #000 28%, transparent 70%);
+  -webkit-mask-image: linear-gradient(var(--md-progressive-blur-dir), #000 0, #000 28%, transparent 70%);
+}
+
+.md-progressive-blur > span:nth-child(3) {
+  backdrop-filter: blur(9px);
+  -webkit-backdrop-filter: blur(9px);
+  mask-image: linear-gradient(var(--md-progressive-blur-dir), #000 0, #000 10%, transparent 42%);
+  -webkit-mask-image: linear-gradient(var(--md-progressive-blur-dir), #000 0, #000 10%, transparent 42%);
+}
+
+/* The fade itself. `page` lands on the app background — text passing under the
+   band goes to nothing rather than to a blurred smear. `rail` leaves the colour
+   to the caller, for a band over a surface that is not the page. */
+.md-progressive-blur[data-tone="page"] .md-progressive-blur__tint {
+  background: linear-gradient(
+    var(--md-progressive-blur-dir),
+    var(--md-progressive-blur-tint, var(--md-bg)) 0,
+    /* Held near-solid across the first third: that is the strip the header's own
+       name and role sit on, and a ghost of a reply behind them is the one thing
+       that would make the band read as dirty rather than deep. */
+    var(--md-progressive-blur-tint, var(--md-bg)) 26%,
+    color-mix(in srgb, var(--md-progressive-blur-tint, var(--md-bg)) 82%, transparent) 46%,
+    color-mix(in srgb, var(--md-progressive-blur-tint, var(--md-bg)) 34%, transparent) 74%,
+    transparent 100%
+  );
+}
+
+.md-progressive-blur[data-tone="rail"] .md-progressive-blur__tint {
+  background: linear-gradient(
+    var(--md-progressive-blur-dir),
+    color-mix(in srgb, var(--md-progressive-blur-tint, var(--md-bg)) 94%, transparent) 0,
+    color-mix(in srgb, var(--md-progressive-blur-tint, var(--md-bg)) 88%, transparent) 30%,
+    color-mix(in srgb, var(--md-progressive-blur-tint, var(--md-bg)) 52%, transparent) 58%,
+    color-mix(in srgb, var(--md-progressive-blur-tint, var(--md-bg)) 18%, transparent) 78%,
+    transparent 100%
+  );
+}
+
+/* ── Dexter watch rail ───────────────────────────────────────────────────────
+   The monitor cards float on the page rather than sitting in a panel: no rail
+   background, no dividers, just a lifted surface each. Deliberately no
+   `backdrop-filter` — the cards sit on flat page background where frosting buys
+   nothing, and they scroll, so a per-card backdrop pass would re-rasterise on
+   every frame for no visible gain. The veil above them does the blurring. */
+.md-watch-card {
+  position: relative;
+  background: color-mix(in srgb, var(--md-surface) 86%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--md-surface) 70%, transparent),
+    0 1px 2px rgba(11, 20, 19, 0.04),
+    0 8px 20px rgba(42, 52, 50, 0.06),
+    0 0 0 1px rgba(11, 20, 19, 0.045);
+  /* Lift arrives on a decelerating curve and leaves faster, so a card never
+     feels like it bounces off the cursor on the way out. */
+  transition:
+    background-color 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    translate 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    scale 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.dark .md-watch-card {
+  background: color-mix(in srgb, var(--md-surface) 78%, transparent);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.07),
+    0 1px 2px rgba(0, 0, 0, 0.2),
+    0 10px 26px rgba(0, 0, 0, 0.26);
+}
+
+.md-watch-card:hover {
+  translate: 0 -2px;
+  background: color-mix(in srgb, var(--md-surface) 98%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--md-surface) 84%, transparent),
+    0 2px 4px rgba(11, 20, 19, 0.05),
+    0 16px 34px rgba(42, 52, 50, 0.1),
+    0 0 0 1px var(--md-accent-a14);
+}
+
+.dark .md-watch-card:hover {
+  background: color-mix(in srgb, var(--md-surface) 96%, transparent);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1),
+    0 2px 6px rgba(0, 0, 0, 0.24),
+    0 18px 40px rgba(0, 0, 0, 0.32),
+    0 0 0 1px var(--md-accent-a18);
+}
+
+.md-watch-card:active {
+  translate: 0 -1px;
+  scale: 0.988;
+  transition-duration: 110ms;
+}
+
+/* The open card holds the lift rather than dropping back when the pointer moves
+   on to the detail pane it just opened — the pane has to be attributable to a
+   row, and it is the only thing marking which. */
+.md-watch-card[data-active="true"] {
+  translate: 0 -2px;
+  background: color-mix(in srgb, var(--md-surface) 100%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--md-surface) 86%, transparent),
+    0 2px 4px rgba(11, 20, 19, 0.05),
+    0 16px 34px rgba(42, 52, 50, 0.1),
+    0 0 0 1px var(--md-accent-a28);
+}
+
+.dark .md-watch-card[data-active="true"] {
+  background: color-mix(in srgb, var(--md-surface) 100%, transparent);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 2px 6px rgba(0, 0, 0, 0.24),
+    0 18px 40px rgba(0, 0, 0, 0.32),
+    0 0 0 1px var(--md-accent-a32);
+}
+
+/* Open means "click again to close", so the affordance turns to face the list. */
+.md-watch-card[data-active="true"] .md-watch-card__go {
+  opacity: 1;
+  translate: 0 0;
+  rotate: 180deg;
+}
+
+.md-watch-card:focus-visible {
+  outline: none;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--md-surface) 84%, transparent),
+    0 0 0 3px var(--md-accent-a20);
+}
+
+/* The arrow only exists once a card is reached for. It slides from behind the
+   card's own metadata, so the reveal reads as the card opening rather than an
+   icon blinking on. */
+.md-watch-card__go {
+  opacity: 0;
+  translate: -4px 0;
+  rotate: 0deg;
+  transition:
+    opacity 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    translate 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    /* The half turn leads and coasts, so it lands with the pane rather than
+       clicking over before it has finished widening. */
+    rotate 300ms cubic-bezier(0.22, 0.86, 0.2, 1);
+}
+
+.md-watch-card:hover .md-watch-card__go,
+.md-watch-card:focus-visible .md-watch-card__go {
+  opacity: 1;
+  translate: 0 0;
+}
+
+/* The live dot's halo. One slow breath, only on monitors that are actually
+   armed — a pulse on everything would read as a page-wide loading state. */
+.md-watch-dot::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.24;
+  animation: md-watch-dot-breathe 2.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes md-watch-dot-breathe {
+  0%,
+  100% {
+    opacity: 0.2;
+    transform: scale(0.86);
+  }
+
+  50% {
+    opacity: 0;
+    transform: scale(1.5);
+  }
+}
+
+/* ── Dexter history rows ─────────────────────────────────────────────────────
+   One line each, so the rail can be narrow and still scan. The timestamp is
+   held in the layout at zero opacity rather than mounted on hover: revealing it
+   must not reflow the title mid-hover. */
+.md-history-row {
+  transition:
+    background-color 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    color 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    scale 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* The current row keeps its own solid fill on hover. These rules are unlayered,
+   so an unqualified `:hover` would outrank the Tailwind background the active row
+   carries and knock it back to a wash the moment the pointer crossed it. */
+.md-history-row:not([data-active="true"]):hover {
+  background: color-mix(in srgb, var(--md-surface) 62%, transparent);
+}
+
+.dark .md-history-row:not([data-active="true"]):hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.md-history-row:active {
+  scale: 0.986;
+  transition-duration: 90ms;
+}
+
+.md-history-row:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--md-accent-a36);
+}
+
+.md-history-row__time {
+  opacity: 0;
+  transition: opacity 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-history-row:hover .md-history-row__time,
+.md-history-row:focus-visible .md-history-row__time,
+.md-history-row[data-active="true"] .md-history-row__time {
+  opacity: 1;
+}
+
+/* The current row's marker grows out of the leading edge rather than appearing at
+   full height, so moving between rows reads as one mark travelling instead of two
+   blinking. `scaleY` only — nothing here reflows the title beside it. */
+.md-history-row__rail {
+  background: var(--md-accent);
+  transform: scaleY(0);
+  opacity: 0;
+  transition:
+    transform 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-history-row[data-active="true"] .md-history-row__rail {
+  transform: scaleY(1);
+  opacity: 1;
+}
+
+/* ── Dexter watch rail shell ─────────────────────────────────────────────────
+   The conversation continues below this floating surface. A dedicated 72px
+   strip on the conversation-facing edge fades the glass itself, not just its
+   colour, so blur, saturation and tint arrive as one continuous material. */
+.md-watch-rail-shell {
+  --md-watch-glass-dir: to right;
+  --md-watch-glass-near: color-mix(in srgb, var(--md-surface) 18%, transparent);
+  --md-watch-glass-mid: color-mix(in srgb, var(--md-surface) 48%, transparent);
+  --md-watch-glass-far: color-mix(in srgb, var(--md-surface) 78%, transparent);
+}
+
+[dir="rtl"] .md-watch-rail-shell {
+  --md-watch-glass-dir: to left;
+}
+
+/* One material for fade, detail and list. The long, irregularly spaced ramp
+   avoids the visible knee created when tint, blur and mask all reach full
+   strength at the same short stop. */
+.md-watch-rail-surface {
+  background: linear-gradient(
+    var(--md-watch-glass-dir),
+    transparent 0,
+    color-mix(in srgb, var(--md-watch-glass-near) 44%, transparent) 22px,
+    var(--md-watch-glass-near) 46px,
+    color-mix(in srgb, var(--md-watch-glass-mid) 72%, transparent) 78px,
+    var(--md-watch-glass-mid) 102px,
+    var(--md-watch-glass-far) 128px,
+    var(--md-watch-glass-far) 100%
+  );
+  -webkit-backdrop-filter: blur(24px) saturate(1.18);
+  backdrop-filter: blur(24px) saturate(1.18);
+  mask-image: linear-gradient(
+    var(--md-watch-glass-dir),
+    transparent 0,
+    rgba(0, 0, 0, 0.04) 18px,
+    rgba(0, 0, 0, 0.14) 38px,
+    rgba(0, 0, 0, 0.34) 66px,
+    rgba(0, 0, 0, 0.62) 94px,
+    rgba(0, 0, 0, 0.86) 114px,
+    #000 128px
+  );
+  -webkit-mask-image: linear-gradient(
+    var(--md-watch-glass-dir),
+    transparent 0,
+    rgba(0, 0, 0, 0.04) 18px,
+    rgba(0, 0, 0, 0.14) 38px,
+    rgba(0, 0, 0, 0.34) 66px,
+    rgba(0, 0, 0, 0.62) 94px,
+    rgba(0, 0, 0, 0.86) 114px,
+    #000 128px
+  );
+}
+
+.dark .md-watch-rail-shell {
+  --md-watch-glass-near: color-mix(in srgb, var(--md-surface) 14%, transparent);
+  --md-watch-glass-mid: color-mix(in srgb, var(--md-surface) 42%, transparent);
+  --md-watch-glass-far: color-mix(in srgb, var(--md-surface) 66%, transparent);
+}
+
+/* ── Dexter watch rail ───────────────────────────────────────────────────────
+   A faint accent wash sits above the neutral glass. It contains no page colour,
+   so it cannot turn the translucent rail back into an opaque side panel. */
+.md-watch-rail__wash {
+  --md-watch-wash-dir: to right;
+  position: absolute;
+  inset: 0;
+  display: block;
+  background: linear-gradient(
+    var(--md-watch-wash-dir),
+    transparent 0%,
+    var(--md-accent-a04) 46%,
+    var(--md-accent-a08) 100%
+  );
+  mask-image: linear-gradient(var(--md-watch-wash-dir), transparent 0%, rgba(0, 0, 0, 0.5) 34%, #000 100%);
+  -webkit-mask-image: linear-gradient(var(--md-watch-wash-dir), transparent 0%, rgba(0, 0, 0, 0.5) 34%, #000 100%);
+}
+
+[dir="rtl"] .md-watch-rail__wash {
+  --md-watch-wash-dir: to left;
+}
+
+/* The severity dot doubles as the liveness cue. `currentColor` carries the tone
+   so the halo, the fill and the ring stay in step from one declaration. */
+.md-watch-dot {
+  position: relative;
+  display: block;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 15%, transparent);
+}
+
+/* Offset per card, so four armed monitors never breathe in unison. */
+.md-watch-dot::after {
+  animation-delay: var(--md-watch-delay, 0s);
+}
+
+.md-watch-card__meta {
+  border-top: 1px solid color-mix(in srgb, var(--md-ink) 6%, transparent);
+}
+
+/* ── Dexter conversation header ──────────────────────────────────────────────
+   Name and role, floating on the veil. The actions hold their labels folded away
+   until the pointer arrives, so the band stays quiet at rest. */
+.md-dexter-header-action {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding-inline: 7px;
+  border-radius: 999px;
+  color: var(--md-text);
+  transition:
+    background-color 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    color 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    scale 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-dexter-header-action:hover,
+.md-dexter-header-action:focus-visible {
+  background: color-mix(in srgb, var(--md-surface) 76%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--md-surface) 62%, transparent),
+    0 1px 2px rgba(11, 20, 19, 0.05),
+    0 0 0 1px rgba(11, 20, 19, 0.04);
+  color: var(--md-ink);
+  outline: none;
+}
+
+.dark .md-dexter-header-action:hover,
+.dark .md-dexter-header-action:focus-visible {
+  background: color-mix(in srgb, var(--md-surface) 84%, transparent);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.09),
+    0 1px 2px rgba(0, 0, 0, 0.24);
+}
+
+.md-dexter-header-action:active {
+  scale: 0.96;
+  transition-duration: 90ms;
+}
+
+/* A quiet return point for long Dexter threads. It floats in the hand-off
+   between the conversation and composer, so it reads as navigation rather than
+   another composer action. The tinted blur keeps the control distinct while
+   allowing the conversation beneath it to remain spatially present. */
+.md-dexter-jump-to-latest {
+  -webkit-backdrop-filter: blur(18px) saturate(1.16);
+  backdrop-filter: blur(18px) saturate(1.16);
+  background: color-mix(in srgb, var(--md-surface) 74%, transparent);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.54),
+    0 1px 2px rgba(11, 20, 19, 0.08),
+    0 10px 28px rgba(42, 52, 50, 0.14);
+  transition:
+    background-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-dexter-jump-to-latest:hover {
+  background: color-mix(in srgb, var(--md-surface) 88%, transparent);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.68),
+    0 2px 4px rgba(11, 20, 19, 0.08),
+    0 14px 34px rgba(42, 52, 50, 0.18);
+}
+
+.md-dexter-jump-to-latest:focus-visible {
+  outline: 2px solid var(--md-accent);
+  outline-offset: 3px;
+}
+
+.dark .md-dexter-jump-to-latest {
+  background: color-mix(in srgb, var(--md-surface) 66%, transparent);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.11),
+    0 1px 2px rgba(0, 0, 0, 0.28),
+    0 12px 32px rgba(0, 0, 0, 0.34);
+}
+
+.dark .md-dexter-jump-to-latest:hover {
+  background: color-mix(in srgb, var(--md-surface) 82%, transparent);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+    0 2px 4px rgba(0, 0, 0, 0.3),
+    0 16px 38px rgba(0, 0, 0, 0.4);
+}
+
+@media (max-width: 760px), (hover: none) {
+  .md-dexter-user-actions {
+    pointer-events: auto;
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .md-dexter-jump-to-latest {
+    background: color-mix(in srgb, var(--md-surface) 96%, var(--md-bg));
+  }
+}
+
+/* `max-width` rather than a fixed width: the label's own text decides how far the
+   reveal travels, so a longer translation is never clipped mid-word. Only this
+   button's own box is affected — the header around it does not reflow. */
+.md-dexter-header-action__label {
+  display: block;
+  max-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  opacity: 0;
+  transition:
+    max-width 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    padding-inline 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-dexter-header-action:hover .md-dexter-header-action__label,
+.md-dexter-header-action:focus-visible .md-dexter-header-action__label {
+  max-width: 8rem;
+  padding-inline: 5px;
+  opacity: 1;
+}
+
+/* The one status cue left in the header: a slow breath while Dexter is working,
+   and nothing at all when it is idle. */
+.md-dexter-live-dot {
+  position: relative;
+  display: block;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--md-accent);
+  color: var(--md-accent);
+}
+
+.md-dexter-live-dot::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.24;
+  animation: md-watch-dot-breathe 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-watch-card,
+  .md-watch-card__go,
+  .md-history-row,
+  .md-history-row__rail,
+  .md-history-row__time,
+  .md-dexter-header-action,
+  .md-dexter-header-action__label,
+  .md-dexter-jump-to-latest {
+    transition: none !important;
+  }
+
+  .md-watch-card:hover,
+  .md-watch-card:active {
+    translate: none;
+    scale: none;
+  }
+
+  .md-watch-dot::after,
+  .md-dexter-live-dot::after {
+    animation: none;
+    opacity: 0.18;
+  }
 }
 
 @keyframes md-sidebar-menu-in {
@@ -1728,17 +2722,420 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
     background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(255, 255, 255, 0.72) 46%, rgba(255, 255, 255, 0) 100%);
   }
 
-  .md-dexter-chat-bubble {
+  .md-dexter-markdown {
     color: var(--md-ink);
-    box-shadow: 0 14px 34px rgba(42, 52, 50, 0.055);
+    font-size: 15.5px;
+    line-height: 1.68;
+    overflow-wrap: anywhere;
   }
 
-  .md-dexter-chat-bubble--user {
-    background: #f1f3f3;
+  .md-dexter-markdown > :first-child {
+    margin-top: 0;
   }
 
-  .md-dexter-chat-bubble--assistant {
-    background: rgba(255, 255, 255, 0.98);
+  .md-dexter-markdown > :last-child {
+    margin-bottom: 0;
+  }
+
+  .md-dexter-markdown p,
+  .md-dexter-markdown ul,
+  .md-dexter-markdown ol,
+  .md-dexter-markdown blockquote,
+  .md-dexter-markdown pre,
+  .md-dexter-markdown__table-wrap {
+    margin-block: 0.96rem;
+  }
+
+  .md-dexter-markdown p {
+    max-width: 68ch;
+    text-wrap: pretty;
+    white-space: normal;
+  }
+
+  .md-dexter-markdown > p + p {
+    margin-top: 1.08rem;
+  }
+
+  .md-dexter-markdown > p:first-child,
+  .md-dexter-markdown__h1 + p {
+    color: color-mix(in srgb, var(--md-ink) 92%, var(--md-text));
+    font-size: 16.25px;
+    line-height: 1.68;
+  }
+
+  .md-dexter-markdown__h1,
+  .md-dexter-markdown__h2,
+  .md-dexter-markdown__h3,
+  .md-dexter-markdown__h4 {
+    color: var(--md-ink);
+    font-weight: 500;
+    text-wrap: balance;
+  }
+
+  .md-dexter-markdown__h1 {
+    max-width: 30ch;
+    margin-block: 0 1rem;
+    font-size: clamp(24px, 2vw, 28px);
+    line-height: 1.16;
+    letter-spacing: -0.028em;
+  }
+
+  .md-dexter-markdown__h2 {
+    margin-block: 1.9rem 0.68rem;
+    font-size: 19px;
+    line-height: 1.3;
+    letter-spacing: -0.018em;
+  }
+
+  .md-dexter-markdown__h3 {
+    margin-block: 1.5rem 0.5rem;
+    font-size: 16px;
+    line-height: 1.4;
+    letter-spacing: -0.008em;
+  }
+
+  .md-dexter-markdown__h4 {
+    margin-block: 1rem 0.34rem;
+    color: var(--md-text);
+    font-size: 13px;
+    line-height: 1.45;
+    letter-spacing: 0;
+  }
+
+  .md-dexter-markdown ul,
+  .md-dexter-markdown ol {
+    padding-inline-start: 1.35rem;
+  }
+
+  .md-dexter-markdown ul {
+    list-style: disc;
+  }
+
+  .md-dexter-markdown ol {
+    list-style: decimal;
+  }
+
+  .md-dexter-markdown li {
+    max-width: 70ch;
+    padding-inline-start: 0.28rem;
+    line-height: 1.58;
+  }
+
+  .md-dexter-markdown li + li {
+    margin-top: 0.54rem;
+  }
+
+  .md-dexter-markdown li::marker {
+    color: var(--md-accent);
+  }
+
+  .md-dexter-markdown strong {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .md-dexter-markdown a {
+    color: var(--md-accent);
+    text-decoration: underline;
+    text-decoration-color: var(--md-accent-a36);
+    text-underline-offset: 3px;
+  }
+
+  .md-dexter-markdown a:hover {
+    text-decoration-color: currentColor;
+  }
+
+  .md-dexter-markdown blockquote {
+    max-width: 68ch;
+    border-inline-start: 2px solid var(--md-accent-a36);
+    border-radius: 0 var(--md-radius-md) var(--md-radius-md) 0;
+    background: var(--md-accent-a08);
+    padding: 0.78rem 0.95rem;
+    padding-inline-start: 1.05rem;
+    color: var(--md-text);
+  }
+
+  [dir="rtl"] .md-dexter-markdown blockquote {
+    border-radius: var(--md-radius-md) 0 0 var(--md-radius-md);
+  }
+
+  .md-dexter-markdown :not(pre) > code {
+    border-radius: var(--md-radius-sm);
+    background: var(--md-accent-a08);
+    padding: 0.12em 0.36em;
+    color: var(--md-ink);
+    font-size: 0.9em;
+  }
+
+  .md-dexter-markdown pre {
+    max-width: 100%;
+    overflow-x: auto;
+    border-radius: var(--md-radius-lg);
+    background: color-mix(in srgb, var(--md-ink) 5%, var(--md-surface));
+    padding: 0.9rem 1rem;
+    box-shadow: var(--md-shadow-line);
+  }
+
+  .md-dexter-markdown pre code {
+    font-size: 12.5px;
+    line-height: 1.65;
+    white-space: pre;
+  }
+
+  .md-dexter-markdown__table-wrap {
+    container: dexter-table / inline-size;
+    max-width: 100%;
+    overflow: hidden;
+    border-radius: var(--md-radius-lg);
+    background: color-mix(in srgb, var(--md-surface) 96%, var(--md-bg));
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--md-ink) 9%, transparent),
+      0 1px 2px rgba(11, 20, 19, 0.03);
+  }
+
+  .md-dexter-markdown__table-scroll {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .md-dexter-markdown table {
+    width: 100%;
+    min-width: 560px;
+    border-collapse: separate;
+    border-spacing: 0;
+    table-layout: auto;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .md-dexter-markdown__table-wrap--dense table {
+    min-width: 940px;
+    table-layout: fixed;
+  }
+
+  .md-dexter-markdown input[type="checkbox"] {
+    margin-inline-end: 0.45rem;
+    accent-color: var(--md-accent);
+  }
+
+  .md-dexter-markdown th,
+  .md-dexter-markdown td {
+    border-bottom: 1px solid color-mix(in srgb, var(--md-ink) 8%, transparent);
+    padding: 0.68rem 0.78rem;
+    text-align: start;
+    vertical-align: middle;
+    overflow-wrap: break-word;
+  }
+
+  .md-dexter-markdown th + th,
+  .md-dexter-markdown td + td {
+    border-inline-start: 1px solid color-mix(in srgb, var(--md-ink) 6%, transparent);
+  }
+
+  .md-dexter-markdown th {
+    background: color-mix(in srgb, var(--md-ink) 3.5%, var(--md-surface));
+    color: var(--md-subtle);
+    font-size: 11.75px;
+    font-weight: 500;
+    line-height: 1.3;
+    white-space: nowrap;
+  }
+
+  .md-dexter-markdown td {
+    max-width: 30ch;
+    color: color-mix(in srgb, var(--md-ink) 92%, var(--md-text));
+    line-height: 1.48;
+  }
+
+  .md-dexter-markdown td:first-child {
+    color: var(--md-ink);
+    font-weight: 600;
+  }
+
+  .md-dexter-markdown td[data-kind="status"] {
+    white-space: nowrap;
+  }
+
+  .md-dexter-markdown td[data-overdue="true"],
+  .md-dexter-markdown__record [data-overdue="true"] dd {
+    color: var(--md-red);
+  }
+
+  .md-dexter-markdown th[data-align="numeric"],
+  .md-dexter-markdown td[data-align="numeric"] {
+    min-width: 112px;
+    text-align: end;
+    white-space: nowrap;
+  }
+
+  .md-dexter-markdown__table-wrap--dense th:last-child,
+  .md-dexter-markdown__table-wrap--dense td:last-child {
+    min-width: 142px;
+  }
+
+  .md-dexter-markdown tbody tr {
+    transition: background-color 120ms ease-out;
+  }
+
+  .md-dexter-markdown tbody tr:hover {
+    background: color-mix(in srgb, var(--md-accent) 4.5%, transparent);
+  }
+
+  .md-dexter-markdown tr:last-child td {
+    border-bottom: 0;
+  }
+
+  .md-dexter-markdown__records {
+    display: none;
+  }
+
+  .md-dexter-markdown__record {
+    border-radius: calc(var(--md-radius-lg) - 4px);
+    background: var(--md-surface);
+    padding: 1rem;
+    box-shadow: var(--md-shadow-line);
+  }
+
+  .md-dexter-markdown__record + .md-dexter-markdown__record {
+    margin-top: 0.5rem;
+  }
+
+  .md-dexter-markdown__record-primary {
+    display: grid;
+    gap: 0.18rem;
+  }
+
+  .md-dexter-markdown__record-primary span,
+  .md-dexter-markdown__record dt {
+    color: var(--md-subtle);
+    font-size: 11.5px;
+    font-weight: 500;
+    line-height: 1.35;
+  }
+
+  .md-dexter-markdown__record-primary strong {
+    color: var(--md-ink);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+
+  .md-dexter-markdown__record dl {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-top: 0.72rem;
+  }
+
+  .md-dexter-markdown__record dl > div {
+    min-width: 0;
+    padding-block: 0.58rem;
+    padding-inline-end: 0.85rem;
+    border-top: 1px solid color-mix(in srgb, var(--md-ink) 6%, transparent);
+  }
+
+  .md-dexter-markdown__record dl > div:not(:nth-child(3n + 1)) {
+    padding-inline: 0.85rem 0;
+    border-inline-start: 1px solid color-mix(in srgb, var(--md-ink) 6%, transparent);
+  }
+
+  .md-dexter-markdown__record dd {
+    margin-top: 0.22rem;
+    color: color-mix(in srgb, var(--md-ink) 92%, var(--md-text));
+    font-size: 13px;
+    line-height: 1.48;
+    overflow-wrap: anywhere;
+  }
+
+  .md-dexter-markdown__record [data-align="numeric"] dd {
+    font-variant-numeric: tabular-nums;
+  }
+
+  @container dexter-table (max-width: 900px) {
+    .md-dexter-markdown__table-wrap--leads .md-dexter-markdown__table-scroll {
+      display: none;
+    }
+
+    .md-dexter-markdown__table-wrap--leads .md-dexter-markdown__records {
+      display: block;
+      padding: 0;
+    }
+
+    .md-dexter-markdown__table-wrap--leads .md-dexter-markdown__record {
+      border-radius: 0;
+      background: transparent;
+      padding: 0.9rem 1rem;
+      box-shadow: none;
+    }
+
+    .md-dexter-markdown__table-wrap--leads .md-dexter-markdown__record + .md-dexter-markdown__record {
+      margin-top: 0;
+      border-top: 1px solid color-mix(in srgb, var(--md-ink) 8%, transparent);
+    }
+  }
+
+  @container dexter-table (max-width: 700px) {
+    .md-dexter-markdown__table-scroll {
+      display: none;
+    }
+
+    .md-dexter-markdown__records {
+      display: block;
+      padding: 0.5rem;
+    }
+
+    .md-dexter-markdown__record dl {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .md-dexter-markdown__record dl > div:nth-child(3n + 1):not(:nth-child(odd)) {
+      padding-inline: 0.85rem 0;
+      border-inline-start: 1px solid color-mix(in srgb, var(--md-ink) 6%, transparent);
+    }
+
+    .md-dexter-markdown__record dl > div:nth-child(odd) {
+      padding-inline: 0 0.85rem;
+      border-inline-start: 0;
+    }
+  }
+
+  @container dexter-table (max-width: 430px) {
+    .md-dexter-markdown__record dl {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .md-dexter-markdown__record dl > div,
+    .md-dexter-markdown__record dl > div:not(:nth-child(3n + 1)),
+    .md-dexter-markdown__record dl > div:nth-child(odd) {
+      padding-inline: 0;
+      border-inline-start: 0;
+    }
+  }
+
+  .md-dexter-markdown hr {
+    margin-block: 1rem;
+    border: 0;
+    border-top: 1px solid var(--md-line);
+  }
+
+  .md-dexter-markdown--streaming > :last-child::after {
+    content: "";
+    display: inline-block;
+    width: 1px;
+    height: 1em;
+    margin-inline-start: 0.28rem;
+    translate: 0 0.12em;
+    background: var(--md-accent);
+    animation: md-dexter-stream-caret 850ms ease-in-out infinite;
+  }
+
+  @keyframes md-dexter-stream-caret {
+    0%,
+    100% {
+      opacity: 0.25;
+    }
+    50% {
+      opacity: 1;
+    }
   }
 
   .md-dexter-context-card {
@@ -1794,13 +3191,8 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
     background: linear-gradient(180deg, rgba(15, 23, 21, 0.96) 0%, rgba(15, 23, 21, 0.72) 46%, rgba(15, 23, 21, 0) 100%);
   }
 
-  .dark .md-dexter-chat-bubble {
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
-  }
-
-  .dark .md-dexter-chat-bubble--user,
-  .dark .md-dexter-chat-bubble--assistant {
-    background: rgba(24, 34, 32, 0.76);
+  .dark .md-dexter-markdown pre {
+    background: color-mix(in srgb, var(--md-surface) 82%, black);
   }
 
   .dark .md-dexter-context-card,
@@ -2807,6 +4199,11 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
       transition-delay: 0ms !important;
     }
 
+    .md-dexter-markdown--streaming > :last-child::after {
+      animation: none;
+      opacity: 1;
+    }
+
     .md-dexter-pill:hover .md-dexter-pill__shader,
     .md-dexter-pill:focus-visible .md-dexter-pill__shader {
       transform: scale(1.04);
@@ -3074,6 +4471,51 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
   [data-settings-page] [role="combobox"] {
     min-height: 44px;
   }
+}
+
+.md-email-marketing-tabs {
+  scrollbar-width: none;
+}
+
+.md-email-marketing-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.md-email-marketing-tabs-shell {
+  position: relative;
+  isolation: isolate;
+}
+
+.md-email-marketing-tabs-fade {
+  position: absolute;
+  z-index: 2;
+  inset-block: 0.125rem;
+  inset-inline-end: 0;
+  width: 4rem;
+  pointer-events: none;
+  background: linear-gradient(
+    to right,
+    transparent 0%,
+    color-mix(in srgb, var(--md-bg) 16%, transparent) 28%,
+    color-mix(in srgb, var(--md-bg) 66%, transparent) 68%,
+    color-mix(in srgb, var(--md-bg) 98%, transparent) 100%
+  );
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  mask-image: linear-gradient(to right, transparent 0%, rgba(0, 0, 0, 0.42) 44%, #000 100%);
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, rgba(0, 0, 0, 0.42) 44%, #000 100%);
+}
+
+[dir="rtl"] .md-email-marketing-tabs-fade {
+  background: linear-gradient(
+    to left,
+    transparent 0%,
+    color-mix(in srgb, var(--md-bg) 16%, transparent) 28%,
+    color-mix(in srgb, var(--md-bg) 66%, transparent) 68%,
+    color-mix(in srgb, var(--md-bg) 98%, transparent) 100%
+  );
+  mask-image: linear-gradient(to left, transparent 0%, rgba(0, 0, 0, 0.42) 44%, #000 100%);
+  -webkit-mask-image: linear-gradient(to left, transparent 0%, rgba(0, 0, 0, 0.42) 44%, #000 100%);
 }
 
 @media (prefers-reduced-motion: reduce) {

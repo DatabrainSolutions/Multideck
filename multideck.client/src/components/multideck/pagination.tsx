@@ -1,7 +1,17 @@
-import { ChevronLeft, ChevronRight } from "lucide-react"
+import { Fragment, type MouseEvent } from "react"
+import {
+  Pagination as PaginationRoot,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination"
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -37,16 +47,23 @@ export function Pagination({
   itemLabel = "items",
   className,
 }: PaginationProps) {
-  const { direction, t } = useLanguage()
+  const { t } = useLanguage()
   const safePageCount = Math.max(pageCount, 1)
   const currentPage = Math.min(Math.max(page, 1), safePageCount)
   const startItem = totalItems === 0 ? 0 : (currentPage - 1) * pageSize + 1
   const endItem = Math.min(currentPage * pageSize, totalItems)
   const visiblePages = getVisiblePages(currentPage, safePageCount)
+  const previousDisabled = currentPage === 1
+  const nextDisabled = currentPage === safePageCount
+
+  function selectPage(event: MouseEvent<HTMLAnchorElement>, nextPage: number) {
+    event.preventDefault()
+    onPageChange(nextPage)
+  }
 
   return (
-    <nav
-      className={cn("flex flex-col gap-3 rounded-[var(--md-radius-xl)] bg-white/35 p-2 shadow-[var(--md-shadow-line)] sm:flex-row sm:items-center sm:justify-between", className)}
+    <PaginationRoot
+      className={cn("mx-0 flex-col gap-3 rounded-[var(--md-radius-xl)] bg-white/35 p-2 shadow-[var(--md-shadow-line)] sm:flex-row sm:items-center sm:justify-between", className)}
       aria-label={t(`${itemLabel} pagination`)}
     >
       <div className="flex flex-col gap-2 px-2 sm:flex-row sm:items-center sm:gap-4">
@@ -67,60 +84,76 @@ export function Pagination({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent className="rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-surface)] shadow-[var(--md-shadow-lift)]">
-                {pageSizeOptions.map((option) => (
-                  <SelectItem key={option} value={String(option)} className="text-[13px]">
-                    {option}
-                  </SelectItem>
-                ))}
+                <SelectGroup>
+                  {pageSizeOptions.map((option) => (
+                    <SelectItem key={option} value={String(option)} className="text-[13px]">
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
               </SelectContent>
             </Select>
           </div>
         ) : null}
       </div>
 
-      <div className="flex items-center gap-1">
-        <button
-          type="button"
-          aria-label={t("Previous page")}
-          disabled={currentPage === 1}
-          className="grid size-8 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-text)] transition-[background,color,box-shadow,opacity,transform] duration-200 hover:bg-white/70 hover:text-[var(--md-ink)] disabled:pointer-events-none disabled:opacity-35"
-          onClick={() => onPageChange(currentPage - 1)}
-        >
-          {direction === "rtl" ? <ChevronRight className="size-4" strokeWidth={1.2} /> : <ChevronLeft className="size-4" strokeWidth={1.2} />}
-        </button>
+      <PaginationContent>
+        <PaginationItem>
+          <PaginationPrevious
+            href="#"
+            text={t("Previous")}
+            aria-label={t("Previous page")}
+            aria-disabled={previousDisabled}
+            tabIndex={previousDisabled ? -1 : undefined}
+            className="rounded-[var(--md-radius-md)] text-[13px] text-[var(--md-text)] aria-disabled:pointer-events-none aria-disabled:opacity-35"
+            onClick={(event) => {
+              if (!previousDisabled) selectPage(event, currentPage - 1)
+              else event.preventDefault()
+            }}
+          />
+        </PaginationItem>
 
         {visiblePages.map((pageNumber, index) => {
           const previousPage = visiblePages[index - 1]
           const hasGap = previousPage && pageNumber - previousPage > 1
 
           return (
-            <span key={pageNumber} className="flex items-center gap-1">
-              {hasGap ? <span className="px-1 text-[12px] font-medium text-[var(--md-subtle)]">...</span> : null}
-              <button
-                type="button"
-                aria-current={pageNumber === currentPage ? "page" : undefined}
-                className={cn(
-                  "h-8 min-w-8 rounded-[var(--md-radius-md)] px-2 text-[13px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,opacity,transform] duration-200 hover:bg-white/70 hover:text-[var(--md-ink)]",
-                  pageNumber === currentPage && "bg-[var(--md-sidebar-bg)] text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
-                )}
-                onClick={() => onPageChange(pageNumber)}
-              >
-                {pageNumber}
-              </button>
-            </span>
+            <Fragment key={pageNumber}>
+              {hasGap ? (
+                <PaginationItem>
+                  <PaginationEllipsis text={t("More pages")} className="text-[var(--md-subtle)]" />
+                </PaginationItem>
+              ) : null}
+              <PaginationItem>
+                <PaginationLink
+                  href="#"
+                  isActive={pageNumber === currentPage}
+                  aria-label={`${t("Page")} ${pageNumber}`}
+                  className="rounded-[var(--md-radius-md)] text-[13px] text-[var(--md-text)] data-[active=true]:bg-[var(--md-sidebar-bg)] data-[active=true]:text-[var(--md-ink)] data-[active=true]:shadow-[var(--md-shadow-line)]"
+                  onClick={(event) => selectPage(event, pageNumber)}
+                >
+                  <span data-i18n-skip dir="ltr">{pageNumber}</span>
+                </PaginationLink>
+              </PaginationItem>
+            </Fragment>
           )
         })}
 
-        <button
-          type="button"
-          aria-label={t("Next page")}
-          disabled={currentPage === safePageCount}
-          className="grid size-8 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-text)] transition-[background,color,box-shadow,opacity,transform] duration-200 hover:bg-white/70 hover:text-[var(--md-ink)] disabled:pointer-events-none disabled:opacity-35"
-          onClick={() => onPageChange(currentPage + 1)}
-        >
-          {direction === "rtl" ? <ChevronLeft className="size-4" strokeWidth={1.2} /> : <ChevronRight className="size-4" strokeWidth={1.2} />}
-        </button>
-      </div>
-    </nav>
+        <PaginationItem>
+          <PaginationNext
+            href="#"
+            text={t("Next")}
+            aria-label={t("Next page")}
+            aria-disabled={nextDisabled}
+            tabIndex={nextDisabled ? -1 : undefined}
+            className="rounded-[var(--md-radius-md)] text-[13px] text-[var(--md-text)] aria-disabled:pointer-events-none aria-disabled:opacity-35"
+            onClick={(event) => {
+              if (!nextDisabled) selectPage(event, currentPage + 1)
+              else event.preventDefault()
+            }}
+          />
+        </PaginationItem>
+      </PaginationContent>
+    </PaginationRoot>
   )
 }

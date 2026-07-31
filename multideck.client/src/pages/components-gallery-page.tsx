@@ -3,6 +3,17 @@ import { useTheme } from "next-themes"
 import { ArrowLeft, ArrowRight, Bell, Check, Clipboard, Cloud, Component, Download, FileText, Folder, Image, KeyRound, Mail, Pin, Search, Ship, Sparkles, UserRound } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import {
+  Context,
+  ContextContent,
+  ContextContentHeader,
+  ContextTrigger,
+} from "@/components/ai-elements/context"
+import {
+  Reasoning,
+  ReasoningContent,
+  ReasoningTrigger,
+} from "@/components/ai-elements/reasoning"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -13,6 +24,7 @@ import { cn } from "@/lib/utils"
 import type { ApiLead, ApiLeadDetail } from "@/lib/lead-api"
 import { activityItems, cityQueues, crmAccountSignals, crmActivities, crmContacts, crmLeadFieldSettings, crmPipelineSettings, crmPipelineStages, crmSummaryMetrics, customerFilters, customerScopeTabs, customers, customsQueue, galleryComponents, galleryIcons, generatedReports, initialFavouriteBookingIds, liveBookings, marlowContacts, marlowMetrics, metricCards, quoteAuditEvents, reportTemplates, bookingFilters, bookingMetrics, bookings, warehouseOrders, warehouseProducts, warehouseStockRows } from "@/data/multideck-data"
 import { AnimatedList } from "@/components/multideck/animated-list"
+import { AppBreadcrumbs } from "@/components/multideck/app-breadcrumbs"
 import { CommandInput } from "@/components/multideck/command-input"
 import { SidebarNavItem } from "@/components/multideck/app-sidebar"
 import { MetricCard } from "@/components/multideck/metric-card"
@@ -56,14 +68,21 @@ import {
   DexterHistoryList,
   DexterMonitorCard,
   DexterMonitorDetailSheet,
+  DexterModelMenu,
+  DexterMentionInput,
   DexterPromptComposer,
   DexterRiskTable,
-  DexterSpecialistMenu,
+  DexterRoleMenu,
   DexterSpecialistPicker,
   defaultDexterAttachments,
   defaultDexterSpecialists,
+  type DexterAccessMode,
+  type DexterMentionItem,
   type DexterSpecialistId,
 } from "@/components/multideck/agent-dexter-components"
+import { DexterActionApproval } from "@/components/multideck/dexter-action-approval"
+import { defaultDexterModelId, type DexterModelId } from "@/data/dexter-models"
+import { defaultDexterMentionItems } from "@/data/dexter-mentions"
 import {
   AreaChartCard,
   BarChartCard,
@@ -120,6 +139,7 @@ import { MultiSelectMenu } from "@/components/multideck/multi-select-menu"
 import { DocumentViewer, PaperTrayStack } from "@/components/multideck/paper-tray"
 import { DocumentWorkspace, documentWorkspaceSampleDocuments } from "@/components/multideck/document-workspace"
 import { createInitialPaperTrays } from "@/data/paper-tray-data"
+import { useLanguage } from "@/i18n/language-provider"
 
 type GalleryIconKey = keyof typeof galleryIcons
 
@@ -148,7 +168,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Button & control components",
     helper: "Navigation and input controls",
-    ids: ["command", "sidebar", "sidebar-item-menu", "sidebar-arrange-canvas", "theme-toggle", "page-settings-menu", "date-range-picker", "segmented-control", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "pagination", "settings-controls", "settings-option-card"],
+    ids: ["command", "app-breadcrumbs", "sidebar", "sidebar-item-menu", "sidebar-arrange-canvas", "theme-toggle", "page-settings-menu", "date-range-picker", "segmented-control", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "pagination", "settings-controls", "settings-option-card"],
   },
   {
     label: "Auth components",
@@ -173,7 +193,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Agent Dexter",
     helper: "Prompt, context, specialists, answers",
-    ids: ["dashboard-customise-panel", "dexter-action-pill", "dexter-companion-sidebar", "dexter-prompt-composer", "dexter-specialist-picker", "dexter-specialist-menu", "dexter-attachment-palette", "dexter-history-list", "dexter-monitor-card", "dexter-monitor-detail", "dexter-response-blocks"],
+    ids: ["dashboard-customise-panel", "dexter-action-pill", "dexter-companion-sidebar", "dexter-mention-input", "dexter-prompt-composer", "context-usage-meter", "dexter-live-reasoning", "dexter-reasoning-summary", "dexter-action-approval", "dexter-specialist-picker", "dexter-specialist-menu", "dexter-attachment-palette", "dexter-history-list", "dexter-monitor-card", "dexter-monitor-detail", "dexter-response-blocks"],
   },
   {
     label: "Feedback",
@@ -687,6 +707,7 @@ const previewSidebarRows: SidebarArrangeItem[] = [
 const previewSidebarOrder = previewSidebarRows.map((row) => row.id)
 
 function ComponentPreview({ id }: { id: string }) {
+  const { language, t } = useLanguage()
   const [previewSidebarPinnedIds, setPreviewSidebarPinnedIds] = useState<string[]>([])
   const [previewArrangeOrder, setPreviewArrangeOrder] = useState<string[]>(previewSidebarOrder)
   const [previewArrangePinned, setPreviewArrangePinned] = useState<string[]>([])
@@ -715,6 +736,8 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewRoadFavouriteBookingIds, setPreviewRoadFavouriteBookingIds] = useState<Set<string>>(() => new Set(["MD-22676"]))
   const [previewRoadJobs, setPreviewRoadJobs] = useState(() => [...domesticRoadJobs])
   const [previewDateRange, setPreviewDateRange] = useState<MultideckDateRange>({ start: "2026-05-25", end: "2026-06-04" })
+  const [previewDateComparisonEnabled, setPreviewDateComparisonEnabled] = useState(false)
+  const [previewDateComparisonRange, setPreviewDateComparisonRange] = useState<MultideckDateRange>({ start: "2026-05-14", end: "2026-05-24" })
   const [previewBookingSearchCriteria, setPreviewBookingSearchCriteria] = useState<BookingSearchCriterion[]>([
     { id: "preview-booking-search-invoice", field: "invoice", groupId: "preview-search-main", value: "INV-MAR", valueTo: "" },
     { id: "preview-booking-search-destination", connector: "and", field: "destination", groupId: "preview-search-main", value: "Felixstowe", valueTo: "" },
@@ -733,7 +756,10 @@ function ComponentPreview({ id }: { id: string }) {
   })
   const [previewContactEmail, setPreviewContactEmail] = useState(marlowContacts[0].email)
   const [previewDexterPrompt, setPreviewDexterPrompt] = useState("Prep Marlow's QBR and attach the latest open booking context.")
+  const [previewDexterMentions, setPreviewDexterMentions] = useState<DexterMentionItem[]>([])
   const [previewDexterSpecialistId, setPreviewDexterSpecialistId] = useState<DexterSpecialistId>("auto")
+  const [previewDexterModelId, setPreviewDexterModelId] = useState<DexterModelId>(defaultDexterModelId)
+  const [previewDexterAccessMode, setPreviewDexterAccessMode] = useState<DexterAccessMode>("approve")
   const [previewDexterAttachmentQuery, setPreviewDexterAttachmentQuery] = useState("")
   const [previewDexterAttachmentIds, setPreviewDexterAttachmentIds] = useState<Set<string>>(new Set(["marlow", "md-22414"]))
   const [previewCrmDealId, setPreviewCrmDealId] = useState(crmPipelineStages[0].deals[0].id)
@@ -848,7 +874,6 @@ function ComponentPreview({ id }: { id: string }) {
     })
   }
 
-  const previewDexterSpecialist = defaultDexterSpecialists.find((specialist) => specialist.id === previewDexterSpecialistId) ?? defaultDexterSpecialists[0]
   const previewDexterAttachments = defaultDexterAttachments.filter((attachment) => previewDexterAttachmentIds.has(attachment.id))
   const previewCrmLead = previewCrmLeadDetails.find((lead) => lead.id === previewCrmLeadId) ?? previewCrmLeadDetails[0]
 
@@ -857,6 +882,16 @@ function ComponentPreview({ id }: { id: string }) {
       {previewScreenGlow ? (
         <div className="pointer-events-none fixed inset-0 z-[9999]" aria-hidden>
           <AIEdgeGlow active variant="screen" className="h-screen w-screen rounded-none" />
+        </div>
+      ) : null}
+
+      {id === "app-breadcrumbs" ? (
+        <div className="w-full max-w-[760px] rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          <AppBreadcrumbs
+            route="/crm/leads/northstar-components/convert"
+            leafLabel="Northstar Components"
+            navigate={(path) => toast.success(`Navigate to ${path}`)}
+          />
         </div>
       ) : null}
 
@@ -1377,7 +1412,7 @@ function ComponentPreview({ id }: { id: string }) {
         <div className="grid w-full max-w-[560px] gap-3 rounded-[var(--md-radius-xl)] bg-white/54 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
           <div>
             <p className="text-[14px] font-medium text-[var(--md-ink)]">Collection dates</p>
-            <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">A paired date range using one selector and highlighted in-between days.</p>
+            <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">A paired range that can expand into a side-by-side comparison without losing context.</p>
           </div>
           <MultideckDateRangePicker
             value={previewDateRange}
@@ -1388,6 +1423,17 @@ function ComponentPreview({ id }: { id: string }) {
             startLabel="Cargo ready from"
             endLabel="Requested collection date"
             footerLabel="Selected collection dates"
+            comparison={{
+              enabled: previewDateComparisonEnabled,
+              value: previewDateComparisonRange,
+              onEnabledChange: setPreviewDateComparisonEnabled,
+              onChange: setPreviewDateComparisonRange,
+              options: [
+                { id: "previous-period", label: "Previous period", range: { start: "2026-05-14", end: "2026-05-24" } },
+                { id: "last-thirty", label: "Last 30 days", range: { start: "2026-04-25", end: "2026-05-24" } },
+                { id: "custom", label: "Custom", range: null },
+              ],
+            }}
           />
         </div>
       ) : null}
@@ -1757,18 +1803,113 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "dexter-mention-input" ? (
+        <div className="w-full max-w-[760px] rounded-[var(--md-radius-xl)] bg-[var(--md-composer-panel-bg)] p-5 shadow-[var(--md-shadow-line)]">
+          <DexterMentionInput
+            value={previewDexterPrompt}
+            items={defaultDexterMentionItems}
+            selectedMentions={previewDexterMentions}
+            placeholder="Type @ to mention workspace context"
+            minHeight={76}
+            maxHeight={232}
+            canSend={Boolean(previewDexterPrompt.trim())}
+            onChange={setPreviewDexterPrompt}
+            onMentionsChange={setPreviewDexterMentions}
+            onSend={() => toast.success("Mention-aware prompt ready")}
+          />
+          <p className="mt-3 text-[11.5px] text-[var(--md-subtle)]">Type @, then use the arrow keys and Enter to add a reference.</p>
+        </div>
+      ) : null}
+
       {id === "dexter-prompt-composer" ? (
         <div className="w-full max-w-[760px]">
           <DexterPromptComposer
             value={previewDexterPrompt}
-            selectedSpecialist={previewDexterSpecialist}
+            selectedSpecialistId={previewDexterSpecialistId}
+            selectedModelId={previewDexterModelId}
+            accessMode={previewDexterAccessMode}
+            contextUsedTokens={40_000}
+            contextMaxTokens={128_000}
             attachments={previewDexterAttachments}
+            mentionItems={defaultDexterMentionItems}
+            selectedMentions={previewDexterMentions}
             onChange={setPreviewDexterPrompt}
+            onMentionsChange={setPreviewDexterMentions}
             onOpenAttachments={() => toast.success("Attachment palette opened")}
-            onOpenSpecialists={() => toast.success("Specialist picker opened")}
+            onSelectSpecialist={setPreviewDexterSpecialistId}
+            onSelectModel={setPreviewDexterModelId}
+            onAccessModeChange={setPreviewDexterAccessMode}
             onRemoveAttachment={togglePreviewDexterAttachment}
             onSend={() => toast.success("Dexter conversation started")}
           />
+        </div>
+      ) : null}
+
+      {id === "dexter-live-reasoning" ? (
+        <div className="w-full max-w-[680px] py-1">
+          <Reasoning defaultOpen={false} isStreaming className="mb-0">
+            <ReasoningTrigger
+              className="min-h-8 text-[12.5px] font-medium text-[var(--md-text)] hover:text-[var(--md-ink)]"
+              getThinkingMessage={() => <span>Reasoning</span>}
+            />
+            <ReasoningContent className="mt-2 text-[13px] leading-5 text-[var(--md-text)]">
+              {"Understanding your request\n\nChecking connected workspace data\n\nPreparing a grounded response"}
+            </ReasoningContent>
+          </Reasoning>
+        </div>
+      ) : null}
+
+      {id === "dexter-reasoning-summary" ? (
+        <div className="w-full max-w-[680px] py-1">
+          <Reasoning defaultOpen={false} isStreaming={false} className="mb-0">
+            <ReasoningTrigger
+              className="min-h-8 text-[12.5px] font-medium text-[var(--md-text)] hover:text-[var(--md-ink)]"
+              getThinkingMessage={() => <span>Reasoning summary</span>}
+            />
+            <ReasoningContent className="mt-2 text-[13px] leading-5 text-[var(--md-text)]">
+              {"Matched the booking reference to the attached Marlow Apparel context.\n\nCompared the current milestones and exception data before preparing the answer."}
+            </ReasoningContent>
+          </Reasoning>
+        </div>
+      ) : null}
+
+      {id === "dexter-action-approval" ? (
+        <div className="w-full max-w-[680px]">
+          <DexterActionApproval
+            action={{
+              id: "preview-update-lead",
+              action: "update_lead",
+              title: "Update Northwind Logistics",
+              description: "Change the lead status to Qualified and assign the next follow-up to 4 August.",
+              arguments: {
+                target_id: "lead-preview",
+                status: "Qualified",
+                next_follow_up: "2026-08-04",
+              },
+              changes: [
+                { field: "status", value: "Qualified" },
+                { field: "next follow up", value: "4 August 2026" },
+              ],
+            }}
+            onDecision={(decision) => toast.success(decision === "approve" ? "Change approved" : "Change denied")}
+          />
+        </div>
+      ) : null}
+
+      {id === "context-usage-meter" ? (
+        <div className="flex w-full max-w-[360px] justify-center rounded-[var(--md-radius-xl)] bg-[var(--md-composer-panel-bg)] p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          <Context
+            usedTokens={40_000}
+            maxTokens={128_000}
+            label={t("Conversation context")}
+            description={t("How much of this chat Dexter can keep in mind.")}
+            locale={language}
+          >
+            <ContextTrigger className="md-composer-chip h-9 rounded-full px-2.5 text-[12.5px] text-[var(--md-text)]" />
+            <ContextContent side="top" sideOffset={10}>
+              <ContextContentHeader />
+            </ContextContent>
+          </Context>
         </div>
       ) : null}
 
@@ -1783,12 +1924,18 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "dexter-specialist-menu" ? (
-        <div className="w-full max-w-[760px] rounded-[var(--md-radius-xl)] bg-[rgba(11,20,19,0.16)] p-[var(--md-page-section-gap)] shadow-[var(--md-shadow-line)] backdrop-blur-md">
-          <DexterSpecialistMenu
+        <div className="flex w-full max-w-[760px] justify-start rounded-[var(--md-radius-xl)] bg-[var(--md-composer-shell-bg)] p-[var(--md-gap-lg)] shadow-[var(--md-shadow-line)]">
+          <DexterRoleMenu
             specialists={defaultDexterSpecialists}
             selectedId={previewDexterSpecialistId}
             onSelect={setPreviewDexterSpecialistId}
           />
+        </div>
+      ) : null}
+
+      {id === "dexter-model-menu" ? (
+        <div className="flex w-full max-w-[760px] justify-start rounded-[var(--md-radius-xl)] bg-[var(--md-composer-inner-bg)] p-[var(--md-gap-lg)] shadow-[var(--md-shadow-line)]">
+          <DexterModelMenu selectedId={previewDexterModelId} onSelect={setPreviewDexterModelId} />
         </div>
       ) : null}
 

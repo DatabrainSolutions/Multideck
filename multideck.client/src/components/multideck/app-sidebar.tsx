@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { ArrowLeft, Bell, Boxes, CheckCircle2, ChevronDown, ChevronRight, Clock3, CreditCard, LifeBuoy, LogOut, PanelLeftClose, PanelLeftOpen, Pin, Settings, Sparkles, TriangleAlert, X, type LucideIcon } from "lucide-react"
+import { ArrowLeft, Bell, Boxes, Check, CheckCircle2, ChevronDown, ChevronRight, Clock3, CreditCard, LifeBuoy, LogOut, Pencil, Plus, PanelLeftClose, PanelLeftOpen, Pin, Settings, Sparkles, Trash2, TriangleAlert, X, type LucideIcon } from "lucide-react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { SpectralBloomShader } from "@/components/multideck/dexter-action-pill"
@@ -19,6 +19,13 @@ import { useAiAgentName } from "@/lib/user-preferences"
 import { customerWarehouseNavigation, homeNavItem, sidebarAreas, type NavItem, type SidebarArea, type SidebarDestination } from "@/data/navigation-data"
 import { readSettingsSectionFromUrl, settingsNavigationGroups, type SettingsSectionId } from "@/data/settings-navigation"
 import { useLanguage } from "@/i18n/language-provider"
+import { deleteDexterConversation, listDexterConversations, renameDexterConversation, type DexterConversationSummary } from "@/lib/dexter-api"
+import {
+  announceDexterConversationsChanged,
+  DEXTER_CONVERSATIONS_CHANGED_EVENT,
+  DEXTER_NEW_CONVERSATION_EVENT,
+  DEXTER_SELECT_CONVERSATION_EVENT,
+} from "@/lib/dexter-navigation"
 import multideckFullLogo from "@/assets/brand/multideck-full-logo.svg"
 
 const sidebarItemTransition = {
@@ -583,6 +590,7 @@ export function AppSidebar({
   currentUser,
   collapsed = false,
   onCollapsedChange,
+  onRequestClose,
 }: {
   route: string
   navigate: (path: string) => void
@@ -590,12 +598,14 @@ export function AppSidebar({
   currentUser?: AuthUserSummary | null
   collapsed?: boolean
   onCollapsedChange?: (collapsed: boolean) => void
+  onRequestClose?: () => void
 }) {
   const { direction, t } = useLanguage()
   const aiAgentName = useAiAgentName()
   const shouldReduceMotion = useReducedMotion()
   const isCustomer = currentUser?.actorType === "customer"
   const isSettingsRoute = route === "/settings"
+  const isAgentRoute = route === "/agent-dexter"
   const canManageWarehouseUsers = hasPermission(currentUser, "Warehouse.Users.ManageOwn")
   const availableAreas = useMemo<SidebarArea[]>(() => {
     if (!isCustomer) return sidebarAreas
@@ -625,6 +635,23 @@ export function AppSidebar({
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   const profileIsActive = false
   const [arrangingScopeId, setArrangingScopeId] = useState<string | null>(null)
+  const [dexterConversations, setDexterConversations] = useState<DexterConversationSummary[]>([])
+  const [activeDexterConversationId, setActiveDexterConversationId] = useState<string | null>(null)
+  const [editingDexterConversationId, setEditingDexterConversationId] = useState<string | null>(null)
+  const [editingDexterTitle, setEditingDexterTitle] = useState("")
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null)
+  const [deletingDexterConversationId, setDeletingDexterConversationId] = useState<string | null>(null)
+  const [dexterSidebarError, setDexterSidebarError] = useState<string | null>(null)
+
+  const loadDexterConversations = useCallback(async () => {
+    if (!isAgentRoute) return
+    try {
+      setDexterConversations(await listDexterConversations())
+      setDexterSidebarError(null)
+    } catch {
+      setDexterConversations([])
+    }
+  }, [isAgentRoute])
 
   const areaBaseIds = useMemo(() => availableAreas.map((area) => area.id), [availableAreas])
   const areaArrangeItems = useMemo<SidebarArrangeItem[]>(
@@ -711,6 +738,14 @@ export function AppSidebar({
     setArrangingScopeId(null)
   }, [activeAreaId])
 
+  useEffect(() => {
+    if (!isAgentRoute) return
+    void loadDexterConversations()
+    const refresh = () => void loadDexterConversations()
+    window.addEventListener(DEXTER_CONVERSATIONS_CHANGED_EVENT, refresh)
+    return () => window.removeEventListener(DEXTER_CONVERSATIONS_CHANGED_EVENT, refresh)
+  }, [isAgentRoute, loadDexterConversations])
+
   function openArea(area: SidebarArea) {
     setActiveAreaId(area.id)
     setExpandedDestinationIds(new Set(activeDestinationIds(area, route)))
@@ -735,6 +770,53 @@ export function AppSidebar({
     const nextPath = sectionId === "profile" ? "/settings" : `/settings?tab=${sectionId}`
     window.history.pushState({}, "", nextPath)
     window.dispatchEvent(new PopStateEvent("popstate"))
+  }
+
+  function startDexterConversation() {
+    setActiveDexterConversationId(null)
+    setConfirmingDeleteId(null)
+    window.dispatchEvent(new Event(DEXTER_NEW_CONVERSATION_EVENT))
+    onRequestClose?.()
+  }
+
+  function selectDexterConversation(id: string) {
+    setActiveDexterConversationId(id)
+    setConfirmingDeleteId(null)
+    window.dispatchEvent(new CustomEvent(DEXTER_SELECT_CONVERSATION_EVENT, { detail: { id } }))
+    onRequestClose?.()
+  }
+
+  async function saveDexterConversationTitle(id: string) {
+    const title = editingDexterTitle.trim()
+    if (!title) return
+    try {
+      await renameDexterConversation(id, title)
+      setEditingDexterConversationId(null)
+      setDexterSidebarError(null)
+      announceDexterConversationsChanged({ action: "rename", id, title })
+    } catch (error) {
+      setDexterSidebarError(error instanceof Error ? error.message : t("This conversation could not be renamed."))
+    }
+  }
+
+  async function removeDexterConversation(id: string) {
+    if (confirmingDeleteId !== id) {
+      setConfirmingDeleteId(id)
+      return
+    }
+    if (deletingDexterConversationId === id) return
+    setDeletingDexterConversationId(id)
+    try {
+      await deleteDexterConversation(id)
+      setConfirmingDeleteId(null)
+      setDexterSidebarError(null)
+      if (activeDexterConversationId === id) setActiveDexterConversationId(null)
+      announceDexterConversationsChanged({ action: "delete", id })
+    } catch (error) {
+      setDexterSidebarError(error instanceof Error ? error.message : t("This conversation could not be deleted."))
+    } finally {
+      setDeletingDexterConversationId(null)
+    }
   }
 
   const homeSidebarItem = (
@@ -763,7 +845,7 @@ export function AppSidebar({
   return (
     <aside
       data-sidebar-collapsed={collapsed ? "true" : undefined}
-      data-sidebar-mode={isSettingsRoute ? "settings" : activeArea?.id ?? "areas"}
+      data-sidebar-mode={isAgentRoute ? "dexter" : isSettingsRoute ? "settings" : activeArea?.id ?? "areas"}
       className={cn(
         "relative isolate flex h-full min-h-0 shrink-0 flex-col bg-[var(--md-sidebar-bg)] py-3 shadow-[var(--md-stroke-right)] transition-[width,padding] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
         collapsed ? "w-[var(--md-sidebar-collapsed-width)] px-2" : "w-[var(--md-sidebar-width)] px-[var(--md-gap-lg)]",
@@ -778,7 +860,19 @@ export function AppSidebar({
             className="h-[34px] min-w-0 max-w-[132px] object-contain transition-[filter,opacity] duration-200 dark:brightness-0 dark:invert"
           />
         )}
-        {collapsed ? null : <NotificationBell />}
+        {collapsed ? null : onRequestClose ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label={t("Close navigation")}
+            title={t("Close navigation")}
+            className="size-9 rounded-full bg-[var(--md-glass)] text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]"
+            onClick={onRequestClose}
+          >
+            <X className="size-4" strokeWidth={1.3} />
+          </Button>
+        ) : <NotificationBell />}
         {onCollapsedChange ? (
           <Button
             type="button"
@@ -801,10 +895,205 @@ export function AppSidebar({
         className="relative z-10 mt-[var(--md-page-stack-gap)] min-h-0 flex-1 overflow-y-auto overflow-x-hidden md-scrollbar"
         style={{ contain: "layout paint" }}
       >
-        {isSettingsRoute || isCustomer ? null : <SidebarSection>{homeSidebarItem}{dexterSidebarItem}</SidebarSection>}
+        {isSettingsRoute || isCustomer || isAgentRoute ? null : <SidebarSection>{homeSidebarItem}{dexterSidebarItem}</SidebarSection>}
 
         <AnimatePresence mode="popLayout" initial={false}>
-          {isSettingsRoute ? (
+          {isAgentRoute ? (
+            <motion.div
+              key="dexter"
+              className="origin-top"
+              initial={shouldReduceMotion ? false : { opacity: 0, scale: 0.992 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.996 }}
+              transition={shouldReduceMotion ? { duration: 0 } : sidebarPaneTransition}
+            >
+              <SidebarSection>
+                {homeSidebarItem}
+                <SidebarSectionItem>
+                  <button
+                    type="button"
+                    className={cn(
+                      "group relative flex h-10 w-full items-center gap-2.5 overflow-hidden rounded-[var(--md-radius-lg)] px-3 text-start text-[13px] font-medium text-white shadow-[var(--md-shadow-line)] transition-[transform,box-shadow] hover:-translate-y-px focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a20)] motion-reduce:hover:translate-y-0",
+                      collapsed && "justify-center px-0",
+                    )}
+                    onClick={startDexterConversation}
+                  >
+                    <span className="absolute inset-0" aria-hidden="true">
+                      <SpectralBloomShader />
+                    </span>
+                    <span className="absolute inset-0 bg-black/20" aria-hidden="true" />
+                    <Plus className="relative size-4 shrink-0" strokeWidth={1.4} />
+                    <span className={cn("relative truncate", collapsed && "sr-only")}>{t("New chat")}</span>
+                  </button>
+                </SidebarSectionItem>
+                <SidebarSectionItem>
+                  <SidebarNavItem
+                    item={{ label: "Back", icon: ArrowLeft }}
+                    onClick={() => {
+                      if (window.history.length > 1) window.history.back()
+                      else navigate("/")
+                      onRequestClose?.()
+                    }}
+                    collapsed={collapsed}
+                  />
+                </SidebarSectionItem>
+              </SidebarSection>
+
+              <div className={cn("mt-5 flex items-center justify-between px-2", collapsed && "justify-center px-0")}>
+                <p className={cn("text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--md-subtle)]", collapsed && "sr-only")}>
+                  {t("History")}
+                </p>
+                {collapsed ? <Clock3 className="size-4 text-[var(--md-subtle)]" strokeWidth={1.25} /> : null}
+              </div>
+
+              {collapsed ? null : (
+                <div className="mt-2 grid gap-0.5">
+                  {dexterConversations.map((conversation, index) => (
+                    <motion.div
+                      key={conversation.id}
+                      className="group relative min-w-0"
+                      initial={shouldReduceMotion ? false : { opacity: 0, x: direction === "rtl" ? 6 : -6 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={shouldReduceMotion ? { duration: 0 } : { ...mdMotion.enter, delay: Math.min(index * 0.025, 0.2) }}
+                    >
+                      {editingDexterConversationId === conversation.id ? (
+                        <form
+                          className="flex h-9 items-center gap-1 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] px-2 shadow-[var(--md-shadow-line)]"
+                          onSubmit={(event) => {
+                            event.preventDefault()
+                            void saveDexterConversationTitle(conversation.id)
+                          }}
+                        >
+                          <input
+                            autoFocus
+                            value={editingDexterTitle}
+                            maxLength={120}
+                            aria-label={t("Conversation name")}
+                            className="min-w-0 flex-1 bg-transparent text-[13px] text-[var(--md-ink)] outline-none"
+                            onChange={(event) => setEditingDexterTitle(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Escape") setEditingDexterConversationId(null)
+                            }}
+                          />
+                          <button
+                            type="submit"
+                            className="group/save grid size-7 place-items-center rounded-full text-[var(--md-accent)] outline-none"
+                            aria-label={t("Save name")}
+                          >
+                            <span className="grid size-6 place-items-center rounded-full transition-[background-color,box-shadow,transform] duration-150 group-hover/save:bg-[var(--md-accent-a10)] group-hover/save:shadow-[var(--md-shadow-line)] group-focus-visible/save:bg-[var(--md-accent-a10)] group-focus-visible/save:ring-[3px] group-focus-visible/save:ring-[var(--md-accent-a20)] group-active/save:scale-[0.94] motion-reduce:transition-none">
+                              <Check className="size-3.5" strokeWidth={1.4} />
+                            </span>
+                          </button>
+                        </form>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            className={cn(
+                              "flex h-9 w-full min-w-0 items-center rounded-[var(--md-radius-lg)] px-2.5 pe-[94px] text-start text-[13px] font-medium transition-[background,color,box-shadow]",
+                              activeDexterConversationId === conversation.id
+                                ? "bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-line)]"
+                                : "text-[var(--md-text)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]",
+                            )}
+                            title={conversation.title}
+                            onClick={() => selectDexterConversation(conversation.id)}
+                          >
+                            <span className="truncate">{conversation.title}</span>
+                          </button>
+                          <motion.div
+                            className={cn(
+                              "pointer-events-none absolute inset-y-0 end-1 flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100",
+                              confirmingDeleteId === conversation.id && "pointer-events-auto opacity-100",
+                            )}
+                            onKeyDown={(event) => {
+                              if (event.key !== "Escape" || confirmingDeleteId !== conversation.id) return
+                              event.preventDefault()
+                              setConfirmingDeleteId(null)
+                            }}
+                          >
+                            <motion.button
+                              type="button"
+                              className="group/secondary grid size-7 shrink-0 place-items-center rounded-full text-[var(--md-subtle)] outline-none"
+                              aria-label={t(confirmingDeleteId === conversation.id ? "Cancel delete" : "Rename conversation")}
+                              title={t(confirmingDeleteId === conversation.id ? "Cancel" : "Rename conversation")}
+                              onClick={() => {
+                                if (confirmingDeleteId === conversation.id) {
+                                  setConfirmingDeleteId(null)
+                                  return
+                                }
+                                setEditingDexterConversationId(conversation.id)
+                                setEditingDexterTitle(conversation.title)
+                                setConfirmingDeleteId(null)
+                              }}
+                            >
+                              <span className="relative grid size-6 place-items-center rounded-full transition-[background-color,box-shadow,color,transform] duration-150 group-hover/secondary:bg-[var(--md-hover)] group-hover/secondary:text-[var(--md-ink)] group-hover/secondary:shadow-[var(--md-shadow-line)] group-focus-visible/secondary:bg-[var(--md-hover)] group-focus-visible/secondary:ring-[3px] group-focus-visible/secondary:ring-[var(--md-accent-a20)] group-active/secondary:scale-[0.94] motion-reduce:transition-none">
+                                <Pencil
+                                  className={cn(
+                                    "absolute size-3.5 transition-[opacity,transform] duration-150",
+                                    confirmingDeleteId === conversation.id ? "scale-75 opacity-0" : "scale-100 opacity-100",
+                                  )}
+                                  strokeWidth={1.3}
+                                />
+                                <X
+                                  className={cn(
+                                    "absolute size-3.5 transition-[opacity,transform] duration-150",
+                                    confirmingDeleteId === conversation.id ? "scale-100 opacity-100" : "scale-75 opacity-0",
+                                  )}
+                                  strokeWidth={1.4}
+                                />
+                              </span>
+                            </motion.button>
+                            <motion.button
+                              type="button"
+                              initial={false}
+                              animate={{ width: confirmingDeleteId === conversation.id ? 62 : 28 }}
+                              className={cn(
+                                "group/delete relative grid h-7 shrink-0 place-items-center overflow-hidden rounded-full text-[var(--md-subtle)] outline-none",
+                                confirmingDeleteId === conversation.id
+                                  ? "bg-[rgba(209,78,78,0.12)] px-2 text-[11px] font-medium text-[var(--md-red)] hover:bg-[rgba(209,78,78,0.18)]"
+                                  : "hover:text-[var(--md-red)]",
+                              )}
+                              aria-label={t(confirmingDeleteId === conversation.id ? "Confirm delete" : "Delete conversation")}
+                              title={t(confirmingDeleteId === conversation.id ? "Confirm delete" : "Delete conversation")}
+                              disabled={deletingDexterConversationId === conversation.id}
+                              onClick={() => void removeDexterConversation(conversation.id)}
+                              transition={reduceMotion(
+                                Boolean(shouldReduceMotion),
+                                confirmingDeleteId === conversation.id ? mdMotion.fast : mdMotion.micro,
+                              )}
+                            >
+                              <span
+                                className={cn(
+                                  "absolute grid size-6 place-items-center rounded-full transition-[background-color,box-shadow,color,opacity,transform] duration-150 group-hover/delete:bg-[rgba(209,78,78,0.10)] group-hover/delete:shadow-[var(--md-shadow-line)] group-focus-visible/delete:ring-[3px] group-focus-visible/delete:ring-[var(--md-accent-a20)] group-active/delete:scale-[0.94] motion-reduce:transition-none",
+                                  confirmingDeleteId === conversation.id ? "scale-75 opacity-0" : "scale-100 opacity-100",
+                                )}
+                                aria-hidden="true"
+                              >
+                                <Trash2 className="size-3.5" strokeWidth={1.3} />
+                              </span>
+                              <span
+                                className={cn(
+                                  "whitespace-nowrap transition-[opacity,transform] duration-150",
+                                  confirmingDeleteId === conversation.id ? "translate-y-0 opacity-100" : "translate-y-1 opacity-0",
+                                )}
+                                aria-hidden={confirmingDeleteId !== conversation.id}
+                              >
+                                {deletingDexterConversationId === conversation.id ? t("Deleting") : t("Confirm")}
+                              </span>
+                            </motion.button>
+                          </motion.div>
+                        </>
+                      )}
+                    </motion.div>
+                  ))}
+                  {dexterConversations.length === 0 ? (
+                    <p className="px-2 py-3 text-[12px] leading-5 text-[var(--md-subtle)]">{t("No conversations yet")}</p>
+                  ) : null}
+                  {dexterSidebarError ? <p className="px-2 py-2 text-[12px] leading-5 text-[var(--md-red)]" role="alert">{dexterSidebarError}</p> : null}
+                </div>
+              )}
+            </motion.div>
+          ) : isSettingsRoute ? (
             <motion.div
               key="settings"
               className="origin-top"
@@ -956,7 +1245,7 @@ export function AppSidebar({
                             exit={shouldReduceMotion ? undefined : { height: 0, opacity: 0 }}
                             transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.fast)}
                           >
-                            <div className="flex flex-col gap-1 rounded-[var(--md-radius-lg)] bg-[rgba(255,255,255,0.3)] p-1 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.48),0_1px_0_rgba(11,20,19,0.03)] dark:bg-[rgba(255,255,255,0.03)]">
+                            <div className="md-sidebar-expanded-options flex flex-col gap-1 rounded-[var(--md-radius-lg)] bg-[rgba(255,255,255,0.3)] p-1 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.48),0_1px_0_rgba(11,20,19,0.03)] dark:bg-[rgba(255,255,255,0.03)]">
                               <AnimatePresence initial={false}>
                                 {destination.children?.map((child) => {
                                   const childId = nestedDestinationId(destination.id, child)

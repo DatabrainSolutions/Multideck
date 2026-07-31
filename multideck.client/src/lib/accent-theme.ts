@@ -1,5 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react"
 import { animate } from "motion/react"
+import type { SupabaseClient } from "@supabase/supabase-js"
+import { supabase } from "@/lib/supabase"
 
 /**
  * The product reads its green from one place. Every accent surface in the app —
@@ -513,11 +515,100 @@ export function writeAccentPresetId(id: AccentPresetId) {
 
   applyAccentPreset(id, { animate: true })
   window.dispatchEvent(new CustomEvent(changeEventName, { detail: id }))
+  hasLocalEdit = true
+  void pushAccentPreference(id)
 }
 
 /** Called once before React mounts so the first paint already carries the accent. */
 export function ensureAccentApplied() {
   applyAccentPreset(readAccentPresetId())
+}
+
+/* ----------------------------------------------------------- profile persistence */
+
+let loadedUserId: string | null = null
+let loadPromise: Promise<void> | null = null
+let pendingSave: Promise<void> = Promise.resolve()
+let hasLocalEdit = false
+let watchingAuth = false
+
+async function currentUserId(client: SupabaseClient) {
+  const { data, error } = await client.auth.getSession()
+  if (error) throw error
+  return data.session?.user.id ?? null
+}
+
+function applySavedAccent(id: AccentPresetId) {
+  try {
+    window.localStorage.setItem(storageKey, id)
+  } catch {
+    // The saved profile still restores the accent when storage is unavailable.
+  }
+  applyAccentPreset(id)
+  window.dispatchEvent(new CustomEvent(changeEventName, { detail: id }))
+}
+
+function saveRemoteAccent(id: AccentPresetId) {
+  const client = supabase
+  if (!client || !loadedUserId) return pendingSave
+
+  pendingSave = pendingSave
+    .then(async () => {
+      const { error } = await client.rpc("set_current_user_accent_preference", { p_accent_preset: id })
+      if (error) throw error
+    })
+    .catch((error: unknown) => {
+      console.warn("Your accent colour could not be saved to your profile.", error)
+    })
+
+  return pendingSave
+}
+
+async function pushAccentPreference(id: AccentPresetId) {
+  await ensureAccentPreferenceLoaded()
+  await saveRemoteAccent(id)
+}
+
+async function loadAccentPreference(client: SupabaseClient) {
+  const userId = await currentUserId(client)
+  loadedUserId = userId
+  if (!userId) return
+
+  const { data, error } = await client.rpc("get_current_user_accent_preference")
+  if (error) throw error
+  if (hasLocalEdit) return
+
+  const value = Array.isArray(data) ? data[0]?.accent_preset : data?.accent_preset
+  if (isAccentPresetId(value)) applySavedAccent(value)
+}
+
+function watchAccentAuth(client: SupabaseClient) {
+  if (watchingAuth) return
+  watchingAuth = true
+
+  client.auth.onAuthStateChange((_event, session) => {
+    const userId = session?.user.id ?? null
+    const settled = loadPromise ?? Promise.resolve()
+    void settled.then(() => {
+      if (userId === loadedUserId) return
+      loadedUserId = null
+      loadPromise = null
+      hasLocalEdit = false
+      void ensureAccentPreferenceLoaded()
+    })
+  })
+}
+
+/** Restores the signed-in operator's accent after the fast local first paint. */
+export function ensureAccentPreferenceLoaded() {
+  const client = supabase
+  if (!client) return Promise.resolve()
+
+  loadPromise ??= loadAccentPreference(client).catch((error: unknown) => {
+    console.warn("Your saved accent colour could not be loaded from your profile.", error)
+  })
+  watchAccentAuth(client)
+  return loadPromise
 }
 
 /* -------------------------------------------------------------------------- hooks */

@@ -11,6 +11,8 @@ const hasSupabaseCredentials = Boolean(supabaseUrl && supabasePublishableKey)
 export const isTenantHostTrusted = import.meta.env.DEV || Boolean(configuredTenantHost && runningHost === configuredTenantHost)
 export const isWorkspaceRouterHost = runningHost === rootHost || runningHost === `www.${rootHost}`
 export const multideckRootHost = rootHost
+export const supabaseFunctionsUrl = supabaseUrl ? `${supabaseUrl.replace(/\/$/, "")}/functions/v1` : ""
+export const supabasePublicApiKey = supabasePublishableKey
 
 export const supabaseConfigurationError = !hasSupabaseCredentials
   ? "Supabase credentials are needed before operators can sign in."

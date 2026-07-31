@@ -6,6 +6,7 @@ import {
   BarChart3,
   Building2,
   CalendarDays,
+  Check,
   ChevronDown,
   ChevronUp,
   CircleDollarSign,
@@ -26,6 +27,7 @@ import {
   Trash2,
   TrendingUp,
   UsersRound,
+  X,
   type LucideIcon,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -62,6 +64,12 @@ import {
 import { cn } from "@/lib/utils"
 import { useKanbanPointerDrag } from "@/lib/kanban-drag"
 import {
+  dealCardFieldDefinitions,
+  dealCardFieldLimit,
+  useDealCardFields,
+  type DealCardFieldKey,
+} from "@/lib/deal-card-fields"
+import {
   crmAccountSignals,
   crmActivities,
   crmContacts,
@@ -97,6 +105,7 @@ export type CrmDeal = {
   summary: string
   nextStep: string
   tone: StatusTone
+  cardFields?: Partial<Record<DealCardFieldKey, string>>
 }
 
 export type CrmPipelineStage = {
@@ -481,6 +490,7 @@ function DealCard({
   onSelect,
   onPointerDown,
   onKeyDown,
+  visibleFields,
 }: {
   deal: CrmDeal
   selected?: boolean
@@ -489,6 +499,7 @@ function DealCard({
   onSelect?: (deal: CrmDeal) => void
   onPointerDown?: (event: PointerEvent<HTMLButtonElement>, deal: CrmDeal) => void
   onKeyDown?: (event: KeyboardEvent<HTMLButtonElement>, deal: CrmDeal) => void
+  visibleFields: readonly DealCardFieldKey[]
 }) {
   return (
     <button
@@ -512,12 +523,31 @@ function DealCard({
       onPointerDown={(event) => onPointerDown?.(event, deal)}
       onKeyDown={(event) => onKeyDown?.(event, deal)}
     >
-      <DealCardBody deal={deal} />
+      <DealCardBody deal={deal} visibleFields={visibleFields} />
     </button>
   )
 }
 
-function DealCardBody({ deal }: { deal: CrmDeal }) {
+function dealCardValue(deal: CrmDeal, key: DealCardFieldKey) {
+  const savedValue = deal.cardFields?.[key]
+  if (savedValue) return savedValue
+  if (key === "expectedValue") return deal.value
+  if (key === "primaryContact") return deal.contact
+  if (key === "owner") return deal.owner
+  if (key === "expectedClose") return deal.due
+  if (key === "nextAction") return deal.nextStep
+  return "Not recorded"
+}
+
+function DealCardBody({
+  deal,
+  visibleFields,
+}: {
+  deal: CrmDeal
+  visibleFields: readonly DealCardFieldKey[]
+}) {
+  const { t } = useLanguage()
+
   return (
     <>
       <div className="flex items-start justify-between gap-3">
@@ -527,12 +557,21 @@ function DealCardBody({ deal }: { deal: CrmDeal }) {
         </div>
         <StatusPill tone={deal.tone}>{deal.status}</StatusPill>
       </div>
-      <p className="line-clamp-2 text-[11.5px] leading-5 text-[var(--md-text)]">{deal.summary}</p>
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-[14px] font-medium leading-none text-[var(--md-ink)]">{deal.value}</p>
-          <p className="mt-1 text-[11px] text-[var(--md-subtle)]">{deal.owner} · {deal.due}</p>
-        </div>
+      <dl className="grid gap-1.5" aria-label={t("Deal card details")}>
+        {visibleFields.map((key) => {
+          const definition = dealCardFieldDefinitions.find((field) => field.key === key)
+          if (!definition) return null
+          return (
+            <div key={key} className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] items-baseline gap-2">
+              <dt className="truncate text-[10.5px] text-[var(--md-subtle)]">{t(definition.label)}</dt>
+              <dd className="truncate text-end text-[11.5px] font-medium text-[var(--md-ink)]" dir="auto">
+                {dealCardValue(deal, key)}
+              </dd>
+            </div>
+          )
+        })}
+      </dl>
+      <div className="flex justify-end">
         <span className="grid size-7 place-items-center rounded-full bg-[var(--md-surface-tint)] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)] transition-colors group-hover:text-[var(--md-accent)]">
           <ArrowRight data-icon="inline-end" className="size-4" strokeWidth={1.2} />
         </span>
@@ -565,6 +604,7 @@ export function CrmPipelineBoard({
   onMoveDeal?: (dealId: string, pipelineId: string, stageId: string) => Promise<void> | void
 }) {
   const { t } = useLanguage()
+  const [visibleDealCardFields] = useDealCardFields()
   const [activePipelineId, setActivePipelineId] = useState(pipelines[0]?.id ?? "custom")
   const activePipeline = pipelines.find((pipeline) => pipeline.id === activePipelineId) ?? pipelines[0]
   const activeStages = activePipeline?.stages ?? stages
@@ -710,6 +750,7 @@ export function CrmPipelineBoard({
                     onSelect={onSelectDeal}
                     onPointerDown={(event) => kanban.handlePointerDown(event, deal.id)}
                     onKeyDown={(event) => kanban.handleKeyDown(event, deal.id)}
+                    visibleFields={visibleDealCardFields}
                   />
                 ))}
                 {column.tasks.length === 0 ? <p className="md-kanban-empty">No deals in this stage</p> : null}
@@ -723,7 +764,7 @@ export function CrmPipelineBoard({
       {kanban.activeTask && kanban.overlayStyle ? createPortal(
         <div className="md-kanban-drag-preview" style={kanban.overlayStyle}>
           <div className="md-kanban-drag-preview-card group">
-            <DealCardBody deal={kanban.activeTask} />
+            <DealCardBody deal={kanban.activeTask} visibleFields={visibleDealCardFields} />
           </div>
         </div>,
         document.body,
@@ -2201,6 +2242,7 @@ export function CrmSettingsBuilder({
   stacked?: boolean
 }) {
   const { t } = useLanguage()
+  const [dealCardFields, setDealCardFields] = useDealCardFields()
   const preview = staticPipelines !== undefined || staticFields !== undefined
 
   const [serverPipelines, setServerPipelines] = useState<ApiPipeline[]>([])
@@ -2252,6 +2294,17 @@ export function CrmSettingsBuilder({
   }, [serverFields, staticFields])
 
   const conversionSummary = staticPipelines?.[0] ?? serverPipelines[0]
+
+  function toggleDealCardField(key: DealCardFieldKey) {
+    if (dealCardFields.includes(key)) {
+      if (dealCardFields.length === 1) return
+      setDealCardFields(dealCardFields.filter((field) => field !== key))
+      return
+    }
+
+    if (dealCardFields.length >= dealCardFieldLimit) return
+    setDealCardFields([...dealCardFields, key])
+  }
 
   useEffect(() => {
     if (!staticFields) return
@@ -2431,51 +2484,73 @@ export function CrmSettingsBuilder({
       >
         <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
           <div className="flex items-start justify-between gap-3 px-5 py-4">
-            <SectionHeader title={t("Lead fields")} meta={t("Shared by everyone in the company")} />
-            {preview ? null : (
-              <Button
-                variant="ghost"
-                disabled={!canEdit || fieldBusy}
-                onClick={() => setComposerTarget((current) => (current === "new" ? null : "new"))}
-                className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] px-3 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]"
+            <SectionHeader
+              title={t("Deal card fields")}
+              meta={t("Choose up to 3 details shown on your deal cards.")}
+            />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  className="h-9 shrink-0 rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] px-3 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]"
+                >
+                  <SlidersHorizontal data-icon="inline-start" strokeWidth={1.2} />
+                  {t("Choose fields")}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                className="max-h-[360px] w-[260px] overflow-y-auto rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-lift)]"
               >
-                <Plus data-icon="inline-start" strokeWidth={1.2} />
-                {t("Add dropdown")}
-              </Button>
-            )}
+                <DropdownMenuLabel className="text-[12px] font-medium text-[var(--md-subtle)]">
+                  <span data-i18n-skip dir="ltr">{dealCardFields.length} / {dealCardFieldLimit}</span> {t("fields selected")}
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {dealCardFieldDefinitions.map((field) => {
+                  const checked = dealCardFields.includes(field.key)
+                  return (
+                    <DropdownMenuCheckboxItem
+                      key={field.key}
+                      checked={checked}
+                      disabled={!checked && dealCardFields.length >= dealCardFieldLimit}
+                      onCheckedChange={() => toggleDealCardField(field.key)}
+                      onSelect={(event) => event.preventDefault()}
+                      className="text-[13px]"
+                    >
+                      {t(field.label)}
+                    </DropdownMenuCheckboxItem>
+                  )
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
           <div className="px-5 pb-5">
-            {composerTarget === "new" ? (
-              <div className="pb-4">
-                <LeadFieldComposer busy={fieldBusy} onCancel={() => setComposerTarget(null)} onSubmit={submitField} />
-              </div>
-            ) : null}
-            {fields.map((field, index) => (
-              <div key={fieldKey(field)}>
-                <DropdownFieldRow
-                  field={field}
-                  disabled={!canEdit}
-                  busy={fieldBusy}
-                  first={index === 0}
-                  last={index === fields.length - 1}
-                  selected={selectedFieldOptions[fieldKey(field)] ?? []}
-                  onSelect={(option) => updateField(field, option)}
-                  onMove={field.id ? (offset) => moveField(index, offset) : undefined}
-                  onEdit={field.id ? () => setComposerTarget((current) => (current === field.id ? null : field.id)) : undefined}
-                  onRemove={field.id ? () => removeField(field) : undefined}
-                />
-                {field.id && composerTarget === field.id ? (
-                  <div className="pb-4">
-                    <LeadFieldComposer
-                      initial={field}
-                      busy={fieldBusy}
-                      onCancel={() => setComposerTarget(null)}
-                      onSubmit={submitField}
-                    />
-                  </div>
-                ) : null}
-              </div>
-            ))}
+            <div className="flex flex-wrap gap-2" aria-label={t("Selected deal card fields")}>
+              {dealCardFields.map((key) => {
+                const field = dealCardFieldDefinitions.find((definition) => definition.key === key)
+                if (!field) return null
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    disabled={dealCardFields.length === 1}
+                    onClick={() => toggleDealCardField(key)}
+                    className="inline-flex min-h-9 items-center gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-accent-a10)] px-3 text-[12px] font-medium text-[var(--md-accent)] transition-colors hover:bg-[var(--md-accent-a18)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] disabled:cursor-default disabled:opacity-65"
+                    aria-label={`${t("Remove")} ${t(field.label)}`}
+                  >
+                    <Check className="size-3.5" strokeWidth={1.4} aria-hidden="true" />
+                    {t(field.label)}
+                    {dealCardFields.length > 1 ? <X className="size-3.5" strokeWidth={1.4} aria-hidden="true" /> : null}
+                  </button>
+                )
+              })}
+            </div>
+            <p className="mt-3 text-[12px] leading-5 text-[var(--md-subtle)]">
+              {t("Changes appear on deal cards immediately. Deal name, company and status always stay visible.")}
+            </p>
+            <p className="sr-only" aria-live="polite">
+              <span data-i18n-skip dir="ltr">{dealCardFields.length} / {dealCardFieldLimit}</span> {t("fields selected")}
+            </p>
           </div>
         </Surface>
 

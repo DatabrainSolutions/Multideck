@@ -1,22 +1,32 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import {
+  ArrowDownRight,
   ArrowLeft,
+  ArrowRight,
+  ArrowUpRight,
   ChartNoAxesCombined,
+  CirclePause,
   Download,
   FileText,
   Folder,
   Image,
   LayoutTemplate,
+  ListFilter,
   LoaderCircle,
+  MailCheck,
+  MousePointerClick,
   PenLine,
   Plus,
   RefreshCw,
   RotateCcw,
   Search,
+  Send,
   Settings2,
   SlidersHorizontal,
   Upload,
   UploadCloud,
+  Users,
+  Workflow,
   X,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -25,6 +35,13 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ContactProfileModule } from "@/components/multideck/customer-components"
+import {
+  getDateKey,
+  MultideckDateRangePicker,
+  parseDateKey,
+  type MultideckDateComparisonOption,
+  type MultideckDateRange,
+} from "@/components/multideck/date-picker"
 import {
   CrmActivityTimeline,
   CrmAssetFolderCard,
@@ -53,6 +70,7 @@ import { DexterDockedPage } from "@/components/multideck/dexter-companion-sideba
 import { SideDrawer } from "@/components/multideck/side-drawer"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
+import { SegmentedControl } from "@/components/multideck/workflow-components"
 import {
   crmActivities,
   crmContacts,
@@ -115,6 +133,12 @@ function apiDealToBoardDeal(deal: ApiDeal, tone: StatusTone): CrmDeal {
   const owner = deal.ownerName
     ? deal.ownerName.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()
     : "—"
+  const margin = deal.expectedMarginAmount === null
+    ? "Not recorded"
+    : getDealValueFormatter(deal.currencyCode || "GBP", false).format(deal.expectedMarginAmount)
+  const nextAction = deal.nextActionDueAt
+    ? dealNextActionFormatter.format(new Date(deal.nextActionDueAt))
+    : "Not recorded"
 
   return {
     id: deal.id,
@@ -130,6 +154,21 @@ function apiDealToBoardDeal(deal: ApiDeal, tone: StatusTone): CrmDeal {
       ? `Next action due ${dealNextActionFormatter.format(new Date(deal.nextActionDueAt))}.`
       : "Set the next customer-facing action.",
     tone: tone === "neutral" ? apiDealTone(deal) : tone,
+    cardFields: {
+      expectedValue: value,
+      expectedMargin: margin,
+      probability: deal.probabilityPct === null ? "Not recorded" : `${deal.probabilityPct}%`,
+      primaryContact: deal.primaryContactName || "Not recorded",
+      owner,
+      expectedClose: due,
+      mode: deal.modeCode || "Not recorded",
+      direction: deal.directionCode || "Not recorded",
+      origin: deal.originName || "Not recorded",
+      destination: deal.destinationName || "Not recorded",
+      tradeLane: deal.tradeLane || "Not recorded",
+      serviceInterest: deal.serviceInterest || "Not recorded",
+      nextAction,
+    },
   }
 }
 
@@ -221,7 +260,7 @@ const crmEmailLists = [
     count: 57,
     delta: "-4 this week",
     deltaTone: "red" as StatusTone,
-    usedIn: "Win-back campaign",
+    usedIn: "Win-back broadcast",
     statusLabel: "live",
     statusTone: "green" as StatusTone,
     owner: "WC",
@@ -606,6 +645,264 @@ const crmEmailCampaigns = [
   },
 ]
 
+type EmailMarketingContactStatus = "Subscribed" | "Unsubscribed" | "Bounced" | "Pending" | "Replied"
+
+const emailMarketingContacts = [
+  {
+    email: "sandra@marlowapparel.co.uk",
+    name: "Sandra Aldridge",
+    company: "Marlow Apparel Ltd",
+    status: "Subscribed" as EmailMarketingContactStatus,
+    source: "CRM contact",
+    lists: "EU importers · apparel",
+    lastActivity: "Clicked June rates · 2h ago",
+  },
+  {
+    email: "lukas@bauhaus-importe.de",
+    name: "Lukas Meyer",
+    company: "Bauhaus Importe GmbH",
+    status: "Subscribed" as EmailMarketingContactStatus,
+    source: "Quote enquiry",
+    lists: "EU importers · apparel",
+    lastActivity: "Opened peak season preview",
+  },
+  {
+    email: "wei@pacificgoods.com",
+    name: "Wei Chen",
+    company: "Pacific Goods Co",
+    status: "Subscribed" as EmailMarketingContactStatus,
+    source: "Customer import",
+    lists: "All active customers",
+    lastActivity: "Forwarded June rates",
+  },
+  {
+    email: "oscar@formaretail.co",
+    name: "Oscar Bennett",
+    company: "Forma Retail Group",
+    status: "Unsubscribed" as EmailMarketingContactStatus,
+    source: "CRM contact",
+    lists: "Suppression list",
+    lastActivity: "Unsubscribed · Jun 9",
+  },
+  {
+    email: "amelia@harbourhome.co.uk",
+    name: "Amelia Stone",
+    company: "Harbour Homeware",
+    status: "Unsubscribed" as EmailMarketingContactStatus,
+    source: "Customer import",
+    lists: "Suppression list",
+    lastActivity: "Changed preference · Jun 8",
+  },
+  {
+    email: "orders@atlasoffice.co",
+    name: "Mina Okafor",
+    company: "Atlas Office Supply",
+    status: "Bounced" as EmailMarketingContactStatus,
+    source: "Spreadsheet import",
+    lists: "All active customers",
+    lastActivity: "Hard bounce · Jun 9",
+  },
+  {
+    email: "freja@cphcomponents.dk",
+    name: "Freja Nielsen",
+    company: "Copenhagen Components",
+    status: "Pending" as EmailMarketingContactStatus,
+    source: "Air quote form",
+    lists: "Peak-season air prospects",
+    lastActivity: "Consent requested · 4h ago",
+  },
+  {
+    email: "jonas@blackforestfoods.de",
+    name: "Jonas Keller",
+    company: "Black Forest Foods",
+    status: "Replied" as EmailMarketingContactStatus,
+    source: "CRM contact",
+    lists: "All active customers",
+    lastActivity: "Replied to service update",
+  },
+]
+
+const recentSubscriberChanges = {
+  subscribed: [
+    ["Freja Nielsen", "Copenhagen Components", "Air quote form · 4h ago"],
+    ["Rosa Conti", "Milano Market Group", "Peak-season guide · Yesterday"],
+    ["David Lloyd", "Westbridge Medical", "CRM contact · Yesterday"],
+  ],
+  unsubscribed: [
+    ["Oscar Bennett", "Forma Retail Group", "June rates · Jun 9"],
+    ["Amelia Stone", "Harbour Homeware", "Preference centre · Jun 8"],
+    ["Camille Roche", "Maison Port Supply", "May rates · Jun 3"],
+  ],
+}
+
+const emailMarketingAutomations = [
+  {
+    name: "New enquiry welcome",
+    trigger: "CRM lead created",
+    audience: "New freight enquiries",
+    status: "Active",
+    tone: "green" as StatusTone,
+    entered: "128",
+    performance: "41% CTR",
+    lastRun: "12 minutes ago",
+  },
+  {
+    name: "Quote follow-up",
+    trigger: "Quote viewed, no reply after 48h",
+    audience: "Open quote contacts",
+    status: "Active",
+    tone: "green" as StatusTone,
+    entered: "64",
+    performance: "18 replies",
+    lastRun: "1 hour ago",
+  },
+  {
+    name: "Dormant customer win-back",
+    trigger: "No booking activity for 90 days",
+    audience: "Dormant 90d+",
+    status: "Paused",
+    tone: "amber" as StatusTone,
+    entered: "57",
+    performance: "9.8% CTR",
+    lastRun: "Paused Jun 7",
+  },
+  {
+    name: "Peak-season capacity alert",
+    trigger: "Capacity risk flag added",
+    audience: "Affected active customers",
+    status: "Draft",
+    tone: "neutral" as StatusTone,
+    entered: "—",
+    performance: "Not started",
+    lastRun: "Edited yesterday",
+  },
+]
+
+type EmailMarketingSection = "dashboard" | "broadcasts" | "lists" | "templates" | "automations" | "emails"
+type EmailDashboardPreset = "today" | "week" | "month" | "ninety" | "custom"
+
+type EmailDashboardSnapshot = {
+  subscribedContacts: number
+  newSubscribers: number
+  unsubscribed: number
+  averageCtr: number
+  averageOpenRate: number
+  deliveryRate: number
+  subscriberSeries: number[]
+  ctrSeries: number[]
+  openSeries: number[]
+  deliverySeries: number[]
+}
+
+const emailMarketingSections: { id: EmailMarketingSection; label: string; icon: typeof Send }[] = [
+  { id: "dashboard", label: "Dashboard", icon: ChartNoAxesCombined },
+  { id: "broadcasts", label: "Broadcasts", icon: Send },
+  { id: "lists", label: "Lists", icon: Users },
+  { id: "templates", label: "Templates", icon: LayoutTemplate },
+  { id: "automations", label: "Automations", icon: Workflow },
+  { id: "emails", label: "Emails", icon: MailCheck },
+]
+
+const emailDashboardPresets = ["today", "week", "month", "ninety"] as const
+const emailMarketingDataStart = "2026-01-01"
+const emailMarketingDataEnd = "2026-07-30"
+
+function addDaysToDateKey(dateKey: string, amount: number) {
+  const date = parseDateKey(dateKey)
+  if (!date) return dateKey
+  date.setDate(date.getDate() + amount)
+  return getDateKey(date)
+}
+
+function getEmailPresetRange(preset: Exclude<EmailDashboardPreset, "custom">): MultideckDateRange {
+  const end = emailMarketingDataEnd
+  if (preset === "today") return { start: end, end }
+  if (preset === "week") return { start: addDaysToDateKey(end, -6), end }
+  if (preset === "month") return { start: addDaysToDateKey(end, -29), end }
+  return { start: addDaysToDateKey(end, -89), end }
+}
+
+function getPreviousEmailPeriod(range?: MultideckDateRange): MultideckDateRange {
+  if (!range) return { start: null, end: null }
+  const start = parseDateKey(range.start)
+  const end = parseDateKey(range.end)
+  if (!start || !end) return { start: null, end: null }
+  const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1)
+  return {
+    start: addDaysToDateKey(range.start!, -days),
+    end: addDaysToDateKey(range.start!, -1),
+  }
+}
+
+function getEmailComparisonRange(range: MultideckDateRange | undefined, days: number): MultideckDateRange {
+  if (!range?.start) return { start: null, end: null }
+  const end = addDaysToDateKey(range.start, -1)
+  return {
+    start: addDaysToDateKey(end, -(Math.max(days, 1) - 1)),
+    end,
+  }
+}
+
+function rangeDayCount(range: MultideckDateRange) {
+  const start = parseDateKey(range.start)
+  const end = parseDateKey(range.end)
+  if (!start || !end || start > end) return 0
+  return Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1
+}
+
+function makeEmailSeries(endValue: number, spread: number, points = 8) {
+  return Array.from({ length: points }, (_, index) => {
+    const progress = index / Math.max(points - 1, 1)
+    const movement = Math.sin(index * 1.35) * spread * 0.22
+    return Number((endValue - spread + spread * progress + movement).toFixed(2))
+  })
+}
+
+function getEmailDashboardSnapshot(range: MultideckDateRange): EmailDashboardSnapshot | null {
+  const days = rangeDayCount(range)
+  if (!range.start || !range.end || !days || range.start < emailMarketingDataStart || range.end > emailMarketingDataEnd) return null
+
+  const coverageStart = parseDateKey(emailMarketingDataStart)!
+  const rangeEnd = parseDateKey(range.end)!
+  const elapsedDays = Math.round((rangeEnd.getTime() - coverageStart.getTime()) / 86_400_000) + 1
+  const monthOffset = (rangeEnd.getFullYear() - 2026) * 12 + rangeEnd.getMonth() - 6
+  const dayOffset = rangeEnd.getDate() - 30
+  const subscribedContacts = 2499 + Math.round(elapsedDays * 1.645)
+  const newSubscribers = Math.max(1, Math.round(days * 1.93))
+  const unsubscribed = Math.max(0, Math.round(days * 0.5))
+  const averageCtr = Number((16.4 + monthOffset * 0.35 + dayOffset * 0.02 + (days - 30) * 0.004).toFixed(1))
+  const averageOpenRate = Number((50.6 + monthOffset * 0.72 + dayOffset * 0.04 + (days - 30) * 0.006).toFixed(1))
+  const deliveryRate = Number(Math.min(99.7, 99.2 + monthOffset * 0.18 + dayOffset * 0.008 + (days - 30) * 0.001).toFixed(1))
+
+  return {
+    subscribedContacts,
+    newSubscribers,
+    unsubscribed,
+    averageCtr,
+    averageOpenRate,
+    deliveryRate,
+    subscriberSeries: makeEmailSeries(subscribedContacts, Math.max(8, days * 1.45)),
+    ctrSeries: makeEmailSeries(averageCtr, Math.max(0.8, days * 0.035)),
+    openSeries: makeEmailSeries(averageOpenRate, Math.max(1.8, days * 0.075)),
+    deliverySeries: makeEmailSeries(deliveryRate, Math.max(0.18, days * 0.009)),
+  }
+}
+
+function readEmailMarketingSection(): EmailMarketingSection {
+  const value = new URLSearchParams(window.location.search).get("tab")
+  return emailMarketingSections.some((section) => section.id === value)
+    ? value as EmailMarketingSection
+    : "dashboard"
+}
+
+function contactStatusTone(status: EmailMarketingContactStatus): StatusTone {
+  if (status === "Subscribed") return "green"
+  if (status === "Pending") return "amber"
+  if (status === "Unsubscribed") return "red"
+  if (status === "Replied") return "blue"
+  return "neutral"
+}
+
 function firstDeal(pipeline: CrmPipeline = crmPipelineBoards[0]) {
   return pipeline.stages.flatMap((stage) => stage.deals)[0] ?? crmPipelineStages.flatMap((stage) => stage.deals)[0]
 }
@@ -629,6 +926,7 @@ function CrmPageHeader({
   meta,
   action,
   onSpeakToDexter,
+  compact = false,
 }: {
   eyebrow?: string
   title: string
@@ -636,7 +934,32 @@ function CrmPageHeader({
   meta?: string
   action?: ReactNode
   onSpeakToDexter?: () => void
+  compact?: boolean
 }) {
+  const actions = action || onSpeakToDexter ? (
+    <div className="flex shrink-0 flex-wrap items-center gap-2">
+      {onSpeakToDexter ? <DexterActionPill onClick={onSpeakToDexter} /> : null}
+      {action}
+    </div>
+  ) : null
+
+  if (compact) {
+    return (
+      <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+        <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:gap-5">
+          <h1 className="shrink-0 text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">{title}</h1>
+          {summary || meta ? (
+            <div className="min-w-0 text-[12px] leading-5">
+              {meta ? <p className="font-medium text-[var(--md-text)]">{meta}</p> : null}
+              {summary ? <p className="text-[var(--md-subtle)]">{summary}</p> : null}
+            </div>
+          ) : null}
+        </div>
+        {actions ? <div className="lg:justify-self-end">{actions}</div> : null}
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col gap-[var(--md-gap-lg)] xl:flex-row xl:items-end xl:justify-between">
       <div className="min-w-0">
@@ -645,12 +968,7 @@ function CrmPageHeader({
         {summary ? <p className="mt-2 max-w-[860px] text-[15px] leading-6 text-[var(--md-text)]">{summary}</p> : null}
         {meta ? <p className="mt-2 text-[12px] font-medium text-[var(--md-subtle)]">{meta}</p> : null}
       </div>
-      {action || onSpeakToDexter ? (
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
-          {onSpeakToDexter ? <DexterActionPill onClick={onSpeakToDexter} /> : null}
-          {action}
-        </div>
-      ) : null}
+      {actions}
     </div>
   )
 }
@@ -973,8 +1291,9 @@ export function CrmLeadsPage({ navigate }: { navigate: (path: string) => void })
   }
 
   return (
-    <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t("Leads")} className="md-page md-page-stack">
+    <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t("Leads")} className="md-page md-page-stack-compact">
       <CrmPageHeader
+        compact
         title={t("Leads")}
         summary={
           <>
@@ -1508,126 +1827,1024 @@ export function CrmListDetailPage({ navigate, listId }: { navigate: (path: strin
   )
 }
 
+function EmailMarketingTabs({
+  activeSection,
+  onSelect,
+}: {
+  activeSection: EmailMarketingSection
+  onSelect: (section: EmailMarketingSection) => void
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [showEndFade, setShowEndFade] = useState(false)
+
+  const updateEndFade = useCallback(() => {
+    const element = scrollRef.current
+    if (!element) return
+    const remaining = element.scrollWidth - element.clientWidth - Math.abs(element.scrollLeft)
+    setShowEndFade(remaining > 2)
+  }, [])
+
+  useEffect(() => {
+    const element = scrollRef.current
+    if (!element) return
+
+    updateEndFade()
+    const observer = new ResizeObserver(updateEndFade)
+    observer.observe(element)
+    const tablist = element.firstElementChild
+    if (tablist instanceof HTMLElement) observer.observe(tablist)
+    window.addEventListener("resize", updateEndFade)
+
+    return () => {
+      observer.disconnect()
+      window.removeEventListener("resize", updateEndFade)
+    }
+  }, [updateEndFade])
+
+  return (
+    <div className="md-email-marketing-tabs-shell -mx-1 min-w-0 flex-[1_1_360px]">
+      <div
+        ref={scrollRef}
+        className="md-email-marketing-tabs min-w-0 overflow-x-auto px-1 py-0.5"
+        onScroll={updateEndFade}
+      >
+        <div
+          role="tablist"
+          aria-label="Email marketing sections"
+          className="flex min-w-max gap-0.5"
+        >
+          {emailMarketingSections.map((section) => {
+            const Icon = section.icon
+            const selected = activeSection === section.id
+            return (
+              <button
+                key={section.id}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                className={`inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-[var(--md-radius-md)] px-2.5 text-[12px] font-medium transition-[background,color,box-shadow,transform] duration-150 active:scale-[0.96] ${
+                  selected
+                    ? "bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-line)]"
+                    : "text-[var(--md-text)] hover:bg-[color-mix(in_srgb,var(--md-surface)_62%,transparent)] hover:text-[var(--md-ink)]"
+                }`}
+                onClick={() => onSelect(section.id)}
+              >
+                <Icon className="size-3.5" strokeWidth={selected ? 1.7 : 1.4} />
+                {section.label}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+      {showEndFade ? <span aria-hidden="true" className="md-email-marketing-tabs-fade" /> : null}
+    </div>
+  )
+}
+
+function EmailAreaChart({
+  values,
+  comparisonValues,
+  comparisonTone = "neutral",
+  label,
+  large = false,
+}: {
+  values: number[]
+  comparisonValues?: number[]
+  comparisonTone?: EmailComparisonTone
+  label: string
+  large?: boolean
+}) {
+  const width = large ? 320 : 150
+  const height = large ? 126 : 48
+  const insetX = large ? 4 : 3
+  const insetY = large ? 9 : 5
+  const allValues = [...values, ...(comparisonValues ?? [])]
+  const min = Math.min(...allValues)
+  const max = Math.max(...allValues)
+  const range = Math.max(max - min, 0.01)
+
+  function pointsFor(series: number[]) {
+    return series.map((value, index) => {
+      const x = insetX + (index / Math.max(series.length - 1, 1)) * (width - insetX * 2)
+      const y = insetY + (height - insetY * 2) - ((value - min) / range) * (height - insetY * 2)
+      return [x, y] as const
+    })
+  }
+
+  function pathFor(points: readonly (readonly [number, number])[]) {
+    return points.map(([x, y], index) => `${index === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`).join(" ")
+  }
+
+  const currentPoints = pointsFor(values)
+  const currentPath = pathFor(currentPoints)
+  const areaPath = `${currentPath} L ${width - insetX} ${height - insetY} L ${insetX} ${height - insetY} Z`
+  const comparisonPath = comparisonValues ? pathFor(pointsFor(comparisonValues)) : null
+  const lastPoint = currentPoints.at(-1)
+  const comparisonStroke = emailComparisonColor(comparisonTone)
+
+  return (
+    <svg
+      role="img"
+      aria-label={label}
+      viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="none"
+      className={large ? "h-[126px] w-full" : "h-12 w-full"}
+    >
+      <path d={areaPath} fill="var(--md-accent-a10)" />
+      {comparisonPath ? (
+        <path
+          d={comparisonPath}
+          fill="none"
+          stroke={comparisonStroke}
+          strokeDasharray={large ? "6 5" : "4 4"}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={large ? 2 : 1.5}
+          opacity="0.72"
+        />
+      ) : null}
+      <path
+        d={currentPath}
+        fill="none"
+        stroke="var(--md-accent)"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={large ? 2.6 : 2}
+      />
+      {lastPoint ? (
+        <circle
+          cx={lastPoint[0]}
+          cy={lastPoint[1]}
+          r={large ? 3.5 : 2.8}
+          fill="var(--md-accent)"
+          stroke="var(--md-surface)"
+          strokeWidth="2"
+        />
+      ) : null}
+    </svg>
+  )
+}
+
+type EmailComparisonTone = "positive" | "negative" | "neutral"
+
+type EmailComparisonDelta = {
+  label: string
+  tone: EmailComparisonTone
+}
+
+function emailComparisonDelta(current: number, comparison: number, lowerIsBetter = false): EmailComparisonDelta {
+  const difference = current - comparison
+  const percentage = comparison > 0 ? (difference / comparison) * 100 : current > 0 ? 100 : 0
+  const tone: EmailComparisonTone = difference === 0
+    ? "neutral"
+    : (lowerIsBetter ? difference < 0 : difference > 0)
+      ? "positive"
+      : "negative"
+
+  return {
+    label: `${difference > 0 ? "+" : ""}${percentage.toFixed(1)}%`,
+    tone,
+  }
+}
+
+function emailComparisonColor(tone: EmailComparisonTone) {
+  if (tone === "positive") return "var(--md-comparison-positive)"
+  if (tone === "negative") return "var(--md-comparison-negative)"
+  return "var(--md-subtle)"
+}
+
+function EmailDashboardDateControl({
+  preset,
+  currentRange,
+  customRange,
+  comparing,
+  comparisonRange,
+  currentHasData,
+  comparisonHasData,
+  onPresetChange,
+  onCustomRangeChange,
+  onComparingChange,
+  onComparisonRangeChange,
+}: {
+  preset: EmailDashboardPreset
+  currentRange: MultideckDateRange
+  customRange: MultideckDateRange
+  comparing: boolean
+  comparisonRange: MultideckDateRange
+  currentHasData: boolean
+  comparisonHasData: boolean
+  onPresetChange: (preset: EmailDashboardPreset) => void
+  onCustomRangeChange: (range: MultideckDateRange) => void
+  onComparingChange: (comparing: boolean) => void
+  onComparisonRangeChange: (range: MultideckDateRange) => void
+}) {
+  const { t } = useLanguage()
+  const comparisonOptions: MultideckDateComparisonOption[] = [
+    { id: "last-seven", label: "Last 7 days", range: getEmailComparisonRange(currentRange, 7) },
+    { id: "last-thirty", label: "Last 30 days", range: getEmailComparisonRange(currentRange, 30) },
+    { id: "last-ninety", label: "Last 90 days", range: getEmailComparisonRange(currentRange, 90) },
+    { id: "previous-period", label: "Previous period", range: getPreviousEmailPeriod(currentRange) },
+    { id: "one-year", label: "One year", range: getEmailComparisonRange(currentRange, 365) },
+    { id: "custom", label: "Custom", range: null },
+  ]
+
+  return (
+    <div className="ms-auto min-w-0 shrink-0">
+      <div className="max-w-full overflow-x-auto pb-1 md-scrollbar">
+        <div className="flex min-w-max items-center justify-end gap-1.5">
+          <div className="shrink-0">
+            <SegmentedControl
+              options={emailDashboardPresets}
+              value={preset as (typeof emailDashboardPresets)[number]}
+              onChange={onPresetChange}
+              className="rounded-[var(--md-radius-lg)] p-0.5"
+              ariaLabel={t("Dashboard date range")}
+              renderOption={(value) => t({
+                today: "Today",
+                week: "7D",
+                month: "30D",
+                ninety: "90D",
+              }[value])}
+            />
+          </div>
+          <MultideckDateRangePicker
+            value={customRange}
+            onChange={(range) => {
+              onPresetChange("custom")
+              onCustomRangeChange(range)
+            }}
+            triggerLabel={preset === "custom" ? undefined : t("Custom")}
+            placeholder="Custom"
+            title="Custom range"
+            description="Pick a start date, then an end date."
+            startLabel="Start"
+            endLabel="End"
+            footerLabel="Selected custom range"
+            active={preset === "custom"}
+            align="end"
+            triggerClassName="h-9 w-auto min-w-[82px] rounded-[var(--md-radius-md)] px-2.5 text-[12px]"
+            comparison={{
+              enabled: comparing,
+              value: comparisonRange,
+              onEnabledChange: onComparingChange,
+              onChange: onComparisonRangeChange,
+              options: comparisonOptions,
+              missing: comparing && !comparisonHasData,
+            }}
+            onOpenChange={(open) => {
+              if (open) onPresetChange("custom")
+            }}
+          />
+        </div>
+      </div>
+
+      {!currentHasData ? (
+        <p
+          role="status"
+          className="mt-1.5 text-end text-[11.5px] font-medium text-[var(--md-red)]"
+        >
+          {t("No data for the selected period.")}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+function AudiencePulse({
+  snapshot,
+  comparisonSnapshot,
+  comparing,
+}: {
+  snapshot: EmailDashboardSnapshot | null
+  comparisonSnapshot: EmailDashboardSnapshot | null
+  comparing: boolean
+}) {
+  const { t } = useLanguage()
+  if (!snapshot) return null
+  const comparisonAvailable = comparing && Boolean(comparisonSnapshot)
+  const netSubscribers = snapshot.newSubscribers - snapshot.unsubscribed
+  const audienceComparison = comparisonAvailable
+    ? emailComparisonDelta(snapshot.subscribedContacts, comparisonSnapshot!.subscribedContacts)
+    : null
+  const subscriberComparison = audienceComparison
+  const newSubscriberComparison = comparisonAvailable
+    ? emailComparisonDelta(snapshot.newSubscribers, comparisonSnapshot!.newSubscribers)
+    : null
+  const unsubscribedComparison = comparisonAvailable
+    ? emailComparisonDelta(snapshot.unsubscribed, comparisonSnapshot!.unsubscribed, true)
+    : null
+  const kpis = [
+    {
+      label: "Average CTR",
+      value: `${snapshot.averageCtr.toFixed(1)}%`,
+      current: snapshot.averageCtr,
+      comparison: comparisonSnapshot?.averageCtr,
+      series: snapshot.ctrSeries,
+      comparisonSeries: comparisonSnapshot?.ctrSeries,
+      Icon: MousePointerClick,
+    },
+    {
+      label: "Average open rate",
+      value: `${snapshot.averageOpenRate.toFixed(1)}%`,
+      current: snapshot.averageOpenRate,
+      comparison: comparisonSnapshot?.averageOpenRate,
+      series: snapshot.openSeries,
+      comparisonSeries: comparisonSnapshot?.openSeries,
+      Icon: MailCheck,
+    },
+    {
+      label: "Delivery rate",
+      value: `${snapshot.deliveryRate.toFixed(1)}%`,
+      current: snapshot.deliveryRate,
+      comparison: comparisonSnapshot?.deliveryRate,
+      series: snapshot.deliverySeries,
+      comparisonSeries: comparisonSnapshot?.deliverySeries,
+      Icon: Send,
+    },
+  ]
+
+  return (
+    <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
+      <div className="grid min-h-[352px] lg:grid-cols-[minmax(0,1.32fr)_minmax(300px,0.68fr)]">
+        <div className="flex flex-col justify-between bg-[var(--md-green-card)] p-5 sm:p-6">
+          <div>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <StatusPill tone="teal">Audience pulse</StatusPill>
+              <span
+                className="inline-flex items-center gap-1 text-[12px] font-medium tabular-nums"
+                style={{ color: audienceComparison ? emailComparisonColor(audienceComparison.tone) : "var(--md-text)" }}
+              >
+                {audienceComparison ? (
+                  <>
+                    {audienceComparison.tone !== "negative"
+                      ? <ArrowUpRight className="size-3.5" strokeWidth={1.5} />
+                      : <ArrowDownRight className="size-3.5" strokeWidth={1.5} />}
+                    {audienceComparison.label} {t("vs comparison")}
+                  </>
+                ) : comparing ? t("No comparison data") : t("Selected period")}
+              </span>
+            </div>
+            <p className="mt-7 text-[12px] font-medium text-[var(--md-text)]">Subscribed contacts</p>
+            <div className="mt-2 flex flex-wrap items-end gap-x-4 gap-y-2">
+              <strong className="text-[42px] font-medium leading-none tracking-[-0.035em] text-[var(--md-ink)] tabular-nums">
+                {snapshot.subscribedContacts.toLocaleString("en-GB")}
+              </strong>
+              <span className="pb-1 text-[13px] font-medium text-[var(--md-green)]">
+                {netSubscribers >= 0 ? "+" : ""}{netSubscribers} {t("net in selected period")}
+              </span>
+            </div>
+            <p className="mt-4 max-w-[56ch] text-[13px] leading-[1.55] text-[var(--md-text)]">
+              Growth is steady and engagement remains strongest in service advisories and rate updates.
+            </p>
+          </div>
+
+          <div className="mt-8 grid gap-3 sm:grid-cols-3">
+            {kpis.map(({ label, value, current, comparison, series, comparisonSeries, Icon }) => {
+              const delta = comparisonAvailable && comparison !== undefined
+                ? emailComparisonDelta(current, comparison)
+                : null
+
+              return (
+                <div key={label} className="rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-surface)_74%,transparent)] p-3.5 shadow-[var(--md-shadow-line)]">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[11px] font-medium text-[var(--md-subtle)]">{label}</p>
+                    <Icon className="size-4 text-[var(--md-text)]" strokeWidth={1.4} />
+                  </div>
+                  <div className="mt-2 flex items-end justify-between gap-3">
+                    <p className="text-[21px] font-medium leading-none text-[var(--md-ink)] tabular-nums">{value}</p>
+                    <span
+                      className="text-end text-[10.5px] font-medium tabular-nums"
+                      style={{ color: delta ? emailComparisonColor(delta.tone) : "var(--md-text)" }}
+                    >
+                      {delta
+                        ? `${delta.label} ${t("vs comparison")}`
+                        : comparing
+                          ? t("No comparison data")
+                          : t("Selected period")}
+                    </span>
+                  </div>
+                  <div className="mt-2">
+                    <EmailAreaChart
+                      values={series}
+                      comparisonValues={comparisonAvailable ? comparisonSeries : undefined}
+                      comparisonTone={delta?.tone}
+                      label={t(label)}
+                    />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        <div className="flex flex-col justify-between bg-[var(--md-surface)] p-5 sm:p-6">
+          <div>
+            <p className="text-[12px] font-medium text-[var(--md-subtle)]">Subscriber momentum</p>
+            <h3 className="mt-2 max-w-[18ch] text-balance text-[20px] font-medium leading-[1.2] tracking-[-0.02em] text-[var(--md-ink)]">
+              More relevant contacts, fewer silent sends.
+            </h3>
+          </div>
+
+          <div className="mt-7">
+            <EmailAreaChart
+              values={snapshot.subscriberSeries}
+              comparisonValues={comparisonAvailable ? comparisonSnapshot?.subscriberSeries : undefined}
+              comparisonTone={subscriberComparison?.tone}
+              label={t("Subscriber momentum over time")}
+              large
+            />
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] font-medium text-[var(--md-text)]">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-0.5 w-5 rounded-full bg-[var(--md-accent)]" />
+                {t("Selected period")}
+              </span>
+              {comparisonAvailable ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <span
+                    className="w-5 border-t border-dashed"
+                    style={{ borderColor: emailComparisonColor(subscriberComparison?.tone ?? "neutral") }}
+                  />
+                  {t("Comparison period")}
+                </span>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="mt-6 grid grid-cols-2 gap-3">
+            <div>
+              <p className="text-[11px] font-medium text-[var(--md-subtle)]">New subscribers</p>
+              <p className="mt-1 text-[18px] font-medium text-[var(--md-ink)] tabular-nums">+{snapshot.newSubscribers}</p>
+              {newSubscriberComparison ? (
+                <p
+                  className="mt-1 text-[10.5px] font-medium tabular-nums"
+                  style={{ color: emailComparisonColor(newSubscriberComparison.tone) }}
+                >
+                  {newSubscriberComparison.label} {t("vs comparison")}
+                </p>
+              ) : null}
+            </div>
+            <div>
+              <p className="text-[11px] font-medium text-[var(--md-subtle)]">Unsubscribed</p>
+              <p className="mt-1 text-[18px] font-medium text-[var(--md-ink)] tabular-nums">{snapshot.unsubscribed}</p>
+              {unsubscribedComparison ? (
+                <p
+                  className="mt-1 text-[10.5px] font-medium tabular-nums"
+                  style={{ color: emailComparisonColor(unsubscribedComparison.tone) }}
+                >
+                  {unsubscribedComparison.label} {t("vs comparison")}
+                </p>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </div>
+    </Surface>
+  )
+}
+
+function SubscriberChangesPanel({
+  snapshot,
+  comparisonSnapshot,
+  comparing,
+  onOpenEmails,
+}: {
+  snapshot: EmailDashboardSnapshot
+  comparisonSnapshot: EmailDashboardSnapshot | null
+  comparing: boolean
+  onOpenEmails: () => void
+}) {
+  const { t } = useLanguage()
+
+  function changeMeta(value: number, comparisonValue?: number) {
+    if (!comparing) return `${value} ${t("selected period")}`
+    if (comparisonValue === undefined) return `${value} · ${t("No comparison data")}`
+    const difference = value - comparisonValue
+    return `${value} · ${difference >= 0 ? "+" : ""}${difference} ${t("vs comparison")}`
+  }
+
+  return (
+    <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
+      <div className="flex flex-wrap items-start justify-between gap-3 px-5 py-5">
+        <SectionHeader title="Audience changes" meta="latest subscribes and unsubscribes" />
+        <Button
+          type="button"
+          variant="ghost"
+          className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] active:scale-[0.96]"
+          onClick={onOpenEmails}
+        >
+          View all emails
+          <ArrowRight className="size-3.5 rtl:rotate-180" strokeWidth={1.4} />
+        </Button>
+      </div>
+
+      <div className="grid gap-px bg-[var(--md-surface-tint)] md:grid-cols-2">
+        {([
+          ["Subscribed", changeMeta(snapshot.newSubscribers, comparisonSnapshot?.newSubscribers), recentSubscriberChanges.subscribed, ArrowUpRight, "green"],
+          ["Unsubscribed", changeMeta(snapshot.unsubscribed, comparisonSnapshot?.unsubscribed), recentSubscriberChanges.unsubscribed, ArrowDownRight, "neutral"],
+        ] as const).map(([title, meta, people, Icon, tone]) => (
+          <section key={title} className="bg-[var(--md-surface)] p-5" aria-label={title}>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <span className={`grid size-8 place-items-center rounded-[var(--md-radius-md)] ${
+                  tone === "green" ? "bg-[var(--md-green-soft)] text-[var(--md-green)]" : "bg-[var(--md-surface-tint)] text-[var(--md-text)]"
+                }`}>
+                  <Icon className="size-4" strokeWidth={1.5} />
+                </span>
+                <h3 className="text-[14px] font-medium text-[var(--md-ink)]">{title}</h3>
+              </div>
+              <span className="text-[12px] font-medium text-[var(--md-subtle)] tabular-nums">{meta}</span>
+            </div>
+            <div className="mt-4 grid gap-1">
+              {people.map(([name, company, detail]) => (
+                <div key={`${title}-${name}`} className="grid gap-1 rounded-[var(--md-radius-lg)] px-3 py-2.5 hover:bg-[var(--md-surface-tint)] sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-4">
+                  <div className="min-w-0">
+                    <p className="truncate text-[13px] font-medium text-[var(--md-ink)]">{name}</p>
+                    <p className="truncate text-[12px] text-[var(--md-text)]">{company}</p>
+                  </div>
+                  <p className="text-[11px] text-[var(--md-subtle)] sm:text-end">{detail}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+    </Surface>
+  )
+}
+
+function RecentBroadcastsPanel({
+  navigate,
+  onOpenBroadcasts,
+}: {
+  navigate: (path: string) => void
+  onOpenBroadcasts: () => void
+}) {
+  return (
+    <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
+      <div className="flex flex-wrap items-start justify-between gap-3 px-5 py-5">
+        <SectionHeader title="Recent broadcasts" meta="performance and delivery state" />
+        <Button
+          type="button"
+          variant="ghost"
+          className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] active:scale-[0.96]"
+          onClick={onOpenBroadcasts}
+        >
+          View broadcasts
+          <ArrowRight className="size-3.5 rtl:rotate-180" strokeWidth={1.4} />
+        </Button>
+      </div>
+      <div className="grid gap-1 px-3 pb-3">
+        {crmEmailCampaigns.map((broadcast) => (
+          <button
+            key={broadcast.id}
+            type="button"
+            className="grid gap-3 rounded-[var(--md-radius-lg)] p-3 text-start transition-[background,transform] duration-150 hover:bg-[var(--md-surface-tint)] active:scale-[0.99] sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center sm:gap-5"
+            onClick={() => navigate(getCrmEmailCampaignPath(broadcast, "stats"))}
+          >
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="truncate text-[13px] font-medium text-[var(--md-ink)]">{broadcast.name}</h3>
+                <StatusPill tone={broadcast.tone}>{broadcast.status}</StatusPill>
+              </div>
+              <p className="mt-1 truncate text-[12px] text-[var(--md-text)]">{broadcast.audience}</p>
+            </div>
+            <div className="flex gap-6">
+              <div>
+                <p className="text-[10px] font-medium text-[var(--md-subtle)]">Open</p>
+                <p className="mt-1 text-[13px] font-medium text-[var(--md-ink)] tabular-nums">{broadcast.open}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-medium text-[var(--md-subtle)]">CTR</p>
+                <p className="mt-1 text-[13px] font-medium text-[var(--md-ink)] tabular-nums">{broadcast.click}</p>
+              </div>
+            </div>
+            <ArrowRight className="hidden size-4 text-[var(--md-subtle)] rtl:rotate-180 sm:block" strokeWidth={1.4} />
+          </button>
+        ))}
+      </div>
+    </Surface>
+  )
+}
+
+function BroadcastsView({ navigate }: { navigate: (path: string) => void }) {
+  return (
+    <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
+      <div className="flex flex-wrap items-start justify-between gap-3 px-5 py-5">
+        <SectionHeader title="Broadcasts" meta="scheduled, sent, and draft email sends" />
+        <p className="text-[12px] font-medium text-[var(--md-text)]">Average CTR 16.4% · open rate 50.6%</p>
+      </div>
+      <div className="overflow-x-auto px-5 pb-5">
+        <Table className="min-w-[1040px]">
+          <TableHeader>
+            <TableRow className="border-[rgba(11,20,19,0.05)] hover:bg-transparent">
+              <TableHead>Broadcast</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead>List</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Send time</TableHead>
+              <TableHead>Open</TableHead>
+              <TableHead>CTR</TableHead>
+              <TableHead className="w-[92px] text-end">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {crmEmailCampaigns.map((broadcast) => (
+              <TableRow
+                key={broadcast.id}
+                className="h-[68px] cursor-pointer border-[rgba(11,20,19,0.04)] hover:bg-[var(--md-surface-tint)]"
+                onClick={() => navigate(getCrmEmailCampaignPath(broadcast, "stats"))}
+              >
+                <TableCell className="font-medium text-[var(--md-ink)]">{broadcast.name}</TableCell>
+                <TableCell className="text-[var(--md-text)]">{broadcast.type}</TableCell>
+                <TableCell className="text-[var(--md-text)]">{broadcast.audience}</TableCell>
+                <TableCell><StatusPill tone={broadcast.tone}>{broadcast.status}</StatusPill></TableCell>
+                <TableCell className="text-[var(--md-text)]">{broadcast.when}</TableCell>
+                <TableCell className="font-medium text-[var(--md-ink)] tabular-nums">{broadcast.open}</TableCell>
+                <TableCell className="font-medium text-[var(--md-ink)] tabular-nums">{broadcast.click}</TableCell>
+                <TableCell>
+                  <div className="flex justify-end gap-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`See statistics for ${broadcast.name}`}
+                      className="size-8 rounded-[var(--md-radius-sm)] bg-[var(--md-surface-tint)]"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        navigate(getCrmEmailCampaignPath(broadcast, "stats"))
+                      }}
+                    >
+                      <ChartNoAxesCombined strokeWidth={1.4} />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Edit ${broadcast.name}`}
+                      className="size-8 rounded-[var(--md-radius-sm)] bg-[var(--md-surface-tint)]"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        navigate(getCrmEmailCampaignPath(broadcast, "edit"))
+                      }}
+                    >
+                      <PenLine strokeWidth={1.4} />
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </Surface>
+  )
+}
+
+function ListsView({ navigate }: { navigate: (path: string) => void }) {
+  return (
+    <div className="grid gap-[var(--md-gap-md)] md:grid-cols-2 xl:grid-cols-3">
+      {crmEmailLists.map((list) => (
+        <button
+          key={list.id}
+          type="button"
+          className="group flex min-h-[240px] flex-col rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 text-start shadow-[var(--md-shadow-line)] transition-[background,box-shadow,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--md-surface)_88%,var(--md-accent)_12%)] hover:shadow-[var(--md-shadow-lift)] active:scale-[0.98]"
+          onClick={() => navigate(getCrmListPath(list))}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <span className="grid size-10 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] text-[var(--md-text)]">
+              <Users className="size-5" strokeWidth={1.4} />
+            </span>
+            <StatusPill tone={list.statusTone}>{list.type}</StatusPill>
+          </div>
+          <h3 className="mt-5 text-balance text-[16px] font-medium leading-[1.25] text-[var(--md-ink)]">{list.name}</h3>
+          <p className="mt-2 line-clamp-2 text-pretty text-[13px] leading-[1.55] text-[var(--md-text)]">{list.description}</p>
+          <div className="mt-auto flex items-end justify-between gap-4 pt-6">
+            <div>
+              <p className="text-[24px] font-medium leading-none text-[var(--md-ink)] tabular-nums">{list.count}</p>
+              <p className="mt-1 text-[11px] text-[var(--md-subtle)]">contacts · {list.delta}</p>
+            </div>
+            <ArrowRight className="size-4 text-[var(--md-subtle)] transition-transform group-hover:translate-x-0.5 rtl:rotate-180 rtl:group-hover:-translate-x-0.5" strokeWidth={1.4} />
+          </div>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function TemplatesView() {
+  return (
+    <section className="grid gap-[var(--md-gap-md)]">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-[18px] font-medium tracking-[-0.015em] text-[var(--md-ink)]">Email templates</h2>
+          <p className="mt-1 max-w-[65ch] text-pretty text-[13px] leading-[1.55] text-[var(--md-text)]">
+            Reusable layouts already connected to your logo, colours, and compliance footer.
+          </p>
+        </div>
+        <Button
+          variant="ghost"
+          className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] active:scale-[0.96]"
+          onClick={() => toast.success("HTML upload opened")}
+        >
+          <Upload className="size-4" strokeWidth={1.4} />
+          Upload template
+        </Button>
+      </div>
+      <div className="grid gap-[var(--md-gap-md)] md:grid-cols-2 2xl:grid-cols-4">
+        {crmEmailTemplates.map((template) => (
+          <button
+            key={template.name}
+            type="button"
+            className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-4 text-start shadow-[var(--md-shadow-line)] transition-[background,transform,box-shadow] duration-150 hover:bg-[color-mix(in_srgb,var(--md-surface)_90%,var(--md-accent)_10%)] hover:shadow-[var(--md-shadow-lift)] active:scale-[0.98]"
+            onClick={() => toast.success(`${template.name} selected`)}
+          >
+            <EmailTemplatePreview variant={template.accent} />
+            <h3 className="mt-4 text-[15px] font-medium text-[var(--md-ink)]">{template.name}</h3>
+            <p className="mt-1 text-[13px] leading-[1.5] text-[var(--md-text)]">{template.detail}</p>
+          </button>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function AutomationsView() {
+  return (
+    <div className="grid gap-[var(--md-gap-md)] xl:grid-cols-2">
+      {emailMarketingAutomations.map((automation) => (
+        <Surface key={automation.name} padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
+          <div className="flex items-start gap-4 p-5">
+            <span className="grid size-11 shrink-0 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] text-[var(--md-ink)]">
+              {automation.status === "Paused" ? <CirclePause className="size-5" strokeWidth={1.4} /> : <Workflow className="size-5" strokeWidth={1.4} />}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-[15px] font-medium text-[var(--md-ink)]">{automation.name}</h3>
+                <StatusPill tone={automation.tone}>{automation.status}</StatusPill>
+              </div>
+              <p className="mt-2 text-[13px] leading-[1.5] text-[var(--md-text)]">{automation.trigger}</p>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={`Edit ${automation.name}`}
+              className="size-9 rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] active:scale-[0.96]"
+              onClick={() => toast.success(`${automation.name} opened`)}
+            >
+              <PenLine strokeWidth={1.4} />
+            </Button>
+          </div>
+          <div className="grid gap-px bg-[var(--md-surface-tint)] sm:grid-cols-4">
+            {[
+              ["Audience", automation.audience],
+              ["Entered", automation.entered],
+              ["Result", automation.performance],
+              ["Last run", automation.lastRun],
+            ].map(([label, value]) => (
+              <div key={label} className="bg-[var(--md-surface)] px-4 py-3">
+                <p className="text-[10px] font-medium text-[var(--md-subtle)]">{label}</p>
+                <p className="mt-1 text-[12px] font-medium leading-[1.4] text-[var(--md-ink)]">{value}</p>
+              </div>
+            ))}
+          </div>
+        </Surface>
+      ))}
+    </div>
+  )
+}
+
+function EmailsView() {
+  const { t } = useLanguage()
+  const [query, setQuery] = useState("")
+  const [status, setStatus] = useState<"all" | EmailMarketingContactStatus>("all")
+  const filteredContacts = useMemo(() => {
+    const normalized = query.trim().toLowerCase()
+    return emailMarketingContacts.filter((contact) => {
+      const matchesQuery = !normalized
+        || `${contact.email} ${contact.name} ${contact.company} ${contact.lists}`.toLowerCase().includes(normalized)
+      const matchesStatus = status === "all" || contact.status === status
+      return matchesQuery && matchesStatus
+    })
+  }, [query, status])
+
+  return (
+    <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
+      <div className="flex flex-col gap-4 px-5 py-5 lg:flex-row lg:items-end lg:justify-between">
+        <SectionHeader title="Emails" meta={`${emailMarketingContacts.length} contact records with consent and delivery status`} />
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <label className="relative min-w-0 sm:w-[280px]">
+            <span className="sr-only">Search emails</span>
+            <Search className="pointer-events-none absolute inset-inline-start-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.4} />
+            <Input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              className="h-10 bg-[var(--md-field-bg)] ps-10 text-base sm:text-[13px]"
+              placeholder="Search email, contact, company, or list…"
+            />
+          </label>
+          <Select value={status} onValueChange={(value) => setStatus(value as typeof status)}>
+            <SelectTrigger className="h-10 min-w-[168px] bg-[var(--md-field-bg)] text-base sm:text-[13px]">
+              <ListFilter className="size-4" strokeWidth={1.4} />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t("All statuses")}</SelectItem>
+              <SelectItem value="Subscribed">{t("Subscribed")}</SelectItem>
+              <SelectItem value="Unsubscribed">{t("Unsubscribed")}</SelectItem>
+              <SelectItem value="Bounced">{t("Bounced")}</SelectItem>
+              <SelectItem value="Pending">{t("Pending")}</SelectItem>
+              <SelectItem value="Replied">{t("Replied")}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {filteredContacts.length ? (
+        <div className="overflow-x-auto px-5 pb-5">
+          <Table className="min-w-[1080px]">
+            <TableHeader>
+              <TableRow className="border-[rgba(11,20,19,0.05)] hover:bg-transparent">
+                <TableHead>Email</TableHead>
+                <TableHead>Contact</TableHead>
+                <TableHead>Company</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Source</TableHead>
+                <TableHead>Lists</TableHead>
+                <TableHead>Last activity</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredContacts.map((contact) => (
+                <TableRow key={contact.email} className="h-[64px] border-[rgba(11,20,19,0.04)] hover:bg-[var(--md-surface-tint)]">
+                  <TableCell className="font-medium text-[var(--md-ink)]" data-i18n-skip dir="ltr"><bdi>{contact.email}</bdi></TableCell>
+                  <TableCell className="text-[var(--md-text)]">{contact.name}</TableCell>
+                  <TableCell className="text-[var(--md-text)]">{contact.company}</TableCell>
+                  <TableCell>
+                    <StatusPill
+                      tone={contactStatusTone(contact.status)}
+                      className={`md-email-status-pill md-email-status-pill--${contact.status.toLowerCase()} !h-[26px] !w-[104px] !justify-center !rounded-[var(--md-radius-lg)] !px-2.5 !text-center !text-[12.5px] !font-medium !leading-none`}
+                    >
+                      {t(contact.status)}
+                    </StatusPill>
+                  </TableCell>
+                  <TableCell className="text-[var(--md-text)]">{contact.source}</TableCell>
+                  <TableCell className="text-[var(--md-text)]">{contact.lists}</TableCell>
+                  <TableCell className="text-[var(--md-text)]">{contact.lastActivity}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      ) : (
+        <div className="mx-5 mb-5 grid min-h-[220px] place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-6 text-center">
+          <div>
+            <Search className="mx-auto size-5 text-[var(--md-subtle)]" strokeWidth={1.4} />
+            <h3 className="mt-3 text-[14px] font-medium text-[var(--md-ink)]">No matching emails</h3>
+            <p className="mt-1 text-[13px] text-[var(--md-text)]">Clear the search or choose another status.</p>
+            <Button
+              type="button"
+              variant="ghost"
+              className="mt-4 h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] px-3 text-[12px] font-medium shadow-[var(--md-shadow-line)]"
+              onClick={() => {
+                setQuery("")
+                setStatus("all")
+              }}
+            >
+              Clear filters
+            </Button>
+          </div>
+        </div>
+      )}
+    </Surface>
+  )
+}
+
 export function CrmEmailsPage({ navigate }: { navigate: (path: string) => void }) {
+  const { t } = useLanguage()
+  const [activeSection, setActiveSection] = useState<EmailMarketingSection>(readEmailMarketingSection)
+  const [dashboardPreset, setDashboardPreset] = useState<EmailDashboardPreset>("month")
+  const [customRange, setCustomRange] = useState<MultideckDateRange>(() => getEmailPresetRange("month"))
+  const [comparing, setComparing] = useState(false)
+  const [comparisonRange, setComparisonRange] = useState<MultideckDateRange>(() => (
+    getPreviousEmailPeriod(getEmailPresetRange("month"))
+  ))
+  const selectedRange = dashboardPreset === "custom" ? customRange : getEmailPresetRange(dashboardPreset)
+  const dashboardSnapshot = useMemo(() => getEmailDashboardSnapshot(selectedRange), [selectedRange.start, selectedRange.end])
+  const comparisonSnapshot = useMemo(
+    () => comparing ? getEmailDashboardSnapshot(comparisonRange) : null,
+    [comparing, comparisonRange.start, comparisonRange.end],
+  )
+
+  useEffect(() => {
+    const onPopState = () => setActiveSection(readEmailMarketingSection())
+    window.addEventListener("popstate", onPopState)
+    return () => window.removeEventListener("popstate", onPopState)
+  }, [])
+
+  function selectSection(section: EmailMarketingSection) {
+    setActiveSection(section)
+    const url = new URL(window.location.href)
+    if (section === "dashboard") url.searchParams.delete("tab")
+    else url.searchParams.set("tab", section)
+    window.history.replaceState(null, "", `${url.pathname}${url.search}`)
+  }
+
+  function selectDashboardPreset(preset: EmailDashboardPreset) {
+    setDashboardPreset(preset)
+    const nextRange = preset === "custom" ? customRange : getEmailPresetRange(preset)
+    setComparisonRange(getPreviousEmailPeriod(nextRange))
+  }
+
+  function updateCustomRange(range: MultideckDateRange) {
+    setCustomRange(range)
+    setDashboardPreset("custom")
+    setComparisonRange(getPreviousEmailPeriod(range))
+  }
+
   return (
     <div className="md-page md-page-stack">
       <CrmPageHeader
-        title="Emails"
+        eyebrow="Email marketing"
+        title="Email marketing"
+        summary="Build audiences, send broadcasts, and turn engagement into the next useful customer conversation."
+        meta={dashboardSnapshot
+          ? `${dashboardSnapshot.subscribedContacts.toLocaleString("en-GB")} ${t("subscribed")} · ${dashboardSnapshot.averageCtr.toFixed(1)}% ${t("average CTR")} · ${dashboardSnapshot.deliveryRate.toFixed(1)}% ${t("delivered")}`
+          : t("No data for the selected period.")}
         action={
           <>
             <Button
               variant="ghost"
-              className="h-10 rounded-[var(--md-radius-lg)] bg-white/35 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/65"
-              onClick={() => toast.success("Brand kit opened")}
+              className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] active:scale-[0.96]"
+              onClick={() => selectSection("templates")}
             >
-              Brand kit
+              <LayoutTemplate className="size-4" strokeWidth={1.4} />
+              Templates
             </Button>
-            <PrimaryActionButton onClick={() => toast.success("Email draft created")}>New email</PrimaryActionButton>
+            <PrimaryActionButton onClick={() => toast.success(t("Broadcast draft created"))}>
+              New broadcast
+            </PrimaryActionButton>
           </>
         }
       />
 
-      <section className="grid gap-[var(--md-gap-md)]">
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-          <div className="flex flex-wrap items-baseline gap-4">
-            <h2 className="text-[18px] font-medium text-[var(--md-ink)]">Start from a template</h2>
-            <p className="text-[13px] text-[var(--md-text)]">All templates carry your logo, colors and footer automatically</p>
-          </div>
-          <Button
-            variant="ghost"
-            className="h-10 w-fit rounded-[var(--md-radius-lg)] bg-white/35 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/65"
-            onClick={() => toast.success("HTML upload opened")}
-          >
-            <Upload data-icon="inline-start" strokeWidth={1.2} />
-            Upload email
-          </Button>
-        </div>
-        <div className="grid gap-[var(--md-gap-md)] md:grid-cols-2 2xl:grid-cols-4">
-          {crmEmailTemplates.map((template) => (
-            <button
-              key={template.name}
-              type="button"
-              className="rounded-[var(--md-radius-xl)] bg-white/72 p-4 text-left shadow-[var(--md-shadow-line)] transition-[background,transform,box-shadow] duration-200 hover:scale-[1.01] hover:bg-white/88 hover:shadow-[var(--md-shadow-lift)]"
-              onClick={() => toast.success(`${template.name} selected`)}
-            >
-              <EmailTemplatePreview variant={template.accent} />
-              <h3 className="mt-4 text-[15px] font-medium text-[var(--md-ink)]">{template.name}</h3>
-              <p className="mt-1 text-[13px] text-[var(--md-text)]">{template.detail}</p>
-            </button>
-          ))}
-        </div>
-      </section>
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <EmailMarketingTabs activeSection={activeSection} onSelect={selectSection} />
+        {activeSection === "dashboard" ? (
+          <EmailDashboardDateControl
+            preset={dashboardPreset}
+            currentRange={selectedRange}
+            customRange={customRange}
+            comparing={comparing}
+            comparisonRange={comparisonRange}
+            currentHasData={Boolean(dashboardSnapshot)}
+            comparisonHasData={Boolean(comparisonSnapshot)}
+            onPresetChange={selectDashboardPreset}
+            onCustomRangeChange={updateCustomRange}
+            onComparingChange={setComparing}
+            onComparisonRangeChange={setComparisonRange}
+          />
+        ) : null}
+      </div>
 
-      <div>
-        <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-          <div className="flex flex-col gap-2 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-            <SectionHeader title="Campaigns" />
-            <p className="text-[13px] font-medium text-[var(--md-text)]">Avg open 51% · industry 28%</p>
+      <div role="tabpanel" aria-label={emailMarketingSections.find((section) => section.id === activeSection)?.label}>
+        {activeSection === "dashboard" ? (
+          <div className="grid gap-[var(--md-page-stack-gap)]">
+            {dashboardSnapshot ? (
+              <>
+                <AudiencePulse
+                  snapshot={dashboardSnapshot}
+                  comparisonSnapshot={comparisonSnapshot}
+                  comparing={comparing}
+                />
+                <div className="grid gap-[var(--md-page-stack-gap)] 2xl:grid-cols-[minmax(0,1.12fr)_minmax(420px,0.88fr)]">
+                  <SubscriberChangesPanel
+                    snapshot={dashboardSnapshot}
+                    comparisonSnapshot={comparisonSnapshot}
+                    comparing={comparing}
+                    onOpenEmails={() => selectSection("emails")}
+                  />
+                  <RecentBroadcastsPanel navigate={navigate} onOpenBroadcasts={() => selectSection("broadcasts")} />
+                </div>
+              </>
+            ) : (
+              <Surface padding="lg" className="grid min-h-[280px] place-items-center rounded-[var(--md-radius-xl)] text-center">
+                <div className="max-w-[420px]">
+                  <ChartNoAxesCombined className="mx-auto size-6 text-[var(--md-subtle)]" strokeWidth={1.4} />
+                  <h2 className="mt-4 text-[16px] font-medium text-[var(--md-ink)]">{t("No email marketing data for these dates")}</h2>
+                  <p className="mt-2 text-[13px] leading-5 text-[var(--md-text)]">
+                    {t("Choose a period between 1 January and 30 July 2026 to see the dashboard.")}
+                  </p>
+                </div>
+              </Surface>
+            )}
           </div>
-          <div className="overflow-x-auto px-5 pb-5">
-            <Table className="min-w-[1080px]">
-              <TableHeader>
-                <TableRow className="border-[rgba(11,20,19,0.05)] hover:bg-transparent">
-                  <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Email</TableHead>
-                  <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Type</TableHead>
-                  <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Audience list</TableHead>
-                  <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Status</TableHead>
-                  <TableHead className="text-[12px] font-medium text-[var(--md-text)]">When</TableHead>
-                  <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Open</TableHead>
-                  <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Click</TableHead>
-                  <TableHead className="w-[92px] text-right text-[12px] font-medium text-[var(--md-text)]">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {crmEmailCampaigns.map((campaign) => (
-                  <TableRow
-                    key={campaign.name}
-                    className="h-[68px] cursor-pointer border-[rgba(11,20,19,0.04)] hover:bg-white/35"
-                    onClick={() => navigate(getCrmEmailCampaignPath(campaign, "stats"))}
-                  >
-                    <TableCell className="text-[14px] font-medium text-[var(--md-ink)]">{campaign.name}</TableCell>
-                    <TableCell className="text-[13px] text-[var(--md-text)]">{campaign.type}</TableCell>
-                    <TableCell className="text-[13px] text-[var(--md-text)]">{campaign.audience}</TableCell>
-                    <TableCell><StatusPill tone={campaign.tone}>{campaign.status}</StatusPill></TableCell>
-                    <TableCell className="text-[13px] text-[var(--md-text)]">{campaign.when}</TableCell>
-                    <TableCell className="text-[14px] font-medium text-[var(--md-ink)]">{campaign.open}</TableCell>
-                    <TableCell className="text-[14px] font-medium text-[var(--md-ink)]">{campaign.click}</TableCell>
-                    <TableCell>
-                      <div className="flex justify-end gap-1">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          aria-label={`See statistics for ${campaign.name}`}
-                          className="size-8 rounded-[var(--md-radius-sm)] bg-white/45 shadow-[var(--md-shadow-line)] hover:bg-white/75"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            navigate(getCrmEmailCampaignPath(campaign, "stats"))
-                          }}
-                        >
-                          <ChartNoAxesCombined data-icon="inline-start" strokeWidth={1.2} />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          aria-label={`Edit ${campaign.name}`}
-                          className="size-8 rounded-[var(--md-radius-sm)] bg-white/45 shadow-[var(--md-shadow-line)] hover:bg-white/75"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            navigate(getCrmEmailCampaignPath(campaign, "edit"))
-                          }}
-                        >
-                          <PenLine data-icon="inline-start" strokeWidth={1.2} />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </Surface>
+        ) : null}
+        {activeSection === "broadcasts" ? <BroadcastsView navigate={navigate} /> : null}
+        {activeSection === "lists" ? <ListsView navigate={navigate} /> : null}
+        {activeSection === "templates" ? <TemplatesView /> : null}
+        {activeSection === "automations" ? <AutomationsView /> : null}
+        {activeSection === "emails" ? <EmailsView /> : null}
       </div>
     </div>
   )
@@ -1639,9 +2856,9 @@ export function CrmEmailStatsPage({ navigate, campaignId }: { navigate: (path: s
   return (
     <div className="md-page md-page-stack">
       <CrmPageHeader
-        eyebrow="Emails"
+        eyebrow="Broadcasts"
         title={`${campaign.name} statistics`}
-        summary="Campaign performance, engaged contacts, and unsubscribes in one full workspace."
+        summary="Broadcast performance, engaged contacts, and unsubscribes in one focused workspace."
         meta={`${campaign.audience} · ${campaign.when}`}
         action={
           <>
@@ -1651,7 +2868,7 @@ export function CrmEmailStatsPage({ navigate, campaignId }: { navigate: (path: s
               onClick={() => navigate("/crm/emails")}
             >
               <ArrowLeft data-icon="inline-start" strokeWidth={1.2} />
-              Back to emails
+              Back to broadcasts
             </Button>
             <Button
               variant="ghost"
@@ -1659,7 +2876,7 @@ export function CrmEmailStatsPage({ navigate, campaignId }: { navigate: (path: s
               onClick={() => navigate(getCrmEmailCampaignPath(campaign, "edit"))}
             >
               <PenLine data-icon="inline-start" strokeWidth={1.2} />
-              Edit email
+              Edit broadcast
             </Button>
           </>
         }
@@ -1746,7 +2963,7 @@ export function CrmEmailEditPage({ navigate, campaignId }: { navigate: (path: st
   return (
     <div className="md-page md-page-stack">
       <CrmPageHeader
-        eyebrow="Emails"
+        eyebrow="Broadcasts"
         title={`Edit ${campaign.name}`}
         summary="Update the subject, audience, uploaded assets, and send settings before the next review."
         meta={`${campaign.status} · ${campaign.edited}`}
@@ -1758,7 +2975,7 @@ export function CrmEmailEditPage({ navigate, campaignId }: { navigate: (path: st
               onClick={() => navigate("/crm/emails")}
             >
               <ArrowLeft data-icon="inline-start" strokeWidth={1.2} />
-              Back to emails
+              Back to broadcasts
             </Button>
             <Button
               className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]"
@@ -1813,7 +3030,7 @@ export function CrmEmailEditPage({ navigate, campaignId }: { navigate: (path: st
         </Surface>
 
         <Surface padding="lg" className="rounded-[var(--md-radius-xl)]">
-          <SectionHeader title="Review" meta="current campaign state" />
+          <SectionHeader title="Review" meta="current broadcast state" />
           <div className="mt-[var(--md-page-stack-gap)] grid gap-3">
             {[
               ["Type", campaign.type],

@@ -46,11 +46,13 @@ function Bloom(props: BloomCanvasProps) {
  */
 export const SpectralBloomShader = memo(function SpectralBloomShader({
   tone = "button",
+  shape = "compact",
 }: {
   tone?: "button" | "brand"
+  shape?: "compact" | "composer"
 }) {
   const stops = useAccentShaderRamp(tone)
-  return <Bloom tone={tone} stops={stops} />
+  return <Bloom tone={tone} shape={shape} stops={stops} />
 })
 
 /** A fixed ramp, for previewing an accent other than the active one. */

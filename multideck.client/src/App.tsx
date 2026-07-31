@@ -10,8 +10,10 @@ import { mdMotion } from "@/lib/motion"
 import { rememberAuthReturnPath, takeAuthReturnPath } from "@/lib/auth-routing"
 import { summarizeAuthUser, type AuthUserSummary } from "@/lib/auth-user"
 import { getApiAuthSession } from "@/lib/api"
-import type { UserProfilePhoto } from "@/lib/profile-photo"
+import { createProfilePhotoSignedUrls, type UserProfilePhoto } from "@/lib/profile-photo"
 import { isSupabaseConfigured, supabase } from "@/lib/supabase"
+import { ThemeProfileSync } from "@/lib/theme-preferences"
+import { LanguageProfileSync } from "@/lib/language-preferences"
 
 const OverviewPage = lazy(() => import("@/pages/overview-page").then((module) => ({ default: module.OverviewPage })))
 const AgentDexterPage = lazy(() => import("@/pages/agent-dexter-page").then((module) => ({ default: module.AgentDexterPage })))
@@ -50,6 +52,28 @@ const CrmMarketingPage = lazy(() => import("@/pages/crm-page").then((module) => 
 const CrmSettingsPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmSettingsPage })))
 
 type AuthStatus = "checking" | "authenticated" | "unauthenticated"
+type ProfileMediaUrls = {
+  profilePhotoPath: string | null
+  profilePhotoUrl: string | null
+  coverPhotoPath: string | null
+  coverPhotoUrl: string | null
+}
+
+const emptyProfileMediaUrls: ProfileMediaUrls = {
+  profilePhotoPath: null,
+  profilePhotoUrl: null,
+  coverPhotoPath: null,
+  coverPhotoUrl: null,
+}
+
+function preloadImage(url: string) {
+  return new Promise<void>((resolve) => {
+    const image = new Image()
+    image.onload = () => resolve()
+    image.onerror = () => resolve()
+    image.src = url
+  })
+}
 
 const validRoutes = new Set([
   "/",
@@ -168,11 +192,50 @@ export default function App() {
   const [route, setRoute] = useState(getRoute)
   const [authStatus, setAuthStatus] = useState<AuthStatus>(isSupabaseConfigured ? "checking" : "unauthenticated")
   const [currentUser, setCurrentUser] = useState<AuthUserSummary | null>(null)
+  const [profileMediaUrls, setProfileMediaUrls] = useState<ProfileMediaUrls>(emptyProfileMediaUrls)
   const isLocalNavigationLab = import.meta.env.DEV && (route === "/playground/navigation" || route === "/settings")
   const isPasswordRecoveryRoute = route === "/auth" && new URLSearchParams(window.location.search).get("mode") === "reset-password"
   const handleProfilePhotoChange = useCallback((profilePhoto: UserProfilePhoto | null) => {
     setCurrentUser((user) => user ? { ...user, profilePhoto } : user)
   }, [])
+  const handleCoverPhotoChange = useCallback((coverPhoto: UserProfilePhoto | null) => {
+    setCurrentUser((user) => user ? { ...user, coverPhoto } : user)
+  }, [])
+
+  useEffect(() => {
+    const profilePhoto = currentUser?.profilePhoto ?? null
+    const coverPhoto = currentUser?.coverPhoto ?? null
+    const photos = [profilePhoto, coverPhoto].filter((photo): photo is UserProfilePhoto => Boolean(photo))
+
+    if (photos.length === 0) {
+      setProfileMediaUrls(emptyProfileMediaUrls)
+      return
+    }
+
+    let cancelled = false
+    createProfilePhotoSignedUrls(photos)
+      .then(async (signedUrls) => {
+        const profilePhotoUrl = profilePhoto ? signedUrls.get(profilePhoto.path) ?? null : null
+        const coverPhotoUrl = coverPhoto ? signedUrls.get(coverPhoto.path) ?? null : null
+        await Promise.all([profilePhotoUrl, coverPhotoUrl].filter((url): url is string => Boolean(url)).map(preloadImage))
+        if (cancelled) return
+
+        setProfileMediaUrls({
+          profilePhotoPath: profilePhoto?.path ?? null,
+          profilePhotoUrl,
+          coverPhotoPath: coverPhoto?.path ?? null,
+          coverPhotoUrl,
+        })
+      })
+      .catch((error) => {
+        console.error("Profile images could not be preloaded.", error)
+        if (!cancelled) setProfileMediaUrls(emptyProfileMediaUrls)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [currentUser?.coverPhoto, currentUser?.profilePhoto])
 
   useEffect(() => {
     const onPopState = () => {
@@ -293,7 +356,9 @@ export default function App() {
 
   return (
     <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} storageKey="multideck.theme">
+      <ThemeProfileSync />
       <LanguageProvider>
+        <LanguageProfileSync />
         <TooltipProvider>
           <MotionConfig reducedMotion="user" transition={mdMotion.fast}>
             {(!isLocalNavigationLab && ((authStatus === "checking" && route !== "/auth") || (authStatus === "authenticated" && route === "/auth" && !isPasswordRecoveryRoute))) ? (
@@ -318,7 +383,12 @@ export default function App() {
               <AppShell route={route} navigate={navigate} currentUser={currentUser}>
                 <Suspense fallback={<RouteFallback />}>
                   {route === "/components" ? <ComponentsGalleryPage /> : null}
-                  {route === "/agent-dexter" ? <AgentDexterPage /> : null}
+                  {route === "/agent-dexter" ? (
+                    <AgentDexterPage
+                      currentUser={currentUser}
+                      profilePhotoUrl={profileMediaUrls.profilePhotoUrl}
+                    />
+                  ) : null}
                   {route === "/crm" ? <CrmOverviewPage /> : null}
                   {route === "/crm/accounts" || route === "/crm/leads" ? <CrmLeadsPage navigate={navigate} /> : null}
                   {isCrmLeadConversionRoute(route) ? <LeadConversionPage navigate={navigate} leadId={route.split("/").at(-2) ?? ""} /> : null}
@@ -340,7 +410,15 @@ export default function App() {
                   {route === "/quotes" ? <QuotesRegisterPage navigate={navigate} /> : null}
                   {isQuoteDetailRoute(route) ? <QuoteDetailPage key={route} variant="cargowise" quoteId={route.split("/").at(-1)} /> : null}
                   {route === "/reports" ? <ReportsPage navigate={navigate} /> : null}
-                  {route === "/settings" ? <SettingsPage navigate={navigate} onProfilePhotoChange={handleProfilePhotoChange} /> : null}
+                  {route === "/settings" ? (
+                    <SettingsPage
+                      navigate={navigate}
+                      currentUser={currentUser}
+                      profileMediaUrls={profileMediaUrls}
+                      onProfilePhotoChange={handleProfilePhotoChange}
+                      onCoverPhotoChange={handleCoverPhotoChange}
+                    />
+                  ) : null}
                   {route.startsWith("/warehouse") ? <WarehousePage route={route} currentUser={currentUser} /> : null}
                   {route === "/bookings" ? <BookingsPage navigate={navigate} /> : null}
                   {route === "/road-control" ? <RoadControlPage navigate={navigate} /> : null}

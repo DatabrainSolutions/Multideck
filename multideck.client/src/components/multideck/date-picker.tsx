@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react"
+import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { ArrowLeft, ArrowRight, CalendarDays, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { useLanguage } from "@/i18n/language-provider"
 import type { LanguageCode } from "@/i18n/languages"
@@ -9,6 +11,21 @@ import { cn } from "@/lib/utils"
 export type MultideckDateRange = {
   start: string | null
   end: string | null
+}
+
+export type MultideckDateComparisonOption = {
+  id: string
+  label: string
+  range: MultideckDateRange | null
+}
+
+export type MultideckDateRangeComparison = {
+  enabled: boolean
+  value: MultideckDateRange
+  onEnabledChange: (enabled: boolean) => void
+  onChange: (range: MultideckDateRange) => void
+  options: MultideckDateComparisonOption[]
+  missing?: boolean
 }
 
 function getLanguageLocale(language: LanguageCode) {
@@ -146,7 +163,7 @@ function CalendarMonth({
               aria-pressed={isStart || isEnd || isInPreview}
               aria-label={new Intl.DateTimeFormat(locale, { dateStyle: "full" }).format(date)}
               className={cn(
-                "grid size-9 place-items-center rounded-[10px] text-[13px] font-medium text-[var(--md-text)] transition-[background-color,box-shadow,color,opacity,scale,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.96] hover:bg-white/78 hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a18)]",
+                "grid size-9 place-items-center rounded-[10px] text-[13px] font-medium text-[var(--md-text)] transition-[background-color,box-shadow,color,opacity,scale,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.96] hover:bg-white/78 hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a18)] dark:hover:bg-white/[0.08]",
                 isToday && "shadow-[inset_0_0_0_1px_var(--md-accent-a22)]",
                 isInPreview && "bg-[var(--md-accent-a10)] text-[var(--md-ink)]",
                 (isStart || isEnd) && "scale-[1.03] bg-[var(--md-accent)] text-[var(--md-accent-ink)] shadow-[0_0_0_3px_var(--md-accent-a14),var(--md-shadow-line)] hover:bg-[var(--md-accent)] hover:text-[var(--md-accent-ink)]",
@@ -176,6 +193,7 @@ export function MultideckDateRangePicker({
   footerLabel = "Selected dates",
   align = "start",
   active,
+  comparison,
   disabled,
   missing,
   allowClear = false,
@@ -195,6 +213,7 @@ export function MultideckDateRangePicker({
   footerLabel?: string
   align?: "start" | "center" | "end"
   active?: boolean
+  comparison?: MultideckDateRangeComparison
   disabled?: boolean
   missing?: boolean
   allowClear?: boolean
@@ -204,22 +223,58 @@ export function MultideckDateRangePicker({
   onOpenChange?: (open: boolean) => void
 }) {
   const { language, t } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
   const locale = getLanguageLocale(language)
   const [open, setOpen] = useState(false)
   const resolvedRange = { start: value.start || null, end: value.end || null }
+  const resolvedComparisonRange = {
+    start: comparison?.value.start || null,
+    end: comparison?.value.end || null,
+  }
   const [visibleMonth, setVisibleMonth] = useState(() => startOfMonth(parseDateKey(resolvedRange.start) ?? new Date()))
+  const [comparisonVisibleMonth, setComparisonVisibleMonth] = useState(() => (
+    startOfMonth(parseDateKey(resolvedComparisonRange.start) ?? parseDateKey(resolvedRange.start) ?? new Date())
+  ))
   const [hoveredDate, setHoveredDate] = useState<string | null>(null)
+  const [comparisonHoveredDate, setComparisonHoveredDate] = useState<string | null>(null)
+  const [activeComparisonOptionId, setActiveComparisonOptionId] = useState("previous-period")
   const previewRange = getPreviewRange(resolvedRange.start, resolvedRange.end, hoveredDate)
+  const comparisonPreviewRange = getPreviewRange(
+    resolvedComparisonRange.start,
+    resolvedComparisonRange.end,
+    comparisonHoveredDate,
+  )
   const hasAnyDate = Boolean(resolvedRange.start || resolvedRange.end)
   const hasCompleteRange = Boolean(parseDateKey(resolvedRange.start) && parseDateKey(resolvedRange.end))
   const waitingForEndDate = Boolean(resolvedRange.start && !resolvedRange.end)
+  const comparisonHasAnyDate = Boolean(resolvedComparisonRange.start || resolvedComparisonRange.end)
+  const comparisonHasCompleteRange = Boolean(
+    parseDateKey(resolvedComparisonRange.start) && parseDateKey(resolvedComparisonRange.end),
+  )
+  const comparisonWaitingForEndDate = Boolean(resolvedComparisonRange.start && !resolvedComparisonRange.end)
   const rangeLabel = formatDateRangeLabel(resolvedRange, locale, t(placeholder), t("Select start"), t("Select end"))
+  const comparisonRangeLabel = formatDateRangeLabel(
+    resolvedComparisonRange,
+    locale,
+    t("Select comparison dates"),
+    t("Select start"),
+    t("Select end"),
+  )
   const triggerText = triggerLabel ?? rangeLabel
 
   useEffect(() => {
     if (!open) return
     setVisibleMonth(startOfMonth(parseDateKey(resolvedRange.start) ?? new Date()))
   }, [open, resolvedRange.start])
+
+  useEffect(() => {
+    if (!open || !comparison?.enabled) return
+    setComparisonVisibleMonth(startOfMonth(
+      parseDateKey(resolvedComparisonRange.start)
+        ?? parseDateKey(resolvedRange.start)
+        ?? new Date(),
+    ))
+  }, [comparison?.enabled, open, resolvedComparisonRange.start, resolvedRange.start])
 
   function updateOpen(nextOpen: boolean) {
     setOpen(nextOpen)
@@ -234,6 +289,27 @@ export function MultideckDateRangePicker({
 
     onChange(normalizeDateRange(resolvedRange.start, dateKey))
     setHoveredDate(null)
+  }
+
+  function selectComparisonDate(dateKey: string) {
+    if (!comparison) return
+    setActiveComparisonOptionId("custom")
+    if (!resolvedComparisonRange.start || resolvedComparisonRange.end) {
+      comparison.onChange({ start: dateKey, end: null })
+      return
+    }
+
+    comparison.onChange(normalizeDateRange(resolvedComparisonRange.start, dateKey))
+    setComparisonHoveredDate(null)
+  }
+
+  function applyComparisonOption(option: MultideckDateComparisonOption) {
+    if (!comparison) return
+    setActiveComparisonOptionId(option.id)
+    comparison.onChange(option.range ?? { start: null, end: null })
+    if (option.range?.start) {
+      setComparisonVisibleMonth(startOfMonth(parseDateKey(option.range.start) ?? new Date()))
+    }
   }
 
   function resetRange() {
@@ -273,7 +349,7 @@ export function MultideckDateRangePicker({
               role="button"
               tabIndex={-1}
               aria-label={t("Clear dates")}
-              className="grid size-6 shrink-0 place-items-center rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] transition-colors hover:bg-white/70 hover:text-[var(--md-red)]"
+              className="grid size-6 shrink-0 place-items-center rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] transition-colors hover:bg-white/70 hover:text-[var(--md-red)] dark:hover:bg-white/[0.08]"
               onPointerDown={(event) => {
                 event.preventDefault()
                 event.stopPropagation()
@@ -287,8 +363,10 @@ export function MultideckDateRangePicker({
       </PopoverTrigger>
       <PopoverContent
         align={align}
+        collisionPadding={10}
         className={cn(
-          "z-[500] w-[min(92vw,590px)] rounded-[var(--md-radius-xl)] border-0 bg-[rgba(251,253,253,0.98)] p-3 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)]",
+          "md-scrollbar z-[500] max-h-[min(88vh,var(--radix-popover-content-available-height),760px)] overflow-y-auto overscroll-contain rounded-[var(--md-radius-xl)] border-0 bg-[rgba(248,251,250,0.82)] p-3 text-[var(--md-ink)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.58),var(--md-shadow-lift)] backdrop-blur-[26px] backdrop-saturate-[145%] transition-[width,background-color,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] dark:bg-[rgba(14,20,20,0.78)] dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.09),0_18px_60px_rgba(0,0,0,0.42)]",
+          comparison?.enabled ? "w-[min(96vw,820px)]" : "w-[min(92vw,590px)]",
           className,
           popoverClassName,
         )}
@@ -298,44 +376,173 @@ export function MultideckDateRangePicker({
             <p className="text-[14px] font-medium text-[var(--md-ink)]">{t(title)}</p>
             <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t(description)}</p>
           </div>
-          <div className="flex shrink-0 gap-1">
-            <Button type="button" variant="ghost" size="icon-sm" className="rounded-[10px] bg-white/45 shadow-[var(--md-shadow-line)] hover:bg-white/70" aria-label={t("Previous month")} onClick={() => setVisibleMonth((current) => addMonths(current, -1))}>
-              <ArrowLeft className="size-3.5" strokeWidth={1.2} />
-            </Button>
-            <Button type="button" variant="ghost" size="icon-sm" className="rounded-[10px] bg-white/45 shadow-[var(--md-shadow-line)] hover:bg-white/70" aria-label={t("Next month")} onClick={() => setVisibleMonth((current) => addMonths(current, 1))}>
-              <ArrowRight className="size-3.5" strokeWidth={1.2} />
-            </Button>
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+            {comparison ? (
+              <label className="inline-flex h-8 cursor-pointer items-center gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] px-2.5 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] transition-[background-color,scale] duration-150 hover:bg-[var(--md-hover)] active:scale-[0.96]">
+                <Checkbox
+                  checked={comparison.enabled}
+                  onCheckedChange={(checked) => comparison.onEnabledChange(checked === true)}
+                  className="size-4 rounded-[5px]"
+                />
+                {t("Compare")}
+              </label>
+            ) : null}
+            {!comparison?.enabled ? (
+              <div className="flex gap-1">
+                <Button type="button" variant="ghost" size="icon-sm" className="rounded-[10px] bg-white/45 shadow-[var(--md-shadow-line)] hover:bg-white/70 dark:bg-white/[0.06] dark:hover:bg-white/[0.1]" aria-label={t("Previous month")} onClick={() => setVisibleMonth((current) => addMonths(current, -1))}>
+                  <ArrowLeft className="size-3.5" strokeWidth={1.2} />
+                </Button>
+                <Button type="button" variant="ghost" size="icon-sm" className="rounded-[10px] bg-white/45 shadow-[var(--md-shadow-line)] hover:bg-white/70 dark:bg-white/[0.06] dark:hover:bg-white/[0.1]" aria-label={t("Next month")} onClick={() => setVisibleMonth((current) => addMonths(current, 1))}>
+                  <ArrowRight className="size-3.5" strokeWidth={1.2} />
+                </Button>
+              </div>
+            ) : null}
           </div>
         </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          {[visibleMonth, addMonths(visibleMonth, 1)].map((month) => (
-            <CalendarMonth
-              key={getDateKey(month)}
-              month={month}
-              range={resolvedRange}
-              previewRange={previewRange}
-              locale={locale}
-              onSelectDate={selectDate}
-              onPreviewDate={(dateKey) => setHoveredDate(waitingForEndDate ? dateKey : null)}
-            />
-          ))}
-        </div>
+
+        <AnimatePresence initial={false}>
+          {comparison?.enabled ? (
+            <motion.div
+              key="comparison-options"
+              initial={shouldReduceMotion ? false : { opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={shouldReduceMotion ? undefined : { opacity: 0, y: -4 }}
+              transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+              className="mt-3 flex flex-wrap items-center gap-1.5"
+              aria-label={t("Comparison quick ranges")}
+            >
+              {comparison.options.map((option) => {
+                const selected = activeComparisonOptionId === option.id
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    aria-pressed={selected}
+                    className={cn(
+                      "h-8 rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] px-2.5 text-[11.5px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background-color,color,scale] duration-150 hover:text-[var(--md-ink)] active:scale-[0.96]",
+                      selected && "bg-[var(--md-accent-a12)] text-[var(--md-selected-text)] shadow-[inset_0_0_0_1px_var(--md-accent-a18)]",
+                    )}
+                    onClick={() => applyComparisonOption(option)}
+                  >
+                    {t(option.label)}
+                  </button>
+                )
+              })}
+              {comparison.missing ? (
+                <span role="status" className="ms-auto text-[11.5px] font-medium text-[var(--md-red)]">
+                  {t("No comparison data")}
+                </span>
+              ) : null}
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+
+        {comparison?.enabled ? (
+          <motion.div
+            layout
+            className="mt-3 grid gap-3 md:grid-cols-2"
+            transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <section className="rounded-[var(--md-radius-lg)] bg-white/30 p-3 shadow-[var(--md-shadow-line)] dark:bg-white/[0.035]" aria-label={t("Current period")}>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Current period")}</p>
+                <div className="flex gap-1">
+                  <Button type="button" variant="ghost" size="icon-sm" className="rounded-[9px] bg-white/45 dark:bg-white/[0.06]" aria-label={t("Previous current month")} onClick={() => setVisibleMonth((current) => addMonths(current, -1))}>
+                    <ArrowLeft className="size-3.5" strokeWidth={1.2} />
+                  </Button>
+                  <Button type="button" variant="ghost" size="icon-sm" className="rounded-[9px] bg-white/45 dark:bg-white/[0.06]" aria-label={t("Next current month")} onClick={() => setVisibleMonth((current) => addMonths(current, 1))}>
+                    <ArrowRight className="size-3.5" strokeWidth={1.2} />
+                  </Button>
+                </div>
+              </div>
+              <CalendarMonth
+                month={visibleMonth}
+                range={resolvedRange}
+                previewRange={previewRange}
+                locale={locale}
+                onSelectDate={selectDate}
+                onPreviewDate={(dateKey) => setHoveredDate(waitingForEndDate ? dateKey : null)}
+              />
+            </section>
+
+            <section
+              className={cn(
+                "rounded-[var(--md-radius-lg)] bg-white/30 p-3 shadow-[var(--md-shadow-line)] dark:bg-white/[0.035]",
+                comparison.missing && "shadow-[inset_0_0_0_1px_rgba(192,57,43,0.52),var(--md-shadow-line)]",
+              )}
+              aria-label={t("Compare period")}
+            >
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Compare period")}</p>
+                <div className="flex gap-1">
+                  <Button type="button" variant="ghost" size="icon-sm" className="rounded-[9px] bg-white/45 dark:bg-white/[0.06]" aria-label={t("Previous comparison month")} onClick={() => setComparisonVisibleMonth((current) => addMonths(current, -1))}>
+                    <ArrowLeft className="size-3.5" strokeWidth={1.2} />
+                  </Button>
+                  <Button type="button" variant="ghost" size="icon-sm" className="rounded-[9px] bg-white/45 dark:bg-white/[0.06]" aria-label={t("Next comparison month")} onClick={() => setComparisonVisibleMonth((current) => addMonths(current, 1))}>
+                    <ArrowRight className="size-3.5" strokeWidth={1.2} />
+                  </Button>
+                </div>
+              </div>
+              <CalendarMonth
+                month={comparisonVisibleMonth}
+                range={resolvedComparisonRange}
+                previewRange={comparisonPreviewRange}
+                locale={locale}
+                onSelectDate={selectComparisonDate}
+                onPreviewDate={(dateKey) => setComparisonHoveredDate(comparisonWaitingForEndDate ? dateKey : null)}
+              />
+            </section>
+          </motion.div>
+        ) : (
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {[visibleMonth, addMonths(visibleMonth, 1)].map((month) => (
+              <CalendarMonth
+                key={getDateKey(month)}
+                month={month}
+                range={resolvedRange}
+                previewRange={previewRange}
+                locale={locale}
+                onSelectDate={selectDate}
+                onPreviewDate={(dateKey) => setHoveredDate(waitingForEndDate ? dateKey : null)}
+              />
+            ))}
+          </div>
+        )}
+
         <div className="mt-4 flex flex-col gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3 shadow-[var(--md-shadow-line)] sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0 text-[12px] leading-5 text-[var(--md-text)]">
-            <span className="font-medium text-[var(--md-ink)]">{t(footerLabel)}</span>
-            <span className="ms-2 inline-block" dir={hasAnyDate ? "ltr" : undefined}>
-              {rangeLabel}
-            </span>
-            <span className="mt-1 block text-[11px] text-[var(--md-subtle)]" dir="ltr">
-              {t(startLabel)}: {formatDateLabel(resolvedRange.start, locale) || "-"} · {t(endLabel)}: {formatDateLabel(resolvedRange.end, locale) || "-"}
-            </span>
+          <div className={cn("min-w-0 flex-1 text-[12px] leading-5 text-[var(--md-text)]", comparison?.enabled && "grid gap-x-5 gap-y-2 md:grid-cols-2")}>
+            <div>
+              <span className="font-medium text-[var(--md-ink)]">{t(comparison?.enabled ? "Current period" : footerLabel)}</span>
+              <span className="ms-2 inline-block" dir={hasAnyDate ? "ltr" : undefined}>
+                {rangeLabel}
+              </span>
+              <span className="mt-1 block text-[11px] text-[var(--md-subtle)]" dir="ltr">
+                {t(startLabel)}: {formatDateLabel(resolvedRange.start, locale) || "-"} · {t(endLabel)}: {formatDateLabel(resolvedRange.end, locale) || "-"}
+              </span>
+            </div>
+            {comparison?.enabled ? (
+              <div>
+                <span className="font-medium text-[var(--md-ink)]">{t("Compare period")}</span>
+                <span className="ms-2 inline-block" dir={comparisonHasAnyDate ? "ltr" : undefined}>
+                  {comparisonRangeLabel}
+                </span>
+                <span className="mt-1 block text-[11px] text-[var(--md-subtle)]" dir="ltr">
+                  {t(startLabel)}: {formatDateLabel(resolvedComparisonRange.start, locale) || "-"} · {t(endLabel)}: {formatDateLabel(resolvedComparisonRange.end, locale) || "-"}
+                </span>
+              </div>
+            ) : null}
           </div>
           <div className="flex shrink-0 gap-2">
-            <Button type="button" variant="ghost" className="h-8 rounded-[var(--md-radius-md)] bg-white/45 px-3 text-[12px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-white/70" onClick={resetRange}>
+            <Button type="button" variant="ghost" className="h-8 rounded-[var(--md-radius-md)] bg-white/45 px-3 text-[12px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-white/70 dark:bg-white/[0.06] dark:hover:bg-white/[0.1]" onClick={resetRange}>
               {t("Reset")}
             </Button>
-            <Button type="button" className="h-8 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[12px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent)]/88" disabled={!resolvedRange.start} onClick={() => setOpen(false)}>
-              {t(hasCompleteRange ? "Apply dates" : "Apply start")}
+            <Button
+              type="button"
+              className="h-8 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[12px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent)]/88"
+              disabled={!resolvedRange.start || Boolean(comparison?.enabled && !resolvedComparisonRange.start)}
+              onClick={() => setOpen(false)}
+            >
+              {t(hasCompleteRange && (!comparison?.enabled || comparisonHasCompleteRange) ? "Apply dates" : "Apply start")}
             </Button>
           </div>
         </div>

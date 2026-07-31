@@ -79,8 +79,11 @@ public static class AppPermissions
 
     public static class AgentDexter
     {
-        public static readonly PermissionDefinition Read = new("AgentDexter.Read", "Agent Dexter", "Read Agent Dexter settings", "View AI agent preferences, watchers, and approval rules.");
-        public static readonly PermissionDefinition Manage = new("AgentDexter.Manage", "Agent Dexter", "Manage Agent Dexter", "Change AI agent autonomy, watchers, and approval rules.");
+        public const string ReadValue = "AgentDexter.Read";
+        public const string ManageValue = "AgentDexter.Manage";
+
+        public static readonly PermissionDefinition Read = new(ReadValue, "Agent Dexter", "Read Agent Dexter settings", "View AI agent preferences, watchers, and approval rules.");
+        public static readonly PermissionDefinition Manage = new(ManageValue, "Agent Dexter", "Manage Agent Dexter", "Change AI agent autonomy, watchers, and approval rules.");
     }
 
     public static IReadOnlyList<PermissionDefinition> All { get; } =

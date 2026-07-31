@@ -1,40 +1,20 @@
 import { useEffect, useState } from "react"
-import { ArrowLeft, Menu, MoreHorizontal, Plus, Upload, UserRoundPlus } from "lucide-react"
+import { Menu, MoreHorizontal, Plus, Upload, UserRoundPlus } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useLanguage } from "@/i18n/language-provider"
-import type { LanguageCode } from "@/i18n/languages"
 import { cn } from "@/lib/utils"
+import { AppBreadcrumbs } from "./app-breadcrumbs"
 import { CommandInput } from "./command-input"
 import { AppSidebar } from "./app-sidebar"
 
-function getTopBarDateLabel(language: LanguageCode, todayLabel: string) {
-  const locale: Record<LanguageCode, string> = {
-    "en-GB": "en-GB",
-    "en-US": "en-US",
-    de: "de-DE",
-    fr: "fr-FR",
-    ar: "ar-GB-u-ca-gregory",
-  }
-  const date = new Intl.DateTimeFormat(locale[language], {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-  }).format(new Date())
-
-  return `${todayLabel} - ${date}`
-}
-
-const topBarBackButtonClass =
-  "-mx-2 flex min-w-0 items-center gap-3 rounded-[var(--md-radius-md)] px-2 py-1.5 text-[14px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-white/42 hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a16)]"
-
 const topBarGhostActionClass =
-  "h-10 rounded-[var(--md-radius-lg)] bg-white/42 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-white/70 hover:shadow-[var(--md-shadow-soft)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
+  "h-9 rounded-[var(--md-radius-lg)] bg-white/42 px-3 text-[12.5px] font-medium leading-none text-[var(--md-ink)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-white/70 hover:shadow-[var(--md-shadow-soft)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
 
 const topBarPrimaryActionClass =
-  "h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] shadow-[0_10px_22px_var(--md-accent-a14)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)] hover:shadow-[0_14px_26px_var(--md-accent-a18)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a16)]"
+  "h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3 text-[12.5px] font-medium leading-none text-[var(--md-accent-ink)] shadow-[0_10px_22px_var(--md-accent-a14)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)] hover:shadow-[0_14px_26px_var(--md-accent-a18)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a16)]"
 
 const topBarIconActionClass =
   "rounded-[var(--md-radius-md)] bg-white/42 text-[var(--md-ink)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-white/70 hover:shadow-[var(--md-shadow-soft)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
@@ -52,51 +32,25 @@ export function TopBar({
   const isCrmLeadDetail = /^\/crm\/leads\/[^/]+$/.test(route)
   const isCrmLeadConversion = /^\/crm\/leads\/[^/]+\/convert$/.test(route)
   const isBookingList = route === "/bookings"
-  const isBookingWizard = route === "/bookings/new"
   const isRoadControl = route === "/road-control"
   const isRoadBooking = route === "/road-control/new"
   const isRoadJob = /^\/road-control\/[^/]+$/.test(route) && !isRoadBooking
   const isRoadRoute = isRoadControl || isRoadBooking || isRoadJob
-  const roadJobLabel = isRoadJob ? route.split("/").at(-1)?.toLocaleUpperCase() : undefined
   const isQuotes = route === "/quotes"
   const isWarehouse = route.startsWith("/warehouse")
   const isReports = route === "/reports"
   const isOperationalJobScreen = route === "/" || route.startsWith("/bookings") || route.startsWith("/quotes") || isRoadRoute || isWarehouse
-  const { language, t } = useLanguage()
-  const todayLabel = getTopBarDateLabel(language, t("Today"))
-  const crmRouteLabel: Record<string, string> = {
-    "/crm": "CRM",
-    "/crm/accounts": "Leads",
-    "/crm/leads": "Leads",
-    "/crm/contacts": "Contacts",
-    "/crm/deals": "Deals",
-    "/crm/emails": "Emails",
-    "/crm/lists": "Lists",
-    "/crm/marketing": "Marketing",
-    "/crm/activity": "Activity",
-    "/crm/settings": "CRM settings",
-  }
-  const warehouseRouteLabel: Record<string, string> = {
-    "/warehouse": "Dashboard",
-    "/warehouse/facilities": "Facilities",
-    "/warehouse/locations": "Locations",
-    "/warehouse/items": "Items",
-    "/warehouse/inventory": "Inventory",
-    "/warehouse/goods-in": "Goods in",
-    "/warehouse/goods-out": "Goods out",
-    "/warehouse/orders": "Orders",
-    "/warehouse/calendar": "Calendar",
-  }
+  const { t } = useLanguage()
   const [currentLeadName, setCurrentLeadName] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!isCrmLeadDetail) {
+    if (!isCrmLeadDetail && !isCrmLeadConversion) {
       setCurrentLeadName(null)
       return
     }
 
     let active = true
-    const leadId = route.split("/").at(-1)
+    const leadId = route.split("/")[3]
     void import("@/data/multideck-data").then(({ customers }) => {
       if (active) setCurrentLeadName(customers.find((customer) => customer.id === leadId)?.name ?? null)
     })
@@ -104,7 +58,7 @@ export function TopBar({
     return () => {
       active = false
     }
-  }, [isCrmLeadDetail, route])
+  }, [isCrmLeadConversion, isCrmLeadDetail, route])
 
   return (
     <header className="sticky top-0 z-10 -mx-[var(--md-page-pad)] mb-[var(--md-page-stack-gap)] flex min-h-[56px] items-center gap-[var(--md-gap-lg)] bg-[var(--md-topbar-bg)] px-[var(--md-page-pad)] py-[var(--md-gap-sm)] shadow-[var(--md-stroke-bottom)] backdrop-blur-xl">
@@ -126,12 +80,7 @@ export function TopBar({
 
       {isCustomerDetail ? (
         <>
-          <button type="button" className={topBarBackButtonClass} onClick={() => navigate("/customers")}>
-            <ArrowLeft className="size-4" strokeWidth={1.2} />
-            <span>Customers</span>
-          </button>
-          <span className="hidden text-[var(--md-subtle)] md:inline">/</span>
-          <p className="hidden text-[14px] font-medium text-[var(--md-ink)] md:block">Marlow Apparel Ltd</p>
+          <AppBreadcrumbs route={route} navigate={navigate} leafLabel="Marlow Apparel Ltd" className="min-w-0 max-w-[120px] sm:max-w-[180px] md:max-w-none md:min-w-[210px]" />
           <div className="ml-auto flex items-center gap-2">
             <Button
               variant="ghost"
@@ -157,22 +106,10 @@ export function TopBar({
           </div>
         </>
       ) : isCrmLeadConversion ? (
-        <>
-          <button type="button" className={topBarBackButtonClass} onClick={() => navigate(route.replace(/\/convert$/, ""))}>
-            <ArrowLeft className="size-4" strokeWidth={1.2} />
-            <span>{t("Lead detail")}</span>
-          </button>
-          <span className="hidden text-[var(--md-subtle)] md:inline">/</span>
-          <p className="hidden truncate text-[14px] font-medium text-[var(--md-ink)] md:block">{t("Convert to deal")}</p>
-        </>
+        <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentLeadName} className="min-w-0 md:min-w-[210px]" />
       ) : isCrmLeadDetail ? (
         <>
-          <button type="button" className={topBarBackButtonClass} onClick={() => navigate("/crm/leads")}>
-            <ArrowLeft className="size-4" strokeWidth={1.2} />
-            <span>Leads</span>
-          </button>
-          <span className="hidden text-[var(--md-subtle)] md:inline">/</span>
-          <p className="hidden truncate text-[14px] font-medium text-[var(--md-ink)] md:block">{currentLeadName ?? "Lead detail"}</p>
+          <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentLeadName} className="min-w-0 max-w-[120px] sm:max-w-[180px] md:max-w-none md:min-w-[210px]" />
           <div className="ml-auto flex items-center gap-2">
             <Button
               variant="ghost"
@@ -194,15 +131,7 @@ export function TopBar({
         </>
       ) : (
         <>
-          {isRoadRoute ? (
-            <div className="hidden min-w-[210px] items-center gap-2 text-[14px] md:flex">
-              <button type="button" onClick={() => navigate("/bookings")} className="font-medium text-[var(--md-text)] transition-colors hover:text-[var(--md-accent)]">{t("Bookings & jobs")}</button>
-              <span className="text-[var(--md-subtle)]" aria-hidden="true">/</span>
-              {isRoadBooking || isRoadJob ? <button type="button" onClick={() => navigate("/road-control")} className="font-medium text-[var(--md-text)] transition-colors hover:text-[var(--md-accent)]">{t("Road control")}</button> : <p className="font-medium text-[var(--md-ink)]">{t("Road control")}</p>}
-              {isRoadBooking ? <><span className="text-[var(--md-subtle)]" aria-hidden="true">/</span><p className="font-medium text-[var(--md-ink)]">{t("New road job")}</p></> : null}
-              {isRoadJob ? <><span className="text-[var(--md-subtle)]" aria-hidden="true">/</span><p dir="ltr" className="font-medium text-[var(--md-ink)]">{roadJobLabel}</p></> : null}
-            </div>
-          ) : <p className="hidden min-w-[210px] text-[15px] font-medium text-[var(--md-text)] md:block">{t(isBookingList ? "Bookings" : isQuotes ? "Quotes" : isBookingWizard ? "New booking" : isCustomerList ? "Customers" : isWarehouse ? warehouseRouteLabel[route] ?? "Warehouse" : isCrmRoute ? crmRouteLabel[route] ?? (route.startsWith("/crm/leads/") ? "Lead detail" : route.startsWith("/crm/lists/") ? "List detail" : route.includes("/stats") ? "Email statistics" : route.includes("/edit") ? "Email editor" : "CRM") : isReports ? "Reports" : todayLabel)}</p>}
+          <AppBreadcrumbs route={route} navigate={navigate} className="hidden min-w-[210px] md:block" />
           <div className="ml-auto min-w-0 flex-1 md:max-w-[560px]">
             <CommandInput placeholder={isBookingList || isRoadRoute ? "Job, reference, customer, route..." : isQuotes ? "Quote, customer, route, reference..." : isWarehouse ? "SKU, bin, order, customer, goods movement..." : isCustomerList ? "Search customers, contacts, or bookings..." : isCrmRoute ? "Search leads, contacts, deals, emails, lists, or marketing..." : isReports ? "Report name, template, customer..." : "Ask Multideck or jump to anything..."} onNavigate={navigate} />
           </div>
