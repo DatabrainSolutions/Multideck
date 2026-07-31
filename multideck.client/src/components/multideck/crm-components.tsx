@@ -1642,7 +1642,7 @@ export function CrmLeadDetailPanel({
               value={lead.companyName}
               className="-my-2 min-w-0"
               contentClassName="min-w-0"
-              buttonClassName="size-8 [@media(hover:none)]:size-10"
+              buttonClassName="size-6 before:-inset-0.5 [@media(hover:none)]:size-10"
               tone="inverse"
             >
               <p className="break-words text-[17px] font-medium leading-6 text-white" data-i18n-skip dir="auto">{lead.companyName}</p>
@@ -1663,7 +1663,7 @@ export function CrmLeadDetailPanel({
                       copyValue={copyValue}
                       className="-my-2 max-w-full"
                       contentClassName="max-w-full"
-                      buttonClassName="size-8 [@media(hover:none)]:size-10"
+                      buttonClassName="size-6 before:-inset-0.5 [@media(hover:none)]:size-10"
                       tone="inverse"
                     >
                       {href ? (
@@ -1696,7 +1696,7 @@ export function CrmLeadDetailPanel({
                   label={t("Upcoming follow-up")}
                   value={formatLeadDate(lead.nextFollowUpAt, language)}
                   className="-my-2 mt-0.5"
-                  buttonClassName="size-8 [@media(hover:none)]:size-10"
+                  buttonClassName="size-6 before:-inset-0.5 [@media(hover:none)]:size-10"
                   tone="inverse"
                 >
                   <p className="text-[12px] font-medium leading-[18px] text-white" data-i18n-skip dir="auto">{formatLeadDate(lead.nextFollowUpAt, language)}</p>

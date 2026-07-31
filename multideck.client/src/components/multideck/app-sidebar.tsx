@@ -631,7 +631,7 @@ export function AppSidebar({
   const accountName = currentUser?.name ?? currentUser?.email ?? t("Signed in")
   const accountDetail = currentUser?.name && currentUser.email ? currentUser.email : t("Signed in")
   const accountInitials = currentUser?.initials ?? "MD"
-  const [accountPhotoUrl, setAccountPhotoUrl] = useState<string | null>(null)
+  const [accountPhotoUrl, setAccountPhotoUrl] = useState<string | null>(currentUser?.profilePhotoUrl ?? null)
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   const profileIsActive = false
   const [arrangingScopeId, setArrangingScopeId] = useState<string | null>(null)
@@ -693,6 +693,12 @@ export function AppSidebar({
       return
     }
 
+    if (currentUser.profilePhotoUrl) {
+      setAccountPhotoUrl(currentUser.profilePhotoUrl)
+      return
+    }
+
+    setAccountPhotoUrl(null)
     let cancelled = false
     createProfilePhotoSignedUrl(profilePhoto).then((signedUrl) => {
       if (!cancelled) setAccountPhotoUrl(signedUrl)
@@ -704,7 +710,7 @@ export function AppSidebar({
     return () => {
       cancelled = true
     }
-  }, [currentUser?.profilePhoto])
+  }, [currentUser?.profilePhoto, currentUser?.profilePhotoUrl])
 
   useEffect(() => {
     const routeArea = isSettingsRoute
@@ -1363,7 +1369,15 @@ export function AppSidebar({
               )}
               <Avatar className="relative size-10 rounded-full">
                 {accountPhotoUrl ? <AvatarImage src={accountPhotoUrl} alt="" /> : null}
-                <AvatarFallback className="rounded-full bg-[var(--md-avatar-bg)] text-[13px] font-medium text-[var(--md-ink)]" data-i18n-skip>{accountInitials}</AvatarFallback>
+                <AvatarFallback
+                  className={cn(
+                    "rounded-full bg-[var(--md-avatar-bg)] text-[13px] font-medium text-[var(--md-ink)]",
+                    currentUser?.profilePhoto && "animate-pulse text-transparent motion-reduce:animate-none",
+                  )}
+                  data-i18n-skip
+                >
+                  {currentUser?.profilePhoto ? null : accountInitials}
+                </AvatarFallback>
               </Avatar>
               <div className={cn("relative min-w-0 flex-1", collapsed && "sr-only")}>
                 <p className="truncate text-[14px] font-medium text-[var(--md-ink)]" dir="auto" data-i18n-skip>{accountName}</p>

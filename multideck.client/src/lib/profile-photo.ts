@@ -1,5 +1,4 @@
 import { supabase } from "@/lib/supabase"
-import { removeApiCurrentUserCoverPhoto, saveApiCurrentUserCoverPhoto } from "@/lib/api"
 
 export const profilePhotoBucket = "profile-photos" as const
 export const profilePhotoMaxBytes = 5 * 1024 * 1024
@@ -89,6 +88,14 @@ export async function loadCurrentUserProfilePhoto(): Promise<UserProfilePhoto | 
   return normalizeProfilePhoto(data)
 }
 
+export async function loadCurrentUserCoverPhoto(): Promise<UserProfilePhoto | null> {
+  const client = requireSupabase()
+  const { data, error } = await client.rpc("get_current_user_cover_photo")
+  if (error) throw error
+
+  return normalizeProfilePhoto(data)
+}
+
 export async function createProfilePhotoSignedUrl(photo: UserProfilePhoto, expiresInSeconds = 3600) {
   const client = requireSupabase()
   const { data, error } = await client.storage.from(photo.bucket).createSignedUrl(photo.path, expiresInSeconds)
@@ -170,7 +177,6 @@ export async function removeCurrentUserProfilePhoto(photo: UserProfilePhoto) {
 export async function uploadCurrentUserCoverPhoto(
   file: File,
   previousPhoto: UserProfilePhoto | null,
-  accessToken: string,
 ): Promise<UserProfilePhoto> {
   const client = requireSupabase()
   const mimeType = await validateProfilePhoto(file)
@@ -188,12 +194,16 @@ export async function uploadCurrentUserCoverPhoto(
   if (uploadError) throw uploadError
 
   try {
-    const savedPhoto = await saveApiCurrentUserCoverPhoto(accessToken, {
-      bucket: profilePhotoBucket,
-      path,
-      mimeType,
-      sizeBytes: file.size,
+    const { data, error } = await client.rpc("set_current_user_cover_photo", {
+      p_bucket: profilePhotoBucket,
+      p_path: path,
+      p_mime_type: mimeType,
+      p_size_bytes: file.size,
     })
+    if (error) throw error
+
+    const savedPhoto = normalizeProfilePhoto(data)
+    if (!savedPhoto) throw new Error("Supabase did not return the saved cover photo metadata.")
 
     if (previousPhoto?.path && previousPhoto.path !== savedPhoto.path) {
       const { error: cleanupError } = await client.storage.from(previousPhoto.bucket).remove([previousPhoto.path])
@@ -207,9 +217,14 @@ export async function uploadCurrentUserCoverPhoto(
   }
 }
 
-export async function removeCurrentUserCoverPhoto(photo: UserProfilePhoto, accessToken: string) {
+export async function removeCurrentUserCoverPhoto(photo: UserProfilePhoto) {
   const client = requireSupabase()
-  await removeApiCurrentUserCoverPhoto(accessToken, photo.path)
+  const { data, error } = await client.rpc("clear_current_user_cover_photo", {
+    p_expected_path: photo.path,
+  })
+  if (error) throw error
+  if (data !== true) throw new Error("This cover photo changed elsewhere. Refresh and try again.")
+
   const { error: removeError } = await client.storage.from(photo.bucket).remove([photo.path])
   return { storageCleanupPending: Boolean(removeError) }
 }

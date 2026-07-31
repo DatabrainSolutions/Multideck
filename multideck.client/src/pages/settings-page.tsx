@@ -114,6 +114,7 @@ import { getSupabaseSession, supabase } from "@/lib/supabase"
 import {
   ProfilePhotoValidationError,
   createProfilePhotoSignedUrl,
+  loadCurrentUserCoverPhoto,
   loadCurrentUserProfilePhoto,
   profilePhotoAcceptedTypes,
   removeCurrentUserCoverPhoto,
@@ -403,7 +404,7 @@ function ProfileTab({
 }: {
   currentUser?: AuthUserSummary | null
   profileMediaUrls: ProfileMediaUrls
-  onProfilePhotoChange: (photo: UserProfilePhoto | null) => void
+  onProfilePhotoChange: (photo: UserProfilePhoto | null, photoUrl: string | null) => void
   onCoverPhotoChange: (photo: UserProfilePhoto | null) => void
 }) {
   const { t } = useLanguage()
@@ -511,19 +512,25 @@ function ProfileTab({
         if (cancelled) return
 
         setProfilePhoto(nextPhoto)
-        onProfilePhotoChange(nextPhoto)
         setProfilePhotoError(null)
 
         if (nextPhoto) {
           try {
             const nextUrl = await createProfilePhotoSignedUrl(nextPhoto)
-            if (!cancelled) setProfilePhotoUrl(nextUrl)
+            if (!cancelled) {
+              setProfilePhotoUrl(nextUrl)
+              onProfilePhotoChange(nextPhoto, nextUrl)
+            }
           } catch (error) {
             console.error(error)
-            if (!cancelled) setProfilePhotoError(t("Photo saved, but its preview could not load."))
+            if (!cancelled) {
+              onProfilePhotoChange(nextPhoto, null)
+              setProfilePhotoError(t("Photo saved, but its preview could not load."))
+            }
           }
         } else {
           setProfilePhotoUrl(null)
+          onProfilePhotoChange(null, null)
         }
       } catch (error) {
         console.error(error)
@@ -540,11 +547,7 @@ function ProfileTab({
   }, [onProfilePhotoChange, t])
 
   useEffect(() => {
-    if (!supabase) {
-      setCoverPhotoOperation("idle")
-      return
-    }
-
+    if (!supabase) return
     let cancelled = false
 
     async function loadDatabaseProfile() {
@@ -558,13 +561,37 @@ function ProfileTab({
         const savedJobTitle = currentUser.jobTitle ?? ""
         setProfile((current) => ({ ...current, roleTitle: savedJobTitle }))
         setSavedProfile((current) => ({ ...current, roleTitle: savedJobTitle }))
-        setCoverPhoto(currentUser.coverPhoto)
-        onCoverPhotoChange(currentUser.coverPhoto)
+      } catch (error) {
+        console.error(error)
+      }
+    }
+
+    void loadDatabaseProfile()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!supabase) {
+      setCoverPhotoOperation("idle")
+      return
+    }
+
+    let cancelled = false
+
+    async function loadCoverPhoto() {
+      try {
+        const nextPhoto = await loadCurrentUserCoverPhoto()
+        if (cancelled) return
+
+        setCoverPhoto(nextPhoto)
+        onCoverPhotoChange(nextPhoto)
         setCoverPhotoError(null)
 
-        if (currentUser.coverPhoto) {
+        if (nextPhoto) {
           try {
-            const nextUrl = await createProfilePhotoSignedUrl(currentUser.coverPhoto)
+            const nextUrl = await createProfilePhotoSignedUrl(nextPhoto)
             if (!cancelled) setCoverPhotoUrl(nextUrl)
           } catch (error) {
             console.error(error)
@@ -581,7 +608,7 @@ function ProfileTab({
       }
     }
 
-    void loadDatabaseProfile()
+    void loadCoverPhoto()
     return () => {
       cancelled = true
     }
@@ -647,15 +674,16 @@ function ProfileTab({
     try {
       const nextPhoto = await uploadCurrentUserProfilePhoto(file, profilePhoto)
       setProfilePhoto(nextPhoto)
-      onProfilePhotoChange(nextPhoto)
 
       try {
         const nextUrl = await createProfilePhotoSignedUrl(nextPhoto)
         setProfilePhotoUrl(nextUrl)
+        onProfilePhotoChange(nextPhoto, nextUrl)
         toast.success(t("Profile photo updated"))
       } catch (error) {
         console.error(error)
         setProfilePhotoUrl(null)
+        onProfilePhotoChange(nextPhoto, null)
         const message = t("Photo saved, but its preview could not load.")
         setProfilePhotoError(message)
         toast.warning(message)
@@ -682,7 +710,7 @@ function ProfileTab({
       const { storageCleanupPending } = await removeCurrentUserProfilePhoto(profilePhoto)
       setProfilePhoto(null)
       setProfilePhotoUrl(null)
-      onProfilePhotoChange(null)
+      onProfilePhotoChange(null, null)
 
       if (storageCleanupPending) {
         const message = t("Photo removed, but storage cleanup needs retry.")
@@ -710,10 +738,7 @@ function ProfileTab({
     setCoverPhotoError(null)
 
     try {
-      const session = await getSupabaseSession()
-      if (!session) throw new Error("Sign in again before changing your cover photo.")
-
-      const nextPhoto = await uploadCurrentUserCoverPhoto(file, coverPhoto, session.access_token)
+      const nextPhoto = await uploadCurrentUserCoverPhoto(file, coverPhoto)
       setCoverPhoto(nextPhoto)
       onCoverPhotoChange(nextPhoto)
 
@@ -746,10 +771,7 @@ function ProfileTab({
     setCoverPhotoError(null)
 
     try {
-      const session = await getSupabaseSession()
-      if (!session) throw new Error("Sign in again before removing your cover photo.")
-
-      const { storageCleanupPending } = await removeCurrentUserCoverPhoto(coverPhoto, session.access_token)
+      const { storageCleanupPending } = await removeCurrentUserCoverPhoto(coverPhoto)
       setCoverPhoto(null)
       setCoverPhotoUrl(null)
       onCoverPhotoChange(null)
@@ -3889,7 +3911,7 @@ function TabContent({
   activeTab: SettingsSectionId
   currentUser?: AuthUserSummary | null
   profileMediaUrls: ProfileMediaUrls
-  onProfilePhotoChange: (photo: UserProfilePhoto | null) => void
+  onProfilePhotoChange: (photo: UserProfilePhoto | null, photoUrl: string | null) => void
   onCoverPhotoChange: (photo: UserProfilePhoto | null) => void
 }) {
   switch (activeTab) {
@@ -3942,7 +3964,7 @@ export function SettingsPage({
   navigate: (path: string) => void
   currentUser?: AuthUserSummary | null
   profileMediaUrls: ProfileMediaUrls
-  onProfilePhotoChange: (photo: UserProfilePhoto | null) => void
+  onProfilePhotoChange: (photo: UserProfilePhoto | null, photoUrl: string | null) => void
   onCoverPhotoChange: (photo: UserProfilePhoto | null) => void
 }) {
   const shouldReduceMotion = useReducedMotion()
