@@ -85,6 +85,8 @@ import {
 } from "@/lib/dexter-navigation"
 import { listCustomers } from "@/lib/customer-api"
 import { listLeads } from "@/lib/lead-api"
+import { listDeals, type ApiDeal } from "@/lib/deal-api"
+import { readRecentWorkContext } from "@/lib/recent-work-context"
 import type { AuthUserSummary } from "@/lib/auth-user"
 import { cn } from "@/lib/utils"
 import { mdMotion, reduceMotion } from "@/lib/motion"
@@ -185,11 +187,8 @@ function dexterMessageServerId(message: DexterMessage) {
   return message.serverId ?? message.id
 }
 
-function trailMessagesFor(
-  messages: DexterMessage[],
-  selectedResponseMessageIds: Record<string, string>,
-) {
-  return conversationBranchFor(messages, selectedResponseMessageIds)
+function trailMessagesFor(messages: DexterMessage[]) {
+  return messages.filter((message) => message.role === "user")
 }
 
 function useAttachedItems(selectedAttachmentIds: Set<string>) {
@@ -815,9 +814,11 @@ function getDexterTrailPreview(content: string) {
 
 function DexterConversationTrail({
   messages,
+  scrollMessages,
   bottomOffset = 40,
 }: {
   messages: DexterMessage[]
+  scrollMessages: DexterMessage[]
   bottomOffset?: number
 }) {
   const { direction, t } = useLanguage()
@@ -831,9 +832,16 @@ function DexterConversationTrail({
   const { currentAnchorId, visibleMessageIds } = useMessageScrollerVisibility()
   const visibleMessageIdSet = useMemo(() => new Set(visibleMessageIds), [visibleMessageIds])
   const messageIdSet = useMemo(() => new Set(messages.map((message) => message.id)), [messages])
-  const currentVisibleMessageId = currentAnchorId && messageIdSet.has(currentAnchorId)
-    ? currentAnchorId
-    : visibleMessageIds.find((messageId) => messageIdSet.has(messageId)) ?? null
+  const currentScrollMessageId = currentAnchorId ?? visibleMessageIds[0] ?? null
+  const currentScrollMessageIndex = currentScrollMessageId
+    ? scrollMessages.findIndex((message) => message.id === currentScrollMessageId)
+    : -1
+  const currentVisibleMessageId = currentScrollMessageIndex >= 0
+    ? scrollMessages
+        .slice(0, currentScrollMessageIndex + 1)
+        .reverse()
+        .find((message) => message.role === "user" && messageIdSet.has(message.id))?.id ?? null
+    : null
   const highlightedMessageId = canScrollTowardsEnd
     ? currentVisibleMessageId
     : messages.at(-1)?.id ?? null
@@ -1528,6 +1536,7 @@ export function AgentDexterPage({
   const [attachmentQuery, setAttachmentQuery] = useState("")
   const [selectedAttachmentIds, setSelectedAttachmentIds] = useState<Set<string>>(new Set())
   const [mentionItems, setMentionItems] = useState<DexterMentionItem[]>(defaultDexterMentionItems)
+  const [recentDeals, setRecentDeals] = useState<ApiDeal[]>([])
   const [composerMentions, setComposerMentions] = useState<DexterMentionItem[]>([])
   const [selectedMonitor, setSelectedMonitor] = useState<DexterMonitor | null>(null)
   const [isMonitorRailCollapsed, setIsMonitorRailCollapsed] = useState(true)
@@ -1541,18 +1550,23 @@ export function AgentDexterPage({
   const jumpScrollTimeoutRef = useRef<number | null>(null)
   const liveReasoningRef = useRef("")
   const actionDecisionInFlightRef = useRef<string | null>(null)
+  const promptSubmissionInFlightRef = useRef(false)
   const attachedItems = useAttachedItems(selectedAttachmentIds)
   const attachedContextItems = useMemo(
     () => [...attachedItems, ...composerMentions],
     [attachedItems, composerMentions],
   )
-  const trailMessages = useMemo(
-    () => trailMessagesFor(activeConversation?.messages ?? [], selectedResponseMessageIds),
+  const branchMessages = useMemo(
+    () => conversationBranchFor(activeConversation?.messages ?? [], selectedResponseMessageIds),
     [activeConversation?.messages, selectedResponseMessageIds],
   )
+  const trailMessages = useMemo(
+    () => trailMessagesFor(branchMessages),
+    [branchMessages],
+  )
   const contextUsedTokens = useMemo(
-    () => estimateContextTokens(trailMessages, composerValue, attachedContextItems),
-    [attachedContextItems, composerValue, trailMessages],
+    () => estimateContextTokens(branchMessages, composerValue, attachedContextItems),
+    [attachedContextItems, branchMessages, composerValue],
   )
   const isWorking = isSending || isLoadingConversation
   // The watcher rail is not modal — it sits over the thread and stays usable
@@ -1571,19 +1585,32 @@ export function AgentDexterPage({
   useEffect(() => {
     let active = true
 
-    Promise.allSettled([listCustomers(), listLeads()]).then(([customerResult, leadResult]) => {
+    Promise.allSettled([listCustomers(), listLeads(), listDeals()]).then(([customerResult, leadResult, dealResult]) => {
       if (!active) return
       setMentionItems(mergeDexterMentionItems(
         customerResult.status === "fulfilled" ? customerMentionItems(customerResult.value) : [],
         leadResult.status === "fulfilled" ? leadMentionItems(leadResult.value) : [],
         defaultDexterMentionItems,
       ))
+      setRecentDeals(dealResult.status === "fulfilled" ? dealResult.value : [])
     })
 
     return () => {
       active = false
     }
   }, [])
+
+  const recentWorkContext = useMemo(() => readRecentWorkContext(), [])
+  const personalisedDeal = useMemo(() => {
+    if (recentWorkContext?.type !== "deal") return null
+    return [...recentDeals]
+      .filter((deal) => !["won", "lost", "closed"].includes(deal.statusCode.toLowerCase()))
+      .sort((left, right) => {
+        const leftTime = Date.parse(left.createdAt)
+        const rightTime = Date.parse(right.createdAt)
+        return rightTime - leftTime
+      })[0] ?? null
+  }, [recentDeals, recentWorkContext])
 
   // The composer floats over the stream and grows with the prompt, so the depth
   // it covers is measured rather than assumed: it sets the scroll clearance under
@@ -1700,7 +1727,8 @@ export function AgentDexterPage({
 
   async function submitPrompt(prompt = composerValue, specialistId = selectedSpecialistId) {
     const message = prompt.trim()
-    if (!message || isWorking) return
+    if (!message || isWorking || promptSubmissionInFlightRef.current) return
+    promptSubmissionInFlightRef.current = true
 
     const previousConversation = activeConversation
     const previousBranchMessages = conversationBranchFor(
@@ -1843,6 +1871,7 @@ export function AgentDexterPage({
       })
       setError(requestError instanceof Error ? requestError.message : t("Dexter could not answer this request."))
     } finally {
+      promptSubmissionInFlightRef.current = false
       setIsSending(false)
       setStreamingMessageId(null)
     }
@@ -2198,7 +2227,7 @@ export function AgentDexterPage({
                   onSelectModel={setSelectedModelId}
                   onAccessModeChange={setAccessMode}
                   onRemoveAttachment={(id) => toggleAttachment(id)}
-                  onSend={() => void submitPrompt()}
+                  onSend={(prompt) => void submitPrompt(prompt)}
                 />
               </motion.div>
 
@@ -2239,7 +2268,11 @@ export function AgentDexterPage({
                   exit={{ opacity: 0, y: 8 }}
                   transition={mdMotion.panel}
                 >
-                  <DexterSuggestionGrid onPick={handleSuggestion} />
+                  <DexterSuggestionGrid
+                    onPick={handleSuggestion}
+                    dealName={personalisedDeal?.name}
+                    bookingId={recentWorkContext?.type === "booking" ? recentWorkContext.recordId : null}
+                  />
                 </motion.div>
               ) : null}
             </div>
@@ -2317,6 +2350,7 @@ export function AgentDexterPage({
                     {trailMessages.length > 5 ? (
                       <DexterConversationTrail
                         messages={trailMessages}
+                        scrollMessages={branchMessages}
                         bottomOffset={composerInset + 36}
                       />
                     ) : null}
@@ -2409,7 +2443,7 @@ export function AgentDexterPage({
                         onSelectModel={setSelectedModelId}
                         onAccessModeChange={setAccessMode}
                         onRemoveAttachment={(id) => toggleAttachment(id)}
-                        onSend={() => void submitPrompt()}
+                        onSend={(prompt) => void submitPrompt(prompt)}
                         className="shadow-[0_0_0_1px_var(--md-accent-a42),0_16px_38px_rgba(42,52,50,0.16)]"
                       />
                     </motion.div>

@@ -1599,7 +1599,7 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
 }
 
 /* ── Dexter watch rail shell ─────────────────────────────────────────────────
-   The conversation continues below this floating surface. A dedicated 72px
+   The conversation continues below this floating surface. A dedicated 176px
    strip on the conversation-facing edge fades the glass itself, not just its
    colour, so blur, saturation and tint arrive as one continuous material. */
 .md-watch-rail-shell {
@@ -1620,11 +1620,12 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
   background: linear-gradient(
     var(--md-watch-glass-dir),
     transparent 0,
-    color-mix(in srgb, var(--md-watch-glass-near) 44%, transparent) 22px,
-    var(--md-watch-glass-near) 46px,
-    color-mix(in srgb, var(--md-watch-glass-mid) 72%, transparent) 78px,
-    var(--md-watch-glass-mid) 102px,
-    var(--md-watch-glass-far) 128px,
+    color-mix(in srgb, var(--md-watch-glass-near) 32%, transparent) 30px,
+    color-mix(in srgb, var(--md-watch-glass-near) 72%, transparent) 66px,
+    var(--md-watch-glass-near) 94px,
+    color-mix(in srgb, var(--md-watch-glass-mid) 72%, transparent) 126px,
+    var(--md-watch-glass-mid) 152px,
+    var(--md-watch-glass-far) 176px,
     var(--md-watch-glass-far) 100%
   );
   -webkit-backdrop-filter: blur(24px) saturate(1.18);
@@ -1632,22 +1633,22 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
   mask-image: linear-gradient(
     var(--md-watch-glass-dir),
     transparent 0,
-    rgba(0, 0, 0, 0.04) 18px,
-    rgba(0, 0, 0, 0.14) 38px,
-    rgba(0, 0, 0, 0.34) 66px,
-    rgba(0, 0, 0, 0.62) 94px,
-    rgba(0, 0, 0, 0.86) 114px,
-    #000 128px
+    rgba(0, 0, 0, 0.025) 24px,
+    rgba(0, 0, 0, 0.09) 52px,
+    rgba(0, 0, 0, 0.22) 84px,
+    rgba(0, 0, 0, 0.46) 118px,
+    rgba(0, 0, 0, 0.74) 148px,
+    #000 176px
   );
   -webkit-mask-image: linear-gradient(
     var(--md-watch-glass-dir),
     transparent 0,
-    rgba(0, 0, 0, 0.04) 18px,
-    rgba(0, 0, 0, 0.14) 38px,
-    rgba(0, 0, 0, 0.34) 66px,
-    rgba(0, 0, 0, 0.62) 94px,
-    rgba(0, 0, 0, 0.86) 114px,
-    #000 128px
+    rgba(0, 0, 0, 0.025) 24px,
+    rgba(0, 0, 0, 0.09) 52px,
+    rgba(0, 0, 0, 0.22) 84px,
+    rgba(0, 0, 0, 0.46) 118px,
+    rgba(0, 0, 0, 0.74) 148px,
+    #000 176px
   );
 }
 
@@ -1677,6 +1678,16 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
 
 [dir="rtl"] .md-watch-rail__wash {
   --md-watch-wash-dir: to left;
+}
+
+/* The vertical scroll veils used to begin at the interactive column, creating
+   a second hard edge inside the wider glass fade. Extend them through the same
+   176px handover and mask that extension horizontally, so tint and blur reach
+   the watcher header without ever appearing as a rectangular band. */
+.md-watch-rail__edge-blur {
+  inset-inline-start: -176px;
+  mask-image: linear-gradient(var(--md-watch-glass-dir), transparent 0, #000 176px);
+  -webkit-mask-image: linear-gradient(var(--md-watch-glass-dir), transparent 0, #000 176px);
 }
 
 /* The severity dot doubles as the liveness cue. `currentColor` carries the tone

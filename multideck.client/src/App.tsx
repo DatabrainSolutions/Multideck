@@ -19,6 +19,7 @@ import {
 import { isSupabaseConfigured, supabase } from "@/lib/supabase"
 import { ThemeProfileSync } from "@/lib/theme-preferences"
 import { LanguageProfileSync } from "@/lib/language-preferences"
+import { rememberRecentWorkContext } from "@/lib/recent-work-context"
 
 const OverviewPage = lazy(() => import("@/pages/overview-page").then((module) => ({ default: module.OverviewPage })))
 const AgentDexterPage = lazy(() => import("@/pages/agent-dexter-page").then((module) => ({ default: module.AgentDexterPage })))
@@ -378,6 +379,7 @@ export default function App() {
       path = currentUser.landingPath
     }
     if (path === route) return
+    rememberRecentWorkContext(route)
     window.history.pushState({}, "", path)
     startTransition(() => setRoute(getRoute()))
   }
