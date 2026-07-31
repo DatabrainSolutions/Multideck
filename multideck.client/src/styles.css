@@ -1091,32 +1091,26 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
     0 0 0 3px var(--md-accent-a20);
 }
 
-/* The role control is the one chip that sits on the pattern, so it carries no
-   surface of its own until it is reached for — a resting fill there would punch
-   a hole in the texture the band exists to show. */
+/* The selected specialist rests directly on the Dexter bloom. Its glass surface
+   appears only when the control is reached for, keeping the header quiet while
+   the expanded specialist options retain their dark-glass treatment. */
 .md-composer-lead {
   position: relative;
+  color: rgba(255, 255, 255, 0.96);
   background: transparent;
+  box-shadow: none;
   transition:
     background-color 200ms cubic-bezier(0.22, 1, 0.36, 1),
     box-shadow 200ms cubic-bezier(0.22, 1, 0.36, 1),
     scale 200ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.md-composer-lead:hover,
-.md-composer-lead[data-state="open"] {
-  background: color-mix(in srgb, var(--md-surface) 72%, transparent);
+.md-composer-lead:hover {
+  background: rgba(24, 29, 31, 0.9);
+  backdrop-filter: blur(12px) saturate(1.18);
   box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--md-surface) 56%, transparent),
-    0 1px 3px rgba(11, 20, 19, 0.06);
-}
-
-.dark .md-composer-lead:hover,
-.dark .md-composer-lead[data-state="open"] {
-  background: color-mix(in srgb, var(--md-surface) 78%, transparent);
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.1),
-    0 1px 3px rgba(0, 0, 0, 0.26);
+    inset 0 0 0 1px rgba(255, 255, 255, 0.22),
+    0 3px 10px rgba(0, 0, 0, 0.24);
 }
 
 .md-composer-lead:active {
@@ -1126,8 +1120,12 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
 
 .md-composer-lead:focus-visible {
   outline: none;
-  background: color-mix(in srgb, var(--md-surface) 88%, transparent);
+  background: rgba(24, 29, 31, 0.92);
   box-shadow: 0 0 0 3px var(--md-accent-a20);
+}
+
+.md-composer-lead .md-composer-chip__caret {
+  color: rgba(255, 255, 255, 0.68);
 }
 
 .md-dexter-role-container {
@@ -1166,36 +1164,27 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
 }
 
 .md-dexter-role-option {
-  background: color-mix(in srgb, var(--md-surface) 20%, transparent);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
-  backdrop-filter: blur(10px) saturate(1.15);
+  color: rgba(255, 255, 255, 0.94);
+  background: rgba(22, 27, 29, 0.68);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
+  backdrop-filter: blur(12px) saturate(1.18);
   transition:
     background-color 160ms cubic-bezier(0.22, 1, 0.36, 1),
     box-shadow 160ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .md-dexter-role-option:hover {
-  background: color-mix(in srgb, var(--md-surface) 34%, transparent);
+  background: rgba(31, 37, 39, 0.86);
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.2),
-    0 2px 8px rgba(11, 20, 19, 0.08);
+    0 3px 10px rgba(0, 0, 0, 0.22);
 }
 
 .md-dexter-role-option:focus-visible {
-  background: color-mix(in srgb, var(--md-surface) 38%, transparent);
+  background: rgba(31, 37, 39, 0.9);
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.2),
     0 0 0 3px var(--md-accent-a24);
-}
-
-.dark .md-dexter-role-option {
-  background: color-mix(in srgb, var(--md-surface) 62%, transparent);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
-}
-
-.dark .md-dexter-role-option:hover,
-.dark .md-dexter-role-option:focus-visible {
-  background: color-mix(in srgb, var(--md-surface) 82%, transparent);
 }
 
 .md-composer-chip__caret {
@@ -2895,13 +2884,16 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
 
   .md-dexter-markdown__table-wrap {
     container: dexter-table / inline-size;
+    width: 100%;
+    min-width: 0;
     max-width: 100%;
     overflow: hidden;
     border-radius: var(--md-radius-lg);
-    background: color-mix(in srgb, var(--md-surface) 96%, var(--md-bg));
+    background: var(--md-surface);
     box-shadow:
-      inset 0 0 0 1px color-mix(in srgb, var(--md-ink) 9%, transparent),
-      0 1px 2px rgba(11, 20, 19, 0.03);
+      inset 0 0 0 1px color-mix(in srgb, var(--md-ink) 11%, transparent),
+      0 1px 2px rgba(11, 20, 19, 0.04),
+      0 12px 28px rgba(42, 52, 50, 0.07);
   }
 
   .md-dexter-markdown__table-scroll {
@@ -2909,7 +2901,7 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
     overflow-x: auto;
   }
 
-  .md-dexter-markdown table {
+  .md-dexter-markdown__table {
     width: 100%;
     min-width: 560px;
     border-collapse: separate;
@@ -2944,8 +2936,8 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
   }
 
   .md-dexter-markdown th {
-    background: color-mix(in srgb, var(--md-ink) 3.5%, var(--md-surface));
-    color: var(--md-subtle);
+    background: color-mix(in srgb, var(--md-accent) 6%, var(--md-surface-soft));
+    color: color-mix(in srgb, var(--md-ink) 72%, var(--md-subtle));
     font-size: 11.75px;
     font-weight: 500;
     line-height: 1.3;
@@ -2985,11 +2977,16 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
   }
 
   .md-dexter-markdown tbody tr {
-    transition: background-color 120ms ease-out;
+    background: var(--md-surface);
+    transition: background-color 160ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .md-dexter-markdown tbody tr:nth-child(even) {
+    background: color-mix(in srgb, var(--md-ink) 1.8%, var(--md-surface));
   }
 
   .md-dexter-markdown tbody tr:hover {
-    background: color-mix(in srgb, var(--md-accent) 4.5%, transparent);
+    background: color-mix(in srgb, var(--md-accent) 7%, var(--md-surface));
   }
 
   .md-dexter-markdown tr:last-child td {
@@ -3002,9 +2999,15 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
 
   .md-dexter-markdown__record {
     border-radius: calc(var(--md-radius-lg) - 4px);
-    background: var(--md-surface);
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--md-accent) 4%, var(--md-surface)),
+      var(--md-surface) 54%
+    );
     padding: 1rem;
-    box-shadow: var(--md-shadow-line);
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--md-ink) 8%, transparent),
+      0 6px 16px rgba(42, 52, 50, 0.055);
   }
 
   .md-dexter-markdown__record + .md-dexter-markdown__record {
@@ -3025,6 +3028,7 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
   }
 
   .md-dexter-markdown__record-primary strong {
+    min-width: 0;
     color: var(--md-ink);
     font-size: 14px;
     font-weight: 600;
@@ -3050,11 +3054,19 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
   }
 
   .md-dexter-markdown__record dd {
+    min-width: 0;
     margin-top: 0.22rem;
     color: color-mix(in srgb, var(--md-ink) 92%, var(--md-text));
     font-size: 13px;
     line-height: 1.48;
     overflow-wrap: anywhere;
+  }
+
+  .md-dexter-markdown__record bdi,
+  .md-dexter-markdown__record a {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
 
   .md-dexter-markdown__record [data-align="numeric"] dd {
@@ -3091,7 +3103,25 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
 
     .md-dexter-markdown__records {
       display: block;
-      padding: 0.5rem;
+      padding: 0.375rem;
+    }
+
+    .md-dexter-markdown__record,
+    .md-dexter-markdown__table-wrap--leads .md-dexter-markdown__record {
+      border-radius: calc(var(--md-radius-lg) - 5px);
+      background: linear-gradient(
+        145deg,
+        color-mix(in srgb, var(--md-accent) 4%, var(--md-surface)),
+        var(--md-surface) 54%
+      );
+      padding: 0.9rem;
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-ink) 8%, transparent);
+    }
+
+    .md-dexter-markdown__record + .md-dexter-markdown__record,
+    .md-dexter-markdown__table-wrap--leads .md-dexter-markdown__record + .md-dexter-markdown__record {
+      margin-top: 0.375rem;
+      border-top: 0;
     }
 
     .md-dexter-markdown__record dl {
@@ -3109,9 +3139,10 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
     }
   }
 
-  @container dexter-table (max-width: 430px) {
+  @container dexter-table (max-width: 520px) {
     .md-dexter-markdown__record dl {
       grid-template-columns: minmax(0, 1fr);
+      margin-top: 0.7rem;
     }
 
     .md-dexter-markdown__record dl > div,
@@ -3119,6 +3150,42 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
     .md-dexter-markdown__record dl > div:nth-child(odd) {
       padding-inline: 0;
       border-inline-start: 0;
+      display: grid;
+      grid-template-columns: minmax(88px, 36%) minmax(0, 1fr);
+      align-items: start;
+      gap: 0.75rem;
+      padding-block: 0.62rem;
+    }
+
+    .md-dexter-markdown__record dd {
+      margin-top: 0;
+      text-align: start;
+    }
+
+    .md-dexter-markdown__record [data-align="numeric"] dd {
+      text-align: end;
+    }
+  }
+
+  @container dexter-table (max-width: 350px) {
+    .md-dexter-markdown__records {
+      padding: 0.25rem;
+    }
+
+    .md-dexter-markdown__record,
+    .md-dexter-markdown__table-wrap--leads .md-dexter-markdown__record {
+      padding: 0.8rem;
+    }
+
+    .md-dexter-markdown__record dl > div,
+    .md-dexter-markdown__record dl > div:not(:nth-child(3n + 1)),
+    .md-dexter-markdown__record dl > div:nth-child(odd) {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0.2rem;
+    }
+
+    .md-dexter-markdown__record [data-align="numeric"] dd {
+      text-align: start;
     }
   }
 

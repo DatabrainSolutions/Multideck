@@ -60,6 +60,7 @@ import {
   mergeDexterMentionItems,
 } from "@/data/dexter-mentions"
 import { DexterBrandMark } from "@/components/multideck/dexter-brand-mark"
+import { DexterInlineCitation, isDexterCitationUrl } from "@/components/multideck/dexter-inline-citation"
 import { ProgressiveBlur } from "@/components/multideck/progressive-blur"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -598,7 +599,7 @@ function DexterMarkdownTable({
     return (
       <div className="md-dexter-markdown__table-wrap my-4 w-full max-w-[1120px] overflow-hidden rounded-[var(--md-radius-lg)]">
         <div className="md-dexter-markdown__table-scroll md-scrollbar">
-          <table>{children}</table>
+          <table className="md-dexter-markdown__table">{children}</table>
         </div>
       </div>
     )
@@ -631,7 +632,7 @@ function DexterMarkdownTable({
       )}
     >
       <div className="md-dexter-markdown__table-scroll md-scrollbar">
-        <table>
+        <table className="md-dexter-markdown__table">
           <thead>
             <tr>
               {columns.map((column, index) => (
@@ -683,12 +684,12 @@ function DexterMarkdownTable({
         </table>
       </div>
 
-      <div className="md-dexter-markdown__records">
+      <div className="md-dexter-markdown__records" role="list">
         {rows.map((row, rowIndex) => (
           <div
             key={`${row[0] || "record"}-${rowIndex}`}
             className="md-dexter-markdown__record"
-            role="group"
+            role="listitem"
             aria-label={`${headers[0]}: ${row[0] || "—"}`}
           >
             <div className="md-dexter-markdown__record-primary">
@@ -774,10 +775,12 @@ function DexterMarkdown({
               {children}
             </blockquote>
           ),
-          a: ({ children, href }) => (
-            <a href={href} target="_blank" rel="noreferrer">
+          a: ({ children, href, title }) => isDexterCitationUrl(href) ? (
+            <DexterInlineCitation href={href} title={title ?? undefined}>
               {children}
-            </a>
+            </DexterInlineCitation>
+          ) : (
+            <span>{children}</span>
           ),
           table: ({ children, node }) => (
             <DexterMarkdownTable node={node} children={children} />

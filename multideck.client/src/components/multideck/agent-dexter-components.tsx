@@ -24,6 +24,7 @@ import {
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
 import { createPortal } from "react-dom"
 import { Button } from "@/components/ui/button"
+import { Kbd, KbdGroup } from "@/components/ui/kbd"
 import {
   Context,
   ContextContent,
@@ -56,6 +57,22 @@ import { mdEaseOut, mdMotion, reduceMotion, staggerRamp } from "@/lib/motion"
 
 export type DexterSpecialistId = "auto" | "customs" | "customer" | "sales" | "ops" | "analytics"
 export type DexterAccessMode = "approve" | "full"
+
+function useSendShortcutModifier() {
+  const [modifier, setModifier] = useState<"⌘" | "Ctrl">("Ctrl")
+
+  useEffect(() => {
+    const navigatorWithPlatform = navigator as Navigator & {
+      userAgentData?: { platform?: string }
+    }
+    const platform = navigatorWithPlatform.userAgentData?.platform
+      ?? navigator.platform
+      ?? navigator.userAgent
+    setModifier(/Mac|iPhone|iPad|iPod/i.test(platform) ? "⌘" : "Ctrl")
+  }, [])
+
+  return modifier
+}
 
 export type DexterSpecialist = {
   id: DexterSpecialistId
@@ -1075,6 +1092,7 @@ export function DexterPromptComposer({
 }) {
   const { language, t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
+  const sendShortcutModifier = useSendShortcutModifier()
   const [internalMentions, setInternalMentions] = useState<DexterMentionItem[]>([])
   const canSend = value.trim().length > 0
   const minRows = compact ? 52 : 76
@@ -1188,20 +1206,27 @@ export function DexterPromptComposer({
               </ContextContent>
             </Context>
             <DexterAccessModeToggle mode={accessMode} onChange={onAccessModeChange} />
-            <span className="ms-auto hidden items-center gap-1.5 pe-1 text-[12px] text-[var(--md-subtle)] sm:inline-flex">
-              <kbd className="grid h-5 min-w-5 place-items-center rounded-[var(--md-radius-sm)] bg-[var(--md-icon-well)] px-1 text-[11px] font-medium leading-none">↵</kbd>
-              {t("to send")}
-            </span>
             <motion.div
-              className="ms-auto shrink-0 sm:ms-0"
+              className="ms-auto flex shrink-0 items-center gap-2"
               animate={{ scale: canSend ? 1 : 0.94, opacity: canSend ? 1 : 0.55 }}
               transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.spring)}
             >
+              <span
+                aria-hidden="true"
+                title={`${sendShortcutModifier} + Enter`}
+                className="hidden h-10 items-center rounded-[var(--md-radius-lg)] px-1.5 sm:inline-flex"
+              >
+                <KbdGroup dir="ltr" data-i18n-skip>
+                  <Kbd>{sendShortcutModifier}</Kbd>
+                  <Kbd>↵</Kbd>
+                </KbdGroup>
+              </span>
               <DexterActionPill
                 type="button"
                 icon={ArrowUp}
                 iconOnly
-                label={t("Send prompt")}
+                label={`${t("Send prompt")} (${sendShortcutModifier} + Enter)`}
+                aria-keyshortcuts="Meta+Enter Control+Enter"
                 className="size-10 min-w-0 rounded-full p-0"
                 onClick={() => onSend()}
                 disabled={!canSend}

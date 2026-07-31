@@ -16,6 +16,7 @@ import {
 } from "@/components/ai-elements/reasoning"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
+import { Kbd, KbdGroup } from "@/components/ui/kbd"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
@@ -81,6 +82,7 @@ import {
   type DexterSpecialistId,
 } from "@/components/multideck/agent-dexter-components"
 import { DexterActionApproval } from "@/components/multideck/dexter-action-approval"
+import { DexterInlineCitation } from "@/components/multideck/dexter-inline-citation"
 import { defaultDexterModelId, type DexterModelId } from "@/data/dexter-models"
 import { defaultDexterMentionItems } from "@/data/dexter-mentions"
 import {
@@ -168,7 +170,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Button & control components",
     helper: "Navigation and input controls",
-    ids: ["command", "app-breadcrumbs", "sidebar", "sidebar-item-menu", "sidebar-arrange-canvas", "theme-toggle", "page-settings-menu", "date-range-picker", "segmented-control", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "pagination", "settings-controls", "settings-option-card"],
+    ids: ["command", "app-breadcrumbs", "sidebar", "sidebar-item-menu", "sidebar-arrange-canvas", "theme-toggle", "page-settings-menu", "date-range-picker", "segmented-control", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "pagination", "kbd", "settings-controls", "settings-option-card"],
   },
   {
     label: "Auth components",
@@ -952,6 +954,14 @@ function ComponentPreview({ id }: { id: string }) {
           <StatusPill tone="blue">AI note</StatusPill>
           <StatusPill tone="teal">Submitted</StatusPill>
           <StatusPill tone="neutral">After hours</StatusPill>
+        </div>
+      ) : null}
+
+      {id === "kbd" ? (
+        <div className="flex w-full max-w-[560px] flex-wrap items-center justify-center gap-4 rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          <Kbd>Ctrl</Kbd>
+          <Kbd>⌘K</Kbd>
+          <KbdGroup><Kbd>Ctrl</Kbd><Kbd>B</Kbd></KbdGroup>
         </div>
       ) : null}
 
@@ -1818,6 +1828,20 @@ function ComponentPreview({ id }: { id: string }) {
             onSend={() => toast.success("Mention-aware prompt ready")}
           />
           <p className="mt-3 text-[11.5px] text-[var(--md-subtle)]">Type @, then use the arrow keys and Enter to add a reference.</p>
+        </div>
+      ) : null}
+
+      {id === "dexter-inline-citation" ? (
+        <div className="w-full max-w-[680px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 text-[13px] leading-6 text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
+          <p>
+            <DexterInlineCitation
+              href="/crm/leads/8f81256b-3f0a-4c48-9d95-bd40ec63dc66"
+              title="Northwind Logistics"
+            >
+              Northwind has a follow-up due today
+            </DexterInlineCitation>
+            . I would prioritise it before the afternoon quote review.
+          </p>
         </div>
       ) : null}
 

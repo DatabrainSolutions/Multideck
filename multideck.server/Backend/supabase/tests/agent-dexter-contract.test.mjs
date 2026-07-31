@@ -43,6 +43,9 @@ const dexterBranches = read(
 const dexterApproval = read(
   "multideck.client/src/components/multideck/dexter-action-approval.tsx",
 )
+const dexterCitation = read(
+  "multideck.client/src/components/multideck/dexter-inline-citation.tsx",
+)
 const clientStyles = read(
   "multideck.client/src/styles.css",
 )
@@ -131,7 +134,7 @@ test("Dexter sends only the current response version into the next model turn", 
   assert.match(currentResponseHistoryMigration, /"AIMSG_CompanyID"|_multideck_dexter_context/)
   assert.match(currentResponseHistoryMigration, /grant execute on function public\.multideck_dexter_prepare_conversation[\s\S]*authenticated/)
   assert.match(dexterPage, /trailMessagesFor/)
-  assert.match(dexterPage, /estimateContextTokens\(trailMessages/)
+  assert.match(dexterPage, /estimateContextTokens\(branchMessages/)
   assert.match(edgeFunction, /p_history_message_ids: historyMessageIds/)
   assert.match(dexterPage, /historyMessageIds: retryHistoryMessageIds/)
 })
@@ -192,6 +195,26 @@ test("Dexter responses keep structured Markdown and one stable reasoning disclos
   assert.match(dexterPage, /serverId: message\.serverId \?\? message\.id/)
   assert.match(dexterPage, /historyMessageIds: previousBranchMessages\.map\(dexterMessageServerId\)/)
   assert.doesNotMatch(dexterPage, /hasStreamedDelta/)
+})
+
+test("Dexter attaches clickable inline citations only to records returned by its data tools", () => {
+  assert.match(edgeFunction, /function addDomainCitations/)
+  assert.match(edgeFunction, /_citation: citationMetadata/)
+  assert.match(edgeFunction, /\/crm\/leads\/\$\{encodeURIComponent\(recordId\)\}/)
+  assert.match(edgeFunction, /\/crm\/deals\?record=/)
+  assert.match(edgeFunction, /\/quotes\?search=/)
+  assert.match(edgeFunction, /\/warehouse\/orders\?/)
+  assert.match(edgeFunction, /\/warehouse\/inventory\?search=/)
+  assert.match(edgeFunction, /Use only citation URLs returned by the data tool/)
+  assert.match(edgeFunction, /wrap the smallest readable phrase/)
+  assert.match(edgeFunction, /addDomainCitations\(domain, data\)/)
+  assert.match(dexterPage, /isDexterCitationUrl\(href\)/)
+  assert.match(dexterPage, /<DexterInlineCitation href=\{href\} title=\{title \?\? undefined\}>/)
+  assert.match(dexterCitation, /href=\{href\}/)
+  assert.match(dexterCitation, /aria-label=\{`\$\{t\("Open source"\)\}: \$\{sourceTitle\}`\}/)
+  assert.match(translations, /"Open source": \{ de:/)
+  assert.match(translations, /"Previous source": \{ de:/)
+  assert.match(translations, /"Next source": \{ de:/)
 })
 
 test("Dexter response data and decisions adapt for narrow, RTL, and reduced-motion views", () => {
