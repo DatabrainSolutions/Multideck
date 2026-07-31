@@ -1,5 +1,4 @@
 using FluentValidation;
-using Multideck.Server.Modules.AgentDexter;
 using Multideck.Server.Modules.Warehouse.Facilities;
 using Multideck.Server.Modules.Warehouse.Documents;
 using Multideck.Server.Modules.Warehouse.Items;
@@ -23,7 +22,7 @@ public static class WarehouseServiceCollectionExtensions
         services.AddScoped<IWarehouseOrderService, WarehouseOrderService>();
         services.AddScoped<IWarehouseOrderDocumentService, WarehouseOrderDocumentService>();
         services.AddScoped<IWarehousePortalService, WarehousePortalService>();
-        services.AddScoped<IAgentDexterService, AgentDexterService>();
+        services.AddHttpContextAccessor();
 
         services.AddValidatorsFromAssemblyContaining<CreateFacilityRequestValidator>(includeInternalTypes: true);
 

@@ -54,5 +54,12 @@ nul
 !/multideck.server/Backend/supabase/migrations/20260723101203_notification_email_preferences.sql
 !/multideck.server/Backend/supabase/migrations/20260723103000_optimize_notification_email_policies.sql
 !/multideck.server/Backend/supabase/migrations/20260723104500_dispatch_notification_emails.sql
+!/multideck.server/Backend/supabase/migrations/202607310002_agent_dexter_supabase_runtime.sql
+!/multideck.server/Backend/supabase/migrations/202607310003_dexter_message_specialist.sql
+!/multideck.server/Backend/supabase/migrations/202607310004_dexter_response_versions.sql
+!/multideck.server/Backend/supabase/migrations/202607310006_dexter_current_response_history.sql
+!/multideck.server/Backend/supabase/migrations/20260730222311_user_accent_preference.sql
+!/multideck.server/Backend/supabase/migrations/202607310005_user_theme_preference.sql
+!/multideck.server/Backend/supabase/migrations/202607310007_user_language_preference.sql
 /multideck.server/Backend/supabase/.temp/
 .vercel

@@ -1,8 +1,22 @@
-import { useMemo, useState, type ReactNode } from "react"
+import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { ArrowUp, Check, Clock3, FileText, Sparkles, X } from "lucide-react"
-import { AnimatePresence, motion } from "motion/react"
+import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { Button } from "@/components/ui/button"
+import {
+  DexterMentionInput,
+  DexterMentionText,
+  type DexterMentionItem,
+} from "@/components/multideck/agent-dexter-components"
 import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
+import {
+  customerMentionItems,
+  defaultDexterMentionItems,
+  leadMentionItems,
+  mergeDexterMentionItems,
+} from "@/data/dexter-mentions"
+import { useLanguage } from "@/i18n/language-provider"
+import { listCustomers } from "@/lib/customer-api"
+import { listLeads } from "@/lib/lead-api"
 import { mdMotion } from "@/lib/motion"
 import { useAiAgentName } from "@/lib/user-preferences"
 import { cn } from "@/lib/utils"
@@ -46,8 +60,14 @@ export function DexterCompanionSidebar({
   presentation?: "fixed" | "preview"
 }) {
   const aiAgentName = useAiAgentName()
+  const { direction } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
   const [prompt, setPrompt] = useState("")
+  const [mentionItems, setMentionItems] = useState<DexterMentionItem[]>(defaultDexterMentionItems)
+  const [promptMentions, setPromptMentions] = useState<DexterMentionItem[]>([])
   const [sentPrompt, setSentPrompt] = useState<string | null>(null)
+  const [sentMentions, setSentMentions] = useState<DexterMentionItem[]>([])
+  const userMessageOffset = direction === "rtl" ? -14 : 14
   const responseLead = useMemo(
     () =>
       sentPrompt
@@ -56,11 +76,31 @@ export function DexterCompanionSidebar({
     [sentPrompt],
   )
 
+  useEffect(() => {
+    if (!open) return
+    let active = true
+
+    Promise.allSettled([listCustomers(), listLeads()]).then(([customerResult, leadResult]) => {
+      if (!active) return
+      setMentionItems(mergeDexterMentionItems(
+        customerResult.status === "fulfilled" ? customerMentionItems(customerResult.value) : [],
+        leadResult.status === "fulfilled" ? leadMentionItems(leadResult.value) : [],
+        defaultDexterMentionItems,
+      ))
+    })
+
+    return () => {
+      active = false
+    }
+  }, [open])
+
   function sendPrompt() {
     const nextPrompt = prompt.trim()
     if (!nextPrompt) return
     setSentPrompt(nextPrompt)
+    setSentMentions(promptMentions)
     setPrompt("")
+    setPromptMentions([])
   }
 
   return (
@@ -100,13 +140,18 @@ export function DexterCompanionSidebar({
             </header>
 
             <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-7 md-scrollbar">
-              <div className="md-dexter-chat-bubble md-dexter-chat-bubble--user ml-auto max-w-[300px] rounded-[20px] px-4 py-3 text-[13px] leading-5">
+              <motion.div
+                className="ms-auto max-w-[300px] text-end text-[13px] leading-5 text-[var(--md-ink)]"
+                initial={shouldReduceMotion ? false : { opacity: 0, x: userMessageOffset, filter: "blur(6px)" }}
+                animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
+                transition={mdMotion.enter}
+              >
                 What should I focus on across customers right now?
-              </div>
+              </motion.div>
 
               <div className="mt-5">
                 <p className="px-1 text-[11px] font-semibold leading-4 text-[var(--md-ink)]">{aiAgentName}</p>
-                <section className="md-dexter-chat-bubble md-dexter-chat-bubble--assistant mt-1.5 rounded-[22px] p-4">
+                <section className="mt-2 px-1">
                   <p className="text-[14px] leading-6 text-[var(--md-ink)]">{responseLead}</p>
                   <div className="mt-4 grid gap-2">
                     {[
@@ -124,9 +169,15 @@ export function DexterCompanionSidebar({
               </div>
 
               {sentPrompt ? (
-                <div className="md-dexter-chat-bubble md-dexter-chat-bubble--user mt-5 ml-auto max-w-[320px] rounded-[20px] px-4 py-3 text-[13px] leading-5">
-                  {sentPrompt}
-                </div>
+                <motion.div
+                  key={sentPrompt}
+                  className="mt-5 ms-auto max-w-[320px] text-end text-[13px] leading-5 text-[var(--md-ink)]"
+                  initial={shouldReduceMotion ? false : { opacity: 0, x: userMessageOffset, filter: "blur(6px)" }}
+                  animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
+                  transition={mdMotion.enter}
+                >
+                  <DexterMentionText text={sentPrompt} items={sentMentions} />
+                </motion.div>
               ) : null}
 
               <div className="mt-6">
@@ -140,7 +191,10 @@ export function DexterCompanionSidebar({
                         key={item.label}
                         type="button"
                         className="md-dexter-followup grid grid-cols-[30px_1fr_auto] items-center gap-3 rounded-[16px] px-3 py-3 text-left transition-[background,color,box-shadow,opacity,transform] hover:-translate-y-0.5"
-                        onClick={() => setPrompt(item.label)}
+                        onClick={() => {
+                          setPrompt(item.label)
+                          setPromptMentions([])
+                        }}
                       >
                         <Icon className="size-4 text-[var(--md-accent)]" strokeWidth={1.25} />
                         <span className="min-w-0">
@@ -164,11 +218,18 @@ export function DexterCompanionSidebar({
             >
               <div className="md-dexter-companion-composer-shell rounded-[22px] p-1.5">
                 <div className="md-dexter-companion-composer-inner flex min-h-[92px] flex-col rounded-[16px] px-3 py-3">
-                  <textarea
+                  <DexterMentionInput
                     value={prompt}
-                    onChange={(event) => setPrompt(event.target.value)}
+                    items={mentionItems}
+                    selectedMentions={promptMentions}
                     placeholder={`Describe what you want ${aiAgentName} to do...`}
-                    className="min-h-0 flex-1 resize-none border-0 bg-transparent text-[13px] leading-5 text-[var(--md-ink)] outline-none placeholder:text-[var(--md-subtle)]"
+                    minHeight={28}
+                    maxHeight={132}
+                    className="text-[13px] leading-5"
+                    canSend={Boolean(prompt.trim())}
+                    onChange={setPrompt}
+                    onMentionsChange={setPromptMentions}
+                    onSend={sendPrompt}
                   />
                   <div className="mt-3 flex items-center justify-between gap-3">
                     <span className={cn("inline-flex items-center gap-1.5 text-[11px] font-medium", sentPrompt ? "text-[var(--md-accent)]" : "text-[var(--md-subtle)]")}>
