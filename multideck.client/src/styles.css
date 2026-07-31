@@ -3080,19 +3080,7 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
 
     .md-dexter-markdown__table-wrap--leads .md-dexter-markdown__records {
       display: block;
-      padding: 0;
-    }
-
-    .md-dexter-markdown__table-wrap--leads .md-dexter-markdown__record {
-      border-radius: 0;
-      background: transparent;
-      padding: 0.9rem 1rem;
-      box-shadow: none;
-    }
-
-    .md-dexter-markdown__table-wrap--leads .md-dexter-markdown__record + .md-dexter-markdown__record {
-      margin-top: 0;
-      border-top: 1px solid color-mix(in srgb, var(--md-ink) 8%, transparent);
+      padding: 0.5rem;
     }
   }
 
