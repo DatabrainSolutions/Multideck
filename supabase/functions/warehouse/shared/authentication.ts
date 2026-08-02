@@ -1,6 +1,6 @@
 
 // @ts-nocheck
-import { oneOrNull } from "./database.ts";
+import { many, one, oneOrNull } from "./database.ts";
 import { HttpError } from "./http.ts";
 
 export async function resolveActor(userDb, admin) {

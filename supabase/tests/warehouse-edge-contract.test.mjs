@@ -57,6 +57,7 @@ test("warehouse runtime targets the current WMS schema", () => {
 
 test("the Edge Function authenticates users and resolves internal or portal scope before using the service role", () => {
   assert.match(edgeSource, /userDb\.auth\.getUser\(\)/)
+  assert.match(edgeSource, /import \{ many, one, oneOrNull \} from "\.\/database\.ts"/)
   assert.match(edgeSource, /Portal_ExternalIdentities/)
   assert.match(edgeSource, /WMS_CustomerFacilityAccess/)
   assert.match(edgeSource, /requireCapability/)
