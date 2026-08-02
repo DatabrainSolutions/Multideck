@@ -10,21 +10,20 @@ import { AppShortcuts } from "@/components/multideck/app-shortcuts"
 // for the first second after a page load is worse than no shortcut, and the summon
 // only pays for its shader once it is actually opened.
 import { DexterSummon } from "@/components/multideck/dexter-summon"
-import { LanguageProvider } from "@/i18n/language-provider"
+import { LanguageProvider, useLanguage } from "@/i18n/language-provider"
 import { mdMotion } from "@/lib/motion"
 import { rememberAuthReturnPath, takeAuthReturnPath } from "@/lib/auth-routing"
 import { summarizeAuthUser, type AuthUserSummary } from "@/lib/auth-user"
 import { getApiAuthSession } from "@/lib/api"
 import {
-  createProfilePhotoSignedUrl,
   createProfilePhotoSignedUrls,
-  loadCurrentUserProfilePhoto,
   type UserProfilePhoto,
 } from "@/lib/profile-photo"
 import { isSupabaseConfigured, supabase } from "@/lib/supabase"
 import { ThemeProfileSync } from "@/lib/theme-preferences"
 import { LanguageProfileSync } from "@/lib/language-preferences"
 import { rememberRecentWorkContext } from "@/lib/recent-work-context"
+import multideckLogoMark from "@/assets/brand/multideck-logo-mark.svg"
 
 const OverviewPage = lazy(() => import("@/pages/overview-page").then((module) => ({ default: module.OverviewPage })))
 const AgentDexterPage = lazy(() => import("@/pages/agent-dexter-page").then((module) => ({ default: module.AgentDexterPage })))
@@ -229,6 +228,62 @@ function RouteFallback() {
   )
 }
 
+function SessionFallback() {
+  const { t } = useLanguage()
+
+  return (
+    <div className="grid min-h-screen bg-[var(--md-bg)] text-[var(--md-ink)] lg:grid-cols-[44%_56%]">
+      <aside className="relative order-2 flex min-h-[360px] overflow-hidden bg-[var(--md-accent-abyss)] text-white lg:order-1 lg:min-h-screen">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_72%_18%,rgba(154,209,164,0.16),transparent_38%),linear-gradient(180deg,rgba(2,14,12,0.08),rgba(2,14,12,0.72))]" aria-hidden="true" />
+        <div className="relative z-10 flex min-h-[360px] w-full flex-col px-[clamp(24px,4vw,64px)] py-[clamp(24px,4vw,56px)] lg:min-h-screen">
+          <div className="flex items-center gap-3" data-i18n-skip dir="ltr">
+            <img src={multideckLogoMark} alt="" className="size-6 brightness-0 invert" />
+            <span className="text-[21px] font-medium leading-none">multideck</span>
+          </div>
+
+          <div className="my-auto max-w-[500px] py-16">
+            <div className="mb-5 inline-flex items-center rounded-full bg-black/12 px-3 py-1.5 text-[12px] font-medium text-white/78 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)]">
+              {t("Private workspace")}
+            </div>
+            <h1 className="whitespace-pre-line text-[24px] font-medium leading-[1.22]">{t("Freight keeps moving.\nDexter keeps watch.")}</h1>
+            <p className="mt-4 max-w-[470px] text-[14px] leading-6 text-white/64">
+              {t("A private operating workspace for the people responsible for every booking, exception, and customer promise.")}
+            </p>
+          </div>
+
+          <p className="flex items-center gap-3 text-[12px] text-white/58">
+            <span className="size-2 rounded-full bg-[var(--md-accent-lift-warm)] shadow-[0_0_0_4px_color-mix(in_srgb,var(--md-accent-lift-warm)_12%,transparent)]" aria-hidden="true" />
+            {t("Invite-only access for your team")}
+          </p>
+        </div>
+      </aside>
+
+      <main className="order-1 grid min-h-[520px] place-items-center px-[clamp(var(--md-gap-xl),5vw,88px)] py-[calc(var(--md-page-section-gap)*2)] lg:order-2 lg:min-h-screen">
+        <div className="w-full max-w-[520px]" role="status" aria-live="polite">
+          <div className="flex items-center gap-3" data-i18n-skip dir="ltr">
+            <img src={multideckLogoMark} alt="" className="size-6" />
+            <span className="text-[21px] font-medium leading-none">multideck</span>
+          </div>
+
+          <div className="mt-10 grid size-11 place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-accent-a10)]" aria-hidden="true">
+            <span className="size-2.5 animate-pulse rounded-full bg-[var(--md-accent)] motion-reduce:animate-none" />
+          </div>
+          <h2 className="mt-5 text-[24px] font-medium leading-tight">{t("Preparing your workspace")}</h2>
+          <p className="mt-2 max-w-[440px] text-[14px] leading-6 text-[var(--md-text)]">
+            {t("Checking your secure session and loading the latest workspace details.")}
+          </p>
+
+          <div className="mt-8 space-y-3" aria-hidden="true">
+            <div className="h-12 w-full animate-pulse rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] motion-reduce:animate-none" />
+            <div className="h-12 w-full animate-pulse rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] motion-reduce:animate-none" />
+            <div className="h-12 w-full animate-pulse rounded-[var(--md-radius-xl)] bg-[var(--md-accent-a10)] motion-reduce:animate-none" />
+          </div>
+        </div>
+      </main>
+    </div>
+  )
+}
+
 export default function App() {
   const [route, setRoute] = useState(getRoute)
   const [authStatus, setAuthStatus] = useState<AuthStatus>(isSupabaseConfigured ? "checking" : "unauthenticated")
@@ -271,6 +326,12 @@ export default function App() {
           coverPhotoPath: coverPhoto?.path ?? null,
           coverPhotoUrl,
         })
+        if (profilePhoto) {
+          setCurrentUser((user) => {
+            if (!user || user.profilePhoto?.path !== profilePhoto.path || user.profilePhotoUrl === profilePhotoUrl) return user
+            return { ...user, profilePhotoUrl }
+          })
+        }
       })
       .catch((error) => {
         console.error("Profile images could not be preloaded.", error)
@@ -311,39 +372,19 @@ export default function App() {
       }
 
       setAuthStatus("checking")
-      Promise.allSettled([
-        getApiAuthSession(session.access_token),
-        loadCurrentUserProfilePhoto(),
-      ]).then(async ([apiSessionResult, profilePhotoResult]) => {
-        if (cancelled || requestId !== sessionRequest) return
+      getApiAuthSession(session.access_token)
+        .then((apiSession) => apiSession.profile)
+        .catch((error) => {
+          console.error("The application profile could not be loaded.", error)
+          return null
+        })
+        .then((apiProfile) => {
+          if (cancelled || requestId !== sessionRequest) return
+          const nextUser = summarizeAuthUser(session.user, apiProfile)
 
-        if (apiSessionResult.status === "rejected") {
-          console.error("The application profile could not be loaded.", apiSessionResult.reason)
-        }
-        if (profilePhotoResult.status === "rejected") {
-          console.error("The profile photo metadata could not be loaded.", profilePhotoResult.reason)
-        }
-
-        const apiProfile = apiSessionResult.status === "fulfilled" ? apiSessionResult.value.profile : null
-        const nextUser = summarizeAuthUser(session.user, apiProfile)
-        if (profilePhotoResult.status === "fulfilled") {
-          nextUser.profilePhoto = profilePhotoResult.value
-        }
-
-        if (nextUser.profilePhoto) {
-          try {
-            const signedUrl = await createProfilePhotoSignedUrl(nextUser.profilePhoto)
-            await preloadImage(signedUrl)
-            nextUser.profilePhotoUrl = signedUrl
-          } catch (error) {
-            console.error("The profile photo preview could not be prepared.", error)
-          }
-        }
-
-        if (cancelled || requestId !== sessionRequest) return
-        setCurrentUser(nextUser)
-        setAuthStatus("authenticated")
-      })
+          setCurrentUser(nextUser)
+          setAuthStatus("authenticated")
+        })
     }
 
     supabase.auth.getSession().then(({ data, error }) => {
@@ -437,9 +478,9 @@ export default function App() {
                 <ContactCardPublicPage slug={route.split("/").at(-1) ?? ""} />
               </Suspense>
             ) : (!isLocalNavigationLab && ((authStatus === "checking" && route !== "/auth") || (authStatus === "authenticated" && route === "/auth" && !isPasswordRecoveryRoute))) ? (
-              <RouteFallback />
+              <SessionFallback />
             ) : !isLocalNavigationLab && (authStatus === "unauthenticated" || route === "/auth") ? (
-              <Suspense fallback={<RouteFallback />}>
+              <Suspense fallback={<SessionFallback />}>
                 <AuthFlowPage navigate={navigate} />
               </Suspense>
             ) : isBookingDetailRoute(route) ? (

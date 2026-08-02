@@ -657,6 +657,16 @@ const phrases: PhraseDictionary = {
     fr: "Accès sur invitation uniquement pour votre équipe",
     ar: "وصول لفريقك عن طريق الدعوة فقط",
   },
+  "Preparing your workspace": {
+    de: "Dein Arbeitsbereich wird vorbereitet",
+    fr: "Préparation de votre espace de travail",
+    ar: "جارٍ إعداد مساحة عملك",
+  },
+  "Checking your secure session and loading the latest workspace details.": {
+    de: "Deine sichere Sitzung wird geprüft und die aktuellen Arbeitsbereichsdaten werden geladen.",
+    fr: "Vérification de votre session sécurisée et chargement des dernières informations de l’espace de travail.",
+    ar: "جارٍ التحقق من جلستك الآمنة وتحميل أحدث تفاصيل مساحة العمل.",
+  },
   "Back in control.\nWithout the wait.": {
     de: "Wieder unter Kontrolle.\nOhne Wartezeit.",
     fr: "Reprenez le contrôle.\nSans attendre.",
