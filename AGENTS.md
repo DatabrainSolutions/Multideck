@@ -2,6 +2,16 @@
 
 These instructions apply to anyone using AI coding tools in this repo, including Codex, Cursor, Claude, or similar assistants.
 
+## Product Boundary
+
+This repository is Multideck App: the operator application and sole operational source of truth. Follow the [canonical three-product architecture](docs/architecture/three-product-platform.md).
+
+- Keep customer portal product work in `DatabrainSolutions/Multideck.Live`.
+- Keep tenant/deployment/domain control-plane work in `DatabrainSolutions/Multideck.Cloud`.
+- App owns operational workflows, Carbone document creation, tenant Auth, private operational Storage, integrations and audit.
+- Supabase is the production backend target. Treat .NET as transitional tooling/parity code and add no new production dependency to it.
+- Run App on port 3000 and deploy tenant projects only as `multideck-app-{slug}`.
+
 ## Product Mindset
 
 Build Multideck like a premium, modern freight-forwarding product for real operators.

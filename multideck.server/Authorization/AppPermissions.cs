@@ -37,6 +37,13 @@ public static class AppPermissions
         public static readonly PermissionDefinition Write = new("Reports.Write", "Reports", "Create and update reports", "Create report templates and publish report changes.");
     }
 
+    public static class Documents
+    {
+        public static readonly PermissionDefinition Read = new("Documents.Read", "Documents", "Read generated documents", "View generated document history and request secure downloads.");
+        public static readonly PermissionDefinition Generate = new("Documents.Generate", "Documents", "Generate documents", "Generate approved documents from authorised operational records.");
+        public static readonly PermissionDefinition Manage = new("Documents.Manage", "Documents", "Manage document templates", "Create, version, approve, publish, and retire document templates.", IsDangerous: true);
+    }
+
     public static class Warehouse
     {
         // Raw permission strings live here as consts so they can also be used in attribute arguments.
@@ -99,6 +106,9 @@ public static class AppPermissions
         Quotes.Delete,
         Reports.Read,
         Reports.Write,
+        Documents.Read,
+        Documents.Generate,
+        Documents.Manage,
         Warehouse.Read,
         Warehouse.Write,
         Users.Read,

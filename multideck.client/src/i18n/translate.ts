@@ -1,4 +1,5 @@
 import type { LanguageCode } from "./languages"
+import { customsDeclarationPhrases } from "./customs-declaration-phrases"
 
 type WordDictionary = Record<string, string>
 type PhraseDictionary = Record<string, Partial<Record<LanguageCode, string>>>
@@ -15,7 +16,48 @@ const britishToAmerican: WordDictionary = {
   organised: "organized",
 }
 
+const documentBuilderPhrases: PhraseDictionary = {
+  "Preview complete": { de: "Vorschau abgeschlossen", fr: "Aperçu terminé", ar: "اكتملت المعاينة" },
+  "No document was generated or sent to Carbone.": { de: "Es wurde kein Dokument erstellt oder an Carbone gesendet.", fr: "Aucun document n’a été créé ni envoyé à Carbone.", ar: "لم يتم إنشاء أي مستند أو إرساله إلى Carbone." },
+  "Document ready": { de: "Dokument bereit", fr: "Document prêt", ar: "المستند جاهز" },
+  "The document could not be generated.": { de: "Das Dokument konnte nicht erstellt werden.", fr: "Le document n’a pas pu être créé.", ar: "تعذر إنشاء المستند." },
+  "Create a document": { de: "Dokument erstellen", fr: "Créer un document", ar: "إنشاء مستند" },
+  "Choose a template and job. Multideck securely gathers the approved data and prepares the file.": { de: "Wählen Sie eine Vorlage und einen Auftrag. Multideck stellt die freigegebenen Daten sicher zusammen und bereitet die Datei vor.", fr: "Choisissez un modèle et un dossier. Multideck rassemble de manière sécurisée les données approuvées et prépare le fichier.", ar: "اختر قالبًا وشحنة. يجمع Multideck البيانات المعتمدة بأمان ويُعد الملف." },
+  "Template": { de: "Vorlage", fr: "Modèle", ar: "القالب" },
+  "Choose a template": { de: "Vorlage auswählen", fr: "Choisir un modèle", ar: "اختر قالبًا" },
+  "Job ID": { de: "Auftrags-ID", fr: "Identifiant du dossier", ar: "معرّف الشحنة" },
+  "The job must belong to one of your authorised offices.": { de: "Der Auftrag muss zu einer Ihrer berechtigten Niederlassungen gehören.", fr: "Le dossier doit appartenir à l’une de vos agences autorisées.", ar: "يجب أن تتبع الشحنة أحد مكاتبك المصرح بها." },
+  "File format": { de: "Dateiformat", fr: "Format du fichier", ar: "تنسيق الملف" },
+  "The exact source data is snapshotted for audit before the document is rendered.": { de: "Die exakten Quelldaten werden vor der Dokumenterstellung revisionssicher gespeichert.", fr: "Les données sources exactes sont figées à des fins d’audit avant la génération du document.", ar: "تُحفظ لقطة دقيقة من بيانات المصدر للتدقيق قبل إنشاء المستند." },
+  "Preparing document…": { de: "Dokument wird vorbereitet…", fr: "Préparation du document…", ar: "جارٍ إعداد المستند…" },
+  "Create and download": { de: "Erstellen und herunterladen", fr: "Créer et télécharger", ar: "إنشاء وتنزيل" },
+  "The document workspace could not be loaded.": { de: "Der Dokumentarbeitsbereich konnte nicht geladen werden.", fr: "L’espace documentaire n’a pas pu être chargé.", ar: "تعذر تحميل مساحة عمل المستندات." },
+  "Preview only": { de: "Nur Vorschau", fr: "Aperçu uniquement", ar: "معاينة فقط" },
+  "Secure downloads are enabled after the service is deployed.": { de: "Sichere Downloads werden nach der Bereitstellung des Dienstes aktiviert.", fr: "Les téléchargements sécurisés seront activés après le déploiement du service.", ar: "يتم تفعيل التنزيلات الآمنة بعد نشر الخدمة." },
+  "Download unavailable": { de: "Download nicht verfügbar", fr: "Téléchargement indisponible", ar: "التنزيل غير متاح" },
+  "A secure download link could not be created.": { de: "Ein sicherer Download-Link konnte nicht erstellt werden.", fr: "Impossible de créer un lien de téléchargement sécurisé.", ar: "تعذر إنشاء رابط تنزيل آمن." },
+  "Document centre": { de: "Dokumentenzentrale", fr: "Centre de documents", ar: "مركز المستندات" },
+  "Create the right document in seconds": { de: "Das richtige Dokument in Sekunden erstellen", fr: "Créez le bon document en quelques secondes", ar: "أنشئ المستند المناسب خلال ثوانٍ" },
+  "Choose an approved template and a job. Multideck takes care of the data, audit trail and secure delivery.": { de: "Wählen Sie eine freigegebene Vorlage und einen Auftrag. Multideck übernimmt Daten, Prüfpfad und sichere Zustellung.", fr: "Choisissez un modèle approuvé et un dossier. Multideck gère les données, la piste d’audit et la livraison sécurisée.", ar: "اختر قالبًا معتمدًا وشحنة، وسيتولى Multideck البيانات ومسار التدقيق والتسليم الآمن." },
+  "Create document": { de: "Dokument erstellen", fr: "Créer un document", ar: "إنشاء مستند" },
+  "Documents are temporarily unavailable": { de: "Dokumente sind vorübergehend nicht verfügbar", fr: "Les documents sont temporairement indisponibles", ar: "المستندات غير متاحة مؤقتًا" },
+  "Approved templates": { de: "Freigegebene Vorlagen", fr: "Modèles approuvés", ar: "القوالب المعتمدة" },
+  "Only published templates can generate customer documents.": { de: "Nur veröffentlichte Vorlagen können Kundendokumente erstellen.", fr: "Seuls les modèles publiés peuvent générer des documents client.", ar: "يمكن للقوالب المنشورة فقط إنشاء مستندات العملاء." },
+  "Manage templates": { de: "Vorlagen verwalten", fr: "Gérer les modèles", ar: "إدارة القوالب" },
+  "Loading templates": { de: "Vorlagen werden geladen", fr: "Chargement des modèles", ar: "جارٍ تحميل القوالب" },
+  "No description": { de: "Keine Beschreibung", fr: "Aucune description", ar: "لا يوجد وصف" },
+  "Use template": { de: "Vorlage verwenden", fr: "Utiliser le modèle", ar: "استخدام القالب" },
+  "No published templates yet": { de: "Noch keine veröffentlichten Vorlagen", fr: "Aucun modèle publié pour le moment", ar: "لا توجد قوالب منشورة بعد" },
+  "Publish the first Carbone template to make document creation available.": { de: "Veröffentlichen Sie die erste Carbone-Vorlage, um die Dokumenterstellung zu aktivieren.", fr: "Publiez le premier modèle Carbone pour activer la création de documents.", ar: "انشر أول قالب Carbone لإتاحة إنشاء المستندات." },
+  "Recent documents": { de: "Letzte Dokumente", fr: "Documents récents", ar: "المستندات الحديثة" },
+  "Every file is private and downloaded through a short-lived secure link.": { de: "Jede Datei ist privat und wird über einen kurzlebigen sicheren Link heruntergeladen.", fr: "Chaque fichier est privé et téléchargé via un lien sécurisé à durée limitée.", ar: "كل ملف خاص ويُنزل عبر رابط آمن قصير الأجل." },
+  "Download document": { de: "Dokument herunterladen", fr: "Télécharger le document", ar: "تنزيل المستند" },
+  "No documents have been generated yet.": { de: "Es wurden noch keine Dokumente erstellt.", fr: "Aucun document n’a encore été généré.", ar: "لم يتم إنشاء أي مستند بعد." },
+}
+
 const phrases: PhraseDictionary = {
+  ...documentBuilderPhrases,
+  ...customsDeclarationPhrases,
   "All areas": { de: "Alle Bereiche", fr: "Tous les espaces", ar: "كل المجالات" },
   "Back to all areas": { de: "Zurück zu allen Bereichen", fr: "Retour à tous les espaces", ar: "العودة إلى كل المجالات" },
   "Pin to top": { de: "Oben anheften", fr: "Épingler en haut", ar: "تثبيت في الأعلى" },

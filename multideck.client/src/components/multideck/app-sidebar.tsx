@@ -607,13 +607,18 @@ export function AppSidebar({
   const isSettingsRoute = route === "/settings"
   const isAgentRoute = route === "/agent-dexter"
   const canManageWarehouseUsers = hasPermission(currentUser, "Warehouse.Users.ManageOwn")
+  const canReadDocuments = hasPermission(currentUser, "Documents.Read")
   const availableAreas = useMemo<SidebarArea[]>(() => {
-    if (!isCustomer) return sidebarAreas
+    if (!isCustomer) {
+      return sidebarAreas.map((area) => area.id === "documents-service"
+        ? { ...area, destinations: area.destinations.filter((destination) => destination.id !== "document-builder" || canReadDocuments) }
+        : area)
+    }
 
     const destinations = customerWarehouseNavigation.filter((item) =>
       item.route !== "/warehouse/users" || canManageWarehouseUsers)
     return [{ id: "warehouse", label: "Warehouse", icon: Boxes, destinations }]
-  }, [isCustomer, canManageWarehouseUsers])
+  }, [isCustomer, canManageWarehouseUsers, canReadDocuments])
   const initialArea = isSettingsRoute
     ? undefined
     : isCustomer
@@ -729,7 +734,7 @@ export function AppSidebar({
       requiredIds.forEach((id) => next.add(id))
       return next
     })
-  }, [route, isCustomer, isSettingsRoute, canManageWarehouseUsers]) // availableAreas is intentionally derived from the account type and permissions.
+  }, [route, isCustomer, isSettingsRoute, canManageWarehouseUsers, canReadDocuments]) // availableAreas is intentionally derived from the account type and permissions.
 
   useEffect(() => {
     if (!isSettingsRoute) return

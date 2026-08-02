@@ -187,8 +187,8 @@ export const sidebarAreas: SidebarArea[] = [
     label: "Customs & Compliance",
     icon: BadgeCheck,
     destinations: [
-      { id: "customs-cases", label: "Customs cases", icon: ClipboardCheck },
-      { id: "transit-t1", label: "Transit (T1)", icon: Ship },
+      { id: "standalone-declarations", label: "Stand Alone Declarations", icon: ClipboardCheck, route: "/customs/standalone/export" },
+      { id: "job-related-declarations", label: "Job Related Declarations", icon: Ship, route: "/customs/job-related/export" },
       { id: "classification-licences", label: "Classification & licences", icon: ScanText },
       { id: "compliance-controls", label: "Compliance controls", icon: BadgeCheck },
     ],
@@ -198,7 +198,7 @@ export const sidebarAreas: SidebarArea[] = [
     label: "Documents & Service",
     icon: FileText,
     destinations: [
-      { id: "document-builder", label: "Document builder", icon: FileText, route: "/paper-tray" },
+      { id: "document-builder", label: "Document centre", icon: FileText, route: "/documents" },
       { id: "signatures-security", label: "Signatures & security", icon: KeyRound },
       { id: "customer-portal", label: "Customer portal", icon: Globe2 },
       { id: "communications", label: "Communications", icon: MessageCircle },

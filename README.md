@@ -1,6 +1,8 @@
-# Multideck
+# Multideck App
 
-A freight forwarding system with a .NET server and web client.
+Multideck App is the main operator application and the sole authoritative operational system for each tenant. It is one of three deliberately separate products; see the [canonical three-product architecture](docs/architecture/three-product-platform.md).
+
+Each tenant uses a dedicated Vercel project named `multideck-app-{slug}`, an exact `{slug}.multideck.app` hostname, and one authoritative operational Supabase project shared with that tenant's Live deployment through separate authorised interfaces. Supabase is the target production backend. The existing .NET code is transitional tooling and parity-test code and receives no new production dependencies.
 
 ## Project Structure
 
@@ -18,7 +20,17 @@ Keep browser-facing application code inside `multideck.client`. Keep API code,
 server-side libraries, database migrations, and Edge Functions inside
 `multideck.server`.
 
-## Running the Server
+## Running the App
+
+```bash
+cd multideck.client
+npm ci
+npm run dev
+```
+
+The operator app runs on `http://127.0.0.1:3000`. The authenticated document centre is at `/documents`.
+
+## Transitional .NET Server
 
 ### Prerequisites
 

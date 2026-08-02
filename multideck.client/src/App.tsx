@@ -27,6 +27,8 @@ const AuthFlowPage = lazy(() => import("@/pages/auth-flow-page").then((module) =
 const ComponentsGalleryPage = lazy(() => import("@/pages/components-gallery-page").then((module) => ({ default: module.ComponentsGalleryPage })))
 const CustomerDetailPage = lazy(() => import("@/pages/customer-detail-page").then((module) => ({ default: module.CustomerDetailPage })))
 const CustomersPage = lazy(() => import("@/pages/customers-page").then((module) => ({ default: module.CustomersPage })))
+const DocumentsPage = lazy(() => import("@/pages/documents-page").then((module) => ({ default: module.DocumentsPage })))
+const CustomsDeclarationsPage = lazy(() => import("@/pages/customs-declarations-page").then((module) => ({ default: module.CustomsDeclarationsPage })))
 const ReportsPage = lazy(() => import("@/pages/reports-page").then((module) => ({ default: module.ReportsPage })))
 const PaperTrayPage = lazy(() => import("@/pages/paper-tray-page").then((module) => ({ default: module.PaperTrayPage })))
 const NavigationLabPage = lazy(() => import("@/pages/navigation-lab-page").then((module) => ({ default: module.NavigationLabPage })))
@@ -97,6 +99,12 @@ const validRoutes = new Set([
   "/crm/marketing",
   "/crm/settings",
   "/customers",
+  "/documents",
+  "/customs/standalone/export",
+  "/customs/standalone/export/new",
+  "/customs/standalone/import",
+  "/customs/job-related/export",
+  "/customs/job-related/import",
   "/paper-tray",
   "/playground/navigation",
   "/quotes",
@@ -131,6 +139,10 @@ function isQuoteDetailRoute(path: string) {
 
 function isRoadJobDetailRoute(path: string) {
   return /^\/road-control\/[^/]+$/.test(path) && path !== "/road-control/new"
+}
+
+function isCustomsDeclarationEditRoute(path: string) {
+  return /^\/customs\/standalone\/export\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(path)
 }
 
 function getLegacyBookingRoute(path: string) {
@@ -169,6 +181,7 @@ function getRoute() {
   if (window.location.pathname.startsWith("/reports/rpt-")) return window.location.pathname
   if (isBookingDetailRoute(window.location.pathname)) return window.location.pathname
   if (isRoadJobDetailRoute(window.location.pathname)) return window.location.pathname
+  if (isCustomsDeclarationEditRoute(window.location.pathname)) return window.location.pathname
   if (isQuoteDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCustomerDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCrmLeadConversionRoute(window.location.pathname)) return window.location.pathname
@@ -435,6 +448,8 @@ export default function App() {
                   {route === "/crm/settings" ? <CrmSettingsPage currentUser={currentUser} /> : null}
                   {route === "/customers" ? <CustomersPage navigate={navigate} /> : null}
                   {isCustomerDetailRoute(route) ? <CustomerDetailPage customerId={route.split("/").at(-1) ?? ""} /> : null}
+                  {route === "/documents" ? <DocumentsPage navigate={navigate} /> : null}
+                  {route.startsWith("/customs/") ? <CustomsDeclarationsPage route={route} navigate={navigate} /> : null}
                   {route === "/paper-tray" ? <PaperTrayPage /> : null}
                   {route === "/playground/navigation" ? <NavigationLabPage /> : null}
                   {route === "/quotes" ? <QuotesRegisterPage navigate={navigate} /> : null}
