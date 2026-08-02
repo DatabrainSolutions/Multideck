@@ -1,4 +1,4 @@
-import { apiFetch } from "@/lib/api"
+import { edgeFetch } from "@/lib/api"
 import { getSupabaseSession } from "@/lib/supabase"
 
 export type ApiFinanceCurrency = {
@@ -53,10 +53,7 @@ async function authenticatedFinanceGet<T>(path: string): Promise<T> {
   const timeoutId = window.setTimeout(() => controller.abort(), 8000)
 
   try {
-    const response = await apiFetch(path, {
-      headers: { Authorization: `Bearer ${session.access_token}` },
-      signal: controller.signal,
-    })
+    const response = await edgeFetch("finance", path, session.access_token, { signal: controller.signal })
 
     if (!response.ok) throw new FinanceApiError(await parseFinanceApiError(response))
     return response.json() as Promise<T>
@@ -71,12 +68,12 @@ async function authenticatedFinanceGet<T>(path: string): Promise<T> {
 }
 
 export function listFinanceCurrencies() {
-  return authenticatedFinanceGet<ApiFinanceCurrenciesResponse>("/api/finance/currencies")
+  return authenticatedFinanceGet<ApiFinanceCurrenciesResponse>("/currencies")
 }
 
 export function getFinanceExchangeRates(baseCurrency: string) {
   const base = baseCurrency.trim().toUpperCase()
   return authenticatedFinanceGet<ApiFinanceExchangeRatesResponse>(
-    `/api/finance/exchange-rates?base=${encodeURIComponent(base)}`,
+    `/exchange-rates?base=${encodeURIComponent(base)}`,
   )
 }
