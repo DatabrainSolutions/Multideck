@@ -53,7 +53,7 @@ async function facilityRows(admin, actor) {
 export async function handleFacilities(request, path, url, admin, actor) {
   const rows = await facilityRows(admin, actor);
   const types = await many(admin.from("sys_WMSFacilityTypes").select("*").eq("WMSFacilityType_IsActive", true));
-  const offices = await many(admin.from("cmp_Offices").select("Office_ID,Office_Name,Office_Address1,Company_ID").eq("Company_ID", actor.companyId));
+  const offices = await many(admin.from("cmp_Offices").select("Office_ID,Office_Name,Office_Address,Company_ID").eq("Company_ID", actor.companyId));
   const typeNames = new Map(types.map((row)=>[
       row.WMSFacilityType_Code,
       row.WMSFacilityType_Name
@@ -78,7 +78,7 @@ export async function handleFacilities(request, path, url, admin, actor) {
       offices: offices.map((row)=>({
           id: row.Office_ID,
           name: row.Office_Name,
-          address: row.Office_Address1
+          address: row.Office_Address
         }))
     };
   }
