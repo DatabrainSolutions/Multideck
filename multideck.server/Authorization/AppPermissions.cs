@@ -77,6 +77,21 @@ public static class AppPermissions
         public static readonly PermissionDefinition Manage = new(ManageValue, "Integrations", "Manage integrations", "Create and update integrations, API keys, and webhook configuration.", IsDangerous: true);
     }
 
+    public static class Email
+    {
+        public const string ConnectValue = "Email.Connect";
+        public const string ReadValue = "Email.Read";
+        public const string SendValue = "Email.Send";
+        public const string ManageSharedValue = "Email.ManageShared";
+        public const string AiReadValue = "Email.AIRead";
+
+        public static readonly PermissionDefinition Connect = new(ConnectValue, "Email", "Connect email accounts", "Connect or revoke Gmail and Microsoft 365 accounts.", IsDangerous: true);
+        public static readonly PermissionDefinition Read = new(ReadValue, "Email", "Read email", "Read authorised personal, shared, and group mailboxes.");
+        public static readonly PermissionDefinition Send = new(SendValue, "Email", "Send email", "Compose, reply, reply all, and forward from authorised mailboxes.", IsDangerous: true);
+        public static readonly PermissionDefinition ManageShared = new(ManageSharedValue, "Email", "Manage shared mailboxes", "Manage users and send-as access for shared or group mailboxes.", IsDangerous: true);
+        public static readonly PermissionDefinition AiRead = new(AiReadValue, "Email", "Summarise email with AI", "Allow Luna to read an authorised thread for summarisation.", IsDangerous: true);
+    }
+
     public static class AgentDexter
     {
         public const string ReadValue = "AgentDexter.Read";
@@ -110,6 +125,11 @@ public static class AppPermissions
         Settings.Manage,
         Integrations.Read,
         Integrations.Manage,
+        Email.Connect,
+        Email.Read,
+        Email.Send,
+        Email.ManageShared,
+        Email.AiRead,
         AgentDexter.Read,
         AgentDexter.Manage,
     ];

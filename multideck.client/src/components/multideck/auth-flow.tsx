@@ -925,7 +925,7 @@ export function AuthFlow({
       toast.success("Check your inbox", { description: "Use the link or six-digit code to continue." })
     } catch (signInError) {
       console.error(signInError)
-      setError("We could not send the sign-in email. Check the address or workspace access.")
+      setError("Unable to send the sign-in email. Check the address or workspace access.")
     } finally {
       setIsSubmitting(false)
     }
@@ -965,7 +965,7 @@ export function AuthFlow({
       completeSignedInSession()
     } catch (passwordError) {
       console.error(passwordError)
-      setError("We could not sign you in with that email and password.")
+      setError("Unable to sign you in with that email and password. Check your details and try again.")
       setMessage("Password is enabled for users who already have a Supabase password.")
       setIsSubmitting(false)
     }
@@ -996,7 +996,7 @@ export function AuthFlow({
       toast.success("Check your inbox", { description: "The recovery link expires and can only be used once." })
     } catch (recoveryError) {
       console.error(recoveryError)
-      setError("We could not send a recovery email. Check the address and try again.")
+      setError("Unable to send a recovery email. Check the address and try again.")
     } finally {
       setIsSubmitting(false)
     }
@@ -1029,7 +1029,7 @@ export function AuthFlow({
       else window.location.assign("/settings?tab=security")
     } catch (updateError) {
       console.error(updateError)
-      setError("We could not update your password. Request a fresh recovery link and try again.")
+      setError("Unable to update your password. Request a fresh recovery link and try again.")
       setIsSubmitting(false)
     }
   }
@@ -1075,7 +1075,7 @@ export function AuthFlow({
           ? "Passkey sign-in is not enabled for this workspace yet."
           : providerCode === "webauthn_credential_not_found"
             ? "No Multideck passkey was found on this device. Connect one from Login & security after signing in."
-            : "We could not start that sign-in method. Check that it is connected to your account.",
+            : "Unable to start that sign-in method. Check that it is connected to your account.",
       )
     } finally {
       setBusyProvider(null)

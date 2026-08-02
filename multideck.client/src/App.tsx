@@ -5,6 +5,11 @@ import { ThemeProvider } from "next-themes"
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { AppShell } from "@/components/multideck/app-shell"
+import { AppShortcuts } from "@/components/multideck/app-shortcuts"
+// Both are loaded with the shell rather than lazily: a shortcut that does nothing
+// for the first second after a page load is worse than no shortcut, and the summon
+// only pays for its shader once it is actually opened.
+import { DexterSummon } from "@/components/multideck/dexter-summon"
 import { LanguageProvider } from "@/i18n/language-provider"
 import { mdMotion } from "@/lib/motion"
 import { rememberAuthReturnPath, takeAuthReturnPath } from "@/lib/auth-routing"
@@ -27,6 +32,7 @@ const AuthFlowPage = lazy(() => import("@/pages/auth-flow-page").then((module) =
 const ComponentsGalleryPage = lazy(() => import("@/pages/components-gallery-page").then((module) => ({ default: module.ComponentsGalleryPage })))
 const CustomerDetailPage = lazy(() => import("@/pages/customer-detail-page").then((module) => ({ default: module.CustomerDetailPage })))
 const CustomersPage = lazy(() => import("@/pages/customers-page").then((module) => ({ default: module.CustomersPage })))
+const InboxPage = lazy(() => import("@/pages/inbox-page").then((module) => ({ default: module.InboxPage })))
 const ReportsPage = lazy(() => import("@/pages/reports-page").then((module) => ({ default: module.ReportsPage })))
 const PaperTrayPage = lazy(() => import("@/pages/paper-tray-page").then((module) => ({ default: module.PaperTrayPage })))
 const NavigationLabPage = lazy(() => import("@/pages/navigation-lab-page").then((module) => ({ default: module.NavigationLabPage })))
@@ -56,6 +62,9 @@ const CrmListsPage = lazy(() => import("@/pages/crm-page").then((module) => ({ d
 const CrmListDetailPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmListDetailPage })))
 const CrmMarketingPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmMarketingPage })))
 const CrmSettingsPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmSettingsPage })))
+const ContactCardsPage = lazy(() => import("@/pages/contact-cards-page").then((module) => ({ default: module.ContactCardsPage })))
+const ContactCardDetailPage = lazy(() => import("@/pages/contact-cards-page").then((module) => ({ default: module.ContactCardDetailPage })))
+const ContactCardPublicPage = lazy(() => import("@/pages/contact-card-public-page").then((module) => ({ default: module.ContactCardPublicPage })))
 
 type AuthStatus = "checking" | "authenticated" | "unauthenticated"
 type ProfileMediaUrls = {
@@ -89,6 +98,7 @@ const validRoutes = new Set([
   "/crm",
   "/crm/accounts",
   "/crm/activity",
+  "/crm/contact-cards",
   "/crm/contacts",
   "/crm/deals",
   "/crm/emails",
@@ -97,6 +107,7 @@ const validRoutes = new Set([
   "/crm/marketing",
   "/crm/settings",
   "/customers",
+  "/inbox",
   "/paper-tray",
   "/playground/navigation",
   "/quotes",
@@ -143,6 +154,15 @@ function isCrmLeadDetailRoute(path: string) {
   return /^\/crm\/leads\/[^/]+$/.test(path)
 }
 
+function isContactCardDetailRoute(path: string) {
+  return /^\/crm\/contact-cards\/[^/]+$/.test(path)
+}
+
+/** The public exchange page is reachable without a session, by design. */
+function isContactCardPublicRoute(path: string) {
+  return /^\/card\/[^/]+$/.test(path)
+}
+
 function isCrmLeadConversionRoute(path: string) {
   return /^\/crm\/leads\/[^/]+\/convert$/.test(path)
 }
@@ -173,6 +193,8 @@ function getRoute() {
   if (isCustomerDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCrmLeadConversionRoute(window.location.pathname)) return window.location.pathname
   if (isCrmLeadDetailRoute(window.location.pathname)) return window.location.pathname
+  if (isContactCardDetailRoute(window.location.pathname)) return window.location.pathname
+  if (isContactCardPublicRoute(window.location.pathname)) return window.location.pathname
   if (isCrmListDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCrmEmailStatsRoute(window.location.pathname)) return window.location.pathname
   if (isCrmEmailEditRoute(window.location.pathname)) return window.location.pathname
@@ -199,8 +221,12 @@ export default function App() {
   const [authStatus, setAuthStatus] = useState<AuthStatus>(isSupabaseConfigured ? "checking" : "unauthenticated")
   const [currentUser, setCurrentUser] = useState<AuthUserSummary | null>(null)
   const [profileMediaUrls, setProfileMediaUrls] = useState<ProfileMediaUrls>(emptyProfileMediaUrls)
-  const isLocalNavigationLab = import.meta.env.DEV && (route === "/playground/navigation" || route === "/settings")
+  const isLocalNavigationLab = import.meta.env.DEV
+    && (route === "/playground/navigation" || route === "/settings")
   const isPasswordRecoveryRoute = route === "/auth" && new URLSearchParams(window.location.search).get("mode") === "reset-password"
+  // Shortcuts and the Dexter summon belong to the signed-in workspace. The
+  // sign-in screen and the public contact card must stay inert.
+  const isWorkspaceRoute = !isContactCardPublicRoute(route) && route !== "/auth" && (authStatus === "authenticated" || isLocalNavigationLab)
   const handleProfilePhotoChange = useCallback((profilePhoto: UserProfilePhoto | null, profilePhotoUrl: string | null) => {
     setCurrentUser((user) => user ? { ...user, profilePhoto, profilePhotoUrl } : user)
   }, [])
@@ -354,6 +380,8 @@ export default function App() {
   useEffect(() => {
     if (authStatus === "checking") return
 
+    if (isContactCardPublicRoute(route)) return
+
     if (authStatus === "unauthenticated" && route !== "/auth" && !isLocalNavigationLab) {
       rememberAuthReturnPath()
       window.history.replaceState({}, "", "/auth")
@@ -369,7 +397,7 @@ export default function App() {
 
   useEffect(() => {
     if (authStatus !== "authenticated" || currentUser?.actorType !== "customer") return
-    if (canCustomerOpenRoute(currentUser, route)) return
+    if (isContactCardPublicRoute(route) || canCustomerOpenRoute(currentUser, route)) return
     window.history.replaceState({}, "", currentUser.landingPath)
     startTransition(() => setRoute(getRoute()))
   }, [authStatus, currentUser, route])
@@ -391,7 +419,11 @@ export default function App() {
         <LanguageProfileSync />
         <TooltipProvider>
           <MotionConfig reducedMotion="user" transition={mdMotion.fast}>
-            {(!isLocalNavigationLab && ((authStatus === "checking" && route !== "/auth") || (authStatus === "authenticated" && route === "/auth" && !isPasswordRecoveryRoute))) ? (
+            {isContactCardPublicRoute(route) ? (
+              <Suspense fallback={<RouteFallback />}>
+                <ContactCardPublicPage slug={route.split("/").at(-1) ?? ""} />
+              </Suspense>
+            ) : (!isLocalNavigationLab && ((authStatus === "checking" && route !== "/auth") || (authStatus === "authenticated" && route === "/auth" && !isPasswordRecoveryRoute))) ? (
               <RouteFallback />
             ) : !isLocalNavigationLab && (authStatus === "unauthenticated" || route === "/auth") ? (
               <Suspense fallback={<RouteFallback />}>
@@ -417,12 +449,15 @@ export default function App() {
                     <AgentDexterPage
                       currentUser={currentUser}
                       profilePhotoUrl={profileMediaUrls.profilePhotoUrl}
+                      navigate={navigate}
                     />
                   ) : null}
                   {route === "/crm" ? <CrmOverviewPage /> : null}
                   {route === "/crm/accounts" || route === "/crm/leads" ? <CrmLeadsPage navigate={navigate} /> : null}
                   {isCrmLeadConversionRoute(route) ? <LeadConversionPage navigate={navigate} leadId={route.split("/").at(-2) ?? ""} /> : null}
                   {isCrmLeadDetailRoute(route) ? <CrmLeadDetailPage navigate={navigate} leadId={route.split("/").at(-1) ?? ""} /> : null}
+                  {route === "/crm/contact-cards" ? <ContactCardsPage navigate={navigate} /> : null}
+                  {isContactCardDetailRoute(route) ? <ContactCardDetailPage key={route} navigate={navigate} cardId={route.split("/").at(-1) ?? ""} /> : null}
                   {route === "/crm/activity" ? <CrmActivityPage navigate={navigate} /> : null}
                   {route === "/crm/contacts" ? <CrmContactsPage /> : null}
                   {route === "/crm/deals" ? <CrmDealsPage currentUser={currentUser} /> : null}
@@ -435,6 +470,7 @@ export default function App() {
                   {route === "/crm/settings" ? <CrmSettingsPage currentUser={currentUser} /> : null}
                   {route === "/customers" ? <CustomersPage navigate={navigate} /> : null}
                   {isCustomerDetailRoute(route) ? <CustomerDetailPage customerId={route.split("/").at(-1) ?? ""} /> : null}
+                  {route === "/inbox" ? <InboxPage navigate={navigate} /> : null}
                   {route === "/paper-tray" ? <PaperTrayPage /> : null}
                   {route === "/playground/navigation" ? <NavigationLabPage /> : null}
                   {route === "/quotes" ? <QuotesRegisterPage navigate={navigate} /> : null}
@@ -460,6 +496,12 @@ export default function App() {
                 </Suspense>
               </AppShell>
             )}
+            {isWorkspaceRoute ? (
+              <>
+                <AppShortcuts navigate={navigate} />
+                <DexterSummon navigate={navigate} />
+              </>
+            ) : null}
           </MotionConfig>
           <Toaster />
         </TooltipProvider>

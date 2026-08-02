@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react"
-import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { ChevronDown, Loader2, Plus, RefreshCw, Save, ShieldCheck, SlidersHorizontal, TriangleAlert } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -23,7 +22,6 @@ import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
-import { mdMotion } from "@/lib/motion"
 import { useMinuteTick } from "@/lib/clock"
 import {
   checkDashboardConnection,
@@ -203,7 +201,6 @@ export function DashboardHeader({
   compact?: boolean
 }) {
   const { t } = useLanguage()
-  const shouldReduceMotion = useReducedMotion()
   const now = useMinuteTick()
   const [createOpen, setCreateOpen] = useState(false)
   const [newName, setNewName] = useState("")
@@ -228,23 +225,6 @@ export function DashboardHeader({
           <h1 className="md-dashboard-greeting">
             {t(greeting)}, {firstName}.
           </h1>
-          {/* The summary line is the only long-form copy in the header, so it
-              gets a crossfade rather than a slide — a moving paragraph is hard
-              to read. */}
-          <div className="md-dashboard-summary-shell">
-            <AnimatePresence initial={false} mode="popLayout">
-              <motion.p
-                key={range}
-                className="md-dashboard-summary"
-                initial={shouldReduceMotion ? false : { opacity: 0, y: 5 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={shouldReduceMotion ? undefined : { opacity: 0, y: -5 }}
-                transition={shouldReduceMotion ? { duration: 0 } : mdMotion.enter}
-              >
-                {snapshot.summary}
-              </motion.p>
-            </AnimatePresence>
-          </div>
         </div>
       </div>
 

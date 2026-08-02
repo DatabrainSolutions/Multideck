@@ -18,6 +18,7 @@ using Multideck.Server.Modules.Finance;
 using Multideck.Server.Modules.CrmPipelines;
 using Multideck.Server.Modules.Leads;
 using Multideck.Server.Modules.Deals;
+using Multideck.Server.Modules.Inbox;
 
 namespace Multideck.Server.Extensions;
 
@@ -45,6 +46,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ILeadService, LeadService>();
         services.AddScoped<IDealService, DealService>();
         services.AddScoped<ICrmPipelineService, CrmPipelineService>();
+        services.AddInboxModule(configuration);
         services.AddSingleton(supabaseAuth);
         services.AddScoped<IAuthSessionService, AuthSessionService>();
         services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();

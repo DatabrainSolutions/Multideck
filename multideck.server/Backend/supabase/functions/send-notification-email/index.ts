@@ -150,7 +150,12 @@ Deno.serve(async (request) => {
       .eq("CommNotifPref_EventType", eventType)
       .maybeSingle()
 
-    if (preference?.CommNotifPref_IsEnabled === false) return json({ delivered: false, skipped: "preference_disabled" })
+    // Watch email is explicitly opt-in. A missing preference (for example on a
+    // newly provisioned user) must not silently turn a high-volume channel on.
+    if (
+      preference?.CommNotifPref_IsEnabled === false ||
+      (eventType === "dexter_watch" && preference?.CommNotifPref_IsEnabled !== true)
+    ) return json({ delivered: false, skipped: "preference_disabled" })
 
     const actionUrl = safeMultideckUrl(metadata.action_url)
     const rendered = renderBrandedEmail({

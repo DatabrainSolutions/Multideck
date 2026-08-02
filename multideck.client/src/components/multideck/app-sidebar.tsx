@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
+import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { ArrowLeft, Bell, Boxes, Check, CheckCircle2, ChevronDown, ChevronRight, Clock3, CreditCard, LifeBuoy, LogOut, Pencil, Plus, PanelLeftClose, PanelLeftOpen, Pin, Settings, Sparkles, Trash2, TriangleAlert, X, type LucideIcon } from "lucide-react"
+import { Archive, ArrowLeft, Bell, Boxes, Check, ChevronDown, ChevronRight, Clock3, CreditCard, FileText, Inbox, LifeBuoy, LogOut, MailWarning, Pencil, Plus, PanelLeftClose, PanelLeftOpen, Pin, Send, Settings, Sparkles, Trash2, TriangleAlert, Users, X, type LucideIcon } from "lucide-react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { SpectralBloomShader } from "@/components/multideck/dexter-action-pill"
@@ -9,6 +9,7 @@ import { SidebarItemMenu } from "@/components/multideck/sidebar-item-menu"
 import { ThemeToggle } from "@/components/multideck/theme-toggle"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Separator } from "@/components/ui/separator"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
 import { mdMotion, reduceMotion } from "@/lib/motion"
 import { isDefaultScope, mergeSavedOrder, useSidebarLayoutScope } from "@/lib/sidebar-preferences"
@@ -16,7 +17,7 @@ import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
 import { createProfilePhotoSignedUrl } from "@/lib/profile-photo"
 import { supabase } from "@/lib/supabase"
 import { useAiAgentName } from "@/lib/user-preferences"
-import { customerWarehouseNavigation, homeNavItem, sidebarAreas, type NavItem, type SidebarArea, type SidebarDestination } from "@/data/navigation-data"
+import { customerWarehouseNavigation, homeNavItem, inboxNavItem, sidebarAreas, type NavItem, type SidebarArea, type SidebarDestination } from "@/data/navigation-data"
 import { readSettingsSectionFromUrl, settingsNavigationGroups, type SettingsSectionId } from "@/data/settings-navigation"
 import { useLanguage } from "@/i18n/language-provider"
 import { deleteDexterConversation, listDexterConversations, renameDexterConversation, type DexterConversationSummary } from "@/lib/dexter-api"
@@ -27,6 +28,9 @@ import {
   DEXTER_SELECT_CONVERSATION_EVENT,
 } from "@/lib/dexter-navigation"
 import multideckFullLogo from "@/assets/brand/multideck-full-logo.svg"
+import { MailProviderMark, mailProviderLabels } from "@/components/multideck/mailbox-provider-switch"
+import { useOptionalInboxWorkspace, type InboxNavigationView } from "@/lib/inbox-workspace"
+import { listWorkspaceNotifications, markWorkspaceNotificationRead, type WorkspaceNotification } from "@/lib/notification-api"
 
 const sidebarItemTransition = {
   duration: 0.18,
@@ -94,39 +98,36 @@ const notificationItemReveal = {
   },
 }
 
-const sidebarNotifications: Array<{
-  icon: LucideIcon
-  title: string
-  description: string
-  time: string
-  tone: "amber" | "teal" | "neutral"
-}> = [
-  {
-    icon: TriangleAlert,
-    title: "Customs hold needs review",
-    description: "MD-22455 is waiting on licence confirmation.",
-    time: "8 min",
-    tone: "amber",
-  },
-  {
-    icon: Clock3,
-    title: "ETA slipped over threshold",
-    description: "Felixstowe arrival moved by 7 hours.",
-    time: "24 min",
-    tone: "neutral",
-  },
-  {
-    icon: CheckCircle2,
-    title: "Customer update approved",
-    description: "Dexter sent the Marlow Apparel draft.",
-    time: "1 hr",
-    tone: "teal",
-  },
-]
+function notificationTime(value: string) {
+  const minutes = Math.max(0, Math.floor((Date.now() - Date.parse(value)) / 60_000))
+  if (minutes < 1) return "now"
+  if (minutes < 60) return `${minutes} min`
+  if (minutes < 1_440) return `${Math.floor(minutes / 60)} hr`
+  return `${Math.floor(minutes / 1_440)} d`
+}
 
 function NotificationBell() {
   const { direction, t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
+  const [notifications, setNotifications] = useState<WorkspaceNotification[]>([])
+  const unreadCount = notifications.filter((notification) => notification.status === "unread").length
+
+  const refreshNotifications = useCallback(() => {
+    void listWorkspaceNotifications()
+      .then(setNotifications)
+      .catch((error) => console.error("Notifications could not be loaded.", error))
+  }, [])
+
+  useEffect(() => {
+    refreshNotifications()
+    const client = supabase
+    if (!client) return
+    const channel = client
+      .channel("sidebar-notifications-live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "Comm_Notifications" }, refreshNotifications)
+      .subscribe()
+    return () => { void client.removeChannel(channel) }
+  }, [refreshNotifications])
 
   function openNotificationSettings() {
     window.history.pushState({}, "", "/settings?tab=notifications")
@@ -153,11 +154,11 @@ function NotificationBell() {
           >
             <Bell className="size-4" strokeWidth={1.3} />
           </motion.span>
-          <motion.span
+          {unreadCount > 0 ? <motion.span
             className="absolute end-2.5 top-2.5 size-1.5 rounded-full bg-[var(--md-amber)] shadow-[0_0_0_2px_var(--md-glass)]"
             animate={shouldReduceMotion ? undefined : { scale: [1, 1.35, 1] }}
             transition={{ duration: 0.54, delay: 0.32, ease: [0.22, 1, 0.36, 1] }}
-          />
+          /> : null}
         </button>
       </PopoverTrigger>
       <PopoverContent
@@ -170,11 +171,11 @@ function NotificationBell() {
       >
         <div className="flex items-start justify-between gap-4 px-4 py-3">
           <div className="min-w-0">
-            <p className="text-[13px] font-medium text-[var(--md-ink)]">Notifications</p>
-            <p className="mt-1 text-[12px] text-[var(--md-text)]">3 updates need attention</p>
+            <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Notifications")}</p>
+            <p className="mt-1 text-[12px] text-[var(--md-text)]">{unreadCount ? `${unreadCount} ${t("updates need attention")}` : t("You're all caught up")}</p>
           </div>
           <span className="rounded-[var(--md-radius-sm)] bg-[rgba(221,138,43,0.12)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--md-amber)]">
-            New
+            {t("New")}
           </span>
         </div>
         <motion.div
@@ -183,30 +184,39 @@ function NotificationBell() {
           initial={shouldReduceMotion ? undefined : "hidden"}
           animate={shouldReduceMotion ? undefined : "show"}
         >
-          {sidebarNotifications.map((notification) => {
-            const Icon = notification.icon
-            const iconTone =
-              notification.tone === "amber"
+          {notifications.length === 0 ? <p className="px-4 py-5 text-[13px] text-[var(--md-text)]">{t("No notifications yet")}</p> : null}
+          {notifications.map((notification) => {
+            const isDexterWatch = notification.metadata.event_type === "dexter_watch"
+            const Icon = isDexterWatch ? Sparkles : notification.priority === "urgent" ? TriangleAlert : Bell
+            const iconTone = isDexterWatch
+              ? "bg-[var(--md-accent-a10)] text-[var(--md-accent)]"
+              : notification.priority === "urgent"
                 ? "bg-[rgba(221,138,43,0.12)] text-[var(--md-amber)]"
-                : notification.tone === "teal"
-                  ? "bg-[var(--md-accent-a10)] text-[var(--md-accent)]"
-                  : "bg-[var(--md-surface-tint)] text-[var(--md-text)]"
+                : "bg-[var(--md-surface-tint)] text-[var(--md-text)]"
 
             return (
               <motion.button
-                key={notification.title}
+                key={notification.id}
                 type="button"
                 variants={shouldReduceMotion ? undefined : notificationItemReveal}
-                className="group grid w-full grid-cols-[30px_minmax(0,1fr)_auto] gap-3 px-4 py-3 text-left transition-[background,color,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-hover)]"
+                className="group grid w-full grid-cols-[30px_minmax(0,1fr)_auto] gap-3 px-4 py-3 text-start transition-[background,color,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-hover)]"
+                onClick={() => {
+                  const url = typeof notification.metadata.url === "string" ? notification.metadata.url : ""
+                  void markWorkspaceNotificationRead(notification.id).then(refreshNotifications)
+                  if (url.startsWith("/")) {
+                    window.history.pushState({}, "", url)
+                    window.dispatchEvent(new PopStateEvent("popstate"))
+                  }
+                }}
               >
                 <span className={cn("grid size-[30px] place-items-center rounded-[var(--md-radius-md)] shadow-[var(--md-shadow-line)] transition-transform duration-200 group-hover:scale-[1.04]", iconTone)}>
                   <Icon className="size-3.5" strokeWidth={1.3} />
                 </span>
                 <span className="min-w-0">
                   <span className="block truncate text-[13px] font-medium text-[var(--md-ink)]">{notification.title}</span>
-                  <span className="mt-0.5 line-clamp-2 block text-[12px] leading-5 text-[var(--md-text)]">{notification.description}</span>
+                  <span className="mt-0.5 line-clamp-2 block text-[12px] leading-5 text-[var(--md-text)]">{notification.body}</span>
                 </span>
-                <span className="pt-0.5 text-[11px] font-medium text-[var(--md-subtle)]">{notification.time}</span>
+                <span className="pt-0.5 text-[11px] font-medium text-[var(--md-subtle)]">{notificationTime(notification.createdAt)}</span>
               </motion.button>
             )
           })}
@@ -218,7 +228,7 @@ function NotificationBell() {
             className="h-8 w-full rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-hover)]"
             onClick={openNotificationSettings}
           >
-            Review notification settings
+            {t("Review notification settings")}
           </Button>
         </div>
       </PopoverContent>
@@ -570,6 +580,14 @@ function destinationMatches(destination: SidebarDestination, route: string) {
   return routeMatches(destination, route) || destination.children?.some((child) => routeMatches(child, route)) === true
 }
 
+/**
+ * Routes that live at the top of the sidebar rather than inside an area, so the
+ * areas rail stays visible instead of opening a pane that does not own them.
+ */
+function isTopLevelRoute(route: string) {
+  return route === "/" || route === "/inbox" || route === "/agent-dexter"
+}
+
 function findAreaForRoute(route: string, areas: SidebarArea[] = sidebarAreas) {
   return areas.find((area) => area.destinations.some((destination) => destinationMatches(destination, route)))
 }
@@ -581,6 +599,216 @@ function activeDestinationIds(area: SidebarArea | undefined, route: string) {
 
 function nestedDestinationId(parentId: string, item: NavItem) {
   return `${parentId}::${item.route ?? item.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`
+}
+
+function InboxContextSidebar({
+  collapsed,
+  navigate,
+  onRequestClose,
+}: {
+  collapsed: boolean
+  navigate: (path: string) => void
+  onRequestClose?: () => void
+}) {
+  const { t } = useLanguage()
+  const workspace = useOptionalInboxWorkspace()
+
+  if (!workspace) return null
+
+  const {
+    connections,
+    mailboxes,
+    accountState,
+    provider,
+    mailboxId,
+    view,
+    selectProvider,
+    selectMailbox,
+    selectView,
+  } = workspace
+  const providers = (["gmail", "outlook"] as const).filter((candidate) =>
+    mailboxes.some((mailbox) => mailbox.provider === candidate)
+    || connections.some((connection) => connection.provider === candidate && connection.status !== "disconnected"))
+  const providerMailboxes = provider ? mailboxes.filter((mailbox) => mailbox.provider === provider) : []
+  const personalMailboxes = providerMailboxes.filter((mailbox) => mailbox.kind === "personal")
+  const sharedMailboxes = providerMailboxes.filter((mailbox) => mailbox.kind !== "personal")
+  const personalUnread = personalMailboxes.reduce((sum, mailbox) => sum + mailbox.unreadCount, 0)
+  const sharedUnread = sharedMailboxes.reduce((sum, mailbox) => sum + mailbox.unreadCount, 0)
+  const hasMailbox = providerMailboxes.length > 0
+
+  const count = (value: number) => value > 0 ? String(value) : undefined
+  const select = (nextView: InboxNavigationView) => {
+    selectView(nextView)
+    onRequestClose?.()
+  }
+
+  const items: Array<{
+    view: InboxNavigationView
+    label: string
+    icon: LucideIcon
+    value?: string
+    enabled: boolean
+    unavailableReason?: string
+  }> = [
+    { view: "all", label: "All inboxes", icon: Inbox, value: count(personalUnread), enabled: personalMailboxes.length > 0 },
+    {
+      view: "shared",
+      label: "Shared inboxes",
+      icon: Users,
+      value: count(sharedUnread),
+      enabled: sharedMailboxes.length > 0,
+      unavailableReason: provider === "gmail"
+        ? "Add a Google Group inbox in Settings."
+        : "Add a shared Outlook mailbox in Settings.",
+    },
+    { view: "sent", label: "Sent items", icon: Send, enabled: hasMailbox },
+    { view: "drafts", label: "Drafts", icon: FileText, enabled: hasMailbox },
+    { view: "archive", label: "Archive", icon: Archive, enabled: hasMailbox },
+    { view: "spam", label: "Spam", icon: MailWarning, enabled: hasMailbox },
+    { view: "trash", label: provider === "gmail" ? "Trash" : "Deleted items", icon: Trash2, enabled: hasMailbox },
+  ]
+
+  return (
+    <motion.div
+      key="inbox"
+      className="origin-top"
+      initial={false}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={sidebarPaneTransition}
+    >
+      <SidebarSection>
+        <SidebarSectionItem>
+          <SidebarNavItem
+            item={{ label: "Back", icon: ArrowLeft }}
+            onClick={() => {
+              navigate("/")
+              onRequestClose?.()
+            }}
+            collapsed={collapsed}
+          />
+        </SidebarSectionItem>
+      </SidebarSection>
+
+      <div className={cn("mt-4 px-1", collapsed && "px-0")}>
+        {provider && providers.length > 1 ? (
+          <Select value={provider} onValueChange={(value) => selectProvider(value as typeof provider)}>
+            <SelectTrigger
+              aria-label={t("Mail provider")}
+              className={cn(
+                "h-10 w-full rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface)] px-2.5 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus:ring-[3px] focus:ring-[var(--md-accent-a14)]",
+                collapsed && "justify-center px-0 [&>svg]:hidden",
+              )}
+            >
+              <SelectValue>
+                <span className="flex min-w-0 items-center gap-2">
+                  <MailProviderMark provider={provider} />
+                  <span className={cn("truncate", collapsed && "sr-only")}>{mailProviderLabels[provider]}</span>
+                </span>
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent className="rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-surface)] shadow-[var(--md-shadow-lift)]">
+              {providers.map((candidate) => (
+                <SelectItem key={candidate} value={candidate} className="text-[13px]">
+                  <span className="flex items-center gap-2">
+                    <MailProviderMark provider={candidate} />
+                    {mailProviderLabels[candidate]}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : provider ? (
+          <div className={cn(
+            "flex h-10 items-center gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] px-2.5 shadow-[var(--md-shadow-line)]",
+            collapsed && "justify-center px-0",
+          )}>
+            <MailProviderMark provider={provider} />
+            <span className={cn("truncate text-[13px] font-medium text-[var(--md-ink)]", collapsed && "sr-only")}>{mailProviderLabels[provider]}</span>
+          </div>
+        ) : (
+          <p className={cn("px-2 text-[12px] text-[var(--md-subtle)]", collapsed && "sr-only")}>
+            {t(accountState === "loading" ? "Loading mailboxes" : accountState === "error" ? "Mail unavailable" : "No mail connected")}
+          </p>
+        )}
+      </div>
+
+      <div className={cn("mt-4 flex items-center gap-2 px-2", collapsed && "justify-center px-0")}>
+        <Inbox className="size-4 shrink-0 text-[var(--md-accent)]" strokeWidth={1.2} aria-hidden="true" />
+        <p className={cn("truncate text-[12px] font-medium uppercase tracking-[0.08em] text-[var(--md-subtle)]", collapsed && "sr-only")}>{t("Inbox")}</p>
+      </div>
+
+      <SidebarSection className="mt-2">
+        {items.map((item) => (
+          <Fragment key={item.view}>
+            <SidebarSectionItem>
+              <SidebarNavItem
+                item={{ label: item.label, icon: item.icon, value: item.value }}
+                isActive={item.view === view}
+                onClick={item.enabled ? () => select(item.view) : undefined}
+                collapsed={collapsed}
+                trailing={!item.enabled && !collapsed ? (
+                  <span
+                    aria-label={t(item.unavailableReason ?? "Unavailable")}
+                    title={t(item.unavailableReason ?? "Unavailable")}
+                    className="grid size-5 place-items-center text-[var(--md-subtle)]"
+                  >
+                    <Clock3 className="size-3" strokeWidth={1.25} aria-hidden="true" />
+                  </span>
+                ) : undefined}
+              />
+            </SidebarSectionItem>
+
+            {item.view === "shared" && view === "shared" && sharedMailboxes.length > 0 && !collapsed ? (
+              <div
+                role="group"
+                aria-label={t("Shared inboxes")}
+                className="ms-5 mb-1 mt-1 border-s border-[var(--md-line-strong)] ps-2"
+              >
+                {sharedMailboxes.map((mailbox) => (
+                  <button
+                    key={mailbox.id}
+                    type="button"
+                    aria-current={mailbox.id === mailboxId ? "page" : undefined}
+                    className={cn(
+                      "flex min-h-9 w-full items-center gap-2 rounded-[var(--md-radius-md)] px-2 text-start text-[12px] outline-none transition-[background-color,color] hover:bg-[var(--md-hover)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]",
+                      mailbox.id === mailboxId ? "bg-[var(--md-bg-strong)] font-medium text-[var(--md-ink)]" : "text-[var(--md-text)]",
+                    )}
+                    onClick={() => {
+                      selectMailbox(mailbox)
+                      onRequestClose?.()
+                    }}
+                  >
+                    <span data-i18n-skip dir="auto" className="min-w-0 flex-1 truncate">{mailbox.displayName}</span>
+                    {mailbox.unreadCount > 0 ? (
+                      <span data-i18n-skip dir="ltr" className="shrink-0 text-[11px] tabular-nums text-[var(--md-accent)]">{mailbox.unreadCount}</span>
+                    ) : null}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </Fragment>
+        ))}
+      </SidebarSection>
+
+      <Button
+        type="button"
+        variant="ghost"
+        aria-label={collapsed ? t("Manage connections") : undefined}
+        title={t("Manage connections")}
+        className={cn(
+          "mt-4 h-10 w-full justify-start gap-2 rounded-[var(--md-radius-md)] px-2.5 text-[12.5px] font-medium text-[var(--md-text)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]",
+          collapsed && "justify-center px-0",
+        )}
+        onClick={() => {
+          navigate("/settings?tab=integrations")
+          onRequestClose?.()
+        }}
+      >
+        <Settings className="size-4" strokeWidth={1.25} aria-hidden="true" />
+        <span className={cn(collapsed && "sr-only")}>{t("Manage connections")}</span>
+      </Button>
+    </motion.div>
+  )
 }
 
 export function AppSidebar({
@@ -606,6 +834,7 @@ export function AppSidebar({
   const isCustomer = currentUser?.actorType === "customer"
   const isSettingsRoute = route === "/settings"
   const isAgentRoute = route === "/agent-dexter"
+  const isInboxRoute = route === "/inbox"
   const canManageWarehouseUsers = hasPermission(currentUser, "Warehouse.Users.ManageOwn")
   const availableAreas = useMemo<SidebarArea[]>(() => {
     if (!isCustomer) return sidebarAreas
@@ -618,7 +847,7 @@ export function AppSidebar({
     ? undefined
     : isCustomer
       ? availableAreas[0]
-      : route === "/" || route === "/agent-dexter"
+      : isTopLevelRoute(route)
         ? undefined
         : findAreaForRoute(route, availableAreas)
   const [activeAreaId, setActiveAreaId] = useState<string | null>(initialArea?.id ?? null)
@@ -717,7 +946,7 @@ export function AppSidebar({
       ? undefined
       : isCustomer
         ? availableAreas[0]
-        : route === "/" || route === "/agent-dexter"
+        : isTopLevelRoute(route)
           ? undefined
           : findAreaForRoute(route, availableAreas)
     setActiveAreaId(routeArea?.id ?? null)
@@ -836,6 +1065,17 @@ export function AppSidebar({
     </SidebarSectionItem>
   )
 
+  const inboxSidebarItem = (
+    <SidebarSectionItem>
+      <SidebarNavItem
+        item={inboxNavItem}
+        isActive={route === "/inbox"}
+        onClick={() => navigate("/inbox")}
+        collapsed={collapsed}
+      />
+    </SidebarSectionItem>
+  )
+
   const dexterSidebarItem = (
     <SidebarSectionItem>
       <SidebarNavItem
@@ -851,7 +1091,7 @@ export function AppSidebar({
   return (
     <aside
       data-sidebar-collapsed={collapsed ? "true" : undefined}
-      data-sidebar-mode={isAgentRoute ? "dexter" : isSettingsRoute ? "settings" : activeArea?.id ?? "areas"}
+      data-sidebar-mode={isInboxRoute ? "inbox" : isAgentRoute ? "dexter" : isSettingsRoute ? "settings" : activeArea?.id ?? "areas"}
       className={cn(
         "relative isolate flex h-full min-h-0 shrink-0 flex-col bg-[var(--md-sidebar-bg)] py-3 shadow-[var(--md-stroke-right)] transition-[width,padding] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
         collapsed ? "w-[var(--md-sidebar-collapsed-width)] px-2" : "w-[var(--md-sidebar-width)] px-[var(--md-gap-lg)]",
@@ -901,10 +1141,14 @@ export function AppSidebar({
         className="relative z-10 mt-[var(--md-page-stack-gap)] min-h-0 flex-1 overflow-y-auto overflow-x-hidden md-scrollbar"
         style={{ contain: "layout paint" }}
       >
-        {isSettingsRoute || isCustomer || isAgentRoute ? null : <SidebarSection>{homeSidebarItem}{dexterSidebarItem}</SidebarSection>}
+        {isSettingsRoute || isCustomer || isAgentRoute || isInboxRoute ? null : (
+          <SidebarSection>{homeSidebarItem}{inboxSidebarItem}{dexterSidebarItem}</SidebarSection>
+        )}
 
         <AnimatePresence mode="popLayout" initial={false}>
-          {isAgentRoute ? (
+          {isInboxRoute ? (
+            <InboxContextSidebar collapsed={collapsed} navigate={navigate} onRequestClose={onRequestClose} />
+          ) : isAgentRoute ? (
             <motion.div
               key="dexter"
               className="origin-top"

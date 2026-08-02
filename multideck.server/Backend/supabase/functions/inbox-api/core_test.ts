@@ -1,0 +1,232 @@
+import { assert, assertEquals, assertMatch, assertThrows } from "jsr:@std/assert@1.0.18"
+import {
+  InboxHttpError,
+  OUTBOUND_ATTACHMENT_LIMITS,
+  base64Encode,
+  buildMimeMessage,
+  buildRfc2822,
+  decodeCursor,
+  decodeHtmlEntities,
+  encodeCursor,
+  gmailGroupQuery,
+  gmailMessageMatchesGroup,
+  mapWithConcurrency,
+  normalizeAddresses,
+  parseFunctionPath,
+  readAllowedOrigins,
+  readOutboundAttachments,
+  repairMojibake,
+  resolveResponseRecipients,
+  safeFileName,
+  sanitizeEmailHtml,
+} from "./core.ts"
+
+Deno.test("parses hosted and local inbox-api route paths", () => {
+  assertEquals(parseFunctionPath("https://project.supabase.co/functions/v1/inbox-api/threads/abc/summary"), ["threads", "abc", "summary"])
+  assertEquals(parseFunctionPath("http://127.0.0.1:54321/functions/v1/inbox-api/providers"), ["providers"])
+})
+
+Deno.test("only exact HTTPS and local development origins are allowlisted", () => {
+  const origins = readAllowedOrigins({
+    EMAIL_ALLOWED_REDIRECT_ORIGINS: "https://jenkar.multideck.app,https://evil.test/path,http://not-local.test",
+    EMAIL_CANONICAL_APP_ORIGIN: "https://databrain.multideck.app",
+  })
+  assert(origins.has("https://jenkar.multideck.app"))
+  assert(origins.has("https://databrain.multideck.app"))
+  assert(origins.has("http://localhost:3000"))
+  assert(!origins.has("https://evil.test"))
+  assert(!origins.has("http://not-local.test"))
+})
+
+Deno.test("cursor is opaque and rejects malformed input", () => {
+  assertEquals(decodeCursor(encodeCursor({ offset: 50 })), 50)
+  assertThrows(() => decodeCursor("not-json"), InboxHttpError)
+})
+
+Deno.test("provider detail reads preserve order and respect their concurrency ceiling", async () => {
+  let active = 0
+  let maximumActive = 0
+  const values = await mapWithConcurrency([1, 2, 3, 4, 5, 6], 3, async (value) => {
+    active += 1
+    maximumActive = Math.max(maximumActive, active)
+    await new Promise((resolve) => setTimeout(resolve, 2))
+    active -= 1
+    return value * 10
+  })
+
+  assertEquals(values, [10, 20, 30, 40, 50, 60])
+  assertEquals(maximumActive, 3)
+})
+
+Deno.test("recipient normalization deduplicates and rejects invalid addresses", () => {
+  assertEquals(normalizeAddresses([
+    { address: " Person@Example.com ", displayName: "Person" },
+    { address: "person@example.com" },
+    { address: "not-an-email" },
+  ]), [{ address: "person@example.com", displayName: "Person" }])
+})
+
+Deno.test("Gmail group snapshots use an exact OR query across recipient and list delivery fields", () => {
+  assertEquals(
+    gmailGroupQuery(" Operations@Example.com "),
+    "{to:operations@example.com cc:operations@example.com deliveredto:operations@example.com list:operations@example.com}",
+  )
+  assertThrows(() => gmailGroupQuery("not-an-address"), InboxHttpError)
+})
+
+Deno.test("Gmail group history accepts exact recipient and delivery headers without substring matches", () => {
+  assert(gmailMessageMatchesGroup({
+    groupAddress: "operations@example.com",
+    recipients: [{ address: "operations@example.com" }],
+  }))
+  assert(gmailMessageMatchesGroup({
+    groupAddress: "operations@example.com",
+    headers: [
+      { name: "Delivered-To", value: "Harry <harry@example.com>" },
+      { name: "List-Post", value: "<mailto:operations@example.com>" },
+    ],
+  }))
+  assert(!gmailMessageMatchesGroup({
+    groupAddress: "operations@example.com",
+    recipients: [{ address: "devoperations@example.com" }],
+    headers: [{ name: "List-Post", value: "<mailto:devoperations@example.com>" }],
+  }))
+  assert(!gmailMessageMatchesGroup({
+    groupAddress: "operations@example.com",
+    headers: [{ name: "From", value: "operations@example.com" }],
+  }))
+})
+
+Deno.test("a reply started from Sent items targets the original audience", () => {
+  assertEquals(resolveResponseRecipients({
+    mode: "reply",
+    direction: "outbound",
+    mailboxAddress: "me@example.com",
+    from: [{ address: "me@example.com", displayName: "Me" }],
+    to: [{ address: "customer@example.com", displayName: "Customer" }],
+    cc: [], addedTo: [], addedCc: [], addedBcc: [], removedAddresses: [],
+  }).to, [{ address: "customer@example.com", displayName: "Customer" }])
+})
+
+Deno.test("a self-addressed Sent reply keeps the mailbox as its sole recipient", () => {
+  assertEquals(resolveResponseRecipients({
+    mode: "reply",
+    direction: "outbound",
+    mailboxAddress: "me@example.com",
+    from: [{ address: "me@example.com", displayName: "Me" }],
+    to: [{ address: "me@example.com", displayName: "Me" }],
+    cc: [], addedTo: [], addedCc: [], addedBcc: [], removedAddresses: [],
+  }), {
+    to: [{ address: "me@example.com", displayName: "Me" }], cc: [], bcc: [],
+  })
+})
+
+Deno.test("sanitizer removes executable email markup", () => {
+  const safe = sanitizeEmailHtml(`<div onclick="steal()"><script>alert(1)</script><a href="javascript:alert(1)">bad</a><img src="https://example.com/a.png" onerror="steal()"></div>`)
+  assert(!/script|onclick|onerror|javascript:/i.test(safe))
+  assertMatch(safe, /https:\/\/example\.com\/a\.png/)
+})
+
+Deno.test("email previews decode safe named and numeric HTML entities", () => {
+  assertEquals(decodeHtmlEntities("You&amp;me, you&#39;re &#x1F44D;"), "You&me, you're 👍")
+})
+
+Deno.test("double-decoded UTF-8 mail headers are repaired without changing normal text", () => {
+  assertEquals(repairMojibake("Live test Ã¢Â€Â” complete"), "Live test — complete")
+  assertEquals(repairMojibake("Normal English subject"), "Normal English subject")
+})
+
+Deno.test("filenames and RFC2822 headers cannot inject response or mail headers", () => {
+  assertEquals(safeFileName("../../invoice\n.pdf"), "invoice_.pdf")
+  const raw = buildRfc2822({
+    from: { address: "me@example.com", displayName: "Me" },
+    to: [{ address: "you@example.com", displayName: null }], cc: [], bcc: [],
+    subject: "Hello\r\nBcc: attacker@example.com", bodyText: "Body",
+  })
+  assert(raw.length > 20)
+})
+
+Deno.test("RFC2822 subjects encode non-ASCII text as UTF-8 encoded words", () => {
+  const raw = buildRfc2822({
+    from: { address: "me@example.com", displayName: "Harry" },
+    to: [{ address: "you@example.com", displayName: null }], cc: [], bcc: [],
+    subject: "Live test — complete", bodyText: "Body",
+  })
+  const padding = "=".repeat((4 - raw.length % 4) % 4)
+  const binary = atob(raw.replace(/-/g, "+").replace(/_/g, "/") + padding)
+  const decoded = new TextDecoder().decode(Uint8Array.from(binary, (character) => character.charCodeAt(0)))
+  assertMatch(decoded, /Subject: =\?UTF-8\?B\?.+\?=/)
+  assert(!decoded.includes("Subject: Live test — complete"))
+})
+
+Deno.test("a message with no attachments stays a single text/plain part", () => {
+  const mime = buildMimeMessage({
+    from: { address: "me@example.com", displayName: "Me" },
+    to: [{ address: "you@example.com", displayName: null }], cc: [], bcc: [],
+    subject: "Plain", bodyText: "Body",
+  })
+  assertMatch(mime, /Content-Type: text\/plain; charset=UTF-8/)
+  assert(!mime.includes("multipart/mixed"))
+})
+
+Deno.test("attachments become base64 multipart parts under a single boundary", () => {
+  const mime = buildMimeMessage({
+    from: { address: "me@example.com", displayName: "Me" },
+    to: [{ address: "you@example.com", displayName: null }], cc: [], bcc: [],
+    subject: "With files", bodyText: "See attached",
+    attachments: [
+      { fileName: "invoice.pdf", mimeType: "application/pdf", bytes: new TextEncoder().encode("PDF-BYTES") },
+      { fileName: "photo.png", mimeType: "image/png", bytes: new Uint8Array([1, 2, 3, 4]) },
+    ],
+  })
+  const boundary = mime.match(/boundary="([^"]+)"/)?.[1]
+  assert(boundary)
+  assertMatch(mime, /Content-Type: multipart\/mixed/)
+  assertMatch(mime, /Content-Disposition: attachment; filename="invoice.pdf"/)
+  assertMatch(mime, /Content-Type: image\/png; name="photo.png"/)
+  assert(mime.includes(base64Encode(new Uint8Array([1, 2, 3, 4]))))
+  assert(mime.trimEnd().endsWith(`--${boundary}--`))
+  // Three openings and one closing: the body part plus one per file.
+  assertEquals(mime.split(`--${boundary}\r\n`).length - 1, 3)
+})
+
+Deno.test("an attachment filename cannot inject mail headers or escape its folder", () => {
+  const [attachment] = readOutboundAttachments([
+    { fileName: "../../secrets\r\nBcc: attacker@example.com.pdf", mimeType: "application/pdf", contentBase64: base64Encode(new Uint8Array([9])) },
+  ])
+  assertEquals(attachment.fileName, "secrets__Bcc_ attacker@example.com.pdf")
+  const mime = buildMimeMessage({
+    from: { address: "me@example.com", displayName: null },
+    to: [{ address: "you@example.com", displayName: null }], cc: [], bcc: [],
+    subject: "Files", bodyText: "Body", attachments: [attachment],
+  })
+  assert(!/^Bcc:/m.test(mime))
+})
+
+Deno.test("an unknown media type falls back rather than being relayed as described", () => {
+  const [attachment] = readOutboundAttachments([
+    { fileName: "run.sh", mimeType: "application/x-sh", contentBase64: base64Encode(new Uint8Array([9])) },
+  ])
+  assertEquals(attachment.mimeType, "application/octet-stream")
+})
+
+Deno.test("attachments are refused past the count, per-file and total limits", () => {
+  const one = { fileName: "a.txt", mimeType: "text/plain", contentBase64: base64Encode(new Uint8Array([1])) }
+  assertThrows(
+    () => readOutboundAttachments(Array.from({ length: OUTBOUND_ATTACHMENT_LIMITS.maxCount + 1 }, () => one)),
+    InboxHttpError,
+    "files",
+  )
+  assertThrows(
+    () => readOutboundAttachments([{ ...one, contentBase64: base64Encode(new Uint8Array(OUTBOUND_ATTACHMENT_LIMITS.maxFileBytes + 1)) }]),
+    InboxHttpError,
+    "too large to send",
+  )
+  const nearLimit = base64Encode(new Uint8Array(OUTBOUND_ATTACHMENT_LIMITS.maxFileBytes))
+  assertThrows(
+    () => readOutboundAttachments([{ ...one, contentBase64: nearLimit }, { ...one, contentBase64: nearLimit }]),
+    InboxHttpError,
+    "together",
+  )
+  assertEquals(readOutboundAttachments(undefined).length, 0)
+})

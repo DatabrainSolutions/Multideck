@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react"
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react"
 import type { User } from "@supabase/supabase-js"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import {
@@ -14,7 +14,6 @@ import {
   ChevronRight,
   CircleAlert,
   CircleHelp,
-  Cloud,
   Copy,
   Cpu,
   CreditCard,
@@ -35,7 +34,6 @@ import {
   MonitorSmartphone,
   Palette,
   Plug,
-  ReceiptText,
   Search,
   ShieldCheck,
   Smartphone,
@@ -52,12 +50,19 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import gmailLogo from "@/assets/integrations/gmail.svg"
+import outlookLogo from "@/assets/integrations/outlook.svg"
+import sageLogo from "@/assets/integrations/sage.svg"
+import xeroLogo from "@/assets/integrations/xero.svg"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { AccentPicker } from "@/components/multideck/accent-picker"
 import { AuthIdentityManager } from "@/components/multideck/auth-provider-selector"
+import { SpectralBloomShader } from "@/components/multideck/dexter-action-pill"
+import { ShortcutKeys } from "@/components/multideck/keyboard-shortcut-keys"
+import { KeyboardShortcutsPanel } from "@/components/multideck/keyboard-shortcuts-panel"
 import { Pagination } from "@/components/multideck/pagination"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { ThemeToggle } from "@/components/multideck/theme-toggle"
@@ -107,6 +112,22 @@ import {
   type CreateSupportTicketResponse,
 } from "@/lib/support-ticket"
 import { getDexterUsage, type DexterUsage, type DexterUsageEntry } from "@/lib/dexter-api"
+import {
+  addGmailGroupMailbox,
+  addOutlookSharedMailbox,
+  authorizeInboxProvider,
+  disconnectInboxConnection,
+  listInboxConnections,
+  listInboxProviders,
+  listMailboxes,
+  readEmailConnectionResult,
+  syncMailbox,
+  type InboxConnection,
+  type InboxProviderAvailability,
+  type MailProvider,
+  type Mailbox,
+} from "@/lib/inbox-api"
+import { useShortcutBinding } from "@/lib/keyboard-shortcuts"
 import { DEXTER_CONVERSATIONS_CHANGED_EVENT } from "@/lib/dexter-navigation"
 import { clockDisplayLabelFromMode, clockDisplayLabels, clockDisplayModeFromLabel, readClockDisplayMode, resetAiAgentName, useAiAgentName, writeAiAgentName, writeClockDisplayMode } from "@/lib/user-preferences"
 import type { AuthUserSummary } from "@/lib/auth-user"
@@ -1651,7 +1672,7 @@ function CustomisationTab() {
 }
 
 function NotificationsTab() {
-  const { language } = useLanguage()
+  const { language, t } = useLanguage()
   const [preferences, setPreferences] = useState<NotificationEmailPreferences>(defaultNotificationEmailPreferences)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -1728,6 +1749,7 @@ function NotificationsTab() {
     preferences.daily_digest,
     preferences.quote_reminder,
     preferences.product_updates,
+    preferences.dexter_watch,
   ].filter(Boolean).length
 
   return (
@@ -1768,6 +1790,12 @@ function NotificationsTab() {
       <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1fr)_310px]">
         <div className="space-y-[var(--md-page-stack-gap)]">
           <SettingsPanel title="Operational alerts" description="Email the updates that need attention away from the Multideck workspace.">
+            <SettingsToggleRow
+              title={t("Dexter watch alerts")}
+              description={t("Email when one of your personal Dexter watch conditions becomes true. In-app alerts remain on.")}
+              checked={preferences.dexter_watch}
+              onCheckedChange={(checked) => setEmailPreference("dexter_watch", checked)}
+            />
             <SettingsToggleRow
               title="Customs holds"
               description="Email when a hold is raised or a required licence is missing."
@@ -1886,6 +1914,88 @@ function NotificationsTab() {
             onAction={() => void sendTestEmail()}
           />
         </aside>
+      </div>
+    </>
+  )
+}
+
+/**
+ * The summon explainer. The gesture is the one shortcut nobody would discover on
+ * their own, so it gets a surface of its own above the list rather than a row in
+ * it — and a Try it button, because reading about a gesture teaches less than
+ * doing it once.
+ */
+function SummonSpotlight() {
+  const aiAgentName = useAiAgentName()
+  const pointerBinding = useShortcutBinding("dexter.summon")
+  const keyboardBinding = useShortcutBinding("dexter.summonKeyboard")
+
+  return (
+    <section className="md-settings-panel relative isolate overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-accent-abyss)] text-white shadow-[var(--md-shadow-soft)]">
+      <span aria-hidden="true" className="absolute inset-0 opacity-[0.55]">
+        <SpectralBloomShader shape="composer" />
+      </span>
+      <span
+        aria-hidden="true"
+        className="absolute inset-0 bg-[linear-gradient(105deg,rgba(6,36,32,0.92),rgba(6,36,32,0.62)_54%,rgba(6,36,32,0.34))]"
+      />
+      <div className="relative grid gap-5 px-5 py-5 sm:px-6 sm:py-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+        <div className="max-w-[62ch]">
+          <p className="flex items-center gap-2 text-[12px] font-medium text-white/70">
+            <WandSparkles className="size-3.5" strokeWidth={1.4} aria-hidden="true" />
+            The gesture worth learning first
+          </p>
+          <h2 className="mt-2.5 text-balance text-[19px] font-medium leading-[1.2] tracking-[-0.01em]">
+            Summon {aiAgentName} onto anything on the screen
+          </h2>
+          <p className="mt-2 text-pretty text-[13px] leading-6 text-white/72">
+            Hold the modifier and double-click a field, a chart, a table or a whole panel. {aiAgentName} traces what you
+            pointed at, opens a small prompt against it, and answers with that context already attached. With nothing
+            under the pointer the screen dims and you pick the area yourself.
+          </p>
+          <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2.5">
+            <span className="flex items-center gap-2 text-[12px] text-white/70">
+              Pointer
+              <ShortcutKeys
+                binding={pointerBinding}
+                keyClassName="bg-white/15 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.14)]"
+                emptyLabel="Off"
+              />
+            </span>
+            <span className="flex items-center gap-2 text-[12px] text-white/70">
+              Keyboard
+              <ShortcutKeys
+                binding={keyboardBinding}
+                keyClassName="bg-white/15 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.14)]"
+                emptyLabel="Off"
+              />
+            </span>
+          </div>
+        </div>
+        <div className="shrink-0 lg:justify-self-end">
+          <p className="text-[11.5px] leading-5 text-white/55">
+            Answers always run on the Fast engine,
+            <br className="hidden sm:inline" /> so they land while you are still looking.
+          </p>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function ShortcutsTab() {
+  return (
+    <>
+      <SettingsPageHeader
+        eyebrow="Personal / Keyboard shortcuts"
+        title="Keyboard shortcuts"
+        description="Every shortcut in Multideck, and the keys they are on. Record a new one by clicking its keys and pressing what you would rather use — two plain keys in a row make a sequence."
+      />
+      <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
+        <SummonSpotlight />
+        <section className="md-settings-panel overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-soft)]">
+          <KeyboardShortcutsPanel />
+        </section>
       </div>
     </>
   )
@@ -2693,35 +2803,473 @@ function PermissionsTab() {
   )
 }
 
-function IntegrationsTab() {
-  const integrations: Array<[LucideIcon, string, string, string]> = [
-    [Mail, "Gmail", "Connected for customer replies, quote follow-ups, and digest delivery.", "Connected"],
-    [Mail, "Outlook", "Available for shared mailboxes and finance inbox routing.", "Ready"],
-    [MessageCircle, "Slack", "Exception alerts go to #ops-customs and #premium-customers.", "Connected"],
-    [Cloud, "CargoWise", "Booking sync every 15 minutes. 1 warning needs mapping review.", "Review"],
-    [ReceiptText, "Xero", "Invoices and credit-limit snapshots sync nightly.", "Connected"],
-    [Globe2, "Customs broker portal", "Broker updates imported into booking timelines.", "Connected"],
-  ]
+const mailProviderCopy: Record<MailProvider, { label: string; description: string }> = {
+  gmail: {
+    label: "Gmail",
+    description: "Read and reply to operational mail from a Google Workspace account, including Spam and Trash. Google Group messages appear when they are delivered to this account.",
+  },
+  outlook: {
+    label: "Outlook",
+    description: "Read and reply to operational mail from Microsoft 365, including shared and group mailboxes.",
+  },
+}
+
+const mailProviderLogos: Record<MailProvider, string> = {
+  gmail: gmailLogo,
+  outlook: outlookLogo,
+}
+
+/**
+ * The live state of the mail connections behind the Inbox workspace.
+ *
+ * This replaced a prototype that hard-coded "Gmail — Connected" for every
+ * workspace, which is the worst thing an integrations screen can do: it told
+ * operators mail was flowing when nothing was connected at all. Everything here
+ * comes from the authenticated tenant `inbox-api` Edge Function, and a provider
+ * with no connection says so.
+ */
+function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
+  const { t } = useLanguage()
+  const [connections, setConnections] = useState<InboxConnection[] | null>(null)
+  const [mailboxes, setMailboxes] = useState<Mailbox[] | null>(null)
+  const [providerAvailability, setProviderAvailability] = useState<InboxProviderAvailability[] | null>(null)
+  const [providerAvailabilityError, setProviderAvailabilityError] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [mailboxLoadError, setMailboxLoadError] = useState<string | null>(null)
+  const [busyProvider, setBusyProvider] = useState<MailProvider | null>(null)
+  const [groupMailboxAddress, setGroupMailboxAddress] = useState("")
+  const [groupMailboxError, setGroupMailboxError] = useState<string | null>(null)
+  const [sharedMailboxAddress, setSharedMailboxAddress] = useState("")
+  const [sharedMailboxError, setSharedMailboxError] = useState<string | null>(null)
+
+  const loadConnections = useCallback(async () => {
+    setLoadError(null)
+    setMailboxLoadError(null)
+    setProviderAvailabilityError(null)
+    const [connectionsResult, availabilityResult, mailboxesResult] = await Promise.allSettled([
+      listInboxConnections(),
+      listInboxProviders(),
+      listMailboxes(),
+    ])
+
+    if (connectionsResult.status === "fulfilled") {
+      setConnections(connectionsResult.value)
+    } else {
+      setConnections([])
+      setLoadError(connectionsResult.reason instanceof Error ? connectionsResult.reason.message : t("Unable to load your mail connections."))
+    }
+
+    if (availabilityResult.status === "fulfilled") {
+      setProviderAvailability(availabilityResult.value)
+    } else {
+      setProviderAvailability([])
+      setProviderAvailabilityError(t("Provider availability could not be checked. Try again."))
+    }
+
+    if (mailboxesResult.status === "fulfilled") {
+      setMailboxes(mailboxesResult.value)
+    } else {
+      setMailboxes([])
+      setMailboxLoadError(t("Existing shared mailboxes could not be loaded. Try again."))
+    }
+  }, [t])
+
+  useEffect(() => {
+    void loadConnections()
+  }, [loadConnections])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const params = new URLSearchParams(window.location.search)
+    if (params.get("shared") !== "outlook") return
+    const result = readEmailConnectionResult(window.location.search)
+    if (!result || result.provider !== "outlook") return
+
+    const cleanUrl = new URL(window.location.href)
+    for (const key of ["shared", "email_connection", "status", "code"]) cleanUrl.searchParams.delete(key)
+    window.history.replaceState(window.history.state, "", `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`)
+
+    if (result.status === "connected") {
+      toast.success(t("Shared Outlook mailbox access enabled"))
+      return
+    }
+    toast.error(result.code === "provider_admin_consent_required"
+      ? t("Your Microsoft 365 administrator needs to approve shared mailbox access.")
+      : t("Shared Outlook mailbox access could not be enabled."))
+  }, [t])
+
+  async function connect(provider: MailProvider) {
+    if (!providerAvailability?.find((candidate) => candidate.provider === provider)?.configured) return
+    setBusyProvider(provider)
+    try {
+      window.location.assign(await authorizeInboxProvider(provider))
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to start the provider sign-in.")
+      setBusyProvider(null)
+    }
+  }
+
+  async function enableOutlookSharedAccess() {
+    setBusyProvider("outlook")
+    setSharedMailboxError(null)
+    try {
+      window.location.assign(await authorizeInboxProvider(
+        "outlook",
+        "shared",
+        "/settings?tab=integrations&shared=outlook",
+      ))
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("Unable to request shared Outlook mailbox access."))
+      setBusyProvider(null)
+    }
+  }
+
+  async function addSharedMailbox(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const connection = connections?.find((candidate) => candidate.provider === "outlook")
+    if (!connection || !connection.sharedMailboxAccess || !sharedMailboxAddress.trim()) return
+
+    setBusyProvider("outlook")
+    setSharedMailboxError(null)
+    try {
+      const mailbox = await addOutlookSharedMailbox(connection.id, sharedMailboxAddress)
+      setMailboxes((current) => [
+        ...(current ?? []).filter((candidate) => candidate.id !== mailbox.id),
+        mailbox,
+      ])
+      setSharedMailboxAddress("")
+      // A first mailbox import can span several provider pages. The mailbox is
+      // already connected at this point, so keep Settings usable while that
+      // import continues and surface only a genuine background failure.
+      void syncMailbox(mailbox.id).catch(() => {
+        toast.error(t("The shared mailbox was added, but its first sync could not finish. Open it and try Refresh."))
+      })
+      toast.success(t("Shared Outlook mailbox added"))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("Unable to add this shared Outlook mailbox.")
+      setSharedMailboxError(message)
+      toast.error(message)
+    } finally {
+      setBusyProvider(null)
+    }
+  }
+
+  async function addGroupMailbox(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const connection = connections?.find((candidate) => candidate.provider === "gmail")
+    if (!connection || !groupMailboxAddress.trim()) return
+
+    setBusyProvider("gmail")
+    setGroupMailboxError(null)
+    try {
+      const mailbox = await addGmailGroupMailbox(connection.id, groupMailboxAddress)
+      setMailboxes((current) => [
+        ...(current ?? []).filter((candidate) => candidate.id !== mailbox.id),
+        mailbox,
+      ])
+      setGroupMailboxAddress("")
+      void syncMailbox(mailbox.id).catch(() => {
+        toast.error(t("The Google Group inbox was added, but its first sync could not finish. Open it and try Refresh."))
+      })
+      toast.success(t("Google Group inbox added"))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("Unable to add this Google Group inbox.")
+      setGroupMailboxError(message)
+      toast.error(message)
+    } finally {
+      setBusyProvider(null)
+    }
+  }
+
+  async function disconnect(connection: InboxConnection) {
+    setBusyProvider(connection.provider)
+    try {
+      await disconnectInboxConnection(connection.id)
+      await loadConnections()
+      toast.success(`${mailProviderCopy[connection.provider].label} disconnected`)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to disconnect this provider.")
+    } finally {
+      setBusyProvider(null)
+    }
+  }
 
   return (
     <>
       <SettingsPageHeader
-        eyebrow="Organisation / Integrations"
+        eyebrow="Workspace / Integrations"
         title="Integrations"
         description="Connect the systems operators already use so Multideck can pull context and push approved updates."
-        actions={primaryAction("Add integration", () => toast.success("Integration picker opened"))}
       />
-      <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-page-stack-gap)] xl:grid-cols-2">
-        {integrations.map(([icon, title, description, status]) => (
-          <SettingsPanel
-            key={title}
-            title={title}
-            description={description}
-            action={<StatusPill tone={status === "Review" ? "amber" : status === "Ready" ? "blue" : "teal"}>{status}</StatusPill>}
-          >
-            <IconRow icon={icon} title={`${title} settings`} description="Configure sync fields, owners, and approval behaviour." right={compactAction("Manage")} />
-          </SettingsPanel>
-        ))}
+      <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
+        <SettingsPanel
+          title="Mail"
+          description={t("Mail powers the Inbox workspace. Multideck syncs message details and sanitised bodies into this tenant's isolated data store so operators can search, reply and ask Dexter for a summary; Gmail or Microsoft remains the source mailbox.")}
+          action={
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-8 rounded-[var(--md-radius-md)] bg-white/48 px-3 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/75"
+              onClick={() => navigate("/inbox")}
+            >
+              Open Inbox
+            </Button>
+          }
+        >
+          {loadError ? (
+            <div className="px-5 py-4">
+              <p className="text-[13px] font-medium text-[var(--md-ink)]" role="alert">Unable to load your mail connections</p>
+              <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{loadError}</p>
+              <Button
+                type="button"
+                variant="ghost"
+                className="mt-3 h-8 rounded-[var(--md-radius-md)] bg-white/48 px-3 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/75"
+                onClick={() => void loadConnections()}
+              >
+                Try again
+              </Button>
+            </div>
+          ) : connections === null ? (
+            <div className="px-5 py-4">
+              <p className="text-[12px] text-[var(--md-text)]">Checking your mail connections...</p>
+            </div>
+          ) : (
+            (["gmail", "outlook"] as MailProvider[]).map((provider) => {
+              const connection = connections.find((candidate) => candidate.provider === provider) ?? null
+              const copy = mailProviderCopy[provider]
+              const configured = providerAvailability?.find((candidate) => candidate.provider === provider)?.configured === true
+              const needsConnection = !connection || connection.status === "disconnected" || connection.status === "reauthorization_required"
+              const statusKey =
+                !configured ? "Unavailable" :
+                !connection ? "Not connected" :
+                connection.status === "reauthorization_required" ? "Reconnect needed" :
+                connection.status === "syncing" ? "Syncing" :
+                connection.status === "error" ? "Sync problem" :
+                connection.status === "disconnected" ? "Not connected" :
+                "Connected"
+              const description = !configured
+                ? providerAvailabilityError ?? t(`${copy.label} has not been configured for this workspace yet. Ask a Multideck administrator to add the provider credentials.`)
+                : connection?.error?.trim() || t(copy.description)
+              const actionLabel =
+                busyProvider === provider ? t("Working") :
+                needsConnection ? (configured
+                  ? t(connection?.status === "reauthorization_required" ? "Reconnect" : "Connect")
+                  : t("Unavailable")) :
+                t("Disconnect")
+
+              const sharedMailboxes = provider === "outlook"
+                ? (mailboxes ?? []).filter((mailbox) => mailbox.provider === "outlook" && mailbox.kind !== "personal")
+                : []
+              const groupMailboxes = provider === "gmail"
+                ? (mailboxes ?? []).filter((mailbox) => mailbox.provider === "gmail" && mailbox.kind === "group")
+                : []
+
+              return (
+                <Fragment key={provider}>
+                  <SettingsIntegrationRow
+                    logoSrc={mailProviderLogos[provider]}
+                    title={copy.label}
+                    description={description}
+                    status={t(statusKey)}
+                    statusTone={
+                      statusKey === "Connected" ? "connected" :
+                      statusKey === "Reconnect needed" || statusKey === "Sync problem" ? "review" :
+                      statusKey === "Syncing" ? "workspace" :
+                      "ready"
+                    }
+                    actionLabel={actionLabel}
+                    disabled={busyProvider !== null || (needsConnection && !configured)}
+                    onAction={() => {
+                      if (busyProvider) return
+                      if (needsConnection) {
+                        void connect(provider)
+                        return
+                      }
+                      void disconnect(connection)
+                    }}
+                  />
+                  {provider === "gmail" && connection && !needsConnection ? (
+                    <SettingsFieldRow
+                      label={t("Google Group inboxes")}
+                      description={t("Add a Google Group address whose messages are delivered to this Gmail account. Multideck creates a filtered group view across Inbox, Spam and Trash without pretending the group is a separate Google mailbox.")}
+                      align="start"
+                      labelFor="gmail-group-mailbox-address"
+                    >
+                      <div>
+                        {mailboxLoadError ? (
+                          <p className="mb-3 text-[12px] leading-5 text-[var(--md-red)]" role="alert">{mailboxLoadError}</p>
+                        ) : groupMailboxes.length > 0 ? (
+                          <ul className="mb-3 grid gap-1.5" aria-label={t("Connected Google Group inboxes")}>
+                            {groupMailboxes.map((mailbox) => (
+                              <li
+                                key={mailbox.id}
+                                className="flex min-h-10 items-center gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] px-3 py-2 shadow-[var(--md-shadow-line)]"
+                              >
+                                <Users className="size-3.5 shrink-0 text-[var(--md-subtle)]" strokeWidth={1.4} aria-hidden="true" />
+                                <bdi data-i18n-skip dir="ltr" className="min-w-0 flex-1 truncate text-[12px] text-[var(--md-ink)]">
+                                  {mailbox.address}
+                                </bdi>
+                                <button
+                                  type="button"
+                                  className="shrink-0 rounded-[var(--md-radius-sm)] px-2 py-1 text-[11px] font-medium text-[var(--md-accent)] transition-[background-color,color] hover:bg-[var(--md-accent-a10)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
+                                  onClick={() => navigate(`/inbox?provider=gmail&view=shared&mailbox=${encodeURIComponent(mailbox.id)}`)}
+                                >
+                                  {t("Open")}
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
+
+                        <form className="flex flex-col gap-2 sm:flex-row" onSubmit={(event) => void addGroupMailbox(event)}>
+                          <SettingsInput
+                            id="gmail-group-mailbox-address"
+                            type="email"
+                            inputMode="email"
+                            autoComplete="off"
+                            spellCheck={false}
+                            required
+                            data-i18n-skip
+                            dir="ltr"
+                            value={groupMailboxAddress}
+                            placeholder="operations@company.com"
+                            aria-describedby={groupMailboxError ? "gmail-group-mailbox-error" : "gmail-group-mailbox-help"}
+                            onChange={(event) => {
+                              setGroupMailboxAddress(event.target.value)
+                              if (groupMailboxError) setGroupMailboxError(null)
+                            }}
+                          />
+                          <Button
+                            type="submit"
+                            variant="ghost"
+                            disabled={busyProvider !== null || !groupMailboxAddress.trim()}
+                            className="h-10 shrink-0 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[12px] font-medium text-[var(--md-accent-ink)] shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,scale] hover:bg-[var(--md-accent-deep)] active:scale-[0.96] motion-reduce:active:scale-100"
+                          >
+                            {busyProvider === "gmail" ? t("Adding inbox") : t("Add group inbox")}
+                          </Button>
+                        </form>
+                        {groupMailboxError ? (
+                          <p id="gmail-group-mailbox-error" className="mt-2 text-[12px] leading-5 text-[var(--md-red)]" role="alert">{groupMailboxError}</p>
+                        ) : (
+                          <p id="gmail-group-mailbox-help" className="mt-2 text-[11.5px] leading-5 text-[var(--md-subtle)]">
+                            {t("This view is read-only as the group address. Reply from the connected personal Gmail mailbox unless Google separately configures the address as a send-as identity.")}
+                          </p>
+                        )}
+                      </div>
+                    </SettingsFieldRow>
+                  ) : null}
+                  {provider === "outlook" && connection && !needsConnection ? (
+                    <SettingsFieldRow
+                      label={t("Shared Outlook mailboxes")}
+                      description={t("Connect only the shared addresses you are authorised to use. Microsoft may also require Exchange Send As or Send on Behalf permission before Multideck can send from them.")}
+                      align="start"
+                      labelFor={connection.sharedMailboxAccess ? "outlook-shared-mailbox-address" : undefined}
+                    >
+                      {!connection.sharedMailboxAccess ? (
+                        <div>
+                          <p className="max-w-[58ch] text-[12px] leading-5 text-[var(--md-text)]">
+                            {t("Your personal Outlook connection does not include shared mailbox permissions.")}
+                          </p>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            disabled={busyProvider !== null}
+                            className="mt-3 h-9 rounded-[var(--md-radius-md)] bg-white/48 px-3 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,scale] hover:bg-white/75 active:scale-[0.96] motion-reduce:active:scale-100"
+                            onClick={() => void enableOutlookSharedAccess()}
+                          >
+                            {busyProvider === "outlook" ? t("Opening Microsoft") : t("Enable shared mailbox access")}
+                          </Button>
+                        </div>
+                      ) : (
+                        <div>
+                          {mailboxLoadError ? (
+                            <p className="mb-3 text-[12px] leading-5 text-[var(--md-red)]" role="alert">{mailboxLoadError}</p>
+                          ) : sharedMailboxes.length > 0 ? (
+                            <ul className="mb-3 grid gap-1.5" aria-label={t("Connected shared Outlook mailboxes")}>
+                              {sharedMailboxes.map((mailbox) => (
+                                <li
+                                  key={mailbox.id}
+                                  className="flex min-h-10 items-center gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] px-3 py-2 shadow-[var(--md-shadow-line)]"
+                                >
+                                  <Users className="size-3.5 shrink-0 text-[var(--md-subtle)]" strokeWidth={1.4} aria-hidden="true" />
+                                  <bdi data-i18n-skip dir="ltr" className="min-w-0 flex-1 truncate text-[12px] text-[var(--md-ink)]">
+                                    {mailbox.address}
+                                  </bdi>
+                                  <button
+                                    type="button"
+                                    className="shrink-0 rounded-[var(--md-radius-sm)] px-2 py-1 text-[11px] font-medium text-[var(--md-accent)] transition-[background-color,color] hover:bg-[var(--md-accent-a10)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
+                                    onClick={() => navigate(`/inbox?provider=outlook&view=shared&mailbox=${encodeURIComponent(mailbox.id)}`)}
+                                  >
+                                    {t("Open")}
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : null}
+
+                          <form className="flex flex-col gap-2 sm:flex-row" onSubmit={(event) => void addSharedMailbox(event)}>
+                            <SettingsInput
+                              id="outlook-shared-mailbox-address"
+                              type="email"
+                              inputMode="email"
+                              autoComplete="off"
+                              spellCheck={false}
+                              required
+                              data-i18n-skip
+                              dir="ltr"
+                              value={sharedMailboxAddress}
+                              placeholder="operations@company.com"
+                              aria-describedby={sharedMailboxError ? "outlook-shared-mailbox-error" : "outlook-shared-mailbox-help"}
+                              onChange={(event) => {
+                                setSharedMailboxAddress(event.target.value)
+                                if (sharedMailboxError) setSharedMailboxError(null)
+                              }}
+                            />
+                            <Button
+                              type="submit"
+                              variant="ghost"
+                              disabled={busyProvider !== null || !sharedMailboxAddress.trim()}
+                              className="h-10 shrink-0 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[12px] font-medium text-[var(--md-accent-ink)] shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,scale] hover:bg-[var(--md-accent-deep)] active:scale-[0.96] motion-reduce:active:scale-100"
+                            >
+                              {busyProvider === "outlook" ? t("Adding mailbox") : t("Add mailbox")}
+                            </Button>
+                          </form>
+                          {sharedMailboxError ? (
+                            <p id="outlook-shared-mailbox-error" className="mt-2 text-[12px] leading-5 text-[var(--md-red)]" role="alert">{sharedMailboxError}</p>
+                          ) : (
+                            <p id="outlook-shared-mailbox-help" className="mt-2 text-[11.5px] leading-5 text-[var(--md-subtle)]">
+                              {t("Multideck checks your delegated Microsoft access before saving the mailbox.")}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </SettingsFieldRow>
+                  ) : null}
+                </Fragment>
+              )
+            })
+          )}
+        </SettingsPanel>
+
+        <SettingsPanel
+          title={t("Accounting")}
+          description={t("Xero and Sage connections are being prepared for this workspace.")}
+        >
+          <SettingsIntegrationRow
+            logoSrc={xeroLogo}
+            title="Xero"
+            description={t("Sync invoices and credit-limit snapshots.")}
+            status={t("Coming soon")}
+            statusTone="workspace"
+          />
+          <SettingsIntegrationRow
+            logoSrc={sageLogo}
+            title="Sage"
+            description={t("Sync invoices, customer balances, and ledger context.")}
+            status={t("Coming soon")}
+            statusTone="workspace"
+          />
+        </SettingsPanel>
       </div>
     </>
   )
@@ -3903,12 +4451,14 @@ function SupportTab() {
 
 function TabContent({
   activeTab,
+  navigate,
   currentUser,
   profileMediaUrls,
   onProfilePhotoChange,
   onCoverPhotoChange,
 }: {
   activeTab: SettingsSectionId
+  navigate: (path: string) => void
   currentUser?: AuthUserSummary | null
   profileMediaUrls: ProfileMediaUrls
   onProfilePhotoChange: (photo: UserProfilePhoto | null, photoUrl: string | null) => void
@@ -3928,10 +4478,14 @@ function TabContent({
       return <SecurityTab />
     case "customisation":
       return <CustomisationTab />
+    case "shortcuts":
+      return <ShortcutsTab />
     case "notifications":
       return <NotificationsTab />
     case "permissions":
       return <PermissionsTab />
+    case "integrations":
+      return <IntegrationsTab navigate={navigate} />
     case "billing":
       return <BillingTab />
     case "ai-usage":
@@ -4003,6 +4557,7 @@ export function SettingsPage({
             >
               <TabContent
                 activeTab={activeItem.id}
+                navigate={navigate}
                 currentUser={currentUser}
                 profileMediaUrls={profileMediaUrls}
                 onProfilePhotoChange={onProfilePhotoChange}

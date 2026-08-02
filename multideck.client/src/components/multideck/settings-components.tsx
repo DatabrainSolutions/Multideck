@@ -103,30 +103,21 @@ export function SettingsRail({
 }
 
 export function SettingsPageHeader({
-  eyebrow,
   title,
   description,
   actions,
 }: {
-  eyebrow: string
+  eyebrow?: string
   title: string
   description: string
   actions?: ReactNode
 }) {
   return (
-    <header className="md-settings-masthead relative isolate overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] px-5 py-5 shadow-[var(--md-shadow-soft)] sm:px-6 sm:py-6">
-      <span className="md-settings-masthead__glow" aria-hidden="true" />
-      <span className="md-settings-masthead__track" aria-hidden="true" />
-      <div className="relative flex flex-col gap-[var(--md-page-stack-gap)] lg:flex-row lg:items-start lg:justify-between">
-        <div className="max-w-[680px]">
-          <p className="flex items-center gap-2 text-[12px] font-medium text-[var(--md-text)]">
-            <span className="size-1.5 rounded-full bg-[var(--md-accent)] shadow-[0_0_0_4px_var(--md-accent-a08)]" aria-hidden="true" />
-            {eyebrow}
-          </p>
-          <h1 className="mt-3 text-balance text-[24px] font-medium leading-[1.1] tracking-[-0.02em] text-[var(--md-ink)]">{title}</h1>
-          <p className="mt-2 max-w-[65ch] text-pretty text-[14px] leading-6 text-[var(--md-text)]">{description}</p>
-        </div>
-        {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
+    <header className="grid gap-3 py-1 lg:grid-cols-[minmax(0,1fr)_minmax(320px,560px)] lg:items-end lg:gap-[var(--md-page-section-gap)]">
+      <h1 className="text-balance text-[24px] font-medium leading-[1.1] tracking-[-0.02em] text-[var(--md-ink)]">{title}</h1>
+      <div className="min-w-0 lg:justify-self-end lg:text-end">
+        <p className="max-w-[65ch] text-pretty text-[14px] leading-6 text-[var(--md-text)] lg:ms-auto">{description}</p>
+        {actions ? <div className="mt-3 flex flex-wrap items-center gap-2 lg:justify-end">{actions}</div> : null}
       </div>
     </header>
   )
@@ -303,20 +294,24 @@ export function SettingsToggleRow({
 
 export function SettingsIntegrationRow({
   icon: Icon,
+  logoSrc,
   title,
   description,
   status,
   statusTone = "ready",
   actionLabel,
   onAction,
+  disabled = false,
 }: {
-  icon: LucideIcon
+  icon?: LucideIcon
+  logoSrc?: string
   title: string
   description: string
   status: string
   statusTone?: "connected" | "ready" | "review" | "workspace"
-  actionLabel: string
+  actionLabel?: string
   onAction?: () => void
+  disabled?: boolean
 }) {
   const statusClass = {
     connected: "bg-[var(--md-accent-a10)] text-[var(--md-green)] shadow-[inset_0_0_0_1px_var(--md-accent-a18)]",
@@ -327,8 +322,12 @@ export function SettingsIntegrationRow({
 
   return (
     <div className="grid gap-3 px-5 py-4 sm:grid-cols-[36px_minmax(0,1fr)_auto] sm:items-center">
-      <div className="grid size-9 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] shadow-[var(--md-shadow-line)]">
-        <Icon className="size-4 text-[var(--md-accent)]" strokeWidth={1.2} />
+      <div className="grid size-9 place-items-center rounded-[var(--md-radius-md)] bg-white shadow-[var(--md-shadow-line)]">
+        {logoSrc ? (
+          <img src={logoSrc} alt="" aria-hidden="true" className="size-[19px] object-contain" />
+        ) : Icon ? (
+          <Icon className="size-4 text-[var(--md-accent)]" strokeWidth={1.2} aria-hidden="true" />
+        ) : null}
       </div>
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
@@ -339,14 +338,17 @@ export function SettingsIntegrationRow({
         </div>
         <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{description}</p>
       </div>
-      <Button
-        type="button"
-        variant="ghost"
-        className="h-8 w-fit rounded-[var(--md-radius-md)] bg-white/48 px-3 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/75"
-        onClick={onAction}
-      >
-        {actionLabel}
-      </Button>
+      {actionLabel ? (
+        <Button
+          type="button"
+          variant="ghost"
+          className="h-8 w-fit rounded-[var(--md-radius-md)] bg-white/48 px-3 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,scale] hover:bg-white/75 active:scale-[0.96] motion-reduce:active:scale-100"
+          onClick={onAction}
+          disabled={disabled}
+        >
+          {actionLabel}
+        </Button>
+      ) : null}
     </div>
   )
 }

@@ -113,7 +113,11 @@ Current Multideck components:
 - `MetricCard`: overview KPI component.
 - `LineChartCard`, `AreaChartCard`, `BarChartCard`, `StackedBarChartCard`, `DonutChartCard`, `FunnelChartCard`, `HeatmapChartCard`, `RadialGoalChartCard`, `ScatterChartCard`, and `MixedChartCard`: reusable report-ready visualization components.
 - `ReportVisualizationBlock`: report-builder adapter for chart variants such as single bars, comparison bars, pie charts with or without keys, and variable-step funnels.
-- `CommandInput`: search and jump entry point.
+- `CommandInput`: search and jump entry point. Shows the live `search.focus` binding and claims it while it is on screen.
+- `ShortcutKeys` / `ShortcutHint`: a saved keyboard binding drawn as keycaps in the operator's own platform glyphs. Sequences read as two groups joined by "then"; keycaps stay left-to-right in right-to-left languages because they describe a physical keyboard.
+- `KeyboardShortcutsPanel`: the editable shortcut list — grouped rows, inline recorder, conflict warnings, per-row reset. Used by the Keyboard shortcuts settings section and by the ⌘/ overlay.
+- `AppShortcuts`: the one place every shell-level shortcut is bound, so the settings list and the real behaviour cannot drift apart. Also draws the sequence hint while a two-key run is half typed.
+- `DexterSummon` / `DexterSummonPrompt`: the summon gesture. Hold the platform modifier and double-click anything, or press ⌘D / Ctrl+D, and Dexter traces that element with a shader ring and opens a stripped prompt box against it, carrying that element's context. With nothing named, the screen dims lightly and the same ring becomes an area picker.
 - `SegmentedControl`: spring-animated mutually-exclusive mode switch for two to four short choices.
 - `ChoiceControl`: adaptive exclusive-choice control. Use a switch for a boolean, the segmented pill for two to four choices, and a dropdown for five or more.
 - `Checkbox`: independent multi-select control for rows, permissions, overrides, and checklist choices.

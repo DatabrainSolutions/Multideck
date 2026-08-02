@@ -14,6 +14,12 @@
       "port": 5183
     },
     {
+      "name": "multideck-client-3000",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "multideck.client", "--", "--port", "3000", "--strictPort"],
+      "port": 3000
+    },
+    {
       "name": "multideck-client-accent",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--prefix", "multideck.client", "--", "--port", "5199", "--strictPort"],

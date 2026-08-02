@@ -10,12 +10,14 @@ import {
 import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import {
   customerMentionItems,
+  dealMentionItems,
   defaultDexterMentionItems,
   leadMentionItems,
   mergeDexterMentionItems,
 } from "@/data/dexter-mentions"
 import { useLanguage } from "@/i18n/language-provider"
 import { listCustomers } from "@/lib/customer-api"
+import { listDeals } from "@/lib/deal-api"
 import { listLeads } from "@/lib/lead-api"
 import { mdMotion } from "@/lib/motion"
 import { useAiAgentName } from "@/lib/user-preferences"
@@ -80,11 +82,12 @@ export function DexterCompanionSidebar({
     if (!open) return
     let active = true
 
-    Promise.allSettled([listCustomers(), listLeads()]).then(([customerResult, leadResult]) => {
+    Promise.allSettled([listCustomers(), listLeads(), listDeals()]).then(([customerResult, leadResult, dealResult]) => {
       if (!active) return
       setMentionItems(mergeDexterMentionItems(
         customerResult.status === "fulfilled" ? customerMentionItems(customerResult.value) : [],
         leadResult.status === "fulfilled" ? leadMentionItems(leadResult.value) : [],
+        dealResult.status === "fulfilled" ? dealMentionItems(dealResult.value) : [],
         defaultDexterMentionItems,
       ))
     })

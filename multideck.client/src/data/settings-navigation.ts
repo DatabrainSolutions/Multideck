@@ -1,6 +1,8 @@
 import {
   Bell,
   BookOpen,
+  Cloud,
+  Command,
   CreditCard,
   LifeBuoy,
   Megaphone,
@@ -17,7 +19,9 @@ export type SettingsSectionId =
   | "security"
   | "notifications"
   | "customisation"
+  | "shortcuts"
   | "permissions"
+  | "integrations"
   | "billing"
   | "ai-usage"
   | "whats-new"
@@ -45,12 +49,14 @@ export const settingsNavigationGroups: SettingsNavigationGroup[] = [
       { id: "security", label: "Security", description: "Password, 2FA and sessions", icon: ShieldCheck },
       { id: "notifications", label: "Notifications", description: "Alerts, digests and delivery", icon: Bell },
       { id: "customisation", label: "Customisation", description: "Language, theme and density", icon: Palette },
+      { id: "shortcuts", label: "Keyboard shortcuts", description: "Summon Dexter and jump anywhere", icon: Command },
     ],
   },
   {
     label: "Workspace",
     items: [
       { id: "permissions", label: "Permissions", description: "Roles and sensitive access", icon: UsersRound },
+      { id: "integrations", label: "Integrations", description: "Connected mail and systems", icon: Cloud },
       { id: "billing", label: "Billing", description: "Plan, payment and invoices", icon: CreditCard },
       { id: "ai-usage", label: "AI usage", description: "Spend, actions and guardrails", icon: Sparkles },
     ],

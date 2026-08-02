@@ -41,6 +41,7 @@ function citationLabel(href: string) {
   if (href.startsWith("/warehouse/inventory")) return "Inventory"
   if (href.startsWith("/warehouse/orders")) return "Warehouse order"
   if (href.startsWith("/warehouse")) return "Warehouse"
+  if (href.startsWith("/inbox")) return "Email"
   return "Multideck"
 }
 

@@ -1,5 +1,5 @@
 import { apiFetch } from "@/lib/api"
-import { getSupabaseSession } from "@/lib/supabase"
+import { getSupabaseSession, supabaseFunctionsUrl, supabasePublicApiKey } from "@/lib/supabase"
 
 export type ApiCustomer = {
   id: string
@@ -47,6 +47,24 @@ export type ApiCustomerDetail = {
   contacts: { id: string; name: string; initials: string; email: string | null; role: string | null; preferredChannel: string | null; lastContactAt: string | null }[]
   activeShipments: { id: string; reference: string; route: string; mode: string | null; status: string | null; eta: string | null; openExceptionCount: number }[]
   activities: { id: string; subject: string; summary: string | null; occurredAt: string; type: string }[]
+  documents?: ApiCustomerDocument[]
+}
+
+export type ApiCustomerDocument = {
+  id: string
+  fileName: string
+  mimeType: string
+  fileSizeBytes: number
+  status: "ready" | "pending_review" | "failed" | string
+  safetyStatus: "clean" | "unscanned" | "blocked" | string
+  createdAt: string
+  sourceMessageId: string
+  sourceAttachmentId: string
+}
+
+export type ApiCustomerDocumentListing = {
+  customer: { id: string; name: string }
+  documents: ApiCustomerDocument[]
 }
 
 export class CustomerApiError extends Error {}
@@ -119,6 +137,60 @@ export async function getCustomer(customerId: string) {
   return response.json() as Promise<ApiCustomerDetail>
 }
 
+export async function getCustomerDocumentUrl(customerId: string, documentId: string) {
+  const session = await getSupabaseSession()
+  if (!session?.access_token) throw new CustomerApiError("Sign in again to open this customer document.")
+  if (!supabaseFunctionsUrl || !supabasePublicApiKey) throw new CustomerApiError("Customer documents are not configured for this workspace.")
+  const response = await fetch(`${supabaseFunctionsUrl}/customer-documents`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      apikey: supabasePublicApiKey,
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ customerId, documentId }),
+  })
+  if (!response.ok) {
+    let message = `${response.status} ${response.statusText}`.trim()
+    try {
+      const problem = await response.json()
+      message = problem.detail || problem.title || message
+    } catch { /* Keep the HTTP status fallback. */ }
+    throw new CustomerApiError(message)
+  }
+  return response.json() as Promise<{ url: string; expiresAt: string }>
+}
+
+export async function listCustomerDocuments(customerId: string) {
+  const session = await getSupabaseSession()
+  if (!session?.access_token) throw new CustomerApiError("Sign in again to view customer documents.")
+  if (!supabaseFunctionsUrl || !supabasePublicApiKey) throw new CustomerApiError("Customer documents are not configured for this workspace.")
+  const response = await fetch(`${supabaseFunctionsUrl}/customer-documents?customerId=${encodeURIComponent(customerId)}`, {
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      apikey: supabasePublicApiKey,
+      Accept: "application/json",
+    },
+  })
+  if (!response.ok) {
+    let message = `${response.status} ${response.statusText}`.trim()
+    try {
+      const problem = await response.json()
+      message = problem.detail || problem.title || problem.message || message
+    } catch { /* Keep the HTTP status fallback. */ }
+    throw new CustomerApiError(message)
+  }
+  const payload = await response.json() as Partial<ApiCustomerDocumentListing>
+  return {
+    customer: {
+      id: typeof payload.customer?.id === "string" ? payload.customer.id : customerId,
+      name: typeof payload.customer?.name === "string" ? payload.customer.name : "",
+    },
+    documents: Array.isArray(payload.documents) ? payload.documents : [],
+  }
+}
+
 export async function getCustomerReference() {
   const session = await getSupabaseSession()
   if (!session?.access_token) throw new CustomerApiError("Sign in again to create a customer.")
@@ -126,6 +198,6 @@ export async function getCustomerReference() {
   const response = await apiFetch("/api/v1/customers/reference", {
     headers: { Authorization: `Bearer ${session.access_token}` },
   })
-  if (!response.ok) throw new CustomerApiError("We could not load organisation types.")
+  if (!response.ok) throw new CustomerApiError("Unable to load organisation types. Check your connection and try again.")
   return response.json() as Promise<CustomerReference>
 }

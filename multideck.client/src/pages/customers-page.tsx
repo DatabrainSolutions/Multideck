@@ -143,7 +143,7 @@ export function CustomersPage({ navigate }: { navigate: (path: string) => void }
       setNewCustomer(emptyCustomer(customerReference?.organisationTypes[0]?.id))
       setReloadToken((value) => value + 1)
     } catch (error) {
-      setCreateError(error instanceof Error ? error.message : t("We could not create the customer."))
+      setCreateError(error instanceof Error ? error.message : t("Unable to create the customer. Check the details and try again."))
     } finally {
       setIsCreating(false)
     }
@@ -206,7 +206,7 @@ export function CustomersPage({ navigate }: { navigate: (path: string) => void }
           {loadState === "error" ? (
             <div className="max-w-md">
               <p className="text-[15px] font-medium text-[var(--md-ink)]">{t("Customer data is unavailable")}</p>
-              <p className="mt-2 text-[13px] leading-5 text-[var(--md-text)]">{t("We could not load the customer directory. Check the connection and try again.")}</p>
+              <p className="mt-2 text-[13px] leading-5 text-[var(--md-text)]">{t("Unable to load the customer directory. Check your connection and try again.")}</p>
               <Button type="button" variant="outline" className="mt-4 rounded-[var(--md-radius-lg)]" onClick={() => setReloadToken((value) => value + 1)}>
                 <RefreshCw data-icon="inline-start" className="size-4" strokeWidth={1.25} />
                 {t("Try again")}

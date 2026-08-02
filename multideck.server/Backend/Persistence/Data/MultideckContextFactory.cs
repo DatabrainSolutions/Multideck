@@ -12,9 +12,14 @@ public sealed class MultideckContextFactory : IDesignTimeDbContextFactory<Multid
 {
     public MultideckContext CreateDbContext(string[] args)
     {
-        var connectionString =
-            Environment.GetEnvironmentVariable("MULTIDECK_CONNECTION")
-            ?? "Host=db.aqtwypsuijxlnvtxpuxe.supabase.co;Database=postgres;Username=postgres;Password=39Water9DEGate;SSL Mode=Require;Trust Server Certificate=true";
+        var connectionString = Environment.GetEnvironmentVariable("MULTIDECK_CONNECTION");
+
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            throw new InvalidOperationException(
+                "MULTIDECK_CONNECTION is required for design-time EF operations. " +
+                "Use the intended tenant database; credentials must not be committed to source control.");
+        }
 
         var options = new DbContextOptionsBuilder<MultideckContext>()
             .UseNpgsql(connectionString)

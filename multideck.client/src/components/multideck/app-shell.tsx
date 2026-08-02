@@ -8,6 +8,7 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from 
 import { AppSidebar } from "./app-sidebar"
 import { TopBar } from "./top-bar"
 import { cn } from "@/lib/utils"
+import { InboxWorkspaceProvider } from "@/lib/inbox-workspace"
 
 export function AppShell({
   route,
@@ -22,12 +23,16 @@ export function AppShell({
 }) {
   const isSettingsRoute = route === "/settings"
   const isAgentRoute = route === "/agent-dexter"
+  const isInboxRoute = route === "/inbox"
+  // Routes that own the whole viewport: they scroll their own panes, so the shell
+  // must not add page padding, a top bar, or a second scroll axis around them.
+  const isFullHeightRoute = isAgentRoute || isInboxRoute
   const isChromeTightRoute = route.startsWith("/quotes/") || route === "/bookings/provisional"
   const [sidebarCollapsed, setSidebarCollapsed] = useSidebarCollapsed()
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const { direction, t } = useLanguage()
 
-  return (
+  const shell = (
     <div className="h-screen overflow-hidden bg-[var(--md-bg)] text-[var(--md-ink)]">
       <div className="flex h-screen min-h-0">
         <AppSidebar
@@ -38,7 +43,7 @@ export function AppShell({
           onCollapsedChange={setSidebarCollapsed}
           className="hidden h-screen min-h-0 lg:flex"
         />
-        {isAgentRoute ? (
+        {isFullHeightRoute ? (
           <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
             <SheetTrigger asChild>
               <Button
@@ -74,14 +79,16 @@ export function AppShell({
         <main
           className={cn(
             "min-h-0 min-w-0 flex-1",
-            isAgentRoute ? "overflow-hidden" : "overflow-y-auto md-scrollbar",
-            !isSettingsRoute && !isAgentRoute && !isChromeTightRoute && "px-[var(--md-page-pad)] pb-[var(--md-page-pad)]",
+            isFullHeightRoute ? "overflow-hidden" : "overflow-y-auto md-scrollbar",
+            !isSettingsRoute && !isFullHeightRoute && !isChromeTightRoute && "px-[var(--md-page-pad)] pb-[var(--md-page-pad)]",
           )}
         >
-          {isSettingsRoute || isAgentRoute || isChromeTightRoute ? null : <TopBar route={route} navigate={navigate} />}
+          {isSettingsRoute || isFullHeightRoute || isChromeTightRoute ? null : <TopBar route={route} navigate={navigate} />}
           {children}
         </main>
       </div>
     </div>
   )
+
+  return isInboxRoute ? <InboxWorkspaceProvider>{shell}</InboxWorkspaceProvider> : shell
 }
