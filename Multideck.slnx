@@ -1,7 +1,0 @@
-<Solution>
-  <Project Path="multideck.server/Backend/Intelligence/multideck.intelligence.csproj" />
-  <Project Path="multideck.server/Backend/Documents/multideck.documents.csproj" />
-  <Project Path="multideck.server/Backend/Persistence/multideck.persistence.csproj" />
-  <Project Path="multideck.server/multideck.server.csproj" />
-  <Project Path="multideck.server/Backend/Shared/multideck.shared.csproj" Id="bd680ffa-37e2-453b-88bd-b4d77cf7b2e1" />
-</Solution>

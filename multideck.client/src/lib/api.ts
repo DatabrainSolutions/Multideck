@@ -1,7 +1,4 @@
-const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim().replace(/\/$/, "")
-const localApiBaseUrl = import.meta.env.DEV ? "http://localhost:5273" : ""
-
-export const apiBaseUrl = configuredApiBaseUrl || localApiBaseUrl
+import { supabaseFunctionsUrl, supabasePublicApiKey } from "@/lib/supabase"
 
 export type ApiCompany = {
   id: string
@@ -143,11 +140,6 @@ export type UpdateUserRolesRequest = {
   roleIds: string[]
 }
 
-function getApiUrl(path: string) {
-  if (/^https?:\/\//i.test(path)) return path
-  return `${apiBaseUrl}${path.startsWith("/") ? path : `/${path}`}`
-}
-
 async function parseApiError(response: Response) {
   const fallback = `${response.status} ${response.statusText}`.trim()
 
@@ -159,10 +151,13 @@ async function parseApiError(response: Response) {
   }
 }
 
-export async function apiFetch(path: string, init: RequestInit = {}) {
+export async function edgeFetch(functionName: string, path: string, accessToken: string, init: RequestInit = {}) {
+  if (!supabaseFunctionsUrl || !supabasePublicApiKey) throw new Error("Supabase is not configured for this workspace.")
   const headers = new Headers(init.headers)
+  headers.set("Authorization", `Bearer ${accessToken}`)
+  headers.set("apikey", supabasePublicApiKey)
 
-  return fetch(getApiUrl(path), {
+  return fetch(`${supabaseFunctionsUrl}/${functionName}${path ? (path.startsWith("/") ? path : `/${path}`) : ""}`, {
     ...init,
     headers,
   })
@@ -174,10 +169,7 @@ export async function getApiAuthSession(accessToken: string): Promise<ApiAuthSes
   let response: Response
 
   try {
-    response = await apiFetch("/api/auth/session", {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
+    response = await edgeFetch("account", "", accessToken, {
       signal: controller.signal,
     })
   } catch (error) {
@@ -197,11 +189,7 @@ export async function getApiAuthSession(accessToken: string): Promise<ApiAuthSes
 }
 
 export async function getApiTeamUsers(accessToken: string): Promise<ApiTeamUsersResponse> {
-  const response = await apiFetch("/api/v1/users", {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  })
+  const response = await edgeFetch("team", "", accessToken)
 
   if (!response.ok) {
     throw new Error(await parseApiError(response))
@@ -211,27 +199,24 @@ export async function getApiTeamUsers(accessToken: string): Promise<ApiTeamUsers
 }
 
 export async function getApiCurrentUser(accessToken: string): Promise<ApiTeamUser> {
-  const response = await apiFetch("/api/v1/users/me", {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  })
+  const response = await edgeFetch("account", "", accessToken)
 
   if (!response.ok) {
     throw new Error(await parseApiError(response))
   }
 
-  return response.json() as Promise<ApiTeamUser>
+  const session = await response.json() as ApiAuthSession
+  if (!session.profile) throw new Error("Your account is not linked to a Multideck profile.")
+  return session.profile
 }
 
 export async function updateApiCurrentUserProfile(
   accessToken: string,
   request: UpdateCurrentUserProfileRequest,
 ): Promise<ApiTeamUser> {
-  const response = await apiFetch("/api/v1/users/me", {
+  const response = await edgeFetch("account", "", accessToken, {
     method: "PATCH",
     headers: {
-      Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(request),
@@ -244,44 +229,10 @@ export async function updateApiCurrentUserProfile(
   return response.json() as Promise<ApiTeamUser>
 }
 
-export async function saveApiCurrentUserCoverPhoto(
-  accessToken: string,
-  request: SaveCurrentUserCoverPhotoRequest,
-): Promise<ApiUserProfilePhoto> {
-  const response = await apiFetch("/api/v1/users/me/cover-photo", {
-    method: "PUT",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(request),
-  })
-
-  if (!response.ok) {
-    throw new Error(await parseApiError(response))
-  }
-
-  return response.json() as Promise<ApiUserProfilePhoto>
-}
-
-export async function removeApiCurrentUserCoverPhoto(accessToken: string, expectedPath: string): Promise<void> {
-  const response = await apiFetch(`/api/v1/users/me/cover-photo?expectedPath=${encodeURIComponent(expectedPath)}`, {
-    method: "DELETE",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  })
-
-  if (!response.ok) {
-    throw new Error(await parseApiError(response))
-  }
-}
-
 export async function createApiTeamUser(accessToken: string, user: CreateTeamUserRequest): Promise<CreateTeamUserResponse> {
-  const response = await apiFetch("/api/v1/users", {
+  const response = await edgeFetch("team", "", accessToken, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(user),
@@ -295,10 +246,9 @@ export async function createApiTeamUser(accessToken: string, user: CreateTeamUse
 }
 
 export async function changeApiTeamUserOffice(accessToken: string, userId: string, request: ChangeTeamUserOfficeRequest): Promise<ApiTeamUser> {
-  const response = await apiFetch(`/api/v1/users/${userId}/office`, {
+  const response = await edgeFetch("team", `/${userId}/office`, accessToken, {
     method: "PATCH",
     headers: {
-      Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(request),
@@ -312,11 +262,7 @@ export async function changeApiTeamUserOffice(accessToken: string, userId: strin
 }
 
 export async function getApiAuthorizationState(accessToken: string): Promise<ApiAuthorizationState> {
-  const response = await apiFetch("/api/authorization", {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  })
+  const response = await edgeFetch("team", "/authorization", accessToken)
 
   if (!response.ok) {
     throw new Error(await parseApiError(response))
@@ -326,10 +272,9 @@ export async function getApiAuthorizationState(accessToken: string): Promise<Api
 }
 
 export async function createApiAuthorizationRole(accessToken: string, request: CreateAuthorizationRoleRequest): Promise<ApiAuthorizationRole> {
-  const response = await apiFetch("/api/authorization/roles", {
+  const response = await edgeFetch("team", "/authorization/roles", accessToken, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(request),
@@ -343,11 +288,8 @@ export async function createApiAuthorizationRole(accessToken: string, request: C
 }
 
 export async function deleteApiAuthorizationRole(accessToken: string, roleId: string): Promise<void> {
-  const response = await apiFetch(`/api/authorization/roles/${roleId}`, {
+  const response = await edgeFetch("team", `/authorization/roles/${roleId}`, accessToken, {
     method: "DELETE",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
   })
 
   if (!response.ok) {
@@ -356,10 +298,9 @@ export async function deleteApiAuthorizationRole(accessToken: string, roleId: st
 }
 
 export async function updateApiRolePermissions(accessToken: string, roleId: string, request: UpdateRolePermissionsRequest): Promise<ApiAuthorizationRole> {
-  const response = await apiFetch(`/api/authorization/roles/${roleId}/permissions`, {
+  const response = await edgeFetch("team", `/authorization/roles/${roleId}/permissions`, accessToken, {
     method: "PATCH",
     headers: {
-      Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(request),
@@ -373,10 +314,9 @@ export async function updateApiRolePermissions(accessToken: string, roleId: stri
 }
 
 export async function updateApiUserRoles(accessToken: string, userId: string, request: UpdateUserRolesRequest): Promise<ApiUserRoleAssignment> {
-  const response = await apiFetch(`/api/authorization/users/${userId}/roles`, {
+  const response = await edgeFetch("team", `/authorization/users/${userId}/roles`, accessToken, {
     method: "PATCH",
     headers: {
-      Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(request),

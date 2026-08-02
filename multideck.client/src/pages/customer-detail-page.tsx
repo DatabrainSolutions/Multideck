@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner"
 import { useLanguage } from "@/i18n/language-provider"
 import { getCustomer, type ApiCustomerDetail } from "@/lib/customer-api"
-import { getWarehousePortalReference, inviteWarehousePortalUser, listWarehousePortalUsers, revokeWarehousePortalUser, updateWarehousePortalUser, type WarehousePortalReference, type WarehousePortalUser } from "@/lib/warehouse-api"
+import { getWarehousePortalReference, inviteWarehousePortalUser, listWarehousePortalUsers, revokeWarehousePortalUser, updateWarehousePortalUser, type WarehousePortalReference, type WarehousePortalUser } from "@/lib/warehouse"
 
 export function CustomerDetailPage({ customerId }: { customerId: string }) {
   const [customer, setCustomer] = useState<ApiCustomerDetail | null>(null)
