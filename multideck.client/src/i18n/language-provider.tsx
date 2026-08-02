@@ -1,4 +1,4 @@
-import { createContext, startTransition, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
+import { createContext, startTransition, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { defaultLanguage, getLanguageOption, isLanguageCode, type LanguageCode } from "./languages"
 import { translateText } from "./translate"
 
@@ -84,7 +84,19 @@ function useDocumentLanguage(language: LanguageCode) {
 }
 
 function useDomLocalization(language: LanguageCode) {
+  const previousLanguageRef = useRef<LanguageCode | null>(null)
+
   useEffect(() => {
+    const previousLanguage = previousLanguageRef.current
+    previousLanguageRef.current = language
+
+    if (language === defaultLanguage) {
+      if (previousLanguage && previousLanguage !== defaultLanguage) {
+        localizeTree(document.body, language)
+      }
+      return
+    }
+
     let frame: number | null = null
 
     const run = () => {
