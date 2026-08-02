@@ -1,6 +1,5 @@
 
 // @ts-nocheck
-import ExcelJS from "npm:exceljs@4.4.0";
 import {
   BUCKET,
   HttpError,
@@ -131,6 +130,7 @@ export async function handleItems(request, path, url, admin, actor) {
     };
   }
   if (request.method === "GET" && path[1] === "import" && path[2] === "template") {
+    const { default: ExcelJS } = await import("npm:exceljs@4.4.0");
     const book = new ExcelJS.Workbook();
     const sheet = book.addWorksheet("Items");
     sheet.addRow([
@@ -227,6 +227,7 @@ async function importItems(request, admin, actor, context) {
   requireCustomerScope(actor, customerOrgId, facilityId);
   const file = form.get("file");
   if (!(file instanceof File) || file.size === 0 || file.size > 10 * 1024 * 1024) throw new HttpError(400, "Upload an Excel workbook no larger than 10 MB.");
+  const { default: ExcelJS } = await import("npm:exceljs@4.4.0");
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(await file.arrayBuffer());
   const sheet = workbook.worksheets[0];

@@ -1,12 +1,6 @@
 // @ts-nocheck
 import { createClient } from "npm:@supabase/supabase-js@2.108.2";
-import { handleDocuments } from "./routes/documents.ts";
-import { handleFacilities } from "./routes/facilities.ts";
-import { handleInventory } from "./routes/inventory.ts";
-import { handleItems } from "./routes/items.ts";
-import { handleLocations } from "./routes/locations.ts";
-import { handleOrders } from "./routes/orders.ts";
-import { handlePortal } from "./routes/portal-users.ts";
+import { handleDashboard } from "./routes/dashboard.ts";
 import { MAX_BODY_BYTES, HttpError, cors, json, resolveActor } from "./shared/mod.ts";
 
 Deno.serve(async (request)=>{
@@ -46,19 +40,28 @@ Deno.serve(async (request)=>{
     }), actor = await resolveActor(userDb, admin), url = new URL(request.url);
     const marker = "/warehouse/", pathname = url.pathname.includes(marker) ? url.pathname.split(marker)[1] : "", path = pathname.split("/").filter(Boolean);
     let result;
-    if (path[0] === "facilities" && path.includes("locations")) {
+    if (path[0] === "dashboard" && request.method === "GET") {
+      result = await handleDashboard(admin, actor);
+    } else if (path[0] === "facilities" && path.includes("locations")) {
+      const { handleLocations } = await import("./routes/locations.ts");
       result = await handleLocations(request, path, url, admin, actor);
     } else if (path[0] === "facilities") {
+      const { handleFacilities } = await import("./routes/facilities.ts");
       result = await handleFacilities(request, path, url, admin, actor);
     } else if (path[0] === "items") {
+      const { handleItems } = await import("./routes/items.ts");
       result = await handleItems(request, path, url, admin, actor);
     } else if (path[0] === "inventory") {
+      const { handleInventory } = await import("./routes/inventory.ts");
       result = await handleInventory(path, url, admin, actor);
     } else if (path[0] === "orders" && path[2] === "documents") {
+      const { handleDocuments } = await import("./routes/documents.ts");
       result = await handleDocuments(request, path, admin, actor);
     } else if (path[0] === "orders") {
+      const { handleOrders } = await import("./routes/orders.ts");
       result = await handleOrders(request, path, url, admin, actor);
     } else if (path[0] === "portal") {
+      const { handlePortal } = await import("./routes/portal-users.ts");
       result = await handlePortal(request, path, admin, actor);
     } else throw new HttpError(404, "Warehouse endpoint not found.");
     if (result instanceof Response) return result;

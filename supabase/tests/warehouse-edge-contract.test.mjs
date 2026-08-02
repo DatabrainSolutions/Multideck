@@ -5,6 +5,7 @@ import test from "node:test"
 const root = new URL("../", import.meta.url)
 const edgeFiles = [
   "functions/warehouse/index.ts",
+  "functions/warehouse/routes/dashboard.ts",
   "functions/warehouse/routes/documents.ts",
   "functions/warehouse/routes/facilities.ts",
   "functions/warehouse/routes/inventory.ts",
@@ -16,6 +17,7 @@ const edgeFiles = [
 ]
 const edgeSource = (await Promise.all(edgeFiles.map((file) => readFile(new URL(file, root), "utf8")))).join("\n")
 const migration = await readFile(new URL("migrations/202608020001_warehouse_edge_functions.sql", root), "utf8")
+const dashboardMigration = await readFile(new URL("migrations/20260802213000_warehouse_dashboard_snapshot.sql", root), "utf8")
 const clientSource = await readFile(new URL("../multideck.client/src/lib/warehouse.ts", root), "utf8")
 
 test("warehouse client uses the tenant Supabase Edge Function as its only backend", () => {
@@ -55,6 +57,15 @@ test("warehouse runtime targets the current WMS schema", () => {
   }
   assert.doesNotMatch(edgeSource, /Org_Master"\)\.select\("Org_ID/)
   assert.match(edgeSource, /Org_Master"\)\.select\("Org_id,Org_Name"/)
+})
+
+test("warehouse dashboard loads through one aggregated database call", () => {
+  assert.match(clientSource, /requestWarehouse<WarehouseDashboardSnapshot>\("\/dashboard", "GET"\)/)
+  assert.doesNotMatch(clientSource, /const \[orders, balances, movements\] = await Promise\.all/)
+  assert.match(edgeSource, /rpc\("warehouse_edge_dashboard"/)
+  assert.match(dashboardMigration, /create or replace function public\.warehouse_edge_dashboard/)
+  assert.match(dashboardMigration, /revoke all on function public\.warehouse_edge_dashboard[\s\S]*from public, anon, authenticated/)
+  assert.match(dashboardMigration, /grant execute on function public\.warehouse_edge_dashboard[\s\S]*to service_role/)
 })
 
 test("the Edge Function authenticates users and resolves internal or portal scope before using the service role", () => {

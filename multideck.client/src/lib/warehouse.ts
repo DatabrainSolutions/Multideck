@@ -516,6 +516,16 @@ export type WarehouseOperationalOrder = {
   dispatches: { id: string; dispatchNumber: string; statusCode: string; dispatchedAt: string | null; vehicleReg: string | null; containerNumber: string | null; sealNumber: string | null }[]
 }
 
+type WarehouseDashboardSnapshot = {
+  orders: WarehouseOperationalOrder[]
+  metrics: {
+    onHandSkus: number
+    availableSkus: number
+    heldBalances: number
+  }
+  movements: WarehouseInventoryMovement[]
+}
+
 export type WarehouseOrderReference = {
   facilities: { id: string; officeId: string | null; code: string; name: string }[]
   customers: { id: string; name: string }[]
@@ -596,6 +606,10 @@ export function listOperationalWarehouseOrders(options: { facilityId?: string; t
     `/orders${toQuery({ facilityId: options.facilityId, typeCode: options.typeCode, statusCode: options.statusCode, openOnly: options.openOnly, search: options.search })}`,
     "GET",
   )
+}
+
+function getWarehouseDashboardSnapshot() {
+  return requestWarehouse<WarehouseDashboardSnapshot>("/dashboard", "GET")
 }
 
 export function getWarehouseOrderReference() {
@@ -844,23 +858,16 @@ function calendarData(orders: WarehouseOperationalOrder[]): WarehouseWorkspaceDa
 }
 
 export async function getWarehouseWorkspaceData(locale = "en-GB"): Promise<WarehouseWorkspaceData> {
-  const [orders, balances, movements] = await Promise.all([
-    listOperationalWarehouseOrders(),
-    listWarehouseInventory(),
-    listWarehouseInventoryMovements({ take: 50 }),
-  ])
+  const { orders, metrics: snapshotMetrics, movements } = await getWarehouseDashboardSnapshot()
 
   const openOrders = orders.filter((order) => !finalOrderStatuses.has(order.statusCode))
   const inboundOrders = openOrders.filter((order) => order.typeCode === "inbound")
   const outboundOrders = openOrders.filter((order) => order.typeCode === "outbound")
-  const onHandSkus = new Set(balances.filter((balance) => balance.onHandQuantity > 0).map((balance) => balance.itemId)).size
-  const availableSkus = new Set(balances.filter((balance) => balance.availableQuantity > 0).map((balance) => balance.itemId)).size
-  const heldBalances = balances.filter((balance) => balance.heldQuantity > 0 || balance.inventoryStatusCode !== "available").length
   const number = new Intl.NumberFormat(locale, { maximumFractionDigits: 2 })
 
   const metrics: WarehouseMetric[] = [
-    { label: "SKUs on hand", value: number.format(onHandSkus), detail: "Distinct items with physical stock in the warehouse.", tone: "teal", icon: Boxes },
-    { label: "Available SKUs", value: number.format(availableSkus), detail: "Distinct items currently available for allocation.", tone: "green", icon: PackageCheck },
+    { label: "SKUs on hand", value: number.format(snapshotMetrics.onHandSkus), detail: "Distinct items with physical stock in the warehouse.", tone: "teal", icon: Boxes },
+    { label: "Available SKUs", value: number.format(snapshotMetrics.availableSkus), detail: "Distinct items currently available for allocation.", tone: "green", icon: PackageCheck },
     { label: "Open inbound", value: number.format(inboundOrders.length), detail: "Inbound orders with lines still to receive.", tone: "amber", icon: ArrowDownToLine },
     { label: "Open outbound", value: number.format(outboundOrders.length), detail: "Outbound orders with lines still to dispatch.", tone: "blue", icon: ArrowUpFromLine },
   ]
@@ -871,7 +878,7 @@ export async function getWarehouseWorkspaceData(locale = "en-GB"): Promise<Wareh
       headerActions: [
         { label: "Ready to receive", value: number.format(inboundOrders.length), icon: Clock3, tone: inboundOrders.length ? "amber" : "neutral" },
         { label: "Ready to dispatch", value: number.format(outboundOrders.length), icon: PackageCheck, tone: outboundOrders.length ? "green" : "neutral" },
-        { label: "Stock holds", value: number.format(heldBalances), icon: ShieldAlert, tone: heldBalances ? "red" : "teal" },
+        { label: "Stock holds", value: number.format(snapshotMetrics.heldBalances), icon: ShieldAlert, tone: snapshotMetrics.heldBalances ? "red" : "teal" },
       ],
       orders: openOrders
         .sort((first, second) => (first.appointmentStartAt ?? first.requestedDate ?? "9999").localeCompare(second.appointmentStartAt ?? second.requestedDate ?? "9999"))
