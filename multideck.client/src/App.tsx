@@ -1,4 +1,4 @@
-import { Component, lazy, startTransition, Suspense, useCallback, useEffect, useState, type ErrorInfo, type ReactNode } from "react"
+import { Component, lazy, startTransition, Suspense, useCallback, useEffect, useState, type CSSProperties, type ErrorInfo, type ReactNode } from "react"
 import type { Session } from "@supabase/supabase-js"
 import { MotionConfig } from "motion/react"
 import { ThemeProvider } from "next-themes"
@@ -218,19 +218,36 @@ function canCustomerOpenRoute(user: AuthUserSummary, path: string) {
   return path === "/warehouse/users" && user.permissions.includes("Warehouse.Users.ManageOwn")
 }
 
-function RouteFallback() {
+const thinkingDotOrder = [
+  0, 1, 2, 3, 4,
+  15, 16, 17, 18, 5,
+  14, 23, 24, 19, 6,
+  13, 22, 21, 20, 7,
+  12, 11, 10, 9, 8,
+]
+
+function RouteFallback({ fullScreen = false }: { fullScreen?: boolean }) {
   const { t } = useLanguage()
 
   return (
-    <div role="status" aria-live="polite" className="min-h-[320px] bg-[var(--md-bg)] pt-[var(--md-page-stack-gap)]">
-      <span className="sr-only">{t("Loading page")}</span>
-      <div className="h-1 w-full overflow-hidden bg-[var(--md-accent-a06)]">
-        <div className="h-full w-1/3 animate-pulse rounded-r-full bg-[var(--md-accent-a22)]" />
-      </div>
-      <div className="mt-[var(--md-page-stack-gap)] grid gap-3" aria-hidden="true">
-        <div className="h-8 w-48 animate-pulse rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] motion-reduce:animate-none" />
-        <div className="h-24 w-full animate-pulse rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] motion-reduce:animate-none" />
-        <div className="h-24 w-full animate-pulse rounded-[var(--md-radius-xl)] bg-[var(--md-accent-a06)] motion-reduce:animate-none" />
+    <div
+      role="status"
+      aria-live="polite"
+      className={fullScreen
+        ? "grid min-h-screen place-items-center bg-[var(--md-bg)] text-[var(--md-ink)]"
+        : "grid min-h-[calc(100dvh-104px)] place-items-center bg-[var(--md-bg)] text-[var(--md-ink)]"}
+    >
+      <div className="flex flex-col items-center gap-4">
+        <div className="grid grid-cols-5 gap-[3px] text-[var(--md-accent)]" aria-hidden="true">
+          {thinkingDotOrder.map((order) => (
+            <span
+              key={order}
+              className="md-thinking-dot block size-1 rounded-full bg-current"
+              style={{ animationDelay: `${order * 48 - 576}ms` } as CSSProperties}
+            />
+          ))}
+        </div>
+        <p className="text-[14px] font-medium text-[var(--md-text)]">{t("Loading…")}</p>
       </div>
     </div>
   )
@@ -285,62 +302,6 @@ class WorkspaceErrorBoundary extends Component<{
   render() {
     return this.state.error ? <WorkspaceFailureFallback /> : this.props.children
   }
-}
-
-function SessionFallback() {
-  const { t } = useLanguage()
-
-  return (
-    <div className="grid min-h-screen bg-[var(--md-bg)] text-[var(--md-ink)] lg:grid-cols-[44%_56%]">
-      <aside className="relative order-2 flex min-h-[360px] overflow-hidden bg-[var(--md-accent-abyss)] text-white lg:order-1 lg:min-h-screen">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_72%_18%,rgba(154,209,164,0.16),transparent_38%),linear-gradient(180deg,rgba(2,14,12,0.08),rgba(2,14,12,0.72))]" aria-hidden="true" />
-        <div className="relative z-10 flex min-h-[360px] w-full flex-col px-[clamp(24px,4vw,64px)] py-[clamp(24px,4vw,56px)] lg:min-h-screen">
-          <div className="flex items-center gap-3" data-i18n-skip dir="ltr">
-            <img src={multideckLogoMark} alt="" className="size-6 brightness-0 invert" />
-            <span className="text-[21px] font-medium leading-none">multideck</span>
-          </div>
-
-          <div className="my-auto max-w-[500px] py-16">
-            <div className="mb-5 inline-flex items-center rounded-full bg-black/12 px-3 py-1.5 text-[12px] font-medium text-white/78 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)]">
-              {t("Private workspace")}
-            </div>
-            <h1 className="whitespace-pre-line text-[24px] font-medium leading-[1.22]">{t("Freight keeps moving.\nDexter keeps watch.")}</h1>
-            <p className="mt-4 max-w-[470px] text-[14px] leading-6 text-white/64">
-              {t("A private operating workspace for the people responsible for every booking, exception, and customer promise.")}
-            </p>
-          </div>
-
-          <p className="flex items-center gap-3 text-[12px] text-white/58">
-            <span className="size-2 rounded-full bg-[var(--md-accent-lift-warm)] shadow-[0_0_0_4px_color-mix(in_srgb,var(--md-accent-lift-warm)_12%,transparent)]" aria-hidden="true" />
-            {t("Invite-only access for your team")}
-          </p>
-        </div>
-      </aside>
-
-      <main className="order-1 grid min-h-[520px] place-items-center px-[clamp(var(--md-gap-xl),5vw,88px)] py-[calc(var(--md-page-section-gap)*2)] lg:order-2 lg:min-h-screen">
-        <div className="w-full max-w-[520px]" role="status" aria-live="polite">
-          <div className="flex items-center gap-3" data-i18n-skip dir="ltr">
-            <img src={multideckLogoMark} alt="" className="size-6" />
-            <span className="text-[21px] font-medium leading-none">multideck</span>
-          </div>
-
-          <div className="mt-10 grid size-11 place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-accent-a10)]" aria-hidden="true">
-            <span className="size-2.5 animate-pulse rounded-full bg-[var(--md-accent)] motion-reduce:animate-none" />
-          </div>
-          <h2 className="mt-5 text-[24px] font-medium leading-tight">{t("Preparing your workspace")}</h2>
-          <p className="mt-2 max-w-[440px] text-[14px] leading-6 text-[var(--md-text)]">
-            {t("Checking your secure session and loading the latest workspace details.")}
-          </p>
-
-          <div className="mt-8 space-y-3" aria-hidden="true">
-            <div className="h-12 w-full animate-pulse rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] motion-reduce:animate-none" />
-            <div className="h-12 w-full animate-pulse rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] motion-reduce:animate-none" />
-            <div className="h-12 w-full animate-pulse rounded-[var(--md-radius-xl)] bg-[var(--md-accent-a10)] motion-reduce:animate-none" />
-          </div>
-        </div>
-      </main>
-    </div>
-  )
 }
 
 export default function App() {
@@ -534,25 +495,25 @@ export default function App() {
           <TooltipProvider>
             <MotionConfig reducedMotion="user" transition={mdMotion.fast}>
             {isContactCardPublicRoute(route) ? (
-              <Suspense fallback={<RouteFallback />}>
+              <Suspense fallback={<RouteFallback fullScreen />}>
                 <ContactCardPublicPage slug={route.split("/").at(-1) ?? ""} />
               </Suspense>
             ) : (!isLocalNavigationLab && ((authStatus === "checking" && route !== "/auth") || (authStatus === "authenticated" && route === "/auth" && !isPasswordRecoveryRoute))) ? (
-              <SessionFallback />
+              <RouteFallback fullScreen />
             ) : !isLocalNavigationLab && (authStatus === "unauthenticated" || route === "/auth") ? (
-              <Suspense fallback={<SessionFallback />}>
+              <Suspense fallback={<RouteFallback fullScreen />}>
                 <AuthFlowPage navigate={navigate} />
               </Suspense>
             ) : isBookingDetailRoute(route) ? (
-              <Suspense fallback={<RouteFallback />}>
+              <Suspense fallback={<RouteFallback fullScreen />}>
                 <BookingDetailPage navigate={navigate} bookingId={route.split("/").at(-1) ?? "md-22455"} />
               </Suspense>
             ) : route.startsWith("/reports/rpt-") ? (
-              <Suspense fallback={<RouteFallback />}>
+              <Suspense fallback={<RouteFallback fullScreen />}>
                 <ReportViewerPage navigate={navigate} reportId={route.split("/").at(-1) ?? "rpt-marlow-may-review"} />
               </Suspense>
             ) : route === "/reports/templates/monthly-client-review" ? (
-              <Suspense fallback={<RouteFallback />}>
+              <Suspense fallback={<RouteFallback fullScreen />}>
                 <ReportTemplateBuilderPage navigate={navigate} />
               </Suspense>
             ) : (

@@ -13,6 +13,52 @@
 
 @custom-variant dark (&:is(.dark *));
 
+@keyframes md-thinking-dot {
+  0%,
+  100% {
+    opacity: 0.12;
+    transform: scale(0.72);
+  }
+
+  10% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  18% {
+    opacity: 0.52;
+    transform: scale(0.9);
+  }
+
+  28% {
+    opacity: 0.24;
+    transform: scale(0.78);
+  }
+
+  40% {
+    opacity: 0.12;
+    transform: scale(0.72);
+  }
+}
+
+.md-thinking-dot {
+  opacity: 0.12;
+  transform: scale(0.72);
+  animation: md-thinking-dot 1450ms cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-thinking-dot {
+    animation: none;
+    opacity: 0.28;
+    transform: none;
+  }
+
+  .md-thinking-dot:nth-child(13) {
+    opacity: 1;
+  }
+}
+
 @theme inline {
   /* The colour emoji families are named last on purpose: a subject line or a
      message preview that contains 🎉 must render it in colour rather than

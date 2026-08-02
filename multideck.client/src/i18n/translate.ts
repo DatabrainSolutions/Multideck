@@ -2111,6 +2111,7 @@ const phrases: PhraseDictionary = {
   "Country code": { de: "Ländercode", fr: "Code pays", ar: "رمز الدولة" },
   "Something went wrong": { de: "Etwas ist schiefgelaufen", fr: "Une erreur est survenue", ar: "حدث خطأ ما" },
   "Loading page": { de: "Seite wird geladen", fr: "Chargement de la page", ar: "جارٍ تحميل الصفحة" },
+  "Loading…": { de: "Wird geladen…", fr: "Chargement…", ar: "جارٍ التحميل…" },
   "This workspace view could not be displayed. Reload the page to continue.": { de: "Diese Arbeitsbereichsansicht konnte nicht angezeigt werden. Laden Sie die Seite neu, um fortzufahren.", fr: "Cette vue de l’espace de travail n’a pas pu être affichée. Rechargez la page pour continuer.", ar: "تعذر عرض مساحة العمل هذه. أعد تحميل الصفحة للمتابعة." },
   "Reload page": { de: "Seite neu laden", fr: "Recharger la page", ar: "إعادة تحميل الصفحة" },
   "Bonded": { de: "Zolllager", fr: "Sous douane", ar: "جمركي" },
