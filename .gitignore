@@ -1,77 +1,35 @@
-# ═══════════════════════════════════════════════════════════
-# .NET
-# ═══════════════════════════════════════════════════════════
-**/bin/
-**/obj/
-**/out/
-*.user
-*.suo
-*.cache
-*.log
-
-# ═══════════════════════════════════════════════════════════
-# Node (for future client tooling)
-# ═══════════════════════════════════════════════════════════
 node_modules/
 dist/
 .vite/
 .npm-cache/
+**/bin/
+**/obj/
+**/out/
 .env
 .env.*
 !.env.example
-Multideck_Scope_v5.docx
 
-# ═══════════════════════════════════════════════════════════
-# Local tooling output
-# ═══════════════════════════════════════════════════════════
 .cursor/
 .playwright-cli/
 test-results/
 playwright-report/
 output/
+artifacts/
+outputs/
+tmp/
+work/
 
-# ═══════════════════════════════════════════════════════════
-# IDE / OS
-# ═══════════════════════════════════════════════════════════
 .vs/
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
 nul
-/multideck.server/Backend/supabase/migrations/*
-!/multideck.server/Backend/supabase/migrations/20260625083908_warehouse_backend_foundation.sql
-!/multideck.server/Backend/supabase/migrations/20260625084450_warehouse_backend_seed_data.sql
-!/multideck.server/Backend/supabase/migrations/202607210001_warehouse_customer_portal.sql
-!/multideck.server/Backend/supabase/migrations/202607220001_document_storage_catalogue.sql
-!/multideck.server/Backend/supabase/migrations/202607220002_warehouse_customer_user_management.sql
-!/multideck.server/Backend/supabase/migrations/202607230001_use_supabase_document_storage.sql
-!/multideck.server/Backend/supabase/migrations/202607290001_user_profile_photos.sql
-!/multideck.server/Backend/supabase/migrations/202607290002_harden_profile_photo_policies.sql
-!/multideck.server/Backend/supabase/migrations/202607290003_crm_pipeline_settings.sql
-!/multideck.server/Backend/supabase/migrations/202607290004_link_deals_to_tenant_pipelines.sql
-!/multideck.server/Backend/supabase/migrations/202607300004_user_cover_photos.sql
-!/multideck.server/Backend/supabase/migrations/20260723101203_notification_email_preferences.sql
-!/multideck.server/Backend/supabase/migrations/20260723103000_optimize_notification_email_policies.sql
-!/multideck.server/Backend/supabase/migrations/20260723104500_dispatch_notification_emails.sql
-!/multideck.server/Backend/supabase/migrations/202607310002_agent_dexter_supabase_runtime.sql
-!/multideck.server/Backend/supabase/migrations/202607310003_dexter_message_specialist.sql
-!/multideck.server/Backend/supabase/migrations/202607310004_dexter_response_versions.sql
-!/multideck.server/Backend/supabase/migrations/202607310006_dexter_current_response_history.sql
-!/multideck.server/Backend/supabase/migrations/20260730222311_user_accent_preference.sql
-!/multideck.server/Backend/supabase/migrations/202607310005_user_theme_preference.sql
-!/multideck.server/Backend/supabase/migrations/202607310007_user_language_preference.sql
-!/multideck.server/Backend/supabase/migrations/20260731212420_qr_contact_cards_supabase.sql
-!/multideck.server/Backend/supabase/migrations/20260731212757_qr_contact_cards_demo_data.sql
-!/multideck.server/Backend/supabase/migrations/20260731213558_qr_contact_cards_seed_last_run.sql
-!/multideck.server/Backend/supabase/migrations/20260731215100_qr_contact_cards_foreign_key_indexes.sql
-!/multideck.server/Backend/supabase/migrations/20260731223000_inbox_provider_foundation.sql
-!/multideck.server/Backend/supabase/migrations/20260731230500_inbox_administrator_permissions.sql
-!/multideck.server/Backend/supabase/migrations/20260801111500_inbox_index_progress.sql
-!/multideck.server/Backend/supabase/migrations/20260801120500_inbox_sync_lease.sql
-!/multideck.server/Backend/supabase/migrations/20260802140000_dexter_watching_for_you.sql
-!/multideck.server/Backend/supabase/migrations/20260802150000_dexter_watch_foreign_key_indexes.sql
-!/multideck.server/Backend/supabase/migrations/20260802153000_dexter_email_sender_attachment_watches.sql
-!/multideck.server/Backend/supabase/migrations/20260802150818_dexter_email_watch_reliability.sql
-/multideck.server/Backend/supabase/.temp/
 .vercel
+
+/supabase/.temp/
+/multideck.server/Backend/supabase/.temp/
+/multideck.server/Backend/supabase/supabase/.temp/
+*.cache
+*.log
+Multideck_Scope_v5.docx

@@ -1,6 +1,8 @@
-# Multideck
+# Multideck App
 
-A freight forwarding system with a .NET server and web client.
+Multideck App is the main operator application and the sole authoritative operational system for each tenant. It is one of three deliberately separate products; see the [canonical three-product architecture](docs/architecture/three-product-platform.md).
+
+Each tenant uses a dedicated Vercel project named `multideck-app-{slug}`, an exact `{slug}.multideck.app` hostname, and one authoritative operational Supabase project shared with that tenant's Live deployment through separate authorised interfaces. Supabase is the target production backend. The existing .NET code is transitional tooling and parity-test code and receives no new production dependencies.
 
 ## Project Structure
 
@@ -18,7 +20,17 @@ Keep browser-facing application code inside `multideck.client`. Keep API code,
 server-side libraries, database migrations, and Edge Functions inside
 `multideck.server`.
 
-## Running the Server
+## Running the App
+
+```bash
+cd multideck.client
+npm ci
+npm run dev
+```
+
+The operator app runs on `http://127.0.0.1:3000`. The authenticated document centre is at `/documents`.
+
+## Transitional .NET Server
 
 ### Prerequisites
 
@@ -67,75 +79,63 @@ HTTP request events include `IpAddress`, plus `Username` when the request is aut
 When the API runs behind a cloud proxy or load balancer, configure ASP.NET Core to trust that proxy's forwarded headers so `IpAddress` contains the user address rather than the proxy address. Prefer configuring the provider's proxy IP or network as trusted. If the API cannot be reached except through the trusted proxy, the hosting environment can instead set:
 
 ```text
-ASPNETCORE_FORWARDEDHEADERS_ENABLED=true
+multideck.client/  React and TypeScript application
+supabase/          Database migrations, Edge Functions, tests, and configuration
 ```
 
-## Supabase Auth Setup
+There is no separate application server. Authentication, Postgres, Storage, Row Level Security,
+RPCs, and server-side operations are owned by each tenant's isolated Supabase project.
 
-### Server
+## Local client
 
-The API validates Supabase access tokens on protected endpoints such as `GET /api/auth/session`.
+Requirements: Node.js 22+ and npm.
 
-Set these values for `multideck.server` using environment variables, user secrets, or deployment settings:
-
-| Key | Required | Notes |
-|---|---:|---|
-| `Supabase__Url` | Yes | Your project URL, for example `https://xxxx.supabase.co`. |
-| `Supabase__JwtAudience` | No | Defaults to `authenticated`. |
-| `Supabase__JwtIssuer` | No | Defaults to `{Supabase__Url}/auth/v1`. |
-| `Supabase__JwtSecret` | Only for legacy HS256 projects | Leave empty for projects using Supabase JWKS/signing keys. |
-| `Cors__AllowedOrigins__0` | Recommended | Client origin, for example `http://localhost:5173`. If omitted, local API allows any origin. |
-
-Example local setup:
-
-```bash
-cd multideck.server
-dotnet user-secrets set "Supabase:Url" "https://xxxx.supabase.co"
-dotnet user-secrets set "Cors:AllowedOrigins:0" "http://localhost:5173"
+```powershell
+cd multideck.client
+Copy-Item .env.example .env.local
+npm install
+npm run dev
 ```
 
-### Client
+Configure the tenant's public values in `.env.local`:
 
-Copy `multideck.client/.env.example` to `multideck.client/.env` and fill in:
-
-```bash
-VITE_SUPABASE_URL=https://xxxx.supabase.co
+```dotenv
+VITE_SUPABASE_URL=https://your-project-ref.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=your-publishable-key
-VITE_MULTIDECK_TENANT_HOST=jenkar.multideck.app
-VITE_API_BASE_URL=http://localhost:5273
+VITE_MULTIDECK_TENANT_HOST=dev.multideck.app
+VITE_MULTIDECK_ROOT_HOST=multideck.app
 ```
 
-`VITE_SUPABASE_ANON_KEY` remains supported for older deployments, but new environments should use the publishable key.
+Never add a service-role key to client environment variables.
 
-Each company is an isolated deployment backed by its own Supabase project and database. Bind every production build to one exact hostname with `VITE_MULTIDECK_TENANT_HOST`; the client fails closed if that build is opened from another company’s subdomain. Never put a Supabase secret or service-role key in the client.
+## Supabase
 
-In Supabase Auth settings:
+Requirements: Docker Desktop and the Supabase CLI.
 
-- Turn off public user signups. Multideck accounts are created by an administrator or invitation only.
-- Enable manual identity linking so signed-in users can connect optional providers from **Settings → Login & security**.
-- Enable Google, LinkedIn (OIDC), Facebook, and Azure (Microsoft) with credentials from each provider's developer console.
-- Use the tenant’s exact URL as the Site URL, for example `https://jenkar.multideck.app`. Do not add a cross-tenant wildcard.
-- Use the same exact tenant hostname as the passkey relying-party ID and its HTTPS origin as the allowed origin. Keep it stable because changing it invalidates existing passkeys.
-- Allow only that tenant’s exact production URL plus the local development redirects: `http://localhost:3000/**` and `http://127.0.0.1:3000/**`.
-
-During the domain cutover, the current exact Vercel production URL may remain on the redirect allow list temporarily. Remove it after the tenant subdomain is serving the app; never replace it with a broad `*.vercel.app` rule.
-
-`multideck.app` is the workspace router, not a shared customer database. It sends the user to the correct company subdomain before that tenant’s Supabase session is created. `jenkar.multideck.app` therefore uses the Jenkar Supabase project, while `databrain.multideck.app` uses a different project, database, Auth user store, API configuration, and set of provider credentials.
-
-## Databrain support tickets
-
-The authenticated **Settings → Support** form invokes the tenant's `create-support-ticket` Supabase Edge Function. The function resolves the requester and company from the signed-in Supabase account, then sends the ticket to Databrain OS. The browser never receives the Databrain webhook secret and this workflow does not depend on the Azure-hosted Multideck API.
-
-| Key | Required | Notes |
-|---|---:|---|
-| `DATABRAIN_TICKET_WEBHOOK_URL` | Yes | Store the Databrain Supabase ticket-intake function URL as a Supabase project secret. |
-| `DATABRAIN_TICKET_WEBHOOK_SECRET` | Yes | Store the shared integration secret only in Supabase Edge Function secrets. Never expose it through a `VITE_` variable. |
-| `APP_URL` | Yes | Exact tenant application origin used for the Edge Function CORS response, for example `https://dev.multideck.app`. |
-
-Deploy the function from `multideck.server/Backend`:
-
-```sh
-npx supabase functions deploy create-support-ticket --project-ref <tenant-project-ref>
+```powershell
+supabase login
+cd supabase
+supabase link --project-ref your-project-ref
+supabase functions deploy account
+supabase functions deploy team
+supabase functions deploy customers
+supabase functions deploy finance
+supabase functions deploy warehouse
 ```
 
-The function accepts a valid tenant Supabase session only. Browser cookies, access tokens, and unrelated headers are not forwarded to Databrain OS.
+Edge Functions use the automatically provided `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and
+`SUPABASE_SERVICE_ROLE_KEY`. Set `APP_URL` as a function secret to the exact tenant application
+origin. Public signup stays disabled; teammates are invited through the trusted `team` function.
+
+The current remote public-schema snapshot is stored at `supabase/baseline/public-schema.sql` for
+new-tenant provisioning. Incremental reviewed changes belong in `supabase/migrations`.
+
+## Checks
+
+```powershell
+cd multideck.client
+npm run build
+
+cd ../supabase
+node --test tests/*.test.mjs
+```

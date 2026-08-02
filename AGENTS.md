@@ -2,6 +2,16 @@
 
 These instructions apply to anyone using AI coding tools in this repo, including Codex, Cursor, Claude, or similar assistants.
 
+## Product Boundary
+
+This repository is Multideck App: the operator application and sole operational source of truth. Follow the [canonical three-product architecture](docs/architecture/three-product-platform.md).
+
+- Keep customer portal product work in `DatabrainSolutions/Multideck.Live`.
+- Keep tenant/deployment/domain control-plane work in `DatabrainSolutions/Multideck.Cloud`.
+- App owns operational workflows, Carbone document creation, tenant Auth, private operational Storage, integrations and audit.
+- Supabase is the production backend target. Treat .NET as transitional tooling/parity code and add no new production dependency to it.
+- Run App on port 3000 and deploy tenant projects only as `multideck-app-{slug}`.
+
 ## Product Mindset
 
 Build Multideck like a premium, modern freight-forwarding product for real operators.
@@ -38,17 +48,16 @@ Do not place client components, design docs, or frontend config in the server fo
 
 ## Backend Scope
 
-Keep all backend implementation inside `multideck.server`.
+Multideck has no separate application server. Keep all backend implementation inside root `supabase`.
 
 Use the existing structure:
-- `multideck.server` for the .NET Web API.
-- `multideck.server/Backend/Documents` for server-side document storage and path policies.
-- `multideck.server/Backend/Intelligence` for provider-neutral AI services.
-- `multideck.server/Backend/Persistence` for Entity Framework data access and migrations.
-- `multideck.server/Backend/Shared` for backend-only shared .NET types.
-- `multideck.server/Backend/supabase` for Supabase Edge Functions and database migrations.
+- `supabase/functions` for Edge Functions and privileged server-side operations.
+- `supabase/functions/_shared` for backend-only shared TypeScript.
+- `supabase/migrations` for reviewed incremental database changes.
+- `supabase/baseline` for the schema-only tenant provisioning snapshot.
+- `supabase/tests` for Edge Function and database contracts.
 
-Do not place API endpoints, server credentials, service-role code, Edge Functions,
+Do not place server credentials, service-role code, Edge Functions,
 database migrations, or other backend implementation in `multideck.client`.
 
 ## Dexter Capability Parity Rule

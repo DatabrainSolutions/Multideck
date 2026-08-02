@@ -16,7 +16,7 @@ import { customerWarehouseNavigation, warehouseNavigation } from "@/data/navigat
 import { useLanguage } from "@/i18n/language-provider"
 import { mdMotion } from "@/lib/motion"
 import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
-import { getWarehouseWorkspaceData, type WarehouseWorkspaceData } from "@/lib/warehouse-api"
+import { getWarehouseWorkspaceData, type WarehouseWorkspaceData } from "@/lib/warehouse"
 import { CustomerWarehouseAccess } from "@/pages/customer-detail-page"
 
 type WarehouseSection = "Dashboard" | "Facilities" | "Locations" | "Items" | "Inventory" | "Goods in" | "Goods out" | "Orders" | "Calendar" | "Users"

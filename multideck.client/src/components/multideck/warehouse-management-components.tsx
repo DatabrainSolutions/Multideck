@@ -52,7 +52,7 @@ import {
   type WarehouseLocation,
   type WarehouseLocationInput,
   type WarehouseLocationReference,
-} from "@/lib/warehouse-api"
+} from "@/lib/warehouse"
 
 // ---------------------------------------------------------------------------
 // Shared field primitives

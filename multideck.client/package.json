@@ -1,11 +1,12 @@
 {
-  "name": "multideck-client",
+  "name": "@multideck/app-client",
   "private": true,
   "version": "0.1.0",
   "type": "module",
   "packageManager": "npm@10.9.2",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --port 3000 --strictPort",
+    "prebuild": "node scripts/assert-product-context.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview"
   },

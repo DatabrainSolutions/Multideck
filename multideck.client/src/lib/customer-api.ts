@@ -1,4 +1,4 @@
-import { apiFetch } from "@/lib/api"
+import { edgeFetch } from "@/lib/api"
 import { getSupabaseSession, supabaseFunctionsUrl, supabasePublicApiKey } from "@/lib/supabase"
 
 export type ApiCustomer = {
@@ -74,9 +74,7 @@ export async function listCustomers(search?: string) {
   if (!session?.access_token) throw new CustomerApiError("Sign in again to view customers.")
 
   const query = search?.trim() ? `?search=${encodeURIComponent(search.trim())}` : ""
-  const response = await apiFetch(`/api/v1/customers${query}`, {
-    headers: { Authorization: `Bearer ${session.access_token}` },
-  })
+  const response = await edgeFetch("customers", query, session.access_token)
 
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`.trim()
@@ -96,10 +94,9 @@ export async function createCustomer(input: CreateCustomerInput) {
   const session = await getSupabaseSession()
   if (!session?.access_token) throw new CustomerApiError("Sign in again to create a customer.")
 
-  const response = await apiFetch("/api/v1/customers", {
+  const response = await edgeFetch("customers", "", session.access_token, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${session.access_token}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(input),
@@ -123,9 +120,7 @@ export async function getCustomer(customerId: string) {
   const session = await getSupabaseSession()
   if (!session?.access_token) throw new CustomerApiError("Sign in again to view this customer.")
 
-  const response = await apiFetch(`/api/v1/customers/${encodeURIComponent(customerId)}`, {
-    headers: { Authorization: `Bearer ${session.access_token}` },
-  })
+  const response = await edgeFetch("customers", `/${encodeURIComponent(customerId)}`, session.access_token)
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`.trim()
     try {
@@ -195,9 +190,7 @@ export async function getCustomerReference() {
   const session = await getSupabaseSession()
   if (!session?.access_token) throw new CustomerApiError("Sign in again to create a customer.")
 
-  const response = await apiFetch("/api/v1/customers/reference", {
-    headers: { Authorization: `Bearer ${session.access_token}` },
-  })
-  if (!response.ok) throw new CustomerApiError("Unable to load organisation types. Check your connection and try again.")
+  const response = await edgeFetch("customers", "/reference", session.access_token)
+  if (!response.ok) throw new CustomerApiError("We could not load organisation types.")
   return response.json() as Promise<CustomerReference>
 }
