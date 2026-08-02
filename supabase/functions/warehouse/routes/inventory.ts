@@ -30,7 +30,7 @@ export async function handleInventory(path, url, admin, actor) {
     many(admin.from("WMS_Items").select("WMSItem_ID,WMSItem_SKU,WMSItem_Description,WMSItem_CustomerOrgID").eq("WMSItem_IsDeleted", false)),
     many(admin.from("WMS_Locations").select("WMSLocation_ID,WMSLocation_Code")),
     many(admin.from("WMS_InventoryLots").select("*")),
-    many(admin.from("Org_Master").select("Org_ID,Org_Name"))
+    many(admin.from("Org_Master").select("Org_id,Org_Name"))
   ]);
   const fm = new Map(facilities.map((r)=>[
       r.WMSFacility_ID,
@@ -45,7 +45,7 @@ export async function handleInventory(path, url, admin, actor) {
       r.WMSLot_ID,
       r
     ])), om = new Map(orgs.map((r)=>[
-      r.Org_ID,
+      r.Org_id,
       r.Org_Name
     ])), term = clean(url.searchParams.get("search"))?.toLowerCase(), itemId = clean(url.searchParams.get("itemId"));
   if (path[1] === "movements") {

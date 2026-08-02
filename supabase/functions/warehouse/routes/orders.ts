@@ -26,18 +26,18 @@ async function orderContext(admin, actor) {
   const facilityIds = await companyFacilityIds(admin, actor);
   const [facilities, orgs, items, locations, types, statuses, customs] = await Promise.all([
     facilityIds.length ? many(admin.from("WMS_Facilities").select("*").in("WMSFacility_ID", facilityIds).eq("WMSFacility_IsDeleted", false)) : Promise.resolve([]),
-    many(admin.from("Org_Master").select("Org_ID,Org_Name")),
+    many(admin.from("Org_Master").select("Org_id,Org_Name")),
     many(admin.from("WMS_Items").select("*").eq("WMSItem_IsDeleted", false).eq("WMSItem_IsActive", true)),
     many(admin.from("WMS_Locations").select("WMSLocation_ID,WMSLocation_FacilityID,WMSLocation_Code,WMSLocation_ZoneID").eq("WMSLocation_IsDeleted", false).eq("WMSLocation_IsActive", true)),
     many(admin.from("sys_WMSOrderTypes").select("*")),
     many(admin.from("sys_WMSOrderStatuses").select("*")),
     many(admin.from("sys_WMSCustomsStatuses").select("*"))
   ]);
-  const allowedOrgs = actor.companyId ? new Set(orgs.map((r)=>r.Org_ID)) : actor.organisationIds;
+  const allowedOrgs = actor.companyId ? new Set(orgs.map((r)=>r.Org_id)) : actor.organisationIds;
   return {
     facilityIds,
     facilities,
-    orgs: orgs.filter((r)=>allowedOrgs.has(r.Org_ID)),
+    orgs: orgs.filter((r)=>allowedOrgs.has(r.Org_id)),
     items: items.filter((r)=>facilityIds.includes(r.WMSItem_DefaultFacilityID) && allowedOrgs.has(r.WMSItem_CustomerOrgID)),
     locations: actor.companyId ? locations.filter((r)=>facilityIds.includes(r.WMSLocation_FacilityID)) : [],
     types,
@@ -66,7 +66,7 @@ async function mapOrders(admin, rows, context) {
       r.WMSFacility_ID,
       r
     ])), om = new Map(context.orgs.map((r)=>[
-      r.Org_ID,
+      r.Org_id,
       r.Org_Name
     ])), im = new Map(context.items.map((r)=>[
       r.WMSItem_ID,
@@ -168,7 +168,7 @@ export async function handleOrders(request, path, url, admin, actor) {
           name: r.WMSFacility_Name
         })),
       customers: context.orgs.map((r)=>({
-          id: r.Org_ID,
+          id: r.Org_id,
           name: r.Org_Name
         })),
       items: context.items.map((r)=>({
@@ -248,7 +248,7 @@ export async function handleOrders(request, path, url, admin, actor) {
     p_actor_user_id: actor.userId,
     p_actor_portal_user_id: actor.portalUserId,
     p_allowed_facility_ids: context.facilityIds,
-    p_allowed_organisation_ids: actor.companyId ? context.orgs.map((r)=>r.Org_ID) : [
+    p_allowed_organisation_ids: actor.companyId ? context.orgs.map((r)=>r.Org_id) : [
       ...actor.organisationIds
     ]
   });

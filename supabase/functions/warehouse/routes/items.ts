@@ -58,18 +58,18 @@ async function itemContext(admin, actor) {
   requireCapability(actor, "warehouse_items:read");
   const facilityIds = await companyFacilityIds(admin, actor);
   const facilities = facilityIds.length ? await many(admin.from("WMS_Facilities").select("WMSFacility_ID,WMSFacility_Code,WMSFacility_Name").in("WMSFacility_ID", facilityIds).eq("WMSFacility_IsDeleted", false)) : [];
-  let orgs = await many(admin.from("Org_Master").select("Org_ID,Org_Name"));
+  let orgs = await many(admin.from("Org_Master").select("Org_id,Org_Name"));
   if (!actor.companyId) {
-    orgs = orgs.filter((row)=>actor.organisationIds.has(row.Org_ID));
+    orgs = orgs.filter((row)=>actor.organisationIds.has(row.Org_id));
   }
-  const orgIds = new Set(orgs.map((row)=>row.Org_ID));
+  const orgIds = new Set(orgs.map((row)=>row.Org_id));
   const items = facilityIds.length ? await many(admin.from("WMS_Items").select("*").in("WMSItem_DefaultFacilityID", facilityIds).eq("WMSItem_IsDeleted", false)) : [];
   return {
     facilities,
     orgs,
     items: items.filter((row)=>orgIds.has(row.WMSItem_CustomerOrgID)),
     orgNames: new Map(orgs.map((row)=>[
-        row.Org_ID,
+        row.Org_id,
         row.Org_Name
       ])),
     facilityNames: new Map(facilities.map((row)=>[
@@ -120,7 +120,7 @@ export async function handleItems(request, path, url, admin, actor) {
   if (request.method === "GET" && path[1] === "reference") {
     return {
       customers: context.orgs.map((row)=>({
-          id: row.Org_ID,
+          id: row.Org_id,
           name: row.Org_Name
         })),
       facilities: context.facilities.map((row)=>({
@@ -206,7 +206,7 @@ export async function handleItems(request, path, url, admin, actor) {
   }
   requireCapability(actor, "warehouse_items:manage");
   const input = bodyObject(await request.json()), facilityId = uuid(input.facilityId, "facility"), customerOrgId = request.method === "POST" ? uuid(input.customerOrgId, "customer") : existing?.WMSItem_CustomerOrgID;
-  if (!customerOrgId || !context.facilities.some((row)=>row.WMSFacility_ID === facilityId) || !context.orgs.some((row)=>row.Org_ID === customerOrgId)) {
+  if (!customerOrgId || !context.facilities.some((row)=>row.WMSFacility_ID === facilityId) || !context.orgs.some((row)=>row.Org_id === customerOrgId)) {
     throw new HttpError(400, "Choose a customer and facility available in your workspace.");
   }
   requireCustomerScope(actor, customerOrgId, facilityId);
