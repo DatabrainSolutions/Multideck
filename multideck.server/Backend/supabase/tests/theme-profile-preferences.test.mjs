@@ -40,6 +40,8 @@ test("accent colours use the same Supabase-only profile boundary", () => {
   assert.match(accentTheme, /get_current_user_accent_preference/)
   assert.match(accentTheme, /set_current_user_accent_preference/)
   assert.equal(accentTheme.includes("@/lib/api"), false)
+  assert.match(accentTheme, /await saveRemoteAccent\(readAccentPresetId\(\)\)/)
+  assert.match(accentTheme, /if \(loadedUserId !== userId\) return/)
   assert.match(accentMigration, /"User_AccentPreset" in \(/)
   assert.match(accentMigration, /where "Auth_User_ID" = v_auth_user_id/)
   assert.match(accentMigration, /grant execute on function public\.set_current_user_accent_preference\(text\) to authenticated/)

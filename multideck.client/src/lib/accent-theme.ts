@@ -550,10 +550,16 @@ function applySavedAccent(id: AccentPresetId) {
 
 function saveRemoteAccent(id: AccentPresetId) {
   const client = supabase
-  if (!client || !loadedUserId) return pendingSave
+  const userId = loadedUserId
+  if (!client || !userId) return pendingSave
 
   pendingSave = pendingSave
     .then(async () => {
+      // A queued write must stay attached to the account that chose it. This
+      // matters on shared browsers where one operator can sign out while a
+      // profile save is still waiting behind an earlier request.
+      if (loadedUserId !== userId) return
+
       const { error } = await client.rpc("set_current_user_accent_preference", { p_accent_preset: id })
       if (error) throw error
     })
@@ -579,7 +585,15 @@ async function loadAccentPreference(client: SupabaseClient) {
   if (hasLocalEdit) return
 
   const value = Array.isArray(data) ? data[0]?.accent_preset : data?.accent_preset
-  if (isAccentPresetId(value)) applySavedAccent(value)
+  if (isAccentPresetId(value)) {
+    applySavedAccent(value)
+    return
+  }
+
+  // Existing operators already have a deliberate browser-side choice from
+  // before profile persistence shipped. Adopt it once when the new profile
+  // field is empty; all later browsers then restore that Supabase value.
+  await saveRemoteAccent(readAccentPresetId())
 }
 
 function watchAccentAuth(client: SupabaseClient) {
