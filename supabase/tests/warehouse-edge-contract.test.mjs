@@ -53,6 +53,8 @@ test("warehouse runtime targets the current WMS schema", () => {
   ]) {
     assert.match(edgeSource, new RegExp(table))
   }
+  assert.doesNotMatch(edgeSource, /Org_Master"\)\.select\("Org_ID/)
+  assert.match(edgeSource, /Org_Master"\)\.select\("Org_id,Org_Name"/)
 })
 
 test("the Edge Function authenticates users and resolves internal or portal scope before using the service role", () => {
