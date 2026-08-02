@@ -1,4 +1,4 @@
-import { lazy, startTransition, Suspense, useCallback, useEffect, useState } from "react"
+import { Component, lazy, startTransition, Suspense, useCallback, useEffect, useState, type ErrorInfo, type ReactNode } from "react"
 import type { Session } from "@supabase/supabase-js"
 import { MotionConfig } from "motion/react"
 import { ThemeProvider } from "next-themes"
@@ -219,13 +219,72 @@ function canCustomerOpenRoute(user: AuthUserSummary, path: string) {
 }
 
 function RouteFallback() {
+  const { t } = useLanguage()
+
   return (
-    <div aria-hidden="true" className="min-h-[320px] bg-transparent">
+    <div role="status" aria-live="polite" className="min-h-[320px] bg-[var(--md-bg)] pt-[var(--md-page-stack-gap)]">
+      <span className="sr-only">{t("Loading page")}</span>
       <div className="h-1 w-full overflow-hidden bg-[var(--md-accent-a06)]">
         <div className="h-full w-1/3 animate-pulse rounded-r-full bg-[var(--md-accent-a22)]" />
       </div>
+      <div className="mt-[var(--md-page-stack-gap)] grid gap-3" aria-hidden="true">
+        <div className="h-8 w-48 animate-pulse rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] motion-reduce:animate-none" />
+        <div className="h-24 w-full animate-pulse rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] motion-reduce:animate-none" />
+        <div className="h-24 w-full animate-pulse rounded-[var(--md-radius-xl)] bg-[var(--md-accent-a06)] motion-reduce:animate-none" />
+      </div>
     </div>
   )
+}
+
+function WorkspaceFailureFallback() {
+  const { t } = useLanguage()
+
+  return (
+    <main className="grid min-h-screen place-items-center bg-[var(--md-bg)] px-[var(--md-page-pad)] text-[var(--md-ink)]">
+      <section className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-[clamp(24px,5vw,48px)] shadow-[var(--md-shadow-soft)]" role="alert">
+        <div className="flex items-center gap-3" data-i18n-skip dir="ltr">
+          <img src={multideckLogoMark} alt="" className="size-6" />
+          <span className="text-[21px] font-medium leading-none">multideck</span>
+        </div>
+        <h1 className="mt-8 text-[24px] font-medium leading-tight">{t("Something went wrong")}</h1>
+        <p className="mt-2 text-[14px] leading-6 text-[var(--md-text)]">
+          {t("This workspace view could not be displayed. Reload the page to continue.")}
+        </p>
+        <button
+          type="button"
+          className="mt-6 h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] shadow-[var(--md-shadow-line)] transition-colors hover:bg-[var(--md-accent-hover)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a20)]"
+          onClick={() => window.location.reload()}
+        >
+          {t("Reload page")}
+        </button>
+      </section>
+    </main>
+  )
+}
+
+class WorkspaceErrorBoundary extends Component<{
+  children: ReactNode
+  resetKey: string
+}, { error: Error | null }> {
+  state = { error: null as Error | null }
+
+  static getDerivedStateFromError(error: Error) {
+    return { error }
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("Multideck could not render the current workspace view.", error, info.componentStack)
+  }
+
+  componentDidUpdate(previousProps: Readonly<{ children: ReactNode; resetKey: string }>) {
+    if (this.state.error && previousProps.resetKey !== this.props.resetKey) {
+      this.setState({ error: null })
+    }
+  }
+
+  render() {
+    return this.state.error ? <WorkspaceFailureFallback /> : this.props.children
+  }
 }
 
 function SessionFallback() {
@@ -470,9 +529,10 @@ export default function App() {
     <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} storageKey="multideck.theme">
       <ThemeProfileSync />
       <LanguageProvider>
-        <LanguageProfileSync />
-        <TooltipProvider>
-          <MotionConfig reducedMotion="user" transition={mdMotion.fast}>
+        <WorkspaceErrorBoundary resetKey={`${route}:${authStatus}`}>
+          <LanguageProfileSync />
+          <TooltipProvider>
+            <MotionConfig reducedMotion="user" transition={mdMotion.fast}>
             {isContactCardPublicRoute(route) ? (
               <Suspense fallback={<RouteFallback />}>
                 <ContactCardPublicPage slug={route.split("/").at(-1) ?? ""} />
@@ -558,9 +618,10 @@ export default function App() {
                 <DexterSummon navigate={navigate} />
               </>
             ) : null}
-          </MotionConfig>
-          <Toaster />
-        </TooltipProvider>
+            </MotionConfig>
+            <Toaster />
+          </TooltipProvider>
+        </WorkspaceErrorBoundary>
       </LanguageProvider>
     </ThemeProvider>
   )

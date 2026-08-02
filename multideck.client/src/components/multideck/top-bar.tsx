@@ -40,8 +40,9 @@ export function TopBar({
   const isWarehouse = route.startsWith("/warehouse")
   const isReports = route === "/reports"
   const isOperationalJobScreen = route === "/" || route.startsWith("/bookings") || route.startsWith("/quotes") || isRoadRoute || isWarehouse
-  const { t } = useLanguage()
+  const { direction, t } = useLanguage()
   const [currentLeadName, setCurrentLeadName] = useState<string | null>(null)
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
 
   useEffect(() => {
     if (!isCrmLeadDetail && !isCrmLeadConversion) {
@@ -62,19 +63,34 @@ export function TopBar({
 
   return (
     <header className="sticky top-0 z-10 -mx-[var(--md-page-pad)] mb-[var(--md-page-stack-gap)] flex min-h-[56px] items-center gap-[var(--md-gap-lg)] bg-[var(--md-topbar-bg)] px-[var(--md-page-pad)] py-[var(--md-gap-sm)] shadow-[var(--md-stroke-bottom)] backdrop-blur-xl">
-      <Sheet>
+      <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
         <SheetTrigger asChild>
-          <Button variant="ghost" size="icon" className={cn(topBarIconActionClass, "bg-[var(--md-glass-strong)] lg:hidden")}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label={t("Open navigation")}
+            title={t("Open navigation")}
+            className={cn(topBarIconActionClass, "bg-[var(--md-glass-strong)] lg:hidden")}
+          >
             <Menu data-icon="inline-start" strokeWidth={1.2} />
           </Button>
         </SheetTrigger>
         <SheetContent
-          side="left"
-          className="data-[side=left]:w-[min(var(--md-sidebar-width),calc(100vw-24px))] data-[side=left]:max-w-[var(--md-sidebar-width)] gap-0 border-0 bg-[var(--md-sidebar-bg)] p-0 shadow-[var(--md-shadow-lift)]"
+          side={direction === "rtl" ? "right" : "left"}
+          showCloseButton={false}
+          className="gap-0 border-0 bg-[var(--md-sidebar-bg)] p-0 shadow-[var(--md-shadow-lift)] data-[side=left]:w-[min(var(--md-sidebar-width),calc(100vw-24px))] data-[side=left]:max-w-[var(--md-sidebar-width)] data-[side=right]:w-[min(var(--md-sidebar-width),calc(100vw-24px))] data-[side=right]:max-w-[var(--md-sidebar-width)]"
         >
-          <SheetTitle className="sr-only">Multideck navigation</SheetTitle>
-          <SheetDescription className="sr-only">Mobile navigation for Multideck modules and boards.</SheetDescription>
-          <AppSidebar route={route} navigate={navigate} />
+          <SheetTitle className="sr-only">{t("Multideck navigation")}</SheetTitle>
+          <SheetDescription className="sr-only">{t("Mobile navigation for Multideck")}</SheetDescription>
+          <AppSidebar
+            route={route}
+            navigate={(path) => {
+              setMobileSidebarOpen(false)
+              navigate(path)
+            }}
+            onRequestClose={() => setMobileSidebarOpen(false)}
+          />
         </SheetContent>
       </Sheet>
 

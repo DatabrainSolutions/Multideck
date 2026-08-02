@@ -98,6 +98,13 @@ const notificationItemReveal = {
   },
 }
 
+let notificationChannelSequence = 0
+
+function nextNotificationChannelName() {
+  notificationChannelSequence += 1
+  return `sidebar-notifications-live-${notificationChannelSequence}`
+}
+
 function notificationTime(value: string) {
   const minutes = Math.max(0, Math.floor((Date.now() - Date.parse(value)) / 60_000))
   if (minutes < 1) return "now"
@@ -123,7 +130,10 @@ function NotificationBell() {
     const client = supabase
     if (!client) return
     const channel = client
-      .channel("sidebar-notifications-live")
+      // Desktop and mobile sidebars can exist at the same time. Supabase does
+      // not allow new callbacks to be added to an already-subscribed channel,
+      // so every mounted bell needs its own channel instance.
+      .channel(nextNotificationChannelName())
       .on("postgres_changes", { event: "*", schema: "public", table: "Comm_Notifications" }, refreshNotifications)
       .subscribe()
     return () => { void client.removeChannel(channel) }
