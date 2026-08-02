@@ -120,6 +120,9 @@ export function DataTable<Row>({
   const [resizingId, setResizingId] = useState<string | null>(null)
   const [sort, setSort] = useState<{ id: string; direction: "asc" | "desc" } | null>(initialLayout.sort)
   const [contextMenu, setContextMenu] = useState<ColumnContextMenu | null>(null)
+  const [stickyColumnsEnabled, setStickyColumnsEnabled] = useState(() => (
+    typeof window === "undefined" || window.matchMedia("(min-width: 768px)").matches
+  ))
   const resizeStart = useRef<{ columnId: string; x: number; width: number; min: number; max: number } | null>(null)
   const contextMenuRef = useRef<HTMLDivElement>(null)
 
@@ -138,6 +141,14 @@ export function DataTable<Row>({
       JSON.stringify({ order, hidden: [...hidden], pinned: [...pinned], widths, sort } satisfies SavedTableLayout),
     )
   }, [hidden, order, pinned, sort, storageKey, widths])
+
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 768px)")
+    const syncStickyColumns = () => setStickyColumnsEnabled(media.matches)
+    media.addEventListener("change", syncStickyColumns)
+    syncStickyColumns()
+    return () => media.removeEventListener("change", syncStickyColumns)
+  }, [])
 
   useEffect(() => {
     if (!contextMenu) return
@@ -348,6 +359,7 @@ export function DataTable<Row>({
   }
 
   function stickyStyle(column: DataTableColumn<Row>): CSSProperties | undefined {
+    if (!stickyColumnsEnabled) return undefined
     const offset = pinnedOffsets.get(column.id)
     if (offset === undefined) return undefined
     return direction === "rtl" ? { position: "sticky", right: offset } : { position: "sticky", left: offset }
@@ -425,7 +437,7 @@ export function DataTable<Row>({
         <TableHeader>
           <TableRow className="border-[rgba(11,20,19,0.05)] hover:bg-transparent">
             {visibleColumns.map((column) => {
-              const isPinned = pinned.has(column.id)
+              const isPinned = stickyColumnsEnabled && pinned.has(column.id)
               return (
                 <TableHead
                   key={column.id}
@@ -494,7 +506,7 @@ export function DataTable<Row>({
                 } : undefined}
               >
                 {visibleColumns.map((column) => {
-                  const isPinned = pinned.has(column.id)
+                  const isPinned = stickyColumnsEnabled && pinned.has(column.id)
                   return (
                     <TableCell
                       key={column.id}

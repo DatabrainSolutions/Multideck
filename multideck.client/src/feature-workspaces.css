@@ -3182,6 +3182,17 @@
     color: var(--md-quote-stage-color);
   }
 
+@media (max-width: 479px) {
+  .md-quote-stage-panel__steps {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    row-gap: 10px;
+  }
+
+  .md-quote-stage-panel__step p {
+    font-size: 9.5px;
+  }
+}
+
 .md-quote-stage-tooltip {
     display: grid !important;
     width: max-content !important;

@@ -386,12 +386,14 @@ export function BookingListHeader<T extends string>({
   const { t } = useLanguage()
 
   return (
-    <div className="flex justify-end">
+    <div className="flex min-w-0 justify-end">
       <h1 className="sr-only">{t("Bookings")}</h1>
-      <div className="flex shrink-0 flex-wrap items-center gap-2">
-        <SegmentedControl options={scopeOptions} value={scope} onChange={onScopeChange} ariaLabel={t("Booking scope")} />
-        <DexterActionPill onClick={onSpeakToDexter} />
-        <BookingViewSwitch value={viewMode} onChange={onViewModeChange} />
+      <div className="grid w-full min-w-0 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:justify-end">
+        <SegmentedControl className="w-full [&>button]:flex-1" options={scopeOptions} value={scope} onChange={onScopeChange} ariaLabel={t("Booking scope")} />
+        <div className="flex min-w-0 items-center justify-end gap-2 sm:contents">
+          <DexterActionPill className="min-w-0 flex-1 sm:min-w-[132px] sm:flex-none" onClick={onSpeakToDexter} />
+          <BookingViewSwitch value={viewMode} onChange={onViewModeChange} />
+        </div>
       </div>
     </div>
   )

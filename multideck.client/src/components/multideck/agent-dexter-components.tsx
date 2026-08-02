@@ -1663,7 +1663,7 @@ export function DexterMonitorStack({
         {onCollapse ? (
           <button
             type="button"
-            className="md-dexter-header-action pointer-events-auto ms-auto text-[12px] font-medium"
+            className="md-dexter-header-action pointer-events-auto ms-auto max-sm:!hidden text-[12px] font-medium"
             onClick={onCollapse}
             title={t("Hide watchers")}
             aria-label={t("Hide watchers")}
@@ -1722,12 +1722,13 @@ function useWatchRailWidths(detailOpen: boolean, collapsed: boolean) {
   const expandedWidth = Math.min(watchShellMaxWidth, availableBesideThread)
   const railWidth = Math.min(watchRailWidth, canShowBoth ? expandedWidth - watchDetailMinWidth : singlePaneWidth)
   const detailWidth = canShowBoth ? expandedWidth - railWidth : singlePaneWidth
+  const resolvedRailWidth = isCompact ? viewportWidth : railWidth
 
   return {
-    railWidth: isCompact ? viewportWidth : railWidth,
+    railWidth: resolvedRailWidth,
     detailWidth: isCompact ? viewportWidth : detailWidth,
     singlePane: !canShowBoth,
-    width: collapsed ? 0 : detailOpen && canShowBoth ? expandedWidth : detailOpen ? detailWidth : railWidth,
+    width: collapsed ? 0 : detailOpen && canShowBoth ? expandedWidth : detailOpen ? detailWidth : resolvedRailWidth,
   }
 }
 
@@ -1771,6 +1772,7 @@ export function DexterWatchRail({
   onAskEvent?: (monitor: DexterMonitor) => void
   onAskAttachment?: (attachment: DexterEmailAttachment) => void
 }) {
+  const { t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
   const detailOpen = activeMonitor !== null
   const { railWidth, detailWidth, singlePane, width } = useWatchRailWidths(detailOpen, collapsed)
@@ -1780,7 +1782,7 @@ export function DexterWatchRail({
   // the pinned content surface below accepts input.
   return (
     <motion.aside
-      className="md-watch-rail-shell fixed inset-y-0 end-0 z-30"
+      className="md-watch-rail-shell fixed inset-y-0 end-0 z-50 lg:z-30"
       data-detail={detailOpen ? "true" : undefined}
       initial={false}
       animate={{ width }}
@@ -1798,6 +1800,18 @@ export function DexterWatchRail({
           backdrop blur and tint therefore disappear together at the conversation
           edge instead of ending at a hard panel boundary. */}
       <span aria-hidden="true" className="md-watch-rail-surface pointer-events-none absolute inset-y-0 end-0" style={{ insetInlineStart: -176 }} />
+
+      {!collapsed && onCollapse ? (
+        <button
+          type="button"
+          className="md-dexter-header-action pointer-events-auto absolute start-4 top-4 z-[5] !grid size-11 place-items-center rounded-full text-[var(--md-ink)] sm:hidden"
+          onClick={onCollapse}
+          title={t("Hide watchers")}
+          aria-label={t("Hide watchers")}
+        >
+          <X className="size-4" strokeWidth={1.5} />
+        </button>
+      ) : null}
 
       <div className="pointer-events-auto absolute inset-0 overflow-hidden">
         <div className={cn("md-watch-rail-detail absolute inset-y-0 start-0", singlePane && activeMonitor && "z-[3]", !activeMonitor && "pointer-events-none")} style={{ width: detailWidth }}>

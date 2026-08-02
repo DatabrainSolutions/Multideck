@@ -1667,10 +1667,6 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
 }
 
 @media (max-width: 767px) {
-  .md-watch-rail-shell {
-    width: 100vw !important;
-  }
-
   .md-watch-rail-detail,
   .md-watch-rail-list {
     width: 100% !important;
