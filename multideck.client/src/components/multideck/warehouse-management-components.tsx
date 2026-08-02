@@ -363,7 +363,7 @@ function FacilityDialog({
         setErrors(error.fieldErrors)
         toast.error(isEditing ? "Facility could not be updated" : "Facility could not be created", { description: error.message })
       } else {
-        toast.error("Something went wrong", { description: String(error) })
+        toast.error("Unable to save the facility", { description: "Check your connection and try again." })
       }
     } finally {
       setSaving(false)
@@ -852,7 +852,7 @@ function ItemDialog({
         setErrors(error.fieldErrors)
         toast.error(isEditing ? "Item could not be updated" : "Item could not be created", { description: error.message })
       } else {
-        toast.error("Something went wrong", { description: String(error) })
+        toast.error("Unable to save the item", { description: "Check your connection and try again." })
       }
     } finally {
       setSaving(false)
@@ -1582,7 +1582,7 @@ function LocationDialog({
         setErrors(error.fieldErrors)
         toast.error(isEditing ? "Location could not be updated" : "Location could not be created", { description: error.message })
       } else {
-        toast.error("Something went wrong", { description: String(error) })
+        toast.error("Unable to save the location", { description: "Check your connection and try again." })
       }
     } finally {
       setSaving(false)
@@ -1609,9 +1609,9 @@ function LocationDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="gap-0 overflow-hidden border-0 bg-[var(--md-surface)] p-0 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[680px]">
         <DialogHeader className={warehouseDialogHeaderClass}>
-          <DialogTitle className="text-[16px] font-medium">{isEditing ? "Edit location" : "New location"}</DialogTitle>
+          <DialogTitle className="text-[16px] font-medium">{isEditing ? "Edit location" : "Create location"}</DialogTitle>
           <DialogDescription className="text-[13px] text-[var(--md-text)]">
-            Locations are the individual bins, racks, and positions where stock sits inside this facility.
+            Add the bin, rack, or position where stock is stored inside this facility.
           </DialogDescription>
         </DialogHeader>
 
@@ -1625,11 +1625,11 @@ function LocationDialog({
             <WarehouseFormField label="Location code" htmlFor="location-code" required error={firstFieldError(errors, "Code")} hint="Unique within the facility, e.g. A01-04-02.">
               <Input id="location-code" dir="ltr" value={form.code} onChange={(event) => update("code", event.target.value)} className={fieldControlClass} placeholder="A01-04-02" />
             </WarehouseFormField>
-            <WarehouseFormField label="Zone" hint="Zones are selected from the zone type catalogue." error={firstFieldError(errors, "ZoneTypeCode")}>
+            <WarehouseFormField label="Zone" hint="Choose a zone from the facility catalogue." error={firstFieldError(errors, "ZoneTypeCode")}>
               <Select value={form.zoneTypeCode} onValueChange={(value) => update("zoneTypeCode", value)}>
-                <SelectTrigger className={fieldControlClass}><SelectValue placeholder="No zone" /></SelectTrigger>
+                <SelectTrigger className={fieldControlClass}><SelectValue placeholder="No zone selected" /></SelectTrigger>
                 <SelectContent className="border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)]">
-                  <SelectItem value={zoneNoneValue} className="text-[13px]">No zone</SelectItem>
+                  <SelectItem value={zoneNoneValue} className="text-[13px]">No zone selected</SelectItem>
                   {reference?.zones.map((zone) => (
                     <SelectItem key={zone.code} value={zone.code} className="text-[13px]">{zone.name}</SelectItem>
                   ))}
@@ -1748,7 +1748,7 @@ function LocationDialog({
           {isEditing ? (
             <Button type="button" variant="ghost" onClick={handleDelete} disabled={deleting || saving} className="h-10 rounded-[var(--md-radius-lg)] px-3 text-[13px] font-medium text-[var(--md-red)] hover:bg-[rgba(209,78,78,0.08)]">
               {deleting ? <Loader2 data-icon="inline-start" className="size-4 animate-spin" /> : <Trash2 data-icon="inline-start" className="size-4" strokeWidth={1.4} />}
-              Delete
+              Delete location
             </Button>
           ) : <span />}
           <div className="flex items-center gap-2">

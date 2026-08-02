@@ -158,4 +158,3 @@ export async function handleFacilities(request, path, url, admin, actor) {
   }).select().single(), "Could not create the facility.") : await one(admin.from("WMS_Facilities").update(payload).eq("WMSFacility_ID", facilityId).in("WMSFacility_ID", rows.map((row)=>row.WMSFacility_ID)).select().single(), "This facility does not exist in your workspace.");
   return mapFacility(saved, typeNames, officeNames);
 }
-

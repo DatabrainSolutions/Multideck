@@ -24,4 +24,3 @@ export const allowedExtensions = new Set([
   "tiff",
   "zip"
 ]);
-

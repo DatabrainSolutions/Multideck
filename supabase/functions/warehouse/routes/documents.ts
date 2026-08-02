@@ -183,4 +183,3 @@ export async function handleDocuments(request, path, admin, actor) {
   }
   return mapDocument(documentRow, uploadRow);
 }
-

@@ -9,6 +9,7 @@ export const notificationEventTypes = [
   "daily_digest",
   "quote_reminder",
   "product_updates",
+  "dexter_watch",
 ] as const
 
 export type NotificationEventType = (typeof notificationEventTypes)[number]
@@ -26,6 +27,7 @@ export const defaultNotificationEmailPreferences: NotificationEmailPreferences =
   daily_digest: true,
   quote_reminder: true,
   product_updates: true,
+  dexter_watch: false,
   digestTime: "07:30",
   timezone: "Europe/London",
 }

@@ -1127,7 +1127,7 @@ export function CrmLeadsPage({ navigate }: { navigate: (path: string) => void })
       })
       .catch((error: unknown) => {
         if (!isMounted) return
-        setLoadError(error instanceof Error ? error.message : t("We could not load CRM leads."))
+        setLoadError(error instanceof Error ? error.message : t("Unable to load CRM leads. Check your connection and try again."))
         setLoadState("error")
       })
 
@@ -1353,7 +1353,7 @@ export function CrmLeadsPage({ navigate }: { navigate: (path: string) => void })
 
       {loadState === "error" ? (
         <Surface padding="lg" className="rounded-[var(--md-radius-xl)]" role="alert">
-          <p className="text-[15px] font-medium text-[var(--md-ink)]">{t("We could not load CRM leads.")}</p>
+          <p className="text-[15px] font-medium text-[var(--md-ink)]">{t("Unable to load CRM leads. Check your connection and try again.")}</p>
           <p className="mt-2 text-[13px] leading-5 text-[var(--md-text)]" dir="auto">{loadError ? t(loadError) : null}</p>
           <Button
             variant="ghost"
@@ -1544,7 +1544,7 @@ export function CrmLeadDetailPage({
       })
       .catch((error: unknown) => {
         if (!isMounted) return
-        setLoadError(error instanceof Error ? error.message : t("We could not load this lead."))
+        setLoadError(error instanceof Error ? error.message : t("Unable to load this lead. Check your connection and try again."))
         setLoadState("error")
       })
 
@@ -1578,7 +1578,7 @@ export function CrmLeadDetailPage({
           {t("Back to leads")}
         </Button>
         <Surface padding="lg" className="rounded-[var(--md-radius-xl)]" role="alert">
-          <p className="text-[15px] font-medium text-[var(--md-ink)]">{t("We could not load this lead.")}</p>
+          <p className="text-[15px] font-medium text-[var(--md-ink)]">{t("Unable to load this lead. Check your connection and try again.")}</p>
           <p className="mt-2 text-[13px] text-[var(--md-text)]" dir="auto">{loadError ? t(loadError) : null}</p>
           <Button
             variant="ghost"

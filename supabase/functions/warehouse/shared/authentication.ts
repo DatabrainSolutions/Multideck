@@ -77,4 +77,3 @@ export async function companyFacilityIds(admin, actor) {
   const facilities = await many(admin.from("WMS_Facilities").select("WMSFacility_ID").in("WMSFacility_OrgOfficeID", offices.map((row)=>row.Office_ID)).eq("WMSFacility_IsDeleted", false));
   return facilities.map((row)=>row.WMSFacility_ID);
 }
-

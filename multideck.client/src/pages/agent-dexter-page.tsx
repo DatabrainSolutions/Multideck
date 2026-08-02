@@ -21,6 +21,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Copy,
+  FileText,
+  Mail,
   RefreshCw,
   Sparkles,
   type LucideIcon,
@@ -55,24 +57,35 @@ import {
 import { defaultDexterModelId, type DexterModelId } from "@/data/dexter-models"
 import {
   customerMentionItems,
+  dealMentionItems,
   defaultDexterMentionItems,
+  emailMentionItems,
   leadMentionItems,
   mergeDexterMentionItems,
 } from "@/data/dexter-mentions"
 import { DexterBrandMark } from "@/components/multideck/dexter-brand-mark"
+import { DexterEmailAttachmentCard } from "@/components/multideck/dexter-email-attachment-card"
 import { DexterInlineCitation, isDexterCitationUrl } from "@/components/multideck/dexter-inline-citation"
 import { ProgressiveBlur } from "@/components/multideck/progressive-blur"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useLanguage } from "@/i18n/language-provider"
 import {
+  createDexterWatch,
+  deleteDexterWatch,
   getDexterConversation,
+  listDexterWatches,
+  setDexterWatchStatus,
   sendDexterMessage,
   streamDexterMessage,
   type DexterConversation,
+  type DexterEmailAttachment,
+  type DexterWatchEmailContext,
   type DexterMessage,
   type DexterPendingAction,
+  type DexterWatch,
 } from "@/lib/dexter-api"
+import { supabase } from "@/lib/supabase"
 import {
   conversationBranchFor,
   responseGroupsFor,
@@ -82,46 +95,18 @@ import {
   DEXTER_CONVERSATIONS_CHANGED_EVENT,
   DEXTER_NEW_CONVERSATION_EVENT,
   DEXTER_SELECT_CONVERSATION_EVENT,
+  takeDexterConversationHandoff,
   type DexterConversationsChangedDetail,
 } from "@/lib/dexter-navigation"
 import { listCustomers } from "@/lib/customer-api"
 import { listLeads } from "@/lib/lead-api"
 import { listDeals, type ApiDeal } from "@/lib/deal-api"
+import { listDexterEmailContextSources } from "@/lib/inbox-api"
 import { readRecentWorkContext } from "@/lib/recent-work-context"
 import type { AuthUserSummary } from "@/lib/auth-user"
 import { cn } from "@/lib/utils"
 import { mdMotion, reduceMotion } from "@/lib/motion"
-
-const monitors: DexterMonitor[] = [
-  {
-    title: "Berth queue - MD-22479",
-    body: "Watching Rotterdam congestion. Re-pings if ETA shifts more than 6h.",
-    meta: "since Wed 09:18",
-    detail: "last ping 36 min ago",
-    tone: "amber",
-  },
-  {
-    title: "Doc parse confidence < 80%",
-    body: "Any document Dexter is not sure about gets flagged for review.",
-    meta: "always on",
-    detail: "1 today - CO-CN-44128",
-    tone: "blue",
-  },
-  {
-    title: "Quote response - Q-1882",
-    body: "Northwind GmbH has not replied. Follow-up drafts after 48h of silence.",
-    meta: "since Mon 14:22",
-    detail: "next check Wed 14:22",
-    tone: "teal",
-  },
-  {
-    title: "Carrier on-time degradation",
-    body: "If any carrier drops 5%+ vs trailing 90 days, it is raised here.",
-    meta: "always on",
-    detail: "Maersk fell 7% last week",
-    tone: "red",
-  },
-]
+import { readableWatchEvent, readableWatchSummary } from "@/lib/dexter-watch-copy"
 
 const DEXTER_CONTEXT_WINDOW_TOKENS = 128_000
 const DEXTER_JUMP_TO_LATEST_DISTANCE = 180
@@ -186,6 +171,15 @@ function retainStreamingAssistantId(
 
 function dexterMessageServerId(message: DexterMessage) {
   return message.serverId ?? message.id
+}
+
+function appendEmailAttachment(
+  message: DexterMessage,
+  attachment: DexterEmailAttachment,
+): DexterMessage {
+  const current = message.emailAttachments ?? []
+  if (current.some((item) => item.id === attachment.id)) return message
+  return { ...message, emailAttachments: [...current, attachment] }
 }
 
 function trailMessagesFor(messages: DexterMessage[]) {
@@ -1198,6 +1192,11 @@ function ConversationStream({
     const reasoning = isStreamingMessage
       ? reasoningContent || message.reasoningSummary || ""
       : message.reasoningSummary || ""
+    const isAwaitingFirstResponse = isStreamingMessage &&
+      !reasoning.trim() &&
+      !message.content.trim() &&
+      !(message.emailAttachments?.length) &&
+      !message.pendingAction
     const versionIndex = options?.versionIndex ?? 0
     const versionCount = options?.versionCount ?? 1
 
@@ -1217,28 +1216,72 @@ function ConversationStream({
             content={reasoning}
             isStreaming={isStreamingMessage}
           />
+          <AnimatePresence initial={false} mode="popLayout">
+            {isAwaitingFirstResponse ? (
+              <motion.div
+                key="dexter-preparing-response"
+                className="py-1.5"
+                initial={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: 5, filter: "blur(5px)" }}
+                animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: -3, filter: "blur(4px)" }}
+                transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.fast)}
+                role="status"
+                aria-live="polite"
+              >
+                <p className="text-[12px] text-[var(--md-subtle)]">
+                  {t("Dexter is checking your connected workspace data...")}
+                </p>
+                <div className="mt-2.5 flex gap-1.5" aria-hidden="true">
+                  {[0, 1, 2].map((index) => (
+                    <motion.span
+                      key={index}
+                      className="size-1.5 rounded-full bg-[var(--md-accent)]"
+                      animate={shouldReduceMotion ? { opacity: 0.55 } : { opacity: [0.25, 1, 0.25] }}
+                      transition={shouldReduceMotion ? { duration: 0 } : {
+                        duration: 1.1,
+                        repeat: Infinity,
+                        delay: index * 0.13,
+                        ease: "easeInOut",
+                      }}
+                    />
+                  ))}
+                </div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
           {message.content.trim() ? (
             <DexterMarkdown
               content={message.content}
               isStreaming={isStreamingMessage}
             />
           ) : null}
-          {message.pendingAction && message.id === latestMessageId ? (
-            <DexterActionApproval
-              action={message.pendingAction}
-              pendingDecision={
-                pendingActionDecision?.actionId === message.pendingAction.id
-                  ? pendingActionDecision.decision
-                  : null
-              }
-              error={
-                actionDecisionError?.actionId === message.pendingAction.id
-                  ? actionDecisionError.message
-                  : null
-              }
-              onDecision={(decision) => onActionDecision(message.pendingAction!, decision)}
-            />
+          {message.emailAttachments?.length ? (
+            <div className="mt-3 grid gap-2" aria-label={t("Email attachments")}>
+              {message.emailAttachments.map((attachment) => (
+                <DexterEmailAttachmentCard key={attachment.id} attachment={attachment} />
+              ))}
+            </div>
           ) : null}
+          <AnimatePresence initial={false} mode="popLayout">
+            {message.pendingAction && message.id === latestMessageId ? (
+              <DexterActionApproval
+                key={message.pendingAction.id}
+                action={message.pendingAction}
+                isPreparing={isStreamingMessage}
+                pendingDecision={
+                  pendingActionDecision?.actionId === message.pendingAction.id
+                    ? pendingActionDecision.decision
+                    : null
+                }
+                error={
+                  actionDecisionError?.actionId === message.pendingAction.id
+                    ? actionDecisionError.message
+                    : null
+                }
+                onDecision={(decision) => onActionDecision(message.pendingAction!, decision)}
+              />
+            ) : null}
+          </AnimatePresence>
           {options?.userMessageId && versionCount > 1 ? (
             <motion.div
               layout
@@ -1507,13 +1550,18 @@ function ConversationStream({
 export function AgentDexterPage({
   currentUser,
   profilePhotoUrl,
+  navigate,
 }: {
   currentUser: AuthUserSummary | null
   profilePhotoUrl: string | null
+  navigate: (path: string) => void
 }) {
   const { language, t } = useLanguage()
   const shouldReduceMotion = Boolean(useReducedMotion())
   const [stage, setStage] = useState<"landing" | "conversation">("landing")
+  const [dexterMode, setDexterMode] = useState<"chat" | "watch">("chat")
+  const [watches, setWatches] = useState<DexterWatch[]>([])
+  const [watchFeedback, setWatchFeedback] = useState<{ tone: "success" | "neutral" | "error"; message: string } | null>(null)
   const [isSending, setIsSending] = useState(false)
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null)
   const [liveReasoning, setLiveReasoning] = useState("")
@@ -1538,6 +1586,8 @@ export function AgentDexterPage({
   const [showAttachments, setShowAttachments] = useState(false)
   const [attachmentQuery, setAttachmentQuery] = useState("")
   const [selectedAttachmentIds, setSelectedAttachmentIds] = useState<Set<string>>(new Set())
+  const [composerEmailAttachments, setComposerEmailAttachments] = useState<DexterEmailAttachment[]>([])
+  const [composerEmailUpdates, setComposerEmailUpdates] = useState<DexterWatchEmailContext[]>([])
   const [mentionItems, setMentionItems] = useState<DexterMentionItem[]>(defaultDexterMentionItems)
   const [recentDeals, setRecentDeals] = useState<ApiDeal[]>([])
   const [composerMentions, setComposerMentions] = useState<DexterMentionItem[]>([])
@@ -1555,9 +1605,37 @@ export function AgentDexterPage({
   const actionDecisionInFlightRef = useRef<string | null>(null)
   const promptSubmissionInFlightRef = useRef(false)
   const attachedItems = useAttachedItems(selectedAttachmentIds)
+  const watchMentionItems = useMemo(() => mentionItems.filter((mention) => {
+    if (mention.type === "email") return true
+    if (!(["booking", "lead", "deal", "quote"] as const).includes(mention.type as "booking" | "lead" | "deal" | "quote")) return false
+    const rawId = mention.id.startsWith(`${mention.type}:`)
+      ? mention.id.slice(mention.type.length + 1)
+      : mention.id
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rawId)
+  }), [mentionItems])
+  const composerMentionItems = dexterMode === "watch" ? watchMentionItems : mentionItems
+  const composerAttachmentItems = useMemo<DexterAttachment[]>(() => [
+    ...attachedItems,
+    ...composerEmailAttachments.map((attachment) => ({
+      id: attachment.id,
+      type: "email_attachment" as const,
+      title: attachment.fileName,
+      meta: attachment.subject,
+      tone: "teal" as const,
+      icon: FileText,
+    })),
+    ...composerEmailUpdates.map((context) => ({
+      id: context.messageId,
+      type: "email_update" as const,
+      title: context.subject || t("No subject"),
+      meta: [context.senderName || context.senderEmail, new Date(context.receivedAt).toLocaleString()].filter(Boolean).join(" · "),
+      tone: "teal" as const,
+      icon: Mail,
+    })),
+  ], [attachedItems, composerEmailAttachments, composerEmailUpdates, t])
   const attachedContextItems = useMemo(
-    () => [...attachedItems, ...composerMentions],
-    [attachedItems, composerMentions],
+    () => [...composerAttachmentItems, ...composerMentions],
+    [composerAttachmentItems, composerMentions],
   )
   const branchMessages = useMemo(
     () => conversationBranchFor(activeConversation?.messages ?? [], selectedResponseMessageIds),
@@ -1579,6 +1657,66 @@ export function AgentDexterPage({
     selectedSpecialistId === "customer" || selectedSpecialistId === "analytics"
       ? ["marlow", "md-22414", "ci-rev2"]
       : ["md-22455", "md-22479", "northwind", "co-cn"]
+
+  const monitors = useMemo<DexterMonitor[]>(() => watches.map((watch) => ({
+    id: watch.id,
+    title: watch.title,
+    body: readableWatchSummary(watch, t),
+    meta: watch.status === "paused"
+      ? t("Paused")
+      : watch.capability === "email" && (watch.healthStatus === "degraded" || watch.healthStatus === "error")
+        ? t("Connection delayed")
+        : watch.capability === "email" && watch.healthStatus === "starting"
+          ? t("Starting checks")
+          : t("Active"),
+    detail: watch.healthMessage
+      ? t(watch.healthMessage)
+      : readableWatchEvent(watch, t) || (watch.triggerCount ? `${watch.triggerCount} ${t("alerts")}` : t("No alerts yet")),
+    tone: watch.status === "paused"
+      ? "neutral"
+      : watch.healthStatus === "degraded" || watch.healthStatus === "error"
+        ? "amber"
+        : watch.latestEvent ? "amber" : "teal",
+    status: watch.status,
+    capability: watch.capability,
+    targetLabel: watch.targetLabel,
+    ruleLabel: readableWatchSummary(watch, t),
+    triggerCount: watch.triggerCount,
+    lastTriggeredAt: watch.lastTriggeredAt,
+    healthStatus: watch.healthStatus,
+    lastSourceCheckAt: watch.lastSourceCheckAt,
+    lastSuccessfulCheckAt: watch.lastSuccessfulCheckAt,
+    healthMessage: watch.healthMessage,
+    latestEvent: watch.latestEvent ?? null,
+    action: watch.latestEvent?.action ?? watch.action ?? null,
+  })), [t, watches])
+
+  useEffect(() => {
+    setSelectedMonitor((current) => {
+      if (!current?.id) return current
+      return monitors.find((monitor) => monitor.id === current.id) ?? null
+    })
+  }, [monitors])
+
+  async function refreshWatches() {
+    try {
+      setWatches(await listDexterWatches())
+    } catch (watchError) {
+      console.error("Dexter watches could not be loaded.", watchError)
+    }
+  }
+
+  useEffect(() => {
+    void refreshWatches()
+    const client = supabase
+    if (!client) return
+    const channel = client
+      .channel("dexter-watches-live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "AI_DexterWatches" }, () => void refreshWatches())
+      .on("postgres_changes", { event: "*", schema: "public", table: "AI_DexterWatchEvents" }, () => void refreshWatches())
+      .subscribe()
+    return () => { void client.removeChannel(channel) }
+  }, [])
   useEffect(() => {
     if (stage === "conversation") {
       window.scrollTo(0, 0)
@@ -1588,12 +1726,21 @@ export function AgentDexterPage({
   useEffect(() => {
     let active = true
 
-    Promise.allSettled([listCustomers(), listLeads(), listDeals()]).then(([customerResult, leadResult, dealResult]) => {
+    Promise.allSettled([
+      listCustomers(),
+      listLeads(),
+      listDeals(),
+      listDexterEmailContextSources(),
+    ]).then(([customerResult, leadResult, dealResult, emailResult]) => {
       if (!active) return
       setMentionItems(mergeDexterMentionItems(
         customerResult.status === "fulfilled" ? customerMentionItems(customerResult.value) : [],
         leadResult.status === "fulfilled" ? leadMentionItems(leadResult.value) : [],
-        defaultDexterMentionItems,
+        dealResult.status === "fulfilled" ? dealMentionItems(dealResult.value) : [],
+        emailResult.status === "fulfilled"
+          ? emailMentionItems(emailResult.value)
+          : emailMentionItems(null, true),
+        defaultDexterMentionItems.filter((mention) => mention.type !== "email"),
       ))
       setRecentDeals(dealResult.status === "fulfilled" ? dealResult.value : [])
     })
@@ -1602,6 +1749,28 @@ export function AgentDexterPage({
       active = false
     }
   }, [])
+
+  useEffect(() => {
+    setComposerMentions((current) => current.filter((mention) => {
+      const latest = composerMentionItems.find((candidate) => candidate.id === mention.id)
+      return !latest?.disabled
+    }))
+  }, [composerMentionItems])
+
+  useEffect(() => {
+    if (!selectedMonitor?.id) return
+    const refreshed = monitors.find((monitor) => monitor.id === selectedMonitor.id)
+    setSelectedMonitor(refreshed ?? null)
+  }, [monitors, selectedMonitor?.id])
+
+  useEffect(() => {
+    const requestedWatchId = new URLSearchParams(window.location.search).get("watch")
+    if (!requestedWatchId) return
+    const requestedMonitor = monitors.find((monitor) => monitor.id === requestedWatchId)
+    if (!requestedMonitor) return
+    setSelectedMonitor(requestedMonitor)
+    setIsMonitorRailCollapsed(false)
+  }, [monitors])
 
   const recentWorkContext = useMemo(() => readRecentWorkContext(), [])
   const personalisedDeal = useMemo(() => {
@@ -1728,10 +1897,139 @@ export function AgentDexterPage({
     })
   }
 
+  function enterDexterMode(mode: "chat" | "watch", preserveDraft = false) {
+    setDexterMode(mode)
+    if (!preserveDraft) {
+      setComposerValue("")
+      setComposerMentions([])
+    }
+    setWatchFeedback(null)
+    if (mode === "watch") setStage("landing")
+  }
+
+  function attachWatchFiles(attachments: DexterEmailAttachment[]) {
+    if (!attachments.length) return
+    setComposerEmailAttachments((current) => {
+      const byId = new Map(current.map((attachment) => [attachment.id, attachment]))
+      for (const attachment of attachments) byId.set(attachment.id, attachment)
+      return [...byId.values()]
+    })
+    enterDexterMode("chat", true)
+    setSelectedMonitor(null)
+    setIsMonitorRailCollapsed(true)
+    window.requestAnimationFrame(() => {
+      composerRef.current?.querySelector<HTMLElement>(".md-dexter-mention-editor")?.focus()
+      document.querySelector<HTMLElement>(".md-dexter-mention-editor")?.focus()
+    })
+  }
+
+  function attachWatchUpdate(context: DexterWatchEmailContext) {
+    setComposerEmailUpdates((current) => {
+      const byId = new Map(current.map((item) => [item.messageId, item]))
+      byId.set(context.messageId, context)
+      return [...byId.values()]
+    })
+    setComposerEmailAttachments((current) => {
+      const byId = new Map(current.map((attachment) => [attachment.id, attachment]))
+      for (const attachment of context.attachments) if (!attachment.limitation) byId.set(attachment.id, attachment)
+      return [...byId.values()]
+    })
+    enterDexterMode("chat", true)
+    setSelectedMonitor(null)
+    setIsMonitorRailCollapsed(true)
+    window.requestAnimationFrame(() => document.querySelector<HTMLElement>(".md-dexter-mention-editor")?.focus())
+  }
+
+  function composerMessageAttachments() {
+    return [...new Map([
+      ...attachedItems.map((attachment) => ({ id: attachment.id, type: attachment.type, title: attachment.title })),
+      ...composerMentions.map((mention) => ({
+        id: mention.id.startsWith(`${mention.type}:`) ? mention.id.slice(mention.type.length + 1) : mention.id,
+        type: mention.type,
+        title: mention.title,
+      })),
+      ...composerEmailAttachments.map((attachment) => ({
+        id: attachment.id,
+        type: "email_attachment",
+        title: attachment.fileName,
+        provider: attachment.provider,
+        mailboxId: attachment.mailboxId,
+        threadId: attachment.threadId,
+        messageId: attachment.messageId,
+        subject: attachment.subject,
+        fileName: attachment.fileName,
+        mimeType: attachment.mimeType,
+        sizeBytes: attachment.sizeBytes,
+        sourceUrl: attachment.sourceUrl,
+      })),
+      ...composerEmailUpdates.map((context) => ({
+        id: context.messageId,
+        type: "email_update",
+        title: context.subject || "Email update",
+        provider: context.provider,
+        mailboxId: context.mailboxId,
+        threadId: context.threadId,
+        messageId: context.messageId,
+        subject: context.subject,
+        sourceUrl: context.sourceUrl,
+      })),
+    ].map((item) => [`${item.type}:${item.id}`, item])).values()]
+  }
+
+  function handleComposerChange(value: string) {
+    const command = value.trim().toLowerCase()
+    if (command === "/watch") {
+      enterDexterMode("watch")
+      return
+    }
+    if (command === "/chat") {
+      enterDexterMode("chat")
+      return
+    }
+    setComposerValue(value)
+  }
+
   async function submitPrompt(prompt = composerValue, specialistId = selectedSpecialistId) {
     const message = prompt.trim()
     if (!message || isWorking || promptSubmissionInFlightRef.current) return
+    if (message.toLowerCase() === "/watch") {
+      enterDexterMode("watch")
+      return
+    }
+    if (message.toLowerCase() === "/chat") {
+      enterDexterMode("chat")
+      return
+    }
     promptSubmissionInFlightRef.current = true
+
+    if (dexterMode === "watch") {
+      setIsSending(true)
+      setWatchFeedback(null)
+      try {
+        const result = await createDexterWatch({
+          message,
+          locale: language,
+          attachments: composerMessageAttachments(),
+        })
+        setWatchFeedback({
+          tone: result.status === "created" ? "success" : "neutral",
+          message: result.message,
+        })
+        if (result.status === "created") {
+          setWatches((current) => [result.watch, ...current.filter((watch) => watch.id !== result.watch.id)])
+          setComposerValue("")
+          setComposerMentions([])
+          setSelectedAttachmentIds(new Set())
+          setIsMonitorRailCollapsed(false)
+        }
+      } catch (watchError) {
+        setWatchFeedback({ tone: "error", message: watchError instanceof Error ? watchError.message : t("Dexter could not set up that watch.") })
+      } finally {
+        promptSubmissionInFlightRef.current = false
+        setIsSending(false)
+      }
+      return
+    }
 
     const previousConversation = activeConversation
     const previousBranchMessages = conversationBranchFor(
@@ -1797,22 +2095,7 @@ export function AgentDexterPage({
         model: selectedModelId,
         locale: language,
         accessMode,
-        attachments: [...new Map(
-          [
-            ...attachedItems.map((attachment) => ({
-              id: attachment.id,
-              type: attachment.type,
-              title: attachment.title,
-            })),
-            ...composerMentions.map((mention) => ({
-              id: mention.id.startsWith(`${mention.type}:`)
-                ? mention.id.slice(mention.type.length + 1)
-                : mention.id,
-              type: mention.type,
-              title: mention.title,
-            })),
-          ].map((item) => [`${item.type}:${item.id}`, item]),
-        ).values()],
+        attachments: composerMessageAttachments(),
       }, {
         onAnswerDelta: (delta) => {
           const stream = streamRef.current
@@ -1846,6 +2129,30 @@ export function AgentDexterPage({
           liveReasoningRef.current += delta
           setLiveReasoning(liveReasoningRef.current)
         },
+        onEmailAttachment: (attachment) => {
+          setActiveConversation((current) => {
+            const base = current ?? pendingConversation
+            return {
+              ...base,
+              messages: base.messages.map((item) =>
+                item.id === assistantStreamMessage.id
+                  ? appendEmailAttachment(item, attachment)
+                  : item,
+              ),
+            }
+          })
+        },
+        onPendingAction: (pendingAction) => {
+          setActiveConversation((current) => {
+            const base = current ?? pendingConversation
+            return {
+              ...base,
+              messages: base.messages.map((item) =>
+                item.id === assistantStreamMessage.id ? { ...item, pendingAction } : item,
+              ),
+            }
+          })
+        },
       })
       setActiveConversation(retainStreamingAssistantId(conversation, assistantStreamMessage.id))
       announceDexterConversationsChanged()
@@ -1865,10 +2172,10 @@ export function AgentDexterPage({
 
         return {
           ...base,
-          messages: base.messages.map((item) =>
-            item.id === assistantStreamMessage.id
-              ? { ...item, reasoningSummary: liveReasoningRef.current || null }
-              : item,
+            messages: base.messages.map((item) =>
+              item.id === assistantStreamMessage.id
+                ? { ...item, pendingAction: null, reasoningSummary: liveReasoningRef.current || null }
+                : item,
           ),
         }
       })
@@ -1971,6 +2278,30 @@ export function AgentDexterPage({
           liveReasoningRef.current += delta
           setLiveReasoning(liveReasoningRef.current)
         },
+        onEmailAttachment: (attachment) => {
+          setActiveConversation((current) => {
+            const base = current ?? previousConversation
+            return {
+              ...base,
+              messages: base.messages.map((item) =>
+                item.id === assistantStreamMessage.id
+                  ? appendEmailAttachment(item, attachment)
+                  : item,
+              ),
+            }
+          })
+        },
+        onPendingAction: (pendingAction) => {
+          setActiveConversation((current) => {
+            const base = current ?? previousConversation
+            return {
+              ...base,
+              messages: base.messages.map((item) =>
+                item.id === assistantStreamMessage.id ? { ...item, pendingAction } : item,
+              ),
+            }
+          })
+        },
       })
 
       setActiveConversation(retainStreamingAssistantId(conversation, assistantStreamMessage.id))
@@ -1985,10 +2316,10 @@ export function AgentDexterPage({
 
         return {
           ...base,
-          messages: base.messages.map((item) =>
-            item.id === assistantStreamMessage.id
-              ? { ...item, reasoningSummary: liveReasoningRef.current || null }
-              : item,
+            messages: base.messages.map((item) =>
+              item.id === assistantStreamMessage.id
+                ? { ...item, pendingAction: null, reasoningSummary: liveReasoningRef.current || null }
+                : item,
           ),
         }
       })
@@ -2106,6 +2437,8 @@ export function AgentDexterPage({
     setComposerValue("")
     setComposerMentions([])
     setSelectedAttachmentIds(new Set())
+    setComposerEmailAttachments([])
+    setComposerEmailUpdates([])
     setSelectedSpecialistId("auto")
     setShowJumpToLatest(false)
   }
@@ -2135,6 +2468,11 @@ export function AgentDexterPage({
         setActiveConversation((current) => current ? { ...current, title: detail.title! } : current)
       }
     }
+
+    // A conversation started by the summon overlay is waiting to be adopted, so
+    // "Open in full" lands on the thread the operator was already reading.
+    const handoffId = takeDexterConversationHandoff()
+    if (handoffId) void handleHistorySelect(handoffId)
 
     window.addEventListener(DEXTER_NEW_CONVERSATION_EVENT, startNew)
     window.addEventListener(DEXTER_SELECT_CONVERSATION_EVENT, selectConversation)
@@ -2193,11 +2531,13 @@ export function AgentDexterPage({
                 <div className="flex items-center justify-center gap-3">
                   <DexterBrandMark className="size-6 shrink-0" />
                   <h1 className="text-[24px] font-medium leading-tight text-[var(--md-ink)] sm:text-[30px]">
-                    What can I help you with today?
+                    {t(dexterMode === "watch" ? "What do you want me to watch?" : "What can I help you with today?")}
                   </h1>
                 </div>
                 <p className="mt-4 text-[15px] text-[var(--md-text)]">
-                  Bookings, customers, documents, rates - or hand me the whole job.
+                  {t(dexterMode === "watch"
+                    ? "Describe the record and the change that matters. Type /chat to return."
+                    : "Bookings, customers, documents, rates - or hand me the whole job.")}
                 </p>
               </motion.div>
 
@@ -2220,16 +2560,28 @@ export function AgentDexterPage({
                   accessMode={accessMode}
                   contextUsedTokens={contextUsedTokens}
                   contextMaxTokens={DEXTER_CONTEXT_WINDOW_TOKENS}
-                  attachments={attachedItems}
-                  mentionItems={mentionItems}
+                  attachments={composerAttachmentItems}
+                  mentionItems={composerMentionItems}
                   selectedMentions={composerMentions}
-                  onChange={setComposerValue}
+                  placeholder={dexterMode === "watch" ? "Describe the change, or @ the record to watch" : undefined}
+                  onChange={handleComposerChange}
                   onMentionsChange={setComposerMentions}
+                  onUnavailableMention={(mention) => {
+                    if (mention.unavailableRoute) navigate(mention.unavailableRoute)
+                  }}
                   onOpenAttachments={() => setShowAttachments((value) => !value)}
                   onSelectSpecialist={setSelectedSpecialistId}
                   onSelectModel={setSelectedModelId}
                   onAccessModeChange={setAccessMode}
-                  onRemoveAttachment={(id) => toggleAttachment(id)}
+                  onRemoveAttachment={(id) => {
+                    if (composerEmailUpdates.some((context) => context.messageId === id)) {
+                      setComposerEmailUpdates((current) => current.filter((context) => context.messageId !== id))
+                      return
+                    }
+                    if (composerEmailAttachments.some((attachment) => attachment.id === id)) {
+                      setComposerEmailAttachments((current) => current.filter((attachment) => attachment.id !== id))
+                    } else toggleAttachment(id)
+                  }}
                   onSend={(prompt) => void submitPrompt(prompt)}
                 />
               </motion.div>
@@ -2263,7 +2615,22 @@ export function AgentDexterPage({
                 ) : null}
               </AnimatePresence>
 
-              {!showAttachments && !isSending ? (
+              {watchFeedback ? (
+                <div
+                  role="status"
+                  aria-live="polite"
+                  className={cn(
+                    "mt-4 rounded-[var(--md-radius-lg)] px-4 py-3 text-[13px] leading-5 shadow-[var(--md-shadow-line)]",
+                    watchFeedback.tone === "success" && "bg-[var(--md-accent-a10)] text-[var(--md-accent)]",
+                    watchFeedback.tone === "neutral" && "bg-[var(--md-surface-tint)] text-[var(--md-ink)]",
+                    watchFeedback.tone === "error" && "bg-[rgba(209,78,78,0.08)] text-[var(--md-red)]",
+                  )}
+                >
+                  {watchFeedback.message}
+                </div>
+              ) : null}
+
+              {!showAttachments && !isSending && dexterMode === "chat" ? (
                 <motion.div
                   className="mt-[var(--md-gap-xl)]"
                   initial={{ opacity: 0, y: 10 }}
@@ -2277,15 +2644,28 @@ export function AgentDexterPage({
                     bookingId={recentWorkContext?.type === "booking" ? recentWorkContext.recordId : null}
                   />
                 </motion.div>
+              ) : !showAttachments && !isSending ? (
+                <div className="mt-[var(--md-gap-xl)] grid gap-2 sm:grid-cols-2">
+                  {[
+                    t("Alert me when a live quote becomes accepted."),
+                    t("Watch for new emails mentioning a customs hold."),
+                  ].map((example) => (
+                    <button key={example} type="button" className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-4 py-3 text-start text-[13px] leading-5 text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:text-[var(--md-ink)]" onClick={() => setComposerValue(example)}>
+                      {example}
+                    </button>
+                  ))}
+                </div>
               ) : null}
             </div>
 
             <div className="hidden items-center justify-center gap-[clamp(32px,6vw,64px)] px-[var(--md-page-pad)] pb-[var(--md-page-pad)] text-[13px] text-[var(--md-text)] lg:flex">
               <span className="flex items-center gap-2">
                 <span className="size-2 rounded-full bg-[var(--md-green)]" />
-                Watching 4 things for you - Maersk on-time fell 7% overnight
-                <button type="button" className="font-medium text-[var(--md-accent)]">
-                  View
+                {watches.length
+                  ? `${t("Watching for you")}: ${watches.filter((watch) => watch.status === "active").length} ${t("active")}`
+                  : t("Nothing is being watched yet")}
+                <button type="button" className="font-medium text-[var(--md-accent)]" onClick={() => setIsMonitorRailCollapsed(false)}>
+                  {t("View")}
                 </button>
               </span>
               <button type="button" className="font-medium text-[var(--md-text)]">
@@ -2331,7 +2711,7 @@ export function AgentDexterPage({
                         isWorking={isWorking}
                         streamingMessageId={streamingMessageId}
                         reasoningContent={liveReasoning}
-                        mentionItems={mentionItems}
+                        mentionItems={composerMentionItems}
                         currentUser={currentUser}
                         profilePhotoUrl={profilePhotoUrl}
                         selectedResponseMessageIds={selectedResponseMessageIds}
@@ -2436,16 +2816,27 @@ export function AgentDexterPage({
                         accessMode={accessMode}
                         contextUsedTokens={contextUsedTokens}
                         contextMaxTokens={DEXTER_CONTEXT_WINDOW_TOKENS}
-                        attachments={attachedItems}
-                        mentionItems={mentionItems}
+                        attachments={composerAttachmentItems}
+                        mentionItems={composerMentionItems}
                         selectedMentions={composerMentions}
-                        onChange={setComposerValue}
+                        onChange={handleComposerChange}
                         onMentionsChange={setComposerMentions}
+                        onUnavailableMention={(mention) => {
+                          if (mention.unavailableRoute) navigate(mention.unavailableRoute)
+                        }}
                         onOpenAttachments={() => setShowAttachments((value) => !value)}
                         onSelectSpecialist={setSelectedSpecialistId}
                         onSelectModel={setSelectedModelId}
                         onAccessModeChange={setAccessMode}
-                        onRemoveAttachment={(id) => toggleAttachment(id)}
+                        onRemoveAttachment={(id) => {
+                          if (composerEmailUpdates.some((context) => context.messageId === id)) {
+                            setComposerEmailUpdates((current) => current.filter((context) => context.messageId !== id))
+                            return
+                          }
+                          if (composerEmailAttachments.some((attachment) => attachment.id === id)) {
+                            setComposerEmailAttachments((current) => current.filter((attachment) => attachment.id !== id))
+                          } else toggleAttachment(id)
+                        }}
                         onSend={(prompt) => void submitPrompt(prompt)}
                         className="shadow-[0_0_0_1px_var(--md-accent-a42),0_16px_38px_rgba(42,52,50,0.16)]"
                       />
@@ -2491,12 +2882,33 @@ export function AgentDexterPage({
         onCollapse={collapseWatchers}
         // Picking the open watcher again closes its pane instead of re-opening it,
         // so the card is a toggle and the rail always has a way back.
-        onSelectMonitor={(monitor) => setSelectedMonitor((current) => (current?.title === monitor.title ? null : monitor))}
+        onSelectMonitor={(monitor) => setSelectedMonitor((current) => (current?.id && current.id === monitor.id ? null : monitor))}
         onCloseDetail={() => setSelectedMonitor(null)}
         onAsk={() => {
-          setComposerValue("Watch for any customer-critical movement on Northwind bookings this week.")
-          setSelectedSpecialistId("ops")
+          enterDexterMode("watch")
+          setIsMonitorRailCollapsed(true)
         }}
+        onSetStatus={(monitor, status) => {
+          if (!monitor.id) return
+          void setDexterWatchStatus(monitor.id, status)
+            .then(() => refreshWatches())
+            .catch((watchError) => setWatchFeedback({ tone: "error", message: watchError instanceof Error ? watchError.message : t("That watch could not be updated.") }))
+        }}
+        onDelete={(monitor) => {
+          if (!monitor.id || !window.confirm(t("Delete this watch? Its previous alerts will also be removed."))) return
+          void deleteDexterWatch(monitor.id)
+            .then(() => {
+              setSelectedMonitor(null)
+              return refreshWatches()
+            })
+            .catch((watchError) => setWatchFeedback({ tone: "error", message: watchError instanceof Error ? watchError.message : t("That watch could not be deleted.") }))
+        }}
+        onAskEvent={(monitor) => {
+          const context = monitor.latestEvent?.context
+          if (context?.kind !== "email" || context.availability !== "available") return
+          attachWatchUpdate(context)
+        }}
+        onAskAttachment={(attachment) => attachWatchFiles([attachment])}
       />
     </LayoutGroup>
   )

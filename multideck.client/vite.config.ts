@@ -4,7 +4,7 @@ import react from "@vitejs/plugin-react"
 import tailwindcss from "@tailwindcss/vite"
 import { defineConfig } from "vite"
 
-const appRoutes = new Set(["/auth", "/auth/", "/components", "/components/", "/customers", "/customers/", "/customers/marlow-apparel", "/customers/marlow-apparel/", "/documents", "/documents/", "/customs/standalone/export", "/customs/standalone/export/new", "/customs/standalone/import", "/customs/job-related/export", "/customs/job-related/import"])
+const appRoutes = new Set(["/auth", "/auth/", "/components", "/components/", "/customers", "/customers/", "/customers/marlow-apparel", "/customers/marlow-apparel/", "/inbox", "/inbox/", "/documents", "/documents/", "/customs/standalone/export", "/customs/standalone/export/new", "/customs/standalone/import", "/customs/job-related/export", "/customs/job-related/import"])
 
 export default defineConfig({
   plugins: [

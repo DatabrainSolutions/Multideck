@@ -14,8 +14,11 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-sans: "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-mono: "SF Mono", "SFMono-Regular", ui-monospace, "Cascadia Code", monospace;
+  /* The colour emoji families are named last on purpose: a subject line or a
+     message preview that contains 🎉 must render it in colour rather than
+     falling through to a monochrome symbol glyph. */
+  --font-sans: "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji";
+  --font-mono: "SF Mono", "SFMono-Regular", ui-monospace, "Cascadia Code", monospace, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji";
   --font-heading: var(--font-sans);
 
   --color-background: var(--background);
@@ -272,6 +275,10 @@
   --md-motion-fast: 160ms cubic-bezier(0.22, 1, 0.36, 1);
   --md-motion-panel: 300ms cubic-bezier(0.16, 1, 0.3, 1);
 
+  /* The summon dim. Light enough that the operator can still read the page they
+     are picking from — it marks focus, it does not replace the screen. */
+  --md-summon-scrim: rgba(11, 20, 19, 0.16);
+
   --background: var(--md-bg);
   --foreground: var(--md-ink);
   --card: var(--md-surface);
@@ -373,6 +380,8 @@
   --md-mention-bg: color-mix(in srgb, var(--md-accent-deep) 78%, var(--md-surface));
   --md-mention-stroke: var(--md-accent);
   --md-mention-text: var(--md-accent-lift-strong);
+  /* Charcoal needs a deeper dim to read as dimmed at all. */
+  --md-summon-scrim: rgba(0, 0, 0, 0.42);
   --md-premium-stroke: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.24);
   --md-premium-stroke-soft: var(--md-premium-stroke);
   --md-stroke-top: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 -1px 0 rgba(0, 0, 0, 0.24);
@@ -1237,7 +1246,9 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
 }
 
 .md-dexter-mention {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   margin-inline: 2px;
   padding-inline: 6px;
   border-radius: 7px;
@@ -1249,6 +1260,13 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
   unicode-bidi: isolate;
   vertical-align: 1px;
   animation: md-dexter-mention-settle 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-dexter-mention > img {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  object-fit: contain;
 }
 
 .md-dexter-mention::selection {
@@ -1600,6 +1618,32 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
 
 [dir="rtl"] .md-watch-rail-shell {
   --md-watch-glass-dir: to left;
+}
+
+@media (max-width: 767px) {
+  .md-watch-rail-shell {
+    width: 100vw !important;
+  }
+
+  .md-watch-rail-detail,
+  .md-watch-rail-list {
+    width: 100% !important;
+  }
+
+  .md-watch-rail-shell[data-detail="true"] .md-watch-rail-detail {
+    z-index: 3;
+  }
+
+  .md-watch-rail-shell[data-detail="true"] .md-watch-rail-list {
+    visibility: hidden;
+  }
+
+  .md-watch-rail-surface,
+  .md-watch-rail__edge-blur {
+    inset-inline-start: 0 !important;
+    -webkit-mask-image: none !important;
+    mask-image: none !important;
+  }
 }
 
 /* One material for fade, detail and list. The long, irregularly spaced ramp
@@ -4345,32 +4389,6 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
   pointer-events: none;
 }
 
-.md-settings-masthead__glow {
-  position: absolute;
-  inset-block-start: -8rem;
-  inset-inline-end: -4rem;
-  width: 22rem;
-  height: 22rem;
-  border-radius: 999px;
-  background: radial-gradient(circle, color-mix(in srgb, var(--md-accent) 10%, transparent), transparent 68%);
-  pointer-events: none;
-}
-
-.md-settings-masthead__track {
-  position: absolute;
-  inset-inline-end: 1.5rem;
-  inset-block-end: 0;
-  width: min(30rem, 46%);
-  height: 1px;
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--md-accent) 32%, transparent));
-  transform-origin: 100% 50%;
-}
-
-[dir="rtl"] .md-settings-masthead__track {
-  background: linear-gradient(270deg, transparent, color-mix(in srgb, var(--md-accent) 32%, transparent));
-  transform-origin: 0 50%;
-}
-
 .md-settings-panel {
   transition:
     box-shadow var(--md-motion),
@@ -4488,10 +4506,6 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
   .md-settings-signal-ping {
     animation: md-settings-signal-arrive 820ms cubic-bezier(0.16, 1, 0.3, 1) 180ms both;
   }
-
-  .md-settings-masthead__track {
-    animation: md-settings-track-arrive 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
-  }
 }
 
 @keyframes md-settings-signal-arrive {
@@ -4503,18 +4517,6 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
   100% {
     opacity: 0;
     transform: scale(1.5);
-  }
-}
-
-@keyframes md-settings-track-arrive {
-  from {
-    opacity: 0;
-    transform: scaleX(0.35);
-  }
-
-  to {
-    opacity: 1;
-    transform: scaleX(1);
   }
 }
 
@@ -4585,13 +4587,386 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .md-settings-signal-ping,
-  .md-settings-masthead__track {
+  .md-settings-signal-ping {
     animation: none;
   }
 
   .md-settings-preview__row,
   .md-settings-panel {
     transition-duration: 0.01ms;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Automation canvas
+   The grid is painted on the viewport rather than the transformed content, so
+   panning never repaints a growing surface and the dots stay a constant size
+   regardless of zoom.
+   -------------------------------------------------------------------------- */
+
+.md-automation-canvas {
+  background-image: radial-gradient(circle at 1px 1px, rgba(11, 20, 19, 0.09) 1px, transparent 0);
+  background-size: 22px 22px;
+}
+
+.dark .md-automation-canvas {
+  background-image: radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.08) 1px, transparent 0);
+}
+
+/* --------------------------------------------------------------------------
+   Dexter summon
+   The overlay that appears when an operator holds the platform modifier and
+   double-clicks something. Everything in this layer is driven by transforms and
+   two box sizes, so following a scroll or travelling between candidates stays on
+   the compositor and never asks the app to re-render.
+   -------------------------------------------------------------------------- */
+
+.md-summon-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 240;
+  pointer-events: none;
+  isolation: isolate;
+}
+
+/* Shared geometry. The three tracking layers are positioned at the origin and
+   moved with `translate`, which is why they can share one set of springs. */
+.md-summon-spotlight,
+.md-summon-halo,
+.md-summon-ring {
+  position: fixed;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  /* Transform only. Hinting width and height would ask the compositor to reserve
+     for properties it cannot accelerate anyway, and these three are only in the
+     tree while the overlay is open. */
+  will-change: transform;
+}
+
+/* The dim is painted by one enormous spread on the cut-out itself. A single
+   element keeps the hole's rounded corners exact and avoids masking four
+   separate panels around it every frame.
+
+   Its fade is a CSS transition rather than an animation: one property, driven by
+   the phase on the layer, with nothing to orchestrate. */
+.md-summon-spotlight {
+  opacity: 0;
+  box-shadow: 0 0 0 100vmax var(--md-summon-scrim);
+  transition: opacity 300ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.md-summon-layer[data-phase="picking"] .md-summon-spotlight {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-summon-spotlight {
+    transition-duration: 0.01ms;
+  }
+}
+
+/* Light cast by the ring, drawn as a sibling because the ring's own mask would
+   clip a glow away with its middle. */
+.md-summon-halo {
+  box-shadow:
+    0 0 0 1px var(--md-accent-a24),
+    0 0 12px var(--md-accent-a28),
+    0 16px 44px var(--md-accent-a26);
+}
+
+/* The ring is a shader with its middle cut out, so the accent bloom reads as the
+   element's own stroke rather than a box drawn on top of it.
+
+   The accent fill underneath matters: a 3px band shows only a sliver of the
+   shader, and the bloom's unlit stops are nearly black. On the accent the band
+   reads as a lit teal stroke; on nothing it reads as a dark outline. */
+.md-summon-ring {
+  padding: 3px;
+  background: var(--md-accent);
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(#000 0 0), linear-gradient(#000 0 0);
+  -webkit-mask-clip: content-box, border-box;
+  -webkit-mask-composite: xor;
+  mask-image: linear-gradient(#000 0 0), linear-gradient(#000 0 0);
+  mask-clip: content-box, border-box;
+  mask-composite: exclude;
+}
+
+.md-summon-ring__shader {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  contain: paint;
+}
+
+.md-summon-ring__shader > *,
+.md-summon-ring__shader canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* The one part of the layer that is interactive, so it opts back in. */
+.md-summon-prompt-anchor {
+  position: fixed;
+  top: 0;
+  left: 0;
+  pointer-events: auto;
+  will-change: transform;
+}
+
+.md-summon-prompt {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 0 0 1px var(--md-accent-deep-a16),
+    0 22px 52px rgba(11, 20, 19, 0.22);
+}
+
+/* The header chips sit on the shader, so they need their own frosted surface to
+   stay legible while the bloom moves underneath. */
+.md-summon-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 1px 2px rgba(11, 20, 19, 0.08);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--md-ink);
+  backdrop-filter: blur(8px) saturate(1.3);
+}
+
+.dark .md-summon-chip {
+  background: color-mix(in srgb, var(--md-surface) 82%, transparent);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.09);
+}
+
+.md-summon-chip--fast {
+  color: var(--md-accent);
+  cursor: default;
+}
+
+.md-summon-input::placeholder {
+  opacity: 1;
+}
+
+/* The picking hint. Docked low and centred so it never covers the thing the
+   operator is aiming at. */
+.md-summon-hud {
+  position: fixed;
+  z-index: 200;
+  inset-inline: 0;
+  bottom: 22px;
+  margin-inline: auto;
+  display: flex;
+  width: fit-content;
+  max-width: calc(100vw - 32px);
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--md-glass-strong);
+  box-shadow: var(--md-shadow-lift);
+  backdrop-filter: blur(18px) saturate(1.4);
+  pointer-events: none;
+}
+
+/* The layer never takes pointer events, in any phase. The picker hit-tests with
+   `elementFromPoint`, and a layer that could be returned by that call would hide
+   the page underneath it from its own picker. Input is intercepted at the window
+   instead, and the crosshair is set on the document. */
+html.md-summon-picking,
+html.md-summon-picking * {
+  cursor: crosshair !important;
+}
+
+html.md-summon-picking {
+  /* Stops a drag across the page from selecting text while an area is chosen. */
+  user-select: none;
+}
+
+/* --------------------------------------------------------------------------
+   Keyboard shortcut editor
+   -------------------------------------------------------------------------- */
+
+.md-shortcut-row {
+  transition: background-color var(--md-motion-fast);
+}
+
+.md-shortcut-row:hover {
+  background: var(--md-accent-a035);
+}
+
+.md-shortcut-value {
+  background: var(--md-field-bg);
+  box-shadow: var(--md-shadow-line);
+  transition:
+    background-color 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    scale 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-shortcut-value:hover {
+  background: var(--md-field-bg-hover);
+  box-shadow: var(--md-shadow-line), 0 0 0 1px var(--md-accent-a18);
+}
+
+.md-shortcut-value:active {
+  scale: 0.985;
+}
+
+.md-shortcut-value:focus-visible {
+  outline: none;
+  box-shadow: var(--md-shadow-line), 0 0 0 3px var(--md-accent-a20);
+}
+
+/* The recorder announces that it has the keyboard: accent surface, accent edge,
+   and one slow breath so it reads as live without becoming a strobe. */
+.md-shortcut-well {
+  background: var(--md-accent-a08);
+  box-shadow: 0 0 0 1px var(--md-accent-a35);
+}
+
+.md-shortcut-well__pulse {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: 0 0 0 0 var(--md-accent-a28);
+  animation: md-shortcut-listening 2.1s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+@keyframes md-shortcut-listening {
+  0% {
+    box-shadow: 0 0 0 0 var(--md-accent-a28);
+  }
+  70% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--md-accent-tint) 0%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--md-accent-tint) 0%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-shortcut-well__pulse {
+    animation: none;
+  }
+
+  .md-shortcut-row,
+  .md-shortcut-value {
+    transition-duration: 0.01ms;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Inbox workspace
+   -------------------------------------------------------------------------- */
+
+/* Dexter summary uses the same full-fill bloom as the Dexter action and prompt
+   surfaces. A dark scrim sits between the canvas and copy so the moving colour
+   never competes with the operational text. */
+.md-dexter-summary {
+  color: white;
+  background: var(--md-accent-abyss);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1),
+    0 0 0 1px var(--md-accent-deep-a16),
+    0 12px 30px var(--md-accent-deep-a18);
+}
+
+.md-dexter-summary__shader {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  pointer-events: none;
+  contain: paint;
+  opacity: 0.9;
+  transform: scale(1.04);
+}
+
+.md-dexter-summary__shader,
+.md-dexter-summary__shader > *,
+.md-dexter-summary__shader canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.md-dexter-summary__scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    112deg,
+    rgba(4, 12, 11, 0.82),
+    rgba(4, 12, 11, 0.69) 54%,
+    rgba(4, 12, 11, 0.76)
+  );
+}
+
+.md-dexter-summary[data-tone="warning"] .md-dexter-summary__scrim {
+  background: linear-gradient(112deg, rgba(25, 18, 7, 0.82), rgba(10, 13, 11, 0.7) 58%, rgba(14, 12, 8, 0.77));
+}
+
+.md-dexter-summary[data-tone="failed"] .md-dexter-summary__scrim {
+  background: linear-gradient(112deg, rgba(30, 8, 8, 0.84), rgba(12, 10, 10, 0.72) 58%, rgba(18, 8, 8, 0.78));
+}
+
+/* Button variants are declared after the Dexter component layer, so this
+   inbox-specific rule keeps the shader label readable in every interaction
+   state without changing the shared pill elsewhere. */
+.md-inbox-summarise,
+.md-inbox-summarise:hover,
+.md-inbox-summarise:focus-visible {
+  color: white !important;
+  background: var(--md-accent) !important;
+}
+
+.md-inbox-summarise {
+  transition-property: transform, box-shadow;
+  transition-duration: 360ms;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-inbox-summarise .md-dexter-pill__shader,
+.md-inbox-summarise .md-dexter-pill__contrast {
+  transition-duration: 360ms;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-inbox-summarise .md-dexter-pill__slot-glyph {
+  transition-duration: 360ms;
+  transition-delay: calc(var(--md-dexter-character-index) * 20ms);
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* The thread list keeps one scroll axis, so a message body can never take over
+   the page's scrolling. */
+[data-inbox-thread-row] {
+  scroll-margin-block: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-dexter-summary__shader {
+    transform: none;
+  }
+
+  .md-inbox-summarise,
+  .md-inbox-summarise .md-dexter-pill__shader,
+  .md-inbox-summarise .md-dexter-pill__contrast,
+  .md-inbox-summarise .md-dexter-pill__slot-glyph {
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
   }
 }

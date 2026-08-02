@@ -37,7 +37,7 @@ import {
 
 type Db = SupabaseClient
 type Row = Record<string, any>
-type Actor = { userId: string; authUserId: string; companyId: string; email: string; displayName: string }
+export type Actor = { userId: string; authUserId: string; companyId: string; email: string; displayName: string }
 type Capability = "read" | "send" | "manage"
 type ProviderCredential = {
   version: number; provider: MailProvider; accessToken: string; refreshToken: string; tokenType: string;
@@ -64,6 +64,12 @@ type ProviderSync = {
   hasMore: boolean
   index: ProviderIndexBatch
 }
+type SyncOptions = { liveOnly?: boolean }
+
+// Historical indexing is intentionally shallow per run. Large provider pages
+// keep the mailbox lease occupied and can delay the ten-second live pass.
+const GMAIL_BACKFILL_PAGE_SIZE = 20
+const OUTLOOK_BACKFILL_PAGE_SIZE = 20
 
 export function runtimeClients(authorization: string) {
   const url = Deno.env.get("SUPABASE_URL") ?? ""
@@ -82,7 +88,8 @@ async function result<T>(promise: PromiseLike<{ data: T | null; error: any }>, m
   const { data, error } = await promise
   if (error) {
     console.error("inbox-api database operation failed", { code: error.code, message: error.message })
-    throw new InboxHttpError(503, message, "database_unavailable")
+    const diagnosticCode = cleanString(error.code, 40).toLowerCase().replace(/[^a-z0-9_]/g, "_")
+    throw new InboxHttpError(503, message, diagnosticCode ? `database_${diagnosticCode}` : "database_unavailable")
   }
   return data
 }
@@ -398,7 +405,41 @@ async function providerJson(url: string, token: string, init: RequestInit = {}) 
       signal: controller.signal,
       headers: { Accept: "application/json", Authorization: `Bearer ${token}`, ...(init.headers ?? {}) },
     })
-    if (!response.ok) throw providerErrorStatus(response)
+    if (!response.ok) {
+      // Graph's HTTP status alone is too broad to distinguish a bad query
+      // from an Exchange mailbox/licensing problem. Keep diagnostics limited
+      // to the provider's short error code and generic message: never include
+      // request URLs, tokens, response headers, or mail content.
+      let providerCode = ""
+      let providerMessage = ""
+      if (response.status === 400 && new URL(url).hostname === "graph.microsoft.com") {
+        try {
+          const payload = await response.clone().json()
+          const providerError = isObject(payload) && isObject(payload.error) ? payload.error : {}
+          providerCode = cleanString(providerError.code, 120).replace(/[^a-z0-9_.-]/gi, "")
+          providerMessage = cleanString(providerError.message, 320)
+            .replace(/[\u0000-\u001f\u007f]/g, " ")
+            .replace(/https?:\/\/\S+/gi, "[url]")
+            .replace(/\b[^\s@]+@[^\s@]+\b/g, "[email]")
+            .replace(/\b[0-9a-f]{8}-[0-9a-f-]{27,36}\b/gi, "[id]")
+        } catch {
+          // Preserve the normal provider-status error when Graph has no JSON body.
+        }
+      }
+      if (providerCode || providerMessage) {
+        console.error("Microsoft Graph request failed", {
+          status: response.status,
+          code: providerCode || "unknown",
+          message: providerMessage || "No provider message",
+        })
+      }
+      const error = providerErrorStatus(response)
+      const providerDiagnostic = [providerCode, providerMessage].filter(Boolean).join(": ")
+      if (providerDiagnostic) {
+        throw new InboxHttpError(error.status, `${error.message} (${providerDiagnostic})`, error.code, error.providerStatus)
+      }
+      throw error
+    }
     return await response.json()
   } catch (error) {
     if (error instanceof InboxHttpError) throw error
@@ -442,14 +483,16 @@ function parseGmailMessage(row: Row): ProviderMessage {
   const labels = Array.isArray(row.labelIds) ? row.labelIds.map(String) : []
   return {
     providerMessageId: cleanString(row.id, 500), providerThreadId: cleanString(row.threadId, 500), providerConversationId: cleanString(row.threadId, 500) || null,
-    internetMessageId: headers["message-id"] ?? null, subject: repairMojibake(headers.subject || "(No subject)"), preview: cleanString(decodeHtmlEntities(row.snippet), 1000),
+    internetMessageId: cleanString(headers["message-id"], 500) || null,
+    subject: cleanString(repairMojibake(headers.subject || "(No subject)"), 500) || "(No subject)",
+    preview: cleanString(decodeHtmlEntities(row.snippet), 1000),
     bodyText: bodies.text ?? (bodies.html ? stripHtml(bodies.html) : null), bodyHtml: bodies.html, occurredAt: new Date(Number(row.internalDate) || Date.now()).toISOString(),
     isDraft: labels.includes("DRAFT"), from: parseAddressHeader(headers.from), to: parseAddressHeader(headers.to), cc: parseAddressHeader(headers.cc), bcc: parseAddressHeader(headers.bcc),
     attachments: bodies.attachments, headers, folders: labels.map((label) => label.toLowerCase()), isSpam: labels.includes("SPAM"),
   }
 }
 
-async function syncGmail(mailbox: Row, token: string): Promise<ProviderSync> {
+async function syncGmail(admin: Db, mailbox: Row, token: string, options: SyncOptions = {}): Promise<ProviderSync> {
   const base = "https://gmail.googleapis.com/gmail/v1/users/me"
   const groupAddress = mailbox.CommMailbox_TypeCode === "group"
     ? normalizeEmail(mailbox.CommMailbox_NormalizedAddress ?? mailbox.CommMailbox_Address)
@@ -458,18 +501,37 @@ async function syncGmail(mailbox: Row, token: string): Promise<ProviderSync> {
     throw new InboxHttpError(409, "This Google Group address is invalid. Remove it and connect it again.", "group_mailbox_address_invalid")
   }
   let messageIds: string[] = []
+  const liveMessageIds = new Set<string>()
   let cursor = cleanString(mailbox.CommMailbox_SyncCursor, 2_000)
   const startingCursor = cursor
-  let snapshot: { pageToken: string; historyId: string } | null = null
+  let snapshot: {
+    pageToken: string
+    historyId: string
+    liveStartHistoryId?: string
+    livePageToken?: string
+  } | null = null
   let historyPage: { startHistoryId: string; pageToken: string } | null = null
   let incremental = false
+  let backfilling = false
+  let resetSnapshot = !startingCursor
+  let snapshotProcessed = 0
   let hasMore = false
   let totalEstimate: number | null = null
   if (cursor.startsWith("{")) {
     try {
       const parsed = JSON.parse(cursor)
-      if (isObject(parsed) && parsed.kind === "gmail_snapshot" && cleanString(parsed.pageToken, 2_000) && cleanString(parsed.historyId, 2_000)) {
-        snapshot = { pageToken: cleanString(parsed.pageToken, 2_000), historyId: cleanString(parsed.historyId, 2_000) }
+      if (
+        isObject(parsed)
+        && (parsed.kind === "gmail_snapshot" || parsed.kind === "gmail_hybrid")
+        && cleanString(parsed.pageToken, 2_000)
+        && cleanString(parsed.historyId, 2_000)
+      ) {
+        snapshot = {
+          pageToken: cleanString(parsed.pageToken, 2_000),
+          historyId: cleanString(parsed.historyId, 2_000),
+          liveStartHistoryId: cleanString(parsed.liveStartHistoryId, 2_000) || undefined,
+          livePageToken: cleanString(parsed.livePageToken, 2_000) || undefined,
+        }
       } else if (isObject(parsed) && parsed.kind === "gmail_history" && cleanString(parsed.startHistoryId, 2_000) && cleanString(parsed.pageToken, 2_000)) {
         historyPage = {
           startHistoryId: cleanString(parsed.startHistoryId, 2_000),
@@ -479,48 +541,230 @@ async function syncGmail(mailbox: Row, token: string): Promise<ProviderSync> {
     } catch { /* malformed snapshot cursor safely restarts */ }
     if (!snapshot && !historyPage) cursor = ""
   }
-  if ((cursor && !snapshot && !historyPage) || historyPage) {
-    incremental = true
-    const startHistoryId = historyPage?.startHistoryId ?? cursor
+
+  const readHistoryPage = async (startHistoryId: string, pageToken?: string) => {
     const url = new URL(`${base}/history`)
     url.searchParams.set("startHistoryId", startHistoryId)
     url.searchParams.append("historyTypes", "messageAdded")
     url.searchParams.append("historyTypes", "labelAdded")
     url.searchParams.append("historyTypes", "labelRemoved")
     url.searchParams.set("maxResults", "100")
-    if (historyPage?.pageToken) url.searchParams.set("pageToken", historyPage.pageToken)
+    if (pageToken) url.searchParams.set("pageToken", pageToken)
+    const history = await providerJson(url.toString(), token)
+    const ids: string[] = (Array.isArray(history.history) ? history.history : []).flatMap((item: Row) => [
+      ...(Array.isArray(item.messagesAdded) ? item.messagesAdded.map((added: Row) => cleanString(added.message?.id, 500)) : []),
+      ...(Array.isArray(item.labelsAdded) ? item.labelsAdded.map((added: Row) => cleanString(added.message?.id, 500)) : []),
+      ...(Array.isArray(item.labelsRemoved) ? item.labelsRemoved.map((removed: Row) => cleanString(removed.message?.id, 500)) : []),
+    ])
+    return {
+      ids: [...new Set(ids.filter((id): id is string => !!id))],
+      nextPageToken: cleanString(history.nextPageToken, 2_000),
+      historyId: cleanString(history.historyId, 2_000) || startHistoryId,
+    }
+  }
+
+  const fetchMessages = async (ids: string[], liveIds = new Set(ids)) => {
+    const fetched = await mapWithConcurrency(ids.slice(0, 100), 8, async (id) => {
+      let row: Row
+      try {
+        row = await providerJson(`${base}/messages/${encodeURIComponent(id)}?format=full`, token)
+      } catch (error) {
+        // Provider result sets can race a deletion or retention purge. A
+        // vanished message must not discard the rest of the durable changes.
+        if (error instanceof InboxHttpError && error.providerStatus === 404) return null
+        throw error
+      }
+      const parsed = parseGmailMessage(row)
+      const payload = isObject(row.payload) ? row.payload : {}
+      const matchesGroup = !groupAddress || !liveIds.has(id) || gmailMessageMatchesGroup({
+        groupAddress,
+        recipients: [...parsed.to, ...parsed.cc, ...parsed.bcc],
+        headers: payload.headers,
+      })
+      return !parsed.isDraft && matchesGroup ? parsed : null
+    })
+    return fetched.filter((message): message is ProviderMessage => message !== null)
+  }
+
+  // The frequent worker only drains new mail. Historical page advancement is
+  // left to the separate backfill run so an old inbox cannot delay today's
+  // messages or cause the same 100-message page to be fetched every ten seconds.
+  if (options.liveOnly && snapshot) {
+    const liveStartHistoryId = snapshot.liveStartHistoryId ?? snapshot.historyId
     try {
-      const history = await providerJson(url.toString(), token)
-      const ids: string[] = (Array.isArray(history.history) ? history.history : []).flatMap((item: Row) => [
-        ...(Array.isArray(item.messagesAdded) ? item.messagesAdded.map((added: Row) => cleanString(added.message?.id, 500)) : []),
-        ...(Array.isArray(item.labelsAdded) ? item.labelsAdded.map((added: Row) => cleanString(added.message?.id, 500)) : []),
-        ...(Array.isArray(item.labelsRemoved) ? item.labelsRemoved.map((removed: Row) => cleanString(removed.message?.id, 500)) : []),
-      ])
-      messageIds = [...new Set(ids.filter((id): id is string => !!id))]
-      const nextPageToken = cleanString(history.nextPageToken, 2_000)
-      hasMore = !!nextPageToken
-      cursor = nextPageToken
-        ? JSON.stringify({ kind: "gmail_history", startHistoryId, pageToken: nextPageToken })
-        : cleanString(history.historyId, 2_000) || startHistoryId
+      const history = await readHistoryPage(liveStartHistoryId, snapshot.livePageToken)
+      cursor = JSON.stringify({
+        kind: "gmail_hybrid",
+        pageToken: snapshot.pageToken,
+        historyId: history.nextPageToken ? snapshot.historyId : history.historyId,
+        ...(history.nextPageToken ? { liveStartHistoryId, livePageToken: history.nextPageToken } : {}),
+      })
+      return {
+        messages: await fetchMessages(history.ids, new Set(history.ids)),
+        cursor,
+        hasMore: true,
+        index: {
+          initial: true,
+          reset: false,
+          processed: 0,
+          totalEstimate: Number.isFinite(Number(mailbox.CommMailbox_IndexTotalEstimate))
+            ? Math.max(0, Number(mailbox.CommMailbox_IndexTotalEstimate))
+            : null,
+        },
+      }
     } catch (error) {
-      if (!(error instanceof InboxHttpError) || error.status !== 502) throw error
+      if (!(error instanceof InboxHttpError) || error.providerStatus !== 404) throw error
+      // Gmail expires old History cursors. The bounded read below keeps new
+      // mail flowing while the backfill worker restarts the snapshot.
       cursor = ""
+      snapshot = null
+    }
+  }
+
+  if (options.liveOnly && !cursor) {
+    const recentUrl = new URL(`${base}/messages`)
+    recentUrl.searchParams.set("maxResults", "50")
+    recentUrl.searchParams.set("includeSpamTrash", "true")
+    recentUrl.searchParams.set(
+      "q",
+      [groupAddress ? gmailGroupQuery(groupAddress) : "", "newer_than:1d"].filter(Boolean).join(" "),
+    )
+    const recent = await providerJson(recentUrl.toString(), token)
+    const listedIds = (Array.isArray(recent.messages) ? recent.messages : [])
+      .map((entry: Row) => cleanString(entry.id, 240))
+      .filter(Boolean)
+    const known = listedIds.length
+      ? await result<Row[]>(admin.from("Comm_Messages")
+        .select("CommMessage_ProviderMessageID")
+        .eq("CommMessage_MailboxID", mailbox.CommMailbox_ID)
+        .in("CommMessage_ProviderMessageID", listedIds)) ?? []
+      : []
+    const knownIds = new Set(known.map((row) => cleanString(row.CommMessage_ProviderMessageID, 240)))
+    const newIds = listedIds.filter((id) => !knownIds.has(id))
+    return {
+      messages: await fetchMessages(newIds),
+      cursor: "",
+      hasMore: true,
+      index: {
+        initial: true,
+        reset: false,
+        processed: 0,
+        totalEstimate: Number.isFinite(Number(mailbox.CommMailbox_IndexTotalEstimate))
+          ? Math.max(0, Number(mailbox.CommMailbox_IndexTotalEstimate))
+          : null,
+      },
+    }
+  }
+
+  if ((cursor && !snapshot && !historyPage) || historyPage) {
+    incremental = true
+    const startHistoryId = historyPage?.startHistoryId ?? cursor
+    try {
+      const history = await readHistoryPage(startHistoryId, historyPage?.pageToken)
+      messageIds = history.ids
+      for (const id of messageIds) liveMessageIds.add(id)
+      hasMore = !!history.nextPageToken
+      cursor = history.nextPageToken
+        ? JSON.stringify({ kind: "gmail_history", startHistoryId, pageToken: history.nextPageToken })
+        : history.historyId
+    } catch (error) {
+      if (!(error instanceof InboxHttpError) || error.providerStatus !== 404) throw error
+      cursor = ""
+      hasMore = false
+      resetSnapshot = true
+    }
+  }
+
+  if (snapshot) {
+    // A historical Gmail snapshot can take hours for a large mailbox. Always
+    // drain live History changes before advancing the older snapshot page so a
+    // new watched email is visible on the next worker run, not after backfill.
+    backfilling = true
+    incremental = false
+    const liveStartHistoryId = snapshot.liveStartHistoryId ?? snapshot.historyId
+    try {
+      const history = await readHistoryPage(liveStartHistoryId, snapshot.livePageToken)
+      messageIds = history.ids
+      for (const id of messageIds) liveMessageIds.add(id)
+
+      if (history.nextPageToken) {
+        cursor = JSON.stringify({
+          kind: "gmail_hybrid",
+          pageToken: snapshot.pageToken,
+          historyId: snapshot.historyId,
+          liveStartHistoryId,
+          livePageToken: history.nextPageToken,
+        })
+        hasMore = true
+      } else if (messageIds.length >= 100) {
+        cursor = JSON.stringify({
+          kind: "gmail_hybrid",
+          pageToken: snapshot.pageToken,
+          historyId: history.historyId,
+        })
+        hasMore = true
+      } else {
+        const remaining = Math.max(0, GMAIL_BACKFILL_PAGE_SIZE - messageIds.length)
+        if (remaining === 0) {
+          cursor = JSON.stringify({
+            kind: "gmail_hybrid",
+            pageToken: snapshot.pageToken,
+            historyId: history.historyId,
+          })
+          hasMore = true
+          const messages = await fetchMessages(messageIds, liveMessageIds)
+          return {
+            messages,
+            cursor,
+            hasMore,
+            index: { initial: true, reset: false, processed: 0, totalEstimate },
+          }
+        }
+        const url = new URL(`${base}/messages`)
+        url.searchParams.set("maxResults", String(remaining))
+        url.searchParams.set("includeSpamTrash", "true")
+        if (groupAddress) url.searchParams.set("q", gmailGroupQuery(groupAddress))
+        url.searchParams.set("pageToken", snapshot.pageToken)
+        const list = await providerJson(url.toString(), token)
+        const snapshotIds = (Array.isArray(list.messages) ? list.messages : [])
+          .map((entry: Row) => cleanString(entry.id, 500))
+          .filter(Boolean)
+        snapshotProcessed = snapshotIds.length
+        messageIds = [...new Set([...messageIds, ...snapshotIds])]
+        const nextPageToken = cleanString(list.nextPageToken, 2_000)
+        hasMore = !!nextPageToken
+        cursor = nextPageToken
+          ? JSON.stringify({ kind: "gmail_hybrid", pageToken: nextPageToken, historyId: history.historyId })
+          : history.historyId
+      }
+    } catch (error) {
+      if (!(error instanceof InboxHttpError) || error.providerStatus !== 404) throw error
+      // Gmail expires old history anchors. Restart from the newest snapshot so
+      // current mail wins over completing stale historical pagination.
+      snapshot = null
+      cursor = ""
+      resetSnapshot = true
+      messageIds = []
+      liveMessageIds.clear()
+      backfilling = false
       hasMore = false
     }
   }
-  if (!cursor || snapshot) {
+
+  if (!cursor && !snapshot) {
     incremental = false
+    backfilling = true
     // Gmail excludes Spam and Trash unless explicitly requested. Inbox is an
     // all-folder workspace, so the snapshot includes them and pages until the
     // local tenant store has the complete mailbox rather than losing anything
     // older than the first 100 messages.
     const url = new URL(`${base}/messages`)
-    url.searchParams.set("maxResults", "100")
+    url.searchParams.set("maxResults", String(GMAIL_BACKFILL_PAGE_SIZE))
     url.searchParams.set("includeSpamTrash", "true")
     if (groupAddress) url.searchParams.set("q", gmailGroupQuery(groupAddress))
-    if (snapshot?.pageToken) url.searchParams.set("pageToken", snapshot.pageToken)
     const list = await providerJson(url.toString(), token)
     messageIds = (Array.isArray(list.messages) ? list.messages : []).map((entry: Row) => cleanString(entry.id, 500)).filter(Boolean)
+    snapshotProcessed = messageIds.length
     const profile = await providerJson(`${base}/profile`, token)
     const listEstimate = Number(list.resultSizeEstimate)
     const profileTotal = Number(profile.messagesTotal)
@@ -534,31 +778,21 @@ async function syncGmail(mailbox: Row, token: string): Promise<ProviderSync> {
           : Number.isFinite(listEstimate) && listEstimate >= 0
             ? Math.floor(listEstimate)
             : null)
-    const historyId = snapshot?.historyId || cleanString(profile.historyId, 2_000)
+    const historyId = cleanString(profile.historyId, 2_000)
     const nextPageToken = cleanString(list.nextPageToken, 2_000)
     hasMore = !!nextPageToken
     cursor = nextPageToken ? JSON.stringify({ kind: "gmail_snapshot", pageToken: nextPageToken, historyId }) : historyId
   }
-  const fetched = await mapWithConcurrency(messageIds.slice(0, 100), 8, async (id) => {
-    const row = await providerJson(`${base}/messages/${encodeURIComponent(id)}?format=full`, token)
-    const parsed = parseGmailMessage(row)
-    const payload = isObject(row.payload) ? row.payload : {}
-    const matchesGroup = !groupAddress || !incremental || gmailMessageMatchesGroup({
-      groupAddress,
-      recipients: [...parsed.to, ...parsed.cc, ...parsed.bcc],
-      headers: payload.headers,
-    })
-    return !parsed.isDraft && matchesGroup ? parsed : null
-  })
-  const messages = fetched.filter((message): message is ProviderMessage => message !== null)
+
+  const messages = await fetchMessages(messageIds, liveMessageIds)
   return {
     messages,
     cursor,
     hasMore,
     index: {
-      initial: !incremental,
-      reset: !incremental && !startingCursor,
-      processed: !incremental ? messageIds.length : 0,
+      initial: backfilling,
+      reset: backfilling && resetSnapshot,
+      processed: backfilling ? snapshotProcessed : 0,
       totalEstimate,
     },
   }
@@ -579,7 +813,7 @@ async function parseGraphMessage(row: Row, owner: string, token: string): Promis
   const headers = headerMap(row.internetMessageHeaders)
   let attachments: ProviderMessage["attachments"] = []
   if (row.hasAttachments) {
-    const list = await providerJson(`https://graph.microsoft.com/v1.0/${owner}/messages/${encodeURIComponent(row.id)}/attachments?$select=id,name,contentType,size,isInline,contentId`, token)
+    const list = await providerJson(`https://graph.microsoft.com/v1.0/${owner}/messages/${encodeURIComponent(row.id)}/attachments?$select=id,name,contentType,size,isInline`, token)
     attachments = (Array.isArray(list.value) ? list.value : []).map((item: Row) => ({
       providerAttachmentId: cleanString(item.id, 1000), fileName: safeFileName(item.name), mimeType: cleanString(item.contentType, 200) || null,
       sizeBytes: Number.isFinite(Number(item.size)) ? Number(item.size) : null, isInline: item.isInline === true, contentId: cleanString(item.contentId, 240) || null,
@@ -596,12 +830,30 @@ async function parseGraphMessage(row: Row, owner: string, token: string): Promis
   }
 }
 
-async function syncOutlook(mailbox: Row, token: string): Promise<ProviderSync> {
+async function syncOutlook(admin: Db, mailbox: Row, token: string, options: SyncOptions = {}): Promise<ProviderSync> {
   const owner = mailbox.CommMailbox_TypeCode === "shared" ? `users/${encodeURIComponent(mailbox.CommMailbox_Address)}` : "me"
-  const select = "id,conversationId,internetMessageId,subject,bodyPreview,body,receivedDateTime,sentDateTime,isDraft,hasAttachments,from,toRecipients,ccRecipients,bccRecipients,internetMessageHeaders"
+  // Microsoft Graph exposes internetMessageHeaders on a single-message GET,
+  // but including it in list/delta projections can make the initial mailbox
+  // sync fail with a provider 400. Transport headers are optional local
+  // metadata, so keep the bounded sync projection to fields supported by the
+  // collection and delta endpoints.
+  const select = "id,conversationId,internetMessageId,subject,bodyPreview,body,receivedDateTime,sentDateTime,isDraft,hasAttachments,from,toRecipients,ccRecipients,bccRecipients"
   const folders = ["inbox", "sentitems", "drafts", "junkemail", "deleteditems"] as const
   let saved: Record<string, string> = {}
-  const rawCursor = cleanString(mailbox.CommMailbox_SyncCursor, 20_000)
+  let rawCursor = cleanString(mailbox.CommMailbox_SyncCursor, 20_000)
+  const existingProcessed = Math.max(0, Number(mailbox.CommMailbox_IndexProcessedCount) || 0)
+  const existingEstimate = Math.max(0, Number(mailbox.CommMailbox_IndexTotalEstimate) || 0)
+  // Earlier Outlook indexing used `$top` on the delta URL. Graph can treat
+  // that as the maximum changes for the entire round and issue a delta token
+  // after only that subset. If the durable provider estimate proves the
+  // supposedly-ready index is incomplete, safely restart the delta snapshot;
+  // provider IDs make the existing rows idempotent upserts rather than copies.
+  if (
+    rawCursor
+    && mailbox.CommMailbox_IndexStatus === "ready"
+    && existingEstimate > 0
+    && existingProcessed < existingEstimate
+  ) rawCursor = ""
   if (rawCursor) {
     try {
       const parsed = JSON.parse(rawCursor)
@@ -617,6 +869,42 @@ async function syncOutlook(mailbox: Row, token: string): Promise<ProviderSync> {
     const normalized = value.toLowerCase()
     return !normalized.includes("$deltatoken") && !normalized.includes("%24deltatoken")
   })
+  if (options.liveOnly && initial) {
+    const liveUrl = `https://graph.microsoft.com/v1.0/${owner}/mailFolders/inbox/messages?$select=${encodeURIComponent(select)}&$orderby=receivedDateTime%20desc&$top=50`
+    const page = await providerJson(liveUrl, token)
+    const providerRows: Row[] = (Array.isArray(page.value) ? page.value : [])
+      .filter((row: unknown): row is Row => isObject(row) && !row["@removed"])
+    const listedIds = providerRows.map((row) => cleanString(row.id, 240)).filter(Boolean)
+    const known = listedIds.length
+      ? await result<Row[]>(admin.from("Comm_Messages")
+        .select("CommMessage_ProviderMessageID")
+        .eq("CommMessage_MailboxID", mailbox.CommMailbox_ID)
+        .in("CommMessage_ProviderMessageID", listedIds)) ?? []
+      : []
+    const knownIds = new Set(known.map((row) => cleanString(row.CommMessage_ProviderMessageID, 240)))
+    const messages = await mapWithConcurrency(
+      providerRows.filter((row) => !knownIds.has(cleanString(row.id, 240))),
+      8,
+      async (row) => {
+        const parsed = await parseGraphMessage(row, owner, token)
+        parsed.folders = ["inbox"]
+        return parsed
+      },
+    )
+    return {
+      messages,
+      cursor: rawCursor,
+      hasMore: true,
+      index: {
+        initial: true,
+        reset: false,
+        processed: 0,
+        totalEstimate: Number.isFinite(Number(mailbox.CommMailbox_IndexTotalEstimate))
+          ? Math.max(0, Number(mailbox.CommMailbox_IndexTotalEstimate))
+          : null,
+      },
+    }
+  }
   let totalEstimate: number | null = null
   if (!rawCursor) {
     const counts = await mapWithConcurrency(folders, 5, async (folder) => {
@@ -639,8 +927,10 @@ async function syncOutlook(mailbox: Row, token: string): Promise<ProviderSync> {
         if (parsed.protocol !== "https:" || parsed.hostname !== "graph.microsoft.com") next = ""
       } catch { next = "" }
     }
-    next ||= `https://graph.microsoft.com/v1.0/${owner}/mailFolders/${folder}/messages/delta?$select=${encodeURIComponent(select)}&$top=100`
-    const page = await providerJson(next, token)
+    next ||= `https://graph.microsoft.com/v1.0/${owner}/mailFolders/${folder}/messages/delta?$select=${encodeURIComponent(select)}`
+    const page = await providerJson(next, token, {
+      headers: { Prefer: `odata.maxpagesize=${OUTLOOK_BACKFILL_PAGE_SIZE}` },
+    })
     const providerValues: unknown[] = Array.isArray(page.value) ? page.value : []
     const providerRows: Row[] = providerValues
       .filter((row: unknown): row is Row => isObject(row) && !row["@removed"])
@@ -685,14 +975,15 @@ async function addRecipients(admin: Db, messageId: string, values: MailAddress[]
 
 async function persistSync(admin: Db, actor: Actor, mailbox: Row, connection: Row, sync: ProviderSync) {
   const { messages, cursor } = sync
-  const providerIds = messages.map((message) => message.providerMessageId)
+  const providerIds = messages.map((message) => cleanString(message.providerMessageId, 240))
   const known = providerIds.length ? await result<Row[]>(admin.from("Comm_Messages").select("CommMessage_ID,CommMessage_ProviderMessageID").eq("CommMessage_MailboxID", mailbox.CommMailbox_ID).in("CommMessage_ProviderMessageID", providerIds)) ?? [] : []
   const knownIds = new Set(known.map((row) => row.CommMessage_ProviderMessageID))
   const knownMessageIds = new Map(known.map((row) => [row.CommMessage_ProviderMessageID, row.CommMessage_ID]))
   // Folder membership can change without a new provider message. Keep existing
   // rows current so moving a message to Spam/Trash/Sent is reflected locally.
   for (const incoming of messages) {
-    const existingMessageId = knownMessageIds.get(incoming.providerMessageId)
+    const providerMessageId = cleanString(incoming.providerMessageId, 240)
+    const existingMessageId = knownMessageIds.get(providerMessageId)
     if (!existingMessageId) continue
     await persistFolders(admin, mailbox.CommMailbox_ID, existingMessageId, incoming.folders)
     await result(admin.from("Comm_Messages").update({
@@ -701,17 +992,18 @@ async function persistSync(admin: Db, actor: Actor, mailbox: Row, connection: Ro
       CommMessage_UpdatedAt: new Date().toISOString(),
     }).eq("CommMessage_ID", existingMessageId))
   }
-  for (const incoming of messages.filter((message) => !knownIds.has(message.providerMessageId)).sort((a, b) => a.occurredAt.localeCompare(b.occurredAt))) {
-    const existing = await result<Row>(admin.from("Comm_Messages").select("CommMessage_ThreadID").eq("CommMessage_MailboxID", mailbox.CommMailbox_ID).eq("CommMessage_ProviderThreadID", incoming.providerThreadId).limit(1).maybeSingle())
+  for (const incoming of messages.filter((message) => !knownIds.has(cleanString(message.providerMessageId, 240))).sort((a, b) => a.occurredAt.localeCompare(b.occurredAt))) {
+    const providerThreadId = cleanString(incoming.providerThreadId, 240)
+    const existing = await result<Row>(admin.from("Comm_Messages").select("CommMessage_ThreadID").eq("CommMessage_MailboxID", mailbox.CommMailbox_ID).eq("CommMessage_ProviderThreadID", providerThreadId).limit(1).maybeSingle())
     const threadId = existing?.CommMessage_ThreadID ?? crypto.randomUUID()
     const now = new Date().toISOString()
     if (!existing) {
       await result(admin.from("Comm_Threads").insert({
-        CommThread_ID: threadId, CommThread_Subject: incoming.subject, CommThread_NormalizedSubject: normalizeSubject(incoming.subject),
+        CommThread_ID: threadId, CommThread_Subject: cleanString(incoming.subject, 500), CommThread_NormalizedSubject: normalizeSubject(incoming.subject),
         CommThread_PrimaryChannelCode: "email", CommThread_StatusCode: "open", CommThread_PriorityCode: "normal",
         CommThread_SensitivityCode: mailbox.CommMailbox_DefaultSensitivityCode ?? "internal", CommThread_SourceTypeCode: "provider_sync",
         CommThread_OwnerUserID: mailbox.CommMailbox_UserID, CommThread_StartedAt: incoming.occurredAt, CommThread_LastMessageAt: incoming.occurredAt,
-        CommThread_MetadataJSON: JSON.stringify({ providerThreadId: incoming.providerThreadId }), CommThread_IsConfidential: false,
+        CommThread_MetadataJSON: JSON.stringify({ providerThreadId }), CommThread_IsConfidential: false,
         CommThread_IsReadOnly: mailbox.CommMailbox_TypeCode === "group", CommThread_CreatedAt: now, CommThread_CreatedBy: actor.userId, CommThread_UpdatedAt: now,
         CommThread_UpdatedBy: actor.userId, CommThread_IsDeleted: false,
       }))
@@ -724,9 +1016,9 @@ async function persistSync(admin: Db, actor: Actor, mailbox: Row, connection: Ro
       CommMessage_ChannelCode: "email", CommMessage_DirectionCode: senderIsMailbox ? "outbound" : "inbound",
       CommMessage_StatusCode: incoming.isDraft ? "draft" : senderIsMailbox ? "sent" : "received", CommMessage_SourceTypeCode: "provider_sync",
       CommMessage_ContentFormatCode: safeHtml ? "html" : "plain_text", CommMessage_PriorityCode: "normal",
-      CommMessage_SensitivityCode: mailbox.CommMailbox_DefaultSensitivityCode ?? "internal", CommMessage_ProviderMessageID: incoming.providerMessageId,
-      CommMessage_ProviderThreadID: incoming.providerThreadId, CommMessage_ProviderConversationID: incoming.providerConversationId,
-      CommMessage_InternetMessageID: incoming.internetMessageId, CommMessage_Subject: incoming.subject, CommMessage_BodyPreview: incoming.preview,
+      CommMessage_SensitivityCode: mailbox.CommMailbox_DefaultSensitivityCode ?? "internal", CommMessage_ProviderMessageID: cleanString(incoming.providerMessageId, 240),
+      CommMessage_ProviderThreadID: providerThreadId, CommMessage_ProviderConversationID: cleanString(incoming.providerConversationId, 240) || null,
+      CommMessage_InternetMessageID: cleanString(incoming.internetMessageId, 500) || null, CommMessage_Subject: cleanString(incoming.subject, 500), CommMessage_BodyPreview: cleanString(incoming.preview, 1_000),
       CommMessage_BodyText: incoming.bodyText, CommMessage_BodyHTML: safeHtml, CommMessage_BodyJSON: "{}",
       CommMessage_HeaderJSON: JSON.stringify(incoming.headers), CommMessage_MessageDate: incoming.occurredAt,
       CommMessage_ReceivedAt: senderIsMailbox ? null : incoming.occurredAt, CommMessage_SentAt: senderIsMailbox ? incoming.occurredAt : null,
@@ -742,7 +1034,7 @@ async function persistSync(admin: Db, actor: Actor, mailbox: Row, connection: Ro
     if (incoming.attachments.length) {
       await result(admin.from("Comm_MessageAttachments").insert(incoming.attachments.map((attachment) => ({
         CommAttachment_ID: crypto.randomUUID(), CommAttachment_MessageID: messageId, CommAttachment_FileName: safeFileName(attachment.fileName),
-        CommAttachment_MimeType: attachment.mimeType, CommAttachment_FileSizeBytes: attachment.sizeBytes, CommAttachment_ContentID: attachment.contentId,
+        CommAttachment_MimeType: cleanString(attachment.mimeType, 160) || null, CommAttachment_FileSizeBytes: attachment.sizeBytes, CommAttachment_ContentID: cleanString(attachment.contentId, 240) || null,
         CommAttachment_Disposition: attachment.isInline ? "inline" : "attachment", CommAttachment_IsInline: attachment.isInline,
         CommAttachment_IsScanned: false, CommAttachment_ScanStatus: "unscanned",
         CommAttachment_MetadataJSON: JSON.stringify({ providerAttachmentId: attachment.providerAttachmentId }),
@@ -750,7 +1042,7 @@ async function persistSync(admin: Db, actor: Actor, mailbox: Row, connection: Ro
       }))))
     }
     await result(admin.from("Comm_Threads").update({
-      CommThread_Subject: incoming.subject, CommThread_LastMessageID: messageId, CommThread_LastMessageAt: incoming.occurredAt,
+      CommThread_Subject: cleanString(incoming.subject, 500), CommThread_LastMessageID: messageId, CommThread_LastMessageAt: incoming.occurredAt,
       CommThread_UpdatedAt: now, CommThread_UpdatedBy: actor.userId,
     }).eq("CommThread_ID", threadId))
     await persistFolders(admin, mailbox.CommMailbox_ID, messageId, incoming.folders)
@@ -770,6 +1062,7 @@ async function persistSync(admin: Db, actor: Actor, mailbox: Row, connection: Ro
   await result(admin.from("Comm_Mailboxes").update({
     CommMailbox_SyncCursor: cursor || null,
     CommMailbox_LastSyncedAt: now,
+    CommMailbox_LiveSyncedAt: now,
     CommMailbox_IndexStatus: indexStatus,
     CommMailbox_IndexProcessedCount: processed,
     CommMailbox_IndexTotalEstimate: estimatedTotal,
@@ -805,8 +1098,8 @@ async function persistFolders(admin: Db, mailboxId: string, messageId: string, f
     let row = await result<Row>(admin.from("Comm_MailFolders").select("CommMailFolder_ID").eq("CommMailFolder_MailboxID", mailboxId).eq("CommMailFolder_ProviderFolderID", folder.provider).maybeSingle())
     if (!row) {
       row = await result<Row>(admin.from("Comm_MailFolders").insert({
-        CommMailFolder_ID: crypto.randomUUID(), CommMailFolder_MailboxID: mailboxId, CommMailFolder_ProviderFolderID: folder.provider,
-        CommMailFolder_RoleCode: folder.role, CommMailFolder_DisplayName: folder.provider, CommMailFolder_IsHidden: false,
+        CommMailFolder_ID: crypto.randomUUID(), CommMailFolder_MailboxID: mailboxId, CommMailFolder_ProviderFolderID: cleanString(folder.provider, 320),
+        CommMailFolder_RoleCode: folder.role, CommMailFolder_DisplayName: cleanString(folder.provider, 240), CommMailFolder_IsHidden: false,
         CommMailFolder_CanHoldMessages: true, CommMailFolder_CreatedAt: new Date().toISOString(), CommMailFolder_UpdatedAt: new Date().toISOString(),
       }).select("CommMailFolder_ID").single())
     }
@@ -814,7 +1107,7 @@ async function persistFolders(admin: Db, mailboxId: string, messageId: string, f
   }
 }
 
-export async function syncMailbox(admin: Db, actor: Actor, mailboxId: string) {
+export async function syncMailbox(admin: Db, actor: Actor, mailboxId: string, options: SyncOptions = {}) {
   await requirePermission(admin, actor, "Email.Read")
   const { mailbox, connection } = await requireMailbox(admin, actor, mailboxId, "read")
   if (!mailbox.CommMailbox_InboundEnabled || !connection.CommConn_InboundEnabled || connection.CommConn_StatusCode !== "active") {
@@ -850,8 +1143,8 @@ export async function syncMailbox(admin: Db, actor: Actor, mailboxId: string) {
   const credentials = await credential(admin, connection)
   try {
     const sync = publicProvider(connection.CommConn_ProviderTypeCode) === "gmail"
-      ? await syncGmail(mailbox, credentials.accessToken)
-      : await syncOutlook(mailbox, credentials.accessToken)
+      ? await syncGmail(admin, mailbox, credentials.accessToken, options)
+      : await syncOutlook(admin, mailbox, credentials.accessToken, options)
     await persistSync(admin, actor, mailbox, connection, sync)
     const existingProcessed = Math.max(0, Number(mailbox.CommMailbox_IndexProcessedCount) || 0)
     const existingEstimate = Number(mailbox.CommMailbox_IndexTotalEstimate)
@@ -862,7 +1155,7 @@ export async function syncMailbox(admin: Db, actor: Actor, mailboxId: string) {
       indexedCount,
       sync.index.totalEstimate ?? (Number.isFinite(existingEstimate) && existingEstimate >= 0 ? existingEstimate : 0),
     )
-    const indexStatus = sync.index.initial && sync.hasMore ? "indexing" : "ready"
+    const indexStatus = sync.index.initial && (sync.hasMore || indexedCount < estimatedTotal) ? "indexing" : "ready"
     return {
       synced: sync.messages.length,
       lastSyncedAt: new Date().toISOString(),
@@ -1562,8 +1855,17 @@ export async function attachment(admin: Db, actor: Actor, attachmentId: string) 
   await requirePermission(admin, actor, "Email.Read")
   const item = await result<Row>(admin.from("Comm_MessageAttachments").select("*").eq("CommAttachment_ID", attachmentId).maybeSingle())
   if (!item) throw new InboxHttpError(404, "This attachment was not found.", "attachment_not_found")
+  const scanStatus = cleanString(item.CommAttachment_ScanStatus, 40).toLowerCase()
+  if (item.CommAttachment_IsInline || ["blocked", "infected", "quarantined", "malicious"].includes(scanStatus)) {
+    throw new InboxHttpError(422, "This attachment is blocked by the workspace security policy.", "attachment_blocked")
+  }
   const message = await result<Row>(admin.from("Comm_Messages").select("*").eq("CommMessage_ID", item.CommAttachment_MessageID).eq("CommMessage_IsDeleted", false).maybeSingle())
-  if (!message?.CommMessage_MailboxID || !(await mailboxIds(admin, actor, "read")).has(message.CommMessage_MailboxID)) throw new InboxHttpError(404, "This attachment was not found.", "attachment_not_found")
+  if (!message?.CommMessage_MailboxID || message.CommMessage_IsDraft || message.CommMessage_IsSpam || !(await mailboxIds(admin, actor, "read")).has(message.CommMessage_MailboxID)) throw new InboxHttpError(404, "This attachment was not found.", "attachment_not_found")
+  const excluded = await result<Row[]>(admin.from("Comm_MessageFolders")
+    .select("CommMessageFolder_MessageID,Comm_MailFolders!inner(CommMailFolder_RoleCode)")
+    .eq("CommMessageFolder_MessageID", message.CommMessage_ID)
+    .in("Comm_MailFolders.CommMailFolder_RoleCode", ["drafts", "spam", "trash"]).limit(1)) ?? []
+  if (excluded.length) throw new InboxHttpError(404, "This attachment was not found.", "attachment_not_found")
   const { mailbox, connection } = await requireMailbox(admin, actor, message.CommMessage_MailboxID, "read")
   let metadata: Row = {}; try { metadata = JSON.parse(item.CommAttachment_MetadataJSON ?? "{}") } catch { metadata = {} }
   const providerAttachmentId = cleanString(metadata.providerAttachmentId, 2_000)

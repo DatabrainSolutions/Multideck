@@ -21,4 +21,3 @@ export async function oneOrNull(promise) {
   if (error) throw new HttpError(500, error.message);
   return data;
 }
-

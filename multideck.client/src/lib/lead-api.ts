@@ -73,7 +73,7 @@ export async function listLeads(search?: string) {
   return callCrmRpc<ApiLead[]>(
     "multideck_crm_list_leads",
     { p_search: search?.trim() || null },
-    "We could not load CRM leads.",
+    "Unable to load CRM leads. Check your connection and try again.",
     "Sign in again to view CRM leads.",
   )
 }
@@ -82,7 +82,7 @@ export async function getLead(leadId: string) {
   return callCrmRpc<ApiLeadDetail>(
     "multideck_crm_get_lead",
     { p_lead_id: leadId },
-    "We could not load this lead.",
+    "Unable to load this lead. Check your connection and try again.",
     "Sign in again to view CRM leads.",
   )
 }

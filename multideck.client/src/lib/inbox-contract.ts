@@ -1,0 +1,941 @@
+/**
+ * The Inbox wire contract: the types the tenant Edge Function speaks, the
+ * readers that turn a response into them, and the pure client-side rules for
+ * pagination, caching, selection and outbound payloads.
+ *
+ * This module deliberately imports nothing. It holds no fetch, no storage and no
+ * browser globals, so every rule below — which cursor is next, which thread
+ * survives a mailbox switch, what a Reply all is allowed to say — can be tested
+ * directly and reasoned about without a running app. `inbox-api.ts` adds the
+ * transport on top and re-exports all of it.
+ */
+
+export type MailProvider = "gmail" | "outlook"
+export type MailboxKind = "personal" | "shared" | "group"
+export type ConnectionStatus = "connected" | "syncing" | "reauthorization_required" | "error" | "disconnected"
+export type MailboxIndexStatus = "pending" | "indexing" | "ready" | "error"
+export type MailFolder = "inbox" | "sent" | "drafts" | "archive" | "spam" | "trash"
+export type ThreadSummaryStatus = "none" | "pending" | "ready" | "stale" | "failed"
+export type MessageDirection = "inbound" | "outbound"
+export type SendMode = "new" | "reply" | "reply_all" | "forward"
+export type SendStatus = "queued" | "sent" | "failed"
+
+export type MailAddress = {
+  address: string
+  displayName: string | null
+}
+
+export type InboxConnection = {
+  id: string
+  provider: MailProvider
+  displayName: string
+  address: string | null
+  /** True only when Microsoft returned both delegated shared-mail scopes. */
+  sharedMailboxAccess: boolean
+  status: ConnectionStatus
+  inboundEnabled: boolean
+  outboundEnabled: boolean
+  lastSyncedAt: string | null
+  error: string | null
+}
+
+export type InboxProviderAvailability = {
+  provider: MailProvider
+  configured: boolean
+  adminConsentUrl: string | null
+}
+
+export type DexterEmailContextStatus =
+  | "available"
+  | "indexing"
+  | "disabled"
+  | "provider_not_configured"
+  | "permission_required"
+  | "reauthorization_required"
+  | "not_connected"
+  | "error"
+
+export type DexterEmailContextSource = {
+  provider: MailProvider
+  enabled: boolean
+  configured: boolean
+  canRead: boolean
+  canAIRead: boolean
+  available: boolean
+  status: DexterEmailContextStatus
+  accessibleMailboxCount: number
+  indexStatus: MailboxIndexStatus
+  lastSyncedAt: string | null
+}
+
+export type EmailConnectionResult = {
+  provider: MailProvider
+  status: "connected" | "error"
+  code: string | null
+}
+
+export type InboxThreadDeepLink = {
+  provider: MailProvider
+  mailboxId: string
+  threadId: string
+}
+
+export type Mailbox = {
+  id: string
+  connectionId: string | null
+  provider: MailProvider
+  kind: MailboxKind
+  displayName: string
+  address: string
+  unreadCount: number
+  isDefault: boolean
+  inboundEnabled: boolean
+  outboundEnabled: boolean
+  status: ConnectionStatus
+  lastSyncedAt: string | null
+  indexStatus: MailboxIndexStatus
+  indexedCount: number
+  estimatedTotal: number | null
+  indexPercent: number
+  error: string | null
+}
+
+export type ThreadSummaryState = {
+  status: ThreadSummaryStatus
+  text: string | null
+  keyPoints: string[]
+  /** Message ids the summary drew on, when the API reports them. */
+  sourceMessageIds: string[]
+  model: string | null
+  updatedAt: string | null
+  error: string | null
+}
+
+export type InboxThreadListItem = {
+  id: string
+  mailboxId: string
+  provider: MailProvider
+  subject: string
+  preview: string
+  participants: MailAddress[]
+  lastMessageAt: string | null
+  unreadCount: number
+  messageCount: number
+  hasAttachments: boolean
+  starred: boolean
+  archived: boolean
+  summary: ThreadSummaryState
+}
+
+export type MailAttachment = {
+  id: string
+  fileName: string
+  mimeType: string | null
+  sizeBytes: number | null
+  isInline: boolean
+  scanStatus: "clean" | "pending" | "blocked" | "unknown"
+}
+
+/** A file the operator picked in the composer, held in memory until it sends. */
+export type OutboundAttachment = {
+  /** Client-side identity. The provider assigns the real one when it sends. */
+  id: string
+  fileName: string
+  mimeType: string
+  sizeBytes: number
+  /** Standard base64, no data-URL prefix. */
+  contentBase64: string
+}
+
+/**
+ * What one message may carry. Both providers are held to the same numbers so a
+ * file that attaches in Gmail attaches in Outlook too, and the composer can say
+ * no before a send fails at the far end.
+ */
+export const attachmentLimits = {
+  maxCount: 10,
+  maxFileBytes: 10 * 1024 * 1024,
+  maxTotalBytes: 15 * 1024 * 1024,
+} as const
+
+export function attachmentTotalBytes(attachments: OutboundAttachment[]) {
+  return attachments.reduce((total, attachment) => total + attachment.sizeBytes, 0)
+}
+
+/**
+ * Why this file cannot be attached, or null when it can. Returns a reason rather
+ * than a boolean so the composer names the actual limit that was hit.
+ */
+export function attachmentRejection(
+  file: { name: string; size: number },
+  existing: OutboundAttachment[],
+): "count" | "file_too_large" | "total_too_large" | "duplicate" | null {
+  if (existing.length >= attachmentLimits.maxCount) return "count"
+  if (file.size > attachmentLimits.maxFileBytes) return "file_too_large"
+  if (attachmentTotalBytes(existing) + file.size > attachmentLimits.maxTotalBytes) return "total_too_large"
+  if (existing.some((item) => item.fileName === file.name && item.sizeBytes === file.size)) return "duplicate"
+  return null
+}
+
+export type InboxMessage = {
+  id: string
+  threadId: string
+  mailboxId: string | null
+  direction: MessageDirection
+  from: MailAddress[]
+  to: MailAddress[]
+  cc: MailAddress[]
+  bcc: MailAddress[]
+  subject: string
+  sentAt: string | null
+  receivedAt: string | null
+  bodyText: string | null
+  /**
+   * Sanitised on the server. The renderer treats it as untrusted markup and
+   * never hands it to `dangerouslySetInnerHTML`.
+   */
+  sanitizedHtml: string | null
+  attachments: MailAttachment[]
+}
+
+export type InboxThreadDetail = {
+  id: string
+  mailboxId: string
+  subject: string
+  starred: boolean
+  archived: boolean
+  unreadCount: number
+  /** A shared mailbox the operator may read but not send from. */
+  readOnly: boolean
+  messages: InboxMessage[]
+  summary: ThreadSummaryState
+}
+
+export type ThreadPage = {
+  items: InboxThreadListItem[]
+  nextCursor: string | null
+  hasMore: boolean
+}
+
+export type InboxDraft = {
+  id: string
+  threadId: string | null
+  mailboxId: string
+  mode: SendMode
+  sourceMessageId: string | null
+  subject: string
+  bodyText: string
+  updatedAt: string | null
+}
+
+export type SendReceipt = {
+  id: string
+  threadId: string | null
+  messageId: string | null
+  status: SendStatus
+  /** True when the idempotency key matched an earlier send. */
+  reused: boolean
+}
+
+/**
+ * What the browser is allowed to say about a reply. The server resolves the
+ * final recipient list from `mode` plus `sourceMessageId`; the client only ever
+ * reports the edits the operator made by hand, so a stale thread in one tab can
+ * never quietly drop somebody off a Reply all.
+ */
+export type SendRequest = {
+  mailboxId: string
+  mode: SendMode
+  sourceMessageId: string | null
+  threadId: string | null
+  draftId: string | null
+  subject: string | null
+  bodyText: string
+  addedTo: MailAddress[]
+  addedCc: MailAddress[]
+  addedBcc: MailAddress[]
+  removedAddresses: string[]
+  attachments: OutboundAttachment[]
+  idempotencyKey: string
+}
+
+export type ThreadQuery = {
+  mailboxId: string
+  folder?: MailFolder
+  query?: string
+  cursor?: string | null
+  limit?: number
+}
+
+export class InboxApiError extends Error {
+  readonly status: number
+  readonly code: "unauthenticated" | "reauthorization_required" | "rate_limited" | "offline" | "not_found" | "forbidden" | "server"
+  readonly retryAfterSeconds: number | null
+
+  constructor(
+    message: string,
+    options: { status?: number; code?: InboxApiError["code"]; retryAfterSeconds?: number | null } = {},
+  ) {
+    super(message)
+    this.name = "InboxApiError"
+    this.status = options.status ?? 0
+    this.code = options.code ?? "server"
+    this.retryAfterSeconds = options.retryAfterSeconds ?? null
+  }
+}
+
+export function isInboxNotFound(error: unknown): error is InboxApiError {
+  return error instanceof InboxApiError && error.code === "not_found"
+}
+
+export function readRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : {}
+}
+
+export function readText(value: unknown, fallback = ""): string {
+  return typeof value === "string" ? value : fallback
+}
+
+export function readOptionalText(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null
+}
+
+export function readCount(value: unknown, fallback = 0): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback
+}
+
+export function readFlag(value: unknown, fallback = false): boolean {
+  return typeof value === "boolean" ? value : fallback
+}
+
+export function readList(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : []
+}
+
+/** The first present key wins, so one reader survives a field rename on either side. */
+export function pickField(source: Record<string, unknown>, ...keys: string[]): unknown {
+  for (const key of keys) {
+    if (source[key] !== undefined && source[key] !== null) return source[key]
+  }
+  return undefined
+}
+
+export function normalizeProvider(value: unknown): MailProvider {
+  const text = readText(value).toLowerCase()
+  if (text === "gmail" || text === "google") return "gmail"
+  return "outlook"
+}
+
+function normalizeMailboxKind(value: unknown, isShared: boolean): MailboxKind {
+  const text = readText(value).toLowerCase()
+  if (text === "shared") return "shared"
+  if (text === "group" || text === "distribution") return "group"
+  if (text === "personal" || text === "user") return "personal"
+  return isShared ? "shared" : "personal"
+}
+
+export function normalizeConnectionStatus(value: unknown): ConnectionStatus {
+  const text = readText(value).toLowerCase().replace(/[\s-]+/g, "_")
+  if (text === "connected" || text === "active" || text === "healthy") return "connected"
+  if (text === "syncing" || text === "initial_sync" || text === "pending") return "syncing"
+  if (text === "reauthorization_required" || text === "reauth_required" || text === "reauthorisation_required") {
+    return "reauthorization_required"
+  }
+  if (text === "error" || text === "failed") return "error"
+  return "disconnected"
+}
+
+function normalizeMailboxIndexStatus(value: unknown, lastSyncedAt: string | null): MailboxIndexStatus {
+  const text = readText(value).toLowerCase()
+  if (text === "pending" || text === "indexing" || text === "ready" || text === "error") return text
+  return lastSyncedAt ? "ready" : "pending"
+}
+
+function normalizeAddress(value: unknown): MailAddress | null {
+  if (typeof value === "string") {
+    return value.trim() ? { address: value.trim(), displayName: null } : null
+  }
+
+  const record = readRecord(value)
+  const address = readText(pickField(record, "address", "email", "emailAddress")).trim()
+  if (!address) return null
+
+  return { address, displayName: readOptionalText(pickField(record, "displayName", "name")) }
+}
+
+function normalizeAddresses(value: unknown): MailAddress[] {
+  return readList(value).map(normalizeAddress).filter((address): address is MailAddress => address !== null)
+}
+
+export function normalizeSummary(value: unknown): ThreadSummaryState {
+  if (typeof value === "string") {
+    return {
+      status: value.trim() ? "ready" : "none",
+      text: readOptionalText(value.trim()),
+      keyPoints: [],
+      sourceMessageIds: [],
+      model: null,
+      updatedAt: null,
+      error: null,
+    }
+  }
+
+  const record = readRecord(value)
+  const text = readOptionalText(pickField(record, "summary", "text"))
+  const rawStatus = readText(pickField(record, "status", "state")).toLowerCase()
+  const status: ThreadSummaryStatus =
+    rawStatus === "pending" || rawStatus === "generating" || rawStatus === "queued" ? "pending" :
+    rawStatus === "stale" || rawStatus === "outdated" ? "stale" :
+    rawStatus === "failed" || rawStatus === "error" ? "failed" :
+    rawStatus === "ready" || rawStatus === "complete" ? "ready" :
+    text ? "ready" : "none"
+
+  return {
+    status,
+    text,
+    keyPoints: readList(pickField(record, "keyPoints", "points")).map((point) => readText(point)).filter(Boolean),
+    sourceMessageIds: readList(pickField(record, "sourceMessageIds", "messageIds", "citations"))
+      .map((entry) => (typeof entry === "string" ? entry : readText(pickField(readRecord(entry), "messageId", "id"))))
+      .filter(Boolean),
+    model: readOptionalText(pickField(record, "model")),
+    updatedAt: readOptionalText(pickField(record, "updatedAt", "generatedAt")),
+    error: readOptionalText(pickField(record, "error", "errorMessage")),
+  }
+}
+
+export function normalizeConnection(value: unknown): InboxConnection {
+  const record = readRecord(value)
+  return {
+    id: readText(pickField(record, "id", "connectionId")),
+    provider: normalizeProvider(pickField(record, "provider")),
+    displayName: readText(pickField(record, "displayName", "name"), "Mail connection"),
+    address: readOptionalText(pickField(record, "address", "email")),
+    sharedMailboxAccess: readFlag(pickField(record, "sharedMailboxAccess")),
+    status: normalizeConnectionStatus(pickField(record, "status")),
+    inboundEnabled: readFlag(pickField(record, "inboundEnabled"), true),
+    outboundEnabled: readFlag(pickField(record, "outboundEnabled"), true),
+    lastSyncedAt: readOptionalText(pickField(record, "lastSyncedAt")),
+    error: readOptionalText(pickField(record, "error", "errorMessage")),
+  }
+}
+
+export function normalizeProviderAvailability(value: unknown): InboxProviderAvailability {
+  const record = readRecord(value)
+  const candidateAdminConsentUrl = readOptionalText(pickField(record, "adminConsentUrl", "admin_consent_url"))
+  let adminConsentUrl: string | null = null
+  if (candidateAdminConsentUrl) {
+    try {
+      const parsed = new URL(candidateAdminConsentUrl)
+      if (parsed.protocol === "https:" && parsed.hostname === "login.microsoftonline.com") {
+        adminConsentUrl = parsed.toString()
+      }
+    } catch {
+      adminConsentUrl = null
+    }
+  }
+  return {
+    provider: normalizeProvider(pickField(record, "provider")),
+    configured: readFlag(pickField(record, "configured")),
+    adminConsentUrl,
+  }
+}
+
+export function normalizeDexterEmailContextSource(value: unknown): DexterEmailContextSource {
+  const record = readRecord(value)
+  const rawStatus = readText(pickField(record, "status")).toLowerCase()
+  const status: DexterEmailContextStatus = [
+    "available",
+    "indexing",
+    "disabled",
+    "provider_not_configured",
+    "permission_required",
+    "reauthorization_required",
+    "not_connected",
+    "error",
+  ].includes(rawStatus)
+    ? rawStatus as DexterEmailContextStatus
+    : "error"
+  const lastSyncedAt = readOptionalText(pickField(record, "lastSyncedAt", "last_synced_at"))
+
+  return {
+    provider: normalizeProvider(pickField(record, "provider")),
+    enabled: readFlag(pickField(record, "enabled")),
+    configured: readFlag(pickField(record, "configured")),
+    canRead: readFlag(pickField(record, "canRead", "can_read")),
+    canAIRead: readFlag(pickField(record, "canAIRead", "can_ai_read")),
+    available: readFlag(pickField(record, "available")),
+    status,
+    accessibleMailboxCount: readCount(pickField(record, "accessibleMailboxCount", "accessible_mailbox_count")),
+    indexStatus: normalizeMailboxIndexStatus(pickField(record, "indexStatus", "index_status"), lastSyncedAt),
+    lastSyncedAt,
+  }
+}
+
+export function readEmailConnectionResult(search: string): EmailConnectionResult | null {
+  const params = new URLSearchParams(search)
+  const provider = params.get("email_connection")
+  const status = params.get("status")
+  if ((provider !== "gmail" && provider !== "outlook") || (status !== "connected" && status !== "error")) {
+    return null
+  }
+  const rawCode = params.get("code")?.trim() ?? ""
+  return {
+    provider,
+    status,
+    code: rawCode && /^[a-z0-9_]{1,80}$/.test(rawCode) ? rawCode : null,
+  }
+}
+
+/**
+ * Reads only server-issued Inbox citation coordinates. Requiring UUIDs keeps a
+ * malformed or hand-built URL from becoming an arbitrary identifier request;
+ * the Edge Function remains the final mailbox-access boundary.
+ */
+export function readInboxThreadDeepLink(search: string): InboxThreadDeepLink | null {
+  const params = new URLSearchParams(search)
+  const provider = params.get("provider")
+  const mailboxId = params.get("mailbox")?.trim() ?? ""
+  const threadId = params.get("thread")?.trim() ?? ""
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+  if ((provider !== "gmail" && provider !== "outlook") || !uuidPattern.test(mailboxId) || !uuidPattern.test(threadId)) {
+    return null
+  }
+
+  return { provider, mailboxId, threadId }
+}
+
+export function normalizeMailbox(value: unknown, fallbackStatus?: ConnectionStatus): Mailbox {
+  const record = readRecord(value)
+  const isShared = readFlag(pickField(record, "isShared"))
+  const rawStatus = pickField(record, "status")
+  const lastSyncedAt = readOptionalText(pickField(record, "lastSyncedAt"))
+  const indexStatus = normalizeMailboxIndexStatus(pickField(record, "indexStatus", "index_status"), lastSyncedAt)
+  const indexedCount = readCount(pickField(record, "indexedCount", "indexed_count"))
+  const rawEstimatedTotal = pickField(record, "estimatedTotal", "estimated_total")
+  const estimatedTotal = rawEstimatedTotal === null || rawEstimatedTotal === undefined
+    ? null
+    : readCount(rawEstimatedTotal)
+  const reportedPercent = readCount(pickField(record, "indexPercent", "index_percent"), -1)
+  const indexPercent = indexStatus === "ready"
+    ? 100
+    : reportedPercent >= 0
+      ? Math.min(99, reportedPercent)
+      : estimatedTotal && estimatedTotal > 0
+        ? Math.min(99, Math.floor(indexedCount / estimatedTotal * 100))
+        : 0
+
+  return {
+    id: readText(pickField(record, "id", "mailboxId")),
+    connectionId: readOptionalText(pickField(record, "connectionId")),
+    provider: normalizeProvider(pickField(record, "provider")),
+    kind: normalizeMailboxKind(pickField(record, "kind", "mailboxKind"), isShared),
+    displayName: readText(pickField(record, "displayName", "name"), readText(pickField(record, "address"))),
+    address: readText(pickField(record, "address", "email")),
+    unreadCount: readCount(pickField(record, "unreadCount", "unread")),
+    isDefault: readFlag(pickField(record, "isDefault", "isDefaultOutbound")),
+    inboundEnabled: readFlag(pickField(record, "inboundEnabled"), true),
+    outboundEnabled: readFlag(pickField(record, "outboundEnabled"), true),
+    status: rawStatus === undefined ? fallbackStatus ?? "connected" : normalizeConnectionStatus(rawStatus),
+    lastSyncedAt,
+    indexStatus,
+    indexedCount,
+    estimatedTotal,
+    indexPercent,
+    error: readOptionalText(pickField(record, "error", "errorMessage")),
+  }
+}
+
+export function normalizeThreadListItem(value: unknown): InboxThreadListItem {
+  const record = readRecord(value)
+  const explicitUnread = pickField(record, "unreadCount")
+  const isRead = pickField(record, "isRead")
+
+  return {
+    id: readText(pickField(record, "id", "threadId")),
+    mailboxId: readText(pickField(record, "mailboxId")),
+    provider: normalizeProvider(pickField(record, "provider")),
+    subject: readText(pickField(record, "subject")),
+    preview: readText(pickField(record, "preview", "snippet")),
+    participants: normalizeAddresses(pickField(record, "participants", "from")),
+    lastMessageAt: readOptionalText(pickField(record, "lastMessageAt", "occurredAt", "receivedAt")),
+    // A boolean read flag and a numeric unread count both appear in the wild.
+    unreadCount: explicitUnread !== undefined ? readCount(explicitUnread) : isRead === false ? 1 : 0,
+    messageCount: readCount(pickField(record, "messageCount"), 1),
+    hasAttachments: readFlag(pickField(record, "hasAttachments")),
+    starred: readFlag(pickField(record, "starred", "isStarred")),
+    archived: readFlag(pickField(record, "archived", "isArchived")),
+    summary: normalizeSummary(pickField(record, "summary", "lunaSummary")),
+  }
+}
+
+function normalizeAttachment(value: unknown): MailAttachment {
+  const record = readRecord(value)
+  const rawScan = readText(pickField(record, "scanStatus")).toLowerCase()
+  const isScanned = pickField(record, "isScanned")
+
+  return {
+    id: readText(pickField(record, "id", "attachmentId")),
+    fileName: readText(pickField(record, "fileName", "name"), "Attachment"),
+    mimeType: readOptionalText(pickField(record, "mimeType", "contentType")),
+    sizeBytes: typeof pickField(record, "sizeBytes", "size") === "number" ? readCount(pickField(record, "sizeBytes", "size")) : null,
+    isInline: readFlag(pickField(record, "isInline")),
+    scanStatus:
+      rawScan === "clean" || rawScan === "passed" ? "clean" :
+      rawScan === "blocked" || rawScan === "infected" ? "blocked" :
+      rawScan === "pending" || rawScan === "scanning" ? "pending" :
+      isScanned === true ? "clean" : isScanned === false ? "pending" : "unknown",
+  }
+}
+
+function normalizeMessage(value: unknown, threadId: string): InboxMessage {
+  const record = readRecord(value)
+  const occurredAt = readOptionalText(pickField(record, "sentAt", "receivedAt", "occurredAt"))
+  const direction = readText(pickField(record, "direction")).toLowerCase() === "outbound" ? "outbound" : "inbound"
+
+  return {
+    id: readText(pickField(record, "id", "messageId")),
+    threadId: readText(pickField(record, "threadId"), threadId),
+    mailboxId: readOptionalText(pickField(record, "mailboxId")),
+    direction,
+    from: normalizeAddresses(pickField(record, "from")),
+    to: normalizeAddresses(pickField(record, "to")),
+    cc: normalizeAddresses(pickField(record, "cc")),
+    bcc: normalizeAddresses(pickField(record, "bcc")),
+    subject: readText(pickField(record, "subject")),
+    sentAt: direction === "outbound" ? occurredAt : readOptionalText(pickField(record, "sentAt", "occurredAt")),
+    receivedAt: direction === "inbound" ? occurredAt : readOptionalText(pickField(record, "receivedAt")),
+    bodyText: readOptionalText(pickField(record, "bodyText", "text")),
+    sanitizedHtml: readOptionalText(pickField(record, "sanitizedHtml", "safeBodyHtml", "bodyHtml")),
+    attachments: readList(pickField(record, "attachments")).map(normalizeAttachment),
+  }
+}
+
+export function normalizeThreadDetail(value: unknown, requestedId: string): InboxThreadDetail {
+  const record = readRecord(value)
+  const id = readText(pickField(record, "id", "threadId"), requestedId)
+  const state = readRecord(pickField(record, "state"))
+  const explicitUnread = pickField(record, "unreadCount")
+  const isRead = pickField(state, "isRead") ?? pickField(record, "isRead")
+
+  return {
+    id,
+    mailboxId: readText(pickField(record, "mailboxId")),
+    subject: readText(pickField(record, "subject")),
+    starred: readFlag(pickField(state, "isStarred") ?? pickField(record, "starred", "isStarred")),
+    archived: readFlag(pickField(state, "isArchived") ?? pickField(record, "archived", "isArchived")),
+    unreadCount: explicitUnread !== undefined ? readCount(explicitUnread) : isRead === false ? 1 : 0,
+    readOnly: readFlag(pickField(record, "readOnly", "isReadOnly")),
+    messages: readList(pickField(record, "messages")).map((message) => normalizeMessage(message, id)),
+    summary: normalizeSummary(pickField(record, "summary", "lunaSummary")),
+  }
+}
+
+export function normalizeThreadPage(value: unknown, limit: number): ThreadPage {
+  const record = readRecord(value)
+  const items = readList(pickField(record, "items", "threads")).map(normalizeThreadListItem)
+  const explicitCursor = readOptionalText(pickField(record, "nextCursor", "cursor"))
+  const hasMoreValue = pickField(record, "hasMore")
+  const page = pickField(record, "page")
+
+  // A cursor API reports the next cursor; a page API reports page + hasMore, so
+  // the page number becomes the cursor the client sends back.
+  const hasMore = hasMoreValue !== undefined ? readFlag(hasMoreValue) : items.length >= limit
+  const nextCursor = explicitCursor ?? (hasMore && typeof page === "number" ? String(page + 1) : null)
+
+  return { items, nextCursor: hasMore ? nextCursor : null, hasMore: hasMore && nextCursor !== null }
+}
+
+
+export function normalizeDraft(value: unknown, request: Partial<SendRequest>): InboxDraft {
+  const record = readRecord(value)
+  return {
+    id: readText(pickField(record, "id", "draftId")),
+    threadId: readOptionalText(pickField(record, "threadId")) ?? request.threadId ?? null,
+    mailboxId: readText(pickField(record, "mailboxId"), request.mailboxId ?? ""),
+    mode: (readText(pickField(record, "mode"), request.mode ?? "new") as SendMode),
+    sourceMessageId: readOptionalText(pickField(record, "sourceMessageId")) ?? request.sourceMessageId ?? null,
+    subject: readText(pickField(record, "subject"), request.subject ?? ""),
+    bodyText: readText(pickField(record, "bodyText"), request.bodyText ?? ""),
+    updatedAt: readOptionalText(pickField(record, "updatedAt")),
+  }
+}
+
+/** The wire shape for a draft or a send. Recipient resolution stays server-side. */
+export function buildSendPayload(request: SendRequest) {
+  return {
+    mailboxId: request.mailboxId,
+    mode: request.mode,
+    sourceMessageId: request.sourceMessageId,
+    threadId: request.threadId,
+    draftId: request.draftId,
+    subject: request.subject,
+    bodyText: request.bodyText,
+    addedTo: request.addedTo,
+    addedCc: request.addedCc,
+    addedBcc: request.addedBcc,
+    removedAddresses: request.removedAddresses,
+    attachments: request.attachments.map((attachment) => ({
+      fileName: attachment.fileName,
+      mimeType: attachment.mimeType,
+      sizeBytes: attachment.sizeBytes,
+      contentBase64: attachment.contentBase64,
+    })),
+  }
+}
+
+export type ComposerEdits = {
+  subject: string
+  bodyText: string
+  addedTo: MailAddress[]
+  addedCc: MailAddress[]
+  addedBcc: MailAddress[]
+  removedAddresses: string[]
+  attachments: OutboundAttachment[]
+}
+
+/**
+ * Builds the request for a reply, reply all or forward without ever deriving the
+ * recipient list. `reply` and `reply_all` differ only by `mode`: the server reads
+ * the source message and decides who receives it, so the two cannot drift apart
+ * in the browser and a Reply all can never silently narrow to a Reply.
+ */
+export function buildReplyRequest({
+  mode,
+  mailboxId,
+  threadId,
+  sourceMessageId,
+  draftId = null,
+  edits,
+  idempotencyKey,
+}: {
+  mode: SendMode
+  mailboxId: string
+  threadId: string | null
+  sourceMessageId: string | null
+  draftId?: string | null
+  edits: ComposerEdits
+  idempotencyKey: string
+}): SendRequest {
+  const needsSource = mode === "reply" || mode === "reply_all" || mode === "forward"
+  if (needsSource && !sourceMessageId) {
+    throw new InboxApiError("Select the message to respond to before sending.")
+  }
+
+  return {
+    mailboxId,
+    mode,
+    // A new message has no source; every response mode carries exactly one.
+    sourceMessageId: needsSource ? sourceMessageId : null,
+    threadId: mode === "new" ? null : threadId,
+    draftId,
+    // Reply and reply all keep the thread's subject on the server side.
+    subject: mode === "new" || mode === "forward" ? edits.subject : null,
+    bodyText: edits.bodyText,
+    addedTo: edits.addedTo,
+    addedCc: edits.addedCc,
+    addedBcc: edits.addedBcc,
+    removedAddresses: edits.removedAddresses,
+    attachments: edits.attachments,
+    idempotencyKey,
+  }
+}
+
+export type ComposerState = {
+  mode: SendMode
+  threadId: string | null
+  sourceMessageId: string | null
+  /** The subject shown for a new message or a forward. Replies keep the thread's. */
+  subject: string
+  bodyText: string
+  /**
+   * Only the people the operator named themselves. For a reply the server still
+   * resolves the audience from the source message; these are added to it.
+   */
+  to: MailAddress[]
+  cc: MailAddress[]
+  bcc: MailAddress[]
+  /** Cc and Bcc stay out of the way until they are asked for, or already hold someone. */
+  showCc: boolean
+  showBcc: boolean
+  attachments: OutboundAttachment[]
+  presentation: "docked" | "open" | "expanded"
+}
+
+export function emptyComposerState(mode: SendMode = "reply", presentation: ComposerState["presentation"] = "docked"): ComposerState {
+  return {
+    mode,
+    threadId: null,
+    sourceMessageId: null,
+    subject: "",
+    bodyText: "",
+    to: [],
+    cc: [],
+    bcc: [],
+    showCc: false,
+    showBcc: false,
+    attachments: [],
+    presentation,
+  }
+}
+
+export type ComposerStatus = "idle" | "saving" | "sending" | "discarding" | "queued" | "failed"
+
+export const composerModeLabels: Record<SendMode, string> = {
+  new: "Compose",
+  reply: "Reply",
+  reply_all: "Reply all",
+  forward: "Forward",
+}
+
+/**
+ * Splits a hand-typed recipient field into addresses. Only the operator's own
+ * additions ever go through here; nothing is inferred from the thread.
+ */
+export function parseAddressInput(value: string): MailAddress[] {
+  const seen = new Set<string>()
+  return value
+    .split(/[,;\n]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const match = entry.match(/^(.*?)\s*<([^>]+)>$/)
+      const address = (match ? match[2] : entry).trim()
+      const displayName = match?.[1]?.trim().replace(/^["']|["']$/g, "") || null
+      return { address, displayName }
+    })
+    .filter((recipient) => {
+      const key = recipient.address.toLowerCase()
+      if (!recipient.address.includes("@") || seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+}
+
+export function composerEdits(state: ComposerState): ComposerEdits {
+  return {
+    subject: state.subject,
+    bodyText: state.bodyText,
+    // Every field says exactly what the operator typed into it. A new message
+    // and a forward carry their whole audience this way; a reply carries only
+    // the people added on top of the ones the server resolves from the source.
+    addedTo: dedupeAddresses(state.to),
+    addedCc: dedupeAddresses(state.cc),
+    addedBcc: dedupeAddresses(state.bcc),
+    removedAddresses: [],
+    attachments: state.attachments,
+  }
+}
+
+/** True when the mode needs the operator to name somebody before it can send. */
+export function composerNeedsRecipient(mode: SendMode) {
+  return mode === "new" || mode === "forward"
+}
+
+export function dedupeAddresses(addresses: MailAddress[]): MailAddress[] {
+  const seen = new Set<string>()
+  return addresses.filter((recipient) => {
+    const key = recipient.address.trim().toLowerCase()
+    if (!key || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+/** RFC-shaped enough to catch a typo without rejecting an address a provider accepts. */
+export function isLikelyEmailAddress(value: string) {
+  return /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]{2,}$/.test(value.trim())
+}
+
+export function formatAddress(address: MailAddress) {
+  return address.displayName ? `${address.displayName} <${address.address}>` : address.address
+}
+
+/* --------------------------------------------------------------------------
+ * Thread page cache, selection and pagination
+ * ------------------------------------------------------------------------ */
+
+export type ThreadCacheEntry = {
+  items: InboxThreadListItem[]
+  nextCursor: string | null
+  hasMore: boolean
+}
+
+export function threadCacheKey(mailboxId: string, folder: MailFolder, query: string) {
+  return `${mailboxId}::${folder}::${query.trim().toLowerCase()}`
+}
+
+/**
+ * Switching mailbox or provider must not throw away a list the operator has
+ * already scrolled, and appending a page must not duplicate a thread that moved
+ * between pages while they were reading. Both live here so the page component
+ * stays about layout and the behaviour stays testable.
+ */
+export function mergeThreadPage(previous: ThreadCacheEntry | undefined, page: ThreadPage, append: boolean): ThreadCacheEntry {
+  if (!append || !previous) {
+    return { items: dedupeThreads(page.items), nextCursor: page.nextCursor, hasMore: page.hasMore }
+  }
+
+  return {
+    items: dedupeThreads([...previous.items, ...page.items]),
+    nextCursor: page.nextCursor,
+    hasMore: page.hasMore,
+  }
+}
+
+export function dedupeThreads(items: InboxThreadListItem[]): InboxThreadListItem[] {
+  const seen = new Map<string, InboxThreadListItem>()
+  for (const item of items) {
+    if (!item.id) continue
+    // A later page carries the fresher row, so it replaces the earlier copy in place.
+    seen.set(item.id, item)
+  }
+  return [...seen.values()]
+}
+
+export function applyThreadPatch(
+  entry: ThreadCacheEntry | undefined,
+  threadId: string,
+  patch: Partial<InboxThreadListItem>,
+): ThreadCacheEntry | undefined {
+  if (!entry) return entry
+  let changed = false
+  const items = entry.items.map((item) => {
+    if (item.id !== threadId) return item
+    changed = true
+    return { ...item, ...patch }
+  })
+  return changed ? { ...entry, items } : entry
+}
+
+/**
+ * Keeps the operator's place when they change provider or mailbox: the thread
+ * they were reading stays selected if it belongs to the new mailbox, and is
+ * dropped only when it genuinely cannot be there.
+ */
+export function resolveSelectionForMailbox(
+  selectedThreadId: string | null,
+  selectedThreadMailboxId: string | null,
+  nextMailboxId: string,
+): string | null {
+  if (!selectedThreadId) return null
+  if (!selectedThreadMailboxId) return null
+  return selectedThreadMailboxId === nextMailboxId ? selectedThreadId : null
+}
+
+/** The mailbox to land on for a provider, preferring the operator's current one. */
+export function resolveMailboxForProvider(
+  mailboxes: Mailbox[],
+  provider: MailProvider,
+  currentMailboxId: string | null,
+): Mailbox | null {
+  const candidates = mailboxes.filter((mailbox) => mailbox.provider === provider)
+  if (candidates.length === 0) return null
+
+  const current = candidates.find((mailbox) => mailbox.id === currentMailboxId)
+  if (current) return current
+
+  return candidates.find((mailbox) => mailbox.isDefault && mailbox.kind === "personal")
+    ?? candidates.find((mailbox) => mailbox.kind === "personal")
+    ?? candidates[0]
+}

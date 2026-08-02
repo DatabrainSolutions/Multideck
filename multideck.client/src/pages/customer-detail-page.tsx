@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { LoaderCircle, Mail, Plus, RefreshCw, ShieldCheck, Trash2 } from "lucide-react"
+import { Download, FileText, LoaderCircle, Mail, Plus, RefreshCw, ShieldCheck, Trash2 } from "lucide-react"
 import { CustomerAvatar } from "@/components/multideck/customer-components"
 import { Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
@@ -9,12 +9,15 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "sonner"
 import { useLanguage } from "@/i18n/language-provider"
-import { getCustomer, type ApiCustomerDetail } from "@/lib/customer-api"
+import { getCustomer, getCustomerDocumentUrl, listCustomerDocuments, type ApiCustomerDetail, type ApiCustomerDocument, type ApiCustomerDocumentListing } from "@/lib/customer-api"
 import { getWarehousePortalReference, inviteWarehousePortalUser, listWarehousePortalUsers, revokeWarehousePortalUser, updateWarehousePortalUser, type WarehousePortalReference, type WarehousePortalUser } from "@/lib/warehouse"
 
 export function CustomerDetailPage({ customerId }: { customerId: string }) {
   const [customer, setCustomer] = useState<ApiCustomerDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [documentListing, setDocumentListing] = useState<ApiCustomerDocumentListing | null>(null)
+  const [documentsError, setDocumentsError] = useState<string | null>(null)
+  const [documentsLoading, setDocumentsLoading] = useState(true)
   const [reloadToken, setReloadToken] = useState(0)
   const { t } = useLanguage()
 
@@ -22,11 +25,27 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
     let active = true
     setCustomer(null)
     setError(null)
-    getCustomer(customerId).then((data) => active && setCustomer(data)).catch((loadError) => active && setError(loadError instanceof Error ? loadError.message : t("We could not load this customer.")))
+    setDocumentListing(null)
+    setDocumentsError(null)
+    setDocumentsLoading(true)
+    getCustomer(customerId)
+      .then((data) => active && setCustomer(data))
+      .catch((loadError) => active && setError(loadError instanceof Error ? loadError.message : t("Unable to load this customer. Check your connection and try again.")))
+    listCustomerDocuments(customerId)
+      .then((listing) => active && setDocumentListing(listing))
+      .catch((loadError) => active && setDocumentsError(loadError instanceof Error ? loadError.message : t("Customer documents are unavailable.")))
+      .finally(() => active && setDocumentsLoading(false))
     return () => { active = false }
   }, [customerId, reloadToken, t])
 
-  if (error) return <CustomerLoadState message={error} onRetry={() => setReloadToken((value) => value + 1)} />
+  if (error) return <div className="md-page md-page-stack">
+    <section>
+      <h1 className="text-[24px] font-medium text-[var(--md-ink)]">{documentListing?.customer.name || t("Customer documents")}</h1>
+      <p className="mt-2 text-[13px] leading-5 text-[var(--md-text)]">{t("The customer profile is temporarily unavailable. Supabase documents remain available below.")}</p>
+    </section>
+    <CustomerLoadState message={error} onRetry={() => setReloadToken((value) => value + 1)} />
+    <CustomerDocuments customerId={customerId} documents={documentListing?.documents ?? []} loading={documentsLoading} error={documentsError} />
+  </div>
   if (!customer) return <div className="md-page grid min-h-[360px] place-items-center"><LoaderCircle className="size-5 animate-spin text-[var(--md-accent)]" /></div>
 
   const accountFacts = [
@@ -67,6 +86,7 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
             <PanelTitle title={t("Active shipments")} meta={String(customer.activeShipments.length)} />
             {customer.activeShipments.length ? customer.activeShipments.map((shipment) => <div key={shipment.id} className="grid grid-cols-[minmax(110px,150px)_1fr_auto] gap-4 border-t border-[rgba(11,20,19,0.06)] px-5 py-4"><p className="text-[13px] font-medium text-[var(--md-text)]">{shipment.reference}</p><div className="min-w-0"><p className="truncate text-[14px] font-medium text-[var(--md-ink)]">{shipment.route || t("Route not recorded")}</p><p className="mt-1 text-[12px] text-[var(--md-text)]">{[shipment.mode, shipment.status, shipment.eta ? `${t("ETA")} ${formatDate(shipment.eta)}` : null].filter(Boolean).join(" · ")}</p></div>{shipment.openExceptionCount ? <StatusPill tone="amber">{shipment.openExceptionCount} {t("exceptions")}</StatusPill> : <StatusPill tone="green">{t("On track")}</StatusPill>}</div>) : <EmptyRow text={t("No active shipments are recorded for this customer.")} />}
           </Surface>
+          <CustomerDocuments customerId={customer.id} documents={documentListing?.documents ?? []} loading={documentsLoading} error={documentsError} />
           <Surface className="overflow-hidden rounded-[var(--md-radius-xl)]" padding="none">
             <PanelTitle title={t("Activity")} meta={t("Latest")} />
             {customer.activities.length ? customer.activities.map((activity) => <div key={activity.id} className="border-t border-[rgba(11,20,19,0.06)] px-5 py-4"><div className="flex items-center justify-between gap-4"><p className="text-[14px] font-medium text-[var(--md-ink)]">{activity.subject}</p><p className="shrink-0 text-[12px] text-[var(--md-text)]">{formatDate(activity.occurredAt)}</p></div>{activity.summary ? <p className="mt-1 text-[13px] leading-5 text-[var(--md-text)]">{activity.summary}</p> : null}</div>) : <EmptyRow text={t("No account activity has been recorded yet.")} />}
@@ -82,6 +102,48 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
       </div>
     </div>
   )
+}
+
+function CustomerDocuments({ customerId, documents, loading = false, error = null }: { customerId: string; documents: ApiCustomerDocument[]; loading?: boolean; error?: string | null }) {
+  const { t } = useLanguage()
+  const [openingId, setOpeningId] = useState<string | null>(null)
+
+  async function openDocument(document: ApiCustomerDocument) {
+    const pendingWindow = window.open("about:blank", "_blank")
+    if (pendingWindow) pendingWindow.opener = null
+    setOpeningId(document.id)
+    try {
+      const access = await getCustomerDocumentUrl(customerId, document.id)
+      if (pendingWindow) pendingWindow.location.replace(access.url)
+      else window.location.assign(access.url)
+    } catch (cause) {
+      pendingWindow?.close()
+      toast.error(t("Unable to open this document. Check your connection and try again."), {
+        description: cause instanceof Error ? cause.message : undefined,
+      })
+    } finally {
+      setOpeningId(null)
+    }
+  }
+
+  return <Surface className="overflow-hidden rounded-[var(--md-radius-xl)]" padding="none">
+    <PanelTitle title={t("Documents")} meta={String(documents.length)} />
+    {loading ? <div className="grid min-h-24 place-items-center border-t border-[rgba(11,20,19,0.06)]"><LoaderCircle className="size-4 animate-spin text-[var(--md-accent)]" /></div> : error ? <p role="alert" className="border-t border-[rgba(11,20,19,0.06)] px-5 py-4 text-[13px] text-[var(--md-red)]">{error}</p> : documents.length ? documents.map((document) => {
+      const pending = document.status === "pending_review" || document.safetyStatus === "unscanned"
+      return <div key={document.id} className="flex flex-col gap-3 border-t border-[rgba(11,20,19,0.06)] px-5 py-4 sm:flex-row sm:items-center">
+        <span className="grid size-10 shrink-0 place-items-center rounded-[var(--md-radius-lg)] bg-white/58 text-[var(--md-accent)] shadow-[var(--md-shadow-line)]"><FileText className="size-4" /></span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[14px] font-medium text-[var(--md-ink)]" title={document.fileName}>{document.fileName}</p>
+          <p className="mt-1 text-[12px] text-[var(--md-text)]">{[document.mimeType, formatBytes(document.fileSizeBytes), formatDate(document.createdAt)].filter(Boolean).join(" · ")}</p>
+        </div>
+        <StatusPill tone={pending ? "amber" : "green"}>{t(pending ? "Pending review" : "Available")}</StatusPill>
+        <Button type="button" variant="outline" className="h-9 rounded-[var(--md-radius-lg)]" disabled={openingId === document.id} onClick={() => void openDocument(document)}>
+          {openingId === document.id ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}
+          {t("Open")}
+        </Button>
+      </div>
+    }) : <EmptyRow text={t("No customer documents have been saved yet.")} />}
+  </Surface>
 }
 
 export function CustomerWarehouseAccess({
@@ -190,5 +252,6 @@ export function CustomerWarehouseAccess({
 function Metric({ label, value }: { label: string; value: string }) { return <Surface className="rounded-[var(--md-radius-xl)]" padding="md"><p className="text-[13px] text-[var(--md-text)]">{label}</p><p className="mt-4 text-[28px] font-medium text-[var(--md-ink)]">{value}</p></Surface> }
 function PanelTitle({ title, meta }: { title: string; meta?: string }) { return <div className="flex items-center justify-between gap-3 px-5 py-4"><h2 className="text-[15px] font-medium text-[var(--md-ink)]">{title}</h2>{meta ? <span className="text-[13px] text-[var(--md-text)]">{meta}</span> : null}</div> }
 function EmptyRow({ text }: { text: string }) { return <p className="border-t border-[rgba(11,20,19,0.06)] px-5 py-5 text-[13px] text-[var(--md-text)]">{text}</p> }
-function CustomerLoadState({ message, onRetry }: { message: string; onRetry: () => void }) { const { t } = useLanguage(); return <div className="md-page"><Surface className="grid min-h-[300px] place-items-center rounded-[var(--md-radius-xl)]" padding="lg"><div className="text-center"><p className="text-[15px] font-medium text-[var(--md-ink)]">{t("Customer data is unavailable")}</p><p className="mt-2 text-[13px] text-[var(--md-text)]">{message}</p><Button variant="outline" className="mt-4" onClick={onRetry}><RefreshCw className="size-4" />{t("Try again")}</Button></div></Surface></div> }
+function CustomerLoadState({ message, onRetry }: { message: string; onRetry: () => void }) { const { t } = useLanguage(); return <Surface className="grid min-h-[220px] place-items-center rounded-[var(--md-radius-xl)]" padding="lg"><div className="text-center"><p className="text-[15px] font-medium text-[var(--md-ink)]">{t("Customer data is unavailable")}</p><p className="mt-2 text-[13px] text-[var(--md-text)]">{message}</p><Button variant="outline" className="mt-4" onClick={onRetry}><RefreshCw className="size-4" />{t("Try again")}</Button></div></Surface> }
 function formatDate(value: string) { return new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric" }).format(new Date(value)) }
+function formatBytes(value: number) { if (!Number.isFinite(value) || value <= 0) return null; if (value < 1024) return `${value} B`; if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`; return `${(value / (1024 * 1024)).toFixed(1)} MB` }

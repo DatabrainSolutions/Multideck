@@ -258,4 +258,3 @@ export async function handleOrders(request, path, url, admin, actor) {
   const refreshed = await loadOrders(admin, actor, context), found = refreshed.filter((r)=>r.WMSOrder_ID === data);
   return (await mapOrders(admin, found, context))[0];
 }
-

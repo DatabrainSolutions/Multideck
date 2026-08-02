@@ -17,6 +17,8 @@ import {
   Globe2,
   Grid3X3,
   House,
+  IdCard,
+  Inbox,
   KeyRound,
   Layers3,
   LayoutDashboard,
@@ -89,6 +91,13 @@ export const customerWarehouseNavigation: SidebarDestination[] = [
 
 export const homeNavItem: NavItem = { label: "Home", icon: House, route: "/" }
 
+/**
+ * The operational mail workspace. It sits at the top of the sidebar next to Home
+ * because an operator lives in it all day, and it is deliberately separate from
+ * Sales & CRM / Marketing / Email marketing, which is outbound campaign work.
+ */
+export const inboxNavItem: NavItem = { label: "Inbox", icon: Inbox, route: "/inbox" }
+
 export const sidebarAreas: SidebarArea[] = [
   {
     id: "operations",
@@ -125,6 +134,7 @@ export const sidebarAreas: SidebarArea[] = [
         icon: Funnel,
         children: [
           { label: "Leads", value: "39", icon: Users, route: "/crm/leads" },
+          { label: "Contact cards", icon: IdCard, route: "/crm/contact-cards" },
           { label: "Deals", value: "12", icon: BriefcaseBusiness, route: "/crm/deals" },
         ],
       },
@@ -250,6 +260,7 @@ export const sidebarSecondary: NavItem[] = [
 export const crmSidebarItems: NavItem[] = [
   { label: "CRM overview", value: "Live", icon: LayoutDashboard, route: "/crm" },
   { label: "Leads", value: "39", icon: Users, route: "/crm/leads" },
+  { label: "Contact cards", icon: IdCard, route: "/crm/contact-cards" },
   { label: "Contacts", value: "112", icon: Mail, route: "/crm/contacts" },
   { label: "Deals", value: "12", icon: BriefcaseBusiness, route: "/crm/deals" },
   { label: "Emails", icon: Mail, route: "/crm/emails" },

@@ -52,6 +52,12 @@ import { CrmActivityTimeline, CrmAssetFolderCard, CrmAssetRow, CrmContactTable, 
 import { CopyableField } from "@/components/multideck/copyable-field"
 import { CrmPipelineEditor } from "@/components/multideck/crm-pipeline-editor"
 import { ChoiceControl, FilterChips, SegmentedControl, TabsRail } from "@/components/multideck/workflow-components"
+import { EmailMessageRenderer } from "@/components/multideck/email-message-renderer"
+import { InboxThreadRow } from "@/components/multideck/inbox-thread-row"
+import { MailboxProviderSwitch } from "@/components/multideck/mailbox-provider-switch"
+import { MailComposer, type ComposerState } from "@/components/multideck/mail-composer"
+import { ThreadSummary } from "@/components/multideck/thread-summary"
+import type { InboxThreadListItem, Mailbox, MailProvider, ThreadSummaryState } from "@/lib/inbox-api"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
 import { CodeInput, FreightNarrative, SignInPanel, SignedOutPanel, VerifyPanel, WorkspaceRouterPanel } from "@/components/multideck/auth-flow"
@@ -83,6 +89,7 @@ import {
 } from "@/components/multideck/agent-dexter-components"
 import { DexterActionApproval } from "@/components/multideck/dexter-action-approval"
 import { DexterInlineCitation } from "@/components/multideck/dexter-inline-citation"
+import { DexterEmailAttachmentCard } from "@/components/multideck/dexter-email-attachment-card"
 import { defaultDexterModelId, type DexterModelId } from "@/data/dexter-models"
 import { defaultDexterMentionItems } from "@/data/dexter-mentions"
 import {
@@ -130,6 +137,11 @@ import { ThemeToggle } from "@/components/multideck/theme-toggle"
 import { SidebarItemMenu } from "@/components/multideck/sidebar-item-menu"
 import { SidebarArrangeCanvas, type SidebarArrangeItem } from "@/components/multideck/sidebar-arrange"
 import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
+import { DexterSummonPrompt } from "@/components/multideck/dexter-summon-prompt"
+import { ShortcutKeys } from "@/components/multideck/keyboard-shortcut-keys"
+import { KeyboardShortcutsPanel } from "@/components/multideck/keyboard-shortcuts-panel"
+import { chord, pointerGesture, sequence } from "@/lib/keyboard-shortcut-binding"
+import type { SummonTarget } from "@/lib/dexter-summon-context"
 import { DexterCompanionSidebar } from "@/components/multideck/dexter-companion-sidebar"
 import { PageSettingsMenu } from "@/components/multideck/page-settings-menu"
 import { AuditTimeline } from "@/components/multideck/audit-timeline"
@@ -170,7 +182,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Button & control components",
     helper: "Navigation and input controls",
-    ids: ["command", "app-breadcrumbs", "sidebar", "sidebar-item-menu", "sidebar-arrange-canvas", "theme-toggle", "page-settings-menu", "date-range-picker", "segmented-control", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "pagination", "kbd", "settings-controls", "settings-option-card"],
+    ids: ["command", "app-breadcrumbs", "sidebar", "sidebar-item-menu", "sidebar-arrange-canvas", "theme-toggle", "page-settings-menu", "date-range-picker", "segmented-control", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "pagination", "kbd", "shortcut-keys", "settings-controls", "settings-option-card"],
   },
   {
     label: "Auth components",
@@ -195,7 +207,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Agent Dexter",
     helper: "Prompt, context, specialists, answers",
-    ids: ["dashboard-customise-panel", "dexter-action-pill", "dexter-companion-sidebar", "dexter-mention-input", "dexter-prompt-composer", "context-usage-meter", "dexter-live-reasoning", "dexter-reasoning-summary", "dexter-action-approval", "dexter-specialist-picker", "dexter-specialist-menu", "dexter-attachment-palette", "dexter-history-list", "dexter-monitor-card", "dexter-monitor-detail", "dexter-response-blocks"],
+    ids: ["dashboard-customise-panel", "dexter-action-pill", "dexter-companion-sidebar", "dexter-summon-prompt", "dexter-mention-input", "dexter-prompt-composer", "context-usage-meter", "dexter-live-reasoning", "dexter-reasoning-summary", "dexter-action-approval", "dexter-specialist-picker", "dexter-specialist-menu", "dexter-attachment-palette", "dexter-history-list", "dexter-monitor-card", "dexter-monitor-detail", "dexter-response-blocks"],
   },
   {
     label: "Feedback",
@@ -205,7 +217,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Settings",
     helper: "Configuration surfaces",
-    ids: ["settings-rail", "settings-panel-row", "settings-integration-row", "settings-summary-card", "settings-progress-ring"],
+    ids: ["settings-rail", "settings-panel-row", "settings-integration-row", "settings-summary-card", "settings-progress-ring", "keyboard-shortcuts-panel"],
   },
 ]
 
@@ -708,6 +720,108 @@ const previewSidebarRows: SidebarArrangeItem[] = [
 
 const previewSidebarOrder = previewSidebarRows.map((row) => row.id)
 
+/* ------------------------------------------------------------------------- *
+ * Inbox preview data. Small, self-contained samples so each mail component can
+ * be inspected here without a connected Gmail or Outlook account.
+ * ------------------------------------------------------------------------- */
+
+const previewInboxSummary: ThreadSummaryState = {
+  status: "ready",
+  text: "Marlow Apparel is waiting on the dual-use licence reference for MD-22455 before the broker will release the declaration. Claire has asked twice and flagged that the Felixstowe free-time window closes on 2 August.",
+  keyPoints: [],
+  sourceMessageIds: ["msg-1", "msg-2"],
+  model: "gpt-5.6-luna",
+  updatedAt: "2026-07-31T09:37:00Z",
+  error: null,
+}
+
+const previewInboxThreads: InboxThreadListItem[] = [
+  {
+    id: "preview-thread-1",
+    mailboxId: "preview-mbx",
+    provider: "gmail",
+    subject: "MD-22455 customs hold \u2014 licence confirmation still outstanding",
+    preview: "Hi Harry, the broker has come back asking for the dual-use licence reference before they will release the declaration.",
+    participants: [{ address: "claire.osei@marlowapparel.co.uk", displayName: "Claire Osei" }],
+    lastMessageAt: "2026-07-31T09:23:00Z",
+    unreadCount: 2,
+    messageCount: 4,
+    hasAttachments: true,
+    starred: true,
+    archived: false,
+    summary: previewInboxSummary,
+  },
+  {
+    id: "preview-thread-2",
+    mailboxId: "preview-mbx",
+    provider: "gmail",
+    subject: "Re: Felixstowe berthing window moved \u2014 revised ETA for MSC ANTONIA",
+    preview: "The berth has slipped to the 03:40 window on Saturday. Attaching the revised proforma so you can update the customer.",
+    participants: [{ address: "operations@mscagency.example", displayName: "MSC Agency Operations" }],
+    lastMessageAt: "2026-07-30T16:05:00Z",
+    unreadCount: 0,
+    messageCount: 2,
+    hasAttachments: true,
+    starred: false,
+    archived: false,
+    summary: { status: "none", text: null, keyPoints: [], sourceMessageIds: [], model: null, updatedAt: null, error: null },
+  },
+]
+
+function previewMailbox(overrides: Partial<Mailbox> & Pick<Mailbox, "id" | "displayName" | "address">): Mailbox {
+  return {
+    connectionId: "preview-conn",
+    provider: "gmail",
+    kind: "personal",
+    unreadCount: 0,
+    isDefault: false,
+    inboundEnabled: true,
+    outboundEnabled: true,
+    status: "connected",
+    lastSyncedAt: "2026-07-31T09:38:00Z",
+    indexStatus: "ready",
+    indexedCount: 2_480,
+    estimatedTotal: 2_480,
+    indexPercent: 100,
+    error: null,
+    ...overrides,
+  }
+}
+
+const previewMailboxes: Mailbox[] = [
+  previewMailbox({ id: "preview-mbx", displayName: "Harry Phillips", address: "harry.phillips@northwind-forwarding.com", unreadCount: 12, isDefault: true }),
+  previewMailbox({ id: "preview-ops", displayName: "Operations desk", address: "ops@northwind-forwarding.com", kind: "shared", unreadCount: 4 }),
+  previewMailbox({ id: "preview-customs", displayName: "Customs & compliance", address: "customs@northwind-forwarding.com", kind: "group", outboundEnabled: false }),
+  previewMailbox({ id: "preview-finance", displayName: "Finance & receivables", address: "finance@northwind-forwarding.com", provider: "outlook", kind: "shared", unreadCount: 7, isDefault: true, status: "reauthorization_required", error: "Microsoft revoked the mail token." }),
+]
+
+/**
+ * Everything real mail throws at the renderer: a remote image, so the blocked
+ * state is visible; an inline signature logo, which must arrive without a frame
+ * around it; a layout table, which must not be drawn as a grid; a table that
+ * asked for borders, which must keep them; and emoji, which must come through
+ * in colour.
+ */
+const previewEmailSignatureLogo = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiI+PGNpcmNsZSBjeD0iMTYiIGN5PSIxNiIgcj0iMTUiIGZpbGw9IiMyZjZmNjMiLz48L3N2Zz4="
+const previewEmailHtml = `<div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+    <tr>
+      <td width="40"><img src="${previewEmailSignatureLogo}" alt="" width="32" height="32" /></td>
+      <td><strong>Northgate brokers</strong><br />Customs desk</td>
+    </tr>
+  </table>
+  <p>Hi Harry,</p>
+  <p>The broker has come back asking for the <strong>dual-use licence reference</strong> before they will release the declaration for MD-22455. 🎉</p>
+  <p><img src="https://images.example.com/tracking-pixel.png" alt="Remote tracking image" width="360" height="90" /></p>
+  <p>Free time at Felixstowe ends on <strong>2 August</strong>, after which demurrage starts at GBP 145 per day. ⚠️</p>
+  <table border="1" cellpadding="0" cellspacing="0">
+    <tr><th>Container</th><th>Free time ends</th></tr>
+    <tr><td>MSKU 442 118 9</td><td>2 August</td></tr>
+  </table>
+  <p>Best regards,<br />Claire Osei ✅</p>
+</div>`
+
+
 function ComponentPreview({ id }: { id: string }) {
   const { language, t } = useLanguage()
   const [previewSidebarPinnedIds, setPreviewSidebarPinnedIds] = useState<string[]>([])
@@ -718,6 +832,25 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewBookingFilter, setPreviewBookingFilter] = useState<string>(bookingFilters[0])
   const [previewBookingView, setPreviewBookingView] = useState<BookingViewMode>("Table")
   const [previewChoiceMode, setPreviewChoiceMode] = useState("OCEAN")
+  const [previewInboxThreadId, setPreviewInboxThreadId] = useState("preview-thread-1")
+  const [previewInboxStarred, setPreviewInboxStarred] = useState<Set<string>>(new Set(["preview-thread-1"]))
+  const [previewMailProvider, setPreviewMailProvider] = useState<MailProvider>("gmail")
+  const [previewMailboxId, setPreviewMailboxId] = useState("preview-mbx")
+  const [previewSummaryState, setPreviewSummaryState] = useState<ThreadSummaryState>(previewInboxSummary)
+  const [previewComposer, setPreviewComposer] = useState<ComposerState>({
+    mode: "reply_all",
+    threadId: "preview-thread-1",
+    sourceMessageId: "msg-2",
+    subject: "",
+    bodyText: "Licence reference is GB/DU/2026/44189, valid to 31 December 2026. Passing it to the broker now.",
+    to: [],
+    cc: [{ address: "broker@northgate.example", displayName: "Northgate brokers" }],
+    bcc: [],
+    showCc: true,
+    showBcc: false,
+    attachments: [],
+    presentation: "open",
+  })
   const [previewCheckbox, setPreviewCheckbox] = useState(true)
   const [previewCustomerView, setPreviewCustomerView] = useState<CustomerViewMode>("List")
   const [previewSelectedIds, setPreviewSelectedIds] = useState<Set<string>>(new Set(["marlow-apparel"]))
@@ -728,6 +861,20 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewSettingsChoice, setPreviewSettingsChoice] = useState("Always ask")
   const [previewSettingsOption, setPreviewSettingsOption] = useState("Suggest")
   const [previewScreenGlow, setPreviewScreenGlow] = useState(false)
+  const [summonPreviewQuestion, setSummonPreviewQuestion] = useState("Is this account safe to book again?")
+  const [summonPreviewAnswer, setSummonPreviewAnswer] = useState("")
+  // The prompt only reads the kind and the label off its target, so the preview
+  // stands one up rather than hit-testing a real node on the gallery page.
+  const summonPreviewTarget = useMemo<SummonTarget>(
+    () => ({
+      element: document.createElement("div"),
+      kind: "row",
+      label: "Marlow Freight · MD-22455",
+      value: null,
+      text: "",
+    }),
+    [],
+  )
   const [previewReportPageId, setPreviewReportPageId] = useState(monthlyReviewPages[0].id)
   const [previewReportControlPage, setPreviewReportControlPage] = useState(1)
   const [previewWidgetQuery, setPreviewWidgetQuery] = useState("")
@@ -962,6 +1109,54 @@ function ComponentPreview({ id }: { id: string }) {
           <Kbd>Ctrl</Kbd>
           <Kbd>⌘K</Kbd>
           <KbdGroup><Kbd>Ctrl</Kbd><Kbd>B</Kbd></KbdGroup>
+        </div>
+      ) : null}
+
+      {id === "shortcut-keys" ? (
+        <div className="grid w-full max-w-[560px] gap-3 rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          {[
+            { label: "Search bookings and quotes", binding: chord("K", { mod: true }) },
+            { label: "New booking", binding: chord("B", { mod: true, shift: true }) },
+            { label: "Go to Bookings", binding: sequence("G", "B") },
+            { label: "Summon Dexter", binding: pointerGesture({ mod: true }) },
+            { label: "Turned off", binding: null },
+          ].map((row) => (
+            <div key={row.label} className="flex items-center justify-between gap-4">
+              <span className="text-[13px] text-[var(--md-ink)]">{row.label}</span>
+              <ShortcutKeys binding={row.binding} emptyLabel="Off" />
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {id === "keyboard-shortcuts-panel" ? (
+        <div className="w-full max-w-[820px] overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-soft)]">
+          <KeyboardShortcutsPanel />
+        </div>
+      ) : null}
+
+      {id === "dexter-summon-prompt" ? (
+        <div className="grid w-full max-w-[560px] place-items-center rounded-[var(--md-radius-xl)] bg-white/54 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          <div className="w-full max-w-[384px]">
+            <DexterSummonPrompt
+              target={summonPreviewTarget}
+              status={summonPreviewAnswer ? "done" : "ready"}
+              question={summonPreviewQuestion}
+              answer={summonPreviewAnswer}
+              error={null}
+              copied={false}
+              onQuestionChange={setSummonPreviewQuestion}
+              onSubmit={() =>
+                setSummonPreviewAnswer(
+                  "Marlow Freight is 14 days over its agreed terms on three invoices totalling €18,400. Two sailings are booked for next week, so worth a call before they load.",
+                )
+              }
+              onClose={() => setSummonPreviewAnswer("")}
+              onCopy={() => toast.success("Answer copied")}
+              onAskAnother={() => setSummonPreviewAnswer("")}
+              onContinueInDexter={() => toast.success("Opening this thread in the Dexter workspace")}
+            />
+          </div>
         </div>
       ) : null}
 
@@ -1448,6 +1643,121 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "inbox-thread-row" ? (
+        <div className="w-full max-w-[420px] rounded-[var(--md-radius-xl)] bg-white/50 p-2 shadow-[var(--md-shadow-line)]">
+          <div className="flex flex-col gap-0.5">
+            {previewInboxThreads.map((item) => (
+              <InboxThreadRow
+                key={item.id}
+                thread={{ ...item, starred: previewInboxStarred.has(item.id) }}
+                selected={item.id === previewInboxThreadId}
+                ownAddresses={["harry.phillips@northwind-forwarding.com"]}
+                selectionLayoutId="preview-inbox-thread-selection"
+                onSelect={() => setPreviewInboxThreadId(item.id)}
+                onToggleStar={() =>
+                  setPreviewInboxStarred((current) => {
+                    const next = new Set(current)
+                    if (next.has(item.id)) next.delete(item.id)
+                    else next.add(item.id)
+                    return next
+                  })
+                }
+              />
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {id === "mailbox-provider-switch" ? (
+        <div className="w-full max-w-[300px] rounded-[var(--md-radius-xl)] bg-white/50 p-3 shadow-[var(--md-shadow-line)]">
+          <MailboxProviderSwitch
+            providers={["gmail", "outlook"]}
+            provider={previewMailProvider}
+            onProviderChange={(next) => {
+              setPreviewMailProvider(next)
+              const first = previewMailboxes.find((mailbox) => mailbox.provider === next)
+              if (first) setPreviewMailboxId(first.id)
+            }}
+            mailboxes={previewMailboxes.filter((mailbox) => mailbox.provider === previewMailProvider)}
+            selectedMailboxId={previewMailboxId}
+            onMailboxChange={(mailbox) => setPreviewMailboxId(mailbox.id)}
+            onReconnect={() => toast.success("Would open the provider sign-in")}
+          />
+        </div>
+      ) : null}
+
+      {id === "email-message-renderer" ? (
+        <div className="w-full max-w-[620px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-3.5 shadow-[var(--md-shadow-line)]">
+          <EmailMessageRenderer sanitizedHtml={previewEmailHtml} bodyText={null} />
+        </div>
+      ) : null}
+
+      {id === "thread-summary" ? (
+        <div className="grid w-full max-w-[620px] gap-3">
+          <div className="flex flex-wrap gap-2">
+            {[
+              { label: "Ready", value: previewInboxSummary },
+              { label: "Generating", value: { ...previewInboxSummary, status: "pending" as const, text: null } },
+              { label: "Out of date", value: { ...previewInboxSummary, status: "stale" as const } },
+              { label: "Failed", value: { ...previewInboxSummary, status: "failed" as const, text: null, error: "Dexter could not reach the model." } },
+              { label: "Not summarised", value: { status: "none" as const, text: null, keyPoints: [], sourceMessageIds: [], model: null, updatedAt: null, error: null } },
+            ].map((option) => (
+              <button
+                key={option.label}
+                type="button"
+                aria-pressed={previewSummaryState.status === option.value.status}
+                className={cn(
+                  "h-8 rounded-[var(--md-radius-md)] px-2.5 text-[12px] font-medium shadow-[var(--md-shadow-line)] transition-[background-color,color] duration-150",
+                  previewSummaryState.status === option.value.status
+                    ? "bg-[var(--md-selected-bg)] text-[var(--md-selected-text)]"
+                    : "bg-[var(--md-surface)] text-[var(--md-text)] hover:bg-[var(--md-hover)]",
+                )}
+                onClick={() => setPreviewSummaryState(option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          {previewSummaryState.status === "none" ? (
+            <DexterActionPill
+              label="Summarise"
+              onClick={() => setPreviewSummaryState({ ...previewInboxSummary, status: "pending", text: null })}
+            />
+          ) : (
+            <ThreadSummary
+              summary={previewSummaryState}
+              sources={[
+                { messageId: "msg-1", label: "Claire Osei" },
+                { messageId: "msg-2", label: "Compliance team" },
+              ]}
+              onRegenerate={() => setPreviewSummaryState({ ...previewInboxSummary, status: "pending", text: null })}
+              onOpenSource={(messageId) => toast.success(`Would scroll to ${messageId}`)}
+            />
+          )}
+        </div>
+      ) : null}
+
+      {id === "mail-composer" ? (
+        <div className="w-full max-w-[620px] overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-bg)] py-3 shadow-[var(--md-shadow-line)]">
+          <MailComposer
+            state={previewComposer}
+            onStateChange={setPreviewComposer}
+            mailbox={previewMailboxes[0]}
+            status="idle"
+            error={null}
+            threadSubject="Dual-use licence for the Rotterdam consignment"
+            replyAudience={{
+              label: "Everyone on this message",
+              detail: "Multideck resolves the full list from the message you are replying to when it sends.",
+            }}
+            canSend={previewComposer.bodyText.trim().length > 0}
+            onSend={() => toast.success("Would send with mode and source message only")}
+            onSaveDraft={() => toast.success("Draft saved")}
+            onDiscard={() => setPreviewComposer((current) => ({ ...current, bodyText: "", presentation: "docked" }))}
+          />
+        </div>
+      ) : null}
+
       {id === "segmented-control" ? (
         <div className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] bg-white/50 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
           <SegmentedControl options={bookingViewModes} value={previewBookingView} onChange={setPreviewBookingView} />
@@ -1845,6 +2155,33 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "dexter-email-attachment-card" ? (
+        <div className="w-full max-w-[620px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <DexterEmailAttachmentCard
+            attachment={{
+              id: "gallery-email-attachment",
+              provider: "gmail",
+              mailboxId: "gallery-mailbox",
+              threadId: "gallery-thread",
+              messageId: "gallery-message",
+              subject: "Booking confirmation · MD-22455",
+              fileName: "booking-confirmation.txt",
+              mimeType: "text/plain",
+              sizeBytes: 1_824,
+              sourceUrl: "/inbox?provider=gmail&mailbox=931169d1-3a01-4c57-ac36-290a559d21bc&thread=45b92d1f-4d13-4d79-80c1-4cb338c5d2de",
+            }}
+            loadAttachment={async () => {
+              const url = URL.createObjectURL(new Blob([
+                "Booking confirmation\nReference: MD-22455\nVessel: Aurora North\nStatus: Confirmed",
+              ], { type: "text/plain" }))
+              return { url, revoke: () => URL.revokeObjectURL(url) }
+            }}
+            variant="watch"
+            onAskDexter={() => toast.success("Attachment added to Dexter")}
+          />
+        </div>
+      ) : null}
+
       {id === "dexter-prompt-composer" ? (
         <div className="w-full max-w-[760px]">
           <DexterPromptComposer
@@ -1911,8 +2248,8 @@ function ComponentPreview({ id }: { id: string }) {
                 next_follow_up: "2026-08-04",
               },
               changes: [
-                { field: "status", value: "Qualified" },
-                { field: "next follow up", value: "4 August 2026" },
+                { field: "status", value: "Qualified", before: "New", after: "Qualified", beforeKnown: true, kind: "changed" },
+                { field: "next follow up", value: "4 August 2026", before: null, after: "4 August 2026", beforeKnown: true, kind: "added" },
               ],
             }}
             onDecision={(decision) => toast.success(decision === "approve" ? "Change approved" : "Change denied")}
@@ -2013,14 +2350,54 @@ function ComponentPreview({ id }: { id: string }) {
           <div className="absolute inset-y-0 right-0 w-[min(580px,100%)]">
             <DexterMonitorDetailSheet
               monitor={{
+                id: "gallery-email-watch",
                 title: "Berth queue - MD-22479",
                 body: "Watching Rotterdam congestion. Re-pings if ETA shifts more than 6h.",
                 meta: "since Wed 09:18",
                 detail: "last ping 36 min ago",
                 tone: "amber",
+                capability: "email",
+                status: "active",
+                healthStatus: "healthy",
+                triggerCount: 1,
+                latestEvent: {
+                  id: "gallery-watch-event",
+                  title: "Invoice received",
+                  body: "New matching email from Maria Chen: Invoice for MD-22479",
+                  changed: {},
+                  createdAt: "2026-08-02T16:13:29Z",
+                  context: {
+                    kind: "email",
+                    availability: "available",
+                    provider: "gmail",
+                    mailboxId: "gallery-mailbox",
+                    messageId: "gallery-message",
+                    threadId: "gallery-thread",
+                    senderName: "Maria Chen",
+                    senderEmail: "maria@example.com",
+                    subject: "Invoice for MD-22479",
+                    receivedAt: "2026-08-02T16:13:29Z",
+                    preview: "Please find the final supplier invoice attached for the Rotterdam shipment.",
+                    sourceUrl: "/inbox?provider=gmail&mailbox=gallery-mailbox&thread=gallery-thread",
+                    attachments: [{
+                      id: "gallery-email-attachment",
+                      provider: "gmail",
+                      mailboxId: "gallery-mailbox",
+                      messageId: "gallery-message",
+                      threadId: "gallery-thread",
+                      subject: "Invoice for MD-22479",
+                      fileName: "invoice-md-22479.pdf",
+                      mimeType: "application/pdf",
+                      sizeBytes: 284220,
+                      sourceUrl: "/inbox?provider=gmail&mailbox=gallery-mailbox&thread=gallery-thread",
+                    }],
+                  },
+                },
               }}
               floating={false}
               onClose={() => toast.success("Monitor detail closed")}
+              onAskEvent={() => toast.success("Update added to Dexter")}
+              onAskAttachment={() => toast.success("Attachment added to Dexter")}
             />
           </div>
         </div>

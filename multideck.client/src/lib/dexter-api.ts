@@ -25,6 +25,21 @@ export type DexterMessage = {
   responseToUserMessageId?: string | null
   responseVersion?: number | null
   parentResponseMessageId?: string | null
+  emailAttachments?: DexterEmailAttachment[]
+}
+
+export type DexterEmailAttachment = {
+  id: string
+  provider: "gmail" | "outlook"
+  mailboxId: string
+  threadId: string
+  messageId: string
+  subject: string
+  fileName: string
+  mimeType: string
+  sizeBytes: number
+  sourceUrl: string
+  limitation?: string | null
 }
 
 export type DexterAccessMode = "approve" | "full"
@@ -35,7 +50,17 @@ export type DexterPendingAction = {
   title: string
   description: string
   arguments: Record<string, unknown>
-  changes: Array<{ field: string; value: string }>
+  changes: DexterActionChange[]
+}
+
+export type DexterActionChange = {
+  field: string
+  /** Legacy fallback retained for approvals saved before field-level diffs. */
+  value: string
+  before?: string | null
+  after?: string | null
+  beforeKnown?: boolean
+  kind?: "added" | "removed" | "changed"
 }
 
 export type DexterConversation = DexterConversationSummary & {
@@ -75,7 +100,69 @@ export type DexterMessageAttachment = {
   id: string
   type: string
   title: string
+  provider?: "gmail" | "outlook"
+  mailboxId?: string
+  threadId?: string
+  messageId?: string
+  subject?: string
+  fileName?: string
+  mimeType?: string
+  sizeBytes?: number
+  sourceUrl?: string
 }
+
+export type DexterWatchEmailContext = {
+  kind: "email"
+  availability: "available" | "removed" | "reconnect_required" | "unavailable"
+  messageId: string
+  threadId: string
+  mailboxId: string
+  provider: "gmail" | "outlook"
+  senderName: string
+  senderEmail: string
+  subject: string
+  receivedAt: string
+  preview: string
+  sourceUrl: string
+  attachments: DexterEmailAttachment[]
+  unavailableReason?: string | null
+}
+
+export type DexterWatchEvent = {
+  id: string
+  title: string
+  body: string
+  changed: Record<string, unknown>
+  context?: DexterWatchEmailContext | null
+  action?: DexterPendingAction | null
+  readAt?: string | null
+  createdAt: string
+}
+
+export type DexterWatch = {
+  id: string
+  title: string
+  summary: string
+  capability: "warehouse" | "leads" | "deals" | "quotes" | "email"
+  status: "active" | "paused"
+  targetLabel?: string | null
+  rule: { field: string; operator: string; value?: string }
+  action?: DexterPendingAction | null
+  createdAt: string
+  updatedAt: string
+  lastEvaluatedAt?: string | null
+  lastTriggeredAt?: string | null
+  triggerCount: number
+  healthStatus?: "starting" | "healthy" | "degraded" | "error"
+  lastSourceCheckAt?: string | null
+  lastSuccessfulCheckAt?: string | null
+  healthMessage?: string | null
+  latestEvent?: DexterWatchEvent | null
+}
+
+export type CreateDexterWatchResult =
+  | { status: "created"; message: string; watch: DexterWatch }
+  | { status: "clarification" | "unsupported"; message: string }
 
 export type SendDexterMessageInput = {
   conversationId?: string | null
@@ -174,6 +261,39 @@ export async function deleteDexterConversation(conversationId: string) {
   )
 }
 
+export async function listDexterWatches() {
+  const result = await invokeDexter<{ watches: DexterWatch[] }>(
+    { operation: "list-watches" },
+    "Dexter's watches are unavailable.",
+  )
+  return result.watches
+}
+
+export async function createDexterWatch(input: {
+  message: string
+  locale: string
+  attachments: DexterMessageAttachment[]
+}) {
+  return invokeDexter<CreateDexterWatchResult>(
+    { operation: "create-watch", ...input },
+    "Dexter could not set up that watch.",
+  )
+}
+
+export async function setDexterWatchStatus(watchId: string, status: "active" | "paused") {
+  await invokeDexter<{ updated: true }>(
+    { operation: "set-watch-status", watchId, status },
+    "That watch could not be updated.",
+  )
+}
+
+export async function deleteDexterWatch(watchId: string) {
+  await invokeDexter<{ deleted: true }>(
+    { operation: "delete-watch", watchId },
+    "That watch could not be deleted.",
+  )
+}
+
 export async function sendDexterMessage(input: SendDexterMessageInput) {
   const result = await invokeDexter<{ conversation: DexterConversation }>(
     { operation: "message", ...input },
@@ -187,10 +307,17 @@ export async function streamDexterMessage(
   handlers: ((delta: string) => void) | {
     onAnswerDelta?: (delta: string) => void
     onReasoningDelta?: (delta: string) => void
+    onPendingAction?: (action: DexterPendingAction) => void
+    onEmailAttachment?: (attachment: DexterEmailAttachment) => void
   },
-) {
+  // Declared explicitly: `completed` is only ever assigned inside the event
+  // closure, which control-flow analysis cannot see, so an inferred return type
+  // collapses to `never` at the call site.
+): Promise<DexterConversation> {
   const onAnswerDelta = typeof handlers === "function" ? handlers : handlers.onAnswerDelta
   const onReasoningDelta = typeof handlers === "function" ? undefined : handlers.onReasoningDelta
+  const onPendingAction = typeof handlers === "function" ? undefined : handlers.onPendingAction
+  const onEmailAttachment = typeof handlers === "function" ? undefined : handlers.onEmailAttachment
   const session = await getSupabaseSession()
   if (!session?.access_token) {
     throw new DexterApiError("Sign in again to use Agent Dexter.")
@@ -248,6 +375,22 @@ export async function streamDexterMessage(
       onAnswerDelta?.(payload.delta)
     } else if ("type" in payload && payload.type === "reasoning_delta" && "delta" in payload && typeof payload.delta === "string") {
       onReasoningDelta?.(payload.delta)
+    } else if (
+      "type" in payload &&
+      payload.type === "pending_action" &&
+      "pendingAction" in payload &&
+      typeof payload.pendingAction === "object" &&
+      payload.pendingAction !== null
+    ) {
+      onPendingAction?.(payload.pendingAction as DexterPendingAction)
+    } else if (
+      "type" in payload &&
+      payload.type === "email_attachment" &&
+      "attachment" in payload &&
+      typeof payload.attachment === "object" &&
+      payload.attachment !== null
+    ) {
+      onEmailAttachment?.(payload.attachment as DexterEmailAttachment)
     } else if ("type" in payload && payload.type === "complete" && "conversation" in payload) {
       completed = payload.conversation as DexterConversation
     } else if ("type" in payload && payload.type === "error") {

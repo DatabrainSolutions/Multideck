@@ -148,4 +148,3 @@ export async function handleInventory(path, url, admin, actor) {
     };
   });
 }
-

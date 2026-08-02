@@ -117,4 +117,3 @@ export async function getGeneratedDocumentDownload(generatedDocumentId: string):
   if (!data) throw new Error("The download service returned no link.")
   return data
 }
-

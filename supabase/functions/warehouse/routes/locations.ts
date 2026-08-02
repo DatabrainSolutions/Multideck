@@ -192,4 +192,3 @@ export async function handleLocations(request, path, url, admin, actor) {
   }).select().single(), "Could not create the location.") : await one(admin.from("WMS_Locations").update(payload).eq("WMSLocation_ID", locationId).select().single(), "This location does not exist in this facility.");
   return map(saved);
 }
-

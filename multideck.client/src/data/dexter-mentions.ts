@@ -1,19 +1,25 @@
 import {
+  BriefcaseBusiness,
   Building2,
   FileText,
   LayoutPanelTop,
+  Mail,
   ReceiptText,
   Ship,
   UserRoundSearch,
   type LucideIcon,
 } from "lucide-react"
+import gmailLogo from "@/assets/integrations/gmail.svg"
+import outlookLogo from "@/assets/integrations/outlook.svg"
 import { bookings, customers } from "@/data/multideck-data"
 import { quoteRegisterRecords } from "@/data/quote-register-data"
 import { sidebarAreas, sidebarPrimary, sidebarSecondary, type NavItem } from "@/data/navigation-data"
 import type { ApiCustomer } from "@/lib/customer-api"
+import type { ApiDeal } from "@/lib/deal-api"
 import type { ApiLead } from "@/lib/lead-api"
+import type { DexterEmailContextSource, MailProvider } from "@/lib/inbox-contract"
 
-export type DexterMentionType = "booking" | "customer" | "lead" | "page" | "quote" | "document"
+export type DexterMentionType = "email" | "booking" | "customer" | "lead" | "deal" | "page" | "quote" | "document"
 
 export type DexterMentionItem = {
   id: string
@@ -23,6 +29,9 @@ export type DexterMentionItem = {
   keywords?: string
   route?: string
   icon: LucideIcon
+  logo?: string
+  disabled?: boolean
+  unavailableRoute?: string
 }
 
 function uniqueById(items: DexterMentionItem[]) {
@@ -54,7 +63,56 @@ const pageMentions = uniqueById([
   ),
 ].filter((item): item is DexterMentionItem => Boolean(item)))
 
+const emailMentionDefinitions: Record<MailProvider, Omit<DexterMentionItem, "meta">> = {
+  gmail: {
+    id: "email:gmail",
+    type: "email",
+    title: "Gmail",
+    keywords: "email inbox mail google",
+    icon: Mail,
+    logo: gmailLogo,
+    unavailableRoute: "/settings?tab=integrations",
+  },
+  outlook: {
+    id: "email:outlook",
+    type: "email",
+    title: "Outlook",
+    keywords: "email inbox mail microsoft office 365",
+    icon: Mail,
+    logo: outlookLogo,
+    unavailableRoute: "/settings?tab=integrations",
+  },
+}
+
+function emailSourceMeta(source: DexterEmailContextSource | undefined, failed: boolean) {
+  if (failed) return "Email availability could not be checked. Open Settings to try again."
+  if (!source) return "Checking email access…"
+  if (source.status === "available") return "Connected and available to Dexter"
+  if (source.status === "indexing") return "Connected; Dexter can search indexed mail while older email continues indexing"
+  if (source.status === "permission_required") return "Ask an administrator for AI email access"
+  if (source.status === "reauthorization_required") return "Reconnect this email provider in Settings to use it with Dexter"
+  if (source.status === "provider_not_configured") return "This email provider is not configured for this workspace"
+  if (source.status === "disabled") return "Dexter email context is disabled for this workspace"
+  if (source.status === "not_connected") return "Connect this email provider in Settings to use it with Dexter"
+  return "Email context is temporarily unavailable. Open Settings to review the connection."
+}
+
+export function emailMentionItems(
+  sources: DexterEmailContextSource[] | null = null,
+  failed = false,
+): DexterMentionItem[] {
+  return (["gmail", "outlook"] as const).map((provider) => {
+    const source = sources?.find((candidate) => candidate.provider === provider)
+    return {
+      ...emailMentionDefinitions[provider],
+      meta: emailSourceMeta(source, failed),
+      disabled: !source?.available,
+    }
+  })
+}
+
 export const defaultDexterMentionItems: DexterMentionItem[] = uniqueById([
+  ...emailMentionItems(),
   ...bookings.map((booking) => ({
     id: `booking:${booking.id}`,
     type: "booking" as const,
@@ -128,6 +186,25 @@ export function leadMentionItems(items: ApiLead[]): DexterMentionItem[] {
     ].filter(Boolean).join(" "),
     route: `/crm/leads/${lead.id}`,
     icon: UserRoundSearch,
+  }))
+}
+
+export function dealMentionItems(items: ApiDeal[]): DexterMentionItem[] {
+  return items.map((deal) => ({
+    id: `deal:${deal.id}`,
+    type: "deal",
+    title: deal.name,
+    meta: [deal.companyName, deal.pipelineStageName, deal.statusName].filter(Boolean).join(" · "),
+    keywords: [
+      deal.pipelineName,
+      deal.opportunityTypeName,
+      deal.primaryContactName,
+      deal.ownerName,
+      deal.tradeLane,
+      deal.serviceInterest,
+    ].filter(Boolean).join(" "),
+    route: `/crm/deals?record=${encodeURIComponent(deal.id)}`,
+    icon: BriefcaseBusiness,
   }))
 }
 

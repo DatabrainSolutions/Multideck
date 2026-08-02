@@ -1,7 +1,11 @@
-import { useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { FileText, Search, Ship } from "lucide-react"
 import { Input } from "@/components/ui/input"
+import { ShortcutKeys } from "@/components/multideck/keyboard-shortcut-keys"
 import { useLanguage } from "@/i18n/language-provider"
+import { registerAppSearch } from "@/lib/app-commands"
+import { bindingAriaKeyshortcuts } from "@/lib/keyboard-shortcut-binding"
+import { useShortcutBinding } from "@/lib/keyboard-shortcuts"
 import { cn } from "@/lib/utils"
 
 type SearchBooking = (typeof import("@/data/multideck-data"))["bookings"][number]
@@ -37,12 +41,29 @@ export function CommandInput({
   const { t } = useLanguage()
   const [query, setQuery] = useState("")
   const [searchData, setSearchData] = useState<CommandSearchData | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const searchShortcut = useShortcutBinding("search.focus")
   const normalizedQuery = query.trim().toLocaleLowerCase()
 
-  function prepareSearch() {
+  const prepareSearch = useCallback(() => {
     if (searchData) return
     void loadCommandSearchData().then(setSearchData)
-  }
+  }, [searchData])
+
+  // Claims the search shortcut while this bar is on screen, so the key handler
+  // never has to know which routes render a top bar.
+  useEffect(
+    () =>
+      registerAppSearch(() => {
+        prepareSearch()
+        const input = inputRef.current
+        if (!input) return
+
+        input.focus({ preventScroll: true })
+        input.select()
+      }),
+    [prepareSearch],
+  )
 
   const results = useMemo(() => {
     if (!normalizedQuery || !searchData) return { jobs: [], quotes: [] }
@@ -62,12 +83,14 @@ export function CommandInput({
 
   return (
     <div className={cn("relative w-full", className)}>
-      <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.2} />
+      <Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.2} />
       <Input
+        ref={inputRef}
         aria-label="Search Multideck"
         aria-expanded={Boolean(normalizedQuery)}
         aria-controls="multideck-command-results"
-        className="h-9 rounded-[var(--md-radius-lg)] border-0 bg-white/70 pl-9 pr-16 text-[13px] shadow-[var(--md-shadow-line)] placeholder:text-[var(--md-subtle)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
+        aria-keyshortcuts={bindingAriaKeyshortcuts(searchShortcut)}
+        className="h-9 rounded-[var(--md-radius-lg)] border-0 bg-white/70 ps-9 pe-16 text-[13px] shadow-[var(--md-shadow-line)] placeholder:text-[var(--md-subtle)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
         placeholder={placeholder}
         value={query}
         onFocus={prepareSearch}
@@ -76,11 +99,13 @@ export function CommandInput({
           prepareSearch()
         }}
         onKeyDown={(event) => {
-          if (event.key === "Escape") setQuery("")
+          if (event.key !== "Escape") return
+          if (query) setQuery("")
+          else event.currentTarget.blur()
         }}
       />
-      <span className="absolute right-2 top-1/2 -translate-y-1/2 rounded-[var(--md-radius-sm)] bg-[var(--md-surface-tint)] px-2 py-1 text-[11px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
-        ⌘ K
+      <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 end-2 my-auto flex h-fit items-center">
+        <ShortcutKeys binding={searchShortcut} keyClassName="bg-[var(--md-surface-tint)]" emptyLabel="" />
       </span>
       {normalizedQuery ? (
         <div id="multideck-command-results" role="listbox" className="absolute inset-x-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-[var(--md-radius-xl)] bg-[rgba(255,255,255,0.98)] p-1.5 shadow-[var(--md-shadow-lift)] ring-1 ring-[rgba(11,20,19,0.08)] backdrop-blur-xl">

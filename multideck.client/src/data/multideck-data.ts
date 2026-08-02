@@ -2080,9 +2080,40 @@ export const galleryComponents = [
     category: "Controls",
     description: "A compact keycap for keyboard shortcuts and command hints.",
     details: "Use inside actionable controls or supporting hints when a keyboard route materially speeds up the workflow. Keep platform-specific modifiers accurate and pair keycaps with an accessible action label.",
-    foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components?component=kbd" }],
+    foundOn: [
+      { label: "Agent Dexter", route: "/agent-dexter" },
+      { label: "Keyboard shortcuts", route: "/settings?tab=shortcuts" },
+      { label: "Components", route: "/components?component=kbd" },
+    ],
     componentCode: `export function Kbd({ className, ...props }) {\n  return <kbd data-slot="kbd" className={cn("inline-flex h-5 min-w-5 items-center justify-center rounded-sm bg-muted px-1 text-xs font-medium text-muted-foreground", className)} {...props} />\n}\n\nexport function KbdGroup({ className, ...props }) {\n  return <span data-slot="kbd-group" className={cn("inline-flex items-center gap-1", className)} {...props} />\n}`,
     usageCode: `<Button aria-label="Send prompt" aria-keyshortcuts="Meta+Enter Control+Enter">\n  <KbdGroup dir="ltr">\n    <Kbd>{isMac ? "⌘" : "Ctrl"}</Kbd>\n    <Kbd>↵</Kbd>\n  </KbdGroup>\n</Button>`,
+  },
+  {
+    id: "shortcut-keys",
+    name: "Shortcut Keys",
+    category: "Controls",
+    description: "A saved keyboard binding drawn as keycaps, in the modifier glyphs of the operator's own platform.",
+    details: "Use anywhere a shortcut is worth advertising: beside a control, inside a menu row, or in the shortcut editor. It resolves ⌘ against Ctrl for you, and draws a two-key sequence as two groups joined by \"then\" rather than one unreadable run of glyphs. Keycaps always read left to right, including in right-to-left languages, because they describe a physical keyboard and a keyboard does not mirror.",
+    foundOn: [
+      { label: "Keyboard shortcuts", route: "/settings?tab=shortcuts" },
+      { label: "Overview", route: "/" },
+      { label: "Components", route: "/components?component=shortcut-keys" },
+    ],
+    componentCode: `export function ShortcutKeys({ binding, className, keyClassName, emptyLabel = "Not set" }) {\n  const platform = usePlatformShortcutLabels()\n  const steps = useMemo(() => bindingTokens(binding, platform), [binding, platform])\n\n  if (steps.length === 0) return <span className={className}>{emptyLabel}</span>\n\n  return (\n    <span className={cn("inline-flex flex-wrap items-center gap-1.5", className)}>\n      {steps.map((tokens, stepIndex) => (\n        <span key={stepIndex} className="inline-flex items-center gap-1.5">\n          {stepIndex > 0 ? <span className="text-[11px] text-[var(--md-subtle)]">then</span> : null}\n          <KbdGroup dir="ltr" data-i18n-skip>\n            {tokens.map((token, tokenIndex) => (\n              <Kbd key={\`\${token}-\${tokenIndex}\`} className={keyClassName}>{token}</Kbd>\n            ))}\n          </KbdGroup>\n        </span>\n      ))}\n    </span>\n  )\n}`,
+    usageCode: `// From a saved binding\n<ShortcutKeys binding={useShortcutBinding("search.focus")} />\n\n// Or straight from a shortcut id\n<ShortcutHint shortcutId="dexter.summon" />\n\n// Inside a field, so the hint follows whatever the operator rebound it to\n<span className="pointer-events-none absolute inset-y-0 end-2 my-auto flex h-fit items-center">\n  <ShortcutKeys binding={searchShortcut} keyClassName="bg-[var(--md-surface-tint)]" emptyLabel="" />\n</span>`,
+  },
+  {
+    id: "keyboard-shortcuts-panel",
+    name: "Keyboard Shortcuts Panel",
+    category: "Settings",
+    description: "The editable shortcut list: grouped rows, live keycaps, an inline recorder, conflict warnings and per-row reset.",
+    details: "Use as the whole body of a settings section, or inside a dialog for an in-place shortcut reference. Clicking a row's keys opens a recorder that takes over the keyboard, so pressing ⌘\\\\ records ⌘\\\\ rather than collapsing the sidebar underneath. Two plain keys in a row become a sequence; holding the modifier and double-clicking inside the recorder captures a mouse gesture instead. Duplicate bindings are shown rather than blocked, because an operator mid-swap between two shortcuts is a normal state and a silently shadowed shortcut looks like a bug in the app. Every change writes through to the signed-in operator's profile.",
+    foundOn: [
+      { label: "Keyboard shortcuts", route: "/settings?tab=shortcuts" },
+      { label: "Components", route: "/components?component=keyboard-shortcuts-panel" },
+    ],
+    componentCode: `export function KeyboardShortcutsPanel({ className, compact = false }) {\n  const bindings = useShortcutBindings()\n  const [query, setQuery] = useState("")\n  const [recording, setRecording] = useState(null)\n  const [lastChange, setLastChange] = useState(null)\n\n  const groups = useMemo(\n    () => shortcutGroups\n      .map((group) => ({ group, items: shortcutDefinitions.filter((d) => d.group === group.id && matches(d)) }))\n      .filter((entry) => entry.items.length > 0),\n    [matches],\n  )\n\n  return (\n    <div className={className}>\n      <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search shortcuts" />\n      <Button onClick={resetAllShortcutBindings} disabled={customisedShortcutCount() === 0}>Reset all</Button>\n      {groups.map(({ group, items }) => (\n        <section key={group.id}>\n          <h3>{group.label}</h3>\n          {items.map((definition, index) => (\n            <ShortcutRow\n              key={definition.id}\n              definition={definition}\n              binding={bindings[definition.id]}\n              customised={isShortcutCustomised(definition.id)}\n              recording={recording}\n              index={index}\n              onStartRecording={() => setRecording({ shortcutId: definition.id, steps: [] })}\n              onCommit={(binding) => writeShortcutBinding(definition.id, binding)}\n              onReset={() => resetShortcutBinding(definition.id)}\n              onDisable={() => writeShortcutBinding(definition.id, null)}\n            />\n          ))}\n        </section>\n      ))}\n    </div>\n  )\n}`,
+    usageCode: `// As a settings section\n<section className="md-settings-panel overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-soft)]">\n  <KeyboardShortcutsPanel />\n</section>\n\n// Or over whatever the operator is working on, opened by its own shortcut\n<Dialog open={overviewOpen} onOpenChange={setOverviewOpen}>\n  <DialogContent className="max-w-[720px] gap-0 overflow-hidden p-0">\n    <DialogHeader><DialogTitle>Keyboard shortcuts</DialogTitle></DialogHeader>\n    <div className="md-scrollbar max-h-[560px] overflow-y-auto">\n      <KeyboardShortcutsPanel compact />\n    </div>\n  </DialogContent>\n</Dialog>`,
   },
   {
     id: "ai-edge-glow",
@@ -2145,6 +2176,51 @@ export const galleryComponents = [
     Northwind has a follow-up due today
   </DexterInlineCitation>.
 </p>`,
+  },
+  {
+    id: "dexter-email-attachment-card",
+    name: "Dexter Email Attachment Card",
+    category: "Agent Dexter",
+    description: "An authorised Gmail or Outlook attachment surfaced in a Dexter answer or Watch update, with secure preview, download and handoff actions.",
+    details: "Use only for attachment records returned by server-side email tools or the owner-scoped Watch RPC. The compact Watch variant adds Ask Dexter without sending a prompt. Every file fetch is re-authorised through the tenant Inbox Edge Function.",
+    foundOn: [
+      { label: "Agent Dexter", route: "/agent-dexter" },
+      { label: "Components", route: "/components?component=dexter-email-attachment-card" },
+    ],
+    componentCode: `export function DexterEmailAttachmentCard({ attachment, variant = "default", onAskDexter, loadAttachment = getAttachmentBlobUrl }) {
+  const kind = previewKind(attachment.mimeType)
+  const [previewUrl, setPreviewUrl] = useState(null)
+
+  async function view() {
+    const opened = await loadAttachment(attachment.id)
+    setPreviewUrl(opened.url)
+  }
+
+  return (
+    <section className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] shadow-[var(--md-shadow-line)]">
+      <header>
+        <ProviderLogo provider={attachment.provider} />
+        <bdi dir="auto">{attachment.fileName}</bdi>
+        {kind ? <Button onClick={view}>View</Button> : null}
+        <Button onClick={download}>Download</Button>
+        {variant === "watch" ? <Button onClick={() => onAskDexter?.(attachment)}>Ask Dexter</Button> : null}
+      </header>
+      {previewUrl ? <AttachmentPreview kind={kind} url={previewUrl} /> : null}
+      <a href={attachment.sourceUrl}>Open email</a>
+    </section>
+  )
+}`,
+    usageCode: `<DexterEmailAttachmentCard attachment={message.emailAttachments[0]} />
+
+<DexterEmailAttachmentCard
+  attachment={watchEvent.context.attachments[0]}
+  variant="watch"
+  onAskDexter={attachToComposer}
+/>
+
+// The default loader downloads through the signed-in tenant's
+// Inbox Edge Function. A custom loader is only useful for isolated previews.
+`,
   },
   {
     id: "dexter-action-pill",
@@ -2568,12 +2644,240 @@ export const galleryComponents = [
     usageCode: `<MultiSelectMenu\n  value={transportModes}\n  options={["Sea FCL", "Sea LCL", "Air", "Road", "Rail"]}\n  onValueChange={setTransportModes}\n  placeholder="Select transport modes"\n/>`,
   },
   {
+    id: "inbox-thread-row",
+    name: "Inbox Thread Row",
+    category: "Operations",
+    description: "One conversation in a mailbox list, with participants, subject, preview, unread state and a hover star.",
+    details: "Use for any list of mail conversations. Pass the same `selectionLayoutId` to every row in one list so the selected surface travels between rows as a single shared element rather than two rows repainting. Unread state is carried by weight and a dot as well as the count, so it survives reduced motion and never depends on colour alone. Provider text is marked `data-i18n-skip` and `dir=\"auto\"`, so a customer's subject line is never machine-translated or reordered.",
+    foundOn: [{ label: "Inbox", route: "/inbox" }, { label: "Components", route: "/components?component=inbox-thread-row" }],
+    componentCode: `export function InboxThreadRow({ thread, selected, ownAddresses = [], selectionLayoutId, onSelect, onToggleStar }) {
+  const shouldReduceMotion = useReducedMotion()
+  const unread = thread.unreadCount > 0
+  const participants = threadParticipantLabel(thread, ownAddresses)
+
+  return (
+    <div data-inbox-thread-row data-selected={selected || undefined} className="group relative isolate">
+      {selected ? (
+        <motion.span
+          aria-hidden="true"
+          layoutId={selectionLayoutId}
+          transition={reduceMotion(shouldReduceMotion, mdMotion.spring)}
+          className="absolute inset-0 -z-10 rounded-[var(--md-radius-lg)] bg-[var(--md-selected-bg)]"
+        />
+      ) : (
+        <span aria-hidden="true" className="absolute inset-0 -z-10 rounded-[var(--md-radius-lg)] bg-[var(--md-hover)] opacity-0 group-hover:opacity-100" />
+      )}
+      <button type="button" aria-current={selected || undefined} onClick={onSelect}>
+        {unread ? <span aria-hidden="true" className="size-[6px] rounded-full bg-[var(--md-accent)]" /> : null}
+        <span data-i18n-skip dir="auto">{participants}</span>
+        <span data-i18n-skip dir="ltr" className="tabular-nums">{formatThreadTimestamp(thread.lastMessageAt, language)}</span>
+        <span data-i18n-skip dir="auto">{thread.subject}</span>
+        <span data-i18n-skip dir="auto" className="line-clamp-2">{thread.preview}</span>
+      </button>
+      <button type="button" aria-pressed={thread.starred} onClick={onToggleStar}>
+        <Star className={cn("size-3.5", thread.starred && "fill-current")} strokeWidth={1.4} />
+      </button>
+    </div>
+  )
+}`,
+    usageCode: `{threads.map((item) => (
+  <InboxThreadRow
+    key={item.id}
+    thread={item}
+    selected={item.id === selectedThreadId}
+    ownAddresses={ownAddresses}
+    selectionLayoutId="inbox-thread-selection"
+    onSelect={() => selectThread(item)}
+    onToggleStar={() => void toggleStar(item)}
+  />
+))}`,
+  },
+  {
+    id: "mailbox-provider-switch",
+    name: "Mailbox Provider Switch",
+    category: "Operations",
+    description: "The provider toggle and mailbox picker for a connected mail workspace, with Shared and Group labels.",
+    details: "Use to choose which mail account a workspace is reading. The provider toggle reuses the shared Segmented Control, and the Gmail and Outlook marks come from the local auth brand assets rather than a remote logo URL. Personal mailboxes are listed before shared and group ones, each labelled explicitly, because sending from the wrong address is the expensive mistake in an operations inbox. An expired connection surfaces its own Reconnect action instead of failing silently.",
+    foundOn: [{ label: "Inbox", route: "/inbox" }, { label: "Components", route: "/components?component=mailbox-provider-switch" }],
+    componentCode: `export function MailboxProviderSwitch({ providers, provider, onProviderChange, mailboxes, selectedMailboxId, onMailboxChange, onReconnect }) {
+  const personal = mailboxes.filter((mailbox) => mailbox.kind === "personal")
+  const shared = mailboxes.filter((mailbox) => mailbox.kind !== "personal")
+  const needsReconnect = mailboxes.some((mailbox) => mailbox.status === "reauthorization_required")
+
+  return (
+    <div className="flex min-h-0 flex-col gap-3">
+      <SegmentedControl
+        options={providers}
+        value={provider}
+        onChange={onProviderChange}
+        ariaLabel="Mail provider"
+        renderOption={(option) => (
+          <>
+            <MailProviderMark provider={option} className="size-4" />
+            <span className="truncate">{mailProviderLabels[option]}</span>
+          </>
+        )}
+      />
+      {needsReconnect ? <ReconnectNotice onReconnect={() => onReconnect(provider)} /> : null}
+      {[{ label: "Personal", items: personal }, { label: "Shared mailboxes", items: shared }]
+        .filter((group) => group.items.length > 0)
+        .map((group) => (
+          <MailboxGroup key={group.label} {...group} selectedMailboxId={selectedMailboxId} onMailboxChange={onMailboxChange} />
+        ))}
+    </div>
+  )
+}`,
+    usageCode: `<MailboxProviderSwitch
+  providers={["gmail", "outlook"]}
+  provider={provider}
+  onProviderChange={changeProvider}
+  mailboxes={providerMailboxes}
+  selectedMailboxId={mailboxId}
+  onMailboxChange={changeMailbox}
+  onReconnect={(target) => void reconnect(target)}
+/>`,
+  },
+  {
+    id: "email-message-renderer",
+    name: "Email Message Renderer",
+    category: "Operations",
+    description: "Renders one email body and its secure remote images inside an isolated surface.",
+    details: "Use for any provider email body. HTML is sanitised on the server and still treated as untrusted here: it never reaches `dangerouslySetInnerHTML`, it goes into a sandboxed iframe whose own Content Security Policy blocks scripts, frames, forms and every network request except HTTPS images. Images load with the message under a no-referrer policy. When there is no sanitised HTML the plain-text alternative is rendered directly. The frame is sized to its content, so the thread keeps one scroll axis.",
+    foundOn: [{ label: "Inbox", route: "/inbox" }, { label: "Components", route: "/components?component=email-message-renderer" }],
+    componentCode: `const sandboxPermissions = "allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+
+function contentPolicy() {
+  return [
+    "default-src 'none'",
+    "script-src 'none'",
+    "object-src 'none'",
+    "frame-src 'none'",
+    "form-action 'none'",
+    "base-uri 'none'",
+    "style-src 'unsafe-inline'",
+    "img-src data: https:",
+  ].join("; ")
+}
+
+export function EmailMessageRenderer({ sanitizedHtml, bodyText }) {
+  if (!sanitizedHtml) {
+    return <div data-i18n-skip dir="auto" className="whitespace-pre-wrap">{bodyText}</div>
+  }
+
+  return (
+    <div className="min-w-0">
+      <iframe
+        title="Message content"
+        sandbox={sandboxPermissions}
+        srcDoc={buildDocument({ html: sanitizedHtml, theme, direction, language })}
+        loading="eager"
+        scrolling="no"
+        style={{ height: frameHeight > 0 ? \`\${frameHeight}px\` : "72px" }}
+      />
+    </div>
+  )
+}`,
+    usageCode: `<EmailMessageRenderer
+  sanitizedHtml={message.sanitizedHtml}
+  bodyText={message.bodyText}
+/>`,
+  },
+  {
+    id: "thread-summary",
+    name: "Thread Summary",
+    category: "Agent Dexter",
+    description: "Dexter's opt-in read of an email thread, with pending, ready, out-of-date and failed states and links back to the messages it used.",
+    details: "Use above a message trail after the operator presses the Dexter Summarise action. The surface does not mount and no model request runs when a conversation merely opens. Pending, ready, out-of-date and failed states share the full Dexter shader with a dark readability scrim. Every claim the API gives message ids for links back to that message, and the footnote keeps the summary attributed rather than authoritative.",
+    foundOn: [{ label: "Inbox", route: "/inbox" }, { label: "Components", route: "/components?component=thread-summary" }],
+    componentCode: `export function ThreadSummary({ summary, sources = [], onRegenerate, onOpenSource }) {
+  const pending = summary.status === "pending"
+
+  if (summary.status === "none") return null
+  if (summary.status === "failed") return <SummaryFailed error={summary.error} onRegenerate={onRegenerate} />
+
+  return (
+    <SummaryShell tone={summary.status === "stale" ? "warning" : "default"}>
+      <SpectralBloomShader shape="composer" />
+      <SummaryScrim />
+      <SummaryHeader status={summary.status} onRegenerate={onRegenerate} busy={pending} />
+      {/* One reserved block for both states, so arrival changes the words and not the height. */}
+      <div className="relative mt-2 min-h-[3.75rem]">
+        <AnimatePresence initial={false} mode="wait">
+          {pending ? <PendingLines key="pending" /> : (
+            <motion.div key="ready" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={mdMotion.enter}>
+              <p data-i18n-skip dir="auto" className="text-pretty">{summary.text}</p>
+              <SourceLinks sources={sources} onOpenSource={onOpenSource} />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </SummaryShell>
+  )
+}`,
+    usageCode: `{summaryVisible ? (
+  <ThreadSummary
+    summary={thread.summary}
+    sources={summarySources}
+    onRegenerate={() => void requestSummary(thread.id)}
+    onOpenSource={focusMessage}
+  />
+) : (
+  <DexterActionPill label="Summarise" onClick={openSummary} />
+)}`,
+  },
+  {
+    id: "mail-composer",
+    name: "Mail Composer",
+    category: "Operations",
+    description: "The docked composer for a new message, a reply, a reply all or a forward, with Save draft and an expand mode.",
+    details: "Use wherever an operator answers mail. For every response mode the browser reports only what was typed or changed by hand: it never computes the final recipient list, because the server reads the source message and resolves who receives a Reply all, so a thread that moved on in another tab cannot drop somebody quietly. The composer states that plainly instead of showing a recipient list it cannot guarantee. Height animates between two explicit values, so reopening mid-close retargets without a jump, and inputs stay at 16px on mobile so iOS does not zoom the page.",
+    foundOn: [{ label: "Inbox", route: "/inbox" }, { label: "Components", route: "/components?component=mail-composer" }],
+    componentCode: `export function MailComposer({ state, onStateChange, mailbox, status, error, canSend, onSend, onSaveDraft, onDiscard }) {
+  const readOnly = mailbox ? !mailbox.outboundEnabled : true
+  const expanded = state.presentation === "expanded"
+  const open = state.presentation !== "docked"
+
+  if (!open) return <ComposerTrigger readOnly={readOnly} onOpen={() => onStateChange({ ...state, presentation: "open" })} />
+
+  return (
+    <motion.section
+      aria-label={composerModeLabels[state.mode]}
+      // Height animates between two explicit values rather than an auto
+      // measurement, so reopening mid-close retargets without a jump.
+      animate={{ height: expanded ? "min(78vh, 640px)" : "min(48vh, 340px)" }}
+      initial={false}
+      transition={reduceMotion(shouldReduceMotion, mdMotion.panel)}
+    >
+      <ComposerHeader mode={state.mode} mailbox={mailbox} expanded={expanded} onChange={onStateChange} />
+      <ComposerFields state={state} onChange={onStateChange} readOnly={readOnly} />
+      <footer>
+        <Button disabled={!canSend || readOnly} onClick={onSend}>Send</Button>
+        <Button variant="ghost" onClick={onSaveDraft}>Save draft</Button>
+        <Button variant="ghost" onClick={onDiscard}>Discard</Button>
+      </footer>
+    </motion.section>
+  )
+}`,
+    usageCode: `<MailComposer
+  state={composer}
+  onStateChange={setComposer}
+  mailbox={activeMailbox}
+  status={composerStatus}
+  error={composerError}
+  offlineDraftRestored={draftRestored}
+  canSend={canSendComposer}
+  onSend={() => void sendComposer()}
+  onSaveDraft={() => void saveComposerDraft()}
+  onDiscard={discardComposer}
+/>`,
+  },
+  {
     id: "segmented-control",
     name: "Segmented Control",
     category: "Navigation",
     description: "A compact mode switch with one spring-animated selection pill for two to four exclusive choices.",
     details: "Use for short mutually exclusive view modes. The selected pill preserves spatial continuity, respects reduced motion, and stays visually identical across settings, dashboards, registers, and workflows.",
-    foundOn: [{ label: "Paper Tray", route: "/paper-tray" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Paper Tray", route: "/paper-tray" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Inbox", route: "/inbox" }, { label: "Components", route: "/components" }],
     componentCode: `export function SegmentedControl({ options, value, onChange }) {\n  const controlId = useId()\n  const shouldReduceMotion = useReducedMotion()\n\n  return (\n    <div role="group" className="relative isolate inline-flex rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-1">\n      {options.map((option) => (\n        <button key={option} aria-pressed={value === option} onClick={() => onChange(option)}>\n          {value === option ? (\n            <motion.span layoutId={controlId + "-active"} transition={reduceMotion(shouldReduceMotion, mdMotion.spring)} />\n          ) : null}\n          {option}\n        </button>\n      ))}\n    </div>\n  )\n}`,
     usageCode: `<SegmentedControl\n  options={["Table", "Board"]}\n  value={viewMode}\n  onChange={setViewMode}\n/>`,
   },
@@ -2920,6 +3224,20 @@ export const galleryComponents = [
     usageCode: `<DexterMentionInput\n  value={prompt}\n  items={mentionItems}\n  selectedMentions={mentions}\n  placeholder="Ask anything, @ a record, or / for a command"\n  minHeight={76}\n  maxHeight={232}\n  canSend={Boolean(prompt.trim())}\n  onChange={setPrompt}\n  onMentionsChange={setMentions}\n  onSend={sendPrompt}\n/>`,
   },
   {
+    id: "dexter-summon-prompt",
+    name: "Dexter Summon Prompt",
+    category: "Agent Dexter",
+    description: "The Dexter prompt box, stripped to what an answer-in-place needs, pinned to whatever the operator summoned it on.",
+    details: "Use as the tooltip half of the summon gesture: hold the platform modifier and double-click a field, chart, table or panel and this opens against it with that thing's context already attached. Everything the full composer carries that an interruption does not need is gone — no role picker, no attachments, no model choice — because the summon always runs on Fast so the answer lands while the operator is still looking. The header names what it is pinned to, Enter sends, and Open in full hands the same conversation to the Dexter workspace rather than starting again.",
+    foundOn: [
+      { label: "Every workspace screen", route: "/" },
+      { label: "Keyboard shortcuts", route: "/settings?tab=shortcuts" },
+      { label: "Components", route: "/components?component=dexter-summon-prompt" },
+    ],
+    componentCode: `export function DexterSummonPrompt({ target, status, question, answer, onQuestionChange, onSubmit, onClose, onCopy, onAskAnother, onContinueInDexter }) {\n  const KindIcon = kindIcons[target.kind]\n  const busy = status === "thinking" || status === "streaming"\n  const canSend = question.trim().length > 0 && !busy\n\n  return (\n    <div className="md-summon-prompt md-composer-bloom relative w-full overflow-hidden rounded-[22px]" role="dialog">\n      <span aria-hidden className="md-composer-bloom__shader"><SpectralBloomShader shape="composer" /></span>\n      <span aria-hidden className="md-composer-bloom__contrast" />\n\n      <header className="relative z-[2] flex h-9 items-center gap-1.5 ps-1.5 pe-1">\n        <DexterBrandMark className="size-6" />\n        <span className="md-summon-chip"><KindIcon /><span className="truncate">{target.label}</span></span>\n        <span className="md-summon-chip md-summon-chip--fast"><Zap /><span>Fast</span></span>\n        <Button variant="ghost" size="icon" aria-label="Close" onClick={onClose} className="ms-auto" />\n      </header>\n\n      <div className="relative z-[2] mx-1.5 mb-1.5 rounded-[16px] bg-[var(--md-composer-panel-bg)]">\n        <AnimatePresence initial={false}>\n          {busy && !answer ? <ThinkingLine /> : null}\n          {answer ? <AnswerBlock answer={answer} onCopy={onCopy} onAskAnother={onAskAnother} onContinueInDexter={onContinueInDexter} /> : null}\n        </AnimatePresence>\n        <div className="flex items-end gap-2 px-2.5 py-2">\n          <textarea\n            rows={1}\n            value={question}\n            placeholder={summonPlaceholder(target.kind)}\n            onChange={(event) => onQuestionChange(event.target.value)}\n            onKeyDown={(event) => {\n              if (event.key !== "Enter") return\n              if (event.shiftKey && !(event.metaKey || event.ctrlKey)) return\n              event.preventDefault()\n              if (canSend) onSubmit()\n            }}\n          />\n          <DexterActionPill icon={ArrowUp} iconOnly label="Ask" disabled={!canSend} onClick={onSubmit} />\n        </div>\n      </div>\n    </div>\n  )\n}`,
+    usageCode: `// Driven by the summon overlay, which resolves the target and streams the answer\nconst target = describeSummonTarget(element)\n\n<DexterSummonPrompt\n  target={target}\n  status={status}\n  question={question}\n  answer={answer}\n  error={error}\n  copied={copied}\n  onQuestionChange={setQuestion}\n  onSubmit={submit}\n  onClose={close}\n  onCopy={copyAnswer}\n  onAskAnother={clearAnswer}\n  onContinueInDexter={() => {\n    rememberDexterConversationHandoff(conversationId)\n    navigate("/agent-dexter")\n  }}\n/>\n\n// The request itself always takes the quickest engine\nawait streamDexterMessage({\n  conversationId,\n  message: \`\${buildSummonBrief(target, readSummonPageContext())}\\n\\n---\\n\\nQuestion: \${question}\`,\n  specialist: "auto",\n  model: "fast",\n  locale: language,\n  accessMode: "approve",\n  attachments: [],\n}, { onAnswerDelta: (delta) => setAnswer((current) => current + delta) })`,
+  },
+  {
     id: "dexter-prompt-composer",
     name: "Dexter Prompt Composer",
     category: "Agent Dexter",
@@ -2963,8 +3281,8 @@ export const galleryComponents = [
     id: "dexter-action-approval",
     name: "Dexter Action Approval",
     category: "Agent Dexter",
-    description: "The explicit review checkpoint for a workspace change, with clear Approve and Deny actions and stable processing feedback.",
-    details: "Use only for a prepared allowlisted write. Keep the proposed change visible while either decision is processing, prevent duplicate submissions, and retain the panel with an inline error when the server cannot confirm the result.",
+    description: "The explicit review checkpoint for a workspace change, with animated field-level before and after comparisons plus clear Approve and Deny actions.",
+    details: "Use only for a prepared allowlisted write. Show changed values as red previous and green proposed panels, identify additions and removals, keep the proposal visible while either decision is processing, and retain it with an inline error when the server cannot confirm the result.",
     foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components?component=dexter-action-approval" }],
     componentCode: `<DexterActionApproval\n  action={pendingAction}\n  pendingDecision={pendingDecision}\n  error={decisionError}\n  onDecision={handleActionDecision}\n/>`,
     usageCode: `{message.pendingAction ? (\n  <DexterActionApproval\n    action={message.pendingAction}\n    pendingDecision={pendingActionDecision}\n    error={actionDecisionError}\n    onDecision={(decision) => handleActionDecision(message.pendingAction, decision)}\n  />\n) : null}`,
@@ -3023,20 +3341,20 @@ export const galleryComponents = [
     id: "dexter-monitor-card",
     name: "Dexter Monitor Card",
     category: "Agent Dexter",
-    description: "A compact background-monitor card for showing what Dexter is watching on the operator's behalf.",
-    details: "Use in the right rail of Agent Dexter. Each card needs a trigger, what Dexter is watching, and when it will next matter.",
+    description: "A compact, wrapping Watch update card that stays readable inside the 288–336px Dexter rail.",
+    details: "Use in the right rail of Agent Dexter. Titles, conditions and activity clamp to two lines; metadata stacks when space is constrained, and the card never creates horizontal scroll.",
     foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components" }],
-    componentCode: `export function DexterMonitorCard({ monitor }) {\n  return (\n    <Surface>\n      <span style={{ background: toneToVar(monitor.tone) }} />\n      <h3>{monitor.title}</h3>\n      <p>{monitor.body}</p>\n      <footer>{monitor.meta} - {monitor.detail}</footer>\n    </Surface>\n  )\n}`,
+    componentCode: `export function DexterMonitorCard({ monitor, active, onClick }) {\n  return (\n    <button className="w-full min-w-0" data-active={active} onClick={onClick}>\n      <h3 className="line-clamp-2 break-words">{monitor.title}</h3>\n      <p className="line-clamp-2 break-words">{monitor.body}</p>\n      <footer className="grid gap-1.5">{monitor.meta}<span className="line-clamp-2">{monitor.detail}</span></footer>\n    </button>\n  )\n}`,
     usageCode: `<DexterMonitorStack monitors={monitors} onAsk={openWatcherComposer} />`,
   },
   {
     id: "dexter-monitor-detail",
     name: "Dexter Monitor Detail",
     category: "Agent Dexter",
-    description: "The right-side drawer for inspecting what a watcher is tracking, why it fired, and what actions are available.",
-    details: "Use when an operator clicks a watcher card. The drawer should open over a blurred thread and preserve any draft in the prompt.",
+    description: "The responsive Watch detail pane for understanding a triggered update and handing its real email attachments to Dexter.",
+    details: "Use when an operator selects a Watch card. Promote the current email, preview and attachments above diagnostics. Ask Dexter attaches authorised context without sending or replacing a draft; constrained widths replace the list with this pane and provide Back.",
     foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components" }],
-    componentCode: `export function DexterMonitorDetailSheet({ monitor, onClose }) {\n  return (\n    <aside className="fixed inset-y-0 right-0">\n      <button onClick={onClose}>Close</button>\n      <h2>{monitor.title}</h2>\n      <StatusPill tone="green">Active</StatusPill>\n      <section>Watching condition and linked booking/customer context</section>\n      <section>Trend chart and activity timeline</section>\n      <footer>\n        <button>Pause</button>\n        <button>Edit conditions</button>\n        <button>Delete</button>\n      </footer>\n    </aside>\n  )\n}`,
+    componentCode: `export function DexterMonitorDetailSheet({ monitor, compactBack, onClose, onAskEvent, onAskAttachment }) {\n  const email = monitor.latestEvent?.context?.kind === "email" ? monitor.latestEvent.context : null\n  return (\n    <aside>\n      <button onClick={onClose}>{compactBack ? "Back" : "Close"}</button>\n      <h2>{monitor.title}</h2>\n      {email?.availability === "available" ? <section>\n        <h3>{email.subject}</h3>\n        <p>{email.preview}</p>\n        <button onClick={onAskEvent}>Ask Dexter about this update</button>\n        {email.attachments.map(file => <DexterEmailAttachmentCard key={file.id} attachment={file} variant="watch" onAskDexter={onAskAttachment} />)}\n      </section> : <UnavailableUpdateState />}\n      <details><summary>Watch conditions and connection details</summary></details>\n    </aside>\n  )\n}`,
     usageCode: `<AnimatePresence>\n  {selectedMonitor ? (\n    <DexterMonitorDetailSheet\n      monitor={selectedMonitor}\n      onClose={() => setSelectedMonitor(null)}\n    />\n  ) : null}\n</AnimatePresence>`,
   },
   {

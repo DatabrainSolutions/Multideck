@@ -6,6 +6,7 @@ export class InboxHttpError extends Error {
     public readonly status: number,
     message: string,
     public readonly code = "inbox_error",
+    public readonly providerStatus?: number,
   ) {
     super(message)
   }
@@ -569,5 +570,5 @@ export function buildRfc2822(input: MimeMessage) {
 export function providerErrorStatus(response: Response) {
   if (response.status === 401 || response.status === 403) return new InboxHttpError(409, "Reconnect this mailbox before continuing.", "reauthorization_required")
   if (response.status === 429) return new InboxHttpError(429, "The mail provider is rate limiting this account. Try again shortly.", "rate_limited")
-  return new InboxHttpError(502, `The mail provider returned status ${response.status}.`, "provider_unavailable")
+  return new InboxHttpError(502, `The mail provider returned status ${response.status}.`, "provider_unavailable", response.status)
 }

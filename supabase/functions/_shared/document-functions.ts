@@ -118,4 +118,3 @@ export function toFunctionError(error: unknown) {
 export function safeFailureMessage(error: unknown) {
   return error instanceof FunctionError ? error.auditMessage : "Unexpected document render failure"
 }
-

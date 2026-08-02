@@ -101,4 +101,3 @@ export async function handlePortal(request, path, admin, actor) {
   }
   return data;
 }
-
