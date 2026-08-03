@@ -1,5 +1,7 @@
 export const MISTRAL_OCR_MODEL = "mistral-ocr-4-0"
+export const MISTRAL_TEXT_MODEL = "mistral-small-latest"
 export const MAX_COMMERCIAL_INVOICE_BYTES = 10 * 1024 * 1024
+export const MAX_COMMERCIAL_INVOICE_TEXT_CHARS = 160_000
 
 export const commercialInvoiceAnnotationFormat = {
   type: "json_schema",
@@ -64,7 +66,6 @@ export type ExtractedCommercialInvoiceLine = {
   packageKind: string
   packageMarks: string
   packageCount: number
-  confidence: number
 }
 
 export type CommercialInvoiceExtraction = {
@@ -74,7 +75,6 @@ export type CommercialInvoiceExtraction = {
 
 export function normalizeCommercialInvoiceAnnotation(
   annotation: unknown,
-  pageConfidences: number[] = [],
 ): CommercialInvoiceExtraction {
   const parsed = typeof annotation === "string" ? parseAnnotation(annotation) : annotation
   const record = asRecord(parsed)
@@ -91,7 +91,6 @@ export function normalizeCommercialInvoiceAnnotation(
     const lineTotal = nonNegativeNumber(line.line_total)
     const unitPrice = explicitUnitPrice ?? (lineTotal === null ? 0 : lineTotal / quantity)
     const page = Math.max(1, Math.round(positiveNumber(line.page_number) || 1))
-    const confidence = normalizeConfidence(pageConfidences[page - 1])
 
     return [{
       id: `ocr-line-${index + 1}`,
@@ -109,7 +108,6 @@ export function normalizeCommercialInvoiceAnnotation(
       packageKind: cleanText(line.package_kind, 35).toUpperCase(),
       packageMarks: cleanText(line.package_marks, 140),
       packageCount: round(nonNegativeNumber(line.package_count) ?? 0, 3),
-      confidence,
     }]
   })
 
@@ -117,14 +115,6 @@ export function normalizeCommercialInvoiceAnnotation(
     invoiceNumber: cleanText(record.invoice_number, 80),
     lines,
   }
-}
-
-export function extractPageConfidences(payload: unknown) {
-  const pages = Array.isArray(asRecord(payload).pages) ? asRecord(payload).pages as unknown[] : []
-  return pages.map((page) => {
-    const scores = asRecord(asRecord(page).confidence_scores)
-    return normalizeConfidence(scores.average ?? scores.mean ?? scores.page)
-  })
 }
 
 function nullableString() {
@@ -178,12 +168,6 @@ function positiveNumber(value: unknown) {
 function nonNegativeNumber(value: unknown) {
   const result = finiteNumber(value)
   return result !== null && result >= 0 ? result : null
-}
-
-function normalizeConfidence(value: unknown) {
-  const result = nonNegativeNumber(value)
-  if (result === null) return 0
-  return Math.round(Math.min(100, result <= 1 ? result * 100 : result))
 }
 
 function round(value: number, precision: number) {

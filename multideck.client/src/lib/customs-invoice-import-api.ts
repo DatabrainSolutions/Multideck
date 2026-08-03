@@ -5,6 +5,7 @@ import {
   supabasePublicApiKey,
 } from "@/lib/supabase"
 import type { ExtractedInvoiceLine } from "@/lib/customs-invoice-import"
+import { extractEmbeddedPdfText } from "@/lib/customs-invoice-pdf-text"
 
 const functionName = "customs-invoice-ocr"
 const endpoint = `${supabaseFunctionsUrl}/${functionName}`
@@ -16,6 +17,8 @@ export type CommercialInvoiceExtractionResult = {
   lines: ExtractedInvoiceLine[]
   model: string
   pageCount: number
+  extractionMode: "embedded_text" | "mistral_ocr"
+  timings: Record<string, number>
 }
 
 export class CommercialInvoiceExtractionError extends Error {
@@ -30,10 +33,23 @@ export async function extractCommercialInvoice(file: File): Promise<CommercialIn
     throw new CommercialInvoiceExtractionError("Commercial invoice extraction is not configured for this workspace.", 503)
   }
 
-  const form = new FormData()
-  form.set("file", file, file.name)
-  let response = await send(form, await accessToken(false))
-  if (response.status === 401) response = await send(form, await accessToken(true))
+  const embeddedPdfText = await extractEmbeddedPdfText(file)
+  let token = await accessToken(false)
+  let response = embeddedPdfText
+    ? await sendEmbeddedText(file, embeddedPdfText, token)
+    : await sendPdf(file, token)
+
+  if (response.status === 401) {
+    token = await accessToken(true)
+    response = embeddedPdfText
+      ? await sendEmbeddedText(file, embeddedPdfText, token)
+      : await sendPdf(file, token)
+  }
+
+  if (embeddedPdfText && await requestsMistralOcrFallback(response)) {
+    response = await sendPdf(file, token)
+    if (response.status === 401) response = await sendPdf(file, await accessToken(true))
+  }
 
   if (!response.ok) {
     const fallback = response.status === 429
@@ -69,21 +85,50 @@ async function accessToken(forceRefresh: boolean) {
   throw new CommercialInvoiceExtractionError("Sign in again to import an invoice.", 401)
 }
 
-async function send(form: FormData, token: string) {
+async function sendEmbeddedText(
+  file: File,
+  embeddedPdfText: { text: string; pageCount: number },
+  token: string,
+) {
+  return send(JSON.stringify({
+    embeddedText: embeddedPdfText.text,
+    fileName: file.name,
+    pageCount: embeddedPdfText.pageCount,
+  }), token, "application/json")
+}
+
+function sendPdf(file: File, token: string) {
+  const form = new FormData()
+  form.set("file", file, file.name)
+  return send(form, token)
+}
+
+async function send(body: BodyInit, token: string, contentType?: string) {
   try {
     return await fetch(endpoint, {
       method: "POST",
-      body: form,
+      body,
       credentials: "omit",
       headers: {
         Accept: "application/json",
         Authorization: `Bearer ${token}`,
         apikey: supabasePublicApiKey,
         "x-client-info": "multideck-customs-invoice-import/1",
+        ...(contentType ? { "Content-Type": contentType } : {}),
       },
     })
   } catch {
     throw new CommercialInvoiceExtractionError("Unable to reach invoice extraction. Check your connection and try again.")
+  }
+}
+
+async function requestsMistralOcrFallback(response: Response) {
+  if (response.status !== 422) return false
+  try {
+    const payload = await response.clone().json() as Record<string, unknown>
+    return payload.fallbackToMistralOcr === true
+  } catch {
+    return false
   }
 }
 
@@ -114,6 +159,8 @@ function normalizeResult(payload: unknown): CommercialInvoiceExtractionResult {
     lines,
     model: text(result.model),
     pageCount: number(result.pageCount),
+    extractionMode: result.extractionMode === "embedded_text" ? "embedded_text" : "mistral_ocr",
+    timings: numberRecord(result.timings),
   }
 }
 
@@ -137,7 +184,6 @@ function normalizeLine(value: unknown): ExtractedInvoiceLine | null {
     packageKind: text(line.packageKind),
     packageMarks: text(line.packageMarks),
     packageCount: number(line.packageCount),
-    confidence: number(line.confidence),
   }
 }
 
@@ -151,4 +197,10 @@ function text(value: unknown) {
 
 function number(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : 0
+}
+
+function numberRecord(value: unknown) {
+  return Object.fromEntries(Object.entries(asRecord(value)).flatMap(([key, item]) => {
+    return typeof item === "number" && Number.isFinite(item) && item >= 0 ? [[key, item]] : []
+  }))
 }

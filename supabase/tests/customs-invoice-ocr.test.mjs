@@ -1,9 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import {
-  extractPageConfidences,
-  normalizeCommercialInvoiceAnnotation,
-} from "../functions/_shared/customs-invoice-ocr.ts"
+import { normalizeCommercialInvoiceAnnotation } from "../functions/_shared/customs-invoice-ocr.ts"
 
 test("normalizes Mistral document annotations without inventing customs data", () => {
   const annotation = JSON.stringify({
@@ -47,7 +44,7 @@ test("normalizes Mistral document annotations without inventing customs data", (
     ],
   })
 
-  const result = normalizeCommercialInvoiceAnnotation(annotation, [0.72, 0.987])
+  const result = normalizeCommercialInvoiceAnnotation(annotation)
 
   assert.equal(result.invoiceNumber, "INV-1042")
   assert.equal(result.lines.length, 2)
@@ -67,24 +64,13 @@ test("normalizes Mistral document annotations without inventing customs data", (
     packageKind: "",
     packageMarks: "CRATE A",
     packageCount: 2,
-    confidence: 99,
   })
   assert.equal(result.lines[1].commodityCode, "")
   assert.equal(result.lines[1].quantity, 1)
   assert.equal(result.lines[1].page, 1)
-  assert.equal(result.lines[1].confidence, 72)
 })
 
-test("filters non-item annotations and reads page confidence safely", () => {
-  const confidences = extractPageConfidences({
-    pages: [
-      { confidence_scores: { average: 0.91 } },
-      { confidence_scores: { average: 87 } },
-      {},
-    ],
-  })
-  assert.deepEqual(confidences, [91, 87, 0])
-
+test("filters non-item annotations", () => {
   const result = normalizeCommercialInvoiceAnnotation({
     invoice_number: null,
     currency: null,

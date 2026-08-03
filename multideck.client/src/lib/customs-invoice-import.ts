@@ -16,7 +16,6 @@ export type ExtractedInvoiceLine = {
   packageKind: string
   packageMarks: string
   packageCount: number
-  confidence: number
 }
 
 export type InvoiceLineSelection = {
