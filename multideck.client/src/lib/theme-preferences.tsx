@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase"
 type ThemeMode = "light" | "dark"
 
 const themeIntentEvent = "multideck:theme-intent"
+let currentSessionThemeIntent: ThemeMode | null = null
 
 function isThemeMode(value: unknown): value is ThemeMode {
   return value === "light" || value === "dark"
@@ -24,6 +25,9 @@ function readThemeMode(value: unknown): ThemeMode | null {
  * otherwise restore the previous mode and make the interface flash back.
  */
 export function setThemeWithProfileIntent(setTheme: (mode: string) => void, mode: ThemeMode) {
+  // Module scope protects the choice from any superseded sync instance whose
+  // asynchronous profile read outlives its React effect cleanup.
+  currentSessionThemeIntent = mode
   window.dispatchEvent(new CustomEvent<ThemeMode>(themeIntentEvent, { detail: mode }))
   setTheme(mode)
 }
@@ -78,9 +82,7 @@ export function ThemeProfileSync() {
     const mode = isThemeMode(theme) ? theme : "light"
     currentTheme.current = mode
 
-    if (pendingThemeIntent.current === mode) {
-      return
-    }
+    if (currentSessionThemeIntent) return
 
     themeRevision.current += 1
 
@@ -143,7 +145,7 @@ export function ThemeProfileSync() {
       if (themeRevision.current !== revisionAtStart) return
 
       const savedTheme = readThemeMode(data)
-      const pendingMode = pendingThemeIntent.current
+      const pendingMode = currentSessionThemeIntent ?? pendingThemeIntent.current
       if (pendingMode) {
         if (savedTheme === pendingMode) {
           lastPersistedTheme.current = pendingMode
