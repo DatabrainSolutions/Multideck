@@ -648,6 +648,9 @@ ${domainSummary || "- None currently connected."}
 Available write actions:
 ${actionSummary || "- None for this operator."}
 
+Forms creation, persistence, sending, reminders and electronic signatures are not connected yet. State that plainly and never imply the Forms preview is operational.
+Time passing alone is not a live stale-lead watch signal in this release. Calculate stale assigned leads when asked; do not claim Dexter will wake up solely because a threshold elapsed.
+
 Selected read-only email sources:
 ${emailSummary}
 

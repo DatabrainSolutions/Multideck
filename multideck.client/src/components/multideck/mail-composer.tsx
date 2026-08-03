@@ -794,6 +794,18 @@ export function MailComposer({
           )}
         </Button>
 
+        <label className="ms-1 flex min-h-10 cursor-pointer items-center gap-2 rounded-[var(--md-radius-md)] px-2 text-[11.5px] text-[var(--md-text)] hover:bg-[var(--md-surface-tint)]">
+          <input
+            type="checkbox"
+            checked={state.trackOpens}
+            disabled={busy || readOnly}
+            onChange={(event) => update({ trackOpens: event.target.checked })}
+            className="size-4 accent-[var(--md-accent)]"
+          />
+          <span>{t("Track opens")}</span>
+          <span className="hidden text-[var(--md-subtle)] lg:inline">{t("Estimated — images may be blocked or proxied")}</span>
+        </label>
+
         <input
           ref={fileInputRef}
           type="file"

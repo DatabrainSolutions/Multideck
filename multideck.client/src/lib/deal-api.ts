@@ -67,6 +67,10 @@ export type ApiDeal = {
   nextActionDueAt: string | null
   createdAt: string
   wasAlreadyConverted: boolean
+  isWon?: boolean
+  wonAt?: string | null
+  isCustomer?: boolean
+  customerOrgId?: string | null
 }
 
 export class DealApiError extends CrmSupabaseError {}
@@ -91,7 +95,7 @@ export async function convertLeadToDeal(leadId: string, input: ConvertLeadToDeal
 
 export async function listDeals() {
   return callCrmRpc<ApiDeal[]>(
-    "multideck_crm_list_deals",
+    "multideck_crm_list_deals_essential",
     undefined,
     "CRM deals could not be loaded.",
     "Sign in again to manage CRM deals.",
@@ -107,6 +111,15 @@ export async function moveDealStage(dealId: string, pipelineId: string, pipeline
       p_pipeline_stage_id: pipelineStageId,
     },
     "This deal could not be moved.",
+    "Sign in again to manage CRM deals.",
+  )
+}
+
+export async function markDealWon(dealId: string, pipelineStageId: string, reason?: string) {
+  return callCrmRpc<ApiDeal>(
+    "multideck_crm_win_deal",
+    { p_deal_id: dealId, p_pipeline_stage_id: pipelineStageId, p_reason: reason?.trim() || null },
+    "This deal could not be converted into a customer.",
     "Sign in again to manage CRM deals.",
   )
 }

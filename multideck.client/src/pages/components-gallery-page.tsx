@@ -904,6 +904,7 @@ function ComponentPreview({ id }: { id: string }) {
     showCc: true,
     showBcc: false,
     attachments: [],
+    trackOpens: false,
     presentation: "open",
   })
   const [previewCheckbox, setPreviewCheckbox] = useState(true)

@@ -1443,11 +1443,26 @@ export async function getThread(admin: Db, actor: Actor, threadId: string) {
   const messageIds = messages.map((row) => row.CommMessage_ID)
   const recipients = await result<Row[]>(admin.from("Comm_MessageRecipients").select("*").in("CommRecipient_MessageID", messageIds)) ?? []
   const attachments = await result<Row[]>(admin.from("Comm_MessageAttachments").select("*").in("CommAttachment_MessageID", messageIds)) ?? []
+  const deliveryEvents = await result<Row[]>(admin.from("Comm_DeliveryEvents").select("CommDelivery_MessageID,CommDelivery_EventTypeCode,CommDelivery_EventAt").in("CommDelivery_MessageID", messageIds).order("CommDelivery_EventAt")) ?? []
+  const trackingTokens = await result<Row[]>(admin.from("Comm_MessageTrackingTokens").select("CommTrack_MessageID,CommTrack_FirstOpenedAt").in("CommTrack_MessageID", messageIds)) ?? []
   const state = await result<Row>(admin.from("Comm_ReadStates").select("*").eq("CommRead_UserID", actor.userId).eq("CommRead_ThreadID", threadId).is("CommRead_MessageID", null).maybeSingle())
   const summary = (await currentSummaries(admin, [threadId])).get(threadId) ?? summaryDto()
   const sendIds = await mailboxIds(admin, actor, "send")
   const readAt = state?.CommRead_ReadAt ? Date.parse(state.CommRead_ReadAt) : 0
   const addresses = (messageId: string, type: string) => recipients.filter((row) => row.CommRecipient_MessageID === messageId && row.CommRecipient_RecipientTypeCode === type).map((row) => ({ address: row.CommRecipient_Address, displayName: row.CommRecipient_DisplayNameSnapshot }))
+  const delivery = (row: Row) => {
+    const events = deliveryEvents.filter((event) => event.CommDelivery_MessageID === row.CommMessage_ID)
+    const eventAt = (type: string) => events.find((event) => event.CommDelivery_EventTypeCode === type)?.CommDelivery_EventAt ?? null
+    const tracking = trackingTokens.find((token) => token.CommTrack_MessageID === row.CommMessage_ID)
+    const replyMessage = messages.find((candidate) => candidate.CommMessage_IsInbound && Date.parse(occurred(candidate)) > Date.parse(occurred(row)))
+    const repliedAt = replyMessage?.CommMessage_ReceivedAt ?? null
+    const bouncedAt = eventAt("bounced")
+    const failedAt = eventAt("failed")
+    const openedAt = tracking?.CommTrack_FirstOpenedAt ?? eventAt("opened")
+    const deliveredAt = row.CommMessage_DeliveredAt ?? eventAt("delivered")
+    const status = bouncedAt ? "bounced" : failedAt || row.CommMessage_StatusCode === "failed" ? "failed" : repliedAt ? "replied" : openedAt ? "opened_estimated" : deliveredAt ? "delivered" : tracking ? "no_open_signal" : "sent"
+    return { status, sentAt: row.CommMessage_SentAt, deliveredAt, openedAt, repliedAt, bouncedAt, openTrackingEnabled: Boolean(tracking), confidence: openedAt ? "estimated" : status === "delivered" || status === "replied" || status === "failed" || status === "bounced" ? "confirmed" : "none" }
+  }
   return {
     id: threadId, mailboxId: messages.at(-1)?.CommMessage_MailboxID, subject: repairMojibake(messages.at(-1)?.CommMessage_Subject ?? "(No subject)"),
     starred: state?.CommRead_IsStarred === true, archived: state?.CommRead_IsArchived === true,
@@ -1457,7 +1472,8 @@ export async function getThread(admin: Db, actor: Actor, threadId: string) {
       id: row.CommMessage_ID, threadId, mailboxId: row.CommMessage_MailboxID, direction: row.CommMessage_IsInbound ? "inbound" : "outbound",
       from: addresses(row.CommMessage_ID, "from"), to: addresses(row.CommMessage_ID, "to"), cc: addresses(row.CommMessage_ID, "cc"), bcc: addresses(row.CommMessage_ID, "bcc"),
       subject: repairMojibake(row.CommMessage_Subject ?? "(No subject)"), sentAt: row.CommMessage_SentAt, receivedAt: row.CommMessage_ReceivedAt,
-      bodyText: row.CommMessage_BodyText, sanitizedHtml: row.CommMessage_BodyHTML ? sanitizeEmailHtml(row.CommMessage_BodyHTML) : null,
+      bodyText: row.CommMessage_BodyText, sanitizedHtml: row.CommMessage_IsInbound && row.CommMessage_BodyHTML ? sanitizeEmailHtml(row.CommMessage_BodyHTML) : null,
+      delivery: row.CommMessage_IsInbound ? undefined : delivery(row),
       attachments: attachments.filter((item) => item.CommAttachment_MessageID === row.CommMessage_ID).map((item) => ({
         id: item.CommAttachment_ID, fileName: safeFileName(item.CommAttachment_FileName), mimeType: item.CommAttachment_MimeType,
         sizeBytes: item.CommAttachment_FileSizeBytes, isInline: item.CommAttachment_IsInline,
@@ -1700,12 +1716,12 @@ async function graphAttachFiles(owner: string, token: string, messageId: string,
   }
 }
 
-async function providerSend(provider: MailProvider, token: string, mailbox: Row, resolved: Awaited<ReturnType<typeof resolveRecipients>>, subject: string, bodyText: string, attachments: OutboundAttachment[] = []) {
+async function providerSend(provider: MailProvider, token: string, mailbox: Row, resolved: Awaited<ReturnType<typeof resolveRecipients>>, subject: string, bodyText: string, bodyHtml: string | null, attachments: OutboundAttachment[] = []) {
   const from = { address: mailbox.CommMailbox_Address, displayName: mailbox.CommMailbox_DisplayName }
   if (provider === "gmail") {
     let headers: Row = {}
     if (resolved.source) { try { headers = JSON.parse(resolved.source.CommMessage_HeaderJSON ?? "{}") } catch { headers = {} } }
-    const mime = { from, to: resolved.to, cc: resolved.cc, bcc: resolved.bcc, subject, bodyText, inReplyTo: resolved.source?.CommMessage_InternetMessageID, references: headers.references ?? headers.References, attachments }
+    const mime = { from, to: resolved.to, cc: resolved.cc, bcc: resolved.bcc, subject, bodyText, bodyHtml, inReplyTo: resolved.source?.CommMessage_InternetMessageID, references: headers.references ?? headers.References, attachments }
     const threadId = resolved.command.startsWith("reply") && resolved.source?.CommMessage_ProviderThreadID ? resolved.source.CommMessage_ProviderThreadID : null
     let response: Response
     if (attachments.length) {
@@ -1730,7 +1746,7 @@ async function providerSend(provider: MailProvider, token: string, mailbox: Row,
   }
   const owner = mailbox.CommMailbox_TypeCode === "shared" ? `users/${encodeURIComponent(mailbox.CommMailbox_Address)}` : "me"
   const recipients = (items: MailAddress[]) => items.map((item) => ({ emailAddress: { address: item.address, name: item.displayName } }))
-  const message = { subject, body: { contentType: "Text", content: bodyText }, toRecipients: recipients(resolved.to), ccRecipients: recipients(resolved.cc), bccRecipients: recipients(resolved.bcc) }
+  const message = { subject, body: { contentType: bodyHtml ? "HTML" : "Text", content: bodyHtml ?? bodyText }, toRecipients: recipients(resolved.to), ccRecipients: recipients(resolved.cc), bccRecipients: recipients(resolved.bcc) }
   if (resolved.command === "new") {
     if (!attachments.length) {
       const response = await fetch(`https://graph.microsoft.com/v1.0/${owner}/sendMail`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ message, saveToSentItems: true }) })
@@ -1761,6 +1777,17 @@ async function providerSend(provider: MailProvider, token: string, mailbox: Row,
   return { providerMessageId: `pending:${crypto.randomUUID()}`, providerThreadId: resolved.source?.CommMessage_ProviderThreadID ?? null, internetMessageId: null }
 }
 
+function escapeTrackedHtml(value: string) {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;").replace(/\r?\n/g, "<br>")
+}
+
+function opaqueTrackingToken() {
+  const bytes = crypto.getRandomValues(new Uint8Array(32))
+  let binary = ""
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "")
+}
+
 export async function sendMail(admin: Db, actor: Actor, body: Row, suppliedKey: string) {
   await requirePermission(admin, actor, "Email.Send")
   if (!suppliedKey || suppliedKey.length > 200) throw new InboxHttpError(400, "An Idempotency-Key header is required when sending email.", "idempotency_key_required")
@@ -1782,19 +1809,28 @@ export async function sendMail(admin: Db, actor: Actor, body: Row, suppliedKey: 
   let bodyText = cleanString(body.bodyText, 2_000_000)
   if (!bodyText) throw new InboxHttpError(400, "Write a message before sending.", "body_required")
   if (resolved.command === "forward" && resolved.source) bodyText += `\n\n---------- Forwarded message ----------\n${resolved.source.CommMessage_BodyText ?? resolved.source.CommMessage_BodyPreview ?? ""}`
+  const trackOpens = body.trackOpens === true
+  const externalRecipients = [...resolved.to, ...resolved.cc, ...resolved.bcc]
+  if (trackOpens && externalRecipients.length !== 1) {
+    throw new InboxHttpError(400, "Open tracking currently supports one recipient per message so the signal is never attributed to the wrong person.", "tracking_recipient_count")
+  }
   // The browser may echo a thread id for presentation, but authorization and
   // service-role persistence derive it only from the checked source message.
   const threadId = resolved.source?.CommMessage_ThreadID ?? await newThread(admin, actor, subject, mailbox)
   const messageId = crypto.randomUUID(); const sendId = crypto.randomUUID(); const now = new Date().toISOString()
+  const trackingToken = trackOpens ? opaqueTrackingToken() : null
+  const trackingTokenHash = trackingToken ? await sha256Hex(trackingToken) : null
+  const trackingUrl = trackingToken ? `${Deno.env.get("SUPABASE_URL")}/functions/v1/email-track/open?token=${encodeURIComponent(trackingToken)}` : null
+  const bodyHtml = trackingUrl ? `<div>${escapeTrackedHtml(bodyText)}</div><img src="${trackingUrl}" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0" referrerpolicy="no-referrer">` : null
   await result(admin.from("Comm_Messages").insert({
     CommMessage_ID: messageId, CommMessage_ThreadID: threadId, CommMessage_ParentMessageID: resolved.command === "forward" ? resolved.source?.CommMessage_ID : null,
     CommMessage_ReplyToMessageID: resolved.command.startsWith("reply") ? resolved.source?.CommMessage_ID : null, CommMessage_MailboxID: mailboxId,
     CommMessage_ChannelCode: "email", CommMessage_DirectionCode: "outbound", CommMessage_StatusCode: "sending", CommMessage_SourceTypeCode: "manual",
-    CommMessage_ContentFormatCode: "plain_text", CommMessage_PriorityCode: "normal", CommMessage_SensitivityCode: mailbox.CommMailbox_DefaultSensitivityCode ?? "internal",
+    CommMessage_ContentFormatCode: bodyHtml ? "html" : "plain_text", CommMessage_PriorityCode: "normal", CommMessage_SensitivityCode: mailbox.CommMailbox_DefaultSensitivityCode ?? "internal",
     CommMessage_ProviderThreadID: resolved.command.startsWith("reply") ? resolved.source?.CommMessage_ProviderThreadID : null,
     CommMessage_ProviderConversationID: resolved.command.startsWith("reply") ? resolved.source?.CommMessage_ProviderConversationID : null,
     CommMessage_IdempotencyKey: idempotencyKey, CommMessage_Subject: subject, CommMessage_BodyPreview: bodyText.slice(0, 1000),
-    CommMessage_BodyText: bodyText, CommMessage_BodyJSON: "{}", CommMessage_HeaderJSON: JSON.stringify({ command: resolved.command, sourceProviderMessageId: resolved.source?.CommMessage_ProviderMessageID }),
+    CommMessage_BodyText: bodyText, CommMessage_BodyHTML: bodyHtml, CommMessage_BodyJSON: "{}", CommMessage_HeaderJSON: JSON.stringify({ command: resolved.command, sourceProviderMessageId: resolved.source?.CommMessage_ProviderMessageID, openTrackingEnabled: trackOpens }),
     CommMessage_MessageDate: now, CommMessage_HasAttachments: attachments.length > 0, CommMessage_IsInbound: false, CommMessage_IsInternal: false,
     CommMessage_IsDraft: false, CommMessage_IsSpam: false, CommMessage_IsBodyRedacted: false, CommMessage_IsTrainingAllowed: false,
     CommMessage_CreatedAt: now, CommMessage_CreatedBy: actor.userId, CommMessage_UpdatedAt: now, CommMessage_UpdatedBy: actor.userId, CommMessage_IsDeleted: false,
@@ -1817,12 +1853,20 @@ export async function sendMail(admin: Db, actor: Actor, body: Row, suppliedKey: 
     CommSend_ChannelCode: "email", CommSend_StatusCode: "sending", CommSend_SourceTypeCode: "manual", CommSend_PriorityCode: "normal",
     CommSend_SensitivityCode: mailbox.CommMailbox_DefaultSensitivityCode ?? "internal", CommSend_RequestedBy: actor.userId,
     CommSend_ScheduledAt: now, CommSend_AttemptCount: 1, CommSend_MaxAttempts: 1, CommSend_Subject: subject, CommSend_BodyText: bodyText,
-    CommSend_PayloadJSON: JSON.stringify({ command: resolved.command, sourceMessageId: resolved.source?.CommMessage_ID }), CommSend_CorrelationID: idempotencyKey,
+    CommSend_PayloadJSON: JSON.stringify({ command: resolved.command, sourceMessageId: resolved.source?.CommMessage_ID, openTrackingEnabled: trackOpens }), CommSend_CorrelationID: idempotencyKey,
     CommSend_CreatedAt: now, CommSend_UpdatedAt: now,
   }))
+  if (trackingTokenHash) {
+    await result(admin.from("Comm_MessageTrackingTokens").insert({
+      CommTrack_ID: crypto.randomUUID(), CommTrack_MessageID: messageId, CommTrack_SendID: sendId,
+      CommTrack_RecipientHashSHA256: await sha256Hex(externalRecipients[0].address.toLowerCase()),
+      CommTrack_TokenHashSHA256: trackingTokenHash, CommTrack_ExpiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
+      CommTrack_IsActive: true, CommTrack_CreatedAt: now,
+    }))
+  }
   const creds = await credential(admin, connection)
   try {
-    const sent = await providerSend(publicProvider(connection.CommConn_ProviderTypeCode), creds.accessToken, mailbox, resolved, subject, bodyText, attachments)
+    const sent = await providerSend(publicProvider(connection.CommConn_ProviderTypeCode), creds.accessToken, mailbox, resolved, subject, bodyText, bodyHtml, attachments)
     const completed = new Date().toISOString()
     await result(admin.from("Comm_Messages").update({ CommMessage_StatusCode: "sent", CommMessage_ProviderMessageID: sent.providerMessageId, CommMessage_ProviderThreadID: sent.providerThreadId, CommMessage_InternetMessageID: sent.internetMessageId, CommMessage_SentAt: completed, CommMessage_UpdatedAt: completed }).eq("CommMessage_ID", messageId))
     await result(admin.from("Comm_SendRequests").update({ CommSend_StatusCode: "sent", CommSend_UpdatedAt: completed }).eq("CommSend_ID", sendId))
@@ -1834,6 +1878,7 @@ export async function sendMail(admin: Db, actor: Actor, body: Row, suppliedKey: 
       const failed = new Date().toISOString()
       await result(admin.from("Comm_Messages").update({ CommMessage_StatusCode: "failed", CommMessage_UpdatedAt: failed }).eq("CommMessage_ID", messageId)).catch(() => undefined)
       await result(admin.from("Comm_SendRequests").update({ CommSend_StatusCode: "failed", CommSend_ErrorMessage: error.message.slice(0, 1000), CommSend_UpdatedAt: failed }).eq("CommSend_ID", sendId)).catch(() => undefined)
+      await result(admin.from("Comm_MessageTrackingTokens").update({ CommTrack_IsActive: false }).eq("CommTrack_MessageID", messageId)).catch(() => undefined)
     }
     // A network exception leaves the atomic claim in `sending`; retrying the
     // same key returns it and never risks a duplicate provider submission.

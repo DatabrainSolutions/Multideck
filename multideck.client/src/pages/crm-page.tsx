@@ -31,9 +31,11 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Textarea } from "@/components/ui/textarea"
 import { ContactProfileModule } from "@/components/multideck/customer-components"
 import {
   getDateKey,
@@ -81,8 +83,22 @@ import {
 import { useLanguage } from "@/i18n/language-provider"
 import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
 import { getApiTeamUsers } from "@/lib/api"
-import { listDeals, moveDealStage, type ApiDeal } from "@/lib/deal-api"
-import { getLead, listLeads, type ApiLead, type ApiLeadDetail } from "@/lib/lead-api"
+import { listDeals, markDealWon, moveDealStage, type ApiDeal } from "@/lib/deal-api"
+import {
+  decideLeadTransfer,
+  getCrmDashboard,
+  getLead,
+  listCrmTransferUsers,
+  listLeads,
+  listLeadTransferRequests,
+  requestLeadTransfer,
+  transferLead,
+  type ApiLead,
+  type ApiLeadDetail,
+  type CrmDashboardData,
+  type CrmLeadTransferRequest,
+  type CrmTransferUser,
+} from "@/lib/lead-api"
 import { getPipelineSettings, type ApiPipeline } from "@/lib/pipeline-api"
 import { createProfilePhotoSignedUrls } from "@/lib/profile-photo"
 import { getSupabaseSession } from "@/lib/supabase"
@@ -1004,61 +1020,156 @@ function DealDetailDrawer({
 }
 
 export function CrmOverviewPage() {
-  const [selectedDeal, setSelectedDeal] = useState<CrmDeal>(() => firstDeal())
-  const [detailOpen, setDetailOpen] = useState(false)
+  const { language, t } = useLanguage()
   const [dexterOpen, setDexterOpen] = useState(false)
+  const [inactivityDays, setInactivityDays] = useState<30 | 90 | 180>(90)
+  const [area, setArea] = useState("all")
+  const [data, setData] = useState<CrmDashboardData | null>(null)
+  const [state, setState] = useState<"loading" | "ready" | "error">("loading")
+  const [error, setError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
-  function openDealDetail(deal: CrmDeal) {
-    setSelectedDeal(deal)
-    setDetailOpen(true)
-  }
+  useEffect(() => {
+    let active = true
+    setState("loading")
+    setError(null)
+    getCrmDashboard(inactivityDays, area === "all" ? null : area)
+      .then((result) => {
+        if (!active) return
+        setData(result)
+        setState("ready")
+      })
+      .catch((loadError) => {
+        if (!active) return
+        setError(loadError instanceof Error ? loadError.message : t("The CRM dashboard could not be loaded."))
+        setState("error")
+      })
+    return () => { active = false }
+  }, [area, inactivityDays, reloadKey, t])
 
-  function switchPipeline(pipeline: CrmPipeline) {
-    setSelectedDeal(firstDeal(pipeline))
-    setDetailOpen(false)
-  }
+  const money = useMemo(() => new Intl.NumberFormat(language, {
+    style: "currency",
+    currency: data?.summary.currencyCode || "GBP",
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }), [data?.summary.currencyCode, language])
+  const dateTime = useMemo(() => new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }), [language])
 
   return (
-    <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel="CRM overview" className="md-page md-page-stack">
+    <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t("CRM dashboard")} className="md-page md-page-stack-compact">
       <CrmPageHeader
-        title="CRM overview"
-        summary={
-          <>
-            A sales dashboard for live pipeline health, lead conversion, forecast confidence, and the actions that move revenue forward.
-          </>
-        }
-        meta="Live CRM · sales pipeline · lead follow-up"
+        title={t("CRM dashboard")}
+        summary={<>{t("Your assigned leads, deals, follow-ups and recent sales activity in one consistent view.")}</>}
+        meta={t("Live CRM data · scoped to your assigned records")}
         onSpeakToDexter={() => setDexterOpen(true)}
-        action={<PrimaryActionButton onClick={() => toast.success("Deal draft created")}>New deal</PrimaryActionButton>}
+        action={<Button className="h-10 rounded-[var(--md-radius-lg)]" onClick={() => { window.location.href = "/crm/deals" }}>{t("Open deals")}</Button>}
       />
 
-      <CrmSalesCommandCenter />
-      <CrmMetricsGrid />
-
-      <div className="grid items-start gap-[var(--md-page-stack-gap-compact)] xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-        <CrmSalesFunnelPanel />
-        <div className="grid gap-[var(--md-page-stack-gap-compact)] lg:grid-cols-2 xl:grid-cols-1">
-          <CrmRevenueMixPanel />
-          <CrmForecastPanel />
-        </div>
-      </div>
-
-      <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-        <div className="px-5 py-4">
-          <SectionHeader title="Pipeline board" meta="drag cards between stages as deals move" />
-        </div>
-        <div className="px-4 pb-5 sm:px-5">
-          <CrmPipelineBoard selectedDealId={detailOpen ? selectedDeal.id : undefined} onSelectDeal={openDealDetail} onPipelineChange={switchPipeline} />
+      <Surface padding="md" className="rounded-[var(--md-radius-xl)]">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Follow-up view")}</p>
+            <p className="mt-1 text-[11px] text-[var(--md-subtle)]">{t("Never-contacted leads are shown first, followed by the oldest contact date.")}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <label className="grid gap-1 text-[11px] font-medium text-[var(--md-subtle)]">
+              {t("Inactive for")}
+              <Select value={String(inactivityDays)} onValueChange={(value) => setInactivityDays(Number(value) as 30 | 90 | 180)}>
+                <SelectTrigger className="h-9 min-w-[126px] rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] shadow-[var(--md-shadow-line)]"><SelectValue /></SelectTrigger>
+                <SelectContent>{[30, 90, 180].map((days) => <SelectItem key={days} value={String(days)}>{days} {t("days")}</SelectItem>)}</SelectContent>
+              </Select>
+            </label>
+            <label className="grid gap-1 text-[11px] font-medium text-[var(--md-subtle)]">
+              {t("Area")}
+              <Select value={area} onValueChange={setArea}>
+                <SelectTrigger className="h-9 min-w-[190px] rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] shadow-[var(--md-shadow-line)]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t("All assigned areas")}</SelectItem>
+                  {(data?.areas ?? []).map((option) => <SelectItem key={option.key} value={option.key}><span dir="auto">{option.label}</span> · {option.count}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </label>
+          </div>
         </div>
       </Surface>
 
-      <div className="grid gap-[var(--md-page-stack-gap-compact)] xl:grid-cols-[minmax(0,0.92fr)_minmax(360px,0.72fr)]">
-        <CrmLeadSignalList onOpenLead={(signal) => toast.success(`${signal.account} opened`)} />
-        <CrmPriorityActionsPanel />
-      </div>
+      {state === "loading" ? (
+        <Surface padding="lg" className="grid min-h-[320px] place-items-center rounded-[var(--md-radius-xl)]" role="status">
+          <div className="text-center"><LoaderCircle className="mx-auto size-6 animate-spin text-[var(--md-accent)]" /><p className="mt-3 text-[13px] text-[var(--md-text)]">{t("Loading your CRM dashboard…")}</p></div>
+        </Surface>
+      ) : null}
 
-      <CrmActivityTimeline compact />
-      <DealDetailDrawer deal={selectedDeal} open={detailOpen} onClose={() => setDetailOpen(false)} />
+      {state === "error" ? (
+        <Surface padding="lg" className="rounded-[var(--md-radius-xl)]" role="alert">
+          <SectionHeader title={t("The CRM dashboard could not be loaded.")} meta={error ?? undefined} />
+          <Button variant="outline" className="mt-4" onClick={() => setReloadKey((key) => key + 1)}><RefreshCw className="size-4" />{t("Retry")}</Button>
+        </Surface>
+      ) : null}
+
+      {state === "ready" && data ? (
+        <>
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
+            {[
+              [t("Open leads"), data.summary.openLeads], [t("Needs follow-up"), data.summary.staleLeads],
+              [t("Due now"), data.summary.dueFollowUps], [t("Open deals"), data.summary.openDeals],
+              [t("Pipeline value"), money.format(data.summary.pipelineValue)], [t("Areas"), data.areas.length],
+            ].map(([label, value]) => (
+              <Surface key={String(label)} padding="md" className="rounded-[var(--md-radius-xl)]">
+                <p className="text-[11px] font-medium text-[var(--md-subtle)]">{label}</p>
+                <p className="mt-2 text-[22px] font-medium tabular-nums text-[var(--md-ink)]" data-i18n-skip>{value}</p>
+              </Surface>
+            ))}
+          </div>
+
+          <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
+            <div className="px-4 py-4 sm:px-5"><SectionHeader title={t("Leads needing follow-up")} meta={t("Oldest contact first")} /></div>
+            {data.followUps.length ? (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader><TableRow>
+                    {["Company", "Decision maker", "Previous conversation or lane", "Email", "Location", "Last contact", "Next action", "Stage", "Value"].map((label) => <TableHead key={label} className="whitespace-nowrap">{t(label)}</TableHead>)}
+                  </TableRow></TableHeader>
+                  <TableBody>
+                    {data.followUps.map((lead) => (
+                      <TableRow key={lead.id} className="cursor-pointer" onClick={() => { window.location.href = `/crm/leads/${lead.id}` }}>
+                        <TableCell className="font-medium text-[var(--md-ink)]" dir="auto">{lead.companyName}</TableCell>
+                        <TableCell dir="auto">{lead.decisionMaker || t("Not recorded")}</TableCell>
+                        <TableCell className="max-w-[260px]"><span className="line-clamp-2" dir="auto">{lead.previousConversation || lead.laneContext || t("No context recorded")}</span></TableCell>
+                        <TableCell dir="ltr">{lead.email || t("Not recorded")}</TableCell>
+                        <TableCell dir="auto">{lead.location || t("Not recorded")}</TableCell>
+                        <TableCell className="whitespace-nowrap">{lead.neverContacted ? <StatusPill tone="amber">{t("Never contacted")}</StatusPill> : dateTime.format(new Date(lead.lastContactAt!))}</TableCell>
+                        <TableCell className="whitespace-nowrap">{lead.nextActionAt ? dateTime.format(new Date(lead.nextActionAt)) : t("Not scheduled")}</TableCell>
+                        <TableCell><StatusPill tone="blue">{lead.stage}</StatusPill></TableCell>
+                        <TableCell className="whitespace-nowrap tabular-nums">{lead.opportunityValue === null ? t("Not recorded") : new Intl.NumberFormat(language, { style: "currency", currency: lead.currencyCode || "GBP", maximumFractionDigits: 0 }).format(lead.opportunityValue)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : (
+              <div className="px-5 py-12 text-center">
+                <p className="text-[14px] font-medium text-[var(--md-ink)]">{area === "all" ? t("No assigned leads need follow-up at this threshold.") : t("No leads match this area and inactivity filter.")}</p>
+                <p className="mt-2 text-[12px] text-[var(--md-subtle)]">{area === "all" ? t("New assigned leads and overdue conversations will appear here automatically.") : t("Choose another area or change the inactivity threshold.")}</p>
+              </div>
+            )}
+          </Surface>
+
+          <div className="grid gap-[var(--md-page-stack-gap-compact)] xl:grid-cols-2">
+            <Surface padding="lg" className="rounded-[var(--md-radius-xl)]">
+              <SectionHeader title={t("Pipeline by stage")} meta={t("Your assigned open deals")} />
+              <div className="mt-4 grid gap-2">
+                {data.pipeline.length ? data.pipeline.map((stage) => <div key={stage.stageId} className="grid grid-cols-[1fr_auto_auto] items-center gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] px-3 py-3"><div><p className="text-[13px] font-medium text-[var(--md-ink)]" dir="auto">{stage.stage}</p><p className="text-[11px] text-[var(--md-subtle)]" dir="auto">{stage.pipeline}</p></div><span className="text-[12px] tabular-nums">{stage.count}</span><span className="text-[12px] font-medium tabular-nums">{new Intl.NumberFormat(language, { style: "currency", currency: stage.currencyCode || data.summary.currencyCode || "GBP", notation: "compact" }).format(stage.value)}</span></div>) : <p className="py-8 text-center text-[12px] text-[var(--md-subtle)]">{t("No assigned open deals yet.")}</p>}
+              </div>
+            </Surface>
+            <Surface padding="lg" className="rounded-[var(--md-radius-xl)]">
+              <SectionHeader title={t("Recent activity")} meta={t("Your CRM work")} />
+              <div className="mt-4 grid gap-3">
+                {data.activity.length ? data.activity.map((item) => <div key={item.id} className="grid grid-cols-[auto_1fr] gap-3"><span className="mt-1.5 size-2 rounded-full bg-[var(--md-accent)]" /><div><p className="text-[13px] font-medium text-[var(--md-ink)]" dir="auto">{item.subject}</p>{item.summary ? <p className="mt-1 line-clamp-2 text-[12px] text-[var(--md-text)]" dir="auto">{item.summary}</p> : null}<p className="mt-1 text-[11px] text-[var(--md-subtle)]">{dateTime.format(new Date(item.at))}</p></div></div>) : <p className="py-8 text-center text-[12px] text-[var(--md-subtle)]">{t("No assigned CRM activity yet.")}</p>}
+              </div>
+            </Surface>
+          </div>
+        </>
+      ) : null}
     </DexterDockedPage>
   )
 }
@@ -1525,6 +1636,12 @@ export function CrmLeadDetailPage({
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading")
   const [loadError, setLoadError] = useState<string | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
+  const [transferUsers, setTransferUsers] = useState<CrmTransferUser[]>([])
+  const [transferRequests, setTransferRequests] = useState<CrmLeadTransferRequest[]>([])
+  const [transferOpen, setTransferOpen] = useState(false)
+  const [transferTarget, setTransferTarget] = useState("")
+  const [transferReason, setTransferReason] = useState("")
+  const [transferSaving, setTransferSaving] = useState(false)
   const { t } = useLanguage()
 
   useEffect(() => {
@@ -1535,11 +1652,15 @@ export function CrmLeadDetailPage({
     Promise.all([
       getLead(leadId),
       loadLeadOwnerPhotoUrls().catch(() => new Map<string, string>()),
+      listCrmTransferUsers(),
+      listLeadTransferRequests(leadId),
     ])
-      .then(([data, nextOwnerPhotoUrls]) => {
+      .then(([data, nextOwnerPhotoUrls, users, requests]) => {
         if (!isMounted) return
         setLead(data)
         setOwnerPhotoUrls(nextOwnerPhotoUrls)
+        setTransferUsers(users)
+        setTransferRequests(requests)
         setLoadState("ready")
       })
       .catch((error: unknown) => {
@@ -1552,6 +1673,44 @@ export function CrmLeadDetailPage({
       isMounted = false
     }
   }, [leadId, reloadToken, t])
+
+  const currentTransferUser = transferUsers.find((user) => user.isCurrentUser)
+  const isOwner = Boolean(currentTransferUser && lead?.ownerId === currentTransferUser.id)
+  const pendingRequestsToDecide = transferRequests.filter((request) => request.status === "pending" && request.fromUserId === currentTransferUser?.id)
+  const ownPendingRequest = transferRequests.find((request) => request.status === "pending" && request.requesterId === currentTransferUser?.id)
+
+  async function submitTransfer() {
+    if (!lead || transferSaving) return
+    setTransferSaving(true)
+    try {
+      if (isOwner) {
+        if (!transferTarget) return
+        await transferLead(lead.id, transferTarget, transferReason)
+        toast.success(t("Lead transferred"))
+      } else {
+        await requestLeadTransfer(lead.id, transferReason)
+        toast.success(t("Ownership request sent"))
+      }
+      setTransferOpen(false)
+      setTransferReason("")
+      setTransferTarget("")
+      setReloadToken((token) => token + 1)
+    } catch (submitError) {
+      toast.error(submitError instanceof Error ? submitError.message : t("Lead ownership could not be updated."))
+    } finally {
+      setTransferSaving(false)
+    }
+  }
+
+  async function decideTransfer(request: CrmLeadTransferRequest, decision: "approved" | "declined") {
+    try {
+      await decideLeadTransfer(request.id, decision)
+      toast.success(decision === "approved" ? t("Ownership request approved") : t("Ownership request declined"))
+      setReloadToken((token) => token + 1)
+    } catch (decisionError) {
+      toast.error(decisionError instanceof Error ? decisionError.message : t("The transfer request could not be updated."))
+    }
+  }
 
   if (loadState === "loading") {
     return (
@@ -1594,12 +1753,48 @@ export function CrmLeadDetailPage({
   }
 
   return (
-    <div className="md-page">
+    <div className="md-page md-page-stack-compact">
+      <Surface padding="md" className="rounded-[var(--md-radius-xl)]">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Lead ownership")}</p>
+            <p className="mt-1 text-[11px] text-[var(--md-subtle)]" dir="auto">
+              {lead.ownerName ? `${t("Current owner")}: ${lead.ownerName}` : t("No owner assigned")}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {ownPendingRequest ? <StatusPill tone="amber">{t("Ownership requested")}</StatusPill> : null}
+            <Button variant="outline" disabled={Boolean(ownPendingRequest) && !isOwner} onClick={() => setTransferOpen(true)}>
+              {isOwner ? t("Transfer lead") : t("Request ownership")}
+            </Button>
+          </div>
+        </div>
+        {pendingRequestsToDecide.length ? (
+          <div className="mt-4 grid gap-2">
+            {pendingRequestsToDecide.map((request) => (
+              <div key={request.id} className="flex flex-col gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div><p className="text-[12px] font-medium text-[var(--md-ink)]" dir="auto">{request.requesterName} {t("requested ownership")}</p>{request.requestNote ? <p className="mt-1 text-[11px] text-[var(--md-text)]" dir="auto">{request.requestNote}</p> : null}</div>
+                <div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => void decideTransfer(request, "declined")}>{t("Decline")}</Button><Button size="sm" onClick={() => void decideTransfer(request, "approved")}>{t("Approve")}</Button></div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </Surface>
       <CrmLeadDetailPanel
         lead={lead}
         ownerPhotoUrl={lead.ownerId ? ownerPhotoUrls.get(lead.ownerId) : undefined}
         onBack={() => navigate("/crm/leads")}
       />
+      <Dialog open={transferOpen} onOpenChange={setTransferOpen}>
+        <DialogContent className="rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[500px]">
+          <DialogHeader><DialogTitle>{isOwner ? t("Transfer lead") : t("Request ownership")}</DialogTitle><DialogDescription>{isOwner ? t("The new owner will also receive this lead's open opportunities.") : t("The current owner must approve before this lead moves to you.")}</DialogDescription></DialogHeader>
+          <div className="grid gap-4">
+            {isOwner ? <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">{t("New owner")}<Select value={transferTarget} onValueChange={setTransferTarget}><SelectTrigger className="h-10 rounded-[var(--md-radius-md)]"><SelectValue placeholder={t("Choose a user")} /></SelectTrigger><SelectContent>{transferUsers.filter((user) => !user.isCurrentUser).map((user) => <SelectItem key={user.id} value={user.id}><span dir="auto">{user.name}</span></SelectItem>)}</SelectContent></Select></label> : null}
+            <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">{isOwner ? t("Handover note (optional)") : t("Why do you need this lead? (optional)")}<Textarea value={transferReason} onChange={(event) => setTransferReason(event.target.value)} className="min-h-[96px] rounded-[var(--md-radius-md)]" /></label>
+          </div>
+          <DialogFooter><Button variant="outline" disabled={transferSaving} onClick={() => setTransferOpen(false)}>{t("Cancel")}</Button><Button disabled={transferSaving || (isOwner && !transferTarget)} onClick={() => void submitTransfer()}>{transferSaving ? <LoaderCircle className="size-4 animate-spin" /> : null}{isOwner ? t("Transfer lead") : t("Send request")}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -3204,6 +3399,8 @@ export function CrmDealsPage({ currentUser }: { currentUser?: AuthUserSummary | 
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
+  const [pendingWin, setPendingWin] = useState<{ deal: ApiDeal; stage: ApiPipeline["stages"][number] } | null>(null)
+  const [winning, setWinning] = useState(false)
   const requestedDealIdRef = useRef(new URLSearchParams(window.location.search).get("record"))
   const canManagePipelines = hasPermission(currentUser, "Settings.Manage")
 
@@ -3259,12 +3456,34 @@ export function CrmDealsPage({ currentUser }: { currentUser?: AuthUserSummary | 
   }
 
   async function persistDealMove(dealId: string, pipelineId: string, stageId: string) {
+    const destinationStage = livePipelines.find((pipeline) => pipeline.id === pipelineId)?.stages.find((stage) => stage.id === stageId)
+    const sourceDeal = liveDeals.find((deal) => deal.id === dealId)
+    if (destinationStage?.isConversion && sourceDeal) {
+      setPendingWin({ deal: sourceDeal, stage: destinationStage })
+      return
+    }
     try {
       const updated = await moveDealStage(dealId, pipelineId, stageId)
       setLiveDeals((deals) => deals.map((deal) => deal.id === updated.id ? updated : deal))
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t("This deal could not be moved."))
       setReloadKey((key) => key + 1)
+    }
+  }
+
+  async function confirmDealWon() {
+    if (!pendingWin || winning) return
+    setWinning(true)
+    try {
+      const updated = await markDealWon(pendingWin.deal.id, pendingWin.stage.id)
+      setLiveDeals((deals) => deals.map((deal) => deal.id === updated.id ? updated : deal))
+      setPendingWin(null)
+      toast.success(t("Deal marked won and customer activated"))
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("This deal could not be converted into a customer."))
+      setReloadKey((key) => key + 1)
+    } finally {
+      setWinning(false)
     }
   }
 
@@ -3322,6 +3541,32 @@ export function CrmDealsPage({ currentUser }: { currentUser?: AuthUserSummary | 
           setReloadKey((key) => key + 1)
         }}
       />
+      <Dialog open={pendingWin !== null} onOpenChange={(open) => {
+        if (!open && !winning) {
+          setPendingWin(null)
+          setReloadKey((key) => key + 1)
+        }
+      }}>
+        <DialogContent className="rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>{t("Confirm deal won")}</DialogTitle>
+            <DialogDescription className="text-[13px] leading-5 text-[var(--md-text)]">
+              {t("This will mark the deal won and activate the organisation as an operational customer. Contacts, notes and CRM history will be preserved.")}
+            </DialogDescription>
+          </DialogHeader>
+          {pendingWin ? (
+            <div className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-4 shadow-[var(--md-shadow-line)]">
+              <p className="text-[13px] font-medium text-[var(--md-ink)]" dir="auto">{pendingWin.deal.name}</p>
+              <p className="mt-1 text-[12px] text-[var(--md-text)]" dir="auto">{pendingWin.deal.companyName}</p>
+              <p className="mt-2 text-[11px] text-[var(--md-subtle)]">{t("Destination stage")}: <span dir="auto">{pendingWin.stage.name}</span></p>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button variant="outline" disabled={winning} onClick={() => { setPendingWin(null); setReloadKey((key) => key + 1) }}>{t("Cancel")}</Button>
+            <Button disabled={winning} onClick={() => void confirmDealWon()}>{winning ? <LoaderCircle className="size-4 animate-spin" /> : null}{t("Mark won and create customer")}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DexterDockedPage>
   )
 }

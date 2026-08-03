@@ -20,6 +20,7 @@ export type LocalDraft = {
   remoteDraftId: string | null
   subject: string
   bodyText: string
+  trackOpens: boolean
   addedTo: MailAddress[]
   addedCc: MailAddress[]
   addedBcc: MailAddress[]

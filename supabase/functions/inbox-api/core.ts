@@ -504,7 +504,7 @@ export function encodeHeaderValue(value: unknown, maximum = 500) {
 
 export type MimeMessage = {
   from: MailAddress; to: MailAddress[]; cc: MailAddress[]; bcc: MailAddress[]; subject: string; bodyText: string;
-  inReplyTo?: string | null; references?: string | null; attachments?: OutboundAttachment[]
+  bodyHtml?: string | null; inReplyTo?: string | null; references?: string | null; attachments?: OutboundAttachment[]
 }
 
 /**
@@ -521,7 +521,9 @@ export function buildMimeMessage(input: MimeMessage) {
     : address.address
   const attachments = input.attachments ?? []
   const boundary = `--=_multideck_${crypto.randomUUID().replace(/-/g, "")}`
+  const alternativeBoundary = `--=_multideck_alt_${crypto.randomUUID().replace(/-/g, "")}`
   const body = input.bodyText.replace(/\r?\n/g, "\r\n")
+  const html = input.bodyHtml?.replace(/\r?\n/g, "\r\n") ?? null
 
   const headers = [
     `From: ${format(input.from)}`,
@@ -534,16 +536,25 @@ export function buildMimeMessage(input: MimeMessage) {
     ...(input.references ? [`References: ${escapeHeader(input.references, 2_000)}`] : []),
   ]
 
-  if (attachments.length === 0) {
+  if (attachments.length === 0 && !html) {
     return [...headers, "Content-Type: text/plain; charset=UTF-8", "Content-Transfer-Encoding: 8bit", "", body].join("\r\n")
+  }
+
+  if (attachments.length === 0 && html) {
+    return [...headers, `Content-Type: multipart/alternative; boundary="${alternativeBoundary}"`, "",
+      `--${alternativeBoundary}`, "Content-Type: text/plain; charset=UTF-8", "Content-Transfer-Encoding: 8bit", "", body,
+      `--${alternativeBoundary}`, "Content-Type: text/html; charset=UTF-8", "Content-Transfer-Encoding: 8bit", "", html,
+      `--${alternativeBoundary}--`, ""].join("\r\n")
   }
 
   const parts = [
     `--${boundary}`,
-    "Content-Type: text/plain; charset=UTF-8",
-    "Content-Transfer-Encoding: 8bit",
-    "",
-    body,
+    ...(html ? [
+      `Content-Type: multipart/alternative; boundary="${alternativeBoundary}"`, "",
+      `--${alternativeBoundary}`, "Content-Type: text/plain; charset=UTF-8", "Content-Transfer-Encoding: 8bit", "", body,
+      `--${alternativeBoundary}`, "Content-Type: text/html; charset=UTF-8", "Content-Transfer-Encoding: 8bit", "", html,
+      `--${alternativeBoundary}--`, "",
+    ] : ["Content-Type: text/plain; charset=UTF-8", "Content-Transfer-Encoding: 8bit", "", body]),
   ]
 
   for (const attachment of attachments) {

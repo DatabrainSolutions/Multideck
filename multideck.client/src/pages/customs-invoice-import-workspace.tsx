@@ -342,6 +342,8 @@ export function CustomsInvoiceImportWorkspace({
     onApply(invoiceOutputToDeclarationItems(output, invoiceReference), mode, includedCount)
   }
 
+  const showInvoiceDropzone = !extracting && !lines.length
+
   return <div className="fixed inset-0 isolate z-[80] h-[100dvh] w-screen overflow-hidden bg-[var(--md-bg)] text-[var(--md-ink)]" data-testid="invoice-import-workspace">
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex flex-wrap items-center justify-between gap-4 border-b border-[var(--md-line)] bg-[var(--md-surface)] px-5 py-4 lg:px-7">
@@ -359,8 +361,8 @@ export function CustomsInvoiceImportWorkspace({
         <Button type="button" variant="ghost" onClick={onClose}>{t("Cancel")}</Button>
       </header>
 
-      <main className="min-h-0 flex-1 overflow-y-auto p-4 lg:p-6">
-        <div className="mx-auto max-w-[1720px]">
+      <main className={cn("min-h-0 flex-1 overflow-y-auto p-4 lg:p-6", showInvoiceDropzone && "flex flex-col")}>
+        <div className={cn("mx-auto w-full max-w-[1720px]", showInvoiceDropzone && "my-auto")}>
           {extracting ? <DocumentExtractionProgress
             title={t("Preparing invoice lines")}
             detail={t("This may take a moment. You can review every line before applying it.")}
@@ -373,7 +375,7 @@ export function CustomsInvoiceImportWorkspace({
             onCancel={cancelExtraction}
           /> : null}
 
-          {!extracting && !lines.length ? <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
+          {showInvoiceDropzone ? <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
             <input ref={invoiceInputRef} id="commercial-invoice-file" type="file" accept="application/pdf,.pdf" className="sr-only" onChange={(event) => { void selectInvoice(event.target.files?.[0]); event.currentTarget.value = "" }} />
             <button
               type="button"

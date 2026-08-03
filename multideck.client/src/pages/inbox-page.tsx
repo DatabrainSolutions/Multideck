@@ -350,6 +350,18 @@ function AttachmentRow({ attachment }: { attachment: MailAttachment }) {
   )
 }
 
+function outboundDeliveryLabel(message: InboxMessage, t: (value: string) => string) {
+  switch (message.delivery?.status) {
+    case "delivered": return t("Delivered")
+    case "opened_estimated": return t("Opened — estimated")
+    case "replied": return t("Replied")
+    case "failed": return t("Failed")
+    case "bounced": return t("Bounced")
+    case "no_open_signal": return t("No open signal yet")
+    default: return t("Sent")
+  }
+}
+
 function MessageCard({
   message,
   expanded,
@@ -396,8 +408,8 @@ function MessageCard({
               </bdi>
             ) : null}
             {message.direction === "outbound" ? (
-              <span className="rounded-[var(--md-radius-sm)] bg-[var(--md-surface-tint)] px-1.5 py-px text-[10px] font-medium uppercase tracking-[0.05em] text-[var(--md-subtle)]">
-                {t("Sent")}
+              <span title={message.delivery?.status === "opened_estimated" || message.delivery?.status === "no_open_signal" ? t("Open tracking is approximate because images can be blocked or loaded by privacy proxies.") : undefined} className="rounded-[var(--md-radius-sm)] bg-[var(--md-surface-tint)] px-1.5 py-px text-[10px] font-medium text-[var(--md-subtle)]">
+                {outboundDeliveryLabel(message, t)}
               </span>
             ) : null}
           </span>
@@ -442,6 +454,11 @@ function MessageCard({
           >
             <div className="min-h-0 px-3.5 pb-3.5">
               <EmailMessageRenderer sanitizedHtml={message.sanitizedHtml} bodyText={message.bodyText} />
+              {message.direction === "outbound" && message.delivery?.openTrackingEnabled ? (
+                <p className="mt-3 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-3 py-2 text-[11px] leading-4 text-[var(--md-subtle)]">
+                  {t("Open tracking is approximate. Image blocking can hide opens, while privacy proxies can create an open signal before the person reads the message.")}
+                </p>
+              ) : null}
               {message.attachments.filter((attachment) => !attachment.isInline).length > 0 ? (
                 <div className="mt-3">
                   <p className="mb-1.5 text-[11px] font-medium uppercase tracking-[0.07em] text-[var(--md-subtle)]">
@@ -1094,6 +1111,7 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
         stored?.subject
         ?? (mode === "forward" && thread ? `Fwd: ${thread.subject}` : ""),
       bodyText: stored?.bodyText ?? "",
+      trackOpens: stored?.trackOpens ?? false,
       to: stored?.addedTo ?? [],
       cc: stored?.addedCc ?? [],
       bcc: stored?.addedBcc ?? [],
@@ -1120,6 +1138,7 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
       remoteDraftId,
       subject: edits.subject,
       bodyText: edits.bodyText,
+      trackOpens: edits.trackOpens,
       addedTo: edits.addedTo,
       addedCc: edits.addedCc,
       addedBcc: edits.addedBcc,

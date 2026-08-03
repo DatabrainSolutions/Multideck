@@ -196,6 +196,16 @@ export type InboxMessage = {
    */
   sanitizedHtml: string | null
   attachments: MailAttachment[]
+  delivery?: {
+    status: "sent" | "delivered" | "opened_estimated" | "replied" | "failed" | "bounced" | "no_open_signal"
+    sentAt: string | null
+    deliveredAt: string | null
+    openedAt: string | null
+    repliedAt: string | null
+    bouncedAt: string | null
+    openTrackingEnabled: boolean
+    confidence: "confirmed" | "estimated" | "none"
+  }
 }
 
 export type InboxThreadDetail = {
@@ -257,6 +267,7 @@ export type SendRequest = {
   removedAddresses: string[]
   attachments: OutboundAttachment[]
   idempotencyKey: string
+  trackOpens: boolean
 }
 
 export type ThreadQuery = {
@@ -592,6 +603,11 @@ function normalizeMessage(value: unknown, threadId: string): InboxMessage {
   const record = readRecord(value)
   const occurredAt = readOptionalText(pickField(record, "sentAt", "receivedAt", "occurredAt"))
   const direction = readText(pickField(record, "direction")).toLowerCase() === "outbound" ? "outbound" : "inbound"
+  const rawDelivery = readRecord(pickField(record, "delivery"))
+  const rawDeliveryStatus = readText(pickField(rawDelivery, "status"))
+  const deliveryStatus = ["sent", "delivered", "opened_estimated", "replied", "failed", "bounced", "no_open_signal"].includes(rawDeliveryStatus)
+    ? rawDeliveryStatus as NonNullable<InboxMessage["delivery"]>["status"]
+    : "sent"
 
   return {
     id: readText(pickField(record, "id", "messageId")),
@@ -608,6 +624,16 @@ function normalizeMessage(value: unknown, threadId: string): InboxMessage {
     bodyText: readOptionalText(pickField(record, "bodyText", "text")),
     sanitizedHtml: readOptionalText(pickField(record, "sanitizedHtml", "safeBodyHtml", "bodyHtml")),
     attachments: readList(pickField(record, "attachments")).map(normalizeAttachment),
+    delivery: direction === "outbound" ? {
+      status: deliveryStatus,
+      sentAt: readOptionalText(pickField(rawDelivery, "sentAt")),
+      deliveredAt: readOptionalText(pickField(rawDelivery, "deliveredAt")),
+      openedAt: readOptionalText(pickField(rawDelivery, "openedAt")),
+      repliedAt: readOptionalText(pickField(rawDelivery, "repliedAt")),
+      bouncedAt: readOptionalText(pickField(rawDelivery, "bouncedAt")),
+      openTrackingEnabled: readFlag(pickField(rawDelivery, "openTrackingEnabled")),
+      confidence: readText(pickField(rawDelivery, "confidence")) === "estimated" ? "estimated" : readText(pickField(rawDelivery, "confidence")) === "confirmed" ? "confirmed" : "none",
+    } : undefined,
   }
 }
 
@@ -681,6 +707,7 @@ export function buildSendPayload(request: SendRequest) {
       sizeBytes: attachment.sizeBytes,
       contentBase64: attachment.contentBase64,
     })),
+    trackOpens: request.trackOpens,
   }
 }
 
@@ -692,6 +719,7 @@ export type ComposerEdits = {
   addedBcc: MailAddress[]
   removedAddresses: string[]
   attachments: OutboundAttachment[]
+  trackOpens: boolean
 }
 
 /**
@@ -738,6 +766,7 @@ export function buildReplyRequest({
     removedAddresses: edits.removedAddresses,
     attachments: edits.attachments,
     idempotencyKey,
+    trackOpens: edits.trackOpens,
   }
 }
 
@@ -759,6 +788,7 @@ export type ComposerState = {
   showCc: boolean
   showBcc: boolean
   attachments: OutboundAttachment[]
+  trackOpens: boolean
   presentation: "docked" | "open" | "expanded"
 }
 
@@ -775,6 +805,7 @@ export function emptyComposerState(mode: SendMode = "reply", presentation: Compo
     showCc: false,
     showBcc: false,
     attachments: [],
+    trackOpens: false,
     presentation,
   }
 }
@@ -824,6 +855,7 @@ export function composerEdits(state: ComposerState): ComposerEdits {
     addedBcc: dedupeAddresses(state.bcc),
     removedAddresses: [],
     attachments: state.attachments,
+    trackOpens: state.trackOpens,
   }
 }
 

@@ -63,6 +63,7 @@ const CrmListsPage = lazy(() => import("@/pages/crm-page").then((module) => ({ d
 const CrmListDetailPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmListDetailPage })))
 const CrmMarketingPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmMarketingPage })))
 const CrmSettingsPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmSettingsPage })))
+const CrmFormsPage = lazy(() => import("@/pages/crm-forms-page").then((module) => ({ default: module.CrmFormsPage })))
 const ContactCardsPage = lazy(() => import("@/pages/contact-cards-page").then((module) => ({ default: module.ContactCardsPage })))
 const ContactCardDetailPage = lazy(() => import("@/pages/contact-cards-page").then((module) => ({ default: module.ContactCardDetailPage })))
 const ContactCardPublicPage = lazy(() => import("@/pages/contact-card-public-page").then((module) => ({ default: module.ContactCardPublicPage })))
@@ -103,6 +104,7 @@ const validRoutes = new Set([
   "/crm/contacts",
   "/crm/deals",
   "/crm/emails",
+  "/crm/forms",
   "/crm/leads",
   "/crm/lists",
   "/crm/marketing",
@@ -543,6 +545,7 @@ export default function App() {
                   {route === "/crm/contacts" ? <CrmContactsPage /> : null}
                   {route === "/crm/deals" ? <CrmDealsPage currentUser={currentUser} /> : null}
                   {route === "/crm/emails" ? <CrmEmailsPage navigate={navigate} /> : null}
+                  {route === "/crm/forms" ? <CrmFormsPage /> : null}
                   {isCrmEmailStatsRoute(route) ? <CrmEmailStatsPage navigate={navigate} campaignId={route.split("/").at(-2) ?? ""} /> : null}
                   {isCrmEmailEditRoute(route) ? <CrmEmailEditPage navigate={navigate} campaignId={route.split("/").at(-2) ?? ""} /> : null}
                   {route === "/crm/lists" ? <CrmListsPage navigate={navigate} /> : null}

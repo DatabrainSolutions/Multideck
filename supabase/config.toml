@@ -412,6 +412,9 @@ verify_jwt = false
 [functions.inbox-api]
 verify_jwt = true
 
+[functions.email-track]
+verify_jwt = false
+
 [functions.warehouse]
 verify_jwt = true
 
