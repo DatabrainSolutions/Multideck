@@ -33,7 +33,7 @@ test("the client restores and saves the profile appearance through Supabase RPCs
   assert.match(themeProfileSync, /get_current_user_theme_preference/)
   assert.match(themeProfileSync, /set_current_user_theme_preference/)
   assert.equal(themeProfileSync.includes("@/lib/api"), false)
-  assert.match(app, /<ThemeProvider[\s\S]*?<ThemeProfileSync \/>/)
+  assert.match(app, /<ThemeProvider[\s\S]*?disableTransitionOnChange[\s\S]*?<ThemeProfileSync \/>/)
 })
 
 test("accent colours use the same Supabase-only profile boundary", () => {

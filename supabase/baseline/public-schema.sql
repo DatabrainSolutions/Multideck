@@ -8964,10 +8964,13 @@ CREATE OR REPLACE FUNCTION "public"."multideck_dexter_conversation_email_context
     AS $_$
 declare
   v_context record;
-  v_result jsonb;
+  v_attachments jsonb;
+  v_providers jsonb;
 begin
   select * into v_context from public._multideck_dexter_context();
-  if p_conversation_id is null then return '[]'::jsonb; end if;
+  if p_conversation_id is null then
+    return jsonb_build_object('attachments', '[]'::jsonb, 'providers', '[]'::jsonb);
+  end if;
 
   if not exists (
     select 1
@@ -8982,7 +8985,7 @@ begin
   end if;
 
   select coalesce(jsonb_agg(context_row.attachment order by context_row.created_at desc, context_row.ordinality), '[]'::jsonb)
-  into v_result
+  into v_attachments
   from (
     select attachment.value as attachment, message."AIMSG_CreatedAt" as created_at, attachment.ordinality
     from public."AI_Messages" message
@@ -9003,7 +9006,30 @@ begin
     limit 5
   ) context_row;
 
-  return v_result;
+  select coalesce(jsonb_agg(provider_rows.provider order by provider_rows.provider), '[]'::jsonb)
+  into v_providers
+  from (
+    select distinct lower(regexp_replace(attachment.value ->> 'id', '^email:', '')) as provider
+    from public."AI_Messages" message
+    cross join lateral jsonb_array_elements(
+      case
+        when jsonb_typeof(message."AIMSG_ContentJSON" -> 'attachments') = 'array'
+          then message."AIMSG_ContentJSON" -> 'attachments'
+        else '[]'::jsonb
+      end
+    ) attachment(value)
+    where message."AIMSG_ConversationID" = p_conversation_id
+      and message."AIMSG_Role" = 'user'
+      and (p_history_message_ids is null or message."AIMSG_ID" = any(p_history_message_ids))
+      and jsonb_typeof(attachment.value) = 'object'
+      and attachment.value ->> 'type' = 'email'
+      and lower(regexp_replace(attachment.value ->> 'id', '^email:', '')) in ('gmail', 'outlook')
+  ) provider_rows;
+
+  return jsonb_build_object(
+    'attachments', v_attachments,
+    'providers', v_providers
+  );
 end;
 $_$;
 

@@ -41,6 +41,11 @@ export type DexterEmailAttachmentReference = {
   sourceUrl: string
 }
 
+export type DexterConversationEmailContext = {
+  attachments: DexterEmailAttachmentReference[]
+  providers: DexterEmailProvider[]
+}
+
 const EMAIL_TOOL_NAMES = new Set(["search_email", "read_email_thread", "read_email_attachment"])
 const MAX_THREAD_PAGES = 3
 const MAX_THREAD_CHARACTERS = 60_000
@@ -125,6 +130,28 @@ export function parseEmailAttachmentReferences(value: unknown): DexterEmailAttac
       sourceUrl: cleanString(item.sourceUrl, 1000),
     }]
   })
+}
+
+export function parseConversationEmailContext(value: unknown): DexterConversationEmailContext {
+  // Older tenant projects returned the attachment array directly. Keeping this
+  // fallback makes the Edge Function safe to deploy before the migration while
+  // preventing it from inventing provider access that the database did not grant.
+  if (Array.isArray(value)) {
+    return { attachments: parseEmailAttachmentReferences(value), providers: [] }
+  }
+  if (!isObject(value)) return { attachments: [], providers: [] }
+
+  const providers = Array.isArray(value.providers)
+    ? [...new Set(value.providers.flatMap((provider): DexterEmailProvider[] => {
+      const normalised = cleanString(provider, 20).toLowerCase()
+      return normalised === "gmail" || normalised === "outlook" ? [normalised] : []
+    }))]
+    : []
+
+  return {
+    attachments: parseEmailAttachmentReferences(value.attachments),
+    providers,
+  }
 }
 
 export function emailProvidersForReferences(references: DexterEmailAttachmentReference[]) {

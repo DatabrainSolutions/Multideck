@@ -46,6 +46,9 @@ const emailSearchRankingMigration = read(
 const emailSearchCleanupMigration = read(
   "supabase/migrations/20260802131500_dexter_email_remove_superseded_index.sql",
 )
+const emailConversationContextMigration = read(
+  "supabase/migrations/20260803101500_dexter_email_conversation_provider_context.sql",
+)
 const watchMigration = read(
   "supabase/migrations/20260802140000_dexter_watching_for_you.sql",
 )
@@ -488,8 +491,13 @@ test("Gmail and Outlook tools are feature flagged and scoped to explicit provide
   assert.match(emailContext, /DEXTER_EMAIL_CONTEXT_ENABLED/)
   assert.match(emailContext, /item\.type\.toLowerCase\(\) !== "email"/)
   assert.match(emailContext, /id === "gmail" \|\| id === "outlook"/)
-  assert.match(edgeFunction, /buildEmailTools\(requestedEmailProviders, retainedEmailReferences\.length > 0\)/)
-  assert.match(edgeFunction, /searchProviders: requestedEmailProviders/)
+  assert.match(edgeFunction, /buildEmailTools\(searchableEmailProviders, retainedEmailReferences\.length > 0\)/)
+  assert.match(edgeFunction, /searchProviders: searchableEmailProviders/)
+  assert.match(edgeFunction, /requestedEmailProviders, \.\.\.previousEmailProviders/)
+  assert.match(emailContext, /parseConversationEmailContext/)
+  assert.match(emailConversationContextMigration, /attachment\.value ->> 'type' = 'email'/)
+  assert.match(emailConversationContextMigration, /lower\(regexp_replace\(attachment\.value ->> 'id', '\^email:', ''\)\)/)
+  assert.match(emailConversationContextMigration, /message\."AIMSG_ID" = any\(p_history_message_ids\)/)
   assert.match(emailContext, /if \(providers\.length === 0\) return allowAttachmentFollowUp \? \[attachmentTool\] : \[\]/)
   assert.match(emailContext, /That email provider was not selected by the operator/)
   assert.match(dexterMentions, /disabled: !source\?\.available/)

@@ -8,6 +8,7 @@ import {
   executeEmailTool,
   isEmailToolName,
   parseEmailAttachmentReferences,
+  parseConversationEmailContext,
   selectedEmailProviders,
   type DexterEmailProvider,
   type DexterEmailToolState,
@@ -1560,6 +1561,7 @@ Deno.serve(async (request) => {
   }
   const history = parseHistory(preparedData.history)
   let previousEmailAttachments: ReturnType<typeof parseEmailAttachmentReferences> = []
+  let previousEmailProviders: DexterEmailProvider[] = []
   const emailEnabled = dexterEmailContextEnabled()
   if (emailEnabled && conversationId) {
     const { data: emailContextData, error: emailContextError } = await userClient.rpc(
@@ -1572,7 +1574,9 @@ Deno.serve(async (request) => {
     if (emailContextError) {
       console.warn("Dexter conversation email context lookup failed", emailContextError.code ?? "unknown")
     } else {
-      previousEmailAttachments = parseEmailAttachmentReferences(emailContextData)
+      const conversationEmailContext = parseConversationEmailContext(emailContextData)
+      previousEmailAttachments = conversationEmailContext.attachments
+      previousEmailProviders = conversationEmailContext.providers
     }
   }
   const retainedEmailReferences = [...new Map(
@@ -1581,8 +1585,11 @@ Deno.serve(async (request) => {
   const directMessageProviders = directEmailMessages
     .map((message) => cleanString(message.provider, 20))
     .filter((provider): provider is DexterEmailProvider => provider === "gmail" || provider === "outlook")
+  const searchableEmailProviders = emailEnabled
+    ? [...new Set([...requestedEmailProviders, ...previousEmailProviders])]
+    : []
   const emailProviders = emailEnabled
-    ? [...new Set([...requestedEmailProviders, ...directMessageProviders, ...emailProvidersForReferences(retainedEmailReferences)])]
+    ? [...new Set([...searchableEmailProviders, ...directMessageProviders, ...emailProvidersForReferences(retainedEmailReferences)])]
     : []
   const emailState = emailProviders.length
     ? createEmailToolState({
@@ -1590,7 +1597,7 @@ Deno.serve(async (request) => {
       authUserId: authData.user.id,
       userClient,
       providers: emailProviders,
-      searchProviders: requestedEmailProviders,
+      searchProviders: searchableEmailProviders,
       previousAttachments: retainedEmailReferences,
       initialSurfacedAttachments: directEmailAttachments,
     })
@@ -1766,7 +1773,7 @@ Deno.serve(async (request) => {
     strict: true,
     parameters: action.parameters,
   }))
-  const emailTools = buildEmailTools(requestedEmailProviders, retainedEmailReferences.length > 0)
+  const emailTools = buildEmailTools(searchableEmailProviders, retainedEmailReferences.length > 0)
   const tools = [...readTools, ...emailTools, ...actionTools]
 
   if (body.stream === true) {

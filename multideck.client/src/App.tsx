@@ -487,7 +487,13 @@ export default function App() {
   }
 
   return (
-    <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} storageKey="multideck.theme">
+    <ThemeProvider
+      attribute="class"
+      defaultTheme="light"
+      disableTransitionOnChange
+      enableSystem={false}
+      storageKey="multideck.theme"
+    >
       <ThemeProfileSync />
       <LanguageProvider>
         <WorkspaceErrorBoundary resetKey={`${route}:${authStatus}`}>
