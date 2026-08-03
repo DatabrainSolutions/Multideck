@@ -350,6 +350,7 @@ export async function streamDexterMessage(
     onPendingAction?: (action: DexterPendingAction) => void
     onEmailAttachment?: (attachment: DexterEmailAttachment) => void
   },
+  signal?: AbortSignal,
   // Declared explicitly: `completed` is only ever assigned inside the event
   // closure, which control-flow analysis cannot see, so an inferred return type
   // collapses to `never` at the call site.
@@ -368,6 +369,7 @@ export async function streamDexterMessage(
 
   const response = await fetch(`${supabaseFunctionsUrl}/agent-dexter`, {
     method: "POST",
+    signal,
     headers: {
       Accept: "text/event-stream",
       apikey: supabasePublicApiKey,

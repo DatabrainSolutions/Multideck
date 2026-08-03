@@ -194,18 +194,20 @@ export function buildEmailTools(providers: DexterEmailProvider[], allowAttachmen
     {
       type: "function",
       name: "search_email",
-      description: "Search the operator's authorised, synced Gmail or Outlook email. Returns matching thread metadata and trusted Multideck citations, not full message bodies. Put only identifying terms in query, such as the subject, sender name, company, address or reference; omit instruction words such as find, show, email, subject, from and sent.",
+      description: "Search the operator's authorised, synced Gmail or Outlook email. Returns matching thread metadata and trusted Multideck citations, not full message bodies. Separate a named sender from the other identifying clues so Dexter can safely recover a minor sender-address typo without relaxing the whole search.",
       strict: true,
       parameters: {
         type: "object",
         properties: {
-          query: { type: "string", minLength: 1, maxLength: 300, description: "Identifying terms only, such as a subject, reference, company, person or address. Do not include conversational instruction words." },
+          query: { type: "string", minLength: 1, maxLength: 300, description: "Identifying terms other than the sender, such as a subject, reference, company, invoice, or attachment name. If the sender is the only clue, repeat it here. Do not include conversational instruction words." },
+          sender: { type: ["string", "null"], maxLength: 320, description: "The sender name or email address when the operator says from, by, or sender; otherwise null." },
+          hasAttachment: { type: ["boolean", "null"], description: "True when the requested email must have an attachment, otherwise null." },
           provider: { ...providerType, description: "A selected provider, or null to search every provider mentioned by the operator." },
           after: { type: ["string", "null"], description: "Optional inclusive ISO date or date-time lower bound." },
           before: { type: ["string", "null"], description: "Optional exclusive ISO date or date-time upper bound." },
           limit: { type: "integer", minimum: 1, maximum: 20, description: "Maximum matching email threads." },
         },
-        required: ["query", "provider", "after", "before", "limit"],
+        required: ["query", "sender", "hasAttachment", "provider", "after", "before", "limit"],
         additionalProperties: false,
       },
     },
@@ -354,6 +356,8 @@ export async function executeEmailTool(
   try {
     if (name === "search_email") {
       const query = cleanString(args.query, 300)
+      const sender = cleanString(args.sender, 320) || null
+      const hasAttachment = args.hasAttachment === true ? true : null
       const providers = selectedProviders(state, args.provider)
       const after = optionalDate(args.after)
       const before = optionalDate(args.before)
@@ -370,6 +374,8 @@ export async function executeEmailTool(
         p_after: after.value,
         p_before: before.value,
         p_take: take,
+        p_sender: sender,
+        p_has_attachment: hasAttachment,
       })
       if (error) return { output: rpcFailure(error, "No matching email was found.") }
       const result = isObject(data) ? data : { items: [], hasMore: false }

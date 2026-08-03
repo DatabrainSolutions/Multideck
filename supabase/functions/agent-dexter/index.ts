@@ -500,6 +500,20 @@ function addDomainCitations(domain: string, value: unknown) {
     }
   }
 
+  if (domain === "customers" && Array.isArray(data)) {
+    return {
+      ...value,
+      data: data.map((record) => {
+        if (!isObject(record)) return record
+        const recordId = cleanString(record.recordId, 80)
+        const title = cleanString(record.name, 240) || "Customer"
+        return recordId
+          ? addRecordCitation(record, title, `/customers/${encodeURIComponent(recordId)}`, "Customer record")
+          : record
+      }),
+    }
+  }
+
   if (domain !== "warehouse" || !isObject(data)) return value
 
   const overview = isObject(data.overview)
@@ -656,9 +670,15 @@ ${emailSummary}
 
 # Tool and safety rules
 Use query_data_domain whenever the operator asks about company records or metrics. Use only the listed domain codes.
+For a named workspace record, search with the strongest concise name, reference, email, SKU, container number, location or lane from the request. Do not pass the whole conversational sentence as the search value.
+Workspace search results can include searchEvidence. exact_identifier, exact_text, exact_phrase and all_terms are evidence-backed matches. corrected_text is only a likely spelling correction: compare its matchedValue with the returned record's other identifying fields, state the actual name or reference you found, and do not describe it as confirmed when another candidate is plausible. Never substitute a different named company, person, reference or record type.
+If a workspace search returns no matching records, retry at most twice: first remove filler or status wording, then use one stable identifier fragment. Do not remove every identifying clue. After those checks, say what was not found and ask for one useful clue. Never fill the gap from conversation history or general knowledge.
+Do not prepare a write against a corrected_text result unless the operator confirms the actual returned name/reference or supplied the record through an exact @ mention. In Full access, ask for that identity confirmation before the write.
 Operator-attached record IDs identify the exact selected record. Never display those raw IDs. When a selected record is queried, use its title as the search term and keep only the returned record whose recordId matches the attached ID.
 Use search_email whenever the operator asks about mail from a selected Gmail or Outlook source and that tool is available. Search first, read only the relevant thread, then load an attachment only when it is needed for the request.
-Keep email search queries concise and identifying: use the subject, sender, company, address or reference, and leave out conversational words such as find, show, email, subject, from and sent.
+Keep email searches concise and identifying. Put a person or address in sender when the operator says from, by or sender; put the remaining clues such as invoice, subject, company, reference or attachment name in query. Set hasAttachment=true only when an attachment is required. Leave out conversational words such as find, show, email, subject, from and sent.
+Search results can mark matchQuality as corrected_sender or possible_sender when the mailbox safely recovered a likely typo. Treat that as a candidate, not a confirmed identity: verify the returned matchedSender, the thread's From participant, the subject and any requested attachment before presenting it. Never silently substitute a different domain. If more than one candidate remains plausible, show the short evidence-backed choices or ask for one useful detail instead of guessing.
+If a well-formed search returns no result, retry at most twice by removing a non-essential clue or using the stable company/domain/reference terms. Do not broaden away both the sender and the requested document type in the same retry.
 When only read_email_attachment is available, use it solely for a retained attachment ID listed in the conversation prompt. That retained reference permits follow-up work on the surfaced document, not a new mailbox search.
 When the operator asks to show, find, inspect, summarise or work with an email attachment, call read_email_attachment after read_email_thread. A successful attachment read surfaces a secure inline attachment in the conversation; never claim a file was surfaced unless that tool succeeds.
 When read_email_thread returns attachmentState "none", the thread was read successfully but has no eligible non-inline business attachment. Say that plainly; do not describe the email source as unavailable.
@@ -1795,7 +1815,7 @@ Deno.serve(async (request) => {
     : [{
       type: "function",
       name: "query_data_domain",
-      description: "Read current, company-scoped records from one approved Multideck data domain.",
+      description: "Read current, company-scoped records from one approved Multideck data domain. Search is exact-reference-first and may return labelled corrected_text candidates for likely spelling mistakes; verify that evidence before claiming a match.",
       strict: true,
       parameters: {
         type: "object",

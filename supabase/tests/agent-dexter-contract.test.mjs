@@ -46,6 +46,15 @@ const emailSearchRankingMigration = read(
 const emailSearchCleanupMigration = read(
   "supabase/migrations/20260802131500_dexter_email_remove_superseded_index.sql",
 )
+const emailSearchRecoveryMigration = read(
+  "supabase/migrations/20260803161000_dexter_email_search_recovery.sql",
+)
+const emailAttachmentSearchMigration = read(
+  "supabase/migrations/20260803162000_dexter_email_attachment_name_index.sql",
+)
+const guardedDomainSearchMigration = read(
+  "supabase/migrations/20260803170000_dexter_guarded_domain_search.sql",
+)
 const emailConversationContextMigration = read(
   "supabase/migrations/20260803101500_dexter_email_conversation_provider_context.sql",
 )
@@ -423,6 +432,7 @@ test("Dexter attaches clickable inline citations only to records returned by its
   assert.match(edgeFunction, /\/crm\/leads\/\$\{encodeURIComponent\(recordId\)\}/)
   assert.match(edgeFunction, /\/crm\/deals\?record=/)
   assert.match(edgeFunction, /\/quotes\?search=/)
+  assert.match(edgeFunction, /\/customers\/\$\{encodeURIComponent\(recordId\)\}/)
   assert.match(edgeFunction, /\/warehouse\/orders\?/)
   assert.match(edgeFunction, /\/warehouse\/inventory\?search=/)
   assert.match(edgeFunction, /Use only citation URLs returned by the data tool/)
@@ -435,6 +445,27 @@ test("Dexter attaches clickable inline citations only to records returned by its
   assert.match(translations, /"Open source": \{ de:/)
   assert.match(translations, /"Previous source": \{ de:/)
   assert.match(translations, /"Next source": \{ de:/)
+})
+
+test("workspace searches recover guarded typos without turning weak candidates into facts", () => {
+  assert.match(guardedDomainSearchMigration, /create or replace function public\._multideck_dexter_search_evidence/)
+  assert.match(guardedDomainSearchMigration, /exact_identifier/)
+  assert.match(guardedDomainSearchMigration, /exact_phrase/)
+  assert.match(guardedDomainSearchMigration, /all_terms/)
+  assert.match(guardedDomainSearchMigration, /corrected_text/)
+  assert.match(guardedDomainSearchMigration, /v_best_similarity >= 0\.72/)
+  assert.match(guardedDomainSearchMigration, /length\(v_search\) >= 7 and v_best_similarity >= 0\.78/)
+  assert.match(guardedDomainSearchMigration, /multideck_dexter_domain_customers/)
+  assert.match(guardedDomainSearchMigration, /multideck_dexter_domain_leads/)
+  assert.match(guardedDomainSearchMigration, /multideck_dexter_domain_deals/)
+  assert.match(guardedDomainSearchMigration, /multideck_dexter_domain_quotes/)
+  assert.match(guardedDomainSearchMigration, /multideck_dexter_domain_warehouse/)
+  assert.match(guardedDomainSearchMigration, /owner\."Auth_User_ID" = auth\.uid\(\)/)
+  assert.match(guardedDomainSearchMigration, /_multideck_dexter_has_permission/)
+  assert.match(guardedDomainSearchMigration, /revoke all on function public\._multideck_dexter_search_evidence[\s\S]*authenticated/)
+  assert.match(edgeFunction, /corrected_text is only a likely spelling correction/)
+  assert.match(edgeFunction, /Do not prepare a write against a corrected_text result/)
+  assert.match(edgeFunction, /retry at most twice/)
 })
 
 test("Dexter never fills evidence gaps with invented people, data, or outcomes", () => {
@@ -568,6 +599,29 @@ test("email search is ranked, freshness-aware and excludes non-evidence folders"
   assert.match(emailContextMigration, /folder\."CommMailFolder_RoleCode" in \('drafts', 'spam', 'trash'\)/)
   assert.match(emailContextMigration, /'stale'.*interval '30 minutes'/s)
   assert.match(emailContextMigration, /'url', '\/inbox\?provider='/)
+})
+
+test("email search can recover a likely sender typo without relaxing every clue", () => {
+  assert.match(emailContext, /sender: \{ type: \["string", "null"\]/)
+  assert.match(emailContext, /hasAttachment: \{ type: \["boolean", "null"\]/)
+  assert.match(emailContext, /p_sender: sender/)
+  assert.match(emailContext, /p_has_attachment: hasAttachment/)
+  assert.match(edgeFunction, /matchQuality as corrected_sender or possible_sender/)
+  assert.match(edgeFunction, /Never silently substitute a different domain/)
+  assert.match(emailSearchRecoveryMigration, /create extension if not exists pg_trgm with schema extensions/)
+  assert.match(emailSearchRecoveryMigration, /CommRecipient_RecipientTypeCode" = 'from'/)
+  assert.match(emailSearchRecoveryMigration, /sender_domain = scored\.address_domain/)
+  assert.match(emailSearchRecoveryMigration, /local_similarity >= 0\.65/)
+  assert.match(emailSearchRecoveryMigration, /local_similarity >= 0\.45[\s\S]*candidate_has_attachment[\s\S]*query_exact/)
+  assert.match(emailSearchRecoveryMigration, /p_has_attachment is distinct from true/)
+  assert.match(emailSearchRecoveryMigration, /'matchQuality', ordered\.match_quality/)
+  assert.match(emailSearchRecoveryMigration, /grant execute on function public\.multideck_dexter_search_email[\s\S]*to authenticated/)
+  assert.match(emailAttachmentSearchMigration, /Comm_MessageAttachments/)
+  assert.match(emailAttachmentSearchMigration, /CommAttachment_FileName/)
+  assert.match(emailAttachmentSearchMigration, /regexp_replace[\s\S]*\[\^\[:alnum:\]@\]\+/)
+  assert.match(emailAttachmentSearchMigration, /not attachment\."CommAttachment_IsInline"/)
+  assert.match(emailAttachmentSearchMigration, /TR_Comm_MessageAttachments_dexter_email_search/)
+  assert.doesNotMatch(emailAttachmentSearchMigration, /StoragePath|ExternalURL|MetadataJSON/)
 })
 
 test("thread and attachment analysis stay bounded and treat provider content as untrusted", () => {

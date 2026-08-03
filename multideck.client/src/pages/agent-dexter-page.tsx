@@ -97,6 +97,9 @@ import {
   DEXTER_CONVERSATIONS_CHANGED_EVENT,
   DEXTER_NEW_CONVERSATION_EVENT,
   DEXTER_SELECT_CONVERSATION_EVENT,
+  readDexterConversationIdFromLocation,
+  rememberOpenDexterConversation,
+  shouldReuseDexterConversation,
   takeDexterConversationHandoff,
   type DexterConversationsChangedDetail,
 } from "@/lib/dexter-navigation"
@@ -1560,14 +1563,17 @@ export function AgentDexterPage({
 }) {
   const { language, t } = useLanguage()
   const shouldReduceMotion = Boolean(useReducedMotion())
-  const [stage, setStage] = useState<"landing" | "conversation">("landing")
+  const initialConversationIdRef = useRef(readDexterConversationIdFromLocation())
+  const [stage, setStage] = useState<"landing" | "conversation">(
+    initialConversationIdRef.current ? "conversation" : "landing",
+  )
   const [dexterMode, setDexterMode] = useState<"chat" | "watch">("chat")
   const [watches, setWatches] = useState<DexterWatch[]>([])
   const [watchFeedback, setWatchFeedback] = useState<{ tone: "success" | "neutral" | "error"; message: string } | null>(null)
   const [isSending, setIsSending] = useState(false)
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null)
   const [liveReasoning, setLiveReasoning] = useState("")
-  const [isLoadingConversation, setIsLoadingConversation] = useState(false)
+  const [isLoadingConversation, setIsLoadingConversation] = useState(Boolean(initialConversationIdRef.current))
   const [error, setError] = useState<string | null>(null)
   const [pendingActionDecision, setPendingActionDecision] = useState<{
     actionId: string
@@ -1609,6 +1615,11 @@ export function AgentDexterPage({
   const liveReasoningRef = useRef("")
   const actionDecisionInFlightRef = useRef<string | null>(null)
   const promptSubmissionInFlightRef = useRef(false)
+  const activePromptAbortControllerRef = useRef<AbortController | null>(null)
+  const conversationIntentRef = useRef({
+    id: initialConversationIdRef.current,
+    version: 0,
+  })
   const attachedItems = useAttachedItems(selectedAttachmentIds)
   const watchMentionItems = useMemo(() => mentionItems.filter((mention) => {
     if (mention.type === "email") return true
@@ -2080,7 +2091,11 @@ export function AgentDexterPage({
       return
     }
 
-    const previousConversation = activeConversation
+    const submissionIntent = conversationIntentRef.current
+    const previousConversation = shouldReuseDexterConversation(
+      activeConversation?.id,
+      submissionIntent.id,
+    ) ? activeConversation : null
     const previousBranchMessages = conversationBranchFor(
       previousConversation?.messages ?? [],
       selectedResponseMessageIds,
@@ -2134,6 +2149,9 @@ export function AgentDexterPage({
     setShowAttachments(false)
     setShowJumpToLatest(false)
 
+    const requestController = new AbortController()
+    activePromptAbortControllerRef.current = requestController
+
     try {
       const conversation = await streamDexterMessage({
         conversationId: previousConversation?.id || null,
@@ -2149,6 +2167,7 @@ export function AgentDexterPage({
         attachments: messageAttachments,
       }, {
         onAnswerDelta: (delta) => {
+          if (conversationIntentRef.current.version !== submissionIntent.version) return
           const stream = streamRef.current
           const shouldFollow = !stream || stream.scrollHeight - stream.scrollTop - stream.clientHeight < 220
 
@@ -2177,10 +2196,12 @@ export function AgentDexterPage({
           }
         },
         onReasoningDelta: (delta) => {
+          if (conversationIntentRef.current.version !== submissionIntent.version) return
           liveReasoningRef.current += delta
           setLiveReasoning(liveReasoningRef.current)
         },
         onEmailAttachment: (attachment) => {
+          if (conversationIntentRef.current.version !== submissionIntent.version) return
           setActiveConversation((current) => {
             const base = current ?? pendingConversation
             return {
@@ -2194,6 +2215,7 @@ export function AgentDexterPage({
           })
         },
         onPendingAction: (pendingAction) => {
+          if (conversationIntentRef.current.version !== submissionIntent.version) return
           setActiveConversation((current) => {
             const base = current ?? pendingConversation
             return {
@@ -2204,14 +2226,23 @@ export function AgentDexterPage({
             }
           })
         },
-      })
+      }, requestController.signal)
+      if (conversationIntentRef.current.version !== submissionIntent.version) return
+      conversationIntentRef.current = { id: conversation.id, version: submissionIntent.version }
       setActiveConversation(retainStreamingAssistantId(conversation, assistantStreamMessage.id))
+      rememberOpenDexterConversation(conversation.id)
       announceDexterConversationsChanged()
       setComposerValue("")
       setComposerMentions([])
       setSelectedAttachmentIds(new Set())
       setComposerUploadedDocuments([])
     } catch (requestError) {
+      if (
+        conversationIntentRef.current.version !== submissionIntent.version ||
+        (requestError instanceof Error && requestError.name === "AbortError")
+      ) {
+        return
+      }
       setActiveConversation((current) => {
         const base = current ?? pendingConversation
         const streamingMessage = base.messages.find((item) => item.id === assistantStreamMessage.id)
@@ -2233,6 +2264,8 @@ export function AgentDexterPage({
       })
       setError(requestError instanceof Error ? requestError.message : t("Dexter could not answer this request."))
     } finally {
+      if (activePromptAbortControllerRef.current !== requestController) return
+      activePromptAbortControllerRef.current = null
       promptSubmissionInFlightRef.current = false
       setIsSending(false)
       setStreamingMessageId(null)
@@ -2453,20 +2486,31 @@ export function AgentDexterPage({
   }
 
   async function handleHistorySelect(id: string) {
+    activePromptAbortControllerRef.current?.abort()
+    activePromptAbortControllerRef.current = null
+    promptSubmissionInFlightRef.current = false
+    const intent = { id, version: conversationIntentRef.current.version + 1 }
+    conversationIntentRef.current = intent
     setStage("conversation")
+    rememberOpenDexterConversation(id)
     setConversationRenderKey(`dexter-conversation-${id}`)
     setIsLoadingConversation(true)
     setError(null)
     setActionDecisionError(null)
     setPendingActionDecision(null)
+    setIsSending(false)
+    setStreamingMessageId(null)
     try {
       pendingScrollToLatestRef.current = true
       setSelectedResponseMessageIds({})
-      setActiveConversation(await getDexterConversation(id))
+      const conversation = await getDexterConversation(id)
+      if (conversationIntentRef.current.version !== intent.version) return
+      setActiveConversation(conversation)
     } catch (requestError) {
+      if (conversationIntentRef.current.version !== intent.version) return
       setError(requestError instanceof Error ? requestError.message : t("This conversation could not be loaded."))
     } finally {
-      setIsLoadingConversation(false)
+      if (conversationIntentRef.current.version === intent.version) setIsLoadingConversation(false)
     }
   }
 
@@ -2477,7 +2521,15 @@ export function AgentDexterPage({
   }
 
   function startNewConversation() {
+    activePromptAbortControllerRef.current?.abort()
+    activePromptAbortControllerRef.current = null
+    promptSubmissionInFlightRef.current = false
+    conversationIntentRef.current = {
+      id: null,
+      version: conversationIntentRef.current.version + 1,
+    }
     setStage("landing")
+    rememberOpenDexterConversation(null)
     setActiveConversation(null)
     setSelectedResponseMessageIds({})
     setRetryingMessageId(null)
@@ -2486,6 +2538,11 @@ export function AgentDexterPage({
     setActionDecisionError(null)
     setPendingActionDecision(null)
     actionDecisionInFlightRef.current = null
+    setIsSending(false)
+    setIsLoadingConversation(false)
+    setStreamingMessageId(null)
+    liveReasoningRef.current = ""
+    setLiveReasoning("")
     setComposerValue("")
     setComposerMentions([])
     setSelectedAttachmentIds(new Set())
@@ -2526,7 +2583,10 @@ export function AgentDexterPage({
     // A conversation started by the summon overlay is waiting to be adopted, so
     // "Open in full" lands on the thread the operator was already reading.
     const handoffId = takeDexterConversationHandoff()
+    const refreshConversationId = initialConversationIdRef.current
+    initialConversationIdRef.current = null
     if (handoffId) void handleHistorySelect(handoffId)
+    else if (refreshConversationId) void handleHistorySelect(refreshConversationId)
 
     window.addEventListener(DEXTER_NEW_CONVERSATION_EVENT, startNew)
     window.addEventListener(DEXTER_SELECT_CONVERSATION_EVENT, selectConversation)

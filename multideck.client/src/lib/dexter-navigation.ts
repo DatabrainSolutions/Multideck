@@ -13,6 +13,48 @@ export function announceDexterConversationsChanged(detail: DexterConversationsCh
 }
 
 const conversationHandoffKey = "multideck.dexterConversationHandoff"
+const conversationQueryKey = "conversation"
+const conversationIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+export function dexterConversationIdFromUrl(value: string | URL) {
+  const url = value instanceof URL ? value : new URL(value, "https://multideck.app")
+  const conversationId = url.searchParams.get(conversationQueryKey)?.trim() ?? ""
+  return conversationIdPattern.test(conversationId) ? conversationId : null
+}
+
+export function readDexterConversationIdFromLocation() {
+  if (typeof window === "undefined") return null
+  return dexterConversationIdFromUrl(window.location.href)
+}
+
+/**
+ * React state can still contain the previous thread for one render after the
+ * operator starts a new chat. Only reuse it when it also matches the current
+ * navigation intent; otherwise the first new message can land in the old chat.
+ */
+export function shouldReuseDexterConversation(
+  activeConversationId: string | null | undefined,
+  intendedConversationId: string | null,
+) {
+  return Boolean(intendedConversationId && activeConversationId === intendedConversationId)
+}
+
+/**
+ * Keep the open Dexter thread in the address bar so a hard refresh restores
+ * the same conversation. Replace rather than push: browsing chat history must
+ * not fill the browser Back stack with every thread selection.
+ */
+export function rememberOpenDexterConversation(conversationId: string | null) {
+  if (typeof window === "undefined") return
+
+  const url = new URL(window.location.href)
+  if (conversationId && conversationIdPattern.test(conversationId)) {
+    url.searchParams.set(conversationQueryKey, conversationId)
+  } else {
+    url.searchParams.delete(conversationQueryKey)
+  }
+  window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`)
+}
 
 /**
  * Hands a conversation started elsewhere — the summon overlay — to the Dexter
