@@ -71,6 +71,43 @@ Deno.serve(async (request) => {
       if (normalize(payload.contactFirstName) || normalize(payload.contactLastName) || normalize(payload.contactEmail)) { const contactId = crypto.randomUUID(); await admin.from("Org_Contacts").insert({ OrgContact_ID: contactId, Org_ID: id, OrgContact_FirstName: normalize(payload.contactFirstName), OrgContact_LastName: normalize(payload.contactLastName) }); if (normalize(payload.contactEmail)) await admin.from("OrgContact_Emails").insert({ OrgContactEmail_ID: crypto.randomUUID(), OrgContact_ID: contactId, OrgContactEmail_Email: normalize(payload.contactEmail), OrgContactEmail_Type: 1 }) }
       return json(request, (await customerRows(admin)).find((item: any) => item.id === id), 201)
     }
+    if (request.method === "POST" && parts.length === 2 && parts[1] === "contacts") {
+      await requirePermission(admin, current.User_ID, "Customers.Write")
+      const customerId = parts[0]
+      const payload = await body<any>(request)
+      const email = normalize(payload.email)?.toLowerCase()
+      const firstName = normalize(payload.firstName)
+      const lastName = normalize(payload.lastName)
+      if (!email) throw new HttpError(400, "Enter a contact email address.")
+      if (!firstName && !lastName) throw new HttpError(400, "Enter the contact's name.")
+      const { data: customer } = await admin.from("Org_Master").select("Org_id,Org_Name").eq("Org_id", customerId).maybeSingle()
+      if (!customer) throw new HttpError(404, "Choose an existing account.")
+      const { data: existingEmail } = await admin.from("OrgContact_Emails").select("OrgContactEmail_ID").ilike("OrgContactEmail_Email", email).maybeSingle()
+      if (existingEmail) throw new HttpError(409, "This email is already connected to a contact.")
+      const contactId = crypto.randomUUID()
+      const insertedContact = await admin.from("Org_Contacts").insert({
+        OrgContact_ID: contactId,
+        Org_ID: customerId,
+        OrgContact_FirstName: firstName,
+        OrgContact_LastName: lastName,
+      })
+      if (insertedContact.error) throw new HttpError(500, insertedContact.error.message)
+      const insertedEmail = await admin.from("OrgContact_Emails").insert({
+        OrgContactEmail_ID: crypto.randomUUID(),
+        OrgContact_ID: contactId,
+        OrgContactEmail_Email: email,
+        OrgContactEmail_Type: 1,
+      })
+      if (insertedEmail.error) throw new HttpError(500, insertedEmail.error.message)
+      return json(request, {
+        id: contactId,
+        accountId: customerId,
+        accountName: customer.Org_Name,
+        firstName,
+        lastName,
+        email,
+      }, 201)
+    }
     throw new HttpError(405, "Method not allowed.")
   } catch (error) { return failure(request, error) }
 })

@@ -28,6 +28,15 @@ export type CustomerReference = {
   organisationTypes: { id: string; name: string }[]
 }
 
+export type ApiCustomerContact = {
+  id: string
+  accountId: string
+  accountName: string
+  firstName: string | null
+  lastName: string | null
+  email: string
+}
+
 export type ApiCustomerDetail = {
   id: string
   name: string
@@ -114,6 +123,28 @@ export async function createCustomer(input: CreateCustomerInput) {
   }
 
   return response.json() as Promise<ApiCustomer>
+}
+
+export async function createCustomerContact(customerId: string, input: { firstName: string | null; lastName: string | null; email: string }) {
+  const session = await getSupabaseSession()
+  if (!session?.access_token) throw new CustomerApiError("Sign in again to create this contact.")
+
+  const response = await edgeFetch("customers", `/${encodeURIComponent(customerId)}/contacts`, session.access_token, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  })
+  if (!response.ok) {
+    let message = `${response.status} ${response.statusText}`.trim()
+    try {
+      const problem = await response.json()
+      message = problem.detail || problem.title || message
+    } catch {
+      // Keep the HTTP fallback for a non-JSON response.
+    }
+    throw new CustomerApiError(message)
+  }
+  return response.json() as Promise<ApiCustomerContact>
 }
 
 export async function getCustomer(customerId: string) {

@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react"
 import {
   ArrowDownRight,
   ArrowLeft,
   ArrowRight,
   ArrowUpRight,
+  Building2,
   ChartNoAxesCombined,
   CirclePause,
   Download,
@@ -25,6 +26,7 @@ import {
   SlidersHorizontal,
   Upload,
   UploadCloud,
+  UserRound,
   Users,
   Workflow,
   X,
@@ -32,6 +34,7 @@ import {
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -83,10 +86,13 @@ import {
 import { useLanguage } from "@/i18n/language-provider"
 import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
 import { getApiTeamUsers } from "@/lib/api"
+import { createCustomer, createCustomerContact, getCustomerReference, listCustomers, type ApiCustomer } from "@/lib/customer-api"
 import { listDeals, markDealWon, moveDealStage, type ApiDeal } from "@/lib/deal-api"
 import {
   decideLeadTransfer,
+  createFollowUpLead,
   getCrmDashboard,
+  getCrmFollowUpOpportunities,
   getLead,
   listCrmTransferUsers,
   listLeads,
@@ -96,6 +102,8 @@ import {
   type ApiLead,
   type ApiLeadDetail,
   type CrmDashboardData,
+  type CrmFollowUpData,
+  type CrmFollowUpOpportunity,
   type CrmLeadTransferRequest,
   type CrmTransferUser,
 } from "@/lib/lead-api"
@@ -1001,6 +1009,186 @@ function PrimaryActionButton({ children, onClick }: { children: ReactNode; onCli
   )
 }
 
+type FollowUpCreateKind = "lead" | "contact" | "account"
+
+function personNameParts(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  return { firstName: parts.shift() || null, lastName: parts.join(" ") || null }
+}
+
+function companyNameFromEmail(email: string) {
+  const domain = email.split("@")[1]?.split(".")[0] || ""
+  return domain ? domain.charAt(0).toLocaleUpperCase() + domain.slice(1).replaceAll(/[-_]/g, " ") : ""
+}
+
+function FollowUpCreateMenu({ opportunity, onChoose }: { opportunity: CrmFollowUpOpportunity; onChoose: (kind: FollowUpCreateKind) => void }) {
+  const { t } = useLanguage()
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3 text-[12px] font-medium text-[var(--md-accent-ink)] shadow-[var(--md-shadow-line)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]"
+          onClick={(event) => event.stopPropagation()}
+          aria-label={t("Create CRM record")}
+        >
+          <Plus className="size-3.5" strokeWidth={1.4} />
+          {t("Create")}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-52" onClick={(event) => event.stopPropagation()}>
+        <DropdownMenuLabel>{t("Create from this email")}</DropdownMenuLabel>
+        <DropdownMenuItem onSelect={() => onChoose("lead")}>
+          <Users className="size-4 text-[var(--md-accent)]" strokeWidth={1.3} />
+          <span><span className="block font-medium text-[var(--md-ink)]">{t("Lead")}</span><span className="block text-[11px] text-[var(--md-subtle)]">{t("New sales opportunity")}</span></span>
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onChoose("contact")}>
+          <UserRound className="size-4 text-[var(--md-blue)]" strokeWidth={1.3} />
+          <span><span className="block font-medium text-[var(--md-ink)]">{t("Contact")}</span><span className="block text-[11px] text-[var(--md-subtle)]">{t("Person at an existing account")}</span></span>
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onChoose("account")}>
+          <Building2 className="size-4 text-[var(--md-green)]" strokeWidth={1.3} />
+          <span><span className="block font-medium text-[var(--md-ink)]">{t("Account")}</span><span className="block text-[11px] text-[var(--md-subtle)]">{t("New customer organisation")}</span></span>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+function FollowUpRecordDialog({
+  opportunity,
+  kind,
+  onClose,
+  onCreated,
+}: {
+  opportunity: CrmFollowUpOpportunity | null
+  kind: FollowUpCreateKind | null
+  onClose: () => void
+  onCreated: () => void
+}) {
+  const { t } = useLanguage()
+  const [personName, setPersonName] = useState("")
+  const [companyName, setCompanyName] = useState("")
+  const [email, setEmail] = useState("")
+  const [accountId, setAccountId] = useState("")
+  const [accounts, setAccounts] = useState<ApiCustomer[]>([])
+  const [accountState, setAccountState] = useState<"idle" | "loading" | "ready" | "error">("idle")
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!opportunity || !kind) return
+    setPersonName(opportunity.personName || "")
+    setCompanyName(opportunity.companyName || companyNameFromEmail(opportunity.email || ""))
+    setEmail(opportunity.email || "")
+    setAccountId("")
+    setError(null)
+    if (kind !== "contact") {
+      setAccountState("idle")
+      return
+    }
+    let active = true
+    setAccountState("loading")
+    listCustomers()
+      .then((rows) => {
+        if (!active) return
+        setAccounts(rows)
+        setAccountState("ready")
+      })
+      .catch(() => {
+        if (!active) return
+        setAccountState("error")
+      })
+    return () => { active = false }
+  }, [kind, opportunity])
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!opportunity || !kind) return
+    setSubmitting(true)
+    setError(null)
+    try {
+      if (kind === "lead") {
+        await createFollowUpLead({ email, personName, companyName, threadId: opportunity.threadId })
+      } else if (kind === "contact") {
+        if (!accountId) throw new Error(t("Choose the account this contact belongs to."))
+        const name = personNameParts(personName)
+        await createCustomerContact(accountId, { ...name, email })
+      } else {
+        const reference = await getCustomerReference()
+        const orgType = reference.organisationTypes.find((type) => type.name.toLocaleLowerCase() === "customer") ?? reference.organisationTypes[0]
+        if (!orgType) throw new Error(t("No customer account type is configured."))
+        const name = personNameParts(personName)
+        await createCustomer({
+          name: companyName,
+          orgTypeId: orgType.id,
+          addressLine1: null,
+          townCity: null,
+          postZipCode: null,
+          countryCode: null,
+          contactFirstName: name.firstName,
+          contactLastName: name.lastName,
+          contactEmail: email,
+        })
+      }
+      toast.success(t(kind === "lead" ? "Lead created" : kind === "contact" ? "Contact created" : "Account created"))
+      onCreated()
+      onClose()
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : t("This CRM record could not be created."))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const title = kind === "lead" ? t("Create lead") : kind === "contact" ? t("Create contact") : t("Create account")
+  return (
+    <Dialog open={Boolean(opportunity && kind)} onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent className="border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[520px]">
+        <DialogHeader className="text-start">
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{t("Review the details found in the email before adding them to CRM.")}</DialogDescription>
+        </DialogHeader>
+        <form className="grid gap-4" onSubmit={submit}>
+          {kind !== "contact" ? (
+            <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
+              {kind === "account" ? t("Account name") : t("Company")}
+              <Input required value={companyName} onChange={(event) => setCompanyName(event.target.value)} className="h-10" dir="auto" />
+            </label>
+          ) : (
+            <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
+              {t("Account")}
+              <Select value={accountId} onValueChange={setAccountId} disabled={accountState !== "ready"}>
+                <SelectTrigger className="h-10"><SelectValue placeholder={accountState === "loading" ? t("Loading accounts…") : t("Choose account")} /></SelectTrigger>
+                <SelectContent>{accounts.map((account) => <SelectItem key={account.id} value={account.id}><span dir="auto">{account.name}</span></SelectItem>)}</SelectContent>
+              </Select>
+              {accountState === "error" ? <span className="text-[11px] text-[var(--md-red)]">{t("Accounts could not be loaded.")}</span> : null}
+            </label>
+          )}
+          <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
+            {t("Person")}
+            <Input required value={personName} onChange={(event) => setPersonName(event.target.value)} className="h-10" dir="auto" />
+          </label>
+          <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
+            {t("Email")}
+            <Input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} className="h-10" dir="ltr" />
+          </label>
+          {error ? <p role="alert" className="rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red)_9%,transparent)] px-3 py-2 text-[12px] text-[var(--md-red)]" dir="auto">{t(error)}</p> : null}
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={onClose}>{t("Cancel")}</Button>
+            <Button type="submit" disabled={submitting || !email.trim() || !personName.trim() || (kind === "contact" && !accountId) || (kind !== "contact" && !companyName.trim())}>
+              {submitting ? <LoaderCircle className="size-4 animate-spin" /> : null}
+              {submitting ? t("Creating…") : title}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function DealDetailDrawer({
   deal,
   open,
@@ -1022,21 +1210,27 @@ function DealDetailDrawer({
 export function CrmOverviewPage() {
   const { language, t } = useLanguage()
   const [dexterOpen, setDexterOpen] = useState(false)
-  const [inactivityDays, setInactivityDays] = useState<30 | 90 | 180>(90)
   const [area, setArea] = useState("all")
   const [data, setData] = useState<CrmDashboardData | null>(null)
+  const [followUpData, setFollowUpData] = useState<CrmFollowUpData | null>(null)
   const [state, setState] = useState<"loading" | "ready" | "error">("loading")
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
+  const [createOpportunity, setCreateOpportunity] = useState<CrmFollowUpOpportunity | null>(null)
+  const [createKind, setCreateKind] = useState<FollowUpCreateKind | null>(null)
 
   useEffect(() => {
     let active = true
     setState("loading")
     setError(null)
-    getCrmDashboard(inactivityDays, area === "all" ? null : area)
-      .then((result) => {
+    Promise.all([
+      getCrmDashboard(90, area === "all" ? null : area),
+      getCrmFollowUpOpportunities(area === "all" ? null : area),
+    ])
+      .then(([result, followUps]) => {
         if (!active) return
         setData(result)
+        setFollowUpData(followUps)
         setState("ready")
       })
       .catch((loadError) => {
@@ -1045,7 +1239,24 @@ export function CrmOverviewPage() {
         setState("error")
       })
     return () => { active = false }
-  }, [area, inactivityDays, reloadKey, t])
+  }, [area, reloadKey, t])
+
+  useEffect(() => {
+    const refresh = () => setReloadKey((key) => key + 1)
+    const refreshWhenVisible = () => { if (document.visibilityState === "visible") refresh() }
+    window.addEventListener("focus", refresh)
+    window.addEventListener("multideck:crm-changed", refresh)
+    window.addEventListener("multideck:inbox-changed", refresh)
+    document.addEventListener("visibilitychange", refreshWhenVisible)
+    const interval = window.setInterval(refreshWhenVisible, 120_000)
+    return () => {
+      window.removeEventListener("focus", refresh)
+      window.removeEventListener("multideck:crm-changed", refresh)
+      window.removeEventListener("multideck:inbox-changed", refresh)
+      document.removeEventListener("visibilitychange", refreshWhenVisible)
+      window.clearInterval(interval)
+    }
+  }, [])
 
   const money = useMemo(() => new Intl.NumberFormat(language, {
     style: "currency",
@@ -1068,17 +1279,10 @@ export function CrmOverviewPage() {
       <Surface padding="md" className="rounded-[var(--md-radius-xl)]">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Follow-up view")}</p>
-            <p className="mt-1 text-[11px] text-[var(--md-subtle)]">{t("Never-contacted leads are shown first, followed by the oldest contact date.")}</p>
+            <p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Follow-up opportunities")}</p>
+            <p className="mt-1 text-[11px] text-[var(--md-subtle)]">{t("Human replies and CRM activity are checked automatically. Sent email is prompted after 3 days, then 5 days after the next attempt.")}</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <label className="grid gap-1 text-[11px] font-medium text-[var(--md-subtle)]">
-              {t("Inactive for")}
-              <Select value={String(inactivityDays)} onValueChange={(value) => setInactivityDays(Number(value) as 30 | 90 | 180)}>
-                <SelectTrigger className="h-9 min-w-[126px] rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] shadow-[var(--md-shadow-line)]"><SelectValue /></SelectTrigger>
-                <SelectContent>{[30, 90, 180].map((days) => <SelectItem key={days} value={String(days)}>{days} {t("days")}</SelectItem>)}</SelectContent>
-              </Select>
-            </label>
             <label className="grid gap-1 text-[11px] font-medium text-[var(--md-subtle)]">
               {t("Area")}
               <Select value={area} onValueChange={setArea}>
@@ -1110,8 +1314,8 @@ export function CrmOverviewPage() {
         <>
           <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
             {[
-              [t("Open leads"), data.summary.openLeads], [t("Needs follow-up"), data.summary.staleLeads],
-              [t("Due now"), data.summary.dueFollowUps], [t("Open deals"), data.summary.openDeals],
+              [t("Open leads"), data.summary.openLeads], [t("Needs follow-up"), followUpData?.summary.total ?? 0],
+              [t("Replies due"), followUpData?.summary.repliesDue ?? 0], [t("Open deals"), data.summary.openDeals],
               [t("Pipeline value"), money.format(data.summary.pipelineValue)], [t("Areas"), data.areas.length],
             ].map(([label, value]) => (
               <Surface key={String(label)} padding="md" className="rounded-[var(--md-radius-xl)]">
@@ -1122,34 +1326,46 @@ export function CrmOverviewPage() {
           </div>
 
           <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-            <div className="px-4 py-4 sm:px-5"><SectionHeader title={t("Leads needing follow-up")} meta={t("Oldest contact first")} /></div>
-            {data.followUps.length ? (
+            <div className="flex flex-col gap-2 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+              <SectionHeader title={t("Who needs following up")} meta={followUpData ? t("Prioritised from live email and CRM activity") : undefined} />
+              {followUpData?.generatedAt ? <p className="text-[11px] text-[var(--md-subtle)]">{t("Checked")} {dateTime.format(new Date(followUpData.generatedAt))}</p> : null}
+            </div>
+            {followUpData?.items.length ? (
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader><TableRow>
-                    {["Company", "Decision maker", "Previous conversation or lane", "Email", "Location", "Last contact", "Next action", "Stage", "Value"].map((label) => <TableHead key={label} className="whitespace-nowrap">{t(label)}</TableHead>)}
+                    {["Person or account", "Why now", "Latest conversation", "Last activity", "CRM", "Action"].map((label) => <TableHead key={label} className="whitespace-nowrap">{t(label)}</TableHead>)}
                   </TableRow></TableHeader>
                   <TableBody>
-                    {data.followUps.map((lead) => (
-                      <TableRow key={lead.id} className="cursor-pointer" onClick={() => { window.location.href = `/crm/leads/${lead.id}` }}>
-                        <TableCell className="font-medium text-[var(--md-ink)]" dir="auto">{lead.companyName}</TableCell>
-                        <TableCell dir="auto">{lead.decisionMaker || t("Not recorded")}</TableCell>
-                        <TableCell className="max-w-[260px]"><span className="line-clamp-2" dir="auto">{lead.previousConversation || lead.laneContext || t("No context recorded")}</span></TableCell>
-                        <TableCell dir="ltr">{lead.email || t("Not recorded")}</TableCell>
-                        <TableCell dir="auto">{lead.location || t("Not recorded")}</TableCell>
-                        <TableCell className="whitespace-nowrap">{lead.neverContacted ? <StatusPill tone="amber">{t("Never contacted")}</StatusPill> : dateTime.format(new Date(lead.lastContactAt!))}</TableCell>
-                        <TableCell className="whitespace-nowrap">{lead.nextActionAt ? dateTime.format(new Date(lead.nextActionAt)) : t("Not scheduled")}</TableCell>
-                        <TableCell><StatusPill tone="blue">{lead.stage}</StatusPill></TableCell>
-                        <TableCell className="whitespace-nowrap tabular-nums">{lead.opportunityValue === null ? t("Not recorded") : new Intl.NumberFormat(language, { style: "currency", currency: lead.currencyCode || "GBP", maximumFractionDigits: 0 }).format(lead.opportunityValue)}</TableCell>
+                    {followUpData.items.map((opportunity) => {
+                      const reason = opportunity.reasonCode === "reply_due" ? t("Reply waiting")
+                        : opportunity.reasonCode === "first_follow_up" ? t("3 days without a reply")
+                          : opportunity.reasonCode === "second_follow_up" ? t("5 days since the last follow-up")
+                            : opportunity.reasonCode === "never_contacted" ? t("Never contacted") : t("Scheduled follow-up due")
+                      const openRecord = () => {
+                        if (opportunity.recordType === "lead" && opportunity.recordId) window.location.href = `/crm/leads/${opportunity.recordId}`
+                        else if (opportunity.threadId && opportunity.mailboxId) window.location.href = `/inbox?mailbox=${encodeURIComponent(opportunity.mailboxId)}&thread=${encodeURIComponent(opportunity.threadId)}`
+                      }
+                      return (
+                      <TableRow key={opportunity.id} className={opportunity.recordId || opportunity.threadId ? "cursor-pointer" : undefined} onClick={openRecord}>
+                        <TableCell className="min-w-[210px]">
+                          <p className="font-medium text-[var(--md-ink)]" dir="auto">{opportunity.personName || opportunity.companyName || opportunity.email || t("Unknown sender")}</p>
+                          <p className="mt-0.5 text-[11px] text-[var(--md-subtle)]" dir="auto">{opportunity.companyName && opportunity.companyName !== opportunity.personName ? opportunity.companyName : opportunity.email}</p>
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap"><StatusPill tone={opportunity.reasonCode === "reply_due" ? "red" : opportunity.reasonCode === "second_follow_up" ? "amber" : "blue"}>{reason}</StatusPill><p className="mt-1 text-[10.5px] text-[var(--md-subtle)]">{opportunity.daysWaiting === 0 ? t("Today") : `${opportunity.daysWaiting} ${t("days")}`}</p></TableCell>
+                        <TableCell className="max-w-[380px]"><p className="line-clamp-1 font-medium text-[var(--md-ink)]" dir="auto">{opportunity.subject}</p><p className="mt-1 line-clamp-2 text-[11px] text-[var(--md-subtle)]" dir="auto">{opportunity.context || t("No message preview available")}</p></TableCell>
+                        <TableCell className="whitespace-nowrap">{dateTime.format(new Date(opportunity.lastActivityAt))}</TableCell>
+                        <TableCell><StatusPill tone={opportunity.canCreate ? "amber" : "green"}>{opportunity.canCreate ? t("Not in CRM") : t(opportunity.recordType === "lead" ? "Lead" : opportunity.recordType === "contact" ? "Contact" : "Account")}</StatusPill></TableCell>
+                        <TableCell onClick={(event) => event.stopPropagation()}>{opportunity.canCreate ? <FollowUpCreateMenu opportunity={opportunity} onChoose={(kind) => { setCreateOpportunity(opportunity); setCreateKind(kind) }} /> : <Button type="button" variant="ghost" size="sm" className="h-8 rounded-[var(--md-radius-lg)] px-2.5 text-[12px]" onClick={openRecord}>{t(opportunity.threadId ? "Open conversation" : "Open record")}<ArrowRight className="size-3.5" /></Button>}</TableCell>
                       </TableRow>
-                    ))}
+                    )})}
                   </TableBody>
                 </Table>
               </div>
             ) : (
               <div className="px-5 py-12 text-center">
-                <p className="text-[14px] font-medium text-[var(--md-ink)]">{area === "all" ? t("No assigned leads need follow-up at this threshold.") : t("No leads match this area and inactivity filter.")}</p>
-                <p className="mt-2 text-[12px] text-[var(--md-subtle)]">{area === "all" ? t("New assigned leads and overdue conversations will appear here automatically.") : t("Choose another area or change the inactivity threshold.")}</p>
+                <p className="text-[14px] font-medium text-[var(--md-ink)]">{t("No follow-up opportunities right now.")}</p>
+                <p className="mt-2 text-[12px] text-[var(--md-subtle)]">{t("Human replies, overdue sent email, and due CRM activity will appear here automatically.")}</p>
               </div>
             )}
           </Surface>
@@ -1170,6 +1386,12 @@ export function CrmOverviewPage() {
           </div>
         </>
       ) : null}
+      <FollowUpRecordDialog
+        opportunity={createOpportunity}
+        kind={createKind}
+        onClose={() => { setCreateOpportunity(null); setCreateKind(null) }}
+        onCreated={() => setReloadKey((key) => key + 1)}
+      />
     </DexterDockedPage>
   )
 }

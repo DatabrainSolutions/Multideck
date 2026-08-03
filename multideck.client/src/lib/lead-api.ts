@@ -100,6 +100,38 @@ export type CrmDashboardData = {
   activity: Array<{ id: string; leadId: string | null; dealId: string | null; subject: string; summary: string | null; at: string }>
 }
 
+export type CrmFollowUpReason = "reply_due" | "first_follow_up" | "second_follow_up" | "scheduled_due" | "never_contacted"
+
+export type CrmFollowUpOpportunity = {
+  id: string
+  source: "email" | "activity"
+  threadId: string | null
+  mailboxId: string | null
+  recordType: "lead" | "contact" | "account" | "unmatched"
+  recordId: string | null
+  companyName: string | null
+  personName: string | null
+  email: string | null
+  subject: string
+  context: string | null
+  lastActivityAt: string
+  lastDirection: "inbound" | "outbound" | null
+  reasonCode: CrmFollowUpReason
+  dueAt: string
+  daysWaiting: number
+  stage: string
+  location: string | null
+  canCreate: boolean
+  outboundAttempts: number
+}
+
+export type CrmFollowUpData = {
+  generatedAt: string
+  cadence: { firstFollowUpDays: number; secondFollowUpDays: number }
+  summary: { total: number; repliesDue: number; awaitingReply: number; notInCrm: number }
+  items: CrmFollowUpOpportunity[]
+}
+
 export type CrmTransferUser = { id: string; name: string; email: string; isCurrentUser: boolean }
 
 export type CrmLeadTransferRequest = {
@@ -146,6 +178,34 @@ export async function getCrmDashboard(inactivityDays: 30 | 90 | 180, area?: stri
     { p_inactivity_days: inactivityDays, p_area: area || null },
     "The CRM dashboard could not be loaded.",
     "Sign in again to view the CRM dashboard.",
+  )
+}
+
+export async function getCrmFollowUpOpportunities(area?: string | null) {
+  return callCrmRpc<CrmFollowUpData>(
+    "multideck_crm_get_follow_up_opportunities",
+    { p_area: area || null },
+    "Follow-up opportunities could not be loaded.",
+    "Sign in again to review follow-up opportunities.",
+  )
+}
+
+export async function createFollowUpLead(input: {
+  email: string
+  personName?: string | null
+  companyName?: string | null
+  threadId?: string | null
+}) {
+  return callCrmRpc<ApiLead>(
+    "multideck_crm_create_follow_up_lead",
+    {
+      p_email: input.email,
+      p_person_name: input.personName || null,
+      p_company_name: input.companyName || null,
+      p_thread_id: input.threadId || null,
+    },
+    "This lead could not be created.",
+    "Sign in again to create this lead.",
   )
 }
 
