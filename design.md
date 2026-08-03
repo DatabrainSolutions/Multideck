@@ -111,6 +111,8 @@ Current Multideck components:
 - `StatusPill`: compact status treatment.
 - `AIEdgeGlow`: animated Dexter working-state edge treatment for AI-active screens or workflow areas.
 - `MetricCard`: overview KPI component.
+- `DocumentExtractionProgress`: the waiting state for staged document work. The operator's own page sits under a reading sweep, the bar keeps moving through a slow stage without claiming to be finished, and the stage list ticks off what is already done.
+- `DocumentEvidenceViewer`: a document beside the data taken from it, with a page-fraction box over the place each value was read. Interpolated boxes, such as one row of a transcribed table, are drawn with a dashed edge.
 - `LineChartCard`, `AreaChartCard`, `BarChartCard`, `StackedBarChartCard`, `DonutChartCard`, `FunnelChartCard`, `HeatmapChartCard`, `RadialGoalChartCard`, `ScatterChartCard`, and `MixedChartCard`: reusable report-ready visualization components.
 - `ReportVisualizationBlock`: report-builder adapter for chart variants such as single bars, comparison bars, pie charts with or without keys, and variable-step funnels.
 - `CommandInput`: search and jump entry point. Shows the live `search.focus` binding and claims it while it is on screen.

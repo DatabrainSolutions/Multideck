@@ -206,7 +206,8 @@ export function CustomsInvoiceImportWorkspace({
       setSelections(createDefaultInvoiceSelections(result.lines))
       setEvidencePages(result.evidencePages)
       setActiveLineId(result.lines[0]?.id ?? "")
-      toast.success(t("Invoice lines ready for review"), { description: `${result.lines.length} ${t("lines are ready for your review")}` })
+      // No success toast: the review screen is the confirmation, and a toast would sit over
+      // the apply buttons at the very moment the operator wants them.
     } catch (error) {
       if (!isCurrent() || controller.signal.aborted) return
       const message = error instanceof CommercialInvoiceExtractionError ? error.message : "Unable to import this invoice. Try again."
@@ -386,8 +387,8 @@ export function CustomsInvoiceImportWorkspace({
                   <span className="min-w-0">
                     <h2 className="text-[14px] font-medium">{t("Approve the lines to import")}</h2>
                     <p className="mt-1 text-[10.5px] text-[var(--md-subtle)]">
-                      {lines.length} {t("invoice lines")} · {includedCount} {t("approved")} · {output.length} {t("declaration lines")}
-                      {attentionCount ? ` · ${attentionCount} ${t("need a check")}` : ""}
+                      {countLabel(lines.length, "invoice line", "invoice lines", t)} · {includedCount} {t("approved")} · {countLabel(output.length, "declaration line", "declaration lines", t)}
+                      {attentionCount ? ` · ${countLabel(attentionCount, "needs a check", "need a check", t)}` : ""}
                     </p>
                   </span>
                   <span className="flex items-center gap-1">
@@ -463,7 +464,7 @@ export function CustomsInvoiceImportWorkspace({
                     <div className="mt-2 flex flex-wrap items-center gap-1 text-[9px] text-[var(--md-subtle)]">
                       <span>{t("From invoice lines")}</span>
                       {line.sourceLineNumbers.map((sourceLine) => <span key={sourceLine} className="rounded-full bg-[var(--md-surface-tint)] px-1.5 py-0.5 font-medium tabular-nums">{sourceLine}</span>)}
-                      <span className="ms-auto tabular-nums">{line.quantity} {t("units")} · {line.netMass} kg {t("net")}</span>
+                      <span className="ms-auto tabular-nums">{formatAmount(line.quantity)} {t("units")} · {formatAmount(line.netMass)} kg {t("net")}</span>
                     </div>
                   </div>)}
                   {!output.length ? <div className="px-5 py-12 text-center">
@@ -481,22 +482,22 @@ export function CustomsInvoiceImportWorkspace({
         <div className="mx-auto flex max-w-[1720px] flex-wrap items-center justify-between gap-3">
           <span className="flex min-w-0 items-center gap-3">
             <span className="min-w-0">
-              <strong className="block text-[13px] font-medium tabular-nums">{includedCount} {t("of")} {lines.length} {t("invoice lines approved")}</strong>
+              <strong className="block text-[13px] font-medium tabular-nums">{includedCount} {t("of")} {countLabel(lines.length, "invoice line approved", "invoice lines approved", t)}</strong>
               <span className="mt-1 block h-1 w-[132px] overflow-hidden rounded-full bg-[var(--md-surface-tint)]">
                 <span className="block h-full rounded-full bg-[var(--md-accent)] transition-[width] duration-200 ease-out motion-reduce:transition-none" style={{ width: `${approvedPercent}%` }} />
               </span>
             </span>
             <span className="text-[11px] leading-4 text-[var(--md-text)]">
-              {output.length} {t("declaration lines will be created")}
-              {attentionCount ? <span className="mt-0.5 block text-[10px] text-[var(--md-amber)]">{attentionCount} {t("lines still need a check")}</span> : null}
+              {countLabel(output.length, "declaration line will be created", "declaration lines will be created", t)}
+              {attentionCount ? <span className="mt-0.5 block text-[10px] text-[var(--md-amber)]">{countLabel(attentionCount, "line still needs a check", "lines still need a check", t)}</span> : null}
             </span>
           </span>
           <span className="flex flex-wrap items-center gap-2">
             <Button type="button" variant="outline" onClick={() => applyToDeclaration("replace")} disabled={!output.length}>
-              {existingItemCount ? `${t("Replace")} ${existingItemCount} ${t("current items")}` : t("Replace items")}
+              {existingItemCount ? `${t("Replace")} ${countLabel(existingItemCount, "current item", "current items", t)}` : t("Replace items")}
             </Button>
             <Button type="button" onClick={() => applyToDeclaration("append")} disabled={!output.length}>
-              <Check className="size-4" />{t("Add")} {output.length} {t("lines to declaration")}
+              <Check className="size-4" />{t("Add")} {countLabel(output.length, "line to declaration", "lines to declaration", t)}
             </Button>
           </span>
         </div>
@@ -545,8 +546,8 @@ function ReviewGroup({
     <header className="flex flex-wrap items-center gap-2 border-b border-[var(--md-line)] px-3 py-2.5">
       <button
         type="button"
-        role="switch"
-        aria-checked={groupState === "all"}
+        role="checkbox"
+        aria-checked={groupState === "all" ? true : groupState === "some" ? "mixed" : false}
         aria-label={`${t("Approve every line in group")} ${group.commodityCode || t("No commodity code")}`}
         onClick={() => onApproveGroup(groupLineIds, groupState !== "all")}
         className={cn(
@@ -560,7 +561,7 @@ function ReviewGroup({
       {canConsolidate
         ? <StatusPill tone="teal">{t("Can be combined")}</StatusPill>
         : <StatusPill tone={group.commodityCode ? undefined : "amber"}>{group.commodityCode ? t("Single line") : t("Needs a commodity code")}</StatusPill>}
-      <span className="text-[10px] tabular-nums text-[var(--md-subtle)]">{group.lines.length} {t("invoice lines")}{canConsolidate ? ` · ${group.descriptionSimilarity}% ${t("alike")}` : ""}</span>
+      <span className="text-[10px] tabular-nums text-[var(--md-subtle)]">{countLabel(group.lines.length, "invoice line", "invoice lines", t)}{canConsolidate ? ` · ${group.descriptionSimilarity}% ${t("alike")}` : ""}</span>
       {canConsolidate ? <span className="ms-auto flex gap-1">
         <Button type="button" variant="ghost" size="sm" onClick={() => onConsolidate(includedLineIds, true)}><Merge className="size-3.5" />{t("Combine")}</Button>
         <Button type="button" variant="ghost" size="sm" onClick={() => onConsolidate(groupLineIds, false)}><Split className="size-3.5" />{t("Keep separate")}</Button>
@@ -629,8 +630,9 @@ function ReviewLineRow({
       aria-checked={selection.include}
       data-approve-line={line.id}
       onClick={onToggle}
+      // Selecting is deliberate: a click or keyboard focus moves the box on the document,
+      // passing the pointer over a row does not.
       onFocus={onFocus}
-      onMouseEnter={onFocus}
       className={cn(
         "flex min-w-0 flex-1 items-start gap-3 px-3 py-2.5 text-start outline-none transition-[background,box-shadow,opacity] duration-150 ease-out hover:bg-[var(--md-accent-a04)] focus-visible:ring-[2px] focus-visible:ring-inset focus-visible:ring-[var(--md-accent-a28)] motion-reduce:transition-none",
         active && "shadow-[inset_2px_0_0_var(--md-accent)]",
@@ -656,7 +658,7 @@ function ReviewLineRow({
       </span>
       <span className="shrink-0 text-end">
         <strong className="block text-[11.5px] tabular-nums">{formatCurrency(line.quantity * line.unitPrice, line.currency)}</strong>
-        <span className="mt-0.5 block text-[10px] tabular-nums text-[var(--md-subtle)]">{line.quantity} × {formatCurrency(line.unitPrice, line.currency)}</span>
+        <span className="mt-0.5 block text-[10px] tabular-nums text-[var(--md-subtle)]">{formatAmount(line.quantity)} × {formatCurrency(line.unitPrice, line.currency)}</span>
       </span>
     </button>
     {canConsolidate ? <button
@@ -675,6 +677,11 @@ function ReviewLineRow({
       <Merge className="size-3.5" />
     </button> : null}
   </div>
+}
+
+/** Keeps a count and its noun together so both readings stay grammatical in every language. */
+function countLabel(count: number, singular: string, plural: string, t: (text: string) => string) {
+  return `${count} ${t(count === 1 ? singular : plural)}`
 }
 
 function canConsolidateGroup(group: InvoiceConsolidationGroup) {
@@ -759,6 +766,11 @@ function hexToLottieColour(hex: string): LottieColour {
     Number.parseInt(normalised.slice(4, 6), 16) / 255,
     1,
   ]
+}
+
+/** Keeps summed weights and quantities free of floating-point tails such as 15.60000000000001. */
+function formatAmount(value: number) {
+  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 3 }).format(value)
 }
 
 function formatCurrency(value: number, currency: string) {

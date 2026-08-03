@@ -2614,6 +2614,110 @@ export const galleryComponents = [
     usageCode: `<DocumentWorkspace\n  documents={documentWorkspaceSampleDocuments}\n  defaultView="list"\n  defaultSource="all"\n/>`,
   },
   {
+    id: "document-extraction-progress",
+    name: "Document Extraction Progress",
+    category: "Operations",
+    description: "The waiting state for document work that runs in stages, with the operator's own page under a reading sweep.",
+    details: "Use when a document is being read and the wait is long enough to need explaining. Each stage owns a ceiling the bar eases towards but never reaches, so a slow stage keeps moving without claiming to be finished, and only the real work completes it. Give it a cancel handler whenever the operator can walk away, and it stays still under reduced motion.",
+    foundOn: [
+      { label: "Invoice import", route: "/customs" },
+      { label: "Components", route: "/components?component=document-extraction-progress" },
+    ],
+    componentCode: `export function DocumentExtractionProgress({ title, stages, activeStageId, done, previewUrl, onCancel }) {
+  const [stageElapsedMs, setStageElapsedMs] = useState(0)
+  const percent = extractionProgressPercent({ stages, activeStageId, elapsedMs: stageElapsedMs, done })
+  const finished = new Set(completedStageIds(stages, activeStageId, done))
+
+  return (
+    <Surface padding="none" aria-busy="true">
+      <span className="page-preview">
+        <img src={previewUrl} alt="" />
+        <motion.span className="reading-sweep" animate={{ top: ["-30%", "100%"] }} />
+      </span>
+      <div>
+        <h2>{title}</h2>
+        <strong>{Math.floor(percent)}%</strong>
+        <span className="bar"><span style={{ width: percent + "%" }} /></span>
+        <ol>
+          {stages.map((stage) => (
+            <li key={stage.id} data-state={finished.has(stage.id) ? "done" : stage.id === activeStageId ? "active" : "waiting"}>
+              {stage.label}
+            </li>
+          ))}
+        </ol>
+        {onCancel ? <Button variant="ghost" onClick={onCancel}>Cancel</Button> : null}
+      </div>
+    </Surface>
+  )
+}`,
+    usageCode: `<DocumentExtractionProgress
+  title="Preparing invoice lines"
+  detail="This may take a moment. You can review every line before applying it."
+  fileName="northwind-commercial-invoice.pdf"
+  pageCount={3}
+  previewUrl={firstPageImageUrl}
+  stages={[
+    { id: "reading", label: "Reading the document", ceiling: 24, expectedMs: 1400 },
+    { id: "extracting", label: "Finding the item lines", ceiling: 88, expectedMs: 9000 },
+    { id: "organising", label: "Preparing the review", ceiling: 99, expectedMs: 1200 },
+  ]}
+  activeStageId={stage}
+  onCancel={cancelImport}
+/>`,
+  },
+  {
+    id: "document-evidence-viewer",
+    name: "Document Evidence Viewer",
+    category: "Operations",
+    description: "A document beside the data taken from it, with a box over the place each value was read.",
+    details: "Use wherever extracted values need to be trusted before they are accepted. Boxes are page fractions, so they stay aligned at any zoom, and an interpolated box such as one row of a table is drawn with a dashed edge to show it is approximate. Selecting a row elsewhere scrolls its box into view, and selecting a box reports back so the two panels stay in step.",
+    foundOn: [
+      { label: "Invoice import", route: "/customs" },
+      { label: "Components", route: "/components?component=document-evidence-viewer" },
+    ],
+    componentCode: `export function DocumentEvidenceViewer({ pages, boxes, activeBoxId, onSelectBox, title }) {
+  const [zoom, setZoom] = useState(1)
+  const activeRef = useRef(null)
+
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ block: "center", behavior: "smooth" })
+  }, [activeBoxId])
+
+  return (
+    <Surface padding="none">
+      <header>{title}<ZoomControls zoom={zoom} onChange={setZoom} /></header>
+      <div className="pages" style={{ width: zoom * 100 + "%" }}>
+        {pages.map((page) => (
+          <div key={page.page} style={{ aspectRatio: page.width + " / " + page.height }}>
+            <img src={page.url} alt={"Page " + page.page} />
+            {boxes.filter((box) => box.page === page.page).map((box) => (
+              <button
+                key={box.id}
+                ref={box.id === activeBoxId ? activeRef : undefined}
+                onClick={() => onSelectBox(box.id)}
+                data-approximate={box.approximate}
+                style={{ insetInlineStart: box.box.x * 100 + "%", top: box.box.y * 100 + "%" }}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+    </Surface>
+  )
+}`,
+    usageCode: `<DocumentEvidenceViewer
+  pages={[{ page: 1, width: 800, height: 1130, url: pageImageUrl }]}
+  boxes={[
+    { id: "line-1", page: 1, box: { x: 0.07, y: 0.34, width: 0.86, height: 0.02 }, label: "Line 1" },
+    { id: "line-2", page: 1, box: { x: 0.07, y: 0.37, width: 0.86, height: 0.02 }, label: "Line 2", approximate: true },
+  ]}
+  activeBoxId={activeLineId}
+  onSelectBox={setActiveLineId}
+  title="Your invoice"
+  empty="The document preview is still being prepared."
+/>`,
+  },
+  {
     id: "audit-timeline",
     name: "Audit Timeline",
     category: "Operations",

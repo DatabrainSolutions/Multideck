@@ -1,6 +1,11 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { normalizeCommercialInvoiceAnnotation } from "../functions/_shared/customs-invoice-ocr.ts"
+import {
+  MAX_INVOICE_EVIDENCE_BLOCKS,
+  MAX_INVOICE_EVIDENCE_BUDGET_CHARS,
+  normalizeCommercialInvoiceAnnotation,
+  normalizeInvoiceEvidencePages,
+} from "../functions/_shared/customs-invoice-ocr.ts"
 
 test("normalizes Mistral document annotations without inventing customs data", () => {
   const annotation = JSON.stringify({

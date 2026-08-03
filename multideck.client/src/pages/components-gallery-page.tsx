@@ -151,6 +151,8 @@ import { UnifiedQuoteChargesWorkspace, type UnifiedQuoteChargeRow } from "@/comp
 import { QuoteSearchBuilder, type QuoteSearchQuery } from "@/components/multideck/quote-search-builder"
 import { MultiSelectMenu } from "@/components/multideck/multi-select-menu"
 import { DocumentViewer, PaperTrayStack } from "@/components/multideck/paper-tray"
+import { DocumentEvidenceViewer } from "@/components/multideck/document-evidence-viewer"
+import { DocumentExtractionProgress } from "@/components/multideck/document-extraction-progress"
 import { DocumentWorkspace, documentWorkspaceSampleDocuments } from "@/components/multideck/document-workspace"
 import { createInitialPaperTrays } from "@/data/paper-tray-data"
 import { useLanguage } from "@/i18n/language-provider"
@@ -197,7 +199,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["paper-tray-stack", "document-viewer", "document-workspace", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-kanban-board", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
+    ids: ["paper-tray-stack", "document-viewer", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-kanban-board", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
   },
   {
     label: "CRM",
@@ -821,6 +823,59 @@ const previewEmailHtml = `<div>
   <p>Best regards,<br />Claire Osei ✅</p>
 </div>`
 
+
+// A stand-in scanned page for the gallery. Real documents are white regardless of theme,
+// so this placeholder keeps paper colours rather than surface tokens.
+const previewDocumentPageMarkup = [
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1130">',
+  '<rect width="800" height="1130" fill="#ffffff"/>',
+  '<rect x="56" y="56" width="196" height="20" rx="4" fill="#c9d2d0"/>',
+  '<rect x="56" y="92" width="120" height="10" rx="3" fill="#e2e7e6"/>',
+  '<rect x="560" y="56" width="184" height="10" rx="3" fill="#e2e7e6"/>',
+  '<rect x="560" y="76" width="140" height="10" rx="3" fill="#e2e7e6"/>',
+  '<rect x="56" y="320" width="688" height="1" fill="#d8dedd"/>',
+  '<rect x="56" y="336" width="96" height="9" rx="3" fill="#c9d2d0"/>',
+  '<rect x="200" y="336" width="180" height="9" rx="3" fill="#c9d2d0"/>',
+  '<rect x="620" y="336" width="124" height="9" rx="3" fill="#c9d2d0"/>',
+  ...[380, 420, 460].flatMap((y) => [
+    `<rect x="56" y="${y}" width="80" height="9" rx="3" fill="#e2e7e6"/>`,
+    `<rect x="200" y="${y}" width="248" height="9" rx="3" fill="#e2e7e6"/>`,
+    `<rect x="620" y="${y}" width="124" height="9" rx="3" fill="#e2e7e6"/>`,
+  ]),
+  '<rect x="560" y="560" width="184" height="12" rx="3" fill="#c9d2d0"/>',
+  "</svg>",
+].join("")
+
+const previewDocumentPageUrl = `data:image/svg+xml;utf8,${encodeURIComponent(previewDocumentPageMarkup)}`
+
+const previewExtractionStages = [
+  { id: "reading", label: "Reading the document", detail: "Opening the PDF and collecting its text and layout.", ceiling: 24, expectedMs: 1_400 },
+  { id: "extracting", label: "Finding the item lines", detail: "Picking out goods rows, quantities, values and codes.", ceiling: 88, expectedMs: 9_000 },
+  { id: "organising", label: "Preparing the review", detail: "Grouping by commodity code and locating each line on the page.", ceiling: 99, expectedMs: 1_200 },
+]
+
+const previewEvidenceBoxes = [
+  { id: "line-1", page: 1, box: { x: 0.07, y: 0.336, width: 0.86, height: 0.02 }, label: "Line 1" },
+  { id: "line-2", page: 1, box: { x: 0.07, y: 0.371, width: 0.86, height: 0.02 }, label: "Line 2" },
+  { id: "line-3", page: 1, box: { x: 0.07, y: 0.407, width: 0.86, height: 0.02 }, label: "Line 3", approximate: true, tone: "amber" as const },
+]
+
+function DocumentEvidenceViewerPreview() {
+  const [activeBoxId, setActiveBoxId] = useState("line-2")
+
+  return (
+    <DocumentEvidenceViewer
+      className="h-[420px]"
+      pages={[{ page: 1, width: 800, height: 1130, url: previewDocumentPageUrl }]}
+      boxes={previewEvidenceBoxes}
+      activeBoxId={activeBoxId}
+      onSelectBox={setActiveBoxId}
+      title="Your invoice"
+      meta={<StatusPill>3 of 3 located</StatusPill>}
+      empty="The document preview is still being prepared."
+    />
+  )
+}
 
 function ComponentPreview({ id }: { id: string }) {
   const { language, t } = useLanguage()
@@ -1477,6 +1532,28 @@ function ComponentPreview({ id }: { id: string }) {
       {id === "document-workspace" ? (
         <div className="w-full max-w-[1120px]">
           <DocumentWorkspace documents={documentWorkspaceSampleDocuments} />
+        </div>
+      ) : null}
+
+      {id === "document-extraction-progress" ? (
+        <div className="w-full max-w-[720px]">
+          <DocumentExtractionProgress
+            title="Preparing invoice lines"
+            detail="This may take a moment. You can review every line before applying it."
+            fileName="northwind-commercial-invoice.pdf"
+            pageCount={3}
+            previewUrl={previewDocumentPageUrl}
+            stages={previewExtractionStages}
+            activeStageId="extracting"
+            footnote="Nothing is added to the declaration until you approve it."
+            onCancel={() => toast.message("Would cancel the import")}
+          />
+        </div>
+      ) : null}
+
+      {id === "document-evidence-viewer" ? (
+        <div className="w-full max-w-[520px]">
+          <DocumentEvidenceViewerPreview />
         </div>
       ) : null}
 

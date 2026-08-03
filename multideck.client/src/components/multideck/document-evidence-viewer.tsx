@@ -56,12 +56,24 @@ export function DocumentEvidenceViewer({
   const { t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
   const [zoom, setZoom] = useState(1)
+  const scrollRef = useRef<HTMLDivElement>(null)
   const activeRef = useRef<HTMLButtonElement>(null)
 
+  // Centres the selected box inside this panel only. Pages are a dependency because they
+  // arrive while the document is still being drawn, which is when the box first has a place.
   useEffect(() => {
-    if (!activeBoxId || !activeRef.current) return
-    activeRef.current.scrollIntoView({ block: "center", inline: "nearest", behavior: shouldReduceMotion ? "auto" : "smooth" })
-  }, [activeBoxId, shouldReduceMotion])
+    const container = scrollRef.current
+    const target = activeRef.current
+    if (!activeBoxId || !container || !target) return
+
+    const frame = requestAnimationFrame(() => {
+      const containerBox = container.getBoundingClientRect()
+      const targetBox = target.getBoundingClientRect()
+      const offset = targetBox.top - containerBox.top - (containerBox.height - targetBox.height) / 2
+      container.scrollTo({ top: Math.max(0, container.scrollTop + offset), behavior: shouldReduceMotion ? "auto" : "smooth" })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [activeBoxId, pages, shouldReduceMotion])
 
   return <Surface padding="none" className={cn("flex min-h-0 flex-col overflow-hidden rounded-[var(--md-radius-xl)]", className)}>
     <header className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--md-line)] px-4 py-2.5">
@@ -77,9 +89,11 @@ export function DocumentEvidenceViewer({
       </span>
     </header>
 
-    <div className={cn("min-h-0 flex-1 overflow-auto overscroll-contain bg-[var(--md-surface-soft)] p-3", bodyClassName)}>
+    <div ref={scrollRef} className={cn("min-h-0 flex-1 overflow-auto overscroll-contain bg-[var(--md-surface-soft)] p-3", bodyClassName)}>
       {pages.length
-        ? <div className="mx-auto space-y-3" style={{ width: `${zoom * 100}%`, maxWidth: zoom > 1 ? "none" : "100%" }}>
+        // The page keeps its own left-to-right coordinate space in every language, because a
+        // box belongs to a fixed place on the document rather than to the reading direction.
+        ? <div dir="ltr" className="mx-auto space-y-3" style={{ width: `${zoom * 100}%`, maxWidth: zoom > 1 ? "none" : "100%" }}>
           {pages.map((page) => <div key={page.page} className="relative overflow-hidden rounded-[var(--md-radius-md)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]">
             <span className="block w-full" style={{ aspectRatio: `${page.width} / ${page.height}` }}>
               {page.url
