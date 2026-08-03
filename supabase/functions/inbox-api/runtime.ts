@@ -187,10 +187,11 @@ export async function providers() {
   ]
 }
 
-export async function connections(admin: Db, actor: Actor) {
-  await requirePermission(admin, actor, "Email.Read")
-  const rows = await result<Row[]>(admin.from("Comm_ProviderConnections").select("*").eq("CommConn_UserID", actor.userId).eq("CommConn_IsDeleted", false).order("CommConn_Name")) ?? []
-  const allMailboxes = await listMailboxes(admin, actor, false)
+async function connectionRows(admin: Db, actor: Actor) {
+  return await result<Row[]>(admin.from("Comm_ProviderConnections").select("*").eq("CommConn_UserID", actor.userId).eq("CommConn_IsDeleted", false).order("CommConn_Name")) ?? []
+}
+
+function connectionDtos(rows: Row[], allMailboxes: Awaited<ReturnType<typeof listMailboxes>>) {
   return rows.map((row) => {
     const settings = isObject(row.CommConn_SettingsJSON)
       ? row.CommConn_SettingsJSON
@@ -222,24 +223,41 @@ export async function connections(admin: Db, actor: Actor) {
   })
 }
 
+export async function connections(admin: Db, actor: Actor) {
+  await requirePermission(admin, actor, "Email.Read")
+  const [rows, allMailboxes] = await Promise.all([
+    connectionRows(admin, actor),
+    listMailboxes(admin, actor, false),
+  ])
+  return connectionDtos(rows, allMailboxes)
+}
+
+export async function inboxWorkspace(admin: Db, actor: Actor) {
+  await requirePermission(admin, actor, "Email.Read")
+  const [rows, mailboxes] = await Promise.all([
+    connectionRows(admin, actor),
+    listMailboxes(admin, actor, false),
+  ])
+  return { connections: connectionDtos(rows, mailboxes), mailboxes }
+}
+
 export async function listMailboxes(admin: Db, actor: Actor, checkPermission = true) {
   if (checkPermission) await requirePermission(admin, actor, "Email.Read")
   const ids = [...await mailboxIds(admin, actor, "read")]
   if (!ids.length) return []
   const rows = await result<Row[]>(admin.from("Comm_Mailboxes").select("*").in("CommMailbox_ID", ids).eq("CommMailbox_IsDeleted", false)) ?? []
   const connectionIds = [...new Set(rows.map((row) => row.CommMailbox_ConnectionID).filter(Boolean))]
-  const connectionRows = connectionIds.length
-    ? await result<Row[]>(admin.from("Comm_ProviderConnections").select("*").in("CommConn_ID", connectionIds).eq("CommConn_IsDeleted", false)) ?? []
-    : []
-  const connectionMap = new Map(connectionRows.map((row) => [row.CommConn_ID, row]))
-  const inbound = await result<Row[]>(admin.from("Comm_Messages").select("CommMessage_MailboxID,CommMessage_ThreadID,CommMessage_MessageDate,CommMessage_ReceivedAt,CommMessage_CreatedAt").in("CommMessage_MailboxID", ids).eq("CommMessage_IsInbound", true).eq("CommMessage_IsDraft", false).eq("CommMessage_IsDeleted", false)) ?? []
-  const states = await result<Row[]>(admin.from("Comm_ReadStates").select("CommRead_ThreadID,CommRead_ReadAt").eq("CommRead_UserID", actor.userId).is("CommRead_MessageID", null)) ?? []
-  const readAt = new Map(states.map((row) => [row.CommRead_ThreadID, row.CommRead_ReadAt ? Date.parse(row.CommRead_ReadAt) : 0]))
-  const unread = new Map<string, number>()
-  for (const message of inbound) {
-    const occurred = Date.parse(message.CommMessage_ReceivedAt ?? message.CommMessage_MessageDate ?? message.CommMessage_CreatedAt)
-    if (occurred > (readAt.get(message.CommMessage_ThreadID) ?? 0)) unread.set(message.CommMessage_MailboxID, (unread.get(message.CommMessage_MailboxID) ?? 0) + 1)
-  }
+  const [connections, unreadRows] = await Promise.all([
+    connectionIds.length
+      ? result<Row[]>(admin.from("Comm_ProviderConnections").select("*").in("CommConn_ID", connectionIds).eq("CommConn_IsDeleted", false))
+      : Promise.resolve([]),
+    result<Row[]>(admin.rpc("comm_inbox_mailbox_unread_counts", {
+      p_user_id: actor.userId,
+      p_mailbox_ids: ids,
+    })),
+  ])
+  const connectionMap = new Map((connections ?? []).map((row) => [row.CommConn_ID, row]))
+  const unread = new Map((unreadRows ?? []).map((row) => [row.mailbox_id, Math.max(0, Number(row.unread_count) || 0)]))
   return rows.map((row) => {
     const connection = connectionMap.get(row.CommMailbox_ConnectionID)
     const indexStatus = ["pending", "indexing", "ready", "error"].includes(row.CommMailbox_IndexStatus)
@@ -1342,7 +1360,8 @@ export async function listThreads(admin: Db, actor: Actor, url: URL) {
   // Thread lists never need full message bodies. Selecting `*` here made a
   // real mailbox return hundreds of HTML documents before the first row could
   // render, which can exceed the Edge/PostgREST response budget.
-  const messages = await result<Row[]>(admin.from("Comm_Messages").select([
+  const [messagesResult, systemFoldersResult] = await Promise.all([
+    result<Row[]>(admin.from("Comm_Messages").select([
     "CommMessage_ID",
     "CommMessage_ThreadID",
     "CommMessage_MailboxID",
@@ -1358,14 +1377,28 @@ export async function listThreads(admin: Db, actor: Actor, url: URL) {
     "CommMessage_IsDraft",
     "CommMessage_IsSpam",
     "CommMessage_HasAttachments",
-  ].join(",")).in("CommMessage_MailboxID", ids).eq("CommMessage_IsDeleted", false).order("CommMessage_MessageDate", { ascending: false }).limit(1000)) ?? []
-  const systemFolders = await result<Row[]>(admin.from("Comm_MailFolders").select("CommMailFolder_ID,CommMailFolder_RoleCode").in("CommMailFolder_MailboxID", ids)) ?? []
+    ].join(",")).in("CommMessage_MailboxID", ids).eq("CommMessage_IsDeleted", false).order("CommMessage_MessageDate", { ascending: false }).limit(1000)),
+    result<Row[]>(admin.from("Comm_MailFolders").select("CommMailFolder_ID,CommMailFolder_RoleCode").in("CommMailFolder_MailboxID", ids)),
+  ])
+  const messages = messagesResult ?? []
+  const systemFolders = systemFoldersResult ?? []
   const roleByFolder = new Map(systemFolders.map((row) => [row.CommMailFolder_ID, row.CommMailFolder_RoleCode]))
-  const memberships = await readInBatches<Row>(messages.map((row) => row.CommMessage_ID), async (messageIds) => (
-    await result<Row[]>(admin.from("Comm_MessageFolders")
-      .select("CommMessageFolder_MessageID,CommMessageFolder_FolderID")
-      .in("CommMessageFolder_MessageID", messageIds)) ?? []
-  ))
+  const threadIds = [...new Set(messages.map((row) => row.CommMessage_ThreadID).filter(Boolean))]
+  const [memberships, states, connectionByMailbox] = await Promise.all([
+    readInBatches<Row>(messages.map((row) => row.CommMessage_ID), async (messageIds) => (
+      await result<Row[]>(admin.from("Comm_MessageFolders")
+        .select("CommMessageFolder_MessageID,CommMessageFolder_FolderID")
+        .in("CommMessageFolder_MessageID", messageIds)) ?? []
+    )),
+    readInBatches<Row>(threadIds, async (ids) => (
+      await result<Row[]>(admin.from("Comm_ReadStates")
+        .select("CommRead_ThreadID,CommRead_ReadAt,CommRead_IsArchived,CommRead_IsStarred")
+        .eq("CommRead_UserID", actor.userId)
+        .is("CommRead_MessageID", null)
+        .in("CommRead_ThreadID", ids)) ?? []
+    )),
+    mailboxProviderMap(admin, ids),
+  ])
   const rolesByMessage = new Map<string, Set<string>>()
   for (const membership of memberships) {
     const role = roleByFolder.get(membership.CommMessageFolder_FolderID)
@@ -1374,14 +1407,6 @@ export async function listThreads(admin: Db, actor: Actor, url: URL) {
     roles.add(role)
     rolesByMessage.set(membership.CommMessageFolder_MessageID, roles)
   }
-  const threadIds = [...new Set(messages.map((row) => row.CommMessage_ThreadID).filter(Boolean))]
-  const states = await readInBatches<Row>(threadIds, async (ids) => (
-    await result<Row[]>(admin.from("Comm_ReadStates")
-      .select("CommRead_ThreadID,CommRead_ReadAt,CommRead_IsArchived,CommRead_IsStarred")
-      .eq("CommRead_UserID", actor.userId)
-      .is("CommRead_MessageID", null)
-      .in("CommRead_ThreadID", ids)) ?? []
-  ))
   const stateMap = new Map(states.map((row) => [row.CommRead_ThreadID, row]))
   let filtered = messages.filter((row) => {
     const state = stateMap.get(row.CommMessage_ThreadID)
@@ -1401,15 +1426,16 @@ export async function listThreads(admin: Db, actor: Actor, url: URL) {
   const ordered = [...groups.entries()].sort((a, b) => Date.parse(occurred(b[1][0])) - Date.parse(occurred(a[1][0])))
   const page = ordered.slice(offset, offset + limit)
   const pageMessageIds = page.flatMap(([, rows]) => rows.map((row) => row.CommMessage_ID))
-  const recipients = await readInBatches<Row>(pageMessageIds, async (messageIds) => (
-    await result<Row[]>(admin.from("Comm_MessageRecipients")
-      .select("CommRecipient_MessageID,CommRecipient_NormalizedAddress,CommRecipient_Address,CommRecipient_DisplayNameSnapshot")
-      .in("CommRecipient_MessageID", messageIds)) ?? []
-  ))
+  const [recipients, summaries] = await Promise.all([
+    readInBatches<Row>(pageMessageIds, async (messageIds) => (
+      await result<Row[]>(admin.from("Comm_MessageRecipients")
+        .select("CommRecipient_MessageID,CommRecipient_NormalizedAddress,CommRecipient_Address,CommRecipient_DisplayNameSnapshot")
+        .in("CommRecipient_MessageID", messageIds)) ?? []
+    )),
+    currentSummaries(admin, page.map(([threadId]) => threadId)),
+  ])
   const recipientMap = new Map<string, Row[]>()
   for (const row of recipients) recipientMap.set(row.CommRecipient_MessageID, [...(recipientMap.get(row.CommRecipient_MessageID) ?? []), row])
-  const summaries = await currentSummaries(admin, page.map(([threadId]) => threadId))
-  const connectionByMailbox = await mailboxProviderMap(admin, ids)
   const items = page.map(([threadId, rows]) => {
     const latest = rows[0]
     const state = stateMap.get(threadId)
@@ -1441,13 +1467,20 @@ export async function getThread(admin: Db, actor: Actor, threadId: string) {
   const accessible = await mailboxIds(admin, actor, "read")
   const messages = await threadData(admin, actor, threadId, accessible)
   const messageIds = messages.map((row) => row.CommMessage_ID)
-  const recipients = await result<Row[]>(admin.from("Comm_MessageRecipients").select("*").in("CommRecipient_MessageID", messageIds)) ?? []
-  const attachments = await result<Row[]>(admin.from("Comm_MessageAttachments").select("*").in("CommAttachment_MessageID", messageIds)) ?? []
-  const deliveryEvents = await result<Row[]>(admin.from("Comm_DeliveryEvents").select("CommDelivery_MessageID,CommDelivery_EventTypeCode,CommDelivery_EventAt").in("CommDelivery_MessageID", messageIds).order("CommDelivery_EventAt")) ?? []
-  const trackingTokens = await result<Row[]>(admin.from("Comm_MessageTrackingTokens").select("CommTrack_MessageID,CommTrack_FirstOpenedAt").in("CommTrack_MessageID", messageIds)) ?? []
-  const state = await result<Row>(admin.from("Comm_ReadStates").select("*").eq("CommRead_UserID", actor.userId).eq("CommRead_ThreadID", threadId).is("CommRead_MessageID", null).maybeSingle())
-  const summary = (await currentSummaries(admin, [threadId])).get(threadId) ?? summaryDto()
-  const sendIds = await mailboxIds(admin, actor, "send")
+  const [recipientsResult, attachmentsResult, deliveryEventsResult, trackingTokensResult, state, summaries, sendIds] = await Promise.all([
+    result<Row[]>(admin.from("Comm_MessageRecipients").select("*").in("CommRecipient_MessageID", messageIds)),
+    result<Row[]>(admin.from("Comm_MessageAttachments").select("*").in("CommAttachment_MessageID", messageIds)),
+    result<Row[]>(admin.from("Comm_DeliveryEvents").select("CommDelivery_MessageID,CommDelivery_EventTypeCode,CommDelivery_EventAt").in("CommDelivery_MessageID", messageIds).order("CommDelivery_EventAt")),
+    result<Row[]>(admin.from("Comm_MessageTrackingTokens").select("CommTrack_MessageID,CommTrack_FirstOpenedAt").in("CommTrack_MessageID", messageIds)),
+    result<Row>(admin.from("Comm_ReadStates").select("*").eq("CommRead_UserID", actor.userId).eq("CommRead_ThreadID", threadId).is("CommRead_MessageID", null).maybeSingle()),
+    currentSummaries(admin, [threadId]),
+    mailboxIds(admin, actor, "send"),
+  ])
+  const recipients = recipientsResult ?? []
+  const attachments = attachmentsResult ?? []
+  const deliveryEvents = deliveryEventsResult ?? []
+  const trackingTokens = trackingTokensResult ?? []
+  const summary = summaries.get(threadId) ?? summaryDto()
   const readAt = state?.CommRead_ReadAt ? Date.parse(state.CommRead_ReadAt) : 0
   const addresses = (messageId: string, type: string) => recipients.filter((row) => row.CommRecipient_MessageID === messageId && row.CommRecipient_RecipientTypeCode === type).map((row) => ({ address: row.CommRecipient_Address, displayName: row.CommRecipient_DisplayNameSnapshot }))
   const delivery = (row: Row) => {
@@ -1461,7 +1494,7 @@ export async function getThread(admin: Db, actor: Actor, threadId: string) {
     const openedAt = tracking?.CommTrack_FirstOpenedAt ?? eventAt("opened")
     const deliveredAt = row.CommMessage_DeliveredAt ?? eventAt("delivered")
     const status = bouncedAt ? "bounced" : failedAt || row.CommMessage_StatusCode === "failed" ? "failed" : repliedAt ? "replied" : openedAt ? "opened_estimated" : deliveredAt ? "delivered" : tracking ? "no_open_signal" : "sent"
-    return { status, sentAt: row.CommMessage_SentAt, deliveredAt, openedAt, repliedAt, bouncedAt, openTrackingEnabled: Boolean(tracking), confidence: openedAt ? "estimated" : status === "delivered" || status === "replied" || status === "failed" || status === "bounced" ? "confirmed" : "none" }
+    return { status, sentAt: row.CommMessage_SentAt, deliveredAt, openedAt, repliedAt, failedAt, bouncedAt, openTrackingEnabled: Boolean(tracking), confidence: openedAt ? "estimated" : status === "delivered" || status === "replied" || status === "failed" || status === "bounced" ? "confirmed" : "none" }
   }
   return {
     id: threadId, mailboxId: messages.at(-1)?.CommMessage_MailboxID, subject: repairMojibake(messages.at(-1)?.CommMessage_Subject ?? "(No subject)"),
@@ -1626,6 +1659,7 @@ export async function saveDraft(admin: Db, actor: Actor, body: Row, draftId?: st
   }
   const now = new Date().toISOString()
   const subject = cleanString(body.subject, 500) || resolved.source?.CommMessage_Subject || "(No subject)"
+  const trackOpens = body.trackOpens !== false
   // Never accept an arbitrary client thread UUID through a service-role write.
   // Updates preserve their current thread; response drafts derive it from the
   // ACL-validated source; new compose always creates a fresh thread.
@@ -1636,7 +1670,7 @@ export async function saveDraft(admin: Db, actor: Actor, body: Row, draftId?: st
     CommMessage_StatusCode: "draft", CommMessage_SourceTypeCode: "manual", CommMessage_ContentFormatCode: "plain_text", CommMessage_PriorityCode: "normal",
     CommMessage_SensitivityCode: mailbox.CommMailbox_DefaultSensitivityCode ?? "internal", CommMessage_Subject: subject,
     CommMessage_BodyPreview: cleanString(body.bodyText, 1000), CommMessage_BodyText: cleanString(body.bodyText, 2_000_000),
-    CommMessage_BodyJSON: JSON.stringify({ mode: resolved.command, sourceMessageId: resolved.source?.CommMessage_ID ?? null }), CommMessage_HeaderJSON: "{}",
+    CommMessage_BodyJSON: JSON.stringify({ mode: resolved.command, sourceMessageId: resolved.source?.CommMessage_ID ?? null, openTrackingEnabled: trackOpens }), CommMessage_HeaderJSON: "{}",
     CommMessage_MessageDate: now, CommMessage_HasAttachments: false, CommMessage_IsInbound: false, CommMessage_IsInternal: false,
     CommMessage_IsDraft: true, CommMessage_IsSpam: false, CommMessage_IsBodyRedacted: false, CommMessage_IsTrainingAllowed: false,
     CommMessage_UpdatedAt: now, CommMessage_UpdatedBy: actor.userId, CommMessage_IsDeleted: false,
@@ -1649,7 +1683,7 @@ export async function saveDraft(admin: Db, actor: Actor, body: Row, draftId?: st
   }
   await addRecipients(admin, id, [{ address: mailbox.CommMailbox_Address, displayName: mailbox.CommMailbox_DisplayName }], "from", now)
   await addRecipients(admin, id, resolved.to, "to", now); await addRecipients(admin, id, resolved.cc, "cc", now); await addRecipients(admin, id, resolved.bcc, "bcc", now)
-  return { id, threadId, mailboxId, mode: resolved.command, sourceMessageId: resolved.source?.CommMessage_ID ?? null, subject, bodyText: cleanString(body.bodyText, 2_000_000), updatedAt: now }
+  return { id, threadId, mailboxId, mode: resolved.command, sourceMessageId: resolved.source?.CommMessage_ID ?? null, subject, bodyText: cleanString(body.bodyText, 2_000_000), trackOpens, updatedAt: now }
 }
 
 export async function deleteDraft(admin: Db, actor: Actor, draftId: string) {
@@ -1788,6 +1822,32 @@ function opaqueTrackingToken() {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "")
 }
 
+async function recordDeliveryEvent(
+  admin: Db,
+  messageId: string,
+  sendId: string,
+  eventType: "sent" | "failed",
+  providerEventId: string | null,
+  payload: Row,
+) {
+  try {
+    const { error } = await admin.rpc("Comm_RecordDeliveryEvent", {
+      p_message_id: messageId,
+      p_send_id: sendId,
+      p_event_type_code: eventType,
+      // Delivery events are evidence alongside the send state. Recording one
+      // must never rewrite `sent` to `read` or another presentation status.
+      p_status_code: null,
+      p_provider_event_id: providerEventId,
+      p_payload_json: payload,
+    })
+    if (error) console.error("inbox-api delivery event could not be recorded", { code: error.code, eventType })
+  } catch {
+    // The provider has already accepted or rejected the send. An audit-event
+    // failure must not turn that known outcome into a duplicate-send risk.
+  }
+}
+
 export async function sendMail(admin: Db, actor: Actor, body: Row, suppliedKey: string) {
   await requirePermission(admin, actor, "Email.Send")
   if (!suppliedKey || suppliedKey.length > 200) throw new InboxHttpError(400, "An Idempotency-Key header is required when sending email.", "idempotency_key_required")
@@ -1811,15 +1871,15 @@ export async function sendMail(admin: Db, actor: Actor, body: Row, suppliedKey: 
   if (resolved.command === "forward" && resolved.source) bodyText += `\n\n---------- Forwarded message ----------\n${resolved.source.CommMessage_BodyText ?? resolved.source.CommMessage_BodyPreview ?? ""}`
   const trackOpens = body.trackOpens === true
   const externalRecipients = [...resolved.to, ...resolved.cc, ...resolved.bcc]
-  if (trackOpens && externalRecipients.length !== 1) {
-    throw new InboxHttpError(400, "Open tracking currently supports one recipient per message so the signal is never attributed to the wrong person.", "tracking_recipient_count")
-  }
   // The browser may echo a thread id for presentation, but authorization and
   // service-role persistence derive it only from the checked source message.
   const threadId = resolved.source?.CommMessage_ThreadID ?? await newThread(admin, actor, subject, mailbox)
   const messageId = crypto.randomUUID(); const sendId = crypto.randomUUID(); const now = new Date().toISOString()
   const trackingToken = trackOpens ? opaqueTrackingToken() : null
   const trackingTokenHash = trackingToken ? await sha256Hex(trackingToken) : null
+  const trackingAudienceHash = trackingToken
+    ? await sha256Hex([...new Set(externalRecipients.map((recipient) => recipient.address.toLowerCase()))].sort().join("\n"))
+    : null
   const trackingUrl = trackingToken ? `${Deno.env.get("SUPABASE_URL")}/functions/v1/email-track/open?token=${encodeURIComponent(trackingToken)}` : null
   const bodyHtml = trackingUrl ? `<div>${escapeTrackedHtml(bodyText)}</div><img src="${trackingUrl}" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0" referrerpolicy="no-referrer">` : null
   await result(admin.from("Comm_Messages").insert({
@@ -1859,7 +1919,7 @@ export async function sendMail(admin: Db, actor: Actor, body: Row, suppliedKey: 
   if (trackingTokenHash) {
     await result(admin.from("Comm_MessageTrackingTokens").insert({
       CommTrack_ID: crypto.randomUUID(), CommTrack_MessageID: messageId, CommTrack_SendID: sendId,
-      CommTrack_RecipientHashSHA256: await sha256Hex(externalRecipients[0].address.toLowerCase()),
+      CommTrack_RecipientHashSHA256: trackingAudienceHash,
       CommTrack_TokenHashSHA256: trackingTokenHash, CommTrack_ExpiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
       CommTrack_IsActive: true, CommTrack_CreatedAt: now,
     }))
@@ -1871,6 +1931,10 @@ export async function sendMail(admin: Db, actor: Actor, body: Row, suppliedKey: 
     await result(admin.from("Comm_Messages").update({ CommMessage_StatusCode: "sent", CommMessage_ProviderMessageID: sent.providerMessageId, CommMessage_ProviderThreadID: sent.providerThreadId, CommMessage_InternetMessageID: sent.internetMessageId, CommMessage_SentAt: completed, CommMessage_UpdatedAt: completed }).eq("CommMessage_ID", messageId))
     await result(admin.from("Comm_SendRequests").update({ CommSend_StatusCode: "sent", CommSend_UpdatedAt: completed }).eq("CommSend_ID", sendId))
     await result(admin.from("Comm_Threads").update({ CommThread_LastMessageID: messageId, CommThread_LastMessageAt: completed, CommThread_UpdatedAt: completed }).eq("CommThread_ID", threadId))
+    await recordDeliveryEvent(admin, messageId, sendId, "sent", sent.providerMessageId, {
+      source: "provider_send",
+      confidence: "confirmed",
+    })
     if (body.draftId) await result(admin.from("Comm_Messages").update({ CommMessage_IsDeleted: true, CommMessage_UpdatedAt: completed }).eq("CommMessage_ID", cleanString(body.draftId, 80)).eq("CommMessage_CreatedBy", actor.userId).eq("CommMessage_IsDraft", true))
     return { id: sendId, threadId, messageId, status: "sent", reused: false }
   } catch (error) {
@@ -1879,6 +1943,11 @@ export async function sendMail(admin: Db, actor: Actor, body: Row, suppliedKey: 
       await result(admin.from("Comm_Messages").update({ CommMessage_StatusCode: "failed", CommMessage_UpdatedAt: failed }).eq("CommMessage_ID", messageId)).catch(() => undefined)
       await result(admin.from("Comm_SendRequests").update({ CommSend_StatusCode: "failed", CommSend_ErrorMessage: error.message.slice(0, 1000), CommSend_UpdatedAt: failed }).eq("CommSend_ID", sendId)).catch(() => undefined)
       await result(admin.from("Comm_MessageTrackingTokens").update({ CommTrack_IsActive: false }).eq("CommTrack_MessageID", messageId)).catch(() => undefined)
+      await recordDeliveryEvent(admin, messageId, sendId, "failed", null, {
+        source: "provider_send",
+        providerStatus: error.providerStatus ?? null,
+        confidence: "confirmed",
+      })
     }
     // A network exception leaves the atomic claim in `sending`; retrying the
     // same key returns it and never risks a duplicate provider submission.

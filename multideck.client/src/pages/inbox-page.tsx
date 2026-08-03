@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import { EmailMessageRenderer } from "@/components/multideck/email-message-renderer"
+import { EmailDeliveryStatus } from "@/components/multideck/email-delivery-status"
 import { InboxThreadRow, formatThreadTimestamp } from "@/components/multideck/inbox-thread-row"
 import {
   MailProviderMark,
@@ -52,7 +53,6 @@ import {
   getAttachmentBlobUrl,
   isInboxNotFound,
   listInboxProviders,
-  mergeThreadPage,
   readEmailConnectionResult,
   readInboxThreadDeepLink,
   resolveSelectionForMailbox,
@@ -68,8 +68,6 @@ import {
   type ThreadSummaryState,
 } from "@/lib/inbox-api"
 import {
-  fetchThread,
-  fetchThreads,
   discardDraft,
   generateThreadSummary,
   patchThreadState,
@@ -350,18 +348,6 @@ function AttachmentRow({ attachment }: { attachment: MailAttachment }) {
   )
 }
 
-function outboundDeliveryLabel(message: InboxMessage, t: (value: string) => string) {
-  switch (message.delivery?.status) {
-    case "delivered": return t("Delivered")
-    case "opened_estimated": return t("Opened — estimated")
-    case "replied": return t("Replied")
-    case "failed": return t("Failed")
-    case "bounced": return t("Bounced")
-    case "no_open_signal": return t("No open signal yet")
-    default: return t("Sent")
-  }
-}
-
 function MessageCard({
   message,
   expanded,
@@ -391,13 +377,15 @@ function MessageCard({
         highlighted && "shadow-[inset_0_0_0_1px_var(--md-accent-a24),0_0_0_3px_var(--md-accent-a12)]",
       )}
     >
-      <button
-        type="button"
-        aria-expanded={expanded}
-        className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-start gap-3 rounded-[var(--md-radius-xl)] px-3.5 py-3 text-start outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a20)]"
-        onClick={onToggle}
-      >
-        <span className="min-w-0">
+      <div className="relative grid w-full grid-cols-[minmax(0,1fr)_auto] items-start gap-3 px-3.5 py-3 text-start">
+        <button
+          type="button"
+          aria-expanded={expanded}
+          aria-label={t(expanded ? "Collapse message" : "Expand message")}
+          className="absolute inset-0 rounded-[var(--md-radius-xl)] outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a20)]"
+          onClick={onToggle}
+        />
+        <span className="pointer-events-none relative min-w-0">
           <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
             <span data-i18n-skip dir="auto" className="min-w-0 truncate text-[13px] font-medium text-[var(--md-ink)]">
               {sender ? addressLabel(sender) : t("Unknown sender")}
@@ -407,10 +395,8 @@ function MessageCard({
                 {sender.address}
               </bdi>
             ) : null}
-            {message.direction === "outbound" ? (
-              <span title={message.delivery?.status === "opened_estimated" || message.delivery?.status === "no_open_signal" ? t("Open tracking is approximate because images can be blocked or loaded by privacy proxies.") : undefined} className="rounded-[var(--md-radius-sm)] bg-[var(--md-surface-tint)] px-1.5 py-px text-[10px] font-medium text-[var(--md-subtle)]">
-                {outboundDeliveryLabel(message, t)}
-              </span>
+            {message.direction === "outbound" && message.delivery ? (
+              <EmailDeliveryStatus delivery={message.delivery} className="pointer-events-auto" />
             ) : null}
           </span>
           {recipients.length > 0 ? (
@@ -422,7 +408,7 @@ function MessageCard({
             </span>
           ) : null}
         </span>
-        <span className="flex shrink-0 items-center gap-1.5 pt-px">
+        <span className="pointer-events-none relative flex shrink-0 items-center gap-1.5 pt-px">
           {message.attachments.length > 0 ? (
             <Paperclip className="size-3 text-[var(--md-subtle)]" strokeWidth={1.4} aria-hidden="true" />
           ) : null}
@@ -438,7 +424,7 @@ function MessageCard({
             strokeWidth={1.5}
           />
         </span>
-      </button>
+      </div>
 
       <AnimatePresence initial={false}>
         {expanded ? (
@@ -454,11 +440,6 @@ function MessageCard({
           >
             <div className="min-h-0 px-3.5 pb-3.5">
               <EmailMessageRenderer sanitizedHtml={message.sanitizedHtml} bodyText={message.bodyText} />
-              {message.direction === "outbound" && message.delivery?.openTrackingEnabled ? (
-                <p className="mt-3 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-3 py-2 text-[11px] leading-4 text-[var(--md-subtle)]">
-                  {t("Open tracking is approximate. Image blocking can hide opens, while privacy proxies can create an open signal before the person reads the message.")}
-                </p>
-              ) : null}
               {message.attachments.filter((attachment) => !attachment.isInline).length > 0 ? (
                 <div className="mt-3">
                   <p className="mb-1.5 text-[11px] font-medium uppercase tracking-[0.07em] text-[var(--md-subtle)]">
@@ -499,6 +480,13 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
     folder,
     refreshAccounts,
     adjustMailboxUnread,
+    threadCache,
+    setThreadCache,
+    fetchThreadPage,
+    readThreadDetail,
+    fetchThreadDetail,
+    prefetchThreadDetail,
+    rememberThreadDetail,
   } = useInboxWorkspace()
   const [initialThreadDeepLink] = useState(() => (
     typeof window === "undefined" ? null : readInboxThreadDeepLink(window.location.search)
@@ -506,7 +494,6 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
   const [searchInput, setSearchInput] = useState("")
   const [query, setQuery] = useState("")
 
-  const [threadCache, setThreadCache] = useState<Record<string, ThreadCacheEntry>>({})
   const [listState, setListState] = useState<LoadState>("idle")
   const [listError, setListError] = useState<string | null>(null)
 
@@ -660,20 +647,18 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
    * one captured when this callback was created.
    */
   const loadThreads = useCallback(
-    async (cursor: string | null) => {
+    async (cursor: string | null, force = false) => {
       if (!mailboxId) return
       const append = cursor !== null
-      const key = threadCacheKey(mailboxId, folder, query)
 
       const requestId = ++listRequestRef.current
       setListState(append ? "loadingMore" : "loading")
       setListError(null)
 
       try {
-        const page = await fetchThreads({ mailboxId, folder, query, cursor, limit: pageSize })
+        await fetchThreadPage({ mailboxId, folder, query, cursor, limit: pageSize }, append, force)
         // A newer request for a different mailbox, folder or query has taken over.
         if (requestId !== listRequestRef.current) return
-        setThreadCache((current) => ({ ...current, [key]: mergeThreadPage(current[key], page, append) }))
         setListState("ready")
       } catch (error) {
         if (requestId !== listRequestRef.current) return
@@ -681,7 +666,7 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
         setListState("error")
       }
     },
-    [folder, mailboxId, query, t],
+    [fetchThreadPage, folder, mailboxId, query, t],
   )
 
   useEffect(() => {
@@ -707,7 +692,7 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
       await refreshAccounts()
       // Keep the current rows mounted while the first page is replaced. New
       // provider mail therefore appears without a full-page loading flash.
-      if (sync.synced > 0 && mailboxId === targetMailboxId) await loadThreads(null)
+      if (sync.synced > 0 && mailboxId === targetMailboxId) await loadThreads(null, true)
       return sync
     } finally {
       mailboxSyncInFlightRef.current = null
@@ -783,10 +768,21 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
     }
 
     const requestId = ++threadRequestRef.current
-    setThreadState("loading")
     setThreadError(null)
 
-    fetchThread(selectedThreadId)
+    const cached = readThreadDetail(selectedThreadId)
+    if (cached) {
+      setThread(cached)
+      setSelectedThreadMailboxId(cached.mailboxId)
+      setThreadState("ready")
+      const last = cached.messages.at(-1)
+      setExpandedMessageIds(new Set(last ? [last.id] : []))
+      return
+    }
+
+    setThreadState("loading")
+
+    fetchThreadDetail(selectedThreadId)
       .then((detail) => {
         if (requestId !== threadRequestRef.current) return
         setThread(detail)
@@ -801,7 +797,7 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
         setThreadError(errorMessageFor(error, t("Unable to open this conversation.")))
         setThreadState("error")
       })
-  }, [selectedThreadId, t])
+  }, [fetchThreadDetail, readThreadDetail, selectedThreadId, t])
 
   useEffect(() => {
     if (typeof window === "undefined" || window.location.pathname !== "/inbox") return
@@ -953,6 +949,14 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
   /* -------------------------------------------------------------- selection */
 
   function selectThread(threadItem: InboxThreadListItem) {
+    const cached = readThreadDetail(threadItem.id)
+    if (cached) {
+      setThread(cached)
+      setThreadState("ready")
+      setThreadError(null)
+      const last = cached.messages.at(-1)
+      setExpandedMessageIds(new Set(last ? [last.id] : []))
+    }
     setSelectedThreadId(threadItem.id)
     setSelectedThreadMailboxId(threadItem.mailboxId)
     setComposer(emptyComposerState())
@@ -1111,7 +1115,7 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
         stored?.subject
         ?? (mode === "forward" && thread ? `Fwd: ${thread.subject}` : ""),
       bodyText: stored?.bodyText ?? "",
-      trackOpens: stored?.trackOpens ?? false,
+      trackOpens: stored?.trackOpens ?? true,
       to: stored?.addedTo ?? [],
       cc: stored?.addedCc ?? [],
       bcc: stored?.addedBcc ?? [],
@@ -1220,8 +1224,11 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
       toast.success(receipt.status === "queued" ? t("Message queued to send") : t("Message sent"))
       setComposer(emptyComposerState(composer.mode))
       if (composer.threadId) {
-        const refreshed = await fetchThread(composer.threadId).catch(() => null)
-        if (refreshed) setThread(refreshed)
+        const refreshed = await fetchThreadDetail(composer.threadId, true).catch(() => null)
+        if (refreshed) {
+          rememberThreadDetail(refreshed)
+          setThread(refreshed)
+        }
       }
     } catch (error) {
       persistLocalDraft(true)
@@ -1510,7 +1517,7 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
                 type="button"
                 variant="ghost"
                 className="h-10 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] px-3.5 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]"
-                onClick={() => void loadThreads(null)}
+                onClick={() => void loadThreads(null, true)}
               >
                 {t("Try again")}
               </Button>
@@ -1573,6 +1580,7 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
                   ownAddresses={ownAddresses}
                   selectionLayoutId={threadSelectionLayoutId}
                   onSelect={() => selectThread(item)}
+                  onPrefetch={() => prefetchThreadDetail(item.id)}
                   onToggleStar={() => void toggleStar(item)}
                 />
               </div>

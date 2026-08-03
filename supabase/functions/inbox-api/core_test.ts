@@ -169,6 +169,44 @@ Deno.test("a message with no attachments stays a single text/plain part", () => 
   assert(!mime.includes("multipart/mixed"))
 })
 
+Deno.test("a tracked message keeps a plain-text alternative beside the HTML pixel", () => {
+  const mime = buildMimeMessage({
+    from: { address: "me@example.com", displayName: "Me" },
+    to: [
+      { address: "one@example.com", displayName: null },
+      { address: "two@example.com", displayName: null },
+    ],
+    cc: [],
+    bcc: [],
+    subject: "Tracked",
+    bodyText: "First line\nSecond line",
+    bodyHtml: '<div>First line<br>Second line</div><img src="https://track.example/open?token=opaque" width="1" height="1" alt="">',
+  })
+
+  assertMatch(mime, /Content-Type: multipart\/alternative/)
+  assertMatch(mime, /Content-Type: text\/plain; charset=UTF-8/)
+  assertMatch(mime, /Content-Type: text\/html; charset=UTF-8/)
+  assertMatch(mime, /First line\r\nSecond line/)
+  assertMatch(mime, /https:\/\/track\.example\/open\?token=opaque/)
+})
+
+Deno.test("a tracked message with a file nests the alternatives inside multipart mixed", () => {
+  const mime = buildMimeMessage({
+    from: { address: "me@example.com", displayName: "Me" },
+    to: [{ address: "you@example.com", displayName: null }],
+    cc: [],
+    bcc: [],
+    subject: "Tracked attachment",
+    bodyText: "See attached",
+    bodyHtml: '<div>See attached</div><img src="https://track.example/open?token=opaque" width="1" height="1" alt="">',
+    attachments: [{ fileName: "invoice.pdf", mimeType: "application/pdf", bytes: new Uint8Array([1, 2, 3]) }],
+  })
+
+  assertMatch(mime, /Content-Type: multipart\/mixed/)
+  assertMatch(mime, /Content-Type: multipart\/alternative/)
+  assertMatch(mime, /Content-Disposition: attachment; filename="invoice\.pdf"/)
+})
+
 Deno.test("attachments become base64 multipart parts under a single boundary", () => {
   const mime = buildMimeMessage({
     from: { address: "me@example.com", displayName: "Me" },

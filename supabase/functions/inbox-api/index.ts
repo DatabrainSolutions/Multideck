@@ -19,6 +19,7 @@ import {
   deleteDraft,
   disconnect,
   getThread,
+  inboxWorkspace,
   listMailboxes,
   listThreads,
   providers,
@@ -63,6 +64,9 @@ Deno.serve(async (request) => {
     }
     if (method === "GET" && path.length === 1 && path[0] === "connections") {
       return jsonResponse(request, allowedOrigins, await connections(clients.admin, actor))
+    }
+    if (method === "GET" && path.length === 1 && path[0] === "workspace") {
+      return jsonResponse(request, allowedOrigins, await inboxWorkspace(clients.admin, actor))
     }
     if (method === "POST" && path.length === 3 && path[0] === "connections" && path[2] === "authorize") {
       const body = await readJson(request)

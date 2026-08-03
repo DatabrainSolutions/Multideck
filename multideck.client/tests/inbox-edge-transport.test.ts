@@ -10,6 +10,8 @@ const appSidebarSource = await readFile(new URL("../src/components/multideck/app
 const threadSummarySource = await readFile(new URL("../src/components/multideck/thread-summary.tsx", import.meta.url), "utf8")
 const emailRendererSource = await readFile(new URL("../src/components/multideck/email-message-renderer.tsx", import.meta.url), "utf8")
 const globalStyles = await readFile(new URL("../src/styles.css", import.meta.url), "utf8")
+const appShellSource = await readFile(new URL("../src/components/multideck/app-shell.tsx", import.meta.url), "utf8")
+const threadRowSource = await readFile(new URL("../src/components/multideck/inbox-thread-row.tsx", import.meta.url), "utf8")
 
 test("Inbox uses the tenant Supabase Edge Function, never the .NET API", () => {
   assert.match(source, /supabaseFunctionsUrl/)
@@ -25,6 +27,17 @@ test("every Inbox Edge request carries the current tenant identity", () => {
   assert.match(source, /result\.set\("apikey", supabasePublicApiKey\)/)
   assert.match(source, /response\.status === 401 && allowSessionRefresh/)
   assert.match(source, /inboxAccessToken\(true\)/)
+})
+
+test("Inbox navigation stays warm and conversation intent prefetches detail", () => {
+  assert.match(source, /inboxRequest\("\/workspace"/)
+  assert.match(appShellSource, /InboxWorkspaceProvider cacheScope=\{currentUser\?\.id \?\? null\}/)
+  assert.match(inboxWorkspaceSource, /threadPageRequestsRef/)
+  assert.match(inboxWorkspaceSource, /threadDetailRequestsRef/)
+  assert.match(inboxWorkspaceSource, /threadDetailCacheTtlMs = 60_000/)
+  assert.match(threadRowSource, /onPointerEnter=\{onPrefetch\}/)
+  assert.match(threadRowSource, /onFocus=\{onPrefetch\}/)
+  assert.match(inboxPageSource, /onPrefetch=\{\(\) => prefetchThreadDetail\(item\.id\)\}/)
 })
 
 test("send keeps its idempotency key in both the Edge header and payload", () => {

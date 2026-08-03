@@ -136,6 +136,27 @@ export type MailAttachment = {
   scanStatus: "clean" | "pending" | "blocked" | "unknown"
 }
 
+export type InboxDeliveryStatus =
+  | "sent"
+  | "delivered"
+  | "opened_estimated"
+  | "replied"
+  | "failed"
+  | "bounced"
+  | "no_open_signal"
+
+export type InboxDelivery = {
+  status: InboxDeliveryStatus
+  sentAt: string | null
+  deliveredAt: string | null
+  openedAt: string | null
+  repliedAt: string | null
+  failedAt: string | null
+  bouncedAt: string | null
+  openTrackingEnabled: boolean
+  confidence: "confirmed" | "estimated" | "none"
+}
+
 /** A file the operator picked in the composer, held in memory until it sends. */
 export type OutboundAttachment = {
   /** Client-side identity. The provider assigns the real one when it sends. */
@@ -196,16 +217,7 @@ export type InboxMessage = {
    */
   sanitizedHtml: string | null
   attachments: MailAttachment[]
-  delivery?: {
-    status: "sent" | "delivered" | "opened_estimated" | "replied" | "failed" | "bounced" | "no_open_signal"
-    sentAt: string | null
-    deliveredAt: string | null
-    openedAt: string | null
-    repliedAt: string | null
-    bouncedAt: string | null
-    openTrackingEnabled: boolean
-    confidence: "confirmed" | "estimated" | "none"
-  }
+  delivery?: InboxDelivery
 }
 
 export type InboxThreadDetail = {
@@ -235,6 +247,7 @@ export type InboxDraft = {
   sourceMessageId: string | null
   subject: string
   bodyText: string
+  trackOpens: boolean
   updatedAt: string | null
 }
 
@@ -630,6 +643,7 @@ function normalizeMessage(value: unknown, threadId: string): InboxMessage {
       deliveredAt: readOptionalText(pickField(rawDelivery, "deliveredAt")),
       openedAt: readOptionalText(pickField(rawDelivery, "openedAt")),
       repliedAt: readOptionalText(pickField(rawDelivery, "repliedAt")),
+      failedAt: readOptionalText(pickField(rawDelivery, "failedAt")),
       bouncedAt: readOptionalText(pickField(rawDelivery, "bouncedAt")),
       openTrackingEnabled: readFlag(pickField(rawDelivery, "openTrackingEnabled")),
       confidence: readText(pickField(rawDelivery, "confidence")) === "estimated" ? "estimated" : readText(pickField(rawDelivery, "confidence")) === "confirmed" ? "confirmed" : "none",
@@ -683,6 +697,7 @@ export function normalizeDraft(value: unknown, request: Partial<SendRequest>): I
     sourceMessageId: readOptionalText(pickField(record, "sourceMessageId")) ?? request.sourceMessageId ?? null,
     subject: readText(pickField(record, "subject"), request.subject ?? ""),
     bodyText: readText(pickField(record, "bodyText"), request.bodyText ?? ""),
+    trackOpens: readFlag(pickField(record, "trackOpens"), request.trackOpens ?? true),
     updatedAt: readOptionalText(pickField(record, "updatedAt")),
   }
 }
@@ -805,7 +820,7 @@ export function emptyComposerState(mode: SendMode = "reply", presentation: Compo
     showCc: false,
     showBcc: false,
     attachments: [],
-    trackOpens: false,
+    trackOpens: true,
     presentation,
   }
 }

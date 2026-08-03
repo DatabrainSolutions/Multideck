@@ -2,6 +2,7 @@ import type { User } from "@supabase/supabase-js"
 import type { ApiTeamUser } from "@/lib/api"
 
 export type AuthUserSummary = {
+  id: string
   name: string | null
   email: string | null
   initials: string
@@ -41,6 +42,7 @@ export function summarizeAuthUser(user: User, profile?: ApiTeamUser | null): Aut
   const name = profile?.displayName ?? readMetadataString(user, ["full_name", "name", "display_name", "preferred_name"]) ?? joinedName
 
   return {
+    id: user.id,
     name,
     email,
     initials: makeInitials(name ?? email),

@@ -20,6 +20,7 @@ import {
 } from "lucide-react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { useLanguage } from "@/i18n/language-provider"
 import { mdMotion, reduceMotion } from "@/lib/motion"
@@ -794,17 +795,20 @@ export function MailComposer({
           )}
         </Button>
 
-        <label className="ms-1 flex min-h-10 cursor-pointer items-center gap-2 rounded-[var(--md-radius-md)] px-2 text-[11.5px] text-[var(--md-text)] hover:bg-[var(--md-surface-tint)]">
-          <input
-            type="checkbox"
+        <div className="ms-1 flex min-h-10 items-center gap-2 rounded-[var(--md-radius-md)] px-1.5 text-[11.5px] text-[var(--md-text)] transition-[background-color] duration-150 hover:bg-[var(--md-surface-tint)] motion-reduce:transition-none">
+          <Checkbox
+            id={`${fieldId}-track-opens`}
             checked={state.trackOpens}
             disabled={busy || readOnly}
-            onChange={(event) => update({ trackOpens: event.target.checked })}
-            className="size-4 accent-[var(--md-accent)]"
+            onCheckedChange={(checked) => update({ trackOpens: checked === true })}
+            aria-label={t("Track opens")}
+            className="size-4"
           />
-          <span>{t("Track opens")}</span>
-          <span className="hidden text-[var(--md-subtle)] lg:inline">{t("Estimated — images may be blocked or proxied")}</span>
-        </label>
+          <label htmlFor={`${fieldId}-track-opens`} className="hidden cursor-pointer whitespace-nowrap sm:inline">
+            {t("Track opens")}
+          </label>
+          <span className="hidden text-[var(--md-subtle)] lg:inline">{t("Estimated from image loads")}</span>
+        </div>
 
         <input
           ref={fileInputRef}

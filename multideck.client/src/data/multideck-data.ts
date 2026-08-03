@@ -2842,6 +2842,37 @@ export const galleryComponents = [
 />`,
   },
   {
+    id: "email-delivery-status",
+    name: "Email Delivery Status",
+    category: "Operations",
+    description: "A compact icon and label showing the strongest available evidence for an outbound email.",
+    details: "Use beside a sent message. The trigger stays quiet while the popover separates provider-confirmed sent, delivered, replied, failed and bounced events from estimated opens. Open tracking never claims certainty: image blocking can hide an open and privacy proxies can load the image before a person reads the email.",
+    foundOn: [{ label: "Inbox", route: "/inbox" }, { label: "Components", route: "/components?component=email-delivery-status" }],
+    componentCode: `export function EmailDeliveryStatus({ delivery }) {
+  const { language, t } = useLanguage()
+  const presentation = presentationFor(delivery.status, t)
+  const Icon = presentation.icon
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button type="button" aria-label={presentation.label}>
+          <Icon aria-hidden="true" />
+          <span>{presentation.label}</span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent>
+        <h2>{presentation.label}</h2>
+        <p>{presentation.detail}</p>
+        <DeliveryEventTimes delivery={delivery} language={language} />
+        {delivery.openTrackingEnabled ? <OpenTrackingNotice /> : null}
+      </PopoverContent>
+    </Popover>
+  )
+}`,
+    usageCode: `<EmailDeliveryStatus delivery={message.delivery} />`,
+  },
+  {
     id: "email-message-renderer",
     name: "Email Message Renderer",
     category: "Operations",

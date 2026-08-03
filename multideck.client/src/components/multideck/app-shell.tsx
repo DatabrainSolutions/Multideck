@@ -90,5 +90,8 @@ export function AppShell({
     </div>
   )
 
-  return isInboxRoute ? <InboxWorkspaceProvider>{shell}</InboxWorkspaceProvider> : shell
+  // Keep Inbox data warm while the operator works elsewhere. The provider is
+  // scoped to the authenticated user and survives route changes, so opening
+  // Inbox does not begin with an avoidable account/bootstrap waterfall.
+  return <InboxWorkspaceProvider cacheScope={currentUser?.id ?? null}>{shell}</InboxWorkspaceProvider>
 }

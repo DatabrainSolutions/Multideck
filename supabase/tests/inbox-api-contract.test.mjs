@@ -15,10 +15,23 @@ test("authenticated Edge boundary is registered", () => {
 })
 
 test("complete browser route contract is present", () => {
-  for (const route of ["providers", "connections", "authorize", "shared-mailboxes", "group-mailboxes", "mailboxes", "ai-context-sources", "sync", "threads", "read-state", "trash", "summary", "drafts", "send", "attachments"]) {
+  for (const route of ["providers", "connections", "workspace", "authorize", "shared-mailboxes", "group-mailboxes", "mailboxes", "ai-context-sources", "sync", "threads", "read-state", "trash", "summary", "drafts", "send", "attachments"]) {
     assert.match(index, new RegExp(`\\b${route.replace("-", "-")}\\b`), `missing ${route}`)
   }
   for (const method of ["GET", "POST", "PATCH", "DELETE", "OPTIONS"]) assert.match(index, new RegExp(`"${method}"`))
+})
+
+test("Inbox startup and thread detail avoid database waterfalls", () => {
+  const mailboxList = runtime.slice(runtime.indexOf("export async function listMailboxes"), runtime.indexOf("export async function aiContextSources"))
+  const threadDetail = runtime.slice(runtime.indexOf("export async function getThread"), runtime.indexOf("export async function updateThreadState"))
+  assert.match(index, /path\[0\] === "workspace"/)
+  assert.match(runtime, /export async function inboxWorkspace/)
+  assert.match(mailboxList, /comm_inbox_mailbox_unread_counts/)
+  assert.doesNotMatch(mailboxList, /CommMessage_MessageDate,CommMessage_ReceivedAt,CommMessage_CreatedAt/)
+  assert.match(threadDetail, /await Promise\.all\(\[/)
+  for (const table of ["Comm_MessageRecipients", "Comm_MessageAttachments", "Comm_DeliveryEvents", "Comm_MessageTrackingTokens", "Comm_ReadStates"]) {
+    assert.match(threadDetail, new RegExp(table))
+  }
 })
 
 test("Dexter email source status is permission-aware and never exposes provider credentials", () => {

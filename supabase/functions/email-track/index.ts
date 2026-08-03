@@ -24,7 +24,10 @@ async function sha256(value: string) {
 
 Deno.serve(async (request) => {
   const method = request.method.toUpperCase()
-  if (method !== "GET" && method !== "HEAD") return pixel(method)
+  // HEAD probes from gateways and security scanners are not evidence that an
+  // email body was rendered. They receive the same invisible response without
+  // changing the message's open state.
+  if (method !== "GET") return pixel(method)
 
   try {
     const token = new URL(request.url).searchParams.get("token")?.trim() ?? ""

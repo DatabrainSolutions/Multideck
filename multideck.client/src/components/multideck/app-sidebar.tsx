@@ -272,6 +272,7 @@ export function SidebarNavItem({
   item,
   isActive,
   onClick,
+  onIntent,
   accent = "default",
   collapsed = false,
   expanded,
@@ -283,6 +284,7 @@ export function SidebarNavItem({
   item: NavItem
   isActive?: boolean
   onClick?: () => void
+  onIntent?: () => void
   accent?: "default" | "dexter"
   collapsed?: boolean
   expanded?: boolean
@@ -333,6 +335,8 @@ export function SidebarNavItem({
         transitionTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1)",
       }}
       disabled={isDisabled}
+      onPointerEnter={onIntent}
+      onFocus={onIntent}
       onClick={onClick}
     >
       {isDexterItem ? (
@@ -1085,6 +1089,9 @@ export function AppSidebar({
       <SidebarNavItem
         item={inboxNavItem}
         isActive={route === "/inbox"}
+        onIntent={() => {
+          if (typeof window !== "undefined") void import("@/pages/inbox-page")
+        }}
         onClick={() => navigate("/inbox")}
         collapsed={collapsed}
       />

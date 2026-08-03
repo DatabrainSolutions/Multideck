@@ -8,6 +8,7 @@ import {
   attachmentRejection,
   buildSendPayload,
   composerEdits,
+  emptyComposerState,
   dedupeThreads,
   mergeThreadPage,
   isInboxNotFound,
@@ -46,6 +47,51 @@ test("Outlook shared access is exposed as a boolean without leaking OAuth scopes
   assert.equal("oauthScopes" in elevated, false)
 })
 
+test("new composers track opens by default and keep an explicit opt-out", () => {
+  const composer = emptyComposerState("new", "open")
+  assert.equal(composer.trackOpens, true)
+  assert.equal(composerEdits({ ...composer, trackOpens: false }).trackOpens, false)
+})
+
+test("outbound delivery evidence is normalised without adding it to inbound mail", () => {
+  const detail = normalizeThreadDetail({
+    id: "thread-1",
+    messages: [
+      {
+        id: "outbound-1",
+        direction: "outbound",
+        sentAt: "2026-08-03T14:42:00.000Z",
+        delivery: {
+          status: "opened_estimated",
+          sentAt: "2026-08-03T14:42:00.000Z",
+          openedAt: "2026-08-03T14:48:00.000Z",
+          openTrackingEnabled: true,
+          confidence: "estimated",
+        },
+      },
+      {
+        id: "inbound-1",
+        direction: "inbound",
+        receivedAt: "2026-08-03T15:00:00.000Z",
+        delivery: { status: "delivered" },
+      },
+    ],
+  }, "thread-1")
+
+  assert.deepEqual(detail.messages[0].delivery, {
+    status: "opened_estimated",
+    sentAt: "2026-08-03T14:42:00.000Z",
+    deliveredAt: null,
+    openedAt: "2026-08-03T14:48:00.000Z",
+    repliedAt: null,
+    failedAt: null,
+    bouncedAt: null,
+    openTrackingEnabled: true,
+    confidence: "estimated",
+  })
+  assert.equal(detail.messages[1].delivery, undefined)
+})
+
 test("server-issued Inbox citations restore their provider, mailbox and thread", () => {
   assert.deepEqual(
     readInboxThreadDeepLink(
@@ -78,6 +124,7 @@ function composerState(mode: SendMode): ComposerState {
     showCc: false,
     showBcc: false,
     attachments: [],
+    trackOpens: true,
     presentation: "open",
   }
 }
@@ -153,6 +200,7 @@ const edits: ComposerEdits = {
   addedBcc: [],
   removedAddresses: [],
   attachments: [],
+  trackOpens: true,
 }
 
 /* ----------------------------------------------------------------- pagination */
@@ -314,11 +362,13 @@ test("a reply payload carries no computed recipient list", () => {
     "sourceMessageId",
     "subject",
     "threadId",
+    "trackOpens",
   ])
   assert.equal("to" in payload, false)
   assert.equal("cc" in payload, false)
   assert.equal("recipients" in payload, false)
   assert.equal(payload.sourceMessageId, "m9")
+  assert.equal(payload.trackOpens, true)
 })
 
 test("replies put hand-typed additions on cc; new messages and forwards put them on to", () => {

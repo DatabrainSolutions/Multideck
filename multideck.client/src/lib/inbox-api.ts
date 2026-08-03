@@ -218,6 +218,23 @@ export async function listInboxConnections(): Promise<InboxConnection[]> {
   })
 }
 
+export async function loadInboxWorkspace(): Promise<{ connections: InboxConnection[]; mailboxes: Mailbox[] }> {
+  return inboxRequest("/workspace", {
+    method: "GET",
+    normalize: (payload) => {
+      const record = readRecord(payload)
+      return {
+        connections: readList(pickField(record, "connections", "items"))
+          .map((connection) => normalizeConnection(connection))
+          .filter((connection) => connection.id !== ""),
+        mailboxes: readList(pickField(record, "mailboxes"))
+          .map((mailbox) => normalizeMailbox(mailbox))
+          .filter((mailbox) => mailbox.id !== ""),
+      }
+    },
+  })
+}
+
 export async function listInboxProviders(): Promise<InboxProviderAvailability[]> {
   return inboxRequest("/providers", {
     method: "GET",

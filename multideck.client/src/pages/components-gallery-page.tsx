@@ -53,6 +53,7 @@ import { CopyableField } from "@/components/multideck/copyable-field"
 import { CrmPipelineEditor } from "@/components/multideck/crm-pipeline-editor"
 import { ChoiceControl, FilterChips, SegmentedControl, TabsRail } from "@/components/multideck/workflow-components"
 import { EmailMessageRenderer } from "@/components/multideck/email-message-renderer"
+import { EmailDeliveryStatus } from "@/components/multideck/email-delivery-status"
 import { InboxThreadRow } from "@/components/multideck/inbox-thread-row"
 import { MailboxProviderSwitch } from "@/components/multideck/mailbox-provider-switch"
 import { MailComposer, type ComposerState } from "@/components/multideck/mail-composer"
@@ -904,7 +905,7 @@ function ComponentPreview({ id }: { id: string }) {
     showCc: true,
     showBcc: false,
     attachments: [],
-    trackOpens: false,
+    trackOpens: true,
     presentation: "open",
   })
   const [previewCheckbox, setPreviewCheckbox] = useState(true)
@@ -1743,6 +1744,50 @@ function ComponentPreview({ id }: { id: string }) {
               />
             ))}
           </div>
+        </div>
+      ) : null}
+
+      {id === "email-delivery-status" ? (
+        <div className="flex w-full max-w-[520px] flex-wrap items-center justify-center gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <EmailDeliveryStatus
+            delivery={{
+              status: "sent",
+              sentAt: "2026-08-03T14:42:00.000Z",
+              deliveredAt: null,
+              openedAt: null,
+              repliedAt: null,
+              failedAt: null,
+              bouncedAt: null,
+              openTrackingEnabled: false,
+              confidence: "none",
+            }}
+          />
+          <EmailDeliveryStatus
+            delivery={{
+              status: "opened_estimated",
+              sentAt: "2026-08-03T14:42:00.000Z",
+              deliveredAt: null,
+              openedAt: "2026-08-03T14:48:00.000Z",
+              repliedAt: null,
+              failedAt: null,
+              bouncedAt: null,
+              openTrackingEnabled: true,
+              confidence: "estimated",
+            }}
+          />
+          <EmailDeliveryStatus
+            delivery={{
+              status: "bounced",
+              sentAt: "2026-08-03T14:42:00.000Z",
+              deliveredAt: null,
+              openedAt: null,
+              repliedAt: null,
+              failedAt: null,
+              bouncedAt: "2026-08-03T14:43:00.000Z",
+              openTrackingEnabled: true,
+              confidence: "confirmed",
+            }}
+          />
         </div>
       ) : null}
 
