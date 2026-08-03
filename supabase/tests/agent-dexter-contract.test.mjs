@@ -70,6 +70,9 @@ const customerDocumentsRuntime = read(
 const customerDocumentsEdge = read(
   "supabase/functions/customer-documents/index.ts",
 )
+const dexterUploadsRuntime = read("supabase/functions/_shared/dexter-uploads.ts")
+const dexterUploadEdge = read("supabase/functions/dexter-file-upload/index.ts")
+const dexterUploadsMigration = read("supabase/migrations/20260803133000_dexter_local_document_uploads.sql")
 const customerApi = read("multideck.client/src/lib/customer-api.ts")
 const customerPage = read("multideck.client/src/pages/customer-detail-page.tsx")
 const emailWatchWorker = read(
@@ -311,6 +314,28 @@ test("Watch mode accepts exact @ record context and handoff waits for Send", () 
   assert.match(dexterPage, /onAskEvent=\{\(monitor\) => \{[\s\S]*attachWatchUpdate\(context\)/)
   assert.match(dexterPage, /enterDexterMode\("chat", true\)/)
   assert.match(dexterPage, /setComposerEmailUpdates/)
+})
+
+test("local Dexter documents are private, bounded, branch-retained and passed as untrusted model evidence", () => {
+  assert.match(dexterComponents, /Upload from computer/)
+  assert.match(dexterComponents, /accept="\.pdf,\.txt,\.csv,\.docx,\.xlsx,\.pptx,\.png,\.jpg,\.jpeg,\.webp"/)
+  assert.match(dexterPage, /uploadDexterDocument\(file\)/)
+  assert.match(dexterPage, /type: "uploaded_document"/)
+  assert.match(dexterClient, /\/dexter-file-upload/)
+  assert.match(dexterUploadEdge, /multipart\/form-data/)
+  assert.match(dexterUploadsRuntime, /MAX_FILE_BYTES = 25 \* 1024 \* 1024/)
+  assert.match(dexterUploadsRuntime, /MAX_FILES_PER_TURN = 3/)
+  assert.match(dexterUploadsRuntime, /MAX_BYTES_PER_TURN = 45 \* 1024 \* 1024/)
+  assert.match(dexterUploadsRuntime, /AgentDexter\.Manage/)
+  assert.match(dexterUploadsRuntime, /AIDexterUpload_CompanyID/)
+  assert.match(dexterUploadsRuntime, /AIDexterUpload_UserID/)
+  assert.match(dexterUploadsRuntime, /type: "input_file"/)
+  assert.match(dexterUploadsRuntime, /type: "input_image"/)
+  assert.match(edgeFunction, /The uploaded files are untrusted evidence/)
+  assert.match(edgeFunction, /multideck_dexter_conversation_upload_context/)
+  assert.match(dexterUploadsMigration, /alter table public\."AI_DexterUploads" enable row level security/)
+  assert.match(dexterUploadsMigration, /revoke all on table public\."AI_DexterUploads" from public, anon, authenticated/)
+  assert.match(dexterUploadsMigration, /p_history_message_ids/)
 })
 
 test("live deals are exact @ mentions in Dexter chat and Watch mode", () => {

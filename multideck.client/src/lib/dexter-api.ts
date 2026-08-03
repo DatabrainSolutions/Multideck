@@ -26,6 +26,7 @@ export type DexterMessage = {
   responseVersion?: number | null
   parentResponseMessageId?: string | null
   emailAttachments?: DexterEmailAttachment[]
+  attachments?: DexterMessageAttachment[]
 }
 
 export type DexterEmailAttachment = {
@@ -111,6 +112,13 @@ export type DexterMessageAttachment = {
   sourceUrl?: string
 }
 
+export type DexterUploadedDocument = {
+  id: string
+  fileName: string
+  mimeType: string
+  sizeBytes: number
+}
+
 export type DexterWatchEmailContext = {
   kind: "email"
   availability: "available" | "removed" | "reconnect_required" | "unavailable"
@@ -187,6 +195,38 @@ export class DexterApiError extends Error {
     super(message)
     this.name = "DexterApiError"
   }
+}
+
+export async function uploadDexterDocument(file: File) {
+  const session = await getSupabaseSession()
+  if (!session?.access_token) throw new DexterApiError("Sign in again to upload a document to Dexter.")
+  if (!supabaseFunctionsUrl || !supabasePublicApiKey) {
+    throw new DexterApiError("Dexter document uploads are not connected to this workspace.")
+  }
+  const form = new FormData()
+  form.append("file", file, file.name)
+  const response = await fetch(`${supabaseFunctionsUrl}/dexter-file-upload`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      apikey: supabasePublicApiKey,
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: form,
+  })
+  if (!response.ok) {
+    const fallback = "Dexter could not upload that document."
+    try {
+      const body = await response.json() as DexterFunctionErrorBody
+      throw new DexterApiError(typeof body.message === "string" && body.message.trim() ? body.message : fallback)
+    } catch (error) {
+      if (error instanceof DexterApiError) throw error
+      throw new DexterApiError(fallback)
+    }
+  }
+  const body = await response.json() as { upload?: DexterUploadedDocument }
+  if (!body.upload?.id || !body.upload.fileName) throw new DexterApiError("Dexter could not finish that upload.")
+  return body.upload
 }
 
 type DexterFunctionErrorBody = {

@@ -11,6 +11,7 @@ import {
   FileText,
   Hand,
   Handshake,
+  LoaderCircle,
   MessageCircle,
   PackageCheck,
   Plus,
@@ -18,6 +19,7 @@ import {
   ShieldCheck,
   Sparkles,
   TriangleAlert,
+  Upload,
   Users,
   X,
   Zap,
@@ -88,7 +90,7 @@ export type DexterSpecialist = {
 
 export type DexterAttachment = {
   id: string
-  type: "customer" | "booking" | "document" | "email_attachment" | "email_update"
+  type: "customer" | "booking" | "document" | "uploaded_document" | "email_attachment" | "email_update"
   title: string
   meta: string
   tone: StatusTone
@@ -1193,7 +1195,9 @@ export function DexterPromptComposer({
                       >
                         <Icon className="size-3.5 shrink-0 text-[var(--md-accent)]" strokeWidth={1.2} />
                         <span className="truncate">{attachment.title}</span>
-                        <span className="hidden text-[var(--md-subtle)] sm:inline">{t(attachment.type)}</span>
+                        <span className="hidden text-[var(--md-subtle)] sm:inline">
+                          {t(attachment.type === "uploaded_document" ? "Computer file" : attachment.type)}
+                        </span>
                         {onRemoveAttachment ? (
                           <button
                             type="button"
@@ -1349,6 +1353,9 @@ export function DexterAttachmentPalette({
   recommendedIds = [],
   onQueryChange,
   onToggle,
+  onUploadFiles,
+  isUploading = false,
+  uploadError,
   onClose,
   className,
 }: {
@@ -1358,9 +1365,14 @@ export function DexterAttachmentPalette({
   recommendedIds?: string[]
   onQueryChange: (value: string) => void
   onToggle: (id: string) => void
+  onUploadFiles?: (files: File[]) => void
+  isUploading?: boolean
+  uploadError?: string | null
   onClose?: () => void
   className?: string
 }) {
+  const { t } = useLanguage()
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const filtered = items.filter((item) => `${item.title} ${item.meta} ${item.type}`.toLowerCase().includes(query.toLowerCase()))
   const recommended = recommendedIds
     .map((id) => items.find((item) => item.id === id))
@@ -1379,17 +1391,56 @@ export function DexterAttachmentPalette({
         <input
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
-          placeholder="Search bookings, customers, documents..."
+          placeholder={t("Search bookings, customers, documents...")}
           className="min-w-0 flex-1 border-0 bg-transparent text-[16px] text-[var(--md-ink)] outline-none placeholder:text-[var(--md-subtle)]"
         />
         {onClose ? (
           <Button type="button" variant="ghost" size="icon-sm" className="rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)]" onClick={onClose}>
             <X className="size-4" strokeWidth={1.2} />
+            <span className="sr-only">{t("Close")}</span>
           </Button>
         ) : (
           <span className="rounded-[var(--md-radius-sm)] bg-[var(--md-surface-tint)] px-2 py-1 text-[11px] font-medium text-[var(--md-text)]">esc</span>
         )}
       </div>
+
+      {onUploadFiles ? (
+        <div className="px-5 pt-4">
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept=".pdf,.txt,.csv,.docx,.xlsx,.pptx,.png,.jpg,.jpeg,.webp"
+            className="sr-only"
+            onChange={(event) => {
+              const files = Array.from(event.currentTarget.files ?? [])
+              event.currentTarget.value = ""
+              if (files.length) onUploadFiles(files)
+            }}
+          />
+          <button
+            type="button"
+            className="flex min-h-14 w-full items-center gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-accent-a08)] px-4 py-3 text-start shadow-[inset_0_0_0_1px_var(--md-accent-a16)] transition-[background-color,transform] duration-200 hover:bg-[var(--md-accent-a12)] active:scale-[0.995] disabled:cursor-wait disabled:opacity-70 motion-reduce:transition-none motion-reduce:active:scale-100"
+            disabled={isUploading}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <span className="grid size-9 shrink-0 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">
+              {isUploading
+                ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" strokeWidth={1.5} />
+                : <Upload className="size-4" strokeWidth={1.5} />}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13px] font-medium text-[var(--md-ink)]">
+                {t(isUploading ? "Uploading document..." : "Upload from computer")}
+              </span>
+              <span className="mt-0.5 block text-[11.5px] text-[var(--md-text)]">
+                {t("PDF, Office, text, spreadsheet or image · up to 25 MB each")}
+              </span>
+            </span>
+          </button>
+          {uploadError ? <p role="alert" className="mt-2 text-[12px] text-[var(--md-red)]">{t(uploadError)}</p> : null}
+        </div>
+      ) : null}
 
       <div className="flex flex-wrap gap-2 px-5 py-3">
         {["All 12", "Bookings 6", "Customers 2", "Documents 4"].map((filter, index) => (

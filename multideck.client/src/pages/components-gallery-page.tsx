@@ -2309,6 +2309,7 @@ function ComponentPreview({ id }: { id: string }) {
             recommendedIds={["marlow", "md-22414", "ci-rev2"]}
             onQueryChange={setPreviewDexterAttachmentQuery}
             onToggle={togglePreviewDexterAttachment}
+            onUploadFiles={(files) => toast.success(`${files.length} local ${files.length === 1 ? "file" : "files"} selected`)}
           />
         </div>
       ) : null}

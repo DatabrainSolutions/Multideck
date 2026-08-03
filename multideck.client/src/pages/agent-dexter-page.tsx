@@ -78,6 +78,8 @@ import {
   setDexterWatchStatus,
   sendDexterMessage,
   streamDexterMessage,
+  uploadDexterDocument,
+  type DexterUploadedDocument,
   type DexterConversation,
   type DexterEmailAttachment,
   type DexterWatchEmailContext,
@@ -1588,6 +1590,9 @@ export function AgentDexterPage({
   const [selectedAttachmentIds, setSelectedAttachmentIds] = useState<Set<string>>(new Set())
   const [composerEmailAttachments, setComposerEmailAttachments] = useState<DexterEmailAttachment[]>([])
   const [composerEmailUpdates, setComposerEmailUpdates] = useState<DexterWatchEmailContext[]>([])
+  const [composerUploadedDocuments, setComposerUploadedDocuments] = useState<DexterUploadedDocument[]>([])
+  const [isUploadingDocument, setIsUploadingDocument] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
   const [mentionItems, setMentionItems] = useState<DexterMentionItem[]>(defaultDexterMentionItems)
   const [recentDeals, setRecentDeals] = useState<ApiDeal[]>([])
   const [composerMentions, setComposerMentions] = useState<DexterMentionItem[]>([])
@@ -1632,7 +1637,15 @@ export function AgentDexterPage({
       tone: "teal" as const,
       icon: Mail,
     })),
-  ], [attachedItems, composerEmailAttachments, composerEmailUpdates, t])
+    ...composerUploadedDocuments.map((document) => ({
+      id: document.id,
+      type: "uploaded_document" as const,
+      title: document.fileName,
+      meta: `${Math.max(1, Math.ceil(document.sizeBytes / 1024)).toLocaleString()} KB`,
+      tone: "teal" as const,
+      icon: FileText,
+    })),
+  ], [attachedItems, composerEmailAttachments, composerEmailUpdates, composerUploadedDocuments, t])
   const attachedContextItems = useMemo(
     () => [...composerAttachmentItems, ...composerMentions],
     [composerAttachmentItems, composerMentions],
@@ -1973,7 +1986,43 @@ export function AgentDexterPage({
         subject: context.subject,
         sourceUrl: context.sourceUrl,
       })),
+      ...composerUploadedDocuments.map((document) => ({
+        id: document.id,
+        type: "uploaded_document",
+        title: document.fileName,
+        fileName: document.fileName,
+        mimeType: document.mimeType,
+        sizeBytes: document.sizeBytes,
+      })),
     ].map((item) => [`${item.type}:${item.id}`, item])).values()]
+  }
+
+  async function handleDocumentUpload(files: File[]) {
+    if (isUploadingDocument || files.length === 0) return
+    const remaining = 3 - composerUploadedDocuments.length
+    if (remaining <= 0) {
+      setUploadError(t("You can attach up to three computer files to one request."))
+      return
+    }
+    const selected = files.slice(0, remaining)
+    const selectionWasTruncated = files.length > remaining
+    setIsUploadingDocument(true)
+    setUploadError(selectionWasTruncated ? t("Only the first three files were selected.") : null)
+    const results = await Promise.allSettled(selected.map((file) => uploadDexterDocument(file)))
+    const uploaded = results.flatMap((result) => result.status === "fulfilled" ? [result.value] : [])
+    const failed = results.find((result): result is PromiseRejectedResult => result.status === "rejected")
+    if (uploaded.length) {
+      setComposerUploadedDocuments((current) => {
+        const byId = new Map(current.map((document) => [document.id, document]))
+        for (const document of uploaded) byId.set(document.id, document)
+        return [...byId.values()].slice(0, 3)
+      })
+      if (!failed && !selectionWasTruncated) setShowAttachments(false)
+    }
+    if (failed) {
+      setUploadError(failed.reason instanceof Error ? failed.reason.message : t("Dexter could not upload that document."))
+    }
+    setIsUploadingDocument(false)
   }
 
   function handleComposerChange(value: string) {
@@ -2039,12 +2088,14 @@ export function AgentDexterPage({
     const parentResponseMessage = [...previousBranchMessages]
       .reverse()
       .find((item) => item.role === "assistant")
+    const messageAttachments = composerMessageAttachments()
     const pendingMessage: DexterMessage = {
       id: `pending-${Date.now()}`,
       role: "user",
       content: message,
       createdAt: new Date().toISOString(),
       specialist: specialistId,
+      attachments: messageAttachments,
       parentResponseMessageId: parentResponseMessage
         ? dexterMessageServerId(parentResponseMessage)
         : null,
@@ -2095,7 +2146,7 @@ export function AgentDexterPage({
         model: selectedModelId,
         locale: language,
         accessMode,
-        attachments: composerMessageAttachments(),
+        attachments: messageAttachments,
       }, {
         onAnswerDelta: (delta) => {
           const stream = streamRef.current
@@ -2159,6 +2210,7 @@ export function AgentDexterPage({
       setComposerValue("")
       setComposerMentions([])
       setSelectedAttachmentIds(new Set())
+      setComposerUploadedDocuments([])
     } catch (requestError) {
       setActiveConversation((current) => {
         const base = current ?? pendingConversation
@@ -2253,7 +2305,7 @@ export function AgentDexterPage({
         model: selectedModelId,
         locale: language,
         accessMode,
-        attachments: [],
+        attachments: userMessage.attachments ?? [],
       }, {
         onAnswerDelta: (delta) => {
           setActiveConversation((current) => {
@@ -2439,6 +2491,8 @@ export function AgentDexterPage({
     setSelectedAttachmentIds(new Set())
     setComposerEmailAttachments([])
     setComposerEmailUpdates([])
+    setComposerUploadedDocuments([])
+    setUploadError(null)
     setSelectedSpecialistId("auto")
     setShowJumpToLatest(false)
   }
@@ -2574,6 +2628,10 @@ export function AgentDexterPage({
                   onSelectModel={setSelectedModelId}
                   onAccessModeChange={setAccessMode}
                   onRemoveAttachment={(id) => {
+                    if (composerUploadedDocuments.some((document) => document.id === id)) {
+                      setComposerUploadedDocuments((current) => current.filter((document) => document.id !== id))
+                      return
+                    }
                     if (composerEmailUpdates.some((context) => context.messageId === id)) {
                       setComposerEmailUpdates((current) => current.filter((context) => context.messageId !== id))
                       return
@@ -2608,6 +2666,9 @@ export function AgentDexterPage({
                       recommendedIds={recommendedAttachmentIds}
                       onQueryChange={setAttachmentQuery}
                       onToggle={addAttachment}
+                      onUploadFiles={dexterMode === "chat" ? (files) => void handleDocumentUpload(files) : undefined}
+                      isUploading={isUploadingDocument}
+                      uploadError={uploadError}
                       onClose={() => setShowAttachments(false)}
                       className="mt-4"
                     />
@@ -2829,6 +2890,10 @@ export function AgentDexterPage({
                         onSelectModel={setSelectedModelId}
                         onAccessModeChange={setAccessMode}
                         onRemoveAttachment={(id) => {
+                          if (composerUploadedDocuments.some((document) => document.id === id)) {
+                            setComposerUploadedDocuments((current) => current.filter((document) => document.id !== id))
+                            return
+                          }
                           if (composerEmailUpdates.some((context) => context.messageId === id)) {
                             setComposerEmailUpdates((current) => current.filter((context) => context.messageId !== id))
                             return
@@ -2860,6 +2925,9 @@ export function AgentDexterPage({
                             recommendedIds={recommendedAttachmentIds}
                             onQueryChange={setAttachmentQuery}
                             onToggle={addAttachment}
+                            onUploadFiles={dexterMode === "chat" ? (files) => void handleDocumentUpload(files) : undefined}
+                            isUploading={isUploadingDocument}
+                            uploadError={uploadError}
                             onClose={() => setShowAttachments(false)}
                           />
                         </motion.div>
