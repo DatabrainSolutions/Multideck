@@ -38,10 +38,11 @@ test("customs invoice extraction remains authenticated, server-side and Mistral-
 })
 
 test("the client uses embedded PDF text first, falls back only to Mistral OCR and applies reviewed lines", async () => {
-  const [transport, pdfText, workspace, importLogic, dexter] = await Promise.all([
+  const [transport, pdfText, workspace, folderAnimation, importLogic, dexter] = await Promise.all([
     read("multideck.client/src/lib/customs-invoice-import-api.ts"),
     read("multideck.client/src/lib/customs-invoice-pdf-text.ts"),
     read("multideck.client/src/pages/customs-invoice-import-workspace.tsx"),
+    read("multideck.client/src/assets/animations/docs-folder.json"),
     read("multideck.client/src/lib/customs-invoice-import.ts"),
     read("supabase/functions/agent-dexter/index.ts"),
   ])
@@ -59,7 +60,11 @@ test("the client uses embedded PDF text first, falls back only to Mistral OCR an
   assert.match(workspace, /extractCommercialInvoice\(file\)/)
   assert.match(workspace, /setSelections\(createDefaultInvoiceSelections\(result\.lines\)\)/)
   assert.match(workspace, /accept="application\/pdf,\.pdf"/)
-  assert.match(workspace, /Try extraction again/)
+  assert.match(workspace, /data-testid="commercial-invoice-dropzone"/)
+  assert.match(workspace, /onDrop=\{handleInvoiceDrop\}/)
+  assert.match(workspace, /DotLottieReact/)
+  assert.match(workspace, /buildAccentRamp\(accentPresetId\)/)
+  assert.match(folderAnimation, /"nm":"Folder"/)
   assert.match(importLogic, /include: Boolean\(line\.description\.trim\(\)\)/)
   assert.match(dexter, /no conventional OCR fallback is used/)
   assert.match(dexter, /You cannot upload or process the invoice from chat or claim that extraction ran/)
