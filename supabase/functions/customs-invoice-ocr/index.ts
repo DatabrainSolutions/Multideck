@@ -45,6 +45,8 @@ Deno.serve(async (request) => {
         },
         table_format: "markdown",
         include_blocks: false,
+        include_image_base64: false,
+        image_limit: 0,
         confidence_scores_granularity: "page",
         document_annotation_format: commercialInvoiceAnnotationFormat,
         document_annotation_prompt: [
@@ -53,6 +55,7 @@ Deno.serve(async (request) => {
           "Use a one-based page number and preserve the source goods description.",
           "Return three-letter ISO currency and two-letter ISO origin only when explicitly stated.",
           "Keep item quantity separate from package count; return package count only when explicitly stated.",
+          "Ignore logos, product photography, signatures, stamps and other decorative images.",
           "Do not return totals, tax, freight, discounts, addresses or payment terms as item rows.",
         ].join(" "),
       }),
