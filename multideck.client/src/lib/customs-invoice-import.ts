@@ -15,6 +15,7 @@ export type ExtractedInvoiceLine = {
   originCountry: string
   packageKind: string
   packageMarks: string
+  packageCount: number
   confidence: number
 }
 
@@ -44,6 +45,7 @@ export type InvoiceOutputLine = {
   originCountry: string
   packageKind: string
   packageMarks: string
+  packageCount: number
   consolidated: boolean
 }
 
@@ -53,7 +55,7 @@ export function createDefaultInvoiceSelections(lines: ExtractedInvoiceLine[]) {
     return counts
   }, {})
   return Object.fromEntries(lines.map((line) => [line.id, {
-    include: Boolean(line.commodityCode),
+    include: Boolean(line.description.trim()),
     consolidate: Boolean(line.commodityCode && commodityCounts[line.commodityCode] > 1),
   }])) as Record<string, InvoiceLineSelection>
 }
@@ -104,7 +106,7 @@ export function invoiceOutputToDeclarationItems(output: InvoiceOutputLine[], inv
     description: line.description,
     packageKind: line.packageKind,
     packageMarks: line.packageMarks,
-    packageCount: String(Math.max(1, line.quantity)),
+    packageCount: line.packageCount ? formatNumber(line.packageCount) : "",
     nonPreferentialOrigin: line.originCountry,
     procedureCode: "",
     additionalProcedureCode: "",
@@ -134,6 +136,7 @@ function combineLines(id: string, lines: ExtractedInvoiceLine[], descriptionOver
     originCountry: commonValue(lines.map((line) => line.originCountry)),
     packageKind: commonValue(lines.map((line) => line.packageKind)),
     packageMarks: [...new Set(lines.map((line) => line.packageMarks).filter(Boolean))].join(", "),
+    packageCount: sum(lines, (line) => line.packageCount),
     consolidated: lines.length >= 2,
   }
 }

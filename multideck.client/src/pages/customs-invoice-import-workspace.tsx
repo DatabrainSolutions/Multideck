@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react"
-import { ArrowLeft, Check, CircleAlert, FileSearch, FileText, Merge, ShieldCheck, Sparkles, Split, Upload } from "lucide-react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { ArrowLeft, Check, CircleAlert, FileSearch, FileText, LoaderCircle, Merge, RotateCcw, ShieldCheck, Sparkles, Split, Upload } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -9,11 +9,16 @@ import { StatusPill } from "@/components/multideck/status-pill"
 import { useLanguage } from "@/i18n/language-provider"
 import {
   buildInvoiceOutputLines,
+  createDefaultInvoiceSelections,
   groupInvoiceLines,
   invoiceOutputToDeclarationItems,
   type ExtractedInvoiceLine,
   type InvoiceLineSelection,
 } from "@/lib/customs-invoice-import"
+import {
+  CommercialInvoiceExtractionError,
+  extractCommercialInvoice,
+} from "@/lib/customs-invoice-import-api"
 import type { ExportDeclarationItem } from "@/lib/customs-declaration"
 import { cn } from "@/lib/utils"
 
@@ -22,16 +27,21 @@ type ApplyMode = "replace" | "append"
 export function CustomsInvoiceImportWorkspace({ onClose, onApply }: { onClose: () => void; onApply: (items: ExportDeclarationItem[], mode: ApplyMode, sourceLineCount: number) => void }) {
   const { t } = useLanguage()
   const [invoiceName, setInvoiceName] = useState("")
+  const [invoiceFile, setInvoiceFile] = useState<File | null>(null)
+  const [extractedInvoiceNumber, setExtractedInvoiceNumber] = useState("")
   const [lines, setLines] = useState<ExtractedInvoiceLine[]>([])
   const [selections, setSelections] = useState<Record<string, InvoiceLineSelection>>({})
   const [descriptionOverrides, setDescriptionOverrides] = useState<Record<string, string>>({})
   const [applyMode, setApplyMode] = useState<ApplyMode>("replace")
+  const [extracting, setExtracting] = useState(false)
+  const [extractionError, setExtractionError] = useState("")
+  const extractionRequest = useRef(0)
   const groups = useMemo(() => groupInvoiceLines(lines), [lines])
   const output = useMemo(() => buildInvoiceOutputLines(groups, selections, descriptionOverrides), [descriptionOverrides, groups, selections])
   const includedCount = lines.filter((line) => selections[line.id]?.include).length
   const excludedCount = lines.length - includedCount
   const consolidatedGroupCount = output.filter((line) => line.consolidated).length
-  const invoiceReference = invoiceName.replace(/\.[^.]+$/, "").slice(0, 35).toUpperCase()
+  const invoiceReference = (extractedInvoiceNumber || invoiceName.replace(/\.[^.]+$/, "")).slice(0, 35).toUpperCase()
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow
@@ -50,13 +60,35 @@ export function CustomsInvoiceImportWorkspace({ onClose, onApply }: { onClose: (
     }))
   }
 
-  function selectInvoice(file: File | undefined) {
+  async function selectInvoice(file: File | undefined) {
     if (!file) return
+    const requestId = extractionRequest.current + 1
+    extractionRequest.current = requestId
     setInvoiceName(file.name)
+    setInvoiceFile(file)
+    setExtractedInvoiceNumber("")
     setLines([])
     setSelections({})
     setDescriptionOverrides({})
-    toast.info(t("Invoice selected"), { description: t("It is ready for secure AI extraction on the App server.") })
+    setExtractionError("")
+    setExtracting(true)
+
+    try {
+      const result = await extractCommercialInvoice(file)
+      if (extractionRequest.current !== requestId) return
+      setExtractedInvoiceNumber(result.invoiceNumber)
+      setLines(result.lines)
+      setSelections(createDefaultInvoiceSelections(result.lines))
+      toast.success(t("Invoice extraction complete"), { description: `${result.lines.length} ${t("item lines are ready for review")}` })
+    } catch (error) {
+      if (extractionRequest.current !== requestId) return
+      const message = error instanceof CommercialInvoiceExtractionError ? error.message : "The invoice could not be extracted. Try again."
+      const translatedMessage = t(message)
+      setExtractionError(translatedMessage)
+      toast.error(t("Invoice extraction failed"), { description: translatedMessage })
+    } finally {
+      if (extractionRequest.current === requestId) setExtracting(false)
+    }
   }
 
   function applyToDeclaration() {
@@ -75,16 +107,16 @@ export function CustomsInvoiceImportWorkspace({ onClose, onApply }: { onClose: (
           <div className="grid size-10 shrink-0 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-accent-a10)] text-[var(--md-accent)]"><Sparkles className="size-5" /></div>
           <span className="min-w-0"><span className="flex flex-wrap items-center gap-2"><h1 className="text-[21px] font-medium tracking-[-0.025em]">{t("AI invoice import")}</h1><StatusPill tone="teal">{t("Extraction preview")}</StatusPill></span><p className="mt-0.5 truncate text-[11px] text-[var(--md-subtle)]">{t("Review source lines, control consolidation and create declaration items.")}</p></span>
         </div>
-        <div className="flex items-center gap-2"><Button type="button" variant="ghost" onClick={onClose}>{t("Cancel")}</Button><Button type="button" onClick={applyToDeclaration} disabled={!output.length}><Check className="size-4" />{t("Apply to declaration")}</Button></div>
+        <div className="flex items-center gap-2"><Button type="button" variant="ghost" onClick={onClose}>{t("Cancel")}</Button><Button type="button" onClick={applyToDeclaration} disabled={extracting || !output.length}><Check className="size-4" />{t("Apply to declaration")}</Button></div>
       </header>
 
       <main className="min-h-0 flex-1 overflow-y-auto p-4 lg:p-6">
         <div className="mx-auto max-w-[1680px] space-y-4">
           <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
             <div className="grid gap-px bg-[var(--md-line)] lg:grid-cols-[1.15fr_1fr_auto]">
-              <div className="flex min-w-0 items-center gap-3 bg-[var(--md-surface)] px-4 py-3"><div className="grid size-9 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)]"><FileText className="size-4 text-[var(--md-accent)]" /></div><span className="min-w-0"><span className="block truncate text-[12px] font-medium">{invoiceName || t("No invoice selected")}</span><span className="mt-0.5 block text-[10px] text-[var(--md-subtle)]">{lines.length ? t("AI extraction available for review") : t("Awaiting secure AI extraction")}</span></span></div>
-              <div className="flex items-center gap-3 bg-[var(--md-surface)] px-4 py-3"><ShieldCheck className="size-4 shrink-0 text-[var(--md-green)]" /><span className="text-[11px] leading-4 text-[var(--md-text)]">{t("The document, extraction evidence and audit trail remain on the App server.")}</span></div>
-              <div className="flex flex-wrap items-center justify-end gap-2 bg-[var(--md-surface)] px-4 py-3"><Button asChild variant="outline" size="sm"><label htmlFor="commercial-invoice-file" className="cursor-pointer"><Upload className="size-3.5" />{t("Choose invoice")}<input id="commercial-invoice-file" type="file" accept="application/pdf,image/*,.doc,.docx,.xls,.xlsx" className="sr-only" onChange={(event) => selectInvoice(event.target.files?.[0])} /></label></Button></div>
+              <div className="flex min-w-0 items-center gap-3 bg-[var(--md-surface)] px-4 py-3"><div className="grid size-9 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)]">{extracting ? <LoaderCircle className="size-4 animate-spin text-[var(--md-accent)]" /> : <FileText className="size-4 text-[var(--md-accent)]" />}</div><span className="min-w-0"><span className="block truncate text-[12px] font-medium">{invoiceName || t("No invoice selected")}</span><span className="mt-0.5 block text-[10px] text-[var(--md-subtle)]" aria-live="polite">{extracting ? t("Extracting item lines with Mistral OCR 4") : extractionError ? t("Invoice extraction needs attention") : lines.length ? t("AI extraction available for review") : t("Awaiting secure AI extraction")}</span></span></div>
+              <div className="flex items-center gap-3 bg-[var(--md-surface)] px-4 py-3"><ShieldCheck className="size-4 shrink-0 text-[var(--md-green)]" /><span className="text-[11px] leading-4 text-[var(--md-text)]">{t("The API key stays on the App server. Your PDF is sent securely to Mistral for extraction.")}</span></div>
+              <div className="flex flex-wrap items-center justify-end gap-2 bg-[var(--md-surface)] px-4 py-3"><Button asChild variant="outline" size="sm" disabled={extracting}><label htmlFor="commercial-invoice-file" className={extracting ? "cursor-not-allowed" : "cursor-pointer"}><Upload className="size-3.5" />{t("Choose invoice")}<input id="commercial-invoice-file" type="file" accept="application/pdf,.pdf" disabled={extracting} className="sr-only" onChange={(event) => { void selectInvoice(event.target.files?.[0]); event.currentTarget.value = "" }} /></label></Button></div>
             </div>
           </Surface>
 
@@ -98,7 +130,7 @@ export function CustomsInvoiceImportWorkspace({ onClose, onApply }: { onClose: (
             </div>
           </Surface>
 
-          {!lines.length ? <Surface padding="lg" className="rounded-[var(--md-radius-xl)]"><div className="mx-auto flex max-w-xl flex-col items-center py-16 text-center"><div className="grid size-14 place-items-center rounded-full bg-[var(--md-accent-a10)] text-[var(--md-accent)]"><FileSearch className="size-6" /></div><h2 className="mt-4 text-[18px] font-medium">{t(invoiceName ? "Ready for AI extraction" : "Choose a commercial invoice")}</h2><p className="mt-2 text-[12px] leading-5 text-[var(--md-text)]">{t(invoiceName ? "The secure extraction endpoint will turn this invoice into evidenced source rows before consolidation begins." : "Select a source document to begin secure AI extraction.")}</p></div></Surface> : <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(380px,0.7fr)]">
+          {!lines.length ? <Surface padding="lg" className="rounded-[var(--md-radius-xl)]"><div className="mx-auto flex max-w-xl flex-col items-center py-16 text-center">{extracting ? <><div className="grid size-14 place-items-center rounded-full bg-[var(--md-accent-a10)] text-[var(--md-accent)]"><LoaderCircle className="size-6 animate-spin" /></div><h2 className="mt-4 text-[18px] font-medium">{t("Extracting invoice")}</h2><p className="mt-2 text-[12px] leading-5 text-[var(--md-text)]">{t("Mistral OCR 4 is reading the document and structuring its item lines. This can take a moment for scanned invoices.")}</p></> : extractionError ? <><div className="grid size-14 place-items-center rounded-full bg-[var(--md-surface-tint)] text-[var(--md-amber)]"><CircleAlert className="size-6" /></div><h2 className="mt-4 text-[18px] font-medium">{t("Invoice extraction failed")}</h2><p className="mt-2 text-[12px] leading-5 text-[var(--md-text)]">{extractionError}</p><Button type="button" variant="outline" className="mt-5" disabled={!invoiceFile} onClick={() => { if (invoiceFile) void selectInvoice(invoiceFile) }}><RotateCcw className="size-4" />{t("Try extraction again")}</Button></> : <><div className="grid size-14 place-items-center rounded-full bg-[var(--md-accent-a10)] text-[var(--md-accent)]"><FileSearch className="size-6" /></div><h2 className="mt-4 text-[18px] font-medium">{t("Choose a commercial invoice")}</h2><p className="mt-2 text-[12px] leading-5 text-[var(--md-text)]">{t("Choose a PDF commercial invoice up to 10 MB. Its item lines will appear here for review before anything changes in the declaration.")}</p></>}</div></Surface> : <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(380px,0.7fr)]">
             <section className="min-w-0 space-y-3" aria-label={t("Consolidation groups")}>
               <div className="flex flex-wrap items-end justify-between gap-3 px-1"><span><h2 className="text-[15px] font-medium">{t("Selective consolidation")}</h2><p className="mt-1 text-[11px] text-[var(--md-subtle)]">{t("Commodity code forms the primary group. Uncheck Consolidate to keep a source line separate.")}</p></span><StatusPill>{groups.length} {t("suggested groups")}</StatusPill></div>
               {groups.map((group) => {
@@ -124,7 +156,7 @@ export function CustomsInvoiceImportWorkspace({ onClose, onApply }: { onClose: (
               <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
                 <header className="border-b border-[var(--md-line)] px-4 py-3"><div className="flex items-center justify-between gap-3"><span><h2 className="text-[14px] font-medium">{t("Declaration line preview")}</h2><p className="mt-1 text-[10px] text-[var(--md-subtle)]">{t("Every output line retains its source invoice evidence.")}</p></span><StatusPill tone="blue">{output.length} {t("lines")}</StatusPill></div></header>
                 <div className="max-h-[460px] divide-y divide-[var(--md-line)] overflow-y-auto">{output.map((line, index) => <div key={line.id} className="bg-[var(--md-surface)] px-4 py-3"><div className="flex items-start justify-between gap-3"><span className="min-w-0"><span className="flex flex-wrap items-center gap-2"><strong className="text-[11px]">{t("Declaration line")} {index + 1}</strong><span className="font-mono text-[10px] text-[var(--md-accent)]" dir="ltr">{line.commodityCode}</span>{line.consolidated ? <StatusPill tone="teal">{t("Consolidated")}</StatusPill> : <StatusPill>{t("Standalone")}</StatusPill>}</span><span className="mt-1 block truncate text-[11px] text-[var(--md-text)]">{line.description}</span></span><strong className="shrink-0 text-[11px] tabular-nums">{formatCurrency(line.itemPrice, line.currency)}</strong></div><div className="mt-2 flex flex-wrap items-center gap-1 text-[9px] text-[var(--md-subtle)]"><span>{t("Source")}</span>{line.sourceLineNumbers.map((sourceLine) => <span key={sourceLine} className="rounded-full bg-[var(--md-surface-tint)] px-1.5 py-0.5 font-medium">{sourceLine}</span>)}<span className="ms-auto">{line.quantity} {t("units")} · {line.netMass} kg {t("net")}</span></div></div>)}{!output.length ? <div className="px-5 py-12 text-center"><CircleAlert className="mx-auto size-5 text-[var(--md-amber)]" /><p className="mt-2 text-[11px] text-[var(--md-text)]">{t("No invoice lines are selected.")}</p></div> : null}</div>
-                <div className="space-y-3 border-t border-[var(--md-line)] bg-[var(--md-surface-soft)] p-4"><div><p className="text-[10px] font-medium text-[var(--md-subtle)]">{t("Apply behaviour")}</p><div className="mt-2 grid grid-cols-2 gap-1 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)]"><ModeButton active={applyMode === "replace"} onClick={() => setApplyMode("replace")} title={t("Replace items")} detail={t("Start with imported lines")} /><ModeButton active={applyMode === "append"} onClick={() => setApplyMode("append")} title={t("Append items")} detail={t("Keep current lines too")} /></div></div><div className="flex gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-accent-a10)] p-3"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-[var(--md-accent)]" /><p className="text-[10px] leading-4 text-[var(--md-text)]">{t("AI proposes the extraction. Deterministic checks and staff approval control what reaches the declaration.")}</p></div><Button type="button" className="w-full" onClick={applyToDeclaration} disabled={!output.length}><Check className="size-4" />{t("Apply")} {output.length} {t("declaration lines")}</Button></div>
+                <div className="space-y-3 border-t border-[var(--md-line)] bg-[var(--md-surface-soft)] p-4"><div><p className="text-[10px] font-medium text-[var(--md-subtle)]">{t("Apply behaviour")}</p><div className="mt-2 grid grid-cols-2 gap-1 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)]"><ModeButton active={applyMode === "replace"} onClick={() => setApplyMode("replace")} title={t("Replace items")} detail={t("Start with imported lines")} /><ModeButton active={applyMode === "append"} onClick={() => setApplyMode("append")} title={t("Append items")} detail={t("Keep current lines too")} /></div></div><div className="flex gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-accent-a10)] p-3"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-[var(--md-accent)]" /><p className="text-[10px] leading-4 text-[var(--md-text)]">{t("AI proposes the extraction. Deterministic checks and staff approval control what reaches the declaration.")}</p></div><Button type="button" className="w-full" onClick={applyToDeclaration} disabled={extracting || !output.length}><Check className="size-4" />{t("Apply")} {output.length} {t("declaration lines")}</Button></div>
               </Surface>
             </aside>
           </div>}
