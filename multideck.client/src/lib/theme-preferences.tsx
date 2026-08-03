@@ -35,6 +35,7 @@ export function setThemeWithProfileIntent(setTheme: (mode: string) => void, mode
  */
 export function ThemeProfileSync() {
   const { theme, setTheme } = useTheme()
+  const setThemeRef = useRef(setTheme)
   const activeUserId = useRef<string | null>(null)
   const loadVersion = useRef(0)
   const themeRevision = useRef(0)
@@ -42,6 +43,10 @@ export function ThemeProfileSync() {
   const lastPersistedTheme = useRef<ThemeMode | null>(null)
   const pendingThemeIntent = useRef<ThemeMode | null>(null)
   const saveQueue = useRef<Promise<void>>(Promise.resolve())
+
+  useEffect(() => {
+    setThemeRef.current = setTheme
+  }, [setTheme])
 
   const saveTheme = useCallback((mode: ThemeMode, userId: string) => {
     const client = supabase
@@ -137,7 +142,7 @@ export function ThemeProfileSync() {
       const savedTheme = readThemeMode(data)
       if (savedTheme) {
         lastPersistedTheme.current = savedTheme
-        if (currentTheme.current !== savedTheme) setTheme(savedTheme)
+        if (currentTheme.current !== savedTheme) setThemeRef.current(savedTheme)
         return
       }
 
@@ -152,7 +157,7 @@ export function ThemeProfileSync() {
     })
 
     return () => listener.subscription.unsubscribe()
-  }, [saveTheme, setTheme])
+  }, [saveTheme])
 
   return null
 }
