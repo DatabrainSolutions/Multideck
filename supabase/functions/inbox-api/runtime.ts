@@ -1346,17 +1346,60 @@ async function threadData(admin: Db, actor: Actor, threadId: string, accessible:
 }
 
 export async function listThreads(admin: Db, actor: Actor, url: URL) {
-  await requirePermission(admin, actor, "Email.Read")
-  const accessible = await mailboxIds(admin, actor, "read")
   const mailboxId = cleanString(url.searchParams.get("mailboxId"), 80)
-  if (mailboxId && !accessible.has(mailboxId)) throw new InboxHttpError(404, "This mailbox is unavailable.", "mailbox_not_found")
-  const ids = mailboxId ? [mailboxId] : [...accessible]
-  if (!ids.length) return { items: [], nextCursor: null, hasMore: false }
   const folder = cleanString(url.searchParams.get("folder"), 40).toLowerCase() || "inbox"
   if (!["inbox", "sent", "drafts", "archive", "all", "spam", "trash", "deleted"].includes(folder)) throw new InboxHttpError(400, "Choose a valid mail folder.", "folder_invalid")
   const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit")) || 25))
   const offset = decodeCursor(url.searchParams.get("cursor"))
   const query = cleanString(url.searchParams.get("query"), 200).toLowerCase()
+
+  if (mailboxId) {
+    const snapshot = await result<Row>(admin.rpc("comm_inbox_thread_page", {
+      p_user_id: actor.userId,
+      p_mailbox_id: mailboxId,
+      p_folder: folder,
+      p_query: query,
+      p_limit: limit,
+      p_offset: offset,
+    }))
+    if (snapshot?.permissionGranted !== true) {
+      throw new InboxHttpError(403, "You do not have permission to perform this inbox action.", "permission_denied")
+    }
+    if (snapshot.folderValid === false) throw new InboxHttpError(400, "Choose a valid mail folder.", "folder_invalid")
+    if (snapshot.mailboxFound !== true) throw new InboxHttpError(404, "This mailbox is unavailable.", "mailbox_not_found")
+    const items = (Array.isArray(snapshot.items) ? snapshot.items : []).map((row) => ({
+      id: cleanString(row.threadId, 80),
+      mailboxId: cleanString(row.mailboxId, 80),
+      provider: publicProvider(row.provider),
+      subject: repairMojibake(row.subject ?? "(No subject)"),
+      preview: decodeHtmlEntities(row.preview ?? ""),
+      participants: (Array.isArray(row.participants) ? row.participants : []).map((participant) => ({
+        address: normalizeEmail(participant.address) ?? cleanString(participant.address, 320),
+        displayName: cleanString(participant.displayName, 240) || null,
+      })).filter((participant) => participant.address),
+      lastMessageAt: row.lastMessageAt ?? null,
+      unreadCount: Math.max(0, Number(row.unreadCount) || 0),
+      messageCount: Math.max(1, Number(row.messageCount) || 1),
+      hasAttachments: row.hasAttachments === true,
+      starred: row.starred === true,
+      archived: row.archived === true,
+      summary: summaryDto(isObject(row.summary) ? row.summary : null),
+    })).filter((item) => item.id && item.mailboxId)
+    const hasMore = snapshot.hasMore === true
+    const nextOffset = Number(snapshot.nextOffset)
+    return {
+      items,
+      nextCursor: hasMore && Number.isFinite(nextOffset) ? encodeCursor({ offset: nextOffset }) : null,
+      hasMore,
+    }
+  }
+
+  // The client opens one physically isolated mailbox at a time. Retain the
+  // existing multi-mailbox path for older callers that omit mailboxId.
+  await requirePermission(admin, actor, "Email.Read")
+  const accessible = await mailboxIds(admin, actor, "read")
+  const ids = [...accessible]
+  if (!ids.length) return { items: [], nextCursor: null, hasMore: false }
   // Thread lists never need full message bodies. Selecting `*` here made a
   // real mailbox return hundreds of HTML documents before the first row could
   // render, which can exceed the Edge/PostgREST response budget.
