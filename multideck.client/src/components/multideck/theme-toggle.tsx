@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "motion/react"
 import { Moon, Sun } from "lucide-react"
 import { useTheme } from "next-themes"
 import { useLanguage } from "@/i18n/language-provider"
+import { setThemeWithProfileIntent } from "@/lib/theme-preferences"
 import { cn } from "@/lib/utils"
 
 type ThemeToggleProps = {
@@ -33,7 +34,7 @@ export function ThemeToggle({ className, compact = false }: ThemeToggleProps) {
         compact && "size-10 justify-center rounded-[var(--md-radius-md)] p-0",
         className,
       )}
-      onClick={() => setTheme(nextTheme)}
+      onClick={() => setThemeWithProfileIntent(setTheme, nextTheme)}
     >
       {compact ? null : (
         <span className="min-w-0">

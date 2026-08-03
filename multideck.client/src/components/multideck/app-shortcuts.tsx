@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Kbd, KbdGroup } from "@/components/ui/kbd"
 import { KeyboardShortcutsPanel } from "@/components/multideck/keyboard-shortcuts-panel"
 import { useLanguage } from "@/i18n/language-provider"
+import { setThemeWithProfileIntent } from "@/lib/theme-preferences"
 import { focusAppSearch } from "@/lib/app-commands"
 import { DEXTER_NEW_CONVERSATION_EVENT } from "@/lib/dexter-navigation"
 import { getShortcutDefinition, shortcutDefinitions } from "@/data/keyboard-shortcuts-data"
@@ -166,7 +167,7 @@ export function AppShortcuts({ navigate }: { navigate: (path: string) => void })
       "search.quickFocus": search,
       "shortcuts.overview": () => setOverviewOpen((open) => !open),
       "interface.sidebar": () => setSidebarCollapsed(!sidebarCollapsed),
-      "interface.theme": () => setTheme(resolvedTheme === "dark" ? "light" : "dark"),
+      "interface.theme": () => setThemeWithProfileIntent(setTheme, resolvedTheme === "dark" ? "light" : "dark"),
       "interface.back": () => window.history.back(),
       "interface.forward": () => window.history.forward(),
     }

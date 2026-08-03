@@ -4,6 +4,8 @@ import { supabase } from "@/lib/supabase"
 
 type ThemeMode = "light" | "dark"
 
+const themeIntentEvent = "multideck:theme-intent"
+
 function isThemeMode(value: unknown): value is ThemeMode {
   return value === "light" || value === "dark"
 }
@@ -14,6 +16,16 @@ function readThemeMode(value: unknown): ThemeMode | null {
 
   const candidate = row as Record<string, unknown>
   return isThemeMode(candidate.theme_mode) ? candidate.theme_mode : null
+}
+
+/**
+ * Registers a deliberate operator choice before next-themes schedules its React
+ * update. This closes the small window where an in-flight profile read could
+ * otherwise restore the previous mode and make the interface flash back.
+ */
+export function setThemeWithProfileIntent(setTheme: (mode: string) => void, mode: ThemeMode) {
+  window.dispatchEvent(new CustomEvent<ThemeMode>(themeIntentEvent, { detail: mode }))
+  setTheme(mode)
 }
 
 /**
@@ -28,6 +40,7 @@ export function ThemeProfileSync() {
   const themeRevision = useRef(0)
   const currentTheme = useRef<ThemeMode>(isThemeMode(theme) ? theme : "light")
   const lastPersistedTheme = useRef<ThemeMode | null>(null)
+  const pendingThemeIntent = useRef<ThemeMode | null>(null)
   const saveQueue = useRef<Promise<void>>(Promise.resolve())
 
   const saveTheme = useCallback((mode: ThemeMode, userId: string) => {
@@ -57,6 +70,12 @@ export function ThemeProfileSync() {
   useEffect(() => {
     const mode = isThemeMode(theme) ? theme : "light"
     currentTheme.current = mode
+
+    if (pendingThemeIntent.current === mode) {
+      pendingThemeIntent.current = null
+      return
+    }
+
     themeRevision.current += 1
 
     const userId = activeUserId.current
@@ -64,6 +83,24 @@ export function ThemeProfileSync() {
 
     void saveTheme(mode, userId)
   }, [saveTheme, theme])
+
+  useEffect(() => {
+    const handleThemeIntent = (event: Event) => {
+      const mode = (event as CustomEvent<unknown>).detail
+      if (!isThemeMode(mode)) return
+
+      pendingThemeIntent.current = mode
+      currentTheme.current = mode
+      themeRevision.current += 1
+
+      const userId = activeUserId.current
+      if (!userId || lastPersistedTheme.current === mode) return
+      void saveTheme(mode, userId)
+    }
+
+    window.addEventListener(themeIntentEvent, handleThemeIntent)
+    return () => window.removeEventListener(themeIntentEvent, handleThemeIntent)
+  }, [saveTheme])
 
   useEffect(() => {
     const configuredClient = supabase
