@@ -1,11 +1,21 @@
-import { useCallback, useEffect, useRef } from "react"
+import { useEffect } from "react"
 import { useTheme } from "next-themes"
 import { supabase } from "@/lib/supabase"
 
 type ThemeMode = "light" | "dark"
 
-const themeIntentEvent = "multideck:theme-intent"
-let currentSessionThemeIntent: ThemeMode | null = null
+/** Also read by the pre-paint script in index.html, which must use the same key. */
+export const themeStorageKey = "multideck.theme"
+
+let activeUserId: string | null = null
+let lastPersistedTheme: ThemeMode | null = null
+/**
+ * The most recent deliberate choice, stamped on the monotonic clock. Any profile
+ * read that started before `at` is stale by definition, so it can never undo the
+ * choice — that ordering rule replaces the guesswork this module used to do.
+ */
+let localChoice: { mode: ThemeMode; at: number } | null = null
+let saveQueue: Promise<void> = Promise.resolve()
 
 function isThemeMode(value: unknown): value is ThemeMode {
   return value === "light" || value === "dark"
@@ -19,17 +29,50 @@ function readThemeMode(value: unknown): ThemeMode | null {
   return isThemeMode(candidate.theme_mode) ? candidate.theme_mode : null
 }
 
+/** The mode actually on screen, which is the only thing a comparison should trust. */
+function appliedMode(): ThemeMode {
+  if (typeof document === "undefined") return "light"
+  return document.documentElement.classList.contains("dark") ? "dark" : "light"
+}
+
+function saveTheme(mode: ThemeMode) {
+  const client = supabase
+  const userId = activeUserId
+  if (!client || !userId) return
+
+  saveQueue = saveQueue
+    .then(async () => {
+      // A queued write from a just-signed-out account must never run for the
+      // next person using this browser.
+      if (activeUserId !== userId) return
+
+      const { error } = await client.rpc("set_current_user_theme_preference", {
+        p_theme_mode: mode,
+      })
+      if (error) throw error
+
+      if (activeUserId === userId) lastPersistedTheme = mode
+    })
+    .catch((error: unknown) => {
+      // Deliberately not reflected in the UI: the mode is already applied and
+      // stored locally, and `localChoice` keeps a later profile read from
+      // reverting it, so a failed write costs cross-device sync and nothing else.
+      console.warn("Your appearance preference could not be saved to your profile.", error)
+    })
+}
+
 /**
- * Registers a deliberate operator choice before next-themes schedules its React
- * update. This closes the small window where an in-flight profile read could
- * otherwise restore the previous mode and make the interface flash back.
+ * Records the choice and its timestamp before handing off to next-themes, so a
+ * profile read already in flight cannot restore the previous mode and make the
+ * interface flash back.
  */
 export function setThemeWithProfileIntent(setTheme: (mode: string) => void, mode: ThemeMode) {
-  // Module scope protects the choice from any superseded sync instance whose
-  // asynchronous profile read outlives its React effect cleanup.
-  currentSessionThemeIntent = mode
-  window.dispatchEvent(new CustomEvent<ThemeMode>(themeIntentEvent, { detail: mode }))
+  // Module scope, so the choice outlives any superseded sync instance whose
+  // asynchronous profile read finishes after its React effect was cleaned up.
+  localChoice = { mode, at: performance.now() }
   setTheme(mode)
+
+  if (lastPersistedTheme !== mode) saveTheme(mode)
 }
 
 /**
@@ -38,77 +81,7 @@ export function setThemeWithProfileIntent(setTheme: (mode: string) => void, mode
  * next-themes storage key is intentionally only a first-paint cache.
  */
 export function ThemeProfileSync() {
-  const { theme, setTheme } = useTheme()
-  const setThemeRef = useRef(setTheme)
-  const activeUserId = useRef<string | null>(null)
-  const loadVersion = useRef(0)
-  const themeRevision = useRef(0)
-  const currentTheme = useRef<ThemeMode>(isThemeMode(theme) ? theme : "light")
-  const lastPersistedTheme = useRef<ThemeMode | null>(null)
-  const pendingThemeIntent = useRef<ThemeMode | null>(null)
-  const saveQueue = useRef<Promise<void>>(Promise.resolve())
-
-  useEffect(() => {
-    setThemeRef.current = setTheme
-  }, [setTheme])
-
-  const saveTheme = useCallback((mode: ThemeMode, userId: string) => {
-    const client = supabase
-    if (!client) return Promise.resolve()
-
-    saveQueue.current = saveQueue.current
-      .then(async () => {
-        // A queued write from a just-signed-out account must never run for the
-        // next person using this browser.
-        if (activeUserId.current !== userId) return
-
-        const { error } = await client.rpc("set_current_user_theme_preference", {
-          p_theme_mode: mode,
-        })
-        if (error) throw error
-
-        if (activeUserId.current === userId) {
-          lastPersistedTheme.current = mode
-        }
-      })
-      .catch((error: unknown) => {
-        console.warn("Your appearance preference could not be saved to your profile.", error)
-      })
-
-    return saveQueue.current
-  }, [])
-
-  useEffect(() => {
-    const mode = isThemeMode(theme) ? theme : "light"
-    currentTheme.current = mode
-
-    if (currentSessionThemeIntent) return
-
-    themeRevision.current += 1
-
-    const userId = activeUserId.current
-    if (!userId || lastPersistedTheme.current === mode) return
-
-    void saveTheme(mode, userId)
-  }, [saveTheme, theme])
-
-  useEffect(() => {
-    const handleThemeIntent = (event: Event) => {
-      const mode = (event as CustomEvent<unknown>).detail
-      if (!isThemeMode(mode)) return
-
-      pendingThemeIntent.current = mode
-      currentTheme.current = mode
-      themeRevision.current += 1
-
-      const userId = activeUserId.current
-      if (!userId || lastPersistedTheme.current === mode) return
-      void saveTheme(mode, userId)
-    }
-
-    window.addEventListener(themeIntentEvent, handleThemeIntent)
-    return () => window.removeEventListener(themeIntentEvent, handleThemeIntent)
-  }, [saveTheme])
+  const { setTheme } = useTheme()
 
   useEffect(() => {
     const configuredClient = supabase
@@ -116,9 +89,10 @@ export function ThemeProfileSync() {
     const client: NonNullable<typeof supabase> = configuredClient
 
     async function syncProfileTheme() {
-      // Capture before the first await so a click that happens during session
-      // lookup also invalidates this entire profile read.
-      const revisionAtStart = themeRevision.current
+      // Stamped before the first await, so a click that happens while the
+      // session lookup or the profile read is in flight counts as newer.
+      const startedAt = performance.now()
+
       const { data: sessionData, error: sessionError } = await client.auth.getSession()
       if (sessionError) {
         console.warn("Your appearance preference could not be loaded from your profile.", sessionError)
@@ -126,10 +100,17 @@ export function ThemeProfileSync() {
       }
 
       const userId = sessionData.session?.user.id ?? null
-      const requestVersion = ++loadVersion.current
-      activeUserId.current = userId
-      lastPersistedTheme.current = null
 
+      // Only a genuine account change discards what this browser knows. A first
+      // resolve leaves it alone, because an early click may have been waiting for
+      // this very request to discover the user ID.
+      if (activeUserId !== null && activeUserId !== userId) {
+        lastPersistedTheme = null
+        localChoice = null
+      }
+      activeUserId = userId
+
+      // Signed out: this browser's own mode stays in effect, unsynced.
       if (!userId) return
 
       const { data, error } = await client.rpc("get_current_user_theme_preference")
@@ -138,33 +119,32 @@ export function ThemeProfileSync() {
         return
       }
 
-      if (requestVersion !== loadVersion.current || activeUserId.current !== userId) return
+      if (activeUserId !== userId) return
 
       const savedTheme = readThemeMode(data)
-      const pendingMode = currentSessionThemeIntent ?? pendingThemeIntent.current
-      if (pendingMode) {
-        if (savedTheme === pendingMode) {
-          lastPersistedTheme.current = pendingMode
-        } else {
-          void saveTheme(pendingMode, userId)
-        }
+
+      // Two ways this browser's choice outranks what the profile just returned:
+      // it was made after this read started, so the read is stale; or it has not
+      // been written yet, so the read is returning the very value it replaces.
+      // Either way, undoing it would flip the interface back under the operator.
+      const isStaleRead = localChoice && localChoice.at > startedAt
+      const isUnwritten = localChoice && lastPersistedTheme !== localChoice.mode
+
+      if (localChoice && (isStaleRead || isUnwritten)) {
+        if (savedTheme === localChoice.mode) lastPersistedTheme = localChoice.mode
+        else saveTheme(localChoice.mode)
         return
       }
 
-      // If a non-theme preference changed while this profile request was in
-      // flight, ignore its stale result. Theme intent is handled above because
-      // an early click may be waiting for this request to discover the user ID.
-      if (themeRevision.current !== revisionAtStart) return
-
       if (savedTheme) {
-        lastPersistedTheme.current = savedTheme
-        if (currentTheme.current !== savedTheme) setThemeRef.current(savedTheme)
+        lastPersistedTheme = savedTheme
+        if (appliedMode() !== savedTheme) setTheme(savedTheme)
         return
       }
 
       // First sign-in after this migration: adopt the local choice once, then
       // every later sign-in reads the profile value instead of this browser.
-      void saveTheme(currentTheme.current, userId)
+      saveTheme(appliedMode())
     }
 
     void syncProfileTheme()
@@ -173,7 +153,7 @@ export function ThemeProfileSync() {
     })
 
     return () => listener.subscription.unsubscribe()
-  }, [saveTheme])
+  }, [setTheme])
 
   return null
 }

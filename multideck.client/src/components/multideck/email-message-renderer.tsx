@@ -85,7 +85,7 @@ function frameStyles(theme: "light" | "dark") {
       border-inline-start: 2px solid ${quote};
       color: ${text};
     }
-    pre, code { font-family: "SF Mono", ui-monospace, monospace, ${emojiFonts}; font-size: 12.5px; white-space: pre-wrap; }
+    pre, code { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif, ${emojiFonts}; font-size: 12.5px; white-space: pre-wrap; }
     hr { border: 0; border-top: 1px solid ${line}; margin: 16px 0; }
   `
 }

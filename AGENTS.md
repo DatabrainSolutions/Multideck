@@ -163,6 +163,8 @@ Avoid:
 
 Typography should stay calm and readable. Prefer SF Pro-style system fonts, regular and medium weights, and restrained sizes.
 
+Do not use monospaced typefaces anywhere in the Multideck interface, including identifiers, references, data-element labels, tables, charts, previews, and code samples. Use the app-wide sans-serif stack instead. Do not add `font-mono`, `--font-mono`, SF Mono, `ui-monospace`, or similar monospaced fallbacks.
+
 Use the Multideck design tokens and CSS variables instead of hardcoded one-off colours, spacing, shadows, or radius values.
 
 ## Corner Radius Rule

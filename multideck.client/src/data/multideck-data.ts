@@ -2051,7 +2051,7 @@ export const galleryComponents = [
     description: "The Multideck type scale for dense freight software: calm, compact, readable, and mostly medium weight.",
     details: "Use 11px and 12px for metadata, 13px for standard UI, 14px for section headings, 18px for subheads, and 24px for main page headings.",
     foundOn: [{ label: "Overview", route: "/" }, { label: "CRM", route: "/crm" }, { label: "Reports", route: "/reports" }, { label: "Components", route: "/components" }],
-    componentCode: `@theme inline {\n  --font-sans: "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;\n  --font-mono: "SF Mono", "SFMono-Regular", ui-monospace, "Cascadia Code", monospace;\n}\n\n.type-page-title {\n  font-size: 24px;\n  font-weight: 500;\n  line-height: 1.15;\n}\n\n.type-section-title {\n  font-size: 14px;\n  font-weight: 500;\n}\n\n.type-body {\n  font-size: 13px;\n  font-weight: 400;\n  line-height: 1.55;\n}`,
+    componentCode: `@theme inline {\n  --font-sans: "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;\n}\n\n.type-page-title {\n  font-size: 24px;\n  font-weight: 500;\n  line-height: 1.15;\n}\n\n.type-section-title {\n  font-size: 14px;\n  font-weight: 500;\n}\n\n.type-body {\n  font-size: 13px;\n  font-weight: 400;\n  line-height: 1.55;\n}`,
     usageCode: `<h1 className="text-[24px] font-medium leading-tight text-[var(--md-ink)]">Overview</h1>\n<h2 className="text-[14px] font-medium text-[var(--md-ink)]">Live bookings</h2>\n<p className="text-[13px] leading-6 text-[var(--md-text)]">Use compact type for operational scanning.</p>\n<p className="text-[12px] text-[var(--md-subtle)]">Updated 41s ago</p>`,
   },
   {

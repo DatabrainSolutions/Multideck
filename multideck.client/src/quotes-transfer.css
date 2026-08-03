@@ -134,7 +134,7 @@
     height: 22px;
     padding-inline: 8px;
     border-radius: var(--md-radius-md);
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 9px;
     color: var(--md-text);
     background: var(--md-surface-soft);

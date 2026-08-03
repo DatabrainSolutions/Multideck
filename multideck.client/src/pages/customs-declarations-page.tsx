@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 import { ArrowLeft, CheckCircle2, CircleAlert, Copy, ExternalLink, FileCheck2, Link2, Plus, Sparkles, Trash2 } from "lucide-react"
+import { ContextMenu as ContextMenuPrimitive } from "radix-ui"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -124,7 +125,7 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, t }: {
             <span>{t("Reference")}</span><span>{t("Trader reference")}</span><span>{t("Items")}</span><span>{t("Destination")}</span><span>{t("Value")}</span><span>{t("Last saved")}</span>
           </div>
           {drafts.map((savedDraft) => <button key={savedDraft.id} type="button" onClick={() => navigate(`/customs/standalone/export/${savedDraft.id}`)} className="grid w-full gap-2 px-5 py-4 text-start hover:bg-[var(--md-hover)] md:grid-cols-[1.3fr_1fr_90px_90px_120px_120px] md:items-center md:gap-4">
-            <span><strong className="block font-mono text-[12px] text-[var(--md-ink)]" dir="ltr">{savedDraft.reference}</strong><StatusPill className="mt-1">{t(savedDraft.status === "draft" ? "Draft" : savedDraft.status)}</StatusPill></span>
+            <span><strong className="block text-[12px] font-medium tabular-nums text-[var(--md-ink)]" dir="ltr">{savedDraft.reference}</strong><StatusPill className="mt-1">{t(savedDraft.status === "draft" ? "Draft" : savedDraft.status)}</StatusPill></span>
             <span className="text-[12px] text-[var(--md-text)]">{savedDraft.traderReference || t("Not set")}</span>
             <span className="text-[12px] text-[var(--md-text)]">{savedDraft.itemCount}</span>
             <span className="text-[12px] text-[var(--md-text)]">{savedDraft.destinationCountry || t("Not set")}</span>
@@ -278,8 +279,9 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
     setItemTab("commodity")
   }
 
-  function duplicateItem() {
-    const item = { ...activeItem, id: `item-${Date.now()}` }
+  function duplicateItem(itemId = activeItem.id) {
+    const sourceItem = draft.items.find((item) => item.id === itemId) ?? activeItem
+    const item = { ...sourceItem, id: `item-${Date.now()}` }
     setDraft((current) => ({ ...current, items: [...current.items, item] }))
     setActiveItemId(item.id)
   }
@@ -288,7 +290,7 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
     if (draft.items.length === 1) return
     const items = draft.items.filter((item) => item.id !== itemId)
     setDraft((current) => ({ ...current, items }))
-    setActiveItemId(items[0].id)
+    setActiveItemId((current) => current === itemId ? items[0].id : current)
   }
 
   function applyInvoiceItems(items: ExportDeclarationItem[], mode: "replace" | "append", sourceLineCount: number) {
@@ -339,8 +341,8 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
           <Toggle checked={showDataElements} onChange={setShowDataElements}>{t("Data Elements")}</Toggle>
           <Toggle checked={showCustomsBoxNumbers} onChange={setShowCustomsBoxNumbers}>{t("Customs box numbers")}</Toggle>
           <Toggle checked={showOptional} onChange={setShowOptional}>{t("Optional fields")}</Toggle>
-          <Button type="button" variant="outline" size="sm" disabled={savingDraft} onClick={() => void saveDraft()}>{t(savingDraft ? "Saving draft" : "Save draft")}</Button>
-          <Button type="button" size="sm" onClick={validate}><FileCheck2 className="size-3.5" />{t("Validate")}</Button>
+          <Button type="button" variant="outline" size="sm" className="h-9" disabled={savingDraft} onClick={() => void saveDraft()}>{t(savingDraft ? "Saving draft" : "Save draft")}</Button>
+          <Button type="button" size="sm" className="h-9" onClick={validate}><FileCheck2 className="size-3.5" />{t("Validate")}</Button>
         </div>
       </header>
 
@@ -350,7 +352,7 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
           <CorrelationCell label={t("iCustoms correlation ID")} value={draft.iCustomsCorrelationId ?? t("Not created yet")} detail={t("Stored after API draft creation")} pending />
           <div className="flex items-center justify-between gap-3 bg-[var(--md-surface)] px-4 py-3">
             <span><strong className="block text-[12px] font-medium text-[var(--md-ink)]">{t("Fallback available")}</strong><span className="mt-1 block text-[11px] text-[var(--md-subtle)]">{t("Continue in iCustoms if required")}</span></span>
-            <Button asChild variant="outline" size="sm"><a href={fallbackUrl} target="_blank" rel="noreferrer">{t("Open iCustoms")}<ExternalLink className="size-3.5" /></a></Button>
+            <Button asChild variant="outline" size="sm"><a href={fallbackUrl} target="_blank" rel="noreferrer"><ICustomsLogo className="size-3.5" />{t("Open iCustoms")}<ExternalLink className="size-3.5" /></a></Button>
           </div>
         </div>
       </Surface>
@@ -358,7 +360,7 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
       <nav className="overflow-x-auto rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)]" aria-label={t("Declaration sections")}>
         <div className="grid min-w-[840px] grid-cols-6 gap-1">
           {editorTabs.map((entry, index) => (
-            <button key={entry.id} type="button" onClick={() => setTab(entry.id)} aria-current={tab === entry.id ? "step" : undefined} className={cn("flex min-h-[52px] items-center gap-2 rounded-[var(--md-radius-md)] px-3 text-start", tab === entry.id ? "bg-[var(--md-selected-bg)] text-[var(--md-selected-text)]" : "text-[var(--md-text)] hover:bg-[var(--md-hover)]")}>
+            <button key={entry.id} type="button" onClick={() => setTab(entry.id)} aria-current={tab === entry.id ? "step" : undefined} className={cn("flex min-h-[52px] items-center gap-2 rounded-[var(--md-radius-lg)] px-3 text-start", tab === entry.id ? "bg-[var(--md-selected-bg)] text-[var(--md-selected-text)]" : "text-[var(--md-text)] hover:bg-[var(--md-hover)]")}>
               <span className={cn("grid size-6 shrink-0 place-items-center rounded-full text-[11px] font-medium", tab === entry.id ? "bg-[var(--md-accent)] text-white" : "bg-[var(--md-surface-tint)]")}>{index + 1}</span>
               <span className="min-w-0"><strong className="block truncate text-[12px] font-medium">{entry.label}</strong><span className="block truncate text-[10px] opacity-70">{entry.meta}</span></span>
             </button>
@@ -376,7 +378,7 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
       {tab === "items" ? <ItemsSection items={draft.items} activeItem={activeItem} activeItemId={activeItemId} onSelectItem={setActiveItemId} onAdd={addItem} onOpenInvoiceImport={() => setInvoiceImportOpen(true)} onDuplicate={duplicateItem} onRemove={removeItem} itemTab={itemTab} onItemTabChange={setItemTab} update={updateItem} updateRow={updateItemById} showDataElements={showDataElements} showOptional={showOptional} issues={activeItemIssueFields} validated={validated} highlightedField={focusTarget?.field} t={t} /> : null}
       {tab === "review" ? <ReviewSection draft={draft} completion={completion} fallbackUrl={fallbackUrl} onValidate={validate} onFixIssue={fixIssue} t={t} /> : null}
     </div>
-    {invoiceImportOpen ? <CustomsInvoiceImportWorkspace onClose={() => setInvoiceImportOpen(false)} onApply={applyInvoiceItems} /> : null}
+    {invoiceImportOpen ? <CustomsInvoiceImportWorkspace onClose={() => setInvoiceImportOpen(false)} onApply={applyInvoiceItems} existingItemCount={draft.items.length} /> : null}
     </CustomsBoxVisibilityContext.Provider>
     </CustomsReferenceDataContext.Provider>
   )
@@ -478,7 +480,8 @@ function DocumentsSection({ draft, update, showDataElements, showOptional, issue
   </SectionFrame>
 }
 
-function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, onOpenInvoiceImport, onDuplicate, onRemove, itemTab, onItemTabChange, update, updateRow, showDataElements, showOptional, issues, validated, highlightedField, t }: { items: ExportDeclarationItem[]; activeItem: ExportDeclarationItem; activeItemId: string; onSelectItem: (id: string) => void; onAdd: () => void; onOpenInvoiceImport: () => void; onDuplicate: () => void; onRemove: (itemId?: string) => void; itemTab: ItemTab; onItemTabChange: (tab: ItemTab) => void; update: <K extends keyof ExportDeclarationItem>(field: K, value: ExportDeclarationItem[K]) => void; updateRow: <K extends keyof ExportDeclarationItem>(itemId: string, field: K, value: ExportDeclarationItem[K]) => void; showDataElements: boolean; showOptional: boolean; issues: Set<string>; validated: boolean; highlightedField?: string; t: (text: string) => string }) {
+function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, onOpenInvoiceImport, onDuplicate, onRemove, itemTab, onItemTabChange, update, updateRow, showDataElements, showOptional, issues, validated, highlightedField, t }: { items: ExportDeclarationItem[]; activeItem: ExportDeclarationItem; activeItemId: string; onSelectItem: (id: string) => void; onAdd: () => void; onOpenInvoiceImport: () => void; onDuplicate: (itemId?: string) => void; onRemove: (itemId?: string) => void; itemTab: ItemTab; onItemTabChange: (tab: ItemTab) => void; update: <K extends keyof ExportDeclarationItem>(field: K, value: ExportDeclarationItem[K]) => void; updateRow: <K extends keyof ExportDeclarationItem>(itemId: string, field: K, value: ExportDeclarationItem[K]) => void; showDataElements: boolean; showOptional: boolean; issues: Set<string>; validated: boolean; highlightedField?: string; t: (text: string) => string }) {
+  const { direction } = useLanguage()
   const tabs: Array<[ItemTab, string]> = [["commodity", "Commodity"], ["packaging", "Packaging & procedure"], ["values", "Weights & values"], ["documents", "Documents"], ["parties", "Parties & transport"]]
   const packageKinds = useReferenceOptions("package_kind", t)
   const packageKindFields = useReferenceOptions("package_kind", t, "Select package")
@@ -527,7 +530,9 @@ function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, on
               const missing = mandatoryItemGaps(item)
               const selected = item.id === activeItemId
               const inputClass = "h-7 rounded-[var(--md-radius-xs)] border-transparent bg-[var(--md-surface-tint)] px-1.5 text-[10px] shadow-none focus-visible:border-[var(--md-accent)] focus-visible:ring-1 focus-visible:ring-[var(--md-accent)]"
-              return <tr key={item.id} onClick={() => onSelectItem(item.id)} onFocus={() => onSelectItem(item.id)} aria-selected={selected} className={cn("group cursor-pointer bg-[var(--md-surface)] transition-colors hover:bg-[var(--md-hover)]", selected && "bg-[var(--md-selected-bg)] hover:bg-[var(--md-selected-bg)]")}>
+              return <ContextMenuPrimitive.Root key={item.id} dir={direction}>
+                <ContextMenuPrimitive.Trigger asChild>
+                <tr onClick={() => onSelectItem(item.id)} onFocus={() => onSelectItem(item.id)} onContextMenu={() => onSelectItem(item.id)} aria-selected={selected} className={cn("group cursor-pointer bg-[var(--md-surface)] transition-colors hover:bg-[var(--md-hover)]", selected && "bg-[var(--md-selected-bg)] hover:bg-[var(--md-selected-bg)]")}>
                 <td className={cn("sticky start-0 z-[5] border-e border-[var(--md-line)] px-2 py-1", selected ? "bg-[var(--md-selected-bg)]" : "bg-[var(--md-surface)] group-hover:bg-[var(--md-hover)]")}>
                   <strong className="block text-[11px] font-semibold text-[var(--md-ink)]">{index + 1}</strong>
                   <span className={cn("mt-0.5 block text-[8px] font-medium", missing.length ? "text-[var(--md-amber)]" : "text-[var(--md-green)]")}>{missing.length ? `${missing.length} ${t("required")}` : t("Complete")}</span>
@@ -546,7 +551,23 @@ function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, on
                 <ItemTableCell><Input aria-label={`${t("Statistical value")} ${index + 1}`} inputMode="decimal" className={cn(inputClass, validatedItemField(issues, missing, "statisticalValue") && "ring-1 ring-[var(--md-red)]")} value={item.statisticalValue} onChange={(event) => updateRow(item.id, "statisticalValue", event.target.value)} /></ItemTableCell>
                 <ItemTableCell><Input aria-label={`${t("Previous document reference")} ${index + 1}`} className={cn(inputClass, validatedItemField(issues, missing, "previousDocumentReference") && "ring-1 ring-[var(--md-red)]")} value={item.previousDocumentReference} onChange={(event) => updateRow(item.id, "previousDocumentReference", event.target.value)} /></ItemTableCell>
                 <ItemTableCell><button type="button" aria-label={`${t("Remove")} ${t("Item")} ${index + 1}`} disabled={items.length === 1} onClick={(event) => { event.stopPropagation(); onRemove(item.id) }} className="grid size-8 place-items-center rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] hover:bg-[var(--md-surface)] hover:text-[var(--md-red)] disabled:opacity-30"><Trash2 className="size-3.5" /></button></ItemTableCell>
-              </tr>
+                </tr>
+                </ContextMenuPrimitive.Trigger>
+                <ContextMenuPrimitive.Portal>
+                  <ContextMenuPrimitive.Content collisionPadding={14} className="md-sidebar-menu premium-stroke z-50 origin-(--radix-context-menu-content-transform-origin) rounded-[var(--md-radius-xl)] bg-[color-mix(in_srgb,var(--md-surface)_96%,transparent)] p-1 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] backdrop-blur-xl">
+                    <ContextMenuPrimitive.Item className="md-sidebar-menu-item group/menu flex h-9 cursor-default select-none items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2 text-[13px] font-medium text-[var(--md-text)] outline-none transition-[background,color] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] data-[highlighted]:bg-[var(--md-hover)] data-[highlighted]:text-[var(--md-ink)]" onSelect={() => onDuplicate(item.id)}>
+                      <span className="md-sidebar-menu-item__icon grid size-5 shrink-0 place-items-center text-[var(--md-subtle)] transition-colors duration-150 group-data-[highlighted]/menu:text-[var(--md-accent)]"><Copy className="size-4" strokeWidth={1.3} /></span>
+                      <span className="min-w-0 flex-1 truncate text-start">{t("Duplicate")}</span>
+                      <span className="shrink-0 text-[11px] font-normal text-[var(--md-subtle)]">{t("Create a copy")}</span>
+                    </ContextMenuPrimitive.Item>
+                    <ContextMenuPrimitive.Item disabled={items.length === 1} className="md-sidebar-menu-item group/menu flex h-9 cursor-default select-none items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2 text-[13px] font-medium text-[var(--md-text)] outline-none transition-[background,color] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] data-[disabled]:opacity-40 data-[highlighted]:bg-[color-mix(in_srgb,var(--md-red)_9%,transparent)] data-[highlighted]:text-[var(--md-red)]" onSelect={() => onRemove(item.id)}>
+                      <span className="md-sidebar-menu-item__icon grid size-5 shrink-0 place-items-center text-[var(--md-subtle)] transition-colors duration-150 group-data-[highlighted]/menu:text-[var(--md-red)]"><Trash2 className="size-4" strokeWidth={1.3} /></span>
+                      <span className="min-w-0 flex-1 truncate text-start">{t("Delete")}</span>
+                      <span className="shrink-0 text-[11px] font-normal text-[var(--md-subtle)]">{t(items.length === 1 ? "Keep one line" : "Remove line")}</span>
+                    </ContextMenuPrimitive.Item>
+                  </ContextMenuPrimitive.Content>
+                </ContextMenuPrimitive.Portal>
+              </ContextMenuPrimitive.Root>
             })}
           </tbody>
         </table>
@@ -560,7 +581,7 @@ function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, on
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 flex-wrap items-center gap-2"><StatusPill tone="teal">{t("Editing item")} {items.findIndex((item) => item.id === activeItemId) + 1}</StatusPill><div className="flex flex-wrap gap-1 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)]">{tabs.map(([id, label]) => <button key={id} type="button" onClick={() => onItemTabChange(id)} className={cn("rounded-[var(--md-radius-md)] px-3 py-2 text-[11px] font-medium", itemTab === id ? "bg-[var(--md-selected-bg)] text-[var(--md-selected-text)]" : "text-[var(--md-text)] hover:bg-[var(--md-hover)]")}>{t(label)}</button>)}</div></div>
-        <div className="flex gap-2"><Button type="button" variant="outline" size="sm" onClick={onDuplicate}><Copy className="size-3.5" />{t("Duplicate")}</Button><Button type="button" variant="ghost" size="sm" disabled={items.length === 1} onClick={() => onRemove()}><Trash2 className="size-3.5" />{t("Remove")}</Button></div>
+        <div className="flex gap-2"><Button type="button" variant="outline" size="sm" onClick={() => onDuplicate()} className="group/duplicate transition-[transform,background,color,box-shadow] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:-translate-y-px hover:shadow-[var(--md-shadow-soft)] active:translate-y-0 active:scale-[0.96] motion-reduce:transform-none motion-reduce:transition-none"><span className="relative size-3.5" aria-hidden="true"><Copy className="absolute inset-0 size-3.5 opacity-0 transition-[transform,opacity] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover/duplicate:-translate-x-[2px] group-hover/duplicate:translate-y-[2px] group-hover/duplicate:opacity-30 group-active/duplicate:scale-[0.92] motion-reduce:transform-none motion-reduce:transition-none" /><Copy className="absolute inset-0 size-3.5 transition-transform duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover/duplicate:translate-x-[1px] group-hover/duplicate:-translate-y-[1px] group-active/duplicate:scale-[0.92] motion-reduce:transform-none motion-reduce:transition-none" /></span>{t("Duplicate")}</Button><Button type="button" variant="ghost" size="sm" disabled={items.length === 1} onClick={() => onRemove()}><Trash2 className="size-3.5" />{t("Remove")}</Button></div>
       </div>
       <SectionFrame title={t(tabs.find(([id]) => id === itemTab)?.[1] ?? "Item details")} description={t("Only fields for this item section are shown.")}>
         <FieldGrid>
@@ -642,11 +663,11 @@ function ReviewSection({ draft, completion, fallbackUrl, onValidate, onFixIssue,
   return <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
     <Surface padding="lg" className="rounded-[var(--md-radius-xl)]">
       <div className="flex items-center justify-between gap-4"><span><p className="text-[12px] font-medium text-[var(--md-accent)]">{t("Declaration readiness")}</p><h2 className="mt-1 text-[22px] font-medium text-[var(--md-ink)]">{completion.percent}% {t("complete")}</h2><p className="mt-1 text-[12px] text-[var(--md-text)]">{completion.completeChecks}/{completion.totalChecks} {t("configured checks complete")}</p></span><div className="relative grid size-24 place-items-center rounded-full" style={{ background: `conic-gradient(var(--md-accent) ${completion.percent}%, var(--md-line) 0)` }}><div className="grid size-[78px] place-items-center rounded-full bg-[var(--md-surface)] text-[17px] font-medium">{completion.percent}%</div></div></div>
-      {completion.issues.length ? <div className="mt-5 divide-y divide-[var(--md-line)] border-t border-[var(--md-line)]">{completion.issues.slice(0, 14).map((issue) => <button key={issue.id} type="button" onClick={() => onFixIssue(issue)} className="flex w-full items-center gap-3 py-3 text-start"><CircleAlert className="size-4 shrink-0 text-[var(--md-amber)]" /><span className="min-w-0 flex-1 text-[12px] text-[var(--md-text)]">{issue.itemNumber ? `${t("Item")} ${issue.itemNumber}: ` : ""}{t(issue.message)}</span><span className="text-[11px] font-medium text-[var(--md-accent)]">{t("Fix")}</span></button>)}</div> : <div className="mt-5 flex gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-accent-a10)] p-4"><CheckCircle2 className="size-5 text-[var(--md-green)]" /><span className="text-[13px] text-[var(--md-text)]"><strong className="block text-[var(--md-ink)]">{t("Current form checks passed")}</strong>{t("Ready for secure server integration checks.")}</span></div>}
+      {completion.issues.length ? <div className="mt-5 divide-y divide-[var(--md-line)] border-t border-[var(--md-line)]">{completion.issues.slice(0, 14).map((issue) => <div key={issue.id} className="flex min-h-11 items-center gap-3 py-2"><CircleAlert className="size-4 shrink-0 text-[var(--md-amber)]" /><span className="min-w-0 flex-1 text-[12px] text-[var(--md-text)]">{issue.itemNumber ? `${t("Item")} ${issue.itemNumber}: ` : ""}{t(issue.message)}</span><Button type="button" variant="outline" size="sm" className="min-w-[48px] rounded-[var(--md-radius-md)]" onClick={() => onFixIssue(issue)}>{t("Fix")}</Button></div>)}</div> : <div className="mt-5 flex gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-accent-a10)] p-4"><CheckCircle2 className="size-5 text-[var(--md-green)]" /><span className="text-[13px] text-[var(--md-text)]"><strong className="block text-[var(--md-ink)]">{t("Current form checks passed")}</strong>{t("Ready for secure server integration checks.")}</span></div>}
     </Surface>
     <div className="space-y-4">
       <Surface padding="lg" className="rounded-[var(--md-radius-xl)]"><h2 className="text-[14px] font-medium text-[var(--md-ink)]">{t("Declaration summary")}</h2><dl className="mt-4 divide-y divide-[var(--md-line)] border-t border-[var(--md-line)]"><Summary label={t("Reference")} value={draft.multideckReference} /><Summary label={t("Category")} value={draft.declarationCategory} /><Summary label={t("Type")} value={draft.declarationType} /><Summary label={t("Items")} value={String(draft.items.length)} /><Summary label={t("Destination")} value={draft.destinationCountry || t("Not set")} /></dl></Surface>
-      <Surface padding="lg" className="rounded-[var(--md-radius-xl)]"><div className="flex gap-3"><Link2 className="mt-0.5 size-4 text-[var(--md-accent)]" /><p className="text-[12px] leading-5 text-[var(--md-text)]">{t("API credentials, XML generation, submission and audit stay on the App server. Nothing sensitive enters the browser.")}</p></div><Button type="button" className="mt-4 w-full" onClick={onValidate}>{t("Run form checks")}</Button><Button asChild variant="outline" className="mt-2 w-full"><a href={fallbackUrl} target="_blank" rel="noreferrer">{t("Continue in iCustoms")}<ExternalLink className="size-3.5" /></a></Button></Surface>
+      <Surface padding="lg" className="rounded-[var(--md-radius-xl)]"><div className="flex gap-3"><Link2 className="mt-0.5 size-4 text-[var(--md-accent)]" /><p className="text-[12px] leading-5 text-[var(--md-text)]">{t("API credentials, XML generation, submission and audit stay on the App server. Nothing sensitive enters the browser.")}</p></div><Button type="button" className="mt-4 w-full" onClick={onValidate}>{t("Run form checks")}</Button><Button asChild variant="outline" className="mt-2 w-full"><a href={fallbackUrl} target="_blank" rel="noreferrer"><ICustomsLogo className="size-4" />{t("Continue in iCustoms")}<ExternalLink className="size-3.5" /></a></Button></Surface>
     </div>
   </div>
 }
@@ -675,7 +696,7 @@ function Toggle({ checked, onChange, children }: { checked: boolean; onChange: (
 }
 
 function CorrelationCell({ label, value, detail, pending }: { label: string; value: string; detail: string; pending?: boolean }) {
-  return <div className="bg-[var(--md-surface)] px-4 py-3"><span className="text-[11px] text-[var(--md-subtle)]">{label}</span><strong className={cn("mt-1 block font-mono text-[12px]", pending ? "text-[var(--md-amber)]" : "text-[var(--md-ink)]")} dir="ltr">{value}</strong><span className="mt-1 block text-[10px] text-[var(--md-muted)]">{detail}</span></div>
+  return <div className="bg-[var(--md-surface)] px-4 py-3"><span className="text-[11px] text-[var(--md-subtle)]">{label}</span><strong className={cn("mt-1 block text-[12px] font-medium tabular-nums", pending ? "text-[var(--md-amber)]" : "text-[var(--md-ink)]")} dir="ltr">{value}</strong><span className="mt-1 block text-[10px] text-[var(--md-muted)]">{detail}</span></div>
 }
 
 function SectionFrame({ title, description, children }: { title: string; description: string; children: ReactNode }) {
@@ -689,7 +710,7 @@ function FieldGrid({ children }: { children: ReactNode }) {
 function FieldShell({ label, dataElement, customsBox, required, showDataElements, invalid, highlighted, fieldKey, className, children }: { label: string; dataElement?: string; customsBox?: string; required?: boolean; showDataElements: boolean; invalid?: boolean; highlighted?: boolean; fieldKey?: string; className?: string; children: ReactNode }) {
   const showCustomsBoxNumbers = useContext(CustomsBoxVisibilityContext)
   const showAnnotations = (showDataElements && dataElement) || (showCustomsBoxNumbers && customsBox)
-  return <label className={cn("min-w-0", className)}><span className="mb-1.5 flex min-h-5 items-center gap-1.5 text-[11px] font-medium text-[var(--md-text)]"><span className="truncate">{label}</span>{required ? <span className="text-[var(--md-red)]">*</span> : null}{showAnnotations ? <span className="ms-auto flex shrink-0 items-center gap-1">{showDataElements && dataElement ? <span className="rounded-[var(--md-radius-sm)] bg-[color-mix(in_srgb,var(--md-blue)_8%,transparent)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--md-blue)]" dir="ltr">DE {dataElement}</span> : null}{showCustomsBoxNumbers && customsBox ? <span className="rounded-[var(--md-radius-sm)] bg-[var(--md-accent-a10)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--md-accent)]" dir="ltr">{`Box ${customsBox}`}</span> : null}</span> : null}</span><span data-customs-field={fieldKey} className={cn("block rounded-[var(--md-radius-md)] transition-[box-shadow] duration-300", invalid && "ring-2 ring-[color-mix(in_srgb,var(--md-red)_22%,transparent)]", highlighted && "ring-2 ring-[var(--md-accent)] shadow-[0_0_20px_var(--md-accent)]")}>{children}</span></label>
+  return <label className={cn("min-w-0", className)}><span className="mb-1.5 flex min-h-5 items-center gap-1.5 text-[11px] font-medium text-[var(--md-text)]"><span className="truncate">{label}</span>{required ? <span className="text-[var(--md-red)]">*</span> : null}{showAnnotations ? <span className="ms-auto flex shrink-0 items-center gap-1">{showDataElements && dataElement ? <span className="rounded-[var(--md-radius-sm)] bg-[color-mix(in_srgb,var(--md-blue)_8%,transparent)] px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-[var(--md-blue)]" dir="ltr">DE {dataElement}</span> : null}{showCustomsBoxNumbers && customsBox ? <span className="rounded-[var(--md-radius-sm)] bg-[var(--md-accent-a10)] px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-[var(--md-accent)]" dir="ltr">{`Box ${customsBox}`}</span> : null}</span> : null}</span><span data-customs-field={fieldKey} className={cn("block rounded-[var(--md-radius-md)] transition-[box-shadow] duration-300", invalid && "ring-2 ring-[color-mix(in_srgb,var(--md-red)_22%,transparent)]", highlighted && "ring-2 ring-[var(--md-accent)] shadow-[0_0_20px_var(--md-accent)]")}>{children}</span></label>
 }
 
 function TextField({ label, value, onChange, dataElement, customsBox, required, showDataElements, invalid, highlighted, fieldKey, placeholder, suffix }: { label: string; value: string; onChange: (value: string) => void; dataElement?: string; customsBox?: string; required?: boolean; showDataElements: boolean; invalid?: boolean; highlighted?: boolean; fieldKey?: string; placeholder?: string; suffix?: string }) {
@@ -707,4 +728,8 @@ function SelectField({ label, value, onChange, options, dataElement, customsBox,
 
 function Summary({ label, value }: { label: string; value: string }) {
   return <div className="flex justify-between gap-4 py-2.5"><dt className="text-[11px] text-[var(--md-subtle)]">{label}</dt><dd className="m-0 text-end text-[12px] font-medium text-[var(--md-ink)]">{value}</dd></div>
+}
+
+function ICustomsLogo({ className }: { className?: string }) {
+  return <svg aria-hidden="true" className={cn("shrink-0 text-[#4943f4]", className)} viewBox="0 0 850 850" fill="currentColor"><path d="M850 183A425 425 0 1 0 850 667L578 423 302 665V181l276 242Z" /></svg>
 }

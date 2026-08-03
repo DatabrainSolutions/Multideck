@@ -5,6 +5,18 @@
     <link rel="icon" type="image/svg+xml" href="/src/assets/brand/multideck-logo-mark.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Multideck</title>
+    <!-- Blocking on purpose, and before the body is parsed: next-themes can only
+         apply the class once React has mounted, which is ~100ms after the document
+         is paintable, so anyone in dark mode would see a white flash on every load.
+         The key must stay in step with `themeStorageKey` in src/lib/theme-preferences.tsx;
+         tests/theme-first-paint.test.ts fails if the two drift apart. -->
+    <script>
+      try {
+        if (localStorage.getItem("multideck.theme") === "dark") document.documentElement.classList.add("dark")
+      } catch (error) {
+        // Private-mode Safari throws on storage access; the light default is fine.
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

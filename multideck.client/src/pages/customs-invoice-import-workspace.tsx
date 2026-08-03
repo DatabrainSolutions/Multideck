@@ -1,15 +1,18 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent } from "react"
+import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent } from "react"
 import { DotLottieReact } from "@lottiefiles/dotlottie-react"
-import { ArrowLeft, Check, CircleAlert, FileText, LoaderCircle, Merge, ShieldCheck, Sparkles, Split } from "lucide-react"
+import { ArrowLeft, Check, CheckCheck, CircleAlert, FileText, Merge, Minus, ShieldCheck, Sparkles, Split, Square } from "lucide-react"
 import { useReducedMotion } from "motion/react"
 import { useTheme } from "next-themes"
 import { toast } from "sonner"
 import docsFolderAnimation from "@/assets/animations/docs-folder.json"
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
+import { Kbd } from "@/components/ui/kbd"
 import { Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
+import { DocumentEvidenceViewer, type EvidenceViewerBox, type EvidenceViewerPage } from "@/components/multideck/document-evidence-viewer"
+import { DocumentExtractionProgress } from "@/components/multideck/document-extraction-progress"
+import { FilterChips, SegmentedControl } from "@/components/multideck/workflow-components"
 import { useLanguage } from "@/i18n/language-provider"
 import {
   buildInvoiceOutputLines,
@@ -17,38 +20,99 @@ import {
   groupInvoiceLines,
   invoiceOutputToDeclarationItems,
   type ExtractedInvoiceLine,
+  type InvoiceConsolidationGroup,
   type InvoiceLineSelection,
 } from "@/lib/customs-invoice-import"
 import {
   CommercialInvoiceExtractionError,
   extractCommercialInvoice,
+  type InvoiceImportStage,
 } from "@/lib/customs-invoice-import-api"
+import { buildInvoiceLineEvidence, type EvidencePage, type InvoiceLineEvidence } from "@/lib/customs-invoice-evidence"
+import { releasePdfPageImages, renderPdfPageImages, type RenderedPdfPage } from "@/lib/customs-invoice-pdf-preview"
+import type { ExtractionStage } from "@/lib/document-extraction-progress"
 import type { ExportDeclarationItem } from "@/lib/customs-declaration"
 import { buildAccentRamp, useAccentPresetId } from "@/lib/accent-theme"
 import { cn } from "@/lib/utils"
 
 type ApplyMode = "replace" | "append"
+type ReviewFilter = "all" | "attention" | "approved"
+type ReviewTab = "lines" | "result"
 
-export function CustomsInvoiceImportWorkspace({ onClose, onApply }: { onClose: () => void; onApply: (items: ExportDeclarationItem[], mode: ApplyMode, sourceLineCount: number) => void }) {
+const reviewFilters: readonly ReviewFilter[] = ["all", "attention", "approved"]
+const reviewTabs: readonly ReviewTab[] = ["lines", "result"]
+
+export function CustomsInvoiceImportWorkspace({
+  onClose,
+  onApply,
+  existingItemCount = 0,
+}: {
+  onClose: () => void
+  onApply: (items: ExportDeclarationItem[], mode: ApplyMode, sourceLineCount: number) => void
+  existingItemCount?: number
+}) {
   const { t } = useLanguage()
   const [invoiceName, setInvoiceName] = useState("")
   const [extractedInvoiceNumber, setExtractedInvoiceNumber] = useState("")
   const [lines, setLines] = useState<ExtractedInvoiceLine[]>([])
   const [selections, setSelections] = useState<Record<string, InvoiceLineSelection>>({})
   const [descriptionOverrides, setDescriptionOverrides] = useState<Record<string, string>>({})
-  const [applyMode, setApplyMode] = useState<ApplyMode>("replace")
+  const [evidencePages, setEvidencePages] = useState<EvidencePage[]>([])
+  const [documentPages, setDocumentPages] = useState<RenderedPdfPage[]>([])
+  const [activeLineId, setActiveLineId] = useState("")
+  const [reviewFilter, setReviewFilter] = useState<ReviewFilter>("all")
+  const [reviewTab, setReviewTab] = useState<ReviewTab>("lines")
   const [extracting, setExtracting] = useState(false)
+  const [stage, setStage] = useState<InvoiceImportStage | null>(null)
   const [extractionError, setExtractionError] = useState("")
   const [isDraggingInvoice, setIsDraggingInvoice] = useState(false)
   const extractionRequest = useRef(0)
+  const abortExtraction = useRef<AbortController | null>(null)
+  const documentPagesRef = useRef<RenderedPdfPage[]>([])
   const invoiceInputRef = useRef<HTMLInputElement>(null)
   const invoiceDragDepth = useRef(0)
+  const reviewListRef = useRef<HTMLDivElement>(null)
+
   const groups = useMemo(() => groupInvoiceLines(lines), [lines])
   const output = useMemo(() => buildInvoiceOutputLines(groups, selections, descriptionOverrides), [descriptionOverrides, groups, selections])
+  const evidence = useMemo(() => buildInvoiceLineEvidence(lines, evidencePages), [evidencePages, lines])
+  const attentionLineIds = useMemo(() => new Set(lines.filter(needsAttention).map((line) => line.id)), [lines])
   const includedCount = lines.filter((line) => selections[line.id]?.include).length
-  const excludedCount = lines.length - includedCount
-  const consolidatedGroupCount = output.filter((line) => line.consolidated).length
+  const attentionCount = lines.filter((line) => attentionLineIds.has(line.id)).length
+  const approvedPercent = lines.length ? Math.round((includedCount / lines.length) * 100) : 0
   const invoiceReference = (extractedInvoiceNumber || invoiceName.replace(/\.[^.]+$/, "")).slice(0, 35).toUpperCase()
+
+  const visibleGroups = useMemo(() => groups.flatMap((group) => {
+    const visible = group.lines.filter((line) => matchesFilter(line, reviewFilter, selections, attentionLineIds))
+    return visible.length ? [{ group, visible }] : []
+  }), [attentionLineIds, groups, reviewFilter, selections])
+  const visibleLineIds = useMemo(() => visibleGroups.flatMap((entry) => entry.visible.map((line) => line.id)), [visibleGroups])
+
+  const documentViewerPages = useMemo<EvidenceViewerPage[]>(() => {
+    const shapes = new Map<number, EvidenceViewerPage>()
+    evidencePages.forEach((page) => shapes.set(page.page, { page: page.page, width: page.width, height: page.height }))
+    documentPages.forEach((page) => shapes.set(page.page, { page: page.page, width: page.width, height: page.height, url: page.url }))
+    return [...shapes.values()].sort((left, right) => left.page - right.page)
+  }, [documentPages, evidencePages])
+
+  const documentBoxes = useMemo<EvidenceViewerBox[]>(() => lines.flatMap((line) => {
+    const located = evidence[line.id]
+    if (!located) return []
+    return [{
+      id: line.id,
+      page: located.page,
+      box: located.box,
+      label: `${t("Line")} ${line.invoiceLine}`,
+      approximate: located.approximate,
+      tone: attentionLineIds.has(line.id) ? "amber" as const : "accent" as const,
+    }]
+  }), [attentionLineIds, evidence, lines, t])
+
+  const extractionStages = useMemo<ExtractionStage[]>(() => [
+    { id: "reading", label: t("Reading the document"), detail: t("Opening the PDF and collecting its text and layout."), ceiling: 24, expectedMs: 1_400 },
+    { id: "extracting", label: t("Finding the item lines"), detail: t("Picking out goods rows, quantities, values and codes."), ceiling: 88, expectedMs: 9_000 },
+    { id: "organising", label: t("Preparing the review"), detail: t("Grouping by commodity code and locating each line on the page."), ceiling: 99, expectedMs: 1_200 },
+  ], [t])
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow
@@ -56,8 +120,28 @@ export function CustomsInvoiceImportWorkspace({ onClose, onApply }: { onClose: (
     return () => { document.body.style.overflow = previousOverflow }
   }, [])
 
+  useEffect(() => () => {
+    abortExtraction.current?.abort()
+    releasePdfPageImages(documentPagesRef.current)
+  }, [])
+
   function updateSelection(lineId: string, update: Partial<InvoiceLineSelection>) {
     setSelections((current) => ({ ...current, [lineId]: { ...current[lineId], ...update } }))
+  }
+
+  function setLinesApproval(lineIds: string[], include: boolean) {
+    setSelections((current) => ({
+      ...current,
+      ...Object.fromEntries(lineIds.map((lineId) => [lineId, {
+        include,
+        consolidate: include ? current[lineId]?.consolidate ?? false : false,
+      }])),
+    }))
+  }
+
+  function toggleLineApproval(line: ExtractedInvoiceLine) {
+    setActiveLineId(line.id)
+    setLinesApproval([line.id], !selections[line.id]?.include)
   }
 
   function setGroupConsolidation(lineIds: string[], consolidate: boolean) {
@@ -67,34 +151,85 @@ export function CustomsInvoiceImportWorkspace({ onClose, onApply }: { onClose: (
     }))
   }
 
+  function releaseDocumentPages() {
+    releasePdfPageImages(documentPagesRef.current)
+    documentPagesRef.current = []
+    setDocumentPages([])
+  }
+
   async function selectInvoice(file: File | undefined) {
     if (!file) return
     const requestId = extractionRequest.current + 1
     extractionRequest.current = requestId
+    const isCurrent = () => extractionRequest.current === requestId
+
+    abortExtraction.current?.abort()
+    const controller = new AbortController()
+    abortExtraction.current = controller
+
+    releaseDocumentPages()
     setInvoiceName(file.name)
     setExtractedInvoiceNumber("")
     setLines([])
     setSelections({})
     setDescriptionOverrides({})
+    setEvidencePages([])
+    setActiveLineId("")
+    setReviewFilter("all")
+    setReviewTab("lines")
     setExtractionError("")
+    setStage("reading")
     setExtracting(true)
 
+    // Page images are drawn while the item lines are being found, so the document is
+    // already on screen when the review opens.
+    void renderPdfPageImages(file, {
+      signal: controller.signal,
+      onPage: (page) => {
+        if (!isCurrent()) {
+          releasePdfPageImages([page])
+          return
+        }
+        documentPagesRef.current = [...documentPagesRef.current, page]
+        setDocumentPages(documentPagesRef.current)
+      },
+    })
+
     try {
-      const result = await extractCommercialInvoice(file)
-      if (extractionRequest.current !== requestId) return
+      const result = await extractCommercialInvoice(file, {
+        signal: controller.signal,
+        onStage: (nextStage) => { if (isCurrent()) setStage(nextStage) },
+      })
+      if (!isCurrent()) return
       setExtractedInvoiceNumber(result.invoiceNumber)
       setLines(result.lines)
       setSelections(createDefaultInvoiceSelections(result.lines))
-      toast.success(t("Invoice ready to review"), { description: t("Review the imported item lines before adding them to the declaration.") })
+      setEvidencePages(result.evidencePages)
+      setActiveLineId(result.lines[0]?.id ?? "")
+      toast.success(t("Invoice lines ready for review"), { description: `${result.lines.length} ${t("lines are ready for your review")}` })
     } catch (error) {
-      if (extractionRequest.current !== requestId) return
+      if (!isCurrent() || controller.signal.aborted) return
       const message = error instanceof CommercialInvoiceExtractionError ? error.message : "Unable to import this invoice. Try again."
       const translatedMessage = t(message)
       setExtractionError(translatedMessage)
       toast.error(t("Unable to import invoice"), { description: translatedMessage })
     } finally {
-      if (extractionRequest.current === requestId) setExtracting(false)
+      if (isCurrent()) {
+        setExtracting(false)
+        setStage(null)
+      }
     }
+  }
+
+  function cancelExtraction() {
+    extractionRequest.current += 1
+    abortExtraction.current?.abort()
+    abortExtraction.current = null
+    releaseDocumentPages()
+    setExtracting(false)
+    setStage(null)
+    setInvoiceName("")
+    setExtractionError("")
   }
 
   function handleInvoiceDragEnter(event: DragEvent<HTMLButtonElement>) {
@@ -129,12 +264,52 @@ export function CustomsInvoiceImportWorkspace({ onClose, onApply }: { onClose: (
     void selectInvoice(pdf)
   }
 
-  function applyToDeclaration() {
-    if (!output.length) {
-      toast.warning(t("Select at least one invoice line"))
+  function focusLine(lineId: string) {
+    setActiveLineId(lineId)
+    reviewListRef.current?.querySelector<HTMLButtonElement>(`[data-approve-line="${lineId}"]`)?.focus()
+  }
+
+  function moveActiveLine(offset: number) {
+    if (!visibleLineIds.length) return
+    const current = visibleLineIds.indexOf(activeLineId)
+    const next = current < 0 ? 0 : Math.min(visibleLineIds.length - 1, Math.max(0, current + offset))
+    focusLine(visibleLineIds[next])
+  }
+
+  function handleReviewKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    const target = event.target as HTMLElement
+    if (target.closest("input, textarea, [contenteditable='true']")) return
+
+    if (event.key === "ArrowDown" || event.key === "j") {
+      event.preventDefault()
+      moveActiveLine(1)
       return
     }
-    onApply(invoiceOutputToDeclarationItems(output, invoiceReference), applyMode, includedCount)
+    if (event.key === "ArrowUp" || event.key === "k") {
+      event.preventDefault()
+      moveActiveLine(-1)
+      return
+    }
+
+    const activeLine = lines.find((line) => line.id === activeLineId)
+    if (event.key === "c" && activeLine) {
+      event.preventDefault()
+      const group = groups.find((entry) => entry.lines.some((line) => line.id === activeLine.id))
+      if (group && canConsolidateGroup(group)) updateSelection(activeLine.id, { consolidate: !selections[activeLine.id]?.consolidate })
+      return
+    }
+    if (event.key === "a") {
+      event.preventDefault()
+      setLinesApproval(lines.map((line) => line.id), includedCount < lines.length)
+    }
+  }
+
+  function applyToDeclaration(mode: ApplyMode) {
+    if (!output.length) {
+      toast.warning(t("Approve at least one invoice line"))
+      return
+    }
+    onApply(invoiceOutputToDeclarationItems(output, invoiceReference), mode, includedCount)
   }
 
   return <div className="fixed inset-0 isolate z-[80] h-[100dvh] w-screen overflow-hidden bg-[var(--md-bg)] text-[var(--md-ink)]" data-testid="invoice-import-workspace">
@@ -143,36 +318,37 @@ export function CustomsInvoiceImportWorkspace({ onClose, onApply }: { onClose: (
         <div className="flex min-w-0 items-center gap-3">
           <button type="button" onClick={onClose} className="grid size-9 shrink-0 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-text)] hover:bg-[var(--md-hover)]" aria-label={t("Back to declaration")}><ArrowLeft className="size-4 rtl:rotate-180" /></button>
           <div className="grid size-10 shrink-0 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-accent-a10)] text-[var(--md-accent)]"><Sparkles className="size-5" /></div>
-          <span className="min-w-0"><span className="flex flex-wrap items-center gap-2"><h1 className="text-[21px] font-medium tracking-[-0.025em]">{t("Invoice import")}</h1><StatusPill tone="teal">{t("Review before applying")}</StatusPill></span><p className="mt-0.5 truncate text-[11px] text-[var(--md-subtle)]">{t("Review invoice lines, choose what to combine, then add them to the declaration.")}</p></span>
+          <span className="min-w-0">
+            <span className="flex flex-wrap items-center gap-2">
+              <h1 className="text-[21px] font-medium tracking-[-0.025em]">{t("Invoice import")}</h1>
+              {lines.length ? <StatusPill tone="teal">{includedCount} {t("of")} {lines.length} {t("approved")}</StatusPill> : <StatusPill tone="teal">{t("Review before applying")}</StatusPill>}
+            </span>
+            <p className="mt-0.5 truncate text-[11px] text-[var(--md-subtle)]" dir="auto">{invoiceName || t("Review invoice lines, choose what to combine, then add them to the declaration.")}</p>
+          </span>
         </div>
-        <div className="flex items-center gap-2"><Button type="button" variant="ghost" onClick={onClose}>{t("Cancel")}</Button><Button type="button" onClick={applyToDeclaration} disabled={extracting || !output.length}><Check className="size-4" />{t("Apply to declaration")}</Button></div>
+        <Button type="button" variant="ghost" onClick={onClose}>{t("Cancel")}</Button>
       </header>
 
       <main className="min-h-0 flex-1 overflow-y-auto p-4 lg:p-6">
-        <div className="mx-auto max-w-[1680px] space-y-4">
-          <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-            <div className="grid gap-px bg-[var(--md-line)] lg:grid-cols-[1.15fr_1fr]">
-              <div className="flex min-w-0 items-center gap-3 bg-[var(--md-surface)] px-4 py-3"><div className="grid size-9 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)]">{extracting ? <LoaderCircle className="size-4 animate-spin text-[var(--md-accent)]" /> : <FileText className="size-4 text-[var(--md-accent)]" />}</div><span className="min-w-0"><span className="block truncate text-[12px] font-medium">{invoiceName || t("No invoice selected")}</span><span className="mt-0.5 block text-[10px] text-[var(--md-subtle)]" aria-live="polite">{extracting ? t("Preparing invoice lines") : extractionError ? t("Invoice needs attention") : lines.length ? t("Invoice lines ready for review") : t("Ready to import")}</span></span></div>
-              <div className="flex items-center gap-3 bg-[var(--md-surface)] px-4 py-3"><ShieldCheck className="size-4 shrink-0 text-[var(--md-green)]" /><span className="text-[11px] leading-4 text-[var(--md-text)]">{t("Your invoice is processed securely. Nothing is added to the declaration until you approve it.")}</span></div>
-            </div>
-          </Surface>
+        <div className="mx-auto max-w-[1720px]">
+          {extracting ? <DocumentExtractionProgress
+            title={t("Preparing invoice lines")}
+            detail={t("This may take a moment. You can review every line before applying it.")}
+            fileName={invoiceName}
+            stages={extractionStages}
+            activeStageId={stage}
+            previewUrl={documentPages[0]?.url}
+            pageCount={documentPages.length || undefined}
+            footnote={<span className="flex items-start gap-1.5"><ShieldCheck className="mt-px size-3 shrink-0 text-[var(--md-green)]" />{t("Your invoice is processed securely. Nothing is added to the declaration until you approve it.")}</span>}
+            onCancel={cancelExtraction}
+          /> : null}
 
-          <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-            <div className="grid divide-y divide-[var(--md-line)] sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-5">
-              <Metric label={t("Invoice lines")} value={String(lines.length)} />
-              <Metric label={t("Included lines")} value={String(includedCount)} tone="teal" />
-              <Metric label={t("Excluded lines")} value={String(excludedCount)} tone={excludedCount ? "amber" : undefined} />
-              <Metric label={t("Consolidated groups")} value={String(consolidatedGroupCount)} tone="blue" />
-              <Metric label={t("Declaration lines produced")} value={String(output.length)} />
-            </div>
-          </Surface>
-
-          {!lines.length ? <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-            <input ref={invoiceInputRef} id="commercial-invoice-file" type="file" accept="application/pdf,.pdf" disabled={extracting} className="sr-only" onChange={(event) => { void selectInvoice(event.target.files?.[0]); event.currentTarget.value = "" }} />
-            {extracting ? <div className="flex min-h-[310px] flex-col items-center justify-center px-6 py-12 text-center" aria-live="polite" aria-busy="true"><div className="grid size-14 place-items-center rounded-full bg-[var(--md-accent-a10)] text-[var(--md-accent)]"><LoaderCircle className="size-6 animate-spin motion-reduce:animate-none" /></div><h2 className="mt-4 text-[18px] font-medium">{t("Preparing invoice lines")}</h2><p className="mt-2 max-w-xl text-[12px] leading-5 text-[var(--md-text)]">{t("This may take a moment. You can review every line before applying it.")}</p></div> : <button
+          {!extracting && !lines.length ? <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
+            <input ref={invoiceInputRef} id="commercial-invoice-file" type="file" accept="application/pdf,.pdf" className="sr-only" onChange={(event) => { void selectInvoice(event.target.files?.[0]); event.currentTarget.value = "" }} />
+            <button
               type="button"
               className={cn(
-                "group flex min-h-[310px] w-full flex-col items-center justify-center px-6 py-10 text-center outline-none transition-[background,box-shadow,transform] duration-200 ease-out focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-[var(--md-accent-a28)] motion-reduce:transition-none",
+                "group flex min-h-[360px] w-full flex-col items-center justify-center px-6 py-10 text-center outline-none transition-[background,box-shadow,transform] duration-200 ease-out focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-[var(--md-accent-a28)] motion-reduce:transition-none",
                 isDraggingInvoice ? "scale-[0.995] bg-[var(--md-accent-a10)] shadow-[inset_0_0_0_2px_var(--md-accent)]" : "bg-[var(--md-surface)] hover:bg-[var(--md-accent-a04)] hover:shadow-[inset_0_0_0_1px_var(--md-accent-a18)]",
               )}
               onClick={() => invoiceInputRef.current?.click()}
@@ -189,41 +365,341 @@ export function CustomsInvoiceImportWorkspace({ onClose, onApply }: { onClose: (
               {extractionError ? <span className="mt-2 block max-w-xl text-[12px] leading-5 text-[var(--md-text)]" role="alert">{extractionError}</span> : null}
               <span id="commercial-invoice-upload-detail" className="mt-2 block text-[12px] leading-5 text-[var(--md-text)]">{t("Drop a PDF here or click to choose one, up to 10 MB.")}</span>
               <span id="commercial-invoice-upload-safety" className="mt-1 block max-w-xl text-[10px] leading-4 text-[var(--md-subtle)]">{t("Its item lines will appear for review before anything changes in the declaration.")}</span>
-            </button>}
-          </Surface> : <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(380px,0.7fr)]">
-            <section className="min-w-0 space-y-3" aria-label={t("Consolidation groups")}>
-              <div className="flex flex-wrap items-end justify-between gap-3 px-1"><span><h2 className="text-[15px] font-medium">{t("Selective consolidation")}</h2><p className="mt-1 text-[11px] text-[var(--md-subtle)]">{t("Commodity code forms the primary group. Uncheck Consolidate to keep a source line separate.")}</p></span><StatusPill>{groups.length} {t("suggested groups")}</StatusPill></div>
-              {groups.map((group) => {
-                const includedLineIds = group.lines.filter((line) => selections[line.id]?.include).map((line) => line.id)
-                const consolidatedLineIds = includedLineIds.filter((lineId) => selections[lineId]?.consolidate)
-                const canConsolidate = Boolean(group.commodityCode) && group.lines.length > 1
-                return <Surface key={group.id} padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-                  <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--md-line)] px-4 py-3">
-                    <div className="flex min-w-0 flex-wrap items-center gap-2"><span className="font-mono text-[13px] font-semibold" dir="ltr">{group.commodityCode || t("No commodity code")}</span>{canConsolidate ? <StatusPill tone="teal">{t("Consolidation suggested")}</StatusPill> : <StatusPill tone={group.commodityCode ? undefined : "amber"}>{group.commodityCode ? t("Standalone") : t("Needs classification")}</StatusPill>}<span className="text-[10px] text-[var(--md-subtle)]">{group.lines.length} {t("source lines")} · {group.descriptionSimilarity}% {t("description similarity")}</span></div>
-                    {canConsolidate ? <div className="flex gap-1"><Button type="button" variant="ghost" size="sm" onClick={() => setGroupConsolidation(includedLineIds, true)}><Merge className="size-3.5" />{t("Combine included")}</Button><Button type="button" variant="ghost" size="sm" onClick={() => setGroupConsolidation(group.lines.map((line) => line.id), false)}><Split className="size-3.5" />{t("Keep separate")}</Button></div> : null}
-                    {canConsolidate ? <div className="w-full"><label className="mb-1 block text-[10px] font-medium text-[var(--md-subtle)]">{t("Consolidated goods description")}</label><Input value={descriptionOverrides[group.id] ?? group.lines[0].description} onChange={(event) => setDescriptionOverrides((current) => ({ ...current, [group.id]: event.target.value }))} className="h-8 border-0 bg-[var(--md-field-bg)] text-[11px] shadow-[var(--md-shadow-line)]" /></div> : null}
-                  </header>
-                  <div className="overflow-x-auto"><table className="w-full min-w-[780px] table-fixed text-start"><thead className="bg-[var(--md-surface-soft)] text-[9px] font-medium uppercase tracking-[0.04em] text-[var(--md-subtle)]"><tr><th className="w-[72px] px-3 py-2 text-start">{t("Include")}</th><th className="w-[90px] px-3 py-2 text-start">{t("Consolidate")}</th><th className="w-[80px] px-3 py-2 text-start">{t("Invoice line")}</th><th className="w-[110px] px-3 py-2 text-start">{t("SKU")}</th><th className="px-3 py-2 text-start">{t("Source description")}</th><th className="w-[80px] px-3 py-2 text-end">{t("Quantity")}</th><th className="w-[100px] px-3 py-2 text-end">{t("Line value")}</th></tr></thead><tbody className="divide-y divide-[var(--md-line)]">{group.lines.map((line) => {
-                    const selection = selections[line.id] ?? { include: false, consolidate: false }
-                    return <tr key={line.id} className={cn("bg-[var(--md-surface)]", selection.consolidate && "bg-[var(--md-selected-bg)]", !selection.include && "opacity-55")}><td className="px-3 py-2"><Checkbox aria-label={`${t("Include invoice line")} ${line.invoiceLine}`} checked={selection.include} onCheckedChange={(checked) => updateSelection(line.id, { include: checked === true, consolidate: checked === true && canConsolidate ? selection.consolidate : false })} /></td><td className="px-3 py-2"><Checkbox aria-label={`${t("Consolidate invoice line")} ${line.invoiceLine}`} disabled={!canConsolidate || !selection.include} checked={selection.consolidate} onCheckedChange={(checked) => updateSelection(line.id, { consolidate: checked === true })} /></td><td className="px-3 py-2 text-[11px] font-medium">{line.invoiceLine}<span className="ms-1 text-[9px] text-[var(--md-muted)]">p{line.page}</span></td><td className="truncate px-3 py-2 font-mono text-[10px]" dir="ltr">{line.sku}</td><td className="truncate px-3 py-2 text-[11px]">{line.description}</td><td className="px-3 py-2 text-end text-[11px] tabular-nums">{line.quantity}</td><td className="px-3 py-2 text-end text-[11px] tabular-nums">{formatCurrency(line.quantity * line.unitPrice, line.currency)}</td></tr>
-                  })}</tbody></table></div>
-                  {canConsolidate ? <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--md-line)] bg-[var(--md-surface-soft)] px-4 py-2 text-[10px] text-[var(--md-subtle)]"><span>{consolidatedLineIds.length} {t("of")} {includedLineIds.length} {t("included lines will consolidate")}</span><span>{Math.max(0, includedLineIds.length - consolidatedLineIds.length)} {t("will remain standalone")}</span></footer> : null}
-                </Surface>
-              })}
-            </section>
+            </button>
+          </Surface> : null}
 
-            <aside className="min-w-0 xl:sticky xl:top-0 xl:self-start">
+          {!extracting && lines.length ? <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.04fr)]">
+            <DocumentEvidenceViewer
+              className="h-[58dvh] xl:sticky xl:top-0 xl:h-[calc(100dvh-11.5rem)]"
+              pages={documentViewerPages}
+              boxes={documentBoxes}
+              activeBoxId={activeLineId}
+              onSelectBox={focusLine}
+              title={t("Your invoice")}
+              meta={<StatusPill>{documentBoxes.length} {t("of")} {lines.length} {t("located")}</StatusPill>}
+              empty={t("The document preview is still being prepared.")}
+            />
+
+            <section className="flex min-w-0 flex-col gap-3" aria-label={t("Invoice line review")}>
               <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-                <header className="border-b border-[var(--md-line)] px-4 py-3"><div className="flex items-center justify-between gap-3"><span><h2 className="text-[14px] font-medium">{t("Declaration line preview")}</h2><p className="mt-1 text-[10px] text-[var(--md-subtle)]">{t("Every output line retains its source invoice evidence.")}</p></span><StatusPill tone="blue">{output.length} {t("lines")}</StatusPill></div></header>
-                <div className="max-h-[460px] divide-y divide-[var(--md-line)] overflow-y-auto">{output.map((line, index) => <div key={line.id} className="bg-[var(--md-surface)] px-4 py-3"><div className="flex items-start justify-between gap-3"><span className="min-w-0"><span className="flex flex-wrap items-center gap-2"><strong className="text-[11px]">{t("Declaration line")} {index + 1}</strong><span className="font-mono text-[10px] text-[var(--md-accent)]" dir="ltr">{line.commodityCode}</span>{line.consolidated ? <StatusPill tone="teal">{t("Consolidated")}</StatusPill> : <StatusPill>{t("Standalone")}</StatusPill>}</span><span className="mt-1 block truncate text-[11px] text-[var(--md-text)]">{line.description}</span></span><strong className="shrink-0 text-[11px] tabular-nums">{formatCurrency(line.itemPrice, line.currency)}</strong></div><div className="mt-2 flex flex-wrap items-center gap-1 text-[9px] text-[var(--md-subtle)]"><span>{t("Source")}</span>{line.sourceLineNumbers.map((sourceLine) => <span key={sourceLine} className="rounded-full bg-[var(--md-surface-tint)] px-1.5 py-0.5 font-medium">{sourceLine}</span>)}<span className="ms-auto">{line.quantity} {t("units")} · {line.netMass} kg {t("net")}</span></div></div>)}{!output.length ? <div className="px-5 py-12 text-center"><CircleAlert className="mx-auto size-5 text-[var(--md-amber)]" /><p className="mt-2 text-[11px] text-[var(--md-text)]">{t("No invoice lines are selected.")}</p></div> : null}</div>
-                <div className="space-y-3 border-t border-[var(--md-line)] bg-[var(--md-surface-soft)] p-4"><div><p className="text-[10px] font-medium text-[var(--md-subtle)]">{t("When applying")}</p><div className="mt-2 grid grid-cols-2 gap-1 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)]"><ModeButton active={applyMode === "replace"} onClick={() => setApplyMode("replace")} title={t("Replace items")} detail={t("Start with imported lines")} /><ModeButton active={applyMode === "append"} onClick={() => setApplyMode("append")} title={t("Append items")} detail={t("Keep current lines too")} /></div></div><div className="flex gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-accent-a10)] p-3"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-[var(--md-accent)]" /><p className="text-[10px] leading-4 text-[var(--md-text)]">{t("Review and approve each line before it is added to the declaration.")}</p></div><Button type="button" className="w-full" onClick={applyToDeclaration} disabled={extracting || !output.length}><Check className="size-4" />{t("Apply to declaration")}</Button></div>
+                <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+                  <span className="min-w-0">
+                    <h2 className="text-[14px] font-medium">{t("Approve the lines to import")}</h2>
+                    <p className="mt-1 text-[10.5px] text-[var(--md-subtle)]">
+                      {lines.length} {t("invoice lines")} · {includedCount} {t("approved")} · {output.length} {t("declaration lines")}
+                      {attentionCount ? ` · ${attentionCount} ${t("need a check")}` : ""}
+                    </p>
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Button type="button" variant="ghost" size="sm" onClick={() => setLinesApproval(lines.map((line) => line.id), true)} disabled={includedCount === lines.length}><CheckCheck className="size-3.5" />{t("Approve all")}</Button>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => setLinesApproval(lines.map((line) => line.id), false)} disabled={!includedCount}><Square className="size-3.5" />{t("Clear")}</Button>
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--md-line)] bg-[var(--md-surface-soft)] px-4 py-2.5">
+                  <FilterChips
+                    options={reviewFilters}
+                    activeOption={reviewFilter}
+                    onChange={(option) => setReviewFilter(option as ReviewFilter)}
+                    labelForOption={(option) => filterLabel(option as ReviewFilter, t, lines.length, includedCount, attentionCount)}
+                  />
+                  <SegmentedControl
+                    options={reviewTabs}
+                    value={reviewTab}
+                    onChange={setReviewTab}
+                    ariaLabel={t("Review view")}
+                    className="h-9 py-0.5"
+                    renderOption={(option) => option === "lines" ? `${t("Invoice lines")}` : `${t("Result")} · ${output.length}`}
+                  />
+                </div>
               </Surface>
-            </aside>
-          </div>}
+
+              {reviewTab === "lines" ? <div ref={reviewListRef} onKeyDown={handleReviewKeyDown} className="space-y-3">
+                {visibleGroups.map(({ group, visible }) => <ReviewGroup
+                  key={group.id}
+                  group={group}
+                  visibleLines={visible}
+                  selections={selections}
+                  descriptionOverride={descriptionOverrides[group.id]}
+                  activeLineId={activeLineId}
+                  attentionLineIds={attentionLineIds}
+                  evidence={evidence}
+                  onToggleLine={toggleLineApproval}
+                  onFocusLine={setActiveLineId}
+                  onApproveGroup={setLinesApproval}
+                  onConsolidate={setGroupConsolidation}
+                  onToggleConsolidate={(lineId, consolidate) => updateSelection(lineId, { consolidate })}
+                  onDescriptionChange={(value) => setDescriptionOverrides((current) => ({ ...current, [group.id]: value }))}
+                />)}
+                {!visibleGroups.length ? <Surface className="rounded-[var(--md-radius-xl)] text-center">
+                  <p className="text-[11.5px] text-[var(--md-text)]">{t("No invoice lines match this filter.")}</p>
+                </Surface> : null}
+                <p className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-[10px] text-[var(--md-subtle)]">
+                  <span className="inline-flex items-center gap-1"><Kbd>↑</Kbd><Kbd>↓</Kbd> {t("move")}</span>
+                  <span className="inline-flex items-center gap-1"><Kbd>Space</Kbd> {t("approve")}</span>
+                  <span className="inline-flex items-center gap-1"><Kbd>C</Kbd> {t("combine")}</span>
+                  <span className="inline-flex items-center gap-1"><Kbd>A</Kbd> {t("approve all")}</span>
+                </p>
+              </div> : <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
+                <header className="flex items-center justify-between gap-3 border-b border-[var(--md-line)] px-4 py-3">
+                  <span>
+                    <h3 className="text-[13px] font-medium">{t("Declaration lines to be created")}</h3>
+                    <p className="mt-1 text-[10px] text-[var(--md-subtle)]">{t("Every line keeps a link back to the invoice lines it came from.")}</p>
+                  </span>
+                  <StatusPill tone="blue">{output.length} {t("lines")}</StatusPill>
+                </header>
+                <div className="divide-y divide-[var(--md-line)]">
+                  {output.map((line, index) => <div key={line.id} className="bg-[var(--md-surface)] px-4 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="min-w-0">
+                        <span className="flex flex-wrap items-center gap-2">
+                          <strong className="text-[11px]">{t("Line")} {index + 1}</strong>
+                          <span className="text-[10px] text-[var(--md-accent)]" dir="ltr">{line.commodityCode || t("No commodity code")}</span>
+                          {line.consolidated ? <StatusPill tone="teal">{t("Combined")}</StatusPill> : null}
+                        </span>
+                        <span className="mt-1 block truncate text-[11px] text-[var(--md-text)]">{line.description}</span>
+                      </span>
+                      <strong className="shrink-0 text-[11px] tabular-nums">{formatCurrency(line.itemPrice, line.currency)}</strong>
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-1 text-[9px] text-[var(--md-subtle)]">
+                      <span>{t("From invoice lines")}</span>
+                      {line.sourceLineNumbers.map((sourceLine) => <span key={sourceLine} className="rounded-full bg-[var(--md-surface-tint)] px-1.5 py-0.5 font-medium tabular-nums">{sourceLine}</span>)}
+                      <span className="ms-auto tabular-nums">{line.quantity} {t("units")} · {line.netMass} kg {t("net")}</span>
+                    </div>
+                  </div>)}
+                  {!output.length ? <div className="px-5 py-12 text-center">
+                    <CircleAlert className="mx-auto size-5 text-[var(--md-amber)]" />
+                    <p className="mt-2 text-[11px] text-[var(--md-text)]">{t("Approve at least one invoice line to see the result.")}</p>
+                  </div> : null}
+                </div>
+              </Surface>}
+            </section>
+          </div> : null}
         </div>
       </main>
+
+      {!extracting && lines.length ? <footer className="border-t border-[var(--md-line)] bg-[var(--md-surface)] px-4 py-3 lg:px-7">
+        <div className="mx-auto flex max-w-[1720px] flex-wrap items-center justify-between gap-3">
+          <span className="flex min-w-0 items-center gap-3">
+            <span className="min-w-0">
+              <strong className="block text-[13px] font-medium tabular-nums">{includedCount} {t("of")} {lines.length} {t("invoice lines approved")}</strong>
+              <span className="mt-1 block h-1 w-[132px] overflow-hidden rounded-full bg-[var(--md-surface-tint)]">
+                <span className="block h-full rounded-full bg-[var(--md-accent)] transition-[width] duration-200 ease-out motion-reduce:transition-none" style={{ width: `${approvedPercent}%` }} />
+              </span>
+            </span>
+            <span className="text-[11px] leading-4 text-[var(--md-text)]">
+              {output.length} {t("declaration lines will be created")}
+              {attentionCount ? <span className="mt-0.5 block text-[10px] text-[var(--md-amber)]">{attentionCount} {t("lines still need a check")}</span> : null}
+            </span>
+          </span>
+          <span className="flex flex-wrap items-center gap-2">
+            <Button type="button" variant="outline" onClick={() => applyToDeclaration("replace")} disabled={!output.length}>
+              {existingItemCount ? `${t("Replace")} ${existingItemCount} ${t("current items")}` : t("Replace items")}
+            </Button>
+            <Button type="button" onClick={() => applyToDeclaration("append")} disabled={!output.length}>
+              <Check className="size-4" />{t("Add")} {output.length} {t("lines to declaration")}
+            </Button>
+          </span>
+        </div>
+      </footer> : null}
     </div>
   </div>
+}
+
+function ReviewGroup({
+  group,
+  visibleLines,
+  selections,
+  descriptionOverride,
+  activeLineId,
+  attentionLineIds,
+  evidence,
+  onToggleLine,
+  onFocusLine,
+  onApproveGroup,
+  onConsolidate,
+  onToggleConsolidate,
+  onDescriptionChange,
+}: {
+  group: InvoiceConsolidationGroup
+  visibleLines: ExtractedInvoiceLine[]
+  selections: Record<string, InvoiceLineSelection>
+  descriptionOverride?: string
+  activeLineId: string
+  attentionLineIds: Set<string>
+  evidence: Record<string, InvoiceLineEvidence>
+  onToggleLine: (line: ExtractedInvoiceLine) => void
+  onFocusLine: (lineId: string) => void
+  onApproveGroup: (lineIds: string[], include: boolean) => void
+  onConsolidate: (lineIds: string[], consolidate: boolean) => void
+  onToggleConsolidate: (lineId: string, consolidate: boolean) => void
+  onDescriptionChange: (value: string) => void
+}) {
+  const { t } = useLanguage()
+  const groupLineIds = group.lines.map((line) => line.id)
+  const includedLineIds = groupLineIds.filter((lineId) => selections[lineId]?.include)
+  const consolidatedLineIds = includedLineIds.filter((lineId) => selections[lineId]?.consolidate)
+  const canConsolidate = canConsolidateGroup(group)
+  const groupState = includedLineIds.length === groupLineIds.length ? "all" : includedLineIds.length ? "some" : "none"
+
+  return <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
+    <header className="flex flex-wrap items-center gap-2 border-b border-[var(--md-line)] px-3 py-2.5">
+      <button
+        type="button"
+        role="switch"
+        aria-checked={groupState === "all"}
+        aria-label={`${t("Approve every line in group")} ${group.commodityCode || t("No commodity code")}`}
+        onClick={() => onApproveGroup(groupLineIds, groupState !== "all")}
+        className={cn(
+          "grid size-[18px] shrink-0 place-items-center rounded-[var(--md-radius-sm)] outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a28)] motion-reduce:transition-none",
+          groupState === "none" ? "text-[var(--md-muted)] shadow-[inset_0_0_0_1.5px_currentColor] hover:text-[var(--md-accent)]" : "bg-[var(--md-accent)] text-white",
+        )}
+      >
+        {groupState === "all" ? <Check className="size-3" strokeWidth={3} /> : groupState === "some" ? <Minus className="size-3" strokeWidth={3} /> : null}
+      </button>
+      <span className="text-[12.5px] font-medium" dir="ltr">{group.commodityCode || t("No commodity code")}</span>
+      {canConsolidate
+        ? <StatusPill tone="teal">{t("Can be combined")}</StatusPill>
+        : <StatusPill tone={group.commodityCode ? undefined : "amber"}>{group.commodityCode ? t("Single line") : t("Needs a commodity code")}</StatusPill>}
+      <span className="text-[10px] tabular-nums text-[var(--md-subtle)]">{group.lines.length} {t("invoice lines")}{canConsolidate ? ` · ${group.descriptionSimilarity}% ${t("alike")}` : ""}</span>
+      {canConsolidate ? <span className="ms-auto flex gap-1">
+        <Button type="button" variant="ghost" size="sm" onClick={() => onConsolidate(includedLineIds, true)}><Merge className="size-3.5" />{t("Combine")}</Button>
+        <Button type="button" variant="ghost" size="sm" onClick={() => onConsolidate(groupLineIds, false)}><Split className="size-3.5" />{t("Keep separate")}</Button>
+      </span> : null}
+      {canConsolidate && consolidatedLineIds.length >= 2 ? <div className="w-full">
+        <label className="mb-1 block text-[10px] font-medium text-[var(--md-subtle)]" htmlFor={`${group.id}-description`}>{t("Combined goods description")}</label>
+        <Input
+          id={`${group.id}-description`}
+          value={descriptionOverride ?? group.lines[0].description}
+          onChange={(event) => onDescriptionChange(event.target.value)}
+          className="h-8 border-0 bg-[var(--md-field-bg)] text-[11px] shadow-[var(--md-shadow-line)]"
+        />
+      </div> : null}
+    </header>
+
+    <div className="divide-y divide-[var(--md-line)]">
+      {visibleLines.map((line) => <ReviewLineRow
+        key={line.id}
+        line={line}
+        selection={selections[line.id] ?? { include: false, consolidate: false }}
+        canConsolidate={canConsolidate}
+        active={line.id === activeLineId}
+        attention={attentionLineIds.has(line.id)}
+        located={Boolean(evidence[line.id])}
+        onToggle={() => onToggleLine(line)}
+        onFocus={() => onFocusLine(line.id)}
+        onToggleConsolidate={(consolidate) => onToggleConsolidate(line.id, consolidate)}
+      />)}
+    </div>
+
+    {canConsolidate ? <footer className="border-t border-[var(--md-line)] bg-[var(--md-surface-soft)] px-3 py-2 text-[10px] text-[var(--md-subtle)]">
+      {consolidatedLineIds.length >= 2
+        ? `${consolidatedLineIds.length} ${t("approved lines become one declaration line")}`
+        : t("These lines share a commodity code, so they can become one declaration line.")}
+    </footer> : null}
+  </Surface>
+}
+
+function ReviewLineRow({
+  line,
+  selection,
+  canConsolidate,
+  active,
+  attention,
+  located,
+  onToggle,
+  onFocus,
+  onToggleConsolidate,
+}: {
+  line: ExtractedInvoiceLine
+  selection: InvoiceLineSelection
+  canConsolidate: boolean
+  active: boolean
+  attention: boolean
+  located: boolean
+  onToggle: () => void
+  onFocus: () => void
+  onToggleConsolidate: (consolidate: boolean) => void
+}) {
+  const { t } = useLanguage()
+
+  return <div className={cn("flex items-stretch", active && "bg-[var(--md-accent-a04)]")}>
+    <button
+      type="button"
+      role="switch"
+      aria-checked={selection.include}
+      data-approve-line={line.id}
+      onClick={onToggle}
+      onFocus={onFocus}
+      onMouseEnter={onFocus}
+      className={cn(
+        "flex min-w-0 flex-1 items-start gap-3 px-3 py-2.5 text-start outline-none transition-[background,box-shadow,opacity] duration-150 ease-out hover:bg-[var(--md-accent-a04)] focus-visible:ring-[2px] focus-visible:ring-inset focus-visible:ring-[var(--md-accent-a28)] motion-reduce:transition-none",
+        active && "shadow-[inset_2px_0_0_var(--md-accent)]",
+        !selection.include && "opacity-60",
+      )}
+    >
+      <span className={cn(
+        "mt-0.5 grid size-[18px] shrink-0 place-items-center rounded-full transition-colors duration-150 motion-reduce:transition-none",
+        selection.include ? "bg-[var(--md-accent)] text-white" : "text-[var(--md-muted)] shadow-[inset_0_0_0_1.5px_currentColor]",
+      )}>
+        {selection.include ? <Check className="size-3" strokeWidth={3} /> : null}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[11.5px] font-medium">{line.description}</span>
+        <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] tabular-nums text-[var(--md-subtle)]">
+          <span>{t("Line")} {line.invoiceLine}</span>
+          <span>{t("Page")} {line.page}</span>
+          {line.sku ? <span className="font-medium tabular-nums" dir="ltr">{line.sku}</span> : null}
+          {line.originCountry ? <span dir="ltr">{line.originCountry}</span> : null}
+          {attention ? <span className="inline-flex items-center gap-1 rounded-full bg-[rgba(221,138,43,0.12)] px-1.5 font-medium text-[var(--md-amber)]"><CircleAlert className="size-2.5" />{t("Check this line")}</span> : null}
+          {located ? null : <span className="inline-flex items-center gap-1 text-[var(--md-muted)]"><FileText className="size-2.5" />{t("Not found on the page")}</span>}
+        </span>
+      </span>
+      <span className="shrink-0 text-end">
+        <strong className="block text-[11.5px] tabular-nums">{formatCurrency(line.quantity * line.unitPrice, line.currency)}</strong>
+        <span className="mt-0.5 block text-[10px] tabular-nums text-[var(--md-subtle)]">{line.quantity} × {formatCurrency(line.unitPrice, line.currency)}</span>
+      </span>
+    </button>
+    {canConsolidate ? <button
+      type="button"
+      role="switch"
+      aria-checked={selection.consolidate}
+      aria-label={`${t("Combine invoice line")} ${line.invoiceLine}`}
+      title={t("Combine with the other lines that share this commodity code")}
+      disabled={!selection.include}
+      onClick={() => onToggleConsolidate(!selection.consolidate)}
+      className={cn(
+        "grid w-11 shrink-0 place-items-center border-s border-[var(--md-line)] outline-none transition-colors duration-150 focus-visible:ring-[2px] focus-visible:ring-inset focus-visible:ring-[var(--md-accent-a28)] disabled:opacity-40 motion-reduce:transition-none",
+        selection.consolidate ? "bg-[var(--md-selected-bg)] text-[var(--md-accent)]" : "text-[var(--md-muted)] hover:bg-[var(--md-hover)]",
+      )}
+    >
+      <Merge className="size-3.5" />
+    </button> : null}
+  </div>
+}
+
+function canConsolidateGroup(group: InvoiceConsolidationGroup) {
+  return Boolean(group.commodityCode) && group.lines.length > 1
+}
+
+function needsAttention(line: ExtractedInvoiceLine) {
+  return !line.commodityCode || !(line.quantity * line.unitPrice > 0)
+}
+
+function matchesFilter(
+  line: ExtractedInvoiceLine,
+  filter: ReviewFilter,
+  selections: Record<string, InvoiceLineSelection>,
+  attentionLineIds: Set<string>,
+) {
+  if (filter === "attention") return attentionLineIds.has(line.id)
+  if (filter === "approved") return Boolean(selections[line.id]?.include)
+  return true
+}
+
+function filterLabel(filter: ReviewFilter, t: (text: string) => string, total: number, approved: number, attention: number) {
+  if (filter === "attention") return `${t("Need a check")} ${attention}`
+  if (filter === "approved") return `${t("Approved")} ${approved}`
+  return `${t("All")} ${total}`
 }
 
 type LottieColour = [number, number, number, number]
@@ -283,14 +759,6 @@ function hexToLottieColour(hex: string): LottieColour {
     Number.parseInt(normalised.slice(4, 6), 16) / 255,
     1,
   ]
-}
-
-function Metric({ label, value, tone }: { label: string; value: string; tone?: "teal" | "amber" | "blue" }) {
-  return <div className="bg-[var(--md-surface)] px-4 py-3"><span className="text-[10px] text-[var(--md-subtle)]">{label}</span><strong className={cn("mt-1 block text-[19px] font-medium", tone === "teal" && "text-[var(--md-accent)]", tone === "amber" && "text-[var(--md-amber)]", tone === "blue" && "text-[var(--md-blue)]")}>{value}</strong></div>
-}
-
-function ModeButton({ active, onClick, title, detail }: { active: boolean; onClick: () => void; title: string; detail: string }) {
-  return <button type="button" onClick={onClick} className={cn("rounded-[var(--md-radius-md)] px-3 py-2 text-start", active ? "bg-[var(--md-selected-bg)] text-[var(--md-selected-text)]" : "text-[var(--md-text)] hover:bg-[var(--md-hover)]")}><strong className="block text-[11px] font-medium">{title}</strong><span className="mt-0.5 block text-[9px] opacity-70">{detail}</span></button>
 }
 
 function formatCurrency(value: number, currency: string) {

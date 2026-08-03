@@ -162,7 +162,7 @@ function CommandResult({ icon, title, badge, detail, meta, onSelect }: { icon: R
     <button type="button" role="option" onClick={onSelect} className="grid w-full grid-cols-[32px_minmax(0,1fr)] gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 py-2 text-start transition-colors hover:bg-[var(--md-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)]">
       <span className="mt-0.5 grid size-8 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] text-[var(--md-accent)]">{icon}</span>
       <span className="min-w-0">
-        <span className="flex items-center gap-2"><span dir="ltr" className="font-mono text-[12px] font-medium text-[var(--md-accent)]">{title}</span><span className="truncate rounded-full bg-[var(--md-surface-tint)] px-2 py-0.5 text-[10px] font-medium text-[var(--md-text)]">{badge}</span></span>
+        <span className="flex items-center gap-2"><span dir="ltr" className="text-[12px] font-medium text-[var(--md-accent)]">{title}</span><span className="truncate rounded-full bg-[var(--md-surface-tint)] px-2 py-0.5 text-[10px] font-medium text-[var(--md-text)]">{badge}</span></span>
         <span className="mt-0.5 block truncate text-[12px] font-medium text-[var(--md-ink)]">{detail}</span>
         <span className="mt-0.5 block truncate text-[11px] text-[var(--md-text)]">{meta}</span>
       </span>

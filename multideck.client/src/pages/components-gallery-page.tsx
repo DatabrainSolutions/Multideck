@@ -535,8 +535,8 @@ function ColourTokenSwatch({ label, token }: { label: string; token: string }) {
       />
       <div className="mt-3 px-1 pb-1">
         <p className="text-[13px] font-medium text-[var(--md-ink)]">{label}</p>
-        <p className="mt-1 font-mono text-[11px] text-[var(--md-text)]">{token}</p>
-        <p className="mt-1 font-mono text-[11px] text-[var(--md-subtle)]">{resolved}</p>
+        <p className="mt-1 text-[11px] text-[var(--md-text)]">{token}</p>
+        <p className="mt-1 text-[11px] text-[var(--md-subtle)]">{resolved}</p>
       </div>
     </div>
   )
@@ -669,7 +669,7 @@ function CodeBlock({ code }: { code: string }) {
     <div className="relative overflow-hidden rounded-[var(--md-radius-lg)] bg-[#07100f] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]">
       <pre
         className={cn(
-          "overflow-auto p-[var(--md-page-stack-gap)] font-mono text-[12px] leading-6 text-[#d8e2df] md-scrollbar transition-[max-height] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
+          "overflow-auto p-[var(--md-page-stack-gap)] text-[12px] leading-6 text-[#d8e2df] md-scrollbar transition-[max-height] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
           canExpand && "pb-16",
           canExpand ? (expanded ? "max-h-[1100px]" : "max-h-[320px]") : "max-h-none",
         )}
@@ -1060,7 +1060,7 @@ function ComponentPreview({ id }: { id: string }) {
             {typographyRows.map(([spec, use, sample], index) => (
               <div key={spec} className="grid gap-3 border-b border-[rgba(11,20,19,0.06)] pb-5 last:border-b-0 last:pb-0 md:grid-cols-[150px_1fr]">
                 <div>
-                  <p className="font-mono text-[11px] text-[var(--md-subtle)]">{spec}</p>
+                  <p className="text-[11px] text-[var(--md-subtle)]">{spec}</p>
                   <p className="mt-1 text-[12px] text-[var(--md-text)]">{use}</p>
                 </div>
                 <p

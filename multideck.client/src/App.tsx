@@ -20,7 +20,7 @@ import {
   type UserProfilePhoto,
 } from "@/lib/profile-photo"
 import { isSupabaseConfigured, supabase } from "@/lib/supabase"
-import { ThemeProfileSync } from "@/lib/theme-preferences"
+import { ThemeProfileSync, themeStorageKey } from "@/lib/theme-preferences"
 import { LanguageProfileSync } from "@/lib/language-preferences"
 import { rememberRecentWorkContext } from "@/lib/recent-work-context"
 import multideckLogoMark from "@/assets/brand/multideck-logo-mark.svg"
@@ -492,7 +492,7 @@ export default function App() {
       defaultTheme="light"
       disableTransitionOnChange
       enableSystem={false}
-      storageKey="multideck.theme"
+      storageKey={themeStorageKey}
     >
       <ThemeProfileSync />
       <LanguageProvider>

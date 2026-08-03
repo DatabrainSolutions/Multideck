@@ -5,7 +5,8 @@ import { ensureAccentApplied, ensureAccentPreferenceLoaded } from "./lib/accent-
 import "./styles.css"
 
 // Before the first render, so the saved accent is already on the page rather than
-// arriving a frame later as a flash of the default teal.
+// arriving a frame later as a flash of the default teal. Light/dark is handled a
+// step earlier still, by the blocking script in index.html.
 ensureAccentApplied()
 void ensureAccentPreferenceLoaded()
 

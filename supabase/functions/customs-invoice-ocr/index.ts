@@ -6,6 +6,7 @@ import {
   MISTRAL_OCR_MODEL,
   MISTRAL_TEXT_MODEL,
   normalizeCommercialInvoiceAnnotation,
+  normalizeInvoiceEvidencePages,
 } from "../_shared/customs-invoice-ocr.ts"
 
 const functionName = "customs-invoice-ocr"
@@ -62,6 +63,11 @@ Deno.serve(async (request) => {
     const model = typeof providerPayload.model === "string"
       ? providerPayload.model
       : input.kind === "embedded_text" ? MISTRAL_TEXT_MODEL : MISTRAL_OCR_MODEL
+    // Scanned invoices come back with block boxes so the browser can show the operator
+    // where each item line was read from. The embedded-text route derives its own boxes.
+    const evidencePages = input.kind === "embedded_text"
+      ? []
+      : timings.measureSync("evidence", () => normalizeInvoiceEvidencePages(providerPayload))
 
     const responseBody = {
       invoiceNumber: extraction.invoiceNumber,
@@ -69,6 +75,7 @@ Deno.serve(async (request) => {
       model,
       pageCount,
       extractionMode: mode,
+      pages: evidencePages,
       usage: { pagesProcessed: finiteNumber(usage.pages_processed) ?? finiteNumber(usage.pages) ?? pageCount },
       timings: timings.snapshot(),
     }
@@ -77,6 +84,7 @@ Deno.serve(async (request) => {
       byteCount: input.byteCount,
       pageCount,
       lineCount: extraction.lines.length,
+      evidencePageCount: evidencePages.length,
       timings: responseBody.timings,
     })
     return timedJson(request, responseBody, 200, timings, mode)
@@ -165,7 +173,7 @@ async function extractWithMistralOcr(apiKey: string, encodedPdf: string) {
         type: "document_url",
         document_url: `data:application/pdf;base64,${encodedPdf}`,
       },
-      include_blocks: false,
+      include_blocks: true,
       include_image_base64: false,
       image_limit: 0,
       document_annotation_format: commercialInvoiceAnnotationFormat,

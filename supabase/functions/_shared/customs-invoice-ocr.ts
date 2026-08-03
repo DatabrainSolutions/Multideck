@@ -3,6 +3,12 @@ export const MISTRAL_TEXT_MODEL = "mistral-small-latest"
 export const MAX_COMMERCIAL_INVOICE_BYTES = 10 * 1024 * 1024
 export const MAX_COMMERCIAL_INVOICE_TEXT_CHARS = 160_000
 
+export const MAX_INVOICE_EVIDENCE_PAGES = 30
+export const MAX_INVOICE_EVIDENCE_BLOCKS = 320
+export const MAX_INVOICE_EVIDENCE_BUDGET_CHARS = 120_000
+export const MAX_INVOICE_EVIDENCE_BLOCK_CHARS = 400
+export const MAX_INVOICE_EVIDENCE_TABLE_CHARS = 4_000
+
 export const commercialInvoiceAnnotationFormat = {
   type: "json_schema",
   json_schema: {
@@ -71,6 +77,107 @@ export type ExtractedCommercialInvoiceLine = {
 export type CommercialInvoiceExtraction = {
   invoiceNumber: string
   lines: ExtractedCommercialInvoiceLine[]
+}
+
+/** A bounding box expressed as page fractions so the browser can overlay it at any zoom. */
+export type InvoiceEvidenceBox = {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export type InvoiceEvidenceBlock = {
+  id: string
+  type: string
+  text: string
+  box: InvoiceEvidenceBox
+}
+
+export type InvoiceEvidencePage = {
+  page: number
+  width: number
+  height: number
+  blocks: InvoiceEvidenceBlock[]
+}
+
+/**
+ * Turns the provider's paragraph-level blocks into page-fraction boxes the review
+ * screen can draw over the operator's own document. Text is kept only so the browser
+ * can match a block back to an extracted item line, so it stays inside a budget.
+ */
+export function normalizeInvoiceEvidencePages(payload: unknown): InvoiceEvidencePage[] {
+  const sourcePayload = asRecord(payload)
+  const sourcePages = Array.isArray(sourcePayload.pages) ? sourcePayload.pages : []
+  const pages: InvoiceEvidencePage[] = []
+  let remainingChars = MAX_INVOICE_EVIDENCE_BUDGET_CHARS
+
+  for (const [pageIndex, source] of sourcePages.slice(0, MAX_INVOICE_EVIDENCE_PAGES).entries()) {
+    const sourcePage = asRecord(source)
+    const dimensions = asRecord(sourcePage.dimensions)
+    const width = positiveNumber(dimensions.width)
+    const height = positiveNumber(dimensions.height)
+    if (width === null || height === null) continue
+
+    const sourceBlocks = Array.isArray(sourcePage.blocks) ? sourcePage.blocks : []
+    const blocks: InvoiceEvidenceBlock[] = []
+
+    for (const [blockIndex, sourceBlock] of sourceBlocks.slice(0, MAX_INVOICE_EVIDENCE_BLOCKS).entries()) {
+      const block = asRecord(sourceBlock)
+      const box = evidenceBox(block, width, height)
+      if (!box) continue
+
+      const type = cleanText(block.type, 40).toLowerCase() || "text"
+      const limit = type === "table" ? MAX_INVOICE_EVIDENCE_TABLE_CHARS : MAX_INVOICE_EVIDENCE_BLOCK_CHARS
+      const text = remainingChars > 0 ? blockText(block, Math.min(limit, remainingChars)) : ""
+      remainingChars -= text.length
+
+      blocks.push({ id: `block-${pageIndex + 1}-${blockIndex + 1}`, type, text, box })
+    }
+
+    if (!blocks.length) continue
+    // The provider numbers pages from zero; every Multideck surface counts from one.
+    const page = Math.round(nonNegativeNumber(sourcePage.index) ?? pageIndex) + 1
+    pages.push({ page, width: Math.round(width), height: Math.round(height), blocks })
+  }
+
+  return pages
+}
+
+/**
+ * Accepts either the provider's corner coordinates or a bounding-box object, and returns
+ * fractions of the page. Boxes too small to point at anything are dropped.
+ */
+function evidenceBox(block: Record<string, unknown>, width: number, height: number): InvoiceEvidenceBox | null {
+  const bbox = asRecord(block.bbox ?? block.bounding_box)
+  const left = finiteNumber(block.top_left_x ?? bbox.top_left_x ?? bbox.x)
+  const top = finiteNumber(block.top_left_y ?? bbox.top_left_y ?? bbox.y)
+  if (left === null || top === null) return null
+
+  const explicitWidth = finiteNumber(bbox.width)
+  const explicitHeight = finiteNumber(bbox.height)
+  const right = explicitWidth !== null ? left + explicitWidth : finiteNumber(block.bottom_right_x ?? bbox.bottom_right_x)
+  const bottom = explicitHeight !== null ? top + explicitHeight : finiteNumber(block.bottom_right_y ?? bbox.bottom_right_y)
+  if (right === null || bottom === null) return null
+
+  const x = clampFraction(Math.min(left, right) / width)
+  const y = clampFraction(Math.min(top, bottom) / height)
+  const boxWidth = clampFraction(Math.abs(right - left) / width, 1 - x)
+  const boxHeight = clampFraction(Math.abs(bottom - top) / height, 1 - y)
+  if (boxWidth < 0.004 || boxHeight < 0.002) return null
+
+  return { x: round(x, 5), y: round(y, 5), width: round(boxWidth, 5), height: round(boxHeight, 5) }
+}
+
+function blockText(block: Record<string, unknown>, maxLength: number) {
+  const source = [block.content, block.text, block.markdown].find((value) => typeof value === "string" && value.trim())
+  if (typeof source !== "string") return ""
+  return source.replace(/\r\n?/g, "\n").replace(/[ \t]+/g, " ").replace(/\n{2,}/g, "\n").trim().slice(0, Math.max(0, maxLength))
+}
+
+function clampFraction(value: number, max = 1) {
+  if (!Number.isFinite(value)) return 0
+  return Math.min(Math.max(value, 0), max)
 }
 
 export function normalizeCommercialInvoiceAnnotation(

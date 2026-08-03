@@ -468,7 +468,7 @@
 
 .md-paper-document-face__ref {
     margin-inline-start: auto;
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 7px;
     color: #89928f;
   }
@@ -792,7 +792,7 @@
 .md-paper-sample__header p + span {
     display: block;
     margin-top: 5px;
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 10px;
     color: #72807c;
   }
@@ -918,7 +918,7 @@
 
 .md-paper-sample__photo-copy p { font-size: 18px; font-weight: 500; }
 
-.md-paper-sample__photo-copy span { font-family: var(--font-mono); font-size: 10px; color: #788481; }
+.md-paper-sample__photo-copy span { font-family: var(--font-sans); font-size: 10px; color: #788481; }
 
 .dark .md-paper-tray-page__stage {
     background:
@@ -1393,7 +1393,7 @@
 .md-paper-wheel-preview__header > span:last-child {
     max-width: 130px;
     overflow: hidden;
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 7px;
     color: #85908d;
     text-overflow: ellipsis;
@@ -1575,7 +1575,7 @@
   }
 
 .md-paper-wheel-controls span {
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 8px;
     color: var(--md-subtle);
   }
@@ -1843,7 +1843,7 @@
 
 .md-paper-full-tray__document-copy span {
     margin-top: 6px;
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 8px;
     color: var(--md-subtle);
   }
@@ -2020,7 +2020,7 @@
   }
 
 .md-paper-list-view__summary strong {
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 11px;
     font-weight: 500;
     color: var(--md-text);
@@ -2154,7 +2154,7 @@
 
 .md-paper-list-view__document small {
     margin-top: 3px;
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 8px;
     color: var(--md-subtle);
   }
@@ -2292,7 +2292,7 @@
     width: 28px;
     height: 28px;
     border-radius: var(--md-radius-md);
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 8px;
     color: var(--md-tray-color);
     background: var(--md-surface);
@@ -2316,7 +2316,7 @@
 
 .md-paper-kanban-column__count {
     flex: 0 0 auto;
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 9px;
     color: var(--md-subtle);
   }
@@ -2393,7 +2393,7 @@
 .md-paper-kanban-card__topline small {
     margin-inline-start: auto;
     overflow: hidden;
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -3072,7 +3072,7 @@
     height: 22px;
     padding-inline: 8px;
     border-radius: var(--md-radius-md);
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 9px;
     color: var(--md-text);
     background: var(--md-surface-soft);
