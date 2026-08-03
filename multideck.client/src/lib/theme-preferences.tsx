@@ -63,7 +63,10 @@ export function ThemeProfileSync() {
         })
         if (error) throw error
 
-        if (activeUserId.current === userId) lastPersistedTheme.current = mode
+        if (activeUserId.current === userId) {
+          lastPersistedTheme.current = mode
+          if (pendingThemeIntent.current === mode) pendingThemeIntent.current = null
+        }
       })
       .catch((error: unknown) => {
         console.warn("Your appearance preference could not be saved to your profile.", error)
@@ -77,7 +80,6 @@ export function ThemeProfileSync() {
     currentTheme.current = mode
 
     if (pendingThemeIntent.current === mode) {
-      pendingThemeIntent.current = null
       return
     }
 
@@ -113,6 +115,9 @@ export function ThemeProfileSync() {
     const client: NonNullable<typeof supabase> = configuredClient
 
     async function syncProfileTheme() {
+      // Capture before the first await so a click that happens during session
+      // lookup also invalidates this entire profile read.
+      const revisionAtStart = themeRevision.current
       const { data: sessionData, error: sessionError } = await client.auth.getSession()
       if (sessionError) {
         console.warn("Your appearance preference could not be loaded from your profile.", sessionError)
@@ -126,7 +131,6 @@ export function ThemeProfileSync() {
 
       if (!userId) return
 
-      const revisionAtStart = themeRevision.current
       const { data, error } = await client.rpc("get_current_user_theme_preference")
       if (error) {
         console.warn("Your appearance preference could not be loaded from your profile.", error)
@@ -140,6 +144,17 @@ export function ThemeProfileSync() {
       if (themeRevision.current !== revisionAtStart) return
 
       const savedTheme = readThemeMode(data)
+      const pendingMode = pendingThemeIntent.current
+      if (pendingMode) {
+        if (savedTheme === pendingMode) {
+          lastPersistedTheme.current = pendingMode
+          pendingThemeIntent.current = null
+        } else {
+          void saveTheme(pendingMode, userId)
+        }
+        return
+      }
+
       if (savedTheme) {
         lastPersistedTheme.current = savedTheme
         if (currentTheme.current !== savedTheme) setThemeRef.current(savedTheme)
