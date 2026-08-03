@@ -4,6 +4,7 @@ import test from "node:test"
 
 const migration = readFileSync(new URL("../migrations/20260803151000_inbox_open_tracking.sql", import.meta.url), "utf8")
 const reliabilityMigration = readFileSync(new URL("../migrations/20260803153000_inbox_tracking_reliability.sql", import.meta.url), "utf8")
+const sendIndexMigration = readFileSync(new URL("../migrations/20260803164000_inbox_tracking_send_index.sql", import.meta.url), "utf8")
 const runtime = readFileSync(new URL("../functions/inbox-api/runtime.ts", import.meta.url), "utf8")
 const core = readFileSync(new URL("../functions/inbox-api/core.ts", import.meta.url), "utf8")
 const pixel = readFileSync(new URL("../functions/email-track/index.ts", import.meta.url), "utf8")
@@ -26,6 +27,12 @@ test("tracking stores only hashes and the public pixel reveals no message identi
   assert.match(pixel, /comm_record_tracking_open/)
   assert.match(pixel, /return pixel\(method\)/)
   assert.doesNotMatch(pixel, /console\.|request\.headers\.get\("x-forwarded-for"/)
+})
+
+test("tracking keeps message and send foreign-key lookups indexed", () => {
+  assert.match(migration, /IX_Comm_MessageTrackingTokens_message_active/)
+  assert.match(sendIndexMigration, /IX_Comm_MessageTrackingTokens_send/)
+  assert.match(sendIndexMigration, /CommTrack_SendID/)
 })
 
 test("the first open records an estimated event and repeated loads only increase the count", () => {
