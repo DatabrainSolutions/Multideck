@@ -65,7 +65,6 @@ export function ThemeProfileSync() {
 
         if (activeUserId.current === userId) {
           lastPersistedTheme.current = mode
-          if (pendingThemeIntent.current === mode) pendingThemeIntent.current = null
         }
       })
       .catch((error: unknown) => {
@@ -148,7 +147,6 @@ export function ThemeProfileSync() {
       if (pendingMode) {
         if (savedTheme === pendingMode) {
           lastPersistedTheme.current = pendingMode
-          pendingThemeIntent.current = null
         } else {
           void saveTheme(pendingMode, userId)
         }
