@@ -5,6 +5,7 @@ import test from "node:test"
 const migration = readFileSync(new URL("../migrations/20260803151000_inbox_open_tracking.sql", import.meta.url), "utf8")
 const reliabilityMigration = readFileSync(new URL("../migrations/20260803153000_inbox_tracking_reliability.sql", import.meta.url), "utf8")
 const sendIndexMigration = readFileSync(new URL("../migrations/20260803164000_inbox_tracking_send_index.sql", import.meta.url), "utf8")
+const prefetchGuardMigration = readFileSync(new URL("../migrations/20260803171500_inbox_tracking_prefetch_guard.sql", import.meta.url), "utf8")
 const runtime = readFileSync(new URL("../functions/inbox-api/runtime.ts", import.meta.url), "utf8")
 const core = readFileSync(new URL("../functions/inbox-api/core.ts", import.meta.url), "utf8")
 const pixel = readFileSync(new URL("../functions/email-track/index.ts", import.meta.url), "utf8")
@@ -42,6 +43,17 @@ test("the first open records an estimated event and repeated loads only increase
   assert.match(migration, /'confidence', 'estimated'/)
   assert.match(reliabilityMigration, /'opened', null, null/)
   assert.doesNotMatch(reliabilityMigration, /'opened', 'read'/)
+})
+
+test("automated image fetches during the first minute cannot become opens", () => {
+  assert.match(prefetchGuardMigration, /CommMessage_SentAt/)
+  assert.match(prefetchGuardMigration, /interval '60 seconds'/)
+  assert.match(prefetchGuardMigration, /return false/)
+  const guard = prefetchGuardMigration.slice(
+    prefetchGuardMigration.indexOf("if v_now < greatest"),
+    prefetchGuardMigration.indexOf("v_first :="),
+  )
+  assert.doesNotMatch(guard, /CommTrack_FirstOpenedAt|CommTrack_OpenCount|Comm_RecordDeliveryEvent/)
 })
 
 test("outbound statuses remain evidence-based and self-rendering cannot trigger the pixel", () => {
