@@ -42,6 +42,7 @@ test("the client restores and saves the profile appearance through Supabase RPCs
   assert.match(themeProfileSync, /pendingThemeIntent\.current = mode[\s\S]*?themeRevision\.current \+= 1/)
   assert.match(themeProfileSync, /const revisionAtStart = themeRevision\.current[\s\S]*?client\.auth\.getSession\(\)/)
   assert.match(themeProfileSync, /const pendingMode = currentSessionThemeIntent \?\? pendingThemeIntent\.current[\s\S]*?saveTheme\(pendingMode, userId\)/)
+  assert.match(themeProfileSync, /const pendingMode = currentSessionThemeIntent[\s\S]*?if \(themeRevision\.current !== revisionAtStart\) return/)
   assert.doesNotMatch(themeProfileSync, /pendingThemeIntent\.current = null/)
   assert.match(themeProfileSync, /setThemeRef\.current = setTheme/)
   assert.match(themeProfileSync, /setThemeRef\.current\(savedTheme\)/)

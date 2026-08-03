@@ -140,10 +140,6 @@ export function ThemeProfileSync() {
 
       if (requestVersion !== loadVersion.current || activeUserId.current !== userId) return
 
-      // If the operator explicitly changed appearance while the profile was
-      // loading, preserve that deliberate choice and let the queued save win.
-      if (themeRevision.current !== revisionAtStart) return
-
       const savedTheme = readThemeMode(data)
       const pendingMode = currentSessionThemeIntent ?? pendingThemeIntent.current
       if (pendingMode) {
@@ -154,6 +150,11 @@ export function ThemeProfileSync() {
         }
         return
       }
+
+      // If a non-theme preference changed while this profile request was in
+      // flight, ignore its stale result. Theme intent is handled above because
+      // an early click may be waiting for this request to discover the user ID.
+      if (themeRevision.current !== revisionAtStart) return
 
       if (savedTheme) {
         lastPersistedTheme.current = savedTheme
