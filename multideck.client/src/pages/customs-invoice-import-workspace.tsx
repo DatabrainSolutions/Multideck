@@ -24,6 +24,11 @@ import {
   type InvoiceLineSelection,
 } from "@/lib/customs-invoice-import"
 import {
+  clearCustomsInvoiceImportRecovery,
+  readCustomsInvoiceImportRecovery,
+  saveCustomsInvoiceImportRecovery,
+} from "@/lib/customs-invoice-import-recovery"
+import {
   CommercialInvoiceExtractionError,
   extractCommercialInvoice,
   type InvoiceImportStage,
@@ -43,25 +48,31 @@ const reviewFilters: readonly ReviewFilter[] = ["all", "attention", "approved"]
 const reviewTabs: readonly ReviewTab[] = ["lines", "result"]
 
 export function CustomsInvoiceImportWorkspace({
+  recoveryKey,
   onClose,
   onApply,
   existingItemCount = 0,
 }: {
+  recoveryKey: string
   onClose: () => void
   onApply: (items: ExportDeclarationItem[], mode: ApplyMode, sourceLineCount: number) => void
   existingItemCount?: number
 }) {
   const { t } = useLanguage()
-  const [invoiceName, setInvoiceName] = useState("")
-  const [extractedInvoiceNumber, setExtractedInvoiceNumber] = useState("")
-  const [lines, setLines] = useState<ExtractedInvoiceLine[]>([])
-  const [selections, setSelections] = useState<Record<string, InvoiceLineSelection>>({})
-  const [descriptionOverrides, setDescriptionOverrides] = useState<Record<string, string>>({})
+  const recovered = useMemo(() => readCustomsInvoiceImportRecovery(recoveryKey), [recoveryKey])
+  const [invoiceName, setInvoiceName] = useState(() => recovered?.invoiceName ?? "")
+  const [extractedInvoiceNumber, setExtractedInvoiceNumber] = useState(() => recovered?.extractedInvoiceNumber ?? "")
+  const [lines, setLines] = useState<ExtractedInvoiceLine[]>(() => recovered?.lines ?? [])
+  const [selections, setSelections] = useState<Record<string, InvoiceLineSelection>>(() => recovered?.selections ?? {})
+  const [descriptionOverrides, setDescriptionOverrides] = useState<Record<string, string>>(() => recovered?.descriptionOverrides ?? {})
+  // Rendered PDF page URLs belong to the previous component lifetime. Start the
+  // restored review without stale evidence geometry rather than drawing boxes over
+  // blank placeholder pages; the extracted fields and decisions remain complete.
   const [evidencePages, setEvidencePages] = useState<EvidencePage[]>([])
   const [documentPages, setDocumentPages] = useState<RenderedPdfPage[]>([])
-  const [activeLineId, setActiveLineId] = useState("")
-  const [reviewFilter, setReviewFilter] = useState<ReviewFilter>("all")
-  const [reviewTab, setReviewTab] = useState<ReviewTab>("lines")
+  const [activeLineId, setActiveLineId] = useState(() => recovered?.activeLineId ?? "")
+  const [reviewFilter, setReviewFilter] = useState<ReviewFilter>(() => recovered?.reviewFilter ?? "all")
+  const [reviewTab, setReviewTab] = useState<ReviewTab>(() => recovered?.reviewTab ?? "lines")
   const [extracting, setExtracting] = useState(false)
   const [stage, setStage] = useState<InvoiceImportStage | null>(null)
   const [extractionError, setExtractionError] = useState("")
@@ -125,6 +136,21 @@ export function CustomsInvoiceImportWorkspace({
     releasePdfPageImages(documentPagesRef.current)
   }, [])
 
+  useEffect(() => {
+    if (!lines.length) return
+    saveCustomsInvoiceImportRecovery(recoveryKey, {
+      invoiceName,
+      extractedInvoiceNumber,
+      lines,
+      selections,
+      descriptionOverrides,
+      evidencePages,
+      activeLineId,
+      reviewFilter,
+      reviewTab,
+    })
+  }, [activeLineId, descriptionOverrides, evidencePages, extractedInvoiceNumber, invoiceName, lines, recoveryKey, reviewFilter, reviewTab, selections])
+
   function updateSelection(lineId: string, update: Partial<InvoiceLineSelection>) {
     setSelections((current) => ({ ...current, [lineId]: { ...current[lineId], ...update } }))
   }
@@ -166,6 +192,7 @@ export function CustomsInvoiceImportWorkspace({
     abortExtraction.current?.abort()
     const controller = new AbortController()
     abortExtraction.current = controller
+    clearCustomsInvoiceImportRecovery(recoveryKey)
 
     releaseDocumentPages()
     setInvoiceName(file.name)
@@ -231,6 +258,7 @@ export function CustomsInvoiceImportWorkspace({
     setStage(null)
     setInvoiceName("")
     setExtractionError("")
+    clearCustomsInvoiceImportRecovery(recoveryKey)
   }
 
   function handleInvoiceDragEnter(event: DragEvent<HTMLButtonElement>) {
@@ -310,6 +338,7 @@ export function CustomsInvoiceImportWorkspace({
       toast.warning(t("Approve at least one invoice line"))
       return
     }
+    clearCustomsInvoiceImportRecovery(recoveryKey)
     onApply(invoiceOutputToDeclarationItems(output, invoiceReference), mode, includedCount)
   }
 
@@ -378,7 +407,9 @@ export function CustomsInvoiceImportWorkspace({
               onSelectBox={focusLine}
               title={t("Your invoice")}
               meta={<StatusPill>{documentBoxes.length} {t("of")} {lines.length} {t("located")}</StatusPill>}
-              empty={t("The document preview is still being prepared.")}
+              empty={t(recovered
+                ? "Your extracted lines and review choices were restored. The document preview is unavailable after returning."
+                : "The document preview is still being prepared.")}
             />
 
             <section className="flex min-w-0 flex-col gap-3" aria-label={t("Invoice line review")}>

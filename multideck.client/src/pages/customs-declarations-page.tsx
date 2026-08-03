@@ -22,6 +22,7 @@ import {
 } from "@/lib/customs-declaration"
 import { createEmptyCustomsReferenceData, useCustomsReferenceData, type CustomsCatalogCode, type CustomsReferenceData } from "@/lib/customs-reference-data"
 import { listStandaloneExportDrafts, loadStandaloneExportDraft, saveStandaloneExportDraft, type CustomsDraftSummary } from "@/lib/customs-drafts-api"
+import { hasCustomsInvoiceImportRecovery, moveCustomsInvoiceImportRecovery } from "@/lib/customs-invoice-import-recovery"
 
 type DeclarationKind = "export" | "import"
 type EditorTab = "declaration" | "parties" | "transport" | "documents" | "items" | "review"
@@ -174,7 +175,8 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
   const [showCustomsBoxNumbers, setShowCustomsBoxNumbers] = useState(false)
   const [showOptional, setShowOptional] = useState(false)
   const [validated, setValidated] = useState(false)
-  const [invoiceImportOpen, setInvoiceImportOpen] = useState(false)
+  const invoiceImportRecoveryKey = declarationId ?? "new"
+  const [invoiceImportOpen, setInvoiceImportOpen] = useState(() => hasCustomsInvoiceImportRecovery(invoiceImportRecoveryKey))
   const [focusTarget, setFocusTarget] = useState<{ field: string; nonce: number } | null>(null)
   const [loadingDraft, setLoadingDraft] = useState(Boolean(declarationId))
   const [draftLoadError, setDraftLoadError] = useState<string | null>(null)
@@ -184,6 +186,10 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
   const issueFields = useMemo(() => new Set(validated ? completion.issues.map((issue) => issue.field) : []), [completion.issues, validated])
   const activeItemIssueFields = useMemo(() => new Set(validated ? completion.issues.filter((issue) => issue.itemId === activeItemId).map((issue) => issue.field) : []), [activeItemId, completion.issues, validated])
   const fallbackUrl = import.meta.env.VITE_ICUSTOMS_APP_URL || "https://app-tdr.customscloud.co/cds/export"
+
+  useEffect(() => {
+    setInvoiceImportOpen(hasCustomsInvoiceImportRecovery(invoiceImportRecoveryKey))
+  }, [invoiceImportRecoveryKey])
 
   useEffect(() => {
     if (!declarationId) return
@@ -248,6 +254,7 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
     setSavingDraft(true)
     try {
       const saved = await saveStandaloneExportDraft(draft, declarationId)
+      moveCustomsInvoiceImportRecovery(invoiceImportRecoveryKey, saved.id)
       setDraft((current) => ({ ...current, multideckReference: saved.reference }))
       toast.success(t("Draft saved"), { description: saved.reference })
       navigate("/customs/standalone/export")
@@ -324,7 +331,7 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
   return (
     <CustomsReferenceDataContext.Provider value={referenceData}>
     <CustomsBoxVisibilityContext.Provider value={showCustomsBoxNumbers}>
-    <div className="space-y-4" data-testid="standalone-export-editor">
+    <div className="min-w-0 max-w-full space-y-4 overflow-x-clip" data-testid="standalone-export-editor">
       <header className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div>
           <button type="button" onClick={() => navigate("/customs/standalone/export")} className="inline-flex items-center gap-2 text-[12px] font-medium text-[var(--md-text)] hover:text-[var(--md-accent)]">
@@ -357,7 +364,7 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
         </div>
       </Surface>
 
-      <nav className="overflow-x-auto rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)]" aria-label={t("Declaration sections")}>
+      <nav className="max-w-full overflow-x-auto rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)]" aria-label={t("Declaration sections")}>
         <div className="grid min-w-[840px] grid-cols-6 gap-1">
           {editorTabs.map((entry, index) => (
             <button key={entry.id} type="button" onClick={() => setTab(entry.id)} aria-current={tab === entry.id ? "step" : undefined} className={cn("flex min-h-[52px] items-center gap-2 rounded-[var(--md-radius-lg)] px-3 text-start", tab === entry.id ? "bg-[var(--md-selected-bg)] text-[var(--md-selected-text)]" : "text-[var(--md-text)] hover:bg-[var(--md-hover)]")}>
@@ -378,7 +385,7 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
       {tab === "items" ? <ItemsSection items={draft.items} activeItem={activeItem} activeItemId={activeItemId} onSelectItem={setActiveItemId} onAdd={addItem} onOpenInvoiceImport={() => setInvoiceImportOpen(true)} onDuplicate={duplicateItem} onRemove={removeItem} itemTab={itemTab} onItemTabChange={setItemTab} update={updateItem} updateRow={updateItemById} showDataElements={showDataElements} showOptional={showOptional} issues={activeItemIssueFields} validated={validated} highlightedField={focusTarget?.field} t={t} /> : null}
       {tab === "review" ? <ReviewSection draft={draft} completion={completion} fallbackUrl={fallbackUrl} onValidate={validate} onFixIssue={fixIssue} t={t} /> : null}
     </div>
-    {invoiceImportOpen ? <CustomsInvoiceImportWorkspace onClose={() => setInvoiceImportOpen(false)} onApply={applyInvoiceItems} existingItemCount={draft.items.length} /> : null}
+    {invoiceImportOpen ? <CustomsInvoiceImportWorkspace key={invoiceImportRecoveryKey} recoveryKey={invoiceImportRecoveryKey} onClose={() => setInvoiceImportOpen(false)} onApply={applyInvoiceItems} existingItemCount={draft.items.length} /> : null}
     </CustomsBoxVisibilityContext.Provider>
     </CustomsReferenceDataContext.Provider>
   )
@@ -504,7 +511,7 @@ function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, on
         </span>
         <div className="flex flex-wrap items-center gap-2"><Button type="button" variant="outline" size="sm" onClick={onOpenInvoiceImport}><Sparkles className="size-3.5" />{t("Import invoice")}</Button><Button type="button" size="sm" onClick={onAdd}><Plus className="size-3.5" />{t("Add item")}</Button></div>
       </header>
-      <div className="w-full max-w-full overflow-x-auto overscroll-x-contain">
+      <div className="w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain" data-testid="mandatory-goods-line-scroll">
         <table className="w-full min-w-[1780px] table-fixed border-collapse text-start" aria-label={t("Mandatory goods-line fields")}>
           <thead className="bg-[var(--md-surface-soft)] text-[9px] font-medium uppercase tracking-[0.035em] text-[var(--md-subtle)]">
             <tr>

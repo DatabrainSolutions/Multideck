@@ -71,6 +71,7 @@ export const customsDeclarationPhrases: PhraseDictionary = {
   "Your invoice": { de: "Ihre Rechnung", fr: "Votre facture", ar: "فاتورتك" },
   located: { de: "zugeordnet", fr: "repérées", ar: "تم تحديدها" },
   "The document preview is still being prepared.": { de: "Die Dokumentvorschau wird noch vorbereitet.", fr: "L’aperçu du document est encore en préparation.", ar: "لا تزال معاينة المستند قيد التحضير." },
+  "Your extracted lines and review choices were restored. The document preview is unavailable after returning.": { de: "Ihre extrahierten Positionen und Prüfentscheidungen wurden wiederhergestellt. Die Dokumentvorschau ist nach der Rückkehr nicht verfügbar.", fr: "Vos lignes extraites et vos choix de vérification ont été restaurés. L’aperçu du document n’est pas disponible après votre retour.", ar: "تمت استعادة البنود المستخرجة وخيارات المراجعة. معاينة المستند غير متاحة بعد العودة." },
   "Invoice line review": { de: "Prüfung der Rechnungspositionen", fr: "Contrôle des lignes de facture", ar: "مراجعة بنود الفاتورة" },
   "Approve the lines to import": { de: "Positionen für den Import genehmigen", fr: "Approuvez les lignes à importer", ar: "وافق على البنود المراد استيرادها" },
   "invoice lines": { de: "Rechnungspositionen", fr: "lignes de facture", ar: "بنود الفاتورة" },
