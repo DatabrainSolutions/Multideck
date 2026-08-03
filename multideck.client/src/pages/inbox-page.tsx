@@ -22,10 +22,11 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
+import { Skeleton } from "@/components/ui/skeleton"
 import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import { EmailMessageRenderer } from "@/components/multideck/email-message-renderer"
 import { EmailDeliveryStatus } from "@/components/multideck/email-delivery-status"
-import { InboxThreadRow, formatThreadTimestamp } from "@/components/multideck/inbox-thread-row"
+import { InboxThreadRow, formatThreadTimestamp, threadParticipantLabel } from "@/components/multideck/inbox-thread-row"
 import {
   MailProviderMark,
   mailProviderLabels,
@@ -468,7 +469,7 @@ function MessageCard({
 /* ------------------------------------------------------------------------- */
 
 export function InboxPage({ navigate: _navigate }: { navigate: (path: string) => void }) {
-  const { direction, t } = useLanguage()
+  const { direction, language, t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
   const isDesktop = useIsDesktopLayout()
   const {
@@ -544,6 +545,9 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
   const cacheKey = mailboxId ? threadCacheKey(mailboxId, folder, query) : null
   const listEntry = cacheKey ? threadCache[cacheKey] : undefined
   const threads = listEntry?.items ?? []
+  const selectedThreadPreview = selectedThreadId
+    ? threads.find((item) => item.id === selectedThreadId) ?? null
+    : null
   // The badge sits beside the active mailbox address, so its count must belong
   // to that mailbox too. A provider-wide sum made a Google Group or Outlook
   // shared address look as if it owned unread mail from the personal inbox.
@@ -956,6 +960,13 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
       setThreadError(null)
       const last = cached.messages.at(-1)
       setExpandedMessageIds(new Set(last ? [last.id] : []))
+    } else {
+      // Replace the previous conversation in the same event as selection. The
+      // list row already carries enough real data for an immediate preview, so
+      // a cold detail request never leaves stale mail or a blank spinner behind.
+      setThread(null)
+      setThreadState("loading")
+      setThreadError(null)
     }
     setSelectedThreadId(threadItem.id)
     setSelectedThreadMailboxId(threadItem.mailboxId)
@@ -1682,11 +1693,52 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
           title={t("Choose a conversation")}
           description={t("Open a conversation to read its messages, ask Dexter for a summary, and reply.")}
         />
+      ) : threadState === "loading" && selectedThreadPreview ? (
+        <div className="flex h-full min-h-0 flex-col" aria-busy="true">
+          <header className="shrink-0 px-[var(--md-gap-lg)] pt-3">
+            <h1
+              data-i18n-skip
+              dir="auto"
+              className="text-balance text-[17px] font-medium leading-[1.25] tracking-[-0.01em] text-[var(--md-ink)]"
+            >
+              {selectedThreadPreview.subject || t("No subject")}
+            </h1>
+            <div className="mt-2 flex min-w-0 items-center gap-2 text-[12px] text-[var(--md-subtle)]">
+              <span data-i18n-skip dir="auto" className="min-w-0 truncate">
+                {threadParticipantLabel(selectedThreadPreview, ownAddresses)}
+              </span>
+              <span aria-hidden="true">·</span>
+              <span data-i18n-skip dir="ltr" className="shrink-0 tabular-nums">
+                {formatThreadTimestamp(selectedThreadPreview.lastMessageAt, language)}
+              </span>
+            </div>
+          </header>
+
+          <div className="min-h-0 flex-1 overflow-hidden px-[var(--md-gap-lg)] py-3">
+            <div className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-3 shadow-[var(--md-shadow-line)]">
+              <p data-i18n-skip dir="auto" className="text-[13px] leading-[1.55] text-[var(--md-text)]">
+                {selectedThreadPreview.preview}
+              </p>
+              <div className="mt-4 space-y-2" aria-hidden="true">
+                <Skeleton className="h-2.5 w-full rounded-[var(--md-radius-xs)] bg-[var(--md-surface-tint)]" />
+                <Skeleton className="h-2.5 w-[88%] rounded-[var(--md-radius-xs)] bg-[var(--md-surface-tint)]" />
+                <Skeleton className="h-2.5 w-[64%] rounded-[var(--md-radius-xs)] bg-[var(--md-surface-tint)]" />
+              </div>
+            </div>
+            <p className="mt-2 text-[11.5px] text-[var(--md-subtle)]" aria-live="polite">
+              {t("Loading the full conversation...")}
+            </p>
+          </div>
+
+          <div className="shrink-0 p-3 pt-0" aria-hidden="true">
+            <Skeleton className="h-11 w-full rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)]" />
+          </div>
+        </div>
       ) : threadState === "loading" ? (
         <div className="grid h-full place-items-center">
           <p className="flex items-center gap-2 text-[13px] text-[var(--md-text)]">
             <Loader2 className="size-4 animate-spin motion-reduce:animate-none" strokeWidth={1.5} aria-hidden="true" />
-            {t("Opening this conversation...")}
+            {t("Loading the full conversation...")}
           </p>
         </div>
       ) : threadState === "error" || !thread ? (

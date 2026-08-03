@@ -7,6 +7,7 @@ const index = await readFile(new URL("index.ts", root), "utf8")
 const runtime = await readFile(new URL("runtime.ts", root), "utf8")
 const core = await readFile(new URL("core.ts", root), "utf8")
 const config = await readFile(new URL("../config.toml", import.meta.url), "utf8")
+const instantThreadMigration = await readFile(new URL("../migrations/20260803165000_inbox_thread_snapshot.sql", import.meta.url), "utf8")
 
 test("authenticated Edge boundary is registered", () => {
   assert.match(config, /\[functions\.inbox-api\]\s+verify_jwt\s*=\s*true/)
@@ -28,10 +29,13 @@ test("Inbox startup and thread detail avoid database waterfalls", () => {
   assert.match(runtime, /export async function inboxWorkspace/)
   assert.match(mailboxList, /comm_inbox_mailbox_unread_counts/)
   assert.doesNotMatch(mailboxList, /CommMessage_MessageDate,CommMessage_ReceivedAt,CommMessage_CreatedAt/)
-  assert.match(threadDetail, /await Promise\.all\(\[/)
+  assert.match(threadDetail, /admin\.rpc\("comm_inbox_thread_snapshot"/)
   for (const table of ["Comm_MessageRecipients", "Comm_MessageAttachments", "Comm_DeliveryEvents", "Comm_MessageTrackingTokens", "Comm_ReadStates"]) {
-    assert.match(threadDetail, new RegExp(table))
+    assert.match(instantThreadMigration, new RegExp(table))
   }
+  assert.match(instantThreadMigration, /permissionGranted/)
+  assert.match(instantThreadMigration, /CommMailboxAccess_CanRead/)
+  assert.match(instantThreadMigration, /CommMailboxAccess_CanSend/)
 })
 
 test("Dexter email source status is permission-aware and never exposes provider credentials", () => {

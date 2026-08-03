@@ -248,8 +248,15 @@ export function InboxWorkspaceProvider({ children, cacheScope }: { children: Rea
   // operator arriving a moment later sees rows without starting another call.
   useEffect(() => {
     if (accountState !== "ready" || !mailboxId) return
-    void fetchThreadPage({ mailboxId, folder: folderForView(view), limit: 25 }).catch(() => undefined)
-  }, [accountState, fetchThreadPage, mailboxId, view])
+    void fetchThreadPage({ mailboxId, folder: folderForView(view), limit: 25 })
+      .then((page) => {
+        // The first conversations are the most likely next click. Warming only
+        // three keeps bandwidth restrained while making the visible top of the
+        // mailbox open from memory instead of starting work after selection.
+        for (const thread of page.items.slice(0, 3)) prefetchThreadDetail(thread.id)
+      })
+      .catch(() => undefined)
+  }, [accountState, fetchThreadPage, mailboxId, prefetchThreadDetail, view])
 
   const applySelection = useCallback((nextProvider: MailProvider, nextView: InboxNavigationView, currentMailboxId: string | null) => {
     const nextMailbox = preferredMailbox(mailboxes, nextProvider, nextView, currentMailboxId)

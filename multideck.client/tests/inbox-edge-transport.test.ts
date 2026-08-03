@@ -35,9 +35,12 @@ test("Inbox navigation stays warm and conversation intent prefetches detail", ()
   assert.match(inboxWorkspaceSource, /threadPageRequestsRef/)
   assert.match(inboxWorkspaceSource, /threadDetailRequestsRef/)
   assert.match(inboxWorkspaceSource, /threadDetailCacheTtlMs = 60_000/)
+  assert.match(inboxWorkspaceSource, /page\.items\.slice\(0, 3\)/)
   assert.match(threadRowSource, /onPointerEnter=\{onPrefetch\}/)
   assert.match(threadRowSource, /onFocus=\{onPrefetch\}/)
   assert.match(inboxPageSource, /onPrefetch=\{\(\) => prefetchThreadDetail\(item\.id\)\}/)
+  assert.match(inboxPageSource, /selectedThreadPreview/)
+  assert.match(inboxPageSource, /Loading the full conversation/)
 })
 
 test("send keeps its idempotency key in both the Edge header and payload", () => {

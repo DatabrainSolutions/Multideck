@@ -1463,24 +1463,24 @@ async function mailboxProviderMap(admin: Db, mailboxIds: string[]) {
 }
 
 export async function getThread(admin: Db, actor: Actor, threadId: string) {
-  await requirePermission(admin, actor, "Email.Read")
-  const accessible = await mailboxIds(admin, actor, "read")
-  const messages = await threadData(admin, actor, threadId, accessible)
-  const messageIds = messages.map((row) => row.CommMessage_ID)
-  const [recipientsResult, attachmentsResult, deliveryEventsResult, trackingTokensResult, state, summaries, sendIds] = await Promise.all([
-    result<Row[]>(admin.from("Comm_MessageRecipients").select("*").in("CommRecipient_MessageID", messageIds)),
-    result<Row[]>(admin.from("Comm_MessageAttachments").select("*").in("CommAttachment_MessageID", messageIds)),
-    result<Row[]>(admin.from("Comm_DeliveryEvents").select("CommDelivery_MessageID,CommDelivery_EventTypeCode,CommDelivery_EventAt").in("CommDelivery_MessageID", messageIds).order("CommDelivery_EventAt")),
-    result<Row[]>(admin.from("Comm_MessageTrackingTokens").select("CommTrack_MessageID,CommTrack_FirstOpenedAt").in("CommTrack_MessageID", messageIds)),
-    result<Row>(admin.from("Comm_ReadStates").select("*").eq("CommRead_UserID", actor.userId).eq("CommRead_ThreadID", threadId).is("CommRead_MessageID", null).maybeSingle()),
-    currentSummaries(admin, [threadId]),
-    mailboxIds(admin, actor, "send"),
-  ])
-  const recipients = recipientsResult ?? []
-  const attachments = attachmentsResult ?? []
-  const deliveryEvents = deliveryEventsResult ?? []
-  const trackingTokens = trackingTokensResult ?? []
-  const summary = summaries.get(threadId) ?? summaryDto()
+  const snapshot = await result<Row>(admin.rpc("comm_inbox_thread_snapshot", {
+    p_user_id: actor.userId,
+    p_thread_id: threadId,
+  }))
+  if (snapshot?.permissionGranted !== true) {
+    throw new InboxHttpError(403, "You do not have permission to perform this inbox action.", "permission_denied")
+  }
+  if (snapshot.found !== true) {
+    throw new InboxHttpError(404, "This email thread was not found.", "thread_not_found")
+  }
+  const messages = Array.isArray(snapshot.messages) ? snapshot.messages : []
+  const recipients = Array.isArray(snapshot.recipients) ? snapshot.recipients : []
+  const attachments = Array.isArray(snapshot.attachments) ? snapshot.attachments : []
+  const deliveryEvents = Array.isArray(snapshot.deliveryEvents) ? snapshot.deliveryEvents : []
+  const trackingTokens = Array.isArray(snapshot.trackingTokens) ? snapshot.trackingTokens : []
+  const state = isObject(snapshot.state) ? snapshot.state : null
+  const sendIds = new Set(Array.isArray(snapshot.sendMailboxIds) ? snapshot.sendMailboxIds : [])
+  const summary = summaryDto(isObject(snapshot.summary) ? snapshot.summary : null)
   const readAt = state?.CommRead_ReadAt ? Date.parse(state.CommRead_ReadAt) : 0
   const addresses = (messageId: string, type: string) => recipients.filter((row) => row.CommRecipient_MessageID === messageId && row.CommRecipient_RecipientTypeCode === type).map((row) => ({ address: row.CommRecipient_Address, displayName: row.CommRecipient_DisplayNameSnapshot }))
   const delivery = (row: Row) => {
