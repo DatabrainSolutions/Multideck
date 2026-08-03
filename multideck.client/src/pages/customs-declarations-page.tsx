@@ -499,7 +499,7 @@ function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, on
           <h2 className="text-[14px] font-medium text-[var(--md-ink)]">{t("Mandatory goods-line fields")}</h2>
           <p className="mt-0.5 text-[11px] text-[var(--md-subtle)]">{t("Add rows and enter the essentials here. Select any row to expand its full details below.")}</p>
         </span>
-        <div className="flex flex-wrap items-center gap-2"><Button type="button" variant="outline" size="sm" onClick={onOpenInvoiceImport}><Sparkles className="size-3.5" />{t("Import invoice with AI")}</Button><Button type="button" size="sm" onClick={onAdd}><Plus className="size-3.5" />{t("Add item")}</Button></div>
+        <div className="flex flex-wrap items-center gap-2"><Button type="button" variant="outline" size="sm" onClick={onOpenInvoiceImport}><Sparkles className="size-3.5" />{t("Import invoice")}</Button><Button type="button" size="sm" onClick={onAdd}><Plus className="size-3.5" />{t("Add item")}</Button></div>
       </header>
       <div className="w-full max-w-full overflow-x-auto overscroll-x-contain">
         <table className="w-full min-w-[1780px] table-fixed border-collapse text-start" aria-label={t("Mandatory goods-line fields")}>

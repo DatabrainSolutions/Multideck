@@ -36,7 +36,7 @@ Deno.serve(async (request) => {
     await timings.measure("profile", () => currentInternalUser(admin, user))
 
     const apiKey = Deno.env.get("MISTRAL_OCR_API_KEY")?.trim()
-    if (!apiKey) throw new HttpError(503, "Commercial invoice extraction is not configured for this workspace.")
+    if (!apiKey) throw new HttpError(503, "Invoice import is unavailable for this workspace.")
 
     const input = await timings.measure("input", () => readInvoiceInput(request))
     mode = input.kind === "embedded_text" ? "embedded_text" : "mistral_ocr"
@@ -52,7 +52,7 @@ Deno.serve(async (request) => {
 
     if (!extraction.lines.length) {
       if (input.kind === "embedded_text") throw new MistralOcrFallback()
-      throw new HttpError(422, "No commercial invoice item lines were found in this PDF.")
+      throw new HttpError(422, "No item lines were found. Check the PDF or choose another invoice.")
     }
 
     const usage = asRecord(providerPayload.usage_info ?? providerPayload.usage)
@@ -82,7 +82,7 @@ Deno.serve(async (request) => {
     return timedJson(request, responseBody, 200, timings, mode)
   } catch (error) {
     if (!(error instanceof HttpError)) console.error(`${functionName}: unexpected extraction error`, error)
-    const publicError = error instanceof HttpError ? error : new HttpError(500, "The invoice could not be extracted. Try again.")
+    const publicError = error instanceof HttpError ? error : new HttpError(500, "Unable to import this invoice. Try again.")
     return timedJson(request, {
       detail: publicError.message,
       fallbackToMistralOcr: error instanceof MistralOcrFallback,
@@ -98,7 +98,7 @@ async function readInvoiceInput(request: Request): Promise<InvoiceInput> {
     try {
       payload = asRecord(await request.json())
     } catch {
-      throw new HttpError(400, "Send valid embedded PDF text for extraction.")
+      throw new HttpError(400, "Unable to read this invoice. Choose another PDF or try again.")
     }
     const text = typeof payload.embeddedText === "string" ? payload.embeddedText.trim() : ""
     if (text.length < 240) throw new MistralOcrFallback()
@@ -236,11 +236,11 @@ function bytesToBase64(bytes: Uint8Array) {
 }
 
 function providerError(status: number) {
-  if (status === 429) return new HttpError(429, "Invoice extraction is busy. Wait a moment and try again.")
+  if (status === 429) return new HttpError(429, "Invoice import is busy. Wait a moment and try again.")
   if (status === 400 || status === 413 || status === 415 || status === 422) {
-    return new HttpError(422, "Mistral could not read this invoice. Try a clearer PDF.")
+    return new HttpError(422, "This invoice could not be read. Choose a clearer PDF or try another invoice.")
   }
-  return new HttpError(502, "Mistral invoice extraction is temporarily unavailable. Try again.")
+  return new HttpError(502, "Invoice import is temporarily unavailable. Try again.")
 }
 
 function timedJson(

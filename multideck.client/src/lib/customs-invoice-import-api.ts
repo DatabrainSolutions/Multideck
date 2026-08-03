@@ -30,7 +30,7 @@ export class CommercialInvoiceExtractionError extends Error {
 export async function extractCommercialInvoice(file: File): Promise<CommercialInvoiceExtractionResult> {
   validateInvoice(file)
   if (!supabase || !supabaseFunctionsUrl || !supabasePublicApiKey || !/^https?:\/\//.test(endpoint)) {
-    throw new CommercialInvoiceExtractionError("Commercial invoice extraction is not configured for this workspace.", 503)
+    throw new CommercialInvoiceExtractionError("Invoice import is unavailable for this workspace.", 503)
   }
 
   const embeddedPdfText = await extractEmbeddedPdfText(file)
@@ -53,8 +53,8 @@ export async function extractCommercialInvoice(file: File): Promise<CommercialIn
 
   if (!response.ok) {
     const fallback = response.status === 429
-      ? "Invoice extraction is busy. Wait a moment and try again."
-      : "The invoice could not be extracted. Try again."
+      ? "Invoice import is busy. Wait a moment and try again."
+      : "Unable to import this invoice. Try again."
     throw new CommercialInvoiceExtractionError(await errorMessage(response, fallback), response.status)
   }
 
@@ -62,7 +62,7 @@ export async function extractCommercialInvoice(file: File): Promise<CommercialIn
   try {
     payload = await response.json()
   } catch {
-    throw new CommercialInvoiceExtractionError("Invoice extraction returned an unexpected response.", response.status)
+    throw new CommercialInvoiceExtractionError("Unable to import this invoice. Try again.", response.status)
   }
   return normalizeResult(payload)
 }
@@ -118,7 +118,7 @@ async function send(body: BodyInit, token: string, contentType?: string) {
       },
     })
   } catch {
-    throw new CommercialInvoiceExtractionError("Unable to reach invoice extraction. Check your connection and try again.")
+    throw new CommercialInvoiceExtractionError("Unable to import the invoice. Check your connection and try again.")
   }
 }
 
@@ -153,7 +153,7 @@ function normalizeResult(payload: unknown): CommercialInvoiceExtractionResult {
   const result = asRecord(payload)
   const sourceLines = Array.isArray(result.lines) ? result.lines : []
   const lines = sourceLines.map(normalizeLine).filter((line): line is ExtractedInvoiceLine => line !== null)
-  if (!lines.length) throw new CommercialInvoiceExtractionError("No commercial invoice item lines were found in this PDF.", 422)
+  if (!lines.length) throw new CommercialInvoiceExtractionError("No item lines were found. Check the PDF or choose another invoice.", 422)
   return {
     invoiceNumber: text(result.invoiceNumber),
     lines,
