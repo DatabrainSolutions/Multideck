@@ -2929,8 +2929,8 @@ export const galleryComponents = [
     id: "email-message-renderer",
     name: "Email Message Renderer",
     category: "Operations",
-    description: "Renders one email body and its secure remote images inside an isolated surface.",
-    details: "Use for any provider email body. HTML is sanitised on the server and still treated as untrusted here: it never reaches `dangerouslySetInnerHTML`, it goes into a sandboxed iframe whose own Content Security Policy blocks scripts, frames, forms and every network request except HTTPS images. Images load with the message under a no-referrer policy. When there is no sanitised HTML the plain-text alternative is rendered directly. The frame is sized to its content, so the thread keeps one scroll axis.",
+    description: "Renders one email body with theme-safe contrast and private inline images inside an isolated surface.",
+    details: "Use for any provider email body. HTML is sanitised on the server and still treated as untrusted here: it never reaches `dangerouslySetInnerHTML`, it goes into a sandboxed iframe whose own Content Security Policy blocks scripts, frames, forms and every network request except HTTPS, data and authenticated private blob images. Sender-authored text and backgrounds retain readable contrast in light and dark appearance, while photos and logos keep their original colours. When there is no sanitised HTML the plain-text alternative is rendered directly. The frame is sized to its content, so the thread keeps one scroll axis.",
     foundOn: [{ label: "Inbox", route: "/inbox" }, { label: "Components", route: "/components?component=email-message-renderer" }],
     componentCode: `const sandboxPermissions = "allow-same-origin allow-popups allow-popups-to-escape-sandbox"
 
@@ -2943,11 +2943,11 @@ function contentPolicy() {
     "form-action 'none'",
     "base-uri 'none'",
     "style-src 'unsafe-inline'",
-    "img-src data: https:",
+    "img-src data: blob: https:",
   ].join("; ")
 }
 
-export function EmailMessageRenderer({ sanitizedHtml, bodyText }) {
+export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachments = [] }) {
   if (!sanitizedHtml) {
     return <div data-i18n-skip dir="auto" className="whitespace-pre-wrap">{bodyText}</div>
   }
@@ -2957,7 +2957,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText }) {
       <iframe
         title="Message content"
         sandbox={sandboxPermissions}
-        srcDoc={buildDocument({ html: sanitizedHtml, theme, direction, language })}
+        srcDoc={buildDocument({ html: replaceInlineImageSources(sanitizedHtml, inlineImageSources), theme, direction, language })}
         loading="eager"
         scrolling="no"
         style={{ height: frameHeight > 0 ? \`\${frameHeight}px\` : "72px" }}
@@ -2968,6 +2968,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText }) {
     usageCode: `<EmailMessageRenderer
   sanitizedHtml={message.sanitizedHtml}
   bodyText={message.bodyText}
+  inlineAttachments={message.attachments}
 />`,
   },
   {

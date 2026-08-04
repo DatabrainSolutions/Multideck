@@ -79,13 +79,9 @@ export function CrmAccountsPage({ navigate }: { navigate: (path: string) => void
   }
 
   return (
-    <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t("Accounts")} className="md-page md-page-stack">
-      <header className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-        <div>
-          <p className="text-[12px] font-medium text-[var(--md-accent)]">{t("Customer management")}</p>
-          <h1 className="mt-1 text-[24px] font-medium leading-tight text-[var(--md-ink)]">{t("Accounts")}</h1>
-          <p className="mt-2 max-w-[680px] text-[13px] leading-5 text-[var(--md-text)]">{t("Customer organisations, relationship health, contacts and the next work that matters.")}</p>
-        </div>
+    <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t("Accounts")} className="md-page md-page-stack-compact">
+      <header className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
+        <div className="min-w-0"><div className="flex flex-wrap items-baseline gap-x-3 gap-y-1"><h1 className="text-[22px] font-medium leading-tight text-[var(--md-ink)]">{t("Accounts")}</h1><p className="text-[11px] font-medium text-[var(--md-subtle)]">{t("Customer management")}</p></div><p className="mt-1 max-w-[900px] text-[12px] leading-5 text-[var(--md-text)]">{t("Customer organisations, relationship health, contacts and the next work that matters.")}</p></div>
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" onClick={() => setDexterOpen(true)} className="h-10 rounded-[var(--md-radius-lg)]">
             <Sparkles className="size-4" strokeWidth={1.4} />{t("Ask Dexter")}

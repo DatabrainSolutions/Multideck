@@ -440,7 +440,11 @@ function MessageCard({
             className="grid overflow-hidden"
           >
             <div className="min-h-0 px-3.5 pb-3.5">
-              <EmailMessageRenderer sanitizedHtml={message.sanitizedHtml} bodyText={message.bodyText} />
+              <EmailMessageRenderer
+                sanitizedHtml={message.sanitizedHtml}
+                bodyText={message.bodyText}
+                inlineAttachments={message.attachments}
+              />
               {message.attachments.filter((attachment) => !attachment.isInline).length > 0 ? (
                 <div className="mt-3">
                   <p className="mb-1.5 text-[11px] font-medium uppercase tracking-[0.07em] text-[var(--md-subtle)]">

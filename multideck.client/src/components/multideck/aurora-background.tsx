@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react"
 import { Color, Mesh, Program, Renderer, Triangle } from "ogl"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
+import { useTheme } from "next-themes"
 import { useAccentBrandRamp, type ShaderStops } from "@/lib/accent-theme"
 import { cn } from "@/lib/utils"
 import { mdMotion, reduceMotion } from "@/lib/motion"
@@ -21,6 +22,7 @@ uniform float uAmplitude;
 uniform vec3 uColorStops[3];
 uniform vec2 uResolution;
 uniform float uBlend;
+uniform float uLightSurface;
 
 out vec4 fragColor;
 
@@ -117,6 +119,11 @@ void main() {
   float auroraAlpha = max(waveAlpha, baseGlow);
   float depthLight = 0.82 + smoothstep(-0.65, 0.72, primaryWave - depthWave) * 0.34;
   vec3 auroraColor = max(intensity, baseGlow * 0.72) * rampColor * depthLight;
+  // A dark aurora needs the intensity multiplication to emerge from the page.
+  // On a light workspace it turns even pale colour stops into grey, so keep the
+  // ramp's intended luminosity and let alpha provide the ambient depth instead.
+  vec3 lightSurfaceColor = mix(rampColor, vec3(1.0), 0.56);
+  auroraColor = mix(auroraColor, lightSurfaceColor, uLightSurface);
 
   fragColor = vec4(auroraColor * auroraAlpha, auroraAlpha);
 }
@@ -134,6 +141,7 @@ export type AuroraBackgroundProps = {
   amplitude?: number
   blend?: number
   speed?: number
+  lightSurface?: boolean
   className?: string
 }
 
@@ -142,13 +150,14 @@ export function AuroraBackground({
   amplitude = 0.72,
   blend = 0.72,
   speed = 0.34,
+  lightSurface = false,
   className,
 }: AuroraBackgroundProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const propsRef = useRef({ colorStops, amplitude, blend, speed })
+  const propsRef = useRef({ colorStops, amplitude, blend, speed, lightSurface })
   const shouldReduceMotion = Boolean(useReducedMotion())
 
-  propsRef.current = { colorStops, amplitude, blend, speed }
+  propsRef.current = { colorStops, amplitude, blend, speed, lightSurface }
 
   useEffect(() => {
     const container = containerRef.current
@@ -180,6 +189,7 @@ export function AuroraBackground({
         uColorStops: { value: toGlColors(colorStops) },
         uResolution: { value: [1, 1] },
         uBlend: { value: blend },
+        uLightSurface: { value: lightSurface ? 1 : 0 },
       },
     })
     const mesh = new Mesh(gl, { geometry, program })
@@ -202,6 +212,7 @@ export function AuroraBackground({
       program.uniforms.uTime.value = shouldReduceMotion ? 1.8 : time * 0.00045 * current.speed
       program.uniforms.uAmplitude.value = current.amplitude
       program.uniforms.uBlend.value = current.blend
+      program.uniforms.uLightSurface.value = current.lightSurface ? 1 : 0
       program.uniforms.uColorStops.value = toGlColors(current.colorStops)
       renderer.render({ scene: mesh })
       if (!shouldReduceMotion && visible) frame = requestAnimationFrame(render)
@@ -236,10 +247,16 @@ export function AuroraBackground({
 }
 
 export function WatchModeAurora({ active, className }: { active: boolean; className?: string }) {
+  const { resolvedTheme } = useTheme()
   const accentRamp = useAccentBrandRamp()
-  // Keep Watch mode tonal: a darker, lighter and deepest expression of the
-  // operator's exact accent hue, rather than introducing unrelated colours.
-  const colorStops: ShaderStops = [accentRamp.glowCore, accentRamp.abyss, accentRamp.glowBright]
+  const isDark = resolvedTheme
+    ? resolvedTheme === "dark"
+    : typeof document !== "undefined" && document.documentElement.classList.contains("dark")
+  // Keep Watch mode tonal: dark mode retains its richer, lower-edge glow while
+  // light mode uses a pale accent ramp that belongs on the white workspace.
+  const colorStops: ShaderStops = isDark
+    ? [accentRamp.glowCore, accentRamp.abyss, accentRamp.glowBright]
+    : accentRamp.watchLight
   const shouldReduceMotion = Boolean(useReducedMotion())
 
   return (
@@ -250,7 +267,7 @@ export function WatchModeAurora({ active, className }: { active: boolean; classN
           aria-hidden="true"
           className={cn("pointer-events-none absolute inset-0 overflow-hidden", className)}
           initial={shouldReduceMotion ? false : { opacity: 0 }}
-          animate={{ opacity: 0.48 }}
+          animate={{ opacity: isDark ? 0.48 : 0.36 }}
           exit={{ opacity: 0 }}
           transition={reduceMotion(shouldReduceMotion, mdMotion.smooth)}
         >
@@ -259,6 +276,7 @@ export function WatchModeAurora({ active, className }: { active: boolean; classN
             amplitude={0.82}
             blend={0.68}
             speed={0.56}
+            lightSurface={!isDark}
             className="[mask-image:linear-gradient(to_top,black_0%,rgba(0,0,0,0.9)_48%,transparent_90%)]"
           />
         </motion.div>

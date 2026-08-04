@@ -133,6 +133,8 @@ export type MailAttachment = {
   mimeType: string | null
   sizeBytes: number | null
   isInline: boolean
+  /** Matches a `cid:` URL in the sanitised HTML for an embedded email image. */
+  contentId: string | null
   scanStatus: "clean" | "pending" | "blocked" | "unknown"
 }
 
@@ -604,6 +606,7 @@ function normalizeAttachment(value: unknown): MailAttachment {
     mimeType: readOptionalText(pickField(record, "mimeType", "contentType")),
     sizeBytes: typeof pickField(record, "sizeBytes", "size") === "number" ? readCount(pickField(record, "sizeBytes", "size")) : null,
     isInline: readFlag(pickField(record, "isInline")),
+    contentId: readOptionalText(pickField(record, "contentId", "cid")),
     scanStatus:
       rawScan === "clean" || rawScan === "passed" ? "clean" :
       rawScan === "blocked" || rawScan === "infected" ? "blocked" :

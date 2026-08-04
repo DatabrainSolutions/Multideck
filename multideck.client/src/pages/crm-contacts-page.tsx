@@ -49,16 +49,22 @@ export function CrmContactsPage({ navigate }: { navigate: (path: string) => void
   }, [consentFilter, contacts, query])
 
   const optedIn = contacts.filter((contact) => contact.consentMarketing).length
+  const optedOut = contacts.length - optedIn
   const recentlyContacted = contacts.filter((contact) => contact.lastContactAt && Date.now() - new Date(contact.lastContactAt).getTime() < 30 * 86_400_000).length
 
   return (
-    <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t("Contacts")} className="md-page md-page-stack">
-      <header className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-        <div><p className="text-[12px] font-medium text-[var(--md-accent)]">{t("Customer management")}</p><h1 className="mt-1 text-[24px] font-medium leading-tight text-[var(--md-ink)]">{t("Contacts")}</h1><p className="mt-2 max-w-[680px] text-[13px] leading-5 text-[var(--md-text)]">{t("The people behind each account, with communication preferences, consent and recent relationship context.")}</p></div>
+    <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t("Contacts")} className="md-page md-page-stack-compact">
+      <header className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
+        <div className="min-w-0"><div className="flex flex-wrap items-baseline gap-x-3 gap-y-1"><h1 className="text-[22px] font-medium leading-tight text-[var(--md-ink)]">{t("Contacts")}</h1><p className="text-[11px] font-medium text-[var(--md-subtle)]">{t("Customer management")}</p></div><p className="mt-1 max-w-[900px] text-[12px] leading-5 text-[var(--md-text)]">{t("The people behind each account, with communication preferences, consent and recent relationship context.")}</p></div>
         <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setDexterOpen(true)} className="h-10 rounded-[var(--md-radius-lg)]"><Sparkles className="size-4" strokeWidth={1.4} />{t("Ask Dexter")}</Button><Button onClick={() => setCreateOpen(true)} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] text-[var(--md-accent-ink)] active:scale-[0.96] motion-reduce:transform-none"><Plus className="size-4" strokeWidth={1.5} />{t("New contact")}</Button></div>
       </header>
 
-      <div className="grid gap-3 sm:grid-cols-3"><ContactStat icon={UsersRound} label={t("Contacts")} value={String(contacts.length)} /><ContactStat icon={UserRoundCheck} label={t("Contacted in 30 days")} value={String(recentlyContacted)} /><ContactStat icon={Mail} label={t("Marketing opted in")} value={String(optedIn)} /></div>
+      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+        <ContactStat icon={UsersRound} label={t("Contacts")} value={contacts.length} />
+        <ContactStat icon={UserRoundCheck} label={t("Contacted in 30 days")} value={recentlyContacted} />
+        <ContactStat icon={Mail} label={t("Marketing opted in")} value={optedIn} />
+        <ContactStat icon={Mail} label={t("Marketing opted out")} value={optedOut} />
+      </div>
 
       <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
         <div className="flex flex-col gap-3 px-4 py-4 xl:flex-row xl:items-center xl:justify-between">
@@ -85,7 +91,11 @@ export function CrmContactsPage({ navigate }: { navigate: (path: string) => void
   )
 }
 
-function ContactStat({ icon: Icon, label, value }: { icon: typeof UsersRound; label: string; value: string }) { return <Surface padding="md" className="rounded-[var(--md-radius-xl)]"><div className="flex items-center justify-between gap-4"><div><p className="text-[12px] text-[var(--md-text)]">{label}</p><p className="mt-2 text-[24px] font-medium tabular-nums text-[var(--md-ink)]">{value}</p></div><span className="grid size-9 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] text-[var(--md-accent)]"><Icon className="size-4" strokeWidth={1.4} /></span></div></Surface> }
+function ContactStat({ icon: Icon, label, value }: { icon: typeof UsersRound; label: string; value: number }) {
+  const { language } = useLanguage()
+
+  return <Surface padding="none" className="h-[44px] min-w-0 rounded-[var(--md-radius-lg)] px-3 py-1.5"><div className="flex h-full min-w-0 items-center gap-2.5"><p className="shrink-0 text-[19px] font-medium leading-none tabular-nums text-[var(--md-ink)]" data-i18n-skip dir="ltr">{new Intl.NumberFormat(language).format(value)}</p><div className="min-w-0"><p className="truncate text-[10.5px] font-medium leading-[13px] text-[var(--md-text)]">{label}</p></div><span className="ms-auto grid size-7 shrink-0 place-items-center rounded-[calc(var(--md-radius-lg)-4px)] bg-[var(--md-surface-tint)] text-[var(--md-accent)]"><Icon className="size-3.5" strokeWidth={1.4} /></span></div></Surface>
+}
 function ContactState({ icon, title, detail, action }: { icon: ReactNode; title: string; detail?: string; action?: ReactNode }) { return <div className="grid min-h-[260px] place-items-center border-t border-[var(--md-line)] px-6 py-10 text-center"><div className="max-w-sm"><span className="mx-auto grid size-10 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] text-[var(--md-accent)]">{icon}</span><p className="mt-4 text-[14px] font-medium text-[var(--md-ink)]">{title}</p>{detail ? <p className="mt-2 text-[13px] leading-5 text-[var(--md-text)]">{detail}</p> : null}{action ? <div className="mt-4">{action}</div> : null}</div></div> }
 function humanize(value: string | null) { return value ? value.replace(/[_-]+/g, " ").replace(/^./, (letter) => letter.toUpperCase()) : "" }
 function relativeDate(value: string | null, t: (value: string) => string) { if (!value) return t("Never"); const days = Math.floor((Date.now() - new Date(value).getTime()) / 86_400_000); if (days <= 0) return t("Today"); if (days === 1) return t("Yesterday"); if (days < 30) return `${days} ${t("days ago")}`; return new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric" }).format(new Date(value)) }

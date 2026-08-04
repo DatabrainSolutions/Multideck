@@ -128,7 +128,8 @@ Deno.serve(async (request) => {
       return jsonResponse(request, allowedOrigins, await sendMail(clients.admin, actor, await readJson(request, 24_000_000), request.headers.get("Idempotency-Key")?.trim() ?? ""))
     }
     if (method === "GET" && path.length === 2 && path[0] === "attachments") {
-      const download = await attachment(clients.admin, actor, path[1])
+      const inline = new URL(request.url).searchParams.get("disposition") === "inline"
+      const download = await attachment(clients.admin, actor, path[1], inline)
       const attachmentBuffer = new ArrayBuffer(download.bytes.byteLength)
       new Uint8Array(attachmentBuffer).set(download.bytes)
       return new Response(attachmentBuffer, {
@@ -137,7 +138,7 @@ Deno.serve(async (request) => {
           ...corsHeaders(request, allowedOrigins),
           "Cache-Control": "private, no-store",
           "Content-Type": download.mimeType,
-          "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(safeFileName(download.fileName))}`,
+          "Content-Disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(safeFileName(download.fileName))}`,
           "Content-Length": String(download.bytes.byteLength),
           "X-Content-Type-Options": "nosniff",
           "X-Content-Safety": "unscanned-provider-content",

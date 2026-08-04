@@ -49,8 +49,10 @@ test("send keeps its idempotency key in both the Edge header and payload", () =>
 })
 
 test("attachments are fetched from the same authenticated Edge transport", () => {
-  assert.match(source, /fetchInboxEdge\(`\/attachments\/\$\{encodeURIComponent\(attachmentId\)\}`/)
+  assert.match(source, /fetchInboxEdge\(`\/attachments\/\$\{encodeURIComponent\(attachmentId\)\}\$\{inline/)
   assert.match(source, /URL\.createObjectURL\(await response\.blob\(\)\)/)
+  assert.match(source, /getInlineAttachmentBlobUrl/)
+  assert.match(source, /\?disposition=inline/)
 })
 
 test("shared Outlook access is explicit and the mailbox is added through the Edge transport", () => {
@@ -87,13 +89,17 @@ test("Dexter summaries are explicitly requested and use the dimmed shader surfac
 })
 
 test("rendered email images load automatically without weakening the frame sandbox", () => {
-  assert.match(emailRendererSource, /"img-src data: https:"/)
+  assert.match(emailRendererSource, /"img-src data: blob: https:"/)
   assert.match(emailRendererSource, /sandbox=\{sandboxPermissions\}/)
   assert.match(emailRendererSource, /<meta name="referrer" content="no-referrer"/)
   assert.match(emailRendererSource, /loading="eager"/)
   assert.match(emailRendererSource, /<img\\b\[\^>\]\*>/)
   assert.match(emailRendererSource, /fetchpriority="high"/)
   assert.match(emailRendererSource, /replace\(\/\\s\+loading/)
+  assert.match(emailRendererSource, /replaceInlineImageSources/)
+  assert.match(emailRendererSource, /getInlineAttachmentBlobUrl/)
+  assert.match(emailRendererSource, /filter: invert\(1\) hue-rotate\(180deg\)/)
+  assert.match(emailRendererSource, /img, picture, video \{ filter: invert\(1\) hue-rotate\(180deg\)/)
   assert.doesNotMatch(emailRendererSource, /Images are blocked/)
   assert.doesNotMatch(emailRendererSource, /Load images/)
   assert.doesNotMatch(emailRendererSource, /dangerouslySetInnerHTML\s*=/)

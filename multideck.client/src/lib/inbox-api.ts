@@ -505,9 +505,22 @@ export async function readFileAsAttachment(file: File): Promise<OutboundAttachme
  * the file inherits the caller's authorization rather than a public link.
  */
 export async function getAttachmentBlobUrl(attachmentId: string): Promise<{ url: string; revoke: () => void }> {
+  return getSecureAttachmentBlobUrl(attachmentId, false)
+}
+
+/**
+ * Inline email images use the same authenticated transport as downloads. The
+ * resulting private blob URL exists only in this browser tab and is revoked as
+ * soon as the message renderer no longer needs it.
+ */
+export async function getInlineAttachmentBlobUrl(attachmentId: string): Promise<{ url: string; revoke: () => void }> {
+  return getSecureAttachmentBlobUrl(attachmentId, true)
+}
+
+async function getSecureAttachmentBlobUrl(attachmentId: string, inline: boolean): Promise<{ url: string; revoke: () => void }> {
   let response: Response
   try {
-    response = await fetchInboxEdge(`/attachments/${encodeURIComponent(attachmentId)}`, {
+    response = await fetchInboxEdge(`/attachments/${encodeURIComponent(attachmentId)}${inline ? "?disposition=inline" : ""}`, {
       method: "GET",
       headers: { Accept: "application/octet-stream" },
     })

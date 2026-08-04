@@ -172,6 +172,16 @@ test("Outlook attachment lists request only base attachment properties", () => {
   const parseGraphMessage = runtime.slice(runtime.indexOf("async function parseGraphMessage"), runtime.indexOf("async function syncOutlook"))
   assert.match(parseGraphMessage, /attachments\?\$select=id,name,contentType,size,isInline/)
   assert.doesNotMatch(parseGraphMessage, /attachments\?\$select=[^`\n]*contentId/)
+  assert.match(parseGraphMessage, /attachments\/\$\{encodeURIComponent\(item\.id\)\}\?\$select=id,contentId/)
+  assert.match(parseGraphMessage, /mapWithConcurrency\(Array\.isArray\(list\.value\)/)
+})
+
+test("inline message images repair legacy content IDs and use the private attachment route", () => {
+  assert.match(runtime, /hydrateOutlookInlineContentIds/)
+  assert.match(runtime, /CommAttachment_ContentID: contentId/)
+  assert.match(runtime, /allowInline && !item\.CommAttachment_IsInline/)
+  assert.match(index, /searchParams\.get\("disposition"\) === "inline"/)
+  assert.match(index, /inline \? "inline" : "attachment"/)
 })
 
 test("real mailbox lists avoid full-body reads and batch large database filters", () => {

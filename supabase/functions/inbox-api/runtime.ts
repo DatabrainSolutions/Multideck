@@ -832,10 +832,26 @@ async function parseGraphMessage(row: Row, owner: string, token: string): Promis
   let attachments: ProviderMessage["attachments"] = []
   if (row.hasAttachments) {
     const list = await providerJson(`https://graph.microsoft.com/v1.0/${owner}/messages/${encodeURIComponent(row.id)}/attachments?$select=id,name,contentType,size,isInline`, token)
-    attachments = (Array.isArray(list.value) ? list.value : []).map((item: Row) => ({
-      providerAttachmentId: cleanString(item.id, 1000), fileName: safeFileName(item.name), mimeType: cleanString(item.contentType, 200) || null,
-      sizeBytes: Number.isFinite(Number(item.size)) ? Number(item.size) : null, isInline: item.isInline === true, contentId: cleanString(item.contentId, 240) || null,
-    }))
+    attachments = await mapWithConcurrency(Array.isArray(list.value) ? list.value : [], 4, async (item: Row) => {
+      let contentId = cleanString(item.contentId, 240) || null
+      // Graph's attachment collection is deliberately projected to base
+      // properties: asking that collection for fileAttachment.contentId can
+      // fail for mixed attachment types. Resolve only the small inline subset
+      // through its typed detail endpoint instead.
+      if (item.isInline === true && !contentId && item.id) {
+        try {
+          const detail = await providerJson(`https://graph.microsoft.com/v1.0/${owner}/messages/${encodeURIComponent(row.id)}/attachments/${encodeURIComponent(item.id)}?$select=id,contentId`, token)
+          contentId = cleanString(detail.contentId, 240) || null
+        } catch {
+          // Keep the message available with its alt text. Existing missing IDs
+          // get another bounded repair attempt when the thread is opened.
+        }
+      }
+      return {
+        providerAttachmentId: cleanString(item.id, 1000), fileName: safeFileName(item.name), mimeType: cleanString(item.contentType, 200) || null,
+        sizeBytes: Number.isFinite(Number(item.size)) ? Number(item.size) : null, isInline: item.isInline === true, contentId,
+      }
+    })
   }
   const html = cleanString(body.contentType, 40).toLowerCase() === "html" ? cleanString(body.content, 2_000_000) : null
   const text = html ? stripHtml(html) : cleanString(body.content, 2_000_000) || null
@@ -1505,6 +1521,53 @@ async function mailboxProviderMap(admin: Db, mailboxIds: string[]) {
   return new Map(mailboxes.map((row) => [row.CommMailbox_ID, providers.get(row.CommMailbox_ConnectionID) ?? "outlook"]))
 }
 
+async function hydrateOutlookInlineContentIds(admin: Db, actor: Actor, messages: Row[], attachments: Row[]) {
+  const messageById = new Map(messages.map((message) => [message.CommMessage_ID, message]))
+  const missing = attachments.filter((item) => (
+    item.CommAttachment_IsInline === true
+    && !cleanString(item.CommAttachment_ContentID, 240)
+    && cleanString(messageById.get(item.CommAttachment_MessageID)?.CommMessage_BodyHTML, 2_000_000).toLowerCase().includes("cid:")
+  )).slice(0, 24)
+  if (!missing.length) return
+
+  const mailboxContexts = new Map<string, Promise<{ mailbox: Row; connection: Row; accessToken: string }>>()
+  const contextFor = (mailboxId: string) => {
+    let pending = mailboxContexts.get(mailboxId)
+    if (!pending) {
+      pending = requireMailbox(admin, actor, mailboxId, "read").then(async ({ mailbox, connection }) => ({
+        mailbox,
+        connection,
+        accessToken: (await credential(admin, connection)).accessToken,
+      }))
+      mailboxContexts.set(mailboxId, pending)
+    }
+    return pending
+  }
+
+  await mapWithConcurrency(missing, 4, async (item) => {
+    const message = messageById.get(item.CommAttachment_MessageID)
+    if (!message?.CommMessage_MailboxID || !message.CommMessage_ProviderMessageID) return
+    let metadata: Row = {}
+    try { metadata = JSON.parse(item.CommAttachment_MetadataJSON ?? "{}") } catch { metadata = {} }
+    const providerAttachmentId = cleanString(metadata.providerAttachmentId, 2_000)
+    if (!providerAttachmentId) return
+
+    try {
+      const { mailbox, connection, accessToken } = await contextFor(message.CommMessage_MailboxID)
+      if (publicProvider(connection.CommConn_ProviderTypeCode) !== "outlook") return
+      const owner = mailbox.CommMailbox_TypeCode === "shared" ? `users/${encodeURIComponent(mailbox.CommMailbox_Address)}` : "me"
+      const detail = await providerJson(`https://graph.microsoft.com/v1.0/${owner}/messages/${encodeURIComponent(message.CommMessage_ProviderMessageID)}/attachments/${encodeURIComponent(providerAttachmentId)}?$select=id,contentId`, accessToken)
+      const contentId = cleanString(detail.contentId, 240)
+      if (!contentId) return
+      item.CommAttachment_ContentID = contentId
+      await result(admin.from("Comm_MessageAttachments").update({ CommAttachment_ContentID: contentId }).eq("CommAttachment_ID", item.CommAttachment_ID))
+    } catch {
+      // This is a best-effort repair for previously indexed mail. Provider or
+      // mailbox failure must never prevent the text of the email from opening.
+    }
+  })
+}
+
 export async function getThread(admin: Db, actor: Actor, threadId: string) {
   const snapshot = await result<Row>(admin.rpc("comm_inbox_thread_snapshot", {
     p_user_id: actor.userId,
@@ -1526,6 +1589,7 @@ export async function getThread(admin: Db, actor: Actor, threadId: string) {
   const summary = summaryDto(isObject(snapshot.summary) ? snapshot.summary : null)
   const readAt = state?.CommRead_ReadAt ? Date.parse(state.CommRead_ReadAt) : 0
   const addresses = (messageId: string, type: string) => recipients.filter((row) => row.CommRecipient_MessageID === messageId && row.CommRecipient_RecipientTypeCode === type).map((row) => ({ address: row.CommRecipient_Address, displayName: row.CommRecipient_DisplayNameSnapshot }))
+  await hydrateOutlookInlineContentIds(admin, actor, messages, attachments)
   const delivery = (row: Row) => {
     const events = deliveryEvents.filter((event) => event.CommDelivery_MessageID === row.CommMessage_ID)
     const eventAt = (type: string) => events.find((event) => event.CommDelivery_EventTypeCode === type)?.CommDelivery_EventAt ?? null
@@ -1552,7 +1616,7 @@ export async function getThread(admin: Db, actor: Actor, threadId: string) {
       delivery: row.CommMessage_IsInbound ? undefined : delivery(row),
       attachments: attachments.filter((item) => item.CommAttachment_MessageID === row.CommMessage_ID).map((item) => ({
         id: item.CommAttachment_ID, fileName: safeFileName(item.CommAttachment_FileName), mimeType: item.CommAttachment_MimeType,
-        sizeBytes: item.CommAttachment_FileSizeBytes, isInline: item.CommAttachment_IsInline,
+        sizeBytes: item.CommAttachment_FileSizeBytes, isInline: item.CommAttachment_IsInline, contentId: cleanString(item.CommAttachment_ContentID, 240) || null,
         scanStatus: item.CommAttachment_IsScanned ? item.CommAttachment_ScanStatus ?? "unknown" : "unknown",
       })),
     })), summary,
@@ -2008,12 +2072,12 @@ export async function disconnect(admin: Db, actor: Actor, connectionId: string) 
   if (connection.CommConn_SecretRef) await result(admin.rpc("comm_delete_email_secret", { p_secret_ref: connection.CommConn_SecretRef })).catch(() => undefined)
 }
 
-export async function attachment(admin: Db, actor: Actor, attachmentId: string) {
+export async function attachment(admin: Db, actor: Actor, attachmentId: string, allowInline = false) {
   await requirePermission(admin, actor, "Email.Read")
   const item = await result<Row>(admin.from("Comm_MessageAttachments").select("*").eq("CommAttachment_ID", attachmentId).maybeSingle())
   if (!item) throw new InboxHttpError(404, "This attachment was not found.", "attachment_not_found")
   const scanStatus = cleanString(item.CommAttachment_ScanStatus, 40).toLowerCase()
-  if (item.CommAttachment_IsInline || ["blocked", "infected", "quarantined", "malicious"].includes(scanStatus)) {
+  if ((!allowInline && item.CommAttachment_IsInline) || (allowInline && !item.CommAttachment_IsInline) || ["blocked", "infected", "quarantined", "malicious"].includes(scanStatus)) {
     throw new InboxHttpError(422, "This attachment is blocked by the workspace security policy.", "attachment_blocked")
   }
   const message = await result<Row>(admin.from("Comm_Messages").select("*").eq("CommMessage_ID", item.CommAttachment_MessageID).eq("CommMessage_IsDeleted", false).maybeSingle())
