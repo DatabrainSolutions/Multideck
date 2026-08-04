@@ -511,13 +511,16 @@ function mapPublicCard(row: Record<string, unknown>): ContactCard {
   return mapWorkspace({ cards: [row], automations: [], conditions: [], actions: [], scans: [], exchanges: [] })[0]
 }
 
-export async function loadPublicCard(slug: string): Promise<ContactCard | null> {
+export async function loadPublicCard(slug: string, preview = false): Promise<ContactCard | null> {
   const local = findCardBySlug(slug)
   if (local) return local
-  const row = await callRpc<Record<string, unknown> | null>("multideck_public_contact_card", { p_slug: slug })
+  const row = await callRpc<Record<string, unknown> | null>(
+    preview ? "multideck_contact_card_preview" : "multideck_public_contact_card",
+    { p_slug: slug },
+  )
   if (!row) return null
   const card = mapPublicCard(row)
-  publicCardCache.set(slug, card)
+  if (!preview) publicCardCache.set(slug, card)
   return card
 }
 
