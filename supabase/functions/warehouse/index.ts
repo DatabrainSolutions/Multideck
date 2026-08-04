@@ -51,9 +51,15 @@ Deno.serve(async (request)=>{
     } else if (path[0] === "items") {
       const { handleItems } = await import("./routes/items.ts");
       result = await handleItems(request, path, url, admin, actor);
+    } else if (path[0] === "inventory" && request.method === "POST") {
+      const { handleInventoryAction } = await import("./routes/inventory-actions.ts");
+      result = await handleInventoryAction(request, path, admin, actor);
     } else if (path[0] === "inventory") {
       const { handleInventory } = await import("./routes/inventory.ts");
       result = await handleInventory(path, url, admin, actor);
+    } else if (path[0] === "handling-units") {
+      const { handleHandlingUnits } = await import("./routes/handling-units.ts");
+      result = await handleHandlingUnits(path, url, admin, actor);
     } else if (path[0] === "orders" && path[2] === "documents") {
       const { handleDocuments } = await import("./routes/documents.ts");
       result = await handleDocuments(request, path, admin, actor);

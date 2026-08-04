@@ -21,7 +21,7 @@ import {
   uuid,
 } from "../shared/mod.ts";
 
-function mapItem(row, orgNames, facilityNames) {
+function mapItem(row, orgNames, facilityNames, uoms = []) {
   return {
     id: row.WMSItem_ID,
     customerOrgId: row.WMSItem_CustomerOrgID,
@@ -34,6 +34,19 @@ function mapItem(row, orgNames, facilityNames) {
     hsCode: row.WMSItem_HSCode,
     countryOfOriginCode: row.WMSItem_CountryOfOriginCode,
     baseUomCode: row.WMSItem_BaseUOMCode,
+    quantityBasisCode: row.WMSItem_QuantityBasisCode ?? "count",
+    quantityScale: row.WMSItem_QuantityScale ?? 0,
+    minimumMovementQuantity: row.WMSItem_MinimumMovementQuantity ?? 1,
+    allowsFractionalQuantity: row.WMSItem_AllowsFractionalQuantity ?? false,
+    uoms: uoms.filter((uom)=>uom.WMSItemUOM_ItemID === row.WMSItem_ID).map((uom)=>({
+        id: uom.WMSItemUOM_ID,
+        code: uom.WMSItemUOM_UOMCode,
+        quantityInBaseUom: uom.WMSItemUOM_QuantityInBaseUOM,
+        grossWeightKg: uom.WMSItemUOM_GrossWeightKG,
+        purchasing: uom.WMSItemUOM_IsPurchasingUOM,
+        stocking: uom.WMSItemUOM_IsStockingUOM,
+        selling: uom.WMSItemUOM_IsSellingUOM
+      })),
     lengthM: row.WMSItem_LengthM,
     widthM: row.WMSItem_WidthM,
     heightM: row.WMSItem_HeightM,
@@ -63,6 +76,7 @@ async function itemContext(admin, actor) {
   }
   const orgIds = new Set(orgs.map((row)=>row.Org_id));
   const items = facilityIds.length ? await many(admin.from("WMS_Items").select("*").in("WMSItem_DefaultFacilityID", facilityIds).eq("WMSItem_IsDeleted", false)) : [];
+  const uoms = items.length ? await many(admin.from("WMS_ItemUOMs").select("*").in("WMSItemUOM_ItemID", items.map((row)=>row.WMSItem_ID))) : [];
   return {
     facilities,
     orgs,
@@ -74,11 +88,17 @@ async function itemContext(admin, actor) {
     facilityNames: new Map(facilities.map((row)=>[
         row.WMSFacility_ID,
         row.WMSFacility_Name
-      ]))
+      ])),
+    uoms
   };
 }
 function itemPayload(input, actor, create) {
   const net = numberOrNull(input.netWeightKg), gross = numberOrNull(input.grossWeightKg), min = numberOrNull(input.temperatureMinC), max = numberOrNull(input.temperatureMaxC);
+  const quantityBasis = clean(input.quantityBasisCode, 20)?.toLowerCase() ?? "count";
+  const quantityScale = Number.isInteger(Number(input.quantityScale)) ? Number(input.quantityScale) : 3;
+  const minimumMovement = numberOrNull(input.minimumMovementQuantity) ?? (quantityBasis === "count" ? 1 : 0.001);
+  if (!new Set(["count", "weight", "volume"]).has(quantityBasis)) throw new HttpError(400, "Choose count, weight, or volume tracking.");
+  if (quantityScale < 0 || quantityScale > 6 || minimumMovement <= 0) throw new HttpError(400, "Check the quantity precision and minimum movement quantity.");
   if (net !== null && gross !== null && gross < net) {
     throw new HttpError(400, "Gross weight cannot be less than net weight.");
   }
@@ -92,6 +112,10 @@ function itemPayload(input, actor, create) {
     WMSItem_HSCode: clean(input.hsCode, 30),
     WMSItem_CountryOfOriginCode: clean(input.countryOfOriginCode, 2)?.toUpperCase() ?? null,
     WMSItem_BaseUOMCode: clean(input.baseUomCode, 20)?.toUpperCase() ?? "EA",
+    WMSItem_QuantityBasisCode: quantityBasis,
+    WMSItem_QuantityScale: quantityScale,
+    WMSItem_MinimumMovementQuantity: minimumMovement,
+    WMSItem_AllowsFractionalQuantity: quantityBasis === "count" ? bool(input.allowsFractionalQuantity) : true,
     WMSItem_LengthM: numberOrNull(input.lengthM),
     WMSItem_WidthM: numberOrNull(input.widthM),
     WMSItem_HeightM: numberOrNull(input.heightM),
@@ -176,7 +200,7 @@ export async function handleItems(request, path, url, admin, actor) {
         row.WMSItem_HSCode,
         context.orgNames.get(row.WMSItem_CustomerOrgID),
         context.facilityNames.get(row.WMSItem_DefaultFacilityID)
-      ].some((value)=>String(value ?? "").toLowerCase().includes(term))).sort((a, b)=>a.WMSItem_SKU.localeCompare(b.WMSItem_SKU)).map((row)=>mapItem(row, context.orgNames, context.facilityNames));
+      ].some((value)=>String(value ?? "").toLowerCase().includes(term))).sort((a, b)=>a.WMSItem_SKU.localeCompare(b.WMSItem_SKU)).map((row)=>mapItem(row, context.orgNames, context.facilityNames, context.uoms));
   }
   if (request.method === "POST" && path[1] === "import") {
     return await importItems(request, admin, actor, context);
@@ -187,7 +211,7 @@ export async function handleItems(request, path, url, admin, actor) {
     if (!existing) {
       throw new HttpError(404, "This item does not exist in your workspace.");
     }
-    return mapItem(existing, context.orgNames, context.facilityNames);
+    return mapItem(existing, context.orgNames, context.facilityNames, context.uoms);
   }
   if (request.method === "DELETE" && itemId) {
     if (!existing) {
@@ -219,7 +243,20 @@ export async function handleItems(request, path, url, admin, actor) {
     WMSItem_ID: id(),
     ...payload
   }).select().single(), "Could not create the item.") : await one(admin.from("WMS_Items").update(payload).eq("WMSItem_ID", itemId).select().single(), "This item does not exist in your workspace.");
-  return mapItem(saved, context.orgNames, context.facilityNames);
+  if (Array.isArray(input.uoms)) {
+    await admin.from("WMS_ItemUOMs").delete().eq("WMSItemUOM_ItemID", saved.WMSItem_ID);
+    const uoms = input.uoms.filter((entry)=>clean(entry?.code,20)).map((entry)=>({
+      WMSItemUOM_ID: id(), WMSItemUOM_ItemID: saved.WMSItem_ID,
+      WMSItemUOM_UOMCode: clean(entry.code,20).toUpperCase(),
+      WMSItemUOM_QuantityInBaseUOM: numberOrNull(entry.quantityInBaseUom) ?? 1,
+      WMSItemUOM_GrossWeightKG: numberOrNull(entry.grossWeightKg),
+      WMSItemUOM_IsPurchasingUOM: bool(entry.purchasing), WMSItemUOM_IsStockingUOM: bool(entry.stocking), WMSItemUOM_IsSellingUOM: bool(entry.selling)
+    }));
+    if (uoms.some((entry)=>entry.WMSItemUOM_QuantityInBaseUOM<=0)) throw new HttpError(400,"Packaging conversions must be greater than zero.");
+    if (uoms.length) await one(admin.from("WMS_ItemUOMs").insert(uoms).select().limit(1).single(),"Could not save the item packaging units.");
+    context.uoms = await many(admin.from("WMS_ItemUOMs").select("*").eq("WMSItemUOM_ItemID",saved.WMSItem_ID));
+  }
+  return mapItem(saved, context.orgNames, context.facilityNames, context.uoms);
 }
 async function importItems(request, admin, actor, context) {
   requireCapability(actor, "warehouse_items:manage");

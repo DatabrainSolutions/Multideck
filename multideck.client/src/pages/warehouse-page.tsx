@@ -7,7 +7,8 @@ import {
   WarehousePageHeader,
 } from "@/components/multideck/warehouse-components"
 import { WarehouseFacilitiesView, WarehouseItemsView, WarehouseLocationsView } from "@/components/multideck/warehouse-management-components"
-import { WarehouseInventoryView, WarehouseOrdersManagementView } from "@/components/multideck/warehouse-operations-components"
+import { WarehouseOrdersManagementView } from "@/components/multideck/warehouse-operations-components"
+import { WarehouseInventoryWorkspace } from "@/components/multideck/warehouse-inventory-workspace"
 import { Surface } from "@/components/multideck/surface"
 import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
 import { Button } from "@/components/ui/button"
@@ -113,7 +114,7 @@ export function WarehousePage({ route, currentUser }: { route: string; currentUs
           {activeSection === "Facilities" ? <WarehouseFacilitiesView /> : null}
           {activeSection === "Locations" ? <WarehouseLocationsView /> : null}
           {activeSection === "Items" ? <WarehouseItemsView canManage={canManageItems} /> : null}
-          {activeSection === "Inventory" ? <WarehouseInventoryView /> : null}
+          {activeSection === "Inventory" ? <WarehouseInventoryWorkspace /> : null}
           {activeSection === "Goods in" ? <WarehouseOrdersManagementView typeFilter="inbound" /> : null}
           {activeSection === "Goods out" ? <WarehouseOrdersManagementView typeFilter="outbound" /> : null}
           {activeSection === "Orders" ? <WarehouseOrdersManagementView isCustomer={isCustomer} canCreateInbound={canCreateInbound} canCreateOutbound={canCreateOutbound} canCancel={canCancel} canUpload={canUpload} /> : null}
