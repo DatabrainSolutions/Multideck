@@ -3150,6 +3150,61 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText }) {
     usageCode: `<WarehouseFormField label="Facility code" htmlFor="facility-code" required hint="A short unique code, e.g. FXT-DC1." error={firstFieldError(errors, "Code")}>\n  <Input id="facility-code" dir="ltr" value={form.code} onChange={(event) => update("code", event.target.value)} className={fieldControlClass} />\n</WarehouseFormField>`,
   },
   {
+    id: "warehouse-quantity-uom-field",
+    name: "Warehouse Quantity & UOM Field",
+    category: "Operations",
+    description: "A quantity input that keeps the product's count, weight, or volume unit visible at the point of entry.",
+    details: "Use for receipts, partial moves, sampling, damage, quarantine, and adjustments. The unit is fixed from the stock balance so an operator cannot accidentally post kilograms as litres or count units.",
+    foundOn: [{ label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Components", route: "/components?component=warehouse-quantity-uom-field" }],
+    componentCode: `export function WarehouseQuantityUomField({ value, onChange, uomCode, max, label }) {
+  return <WarehouseFormField label={label} required>
+    <div className="quantity-uom-grid">
+      <Input type="number" value={value} max={max} onChange={(event) => onChange(event.target.value)} />
+      <span dir="ltr">{uomCode}</span>
+    </div>
+  </WarehouseFormField>
+}`,
+    usageCode: `<WarehouseQuantityUomField
+  label="Quantity to sample"
+  value={quantity}
+  onChange={setQuantity}
+  uomCode={balance.uomCode}
+  max={balance.onHandQuantity}
+/>`,
+  },
+  {
+    id: "warehouse-object-summary",
+    name: "Warehouse Object Summary",
+    category: "Operations",
+    description: "A compact identity and contents summary for pallets, IBCs, cartons, drums, totes, and labelled loose stock.",
+    details: "Use wherever an operator chooses, moves, or consolidates a warehouse object. It keeps the label, lifecycle state, stock-line count, and physical location together.",
+    foundOn: [{ label: "Warehouse objects", route: "/warehouse/inventory" }, { label: "Components", route: "/components?component=warehouse-object-summary" }],
+    componentCode: `export function WarehouseObjectSummary({ unit }) {
+  return <div>
+    <div>{unit.code}<StatusPill>{unit.lifecycleStatusCode}</StatusPill></div>
+    <p>{unit.typeName} · {unit.contents.length} stock lines</p>
+    <p>{unit.locationCode ?? "No physical location"}</p>
+  </div>
+}`,
+    usageCode: `<WarehouseObjectSummary unit={selectedPallet} />`,
+  },
+  {
+    id: "warehouse-exception-summary",
+    name: "Warehouse Exception Summary",
+    category: "Operations",
+    description: "A compact investigation summary for empty bins, location overrides, damage, shortages, and sampling events.",
+    details: "Use before resolving an inventory exception or approving a loss. It keeps the issue, workflow state, and expected physical location visible while the operator decides what happened.",
+    foundOn: [{ label: "Warehouse exceptions", route: "/warehouse/inventory" }, { label: "Components", route: "/components?component=warehouse-exception-summary" }],
+    componentCode: `export function WarehouseExceptionSummary({ exception }) {
+  return <div>
+    <div>{exception.title}<StatusPill>{exception.statusCode}</StatusPill></div>
+    <p>{exception.description ?? exception.typeCode}</p>
+    <p>Expected: {exception.expectedLocationCode}</p>
+  </div>
+}`,
+    usageCode: `<WarehouseExceptionSummary exception={selectedException} />`,
+  },
+  {
     id: "warehouse-kanban-board",
     name: "Warehouse Kanban Board",
     category: "Operations",
@@ -4268,6 +4323,9 @@ export const galleryIcons = {
   "filter-chips": Users,
   "data-table": Users,
   "warehouse-table": Boxes,
+  "warehouse-quantity-uom-field": Boxes,
+  "warehouse-object-summary": Boxes,
+  "warehouse-exception-summary": Boxes,
   "warehouse-kanban-board": LayoutDashboard,
   "geo-panel": Globe2,
   "record-header": BriefcaseBusiness,

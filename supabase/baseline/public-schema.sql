@@ -32780,6 +32780,10 @@ CREATE TABLE IF NOT EXISTS "public"."WMS_Items" (
     "WMSItem_ECCNCode" character varying(40),
     "WMSItem_CountryOfOriginCode" character varying(2),
     "WMSItem_BaseUOMCode" character varying(20) DEFAULT 'EA'::character varying NOT NULL,
+    "WMSItem_QuantityBasisCode" "text" DEFAULT 'count'::"text" NOT NULL,
+    "WMSItem_QuantityScale" smallint DEFAULT 0 NOT NULL,
+    "WMSItem_MinimumMovementQuantity" numeric(18,6) DEFAULT 1 NOT NULL,
+    "WMSItem_AllowsFractionalQuantity" boolean DEFAULT false NOT NULL,
     "WMSItem_LengthM" numeric(18,6),
     "WMSItem_WidthM" numeric(18,6),
     "WMSItem_HeightM" numeric(18,6),
@@ -32799,7 +32803,10 @@ CREATE TABLE IF NOT EXISTS "public"."WMS_Items" (
     "WMSItem_CreatedAt" timestamp with time zone DEFAULT "now"() NOT NULL,
     "WMSItem_CreatedBy" "uuid",
     "WMSItem_UpdatedAt" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "WMSItem_IsDeleted" boolean DEFAULT false NOT NULL
+    "WMSItem_IsDeleted" boolean DEFAULT false NOT NULL,
+    CONSTRAINT "CK_WMS_Items_quantity_basis" CHECK (("WMSItem_QuantityBasisCode" = ANY (ARRAY['count'::"text", 'weight'::"text", 'volume'::"text"]))),
+    CONSTRAINT "CK_WMS_Items_quantity_scale" CHECK ((("WMSItem_QuantityScale" >= 0) AND ("WMSItem_QuantityScale" <= 6))),
+    CONSTRAINT "CK_WMS_Items_minimum_movement" CHECK (("WMSItem_MinimumMovementQuantity" > (0)::numeric))
 );
 
 
@@ -33053,7 +33060,10 @@ CREATE TABLE IF NOT EXISTS "public"."WMS_Exceptions" (
     "WMSException_RaisedBy" "uuid",
     "WMSException_ResolvedAt" timestamp with time zone,
     "WMSException_ResolvedBy" "uuid",
-    "WMSException_MetadataJSON" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL
+    "WMSException_MetadataJSON" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
+    "WMSException_ExpectedLocationID" "uuid",
+    "WMSException_ActualLocationID" "uuid",
+    "WMSException_MovementGroupID" "uuid"
 );
 
 
@@ -33360,6 +33370,10 @@ CREATE TABLE IF NOT EXISTS "public"."WMS_HandlingUnits" (
     "WMSHU_LocationID" "uuid",
     "WMSHU_InventoryStatusCode" character varying(60) DEFAULT 'available'::character varying NOT NULL,
     "WMSHU_CustomsStatusCode" character varying(60) DEFAULT 'free_circulation'::character varying NOT NULL,
+    "WMSHU_LifecycleStatusCode" "text" DEFAULT 'open'::"text" NOT NULL,
+    "WMSHU_ConsumedIntoHU_ID" "uuid",
+    "WMSHU_ConsumedAt" timestamp with time zone,
+    "WMSHU_Version" integer DEFAULT 1 NOT NULL,
     "WMSHU_GrossWeightKG" numeric(18,6),
     "WMSHU_NetWeightKG" numeric(18,6),
     "WMSHU_VolumeCBM" numeric(18,6),
@@ -33368,7 +33382,8 @@ CREATE TABLE IF NOT EXISTS "public"."WMS_HandlingUnits" (
     "WMSHU_CreatedAt" timestamp with time zone DEFAULT "now"() NOT NULL,
     "WMSHU_CreatedBy" "uuid",
     "WMSHU_UpdatedAt" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "WMSHU_IsDeleted" boolean DEFAULT false NOT NULL
+    "WMSHU_IsDeleted" boolean DEFAULT false NOT NULL,
+    CONSTRAINT "CK_WMS_HandlingUnits_lifecycle" CHECK (("WMSHU_LifecycleStatusCode" = ANY (ARRAY['open'::"text", 'sealed'::"text", 'consumed'::"text", 'closed'::"text", 'investigation'::"text"])))
 );
 
 
@@ -33617,12 +33632,39 @@ CREATE TABLE IF NOT EXISTS "public"."WMS_InventoryTransactions" (
     "WMSTransaction_Reference" character varying(180),
     "WMSTransaction_Notes" "text",
     "WMSTransaction_MetadataJSON" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
+    "WMSTransaction_MovementGroupID" "uuid",
+    "WMSTransaction_ReasonCode" "text",
+    "WMSTransaction_IdempotencyKey" "uuid",
     "WMSTransaction_CreatedAt" timestamp with time zone DEFAULT "now"() NOT NULL,
     "WMSTransaction_CreatedBy" "uuid"
 );
 
 
 ALTER TABLE "public"."WMS_InventoryTransactions" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."WMS_InventoryOperations" (
+    "WMSOperation_ID" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "WMSOperation_RequestID" "uuid" NOT NULL,
+    "WMSOperation_FacilityID" "uuid" NOT NULL,
+    "WMSOperation_ActionCode" character varying(60) NOT NULL,
+    "WMSOperation_MovementGroupID" "uuid" NOT NULL,
+    "WMSOperation_PayloadJSON" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
+    "WMSOperation_ResultJSON" "jsonb",
+    "WMSOperation_CreatedAt" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "WMSOperation_CreatedBy" "uuid",
+    CONSTRAINT "CK_WMS_InventoryOperations_payload" CHECK (("jsonb_typeof"("WMSOperation_PayloadJSON") = 'object'::"text")),
+    CONSTRAINT "CK_WMS_InventoryOperations_result" CHECK ((("WMSOperation_ResultJSON" IS NULL) OR ("jsonb_typeof"("WMSOperation_ResultJSON") = 'object'::"text")))
+);
+
+
+ALTER TABLE "public"."WMS_InventoryOperations" OWNER TO "postgres";
+
+
+CREATE INDEX "IX_WMS_InventoryOperations_facility_created" ON "public"."WMS_InventoryOperations" USING "btree" ("WMSOperation_FacilityID", "WMSOperation_CreatedAt" DESC);
+
+
+CREATE INDEX "IX_WMS_InventoryTransactions_movement_group" ON "public"."WMS_InventoryTransactions" USING "btree" ("WMSTransaction_MovementGroupID", "WMSTransaction_CreatedAt");
 
 
 CREATE TABLE IF NOT EXISTS "public"."WMS_ItemBarcodes" (
@@ -45343,6 +45385,14 @@ ALTER TABLE ONLY "public"."WMS_InventoryTransactionLinks"
 
 ALTER TABLE ONLY "public"."WMS_InventoryTransactions"
     ADD CONSTRAINT "WMS_InventoryTransactions_pkey" PRIMARY KEY ("WMSTransaction_ID");
+
+
+ALTER TABLE ONLY "public"."WMS_InventoryOperations"
+    ADD CONSTRAINT "WMS_InventoryOperations_pkey" PRIMARY KEY ("WMSOperation_ID");
+
+
+ALTER TABLE ONLY "public"."WMS_InventoryOperations"
+    ADD CONSTRAINT "WMS_InventoryOperations_request_key" UNIQUE ("WMSOperation_RequestID");
 
 
 
@@ -66836,6 +66886,14 @@ ALTER TABLE ONLY "public"."WMS_Exceptions"
     ADD CONSTRAINT "WMS_Exceptions_WMSException_BalanceID_fkey" FOREIGN KEY ("WMSException_BalanceID") REFERENCES "public"."WMS_InventoryBalances"("WMSBalance_ID");
 
 
+ALTER TABLE ONLY "public"."WMS_Exceptions"
+    ADD CONSTRAINT "WMS_Exceptions_WMSException_ExpectedLocationID_fkey" FOREIGN KEY ("WMSException_ExpectedLocationID") REFERENCES "public"."WMS_Locations"("WMSLocation_ID");
+
+
+ALTER TABLE ONLY "public"."WMS_Exceptions"
+    ADD CONSTRAINT "WMS_Exceptions_WMSException_ActualLocationID_fkey" FOREIGN KEY ("WMSException_ActualLocationID") REFERENCES "public"."WMS_Locations"("WMSLocation_ID");
+
+
 
 ALTER TABLE ONLY "public"."WMS_Exceptions"
     ADD CONSTRAINT "WMS_Exceptions_WMSException_FacilityID_fkey" FOREIGN KEY ("WMSException_FacilityID") REFERENCES "public"."WMS_Facilities"("WMSFacility_ID");
@@ -67024,6 +67082,10 @@ ALTER TABLE ONLY "public"."WMS_HandlingUnits"
 
 ALTER TABLE ONLY "public"."WMS_HandlingUnits"
     ADD CONSTRAINT "WMS_HandlingUnits_WMSHU_ParentHU_ID_fkey" FOREIGN KEY ("WMSHU_ParentHU_ID") REFERENCES "public"."WMS_HandlingUnits"("WMSHU_ID");
+
+
+ALTER TABLE ONLY "public"."WMS_HandlingUnits"
+    ADD CONSTRAINT "WMS_HandlingUnits_WMSHU_ConsumedIntoHU_ID_fkey" FOREIGN KEY ("WMSHU_ConsumedIntoHU_ID") REFERENCES "public"."WMS_HandlingUnits"("WMSHU_ID");
 
 
 
@@ -67344,6 +67406,14 @@ ALTER TABLE ONLY "public"."WMS_InventoryTransactionLinks"
 
 ALTER TABLE ONLY "public"."WMS_InventoryTransactions"
     ADD CONSTRAINT "WMS_InventoryTransactions_WMSTransaction_BalanceID_fkey" FOREIGN KEY ("WMSTransaction_BalanceID") REFERENCES "public"."WMS_InventoryBalances"("WMSBalance_ID");
+
+
+ALTER TABLE ONLY "public"."WMS_InventoryOperations"
+    ADD CONSTRAINT "WMS_InventoryOperations_WMSOperation_FacilityID_fkey" FOREIGN KEY ("WMSOperation_FacilityID") REFERENCES "public"."WMS_Facilities"("WMSFacility_ID");
+
+
+ALTER TABLE ONLY "public"."WMS_InventoryOperations"
+    ADD CONSTRAINT "WMS_InventoryOperations_WMSOperation_CreatedBy_fkey" FOREIGN KEY ("WMSOperation_CreatedBy") REFERENCES "public"."cmp_Users"("User_ID");
 
 
 
@@ -71586,6 +71656,9 @@ ALTER TABLE "public"."WMS_InventoryTransactionLinks" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."WMS_InventoryTransactions" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."WMS_InventoryOperations" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."WMS_ItemBarcodes" ENABLE ROW LEVEL SECURITY;
@@ -79750,6 +79823,9 @@ GRANT ALL ON TABLE "public"."WMS_InventoryTransactionLinks" TO "service_role";
 GRANT ALL ON TABLE "public"."WMS_InventoryTransactions" TO "anon";
 GRANT ALL ON TABLE "public"."WMS_InventoryTransactions" TO "authenticated";
 GRANT ALL ON TABLE "public"."WMS_InventoryTransactions" TO "service_role";
+
+
+GRANT ALL ON TABLE "public"."WMS_InventoryOperations" TO "service_role";
 
 
 

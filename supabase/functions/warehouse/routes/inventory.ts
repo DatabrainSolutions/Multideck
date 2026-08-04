@@ -25,12 +25,13 @@ export async function handleInventory(path, url, admin, actor) {
   requireCapability(actor, "warehouse_inventory:read");
   const facilityIds = await companyFacilityIds(admin, actor), requestedFacility = clean(url.searchParams.get("facilityId")), allowed = requestedFacility ? facilityIds.filter((value)=>value === requestedFacility) : facilityIds;
   if (!allowed.length) return [];
-  const [facilities, items, locations, lots, orgs] = await Promise.all([
+  const [facilities, items, locations, lots, orgs, handlingUnits] = await Promise.all([
     many(admin.from("WMS_Facilities").select("WMSFacility_ID,WMSFacility_Code,WMSFacility_Name").in("WMSFacility_ID", allowed)),
     many(admin.from("WMS_Items").select("WMSItem_ID,WMSItem_SKU,WMSItem_Description,WMSItem_CustomerOrgID").eq("WMSItem_IsDeleted", false)),
     many(admin.from("WMS_Locations").select("WMSLocation_ID,WMSLocation_Code")),
     many(admin.from("WMS_InventoryLots").select("*")),
-    many(admin.from("Org_Master").select("Org_id,Org_Name"))
+    many(admin.from("Org_Master").select("Org_id,Org_Name")),
+    many(admin.from("WMS_HandlingUnits").select("WMSHU_ID,WMSHU_Code,WMSHU_TypeCode,WMSHU_LifecycleStatusCode"))
   ]);
   const fm = new Map(facilities.map((r)=>[
       r.WMSFacility_ID,
@@ -47,7 +48,44 @@ export async function handleInventory(path, url, admin, actor) {
     ])), om = new Map(orgs.map((r)=>[
       r.Org_id,
       r.Org_Name
+    ])), hum = new Map(handlingUnits.map((r)=>[
+      r.WMSHU_ID,
+      r
     ])), term = clean(url.searchParams.get("search"))?.toLowerCase(), itemId = clean(url.searchParams.get("itemId"));
+  if (path[1] === "exceptions") {
+    if (!actor.companyId) throw new HttpError(403, "Warehouse exceptions are available only to the warehouse team.");
+    let exceptions = await many(admin.from("WMS_Exceptions").select("*").in("WMSException_FacilityID", allowed).order("WMSException_RaisedAt", {
+      ascending: false
+    }).limit(500));
+    if (url.searchParams.get("openOnly") !== "false") exceptions = exceptions.filter((row)=>row.WMSException_StatusCode !== "resolved");
+    const requestedStatus = clean(url.searchParams.get("statusCode"));
+    if (requestedStatus) exceptions = exceptions.filter((row)=>row.WMSException_StatusCode === requestedStatus);
+    return exceptions.filter((row)=>!term || [
+        row.WMSException_Title,
+        row.WMSException_Description,
+        row.WMSException_TypeCode,
+        row.WMSException_SeverityCode,
+        lm.get(row.WMSException_ExpectedLocationID),
+        lm.get(row.WMSException_ActualLocationID)
+      ].some((value)=>String(value ?? "").toLowerCase().includes(term))).map((row)=>({
+        id: row.WMSException_ID,
+        facilityId: row.WMSException_FacilityID,
+        typeCode: row.WMSException_TypeCode,
+        statusCode: row.WMSException_StatusCode,
+        severityCode: row.WMSException_SeverityCode,
+        balanceId: row.WMSException_BalanceID,
+        title: row.WMSException_Title,
+        description: row.WMSException_Description,
+        expectedLocationId: row.WMSException_ExpectedLocationID,
+        expectedLocationCode: lm.get(row.WMSException_ExpectedLocationID) ?? null,
+        actualLocationId: row.WMSException_ActualLocationID,
+        actualLocationCode: lm.get(row.WMSException_ActualLocationID) ?? null,
+        movementGroupId: row.WMSException_MovementGroupID,
+        raisedAt: row.WMSException_RaisedAt,
+        resolvedAt: row.WMSException_ResolvedAt,
+        metadata: row.WMSException_MetadataJSON
+      }));
+  }
   if (path[1] === "movements") {
     let rows = await many(admin.from("WMS_InventoryTransactions").select("*").in("WMSTransaction_FacilityID", allowed).order("WMSTransaction_CreatedAt", {
       ascending: false
@@ -88,6 +126,11 @@ export async function handleInventory(path, url, admin, actor) {
         batchNumber: lot?.WMSLot_BatchNumber ?? null,
         reference: r.WMSTransaction_Reference,
         notes: r.WMSTransaction_Notes,
+        handlingUnitId: r.WMSTransaction_HU_ID,
+        handlingUnitCode: hum.get(r.WMSTransaction_HU_ID)?.WMSHU_Code ?? null,
+        movementGroupId: r.WMSTransaction_MovementGroupID ?? null,
+        reasonCode: r.WMSTransaction_ReasonCode ?? null,
+        metadata: r.WMSTransaction_MetadataJSON ?? {},
         createdAt: r.WMSTransaction_CreatedAt
       };
     });
@@ -127,6 +170,9 @@ export async function handleInventory(path, url, admin, actor) {
       itemDescription: item?.WMSItem_Description ?? "",
       locationId: r.WMSBalance_LocationID,
       locationCode: lm.get(r.WMSBalance_LocationID) ?? null,
+      handlingUnitId: r.WMSBalance_HU_ID,
+      handlingUnitCode: hum.get(r.WMSBalance_HU_ID)?.WMSHU_Code ?? null,
+      handlingUnitTypeCode: hum.get(r.WMSBalance_HU_ID)?.WMSHU_TypeCode ?? null,
       lotId: r.WMSBalance_LotID,
       lotNumber: lot?.WMSLot_LotNumber ?? null,
       batchNumber: lot?.WMSLot_BatchNumber ?? null,
