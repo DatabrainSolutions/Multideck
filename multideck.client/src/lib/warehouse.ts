@@ -719,6 +719,10 @@ export function updateWarehousePortalUser(customerOrgId: string, portalUserId: s
   return requestWarehouse<WarehousePortalUser>(`/portal/customers/${customerOrgId}/users/${portalUserId}`, "PUT", input)
 }
 
+export function sendWarehousePortalAccessLink(customerOrgId: string, portalUserId: string) {
+  return requestWarehouse<{ delivered: true }>(`/portal/customers/${customerOrgId}/users/${portalUserId}/access-link`, "POST")
+}
+
 export function revokeWarehousePortalUser(customerOrgId: string, portalUserId: string) {
   return requestWarehouse<void>(`/portal/customers/${customerOrgId}/users/${portalUserId}`, "DELETE")
 }

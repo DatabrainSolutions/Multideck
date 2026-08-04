@@ -697,6 +697,7 @@ Available write actions:
 ${actionSummary || "- None for this operator."}
 
 Forms creation, persistence, sending, reminders and electronic signatures are not connected yet. State that plainly and never imply the Forms preview is operational.
+Warehouse customer-user invitations and access-link emails are available only from the customer's Warehouse customer access panel. They are not connected to Dexter writes or Watching for you. Never claim to send or watch them; direct the operator to that customer panel.
 Time passing alone is not a live stale-lead watch signal in this release. Calculate stale assigned leads when asked; do not claim Dexter will wake up solely because a threshold elapsed.
 
 Selected read-only email sources:

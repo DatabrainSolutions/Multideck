@@ -12,7 +12,7 @@ import { toast } from "sonner"
 import { useLanguage } from "@/i18n/language-provider"
 import { getCustomer, getCustomerDocumentUrl, listCustomerDocuments, type ApiCustomerDetail, type ApiCustomerDocument, type ApiCustomerDocumentListing } from "@/lib/customer-api"
 import { setMarketingOptIn, type MarketingConsentRecordType } from "@/lib/marketing-consent-api"
-import { getWarehousePortalReference, inviteWarehousePortalUser, listWarehousePortalUsers, revokeWarehousePortalUser, updateWarehousePortalUser, type WarehousePortalReference, type WarehousePortalUser } from "@/lib/warehouse"
+import { getWarehousePortalReference, inviteWarehousePortalUser, listWarehousePortalUsers, revokeWarehousePortalUser, sendWarehousePortalAccessLink, updateWarehousePortalUser, type WarehousePortalReference, type WarehousePortalUser } from "@/lib/warehouse"
 
 export function CustomerDetailPage({ customerId }: { customerId: string }) {
   const [customer, setCustomer] = useState<ApiCustomerDetail | null>(null)
@@ -196,6 +196,7 @@ export function CustomerWarehouseAccess({
   const [roleCode, setRoleCode] = useState("warehouse_operator")
   const [facilityIds, setFacilityIds] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
+  const [sendingAccessLinkUserId, setSendingAccessLinkUserId] = useState<string | null>(null)
 
   async function refresh() {
     setError(null)
@@ -248,6 +249,14 @@ export function CustomerWarehouseAccess({
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
   }
 
+  async function sendAccessLink(user: WarehousePortalUser) {
+    setSendingAccessLinkUserId(user.id); setError(null)
+    try {
+      await sendWarehousePortalAccessLink(customerId, user.id)
+      toast.success(t("Access link sent"), { description: user.email })
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) } finally { setSendingAccessLinkUserId(null) }
+  }
+
   const roleName = (code: string) => reference?.roles.find((role) => role.code === code)?.name ?? code
   const isCurrentUser = (user: WarehousePortalUser) =>
     Boolean(selfService && currentUserEmail && user.email.trim().toLowerCase() === currentUserEmail.trim().toLowerCase())
@@ -263,7 +272,7 @@ export function CustomerWarehouseAccess({
         <div className="min-w-0 flex-1"><div className="flex items-center gap-2"><p className="truncate text-[14px] font-medium text-[var(--md-ink)]">{user.displayName}</p>{isCurrentUser(user) ? <StatusPill tone="neutral">{t("You")}</StatusPill> : null}</div><p dir="ltr" className="truncate text-start text-[12px] text-[var(--md-text)]">{user.email}</p></div>
         <StatusPill tone={user.status === "active" ? "green" : "amber"}>{t(user.status)}</StatusPill>
         <p className="min-w-[190px] text-[12px] text-[var(--md-text)]">{t(roleName(user.roleCode))}</p>
-        {!isCurrentUser(user) ? <div className="flex gap-1"><Button type="button" variant="ghost" onClick={() => showEdit(user)} className="h-9 rounded-[var(--md-radius-lg)]">{t("Edit access")}</Button><Button type="button" variant="ghost" size="icon" aria-label={t("Revoke access")} onClick={() => void revoke(user)} className="size-9 rounded-[var(--md-radius-lg)] text-[var(--md-red)]"><Trash2 className="size-4" /></Button></div> : null}
+        {!isCurrentUser(user) ? <div className="flex flex-wrap gap-1">{!user.lastLoginAt ? <Button type="button" variant="ghost" disabled={sendingAccessLinkUserId === user.id} onClick={() => void sendAccessLink(user)} className="h-9 rounded-[var(--md-radius-lg)]">{sendingAccessLinkUserId === user.id ? <LoaderCircle className="size-4 animate-spin" /> : <Mail className="size-4" />}{t("Send access link")}</Button> : null}<Button type="button" variant="ghost" onClick={() => showEdit(user)} className="h-9 rounded-[var(--md-radius-lg)]">{t("Edit access")}</Button><Button type="button" variant="ghost" size="icon" aria-label={t("Revoke access")} onClick={() => void revoke(user)} className="size-9 rounded-[var(--md-radius-lg)] text-[var(--md-red)]"><Trash2 className="size-4" /></Button></div> : null}
       </div>) : <p className="border-t border-[rgba(11,20,19,0.06)] px-5 py-6 text-[13px] text-[var(--md-text)]">{t("No customer users have warehouse access yet.")}</p>}
     </Surface>
     <Dialog open={open} onOpenChange={setOpen}><DialogContent className="border-0 bg-[var(--md-surface)] sm:max-w-[560px]">

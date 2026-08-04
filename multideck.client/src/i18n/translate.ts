@@ -2183,6 +2183,8 @@ const phrases: PhraseDictionary = {
   "No customer users have warehouse access yet.": { de: "Noch keine Kundenbenutzer haben Lagerzugang.", fr: "Aucun utilisateur client n’a encore accès à l’entrepôt.", ar: "لا يوجد مستخدمون للعميل لديهم وصول إلى المستودع بعد." },
   "Edit access": { de: "Zugang bearbeiten", fr: "Modifier l’accès", ar: "تعديل الوصول" },
   "Revoke access": { de: "Zugang entziehen", fr: "Révoquer l’accès", ar: "إلغاء الوصول" },
+  "Send access link": { de: "Zugangslink senden", fr: "Envoyer le lien d’accès", ar: "إرسال رابط الوصول" },
+  "Access link sent": { de: "Zugangslink gesendet", fr: "Lien d’accès envoyé", ar: "تم إرسال رابط الوصول" },
   "Edit warehouse access": { de: "Lagerzugang bearbeiten", fr: "Modifier l’accès à l’entrepôt", ar: "تعديل الوصول إلى المستودع" },
   "Invite customer user": { de: "Kundenbenutzer einladen", fr: "Inviter un utilisateur client", ar: "دعوة مستخدم للعميل" },
   "Change this user’s role and warehouse access.": { de: "Rolle und Lagerzugang dieses Benutzers ändern.", fr: "Modifiez le rôle et l’accès à l’entrepôt de cet utilisateur.", ar: "غيّر دور هذا المستخدم ووصوله إلى المستودع." },

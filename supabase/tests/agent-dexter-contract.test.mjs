@@ -96,6 +96,11 @@ const supabaseConfig = read(
 const notificationEmailFunction = read(
   "supabase/functions/send-notification-email/index.ts",
 )
+
+test("Dexter clearly leaves warehouse customer access-link delivery to the audited product flow", () => {
+  assert.match(edgeFunction, /Warehouse customer-user invitations and access-link emails are available only from the customer's Warehouse customer access panel/)
+  assert.match(edgeFunction, /They are not connected to Dexter writes or Watching for you/)
+})
 const dexterClient = read(
   "multideck.client/src/lib/dexter-api.ts",
 )
