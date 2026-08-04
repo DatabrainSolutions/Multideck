@@ -110,6 +110,9 @@ test("warehouse customer invitation retries recover an existing Supabase Auth id
     portalInviteFixMigration,
     /grant execute on function public\.warehouse_edge_auth_user_id_by_email\(text\) to service_role/,
   )
+  assert.match(portalSource, /shouldDeliverAccessLink = true/)
+  assert.match(portalSource, /action === "invite" && shouldDeliverAccessLink && inviteEmail && data\?\.user\?\.id/)
+  assert.match(portalSource, /await deliverPortalAccessLink\(admin, actor, targetCustomerOrgId, data\.user\.id, inviteEmail\)/)
 })
 
 test("warehouse customer roles reactivate after revocation without duplicate keys", () => {

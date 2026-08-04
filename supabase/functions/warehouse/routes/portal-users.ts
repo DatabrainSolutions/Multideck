@@ -92,51 +92,27 @@ export async function handlePortal(request, path, admin, actor) {
     if (usersError) throw new HttpError(500, usersError.message);
     const portalUser = Array.isArray(customerUsers) ? customerUsers.find((user)=>user?.id === portalUserId) : null;
     if (!portalUser?.email) throw new HttpError(404, "This customer portal user does not exist.");
-    const portalProfile = await one(admin.from("Portal_Users").select("PortalUser_DefaultSiteID").eq("PortalUser_ID", portalUserId).single());
-    const { data: audit, error: auditError } = await admin.from("Portal_AuditEvents").insert({
-      PortalAudit_EventTypeCode: "access_link_delivery",
-      PortalAudit_SiteID: portalProfile.PortalUser_DefaultSiteID,
-      PortalAudit_PortalUserID: actor.portalUserId,
-      PortalAudit_OrgID: targetCustomerOrgId,
-      PortalAudit_ResourceTypeCode: "warehouse_users",
-      PortalAudit_TargetTable: "Portal_Users",
-      PortalAudit_TargetID: portalUserId,
-      PortalAudit_ResultCode: "requested",
-      PortalAudit_Message: "Warehouse portal access link requested",
-      PortalAudit_MetadataJSON: { actorUserId: actor.userId }
-    }).select("PortalAudit_ID").single();
-    if (auditError || !audit) throw new HttpError(500, "The access-link request could not be audited.");
-    const configuredAppUrl = Deno.env.get("APP_URL")?.trim() || "https://dev.multideck.app";
-    const redirectTo = new URL("/auth", configuredAppUrl).toString();
-    const { error: deliveryError } = await admin.auth.signInWithOtp({
-      email: portalUser.email,
-      options: { emailRedirectTo: redirectTo, shouldCreateUser: false }
-    });
-    const { error: auditUpdateError } = await admin.from("Portal_AuditEvents").update({
-      PortalAudit_ResultCode: deliveryError ? "failed" : "sent",
-      PortalAudit_Message: deliveryError ? "Warehouse portal access link failed" : "Warehouse portal access link sent",
-      PortalAudit_MetadataJSON: { actorUserId: actor.userId, deliveredAt: deliveryError ? null : new Date().toISOString() }
-    }).eq("PortalAudit_ID", audit.PortalAudit_ID);
-    if (auditUpdateError) console.error("Warehouse access-link audit update failed", auditUpdateError.message);
-    if (deliveryError) {
-      console.error("Warehouse access-link delivery failed", deliveryError.message);
-      throw new HttpError(deliveryError.status === 429 ? 429 : 502, "The access link could not be sent. Try again in a moment.");
-    }
-    return { delivered: true };
+    return await deliverPortalAccessLink(admin, actor, targetCustomerOrgId, portalUserId, portalUser.email);
   }
+  let inviteEmail = null;
+  let shouldDeliverAccessLink = false;
   if (action === "invite") {
     const email = clean(input.email, 320)?.toLowerCase();
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       throw new HttpError(400, "Enter a valid customer email address.");
     }
+    inviteEmail = email;
     const existing = await oneOrNull(admin.from("Portal_Users").select("PortalUser_ID").ilike("PortalUser_Email", email).maybeSingle());
-    if (!existing) {
+    if (existing) {
+      shouldDeliverAccessLink = true;
+    } else {
       const { data: existingAuthUserId, error: authLookupError } = await admin.rpc("warehouse_edge_auth_user_id_by_email", {
         p_email: email
       });
       if (authLookupError) throw new HttpError(500, authLookupError.message);
       if (existingAuthUserId) {
         input.authUserId = existingAuthUserId;
+        shouldDeliverAccessLink = true;
       } else {
         const { data: invited, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
           data: {
@@ -163,5 +139,42 @@ export async function handlePortal(request, path, admin, actor) {
   if (error) {
     throw new HttpError(error.message.includes("WMS400:") ? 400 : error.message.includes("WMS409:") ? 409 : 500, error.message.replace(/^.*WMS(?:400|409):\s*/, ""));
   }
+  if (action === "invite" && shouldDeliverAccessLink && inviteEmail && data?.user?.id) {
+    await deliverPortalAccessLink(admin, actor, targetCustomerOrgId, data.user.id, inviteEmail);
+  }
   return data;
+}
+
+async function deliverPortalAccessLink(admin, actor, customerOrgId, portalUserId, email) {
+  const portalProfile = await one(admin.from("Portal_Users").select("PortalUser_DefaultSiteID").eq("PortalUser_ID", portalUserId).single());
+  const { data: audit, error: auditError } = await admin.from("Portal_AuditEvents").insert({
+    PortalAudit_EventTypeCode: "access_link_delivery",
+    PortalAudit_SiteID: portalProfile.PortalUser_DefaultSiteID,
+    PortalAudit_PortalUserID: actor.portalUserId,
+    PortalAudit_OrgID: customerOrgId,
+    PortalAudit_ResourceTypeCode: "warehouse_users",
+    PortalAudit_TargetTable: "Portal_Users",
+    PortalAudit_TargetID: portalUserId,
+    PortalAudit_ResultCode: "requested",
+    PortalAudit_Message: "Warehouse portal access link requested",
+    PortalAudit_MetadataJSON: { actorUserId: actor.userId }
+  }).select("PortalAudit_ID").single();
+  if (auditError || !audit) throw new HttpError(500, "The access-link request could not be audited.");
+  const configuredAppUrl = Deno.env.get("APP_URL")?.trim() || "https://dev.multideck.app";
+  const redirectTo = new URL("/auth", configuredAppUrl).toString();
+  const { error: deliveryError } = await admin.auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo: redirectTo, shouldCreateUser: false }
+  });
+  const { error: auditUpdateError } = await admin.from("Portal_AuditEvents").update({
+    PortalAudit_ResultCode: deliveryError ? "failed" : "sent",
+    PortalAudit_Message: deliveryError ? "Warehouse portal access link failed" : "Warehouse portal access link sent",
+    PortalAudit_MetadataJSON: { actorUserId: actor.userId, deliveredAt: deliveryError ? null : new Date().toISOString() }
+  }).eq("PortalAudit_ID", audit.PortalAudit_ID);
+  if (auditUpdateError) console.error("Warehouse access-link audit update failed", auditUpdateError.message);
+  if (deliveryError) {
+    console.error("Warehouse access-link delivery failed", deliveryError.message);
+    throw new HttpError(deliveryError.status === 429 ? 429 : 502, "The access link could not be sent. Try again in a moment.");
+  }
+  return { delivered: true };
 }
