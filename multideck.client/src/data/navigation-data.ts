@@ -209,7 +209,7 @@ export const sidebarAreas: SidebarArea[] = [
     label: "Documents & Service",
     icon: FileText,
     destinations: [
-      { id: "document-builder", label: "Document centre", icon: FileText, route: "/documents" },
+      { id: "document-builder", label: "Document builder", icon: FileText, route: "/documents" },
       { id: "signatures-security", label: "Signatures & security", icon: KeyRound },
       { id: "customer-portal", label: "Customer portal", icon: Globe2 },
       { id: "communications", label: "Communications", icon: MessageCircle },

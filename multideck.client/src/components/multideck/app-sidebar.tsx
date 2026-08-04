@@ -847,17 +847,18 @@ export function AppSidebar({
   const isInboxRoute = route === "/inbox"
   const canManageWarehouseUsers = hasPermission(currentUser, "Warehouse.Users.ManageOwn")
   const canReadDocuments = hasPermission(currentUser, "Documents.Read")
+  const canShowDocumentBuilder = import.meta.env.DEV || canReadDocuments
   const availableAreas = useMemo<SidebarArea[]>(() => {
     if (!isCustomer) {
       return sidebarAreas.map((area) => area.id === "documents-service"
-        ? { ...area, destinations: area.destinations.filter((destination) => destination.id !== "document-builder" || canReadDocuments) }
+        ? { ...area, destinations: area.destinations.filter((destination) => destination.id !== "document-builder" || canShowDocumentBuilder) }
         : area)
     }
 
     const destinations = customerWarehouseNavigation.filter((item) =>
       item.route !== "/warehouse/users" || canManageWarehouseUsers)
     return [{ id: "warehouse", label: "Warehouse", icon: Boxes, destinations }]
-  }, [isCustomer, canManageWarehouseUsers, canReadDocuments])
+  }, [isCustomer, canManageWarehouseUsers, canShowDocumentBuilder])
   const initialArea = isSettingsRoute
     ? undefined
     : isCustomer
@@ -973,7 +974,7 @@ export function AppSidebar({
       requiredIds.forEach((id) => next.add(id))
       return next
     })
-  }, [route, isCustomer, isSettingsRoute, canManageWarehouseUsers, canReadDocuments]) // availableAreas is intentionally derived from the account type and permissions.
+  }, [route, isCustomer, isSettingsRoute, canManageWarehouseUsers, canShowDocumentBuilder]) // availableAreas is intentionally derived from the account type, environment and permissions.
 
   useEffect(() => {
     if (!isSettingsRoute) return

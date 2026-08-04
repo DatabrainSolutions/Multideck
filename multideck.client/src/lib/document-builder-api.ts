@@ -1,9 +1,18 @@
 
-import { supabase } from "@/lib/supabase"
+import { getSupabaseSession, supabase, supabaseFunctionsUrl, supabasePublicApiKey } from "@/lib/supabase"
 
 export type DocumentOutputFormat = "pdf" | "docx"
 export type DocumentTemplateStatus = "draft" | "published" | "retired"
 export type DocumentRenderStatus = "queued" | "rendering" | "ready" | "failed"
+export type DocumentContentSectionCode = "job" | "customer" | "shipper" | "consignee" | "cargo" | "routing"
+
+export type DocumentContentSection = {
+  code: DocumentContentSectionCode
+  label: string
+  description: string
+  required: boolean
+  defaultSelected: boolean
+}
 
 export type DocumentTemplateSummary = {
   id: string
@@ -18,6 +27,7 @@ export type DocumentTemplateSummary = {
   languageCode: string
   updatedAt: string
   updatedBy: string | null
+  contentSections: DocumentContentSection[]
 }
 
 export type GeneratedDocumentSummary = {
@@ -51,9 +61,34 @@ export type DocumentBuilderWorkspace = {
 export type RenderDocumentRequest = {
   templateCode: string
   targetType: "Job_Header"
-  targetId: string
+  jobNumber: string
   outputFormat: DocumentOutputFormat
+  contentSections: DocumentContentSectionCode[]
   reason?: string
+  studioTemplateBase64?: string
+}
+
+export type DocumentStudioSession = {
+  templateBase64: string
+  templateType: "docx"
+  templateName: string
+  templateVersion: number
+  jobReference: string
+  renderOptions: {
+    data: Record<string, unknown>
+    complement: Record<string, unknown>
+    enum: Record<string, unknown>
+    translations: Record<string, unknown>
+    converter: "L"
+    lang: string
+    reportName: string
+  }
+}
+
+export type DocumentStudioRequest = {
+  templateCode: string
+  jobNumber: string
+  contentSections: DocumentContentSectionCode[]
 }
 
 export type RenderDocumentResponse = {
@@ -104,6 +139,49 @@ export async function renderDocument(request: RenderDocumentRequest): Promise<Re
   if (error) throw toFunctionError(error, "The document could not be generated.")
   if (!data) throw new Error("The render service returned no document.")
   return data
+}
+
+export async function getDocumentStudioSession(request: DocumentStudioRequest): Promise<DocumentStudioSession> {
+  const client = requireDocumentClient()
+  const { data, error } = await client.functions.invoke<DocumentStudioSession>("document-studio", {
+    method: "POST",
+    body: { action: "open", ...request },
+  })
+
+  if (error) throw toFunctionError(error, "The document studio could not be opened.")
+  if (!data) throw new Error("The document studio returned no session.")
+  return data
+}
+
+export async function renderDocumentStudioPreview(
+  request: DocumentStudioRequest & { templateBase64: string },
+): Promise<Response> {
+  requireDocumentClient()
+  const session = await getSupabaseSession()
+  if (!session) throw new Error("Sign in again to preview this document.")
+  if (!supabaseFunctionsUrl || !supabasePublicApiKey) throw new Error("The secure document service is not configured for this workspace.")
+
+  const response = await fetch(`${supabaseFunctionsUrl}/document-studio`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      apikey: supabasePublicApiKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ action: "preview", ...request }),
+  })
+
+  if (!response.ok) {
+    let message = "The Studio preview could not be created."
+    try {
+      const payload = await response.json() as { error?: string }
+      if (payload.error) message = payload.error
+    } catch {
+      // Keep the safe fallback when the gateway did not return JSON.
+    }
+    throw new Error(message)
+  }
+  return response
 }
 
 export async function getGeneratedDocumentDownload(generatedDocumentId: string): Promise<DocumentDownloadResponse> {

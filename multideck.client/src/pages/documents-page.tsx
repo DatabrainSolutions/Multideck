@@ -1,9 +1,10 @@
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import {
   CheckCircle2,
   Download,
   FileClock,
+  FilePenLine,
   FilePlus2,
   FileText,
   LoaderCircle,
@@ -14,6 +15,7 @@ import {
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogContent,
@@ -42,10 +44,15 @@ import { Surface } from "@/components/multideck/surface"
 import { useLanguage } from "@/i18n/language-provider"
 import {
   getDocumentBuilderWorkspace,
+  getDocumentStudioSession,
   getGeneratedDocumentDownload,
   renderDocument,
+  renderDocumentStudioPreview,
   type DocumentBuilderWorkspace,
+  type DocumentContentSectionCode,
   type DocumentOutputFormat,
+  type DocumentStudioRequest,
+  type DocumentStudioSession,
   type DocumentTemplateSummary,
   type GeneratedDocumentSummary,
 } from "@/lib/document-builder-api"
@@ -85,10 +92,220 @@ function startSignedDownload(url: string, fileName: string) {
 }
 
 function formatBytes(value: number | null) {
-  if (value === null) return "â€”"
+  if (value === null) return "—"
   if (value < 1024) return `${value} B`
   if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`
   return `${(value / (1024 * 1024)).toFixed(1)} MB`
+}
+
+type CarboneStudioElement = HTMLElement & {
+  setConfig: (config: {
+    mode: "embedded"
+    origin: string
+    version: string
+    theme: string
+    fetchOverride: (url: string, options?: RequestInit) => Promise<Response>
+  }) => void
+  setRenderOptions: (options: DocumentStudioSession["renderOptions"], forceRefreshPreview?: boolean) => void
+  openTemplateDataURI: (dataUri: string, attributes?: Record<string, unknown>) => void
+  reset: () => void
+}
+
+type StudioPreview = {
+  bytes: ArrayBuffer
+  contentType: string
+}
+
+let carboneStudioScriptPromise: Promise<void> | null = null
+
+function loadCarboneStudioScript() {
+  if (customElements.get("carbone-studio")) return Promise.resolve()
+  if (carboneStudioScriptPromise) return carboneStudioScriptPromise
+
+  const configuredVersion = import.meta.env.VITE_CARBONE_STUDIO_VERSION?.trim() || "5.9.1"
+  const version = /^\d+\.\d+\.\d+$/.test(configuredVersion) ? configuredVersion : "5.9.1"
+  carboneStudioScriptPromise = new Promise<void>((resolve, reject) => {
+    const script = document.createElement("script")
+    script.src = `https://bin.carbone.io/studio/${version}/carbone-studio.min.js`
+    script.async = true
+    script.crossOrigin = "anonymous"
+    script.addEventListener("load", () => resolve(), { once: true })
+    script.addEventListener("error", () => reject(new Error("carbone_studio_script_failed")), { once: true })
+    document.head.append(script)
+  })
+  return carboneStudioScriptPromise
+}
+
+function base64FromDataUri(value: unknown) {
+  if (typeof value !== "string") return null
+  const separator = value.indexOf(",")
+  const base64 = separator >= 0 ? value.slice(separator + 1) : value
+  return /^[A-Za-z0-9+/]*={0,2}$/.test(base64) ? base64 : null
+}
+
+function isJobNumber(value: string) {
+  return /^[A-Z0-9][A-Z0-9._/-]{0,49}$/i.test(value)
+}
+
+function DocumentStudioWorkspace({
+  session,
+  request,
+  onTemplateChange,
+  onError,
+}: {
+  session: DocumentStudioSession | null
+  request: DocumentStudioRequest | null
+  onTemplateChange: (templateBase64: string | null) => void
+  onError: (message: string | null) => void
+}) {
+  const { t } = useLanguage()
+  const hostRef = useRef<HTMLDivElement>(null)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (!session || !request || !hostRef.current) return
+
+    const activeSession = session
+    const activeRequest = request
+    let disposed = false
+    let studio: CarboneStudioElement | null = null
+    const previews = new Map<string, StudioPreview>()
+
+    async function startStudio() {
+      setLoading(true)
+      onError(null)
+      try {
+        await loadCarboneStudioScript()
+        await customElements.whenDefined("carbone-studio")
+        if (disposed || !hostRef.current) return
+
+        studio = document.createElement("carbone-studio") as CarboneStudioElement
+        studio.setAttribute("carbone-mode", "off")
+        studio.setAttribute("aria-label", t("Carbone document studio"))
+        studio.style.display = "block"
+        studio.style.width = "100%"
+        studio.style.height = "100%"
+        hostRef.current.replaceChildren(studio)
+
+        const fetchOverride = async (url: string, options: RequestInit = {}) => {
+          const requestUrl = new URL(url, "https://docserver.multideck.app")
+          const method = (options.method || "GET").toUpperCase()
+          const renderId = requestUrl.pathname.match(/\/render\/(multideck-[A-Za-z0-9-]+)$/)?.[1]
+
+          if (method === "GET" && renderId) {
+            const preview = previews.get(renderId)
+            if (!preview) return new Response(JSON.stringify({ success: false, error: "Preview expired" }), { status: 404, headers: { "Content-Type": "application/json" } })
+            return new Response(preview.bytes.slice(0), { status: 200, headers: { "Content-Type": preview.contentType, "Cache-Control": "no-store" } })
+          }
+
+          if (method !== "POST" || !requestUrl.pathname.endsWith("/render/template")) {
+            return new Response(JSON.stringify({ success: false, error: "This Studio action is not available in Document Builder." }), {
+              status: 403,
+              headers: { "Content-Type": "application/json" },
+            })
+          }
+
+          let templateBase64 = activeSession.templateBase64
+          if (typeof options.body === "string") {
+            try {
+              const body = JSON.parse(options.body) as { template?: unknown }
+              if (typeof body.template === "string" && /^[A-Za-z0-9+/]*={0,2}$/.test(body.template)) templateBase64 = body.template
+            } catch {
+              // The trusted template loaded for this session remains the fallback.
+            }
+          }
+
+          onTemplateChange(templateBase64)
+          const response = await renderDocumentStudioPreview({ ...activeRequest, templateBase64 })
+          const bytes = await response.arrayBuffer()
+          const localRenderId = `multideck-${crypto.randomUUID()}`
+          previews.clear()
+          previews.set(localRenderId, { bytes, contentType: response.headers.get("Content-Type") || "application/pdf" })
+          return new Response(JSON.stringify({ success: true, data: { renderId: localRenderId } }), {
+            status: 200,
+            headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+          })
+        }
+
+        studio.setConfig({
+          mode: "embedded",
+          origin: "https://docserver.multideck.app",
+          version: "5",
+          theme: `main {
+            --primary: #0e7d74;
+            --on-primary: #ffffff;
+            --primary-container: #e7f3f1;
+            --on-primary-container: #174b47;
+            --secondary: #5d5d5d;
+            --background: #fdfdfc;
+            --on-background: #292929;
+            --surface: #f5f6f5;
+            --on-surface: #292929;
+            --surface-container: #ffffff;
+            --surface-container-high: #f2f4f3;
+            --outline: #c8cecc;
+          }`,
+          fetchOverride,
+        })
+        studio.setRenderOptions(activeSession.renderOptions, false)
+        studio.addEventListener("template:updated", ((event: CustomEvent<{ dataURI?: unknown }>) => {
+          const base64 = base64FromDataUri(event.detail?.dataURI)
+          if (base64) onTemplateChange(base64)
+        }) as EventListener)
+        studio.openTemplateDataURI(
+          `data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,${activeSession.templateBase64}`,
+          { name: activeSession.templateName, comment: `${activeSession.jobReference} · v${activeSession.templateVersion}`, createdAt: Math.floor(Date.now() / 1000) },
+        )
+        onTemplateChange(activeSession.templateBase64)
+      } catch (studioError) {
+        if (!disposed) {
+          onError(studioError instanceof Error && studioError.message !== "carbone_studio_script_failed"
+            ? studioError.message
+            : t("The Carbone Studio interface could not be loaded."))
+        }
+      } finally {
+        if (!disposed) setLoading(false)
+      }
+    }
+
+    void startStudio()
+    return () => {
+      disposed = true
+      previews.clear()
+      if (studio) {
+        studio.reset()
+        studio.remove()
+      }
+    }
+  }, [onError, onTemplateChange, request, session, t])
+
+  if (!session || !request) {
+    return (
+      <div className="grid h-full min-h-[440px] place-items-center p-8 text-center">
+        <div className="max-w-sm">
+          <span className="mx-auto grid size-11 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">
+            <FilePenLine className="size-5" strokeWidth={1.4} aria-hidden="true" />
+          </span>
+          <p className="mt-4 text-[13px] font-medium text-[var(--md-ink)]">{t("Your document workspace")}</p>
+          <p className="mt-1 text-[11px] leading-5 text-[var(--md-text)]">{t("Choose a template and job, then open it in Studio to arrange fields and preview the finished document.")}</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="relative h-full min-h-[520px]">
+      {loading ? (
+        <div className="absolute inset-0 z-10 grid place-items-center bg-[var(--md-surface)]/90" role="status">
+          <div className="text-center">
+            <LoaderCircle className="mx-auto size-5 animate-spin text-[var(--md-accent)]" aria-hidden="true" />
+            <p className="mt-2 text-[11px] text-[var(--md-text)]">{t("Opening secure Studio…")}</p>
+          </div>
+        </div>
+      ) : null}
+      <div ref={hostRef} className="h-full min-h-[520px] overflow-hidden" />
+    </div>
+  )
 }
 
 function CreateDocumentDialog({
@@ -101,24 +318,112 @@ function CreateDocumentDialog({
 }: CreateDocumentDialogProps) {
   const { t } = useLanguage()
   const [templateCode, setTemplateCode] = useState("")
-  const [jobId, setJobId] = useState("")
+  const [jobNumber, setJobNumber] = useState("")
   const [outputFormat, setOutputFormat] = useState<DocumentOutputFormat>("pdf")
+  const [contentSections, setContentSections] = useState<DocumentContentSectionCode[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [studioSession, setStudioSession] = useState<DocumentStudioSession | null>(null)
+  const [studioRequest, setStudioRequest] = useState<DocumentStudioRequest | null>(null)
+  const [studioTemplateBase64, setStudioTemplateBase64] = useState<string | null>(null)
+  const [studioLoading, setStudioLoading] = useState(false)
+  const [studioError, setStudioError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!open) return
     const template = templates.find((item) => item.code === initialTemplateCode) ?? templates[0]
     setTemplateCode(template?.code ?? "")
     setOutputFormat(template?.defaultOutputFormat ?? "pdf")
-    setJobId("")
+    setContentSections(template?.contentSections.filter((section) => section.required || section.defaultSelected).map((section) => section.code) ?? [])
+    setJobNumber("")
     setError(null)
+    setStudioSession(null)
+    setStudioRequest(null)
+    setStudioTemplateBase64(null)
+    setStudioError(null)
   }, [initialTemplateCode, open, templates])
 
   const selectedTemplate = templates.find((template) => template.code === templateCode)
 
+  function chooseTemplate(nextTemplateCode: string) {
+    const template = templates.find((item) => item.code === nextTemplateCode)
+    setTemplateCode(nextTemplateCode)
+    setOutputFormat(template?.defaultOutputFormat ?? "pdf")
+    setContentSections(template?.contentSections.filter((section) => section.required || section.defaultSelected).map((section) => section.code) ?? [])
+    setError(null)
+    clearStudio()
+  }
+
+  function clearStudio() {
+    setStudioSession(null)
+    setStudioRequest(null)
+    setStudioTemplateBase64(null)
+    setStudioError(null)
+  }
+
+  function setSectionSelected(sectionCode: DocumentContentSectionCode, selected: boolean) {
+    clearStudio()
+    setContentSections((current) => selected
+      ? [...current, sectionCode]
+      : current.filter((code) => code !== sectionCode))
+  }
+
+  async function openStudio() {
+    if (!selectedTemplate) {
+      setError(t("Choose a document template."))
+      return
+    }
+    if (!isJobNumber(jobNumber.trim())) {
+      setError(t("Enter a valid job number to open Studio."))
+      return
+    }
+    if (!contentSections.includes("job")) {
+      setError(t("Job details must be included."))
+      return
+    }
+
+    const request = {
+      templateCode: selectedTemplate.code,
+      jobNumber: jobNumber.trim(),
+      contentSections,
+    } satisfies DocumentStudioRequest
+
+    setStudioLoading(true)
+    setError(null)
+    setStudioError(null)
+    try {
+      if (preview) {
+        setStudioError(t("Secure Studio opens after the document service is deployed."))
+        return
+      }
+      const session = await getDocumentStudioSession(request)
+      setStudioRequest(request)
+      setStudioSession(session)
+      setStudioTemplateBase64(session.templateBase64)
+    } catch (studioLoadError) {
+      setStudioError(studioLoadError instanceof Error ? studioLoadError.message : t("The document studio could not be opened."))
+    } finally {
+      setStudioLoading(false)
+    }
+  }
+
   async function submit() {
-    if (!selectedTemplate || !jobId.trim()) return
+    if (!selectedTemplate) {
+      setError(t("Choose a document template."))
+      return
+    }
+    if (!isJobNumber(jobNumber.trim())) {
+      setError(t("Enter the job number to continue."))
+      return
+    }
+    if (!contentSections.includes("job")) {
+      setError(t("Job details must be included."))
+      return
+    }
+    if (!preview && (!studioSession || !studioRequest || !studioTemplateBase64)) {
+      setError(t("Open this job in Studio before creating the document."))
+      return
+    }
     setSubmitting(true)
     setError(null)
 
@@ -132,9 +437,11 @@ function CreateDocumentDialog({
       const result = await renderDocument({
         templateCode: selectedTemplate.code,
         targetType: "Job_Header",
-        targetId: jobId.trim(),
+        jobNumber: jobNumber.trim(),
         outputFormat,
+        contentSections,
         reason: "Generated from the Multideck document workspace",
+        studioTemplateBase64: studioTemplateBase64 ?? undefined,
       })
       startSignedDownload(result.signedUrl, result.fileName)
       await onRendered()
@@ -149,7 +456,7 @@ function CreateDocumentDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="gap-0 overflow-hidden rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-surface)] p-0 shadow-[var(--md-shadow-lift)] sm:max-w-[520px]">
+      <DialogContent className="flex max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-none flex-col gap-0 overflow-y-auto rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-surface)] p-0 shadow-[var(--md-shadow-lift)] sm:max-w-[min(96vw,1440px)] lg:h-[min(94dvh,920px)] lg:overflow-hidden">
         <DialogHeader className="px-5 pb-4 pt-5 pe-14">
           <DialogTitle className="text-[17px] text-[var(--md-ink)]">{t("Create a document")}</DialogTitle>
           <DialogDescription className="text-[12px] leading-5 text-[var(--md-text)]">
@@ -157,10 +464,11 @@ function CreateDocumentDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 px-5 pb-5 shadow-[var(--md-stroke-top)] pt-4">
+        <div className="grid shadow-[var(--md-stroke-top)] lg:min-h-0 lg:flex-1 lg:grid-cols-[340px_minmax(0,1fr)]">
+        <div className="space-y-4 px-5 py-4 lg:overflow-y-auto lg:shadow-[var(--md-stroke-end)]">
           <label className="block">
             <span className="text-[11px] font-medium text-[var(--md-ink)]">{t("Template")}</span>
-            <Select value={templateCode} onValueChange={setTemplateCode}>
+            <Select value={templateCode} onValueChange={chooseTemplate}>
               <SelectTrigger className="mt-1.5 h-10 w-full rounded-[var(--md-radius-md)]">
                 <SelectValue placeholder={t("Choose a template")} />
               </SelectTrigger>
@@ -172,12 +480,66 @@ function CreateDocumentDialog({
             </Select>
           </label>
 
+          <fieldset>
+            <div className="flex items-end justify-between gap-3">
+              <div>
+                <legend className="text-[11px] font-medium text-[var(--md-ink)]">{t("Information to include")}</legend>
+                <p className="mt-1 text-[10.5px] leading-4 text-[var(--md-subtle)]">
+                  {t("Choose the approved job information needed in this document.")}
+                </p>
+              </div>
+              <span className="shrink-0 text-[10px] text-[var(--md-subtle)]">
+                {contentSections.length} {t("selected")}
+              </span>
+            </div>
+            <div className="mt-2.5 grid gap-2 sm:grid-cols-2">
+              {(selectedTemplate?.contentSections ?? []).map((section) => {
+                const checked = contentSections.includes(section.code)
+                const controlId = `document-section-${section.code}`
+                return (
+                  <label
+                    key={section.code}
+                    htmlFor={controlId}
+                    className={cn(
+                      "flex min-h-16 cursor-pointer items-start gap-2.5 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-3 shadow-[var(--md-shadow-line)] transition-colors duration-200",
+                      checked && "bg-[var(--md-selected-bg)]",
+                      section.required && "cursor-default",
+                    )}
+                  >
+                    <Checkbox
+                      id={controlId}
+                      checked={checked}
+                      disabled={section.required}
+                      onCheckedChange={(value) => setSectionSelected(section.code, value === true)}
+                      aria-describedby={`${controlId}-description`}
+                      className="mt-0.5 size-4"
+                    />
+                    <span className="min-w-0">
+                      <span className="flex flex-wrap items-center gap-1.5 text-[11px] font-medium text-[var(--md-ink)]">
+                        {t(section.label)}
+                        {section.required ? <span className="text-[9.5px] font-normal text-[var(--md-subtle)]">{t("Required")}</span> : null}
+                      </span>
+                      <span id={`${controlId}-description`} className="mt-0.5 block text-[10px] leading-4 text-[var(--md-text)]">
+                        {t(section.description)}
+                      </span>
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+          </fieldset>
+
           <label className="block">
-            <span className="text-[11px] font-medium text-[var(--md-ink)]">{t("Job ID")}</span>
+            <span className="text-[11px] font-medium text-[var(--md-ink)]">{t("Job number")}</span>
             <Input
-              value={jobId}
-              onChange={(event) => setJobId(event.target.value)}
-              placeholder="00000000-0000-0000-0000-000000000000"
+              value={jobNumber}
+              onChange={(event) => {
+                clearStudio()
+                setJobNumber(event.target.value.toUpperCase().replace(/[^A-Z0-9._/-]/g, "").slice(0, 50))
+              }}
+              placeholder="e.g. JE22481"
+              inputMode="text"
+              autoComplete="off"
               dir="ltr"
               className="mt-1.5 h-10 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] text-[12px]"
               data-i18n-skip
@@ -186,6 +548,11 @@ function CreateDocumentDialog({
               {t("The job must belong to one of your authorised offices.")}
             </span>
           </label>
+
+          <Button type="button" variant="outline" onClick={() => void openStudio()} disabled={studioLoading} className="h-10 w-full rounded-[var(--md-radius-md)]">
+            {studioLoading ? <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" /> : <FilePenLine className="size-3.5" aria-hidden="true" />}
+            {studioLoading ? t("Opening Studio…") : t("Open job in Studio")}
+          </Button>
 
           <label className="block">
             <span className="text-[11px] font-medium text-[var(--md-ink)]">{t("File format")}</span>
@@ -214,11 +581,44 @@ function CreateDocumentDialog({
           ) : null}
         </div>
 
+        <section className="flex min-h-[520px] min-w-0 flex-col bg-[var(--md-surface-soft)] p-2.5 lg:min-h-0" aria-labelledby="document-studio-title">
+          <div className="flex min-h-10 items-center justify-between gap-3 px-2 pb-2">
+            <div className="min-w-0">
+              <h2 id="document-studio-title" className="truncate text-[12px] font-medium text-[var(--md-ink)]">{t("Carbone Studio")}</h2>
+              <p className="mt-0.5 truncate text-[10px] text-[var(--md-subtle)]">
+                {studioSession ? `${studioSession.jobReference} · ${studioSession.templateName}` : t("Secure document editor and preview")}
+              </p>
+            </div>
+            <Badge className="border-0 bg-[rgba(14,125,116,0.1)] text-[10px] text-[var(--md-accent)] shadow-none">
+              <ShieldCheck className="size-3" aria-hidden="true" />
+              {t("Protected connection")}
+            </Badge>
+          </div>
+          <div className="min-h-0 flex-1 overflow-hidden rounded-[calc(var(--md-radius-xl)-10px)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]">
+            {studioError ? (
+              <div role="alert" className="flex items-start gap-2 bg-[rgba(190,70,60,0.08)] p-3 text-[11px] text-[var(--md-red)]">
+                <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                <span>{studioError}</span>
+              </div>
+            ) : null}
+            <DocumentStudioWorkspace
+              session={studioSession}
+              request={studioRequest}
+              onTemplateChange={setStudioTemplateBase64}
+              onError={setStudioError}
+            />
+          </div>
+          <div className="sr-only" role="status" aria-live="polite">
+            {studioLoading ? t("Opening secure Studio…") : studioSession ? t("Carbone Studio is ready.") : ""}
+          </div>
+        </section>
+        </div>
+
         <DialogFooter className="m-0 rounded-none bg-[var(--md-surface-soft)] px-5 py-4">
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={submitting}>
             {t("Cancel")}
           </Button>
-          <Button type="button" onClick={() => void submit()} disabled={!selectedTemplate || !jobId.trim() || submitting} className="bg-[var(--md-accent)] text-white">
+          <Button type="button" onClick={() => void submit()} disabled={submitting} className="bg-[var(--md-accent)] text-white">
             {submitting ? <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" /> : <FilePlus2 className="size-3.5" aria-hidden="true" />}
             {submitting ? t("Preparing document…") : t("Create and download")}
           </Button>
@@ -289,7 +689,7 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
     <div className="md-page md-page-sections" dir="inherit">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="max-w-2xl">
-          <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--md-accent)]">{t("Document centre")}</p>
+          <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--md-accent)]">{t("Document builder")}</p>
           <h1 className="mt-1 text-[24px] font-medium tracking-[-0.03em] text-[var(--md-ink)]">{t("Create the right document in seconds")}</h1>
           <p className="mt-2 text-[13px] leading-5 text-[var(--md-text)]">
             {t("Choose an approved template and a job. Multideck takes care of the data, audit trail and secure delivery.")}
@@ -324,9 +724,9 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
 
       <section className="grid gap-3 sm:grid-cols-3">
         {[
-          { label: "Published templates", value: workspace?.templates.filter((template) => template.status === "published").length ?? "â€”", icon: FileText },
-          { label: "Ready to download", value: readyCount || "â€”", icon: CheckCircle2 },
-          { label: "Needs attention", value: failedCount || "â€”", icon: FileClock },
+          { label: "Published templates", value: workspace?.templates.filter((template) => template.status === "published").length ?? "—", icon: FileText },
+          { label: "Ready to download", value: readyCount || "—", icon: CheckCircle2 },
+          { label: "Needs attention", value: failedCount || "—", icon: FileClock },
         ].map((metric) => (
           <Surface key={metric.label} tone="soft" padding="sm" className="flex items-center gap-3 rounded-[var(--md-radius-lg)]">
             <span className="grid size-9 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">
@@ -418,7 +818,7 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
                       </div>
                     </TableCell>
                     <TableCell className="text-[11px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{document.targetReference}</TableCell>
-                    <TableCell className="text-[11px] text-[var(--md-text)]" data-i18n-skip dir="auto">{document.customerName ?? "â€”"}</TableCell>
+                    <TableCell className="text-[11px] text-[var(--md-text)]" data-i18n-skip dir="auto">{document.customerName ?? "—"}</TableCell>
                     <TableCell className="text-[10.5px] text-[var(--md-text)]" data-i18n-skip>{dateFormatter.format(new Date(document.createdAt))}</TableCell>
                     <TableCell>
                       <Badge className={cn("border-0 text-[10px] capitalize shadow-none", statusTone[document.status])}>{t(document.status)}</Badge>

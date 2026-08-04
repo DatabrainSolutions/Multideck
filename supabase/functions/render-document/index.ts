@@ -4,22 +4,28 @@ import {
   corsHeaders,
   FunctionError,
   generatedDocumentsBucket,
-  isUuid,
   jsonResponse,
   maximumGeneratedFileBytes,
+  parseJobNumber,
   safeFailureMessage,
   signedUrlLifetimeSeconds,
   toFunctionError,
 } from "../_shared/document-functions.ts"
 
 type OutputFormat = "pdf" | "docx"
+type ContentSection = "job" | "customer" | "shipper" | "consignee" | "cargo" | "routing"
+
+const allowedContentSections: ContentSection[] = ["job", "customer", "shipper", "consignee", "cargo", "routing"]
+const maximumStudioTemplateBytes = 15 * 1024 * 1024
 
 type RenderRequest = {
   templateCode?: string
   targetType?: string
-  targetId?: string
+  jobNumber?: string
   outputFormat?: string
+  contentSections?: unknown
   reason?: string
+  studioTemplateBase64?: string
 }
 
 type PreparedRender = {
@@ -83,6 +89,31 @@ function validateRenderedFile(bytes: Uint8Array, format: OutputFormat) {
   }
 }
 
+function decodeStudioTemplate(value: unknown) {
+  if (value === undefined) return null
+  if (typeof value !== "string" || !/^[A-Za-z0-9+/]*={0,2}$/.test(value) || value.length > Math.ceil(maximumStudioTemplateBytes / 3) * 4 + 4) {
+    throw new FunctionError(400, "The Studio template is invalid.", "Studio template base64 validation failed")
+  }
+
+  let binary: string
+  try {
+    binary = atob(value)
+  } catch {
+    throw new FunctionError(400, "The Studio template is invalid.", "Studio template base64 decoding failed")
+  }
+
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0))
+  const archiveText = new TextDecoder("latin1").decode(bytes)
+  if (!bytes.byteLength
+      || bytes.byteLength > maximumStudioTemplateBytes
+      || bytes[0] !== 0x50
+      || bytes[1] !== 0x4b
+      || !archiveText.includes("word/document.xml")) {
+    throw new FunctionError(400, "Choose a valid Word template.", "Studio accepts DOCX templates up to 15 MiB")
+  }
+  return bytes
+}
+
 async function sha256(bytes: Uint8Array) {
   const hashInput = Uint8Array.from(bytes)
   const digest = await crypto.subtle.digest("SHA-256", hashInput.buffer)
@@ -92,6 +123,22 @@ async function sha256(bytes: Uint8Array) {
 function renderTimeout() {
   const configured = Number(Deno.env.get("CARBONE_TIMEOUT_MS") ?? 90000)
   return Number.isFinite(configured) ? Math.min(Math.max(configured, 5000), 120000) : 90000
+}
+
+function parseContentSections(value: unknown): ContentSection[] {
+  if (value === undefined) return [...allowedContentSections]
+  if (!Array.isArray(value) || value.length === 0 || value.length > allowedContentSections.length) {
+    throw new FunctionError(400, "Choose the information to include.", "Content section selection was not a valid array")
+  }
+
+  const unique = [...new Set(value)]
+  if (unique.length !== value.length || unique.some((section) => typeof section !== "string" || !allowedContentSections.includes(section as ContentSection))) {
+    throw new FunctionError(400, "Choose valid document information.", "Content section selection contained duplicates or unsupported values")
+  }
+  if (!unique.includes("job")) {
+    throw new FunctionError(400, "Job details must be included.", "Required job content section was omitted")
+  }
+  return unique as ContentSection[]
 }
 
 Deno.serve(async (request) => {
@@ -108,12 +155,14 @@ Deno.serve(async (request) => {
     const payload = await request.json() as RenderRequest
     const templateCode = payload.templateCode?.trim().toUpperCase() ?? ""
     const outputFormat = payload.outputFormat?.trim().toLowerCase() ?? ""
+    const contentSections = parseContentSections(payload.contentSections)
+    const jobNumber = parseJobNumber(payload.jobNumber)
 
     if (!/^[A-Z0-9][A-Z0-9_-]{1,99}$/.test(templateCode)) {
       throw new FunctionError(400, "Choose a valid document template.", "Template code validation failed")
     }
-    if (payload.targetType !== "Job_Header" || !isUuid(payload.targetId)) {
-      throw new FunctionError(400, "Choose a valid job.", "Only an exact Job_Header UUID is accepted")
+    if (payload.targetType !== "Job_Header") {
+      throw new FunctionError(400, "Choose a valid job.", "Only Job_Header targets are accepted")
     }
     if (outputFormat !== "pdf" && outputFormat !== "docx") {
       throw new FunctionError(400, "Choose PDF or DOCX.", "Output format validation failed")
@@ -124,19 +173,45 @@ Deno.serve(async (request) => {
       .rpc("prepare_job_render", {
         caller_auth_user_id: context.userId,
         requested_template_code: templateCode,
-        requested_job_id: payload.targetId,
+        requested_job_number: jobNumber,
         requested_output_format: outputFormat,
         requested_reason: payload.reason?.trim().slice(0, 500) || null,
       })
     if (error || !data) throw error ?? new Error("Render preparation returned no data")
     prepared = data as PreparedRender
 
+    const { data: selectedDataset, error: selectionError } = await context.admin
+      .schema("document_api")
+      .rpc("apply_job_render_content_selection", {
+        caller_auth_user_id: context.userId,
+        requested_render_job_id: prepared.renderJobId,
+        requested_content_sections: contentSections,
+      })
+    if (selectionError || !selectedDataset) {
+      throw selectionError ?? new Error("Document content selection returned no data")
+    }
+    prepared = { ...prepared, dataset: selectedDataset as Record<string, unknown> }
+    const studioTemplateBytes = decodeStudioTemplate(payload.studioTemplateBase64)
+
+    if (studioTemplateBytes) {
+      const templateDigest = await sha256(studioTemplateBytes)
+      const { error: studioAuditError } = await context.admin
+        .schema("document_api")
+        .rpc("record_studio_template", {
+          caller_auth_user_id: context.userId,
+          requested_render_job_id: prepared.renderJobId,
+          template_sha256: templateDigest,
+          template_size_bytes: studioTemplateBytes.byteLength,
+        })
+      if (studioAuditError) throw studioAuditError
+    }
+
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), renderTimeout())
     let carboneResponse: Response
     try {
       carboneResponse = await fetch(
-        `${getCarboneBaseUrl()}/render/${encodeURIComponent(prepared.carboneTemplateReference)}?download=true`,
+        `${getCarboneBaseUrl()}/render/${studioTemplateBytes ? "template" : encodeURIComponent(prepared.carboneTemplateReference)}?download=true`,
         {
           method: "POST",
           headers: {
@@ -146,6 +221,7 @@ Deno.serve(async (request) => {
           },
           body: JSON.stringify({
             data: prepared.dataset,
+            ...(studioTemplateBytes ? { template: payload.studioTemplateBase64 } : {}),
             convertTo: prepared.outputFormat,
             lang: prepared.languageCode,
             reportName: safeReportName(prepared.templateCode, prepared.jobReference),

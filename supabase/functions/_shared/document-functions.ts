@@ -66,6 +66,14 @@ export function isUuid(value: unknown): value is string {
     && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 }
 
+export function parseJobNumber(value: unknown) {
+  const normalised = typeof value === "string" ? value.trim().toUpperCase() : ""
+  if (!/^[A-Z0-9][A-Z0-9._/-]{0,49}$/.test(normalised)) {
+    throw new FunctionError(400, "Enter a valid job number.", "Job number validation failed")
+  }
+  return normalised
+}
+
 export async function authenticateRequest(request: Request): Promise<FunctionContext> {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")
   const publishableKey = getPublishableKey()
@@ -111,6 +119,12 @@ export function toFunctionError(error: unknown) {
   const code = typeof error === "object" && error && "code" in error ? String(error.code) : ""
   if (code === "42501" || code === "PGRST301") {
     return new FunctionError(403, "You are not authorised to use this document.", "Document authorization was rejected")
+  }
+  if (code === "MD404") {
+    return new FunctionError(404, "No authorised job matches that job number.", "Job number was not found in the caller's authorised offices")
+  }
+  if (code === "MD409") {
+    return new FunctionError(409, "More than one authorised job uses that number.", "Job number resolution was ambiguous")
   }
   return new FunctionError(500, "The secure document service could not complete the request.", "Unexpected document function failure")
 }
