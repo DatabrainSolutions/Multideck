@@ -51,6 +51,7 @@ import {
 import { CrmActivityTimeline, CrmAssetFolderCard, CrmAssetRow, CrmContactTable, CrmForecastPanel, CrmLeadDetailPanel, CrmLeadQualificationTable, CrmLeadSignalList, CrmMetricsGrid, CrmPipelineBoard, CrmPriorityActionsPanel, CrmRevenueMixPanel, CrmSalesCommandCenter, CrmSalesFunnelPanel, CrmSettingsBuilder } from "@/components/multideck/crm-components"
 import { CopyableField } from "@/components/multideck/copyable-field"
 import { ContactCardLayoutPicker, ContactCardSocialLinksEditor } from "@/components/multideck/contact-card-design"
+import { ContactCreateDialog } from "@/components/multideck/contact-create-dialog"
 import { AutomationRunHistory } from "@/components/multideck/contact-card-automation"
 import { MarketingOptInControl } from "@/components/multideck/marketing-opt-in-control"
 import { CrmPipelineEditor } from "@/components/multideck/crm-pipeline-editor"
@@ -211,7 +212,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "CRM",
     helper: "Leads, contacts, deals, activity, marketing, settings",
-    ids: ["crm-sales-command-center", "crm-metrics-grid", "crm-sales-funnel-panel", "crm-revenue-mix-panel", "crm-forecast-panel", "crm-priority-actions-panel", "crm-pipeline-board", "crm-pipeline-editor", "crm-asset-folder-card", "crm-asset-row", "crm-lead-qualification-table", "copyable-field", "crm-lead-detail-panel", "crm-contact-table", "crm-activity-timeline", "crm-lead-signals", "crm-settings-builder"],
+    ids: ["crm-sales-command-center", "crm-metrics-grid", "crm-sales-funnel-panel", "crm-revenue-mix-panel", "crm-forecast-panel", "crm-priority-actions-panel", "crm-pipeline-board", "crm-pipeline-editor", "crm-asset-folder-card", "crm-asset-row", "crm-lead-qualification-table", "copyable-field", "crm-lead-detail-panel", "contact-create-dialog", "crm-contact-table", "crm-activity-timeline", "crm-lead-signals", "crm-settings-builder"],
   },
   {
     label: "Agent Dexter",
@@ -1029,6 +1030,7 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewCrmDealId, setPreviewCrmDealId] = useState(crmPipelineStages[0].deals[0].id)
   const [previewCrmLeadId, setPreviewCrmLeadId] = useState(previewCrmLeads[0].id)
   const [previewCrmContactEmail, setPreviewCrmContactEmail] = useState(crmContacts[0].email)
+  const [previewContactCreateOpen, setPreviewContactCreateOpen] = useState(false)
   const [previewMarketingFolderId, setPreviewMarketingFolderId] = useState(previewMarketingFolders[0].id)
   const [previewPaperDocumentId, setPreviewPaperDocumentId] = useState<string | null>(null)
   const [previewTransportModes, setPreviewTransportModes] = useState(["Sea FCL", "Road"])
@@ -2727,6 +2729,21 @@ function ComponentPreview({ id }: { id: string }) {
             contacts={crmContacts}
             selectedEmail={previewCrmContactEmail}
             onSelectContact={(contact) => setPreviewCrmContactEmail(contact.email)}
+          />
+        </div>
+      ) : null}
+
+      {id === "contact-create-dialog" ? (
+        <div className="grid w-full max-w-[520px] place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-8 shadow-[var(--md-shadow-line)]">
+          <Button onClick={() => setPreviewContactCreateOpen(true)}>New contact</Button>
+          <ContactCreateDialog
+            open={previewContactCreateOpen}
+            onOpenChange={setPreviewContactCreateOpen}
+            accounts={[
+              { id: "preview-marlow", name: "Marlow Apparel" },
+              { id: "preview-northstar", name: "Northstar Components" },
+            ]}
+            onCreated={() => setPreviewContactCreateOpen(false)}
           />
         </div>
       ) : null}

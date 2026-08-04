@@ -3716,6 +3716,47 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText }) {
     usageCode: `<Button onClick={() => setOpenedFolderId(null)}>\n  <ArrowLeft />\n  Marketing drive\n</Button>\n\n<div className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-3">\n  {folderAssets.map((asset) => (\n    <CrmAssetRow\n      key={asset.id}\n      asset={asset}\n      onOpen={(selectedAsset) => openAsset(selectedAsset)}\n    />\n  ))}\n</div>`,
   },
   {
+    id: "contact-create-dialog",
+    name: "Contact Create Dialog",
+    category: "CRM",
+    description: "The shared account-linked form for creating a CRM contact with role, department, and recorded marketing consent.",
+    details: "Use from the Contacts directory or inside an account workspace. Pass a fixed account when the operator starts from an account so the same form stays scoped to that customer.",
+    foundOn: [{ label: "CRM contacts", route: "/crm/contacts" }, { label: "Account details", route: "/crm/accounts/de1000c1-5eed-4ead-8000-000000000001" }, { label: "Components", route: "/components?component=contact-create-dialog" }],
+    componentCode: `export function ContactCreateDialog({ open, onOpenChange, accounts, fixedAccountId, onCreated }) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>New contact</DialogTitle>
+          <DialogDescription>Connect this person to an account and record only what helps the relationship now.</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={createContact}>
+          <AccountSelect accounts={accounts} value={fixedAccountId ?? accountId} disabled={Boolean(fixedAccountId)} />
+          <ContactIdentityFields />
+          <ContactRoleFields />
+          <MarketingConsentFields />
+          <DialogFooter><Button type="submit">Create contact</Button></DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}`,
+    usageCode: `<ContactCreateDialog
+  open={createOpen}
+  onOpenChange={setCreateOpen}
+  accounts={accounts}
+  onCreated={(contact) => navigate(\`/crm/contacts/\${contact.id}\`)}
+/>
+
+<ContactCreateDialog
+  open={createOpen}
+  onOpenChange={setCreateOpen}
+  accounts={[account]}
+  fixedAccountId={account.id}
+  onCreated={refreshAccount}
+/>`,
+  },
+  {
     id: "crm-contact-table",
     name: "CRM Contact Table",
     category: "CRM",
@@ -4256,6 +4297,7 @@ export const galleryIcons = {
   "crm-pipeline-board": BriefcaseBusiness,
   "crm-asset-folder-card": Boxes,
   "crm-asset-row": FileText,
+  "contact-create-dialog": Users,
   "crm-contact-table": Mail,
   "crm-lead-qualification-table": Users,
   "crm-lead-detail-panel": Users,
