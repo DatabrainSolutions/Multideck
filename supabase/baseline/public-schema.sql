@@ -11516,7 +11516,13 @@ begin
   if v_user_id is null then raise exception 'WMS400: This customer portal user does not exist.'; end if;
   insert into public."Portal_UserOrganisations" ("PortalUserOrg_ID","PortalUserOrg_PortalUserID","PortalUserOrg_OrgID","PortalUserOrg_AudienceTypeCode","PortalUserOrg_StatusCode","PortalUserOrg_IsPrimary","PortalUserOrg_CanManageOrgUsers","PortalUserOrg_FieldPolicyJSON","PortalUserOrg_CreatedAt","PortalUserOrg_CreatedBy") values(gen_random_uuid(),v_user_id,p_customer_org_id,'customer','active',true,v_role_code='warehouse_customer_admin','{}',v_now,p_actor_user_id) on conflict ("PortalUserOrg_PortalUserID","PortalUserOrg_OrgID","PortalUserOrg_AudienceTypeCode") do update set "PortalUserOrg_StatusCode"='active',"PortalUserOrg_CanManageOrgUsers"=excluded."PortalUserOrg_CanManageOrgUsers";
   update public."Portal_UserRoles" set "PortalUserRole_StatusCode"='revoked' where "PortalUserRole_PortalUserID"=v_user_id and "PortalUserRole_OrgID"=p_customer_org_id;
-  insert into public."Portal_UserRoles" ("PortalUserRole_ID","PortalUserRole_PortalUserID","PortalUserRole_RoleID","PortalUserRole_SiteID","PortalUserRole_OrgID","PortalUserRole_StatusCode","PortalUserRole_ValidFrom","PortalUserRole_AssignedAt","PortalUserRole_AssignedBy") values(gen_random_uuid(),v_user_id,v_role_id,v_site_id,p_customer_org_id,'active',v_now,v_now,p_actor_user_id);
+  insert into public."Portal_UserRoles" ("PortalUserRole_ID","PortalUserRole_PortalUserID","PortalUserRole_RoleID","PortalUserRole_SiteID","PortalUserRole_OrgID","PortalUserRole_StatusCode","PortalUserRole_ValidFrom","PortalUserRole_AssignedAt","PortalUserRole_AssignedBy") values(gen_random_uuid(),v_user_id,v_role_id,v_site_id,p_customer_org_id,'active',v_now,v_now,p_actor_user_id)
+  on conflict on constraint "Portal_UserRoles_unique_role" do update set
+    "PortalUserRole_StatusCode"='active',
+    "PortalUserRole_ValidFrom"=excluded."PortalUserRole_ValidFrom",
+    "PortalUserRole_ValidUntil"=null,
+    "PortalUserRole_AssignedAt"=excluded."PortalUserRole_AssignedAt",
+    "PortalUserRole_AssignedBy"=excluded."PortalUserRole_AssignedBy";
   if p_actor_user_id is not null and jsonb_typeof(p_payload->'facilityIds')='array' then
     select array_agg(value::uuid) into v_facilities from jsonb_array_elements_text(p_payload->'facilityIds'); if coalesce(array_length(v_facilities,1),0)=0 then raise exception 'WMS400: Choose at least one warehouse for this customer.'; end if;
     update public."WMS_CustomerFacilityAccess" set "WMSCustomerFacilityAccess_IsActive"=("WMSCustomerFacilityAccess_FacilityID"=any(v_facilities)),"WMSCustomerFacilityAccess_UpdatedAt"=v_now where "WMSCustomerFacilityAccess_CustomerOrgID"=p_customer_org_id;

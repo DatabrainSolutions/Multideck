@@ -20,6 +20,7 @@ const migration = await readFile(new URL("migrations/202608020001_warehouse_edge
 const dashboardMigration = await readFile(new URL("migrations/20260802213000_warehouse_dashboard_snapshot.sql", root), "utf8")
 const portalInviteFixMigration = await readFile(new URL("migrations/20260804100000_fix_warehouse_customer_invites.sql", root), "utf8")
 const portalAccessLinkAuditMigration = await readFile(new URL("migrations/20260804110000_warehouse_portal_access_link_audit.sql", root), "utf8")
+const portalRoleReactivationMigration = await readFile(new URL("migrations/20260804120000_fix_warehouse_portal_role_reactivation.sql", root), "utf8")
 const baseline = await readFile(new URL("baseline/public-schema.sql", root), "utf8")
 const clientSource = await readFile(new URL("../multideck.client/src/lib/warehouse.ts", root), "utf8")
 const orderSource = await readFile(new URL("functions/warehouse/routes/orders.ts", root), "utf8")
@@ -109,6 +110,14 @@ test("warehouse customer invitation retries recover an existing Supabase Auth id
     portalInviteFixMigration,
     /grant execute on function public\.warehouse_edge_auth_user_id_by_email\(text\) to service_role/,
   )
+})
+
+test("warehouse customer roles reactivate after revocation without duplicate keys", () => {
+  const roleConflict = /on conflict on constraint "Portal_UserRoles_unique_role" do update set/
+  assert.match(portalRoleReactivationMigration, roleConflict)
+  assert.match(portalRoleReactivationMigration, /"PortalUserRole_StatusCode"='active'/)
+  assert.match(portalRoleReactivationMigration, /"PortalUserRole_ValidUntil"=null/)
+  assert.match(baseline, roleConflict)
 })
 
 test("warehouse portal access reuses the scoped order context", () => {
