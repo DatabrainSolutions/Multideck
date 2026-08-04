@@ -11440,6 +11440,21 @@ $$;
 ALTER FUNCTION "public"."warehouse_edge_order_mutation"("p_action" "text", "p_order_id" "uuid", "p_payload" "jsonb", "p_actor_user_id" "uuid", "p_actor_portal_user_id" "uuid", "p_allowed_facility_ids" "uuid"[], "p_allowed_organisation_ids" "uuid"[]) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."warehouse_edge_auth_user_id_by_email"("p_email" "text") RETURNS "uuid"
+    LANGUAGE "sql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select auth_user.id
+  from auth.users auth_user
+  where lower(auth_user.email) = lower(trim(p_email))
+  order by auth_user.created_at
+  limit 1;
+$$;
+
+
+ALTER FUNCTION "public"."warehouse_edge_auth_user_id_by_email"("p_email" "text") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."warehouse_edge_portal_mutation"("p_action" "text", "p_customer_org_id" "uuid", "p_portal_user_id" "uuid", "p_payload" "jsonb", "p_actor_user_id" "uuid", "p_actor_portal_user_id" "uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -11479,7 +11494,7 @@ begin
     return null;
   end if;
   if v_user_id is null then raise exception 'WMS400: This customer portal user does not exist.'; end if;
-  insert into public."Portal_UserOrganisations" ("PortalUserOrg_ID","PortalUserOrg_PortalUserID","PortalUserOrg_OrgID","PortalUserOrg_AudienceTypeCode","PortalUserOrg_StatusCode","PortalUserOrg_IsPrimary","PortalUserOrg_CanManageOrgUsers","PortalUserOrg_FieldPolicyJSON","PortalUserOrg_CreatedAt","PortalUserOrg_CreatedBy") values(gen_random_uuid(),v_user_id,p_customer_org_id,'customer','active',true,v_role_code='warehouse_customer_admin','{}',v_now,p_actor_user_id) on conflict ("PortalUserOrg_PortalUserID","PortalUserOrg_OrgID") do update set "PortalUserOrg_StatusCode"='active',"PortalUserOrg_CanManageOrgUsers"=excluded."PortalUserOrg_CanManageOrgUsers";
+  insert into public."Portal_UserOrganisations" ("PortalUserOrg_ID","PortalUserOrg_PortalUserID","PortalUserOrg_OrgID","PortalUserOrg_AudienceTypeCode","PortalUserOrg_StatusCode","PortalUserOrg_IsPrimary","PortalUserOrg_CanManageOrgUsers","PortalUserOrg_FieldPolicyJSON","PortalUserOrg_CreatedAt","PortalUserOrg_CreatedBy") values(gen_random_uuid(),v_user_id,p_customer_org_id,'customer','active',true,v_role_code='warehouse_customer_admin','{}',v_now,p_actor_user_id) on conflict ("PortalUserOrg_PortalUserID","PortalUserOrg_OrgID","PortalUserOrg_AudienceTypeCode") do update set "PortalUserOrg_StatusCode"='active',"PortalUserOrg_CanManageOrgUsers"=excluded."PortalUserOrg_CanManageOrgUsers";
   update public."Portal_UserRoles" set "PortalUserRole_StatusCode"='revoked' where "PortalUserRole_PortalUserID"=v_user_id and "PortalUserRole_OrgID"=p_customer_org_id;
   insert into public."Portal_UserRoles" ("PortalUserRole_ID","PortalUserRole_PortalUserID","PortalUserRole_RoleID","PortalUserRole_SiteID","PortalUserRole_OrgID","PortalUserRole_StatusCode","PortalUserRole_ValidFrom","PortalUserRole_AssignedAt","PortalUserRole_AssignedBy") values(gen_random_uuid(),v_user_id,v_role_id,v_site_id,p_customer_org_id,'active',v_now,v_now,p_actor_user_id);
   if p_actor_user_id is not null and jsonb_typeof(p_payload->'facilityIds')='array' then
@@ -73895,6 +73910,11 @@ GRANT ALL ON FUNCTION "public"."sync_cmp_user_from_auth_user"() TO "service_role
 
 REVOKE ALL ON FUNCTION "public"."warehouse_edge_order_mutation"("p_action" "text", "p_order_id" "uuid", "p_payload" "jsonb", "p_actor_user_id" "uuid", "p_actor_portal_user_id" "uuid", "p_allowed_facility_ids" "uuid"[], "p_allowed_organisation_ids" "uuid"[]) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."warehouse_edge_order_mutation"("p_action" "text", "p_order_id" "uuid", "p_payload" "jsonb", "p_actor_user_id" "uuid", "p_actor_portal_user_id" "uuid", "p_allowed_facility_ids" "uuid"[], "p_allowed_organisation_ids" "uuid"[]) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."warehouse_edge_auth_user_id_by_email"("p_email" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."warehouse_edge_auth_user_id_by_email"("p_email" "text") TO "service_role";
 
 
 

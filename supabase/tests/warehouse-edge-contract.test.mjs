@@ -18,6 +18,8 @@ const edgeFiles = [
 const edgeSource = (await Promise.all(edgeFiles.map((file) => readFile(new URL(file, root), "utf8")))).join("\n")
 const migration = await readFile(new URL("migrations/202608020001_warehouse_edge_functions.sql", root), "utf8")
 const dashboardMigration = await readFile(new URL("migrations/20260802213000_warehouse_dashboard_snapshot.sql", root), "utf8")
+const portalInviteFixMigration = await readFile(new URL("migrations/20260804100000_fix_warehouse_customer_invites.sql", root), "utf8")
+const baseline = await readFile(new URL("baseline/public-schema.sql", root), "utf8")
 const clientSource = await readFile(new URL("../multideck.client/src/lib/warehouse.ts", root), "utf8")
 
 test("warehouse client uses the tenant Supabase Edge Function as its only backend", () => {
@@ -74,4 +76,34 @@ test("the Edge Function authenticates users and resolves internal or portal scop
   assert.match(edgeSource, /Portal_ExternalIdentities/)
   assert.match(edgeSource, /WMS_CustomerFacilityAccess/)
   assert.match(edgeSource, /requireCapability/)
+})
+
+test("warehouse customer invitations use the complete portal organisation conflict key", () => {
+  const conflictKey = /on conflict \("PortalUserOrg_PortalUserID","PortalUserOrg_OrgID","PortalUserOrg_AudienceTypeCode"\)/
+  assert.match(
+    baseline,
+    /ADD CONSTRAINT "Portal_UserOrganisations_unique_org" UNIQUE \("PortalUserOrg_PortalUserID", "PortalUserOrg_OrgID", "PortalUserOrg_AudienceTypeCode"\)/,
+  )
+  assert.match(baseline, conflictKey)
+  assert.match(
+    portalInviteFixMigration,
+    conflictKey,
+  )
+  assert.doesNotMatch(
+    portalInviteFixMigration,
+    /on conflict \("PortalUserOrg_PortalUserID","PortalUserOrg_OrgID"\) do update/,
+  )
+})
+
+test("warehouse customer invitation retries recover an existing Supabase Auth identity", () => {
+  assert.match(edgeSource, /rpc\("warehouse_edge_auth_user_id_by_email"/)
+  assert.match(portalInviteFixMigration, /create or replace function public\.warehouse_edge_auth_user_id_by_email/)
+  assert.match(
+    portalInviteFixMigration,
+    /revoke all on function public\.warehouse_edge_auth_user_id_by_email\(text\) from public,anon,authenticated/,
+  )
+  assert.match(
+    portalInviteFixMigration,
+    /grant execute on function public\.warehouse_edge_auth_user_id_by_email\(text\) to service_role/,
+  )
 })

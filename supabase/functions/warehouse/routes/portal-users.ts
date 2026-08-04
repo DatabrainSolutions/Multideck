@@ -75,16 +75,24 @@ export async function handlePortal(request, path, admin, actor) {
     }
     const existing = await oneOrNull(admin.from("Portal_Users").select("PortalUser_ID").ilike("PortalUser_Email", email).maybeSingle());
     if (!existing) {
-      const { data: invited, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
-        data: {
-          full_name: clean(input.displayName, 180) ?? email,
-          account_type: "Warehouse customer"
-        }
+      const { data: existingAuthUserId, error: authLookupError } = await admin.rpc("warehouse_edge_auth_user_id_by_email", {
+        p_email: email
       });
-      if (inviteError || !invited.user) {
-        throw new HttpError(409, inviteError?.message ?? "The customer invitation could not be created.");
+      if (authLookupError) throw new HttpError(500, authLookupError.message);
+      if (existingAuthUserId) {
+        input.authUserId = existingAuthUserId;
+      } else {
+        const { data: invited, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
+          data: {
+            full_name: clean(input.displayName, 180) ?? email,
+            account_type: "Warehouse customer"
+          }
+        });
+        if (inviteError || !invited.user) {
+          throw new HttpError(409, inviteError?.message ?? "The customer invitation could not be created.");
+        }
+        input.authUserId = invited.user.id;
       }
-      input.authUserId = invited.user.id;
       input.email = email;
     }
   }
