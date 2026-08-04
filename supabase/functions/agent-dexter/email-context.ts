@@ -202,7 +202,7 @@ export function buildEmailTools(providers: DexterEmailProvider[], allowAttachmen
           query: { type: "string", minLength: 1, maxLength: 300, description: "Identifying terms other than the sender, such as a subject, reference, company, invoice, or attachment name. If the sender is the only clue, repeat it here. Do not include conversational instruction words." },
           sender: { type: ["string", "null"], maxLength: 320, description: "The sender name or email address when the operator says from, by, or sender; otherwise null." },
           hasAttachment: { type: ["boolean", "null"], description: "True when the requested email must have an attachment, otherwise null." },
-          provider: { ...providerType, description: "A selected provider, or null to search every provider mentioned by the operator." },
+          provider: { ...providerType, description: "A provider established by the operator's request, or null to search every email provider available for this request." },
           after: { type: ["string", "null"], description: "Optional inclusive ISO date or date-time lower bound." },
           before: { type: ["string", "null"], description: "Optional exclusive ISO date or date-time upper bound." },
           limit: { type: "integer", minimum: 1, maximum: 20, description: "Maximum matching email threads." },

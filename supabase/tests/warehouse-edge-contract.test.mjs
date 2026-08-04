@@ -19,6 +19,8 @@ const edgeSource = (await Promise.all(edgeFiles.map((file) => readFile(new URL(f
 const migration = await readFile(new URL("migrations/202608020001_warehouse_edge_functions.sql", root), "utf8")
 const dashboardMigration = await readFile(new URL("migrations/20260802213000_warehouse_dashboard_snapshot.sql", root), "utf8")
 const clientSource = await readFile(new URL("../multideck.client/src/lib/warehouse.ts", root), "utf8")
+const orderSource = await readFile(new URL("functions/warehouse/routes/orders.ts", root), "utf8")
+const portalSource = await readFile(new URL("functions/warehouse/routes/portal-users.ts", root), "utf8")
 
 test("warehouse client uses the tenant Supabase Edge Function as its only backend", () => {
   assert.match(clientSource, /supabaseFunctionsUrl.*warehouse/s)
@@ -74,4 +76,10 @@ test("the Edge Function authenticates users and resolves internal or portal scop
   assert.match(edgeSource, /Portal_ExternalIdentities/)
   assert.match(edgeSource, /WMS_CustomerFacilityAccess/)
   assert.match(edgeSource, /requireCapability/)
+})
+
+test("warehouse portal access reuses the scoped order context", () => {
+  assert.match(orderSource, /export async function orderContext/)
+  assert.match(portalSource, /import \{ orderContext \} from "\.\/orders\.ts"/)
+  assert.match(portalSource, /await orderContext\(admin, actor\)/)
 })

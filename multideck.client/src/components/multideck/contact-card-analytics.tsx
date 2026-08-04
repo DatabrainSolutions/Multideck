@@ -249,7 +249,7 @@ export function CardAnalyticsPanel({ card, status }: { card: ContactCard; status
 
   const totals = cardTotals(card)
   const location = useMemo(() => locationBreakdown(card), [card])
-  const hasScans = card.scans.length > 0
+  const hasScans = totals.scans > 0
 
   if (status === "loading") {
     return (

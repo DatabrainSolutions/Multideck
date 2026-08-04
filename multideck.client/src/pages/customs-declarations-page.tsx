@@ -332,8 +332,8 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
     <CustomsReferenceDataContext.Provider value={referenceData}>
     <CustomsBoxVisibilityContext.Provider value={showCustomsBoxNumbers}>
     <div className="min-w-0 max-w-full space-y-4 overflow-x-clip" data-testid="standalone-export-editor">
-      <header className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-        <div>
+      <header>
+        <div className="flex min-w-0 flex-col justify-center">
           <button type="button" onClick={() => navigate("/customs/standalone/export")} className="inline-flex items-center gap-2 text-[12px] font-medium text-[var(--md-text)] hover:text-[var(--md-accent)]">
             <ArrowLeft className="size-3.5 rtl:rotate-180" /> {t("Back to standalone declarations")}
           </button>
@@ -344,25 +344,20 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
           </div>
           <p className="mt-1 text-[13px] text-[var(--md-text)]">{t("Complete one focused section at a time. Move between sections whenever you need.")}</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+      </header>
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <Toggle checked={showDataElements} onChange={setShowDataElements}>{t("Data Elements")}</Toggle>
           <Toggle checked={showCustomsBoxNumbers} onChange={setShowCustomsBoxNumbers}>{t("Customs box numbers")}</Toggle>
           <Toggle checked={showOptional} onChange={setShowOptional}>{t("Optional fields")}</Toggle>
+        </div>
+        <div className="flex shrink-0 items-center gap-2 sm:justify-end">
           <Button type="button" variant="outline" size="sm" className="h-9" disabled={savingDraft} onClick={() => void saveDraft()}>{t(savingDraft ? "Saving draft" : "Save draft")}</Button>
+          <Button asChild variant="outline" size="sm" className="h-9"><a href={fallbackUrl} target="_blank" rel="noreferrer"><ICustomsLogo className="size-3.5" />{t("Open iCustoms")}<ExternalLink className="size-3.5" /></a></Button>
           <Button type="button" size="sm" className="h-9" onClick={validate}><FileCheck2 className="size-3.5" />{t("Validate")}</Button>
         </div>
-      </header>
-
-      <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-        <div className="grid gap-px bg-[var(--md-line)] lg:grid-cols-[1fr_1fr_1.2fr]">
-          <CorrelationCell label={t("Multideck draft reference")} value={draft.multideckReference} detail={t("Internal reference in both systems")} />
-          <CorrelationCell label={t("iCustoms correlation ID")} value={draft.iCustomsCorrelationId ?? t("Not created yet")} detail={t("Stored after API draft creation")} pending />
-          <div className="flex items-center justify-between gap-3 bg-[var(--md-surface)] px-4 py-3">
-            <span><strong className="block text-[12px] font-medium text-[var(--md-ink)]">{t("Fallback available")}</strong><span className="mt-1 block text-[11px] text-[var(--md-subtle)]">{t("Continue in iCustoms if required")}</span></span>
-            <Button asChild variant="outline" size="sm"><a href={fallbackUrl} target="_blank" rel="noreferrer"><ICustomsLogo className="size-3.5" />{t("Open iCustoms")}<ExternalLink className="size-3.5" /></a></Button>
-          </div>
-        </div>
-      </Surface>
+      </div>
 
       <nav className="max-w-full overflow-x-auto rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)]" aria-label={t("Declaration sections")}>
         <div className="grid min-w-[840px] grid-cols-6 gap-1">
@@ -700,10 +695,6 @@ function KindButton({ active, onClick, children }: { active: boolean; onClick: (
 
 function Toggle({ checked, onChange, children }: { checked: boolean; onChange: (checked: boolean) => void; children: ReactNode }) {
   return <label className="flex h-9 items-center gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] px-3 text-[12px] text-[var(--md-text)] shadow-[var(--md-shadow-line)]"><Checkbox checked={checked} onCheckedChange={(value) => onChange(value === true)} />{children}</label>
-}
-
-function CorrelationCell({ label, value, detail, pending }: { label: string; value: string; detail: string; pending?: boolean }) {
-  return <div className="bg-[var(--md-surface)] px-4 py-3"><span className="text-[11px] text-[var(--md-subtle)]">{label}</span><strong className={cn("mt-1 block text-[12px] font-medium tabular-nums", pending ? "text-[var(--md-amber)]" : "text-[var(--md-ink)]")} dir="ltr">{value}</strong><span className="mt-1 block text-[10px] text-[var(--md-muted)]">{detail}</span></div>
 }
 
 function SectionFrame({ title, description, children }: { title: string; description: string; children: ReactNode }) {

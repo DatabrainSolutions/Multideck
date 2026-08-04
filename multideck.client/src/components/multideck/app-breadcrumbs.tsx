@@ -23,7 +23,7 @@ const staticLeafLabels: Record<string, string> = {
   "/bookings/provisional": "Provisional booking",
   "/components": "Components",
   "/crm": "CRM",
-  "/crm/accounts": "Leads",
+  "/crm/accounts": "Accounts",
   "/crm/activity": "Activity",
   "/crm/contacts": "Contacts",
   "/crm/deals": "Deals",
@@ -53,7 +53,7 @@ const staticLeafLabels: Record<string, string> = {
 }
 
 const crmChildLabels: Record<string, string> = {
-  accounts: "Leads",
+  accounts: "Accounts",
   activity: "Activity",
   contacts: "Contacts",
   deals: "Deals",
@@ -134,6 +134,26 @@ export function getAppBreadcrumbTrail(route: string, leafLabel?: string | null):
       { label: "CRM", route: "/crm" },
       { label: "Leads", route: "/crm/leads" },
       { label: leafLabel ?? referenceLabel(crmLeadMatch[1]) },
+    ]
+  }
+
+  const crmAccountMatch = route.match(/^\/crm\/accounts\/([^/]+)$/)
+  if (crmAccountMatch) {
+    return [
+      { label: "Home", route: "/" },
+      { label: "CRM", route: "/crm" },
+      { label: "Accounts", route: "/crm/accounts" },
+      { label: leafLabel ?? referenceLabel(crmAccountMatch[1]) },
+    ]
+  }
+
+  const crmContactMatch = route.match(/^\/crm\/contacts\/([^/]+)$/)
+  if (crmContactMatch) {
+    return [
+      { label: "Home", route: "/" },
+      { label: "CRM", route: "/crm" },
+      { label: "Contacts", route: "/crm/contacts" },
+      { label: leafLabel ?? referenceLabel(crmContactMatch[1]) },
     ]
   }
 

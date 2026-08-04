@@ -41,6 +41,11 @@ test("lead transfers lock, reject stale owners, update open opportunities and no
   assert.match(migration, /status\."CRMOpptyStatus_IsOpen"/)
   assert.match(migration, /from \(values \(p_expected_owner_id\), \(p_target_user_id\)\)/)
   assert.match(migration, /CRM\.Leads\.Reassign/)
+  const leadDetailPage = page.slice(page.indexOf("export function CrmLeadDetailPage"), page.indexOf("export function CrmListsPage"))
+  assert.match(leadDetailPage, /aria-label=\{t\("Transfer ownership"\)\}/)
+  assert.match(leadDetailPage, /Search team members/)
+  assert.match(leadDetailPage, /isOwner \? \(/)
+  assert.doesNotMatch(leadDetailPage, /Request ownership|requestLeadTransfer/)
 })
 
 test("deal winning is conversion-stage validated, permissioned and idempotent", () => {

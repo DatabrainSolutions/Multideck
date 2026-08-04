@@ -48,6 +48,57 @@ final result: passed
 
 # Design QA
 
+Feature: Dexter inline email composer refinement
+
+Source visual truth:
+- `/Users/harryphillips/Desktop/Screenshot 2026-08-04 at 00.29.32.png`
+- `/Users/harryphillips/Desktop/Screenshot 2026-08-04 at 00.29.36.png`
+- `/Users/harryphillips/Desktop/Screenshot 2026-08-04 at 00.29.42.png`
+- `/Users/harryphillips/Desktop/Screenshot 2026-08-04 at 00.29.53.png`
+- `/Users/harryphillips/Desktop/Screenshot 2026-08-04 at 00.30.00.png`
+- Scroll defect evidence: `/Users/harryphillips/Desktop/Screenshot 2026-08-04 at 00.41.07.png`
+
+Implementation evidence:
+- Local URL: `http://127.0.0.1:3000/agent-dexter?conversation=ec34654e-a6f2-4eb7-9c83-ca06f1218602`
+- Component preview: `/Users/harryphillips/.codex/visualizations/2026/08/03/019fc9f7-9079-7080-a06e-e52386cad3ef/dexter-email-composer-preview.png`
+- Inline bottom-clearance proof: `/Users/harryphillips/.codex/visualizations/2026/08/03/019fc9f7-9079-7080-a06e-e52386cad3ef/dexter-email-composer-inline-bottom.png`
+- Half-width desktop proof: `/Users/harryphillips/.codex/visualizations/2026/08/03/019fc9f7-9079-7080-a06e-e52386cad3ef/dexter-email-composer-half-width.png`
+- Half-width bottom-clearance proof: `/Users/harryphillips/.codex/visualizations/2026/08/03/019fc9f7-9079-7080-a06e-e52386cad3ef/dexter-email-composer-half-width-bottom.png`
+- Reference/implementation comparison: `/Users/harryphillips/.codex/visualizations/2026/08/03/019fc9f7-9079-7080-a06e-e52386cad3ef/dexter-email-composer-comparison.png`
+- Browser viewport: `1280x720`, dark theme.
+
+Checks:
+- The composer is one calm surface with a compact draft marker and a labelled primary Send action.
+- From, To, Cc, Bcc, and Subject use direct-edit rows rather than stacked boxed fields.
+- The body reads as a continuous writing surface while retaining a visible keyboard focus treatment.
+- Mailbox selection and Cc expansion work in the component preview.
+- Existing mailbox permissions, autosave, validation, idempotent send, provider status, open tracking, localisation, RTL-safe motion, and reduced-motion handling remain intact.
+- The floating prompt now reserves at least 202px of measured stream clearance even if the first ResizeObserver tick reports zero.
+- Browser measurement confirms 226px bottom padding, and the live conversation reaches its exact scroll maximum with the full email footer visible above the prompt.
+- Row separators use the quieter `--md-line` token and remain stronger only while a field has focus.
+- The inline card is 50% width at desktop breakpoints and returns to full width below desktop so fields remain usable.
+- Draft fields edit directly in place; the component preview accepted a live subject change without a modal or secondary edit state.
+- Draft autosave now communicates Saving, Saved, and failure states with an interruptible reduced-motion-safe status transition.
+- Sent provider records remain immutable. Clicking any composer field now creates a tenant-scoped editable copy in place, with clear copy-state wording.
+- Chrome QA on the authenticated conversation confirmed the first click changed the sent card to an editable draft, a subject edit autosaved, and `test — editable copy` remained after refresh.
+- Response history retained both versions: version 1 remained visibly Sent with its original subject, while version 2 remained an unsent editable draft. The Send action was not selected during QA.
+- The focused duplicate-draft migration was applied to the linked development Supabase project without pushing unrelated pending migrations.
+- The focused contract suite passes all 11 checks; the Agent Dexter page also bundles successfully.
+
+Intentional differences from the references:
+- Multideck keeps its own accent colour, type scale, mail provider marks, and status language.
+- Reference-only AI selection tools, undo/copy controls, and open-in-email actions were not invented because the current inline composer does not provide those capabilities.
+
+Findings:
+- No actionable P0/P1/P2 findings remain.
+- Existing Dexter watch-loading and keyboard-shortcut warnings were observed in the browser and are unrelated to this composer change.
+
+final result: passed
+
+---
+
+# Design QA
+
 Feature: Quote Details compact field layout and sidebar preference persistence
 
 Source visual truth:

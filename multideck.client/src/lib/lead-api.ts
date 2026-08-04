@@ -1,4 +1,6 @@
 import { callCrmRpc, CrmSupabaseError } from "@/lib/crm-supabase"
+import { invalidateCrmResources, readCachedCrmResource, type CrmReadOptions } from "@/lib/crm-read-cache"
+import { getSupabaseSession } from "@/lib/supabase"
 
 export type ApiLead = {
   id: string
@@ -33,6 +35,9 @@ export type ApiLead = {
   serviceInterest: string | null
   openOpportunityCount: number
   pendingTransfer?: CrmLeadTransferRequest | null
+  marketingOptIn?: boolean
+  marketingConsentSource?: string | null
+  marketingConsentUpdatedAt?: string | null
 }
 
 export type ApiLeadCompany = {
@@ -52,6 +57,9 @@ export type ApiLeadContact = {
   phone: string | null
   isPrimary: boolean
   lastContactAt: string | null
+  marketingOptIn?: boolean
+  marketingConsentSource?: string | null
+  marketingConsentUpdatedAt?: string | null
 }
 
 export type ApiLeadActivity = {
@@ -154,12 +162,20 @@ export type CrmLeadTransferRequest = {
 
 export class LeadApiError extends CrmSupabaseError {}
 
-export async function listLeads(search?: string) {
-  return callCrmRpc<ApiLead[]>(
-    "multideck_crm_list_leads_essential",
-    { p_search: search?.trim() || null },
-    "Unable to load CRM leads. Check your connection and try again.",
-    "Sign in again to view CRM leads.",
+export async function listLeads(search?: string, options?: CrmReadOptions) {
+  const session = await getSupabaseSession()
+  if (!session?.access_token) throw new LeadApiError("Sign in again to view CRM leads.")
+  const normalizedSearch = search?.trim() ?? ""
+  return readCachedCrmResource(
+    session.user.id,
+    `leads:${normalizedSearch.toLocaleLowerCase()}`,
+    () => callCrmRpc<ApiLead[]>(
+      "multideck_crm_list_leads_essential",
+      { p_search: normalizedSearch || null },
+      "Unable to load CRM leads. Check your connection and try again.",
+      "Sign in again to view CRM leads.",
+    ),
+    options,
   )
 }
 
@@ -196,7 +212,7 @@ export async function createFollowUpLead(input: {
   companyName?: string | null
   threadId?: string | null
 }) {
-  return callCrmRpc<ApiLead>(
+  const lead = await callCrmRpc<ApiLead>(
     "multideck_crm_create_follow_up_lead",
     {
       p_email: input.email,
@@ -207,6 +223,9 @@ export async function createFollowUpLead(input: {
     "This lead could not be created.",
     "Sign in again to create this lead.",
   )
+  const session = await getSupabaseSession()
+  if (session) invalidateCrmResources(session.user.id, ["leads:"])
+  return lead
 }
 
 export async function listCrmTransferUsers() {
@@ -230,5 +249,8 @@ export async function cancelLeadTransfer(requestId: string) {
 }
 
 export async function transferLead(leadId: string, targetUserId: string, reason?: string) {
-  return callCrmRpc<ApiLead>("multideck_crm_transfer_lead", { p_lead_id: leadId, p_target_user_id: targetUserId, p_reason: reason?.trim() || null }, "This lead could not be transferred.", "Sign in again to manage lead ownership.")
+  const lead = await callCrmRpc<ApiLead>("multideck_crm_transfer_lead", { p_lead_id: leadId, p_target_user_id: targetUserId, p_reason: reason?.trim() || null }, "This lead could not be transferred.", "Sign in again to manage lead ownership.")
+  const session = await getSupabaseSession()
+  if (session) invalidateCrmResources(session.user.id, ["leads:"])
+  return lead
 }

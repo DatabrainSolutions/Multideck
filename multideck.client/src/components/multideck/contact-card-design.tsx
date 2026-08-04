@@ -1,12 +1,14 @@
 import { useMemo, useRef, useState } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { Check, ImageUp, Info, Trash2, TriangleAlert } from "lucide-react"
+import { ArrowDown, ArrowUp, Check, ImageUp, Info, QrCode, Trash2, TriangleAlert } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { SegmentedControl } from "@/components/multideck/workflow-components"
 import { QrCodeImage } from "@/components/multideck/contact-card-components"
+import { ContactSocialMark } from "@/components/multideck/contact-social-mark"
 import {
   EMPTY_PUBLIC_FORM,
   PublicCardExchange,
@@ -20,7 +22,7 @@ import { mdEaseOut } from "@/lib/motion"
 import { bestInkContrast, accentCanCarryActions } from "@/lib/color"
 import { resolveCardTheme } from "@/lib/card-theme"
 import { cardPublicUrl, readLogoFile, updateBranding, MAX_LOGO_BYTES } from "@/lib/contact-card-store"
-import type { CardHeaderStyle, CardLayout, CardTheme, ContactCard } from "@/data/contact-card-data"
+import { CARD_SOCIAL_LABELS, type CardHeaderStyle, type CardLayout, type CardSocialKind, type CardSocialLink, type CardTheme, type ContactCard } from "@/data/contact-card-data"
 import type { QrEyeStyle, QrModuleStyle } from "@/lib/qr-code"
 import { cn } from "@/lib/utils"
 
@@ -35,12 +37,112 @@ const ACCENT_PRESETS = [
   "#2b2f2e",
 ]
 
-const SAMPLE_VALUES = {
-  ...EMPTY_PUBLIC_FORM,
-  firstName: "Nadia",
-  lastName: "Perera",
-  email: "nadia.perera@halcyontextiles.com",
-  company: "Halcyon Textiles",
+const LAYOUT_PRESETS: { id: CardLayout; label: string; detail: string }[] = [
+  { id: "classic", label: "Classic", detail: "Balanced and familiar" },
+  { id: "editorial", label: "Editorial", detail: "Strong left edge" },
+  { id: "compact", label: "Compact", detail: "More visible at once" },
+  { id: "spotlight", label: "Spotlight", detail: "Centred on the person" },
+]
+
+export function ContactCardLayoutPicker({ value, onChange }: { value: CardLayout; onChange: (value: CardLayout) => void }) {
+  const { t } = useLanguage()
+
+  return (
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="radiogroup" aria-label={t("Layout preset")}>
+      {LAYOUT_PRESETS.map((preset) => {
+        const selected = value === preset.id
+        return (
+          <button
+            key={preset.id}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            onClick={() => onChange(preset.id)}
+            className={cn(
+              "group rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-2.5 text-start shadow-[var(--md-shadow-line)]",
+              "transition-[transform,box-shadow,background-color] duration-[180ms] ease-[cubic-bezier(0.22,1,0.36,1)] hover:shadow-[var(--md-shadow-soft)] active:scale-[0.96]",
+              "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a22)] motion-reduce:transition-none motion-reduce:active:scale-100",
+              selected && "bg-[var(--md-accent-a08)] shadow-[inset_0_0_0_1px_var(--md-accent),var(--md-shadow-soft)]",
+            )}
+          >
+            <span className={cn("relative block h-[76px] overflow-hidden rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] p-2", selected && "bg-[var(--md-surface)]")}>
+              <span className={cn("block h-2 rounded-[var(--md-radius-xs)] bg-[var(--md-accent-a22)]", preset.id === "compact" ? "w-8" : "w-12", preset.id === "spotlight" && "mx-auto")} />
+              <span className={cn("mt-2 block h-1.5 rounded-[var(--md-radius-xs)] bg-[rgba(11,20,19,0.16)]", preset.id === "editorial" ? "w-4/5" : "w-3/5", preset.id === "spotlight" && "mx-auto")} />
+              <span className={cn("mt-1.5 block h-1.5 rounded-[var(--md-radius-xs)] bg-[rgba(11,20,19,0.09)]", preset.id === "compact" ? "w-2/3" : "w-full", preset.id === "spotlight" && "mx-auto w-2/3")} />
+              <span className={cn("absolute bottom-2 size-6 rounded-[var(--md-radius-sm)] bg-[var(--md-ink)]", preset.id === "classic" && "right-2", preset.id === "editorial" && "right-2", preset.id === "compact" && "right-2 size-5", preset.id === "spotlight" && "left-1/2 -translate-x-1/2 rounded-full")} />
+            </span>
+            <span className="mt-2 flex items-center justify-between gap-2">
+              <span className="text-[12.5px] font-medium text-[var(--md-ink)]">{t(preset.label)}</span>
+              {selected ? <Check className="size-3.5 text-[var(--md-accent)]" strokeWidth={2} /> : null}
+            </span>
+            <span className="mt-0.5 block text-[11px] leading-4 text-[var(--md-subtle)]">{t(preset.detail)}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+const SOCIAL_PLACEHOLDERS: Record<CardSocialKind, string> = {
+  linkedin: "linkedin.com/in/harry-phillips",
+  facebook: "facebook.com/your-name",
+  instagram: "@your-name",
+  whatsapp: "+44 7700 900000",
+  email: "name@company.com",
+  website: "company.com",
+}
+
+export function ContactCardSocialLinksEditor({ links, onChange }: { links: CardSocialLink[]; onChange: (links: CardSocialLink[]) => void }) {
+  const { t } = useLanguage()
+
+  function update(id: string, update: Partial<CardSocialLink>) {
+    onChange(links.map((link) => (link.id === id ? { ...link, ...update } : link)))
+  }
+
+  function move(index: number, direction: -1 | 1) {
+    const target = index + direction
+    if (target < 0 || target >= links.length) return
+    const next = [...links]
+    const [item] = next.splice(index, 1)
+    next.splice(target, 0, item)
+    onChange(next)
+  }
+
+  return (
+    <div className="grid gap-2">
+      {links.map((link, index) => {
+        const label = CARD_SOCIAL_LABELS[link.kind]
+        return (
+          <div key={link.id} className="grid items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-2 sm:grid-cols-[36px_minmax(0,1fr)_auto]">
+            <span className="grid size-9 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-line)]" aria-hidden="true">
+              <ContactSocialMark kind={link.kind} className="size-4" />
+            </span>
+            <label className="min-w-0">
+              <span className="sr-only">{t(label)}</span>
+              <Input
+                className="h-9 bg-[var(--md-surface)] text-[13px]"
+                dir="ltr"
+                type={link.kind === "email" ? "email" : "text"}
+                value={link.value}
+                placeholder={SOCIAL_PLACEHOLDERS[link.kind]}
+                onChange={(event) => update(link.id, { value: event.target.value, enabled: link.enabled || Boolean(event.target.value.trim()) })}
+              />
+            </label>
+            <div className="flex items-center justify-end gap-0.5">
+              <Button variant="ghost" size="icon" className="size-8 rounded-[var(--md-radius-md)]" disabled={index === 0} aria-label={`${t("Move earlier")}: ${t(label)}`} onClick={() => move(index, -1)}>
+                <ArrowUp className="size-3.5" strokeWidth={1.5} />
+              </Button>
+              <Button variant="ghost" size="icon" className="size-8 rounded-[var(--md-radius-md)]" disabled={index === links.length - 1} aria-label={`${t("Move later")}: ${t(label)}`} onClick={() => move(index, 1)}>
+                <ArrowDown className="size-3.5" strokeWidth={1.5} />
+              </Button>
+              <Switch checked={link.enabled} disabled={!link.value.trim()} aria-label={`${t("Show")}: ${t(label)}`} onCheckedChange={(enabled) => update(link.id, { enabled })} />
+            </div>
+          </div>
+        )
+      })}
+      <p className="text-[12px] leading-5 text-[var(--md-subtle)]">{t("Only enabled links appear on the public card. The order here is the order visitors see.")}</p>
+    </div>
+  )
 }
 
 /* -------------------------------------------------------------------------- */
@@ -215,7 +317,7 @@ function CardPreview({ card }: { card: ContactCard }) {
               form={
                 <PublicCardForm
                   card={card}
-                  values={SAMPLE_VALUES}
+                  values={EMPTY_PUBLIC_FORM}
                   errors={{}}
                   submitting={false}
                   slow={false}
@@ -372,14 +474,8 @@ export function CardDesignPanel({ card }: { card: ContactCard }) {
               />
             </ControlRow>
 
-            <ControlRow label={t("Layout")}>
-              <SegmentedControl
-                options={["classic", "centred", "compact"] as const satisfies readonly CardLayout[]}
-                value={branding.layout}
-                onChange={(layout) => updateBranding(card.id, { layout })}
-                ariaLabel={t("Layout")}
-                renderOption={(option) => t(option === "classic" ? "Classic" : option === "centred" ? "Centred" : "Compact")}
-              />
+            <ControlRow label={t("Layout preset")} hint={t("Choose the arrangement first, then tune the colours and code.")} stacked>
+              <ContactCardLayoutPicker value={branding.layout} onChange={(layout) => updateBranding(card.id, { layout })} />
             </ControlRow>
 
             <ControlRow label={t("Corners")}>
@@ -427,8 +523,18 @@ export function CardDesignPanel({ card }: { card: ContactCard }) {
               </ControlRow>
             </div>
 
-            <div className="rounded-[var(--md-radius-xl)] p-3 shadow-[var(--md-shadow-line)]" style={{ backgroundColor: branding.qrLight }}>
-              <QrCodeImage value={url} branding={branding} label={t("Code preview")} />
+            <div className="grid gap-3">
+              <div className="rounded-[var(--md-radius-xl)] p-3 shadow-[var(--md-shadow-line)]" style={{ backgroundColor: branding.qrLight }}>
+                <QrCodeImage value={url} branding={branding} label={t("Code preview")} />
+              </div>
+              <Button
+                variant="outline"
+                className="h-9 rounded-[var(--md-radius-md)] text-[13px]"
+                onClick={() => window.open(url, "_blank", "noopener,noreferrer")}
+              >
+                <QrCode data-icon="inline-start" strokeWidth={1.5} />
+                {t("Test QR code")}
+              </Button>
             </div>
           </div>
         </Surface>

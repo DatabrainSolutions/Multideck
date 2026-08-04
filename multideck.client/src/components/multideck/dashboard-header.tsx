@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react"
-import { ChevronDown, Loader2, Plus, RefreshCw, Save, ShieldCheck, SlidersHorizontal, TriangleAlert } from "lucide-react"
+import { useMemo, useState } from "react"
+import { ChevronDown, Plus, Save } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -19,15 +19,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
 import { useMinuteTick } from "@/lib/clock"
-import {
-  checkDashboardConnection,
-  createDashboardConnectionState,
-  type DashboardConnectionState,
-} from "@/lib/dashboard-connection"
 import {
   currentOperator,
   dashboardRangeOptions,
@@ -83,98 +77,6 @@ function CustomRangeTrigger({
   )
 }
 
-/**
- * The connection state used to occupy a 270px card in the header. It is now a
- * single status dot: the detail matters when something is wrong, so it lives
- * behind a click and the header stays about the operator's day.
- */
-function ConnectionStatus() {
-  const { t } = useLanguage()
-  const [state, setState] = useState<DashboardConnectionState>(() => createDashboardConnectionState("checking"))
-  const [refreshing, setRefreshing] = useState(false)
-
-  useEffect(() => {
-    let active = true
-
-    setRefreshing(true)
-    checkDashboardConnection()
-      .then((next) => {
-        if (active) setState(next)
-      })
-      .finally(() => {
-        if (active) setRefreshing(false)
-      })
-
-    return () => {
-      active = false
-    }
-  }, [])
-
-  async function refresh() {
-    setRefreshing(true)
-    setState(createDashboardConnectionState("checking"))
-    setState(await checkDashboardConnection())
-    setRefreshing(false)
-  }
-
-  const healthy = state.status === "connected"
-  const checking = state.status === "checking"
-  const Icon = healthy ? ShieldCheck : checking ? Loader2 : TriangleAlert
-  const title = healthy
-    ? t("System connected")
-    : checking
-      ? t("Checking API")
-      : state.status === "signed-out"
-        ? t("No Supabase session")
-        : t("Connection issue")
-
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          className={cn("md-dashboard-status", healthy && "md-dashboard-status-ok", checking && "md-dashboard-status-checking")}
-          aria-label={title}
-        >
-          <Icon className={cn("size-3.5", checking && "animate-spin")} strokeWidth={1.5} />
-          <span className="md-dashboard-status-text">{healthy ? t("Live") : title}</span>
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="end" sideOffset={8} className="w-[264px] gap-2">
-        <p className="text-[13px] font-medium text-[var(--md-ink)]">{title}</p>
-        <p className="text-[11.5px] leading-4 text-[var(--md-text)]">
-          {healthy ? (
-            state.email ? (
-              <>
-                <span>{t("Signed in as")}</span> <span data-i18n-skip dir="ltr">{state.email}</span>
-              </>
-            ) : (
-              t("API accepted your Supabase session.")
-            )
-          ) : checking ? (
-            t("Calling protected API...")
-          ) : state.status === "signed-out" ? (
-            t("Sign in again to test the API.")
-          ) : (
-            t("Protected API check failed.")
-          )}
-        </p>
-        <Button
-          type="button"
-          variant="ghost"
-          className="h-8 w-full justify-center rounded-[var(--md-radius-md)] bg-white/50 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/78"
-          disabled={refreshing}
-          onClick={() => void refresh()}
-        >
-          <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} strokeWidth={1.4} />
-          {t("Re-check connection")}
-        </Button>
-      </PopoverContent>
-    </Popover>
-  )
-}
-
 export function DashboardHeader({
   range,
   onRangeChange,
@@ -185,7 +87,6 @@ export function DashboardHeader({
   onSelectDashboard,
   onCreateDashboard,
   onSaveDashboard,
-  onOpenCustomise,
   compact = false,
 }: {
   range: DashboardRange
@@ -197,7 +98,6 @@ export function DashboardHeader({
   onSelectDashboard?: (dashboard: string) => void
   onCreateDashboard?: (dashboard: string) => void
   onSaveDashboard?: () => void
-  onOpenCustomise?: () => void
   compact?: boolean
 }) {
   const { t } = useLanguage()
@@ -268,19 +168,6 @@ export function DashboardHeader({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-
-        <Button
-          type="button"
-          variant="ghost"
-          className="md-dashboard-header-control"
-          onClick={onOpenCustomise}
-          aria-label={t("Customise")}
-        >
-          <SlidersHorizontal className="size-4" strokeWidth={1.3} />
-          <span className="md-dashboard-customise-text">{t("Customise")}</span>
-        </Button>
-
-        <ConnectionStatus />
       </div>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>

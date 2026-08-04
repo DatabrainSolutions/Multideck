@@ -50,6 +50,9 @@ import {
 } from "@/components/multideck/customer-components"
 import { CrmActivityTimeline, CrmAssetFolderCard, CrmAssetRow, CrmContactTable, CrmForecastPanel, CrmLeadDetailPanel, CrmLeadQualificationTable, CrmLeadSignalList, CrmMetricsGrid, CrmPipelineBoard, CrmPriorityActionsPanel, CrmRevenueMixPanel, CrmSalesCommandCenter, CrmSalesFunnelPanel, CrmSettingsBuilder } from "@/components/multideck/crm-components"
 import { CopyableField } from "@/components/multideck/copyable-field"
+import { ContactCardLayoutPicker, ContactCardSocialLinksEditor } from "@/components/multideck/contact-card-design"
+import { AutomationRunHistory } from "@/components/multideck/contact-card-automation"
+import { MarketingOptInControl } from "@/components/multideck/marketing-opt-in-control"
 import { CrmPipelineEditor } from "@/components/multideck/crm-pipeline-editor"
 import { ChoiceControl, FilterChips, SegmentedControl, TabsRail } from "@/components/multideck/workflow-components"
 import { EmailMessageRenderer } from "@/components/multideck/email-message-renderer"
@@ -91,8 +94,11 @@ import {
 import { DexterActionApproval } from "@/components/multideck/dexter-action-approval"
 import { DexterInlineCitation } from "@/components/multideck/dexter-inline-citation"
 import { DexterEmailAttachmentCard } from "@/components/multideck/dexter-email-attachment-card"
+import { DexterEmailComposeCard } from "@/components/multideck/dexter-email-compose-card"
+import { WatchModeAurora } from "@/components/multideck/aurora-background"
 import { defaultDexterModelId, type DexterModelId } from "@/data/dexter-models"
 import { defaultDexterMentionItems } from "@/data/dexter-mentions"
+import type { AutomationRun, CardLayout, CardSocialLink } from "@/data/contact-card-data"
 import {
   AreaChartCard,
   BarChartCard,
@@ -210,7 +216,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Agent Dexter",
     helper: "Prompt, context, specialists, answers",
-    ids: ["dashboard-customise-panel", "dexter-action-pill", "dexter-companion-sidebar", "dexter-summon-prompt", "dexter-mention-input", "dexter-prompt-composer", "context-usage-meter", "dexter-live-reasoning", "dexter-reasoning-summary", "dexter-action-approval", "dexter-specialist-picker", "dexter-specialist-menu", "dexter-attachment-palette", "dexter-history-list", "dexter-monitor-card", "dexter-monitor-detail", "dexter-response-blocks"],
+    ids: ["dashboard-customise-panel", "dexter-action-pill", "dexter-companion-sidebar", "dexter-summon-prompt", "dexter-mention-input", "dexter-prompt-composer", "dexter-email-compose-card", "watch-mode-aurora", "context-usage-meter", "dexter-live-reasoning", "dexter-reasoning-summary", "dexter-action-approval", "dexter-specialist-picker", "dexter-specialist-menu", "dexter-attachment-palette", "dexter-history-list", "dexter-monitor-card", "dexter-monitor-detail", "dexter-response-blocks"],
   },
   {
     label: "Feedback",
@@ -878,6 +884,48 @@ function DocumentEvidenceViewerPreview() {
   )
 }
 
+const previewAutomationRuns: AutomationRun[] = [
+  {
+    id: "gallery-run-failed",
+    exchangeId: "exchange-gallery-1",
+    leadId: null,
+    status: "failed",
+    startedAt: "2026-08-03T10:42:18.000Z",
+    completedAt: "2026-08-03T10:42:18.684Z",
+    durationMs: 684,
+    recordsAffected: 1,
+    trigger: "Contact details shared",
+    errorSummary: "The deal stage no longer exists in the selected pipeline.",
+    recovery: "Choose a current stage in the Add to CRM step, publish the change, then rerun the failed steps.",
+    input: { name: "Nadia Perera", email: "nadia@halcyontextiles.com", company: "Halcyon Textiles" },
+    rerunOf: null,
+    isTest: false,
+    steps: [
+      { id: "gallery-step-1", actionId: "add-lead", kind: "add-to-crm", label: "Add lead to CRM", status: "succeeded", detail: "Created lead and kept the submitted details.", startedAt: "2026-08-03T10:42:18.000Z", durationMs: 416 },
+      { id: "gallery-step-2", actionId: "add-deal", kind: "add-to-crm", label: "Create deal", status: "failed", detail: "Stage ‘Qualified’ was not found.", startedAt: "2026-08-03T10:42:18.416Z", durationMs: 268 },
+    ],
+  },
+  {
+    id: "gallery-run-success",
+    exchangeId: "exchange-gallery-2",
+    leadId: "lead-gallery-2",
+    status: "succeeded",
+    startedAt: "2026-08-03T09:18:04.000Z",
+    completedAt: "2026-08-03T09:18:04.521Z",
+    durationMs: 521,
+    recordsAffected: 2,
+    trigger: "Contact details shared",
+    errorSummary: null,
+    recovery: null,
+    input: { name: "Owen Hughes", email: "owen@northgate.example", company: "Northgate" },
+    rerunOf: null,
+    isTest: false,
+    steps: [
+      { id: "gallery-step-3", actionId: "add-lead", kind: "add-to-crm", label: "Add lead to CRM", status: "succeeded", detail: "Matched the existing lead and refreshed its details.", startedAt: "2026-08-03T09:18:04.000Z", durationMs: 521 },
+    ],
+  },
+]
+
 function ComponentPreview({ id }: { id: string }) {
   const { language, t } = useLanguage()
   const [previewSidebarPinnedIds, setPreviewSidebarPinnedIds] = useState<string[]>([])
@@ -909,6 +957,16 @@ function ComponentPreview({ id }: { id: string }) {
     presentation: "open",
   })
   const [previewCheckbox, setPreviewCheckbox] = useState(true)
+  const [previewContactLayout, setPreviewContactLayout] = useState<CardLayout>("editorial")
+  const [previewMarketingOptIn, setPreviewMarketingOptIn] = useState(true)
+  const [previewSocialLinks, setPreviewSocialLinks] = useState<CardSocialLink[]>([
+    { id: "gallery-linkedin", kind: "linkedin", value: "linkedin.com/in/maya-stone", enabled: true },
+    { id: "gallery-facebook", kind: "facebook", value: "facebook.com/maya.stone", enabled: true },
+    { id: "gallery-instagram", kind: "instagram", value: "@maya.moves.freight", enabled: true },
+    { id: "gallery-whatsapp", kind: "whatsapp", value: "+44 7700 900000", enabled: true },
+    { id: "gallery-email", kind: "email", value: "maya@multideck.app", enabled: true },
+    { id: "gallery-website", kind: "website", value: "multideck.app", enabled: true },
+  ])
   const [previewCustomerView, setPreviewCustomerView] = useState<CustomerViewMode>("List")
   const [previewSelectedIds, setPreviewSelectedIds] = useState<Set<string>>(new Set(["marlow-apparel"]))
   const [previewCustomerTab, setPreviewCustomerTab] = useState("Overview")
@@ -2305,6 +2363,29 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "dexter-email-compose-card" ? (
+        <div className="w-full max-w-[720px]">
+          <DexterEmailComposeCard
+            messageId="gallery-dexter-message"
+            preview
+            draft={{
+              id: "gallery-dexter-email-draft",
+              mode: "reply",
+              mailboxId: "preview-mailbox",
+              threadId: "gallery-thread",
+              sourceMessageId: "gallery-source-message",
+              to: [{ address: "maya@pacificgoods.example", displayName: "Maya Chen" }],
+              cc: [],
+              bcc: [],
+              subject: "Re: Felixstowe handover",
+              bodyText: "Hi Maya,\n\nThanks for checking. The cleared documents are with the local team, and I’ll confirm the handover time as soon as the carrier updates the booking.\n\nBest,\nHarry",
+              trackOpens: false,
+              delivery: { status: "draft", sendRequestId: null, messageId: null, threadId: null, updatedAt: null },
+            }}
+          />
+        </div>
+      ) : null}
+
       {id === "dexter-prompt-composer" ? (
         <div className="w-full max-w-[760px]">
           <DexterPromptComposer
@@ -2326,6 +2407,19 @@ function ComponentPreview({ id }: { id: string }) {
             onRemoveAttachment={togglePreviewDexterAttachment}
             onSend={() => toast.success("Dexter conversation started")}
           />
+        </div>
+      ) : null}
+
+      {id === "watch-mode-aurora" ? (
+        <div className="relative h-[420px] w-full max-w-[820px] overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-bg)] shadow-[var(--md-shadow-line)]">
+          <WatchModeAurora active />
+          <div className="relative z-10 flex h-full items-center justify-center px-6 text-center">
+            <div>
+              <Sparkles className="mx-auto size-6 text-[var(--md-accent)]" strokeWidth={1.35} />
+              <p className="mt-4 text-[20px] font-medium text-[var(--md-ink)]">What do you want me to watch?</p>
+              <p className="mt-2 text-[13px] text-[var(--md-text)]">A subtle, accent-matched mode cue rises from the bottom edge.</p>
+            </div>
+          </div>
         </div>
       ) : null}
 
@@ -2821,6 +2915,35 @@ function ComponentPreview({ id }: { id: string }) {
         <div className="grid w-full max-w-[820px] gap-4 rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-soft)] sm:grid-cols-2">
           <SettingsProgressRing value={86} label="Profile readiness" detail="Identity details are ready for customer-facing ownership." />
           <SettingsProgressRing value={68} label="Monthly AI budget" detail="EUR 1,024 of EUR 1,500 used." tone="blue" />
+        </div>
+      ) : null}
+
+      {id === "contact-card-layout-picker" ? (
+        <div className="w-full max-w-[860px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <ContactCardLayoutPicker value={previewContactLayout} onChange={setPreviewContactLayout} />
+        </div>
+      ) : null}
+
+      {id === "contact-card-social-links-editor" ? (
+        <div className="w-full max-w-[760px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <ContactCardSocialLinksEditor links={previewSocialLinks} onChange={setPreviewSocialLinks} />
+        </div>
+      ) : null}
+
+      {id === "automation-run-history" ? (
+        <div className="w-full max-w-[920px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <AutomationRunHistory runs={previewAutomationRuns} onRerun={async () => undefined} />
+        </div>
+      ) : null}
+
+      {id === "marketing-opt-in-control" ? (
+        <div className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <MarketingOptInControl
+            checked={previewMarketingOptIn}
+            source="manual_override"
+            updatedAt="2026-08-03T14:30:00.000Z"
+            onCheckedChange={async (checked) => setPreviewMarketingOptIn(checked)}
+          />
         </div>
       ) : null}
 
