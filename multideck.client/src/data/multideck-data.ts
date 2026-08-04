@@ -40,6 +40,7 @@ import {
   Palette,
   Plane,
   ReceiptText,
+  QrCode,
   Search,
   ScanText,
   Settings2,
@@ -51,6 +52,7 @@ import {
   TriangleAlert,
   Truck,
   Users,
+  Workflow,
   type LucideIcon,
 } from "lucide-react"
 import type { AuditTimelineEvent } from "@/components/multideck/audit-timeline"
@@ -2060,7 +2062,7 @@ export const galleryComponents = [
     category: "Foundation",
     description: "The base Multideck panel. It gives workflow areas quiet depth without creating heavy card clutter.",
     details: "Use for primary panels, side panels, preview wells, and command areas. Radius and shadow come from tokens.",
-    foundOn: [{ label: "Overview", route: "/" }, { label: "CRM", route: "/crm" }, { label: "Customers", route: "/customers" }, { label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Overview", route: "/" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Components", route: "/components" }],
     componentCode: `export function Surface({ tone = "panel", padding = "md", className, children }) {\n  return (\n    <section className={cn("rounded-[var(--md-radius-lg)]", toneClass[tone], paddingClass[padding], className)}>\n      {children}\n    </section>\n  )\n}\n\nexport function SectionHeader({ eyebrow, title, meta, action, className }) {\n  return (\n    <div className={cn("flex items-start justify-between gap-3", className)}>\n      <div className="min-w-0">\n        {eyebrow ? <p className="mb-1 text-xs font-medium text-[var(--md-subtle)]">{eyebrow}</p> : null}\n        <h2 className="truncate text-[14px] font-medium text-[var(--md-ink)]">{title}</h2>\n        {meta ? <p className="mt-1 text-[12px] text-[var(--md-text)]">{meta}</p> : null}\n      </div>\n      {action ? <div className="shrink-0">{action}</div> : null}\n    </div>\n  )\n}`,
     usageCode: `<Surface tone="panel" padding="md">\n  <SectionHeader title="Live bookings" meta="updated 41s ago" />\n  <BookingRow booking={booking} />\n</Surface>`,
   },
@@ -2070,7 +2072,7 @@ export const galleryComponents = [
     category: "Feedback",
     description: "Compact status language for freight workflows, exceptions, and document states.",
     details: "Use green for good, amber for review, red for action, blue for information, teal for AI or customs flow.",
-    foundOn: [{ label: "Overview", route: "/" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "Customers", route: "/customers" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Overview", route: "/" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
     componentCode: `export function StatusPill({ tone = "neutral", children, className }) {\n  return (\n    <Badge\n      variant="secondary"\n      className={cn("h-[21px] rounded-full px-[9px] text-[11.5px] font-medium leading-none", toneClass[tone], className)}\n    >\n      {children}\n    </Badge>\n  )\n}`,
     usageCode: `<StatusPill tone="amber">Under review</StatusPill>\n<StatusPill tone="red">Action req.</StatusPill>`,
   },
@@ -2221,6 +2223,57 @@ export const galleryComponents = [
 // The default loader downloads through the signed-in tenant's
 // Inbox Edge Function. A custom loader is only useful for isolated previews.
 `,
+  },
+  {
+    id: "dexter-email-compose-card",
+    name: "Dexter Email Composer",
+    category: "Agent Dexter",
+    description: "An editable Gmail or Outlook draft prepared inside a Dexter conversation, with in-place refinement and an explicit provider-backed send control.",
+    details: "Use only for structured drafts returned by Dexter's prepare_email_draft tool. Operators can refine the whole draft from the edit icon or select a passage for focused changes without replacing the composer. Recipients and the sending mailbox stay empty unless confirmed by the selected thread, attached workspace context, or the operator. Sending reuses Inbox permissions and idempotency, preserves the draft after failures, and shows Sent only after provider confirmation.",
+    foundOn: [
+      { label: "Agent Dexter", route: "/agent-dexter" },
+      { label: "Components", route: "/components?component=dexter-email-compose-card" },
+    ],
+    componentCode: `export function DexterEmailComposeCard({ messageId, draft, onDraftChange }) {
+  const [status, setStatus] = useState(draft.delivery.status)
+  const idempotencyKey = useRef(createIdempotencyKey())
+
+  async function send() {
+    setStatus("sending")
+    const receipt = await sendMail(buildReplyRequest({
+      mode: draft.mode,
+      mailboxId: draft.mailboxId,
+      threadId: draft.threadId,
+      sourceMessageId: draft.sourceMessageId,
+      edits: collectEditableFields(),
+      idempotencyKey: idempotencyKey.current,
+    }))
+    const delivery = await recordDexterEmailDraftDelivery(messageId, receipt.id)
+    setStatus(delivery.status)
+    onDraftChange?.({ ...draft, delivery })
+  }
+
+  return <section aria-label="Editable email draft">
+    <RefinementControl onSubmit={(instruction) => refineDraft(messageId, instruction)} />
+    <MailboxSelect value={draft.mailboxId} sendCapableOnly />
+    <RecipientFields to={draft.to} cc={draft.cc} bcc={draft.bcc} />
+    <Input aria-label="Subject" value={draft.subject} />
+    <Textarea aria-label="Message" value={draft.bodyText} onSelect={showSelectionActions} />
+    <Button aria-label="Send email" disabled={status === "sending"} onClick={send}>
+      <SendHorizontal aria-hidden />
+    </Button>
+    <p role="status">{deliveryStatusCopy(status)}</p>
+  </section>
+}`,
+    usageCode: `<DexterEmailComposeCard
+  messageId={message.id}
+  draft={message.emailDraft}
+  onDraftChange={(nextDraft) => updateConversationMessage(message.id, nextDraft)}
+/>
+
+// message.emailDraft must come from Dexter's structured prepare_email_draft
+// result. The component resolves send-capable mailboxes through Inbox and
+// never sends until the operator selects the paper plane.`,
   },
   {
     id: "dexter-action-pill",
@@ -2529,7 +2582,7 @@ export const galleryComponents = [
     category: "Operations",
     description: "A reusable initials avatar for customer records, contacts, table rows, cards, and detail headers.",
     details: "Use when a customer or contact needs a compact identity marker. Keep tone tied to the record so the same account feels familiar across lists and detail views.",
-    foundOn: [{ label: "Customers", route: "/customers" }, { label: "Customer detail", route: "/customers/marlow-apparel" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "CRM accounts", route: "/crm/accounts" }, { label: "Account detail", route: "/crm/accounts/de1000c1-5eed-4ead-8000-000000000001" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Contact detail", route: "/crm/contacts/de1000c3-5eed-4ead-8000-000000000001" }, { label: "Components", route: "/components" }],
     componentCode: `export function CustomerAvatar({ initials, tone = "teal", size = "md" }) {\n  return (\n    <span\n      className={cn(\n        "grid shrink-0 place-items-center rounded-[var(--md-radius-md)] font-medium",\n        avatarToneClass[tone] ?? avatarToneClass.teal,\n        size === "sm" && "size-8 text-[12px]",\n        size === "md" && "size-10 text-[13px]",\n        size === "lg" && "size-[74px] rounded-[var(--md-radius-lg)] text-[30px]",\n      )}\n    >\n      {initials}\n    </span>\n  )\n}`,
     usageCode: `<CustomerAvatar initials="MA" tone="olive" />\n<CustomerAvatar initials="BI" tone="blue" size="sm" />\n<CustomerAvatar initials="MA" tone="olive" size="lg" />`,
   },
@@ -3376,11 +3429,24 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText }) {
     id: "dexter-prompt-composer",
     name: "Dexter Prompt Composer",
     category: "Agent Dexter",
-    description: "The central command box for Agent Dexter: @ mentions, attached context, model and role choices, live context usage, plus explicit approval or full-access control.",
-    details: "Use on the Agent Dexter landing and conversation footer. Operators can type @ to reference a booking, customer, lead, quote, document, or page in place; Approve remains the safe default and Full access is a deliberately warning-toned state for allowlisted writes.",
-    foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components" }],
+    description: "The central command box for Agent Dexter: @ mentions, attached context, slash commands, model and role choices, live context usage, plus explicit approval or full-access control.",
+    details: "Use on the Agent Dexter landing and conversation footer. Operators can type @ to reference workspace context or / to switch between Chat and Watch; Approve remains the safe default and Full access is a deliberately warning-toned state for allowlisted writes.",
+    foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components?component=dexter-prompt-composer" }],
     componentCode: `export function DexterPromptComposer({ value, selectedSpecialistId, selectedModelId, accessMode, contextUsedTokens, contextMaxTokens, attachments, onChange, onOpenAttachments, onSelectSpecialist, onSelectModel, onAccessModeChange, onSend }) {\n  return (\n    <div className="md-composer md-composer-bloom relative overflow-hidden rounded-[26px]">\n      <span aria-hidden className="md-composer-bloom__shader">\n        <SpectralBloomShader shape="composer" />\n      </span>\n      <span aria-hidden className="md-composer-bloom__contrast" />\n      <div className="relative z-[2] flex h-[44px] items-center px-3">\n        <DexterRoleMenu selectedId={selectedSpecialistId} onSelect={onSelectSpecialist} />\n      </div>\n      <div className="relative z-[2] mx-1.5 mb-1.5 rounded-[21px] bg-[var(--md-composer-panel-bg)]">\n        {attachments.map((attachment) => <ContextChip key={attachment.id} attachment={attachment} />)}\n        <textarea\n          value={value}\n          rows={1}\n          onChange={(event) => onChange(event.target.value)}\n          onKeyDown={(event) => {\n            if (event.key === "Enter" && !event.shiftKey) {\n              event.preventDefault()\n              if (value.trim()) onSend()\n            }\n          }}\n        />\n        <button onClick={onOpenAttachments}>Attach</button>\n        <DexterModelMenu selectedId={selectedModelId} onSelect={onSelectModel} />\n        <Context\n          usedTokens={contextUsedTokens}\n          maxTokens={contextMaxTokens}\n          label={t("Conversation context")}\n          description={t("How much of this chat Dexter can keep in mind.")}\n        >\n          <ContextTrigger />\n          <ContextContent><ContextContentHeader /></ContextContent>\n        </Context>\n        <DexterAccessModeToggle mode={accessMode} onChange={onAccessModeChange} />\n        <DexterActionPill icon={ArrowUp} iconOnly disabled={!value.trim()} onClick={onSend} />\n      </div>\n    </div>\n  )\n}`,
-    usageCode: `<DexterPromptComposer\n  value={prompt}\n  selectedSpecialistId={selectedSpecialistId}\n  selectedModelId={selectedModelId}\n  accessMode={accessMode}\n  contextUsedTokens={contextUsedTokens}\n  contextMaxTokens={128_000}\n  attachments={attachedItems}\n  onChange={setPrompt}\n  onOpenAttachments={() => setShowAttachments(true)}\n  onSelectSpecialist={setSelectedSpecialistId}\n  onSelectModel={setSelectedModelId}\n  onAccessModeChange={setAccessMode}\n  onSend={startConversation}\n/>`,
+    usageCode: `<DexterPromptComposer\n  value={prompt}\n  selectedSpecialistId={selectedSpecialistId}\n  selectedModelId={selectedModelId}\n  accessMode={accessMode}\n  contextUsedTokens={contextUsedTokens}\n  contextMaxTokens={128_000}\n  attachments={attachedItems}\n  commands={slashCommands}\n  onChange={setPrompt}\n  onOpenAttachments={() => setShowAttachments(true)}\n  onSelectSpecialist={setSelectedSpecialistId}\n  onSelectModel={setSelectedModelId}\n  onAccessModeChange={setAccessMode}\n  onCommand={handleSlashCommand}\n  onSend={startConversation}\n/>`,
+  },
+  {
+    id: "watch-mode-aurora",
+    name: "Watch Mode Aurora",
+    category: "Agent Dexter",
+    description: "A quiet full-surface shader that distinguishes Watch mode using tones derived from the operator's chosen accent colour.",
+    details: "Use behind Dexter only while Watch mode is active. The light rises from the bottom, stays non-interactive, fades before it reaches the main content, follows live accent changes, and becomes still when reduced motion is enabled.",
+    foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components?component=watch-mode-aurora" }],
+    componentCode: `<WatchModeAurora active={dexterMode === "watch"} />`,
+    usageCode: `<div className="relative min-h-screen overflow-hidden bg-[var(--md-bg)]">
+  <WatchModeAurora active={dexterMode === "watch"} />
+  <main className="relative z-10">{children}</main>
+</div>`,
   },
   {
     id: "context-usage-meter",
@@ -4068,6 +4134,46 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText }) {
     componentCode: `export function SignedOutPanel({ onSignBackIn, onSwitchAccount }) {\n  return (\n    <div className="w-full max-w-[560px]">\n      <BrandLockup />\n      <h2>You're signed out</h2>\n      {signedOutStats.map(([value, label]) => <StatRow key={label} value={value} label={label} />)}\n      <Button onClick={onSignBackIn}>Sign back in</Button>\n      <Button onClick={onSwitchAccount}>Switch account</Button>\n    </div>\n  )\n}`,
     usageCode: `<SignedOutPanel\n  onSignBackIn={() => setStep("signin")}\n  onSwitchAccount={() => {\n    setEmail("")\n    setStep("signin")\n  }}\n/>`,
   },
+  {
+    id: "contact-card-layout-picker",
+    name: "Contact Card Layout Picker",
+    category: "CRM",
+    description: "Four visual presets for choosing how a public QR contact card is arranged without exposing layout jargon.",
+    details: "Use in Contact Card design settings. Each option previews its hierarchy, supports keyboard selection, and leaves colour and QR styling independent.",
+    foundOn: [{ label: "Contact Cards", route: "/crm/contact-cards" }, { label: "Components", route: "/components?component=contact-card-layout-picker" }],
+    componentCode: `export function ContactCardLayoutPicker({ value, onChange }) {\n  return (\n    <div role="radiogroup" aria-label="Layout preset">\n      {layoutPresets.map((preset) => (\n        <button role="radio" aria-checked={value === preset.id} onClick={() => onChange(preset.id)}>\n          <LayoutThumbnail preset={preset.id} />\n          <span>{preset.label}</span>\n          <small>{preset.detail}</small>\n        </button>\n      ))}\n    </div>\n  )\n}`,
+    usageCode: `<ContactCardLayoutPicker\n  value={card.branding.layout}\n  onChange={(layout) => updateBranding(card.id, { layout })}\n/>`,
+  },
+  {
+    id: "contact-card-social-links-editor",
+    name: "Contact Card Social Links Editor",
+    category: "CRM",
+    description: "A reorderable, branded social-link editor for LinkedIn, Facebook, Instagram, WhatsApp, email, and website details.",
+    details: "Use for person-owned public contact profiles. Blank links remain safely disabled, while enabled links keep the exact order shown in the editor.",
+    foundOn: [{ label: "Contact Card settings", route: "/crm/contact-cards" }, { label: "Components", route: "/components?component=contact-card-social-links-editor" }],
+    componentCode: `export function ContactCardSocialLinksEditor({ links, onChange }) {\n  return links.map((link, index) => (\n    <div key={link.id}>\n      <ContactSocialMark kind={link.kind} />\n      <Input value={link.value} onChange={(event) => update(link.id, event.target.value)} />\n      <MoveButtons index={index} onMove={move} />\n      <Switch checked={link.enabled} disabled={!link.value.trim()} />\n    </div>\n  ))\n}`,
+    usageCode: `<ContactCardSocialLinksEditor\n  links={card.person.socialLinks}\n  onChange={(socialLinks) => updatePerson(card.id, { socialLinks })}\n/>`,
+  },
+  {
+    id: "automation-run-history",
+    name: "Automation Run History",
+    category: "CRM",
+    description: "An operator-friendly record of automation runs with expandable failures, preserved input, step traces, and safe reruns.",
+    details: "Use below an automation canvas. Start with status, time, duration, and affected records; reveal the technical evidence only when a run needs investigation.",
+    foundOn: [{ label: "Contact Card automation", route: "/crm/contact-cards" }, { label: "Components", route: "/components?component=automation-run-history" }],
+    componentCode: `export function AutomationRunHistory({ runs, onRerun }) {\n  return runs.map((run) => (\n    <section key={run.id}>\n      <button aria-expanded={expanded === run.id} onClick={() => setExpanded(run.id)}>\n        <StatusPill>{run.status}</StatusPill>\n        <time>{run.startedAt}</time>\n        <span>{run.durationMs}ms</span>\n      </button>\n      {expanded === run.id ? <RunEvidence run={run} onRerun={onRerun} /> : null}\n    </section>\n  ))\n}`,
+    usageCode: `<AutomationRunHistory\n  runs={card.automation.runs}\n  onRerun={(run) => rerunAutomationRun(run.id)}\n/>`,
+  },
+  {
+    id: "marketing-opt-in-control",
+    name: "Marketing Opt-in Control",
+    category: "CRM",
+    description: "A compact, auditable consent toggle for lead, contact, and customer records.",
+    details: "Use on live CRM record detail views. The current state stays easy to scan while the source and last change remain visible as supporting evidence.",
+    foundOn: [{ label: "CRM lead details", route: "/crm/leads" }, { label: "Account details", route: "/crm/accounts/de1000c1-5eed-4ead-8000-000000000001" }, { label: "Contact details", route: "/crm/contacts/de1000c3-5eed-4ead-8000-000000000001" }, { label: "Components", route: "/components?component=marketing-opt-in-control" }],
+    componentCode: `export function MarketingOptInControl({ checked, source, updatedAt, onCheckedChange }) {\n  return (\n    <div>\n      <div>\n        <p>Opt-in marketing</p>\n        <p>{checked ? "Can receive marketing updates." : "No marketing updates will be sent."}</p>\n        <small>{source} · {updatedAt}</small>\n      </div>\n      <Switch checked={checked} onCheckedChange={onCheckedChange} />\n    </div>\n  )\n}`,
+    usageCode: `<MarketingOptInControl\n  checked={lead.marketingOptIn}\n  source={lead.marketingConsentSource}\n  updatedAt={lead.marketingConsentUpdatedAt}\n  onCheckedChange={(checked) => setMarketingOptIn("lead", lead.id, checked)}\n/>`,
+  },
 ]
 
 export const galleryCategories = ["All", "Design System", "Foundation", "Controls", "Navigation", "Data", "Visualizations", "Feedback", "Operations", "CRM", "Agent Dexter"]
@@ -4184,4 +4290,8 @@ export const galleryIcons = {
   "auth-verification-panel": Mail,
   "auth-code-input": KeyRound,
   "auth-signed-out-panel": BarChart3,
+  "contact-card-layout-picker": QrCode,
+  "contact-card-social-links-editor": Users,
+  "automation-run-history": Workflow,
+  "marketing-opt-in-control": BadgeCheck,
 } satisfies Record<string, LucideIcon>

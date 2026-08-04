@@ -1,5 +1,7 @@
 import { callCrmRpc, CrmSupabaseError } from "@/lib/crm-supabase"
 import type { StatusTone } from "@/data/multideck-data"
+import { invalidateCrmResources, readCachedCrmResource, type CrmReadOptions } from "@/lib/crm-read-cache"
+import { getSupabaseSession } from "@/lib/supabase"
 
 export type ApiPipelineStage = {
   id: string
@@ -76,21 +78,31 @@ async function mutatePipelineSettings<T>(
   payload: unknown,
   fallback: string,
 ) {
-  return callCrmRpc<T>(
+  const result = await callCrmRpc<T>(
     "multideck_crm_mutate_pipeline_settings",
     { p_action: action, p_id: id, p_payload: payload },
     fallback,
     "Sign in again to manage pipeline settings.",
     action === "delete_pipeline" || action === "delete_field",
   )
+  const session = await getSupabaseSession()
+  if (session) invalidateCrmResources(session.user.id, ["pipelines:"])
+  return result
 }
 
-export async function getPipelineSettings() {
-  return callCrmRpc<ApiPipelineSettings>(
-    "multideck_crm_pipeline_settings",
-    undefined,
-    "We could not load pipeline settings.",
-    "Sign in again to manage pipeline settings.",
+export async function getPipelineSettings(options?: CrmReadOptions) {
+  const session = await getSupabaseSession()
+  if (!session?.access_token) throw new PipelineApiError("Sign in again to manage pipeline settings.")
+  return readCachedCrmResource(
+    session.user.id,
+    "pipelines:settings",
+    () => callCrmRpc<ApiPipelineSettings>(
+      "multideck_crm_pipeline_settings",
+      undefined,
+      "We could not load pipeline settings.",
+      "Sign in again to manage pipeline settings.",
+    ),
+    options,
   )
 }
 

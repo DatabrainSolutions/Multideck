@@ -63,6 +63,16 @@ import { mdEaseOut, mdMotion, reduceMotion, staggerRamp } from "@/lib/motion"
 
 export type DexterSpecialistId = "auto" | "customs" | "customer" | "sales" | "ops" | "analytics"
 export type DexterAccessMode = "approve" | "full"
+export type DexterSlashCommand = {
+  id: string
+  command: string
+  label: string
+  description: string
+  group: "mode"
+  icon: LucideIcon
+  selected?: boolean
+  disabled?: boolean
+}
 
 function useSendShortcutModifier() {
   const [modifier, setModifier] = useState<"⌘" | "Ctrl">("Ctrl")
@@ -675,6 +685,7 @@ function insertPlainTextAtSelection(text: string) {
 export function DexterMentionInput({
   value,
   items = defaultDexterMentionItems,
+  commands = [],
   selectedMentions,
   placeholder,
   minHeight,
@@ -684,10 +695,12 @@ export function DexterMentionInput({
   onChange,
   onMentionsChange,
   onUnavailableMention,
+  onCommand,
   onSend,
 }: {
   value: string
   items?: DexterMentionItem[]
+  commands?: DexterSlashCommand[]
   selectedMentions: DexterMentionItem[]
   placeholder: string
   minHeight: number
@@ -697,6 +710,7 @@ export function DexterMentionInput({
   onChange: (value: string) => void
   onMentionsChange: (mentions: DexterMentionItem[]) => void
   onUnavailableMention?: (mention: DexterMentionItem) => void
+  onCommand?: (command: DexterSlashCommand) => void
   onSend: (value: string) => void
 }) {
   const { direction, t } = useLanguage()
@@ -706,6 +720,7 @@ export function DexterMentionInput({
   const lastEmittedValueRef = useRef("")
   const listId = useId().replaceAll(":", "")
   const [query, setQuery] = useState<string | null>(null)
+  const [menuKind, setMenuKind] = useState<"mention" | "command">("mention")
   const [activeIndex, setActiveIndex] = useState(0)
   const [announcement, setAnnouncement] = useState("")
   const [menuPosition, setMenuPosition] = useState<{
@@ -745,6 +760,17 @@ export function DexterMentionInput({
       .slice(0, 8)
       .map(({ item }) => item)
   }, [items, query])
+
+  const commandResults = useMemo(() => {
+    if (menuKind !== "command") return []
+    const normalizedQuery = query?.trim().toLocaleLowerCase() ?? ""
+    return commands.filter((item) => {
+      if (!normalizedQuery) return true
+      return `${item.command} ${item.label} ${item.description}`.toLocaleLowerCase().includes(normalizedQuery)
+    }).slice(0, 12)
+  }, [commands, menuKind, query])
+
+  const menuResultCount = menuKind === "command" ? commandResults.length : results.length
 
   useEffect(() => {
     setActiveIndex(0)
@@ -842,7 +868,9 @@ export function DexterMentionInput({
     }
 
     const textBeforeCaret = textNode.textContent?.slice(0, caretOffset) ?? ""
-    const trigger = textBeforeCaret.match(/(?:^|[\s([{])@([^\s@]*)$/u)
+    const commandTrigger = commands.length > 0 ? textBeforeCaret.match(/^\/([^\s/]*)$/u) : null
+    const mentionTrigger = textBeforeCaret.match(/(?:^|[\s([{])@([^\s@]*)$/u)
+    const trigger = commandTrigger ?? mentionTrigger
     if (!trigger) {
       setQuery(null)
       triggerRangeRef.current = null
@@ -853,6 +881,7 @@ export function DexterMentionInput({
     mentionRange.setStart(textNode, caretOffset - trigger[1].length - 1)
     mentionRange.setEnd(textNode, caretOffset)
     triggerRangeRef.current = mentionRange
+    setMenuKind(commandTrigger ? "command" : "mention")
     setQuery(trigger[1])
   }
 
@@ -919,6 +948,20 @@ export function DexterMentionInput({
     editor.focus()
   }
 
+  function selectCommand(item: DexterSlashCommand) {
+    if (item.disabled) return
+    const editor = editorRef.current
+    if (!editor) return
+    editor.replaceChildren()
+    lastEmittedValueRef.current = ""
+    setQuery(null)
+    triggerRangeRef.current = null
+    onChange("")
+    onCommand?.(item)
+    setAnnouncement(`${t("Command selected")}: ${item.command}`)
+    editor.focus()
+  }
+
   function handleInput(_event: FormEvent<HTMLDivElement>) {
     emitValue()
     syncSelectedMentions()
@@ -927,20 +970,21 @@ export function DexterMentionInput({
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     const menuOpen = query !== null
-    if (menuOpen && results.length > 0) {
+    if (menuOpen && menuResultCount > 0) {
       if (event.key === "ArrowDown") {
         event.preventDefault()
-        setActiveIndex((index) => (index + 1) % results.length)
+        setActiveIndex((index) => (index + 1) % menuResultCount)
         return
       }
       if (event.key === "ArrowUp") {
         event.preventDefault()
-        setActiveIndex((index) => (index - 1 + results.length) % results.length)
+        setActiveIndex((index) => (index - 1 + menuResultCount) % menuResultCount)
         return
       }
       if (event.key === "Tab" || (event.key === "Enter" && !event.shiftKey)) {
         event.preventDefault()
-        selectMention(results[activeIndex] ?? results[0])
+        if (menuKind === "command") selectCommand(commandResults[activeIndex] ?? commandResults[0])
+        else selectMention(results[activeIndex] ?? results[0])
         return
       }
     }
@@ -965,7 +1009,7 @@ export function DexterMentionInput({
     updateMentionTrigger()
   }
 
-  const activeResult = results[activeIndex]
+  const activeResult = menuKind === "command" ? commandResults[activeIndex] : results[activeIndex]
 
   const mentionMenu = typeof document !== "undefined"
     ? createPortal(
@@ -974,8 +1018,11 @@ export function DexterMentionInput({
           <motion.div
             id={listId}
             role="listbox"
-            aria-label={t("Mention workspace context")}
-            className="md-dexter-mention-menu fixed z-[100] overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1.5 shadow-[var(--md-shadow-lift)]"
+            aria-label={t(menuKind === "command" ? "Dexter commands" : "Mention workspace context")}
+            className={cn(
+              "md-dexter-mention-menu fixed z-[100] overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-lift)]",
+              menuKind === "command" ? "p-1" : "p-1.5",
+            )}
             initial={shouldReduceMotion ? false : { opacity: 0, y: menuPosition.placement === "top" ? 7 : -7, scale: 0.985 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={shouldReduceMotion ? undefined : { opacity: 0, y: menuPosition.placement === "top" ? 4 : -4, scale: 0.99 }}
@@ -988,13 +1035,57 @@ export function DexterMentionInput({
               transformOrigin: menuPosition.placement === "top" ? "bottom center" : "top center",
             }}
           >
-            <div className="flex items-center justify-between gap-3 px-2.5 pb-1.5 pt-1">
-              <p className="text-[11.5px] font-medium text-[var(--md-subtle)]">{t("Mention workspace context")}</p>
-              <p className="hidden text-[11px] text-[var(--md-subtle)] sm:block">{t("Use arrows to choose · Enter to add")}</p>
-            </div>
+            {menuKind === "mention" ? (
+              <div className="flex items-center justify-between gap-3 px-2.5 pb-1.5 pt-1">
+                <p className="text-[11.5px] font-medium text-[var(--md-subtle)]">{t("Mention workspace context")}</p>
+                <p className="hidden text-[11px] text-[var(--md-subtle)] sm:block">{t("Use arrows to choose · Enter to add")}</p>
+              </div>
+            ) : null}
             <div className="md-scrollbar max-h-[276px] overflow-y-auto">
               <LayoutGroup id={`dexter-mention-${listId}`}>
-                {results.map((item, index) => {
+                {menuKind === "command" ? commandResults.map((item, index) => {
+                  const Icon = item.icon
+                  const active = index === activeIndex
+                  const startsGroup = index === 0 || commandResults[index - 1]?.group !== item.group
+
+                  return (
+                    <div key={item.id}>
+                      {startsGroup ? <p className={cn("px-2 pb-0.5 text-[10px] font-medium leading-4 text-[var(--md-subtle)]", index === 0 ? "pt-0.5" : "pt-1")}>{t("Modes")}</p> : null}
+                      <button
+                        id={`${listId}-option-${index}`}
+                        type="button"
+                        role="option"
+                        aria-selected={!item.disabled && active}
+                        aria-disabled={item.disabled || undefined}
+                        aria-label={`${item.command} — ${t(item.label)}. ${t(item.description)}`}
+                        className={cn(
+                          "relative grid min-h-8 w-full grid-cols-[24px_minmax(0,1fr)] items-center gap-2 rounded-[var(--md-radius-md)] px-2 py-1 text-start outline-none",
+                          item.disabled && "opacity-55",
+                        )}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onMouseEnter={() => setActiveIndex(index)}
+                        onClick={() => selectCommand(item)}
+                      >
+                        {active && !item.disabled ? (
+                          <motion.span
+                            layoutId="active-command-result"
+                            aria-hidden="true"
+                            className="absolute inset-0 rounded-[var(--md-radius-md)] bg-[var(--md-accent-a10)] shadow-[inset_0_0_0_1px_var(--md-accent-a18)]"
+                            transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.spring)}
+                          />
+                        ) : null}
+                        <span className="relative grid size-6 place-items-center text-[var(--md-accent)]">
+                          <Icon className="size-[15px]" strokeWidth={1.5} aria-hidden="true" />
+                        </span>
+                        <span className="relative flex min-w-0 items-baseline gap-2">
+                          <span className="shrink-0 text-[12.5px] font-medium text-[var(--md-ink)]" dir="ltr" data-i18n-skip>{item.command}</span>
+                          <span className="min-w-0 truncate text-[11.5px] text-[var(--md-subtle)]">{t(item.description)}</span>
+                          {item.selected ? <span className="sr-only">{t("Current")}</span> : null}
+                        </span>
+                      </button>
+                    </div>
+                  )
+                }) : results.map((item, index) => {
                   const Icon = item.icon
                   const active = index === activeIndex
 
@@ -1040,10 +1131,10 @@ export function DexterMentionInput({
                   )
                 })}
               </LayoutGroup>
-              {results.length === 0 ? (
+              {menuResultCount === 0 ? (
                 <div className="px-3 py-5 text-center">
-                  <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("No matching workspace items")}</p>
-                  <p className="mt-1 text-[11.5px] text-[var(--md-subtle)]">{t("Try Gmail, Outlook, a booking reference, customer, lead, quote or page name.")}</p>
+                  <p className="text-[13px] font-medium text-[var(--md-ink)]">{t(menuKind === "command" ? "No matching commands" : "No matching workspace items")}</p>
+                  <p className="mt-1 text-[11.5px] text-[var(--md-subtle)]">{t(menuKind === "command" ? "Try chat or watch." : "Try Gmail, Outlook, a booking reference, customer, lead, quote or page name.")}</p>
                 </div>
               ) : null}
             </div>
@@ -1100,6 +1191,7 @@ export function DexterPromptComposer({
   contextUsedTokens = 0,
   contextMaxTokens = 128_000,
   attachments = [],
+  commands = [],
   mentionItems = defaultDexterMentionItems,
   selectedMentions,
   placeholder = "Ask anything, @ a record, or / for a command",
@@ -1110,8 +1202,11 @@ export function DexterPromptComposer({
   onSelectSpecialist,
   onSelectModel,
   onAccessModeChange,
+  onCommand,
   onRemoveAttachment,
   onSend,
+  isSending = false,
+  mode = "chat",
   compact = false,
   className,
 }: {
@@ -1124,6 +1219,7 @@ export function DexterPromptComposer({
   contextUsedTokens?: number
   contextMaxTokens?: number
   attachments?: DexterAttachment[]
+  commands?: DexterSlashCommand[]
   mentionItems?: DexterMentionItem[]
   selectedMentions?: DexterMentionItem[]
   placeholder?: string
@@ -1134,8 +1230,12 @@ export function DexterPromptComposer({
   onSelectSpecialist: (id: DexterSpecialistId) => void
   onSelectModel: (id: DexterModelId) => void
   onAccessModeChange: (mode: DexterAccessMode) => void
+  onCommand?: (command: DexterSlashCommand) => void
   onRemoveAttachment?: (id: string) => void
   onSend: (value?: string) => void
+  isSending?: boolean
+  /** Watch mode has one deterministic job, so it does not expose role routing. */
+  mode?: "chat" | "watch"
   compact?: boolean
   className?: string
 }) {
@@ -1164,7 +1264,13 @@ export function DexterPromptComposer({
       <span aria-hidden="true" className="md-composer-bloom__contrast" />
 
       <div className="md-dexter-role-container relative z-[2] flex h-[44px] min-w-0 items-center px-3 sm:px-3.5">
-        <DexterRoleMenu specialists={specialists} selectedId={selectedSpecialistId} onSelect={onSelectSpecialist} />
+        {mode === "watch" ? (
+          <span className="md-composer-lead inline-flex h-8 items-center rounded-full px-2.5 text-[13px] font-medium text-white dark:text-[var(--md-ink)]">
+            {t("Watcher")}
+          </span>
+        ) : (
+          <DexterRoleMenu specialists={specialists} selectedId={selectedSpecialistId} onSelect={onSelectSpecialist} />
+        )}
       </div>
 
       <div className="relative z-[2] mx-1.5 mb-1.5 rounded-[21px] bg-[var(--md-composer-panel-bg)] shadow-[inset_0_0_0_1px_var(--md-composer-panel-line)]">
@@ -1219,6 +1325,7 @@ export function DexterPromptComposer({
           <DexterMentionInput
             value={value}
             items={mentionItems}
+            commands={commands}
             selectedMentions={activeMentions}
             placeholder={t(placeholder)}
             minHeight={minRows}
@@ -1227,6 +1334,7 @@ export function DexterPromptComposer({
             onChange={onChange}
             onMentionsChange={handleMentionsChange}
             onUnavailableMention={onUnavailableMention}
+            onCommand={onCommand}
             onSend={(liveValue) => onSend(liveValue)}
           />
 
@@ -1281,7 +1389,7 @@ export function DexterPromptComposer({
                 aria-keyshortcuts="Meta+Enter Control+Enter"
                 className="size-10 min-w-0 rounded-full p-0"
                 onClick={() => onSend()}
-                disabled={!canSend}
+                disabled={!canSend || isSending}
               />
             </motion.div>
           </div>
@@ -1847,10 +1955,16 @@ export function DexterWatchRail({
       style={{ pointerEvents: "none" }}
       aria-hidden={collapsed || undefined}
     >
-      {/* One masked glass surface spans the fade strip, detail, and list. The
-          backdrop blur and tint therefore disappear together at the conversation
-          edge instead of ending at a hard panel boundary. */}
-      <span aria-hidden="true" className="md-watch-rail-surface pointer-events-none absolute inset-y-0 end-0" style={{ insetInlineStart: -176 }} />
+      {/* The fade extends outside the rail width, so it must leave the render
+          tree when the rail closes. A zero-width shell alone would still leave
+          the 176px backdrop-filter strip visible over the conversation. */}
+      {!collapsed ? (
+        <span
+          aria-hidden="true"
+          className="md-watch-rail-surface pointer-events-none absolute inset-y-0 end-0"
+          style={{ insetInlineStart: -176 }}
+        />
+      ) : null}
 
       {!collapsed && onCollapse ? (
         <button
@@ -1864,43 +1978,45 @@ export function DexterWatchRail({
         </button>
       ) : null}
 
-      <div className="pointer-events-auto absolute inset-0 overflow-hidden">
-        <div className={cn("md-watch-rail-detail absolute inset-y-0 start-0", singlePane && activeMonitor && "z-[3]", !activeMonitor && "pointer-events-none")} style={{ width: detailWidth }}>
-          <AnimatePresence mode="popLayout" initial={false}>
-            {activeMonitor ? (
-              <motion.div
-                key={activeMonitor.id ?? activeMonitor.title}
-                className="h-full w-full"
-                initial={shouldReduceMotion ? false : { opacity: 0, x: -14, filter: "blur(5px)" }}
-                animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
-                exit={shouldReduceMotion ? undefined : { opacity: 0, x: -10, filter: "blur(4px)" }}
-                transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.enter)}
-              >
-                <DexterMonitorDetailSheet
-                  monitor={activeMonitor}
-                  floating={false}
-                  compactBack={singlePane}
-                  onClose={() => onCloseDetail?.()}
-                  onSetStatus={(status) => onSetStatus?.(activeMonitor, status)}
-                  onDelete={() => onDelete?.(activeMonitor)}
-                  onAskEvent={() => onAskEvent?.(activeMonitor)}
-                  onAskAttachment={onAskAttachment}
-                />
-              </motion.div>
-            ) : null}
-          </AnimatePresence>
-        </div>
+      {!collapsed ? (
+        <div className="pointer-events-auto absolute inset-0 overflow-hidden">
+          <div className={cn("md-watch-rail-detail absolute inset-y-0 start-0", singlePane && activeMonitor && "z-[3]", !activeMonitor && "pointer-events-none")} style={{ width: detailWidth }}>
+            <AnimatePresence mode="popLayout" initial={false}>
+              {activeMonitor ? (
+                <motion.div
+                  key={activeMonitor.id ?? activeMonitor.title}
+                  className="h-full w-full"
+                  initial={shouldReduceMotion ? false : { opacity: 0, x: -14, filter: "blur(5px)" }}
+                  animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
+                  exit={shouldReduceMotion ? undefined : { opacity: 0, x: -10, filter: "blur(4px)" }}
+                  transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.enter)}
+                >
+                  <DexterMonitorDetailSheet
+                    monitor={activeMonitor}
+                    floating={false}
+                    compactBack={singlePane}
+                    onClose={() => onCloseDetail?.()}
+                    onSetStatus={(status) => onSetStatus?.(activeMonitor, status)}
+                    onDelete={() => onDelete?.(activeMonitor)}
+                    onAskEvent={() => onAskEvent?.(activeMonitor)}
+                    onAskAttachment={onAskAttachment}
+                  />
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
+          </div>
 
-        <div className={cn("md-watch-rail-list absolute inset-y-0 end-0", singlePane && activeMonitor && "invisible")} style={{ width: railWidth }}>
-          <DexterMonitorStack
-            monitors={monitors}
-            activeId={activeMonitor?.id ?? null}
-            onCollapse={onCollapse}
-            onSelectMonitor={onSelectMonitor}
-            onAsk={onAsk}
-          />
+          <div className={cn("md-watch-rail-list absolute inset-y-0 end-0", singlePane && activeMonitor && "invisible")} style={{ width: railWidth }}>
+            <DexterMonitorStack
+              monitors={monitors}
+              activeId={activeMonitor?.id ?? null}
+              onCollapse={onCollapse}
+              onSelectMonitor={onSelectMonitor}
+              onAsk={onAsk}
+            />
+          </div>
         </div>
-      </div>
+      ) : null}
     </motion.aside>
   )
 }

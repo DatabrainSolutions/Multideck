@@ -136,7 +136,6 @@ export function OverviewPage({ navigate }: { navigate: (path: string) => void })
           onSelectDashboard={setSelectedDashboard}
           onCreateDashboard={createDashboard}
           onSaveDashboard={saveDashboard}
-          onOpenCustomise={() => setCustomiseOpen(true)}
           compact={customiseOpen}
         />
 

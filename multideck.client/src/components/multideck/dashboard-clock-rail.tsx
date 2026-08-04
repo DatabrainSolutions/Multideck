@@ -9,7 +9,6 @@ import { mdMotion, reduceMotion, staggerRamp } from "@/lib/motion"
 import {
   computeCityClock,
   getLocalTimeZone,
-  getLocalZoneLabel,
   useMinuteTick,
   type CityClock,
 } from "@/lib/clock"
@@ -266,9 +265,6 @@ export function ClockRail({
     () => cityQueues.map((city) => computeCityClock(city, now, localTimeZone)),
     [now, localTimeZone],
   )
-  const localLabel = useMemo(() => getLocalZoneLabel(now, localTimeZone), [now, localTimeZone])
-  const workingCount = clocks.filter((clock) => clock.tone !== "neutral").length
-
   /** Roving tabindex: the rail is one tab stop and the arrows walk the cities. */
   const handleKeyNavigate = useCallback(
     (event: ReactKeyboardEvent<HTMLButtonElement>, index: number) => {
@@ -296,32 +292,6 @@ export function ClockRail({
 
   return (
     <section className={cn("md-clock-rail", className)} aria-label={t("World clock")}>
-      <div className="md-clock-rail-head">
-        <div className="flex min-w-0 items-center gap-2">
-          <p className="md-clock-rail-title">{t("World clock")}</p>
-          <span className="md-clock-rail-meta" dir="ltr">
-            {localLabel}
-          </span>
-          <span className="md-clock-rail-count">
-            {workingCount}/{clocks.length} {t("open")}
-          </span>
-        </div>
-        <div className="md-clock-rail-legend">
-          {(
-            [
-              [t("Working"), "green"],
-              [t("Closing soon"), "amber"],
-              [t("Clocked off"), "neutral"],
-            ] as const
-          ).map(([label, tone]) => (
-            <span key={label} className="inline-flex items-center gap-1.5">
-              <span className="size-1.5 rounded-full" style={{ background: toneToVar(tone as StatusTone) }} />
-              {label}
-            </span>
-          ))}
-        </div>
-      </div>
-
       <div ref={trackRef} className="md-clock-rail-track md-scrollbar" role="group" aria-label={t("City clocks")}>
         {clocks.map((clock, index) => (
           <motion.div

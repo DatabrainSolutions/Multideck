@@ -7,6 +7,7 @@ import {
   LifeBuoy,
   Megaphone,
   Palette,
+  PenLine,
   ShieldCheck,
   Sparkles,
   UserRound,
@@ -20,6 +21,7 @@ export type SettingsSectionId =
   | "notifications"
   | "customisation"
   | "shortcuts"
+  | "dexter"
   | "permissions"
   | "integrations"
   | "billing"
@@ -50,6 +52,7 @@ export const settingsNavigationGroups: SettingsNavigationGroup[] = [
       { id: "notifications", label: "Notifications", description: "Alerts, digests and delivery", icon: Bell },
       { id: "customisation", label: "Customisation", description: "Language, theme and density", icon: Palette },
       { id: "shortcuts", label: "Keyboard shortcuts", description: "Summon Dexter and jump anywhere", icon: Command },
+      { id: "dexter", label: "Dexter", description: "Personal email writing style", icon: PenLine },
     ],
   },
   {

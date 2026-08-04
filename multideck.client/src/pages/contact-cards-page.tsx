@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react"
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import {
   ArrowLeft,
   ExternalLink,
   IdCard,
+  ImageUp,
   Plus,
   QrCode,
   Trash2,
@@ -35,7 +36,7 @@ import {
 } from "@/components/multideck/contact-card-components"
 import { AutomationEnableRow, AutomationSummaryBand, CardAutomationPanel } from "@/components/multideck/contact-card-automation"
 import { CardAnalyticsPanel } from "@/components/multideck/contact-card-analytics"
-import { CardDesignPanel } from "@/components/multideck/contact-card-design"
+import { CardDesignPanel, ContactCardSocialLinksEditor } from "@/components/multideck/contact-card-design"
 import { useLanguage } from "@/i18n/language-provider"
 import { mdMotion, reduceMotion } from "@/lib/motion"
 import {
@@ -44,6 +45,7 @@ import {
   createCard,
   deleteCard,
   reloadContactCards,
+  readLogoFile,
   setCardStatus,
   updateCard,
   useContactCard,
@@ -279,8 +281,8 @@ export function ContactCardsPage({ navigate }: { navigate: (path: string) => voi
       width: 88,
       headerClassName: "text-right",
       cellClassName: "text-right",
-      sortValue: (card) => card.scans.length,
-      cell: (card) => <span className="text-[13px] text-[var(--md-ink)] tabular-nums">{card.scans.length.toLocaleString()}</span>,
+      sortValue: (card) => cardTotals(card).scans,
+      cell: (card) => <span className="text-[13px] text-[var(--md-ink)] tabular-nums">{cardTotals(card).scans.toLocaleString()}</span>,
     },
     {
       id: "exchanges",
@@ -288,8 +290,8 @@ export function ContactCardsPage({ navigate }: { navigate: (path: string) => voi
       width: 88,
       headerClassName: "text-right",
       cellClassName: "text-right",
-      sortValue: (card) => card.exchanges.length,
-      cell: (card) => <span className="text-[13px] text-[var(--md-ink)] tabular-nums">{card.exchanges.length.toLocaleString()}</span>,
+      sortValue: (card) => cardTotals(card).exchanges,
+      cell: (card) => <span className="text-[13px] text-[var(--md-ink)] tabular-nums">{cardTotals(card).exchanges.toLocaleString()}</span>,
     },
     {
       id: "conversion",
@@ -647,6 +649,43 @@ function SettingRow({ label, hint, children }: { label: string; hint?: string; c
   )
 }
 
+function ProfileImageControl({ card }: { card: ContactCard }) {
+  const { t } = useLanguage()
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  async function accept(file: File | undefined) {
+    if (!file) return
+    try {
+      const profileImageDataUrl = await readLogoFile(file)
+      updateCard(card.id, (current) => ({ ...current, person: { ...current.person, profileImageDataUrl } }))
+      toast.success(t("Profile photo updated"))
+    } catch {
+      toast.error(t("Choose a PNG, JPG or WebP image under 512KB."))
+    }
+  }
+
+  return (
+    <div className="flex max-w-[420px] items-center gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3">
+      <span className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-full bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]">
+        {card.person.profileImageDataUrl ? <img src={card.person.profileImageDataUrl} alt={t("Current profile photo")} className="size-full object-cover" /> : <ImageUp className="size-5 text-[var(--md-subtle)]" strokeWidth={1.4} />}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] text-[var(--md-ink)]">{card.person.profileImageDataUrl ? t("Profile photo added") : t("Add a profile photo")}</p>
+        <p className="mt-0.5 text-[12px] text-[var(--md-subtle)]">{t("Shown above your contact details. Up to 512KB.")}</p>
+      </div>
+      <Button variant="outline" className="h-9 rounded-[var(--md-radius-md)] text-[13px]" onClick={() => inputRef.current?.click()}>
+        {card.person.profileImageDataUrl ? t("Replace") : t("Choose")}
+      </Button>
+      {card.person.profileImageDataUrl ? (
+        <Button variant="ghost" size="icon" className="size-9 rounded-[var(--md-radius-md)] text-[var(--md-subtle)] hover:text-[var(--md-red)]" aria-label={t("Remove profile photo")} onClick={() => updateCard(card.id, (current) => ({ ...current, person: { ...current.person, profileImageDataUrl: null } }))}>
+          <Trash2 className="size-4" strokeWidth={1.4} />
+        </Button>
+      ) : null}
+      <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={(event) => { void accept(event.target.files?.[0]); event.target.value = "" }} />
+    </div>
+  )
+}
+
 function CardSettingsPanel({ card, navigate }: { card: ContactCard; navigate: (path: string) => void }) {
   const { t } = useLanguage()
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -660,6 +699,9 @@ function CardSettingsPanel({ card, navigate }: { card: ContactCard; navigate: (p
       <Surface padding="md" className="p-5">
         <SectionHeader title={t("The person on this card")} meta={t("These are the details a visitor receives after they share theirs.")} />
         <div className="mt-2 divide-y divide-[rgba(11,20,19,0.06)]">
+          <SettingRow label={t("Profile photo")} hint={t("Optional. If no photo is added, the card uses your company logo or initials.")}>
+            <ProfileImageControl card={card} />
+          </SettingRow>
           <SettingRow label={t("Full name")}>
             <Input className="h-9 max-w-[360px] text-[13px]" value={card.person.fullName} onChange={(event) => setPerson({ fullName: event.target.value })} />
           </SettingRow>
@@ -690,6 +732,16 @@ function CardSettingsPanel({ card, navigate }: { card: ContactCard; navigate: (p
               </label>
             </div>
           </SettingRow>
+        </div>
+      </Surface>
+
+      <Surface padding="md" className="p-5">
+        <SectionHeader title={t("Social links")} meta={t("Add the ways people can reach or follow you after they scan the card.")} />
+        <div className="mt-4">
+          <ContactCardSocialLinksEditor
+            links={card.person.socialLinks}
+            onChange={(socialLinks) => updateCard(card.id, (current) => ({ ...current, person: { ...current.person, socialLinks } }))}
+          />
         </div>
       </Surface>
 
@@ -729,6 +781,18 @@ function CardSettingsPanel({ card, navigate }: { card: ContactCard; navigate: (p
       <Surface padding="md" className="p-5">
         <SectionHeader title={t("Privacy and consent")} />
         <div className="mt-2 divide-y divide-[rgba(11,20,19,0.06)]">
+          <SettingRow label={t("Show tenant name")} hint={t("Shows who receives submitted details. On by default.")}>
+            <div className="flex items-center gap-3">
+              <Switch
+                checked={card.showTenantName}
+                aria-label={t("Show tenant name")}
+                onCheckedChange={(checked) => set({ showTenantName: checked })}
+              />
+              <span className="text-[13px] text-[var(--md-text)]">
+                {card.showTenantName ? card.tenantName : t("Hidden")}
+              </span>
+            </div>
+          </SettingRow>
           <SettingRow label={t("Privacy policy link")} hint={t("Always shown above the button on the public page.")}>
             <Input className="h-9 max-w-[420px] text-[13px]" dir="ltr" value={card.privacyUrl} onChange={(event) => set({ privacyUrl: event.target.value })} />
           </SettingRow>

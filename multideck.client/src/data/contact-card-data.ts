@@ -1,4 +1,4 @@
-/** Shared QR contact-card types, defaults, and analytics derived from Supabase rows. */
+/** Shared QR contact-card types and defaults. Analytics are calculated by Supabase. */
 
 import type { QrEyeStyle, QrModuleStyle } from "@/lib/qr-code"
 
@@ -11,11 +11,43 @@ export type CardPerson = {
   email: string
   phone: string
   website: string
+  /** Optional portrait used on the public card. The company logo remains separate. */
+  profileImageDataUrl: string | null
+  socialLinks: CardSocialLink[]
+}
+
+export type CardSocialKind = "linkedin" | "facebook" | "instagram" | "whatsapp" | "email" | "website"
+
+export type CardSocialLink = {
+  id: string
+  kind: CardSocialKind
+  value: string
+  enabled: boolean
+}
+
+export const CARD_SOCIAL_LABELS: Record<CardSocialKind, string> = {
+  linkedin: "LinkedIn",
+  facebook: "Facebook",
+  instagram: "Instagram",
+  whatsapp: "WhatsApp",
+  email: "Email",
+  website: "Website",
+}
+
+export function defaultSocialLinks(email = "", website = ""): CardSocialLink[] {
+  return [
+    { id: crypto.randomUUID(), kind: "linkedin", value: "", enabled: false },
+    { id: crypto.randomUUID(), kind: "facebook", value: "", enabled: false },
+    { id: crypto.randomUUID(), kind: "instagram", value: "", enabled: false },
+    { id: crypto.randomUUID(), kind: "whatsapp", value: "", enabled: false },
+    { id: crypto.randomUUID(), kind: "email", value: email, enabled: Boolean(email) },
+    { id: crypto.randomUUID(), kind: "website", value: website, enabled: Boolean(website) },
+  ]
 }
 
 export type CardTheme = "light" | "dark" | "tinted"
 export type CardHeaderStyle = "none" | "bar" | "band" | "cover"
-export type CardLayout = "classic" | "centred" | "compact"
+export type CardLayout = "classic" | "editorial" | "compact" | "spotlight"
 
 /**
  * Everything a card owner can restyle. The accent is theirs to choose freely;
@@ -70,6 +102,7 @@ export type AutomationCondition = {
 }
 
 export type AutomationActionKind =
+  | "add-to-crm"
   | "assign-owner"
   | "pipeline-stage"
   | "add-to-list"
@@ -88,6 +121,38 @@ export type AutomationAction = {
 
 export type AutomationState = "off" | "active" | "paused"
 
+export type AutomationRunStatus = "succeeded" | "failed" | "skipped" | "running"
+export type AutomationRunStepStatus = "succeeded" | "failed" | "skipped"
+
+export type AutomationRunStep = {
+  id: string
+  actionId: string | null
+  kind: string
+  label: string
+  status: AutomationRunStepStatus
+  detail: string
+  startedAt: string
+  durationMs: number
+}
+
+export type AutomationRun = {
+  id: string
+  exchangeId: string | null
+  leadId: string | null
+  status: AutomationRunStatus
+  startedAt: string
+  completedAt: string | null
+  durationMs: number
+  recordsAffected: number
+  trigger: string
+  errorSummary: string | null
+  recovery: string | null
+  input: Record<string, string | boolean>
+  rerunOf: string | null
+  isTest: boolean
+  steps: AutomationRunStep[]
+}
+
 export type CardAutomation = {
   state: AutomationState
   conditions: AutomationCondition[]
@@ -99,6 +164,7 @@ export type CardAutomation = {
   failures: number
   /** Populated when repeated failures forced the automation to stop. */
   autoPausedReason: string | null
+  runs: AutomationRun[]
 }
 
 export type CardScanChannel = "direct-scan" | "shared-link" | "in-app-browser" | "unknown"
@@ -137,9 +203,59 @@ export type CardExchange = {
   automationDetail: string
 }
 
+export type CardTotals = {
+  scans: number
+  uniqueScans: number
+  started: number
+  exchanges: number
+  leadsCreated: number
+  leadsMatched: number
+  conversion: number | null
+}
+
+export type TimelinePoint = { label: string; iso: string; scans: number; exchanges: number }
+export type BreakdownRow = { name: string; value: number; share: number }
+
+export type CardAnalytics = {
+  totals: CardTotals
+  timelineHour: Omit<TimelinePoint, "label">[]
+  timelineDay: Omit<TimelinePoint, "label">[]
+  devices: BreakdownRow[]
+  browsers: BreakdownRow[]
+  channels: BreakdownRow[]
+  location: {
+    rows: BreakdownRow[]
+    suppressedRegions: number
+    suppressedScans: number
+  }
+  automationOutcomes: BreakdownRow[]
+  automationRunsToday: number
+  automationFailures: number
+}
+
+/** Empty database-shaped state used only while a newly created row is being persisted. */
+export function emptyCardAnalytics(): CardAnalytics {
+  return {
+    totals: { scans: 0, uniqueScans: 0, started: 0, exchanges: 0, leadsCreated: 0, leadsMatched: 0, conversion: null },
+    timelineHour: [],
+    timelineDay: [],
+    devices: [],
+    browsers: [],
+    channels: [],
+    location: { rows: [], suppressedRegions: 0, suppressedScans: 0 },
+    automationOutcomes: [],
+    automationRunsToday: 0,
+    automationFailures: 0,
+  }
+}
+
 export type ContactCard = {
   id: string
   ownerUserId: string
+  /** Workspace company name, sourced from cmp_Company rather than the card owner's profile. */
+  tenantName: string
+  /** Public attribution is on by default, but can be hidden per card. */
+  showTenantName: boolean
   slug: string
   /** The card's own label in the register, distinct from the person's name. */
   label: string
@@ -161,6 +277,8 @@ export type ContactCard = {
   consentCopy: string
   privacyUrl: string
   automation: CardAutomation
+  /** Aggregates and chart buckets returned by the tenant-safe workspace RPC. */
+  analytics: CardAnalytics
   createdAt: string
   scans: CardScan[]
   exchanges: CardExchange[]
@@ -195,6 +313,15 @@ export const AUTOMATION_CONDITION_LABELS: Record<AutomationConditionKind, { labe
 }
 
 export const AUTOMATION_ACTION_LABELS: Record<AutomationActionKind, { label: string; external: boolean; describe: (action: AutomationAction) => string }> = {
+  "add-to-crm": {
+    label: "Add to CRM",
+    external: false,
+    describe: (action) => {
+      const recordType = action.config.recordType === "deal" ? "a deal" : "a lead"
+      const destination = action.config.pipeline ? ` in ${action.config.pipeline}` : ""
+      return `Add ${recordType} to the CRM${destination}`
+    },
+  },
   "assign-owner": {
     label: "Assign owner",
     external: false,
@@ -268,22 +395,36 @@ export function defaultAutomation(
   const actions: AutomationAction[] = [
     {
       id: crypto.randomUUID(),
+      kind: "add-to-crm",
+      enabled: true,
+      config: {
+        destination: "crm",
+        recordType: "lead",
+        duplicateHandling: "update",
+        owner: ownerName,
+        ownerId,
+        pipeline: pipeline?.name ?? "",
+        pipelineId: pipeline?.id ?? "",
+        stage: stage?.name ?? "",
+        stageId: stage?.id ?? "",
+        fieldMappings: JSON.stringify([
+          { source: "firstName", target: "firstName" },
+          { source: "lastName", target: "lastName" },
+          { source: "email", target: "email" },
+          { source: "company", target: "company" },
+          { source: "phone", target: "phone" },
+        ]),
+      },
+      delayMinutes: 0,
+    },
+    {
+      id: crypto.randomUUID(),
       kind: "assign-owner",
       enabled: true,
       config: { owner: ownerName, ownerId },
       delayMinutes: 0,
     },
   ]
-
-  if (pipeline && stage) {
-    actions.push({
-      id: crypto.randomUUID(),
-      kind: "pipeline-stage",
-      enabled: true,
-      config: { pipeline: pipeline.name, pipelineId: pipeline.id, stage: stage.name, stageId: stage.id },
-      delayMinutes: 0,
-    })
-  }
 
   return {
     state: "active",
@@ -294,150 +435,45 @@ export function defaultAutomation(
     runsToday: 0,
     failures: 0,
     autoPausedReason: null,
+    runs: [],
   }
 }
 /* -------------------------------------------------------------------------- */
-/* Derived analytics                                                           */
+/* Database-owned analytics presentation helpers                              */
 /* -------------------------------------------------------------------------- */
-
-export type CardTotals = {
-  scans: number
-  uniqueScans: number
-  started: number
-  exchanges: number
-  leadsCreated: number
-  leadsMatched: number
-  conversion: number | null
-}
-
-/** A scan and a repeat scan from the same visitor inside 30 minutes are one visit. */
-const VISIT_WINDOW_MS = 30 * 60 * 1000
 
 export function cardTotals(card: ContactCard): CardTotals {
-  const scans = card.scans.length
-  const sorted = [...card.scans].sort((a, b) => a.at.localeCompare(b.at))
-
-  let uniqueScans = 0
-  const lastSeen = new Map<string, number>()
-  for (const scan of sorted) {
-    const fingerprint = `${scan.device}-${scan.browser}-${scan.region}`
-    const at = new Date(scan.at).getTime()
-    const previous = lastSeen.get(fingerprint)
-    if (previous === undefined || at - previous > VISIT_WINDOW_MS) uniqueScans += 1
-    lastSeen.set(fingerprint, at)
-  }
-
-  const started = card.scans.filter((scan) => scan.started).length
-  const exchanges = card.exchanges.length
-  const leadsCreated = card.exchanges.filter((exchange) => exchange.outcome === "created").length
-
-  return {
-    scans,
-    uniqueScans,
-    started,
-    exchanges,
-    leadsCreated,
-    leadsMatched: exchanges - leadsCreated,
-    conversion: uniqueScans > 0 ? exchanges / uniqueScans : null,
-  }
+  return card.analytics.totals
 }
 
-export type TimelinePoint = { label: string; iso: string; scans: number; exchanges: number }
-
 export function cardTimeline(card: ContactCard, granularity: "hour" | "day"): TimelinePoint[] {
-  if (card.scans.length === 0) return []
-
-  const buckets = new Map<string, TimelinePoint>()
-  const keyFor = (date: Date) =>
-    granularity === "hour"
-      ? `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}-${date.getHours()}`
-      : `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
-
+  const points = granularity === "hour" ? card.analytics.timelineHour : card.analytics.timelineDay
   const labelFor = (date: Date) =>
     granularity === "hour"
       ? `${String(date.getHours()).padStart(2, "0")}:00`
       : date.toLocaleDateString(undefined, { day: "numeric", month: "short" })
-
-  const range = granularity === "hour" ? card.scans.slice(-400) : card.scans
-
-  for (const scan of range) {
-    const date = new Date(scan.at)
-    const key = keyFor(date)
-    const existing = buckets.get(key)
-    if (existing) {
-      existing.scans += 1
-      if (scan.exchanged) existing.exchanges += 1
-      continue
-    }
-    buckets.set(key, { label: labelFor(date), iso: date.toISOString(), scans: 1, exchanges: scan.exchanged ? 1 : 0 })
-  }
-
-  return [...buckets.values()].sort((a, b) => a.iso.localeCompare(b.iso))
-}
-
-export type BreakdownRow = { name: string; value: number; share: number }
-
-function tally(values: string[]): BreakdownRow[] {
-  const counts = new Map<string, number>()
-  for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1)
-  const total = values.length || 1
-
-  return [...counts.entries()]
-    .map(([name, value]) => ({ name, value, share: value / total }))
-    .sort((a, b) => b.value - a.value || a.name.localeCompare(b.name))
-}
-
-export const CHANNEL_LABELS: Record<CardScanChannel, string> = {
-  "direct-scan": "Direct scan",
-  "shared-link": "Shared link",
-  "in-app-browser": "In-app browser",
-  unknown: "Unknown",
-}
-
-export const DEVICE_LABELS: Record<CardScanDevice, string> = {
-  mobile: "Mobile",
-  tablet: "Tablet",
-  desktop: "Desktop",
+  return points.map((point) => ({ ...point, label: labelFor(new Date(point.iso)) }))
 }
 
 export function deviceBreakdown(card: ContactCard) {
-  return tally(card.scans.map((scan) => DEVICE_LABELS[scan.device]))
+  return card.analytics.devices
 }
 
 export function browserBreakdown(card: ContactCard) {
-  return tally(card.scans.map((scan) => scan.browser))
+  return card.analytics.browsers
 }
 
 export function channelBreakdown(card: ContactCard) {
-  return tally(card.scans.map((scan) => CHANNEL_LABELS[scan.channel]))
+  return card.analytics.channels
 }
 
 /** Buckets below this size are folded into "Other" so small counts cannot identify a visitor. */
 export const LOCATION_SUPPRESSION_THRESHOLD = 5
 
 export function locationBreakdown(card: ContactCard) {
-  const rows = tally(card.scans.map((scan) => `${scan.region}, ${scan.country}`))
-  const kept = rows.filter((row) => row.value >= LOCATION_SUPPRESSION_THRESHOLD)
-  const suppressed = rows.filter((row) => row.value < LOCATION_SUPPRESSION_THRESHOLD)
-
-  if (suppressed.length === 0) return { rows: kept, suppressedRegions: 0, suppressedScans: 0 }
-
-  const suppressedScans = suppressed.reduce((sum, row) => sum + row.value, 0)
-  const total = card.scans.length || 1
-
-  return {
-    rows: [...kept, { name: "Other regions", value: suppressedScans, share: suppressedScans / total }],
-    suppressedRegions: suppressed.length,
-    suppressedScans,
-  }
+  return card.analytics.location
 }
 
 export function automationOutcomeBreakdown(card: ContactCard) {
-  const labels: Record<CardAutomationOutcome, string> = {
-    ran: "Ran",
-    skipped: "Skipped by a condition",
-    failed: "Failed",
-    none: "Automation off",
-  }
-  return tally(card.exchanges.map((exchange) => labels[exchange.automationOutcome]))
+  return card.analytics.automationOutcomes
 }

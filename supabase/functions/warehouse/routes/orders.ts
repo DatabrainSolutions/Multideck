@@ -21,7 +21,7 @@ import {
   uuid,
 } from "../shared/mod.ts";
 
-async function orderContext(admin, actor) {
+export async function orderContext(admin, actor) {
   requireCapability(actor, "warehouse_orders:read");
   const facilityIds = await companyFacilityIds(admin, actor);
   const [facilities, orgs, items, locations, types, statuses, customs] = await Promise.all([

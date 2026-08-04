@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { Download, FileText, LoaderCircle, Mail, Plus, RefreshCw, ShieldCheck, Trash2 } from "lucide-react"
 import { CustomerAvatar } from "@/components/multideck/customer-components"
+import { MarketingOptInControl } from "@/components/multideck/marketing-opt-in-control"
 import { Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { Button } from "@/components/ui/button"
@@ -10,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner"
 import { useLanguage } from "@/i18n/language-provider"
 import { getCustomer, getCustomerDocumentUrl, listCustomerDocuments, type ApiCustomerDetail, type ApiCustomerDocument, type ApiCustomerDocumentListing } from "@/lib/customer-api"
+import { setMarketingOptIn, type MarketingConsentRecordType } from "@/lib/marketing-consent-api"
 import { getWarehousePortalReference, inviteWarehousePortalUser, listWarehousePortalUsers, revokeWarehousePortalUser, updateWarehousePortalUser, type WarehousePortalReference, type WarehousePortalUser } from "@/lib/warehouse"
 
 export function CustomerDetailPage({ customerId }: { customerId: string }) {
@@ -47,6 +49,34 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
     <CustomerDocuments customerId={customerId} documents={documentListing?.documents ?? []} loading={documentsLoading} error={documentsError} />
   </div>
   if (!customer) return <div className="md-page grid min-h-[360px] place-items-center"><LoaderCircle className="size-5 animate-spin text-[var(--md-accent)]" /></div>
+
+  async function changeMarketingOptIn(recordType: MarketingConsentRecordType, recordId: string, optedIn: boolean) {
+    try {
+      const result = await setMarketingOptIn(recordType, recordId, optedIn)
+      setCustomer((current) => {
+        if (!current) return current
+        if (recordType === "customer") return {
+          ...current,
+          marketingOptIn: result.marketingOptIn,
+          marketingConsentSource: result.marketingConsentSource,
+          marketingConsentUpdatedAt: result.marketingConsentUpdatedAt,
+        }
+        return {
+          ...current,
+          contacts: current.contacts.map((contact) => contact.id === recordId ? {
+            ...contact,
+            consentMarketing: result.marketingOptIn,
+            marketingConsentSource: result.marketingConsentSource,
+            marketingConsentUpdatedAt: result.marketingConsentUpdatedAt,
+          } : contact),
+        }
+      })
+      toast.success(t(optedIn ? "Marketing opt-in recorded" : "Marketing opt-out recorded"))
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : t("Marketing consent could not be updated."))
+      throw cause
+    }
+  }
 
   const accountFacts = [
     [t("Segment"), customer.segment],
@@ -95,9 +125,9 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
         <div className="md-panel-column">
           <Surface className="overflow-hidden rounded-[var(--md-radius-xl)]" padding="none">
             <PanelTitle title={t("Contacts")} meta={String(customer.contacts.length)} />
-            {customer.contacts.length ? customer.contacts.map((contact) => <div key={contact.id} className="flex gap-3 border-t border-[rgba(11,20,19,0.06)] px-5 py-4"><CustomerAvatar initials={contact.initials || "?"} tone="blue" /><div className="min-w-0"><p className="truncate text-[14px] font-medium text-[var(--md-ink)]">{contact.name || t("Unnamed contact")}</p><p className="truncate text-[12px] text-[var(--md-text)]">{contact.role || t("No role recorded")}</p>{contact.email ? <a className="mt-1 block truncate text-[12px] text-[var(--md-accent)]" href={`mailto:${contact.email}`}>{contact.email}</a> : null}</div></div>) : <EmptyRow text={t("No contacts are recorded for this customer.")} />}
+            {customer.contacts.length ? customer.contacts.map((contact) => <div key={contact.id} className="border-t border-[rgba(11,20,19,0.06)] px-5 py-4"><div className="flex gap-3"><CustomerAvatar initials={contact.initials || "?"} tone="blue" /><div className="min-w-0 flex-1"><p className="truncate text-[14px] font-medium text-[var(--md-ink)]">{contact.name || t("Unnamed contact")}</p><p className="truncate text-[12px] text-[var(--md-text)]">{contact.role || t("No role recorded")}</p>{contact.email ? <a className="mt-1 block truncate text-[12px] text-[var(--md-accent)]" href={`mailto:${contact.email}`}>{contact.email}</a> : null}</div></div><MarketingOptInControl compact className="mt-3 pt-3 shadow-[var(--md-stroke-top)]" checked={contact.consentMarketing} source={contact.marketingConsentSource} updatedAt={contact.marketingConsentUpdatedAt} onCheckedChange={(optedIn) => changeMarketingOptIn("contact", contact.id, optedIn)} /></div>) : <EmptyRow text={t("No contacts are recorded for this customer.")} />}
           </Surface>
-          <Surface className="rounded-[var(--md-radius-xl)]" padding="none"><PanelTitle title={t("Account")} />{accountFacts.length ? <div className="px-5 pb-5">{accountFacts.map(([label, value]) => <div key={label} className="grid grid-cols-[120px_1fr] gap-4 border-t border-[rgba(11,20,19,0.06)] py-3"><p className="text-[13px] text-[var(--md-text)]">{label}</p><p className="text-right text-[13px] font-medium text-[var(--md-ink)]">{value}</p></div>)}</div> : <EmptyRow text={t("No additional account details are recorded.")} />}</Surface>
+          <Surface className="rounded-[var(--md-radius-xl)]" padding="none"><PanelTitle title={t("Account")} /><div className="px-5 py-4 shadow-[var(--md-stroke-top)]"><MarketingOptInControl checked={Boolean(customer.marketingOptIn)} source={customer.marketingConsentSource} updatedAt={customer.marketingConsentUpdatedAt} onCheckedChange={(optedIn) => changeMarketingOptIn("customer", customer.id, optedIn)} /></div>{accountFacts.length ? <div className="px-5 pb-5">{accountFacts.map(([label, value]) => <div key={label} className="grid grid-cols-[120px_1fr] gap-4 border-t border-[rgba(11,20,19,0.06)] py-3"><p className="text-[13px] text-[var(--md-text)]">{label}</p><p className="text-right text-[13px] font-medium text-[var(--md-ink)]">{value}</p></div>)}</div> : <EmptyRow text={t("No additional account details are recorded.")} />}</Surface>
         </div>
       </div>
     </div>

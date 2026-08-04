@@ -268,12 +268,14 @@ export function SettingsToggleRow({
   checked,
   onCheckedChange,
   meta,
+  disabled = false,
 }: {
   title: string
   description: string
   checked: boolean
   onCheckedChange?: (checked: boolean) => void
   meta?: ReactNode
+  disabled?: boolean
 }) {
   const switchId = useId()
   const descriptionId = `${switchId}-description`
@@ -281,12 +283,12 @@ export function SettingsToggleRow({
   return (
     <div className="grid gap-3 px-5 py-4 md:grid-cols-[minmax(160px,260px)_minmax(0,1fr)] md:items-center">
       <div className="min-w-0">
-        <label htmlFor={switchId} className="cursor-pointer text-[13px] font-medium text-[var(--md-ink)]">{title}</label>
+        <label htmlFor={switchId} className={cn("text-[13px] font-medium text-[var(--md-ink)]", disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer")}>{title}</label>
         <p id={descriptionId} className="mt-1 max-w-[260px] text-[12px] leading-5 text-[var(--md-text)]">{description}</p>
       </div>
       <div className="flex min-w-0 items-center justify-between gap-4">
         {meta ? <div className="min-w-0 text-[12px] text-[var(--md-text)]">{meta}</div> : <span />}
-        <Switch id={switchId} aria-describedby={descriptionId} checked={checked} onCheckedChange={onCheckedChange} />
+        <Switch id={switchId} aria-describedby={descriptionId} checked={checked} disabled={disabled} onCheckedChange={onCheckedChange} />
       </div>
     </div>
   )

@@ -52,7 +52,7 @@ export const dexterModels: DexterModel[] = [
   },
 ]
 
-export const defaultDexterModelId: DexterModelId = "smart"
+export const defaultDexterModelId: DexterModelId = "fast"
 
 const modelsById = new Map(dexterModels.map((model) => [model.id, model]))
 

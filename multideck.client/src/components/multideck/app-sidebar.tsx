@@ -1,6 +1,6 @@
-import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Archive, ArrowLeft, Bell, Boxes, Check, ChevronDown, ChevronRight, Clock3, CreditCard, FileText, Inbox, LifeBuoy, LogOut, MailWarning, Pencil, Plus, PanelLeftClose, PanelLeftOpen, Pin, Send, Settings, Sparkles, Trash2, TriangleAlert, Users, X, type LucideIcon } from "lucide-react"
+import { Archive, ArrowLeft, Bell, Boxes, Check, ChevronDown, ChevronRight, Clock3, CreditCard, FileText, Inbox, LifeBuoy, LoaderCircle, LogOut, MailWarning, Pencil, Plus, PanelLeftClose, PanelLeftOpen, Pin, Search, Send, Settings, Sparkles, Trash2, TriangleAlert, Users, X, type LucideIcon } from "lucide-react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { SpectralBloomShader } from "@/components/multideck/dexter-action-pill"
@@ -47,6 +47,10 @@ const sidebarActiveTransition = {
 const sidebarPaneTransition = {
   duration: 0.18,
   ease: [0.22, 1, 0.36, 1] as [number, number, number, number],
+}
+
+type SearchableDexterConversation = DexterConversationSummary & {
+  matchSnippet?: string
 }
 
 /** Pinning re-slots a row, so it travels on a spring rather than jumping to the top. */
@@ -883,23 +887,53 @@ export function AppSidebar({
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   const profileIsActive = false
   const [arrangingScopeId, setArrangingScopeId] = useState<string | null>(null)
-  const [dexterConversations, setDexterConversations] = useState<DexterConversationSummary[]>([])
+  const [dexterConversations, setDexterConversations] = useState<SearchableDexterConversation[]>([])
+  const [dexterConversationSearch, setDexterConversationSearch] = useState("")
+  const [isSearchingDexterConversations, setIsSearchingDexterConversations] = useState(false)
   const [activeDexterConversationId, setActiveDexterConversationId] = useState<string | null>(null)
   const [editingDexterConversationId, setEditingDexterConversationId] = useState<string | null>(null)
   const [editingDexterTitle, setEditingDexterTitle] = useState("")
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null)
   const [deletingDexterConversationId, setDeletingDexterConversationId] = useState<string | null>(null)
   const [dexterSidebarError, setDexterSidebarError] = useState<string | null>(null)
+  const dexterConversationRequestVersion = useRef(0)
 
-  const loadDexterConversations = useCallback(async () => {
+  const loadDexterConversations = useCallback(async (search = "") => {
     if (!isAgentRoute) return
+    const query = search.trim()
+    const requestVersion = dexterConversationRequestVersion.current + 1
+    dexterConversationRequestVersion.current = requestVersion
+    setIsSearchingDexterConversations(Boolean(query))
+
     try {
-      setDexterConversations(await listDexterConversations())
+      let conversations: SearchableDexterConversation[]
+      if (query) {
+        if (!supabase) throw new Error("Dexter is not connected to this workspace.")
+        const { data, error } = await supabase.rpc("multideck_dexter_search_conversations", {
+          p_query: query,
+          p_limit: 50,
+        })
+        if (error) throw error
+        conversations = Array.isArray(data) ? data as SearchableDexterConversation[] : []
+      } else {
+        conversations = await listDexterConversations()
+      }
+
+      if (dexterConversationRequestVersion.current !== requestVersion) return
+      setDexterConversations(conversations)
       setDexterSidebarError(null)
-    } catch {
+    } catch (error) {
+      if (dexterConversationRequestVersion.current !== requestVersion) return
       setDexterConversations([])
+      setDexterSidebarError(query
+        ? t("Unable to search conversations. Clear the search and try again.")
+        : error instanceof Error ? error.message : t("Dexter's conversation history is unavailable."))
+    } finally {
+      if (dexterConversationRequestVersion.current === requestVersion) {
+        setIsSearchingDexterConversations(false)
+      }
     }
-  }, [isAgentRoute])
+  }, [isAgentRoute, t])
 
   const areaBaseIds = useMemo(() => availableAreas.map((area) => area.id), [availableAreas])
   const areaArrangeItems = useMemo<SidebarArrangeItem[]>(
@@ -994,11 +1028,15 @@ export function AppSidebar({
 
   useEffect(() => {
     if (!isAgentRoute) return
-    void loadDexterConversations()
-    const refresh = () => void loadDexterConversations()
+    const search = dexterConversationSearch.trim()
+    const timer = window.setTimeout(() => void loadDexterConversations(search), search ? 180 : 0)
+    const refresh = () => void loadDexterConversations(search)
     window.addEventListener(DEXTER_CONVERSATIONS_CHANGED_EVENT, refresh)
-    return () => window.removeEventListener(DEXTER_CONVERSATIONS_CHANGED_EVENT, refresh)
-  }, [isAgentRoute, loadDexterConversations])
+    return () => {
+      window.clearTimeout(timer)
+      window.removeEventListener(DEXTER_CONVERSATIONS_CHANGED_EVENT, refresh)
+    }
+  }, [dexterConversationSearch, isAgentRoute, loadDexterConversations])
 
   function openArea(area: SidebarArea) {
     setActiveAreaId(area.id)
@@ -1182,10 +1220,21 @@ export function AppSidebar({
               <SidebarSection>
                 {homeSidebarItem}
                 <SidebarSectionItem>
+                  <SidebarNavItem
+                    item={{ label: "Back", icon: ArrowLeft }}
+                    onClick={() => {
+                      if (window.history.length > 1) window.history.back()
+                      else navigate("/")
+                      onRequestClose?.()
+                    }}
+                    collapsed={collapsed}
+                  />
+                </SidebarSectionItem>
+                <SidebarSectionItem>
                   <button
                     type="button"
                     className={cn(
-                      "group relative flex h-10 w-full items-center gap-2.5 overflow-hidden rounded-[var(--md-radius-lg)] px-3 text-start text-[13px] font-medium text-white shadow-[var(--md-shadow-line)] transition-[transform,box-shadow] hover:-translate-y-px focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a20)] motion-reduce:hover:translate-y-0",
+                      "group relative flex h-10 w-full items-center gap-2.5 overflow-hidden rounded-[var(--md-radius-md)] px-3 text-start text-[13px] font-medium text-white shadow-[var(--md-shadow-line)] transition-[transform,box-shadow] hover:-translate-y-px focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a20)] motion-reduce:hover:translate-y-0",
                       collapsed && "justify-center px-0",
                     )}
                     onClick={startDexterConversation}
@@ -1198,17 +1247,6 @@ export function AppSidebar({
                     <span className={cn("relative truncate", collapsed && "sr-only")}>{t("New chat")}</span>
                   </button>
                 </SidebarSectionItem>
-                <SidebarSectionItem>
-                  <SidebarNavItem
-                    item={{ label: "Back", icon: ArrowLeft }}
-                    onClick={() => {
-                      if (window.history.length > 1) window.history.back()
-                      else navigate("/")
-                      onRequestClose?.()
-                    }}
-                    collapsed={collapsed}
-                  />
-                </SidebarSectionItem>
               </SidebarSection>
 
               <div className={cn("mt-5 flex items-center justify-between px-2", collapsed && "justify-center px-0")}>
@@ -1219,14 +1257,63 @@ export function AppSidebar({
               </div>
 
               {collapsed ? null : (
-                <div className="mt-2 grid gap-0.5">
+                <>
+                  <div className="relative mx-2 mt-2">
+                    <label className="sr-only" htmlFor="dexter-conversation-search">{t("Search conversations")}</label>
+                    <Search
+                      className="pointer-events-none absolute start-3 top-1/2 size-3.5 -translate-y-1/2 text-[var(--md-subtle)]"
+                      strokeWidth={1.4}
+                      aria-hidden="true"
+                    />
+                    <input
+                      id="dexter-conversation-search"
+                      type="text"
+                      role="searchbox"
+                      value={dexterConversationSearch}
+                      placeholder={t("Search conversations")}
+                      autoComplete="off"
+                      className="h-9 w-full rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] pe-9 ps-9 text-[12.5px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] outline-none transition-[background-color,box-shadow] duration-150 placeholder:text-[var(--md-subtle)] focus-visible:shadow-[var(--md-shadow-line),0_0_0_3px_var(--md-accent-a20)] motion-reduce:transition-none"
+                      onChange={(event) => setDexterConversationSearch(event.target.value)}
+                    />
+                    <span className="absolute end-1 top-1/2 z-10 grid size-7 -translate-y-1/2 place-items-center">
+                      <LoaderCircle
+                        className={cn(
+                          "pointer-events-none absolute size-3.5 animate-spin text-[var(--md-subtle)] transition-opacity duration-150 motion-reduce:animate-none motion-reduce:transition-none",
+                          isSearchingDexterConversations ? "opacity-100" : "opacity-0",
+                        )}
+                        strokeWidth={1.4}
+                        aria-hidden="true"
+                      />
+                      <button
+                        type="button"
+                        aria-label={t("Clear search")}
+                        className={cn(
+                          "grid size-7 place-items-center rounded-full text-[var(--md-subtle)] outline-none transition-[background-color,color,opacity,scale] duration-150 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a20)] active:scale-[0.96] motion-reduce:transition-none motion-reduce:active:scale-100",
+                          dexterConversationSearch && !isSearchingDexterConversations ? "opacity-100" : "pointer-events-none scale-75 opacity-0",
+                        )}
+                        onClick={() => setDexterConversationSearch("")}
+                      >
+                        <X className="size-3.5" strokeWidth={1.4} aria-hidden="true" />
+                      </button>
+                    </span>
+                  </div>
+
+                  <div className="mt-2 grid gap-0.5" aria-busy={isSearchingDexterConversations}>
                   {dexterConversations.map((conversation, index) => (
                     <motion.div
                       key={conversation.id}
                       className="group relative min-w-0"
-                      initial={shouldReduceMotion ? false : { opacity: 0, x: direction === "rtl" ? 6 : -6 }}
+                      initial={shouldReduceMotion
+                        ? false
+                        : dexterConversationSearch
+                          ? { opacity: 0 }
+                          : { opacity: 0, x: direction === "rtl" ? 6 : -6 }}
                       animate={{ opacity: 1, x: 0 }}
-                      transition={shouldReduceMotion ? { duration: 0 } : { ...mdMotion.enter, delay: Math.min(index * 0.025, 0.2) }}
+                      transition={shouldReduceMotion
+                        ? { duration: 0 }
+                        : dexterConversationSearch
+                          ? mdMotion.micro
+                          : { ...mdMotion.enter, delay: Math.min(index * 0.025, 0.2) }}
                     >
                       {editingDexterConversationId === conversation.id ? (
                         <form
@@ -1358,11 +1445,23 @@ export function AppSidebar({
                       )}
                     </motion.div>
                   ))}
-                  {dexterConversations.length === 0 ? (
-                    <p className="px-2 py-3 text-[12px] leading-5 text-[var(--md-subtle)]">{t("No conversations yet")}</p>
+                  {dexterConversations.length === 0 && !isSearchingDexterConversations ? (
+                    <div className="px-2 py-3 text-[12px] leading-5 text-[var(--md-subtle)]">
+                      <p>{t(dexterConversationSearch ? "No matching conversations" : "No conversations yet")}</p>
+                      {dexterConversationSearch ? (
+                        <button
+                          type="button"
+                          className="mt-1 font-medium text-[var(--md-accent)] outline-none hover:underline focus-visible:rounded focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a20)]"
+                          onClick={() => setDexterConversationSearch("")}
+                        >
+                          {t("Clear search")}
+                        </button>
+                      ) : null}
+                    </div>
                   ) : null}
                   {dexterSidebarError ? <p className="px-2 py-2 text-[12px] leading-5 text-[var(--md-red)]" role="alert">{dexterSidebarError}</p> : null}
-                </div>
+                  </div>
+                </>
               )}
             </motion.div>
           ) : isSettingsRoute ? (

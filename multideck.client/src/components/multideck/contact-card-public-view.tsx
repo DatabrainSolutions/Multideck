@@ -2,11 +2,12 @@ import { useMemo, type CSSProperties, type ReactNode, type RefObject } from "rea
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { Check, Eye, Globe, LoaderCircle, Mail, Phone, TriangleAlert, UserRoundPlus } from "lucide-react"
 import { CopyableField } from "@/components/multideck/copyable-field"
+import { ContactSocialMark } from "@/components/multideck/contact-social-mark"
 import { useLanguage } from "@/i18n/language-provider"
 import { mdEaseIn, mdEaseOut } from "@/lib/motion"
 import { cardThemeVariables, resolveCardTheme } from "@/lib/card-theme"
 import { readableInk } from "@/lib/color"
-import type { ContactCard } from "@/data/contact-card-data"
+import { CARD_SOCIAL_LABELS, type CardSocialKind, type ContactCard } from "@/data/contact-card-data"
 import { cn } from "@/lib/utils"
 
 export type PublicFormValues = {
@@ -51,8 +52,9 @@ export function PublicCardShell({
   const theme = useMemo(() => resolveCardTheme(card?.branding ?? { accent: "#1f6f68", theme: "light", headerStyle: "bar", layout: "classic", cornerStyle: "soft", logoDataUrl: null, logoInQr: false, qrModuleStyle: "rounded", qrEyeStyle: "rounded", qrDark: "#0b1413", qrLight: "#ffffff" }), [card?.branding])
 
   const style = { ...cardThemeVariables(theme), fontSize: `${scale}rem` } as CSSProperties
-  const centred = card?.branding.layout === "centred"
+  const centred = card?.branding.layout === "spotlight"
   const compact = card?.branding.layout === "compact"
+  const editorial = card?.branding.layout === "editorial"
 
   return (
     <div
@@ -74,6 +76,7 @@ export function PublicCardShell({
           "mx-auto w-full",
           compact ? "max-w-[440px] px-5 pb-12 pt-6" : "max-w-[500px] px-6 pb-16 pt-9",
           centred && "text-center",
+          editorial && "max-w-[540px]",
         )}
       >
         {children}
@@ -130,6 +133,18 @@ function IdentityMark({ card, size = 48 }: { card: ContactCard; size?: number })
 
   const cover = card.branding.headerStyle === "cover"
 
+  if (card.person.profileImageDataUrl) {
+    return (
+      <span
+        aria-hidden="true"
+        className={cn("grid shrink-0 place-items-center overflow-hidden rounded-full bg-[var(--card-surface)] shadow-[var(--card-shadow)]", cover && "-mt-12")}
+        style={{ width: size, height: size }}
+      >
+        <img src={card.person.profileImageDataUrl} alt="" className="size-full object-cover" />
+      </span>
+    )
+  }
+
   if (card.branding.logoDataUrl) {
     return (
       <span
@@ -156,6 +171,44 @@ function IdentityMark({ card, size = 48 }: { card: ContactCard; size?: number })
     >
       {initials}
     </span>
+  )
+}
+
+function socialHref(kind: CardSocialKind, value: string) {
+  const clean = value.trim()
+  if (kind === "email") return `mailto:${clean}`
+  if (kind === "whatsapp") return `https://wa.me/${clean.replace(/[^0-9+]/g, "").replace(/^\+/, "")}`
+  if (/^https?:\/\//i.test(clean)) return clean
+  if (kind === "linkedin") return `https://linkedin.com/in/${clean.replace(/^@/, "")}`
+  if (kind === "facebook") return `https://facebook.com/${clean.replace(/^@/, "")}`
+  if (kind === "instagram") return `https://instagram.com/${clean.replace(/^@/, "")}`
+  return `https://${clean}`
+}
+
+export function ContactCardSocialLinks({ card, interactive = true, className }: { card: ContactCard; interactive?: boolean; className?: string }) {
+  const links = card.person.socialLinks.filter((link) => link.enabled && link.value.trim())
+  if (links.length === 0) return null
+
+  return (
+    <div className={cn("flex flex-wrap gap-2", card.branding.layout === "spotlight" && "justify-center", className)} aria-label="Social links">
+      {links.map((link) => {
+        const label = CARD_SOCIAL_LABELS[link.kind]
+        return (
+          <a
+            key={link.id}
+            href={socialHref(link.kind, link.value)}
+            target={link.kind === "email" ? undefined : "_blank"}
+            rel={link.kind === "email" ? undefined : "noreferrer noopener"}
+            tabIndex={interactive ? undefined : -1}
+            aria-label={label}
+            title={label}
+            className="grid size-10 place-items-center rounded-full bg-[var(--card-surface)] text-[var(--card-ink)] shadow-[inset_0_0_0_1px_var(--card-hairline)] transition-[transform,background-color,color] duration-[160ms] hover:bg-[var(--card-accent-soft)] hover:text-[var(--card-accent)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--card-focus-ring)] motion-reduce:transition-none"
+          >
+            <ContactSocialMark kind={link.kind} className="size-[18px]" />
+          </a>
+        )
+      })}
+    </div>
   )
 }
 
@@ -254,11 +307,12 @@ export function PublicCardForm({
   interactive?: boolean
 }) {
   const { t } = useLanguage()
-  const centred = card.branding.layout === "centred"
+  const centred = card.branding.layout === "spotlight"
+  const editorial = card.branding.layout === "editorial"
 
   return (
     <div>
-      <div className={cn("flex flex-col gap-4", centred && "items-center")}>
+      <div className={cn("flex flex-col gap-4", centred && "items-center", editorial && "border-s-2 border-[var(--card-accent)] ps-5")}>
         <IdentityMark card={card} size={card.branding.layout === "compact" ? 44 : 52} />
 
         <div className="min-w-0">
@@ -270,6 +324,8 @@ export function PublicCardForm({
           </p>
         </div>
       </div>
+
+      <ContactCardSocialLinks card={card} interactive={interactive} className="mt-5" />
 
       <form ref={formRef} noValidate className="mt-8 text-start" onSubmit={onSubmit}>
         <fieldset disabled={submitting} className="grid gap-[18px] border-0 p-0">
@@ -359,7 +415,11 @@ export function PublicCardForm({
           ) : null}
 
           <p className="mt-3 text-[12.5px] leading-[1.55] text-[var(--card-subtle)]">
-            {t("Your details go to")} {card.person.company} {t("so they can follow up with you.")}{" "}
+            {card.showTenantName ? (
+              <>{t("Your details go to")} <bdi dir="auto" data-i18n-skip>{card.tenantName}</bdi> {t("so they can follow up with you.")}{" "}</>
+            ) : (
+              <>{t("Your details are used only to respond to this request.")}{" "}</>
+            )}
             <a
               href={card.privacyUrl}
               target="_blank"
@@ -463,7 +523,7 @@ export function PublicCardExchange({
   interactive?: boolean
 }) {
   const { t } = useLanguage()
-  const centred = card.branding.layout === "centred"
+  const centred = card.branding.layout === "spotlight"
 
   return (
     <div>
@@ -515,6 +575,7 @@ export function PublicCardExchange({
             <ContactRow icon={Globe} label={t("Website")} value={card.person.website} href={`https://${card.person.website}`} interactive={interactive} />
           ) : null}
         </div>
+        <ContactCardSocialLinks card={card} interactive={interactive} className="mt-4 border-t border-[var(--card-hairline)] pt-4" />
       </section>
 
       <div className="mt-5 grid gap-2.5">

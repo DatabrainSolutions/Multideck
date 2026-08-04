@@ -23,6 +23,8 @@ import {
   Copy,
   FileText,
   Mail,
+  MessageSquareText,
+  Radar,
   RefreshCw,
   Sparkles,
   type LucideIcon,
@@ -48,6 +50,7 @@ import {
   type DexterAccessMode,
   type DexterMentionItem,
   type DexterMonitor,
+  type DexterSlashCommand,
   type DexterSpecialistId,
 } from "@/components/multideck/agent-dexter-components"
 import {
@@ -65,6 +68,8 @@ import {
 } from "@/data/dexter-mentions"
 import { DexterBrandMark } from "@/components/multideck/dexter-brand-mark"
 import { DexterEmailAttachmentCard } from "@/components/multideck/dexter-email-attachment-card"
+import { DexterEmailComposeCard } from "@/components/multideck/dexter-email-compose-card"
+import { WatchModeAurora } from "@/components/multideck/aurora-background"
 import { DexterInlineCitation, isDexterCitationUrl } from "@/components/multideck/dexter-inline-citation"
 import { ProgressiveBlur } from "@/components/multideck/progressive-blur"
 import { StatusPill } from "@/components/multideck/status-pill"
@@ -82,6 +87,7 @@ import {
   type DexterUploadedDocument,
   type DexterConversation,
   type DexterEmailAttachment,
+  type DexterEmailDraft,
   type DexterWatchEmailContext,
   type DexterMessage,
   type DexterPendingAction,
@@ -1106,6 +1112,7 @@ function ConversationStream({
   onActionDecision,
   onRetryMessage,
   onSelectResponse,
+  onEmailDraftChange,
 }: {
   messages: DexterMessage[]
   isWorking: boolean
@@ -1120,8 +1127,9 @@ function ConversationStream({
   pendingActionDecision: { actionId: string; decision: DexterActionDecision } | null
   actionDecisionError: { actionId: string; message: string } | null
   onActionDecision: (action: DexterPendingAction, decision: DexterActionDecision) => void
-  onRetryMessage: (message: DexterMessage) => void
+  onRetryMessage?: (message: DexterMessage) => void
   onSelectResponse: (userMessageId: string, assistantMessageId: string) => void
+  onEmailDraftChange: (messageId: string, draft: DexterEmailDraft) => void
 }) {
   const { direction, t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
@@ -1265,6 +1273,15 @@ function ConversationStream({
               {message.emailAttachments.map((attachment) => (
                 <DexterEmailAttachmentCard key={attachment.id} attachment={attachment} />
               ))}
+            </div>
+          ) : null}
+          {message.emailDraft ? (
+            <div className="w-full lg:w-1/2">
+              <DexterEmailComposeCard
+                messageId={dexterMessageServerId(message)}
+                draft={message.emailDraft}
+                onDraftChange={(draft) => onEmailDraftChange(message.id, draft)}
+              />
             </div>
           ) : null}
           <AnimatePresence initial={false} mode="popLayout">
@@ -1437,22 +1454,24 @@ function ConversationStream({
                           <Check className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
                         </motion.span>
                       </motion.button>
-                      <motion.button
-                        type="button"
-                        className="grid size-7 place-items-center rounded-full text-[var(--md-subtle)] transition-colors hover:bg-[var(--md-surface-2)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a42)] disabled:cursor-not-allowed disabled:opacity-40"
-                        aria-label={t("Retry response")}
-                        title={t("Retry response")}
-                        disabled={isWorking}
-                        whileTap={shouldReduceMotion || isWorking ? undefined : { scale: 0.9 }}
-                        onClick={() => onRetryMessage(message)}
-                      >
-                        <motion.span
-                          animate={{ rotate: isRetrying && !shouldReduceMotion ? 180 : 0 }}
-                          transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.smooth)}
+                      {onRetryMessage ? (
+                        <motion.button
+                          type="button"
+                          className="grid size-7 place-items-center rounded-full text-[var(--md-subtle)] transition-colors hover:bg-[var(--md-surface-2)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a42)] disabled:cursor-not-allowed disabled:opacity-40"
+                          aria-label={t("Retry response")}
+                          title={t("Retry response")}
+                          disabled={isWorking}
+                          whileTap={shouldReduceMotion || isWorking ? undefined : { scale: 0.9 }}
+                          onClick={() => onRetryMessage(message)}
                         >
-                          <RefreshCw className="size-3.5" strokeWidth={1.55} aria-hidden="true" />
-                        </motion.span>
-                      </motion.button>
+                          <motion.span
+                            animate={{ rotate: isRetrying && !shouldReduceMotion ? 180 : 0 }}
+                            transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.smooth)}
+                          >
+                            <RefreshCw className="size-3.5" strokeWidth={1.55} aria-hidden="true" />
+                          </motion.span>
+                        </motion.button>
+                      ) : null}
                     </div>
                     <span className="sr-only" aria-live="polite">
                       {isCopied ? t("Message copied") : null}
@@ -1569,7 +1588,6 @@ export function AgentDexterPage({
   )
   const [dexterMode, setDexterMode] = useState<"chat" | "watch">("chat")
   const [watches, setWatches] = useState<DexterWatch[]>([])
-  const [watchFeedback, setWatchFeedback] = useState<{ tone: "success" | "neutral" | "error"; message: string } | null>(null)
   const [isSending, setIsSending] = useState(false)
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null)
   const [liveReasoning, setLiveReasoning] = useState("")
@@ -1630,6 +1648,12 @@ export function AgentDexterPage({
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rawId)
   }), [mentionItems])
   const composerMentionItems = dexterMode === "watch" ? watchMentionItems : mentionItems
+  const slashCommands = useMemo<DexterSlashCommand[]>(() => {
+    return [
+      { id: "mode:chat", command: "/chat", label: "Chat", description: "Investigate or complete work.", group: "mode", icon: MessageSquareText, selected: dexterMode === "chat" },
+      { id: "mode:watch", command: "/watch", label: "Watch", description: "Alert you when workspace records change.", group: "mode", icon: Radar, selected: dexterMode === "watch" },
+    ]
+  }, [dexterMode])
   const composerAttachmentItems = useMemo<DexterAttachment[]>(() => [
     ...attachedItems,
     ...composerEmailAttachments.map((attachment) => ({
@@ -1822,7 +1846,11 @@ export function AgentDexterPage({
       // Remember the intent before the padding changes: if the operator was
       // reading the newest reply, they should still be reading it afterwards.
       stickToBottomRef.current = Boolean(stream && stream.scrollHeight - stream.scrollTop - stream.clientHeight < 140)
-      setComposerInset(node.offsetHeight)
+      // The first observer tick can arrive while Motion is still laying out the
+      // composer and briefly report zero. Never collapse the stream clearance:
+      // a tall inline response (for example an email draft) must always scroll
+      // fully above the floating prompt.
+      setComposerInset(Math.max(node.offsetHeight, 202))
     })
     observer.observe(node)
 
@@ -1913,6 +1941,17 @@ export function AgentDexterPage({
     })
   }
 
+  function handleSlashCommand(command: DexterSlashCommand) {
+    if (command.id === "mode:chat") {
+      enterDexterMode("chat")
+      return
+    }
+    if (command.id === "mode:watch") {
+      enterDexterMode("watch")
+      return
+    }
+  }
+
   function addAttachment(id: string) {
     setSelectedAttachmentIds((current) => {
       const next = new Set(current)
@@ -1927,8 +1966,9 @@ export function AgentDexterPage({
       setComposerValue("")
       setComposerMentions([])
     }
-    setWatchFeedback(null)
-    if (mode === "watch") setStage("landing")
+    if (mode === "watch") {
+      setStage("landing")
+    }
   }
 
   function attachWatchFiles(attachments: DexterEmailAttachment[]) {
@@ -2038,12 +2078,10 @@ export function AgentDexterPage({
 
   function handleComposerChange(value: string) {
     const command = value.trim().toLowerCase()
-    if (command === "/watch") {
-      enterDexterMode("watch")
-      return
-    }
-    if (command === "/chat") {
-      enterDexterMode("chat")
+    const matchedCommand = slashCommands.find((item) => item.command.toLowerCase() === command)
+    if (matchedCommand && !matchedCommand.disabled) {
+      setComposerValue("")
+      handleSlashCommand(matchedCommand)
       return
     }
     setComposerValue(value)
@@ -2052,41 +2090,104 @@ export function AgentDexterPage({
   async function submitPrompt(prompt = composerValue, specialistId = selectedSpecialistId) {
     const message = prompt.trim()
     if (!message || isWorking || promptSubmissionInFlightRef.current) return
-    if (message.toLowerCase() === "/watch") {
-      enterDexterMode("watch")
-      return
-    }
-    if (message.toLowerCase() === "/chat") {
-      enterDexterMode("chat")
+    const matchedCommand = slashCommands.find((item) => item.command.toLowerCase() === message.toLowerCase())
+    if (matchedCommand && !matchedCommand.disabled) {
+      handleSlashCommand(matchedCommand)
       return
     }
     promptSubmissionInFlightRef.current = true
 
     if (dexterMode === "watch") {
+      const messageAttachments = composerMessageAttachments()
+      const createdAt = new Date().toISOString()
+      const pendingMessage: DexterMessage = {
+        id: `watch-pending-${Date.now()}`,
+        role: "user",
+        content: message,
+        createdAt,
+        specialist: specialistId,
+        attachments: messageAttachments,
+      }
+      const assistantStreamMessage: DexterMessage = {
+        id: `watch-streaming-${Date.now()}`,
+        role: "assistant",
+        content: "",
+        createdAt,
+        specialist: specialistId,
+        responseToUserMessageId: pendingMessage.id,
+        responseVersion: 1,
+      }
+      const pendingConversation: DexterConversation = {
+        id: "",
+        title: message.length > 100 ? `${message.slice(0, 99).trimEnd()}…` : message,
+        summary: "",
+        updatedAt: createdAt,
+        messages: [pendingMessage, assistantStreamMessage],
+      }
+      const pendingDraft = {
+        value: composerValue,
+        mentions: composerMentions,
+        attachmentIds: selectedAttachmentIds,
+        emailAttachments: composerEmailAttachments,
+        emailUpdates: composerEmailUpdates,
+        uploadedDocuments: composerUploadedDocuments,
+      }
+      pendingScrollToLatestRef.current = true
+      setActiveConversation(pendingConversation)
+      setStage("conversation")
       setIsSending(true)
-      setWatchFeedback(null)
+      liveReasoningRef.current = ""
+      setLiveReasoning("")
+      setStreamingMessageId(assistantStreamMessage.id)
+      setError(null)
+      setActionDecisionError(null)
+      setComposerValue("")
+      setComposerMentions([])
+      setSelectedAttachmentIds(new Set())
+      setComposerEmailAttachments([])
+      setComposerEmailUpdates([])
+      setComposerUploadedDocuments([])
+      setShowAttachments(false)
       try {
         const result = await createDexterWatch({
           message,
           locale: language,
-          attachments: composerMessageAttachments(),
+          attachments: messageAttachments,
         })
-        setWatchFeedback({
-          tone: result.status === "created" ? "success" : "neutral",
-          message: result.message,
+        setActiveConversation({
+          ...pendingConversation,
+          messages: [
+            pendingMessage,
+            { ...assistantStreamMessage, content: result.message },
+          ],
         })
         if (result.status === "created") {
           setWatches((current) => [result.watch, ...current.filter((watch) => watch.id !== result.watch.id)])
-          setComposerValue("")
-          setComposerMentions([])
-          setSelectedAttachmentIds(new Set())
           setIsMonitorRailCollapsed(false)
         }
       } catch (watchError) {
-        setWatchFeedback({ tone: "error", message: watchError instanceof Error ? watchError.message : t("Dexter could not set up that watch.") })
+        setComposerValue(pendingDraft.value)
+        setComposerMentions(pendingDraft.mentions)
+        setSelectedAttachmentIds(pendingDraft.attachmentIds)
+        setComposerEmailAttachments(pendingDraft.emailAttachments)
+        setComposerEmailUpdates(pendingDraft.emailUpdates)
+        setComposerUploadedDocuments(pendingDraft.uploadedDocuments)
+        setActiveConversation({
+          ...pendingConversation,
+          messages: [
+            pendingMessage,
+            {
+              ...assistantStreamMessage,
+              content: watchError instanceof Error
+                ? watchError.message
+                : t("Dexter could not set up that watch."),
+            },
+          ],
+        })
       } finally {
         promptSubmissionInFlightRef.current = false
         setIsSending(false)
+        setStreamingMessageId(null)
       }
       return
     }
@@ -2626,6 +2727,7 @@ export function AgentDexterPage({
             exit={{ opacity: 0, transition: { duration: 0 } }}
             transition={mdMotion.page}
           >
+            <WatchModeAurora active={dexterMode === "watch"} />
             <div className="pointer-events-auto absolute end-[var(--md-page-stack-gap)] top-[18px] z-30">
               <HeaderAction
                 icon={Sparkles}
@@ -2635,7 +2737,7 @@ export function AgentDexterPage({
               />
             </div>
 
-            <div className="mx-auto flex w-full max-w-[850px] flex-1 flex-col justify-center px-[var(--md-page-stack-gap)] py-[clamp(48px,8vw,64px)]">
+            <div className="relative z-10 mx-auto flex w-full max-w-[850px] flex-1 flex-col justify-center px-[var(--md-page-stack-gap)] py-[clamp(48px,8vw,64px)]">
               <motion.div
                 className="mx-auto mb-[var(--md-page-section-gap)] text-center"
                 initial={{ opacity: 0, y: 12 }}
@@ -2672,9 +2774,11 @@ export function AgentDexterPage({
                   selectedSpecialistId={selectedSpecialistId}
                   selectedModelId={selectedModelId}
                   accessMode={accessMode}
+                  mode={dexterMode}
                   contextUsedTokens={contextUsedTokens}
                   contextMaxTokens={DEXTER_CONTEXT_WINDOW_TOKENS}
                   attachments={composerAttachmentItems}
+                  commands={slashCommands}
                   mentionItems={composerMentionItems}
                   selectedMentions={composerMentions}
                   placeholder={dexterMode === "watch" ? "Describe the change, or @ the record to watch" : undefined}
@@ -2687,6 +2791,7 @@ export function AgentDexterPage({
                   onSelectSpecialist={setSelectedSpecialistId}
                   onSelectModel={setSelectedModelId}
                   onAccessModeChange={setAccessMode}
+                  onCommand={handleSlashCommand}
                   onRemoveAttachment={(id) => {
                     if (composerUploadedDocuments.some((document) => document.id === id)) {
                       setComposerUploadedDocuments((current) => current.filter((document) => document.id !== id))
@@ -2701,6 +2806,7 @@ export function AgentDexterPage({
                     } else toggleAttachment(id)
                   }}
                   onSend={(prompt) => void submitPrompt(prompt)}
+                  isSending={isSending}
                 />
               </motion.div>
 
@@ -2736,21 +2842,6 @@ export function AgentDexterPage({
                 ) : null}
               </AnimatePresence>
 
-              {watchFeedback ? (
-                <div
-                  role="status"
-                  aria-live="polite"
-                  className={cn(
-                    "mt-4 rounded-[var(--md-radius-lg)] px-4 py-3 text-[13px] leading-5 shadow-[var(--md-shadow-line)]",
-                    watchFeedback.tone === "success" && "bg-[var(--md-accent-a10)] text-[var(--md-accent)]",
-                    watchFeedback.tone === "neutral" && "bg-[var(--md-surface-tint)] text-[var(--md-ink)]",
-                    watchFeedback.tone === "error" && "bg-[rgba(209,78,78,0.08)] text-[var(--md-red)]",
-                  )}
-                >
-                  {watchFeedback.message}
-                </div>
-              ) : null}
-
               {!showAttachments && !isSending && dexterMode === "chat" ? (
                 <motion.div
                   className="mt-[var(--md-gap-xl)]"
@@ -2766,12 +2857,17 @@ export function AgentDexterPage({
                   />
                 </motion.div>
               ) : !showAttachments && !isSending ? (
-                <div className="mt-[var(--md-gap-xl)] grid gap-2 sm:grid-cols-2">
+                <div className="mt-[var(--md-gap-xl)] flex flex-wrap justify-center gap-2" aria-label={t("Recommended actions")}>
                   {[
                     t("Alert me when a live quote becomes accepted."),
                     t("Watch for new emails mentioning a customs hold."),
                   ].map((example) => (
-                    <button key={example} type="button" className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-4 py-3 text-start text-[13px] leading-5 text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:text-[var(--md-ink)]" onClick={() => setComposerValue(example)}>
+                    <button
+                      key={example}
+                      type="button"
+                      className="group inline-flex min-h-9 max-w-full items-center rounded-full bg-[var(--md-surface)] px-3.5 py-2 text-start text-[13px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 hover:-translate-y-px hover:bg-[var(--md-surface-raised)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a22)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--md-bg)] active:translate-y-0 motion-reduce:transform-none"
+                      onClick={() => setComposerValue(example)}
+                    >
                       {example}
                     </button>
                   ))}
@@ -2779,7 +2875,7 @@ export function AgentDexterPage({
               ) : null}
             </div>
 
-            <div className="hidden items-center justify-center gap-[clamp(32px,6vw,64px)] px-[var(--md-page-pad)] pb-[var(--md-page-pad)] text-[13px] text-[var(--md-text)] lg:flex">
+            <div className="relative z-10 hidden items-center justify-center gap-[clamp(32px,6vw,64px)] px-[var(--md-page-pad)] pb-[var(--md-page-pad)] text-[13px] text-[var(--md-text)] lg:flex">
               <span className="flex items-center gap-2">
                 <span className="size-2 rounded-full bg-[var(--md-green)]" />
                 {watches.length
@@ -2803,6 +2899,7 @@ export function AgentDexterPage({
             exit={{ opacity: 0 }}
             transition={mdMotion.smooth}
           >
+            <WatchModeAurora active={dexterMode === "watch"} />
             {/* The veils are mounted here, as siblings of the scroller: `backdrop-filter`
           samples what is painted below it in its own backdrop root, and any
           animated ancestor — a transform, an opacity under 1 — would start a new
@@ -2815,7 +2912,7 @@ export function AgentDexterPage({
               defaultScrollPosition="end"
               scrollMargin={88}
             >
-              <main className="relative flex min-h-0 min-w-0 flex-col overflow-hidden">
+              <main className="relative z-10 flex min-h-0 min-w-0 flex-col overflow-hidden">
                 <div className="relative flex min-h-0 flex-1 flex-col">
                   <MessageScroller.Root className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
                     <MotionMessageScrollerViewport
@@ -2841,12 +2938,20 @@ export function AgentDexterPage({
                         pendingActionDecision={pendingActionDecision}
                         actionDecisionError={actionDecisionError}
                         onActionDecision={(action, decision) => void handleActionDecision(action, decision)}
-                        onRetryMessage={(message) => void retryPrompt(message)}
+                        onRetryMessage={dexterMode === "chat" ? (message) => void retryPrompt(message) : undefined}
                         onSelectResponse={(userMessageId, assistantMessageId) => {
                           setSelectedResponseMessageIds((current) => ({
                             ...current,
                             [userMessageId]: assistantMessageId,
                           }))
+                        }}
+                        onEmailDraftChange={(messageId, draft) => {
+                          setActiveConversation((current) => current ? {
+                            ...current,
+                            messages: current.messages.map((message) => message.id === messageId
+                              ? { ...message, emailDraft: draft }
+                              : message),
+                          } : current)
                         }}
                       />
                     </MotionMessageScrollerViewport>
@@ -2935,9 +3040,11 @@ export function AgentDexterPage({
                         selectedSpecialistId={selectedSpecialistId}
                         selectedModelId={selectedModelId}
                         accessMode={accessMode}
+                        mode={dexterMode}
                         contextUsedTokens={contextUsedTokens}
                         contextMaxTokens={DEXTER_CONTEXT_WINDOW_TOKENS}
                         attachments={composerAttachmentItems}
+                        commands={slashCommands}
                         mentionItems={composerMentionItems}
                         selectedMentions={composerMentions}
                         onChange={handleComposerChange}
@@ -2949,6 +3056,7 @@ export function AgentDexterPage({
                         onSelectSpecialist={setSelectedSpecialistId}
                         onSelectModel={setSelectedModelId}
                         onAccessModeChange={setAccessMode}
+                        onCommand={handleSlashCommand}
                         onRemoveAttachment={(id) => {
                           if (composerUploadedDocuments.some((document) => document.id === id)) {
                             setComposerUploadedDocuments((current) => current.filter((document) => document.id !== id))
@@ -2963,6 +3071,7 @@ export function AgentDexterPage({
                           } else toggleAttachment(id)
                         }}
                         onSend={(prompt) => void submitPrompt(prompt)}
+                        isSending={isSending}
                         className="shadow-[0_0_0_1px_var(--md-accent-a42),0_16px_38px_rgba(42,52,50,0.16)]"
                       />
                     </motion.div>
@@ -3020,7 +3129,7 @@ export function AgentDexterPage({
           if (!monitor.id) return
           void setDexterWatchStatus(monitor.id, status)
             .then(() => refreshWatches())
-            .catch((watchError) => setWatchFeedback({ tone: "error", message: watchError instanceof Error ? watchError.message : t("That watch could not be updated.") }))
+            .catch((watchError) => setError(watchError instanceof Error ? watchError.message : t("That watch could not be updated.")))
         }}
         onDelete={(monitor) => {
           if (!monitor.id || !window.confirm(t("Delete this watch? Its previous alerts will also be removed."))) return
@@ -3029,7 +3138,7 @@ export function AgentDexterPage({
               setSelectedMonitor(null)
               return refreshWatches()
             })
-            .catch((watchError) => setWatchFeedback({ tone: "error", message: watchError instanceof Error ? watchError.message : t("That watch could not be deleted.") }))
+            .catch((watchError) => setError(watchError instanceof Error ? watchError.message : t("That watch could not be deleted.")))
         }}
         onAskEvent={(monitor) => {
           const context = monitor.latestEvent?.context

@@ -1,4 +1,6 @@
 import { callCrmRpc, CrmSupabaseError } from "@/lib/crm-supabase"
+import { invalidateCrmResources, readCachedCrmResource, type CrmReadOptions } from "@/lib/crm-read-cache"
+import { getSupabaseSession } from "@/lib/supabase"
 
 export type ApiDealOption = {
   code: string
@@ -85,25 +87,35 @@ export async function getDealConversionOptions() {
 }
 
 export async function convertLeadToDeal(leadId: string, input: ConvertLeadToDealInput) {
-  return callCrmRpc<ApiDeal>(
+  const deal = await callCrmRpc<ApiDeal>(
     "multideck_crm_convert_lead",
     { p_lead_id: leadId, p_input: input },
     "This lead could not be converted.",
     "Sign in again to manage CRM deals.",
   )
+  const session = await getSupabaseSession()
+  if (session) invalidateCrmResources(session.user.id, ["leads:", "deals:"])
+  return deal
 }
 
-export async function listDeals() {
-  return callCrmRpc<ApiDeal[]>(
-    "multideck_crm_list_deals_essential",
-    undefined,
-    "CRM deals could not be loaded.",
-    "Sign in again to manage CRM deals.",
+export async function listDeals(options?: CrmReadOptions) {
+  const session = await getSupabaseSession()
+  if (!session?.access_token) throw new DealApiError("Sign in again to manage CRM deals.")
+  return readCachedCrmResource(
+    session.user.id,
+    "deals:list",
+    () => callCrmRpc<ApiDeal[]>(
+      "multideck_crm_list_deals_essential",
+      undefined,
+      "CRM deals could not be loaded.",
+      "Sign in again to manage CRM deals.",
+    ),
+    options,
   )
 }
 
 export async function moveDealStage(dealId: string, pipelineId: string, pipelineStageId: string) {
-  return callCrmRpc<ApiDeal>(
+  const deal = await callCrmRpc<ApiDeal>(
     "multideck_crm_move_deal_stage",
     {
       p_deal_id: dealId,
@@ -113,13 +125,19 @@ export async function moveDealStage(dealId: string, pipelineId: string, pipeline
     "This deal could not be moved.",
     "Sign in again to manage CRM deals.",
   )
+  const session = await getSupabaseSession()
+  if (session) invalidateCrmResources(session.user.id, ["deals:"])
+  return deal
 }
 
 export async function markDealWon(dealId: string, pipelineStageId: string, reason?: string) {
-  return callCrmRpc<ApiDeal>(
+  const deal = await callCrmRpc<ApiDeal>(
     "multideck_crm_win_deal",
     { p_deal_id: dealId, p_pipeline_stage_id: pipelineStageId, p_reason: reason?.trim() || null },
     "This deal could not be converted into a customer.",
     "Sign in again to manage CRM deals.",
   )
+  const session = await getSupabaseSession()
+  if (session) invalidateCrmResources(session.user.id, ["accounts:", "deals:"])
+  return deal
 }
