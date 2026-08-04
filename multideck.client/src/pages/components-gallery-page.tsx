@@ -72,6 +72,8 @@ import { BookingSearchBuilder } from "@/components/multideck/booking-search-buil
 import { DomesticJobStageRail, DomesticRoadJobCard, DomesticRoadKanbanBoard, domesticRoadJobs, roadJobStageStatus, roadJobStages } from "@/components/multideck/domestic-road-components"
 import { WarehouseKanbanBoardPreview, WarehouseOrdersTable, WarehouseProductsTable, WarehouseStockTable } from "@/components/multideck/warehouse-components"
 import { WarehouseFormField } from "@/components/multideck/warehouse-management-components"
+import { WarehouseExceptionSummary, WarehouseObjectSummary, WarehouseQuantityUomField } from "@/components/multideck/warehouse-inventory-workspace"
+import type { WarehouseHandlingUnit, WarehouseInventoryException } from "@/lib/warehouse"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   DexterAttachmentPalette,
@@ -207,7 +209,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["paper-tray-stack", "document-viewer", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-kanban-board", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
+    ids: ["paper-tray-stack", "document-viewer", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
   },
   {
     label: "CRM",
@@ -927,6 +929,29 @@ const previewAutomationRuns: AutomationRun[] = [
   },
 ]
 
+const previewWarehouseObject: WarehouseHandlingUnit = {
+  id: "gallery-pallet", facilityId: "gallery-facility", parentHandlingUnitId: null,
+  typeCode: "pallet", typeName: "Pallet", code: "PLT-000184", sscc: null,
+  externalReference: "ASN-4419", customerOrgId: "gallery-customer", customerName: "Marlow Apparel",
+  locationId: "gallery-location", locationCode: "A-03-02", inventoryStatusCode: "available",
+  inventoryStatusName: "Available", customsStatusCode: "free_circulation", lifecycleStatusCode: "open",
+  consumedIntoHandlingUnitId: null, grossWeightKg: 486.5, netWeightKg: 452, volumeCbm: 1.28,
+  sealed: false, updatedAt: "2026-08-04T09:30:00Z",
+  contents: [
+    { balanceId: "gallery-balance-1", itemId: "gallery-item-1", sku: "INK-BLK-25", description: "Black industrial ink", quantity: 387.5, uomCode: "KG", statusCode: "available", customsStatusCode: "free_circulation", lotNumber: "LOT-442", batchNumber: null },
+    { balanceId: "gallery-balance-2", itemId: "gallery-item-2", sku: "CAP-38MM", description: "38 mm closure caps", quantity: 2_400, uomCode: "EA", statusCode: "available", customsStatusCode: "free_circulation", lotNumber: null, batchNumber: null },
+  ],
+  events: [],
+}
+
+const previewWarehouseException: WarehouseInventoryException = {
+  id: "gallery-exception", facilityId: "gallery-facility", typeCode: "location_empty", statusCode: "open", severityCode: "high",
+  balanceId: "gallery-balance-1", title: "Expected stock missing from B-01-04",
+  description: "The bin was scanned and physically confirmed empty. Stock is held as unlocated while the count is investigated.",
+  expectedLocationId: "gallery-location", expectedLocationCode: "B-01-04", actualLocationId: null, actualLocationCode: null,
+  movementGroupId: "gallery-movement", raisedAt: "2026-08-04T10:15:00Z", resolvedAt: null, metadata: {},
+}
+
 function ComponentPreview({ id }: { id: string }) {
   const { language, t } = useLanguage()
   const [previewSidebarPinnedIds, setPreviewSidebarPinnedIds] = useState<string[]>([])
@@ -958,6 +983,7 @@ function ComponentPreview({ id }: { id: string }) {
     presentation: "open",
   })
   const [previewCheckbox, setPreviewCheckbox] = useState(true)
+  const [previewWarehouseQuantity, setPreviewWarehouseQuantity] = useState("12.5")
   const [previewContactLayout, setPreviewContactLayout] = useState<CardLayout>("editorial")
   const [previewMarketingOptIn, setPreviewMarketingOptIn] = useState(true)
   const [previewSocialLinks, setPreviewSocialLinks] = useState<CardSocialLink[]>([
@@ -2064,6 +2090,24 @@ function ComponentPreview({ id }: { id: string }) {
           <WarehouseFormField label="Country code" htmlFor="gallery-country" error="Country code must be a 2-letter ISO code.">
             <Input id="gallery-country" dir="ltr" defaultValue="GBR" className="h-10 w-full rounded-[var(--md-radius-lg)] border-0 bg-white/68 px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]" />
           </WarehouseFormField>
+        </div>
+      ) : null}
+
+      {id === "warehouse-quantity-uom-field" ? (
+        <div className="w-full max-w-[420px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <WarehouseQuantityUomField label="Quantity to sample" value={previewWarehouseQuantity} onChange={setPreviewWarehouseQuantity} uomCode="KG" max={387.5} />
+        </div>
+      ) : null}
+
+      {id === "warehouse-object-summary" ? (
+        <div className="w-full max-w-[480px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <WarehouseObjectSummary unit={previewWarehouseObject} />
+        </div>
+      ) : null}
+
+      {id === "warehouse-exception-summary" ? (
+        <div className="w-full max-w-[560px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <WarehouseExceptionSummary exception={previewWarehouseException} />
         </div>
       ) : null}
 

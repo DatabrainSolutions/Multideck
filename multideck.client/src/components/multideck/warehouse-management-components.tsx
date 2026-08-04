@@ -700,6 +700,11 @@ type ItemFormState = {
   hsCode: string
   countryOfOriginCode: string
   baseUomCode: string
+  quantityBasisCode: "count" | "weight" | "volume"
+  quantityScale: string
+  minimumMovementQuantity: string
+  allowsFractionalQuantity: boolean
+  uoms: { key: string; code: string; quantityInBaseUom: string; grossWeightKg: string }[]
   lengthM: string
   widthM: string
   heightM: string
@@ -727,6 +732,11 @@ function emptyItemForm(reference: WarehouseItemReference | null): ItemFormState 
     hsCode: "",
     countryOfOriginCode: "",
     baseUomCode: "EA",
+    quantityBasisCode: "count",
+    quantityScale: "0",
+    minimumMovementQuantity: "1",
+    allowsFractionalQuantity: false,
+    uoms: [],
     lengthM: "",
     widthM: "",
     heightM: "",
@@ -755,6 +765,11 @@ function itemToForm(item: WarehouseItem): ItemFormState {
     hsCode: item.hsCode ?? "",
     countryOfOriginCode: item.countryOfOriginCode ?? "",
     baseUomCode: item.baseUomCode,
+    quantityBasisCode: item.quantityBasisCode,
+    quantityScale: String(item.quantityScale),
+    minimumMovementQuantity: numberToInput(item.minimumMovementQuantity),
+    allowsFractionalQuantity: item.allowsFractionalQuantity,
+    uoms: item.uoms.map((uom) => ({ key: uom.id ?? crypto.randomUUID(), code: uom.code, quantityInBaseUom: numberToInput(uom.quantityInBaseUom), grossWeightKg: numberToInput(uom.grossWeightKg) })),
     lengthM: numberToInput(item.lengthM),
     widthM: numberToInput(item.widthM),
     heightM: numberToInput(item.heightM),
@@ -781,6 +796,11 @@ function itemFormAttributes(form: ItemFormState) {
     hsCode: nullableText(form.hsCode),
     countryOfOriginCode: nullableText(form.countryOfOriginCode),
     baseUomCode: nullableText(form.baseUomCode),
+    quantityBasisCode: form.quantityBasisCode,
+    quantityScale: Number(form.quantityScale),
+    minimumMovementQuantity: parseDecimal(form.minimumMovementQuantity) ?? 1,
+    allowsFractionalQuantity: form.quantityBasisCode === "count" && form.allowsFractionalQuantity,
+    uoms: form.uoms.filter((uom) => uom.code.trim()).map((uom) => ({ code: uom.code.trim().toUpperCase(), quantityInBaseUom: parseDecimal(uom.quantityInBaseUom) ?? 1, grossWeightKg: parseDecimal(uom.grossWeightKg), purchasing: false, stocking: true, selling: false })),
     lengthM: parseDecimal(form.lengthM),
     widthM: parseDecimal(form.widthM),
     heightM: parseDecimal(form.heightM),
@@ -819,6 +839,7 @@ function ItemDialog({
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [section, setSection] = useState("identity")
+  const { t } = useLanguage()
 
   useEffect(() => {
     if (!open) return
@@ -887,10 +908,11 @@ function ItemDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs value={section} onValueChange={setSection} className="h-[552px] gap-0">
+        <Tabs value={section} onValueChange={setSection} className="h-[600px] gap-0">
           <TabsList variant="line" className="mx-6 mt-3 h-10 w-auto justify-start rounded-none bg-transparent p-0">
             <TabsTrigger value="identity" className="h-10 flex-none px-3 text-[13px]">Item details</TabsTrigger>
             <TabsTrigger value="dimensions" className="h-10 flex-none px-3 text-[13px]">Dimensions &amp; storage</TabsTrigger>
+            <TabsTrigger value="quantity" className="h-10 flex-none px-3 text-[13px]">{t("Quantity & packaging")}</TabsTrigger>
             <TabsTrigger value="handling" className="h-10 flex-none px-3 text-[13px]">Handling rules</TabsTrigger>
           </TabsList>
 
@@ -926,7 +948,7 @@ function ItemDialog({
             <WarehouseFormField label="SKU" htmlFor="item-sku" required error={firstFieldError(errors, "Sku")}>
               <Input id="item-sku" dir="ltr" value={form.sku} onChange={(event) => update("sku", event.target.value)} className={fieldControlClass} placeholder="MAR-ACT-044" />
             </WarehouseFormField>
-            <WarehouseFormField label="Base unit of measure" htmlFor="item-uom" hint="e.g. EA, CTN, PLT." error={firstFieldError(errors, "BaseUomCode")}>
+            <WarehouseFormField label="Base unit of measure" htmlFor="item-uom" hint="e.g. EA, KG, L, or CBM." error={firstFieldError(errors, "BaseUomCode")}>
               <Input id="item-uom" dir="ltr" value={form.baseUomCode} onChange={(event) => update("baseUomCode", event.target.value)} className={fieldControlClass} placeholder="EA" />
             </WarehouseFormField>
           </div>
@@ -982,6 +1004,50 @@ function ItemDialog({
             </div>
           </div>
 
+          </TabsContent>
+
+          <TabsContent value="quantity" className="min-h-0 overflow-y-auto px-6 py-5">
+            <div className="grid gap-4">
+              <div className="grid gap-4 sm:grid-cols-3">
+                <WarehouseFormField label={t("Tracking basis")} required>
+                  <Select value={form.quantityBasisCode} onValueChange={(value: "count" | "weight" | "volume") => {
+                    update("quantityBasisCode", value)
+                    if (value !== "count") {
+                      update("allowsFractionalQuantity", true)
+                      update("quantityScale", "3")
+                      update("minimumMovementQuantity", "0.001")
+                    }
+                  }}>
+                    <SelectTrigger className={fieldControlClass}><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="count">{t("Count")}</SelectItem>
+                      <SelectItem value="weight">{t("Weight")}</SelectItem>
+                      <SelectItem value="volume">{t("Volume")}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </WarehouseFormField>
+                <WarehouseFormField label={t("Decimal places")} hint={t("Between 0 and 6.")}>
+                  <Input dir="ltr" type="number" min="0" max="6" step="1" value={form.quantityScale} onChange={(event) => update("quantityScale", event.target.value)} className={fieldControlClass} />
+                </WarehouseFormField>
+                <WarehouseFormField label={t("Minimum movement")}>
+                  <Input dir="ltr" type="number" min="0.000001" step="0.001" value={form.minimumMovementQuantity} onChange={(event) => update("minimumMovementQuantity", event.target.value)} className={fieldControlClass} />
+                </WarehouseFormField>
+              </div>
+              {form.quantityBasisCode === "count" ? <WarehouseSwitchField label={t("Allow partial units")} hint={t("Use only when this counted product can be split into fractions.")} checked={form.allowsFractionalQuantity} onCheckedChange={(checked) => update("allowsFractionalQuantity", checked)} /> : null}
+              <div className="grid gap-3 rounded-[var(--md-radius-xl)] bg-white/40 p-4 shadow-[var(--md-shadow-line)]">
+                <div className="flex items-center justify-between gap-3">
+                  <div><p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Packaging conversions")}</p><p className="mt-1 text-[11px] text-[var(--md-subtle)]">{t("Define fixed packs such as one box equalling twelve base units. Pallets remain warehouse objects, not quantities.")}</p></div>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => update("uoms", [...form.uoms, { key: crypto.randomUUID(), code: "", quantityInBaseUom: "1", grossWeightKg: "" }])} className="rounded-[var(--md-radius-md)] bg-white/55 shadow-[var(--md-shadow-line)]"><Plus className="size-4" />{t("Add unit")}</Button>
+                </div>
+                {form.uoms.map((uom) => <div key={uom.key} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_40px] gap-2">
+                  <Input aria-label={t("Unit code")} dir="ltr" placeholder="BOX" value={uom.code} onChange={(event) => update("uoms", form.uoms.map((entry) => entry.key === uom.key ? { ...entry, code: event.target.value } : entry))} className={fieldControlClass} />
+                  <Input aria-label={t("Quantity in base unit")} dir="ltr" type="number" min="0.000001" placeholder="12" value={uom.quantityInBaseUom} onChange={(event) => update("uoms", form.uoms.map((entry) => entry.key === uom.key ? { ...entry, quantityInBaseUom: event.target.value } : entry))} className={fieldControlClass} />
+                  <Input aria-label={t("Gross weight in kilograms")} dir="ltr" type="number" min="0" placeholder={t("Gross kg")} value={uom.grossWeightKg} onChange={(event) => update("uoms", form.uoms.map((entry) => entry.key === uom.key ? { ...entry, grossWeightKg: event.target.value } : entry))} className={fieldControlClass} />
+                  <Button type="button" variant="ghost" size="icon" aria-label={t("Remove packaging unit")} onClick={() => update("uoms", form.uoms.filter((entry) => entry.key !== uom.key))} className="size-10 rounded-[var(--md-radius-lg)] text-[var(--md-red)]"><Trash2 className="size-4" /></Button>
+                </div>)}
+                {!form.uoms.length ? <p className="py-4 text-center text-[12px] text-[var(--md-subtle)]">{t("No fixed packaging conversions added.")}</p> : null}
+              </div>
+            </div>
           </TabsContent>
 
           <TabsContent value="handling" className="min-h-0 px-6 py-5">

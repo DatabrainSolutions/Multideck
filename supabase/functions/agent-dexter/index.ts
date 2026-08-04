@@ -53,7 +53,7 @@ const MAX_PROMPT_CHARACTERS = 4_000
 const MAX_HISTORY_MESSAGES = 30
 const MAX_TOOL_ROUNDS = 4
 const MAX_TOOL_CALLS = 6
-const PROMPT_VERSION = "freight-coworker-2026-08-04-full-access-tools"
+const PROMPT_VERSION = "freight-coworker-2026-08-04-warehouse-inventory"
 const EMAIL_STYLE_TOOL = "load_operator_email_style"
 const PREPARE_EMAIL_DRAFT_TOOL = "prepare_email_draft"
 
@@ -310,6 +310,7 @@ function rpcErrorMessage(error: unknown, fallback: string) {
 }
 
 const ATTACH_EMAIL_DOCUMENT_ACTION = "attach_email_document_to_customer"
+const QUARANTINE_INVENTORY_ACTION = "quarantine_inventory"
 
 async function executeApprovedAction(
   userClient: DexterSupabaseClient,
@@ -317,6 +318,35 @@ async function executeApprovedAction(
   actionCode: string,
   args: JsonObject,
 ) {
+  if (actionCode === QUARANTINE_INVENTORY_ACTION) {
+    const balanceId = cleanString(args.target_id, 80)
+    const facilityId = cleanString(args.facility_id, 80)
+    const quantity = Number(args.quantity)
+    const reason = cleanString(args.reason, 240)
+    if (!isUuid(balanceId) || !isUuid(facilityId) || !Number.isFinite(quantity) || quantity <= 0 || !reason) {
+      return { data: null, error: { code: "invalid_action", message: "The approved stock, warehouse, quantity or reason is invalid." } }
+    }
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")?.trim() ?? ""
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")?.trim() ?? ""
+    try {
+      const response = await fetch(`${supabaseUrl}/functions/v1/warehouse/inventory/actions/change_status`, {
+        method: "POST",
+        headers: { Authorization: authorization, apikey: anonKey, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requestId: crypto.randomUUID(), facilityId, balanceId, quantity,
+          targetStatusCode: "quarantine", reasonCode: reason,
+          notes: cleanString(args.notes, 1_000) || null,
+        }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      return response.ok
+        ? { data: payload, error: null }
+        : { data: null, error: { code: `warehouse_${response.status}`, message: cleanString(payload?.detail, 300) || "The approved quarantine could not be posted." } }
+    } catch {
+      return { data: null, error: { code: "warehouse_unavailable", message: "The Warehouse Edge Function could not be reached. Nothing was changed." } }
+    }
+  }
+
   if (actionCode !== ATTACH_EMAIL_DOCUMENT_ACTION) {
     return await userClient.rpc("multideck_dexter_execute_action", {
       p_action: actionCode,
@@ -451,7 +481,8 @@ function watchCandidates(capability: string, value: unknown): JsonObject[] {
   if (!isObject(value)) return []
   const data = value.data
   if (capability === "warehouse" && isObject(data)) {
-    return Array.isArray(data.orders) ? data.orders.filter(isObject) : []
+    return [data.orders, data.inventory, data.handlingUnits, data.exceptions]
+      .flatMap((records) => Array.isArray(records) ? records.filter(isObject) : [])
   }
   return Array.isArray(data) ? data.filter(isObject) : []
 }
@@ -463,7 +494,7 @@ function watchTargetLabel(capability: string, record: JsonObject) {
       ? ["name"]
       : capability === "quotes"
         ? ["quoteNumber"]
-        : ["orderNumber", "customerReference", "containerNumber"]
+        : ["orderNumber", "customerReference", "containerNumber", "handlingUnitCode", "code", "sku", "title", "locationCode"]
   return keys.map((key) => cleanString(record[key], 240)).find(Boolean) ?? "Watched record"
 }
 
@@ -573,6 +604,15 @@ function addDomainCitations(domain: string, value: unknown) {
           : record
       })
     : data.inventory
+  const handlingUnits = Array.isArray(data.handlingUnits)
+    ? data.handlingUnits.map((record) => {
+        if (!isObject(record)) return record
+        const code = cleanReference(record.code, 120)
+        return code
+          ? addRecordCitation(record, code, `/warehouse/inventory?object=${encodeURIComponent(code)}`, "Warehouse pallet or handling unit")
+          : record
+      })
+    : data.handlingUnits
   const exceptions = Array.isArray(data.exceptions)
     ? data.exceptions.map((record) => {
         if (!isObject(record)) return record
@@ -583,7 +623,7 @@ function addDomainCitations(domain: string, value: unknown) {
 
   return {
     ...value,
-    data: { ...data, overview, orders, inventory, exceptions },
+    data: { ...data, overview, orders, inventory, handlingUnits, exceptions },
   }
 }
 
@@ -698,6 +738,7 @@ ${actionSummary || "- None for this operator."}
 
 Forms creation, persistence, sending, reminders and electronic signatures are not connected yet. State that plainly and never imply the Forms preview is operational.
 Warehouse customer-user invitations and access-link emails are available only from the customer's Warehouse customer access panel. They are not connected to Dexter writes or Watching for you. Never claim to send or watch them; direct the operator to that customer panel.
+Warehouse stock moves, pallet consolidation, sampling, damage posting and empty-location resolution require physical scans or dedicated warehouse controls. Dexter may inspect and watch those records, but must direct the operator to Warehouse for those actions. Dexter may quarantine an exact evidence-backed balance only through its listed approval action, which always waits for confirmation and is completed by the Warehouse Edge Function.
 Time passing alone is not a live stale-lead watch signal in this release. Calculate stale assigned leads when asked; do not claim Dexter will wake up solely because a threshold elapsed.
 
 Selected read-only email sources:
@@ -1347,7 +1388,7 @@ async function runStreamedAgent(
         const action = actions.find((candidate) => candidate.code === call.name)
         if (!action) {
           toolOutput = { error: "That write action is not available in this workspace." }
-        } else if (accessMode === "approve" || action.code === ATTACH_EMAIL_DOCUMENT_ACTION) {
+        } else if (accessMode === "approve" || action.code === ATTACH_EMAIL_DOCUMENT_ACTION || action.code === QUARANTINE_INVENTORY_ACTION) {
           const currentRecord = currentRecordsById.get(cleanString(args.target_id, 80))
           const reason = preparedActionDescription(
             action.code,
@@ -2536,7 +2577,7 @@ Deno.serve(async (request) => {
         const action = actions.find((candidate) => candidate.code === call.name)
         if (!action) {
           toolOutput = { error: "That write action is not available in this workspace." }
-        } else if (accessMode === "approve" || action.code === ATTACH_EMAIL_DOCUMENT_ACTION) {
+        } else if (accessMode === "approve" || action.code === ATTACH_EMAIL_DOCUMENT_ACTION || action.code === QUARANTINE_INVENTORY_ACTION) {
           const currentRecord = currentRecordsById.get(cleanString(args.target_id, 80))
           const reason = preparedActionDescription(
             action.code,
