@@ -6,28 +6,33 @@ import {
 } from "@/lib/supabase"
 import type { ExtractedInvoiceLine } from "@/lib/customs-invoice-import"
 import type { EvidenceBlock, EvidenceBox, EvidencePage } from "@/lib/customs-invoice-evidence"
-import { extractEmbeddedPdfText } from "@/lib/customs-invoice-pdf-text"
 
 const functionName = "customs-invoice-ocr"
 const endpoint = `${supabaseFunctionsUrl}/${functionName}`
 const maxInvoiceBytes = 10 * 1024 * 1024
 const sessionRefreshLeewaySeconds = 30
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
-/** The observable phases of an import, in order. */
-export type InvoiceImportStage = "reading" | "extracting" | "organising"
+/** The observable phases of a server-owned import, in order. */
+export type InvoiceImportStage = "uploading" | "extracting" | "organising"
 
 export type CommercialInvoiceExtractionResult = {
+  extractionId: string
   invoiceNumber: string
   lines: ExtractedInvoiceLine[]
   model: string
+  requestedModel: string
   pageCount: number
-  extractionMode: "embedded_text" | "mistral_ocr"
-  /** Where each block of the document sat, so reviewed lines can be shown in place. */
+  extractionMode: "mistral_ocr"
+  cacheHit: boolean
+  /** Where each provider block sat, so reviewed lines can be shown in place. */
   evidencePages: EvidencePage[]
   timings: Record<string, number>
 }
 
 export type ExtractCommercialInvoiceOptions = {
+  extractionId?: string
+  declarationId?: string
   onStage?: (stage: InvoiceImportStage) => void
   signal?: AbortSignal
 }
@@ -40,51 +45,52 @@ export class CommercialInvoiceExtractionError extends Error {
 
 export async function extractCommercialInvoice(
   file: File,
-  { onStage, signal }: ExtractCommercialInvoiceOptions = {},
+  {
+    extractionId = crypto.randomUUID(),
+    declarationId,
+    onStage,
+    signal,
+  }: ExtractCommercialInvoiceOptions = {},
 ): Promise<CommercialInvoiceExtractionResult> {
   validateInvoice(file)
-  if (!supabase || !supabaseFunctionsUrl || !supabasePublicApiKey || !/^https?:\/\//.test(endpoint)) {
-    throw new CommercialInvoiceExtractionError("Invoice import is unavailable for this workspace.", 503)
-  }
+  validateConfiguration()
+  if (!uuidPattern.test(extractionId)) throw new CommercialInvoiceExtractionError("Unable to start this invoice import.", 400)
 
-  onStage?.("reading")
-  const embeddedPdfText = await extractEmbeddedPdfText(file)
-
-  onStage?.("extracting")
+  onStage?.("uploading")
   let token = await accessToken(false)
-  let response = embeddedPdfText
-    ? await sendEmbeddedText(file, embeddedPdfText, token, signal)
-    : await sendPdf(file, token, signal)
-
+  let response = await uploadPdf(file, extractionId, declarationId, token, signal, () => onStage?.("extracting"))
   if (response.status === 401) {
     token = await accessToken(true)
-    response = embeddedPdfText
-      ? await sendEmbeddedText(file, embeddedPdfText, token, signal)
-      : await sendPdf(file, token, signal)
+    response = await uploadPdf(file, extractionId, declarationId, token, signal, () => onStage?.("extracting"))
   }
-
-  if (embeddedPdfText && await requestsMistralOcrFallback(response)) {
-    response = await sendPdf(file, token, signal)
-    if (response.status === 401) response = await sendPdf(file, await accessToken(true), signal)
-  }
-
-  if (!response.ok) {
-    const fallback = response.status === 429
-      ? "Invoice import is busy. Wait a moment and try again."
-      : "Unable to import this invoice. Try again."
-    throw new CommercialInvoiceExtractionError(await errorMessage(response, fallback), response.status)
-  }
-
-  let payload: unknown
-  try {
-    payload = await response.json()
-  } catch {
-    throw new CommercialInvoiceExtractionError("Unable to import this invoice. Try again.", response.status)
-  }
-
+  const payload = await successfulPayload(response)
   onStage?.("organising")
-  // Text PDFs keep their row geometry in the browser; scanned PDFs get block boxes back.
-  return normalizeResult(payload, embeddedPdfText?.pages ?? [])
+  return normalizeResult(payload)
+}
+
+export async function readCommercialInvoiceExtraction(
+  extractionId: string,
+  signal?: AbortSignal,
+): Promise<CommercialInvoiceExtractionResult> {
+  validateConfiguration()
+  if (!uuidPattern.test(extractionId)) throw new CommercialInvoiceExtractionError("This invoice review is no longer available.", 404)
+
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    const response = await authenticatedRequest(`${endpoint}/${extractionId}`, { method: "GET", signal })
+    if (response.status !== 202) return normalizeResult(await successfulPayload(response))
+    await abortableDelay(1_000, signal)
+  }
+  throw new CommercialInvoiceExtractionError("Invoice import is taking longer than expected. Try opening the review again.", 408)
+}
+
+export async function cancelCommercialInvoiceExtraction(extractionId: string) {
+  if (!uuidPattern.test(extractionId) || !supabaseFunctionsUrl || !supabasePublicApiKey) return
+  try {
+    await authenticatedRequest(`${endpoint}/${extractionId}`, { method: "DELETE" })
+  } catch {
+    // Cancellation is best effort. The server still removes temporary PDFs in its
+    // request finalizer and will not return a cancelled result to the operator.
+  }
 }
 
 async function accessToken(forceRefresh: boolean) {
@@ -105,53 +111,87 @@ async function accessToken(forceRefresh: boolean) {
   throw new CommercialInvoiceExtractionError("Sign in again to import an invoice.", 401)
 }
 
-async function sendEmbeddedText(
+function uploadPdf(
   file: File,
-  embeddedPdfText: { text: string; pageCount: number },
+  extractionId: string,
+  declarationId: string | undefined,
   token: string,
-  signal?: AbortSignal,
+  signal: AbortSignal | undefined,
+  onUploaded: () => void,
 ) {
-  return send(JSON.stringify({
-    embeddedText: embeddedPdfText.text,
-    fileName: file.name,
-    pageCount: embeddedPdfText.pageCount,
-  }), token, signal, "application/json")
-}
-
-function sendPdf(file: File, token: string, signal?: AbortSignal) {
   const form = new FormData()
   form.set("file", file, file.name)
-  return send(form, token, signal)
+  form.set("extractionId", extractionId)
+  if (declarationId && uuidPattern.test(declarationId)) form.set("declarationId", declarationId)
+
+  return new Promise<Response>((resolve, reject) => {
+    const request = new XMLHttpRequest()
+    const abort = () => request.abort()
+    const cleanup = () => signal?.removeEventListener("abort", abort)
+    request.open("POST", endpoint)
+    request.responseType = "text"
+    request.setRequestHeader("Accept", "application/json")
+    request.setRequestHeader("Authorization", `Bearer ${token}`)
+    request.setRequestHeader("apikey", supabasePublicApiKey)
+    request.setRequestHeader("x-client-info", "multideck-customs-invoice-import/2")
+    request.upload.addEventListener("load", onUploaded, { once: true })
+    request.addEventListener("load", () => {
+      cleanup()
+      resolve(new Response(request.responseText, {
+        status: request.status,
+        headers: responseHeaders(request.getAllResponseHeaders()),
+      }))
+    }, { once: true })
+    request.addEventListener("error", () => {
+      cleanup()
+      reject(new CommercialInvoiceExtractionError("Unable to import the invoice. Check your connection and try again."))
+    }, { once: true })
+    request.addEventListener("abort", () => {
+      cleanup()
+      reject(new DOMException("Invoice import was cancelled.", "AbortError"))
+    }, { once: true })
+    signal?.addEventListener("abort", abort, { once: true })
+    if (signal?.aborted) abort()
+    else request.send(form)
+  })
 }
 
-async function send(body: BodyInit, token: string, signal?: AbortSignal, contentType?: string) {
-  try {
-    return await fetch(endpoint, {
-      method: "POST",
-      body,
-      credentials: "omit",
-      signal,
-      headers: {
-        Accept: "application/json",
-        Authorization: `Bearer ${token}`,
-        apikey: supabasePublicApiKey,
-        "x-client-info": "multideck-customs-invoice-import/1",
-        ...(contentType ? { "Content-Type": contentType } : {}),
-      },
-    })
-  } catch (error) {
-    if (signal?.aborted || (error instanceof DOMException && error.name === "AbortError")) throw error
-    throw new CommercialInvoiceExtractionError("Unable to import the invoice. Check your connection and try again.")
+async function authenticatedRequest(url: string, init: RequestInit) {
+  let token = await accessToken(false)
+  let response = await fetchWithToken(url, init, token)
+  if (response.status === 401) {
+    token = await accessToken(true)
+    response = await fetchWithToken(url, init, token)
   }
+  return response
 }
 
-async function requestsMistralOcrFallback(response: Response) {
-  if (response.status !== 422) return false
-  try {
-    const payload = await response.clone().json() as Record<string, unknown>
-    return payload.fallbackToMistralOcr === true
-  } catch {
-    return false
+function fetchWithToken(url: string, init: RequestInit, token: string) {
+  return fetch(url, {
+    ...init,
+    credentials: "omit",
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${token}`,
+      apikey: supabasePublicApiKey,
+      "x-client-info": "multideck-customs-invoice-import/2",
+      ...init.headers,
+    },
+  })
+}
+
+function responseHeaders(raw: string) {
+  const headers = new Headers()
+  raw.trim().split(/[\r\n]+/).forEach((line) => {
+    const separator = line.indexOf(":")
+    if (separator > 0) headers.append(line.slice(0, separator).trim(), line.slice(separator + 1).trim())
+  })
+  return headers
+}
+
+function validateConfiguration() {
+  if (!supabase || !supabaseFunctionsUrl || !supabasePublicApiKey || !/^https?:\/\//.test(endpoint)) {
+    throw new CommercialInvoiceExtractionError("Invoice import is unavailable for this workspace.", 503)
   }
 }
 
@@ -160,6 +200,20 @@ function validateInvoice(file: File) {
   if (file.size > maxInvoiceBytes) throw new CommercialInvoiceExtractionError("Choose a PDF commercial invoice smaller than 10 MB.", 413)
   if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
     throw new CommercialInvoiceExtractionError("Only PDF commercial invoices are supported.", 415)
+  }
+}
+
+async function successfulPayload(response: Response) {
+  if (!response.ok) {
+    const fallback = response.status === 429
+      ? "Invoice import is busy. Wait a moment and try again."
+      : "Unable to import this invoice. Try again."
+    throw new CommercialInvoiceExtractionError(await errorMessage(response, fallback), response.status)
+  }
+  try {
+    return await response.json() as unknown
+  } catch {
+    throw new CommercialInvoiceExtractionError("Unable to import this invoice. Try again.", response.status)
   }
 }
 
@@ -172,20 +226,24 @@ async function errorMessage(response: Response, fallback: string) {
   }
 }
 
-function normalizeResult(payload: unknown, embeddedPages: EvidencePage[]): CommercialInvoiceExtractionResult {
+function normalizeResult(payload: unknown): CommercialInvoiceExtractionResult {
   const result = asRecord(payload)
+  const extractionId = text(result.extractionId)
   const sourceLines = Array.isArray(result.lines) ? result.lines : []
   const lines = sourceLines.map(normalizeLine).filter((line): line is ExtractedInvoiceLine => line !== null)
-  if (!lines.length) throw new CommercialInvoiceExtractionError("No item lines were found. Check the PDF or choose another invoice.", 422)
-  const extractionMode = result.extractionMode === "embedded_text" ? "embedded_text" : "mistral_ocr"
-  const servicePages = normalizeEvidencePages(result.pages)
+  if (!uuidPattern.test(extractionId) || !lines.length) {
+    throw new CommercialInvoiceExtractionError("No item lines were found. Check the PDF or choose another invoice.", 422)
+  }
   return {
+    extractionId,
     invoiceNumber: text(result.invoiceNumber),
     lines,
     model: text(result.model),
+    requestedModel: text(result.requestedModel),
     pageCount: number(result.pageCount),
-    extractionMode,
-    evidencePages: servicePages.length ? servicePages : extractionMode === "embedded_text" ? embeddedPages : [],
+    extractionMode: "mistral_ocr",
+    cacheHit: result.cacheHit === true,
+    evidencePages: normalizeEvidencePages(result.pages),
     timings: numberRecord(result.timings),
   }
 }
@@ -242,6 +300,16 @@ function normalizeLine(value: unknown): ExtractedInvoiceLine | null {
     packageMarks: text(line.packageMarks),
     packageCount: number(line.packageCount),
   }
+}
+
+function abortableDelay(milliseconds: number, signal?: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    const timer = window.setTimeout(resolve, milliseconds)
+    signal?.addEventListener("abort", () => {
+      window.clearTimeout(timer)
+      reject(new DOMException("Invoice import was cancelled.", "AbortError"))
+    }, { once: true })
+  })
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
