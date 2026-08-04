@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { Download, FileText, LoaderCircle, Mail, Plus, RefreshCw, ShieldCheck, Trash2 } from "lucide-react"
 import { CustomerAvatar } from "@/components/multideck/customer-components"
 import { MarketingOptInControl } from "@/components/multideck/marketing-opt-in-control"
+import { MultiSelectMenu } from "@/components/multideck/multi-select-menu"
 import { Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { Button } from "@/components/ui/button"
@@ -222,10 +223,6 @@ export function CustomerWarehouseAccess({
     setEditing(user); setDisplayName(user.displayName); setEmail(user.email); setRoleCode(user.roleCode); setFacilityIds(user.facilityIds); setOpen(true); setError(null)
   }
 
-  function toggleFacility(id: string) {
-    setFacilityIds((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id])
-  }
-
   async function save() {
     if (!editing && !email.trim()) return
     setSaving(true); setError(null)
@@ -280,7 +277,7 @@ export function CustomerWarehouseAccess({
       <div className="grid gap-4 py-2">
         {!editing ? <div className="grid gap-3 sm:grid-cols-2"><label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">{t("Name")}<Input dir="auto" value={displayName} onChange={(event) => setDisplayName(event.target.value)} className="h-10 rounded-[var(--md-radius-lg)] border-0 bg-white/68 shadow-[var(--md-shadow-line)]" /></label><label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">{t("Email")}<Input dir="ltr" type="email" value={email} onChange={(event) => setEmail(event.target.value)} className="h-10 rounded-[var(--md-radius-lg)] border-0 bg-white/68 text-start shadow-[var(--md-shadow-line)]" /></label></div> : <p dir="ltr" className="text-start text-[13px] text-[var(--md-text)]">{editing.email}</p>}
         <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">{t("Role")}<Select value={roleCode} onValueChange={setRoleCode}><SelectTrigger className="h-10 rounded-[var(--md-radius-lg)] border-0 bg-white/68 shadow-[var(--md-shadow-line)]"><SelectValue /></SelectTrigger><SelectContent>{reference?.roles.map((role) => <SelectItem key={role.code} value={role.code}><span>{t(role.name)}</span></SelectItem>)}</SelectContent></Select><span className="font-normal leading-5 text-[var(--md-subtle)]">{t(reference?.roles.find((role) => role.code === roleCode)?.description ?? "")}</span></label>
-        {selfService ? <div className="rounded-[var(--md-radius-lg)] bg-white/48 px-3 py-3 text-[12px] leading-5 text-[var(--md-text)] shadow-[var(--md-shadow-line)]">{t("Users inherit access to the warehouses assigned to this organisation. Only your warehouse provider can change those assignments.")}</div> : <div><p className="text-[12px] font-medium text-[var(--md-text)]">{t("Warehouses")}</p><div className="mt-2 grid gap-2 rounded-[var(--md-radius-xl)] bg-white/36 p-3 shadow-[var(--md-shadow-line)] sm:grid-cols-2">{reference?.facilities.map((facility) => { const selected = facilityIds.includes(facility.id); return <button key={facility.id} type="button" aria-pressed={selected} onClick={() => toggleFacility(facility.id)} className={`rounded-[var(--md-radius-lg)] px-3 py-2 text-start text-[12px] shadow-[var(--md-shadow-line)] ${selected ? "bg-[var(--md-accent-a11)] text-[var(--md-accent)]" : "bg-white/58 text-[var(--md-text)]"}`}><span dir="ltr" className="font-medium">{facility.code}</span><span className="ms-2">{facility.name}</span></button> })}</div></div>}
+        {selfService ? <div className="rounded-[var(--md-radius-lg)] bg-white/48 px-3 py-3 text-[12px] leading-5 text-[var(--md-text)] shadow-[var(--md-shadow-line)]">{t("Users inherit access to the warehouses assigned to this organisation. Only your warehouse provider can change those assignments.")}</div> : <div><p className="text-[12px] font-medium text-[var(--md-text)]">{t("Warehouses")}</p><MultiSelectMenu value={facilityIds} options={reference?.facilities.map((facility) => ({ value: facility.id, label: `${facility.code} · ${facility.name}` })) ?? []} onValueChange={setFacilityIds} placeholder="Select warehouses" label="Warehouses" className="mt-2 h-10 rounded-[var(--md-radius-lg)] bg-white/68 px-3 text-[12px]" /></div>}
         {error ? <p className="rounded-[var(--md-radius-lg)] bg-[rgba(185,28,28,0.07)] px-3 py-2 text-[12px] text-[var(--md-red)]">{error}</p> : null}
       </div>
       <DialogFooter><Button type="button" variant="ghost" onClick={() => setOpen(false)}>{t("Cancel")}</Button><Button type="button" disabled={saving || facilityIds.length === 0 || (!editing && !email.trim())} onClick={() => void save()} className="bg-[var(--md-accent)] text-[var(--md-accent-ink)]">{saving ? <LoaderCircle className="size-4 animate-spin" /> : null}{t(editing ? "Save access" : "Send invitation")}</Button></DialogFooter>

@@ -11,6 +11,11 @@ import {
 import { cn } from "@/lib/utils"
 import { useLanguage } from "@/i18n/language-provider"
 
+export type MultiSelectMenuOption = string | {
+  value: string
+  label: string
+}
+
 export function MultiSelectMenu({
   value,
   options,
@@ -24,7 +29,7 @@ export function MultiSelectMenu({
   className,
 }: {
   value: string[]
-  options: string[]
+  options: MultiSelectMenuOption[]
   onValueChange: (value: string[]) => void
   placeholder?: string
   label?: string
@@ -35,9 +40,15 @@ export function MultiSelectMenu({
   className?: string
 }) {
   const { t } = useLanguage()
+  const normalisedOptions = options.map((option) => typeof option === "string"
+    ? { value: option, label: option, translate: true }
+    : { ...option, translate: false })
+  const selectedLabels = normalisedOptions
+    .filter((option) => value.includes(option.value))
+    .map((option) => option.translate ? t(option.label) : option.label)
 
-  function toggleOption(option: string) {
-    onValueChange(value.includes(option) ? value.filter((item) => item !== option) : [...value, option])
+  function toggleOption(optionValue: string) {
+    onValueChange(value.includes(optionValue) ? value.filter((item) => item !== optionValue) : [...value, optionValue])
   }
 
   return (
@@ -54,8 +65,8 @@ export function MultiSelectMenu({
             className,
           )}
         >
-          <span data-i18n-skip={value.length ? true : undefined} dir="auto" className={cn("truncate", !value.length && "text-[var(--md-subtle)]")}>
-            {value.length ? value.join(" + ") : t(placeholder)}
+          <span data-i18n-skip={selectedLabels.length ? true : undefined} dir="auto" className={cn("truncate", !selectedLabels.length && "text-[var(--md-subtle)]")}>
+            {selectedLabels.length ? selectedLabels.join(" + ") : t(placeholder)}
           </span>
           <ChevronDown data-icon="inline-end" className="size-3.5 shrink-0 text-[var(--md-subtle)]" strokeWidth={1.3} />
         </Button>
@@ -67,15 +78,17 @@ export function MultiSelectMenu({
             <DropdownMenuSeparator />
           </>
         ) : null}
-        {options.map((option) => (
+        {normalisedOptions.map((option) => (
           <DropdownMenuCheckboxItem
-            key={option}
-            checked={value.includes(option)}
+            key={option.value}
+            checked={value.includes(option.value)}
             onSelect={(event) => event.preventDefault()}
-            onCheckedChange={() => toggleOption(option)}
+            onCheckedChange={() => toggleOption(option.value)}
             className="rounded-[var(--md-radius-md)] text-[12px]"
           >
-            {t(option)}
+            <span data-i18n-skip={option.translate ? undefined : true} dir="auto" className="min-w-0 truncate">
+              {option.translate ? t(option.label) : option.label}
+            </span>
           </DropdownMenuCheckboxItem>
         ))}
       </DropdownMenuContent>
