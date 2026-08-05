@@ -11,7 +11,7 @@ import {
 type ContentSection = "job" | "customer" | "shipper" | "consignee" | "cargo" | "routing"
 
 type StudioRequest = {
-  action?: "open" | "preview"
+  action?: "component" | "open" | "preview"
   templateCode?: string
   jobNumber?: string
   contentSections?: unknown
@@ -30,6 +30,7 @@ type StudioSession = {
 
 const allowedContentSections: ContentSection[] = ["job", "customer", "shipper", "consignee", "cargo", "routing"]
 const maximumStudioTemplateBytes = 15 * 1024 * 1024
+const maximumStudioComponentBytes = 5 * 1024 * 1024
 
 function getCarboneAuthorization() {
   const explicitHeader = Deno.env.get("CARBONE_AUTH_HEADER")?.trim()
@@ -53,6 +54,14 @@ function getCarboneBaseUrl() {
     throw new FunctionError(500, "The document studio is not configured safely.", "CARBONE_URL must use HTTPS")
   }
   return url.toString().replace(/\/$/, "")
+}
+
+function getCarboneStudioVersion() {
+  const configured = Deno.env.get("CARBONE_STUDIO_VERSION")?.trim() || "5.9.0"
+  if (!/^\d+\.\d+\.\d+$/.test(configured)) {
+    throw new FunctionError(500, "The document studio is not configured safely.", "CARBONE_STUDIO_VERSION must be a pinned semantic version")
+  }
+  return configured
 }
 
 function renderTimeout() {
@@ -123,6 +132,51 @@ function binaryResponse(request: Request, bytes: Uint8Array, contentType: string
   })
 }
 
+async function studioComponentResponse(request: Request) {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), renderTimeout())
+
+  try {
+    const version = getCarboneStudioVersion()
+    const response = await fetch(`${getCarboneBaseUrl()}/carbone-studio.js?v=${encodeURIComponent(version)}`, {
+      method: "GET",
+      headers: { "Authorization": getCarboneAuthorization() },
+      signal: controller.signal,
+    })
+    if (!response.ok) {
+      throw new FunctionError(502, "The Carbone Studio interface could not be loaded.", `Carbone Studio component returned HTTP ${response.status}`)
+    }
+
+    const contentLength = Number(response.headers.get("Content-Length") ?? 0)
+    if (contentLength > maximumStudioComponentBytes) {
+      throw new FunctionError(502, "The Carbone Studio interface is too large.", "Carbone Studio component exceeded 5 MiB")
+    }
+
+    const bytes = new Uint8Array(await response.arrayBuffer())
+    if (!bytes.byteLength || bytes.byteLength > maximumStudioComponentBytes) {
+      throw new FunctionError(502, "The Carbone Studio interface is invalid.", "Carbone Studio component was empty or exceeded 5 MiB")
+    }
+
+    return new Response(bytes, {
+      status: 200,
+      headers: {
+        ...corsHeaders(request),
+        "Cache-Control": "private, max-age=3600",
+        "Content-Type": "text/javascript; charset=utf-8",
+        "X-Carbone-Studio-Version": version,
+        "X-Content-Type-Options": "nosniff",
+      },
+    })
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new FunctionError(502, "The document studio did not respond in time.", "Carbone Studio component request timed out")
+    }
+    throw error
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
+
 async function prepareSession(
   context: Awaited<ReturnType<typeof authenticateRequest>>,
   templateCode: string,
@@ -148,6 +202,11 @@ Deno.serve(async (request) => {
   try {
     const context = await authenticateRequest(request)
     const payload = await request.json() as StudioRequest
+
+    if (payload.action === "component") {
+      return await studioComponentResponse(request)
+    }
+
     const templateCode = parseTemplateCode(payload.templateCode)
     const contentSections = parseContentSections(payload.contentSections)
     const jobNumber = parseJobNumber(payload.jobNumber)

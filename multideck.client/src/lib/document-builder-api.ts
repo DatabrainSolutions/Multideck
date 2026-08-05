@@ -142,15 +142,61 @@ export async function renderDocument(request: RenderDocumentRequest): Promise<Re
 }
 
 export async function getDocumentStudioSession(request: DocumentStudioRequest): Promise<DocumentStudioSession> {
-  const client = requireDocumentClient()
-  const { data, error } = await client.functions.invoke<DocumentStudioSession>("document-studio", {
+  requireDocumentClient()
+  const session = await getSupabaseSession()
+  if (!session) throw new Error("Sign in again to open the document studio.")
+  if (!supabaseFunctionsUrl || !supabasePublicApiKey) throw new Error("The secure document service is not configured for this workspace.")
+
+  const response = await fetch(`${supabaseFunctionsUrl}/document-studio`, {
     method: "POST",
-    body: { action: "open", ...request },
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      apikey: supabasePublicApiKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ action: "open", ...request }),
   })
 
-  if (error) throw toFunctionError(error, "The document studio could not be opened.")
-  if (!data) throw new Error("The document studio returned no session.")
-  return data
+  if (!response.ok) {
+    let message = "The document studio could not be opened."
+    try {
+      const payload = await response.json() as { error?: string }
+      if (payload.error) message = payload.error
+    } catch {
+      // Keep the safe fallback when the gateway did not return JSON.
+    }
+    throw new Error(message)
+  }
+  return response.json() as Promise<DocumentStudioSession>
+}
+
+export async function getDocumentStudioComponent(): Promise<Blob> {
+  requireDocumentClient()
+  const session = await getSupabaseSession()
+  if (!session) throw new Error("Sign in again to open the document studio.")
+  if (!supabaseFunctionsUrl || !supabasePublicApiKey) throw new Error("The secure document service is not configured for this workspace.")
+
+  const response = await fetch(`${supabaseFunctionsUrl}/document-studio`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      apikey: supabasePublicApiKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ action: "component" }),
+  })
+
+  if (!response.ok) {
+    let message = "The Carbone Studio interface could not be loaded."
+    try {
+      const payload = await response.json() as { error?: string }
+      if (payload.error) message = payload.error
+    } catch {
+      // Keep the safe fallback when the gateway did not return JSON.
+    }
+    throw new Error(message)
+  }
+  return response.blob()
 }
 
 export async function renderDocumentStudioPreview(

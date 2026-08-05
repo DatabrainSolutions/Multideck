@@ -66,7 +66,7 @@ No browser storage policy is created. Storage access is granted only to the Edge
 
 ### Embedded Studio boundary
 
-The Create Document dialog uses Carbone Studio `5.9.1` in `embedded` mode. The component is downloaded from Carbone's versioned CDN, but all template and preview requests go through the authenticated `document-studio` Edge Function.
+The Create Document dialog uses the self-hosted Carbone Studio `5.9.0` web component in `embedded` mode. The authenticated `document-studio` Edge Function retrieves the pinned component from the protected Carbone host, so Carbone credentials remain server-side. Template and preview requests use the same gateway.
 
 - `document_api.prepare_studio_job_session` repeats company, office, job, template-scope and permission checks without creating a render job.
 - The Edge Function downloads only the resolved published template from Carbone and returns it with the selected authorised job snapshot.
@@ -76,7 +76,7 @@ The Create Document dialog uses Carbone Studio `5.9.1` in `embedded` mode. The c
 - Final creation uses the current Studio DOCX but rebuilds the data again through `prepare_job_render`; the template SHA-256 and byte size are added to the render audit before generation.
 - Carbone and Supabase secrets remain server-side.
 
-The Studio version can be changed with the public build setting `VITE_CARBONE_STUDIO_VERSION`, but it must be a pinned semantic version and should be equal to or newer than the installed Carbone backend version.
+The Studio version can be changed with the server-side `CARBONE_STUDIO_VERSION` secret. It must be a pinned semantic version compatible with the installed Carbone backend.
 
 ### Template resolution
 
@@ -305,6 +305,7 @@ Create a local, ignored secrets file for deployment. Do not commit it.
 ```dotenv
 CARBONE_URL=https://docserver.multideck.app
 CARBONE_API_VERSION=5
+CARBONE_STUDIO_VERSION=5.9.0
 CARBONE_TIMEOUT_MS=90000
 MULTIDECK_ENVIRONMENT=production
 DOCUMENT_ALLOWED_ORIGINS=https://YOUR-MULTIDECK-ORIGIN
