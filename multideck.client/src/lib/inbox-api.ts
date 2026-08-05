@@ -8,9 +8,11 @@ import {
   InboxApiError,
   buildSendPayload,
   normalizeConnection,
+  normalizeAutomaticReplySettings,
   normalizeDexterEmailContextSource,
   normalizeDraft,
   normalizeMailbox,
+  normalizeMailboxFolder,
   normalizeProviderAvailability,
   normalizeSummary,
   normalizeThreadDetail,
@@ -25,11 +27,14 @@ import {
   type ConnectionStatus,
   type DexterEmailContextSource,
   type InboxConnection,
+  type AutomaticReplySettings,
+  type AutomaticReplyUpdate,
   type InboxDraft,
   type InboxProviderAvailability,
   type InboxThreadDetail,
   type MailProvider,
   type Mailbox,
+  type MailboxFolder,
   type OutboundAttachment,
   type SendReceipt,
   type SendRequest,
@@ -218,7 +223,7 @@ export async function listInboxConnections(): Promise<InboxConnection[]> {
   })
 }
 
-export async function loadInboxWorkspace(): Promise<{ connections: InboxConnection[]; mailboxes: Mailbox[] }> {
+export async function loadInboxWorkspace(): Promise<{ connections: InboxConnection[]; mailboxes: Mailbox[]; folders: MailboxFolder[] }> {
   return inboxRequest("/workspace", {
     method: "GET",
     normalize: (payload) => {
@@ -230,6 +235,9 @@ export async function loadInboxWorkspace(): Promise<{ connections: InboxConnecti
         mailboxes: readList(pickField(record, "mailboxes"))
           .map((mailbox) => normalizeMailbox(mailbox))
           .filter((mailbox) => mailbox.id !== ""),
+        folders: readList(pickField(record, "folders"))
+          .map((folder) => normalizeMailboxFolder(folder))
+          .filter((folder) => folder.id !== "" && folder.mailboxId !== ""),
       }
     },
   })
@@ -363,10 +371,29 @@ export async function syncMailbox(mailboxId: string): Promise<MailboxSyncResult>
   }
 }
 
-export function buildThreadQueryString({ mailboxId, folder = "inbox", query, cursor, limit = 25 }: ThreadQuery) {
+export async function getAutomaticReply(mailboxId: string): Promise<AutomaticReplySettings> {
+  return inboxRequest(`/mailboxes/${encodeURIComponent(mailboxId)}/automatic-reply`, {
+    method: "GET",
+    normalize: normalizeAutomaticReplySettings,
+  })
+}
+
+export async function updateAutomaticReply(
+  mailboxId: string,
+  update: AutomaticReplyUpdate,
+): Promise<AutomaticReplySettings> {
+  return inboxRequest(`/mailboxes/${encodeURIComponent(mailboxId)}/automatic-reply`, {
+    method: "PATCH",
+    body: JSON.stringify(update),
+    normalize: normalizeAutomaticReplySettings,
+  })
+}
+
+export function buildThreadQueryString({ mailboxId, folder = "inbox", folderId, query, cursor, limit = 25 }: ThreadQuery) {
   const params = new URLSearchParams()
   params.set("mailboxId", mailboxId)
   params.set("folder", folder)
+  if (folderId) params.set("folderId", folderId)
   if (query?.trim()) params.set("query", query.trim())
   if (cursor) params.set("cursor", cursor)
   params.set("limit", String(limit))

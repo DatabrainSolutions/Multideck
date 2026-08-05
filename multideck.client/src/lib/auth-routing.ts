@@ -15,10 +15,10 @@ export function rememberAuthReturnPath(path = getCurrentAuthReturnPath()) {
 }
 
 export function takeAuthReturnPath() {
-  if (typeof window === "undefined") return "/"
+  if (typeof window === "undefined") return "/app"
 
   const path = window.sessionStorage.getItem(authReturnToStorageKey)
   window.sessionStorage.removeItem(authReturnToStorageKey)
 
-  return isSafeAppPath(path) ? path : "/"
+  return isSafeAppPath(path) ? path : "/app"
 }

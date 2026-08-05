@@ -4,6 +4,7 @@ import {
   deleteDraft,
   disconnectInboxConnection,
   getThread,
+  getAutomaticReply,
   listInboxConnections,
   listMailboxes,
   listThreads,
@@ -13,8 +14,11 @@ import {
   setThreadReadState,
   syncMailbox,
   updateDraft,
+  updateAutomaticReply,
   InboxApiError,
   type InboxConnection,
+  type AutomaticReplySettings,
+  type AutomaticReplyUpdate,
   type InboxDraft,
   type InboxThreadDetail,
   type MailProvider,
@@ -103,4 +107,15 @@ export async function removeConnection(connectionId: string): Promise<void> {
 
 export async function requestMailboxSync(mailboxId: string): Promise<MailboxSyncResult> {
   return syncMailbox(mailboxId)
+}
+
+export async function fetchAutomaticReply(mailboxId: string): Promise<AutomaticReplySettings> {
+  return getAutomaticReply(mailboxId)
+}
+
+export async function saveAutomaticReply(
+  mailboxId: string,
+  update: AutomaticReplyUpdate,
+): Promise<AutomaticReplySettings> {
+  return updateAutomaticReply(mailboxId, update)
 }

@@ -60,6 +60,17 @@ export type DexterEmailDraft = {
   delivery: DexterEmailDraftDelivery
 }
 
+export type InboxDexterDraftInput = {
+  mode: DexterEmailDraft["mode"]
+  sourceMessageId: string | null
+  to: DexterEmailDraftAddress[]
+  cc: DexterEmailDraftAddress[]
+  bcc: DexterEmailDraftAddress[]
+  subject: string
+  bodyText: string
+  locale: string
+}
+
 export type DexterEmailAttachment = {
   id: string
   provider: "gmail" | "outlook"
@@ -395,6 +406,31 @@ export async function refineDexterEmailDraft(input: {
     throw new DexterApiError("Dexter could not confirm the refined draft.")
   }
   return data.draft
+}
+
+/**
+ * Drafts directly inside Inbox without creating a hidden Dexter conversation.
+ * The server re-authorises reply context and returns wording only; the normal
+ * Inbox controls remain responsible for saving and sending.
+ */
+export async function prepareInboxDexterDraft(input: InboxDexterDraftInput) {
+  if (!supabase) throw new DexterApiError("Agent Dexter is not connected to this workspace.")
+  const { data, error } = await supabase.functions.invoke<{
+    draft: { subject: string; bodyText: string }
+    model: string
+    reasoningEffort: "low"
+    personalised: boolean
+  }>("dexter-email-compose", { body: input })
+  if (error) {
+    throw await dexterFunctionError(
+      error,
+      "Dexter could not draft this email. Your current wording is unchanged.",
+    )
+  }
+  if (!data?.draft || typeof data.draft.subject !== "string" || typeof data.draft.bodyText !== "string") {
+    throw new DexterApiError("Dexter could not confirm the email draft.")
+  }
+  return data
 }
 
 export async function updateDexterEmailDraft(messageId: string, draft: DexterEmailDraft) {

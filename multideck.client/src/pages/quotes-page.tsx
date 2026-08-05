@@ -130,6 +130,7 @@ type QuoteRecord = {
   docsStatus?: string
   workflow?: string
   revisionReason?: string
+  createdAt?: string
   customer: string
   clientCode?: string
   customerAddress?: string
@@ -231,6 +232,7 @@ const quoteQueue: QuoteRecord[] = [
     docsStatus: "Draft",
     workflow: "Review",
     revisionReason: "Initial spot rate",
+    createdAt: "08 Jan 2026 · 09:42",
     customer: "HarbourWorks Safety",
     clientCode: "HWSBRI",
     customerAddress: "RIVERGATE WORKS, BRISTOL, UNITED KINGDOM",
@@ -270,7 +272,7 @@ const quoteQueue: QuoteRecord[] = [
     branch: "BR1",
     department: "SEA",
     salesRep: "AM1",
-    opsRep: "OP2",
+    opsRep: "Daniel Reed",
     jobStatus: "WRK",
     goodsValue: "0.00 GBP",
     insuranceValue: "0.00 GBP",
@@ -298,6 +300,8 @@ const quoteQueue: QuoteRecord[] = [
     id: "Q-19157",
     status: "Ready",
     statusTone: "green",
+    source: "Repeat lane",
+    createdAt: "22 Jul 2026 · 08:14",
     customer: "Cedar & Loom Trading",
     route: "Singapore to Southampton",
     mode: "Sea FCL",
@@ -306,7 +310,9 @@ const quoteQueue: QuoteRecord[] = [
     origin: "SGSIN",
     destination: "GBSOU",
     via: "Direct",
-    validity: "10 Jan to 24 Jan",
+    validity: "28 Jul 2026",
+    salesRep: "EM",
+    opsRep: "Wei Chen",
     margin: "18.40%",
     profit: 612.2,
     cost: 2714.8,
@@ -317,6 +323,8 @@ const quoteQueue: QuoteRecord[] = [
     id: "Q-19154",
     status: "Needs rate",
     statusTone: "blue",
+    source: "CRM opportunity",
+    createdAt: "22 Jul 2026 · 08:31",
     customer: "Asterline Components",
     route: "Dubai to Heathrow",
     mode: "Air",
@@ -325,7 +333,9 @@ const quoteQueue: QuoteRecord[] = [
     origin: "DXB",
     destination: "LHR",
     via: "Direct",
-    validity: "Today",
+    validity: "24 Jul 2026",
+    salesRep: "AM1",
+    opsRep: "Wei Chen",
     margin: "Pending",
     profit: 0,
     cost: 0,
@@ -439,12 +449,11 @@ const carriers = [
 ]
 
 const quoteStages = [
-  { label: "Draft/WIP", state: "done", color: "#0e7d74", summary: "Core quote details and customer requirements are being prepared." },
-  { label: "Rating", state: "done", color: "#4a7d9c", summary: "Supplier costs and customer selling rates are being built." },
-  { label: "Review", state: "current", color: "#dd8a2b", summary: "Commercial margin, completeness, and risk are being checked." },
-  { label: "Sent", state: "todo", color: "#7d667f", summary: "The customer copy has been issued and is awaiting a response." },
-  { label: "Followed-up", state: "todo", color: "#b56d7c", summary: "Sales follow-up is active and customer feedback is being recorded." },
-  { label: "Won/Lost", state: "todo", color: "#5f7f68", summary: "The final outcome and decision reason are captured for reporting." },
+  { id: "intake", label: "Intake", state: "done", progress: 100, summary: "Customer, routing, cargo, and service requirements are captured." },
+  { id: "costing", label: "Costing", state: "done", progress: 100, summary: "Supplier costs and selling rates are prepared." },
+  { id: "review", label: "Review", state: "current", progress: 50, summary: "Margin, terms, and exclusions are ready for commercial review." },
+  { id: "sent", label: "Sent", state: "todo", progress: 0, summary: "The customer quote has been issued and is awaiting a decision." },
+  { id: "outcome", label: "Outcome", state: "todo", progress: 0, summary: "The decision and reason are recorded for the next quote." },
 ]
 
 const recentQuotes = [
@@ -726,60 +735,69 @@ function InsightRow({
   )
 }
 
-function QuoteOverviewSignals({ compact = false }: { compact?: boolean }) {
-  const { t, direction } = useLanguage()
+function QuoteOverviewSignals({ quote, compact = false }: { quote: QuoteRecord; compact?: boolean }) {
+  const { t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
   const successScore = 68
   const needleAngle = -90 + (successScore / 100) * 180
+  const quoteMetadata = [
+    { label: "Quote owner", value: salesRepresentativeValue(quote.salesRep) },
+    { label: "Created", value: quote.createdAt ?? "—" },
+    { label: "Operations owner", value: quote.opsRep ?? "—" },
+    { label: "Valid until", value: quote.validity || "—" },
+  ]
 
   return (
     <div className={cn("grid gap-2", compact ? "lg:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]" : "xl:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]")}>
-      <Surface padding="none" className="md-quote-stage-panel rounded-[var(--md-radius-xl)] p-2">
-        <div className="md-quote-stage-panel__header">
-          <div className="min-w-0">
-            <p className="text-[11px] font-medium uppercase leading-3 tracking-[0.02em] text-[var(--md-subtle)]">{t("Quote stage")}</p>
-            <div className="mt-0.5 flex min-w-0 items-baseline gap-2">
-              <p className="truncate text-[13px] font-medium leading-4 text-[var(--md-ink)]">{t("Commercial review")}</p>
-              <span className="truncate text-[10px] text-[var(--md-subtle)]">{t("Rates complete")}</span>
-            </div>
+      <div className="md-quote-stage-stack grid min-h-0 grid-rows-2 gap-2">
+        <Surface padding="none" className="md-quote-stage-panel flex min-h-0 items-center rounded-[var(--md-radius-xl)] p-1.5">
+          <div className="md-quote-stage-panel__steps" role="list" aria-label={t("Quote progress")}>
+            {quoteStages.map((stage) => (
+              <div
+                key={stage.label}
+                className="md-quote-stage-panel__step"
+                data-stage={stage.id}
+                data-state={stage.state}
+                style={{ "--md-quote-stage-progress": `${stage.progress}%` } as CSSProperties}
+                role="listitem"
+                aria-current={stage.state === "current" ? "step" : undefined}
+              >
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button type="button" aria-label={`${t(stage.label)}, ${stage.progress}%: ${t(stage.summary)}`}>
+                      <span className="md-quote-stage-panel__label md-quote-stage-panel__label--track" aria-hidden="true">
+                        <span>{t(stage.label)}</span>
+                        {stage.progress > 0 && stage.progress < 100 ? <small data-i18n-skip>{stage.progress}%</small> : null}
+                      </span>
+                      <span className="md-quote-stage-panel__label md-quote-stage-panel__label--fill" aria-hidden="true">
+                        <span>{t(stage.label)}</span>
+                        {stage.progress > 0 && stage.progress < 100 ? <small data-i18n-skip>{stage.progress}%</small> : null}
+                      </span>
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" sideOffset={8} className="md-quote-stage-tooltip">
+                    <strong>{t(stage.label)} <span aria-hidden="true" data-i18n-skip>· {stage.progress}%</span></strong>
+                    <span>{t(stage.summary)}</span>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+            ))}
           </div>
-          <span className="md-quote-stage-panel__count" data-i18n-skip>3 / 6</span>
-        </div>
-        <div className="md-quote-stage-panel__steps" role="list" aria-label={t("Quote progress")}>
-          {quoteStages.map((stage, index) => (
-            <div
-              key={stage.label}
-              className="md-quote-stage-panel__step"
-              data-state={stage.state}
-              role="listitem"
-              aria-current={stage.state === "current" ? "step" : undefined}
-              style={{ "--md-quote-stage-color": stage.color } as CSSProperties}
-            >
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button type="button" aria-label={`${t(stage.label)}: ${t(stage.summary)}`}>
-                    <span className="md-quote-stage-panel__rail">
-                      <motion.i
-                        initial={shouldReduceMotion ? false : { scaleX: 0 }}
-                        animate={{ scaleX: 1 }}
-                        transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.32, delay: index * 0.035, ease: [0.16, 1, 0.3, 1] }}
-                        style={{ transformOrigin: direction === "rtl" ? "right center" : "left center" }}
-                      />
-                    </span>
-                    <p>{t(stage.label)}</p>
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="top" sideOffset={8} className="md-quote-stage-tooltip">
-                  <strong>{t(stage.label)}</strong>
-                  <span>{t(stage.summary)}</span>
-                </TooltipContent>
-              </Tooltip>
-            </div>
-          ))}
-        </div>
-      </Surface>
+        </Surface>
 
-      <Surface padding="none" className="relative overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-accent-abyss-deep)] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_0_0_1px_var(--md-accent-veil-ring-a12),0_10px_22px_var(--md-accent-veil-cast-a18)]">
+        <Surface padding="none" className="md-quote-stage-metadata min-h-0 overflow-hidden rounded-[var(--md-radius-xl)] px-3 py-1.5">
+          <dl className="grid h-full grid-cols-4 items-center gap-3">
+            {quoteMetadata.map((item) => (
+              <div key={item.label} className="min-w-0">
+                <dt>{t(item.label)}</dt>
+                <dd title={item.value} data-i18n-skip dir="auto">{item.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </Surface>
+      </div>
+
+      <Surface padding="none" className="md-quote-temperature-panel relative overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-accent-abyss-deep)] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_0_0_1px_var(--md-accent-veil-ring-a12),0_10px_22px_var(--md-accent-veil-cast-a18)]">
         <span aria-hidden="true" className="pointer-events-none absolute inset-0">
           <SpectralBloomShader />
         </span>
@@ -791,7 +809,7 @@ function QuoteOverviewSignals({ compact = false }: { compact?: boolean }) {
           </div>
           <StatusPill tone="amber" className="border-0 bg-white/12 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.16)]">{t("Warm")}</StatusPill>
         </div>
-        <div className="relative z-10 mx-auto h-[58px] w-full overflow-hidden">
+        <div className="relative z-10 mx-auto h-[50px] w-full overflow-hidden">
           <svg viewBox="0 0 220 124" className="h-full w-full" role="img" aria-label={t("AI quote likelihood gauge")}>
             <defs>
               <linearGradient id="quote-temperature-gradient" x1="30" y1="104" x2="190" y2="104" gradientUnits="userSpaceOnUse">
@@ -2067,7 +2085,7 @@ function CargoWiseGroup({
 function QuoteCargoWiseOverviewPanel({ quote }: { quote: QuoteRecord }) {
   return (
     <div className="md-quote-cargowise-overview grid gap-2">
-      <QuoteOverviewSignals compact />
+      <QuoteOverviewSignals quote={quote} compact />
 
       <div className="grid gap-2 lg:grid-cols-[1fr_1fr_0.9fr]">
         <CargoWiseGroup title="Quote header" compact>
@@ -2876,6 +2894,7 @@ function quoteRecordFromRegister(quote: QuoteRegisterRecord): QuoteRecord {
     shipperReference: quote.shipperReference,
     docsStatus: quote.documentStatus,
     workflow: quote.workflowStage,
+    createdAt: quote.createdAt,
     customer: quote.customer,
     route: `${quote.origin} to ${quote.destination}`,
     mode: quote.transportMode,

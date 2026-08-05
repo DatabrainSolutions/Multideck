@@ -697,6 +697,7 @@ export function DexterMentionInput({
   onUnavailableMention,
   onCommand,
   onSend,
+  animateProgrammaticMentions = false,
 }: {
   value: string
   items?: DexterMentionItem[]
@@ -712,6 +713,8 @@ export function DexterMentionInput({
   onUnavailableMention?: (mention: DexterMentionItem) => void
   onCommand?: (command: DexterSlashCommand) => void
   onSend: (value: string) => void
+  /** Preserve real inline mention tokens when a controlled demo or restored draft changes the value. */
+  animateProgrammaticMentions?: boolean
 }) {
   const { direction, t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
@@ -818,12 +821,75 @@ export function DexterMentionInput({
     if (!editor || value === lastEmittedValueRef.current) return
 
     if (readMentionEditorValue(editor) !== value) {
-      editor.replaceChildren(document.createTextNode(value))
+      const mentionByTitle = new Map(selectedMentions.map((mention) => [mention.title.toLocaleLowerCase(), mention]))
+      const matches = animateProgrammaticMentions && mentionByTitle.size > 0
+        ? findDexterMentionMatches(value, [...mentionByTitle.keys()])
+        : []
+
+      if (matches.length === 0) {
+        editor.replaceChildren(document.createTextNode(value))
+      } else {
+        const parts: Array<{ kind: "text"; value: string } | { kind: "mention"; item: DexterMentionItem }> = []
+        let cursor = 0
+        for (const match of matches) {
+          const mention = mentionByTitle.get(match.title.toLocaleLowerCase())
+          if (!mention) continue
+          if (match.start > cursor) parts.push({ kind: "text", value: value.slice(cursor, match.start) })
+          parts.push({ kind: "mention", item: mention })
+          cursor = match.end
+        }
+        if (cursor < value.length) parts.push({ kind: "text", value: value.slice(cursor) })
+
+        const currentNodes = [...editor.childNodes]
+        const canUpdateInPlace = currentNodes.length === parts.length && parts.every((part, index) => {
+          const node = currentNodes[index]
+          return part.kind === "text"
+            ? node?.nodeType === Node.TEXT_NODE
+            : node instanceof HTMLElement && node.dataset.mentionId === part.item.id
+        })
+
+        if (canUpdateInPlace) {
+          parts.forEach((part, index) => {
+            if (part.kind === "text" && currentNodes[index].textContent !== part.value) {
+              currentNodes[index].textContent = part.value
+            }
+          })
+        } else {
+          const fragment = document.createDocumentFragment()
+          let mentionIndex = 0
+          parts.forEach((part) => {
+            if (part.kind === "text") {
+              fragment.append(document.createTextNode(part.value))
+              return
+            }
+            const mention = document.createElement("span")
+            mention.className = "md-dexter-mention"
+            mention.dataset.mdDexterMention = "true"
+            mention.dataset.mentionId = part.item.id
+            mention.dataset.mentionType = part.item.type
+            mention.dataset.mentionTitle = part.item.title
+            mention.contentEditable = "false"
+            mention.setAttribute("aria-label", `${t(mentionTypeLabels[part.item.type])}: ${part.item.title}`)
+            mention.style.animationDelay = `${mentionIndex * 90}ms`
+            if (part.item.logo) {
+              const logo = document.createElement("img")
+              logo.src = part.item.logo
+              logo.alt = ""
+              logo.setAttribute("aria-hidden", "true")
+              mention.append(logo)
+            }
+            mention.append(document.createTextNode(`@${part.item.title}`))
+            fragment.append(mention)
+            mentionIndex += 1
+          })
+          editor.replaceChildren(fragment)
+        }
+      }
     }
     lastEmittedValueRef.current = value
     setQuery(null)
     triggerRangeRef.current = null
-  }, [value])
+  }, [animateProgrammaticMentions, selectedMentions, t, value])
 
   function syncSelectedMentions() {
     const editor = editorRef.current
@@ -1208,6 +1274,7 @@ export function DexterPromptComposer({
   isSending = false,
   mode = "chat",
   compact = false,
+  animateProgrammaticMentions = false,
   className,
 }: {
   value: string
@@ -1237,6 +1304,7 @@ export function DexterPromptComposer({
   /** Watch mode has one deterministic job, so it does not expose role routing. */
   mode?: "chat" | "watch"
   compact?: boolean
+  animateProgrammaticMentions?: boolean
   className?: string
 }) {
   const { language, t } = useLanguage()
@@ -1336,6 +1404,7 @@ export function DexterPromptComposer({
             onUnavailableMention={onUnavailableMention}
             onCommand={onCommand}
             onSend={(liveValue) => onSend(liveValue)}
+            animateProgrammaticMentions={animateProgrammaticMentions}
           />
 
           <div className="mt-3 flex flex-wrap items-center gap-2">

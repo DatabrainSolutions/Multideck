@@ -214,6 +214,29 @@ export function sanitizeEmailHtml(value: unknown) {
   return html
 }
 
+/**
+ * Microsoft Graph's `hasAttachments` flag deliberately ignores inline-only
+ * images. A signature can therefore contain several `cid:` sources while the
+ * message claims to have no attachments. Treat the HTML reference as the
+ * second, provider-documented signal that the attachment collection must be
+ * read.
+ */
+export function emailHtmlContentIds(value: unknown) {
+  const html = typeof value === "string" ? value.slice(0, 2_000_000) : ""
+  const ids = new Set<string>()
+  for (const match of html.matchAll(/\bsrc\s*=\s*["']cid:([^"']+)["']/gi)) {
+    let contentId = String(match[1] ?? "").trim()
+    try { contentId = decodeURIComponent(contentId) } catch { /* Keep the provider value. */ }
+    contentId = contentId.replace(/^<|>$/g, "").toLowerCase()
+    if (contentId) ids.add(contentId)
+  }
+  return [...ids]
+}
+
+export function graphMessageNeedsAttachmentFetch(hasAttachments: unknown, bodyHtml: unknown) {
+  return hasAttachments === true || emailHtmlContentIds(bodyHtml).length > 0
+}
+
 function escapeAttribute(value: string) {
   return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;")
 }

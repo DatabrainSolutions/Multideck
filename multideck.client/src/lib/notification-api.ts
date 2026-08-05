@@ -40,3 +40,42 @@ export async function markWorkspaceNotificationRead(notificationId: string) {
     .eq("CommNotif_ID", notificationId)
   if (error) throw error
 }
+
+export async function markWorkspaceNotificationUnread(notificationId: string) {
+  if (!supabase) throw new Error("Notifications are not connected to this workspace.")
+  const { error } = await supabase
+    .from("Comm_Notifications")
+    .update({ CommNotif_StatusCode: "unread", CommNotif_ReadAt: null })
+    .eq("CommNotif_ID", notificationId)
+    .is("CommNotif_DismissedAt", null)
+  if (error) throw error
+}
+
+export async function markAllWorkspaceNotificationsRead() {
+  if (!supabase) throw new Error("Notifications are not connected to this workspace.")
+  const { error } = await supabase
+    .from("Comm_Notifications")
+    .update({ CommNotif_StatusCode: "read", CommNotif_ReadAt: new Date().toISOString() })
+    .eq("CommNotif_StatusCode", "unread")
+    .is("CommNotif_DismissedAt", null)
+  if (error) throw error
+}
+
+export async function dismissWorkspaceNotification(notificationId: string) {
+  if (!supabase) throw new Error("Notifications are not connected to this workspace.")
+  const { error } = await supabase
+    .from("Comm_Notifications")
+    .update({ CommNotif_DismissedAt: new Date().toISOString() })
+    .eq("CommNotif_ID", notificationId)
+    .is("CommNotif_DismissedAt", null)
+  if (error) throw error
+}
+
+export async function dismissAllWorkspaceNotifications() {
+  if (!supabase) throw new Error("Notifications are not connected to this workspace.")
+  const { error } = await supabase
+    .from("Comm_Notifications")
+    .update({ CommNotif_DismissedAt: new Date().toISOString() })
+    .is("CommNotif_DismissedAt", null)
+  if (error) throw error
+}

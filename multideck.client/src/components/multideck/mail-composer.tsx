@@ -19,6 +19,7 @@ import {
   X,
 } from "lucide-react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
+import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
@@ -380,6 +381,10 @@ export function MailComposer({
   onSaveDraft,
   onDiscard,
   onOpen,
+  onComposeWithDexter,
+  dexterAction = "compose",
+  dexterStatus = "idle",
+  dexterError = null,
   className,
 }: {
   state: ComposerState
@@ -408,6 +413,11 @@ export function MailComposer({
   onDiscard: () => void
   /** Initialises the selected source message before a docked reply opens. */
   onOpen?: () => void
+  /** Drafts wording in place. It never sends or saves the message. */
+  onComposeWithDexter?: () => void
+  dexterAction?: "compose" | "draft" | "reply"
+  dexterStatus?: "idle" | "drafting"
+  dexterError?: string | null
   className?: string
 }) {
   const { language, t } = useLanguage()
@@ -421,7 +431,7 @@ export function MailComposer({
   const [attaching, setAttaching] = useState(0)
   const [attachError, setAttachError] = useState<string | null>(null)
 
-  const busy = status === "sending" || status === "saving" || status === "discarding"
+  const busy = status === "sending" || status === "saving" || status === "discarding" || dexterStatus === "drafting"
   const readOnly = mailbox ? !mailbox.outboundEnabled : true
   const expanded = state.presentation === "expanded"
   const open = state.presentation !== "docked"
@@ -500,6 +510,8 @@ export function MailComposer({
   )
 
   const statusLine = useMemo(() => {
+    if (dexterError) return { text: dexterError, tone: "error" as const }
+    if (dexterStatus === "drafting") return { text: t("Dexter is reading the thread and preparing your draft."), tone: "muted" as const }
     if (status === "failed" && error) return { text: error, tone: "error" as const }
     if (status === "queued") return { text: t("Queued to send. It will leave as soon as the provider accepts it."), tone: "muted" as const }
     if (readOnly) return { text: t("This mailbox receives mail only."), tone: "muted" as const }
@@ -511,7 +523,11 @@ export function MailComposer({
       }
     }
     return null
-  }, [attachError, attachedBytes, error, language, readOnly, state.attachments.length, status, t])
+  }, [attachError, attachedBytes, dexterError, dexterStatus, error, language, readOnly, state.attachments.length, status, t])
+
+  const dexterLabel = dexterStatus === "drafting"
+    ? t("Dexter is drafting")
+    : t(dexterAction === "reply" ? "Reply with Dexter" : dexterAction === "draft" ? "Draft with Dexter" : "Compose with Dexter")
 
   if (!open) {
     return (
@@ -601,6 +617,19 @@ export function MailComposer({
             </>
           ) : null}
         </p>
+        {onComposeWithDexter ? (
+          <DexterActionPill
+            label={dexterLabel}
+            icon={dexterStatus === "drafting" ? Loader2 : Sparkles}
+            disabled={busy || readOnly}
+            aria-busy={dexterStatus === "drafting"}
+            className={cn(
+              "md-inbox-summarise h-9 min-w-[154px] shrink-0 rounded-full px-3 text-[12.5px]",
+              dexterStatus === "drafting" && "[&_svg]:animate-spin motion-reduce:[&_svg]:animate-none",
+            )}
+            onClick={onComposeWithDexter}
+          />
+        ) : null}
         {fill ? null : (
           <Button
             type="button"
@@ -738,7 +767,7 @@ export function MailComposer({
           dir="auto"
           data-i18n-skip
           value={state.bodyText}
-          disabled={readOnly}
+          disabled={readOnly || busy}
           placeholder={t("Write your message")}
           onChange={(event) => update({ bodyText: event.target.value })}
           onPaste={(event) => {

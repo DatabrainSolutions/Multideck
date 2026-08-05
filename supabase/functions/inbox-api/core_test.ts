@@ -19,6 +19,8 @@ import {
   resolveResponseRecipients,
   safeFileName,
   sanitizeEmailHtml,
+  emailHtmlContentIds,
+  graphMessageNeedsAttachmentFetch,
 } from "./core.ts"
 
 Deno.test("parses hosted and local inbox-api route paths", () => {
@@ -125,6 +127,14 @@ Deno.test("sanitizer removes executable email markup", () => {
   const safe = sanitizeEmailHtml(`<div onclick="steal()"><script>alert(1)</script><a href="javascript:alert(1)">bad</a><img src="https://example.com/a.png" onerror="steal()"></div>`)
   assert(!/script|onclick|onerror|javascript:/i.test(safe))
   assertMatch(safe, /https:\/\/example\.com\/a\.png/)
+})
+
+Deno.test("Outlook inline-only images still trigger an attachment lookup", () => {
+  const html = `<p>Hello</p><img src="cid:Signature.Logo%40example"><img src='cid:<photo-1>'>`
+  assertEquals(emailHtmlContentIds(html), ["signature.logo@example", "photo-1"])
+  assertEquals(graphMessageNeedsAttachmentFetch(false, html), true)
+  assertEquals(graphMessageNeedsAttachmentFetch(false, "<p>No images</p>"), false)
+  assertEquals(graphMessageNeedsAttachmentFetch(true, "<p>Invoice attached</p>"), true)
 })
 
 Deno.test("email previews decode safe named and numeric HTML entities", () => {

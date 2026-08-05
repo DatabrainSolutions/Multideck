@@ -19,6 +19,7 @@ import {
   deleteDraft,
   disconnect,
   getThread,
+  getAutomaticReply,
   inboxWorkspace,
   listMailboxes,
   listThreads,
@@ -31,6 +32,7 @@ import {
   syncMailbox,
   trashThread,
   updateThreadState,
+  updateAutomaticReply,
 } from "./runtime.ts"
 
 const allowedOrigins = readAllowedOrigins({
@@ -95,6 +97,12 @@ Deno.serve(async (request) => {
     }
     if (method === "POST" && path.length === 3 && path[0] === "mailboxes" && path[2] === "sync") {
       return jsonResponse(request, allowedOrigins, await syncMailbox(clients.admin, actor, path[1]))
+    }
+    if (method === "GET" && path.length === 3 && path[0] === "mailboxes" && path[2] === "automatic-reply") {
+      return jsonResponse(request, allowedOrigins, await getAutomaticReply(clients.admin, actor, path[1]))
+    }
+    if (method === "PATCH" && path.length === 3 && path[0] === "mailboxes" && path[2] === "automatic-reply") {
+      return jsonResponse(request, allowedOrigins, await updateAutomaticReply(clients.admin, actor, path[1], await readJson(request)))
     }
     if (method === "GET" && path.length === 1 && path[0] === "threads") {
       return jsonResponse(request, allowedOrigins, await listThreads(clients.admin, actor, new URL(request.url)))
