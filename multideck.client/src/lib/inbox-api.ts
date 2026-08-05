@@ -568,7 +568,7 @@ export function getCachedInlineAttachmentBlobUrl(attachmentId: string): { url: s
 /** Warms only the inline images that can appear in one rendered conversation. */
 export async function prefetchThreadInlineAttachmentBlobUrls(detail: InboxThreadDetail): Promise<void> {
   const attachmentIds = Array.from(new Set(
-    detail.messages.flatMap((message) => message.attachments)
+    [...detail.messages].reverse().flatMap((message) => message.attachments)
       .filter((attachment) => attachment.isInline && attachment.contentId)
       .map((attachment) => attachment.id),
   )).slice(0, 24)

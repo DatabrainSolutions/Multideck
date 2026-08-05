@@ -67,6 +67,7 @@ test("attachments are fetched from the same authenticated Edge transport", () =>
   assert.match(source, /getCachedInlineAttachmentBlobUrl/)
   assert.match(source, /inlineAttachmentCacheLimit = 96/)
   assert.match(source, /prefetchThreadInlineAttachmentBlobUrls/)
+  assert.match(source, /\[\.\.\.detail\.messages\]\.reverse\(\)/)
   assert.match(source, /\?disposition=inline/)
 })
 
