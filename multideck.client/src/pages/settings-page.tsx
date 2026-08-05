@@ -651,7 +651,7 @@ function ProfileTab({
 
   function discardProfileChanges() {
     setProfile(savedProfile)
-    toast.message("Changes discarded")
+    toast.info("Changes discarded")
   }
 
   async function saveProfileChanges() {

@@ -1,14 +1,15 @@
 import { useCallback, useState } from "react"
 import type { Provider } from "@supabase/supabase-js"
-import { ArrowRight, Building2, Clock3, KeyRound, Loader2, Mail, ShieldCheck, TriangleAlert } from "lucide-react"
+import { ArrowRight, Building2, Clock3, KeyRound, Loader2, Mail, Menu, ShieldCheck, TriangleAlert, X } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { AuthProviderSelector, type AuthProviderId } from "@/components/multideck/auth-provider-selector"
-import { SpectralBloomShader } from "@/components/multideck/dexter-action-pill"
 import { takeAuthReturnPath } from "@/lib/auth-routing"
+import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
 import { isSupabaseConfigured, isWorkspaceRouterHost, multideckRootHost, supabase, supabaseConfigurationError } from "@/lib/supabase"
+import authPanelBackdrop from "@/assets/auth/auth-panel-backdrop.jpg"
 import multideckLogoMark from "@/assets/brand/multideck-logo-mark.svg"
 
 export type AuthFlowStep = "signin" | "verify" | "forgot-password" | "reset-password" | "signed-out"
@@ -112,7 +113,7 @@ function isValidEmail(email: string) {
 
 function BrandLockup({ inverted = false, centered = false }: { inverted?: boolean; centered?: boolean }) {
   return (
-    <div className={cn("flex items-center gap-3", centered && "justify-center")}>
+    <div data-auth-brand className={cn("flex items-center gap-3", centered && "justify-center")}>
       <img
         src={multideckLogoMark}
         alt=""
@@ -120,6 +121,75 @@ function BrandLockup({ inverted = false, centered = false }: { inverted?: boolea
       />
       <span className={cn("text-[21px] font-medium leading-none tracking-normal", inverted ? "text-white" : "text-[var(--md-ink)]")}>multideck</span>
     </div>
+  )
+}
+
+function AuthWebsiteHeader({
+  menuOpen,
+  onMenuToggle,
+}: {
+  menuOpen: boolean
+  onMenuToggle: () => void
+}) {
+  const { t } = useLanguage()
+  const navLinks = [
+    { label: t("Features"), href: "/features" },
+    { label: t("About"), href: "/about" },
+    { label: t("Contact"), href: "/contact" },
+  ]
+
+  return (
+    <header className="relative z-50 h-[68px] bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[0_1px_0_rgba(11,20,19,0.06)] [--md-accent:#0a7068] [--md-accent-a16:rgba(10,112,104,0.16)] [--md-accent-a20:rgba(10,112,104,0.2)] [--md-accent-hover:#095e57] [--md-accent-ink:#fff] [--md-ink:#0b1413] [--md-surface:#fff] [--md-surface-soft:#f7f6f2] [--md-text:#4d5956]">
+      <div className="mx-auto flex h-full w-full max-w-[1320px] items-center px-[clamp(20px,4.4vw,64px)]">
+        <a href="/" aria-label={t("Multideck — home")} className="flex min-h-11 items-center gap-2.5 rounded-[var(--md-radius-lg)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a16)]">
+          <img src={multideckLogoMark} alt="" className="h-[19px] w-[26px] object-contain" />
+          <span className="text-[18px] font-medium leading-none">Multideck</span>
+        </a>
+
+        <nav className="ms-auto hidden items-center gap-1 md:flex" aria-label={t("Main navigation")}>
+          {navLinks.map((link) => (
+            <a key={link.href} href={link.href} className="flex min-h-11 items-center rounded-[var(--md-radius-lg)] px-3 text-[14px] text-[var(--md-text)] transition-colors hover:bg-[var(--md-surface-soft)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a16)]">
+              {link.label}
+            </a>
+          ))}
+          <a href="/auth" aria-current="page" className="flex min-h-11 items-center rounded-[var(--md-radius-lg)] px-3 text-[14px] font-medium text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a16)]">
+            {t("Log in")}
+          </a>
+          <a href="/contact#enquire" className="ms-1 flex min-h-10 items-center rounded-[var(--md-radius-xl)] bg-[var(--md-accent)] px-5 text-[14px] font-medium text-[var(--md-accent-ink)] shadow-[var(--md-shadow-soft)] transition-colors hover:bg-[var(--md-accent-hover)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a20)]">
+            {t("Enquire")}
+          </a>
+        </nav>
+
+        <button
+          type="button"
+          aria-expanded={menuOpen}
+          aria-controls="auth-website-navigation"
+          aria-label={menuOpen ? t("Close menu") : t("Open menu")}
+          onClick={onMenuToggle}
+          className="ms-auto grid size-11 place-items-center rounded-[var(--md-radius-lg)] text-[var(--md-ink)] transition-colors hover:bg-[var(--md-surface-soft)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a16)] md:hidden"
+        >
+          {menuOpen ? <X className="size-5" strokeWidth={1.5} /> : <Menu className="size-5" strokeWidth={1.5} />}
+        </button>
+      </div>
+
+      {menuOpen ? (
+        <nav id="auth-website-navigation" aria-label={t("Mobile navigation")} className="absolute inset-x-0 top-full bg-[var(--md-surface)] px-5 pb-5 shadow-[0_18px_36px_rgba(11,20,19,0.12)] md:hidden">
+          <div className="flex flex-col border-t border-[rgba(11,20,19,0.06)] pt-3">
+            {navLinks.map((link) => (
+              <a key={link.href} href={link.href} className="flex min-h-11 items-center rounded-[var(--md-radius-lg)] px-3 text-[14px] text-[var(--md-text)] hover:bg-[var(--md-surface-soft)]">
+                {link.label}
+              </a>
+            ))}
+            <a href="/auth" aria-current="page" className="flex min-h-11 items-center rounded-[var(--md-radius-lg)] px-3 text-[14px] font-medium text-[var(--md-ink)]">
+              {t("Log in")}
+            </a>
+            <a href="/contact#enquire" className="mt-2 flex min-h-11 items-center justify-center rounded-[var(--md-radius-xl)] bg-[var(--md-accent)] px-5 text-[14px] font-medium text-[var(--md-accent-ink)]">
+              {t("Enquire")}
+            </a>
+          </div>
+        </nav>
+      ) : null}
+    </header>
   )
 }
 
@@ -143,9 +213,12 @@ function FreightNarrative({
         className,
       )}
     >
-      <div className="absolute inset-0 scale-[1.08]" aria-hidden="true">
-        <SpectralBloomShader />
-      </div>
+      <img
+        src={authPanelBackdrop}
+        alt=""
+        aria-hidden="true"
+        className="absolute inset-0 size-full object-cover object-center"
+      />
       <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(2,14,12,0.12),rgba(2,14,12,0.34)_58%,rgba(2,14,12,0.78))]" aria-hidden="true" />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_22%,rgba(255,255,255,0.12),transparent_36%)]" aria-hidden="true" />
 
@@ -867,6 +940,7 @@ export function AuthFlow({
   const [busyProvider, setBusyProvider] = useState<AuthProviderId | null>(null)
   const [message, setMessage] = useState<string | null>(!galleryMode && !isSupabaseConfigured ? supabaseConfigurationError : null)
   const [error, setError] = useState<string | null>(null)
+  const [websiteMenuOpen, setWebsiteMenuOpen] = useState(false)
 
   const goToApp = useCallback(() => {
     const destination = takeAuthReturnPath()
@@ -1200,7 +1274,7 @@ export function AuthFlow({
 
   if (galleryMode) {
     return (
-      <div className="grid min-h-[720px] overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-bg)] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] lg:grid-cols-[44%_56%]">
+      <div className="md-auth-light grid min-h-[720px] overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-bg)] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] lg:grid-cols-[44%_56%]">
         <FreightNarrative step={step} className="min-h-[720px]" />
         <main className="grid min-h-[720px] place-items-center px-[clamp(var(--md-gap-xl),5vw,88px)] py-[calc(var(--md-page-section-gap)*2)]">
           {authPanel}
@@ -1210,13 +1284,16 @@ export function AuthFlow({
   }
 
   return (
-    <div className="grid min-h-screen bg-[var(--md-bg)] text-[var(--md-ink)] lg:grid-cols-[44%_56%]">
-      <FreightNarrative step={step} className="order-2 lg:order-1" />
-      <main className="order-1 grid min-h-[720px] place-items-center px-[clamp(var(--md-gap-xl),5vw,88px)] py-[calc(var(--md-page-section-gap)*2)] lg:order-2 lg:min-h-screen">
-        <div className="w-full max-w-[520px]">
-          {authPanel}
-        </div>
-      </main>
+    <div className="md-auth-light min-h-screen bg-[var(--md-bg)] text-[var(--md-ink)] [&_[data-auth-brand]]:hidden">
+      <AuthWebsiteHeader menuOpen={websiteMenuOpen} onMenuToggle={() => setWebsiteMenuOpen((open) => !open)} />
+      <div className="grid min-h-[calc(100dvh-68px)] lg:grid-cols-[44%_56%]">
+        <FreightNarrative step={step} className="order-2 lg:order-1 lg:!min-h-[calc(100dvh-68px)] [&>div.relative]:lg:!min-h-[calc(100dvh-68px)]" />
+        <main className="order-1 grid min-h-[720px] place-items-center px-[clamp(var(--md-gap-xl),5vw,88px)] py-[calc(var(--md-page-section-gap)*2)] lg:order-2 lg:min-h-[calc(100dvh-68px)]">
+          <div className="w-full max-w-[520px]">
+            {authPanel}
+          </div>
+        </main>
+      </div>
     </div>
   )
 }

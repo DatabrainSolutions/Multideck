@@ -22,6 +22,7 @@ import {
   type MailFolder,
   type MailProvider,
   type Mailbox,
+  type MailboxFolder,
   type ThreadCacheEntry,
   type ThreadPage,
   type ThreadQuery,
@@ -33,10 +34,13 @@ export type InboxAccountLoadState = "loading" | "ready" | "error"
 type InboxWorkspaceValue = {
   connections: InboxConnection[]
   mailboxes: Mailbox[]
+  folders: MailboxFolder[]
   accountState: InboxAccountLoadState
   accountError: string | null
   provider: MailProvider | null
   mailboxId: string | null
+  folderId: string | null
+  selectedFolder: MailboxFolder | null
   folder: MailFolder
   view: InboxNavigationView
   threadCache: Record<string, ThreadCacheEntry>
@@ -50,6 +54,7 @@ type InboxWorkspaceValue = {
   selectProvider: (provider: MailProvider) => void
   selectMailbox: (mailbox: Mailbox) => void
   selectView: (view: InboxNavigationView) => void
+  selectFolder: (folder: MailboxFolder) => void
   adjustMailboxUnread: (mailboxId: string, delta: number) => void
 }
 
@@ -60,7 +65,7 @@ const supportedViews = new Set<InboxNavigationView>(["all", "shared", "sent", "d
 
 function readInitialSelection() {
   if (typeof window === "undefined" || window.location.pathname !== "/inbox") {
-    return { provider: null, mailboxId: null, view: "all" as InboxNavigationView }
+    return { provider: null, mailboxId: null, folderId: null, view: "all" as InboxNavigationView }
   }
 
   const params = new URLSearchParams(window.location.search)
@@ -70,6 +75,7 @@ function readInitialSelection() {
   return {
     provider,
     mailboxId: params.get("mailbox"),
+    folderId: params.get("folder"),
     view: rawView && supportedViews.has(rawView as InboxNavigationView)
       ? rawView as InboxNavigationView
       : "all",
@@ -101,7 +107,7 @@ function preferredMailbox(
     ?? null
 }
 
-function writeSelection(provider: MailProvider | null, mailboxId: string | null, view: InboxNavigationView) {
+function writeSelection(provider: MailProvider | null, mailboxId: string | null, view: InboxNavigationView, folderId: string | null = null) {
   if (typeof window === "undefined" || window.location.pathname !== "/inbox") return
   const url = new URL(window.location.href)
   // Fixture mail is never a fallback for the real Inbox workspace.
@@ -112,6 +118,8 @@ function writeSelection(provider: MailProvider | null, mailboxId: string | null,
   else url.searchParams.delete("mailbox")
   if (view === "all") url.searchParams.delete("view")
   else url.searchParams.set("view", view)
+  if (folderId) url.searchParams.set("folder", folderId)
+  else url.searchParams.delete("folder")
   window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`)
 }
 
@@ -119,10 +127,12 @@ export function InboxWorkspaceProvider({ children, cacheScope }: { children: Rea
   const initial = useMemo(readInitialSelection, [])
   const [connections, setConnections] = useState<InboxConnection[]>([])
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([])
+  const [folders, setFolders] = useState<MailboxFolder[]>([])
   const [accountState, setAccountState] = useState<InboxAccountLoadState>("loading")
   const [accountError, setAccountError] = useState<string | null>(null)
   const [provider, setProvider] = useState<MailProvider | null>(initial.provider)
   const [mailboxId, setMailboxId] = useState<string | null>(initial.mailboxId)
+  const [folderId, setFolderId] = useState<string | null>(initial.folderId)
   const [view, setView] = useState<InboxNavigationView>(initial.view)
   const [threadCache, setThreadCache] = useState<Record<string, ThreadCacheEntry>>({})
   const threadCacheRef = useRef(threadCache)
@@ -142,6 +152,7 @@ export function InboxWorkspaceProvider({ children, cacheScope }: { children: Rea
       const workspace = await loadInboxWorkspace()
       setConnections(workspace.connections)
       setMailboxes(workspace.mailboxes)
+      setFolders(workspace.folders)
       setAccountState("ready")
       return workspace.mailboxes
     } catch (error) {
@@ -154,6 +165,7 @@ export function InboxWorkspaceProvider({ children, cacheScope }: { children: Rea
   useEffect(() => {
     setConnections([])
     setMailboxes([])
+    setFolders([])
     setThreadCache({})
     threadCacheRef.current = {}
     threadDetailsRef.current.clear()
@@ -167,7 +179,7 @@ export function InboxWorkspaceProvider({ children, cacheScope }: { children: Rea
   }, [cacheScope, refreshAccounts])
 
   const fetchThreadPage = useCallback(async (request: ThreadQuery, append = false, force = false) => {
-    const key = threadCacheKey(request.mailboxId, request.folder ?? "inbox", request.query ?? "")
+    const key = threadCacheKey(request.mailboxId, request.folder ?? "inbox", request.query ?? "", request.folderId)
     const existing = threadCacheRef.current[key]
     if (!append && !force && existing) {
       return { items: existing.items, nextCursor: existing.nextCursor, hasMore: existing.hasMore }
@@ -240,15 +252,17 @@ export function InboxWorkspaceProvider({ children, cacheScope }: { children: Rea
     setProvider(nextProvider)
     setView(nextView)
     setMailboxId(nextMailbox?.id ?? null)
-    writeSelection(nextProvider, nextMailbox?.id ?? null, nextView)
-  }, [accountState, mailboxId, mailboxes, provider, view])
+    const nextFolderId = folders.some((folder) => folder.id === folderId && folder.mailboxId === nextMailbox?.id) ? folderId : null
+    setFolderId(nextFolderId)
+    writeSelection(nextProvider, nextMailbox?.id ?? null, nextView, nextFolderId)
+  }, [accountState, folderId, folders, mailboxId, mailboxes, provider, view])
 
   // Warm the first visible page as soon as the account bootstrap resolves.
   // This runs behind the rest of the app and is shared with InboxPage, so an
   // operator arriving a moment later sees rows without starting another call.
   useEffect(() => {
     if (accountState !== "ready" || !mailboxId) return
-    void fetchThreadPage({ mailboxId, folder: folderForView(view), limit: 25 })
+    void fetchThreadPage({ mailboxId, folder: folderForView(view), folderId, limit: 25 })
       .then((page) => {
         // The first conversations are the most likely next click. Warming only
         // three keeps bandwidth restrained while making the visible top of the
@@ -256,7 +270,7 @@ export function InboxWorkspaceProvider({ children, cacheScope }: { children: Rea
         for (const thread of page.items.slice(0, 3)) prefetchThreadDetail(thread.id)
       })
       .catch(() => undefined)
-  }, [accountState, fetchThreadPage, mailboxId, prefetchThreadDetail, view])
+  }, [accountState, fetchThreadPage, folderId, mailboxId, prefetchThreadDetail, view])
 
   const applySelection = useCallback((nextProvider: MailProvider, nextView: InboxNavigationView, currentMailboxId: string | null) => {
     const nextMailbox = preferredMailbox(mailboxes, nextProvider, nextView, currentMailboxId)
@@ -265,6 +279,7 @@ export function InboxWorkspaceProvider({ children, cacheScope }: { children: Rea
     setProvider(nextProvider)
     setView(resolvedView)
     setMailboxId(resolvedMailbox?.id ?? null)
+    setFolderId(null)
     writeSelection(nextProvider, resolvedMailbox?.id ?? null, resolvedView)
   }, [mailboxes])
 
@@ -277,6 +292,7 @@ export function InboxWorkspaceProvider({ children, cacheScope }: { children: Rea
     setProvider(mailbox.provider)
     setMailboxId(mailbox.id)
     setView(nextView)
+    setFolderId(null)
     writeSelection(mailbox.provider, mailbox.id, nextView)
   }, [])
 
@@ -284,6 +300,17 @@ export function InboxWorkspaceProvider({ children, cacheScope }: { children: Rea
     if (!provider) return
     applySelection(provider, nextView, mailboxId)
   }, [applySelection, mailboxId, provider])
+
+  const selectFolder = useCallback((nextFolder: MailboxFolder) => {
+    const mailbox = mailboxes.find((candidate) => candidate.id === nextFolder.mailboxId)
+    if (!mailbox) return
+    const nextView: InboxNavigationView = mailbox.kind === "personal" ? "all" : "shared"
+    setProvider(mailbox.provider)
+    setMailboxId(mailbox.id)
+    setView(nextView)
+    setFolderId(nextFolder.id)
+    writeSelection(mailbox.provider, mailbox.id, nextView, nextFolder.id)
+  }, [mailboxes])
 
   const adjustMailboxUnread = useCallback((targetMailboxId: string, delta: number) => {
     setMailboxes((current) => current.map((mailbox) =>
@@ -295,10 +322,13 @@ export function InboxWorkspaceProvider({ children, cacheScope }: { children: Rea
   const value = useMemo<InboxWorkspaceValue>(() => ({
     connections,
     mailboxes,
+    folders,
     accountState,
     accountError,
     provider,
     mailboxId,
+    folderId,
+    selectedFolder: folders.find((folder) => folder.id === folderId) ?? null,
     folder: folderForView(view),
     view,
     threadCache,
@@ -312,6 +342,7 @@ export function InboxWorkspaceProvider({ children, cacheScope }: { children: Rea
     selectProvider,
     selectMailbox,
     selectView,
+    selectFolder,
     adjustMailboxUnread,
   }), [
     accountError,
@@ -320,6 +351,8 @@ export function InboxWorkspaceProvider({ children, cacheScope }: { children: Rea
     connections,
     fetchThreadDetail,
     fetchThreadPage,
+    folderId,
+    folders,
     mailboxId,
     mailboxes,
     provider,
@@ -330,6 +363,7 @@ export function InboxWorkspaceProvider({ children, cacheScope }: { children: Rea
     selectMailbox,
     selectProvider,
     selectView,
+    selectFolder,
     threadCache,
     view,
   ])

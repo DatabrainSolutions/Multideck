@@ -9,6 +9,10 @@ const core = await readFile(new URL("core.ts", root), "utf8")
 const config = await readFile(new URL("../config.toml", import.meta.url), "utf8")
 const instantThreadMigration = await readFile(new URL("../migrations/20260803165000_inbox_thread_snapshot.sql", import.meta.url), "utf8")
 const threadPageMigration = await readFile(new URL("../migrations/20260803166000_inbox_thread_page.sql", import.meta.url), "utf8")
+const automaticReplyAuditMigration = await readFile(new URL("../migrations/20260804130000_inbox_automatic_reply_audit.sql", import.meta.url), "utf8")
+const providerFolderMigration = await readFile(new URL("../migrations/20260804203000_inbox_provider_folder_catalog.sql", import.meta.url), "utf8")
+const dexterEmailContext = await readFile(new URL("../functions/agent-dexter/email-context.ts", import.meta.url), "utf8")
+const dexterRuntime = await readFile(new URL("../functions/agent-dexter/index.ts", import.meta.url), "utf8")
 
 test("authenticated Edge boundary is registered", () => {
   assert.match(config, /\[functions\.inbox-api\]\s+verify_jwt\s*=\s*true/)
@@ -17,10 +21,27 @@ test("authenticated Edge boundary is registered", () => {
 })
 
 test("complete browser route contract is present", () => {
-  for (const route of ["providers", "connections", "workspace", "authorize", "shared-mailboxes", "group-mailboxes", "mailboxes", "ai-context-sources", "sync", "threads", "read-state", "trash", "summary", "drafts", "send", "attachments"]) {
+  for (const route of ["providers", "connections", "workspace", "authorize", "shared-mailboxes", "group-mailboxes", "mailboxes", "automatic-reply", "ai-context-sources", "sync", "threads", "read-state", "trash", "summary", "drafts", "send", "attachments"]) {
     assert.match(index, new RegExp(`\\b${route.replace("-", "-")}\\b`), `missing ${route}`)
   }
   for (const method of ["GET", "POST", "PATCH", "DELETE", "OPTIONS"]) assert.match(index, new RegExp(`"${method}"`))
+})
+
+test("automatic replies stay mailbox-scoped, provider-backed, and permission checked", () => {
+  assert.match(index, /getAutomaticReply/)
+  assert.match(index, /updateAutomaticReply/)
+  assert.match(runtime, /requireMailbox\(admin, actor, mailboxId, "manage"\)/)
+  assert.match(runtime, /requirePermission\(admin, actor, "Email\.Connect"\)/)
+  assert.match(runtime, /gmail\.googleapis\.com\/gmail\/v1\/users\/me\/settings\/vacation/)
+  assert.match(runtime, /graph\.microsoft\.com\/v1\.0\/me\/mailboxSettings/)
+  assert.match(runtime, /gmail\.settings\.basic/)
+  assert.match(runtime, /mailboxsettings\.readwrite/)
+  assert.match(runtime, /Comm_MailboxAutomaticReplyAudit/)
+  assert.doesNotMatch(runtime, /CommAutoReplyAudit_(?:Message|Subject)/)
+  assert.match(automaticReplyAuditMigration, /enable row level security/)
+  assert.match(automaticReplyAuditMigration, /revoke all .* anon, authenticated/)
+  assert.match(automaticReplyAuditMigration, /grant all .* service_role/)
+  assert.doesNotMatch(automaticReplyAuditMigration, /CommAutoReplyAudit_(?:Message|Subject)/)
 })
 
 test("Inbox startup and thread detail avoid database waterfalls", () => {
@@ -88,6 +109,31 @@ test("real Gmail and Microsoft folder sync is implemented", () => {
   assert.match(runtime, /CommMailFolder_RoleCode/)
   assert.match(runtime, /CommThread_SourceTypeCode: "provider_sync"/)
   assert.match(runtime, /CommMessage_SourceTypeCode: "provider_sync"/)
+})
+
+test("provider labels and nested folders remain access-checked and provider identifiers stay server-side", () => {
+  assert.match(runtime, /gmailFolderCatalogue/)
+  assert.match(runtime, /users\/me\/labels/)
+  assert.match(runtime, /outlookFolderCatalogue/)
+  assert.match(runtime, /childFolders/)
+  assert.match(runtime, /CommMailbox_FolderCatalogSyncedAt/)
+  assert.match(runtime, /OUTLOOK_CUSTOM_FOLDER_BATCH/)
+  assert.match(runtime, /CommMailFolder_SyncCursor/)
+  assert.match(runtime, /comm_inbox_provider_folder_thread_page/)
+  assert.match(runtime, /\.delete\(\)\.eq\("CommMessageFolder_MessageID", messageId\)/)
+  assert.match(providerFolderMigration, /permission\."sys_Permission_Value" = 'Email\.Read'/)
+  assert.match(providerFolderMigration, /CommMailboxAccess_CanRead/)
+  assert.match(providerFolderMigration, /grant execute on function public\.comm_inbox_provider_folder_thread_page[^;]+to service_role/s)
+  assert.doesNotMatch(runtime.slice(runtime.indexOf("export async function listMailboxFolders"), runtime.indexOf("export async function aiContextSources")), /providerFolderId:/)
+})
+
+test("Dexter can read visible folder context while folder-move watches stay explicitly unsupported", () => {
+  assert.match(providerFolderMigration, /multideck_dexter_email_thread_folders/)
+  assert.match(providerFolderMigration, /Email\.AIRead/)
+  assert.match(providerFolderMigration, /_multideck_dexter_email_mailboxes/)
+  assert.match(dexterEmailContext, /multideck_dexter_email_thread_folders/)
+  assert.match(dexterEmailContext, /visible Gmail labels or Outlook folders/)
+  assert.match(dexterRuntime, /Label changes and folder moves do not emit a dedicated tenant-safe watch event/)
 })
 
 test("moving a conversation to trash updates the provider and local folder mapping", () => {

@@ -406,6 +406,9 @@ verify_jwt = true
 [functions.dexter-email-refine]
 verify_jwt = true
 
+[functions.dexter-email-compose]
+verify_jwt = true
+
 [functions.email-oauth]
 verify_jwt = false
 

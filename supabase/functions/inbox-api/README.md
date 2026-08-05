@@ -17,6 +17,7 @@ Base path: `/functions/v1/inbox-api`
 
 | Method | Route | Purpose |
 | --- | --- | --- |
+| GET | `/workspace` | Accessible connections, mailboxes, and safe local folder catalogue |
 | GET | `/providers` | Configured Gmail/Outlook providers |
 | GET | `/connections` | Current user's connections |
 | POST | `/connections/:provider/authorize` | Delegate OAuth start to `email-oauth` |
@@ -24,6 +25,8 @@ Base path: `/functions/v1/inbox-api`
 | POST | `/connections/:id/shared-mailboxes` | Validate and add an Outlook shared mailbox |
 | GET | `/mailboxes` | Personal/shared/group mailboxes and unread counts |
 | POST | `/mailboxes/:id/sync` | On-demand provider sync |
+| GET | `/mailboxes/:id/automatic-reply` | Read the provider-owned out-of-office setting |
+| PATCH | `/mailboxes/:id/automatic-reply` | Schedule, enable, or disable a personal mailbox automatic reply |
 | GET | `/threads` | Cursor-paged folder/search list |
 | GET | `/threads/:id` | Sanitised rendered thread detail |
 | PATCH | `/threads/:id/read-state` | Read/star/archive state |
@@ -38,8 +41,15 @@ Calls require both the Supabase session bearer and the project's browser-safe pu
 
 - Gmail initial sync explicitly includes Spam and Trash, then advances with Gmail history IDs.
 - Outlook keeps independent delta cursors for Inbox, Sent Items, Drafts, Junk Email, and Deleted Items. Shared mailboxes use delegated `/users/:address` endpoints.
-- Folder membership is persisted in `Comm_MailFolders` / `Comm_MessageFolders`; provider Deleted Items remain readable records rather than being confused with Multideck soft deletion.
+- Gmail labels and Outlook's nested folder tree are refreshed into `Comm_MailFolders`. The browser receives only access-checked local folder UUIDs, visible names, hierarchy, colours, and counts; provider folder identifiers remain server-side.
+- Folder membership is replaced from each provider message's current state in `Comm_MessageFolders`, so removed Gmail labels and Outlook moves do not leave stale local memberships. Provider Deleted Items remain readable records rather than being confused with Multideck soft deletion.
+- Outlook custom folders are indexed in bounded rotating batches with per-folder delta cursors, keeping an individual sync request predictable even for large folder trees.
 - A send first creates an idempotent `sending` claim. A retry with the same user-scoped key returns the existing receipt. An ambiguous network result is not automatically resent.
+
+## Dexter and Watching parity
+
+- `read_email_thread` receives the visible folder/label names through a separate permission-checked RPC. Dexter never receives provider folder identifiers and cannot move or relabel mail.
+- New synced mail continues through the existing event-driven email watch path. A label-only change or folder move has no dedicated tenant-safe domain event in this release, so Dexter is explicitly instructed not to offer a watch for organisational changes and to direct the operator to Inbox.
 
 ## Required secrets
 

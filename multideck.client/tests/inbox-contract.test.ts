@@ -17,6 +17,7 @@ import {
   normalizeThreadPage,
   normalizeConnection,
   normalizeMailbox,
+  normalizeMailboxFolder,
   normalizeProviderAvailability,
   readEmailConnectionResult,
   readInboxThreadDeepLink,
@@ -32,6 +33,7 @@ import {
   type SendMode,
 } from "../src/lib/inbox-contract.ts"
 import { isEmptyEdits } from "../src/lib/inbox-drafts.ts"
+import { labelColourContrast, mailboxLabelTone } from "../src/lib/mailbox-label-colour.ts"
 
 test("Outlook shared access is exposed as a boolean without leaking OAuth scopes", () => {
   const elevated = normalizeConnection({
@@ -45,6 +47,51 @@ test("Outlook shared access is exposed as a boolean without leaking OAuth scopes
   assert.equal(elevated.sharedMailboxAccess, true)
   assert.equal(personal.sharedMailboxAccess, false)
   assert.equal("oauthScopes" in elevated, false)
+})
+
+test("provider folders expose only bounded display metadata and a local hierarchy", () => {
+  const folder = normalizeMailboxFolder({
+    id: "4c8ab61f-5965-4ee5-bdd5-6ac789b86bd6",
+    mailboxId: "mailbox-1",
+    parentId: "f3848c35-eac4-4a73-89aa-0fd15cde7517",
+    role: "custom",
+    displayName: "Priority freight",
+    unreadCount: 7,
+    totalCount: 14,
+    backgroundColor: "#AABBCC",
+    textColor: "javascript:bad",
+    kind: "user",
+    providerFolderId: "must-not-cross-the-wire",
+  })
+
+  assert.equal(folder.displayName, "Priority freight")
+  assert.equal(folder.unreadCount, 7)
+  assert.equal(folder.backgroundColor, "#AABBCC")
+  assert.equal(folder.textColor, null)
+  assert.equal("providerFolderId" in folder, false)
+})
+
+test("Gmail labels keep an opaque accessible colour independent of the app theme", () => {
+  const providerTone = mailboxLabelTone({
+    displayName: "Priority freight",
+    backgroundColor: "#FFF475",
+    textColor: "#FFFFFF",
+  })
+  const fallbackTone = mailboxLabelTone({
+    displayName: "Client approvals",
+    backgroundColor: null,
+    textColor: null,
+  })
+
+  assert.equal(providerTone.backgroundColor, "#FFF475")
+  assert.equal(providerTone.foregroundColor, "#17211F")
+  assert.deepEqual(
+    mailboxLabelTone({ displayName: "Client approvals", backgroundColor: null, textColor: null }),
+    fallbackTone,
+  )
+  assert.match(fallbackTone.backgroundColor, /^#[0-9A-F]{6}$/)
+  assert.ok(labelColourContrast(providerTone.foregroundColor, providerTone.backgroundColor) >= 4.5)
+  assert.ok(labelColourContrast(fallbackTone.foregroundColor, fallbackTone.backgroundColor) >= 4.5)
 })
 
 test("new composers track opens by default and keep an explicit opt-out", () => {
@@ -274,6 +321,7 @@ test("the cache key separates mailbox, folder and query", () => {
   assert.notEqual(threadCacheKey("mbx-a", "inbox", ""), threadCacheKey("mbx-b", "inbox", ""))
   assert.notEqual(threadCacheKey("mbx-a", "inbox", ""), threadCacheKey("mbx-a", "archive", ""))
   assert.notEqual(threadCacheKey("mbx-a", "inbox", ""), threadCacheKey("mbx-a", "inbox", "customs"))
+  assert.notEqual(threadCacheKey("mbx-a", "inbox", "", "folder-a"), threadCacheKey("mbx-a", "inbox", "", "folder-b"))
 })
 
 test("the cache key ignores query casing and padding, so one search hits one entry", () => {

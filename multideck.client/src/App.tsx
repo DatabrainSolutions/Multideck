@@ -208,6 +208,7 @@ function isCrmEmailEditRoute(path: string) {
 }
 
 function getRoute() {
+  if (window.location.pathname === "/app" || window.location.pathname === "/app/") return "/"
   const legacyBookingRoute = getLegacyBookingRoute(window.location.pathname)
   if (legacyBookingRoute) return legacyBookingRoute
   if (window.location.pathname.startsWith("/reports/rpt-")) return window.location.pathname
@@ -486,8 +487,7 @@ export default function App() {
 
     if (authStatus === "unauthenticated" && route !== "/auth" && !isLocalNavigationLab) {
       rememberAuthReturnPath()
-      window.history.replaceState({}, "", "/auth")
-      startTransition(() => setRoute(getRoute()))
+      window.location.replace(import.meta.env.DEV ? "/auth" : "/")
       return
     }
 
@@ -510,7 +510,7 @@ export default function App() {
     }
     if (path === route) return
     rememberRecentWorkContext(route)
-    window.history.pushState({}, "", path)
+    window.history.pushState({}, "", path === "/" ? "/app" : path)
     startTransition(() => setRoute(getRoute()))
   }
 

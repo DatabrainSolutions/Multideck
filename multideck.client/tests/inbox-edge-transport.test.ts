@@ -43,6 +43,17 @@ test("Inbox navigation stays warm and conversation intent prefetches detail", ()
   assert.match(inboxPageSource, /Loading the full conversation/)
 })
 
+test("provider folders stay mailbox-scoped from workspace bootstrap through thread paging", () => {
+  assert.match(source, /folders: readList\(pickField\(record, "folders"\)\)/)
+  assert.match(source, /if \(folderId\) params\.set\("folderId", folderId\)/)
+  assert.match(inboxWorkspaceSource, /folders\.some\(\(folder\) => folder\.id === folderId && folder\.mailboxId === nextMailbox\?\.id\)/)
+  assert.match(inboxWorkspaceSource, /writeSelection\(mailbox\.provider, mailbox\.id, nextView, nextFolder\.id\)/)
+  assert.match(appSidebarSource, /folder\.role === "custom"/)
+  assert.match(appSidebarSource, /paddingInlineStart/)
+  assert.match(appSidebarSource, /layoutId=\{activeFolderLayoutId\}/)
+  assert.match(appSidebarSource, /reduceMotion\(Boolean\(shouldReduceMotion\), mdMotion\.panel\)/)
+})
+
 test("send keeps its idempotency key in both the Edge header and payload", () => {
   assert.match(source, /"Idempotency-Key": request\.idempotencyKey/)
   assert.match(source, /idempotencyKey: request\.idempotencyKey/)

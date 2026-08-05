@@ -2,6 +2,9 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } 
 import { useTheme } from "next-themes"
 import { ArrowLeft, ArrowRight, Bell, Check, Clipboard, Cloud, Component, Download, FileText, Folder, Image, KeyRound, Mail, Pin, Search, Ship, Sparkles, UserRound } from "lucide-react"
 import { toast } from "sonner"
+import toastErrorIcon from "@/assets/toasts/toast-error.png"
+import toastGeneralIcon from "@/assets/toasts/toast-general.png"
+import toastSuccessIcon from "@/assets/toasts/toast-success.png"
 import { Button } from "@/components/ui/button"
 import {
   Context,
@@ -1381,29 +1384,56 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "toast" ? (
-        <div className="relative flex min-h-[340px] w-full max-w-[760px] items-center justify-center overflow-hidden rounded-[var(--md-radius-xl)] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--md-surface)_72%,transparent),color-mix(in_srgb,var(--md-surface-tint)_72%,transparent))] p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+        <div className="relative flex min-h-[300px] w-full max-w-[760px] items-start justify-center overflow-hidden rounded-[var(--md-radius-xl)] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--md-surface)_72%,transparent),color-mix(in_srgb,var(--md-surface-tint)_72%,transparent))] p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
           <Button
             type="button"
             variant="ghost"
             className="h-10 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-surface)_78%,transparent)] px-4 text-[13px] font-medium shadow-[var(--md-shadow-line)]"
-            onClick={() =>
-              toast.success("Customer CSV prepared", {
-                description: "The export is ready for Northwind Forwarding.",
+            onClick={() => {
+              toast.success(t("Customer CSV prepared"), {
+                description: t("The export is ready to download."),
               })
-            }
+              toast.warning(t("Declaration needs attention"), {
+                description: t("Two checks still need review."),
+              })
+              toast.info(t("New notification"), {
+                description: t("A booking was assigned to you."),
+              })
+            }}
           >
-            Trigger toast
+            {t("Trigger toast stack")}
           </Button>
 
-          <div className="pointer-events-none absolute bottom-6 right-6 w-[min(520px,calc(100%-48px))]">
-            <div data-type="success" className="md-toast flex items-start">
-              <div className="md-toast-icon shrink-0">
-                <Check className="size-4.5" strokeWidth={1.5} />
+          <div aria-hidden="true" className="md-toast-gallery-stack pointer-events-none absolute bottom-5 end-5 flex w-[min(520px,calc(100%-40px))] flex-col gap-2">
+            <div data-type="info" className="md-toast flex">
+              <div className="md-toast-icon shrink-0" data-icon="">
+                <img alt="" className="md-toast-status-art" data-toast-icon-kind="general" src={toastGeneralIcon} />
               </div>
-              <div className="min-w-0 flex-1">
-                <p className="md-toast-title">Customer CSV prepared</p>
-                <p className="md-toast-description">The export is ready for Northwind Forwarding.</p>
+              <div className="min-w-0 flex-1" data-content="">
+                <p className="md-toast-title" data-title="">{t("New notification")}</p>
+                <p className="md-toast-description" data-description="">{t("A booking was assigned to you.")}</p>
               </div>
+              <button className="md-toast-close" tabIndex={-1} type="button"><span className="md-toast-dismiss-label">{t("Dismiss")}</span></button>
+            </div>
+            <div data-type="warning" className="md-toast flex">
+              <div className="md-toast-icon shrink-0" data-icon="">
+                <img alt="" className="md-toast-status-art" data-toast-icon-kind="warning" src={toastErrorIcon} />
+              </div>
+              <div className="min-w-0 flex-1" data-content="">
+                <p className="md-toast-title" data-title="">{t("Declaration needs attention")}</p>
+                <p className="md-toast-description" data-description="">{t("Two checks still need review.")}</p>
+              </div>
+              <button className="md-toast-close" tabIndex={-1} type="button"><span className="md-toast-dismiss-label">{t("Dismiss")}</span></button>
+            </div>
+            <div data-type="success" className="md-toast flex">
+              <div className="md-toast-icon shrink-0" data-icon="">
+                <img alt="" className="md-toast-status-art" data-toast-icon-kind="success" src={toastSuccessIcon} />
+              </div>
+              <div className="min-w-0 flex-1" data-content="">
+                <p className="md-toast-title" data-title="">{t("Customer CSV prepared")}</p>
+                <p className="md-toast-description" data-description="">{t("The export is ready to download.")}</p>
+              </div>
+              <button className="md-toast-close" tabIndex={-1} type="button"><span className="md-toast-dismiss-label">{t("Dismiss")}</span></button>
             </div>
           </div>
         </div>
@@ -1634,7 +1664,7 @@ function ComponentPreview({ id }: { id: string }) {
             stages={previewExtractionStages}
             activeStageId="extracting"
             footnote="Nothing is added to the declaration until you approve it."
-            onCancel={() => toast.message("Would cancel the import")}
+            onCancel={() => toast.info("Would cancel the import")}
           />
         </div>
       ) : null}
@@ -1963,6 +1993,8 @@ function ComponentPreview({ id }: { id: string }) {
             onSend={() => toast.success("Would send with mode and source message only")}
             onSaveDraft={() => toast.success("Draft saved")}
             onDiscard={() => setPreviewComposer((current) => ({ ...current, bodyText: "", presentation: "docked" }))}
+            onComposeWithDexter={() => toast.success("Dexter would prepare wording in place")}
+            dexterAction={previewComposer.mode === "reply" || previewComposer.mode === "reply_all" ? "reply" : "compose"}
           />
         </div>
       ) : null}
