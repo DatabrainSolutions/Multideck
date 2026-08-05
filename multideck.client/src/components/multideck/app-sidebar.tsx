@@ -1,7 +1,8 @@
-import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Archive, ArrowLeft, Bell, Boxes, Check, ChevronDown, ChevronRight, Clock3, CreditCard, FileText, Inbox, LifeBuoy, LogOut, MailWarning, Pencil, Plus, PanelLeftClose, PanelLeftOpen, Pin, Send, Settings, Sparkles, Trash2, TriangleAlert, Users, X, type LucideIcon } from "lucide-react"
+import { Archive, ArrowLeft, Bell, Boxes, Check, ChevronDown, ChevronRight, Clock3, CreditCard, FileText, Folder, Inbox, LifeBuoy, LoaderCircle, LogOut, MailWarning, Pencil, Plus, PanelLeftClose, PanelLeftOpen, Pin, Search, Send, Settings, Sparkles, Tags, Trash2, TriangleAlert, Users, X, type LucideIcon } from "lucide-react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
+import { ContextMenu as ContextMenuPrimitive } from "radix-ui"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { SpectralBloomShader } from "@/components/multideck/dexter-action-pill"
 import { SidebarArrangeCanvas, type SidebarArrangeItem } from "@/components/multideck/sidebar-arrange"
@@ -17,6 +18,7 @@ import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
 import { createProfilePhotoSignedUrl } from "@/lib/profile-photo"
 import { supabase } from "@/lib/supabase"
 import { useAiAgentName } from "@/lib/user-preferences"
+import { mailboxLabelTone } from "@/lib/mailbox-label-colour"
 import { customerWarehouseNavigation, homeNavItem, inboxNavItem, sidebarAreas, type NavItem, type SidebarArea, type SidebarDestination } from "@/data/navigation-data"
 import { readSettingsSectionFromUrl, settingsNavigationGroups, type SettingsSectionId } from "@/data/settings-navigation"
 import { useLanguage } from "@/i18n/language-provider"
@@ -30,7 +32,8 @@ import {
 import multideckFullLogo from "@/assets/brand/multideck-full-logo.svg"
 import { MailProviderMark, mailProviderLabels } from "@/components/multideck/mailbox-provider-switch"
 import { useOptionalInboxWorkspace, type InboxNavigationView } from "@/lib/inbox-workspace"
-import { listWorkspaceNotifications, markWorkspaceNotificationRead, type WorkspaceNotification } from "@/lib/notification-api"
+import type { MailboxFolder } from "@/lib/inbox-api"
+import { dismissAllWorkspaceNotifications, dismissWorkspaceNotification, listWorkspaceNotifications, markAllWorkspaceNotificationsRead, markWorkspaceNotificationRead, markWorkspaceNotificationUnread, type WorkspaceNotification } from "@/lib/notification-api"
 
 const sidebarItemTransition = {
   duration: 0.18,
@@ -47,6 +50,10 @@ const sidebarActiveTransition = {
 const sidebarPaneTransition = {
   duration: 0.18,
   ease: [0.22, 1, 0.36, 1] as [number, number, number, number],
+}
+
+type SearchableDexterConversation = DexterConversationSummary & {
+  matchSnippet?: string
 }
 
 /** Pinning re-slots a row, so it travels on a spring rather than jumping to the top. */
@@ -86,17 +93,7 @@ const notificationsReveal = {
   },
 }
 
-const notificationItemReveal = {
-  hidden: { opacity: 0, y: -6 },
-  show: {
-    opacity: 1,
-    y: 0,
-    transition: {
-      duration: 0.22,
-      ease: [0.22, 1, 0.36, 1] as [number, number, number, number],
-    },
-  },
-}
+const notificationItemExit = { opacity: 0, x: -8, transition: { duration: 0.14, ease: [0.22, 1, 0.36, 1] as [number, number, number, number] } }
 
 let notificationChannelSequence = 0
 
@@ -118,6 +115,27 @@ function NotificationBell() {
   const shouldReduceMotion = useReducedMotion()
   const [notifications, setNotifications] = useState<WorkspaceNotification[]>([])
   const unreadCount = notifications.filter((notification) => notification.status === "unread").length
+
+  function updateNotificationStatus(notificationId: string, status: "read" | "unread") {
+    setNotifications((current) => current.map((notification) => notification.id === notificationId ? { ...notification, status } : notification))
+    const request = status === "read" ? markWorkspaceNotificationRead(notificationId) : markWorkspaceNotificationUnread(notificationId)
+    void request.catch(() => refreshNotifications())
+  }
+
+  function dismissNotification(notificationId: string) {
+    setNotifications((current) => current.filter((notification) => notification.id !== notificationId))
+    void dismissWorkspaceNotification(notificationId).catch(() => refreshNotifications())
+  }
+
+  function markAllRead() {
+    setNotifications((current) => current.map((notification) => ({ ...notification, status: "read" })))
+    void markAllWorkspaceNotificationsRead().catch(() => refreshNotifications())
+  }
+
+  function clearNotifications() {
+    setNotifications([])
+    void dismissAllWorkspaceNotifications().catch(() => refreshNotifications())
+  }
 
   const refreshNotifications = useCallback(() => {
     void listWorkspaceNotifications()
@@ -179,14 +197,19 @@ function NotificationBell() {
         collisionPadding={18}
         className="w-[312px] gap-0 overflow-hidden rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-surface)] p-0 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)]"
       >
-        <div className="flex items-start justify-between gap-4 px-4 py-3">
+        <div className="flex items-center justify-between gap-4 px-4 py-3">
           <div className="min-w-0">
             <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Notifications")}</p>
-            <p className="mt-1 text-[12px] text-[var(--md-text)]">{unreadCount ? `${unreadCount} ${t("updates need attention")}` : t("You're all caught up")}</p>
+            <p className="mt-1 text-[12px] text-[var(--md-text)]">{unreadCount ? `${unreadCount} ${t(unreadCount === 1 ? "unread notification" : "unread notifications")}` : t("You're all caught up")}</p>
           </div>
-          <span className="rounded-[var(--md-radius-sm)] bg-[rgba(221,138,43,0.12)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--md-amber)]">
-            {t("New")}
-          </span>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <button type="button" disabled={unreadCount === 0} onClick={markAllRead} className="h-7 rounded-full bg-[var(--md-surface-tint)] px-2.5 text-[11px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,opacity,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.96] disabled:opacity-40 disabled:active:scale-100">
+              {t("Mark all as read")}
+            </button>
+            <button type="button" disabled={notifications.length === 0} onClick={clearNotifications} className="h-7 rounded-full px-2.5 text-[11px] font-medium text-[var(--md-subtle)] transition-[background,color,opacity,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.96] disabled:opacity-40 disabled:active:scale-100">
+              {t("Clear")}
+            </button>
+          </div>
         </div>
         <motion.div
           className="divide-y divide-[rgba(11,20,19,0.07)] shadow-[inset_0_1px_0_rgba(11,20,19,0.06)]"
@@ -195,41 +218,52 @@ function NotificationBell() {
           animate={shouldReduceMotion ? undefined : "show"}
         >
           {notifications.length === 0 ? <p className="px-4 py-5 text-[13px] text-[var(--md-text)]">{t("No notifications yet")}</p> : null}
-          {notifications.map((notification) => {
-            const isDexterWatch = notification.metadata.event_type === "dexter_watch"
-            const Icon = isDexterWatch ? Sparkles : notification.priority === "urgent" ? TriangleAlert : Bell
-            const iconTone = isDexterWatch
-              ? "bg-[var(--md-accent-a10)] text-[var(--md-accent)]"
-              : notification.priority === "urgent"
-                ? "bg-[rgba(221,138,43,0.12)] text-[var(--md-amber)]"
-                : "bg-[var(--md-surface-tint)] text-[var(--md-text)]"
-
-            return (
+          <AnimatePresence initial={false} mode="popLayout">
+          {notifications.map((notification) => (
+            <motion.div
+              key={notification.id}
+              layout
+              initial={shouldReduceMotion ? false : { opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={shouldReduceMotion ? { opacity: 0 } : notificationItemExit}
+              transition={sidebarItemTransition}
+            >
+              <ContextMenuPrimitive.Root dir={direction}>
+                <ContextMenuPrimitive.Trigger asChild>
               <motion.button
-                key={notification.id}
                 type="button"
-                variants={shouldReduceMotion ? undefined : notificationItemReveal}
-                className="group grid w-full grid-cols-[30px_minmax(0,1fr)_auto] gap-3 px-4 py-3 text-start transition-[background,color,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-hover)]"
+                className="group grid w-full grid-cols-[6px_minmax(0,1fr)_auto] items-start gap-3 px-4 py-3 text-start transition-[background,color] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--md-accent-a14)]"
                 onClick={() => {
                   const url = typeof notification.metadata.url === "string" ? notification.metadata.url : ""
-                  void markWorkspaceNotificationRead(notification.id).then(refreshNotifications)
+                  if (notification.status === "unread") updateNotificationStatus(notification.id, "read")
                   if (url.startsWith("/")) {
                     window.history.pushState({}, "", url)
                     window.dispatchEvent(new PopStateEvent("popstate"))
                   }
                 }}
               >
-                <span className={cn("grid size-[30px] place-items-center rounded-[var(--md-radius-md)] shadow-[var(--md-shadow-line)] transition-transform duration-200 group-hover:scale-[1.04]", iconTone)}>
-                  <Icon className="size-3.5" strokeWidth={1.3} />
-                </span>
+                <span aria-hidden="true" className={cn("mt-[7px] size-1.5 rounded-full transition-opacity duration-150", notification.status === "unread" ? "bg-[var(--md-accent)] opacity-100" : "opacity-0")} />
                 <span className="min-w-0">
                   <span className="block truncate text-[13px] font-medium text-[var(--md-ink)]">{notification.title}</span>
-                  <span className="mt-0.5 line-clamp-2 block text-[12px] leading-5 text-[var(--md-text)]">{notification.body}</span>
+                  <span className="mt-0.5 block truncate text-[12px] leading-5 text-[var(--md-text)]">{notification.body}</span>
                 </span>
                 <span className="pt-0.5 text-[11px] font-medium text-[var(--md-subtle)]">{notificationTime(notification.createdAt)}</span>
               </motion.button>
-            )
-          })}
+                </ContextMenuPrimitive.Trigger>
+                <ContextMenuPrimitive.Portal>
+                  <ContextMenuPrimitive.Content collisionPadding={14} className="z-50 min-w-[168px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)]">
+                    <ContextMenuPrimitive.Item className="h-9 cursor-default select-none rounded-[var(--md-radius-lg)] px-3 text-[13px] leading-9 text-[var(--md-text)] outline-none data-[highlighted]:bg-[var(--md-hover)] data-[highlighted]:text-[var(--md-ink)]" onSelect={() => updateNotificationStatus(notification.id, notification.status === "unread" ? "read" : "unread")}>
+                      {t(notification.status === "unread" ? "Mark as read" : "Mark as unread")}
+                    </ContextMenuPrimitive.Item>
+                    <ContextMenuPrimitive.Item className="h-9 cursor-default select-none rounded-[var(--md-radius-lg)] px-3 text-[13px] leading-9 text-[var(--md-danger)] outline-none data-[highlighted]:bg-[rgba(194,91,65,0.08)]" onSelect={() => dismissNotification(notification.id)}>
+                      {t("Clear notification")}
+                    </ContextMenuPrimitive.Item>
+                  </ContextMenuPrimitive.Content>
+                </ContextMenuPrimitive.Portal>
+              </ContextMenuPrimitive.Root>
+            </motion.div>
+          ))}
+          </AnimatePresence>
         </motion.div>
         <div className="px-3 py-3">
           <Button
@@ -272,23 +306,27 @@ export function SidebarNavItem({
   item,
   isActive,
   onClick,
+  onIntent,
   accent = "default",
   collapsed = false,
   expanded,
   affordance,
   trailing,
   nested = false,
+  activeLayoutId,
   className,
 }: {
   item: NavItem
   isActive?: boolean
   onClick?: () => void
+  onIntent?: () => void
   accent?: "default" | "dexter"
   collapsed?: boolean
   expanded?: boolean
   affordance?: SidebarNavAffordance
   trailing?: ReactNode
   nested?: boolean
+  activeLayoutId?: string
   className?: string
 }) {
   const Icon = item.icon
@@ -333,6 +371,8 @@ export function SidebarNavItem({
         transitionTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1)",
       }}
       disabled={isDisabled}
+      onPointerEnter={onIntent}
+      onFocus={onIntent}
       onClick={onClick}
     >
       {isDexterItem ? (
@@ -350,11 +390,21 @@ export function SidebarNavItem({
           ) : null}
         </>
       ) : isActive ? (
-        <span
-          data-sidebar-active-surface
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 rounded-[var(--md-radius-md)] bg-[var(--md-bg-strong)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.68),0_8px_18px_rgba(42,52,50,0.08)]"
-        />
+        activeLayoutId ? (
+          <motion.span
+            layoutId={activeLayoutId}
+            data-sidebar-active-surface
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 rounded-[var(--md-radius-md)] bg-[var(--md-bg-strong)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.68),0_8px_18px_rgba(42,52,50,0.08)]"
+            transition={mdMotion.fast}
+          />
+        ) : (
+          <span
+            data-sidebar-active-surface
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 rounded-[var(--md-radius-md)] bg-[var(--md-bg-strong)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.68),0_8px_18px_rgba(42,52,50,0.08)]"
+          />
+        )
       ) : !isDisabled ? (
         <span
           aria-hidden="true"
@@ -611,6 +661,39 @@ function nestedDestinationId(parentId: string, item: NavItem) {
   return `${parentId}::${item.route ?? item.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`
 }
 
+function inboxFolderRows(folders: MailboxFolder[]) {
+  const visible = folders.filter((folder) => folder.role === "custom" || folder.role === "important")
+  const visibleIds = new Set(visible.map((folder) => folder.id))
+  const children = new Map<string | null, MailboxFolder[]>()
+
+  for (const folder of visible) {
+    const parentId = folder.parentId && visibleIds.has(folder.parentId) ? folder.parentId : null
+    const siblings = children.get(parentId) ?? []
+    siblings.push(folder)
+    children.set(parentId, siblings)
+  }
+  for (const siblings of children.values()) {
+    siblings.sort((a, b) => a.displayName.localeCompare(b.displayName, undefined, { sensitivity: "base" }))
+  }
+
+  const rows: Array<{ folder: MailboxFolder; depth: number }> = []
+  const visited = new Set<string>()
+  const visit = (parentId: string | null, depth: number) => {
+    for (const folder of children.get(parentId) ?? []) {
+      if (visited.has(folder.id)) continue
+      visited.add(folder.id)
+      rows.push({ folder, depth })
+      visit(folder.id, depth + 1)
+    }
+  }
+  visit(null, 0)
+  // A malformed provider hierarchy must not make a folder disappear.
+  for (const folder of visible) {
+    if (!visited.has(folder.id)) rows.push({ folder, depth: 0 })
+  }
+  return rows
+}
+
 function InboxContextSidebar({
   collapsed,
   navigate,
@@ -622,6 +705,11 @@ function InboxContextSidebar({
 }) {
   const { t } = useLanguage()
   const workspace = useOptionalInboxWorkspace()
+  const shouldReduceMotion = useReducedMotion()
+  const [foldersExpanded, setFoldersExpanded] = useState(true)
+  const sidebarInstanceId = useId()
+  const folderRegionId = `inbox-provider-folders-${sidebarInstanceId}`
+  const activeFolderLayoutId = `inbox-folder-selection-${sidebarInstanceId}`
 
   if (!workspace) return null
 
@@ -631,10 +719,13 @@ function InboxContextSidebar({
     accountState,
     provider,
     mailboxId,
+    folderId,
     view,
+    folders,
     selectProvider,
     selectMailbox,
     selectView,
+    selectFolder,
   } = workspace
   const providers = (["gmail", "outlook"] as const).filter((candidate) =>
     mailboxes.some((mailbox) => mailbox.provider === candidate)
@@ -645,6 +736,9 @@ function InboxContextSidebar({
   const personalUnread = personalMailboxes.reduce((sum, mailbox) => sum + mailbox.unreadCount, 0)
   const sharedUnread = sharedMailboxes.reduce((sum, mailbox) => sum + mailbox.unreadCount, 0)
   const hasMailbox = providerMailboxes.length > 0
+  const folderRows = inboxFolderRows(folders.filter((folder) => folder.mailboxId === mailboxId))
+  const folderNoun = provider === "gmail" ? "Labels" : "Folders"
+  const FolderNounIcon = provider === "gmail" ? Tags : Folder
 
   const count = (value: number) => value > 0 ? String(value) : undefined
   const select = (nextView: InboxNavigationView) => {
@@ -753,9 +847,10 @@ function InboxContextSidebar({
             <SidebarSectionItem>
               <SidebarNavItem
                 item={{ label: item.label, icon: item.icon, value: item.value }}
-                isActive={item.view === view}
+                isActive={item.view === view && !folderId}
                 onClick={item.enabled ? () => select(item.view) : undefined}
                 collapsed={collapsed}
+                activeLayoutId={activeFolderLayoutId}
                 trailing={!item.enabled && !collapsed ? (
                   <span
                     aria-label={t(item.unavailableReason ?? "Unavailable")}
@@ -799,6 +894,105 @@ function InboxContextSidebar({
           </Fragment>
         ))}
       </SidebarSection>
+
+      {folderRows.length > 0 && !collapsed ? (
+        <div className="mt-3">
+          <button
+            type="button"
+            aria-expanded={foldersExpanded}
+            aria-controls={folderRegionId}
+            aria-label={t(`${foldersExpanded ? "Hide" : "Show"} ${folderNoun.toLowerCase()}`)}
+            className="group flex min-h-10 w-full items-center gap-2 rounded-[var(--md-radius-md)] px-2.5 text-start text-[12px] font-medium uppercase tracking-[0.08em] text-[var(--md-subtle)] outline-none transition-[background,color,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.96] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] motion-reduce:transition-none motion-reduce:active:scale-100"
+            onClick={() => setFoldersExpanded((current) => !current)}
+          >
+            <FolderNounIcon className="size-4 shrink-0 text-[var(--md-accent)]" strokeWidth={1.2} aria-hidden="true" />
+            <span className="min-w-0 flex-1 truncate">{t(folderNoun)}</span>
+            <span data-i18n-skip dir="ltr" className="text-[11px] tabular-nums text-[var(--md-subtle)]">{folderRows.length}</span>
+            <motion.span
+              aria-hidden="true"
+              animate={{ rotate: foldersExpanded ? 0 : -90 }}
+              transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.fast)}
+              className="grid size-5 place-items-center"
+            >
+              <ChevronDown className="size-3.5" strokeWidth={1.35} />
+            </motion.span>
+          </button>
+
+          <motion.div
+            id={folderRegionId}
+            aria-hidden={!foldersExpanded}
+            initial={false}
+            animate={{ gridTemplateRows: foldersExpanded ? "1fr" : "0fr", opacity: foldersExpanded ? 1 : 0 }}
+            transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.panel)}
+            className="grid"
+            inert={!foldersExpanded ? true : undefined}
+          >
+            <div className="min-h-0 overflow-hidden">
+              <nav aria-label={t(folderNoun)} className="mt-1 flex flex-col gap-0.5">
+                {folderRows.map(({ folder, depth }) => {
+                  const isActive = folder.id === folderId
+                  const labelTone = provider === "gmail" ? mailboxLabelTone(folder) : null
+                  return (
+                    <motion.button
+                      key={folder.id}
+                      type="button"
+                      aria-current={isActive ? "page" : undefined}
+                      title={folder.displayName}
+                      whileTap={shouldReduceMotion ? undefined : { scale: 0.96 }}
+                      className={cn(
+                        "group relative flex min-h-9 w-full items-center gap-2 overflow-hidden rounded-[var(--md-radius-md)] pe-2.5 text-start text-[13px] font-medium outline-none transition-[color] duration-150 hover:text-[var(--md-ink)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]",
+                        isActive ? "text-[var(--md-selected-text)]" : "text-[var(--md-text)]",
+                      )}
+                      style={{ paddingInlineStart: `${10 + Math.min(depth, 4) * 14}px` }}
+                      onClick={() => {
+                        selectFolder(folder)
+                        onRequestClose?.()
+                      }}
+                    >
+                      {isActive ? (
+                        <motion.span
+                          layoutId={activeFolderLayoutId}
+                          aria-hidden="true"
+                          className="pointer-events-none absolute inset-0 rounded-[var(--md-radius-md)] bg-[var(--md-bg-strong)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.68),0_8px_18px_rgba(42,52,50,0.08)]"
+                          transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.fast)}
+                        />
+                      ) : (
+                        <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[var(--md-radius-md)] bg-[var(--md-hover)] opacity-0 transition-opacity duration-100 group-hover:opacity-100 motion-reduce:transition-none" />
+                      )}
+                      {labelTone ? (
+                        <span className="relative min-w-0 flex-1">
+                          <span
+                            className="inline-flex max-w-full items-center gap-1.5 rounded-[6px] px-2 py-1 text-[12px] font-medium leading-4 shadow-[inset_0_0_0_1px_rgba(11,20,19,0.10)]"
+                            style={{
+                              backgroundColor: labelTone.backgroundColor,
+                              color: labelTone.foregroundColor,
+                            }}
+                          >
+                            <Tags className="size-3 shrink-0 opacity-70" strokeWidth={1.35} aria-hidden="true" />
+                            <bdi dir="auto" data-i18n-skip className="min-w-0 truncate">{folder.displayName}</bdi>
+                          </span>
+                        </span>
+                      ) : (
+                        <>
+                          <span
+                            aria-hidden="true"
+                            className="relative size-2.5 shrink-0 rounded-[3px] shadow-[inset_0_0_0_1px_rgba(11,20,19,0.10)]"
+                            style={{ backgroundColor: folder.backgroundColor ?? "var(--md-icon-well)" }}
+                          />
+                          <bdi dir="auto" data-i18n-skip className="relative min-w-0 flex-1 truncate">{folder.displayName}</bdi>
+                        </>
+                      )}
+                      {folder.unreadCount ? (
+                        <span data-i18n-skip dir="ltr" className="relative shrink-0 text-[11px] tabular-nums text-[var(--md-accent)]">{folder.unreadCount}</span>
+                      ) : null}
+                    </motion.button>
+                  )
+                })}
+              </nav>
+            </div>
+          </motion.div>
+        </div>
+      ) : null}
 
       <Button
         type="button"
@@ -880,23 +1074,77 @@ export function AppSidebar({
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   const profileIsActive = false
   const [arrangingScopeId, setArrangingScopeId] = useState<string | null>(null)
-  const [dexterConversations, setDexterConversations] = useState<DexterConversationSummary[]>([])
+  const [dexterConversations, setDexterConversations] = useState<SearchableDexterConversation[]>([])
+  const [dexterConversationSearch, setDexterConversationSearch] = useState("")
+  const [isSearchingDexterConversations, setIsSearchingDexterConversations] = useState(false)
   const [activeDexterConversationId, setActiveDexterConversationId] = useState<string | null>(null)
   const [editingDexterConversationId, setEditingDexterConversationId] = useState<string | null>(null)
   const [editingDexterTitle, setEditingDexterTitle] = useState("")
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null)
   const [deletingDexterConversationId, setDeletingDexterConversationId] = useState<string | null>(null)
   const [dexterSidebarError, setDexterSidebarError] = useState<string | null>(null)
+  const dexterConversationRequestVersion = useRef(0)
+  const sidebarScrollRef = useRef<HTMLDivElement>(null)
+  const [sidebarScrollFade, setSidebarScrollFade] = useState({ top: 0, bottom: 0 })
 
-  const loadDexterConversations = useCallback(async () => {
+  const updateSidebarScrollFade = useCallback(() => {
+    const scrollRegion = sidebarScrollRef.current
+    if (!scrollRegion) return
+
+    const remaining = Math.max(0, scrollRegion.scrollHeight - scrollRegion.clientHeight - scrollRegion.scrollTop)
+    setSidebarScrollFade({
+      top: Math.min(1, scrollRegion.scrollTop / 36),
+      bottom: Math.min(1, remaining / 36),
+    })
+  }, [])
+
+  useEffect(() => {
+    const scrollRegion = sidebarScrollRef.current
+    if (!scrollRegion) return
+
+    updateSidebarScrollFade()
+    const resizeObserver = new ResizeObserver(updateSidebarScrollFade)
+    resizeObserver.observe(scrollRegion)
+    if (scrollRegion.firstElementChild) resizeObserver.observe(scrollRegion.firstElementChild)
+    return () => resizeObserver.disconnect()
+  }, [activeAreaId, collapsed, isAgentRoute, isInboxRoute, isSettingsRoute, updateSidebarScrollFade])
+
+  const loadDexterConversations = useCallback(async (search = "") => {
     if (!isAgentRoute) return
+    const query = search.trim()
+    const requestVersion = dexterConversationRequestVersion.current + 1
+    dexterConversationRequestVersion.current = requestVersion
+    setIsSearchingDexterConversations(Boolean(query))
+
     try {
-      setDexterConversations(await listDexterConversations())
+      let conversations: SearchableDexterConversation[]
+      if (query) {
+        if (!supabase) throw new Error("Dexter is not connected to this workspace.")
+        const { data, error } = await supabase.rpc("multideck_dexter_search_conversations", {
+          p_query: query,
+          p_limit: 50,
+        })
+        if (error) throw error
+        conversations = Array.isArray(data) ? data as SearchableDexterConversation[] : []
+      } else {
+        conversations = await listDexterConversations()
+      }
+
+      if (dexterConversationRequestVersion.current !== requestVersion) return
+      setDexterConversations(conversations)
       setDexterSidebarError(null)
-    } catch {
+    } catch (error) {
+      if (dexterConversationRequestVersion.current !== requestVersion) return
       setDexterConversations([])
+      setDexterSidebarError(query
+        ? t("Unable to search conversations. Clear the search and try again.")
+        : error instanceof Error ? error.message : t("Dexter's conversation history is unavailable."))
+    } finally {
+      if (dexterConversationRequestVersion.current === requestVersion) {
+        setIsSearchingDexterConversations(false)
+      }
     }
-  }, [isAgentRoute])
+  }, [isAgentRoute, t])
 
   const areaBaseIds = useMemo(() => availableAreas.map((area) => area.id), [availableAreas])
   const areaArrangeItems = useMemo<SidebarArrangeItem[]>(
@@ -991,11 +1239,15 @@ export function AppSidebar({
 
   useEffect(() => {
     if (!isAgentRoute) return
-    void loadDexterConversations()
-    const refresh = () => void loadDexterConversations()
+    const search = dexterConversationSearch.trim()
+    const timer = window.setTimeout(() => void loadDexterConversations(search), search ? 180 : 0)
+    const refresh = () => void loadDexterConversations(search)
     window.addEventListener(DEXTER_CONVERSATIONS_CHANGED_EVENT, refresh)
-    return () => window.removeEventListener(DEXTER_CONVERSATIONS_CHANGED_EVENT, refresh)
-  }, [isAgentRoute, loadDexterConversations])
+    return () => {
+      window.clearTimeout(timer)
+      window.removeEventListener(DEXTER_CONVERSATIONS_CHANGED_EVENT, refresh)
+    }
+  }, [dexterConversationSearch, isAgentRoute, loadDexterConversations])
 
   function openArea(area: SidebarArea) {
     setActiveAreaId(area.id)
@@ -1086,6 +1338,9 @@ export function AppSidebar({
       <SidebarNavItem
         item={inboxNavItem}
         isActive={route === "/inbox"}
+        onIntent={() => {
+          if (typeof window !== "undefined") void import("@/pages/inbox-page")
+        }}
         onClick={() => navigate("/inbox")}
         collapsed={collapsed}
       />
@@ -1153,10 +1408,14 @@ export function AppSidebar({
         ) : null}
       </div>
 
-      <div
-        className="relative z-10 mt-[var(--md-page-stack-gap)] min-h-0 flex-1 overflow-y-auto overflow-x-hidden md-scrollbar"
-        style={{ contain: "layout paint" }}
-      >
+      <div className="relative z-10 mt-[var(--md-page-stack-gap)] min-h-0 flex-1">
+        <div
+          ref={sidebarScrollRef}
+          className="md-sidebar-scroll-region h-full overflow-y-auto overflow-x-hidden"
+          style={{ contain: "layout paint" }}
+          onScroll={updateSidebarScrollFade}
+        >
+          <div>
         {isSettingsRoute || isCustomer || isAgentRoute || isInboxRoute ? null : (
           <SidebarSection>{homeSidebarItem}{inboxSidebarItem}{dexterSidebarItem}</SidebarSection>
         )}
@@ -1176,10 +1435,21 @@ export function AppSidebar({
               <SidebarSection>
                 {homeSidebarItem}
                 <SidebarSectionItem>
+                  <SidebarNavItem
+                    item={{ label: "Back", icon: ArrowLeft }}
+                    onClick={() => {
+                      if (window.history.length > 1) window.history.back()
+                      else navigate("/")
+                      onRequestClose?.()
+                    }}
+                    collapsed={collapsed}
+                  />
+                </SidebarSectionItem>
+                <SidebarSectionItem>
                   <button
                     type="button"
                     className={cn(
-                      "group relative flex h-10 w-full items-center gap-2.5 overflow-hidden rounded-[var(--md-radius-lg)] px-3 text-start text-[13px] font-medium text-white shadow-[var(--md-shadow-line)] transition-[transform,box-shadow] hover:-translate-y-px focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a20)] motion-reduce:hover:translate-y-0",
+                      "group relative flex h-10 w-full items-center gap-2.5 overflow-hidden rounded-[var(--md-radius-md)] px-3 text-start text-[13px] font-medium text-white shadow-[var(--md-shadow-line)] transition-[transform,box-shadow] hover:-translate-y-px focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a20)] motion-reduce:hover:translate-y-0",
                       collapsed && "justify-center px-0",
                     )}
                     onClick={startDexterConversation}
@@ -1192,17 +1462,6 @@ export function AppSidebar({
                     <span className={cn("relative truncate", collapsed && "sr-only")}>{t("New chat")}</span>
                   </button>
                 </SidebarSectionItem>
-                <SidebarSectionItem>
-                  <SidebarNavItem
-                    item={{ label: "Back", icon: ArrowLeft }}
-                    onClick={() => {
-                      if (window.history.length > 1) window.history.back()
-                      else navigate("/")
-                      onRequestClose?.()
-                    }}
-                    collapsed={collapsed}
-                  />
-                </SidebarSectionItem>
               </SidebarSection>
 
               <div className={cn("mt-5 flex items-center justify-between px-2", collapsed && "justify-center px-0")}>
@@ -1213,14 +1472,63 @@ export function AppSidebar({
               </div>
 
               {collapsed ? null : (
-                <div className="mt-2 grid gap-0.5">
+                <>
+                  <div className="relative mx-2 mt-2">
+                    <label className="sr-only" htmlFor="dexter-conversation-search">{t("Search conversations")}</label>
+                    <Search
+                      className="pointer-events-none absolute start-3 top-1/2 size-3.5 -translate-y-1/2 text-[var(--md-subtle)]"
+                      strokeWidth={1.4}
+                      aria-hidden="true"
+                    />
+                    <input
+                      id="dexter-conversation-search"
+                      type="text"
+                      role="searchbox"
+                      value={dexterConversationSearch}
+                      placeholder={t("Search conversations")}
+                      autoComplete="off"
+                      className="h-9 w-full rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] pe-9 ps-9 text-[12.5px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] outline-none transition-[background-color,box-shadow] duration-150 placeholder:text-[var(--md-subtle)] focus-visible:shadow-[var(--md-shadow-line),0_0_0_3px_var(--md-accent-a20)] motion-reduce:transition-none"
+                      onChange={(event) => setDexterConversationSearch(event.target.value)}
+                    />
+                    <span className="absolute end-1 top-1/2 z-10 grid size-7 -translate-y-1/2 place-items-center">
+                      <LoaderCircle
+                        className={cn(
+                          "pointer-events-none absolute size-3.5 animate-spin text-[var(--md-subtle)] transition-opacity duration-150 motion-reduce:animate-none motion-reduce:transition-none",
+                          isSearchingDexterConversations ? "opacity-100" : "opacity-0",
+                        )}
+                        strokeWidth={1.4}
+                        aria-hidden="true"
+                      />
+                      <button
+                        type="button"
+                        aria-label={t("Clear search")}
+                        className={cn(
+                          "grid size-7 place-items-center rounded-full text-[var(--md-subtle)] outline-none transition-[background-color,color,opacity,scale] duration-150 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a20)] active:scale-[0.96] motion-reduce:transition-none motion-reduce:active:scale-100",
+                          dexterConversationSearch && !isSearchingDexterConversations ? "opacity-100" : "pointer-events-none scale-75 opacity-0",
+                        )}
+                        onClick={() => setDexterConversationSearch("")}
+                      >
+                        <X className="size-3.5" strokeWidth={1.4} aria-hidden="true" />
+                      </button>
+                    </span>
+                  </div>
+
+                  <div className="mt-2 grid gap-0.5" aria-busy={isSearchingDexterConversations}>
                   {dexterConversations.map((conversation, index) => (
                     <motion.div
                       key={conversation.id}
                       className="group relative min-w-0"
-                      initial={shouldReduceMotion ? false : { opacity: 0, x: direction === "rtl" ? 6 : -6 }}
+                      initial={shouldReduceMotion
+                        ? false
+                        : dexterConversationSearch
+                          ? { opacity: 0 }
+                          : { opacity: 0, x: direction === "rtl" ? 6 : -6 }}
                       animate={{ opacity: 1, x: 0 }}
-                      transition={shouldReduceMotion ? { duration: 0 } : { ...mdMotion.enter, delay: Math.min(index * 0.025, 0.2) }}
+                      transition={shouldReduceMotion
+                        ? { duration: 0 }
+                        : dexterConversationSearch
+                          ? mdMotion.micro
+                          : { ...mdMotion.enter, delay: Math.min(index * 0.025, 0.2) }}
                     >
                       {editingDexterConversationId === conversation.id ? (
                         <form
@@ -1352,11 +1660,23 @@ export function AppSidebar({
                       )}
                     </motion.div>
                   ))}
-                  {dexterConversations.length === 0 ? (
-                    <p className="px-2 py-3 text-[12px] leading-5 text-[var(--md-subtle)]">{t("No conversations yet")}</p>
+                  {dexterConversations.length === 0 && !isSearchingDexterConversations ? (
+                    <div className="px-2 py-3 text-[12px] leading-5 text-[var(--md-subtle)]">
+                      <p>{t(dexterConversationSearch ? "No matching conversations" : "No conversations yet")}</p>
+                      {dexterConversationSearch ? (
+                        <button
+                          type="button"
+                          className="mt-1 font-medium text-[var(--md-accent)] outline-none hover:underline focus-visible:rounded focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a20)]"
+                          onClick={() => setDexterConversationSearch("")}
+                        >
+                          {t("Clear search")}
+                        </button>
+                      ) : null}
+                    </div>
                   ) : null}
                   {dexterSidebarError ? <p className="px-2 py-2 text-[12px] leading-5 text-[var(--md-red)]" role="alert">{dexterSidebarError}</p> : null}
-                </div>
+                  </div>
+                </>
               )}
             </motion.div>
           ) : isSettingsRoute ? (
@@ -1588,7 +1908,21 @@ export function AppSidebar({
               />
             </motion.div>
           )}
-        </AnimatePresence>
+          </AnimatePresence>
+          </div>
+        </div>
+        <div
+          aria-hidden="true"
+          data-edge="top"
+          className="md-sidebar-scroll-fade pointer-events-none absolute inset-x-0 top-0 z-20 h-10"
+          style={{ opacity: sidebarScrollFade.top }}
+        />
+        <div
+          aria-hidden="true"
+          data-edge="bottom"
+          className="md-sidebar-scroll-fade pointer-events-none absolute inset-x-0 bottom-0 z-20 h-10"
+          style={{ opacity: sidebarScrollFade.bottom }}
+        />
       </div>
 
       <div className="relative z-10 mt-[var(--md-page-stack-gap)]">

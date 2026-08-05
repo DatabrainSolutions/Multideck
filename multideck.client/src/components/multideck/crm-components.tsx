@@ -88,6 +88,7 @@ import {
 import { CustomerAvatar } from "./customer-components"
 import { AuditTimeline, type AuditTimelineEvent } from "./audit-timeline"
 import { CopyableField } from "./copyable-field"
+import { MarketingOptInControl } from "./marketing-opt-in-control"
 import { CrmPipelineEditor, type CrmPipelineEditorSave, type CrmPipelineEditorSource } from "./crm-pipeline-editor"
 import { SectionHeader, Surface } from "./surface"
 import { StatusPill, toneToVar } from "./status-pill"
@@ -1274,11 +1275,17 @@ export function CrmLeadDetailPanel({
   onBack,
   onStartQualification,
   ownerPhotoUrl,
+  ownerAction,
+  onMarketingOptInChange,
+  onContactMarketingOptInChange,
 }: {
   lead: ApiLeadDetail
   onBack?: () => void
   onStartQualification?: (lead: ApiLead) => void
   ownerPhotoUrl?: string
+  ownerAction?: ReactNode
+  onMarketingOptInChange?: (optedIn: boolean) => Promise<void>
+  onContactMarketingOptInChange?: (contactId: string, optedIn: boolean) => Promise<void>
 }) {
   const { language, t } = useLanguage()
   const qualification = lead.qualificationScore !== null
@@ -1435,15 +1442,23 @@ export function CrmLeadDetailPanel({
             <p className="text-[11px] font-medium text-[var(--md-subtle)]">{t("Owner")}</p>
             {lead.ownerName ? (
               <div className="mt-1 flex min-w-0 items-center gap-2.5">
-                <Avatar aria-label={lead.ownerName} className="size-8 shrink-0">
-                  {ownerPhotoUrl ? <AvatarImage src={ownerPhotoUrl} alt="" /> : null}
-                  <AvatarFallback className="bg-[var(--md-accent-a11)] text-[11px] font-medium text-[var(--md-accent)]">{lead.ownerInitials ?? "—"}</AvatarFallback>
-                </Avatar>
+                {!ownerAction ? (
+                  <Avatar aria-label={lead.ownerName} className="size-8 shrink-0">
+                    {ownerPhotoUrl ? <AvatarImage src={ownerPhotoUrl} alt="" /> : null}
+                    <AvatarFallback className="bg-[var(--md-accent-a11)] text-[11px] font-medium text-[var(--md-accent)]">{lead.ownerInitials ?? "—"}</AvatarFallback>
+                  </Avatar>
+                ) : null}
                 <CopyableField label={t("Owner")} value={lead.ownerName} className="-my-1 min-w-0">
                   <p className="min-w-0 truncate text-[13px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{lead.ownerName}</p>
                 </CopyableField>
+                {ownerAction}
               </div>
-            ) : <p className="mt-2 text-[13px] font-medium text-[var(--md-ink)]">{t("Unassigned")}</p>}
+            ) : (
+              <div className="mt-2 flex min-w-0 items-center gap-2">
+                <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Unassigned")}</p>
+                {ownerAction}
+              </div>
+            )}
           </div>
           <div className="min-w-0 px-5 py-4 sm:px-6 lg:shadow-[var(--md-stroke-right)]">
             <p className="text-[11px] font-medium text-[var(--md-subtle)]">{t("Qualification score")}</p>
@@ -1494,12 +1509,23 @@ export function CrmLeadDetailPanel({
           </div>
         </div>
 
+        {onMarketingOptInChange ? (
+          <div className="px-5 py-4 shadow-[var(--md-stroke-bottom)] sm:px-6">
+            <MarketingOptInControl
+              checked={Boolean(lead.marketingOptIn)}
+              source={lead.marketingConsentSource}
+              updatedAt={lead.marketingConsentUpdatedAt}
+              onCheckedChange={onMarketingOptInChange}
+            />
+          </div>
+        ) : null}
+
         <div className="px-5 py-6 sm:px-6">
           <SectionHeader title={t("Contacts")} meta={contactCount} />
           {lead.contacts.length ? (
             <div className="mt-4 grid gap-3 lg:grid-cols-2">
               {lead.contacts.map((contact) => (
-                <LeadContactCard key={contact.id} contact={contact} language={language} />
+                <LeadContactCard key={contact.id} contact={contact} language={language} onMarketingOptInChange={onContactMarketingOptInChange} />
               ))}
             </div>
           ) : (
@@ -1713,9 +1739,11 @@ export function CrmLeadDetailPanel({
 function LeadContactCard({
   contact,
   language,
+  onMarketingOptInChange,
 }: {
   contact: ApiLeadContact
   language: string
+  onMarketingOptInChange?: (contactId: string, optedIn: boolean) => Promise<void>
 }) {
   const { t } = useLanguage()
   const name = contact.name ?? t("Unnamed contact")
@@ -1779,6 +1807,16 @@ function LeadContactCard({
           </CopyableField>
         ) : <p className="text-end text-[11px] font-medium text-[var(--md-ink)]">{t("No activity recorded")}</p>}
       </div>
+      {onMarketingOptInChange ? (
+        <MarketingOptInControl
+          compact
+          className="mt-3 pt-3 shadow-[var(--md-stroke-top)]"
+          checked={Boolean(contact.marketingOptIn)}
+          source={contact.marketingConsentSource}
+          updatedAt={contact.marketingConsentUpdatedAt}
+          onCheckedChange={(optedIn) => onMarketingOptInChange(contact.id, optedIn)}
+        />
+      ) : null}
     </article>
   )
 }

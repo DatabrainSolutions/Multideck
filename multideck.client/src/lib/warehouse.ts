@@ -106,6 +106,11 @@ export type WarehouseItem = {
   hsCode: string | null
   countryOfOriginCode: string | null
   baseUomCode: string
+  quantityBasisCode: "count" | "weight" | "volume"
+  quantityScale: number
+  minimumMovementQuantity: number
+  allowsFractionalQuantity: boolean
+  uoms: WarehouseItemUom[]
   lengthM: number | null
   widthM: number | null
   heightM: number | null
@@ -125,6 +130,16 @@ export type WarehouseItem = {
   updatedAt: string
 }
 
+export type WarehouseItemUom = {
+  id?: string
+  code: string
+  quantityInBaseUom: number
+  grossWeightKg: number | null
+  purchasing: boolean
+  stocking: boolean
+  selling: boolean
+}
+
 export type WarehouseItemReference = {
   customers: { id: string; name: string }[]
   facilities: { id: string; code: string; name: string }[]
@@ -137,6 +152,11 @@ type WarehouseItemAttributes = {
   hsCode: string | null
   countryOfOriginCode: string | null
   baseUomCode: string | null
+  quantityBasisCode: "count" | "weight" | "volume"
+  quantityScale: number
+  minimumMovementQuantity: number
+  allowsFractionalQuantity: boolean
+  uoms: WarehouseItemUom[]
   lengthM: number | null
   widthM: number | null
   heightM: number | null
@@ -419,6 +439,9 @@ export type WarehouseInventoryBalance = {
   itemDescription: string
   locationId: string | null
   locationCode: string | null
+  handlingUnitId: string | null
+  handlingUnitCode: string | null
+  handlingUnitTypeCode: string | null
   lotId: string | null
   lotNumber: string | null
   batchNumber: string | null
@@ -456,6 +479,11 @@ export type WarehouseInventoryMovement = {
   batchNumber: string | null
   reference: string | null
   notes: string | null
+  handlingUnitId: string | null
+  handlingUnitCode: string | null
+  movementGroupId: string | null
+  reasonCode: string | null
+  metadata: Record<string, unknown>
   createdAt: string
 }
 
@@ -565,18 +593,99 @@ export type CreateWarehouseOrderInput = {
 }
 
 export type ReceiveWarehouseOrderInput = {
+  requestId: string
   receivingLocationId: string | null
+  handlingUnitId: string | null
+  newHandlingUnit: { typeCode: string; code: string | null; sscc: string | null; externalReference: string | null } | null
   notes: string | null
   lines: {
     orderLineId: string
     quantity: number
     damagedQuantity: number
+    missingQuantity: number
     targetLocationId: string | null
     lotNumber: string | null
     batchNumber: string | null
     manufactureDate: string | null
     expiryDate: string | null
   }[]
+}
+
+export type WarehouseHandlingUnitContent = {
+  balanceId: string
+  itemId: string
+  sku: string
+  description: string
+  quantity: number
+  uomCode: string
+  statusCode: string
+  customsStatusCode: string
+  lotNumber: string | null
+  batchNumber: string | null
+}
+
+export type WarehouseHandlingUnit = {
+  id: string
+  facilityId: string
+  parentHandlingUnitId: string | null
+  typeCode: string
+  typeName: string
+  code: string
+  sscc: string | null
+  externalReference: string | null
+  customerOrgId: string | null
+  customerName: string | null
+  locationId: string | null
+  locationCode: string | null
+  inventoryStatusCode: string
+  inventoryStatusName: string
+  customsStatusCode: string
+  lifecycleStatusCode: string
+  consumedIntoHandlingUnitId: string | null
+  grossWeightKg: number | null
+  netWeightKg: number | null
+  volumeCbm: number | null
+  sealed: boolean
+  updatedAt: string
+  contents: WarehouseHandlingUnitContent[]
+  events: { id: string; typeCode: string; at: string; locationId: string | null; notes: string | null; metadata: Record<string, unknown> }[]
+}
+
+export type WarehouseHandlingUnitReference = {
+  types: { code: string; name: string; isContainer: boolean }[]
+  locations: { id: string; facilityId: string; code: string; statusCode: string; typeCode: string }[]
+  statuses: { code: string; name: string; available: boolean }[]
+}
+
+export type WarehouseInventoryException = {
+  id: string
+  facilityId: string
+  typeCode: string
+  statusCode: string
+  severityCode: string
+  balanceId: string | null
+  title: string
+  description: string | null
+  expectedLocationId: string | null
+  expectedLocationCode: string | null
+  actualLocationId: string | null
+  actualLocationCode: string | null
+  movementGroupId: string | null
+  raisedAt: string
+  resolvedAt: string | null
+  metadata: Record<string, unknown>
+}
+
+export type WarehouseInventoryActionResult = {
+  requestId: string
+  movementGroupId: string
+  transactionId?: string
+  balanceId?: string
+  handlingUnitId?: string
+  targetHandlingUnitId?: string
+  exceptionId?: string
+  adjustmentId?: string
+  status?: string
 }
 
 export type DispatchWarehouseOrderInput = {
@@ -599,6 +708,54 @@ export function listWarehouseInventoryMovements(options: { facilityId?: string; 
     `/inventory/movements${toQuery({ facilityId: options.facilityId, itemId: options.itemId, search: options.search, take: options.take === undefined ? undefined : String(options.take) })}`,
     "GET",
   )
+}
+
+export function listWarehouseHandlingUnits(options: { facilityId?: string; search?: string; includeConsumed?: boolean } = {}) {
+  return requestWarehouse<WarehouseHandlingUnit[]>(`/handling-units${toQuery(options)}`, "GET")
+}
+
+export function getWarehouseHandlingUnitReference(facilityId?: string) {
+  return requestWarehouse<WarehouseHandlingUnitReference>(`/handling-units/reference${toQuery({ facilityId })}`, "GET")
+}
+
+export function listWarehouseInventoryExceptions(options: { facilityId?: string; search?: string; openOnly?: boolean; statusCode?: string } = {}) {
+  return requestWarehouse<WarehouseInventoryException[]>(`/inventory/exceptions${toQuery(options)}`, "GET")
+}
+
+function inventoryAction<T extends Record<string, unknown>>(action: string, input: T) {
+  return requestWarehouse<WarehouseInventoryActionResult>(`/inventory/actions/${action}`, "POST", { requestId: crypto.randomUUID(), ...input })
+}
+
+export function createWarehouseHandlingUnit(input: { facilityId: string; customerOrgId: string | null; locationId: string | null; typeCode: string; code: string | null; sscc: string | null; externalReference: string | null; customsStatusCode?: string; notes?: string }) {
+  return inventoryAction("create_hu", input)
+}
+
+export function moveWarehouseBalance(input: { facilityId: string; balanceId: string; quantity: number; targetLocationId: string; targetHandlingUnitId: string | null; actualSourceLocationId: string | null; reasonCode: string; overrideReason: string | null; notes: string | null }) {
+  return inventoryAction("move_balance", input)
+}
+
+export function moveWarehouseHandlingUnit(input: { facilityId: string; handlingUnitId: string; targetLocationId: string; actualSourceLocationId: string | null; reasonCode: string; overrideReason: string | null; notes: string | null }) {
+  return inventoryAction("move_hu", input)
+}
+
+export function consolidateWarehouseHandlingUnits(input: { facilityId: string; targetHandlingUnitId: string; sourceHandlingUnitIds: string[]; notes: string | null }) {
+  return inventoryAction("consolidate", input)
+}
+
+export function changeWarehouseStockStatus(input: { facilityId: string; balanceId: string; quantity: number; targetStatusCode: string; reasonCode: string; notes: string | null }) {
+  return inventoryAction("change_status", input)
+}
+
+export function recordWarehouseSample(input: { facilityId: string; balanceId: string; quantity: number; disposition: "onsite" | "removed"; targetStatusCode?: string; reasonCode: string; recipient: string | null; custodyReference: string | null; notes: string | null }) {
+  return inventoryAction("sample", input)
+}
+
+export function reportWarehouseLocationEmpty(input: { facilityId: string; locationId: string; notes: string | null }) {
+  return inventoryAction("report_empty", input)
+}
+
+export function resolveWarehouseLocationException(input: { facilityId: string; exceptionId: string; resolution: "found" | "data_error" | "request_loss" | "approve_loss"; actualLocationId: string | null; notes: string | null }) {
+  return inventoryAction("resolve_location_exception", input)
 }
 
 export function listOperationalWarehouseOrders(options: { facilityId?: string; typeCode?: string; statusCode?: string; openOnly?: boolean; search?: string } = {}) {
@@ -717,6 +874,10 @@ export function inviteWarehousePortalUser(input: { customerOrgId: string; email:
 
 export function updateWarehousePortalUser(customerOrgId: string, portalUserId: string, input: { roleCode: string; facilityIds: string[] }) {
   return requestWarehouse<WarehousePortalUser>(`/portal/customers/${customerOrgId}/users/${portalUserId}`, "PUT", input)
+}
+
+export function sendWarehousePortalAccessLink(customerOrgId: string, portalUserId: string) {
+  return requestWarehouse<{ delivered: true }>(`/portal/customers/${customerOrgId}/users/${portalUserId}/access-link`, "POST")
 }
 
 export function revokeWarehousePortalUser(customerOrgId: string, portalUserId: string) {

@@ -188,7 +188,7 @@ function LookupField({
         type="button"
         variant="ghost"
         disabled={disabled}
-        onClick={() => toast.message(t(`Lookup opened for ${label}`))}
+        onClick={() => toast.info(t(`Lookup opened for ${label}`))}
         aria-label={t(`Search ${label}`)}
         className="size-6 rounded-[3px] bg-[var(--md-surface)] p-0 text-[var(--md-accent)] shadow-[var(--md-shadow-line)] disabled:opacity-45"
       >
@@ -251,10 +251,10 @@ function PartyPanel({
     <Panel title={title}>
       <div className="mb-1 flex items-center justify-between gap-1">
         <div className="flex gap-1">
-          <Button type="button" variant="ghost" disabled={!editable} onClick={() => toast.message(t(`${title} contacts opened`))} className="h-5 rounded-[3px] bg-[var(--md-surface)] px-1.5 text-[10px] shadow-[var(--md-shadow-line)] disabled:opacity-45">
+          <Button type="button" variant="ghost" disabled={!editable} onClick={() => toast.info(t(`${title} contacts opened`))} className="h-5 rounded-[3px] bg-[var(--md-surface)] px-1.5 text-[10px] shadow-[var(--md-shadow-line)] disabled:opacity-45">
             {t("Contacts")}
           </Button>
-          <Button type="button" variant="ghost" disabled={!editable} onClick={() => toast.message(t(`${title} address opened`))} className="h-5 rounded-[3px] bg-[var(--md-surface)] px-1.5 text-[10px] shadow-[var(--md-shadow-line)] disabled:opacity-45">
+          <Button type="button" variant="ghost" disabled={!editable} onClick={() => toast.info(t(`${title} address opened`))} className="h-5 rounded-[3px] bg-[var(--md-surface)] px-1.5 text-[10px] shadow-[var(--md-shadow-line)] disabled:opacity-45">
             {t("Address")}
           </Button>
         </div>
@@ -308,7 +308,7 @@ export function ProvisionalBookingPage({ navigate }: { navigate: (path: string) 
 
   function toggleEditing(next: boolean) {
     if (!next && dirty) {
-      toast.message(t("Save or discard changes before locking the booking"))
+      toast.info(t("Save or discard changes before locking the booking"))
       return
     }
     setEditable(next)

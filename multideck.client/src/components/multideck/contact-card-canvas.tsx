@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import {
   Bell,
   CirclePause,
   CirclePlay,
+  Database,
   Filter,
   GripVertical,
   ListPlus,
@@ -41,9 +42,10 @@ import { cn } from "@/lib/utils"
 const MIN_ZOOM = 0.5
 const MAX_ZOOM = 1.4
 /** Node box plus the connector beneath it. Reorder maths counts in these. */
-const STEP_HEIGHT = 116
+const STEP_HEIGHT = 88
 
 export const ACTION_ICONS: Record<AutomationActionKind, LucideIcon> = {
+  "add-to-crm": Database,
   "assign-owner": UserRoundCheck,
   "pipeline-stage": Workflow,
   "add-to-list": ListPlus,
@@ -101,6 +103,7 @@ export function buildSteps(card: ContactCard): FlowStep[] {
 /* -------------------------------------------------------------------------- */
 
 const ACTION_MENU: { kind: AutomationActionKind; label: string; hint: string }[] = [
+  { kind: "add-to-crm", label: "Add to CRM", hint: "Create or update a lead or deal" },
   { kind: "assign-owner", label: "Assign an owner", hint: "Give the lead to someone" },
   { kind: "pipeline-stage", label: "Add to a pipeline", hint: "Put it in a stage" },
 ]
@@ -239,7 +242,7 @@ function StepCard({
         animate={dragging ? { scale: 1.025 } : { scale: 1 }}
         transition={mdMotion.spring}
         className={cn(
-          "group/step flex min-h-[76px] items-center gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] px-3.5 py-3",
+          "group/step flex min-h-[58px] items-center gap-2.5 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] px-2.5 py-2",
           "transition-[box-shadow,opacity] duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
           dragging ? "shadow-[var(--md-shadow-lift)]" : "shadow-[var(--md-shadow-soft)] hover:shadow-[var(--md-shadow-lift)]",
           !step.enabled && "opacity-60",
@@ -265,7 +268,7 @@ function StepCard({
         )}
 
         <div className="min-w-0 flex-1">
-          <p className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.06em] text-[var(--md-subtle)]">
+          <p className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-[0.055em] text-[var(--md-subtle)]">
             {index !== null ? <span className="tabular-nums">{index}</span> : null}
             <span className="truncate">{step.eyebrow}</span>
             {step.external ? (
@@ -280,7 +283,7 @@ function StepCard({
               </span>
             ) : null}
           </p>
-          <p className="mt-1 text-[14px] leading-[1.35] text-[var(--md-ink)]">{step.title}</p>
+          <p className="mt-0.5 truncate text-[13px] leading-[1.35] text-[var(--md-ink)]">{step.title}</p>
         </div>
 
         {!isTrigger ? (
@@ -334,6 +337,7 @@ export function AutomationCanvas({
   onRemoveStep,
   onReorder,
   onAskDexter,
+  inspector,
   className,
 }: {
   card: ContactCard
@@ -345,6 +349,7 @@ export function AutomationCanvas({
   onRemoveStep: (id: string) => void
   onReorder: (group: "condition" | "action", from: number, to: number) => void
   onAskDexter?: () => void
+  inspector?: ReactNode
   className?: string
 }) {
   const { t } = useLanguage()
@@ -528,7 +533,7 @@ export function AutomationCanvas({
     >
       <div
         ref={contentRef}
-        className="absolute left-1/2 top-0 w-[420px] -translate-x-1/2 origin-top will-change-transform"
+        className={cn("absolute top-0 w-[380px] -translate-x-1/2 origin-top will-change-transform", inspector ? "left-[calc(50%_-_190px)]" : "left-1/2")}
         style={{ transform: "translate3d(0px, 0px, 0) scale(1)" }}
       >
         <div className="group/flow px-2 pb-32 pt-9" onPointerDown={(event) => event.stopPropagation()}>
@@ -684,6 +689,12 @@ export function AutomationCanvas({
           </Tooltip>
         </div>
       </div>
+
+      {inspector ? (
+        <div className="absolute bottom-3 end-3 top-[58px] z-30 w-[min(390px,calc(100%-24px))] overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-lift)]" onPointerDown={(event) => event.stopPropagation()}>
+          {inspector}
+        </div>
+      ) : null}
     </div>
   )
 

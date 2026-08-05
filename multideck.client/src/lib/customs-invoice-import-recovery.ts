@@ -2,13 +2,14 @@ import type { ExtractedInvoiceLine, InvoiceLineSelection } from "@/lib/customs-i
 import type { EvidencePage } from "@/lib/customs-invoice-evidence"
 
 const storageKeyPrefix = "multideck.customs.invoice-import"
-const recoveryVersion = 1
+const recoveryVersion = 2
 
 export type InvoiceImportReviewFilter = "all" | "attention" | "approved"
 export type InvoiceImportReviewTab = "lines" | "result"
 
 export type CustomsInvoiceImportRecovery = {
   version: typeof recoveryVersion
+  extractionId: string
   invoiceName: string
   extractedInvoiceNumber: string
   lines: ExtractedInvoiceLine[]
@@ -22,6 +23,7 @@ export type CustomsInvoiceImportRecovery = {
 }
 
 export type CustomsInvoiceImportRecoveryInput = Omit<CustomsInvoiceImportRecovery, "version" | "savedAt">
+type StoredCustomsInvoiceImportRecovery = Omit<Partial<CustomsInvoiceImportRecovery>, "version"> & { version?: number }
 
 function storageKey(declarationKey: string) {
   return `${storageKeyPrefix}.${encodeURIComponent(declarationKey)}`
@@ -33,17 +35,21 @@ function storage() {
 
 export function readCustomsInvoiceImportRecovery(declarationKey: string): CustomsInvoiceImportRecovery | null {
   try {
-    const parsed = JSON.parse(storage()?.getItem(storageKey(declarationKey)) ?? "null") as Partial<CustomsInvoiceImportRecovery> | null
-    if (!parsed || parsed.version !== recoveryVersion || !Array.isArray(parsed.lines) || !parsed.lines.length) return null
+    const parsed = JSON.parse(storage()?.getItem(storageKey(declarationKey)) ?? "null") as StoredCustomsInvoiceImportRecovery | null
+    if (!parsed || (parsed.version !== 1 && parsed.version !== recoveryVersion)) return null
+    const lines = Array.isArray(parsed.lines) ? parsed.lines as ExtractedInvoiceLine[] : []
+    const extractionId = typeof parsed.extractionId === "string" ? parsed.extractionId : ""
+    if (!extractionId && !lines.length) return null
     return {
       version: recoveryVersion,
+      extractionId,
       invoiceName: typeof parsed.invoiceName === "string" ? parsed.invoiceName : "",
       extractedInvoiceNumber: typeof parsed.extractedInvoiceNumber === "string" ? parsed.extractedInvoiceNumber : "",
-      lines: parsed.lines as ExtractedInvoiceLine[],
+      lines,
       selections: record(parsed.selections) as Record<string, InvoiceLineSelection>,
       descriptionOverrides: record(parsed.descriptionOverrides) as Record<string, string>,
       evidencePages: Array.isArray(parsed.evidencePages) ? parsed.evidencePages as EvidencePage[] : [],
-      activeLineId: typeof parsed.activeLineId === "string" ? parsed.activeLineId : parsed.lines[0]?.id ?? "",
+      activeLineId: typeof parsed.activeLineId === "string" ? parsed.activeLineId : lines[0]?.id ?? "",
       reviewFilter: isReviewFilter(parsed.reviewFilter) ? parsed.reviewFilter : "all",
       reviewTab: isReviewTab(parsed.reviewTab) ? parsed.reviewTab : "lines",
       savedAt: typeof parsed.savedAt === "number" ? parsed.savedAt : 0,
@@ -63,16 +69,20 @@ export function saveCustomsInvoiceImportRecovery(
   now = Date.now(),
 ) {
   const target = storage()
-  if (!target || !recovery.lines.length) return
+  if (!target || (!recovery.extractionId && !recovery.lines.length)) return
 
   const next: CustomsInvoiceImportRecovery = { ...recovery, version: recoveryVersion, savedAt: now }
   try {
-    target.setItem(storageKey(declarationKey), JSON.stringify(next))
+    target.setItem(storageKey(declarationKey), JSON.stringify(next.extractionId
+      ? { ...next, lines: [], evidencePages: [] }
+      : next))
   } catch {
     // Evidence text can be large. The extracted fields and operator decisions are the
     // irreplaceable part, so keep those even if the browser's session quota is tight.
     try {
-      target.setItem(storageKey(declarationKey), JSON.stringify({ ...next, evidencePages: [] }))
+      target.setItem(storageKey(declarationKey), JSON.stringify(next.extractionId
+        ? { ...next, lines: [], evidencePages: [] }
+        : { ...next, evidencePages: [] }))
     } catch {
       // Blocked or full storage must not interrupt the live review workflow.
     }

@@ -35,10 +35,12 @@ function draft(pendingSync: boolean, remoteDraftId: string | null = null) {
     remoteDraftId,
     subject: "Arrival notice",
     bodyText: "Confirmed.",
+    trackOpens: true,
     addedTo: [],
     addedCc: [],
     addedBcc: [],
     removedAddresses: [],
+    attachmentNames: [],
     pendingSync,
   }
 }

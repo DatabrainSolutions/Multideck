@@ -40,6 +40,7 @@ import {
   Palette,
   Plane,
   ReceiptText,
+  QrCode,
   Search,
   ScanText,
   Settings2,
@@ -51,6 +52,7 @@ import {
   TriangleAlert,
   Truck,
   Users,
+  Workflow,
   type LucideIcon,
 } from "lucide-react"
 import type { AuditTimelineEvent } from "@/components/multideck/audit-timeline"
@@ -2060,7 +2062,7 @@ export const galleryComponents = [
     category: "Foundation",
     description: "The base Multideck panel. It gives workflow areas quiet depth without creating heavy card clutter.",
     details: "Use for primary panels, side panels, preview wells, and command areas. Radius and shadow come from tokens.",
-    foundOn: [{ label: "Overview", route: "/" }, { label: "CRM", route: "/crm" }, { label: "Customers", route: "/customers" }, { label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Overview", route: "/" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Components", route: "/components" }],
     componentCode: `export function Surface({ tone = "panel", padding = "md", className, children }) {\n  return (\n    <section className={cn("rounded-[var(--md-radius-lg)]", toneClass[tone], paddingClass[padding], className)}>\n      {children}\n    </section>\n  )\n}\n\nexport function SectionHeader({ eyebrow, title, meta, action, className }) {\n  return (\n    <div className={cn("flex items-start justify-between gap-3", className)}>\n      <div className="min-w-0">\n        {eyebrow ? <p className="mb-1 text-xs font-medium text-[var(--md-subtle)]">{eyebrow}</p> : null}\n        <h2 className="truncate text-[14px] font-medium text-[var(--md-ink)]">{title}</h2>\n        {meta ? <p className="mt-1 text-[12px] text-[var(--md-text)]">{meta}</p> : null}\n      </div>\n      {action ? <div className="shrink-0">{action}</div> : null}\n    </div>\n  )\n}`,
     usageCode: `<Surface tone="panel" padding="md">\n  <SectionHeader title="Live bookings" meta="updated 41s ago" />\n  <BookingRow booking={booking} />\n</Surface>`,
   },
@@ -2070,7 +2072,7 @@ export const galleryComponents = [
     category: "Feedback",
     description: "Compact status language for freight workflows, exceptions, and document states.",
     details: "Use green for good, amber for review, red for action, blue for information, teal for AI or customs flow.",
-    foundOn: [{ label: "Overview", route: "/" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "Customers", route: "/customers" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Overview", route: "/" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
     componentCode: `export function StatusPill({ tone = "neutral", children, className }) {\n  return (\n    <Badge\n      variant="secondary"\n      className={cn("h-[21px] rounded-full px-[9px] text-[11.5px] font-medium leading-none", toneClass[tone], className)}\n    >\n      {children}\n    </Badge>\n  )\n}`,
     usageCode: `<StatusPill tone="amber">Under review</StatusPill>\n<StatusPill tone="red">Action req.</StatusPill>`,
   },
@@ -2223,6 +2225,57 @@ export const galleryComponents = [
 `,
   },
   {
+    id: "dexter-email-compose-card",
+    name: "Dexter Email Composer",
+    category: "Agent Dexter",
+    description: "An editable Gmail or Outlook draft prepared inside a Dexter conversation, with in-place refinement and an explicit provider-backed send control.",
+    details: "Use only for structured drafts returned by Dexter's prepare_email_draft tool. Operators can refine the whole draft from the edit icon or select a passage for focused changes without replacing the composer. Recipients and the sending mailbox stay empty unless confirmed by the selected thread, attached workspace context, or the operator. Sending reuses Inbox permissions and idempotency, preserves the draft after failures, and shows Sent only after provider confirmation.",
+    foundOn: [
+      { label: "Agent Dexter", route: "/agent-dexter" },
+      { label: "Components", route: "/components?component=dexter-email-compose-card" },
+    ],
+    componentCode: `export function DexterEmailComposeCard({ messageId, draft, onDraftChange }) {
+  const [status, setStatus] = useState(draft.delivery.status)
+  const idempotencyKey = useRef(createIdempotencyKey())
+
+  async function send() {
+    setStatus("sending")
+    const receipt = await sendMail(buildReplyRequest({
+      mode: draft.mode,
+      mailboxId: draft.mailboxId,
+      threadId: draft.threadId,
+      sourceMessageId: draft.sourceMessageId,
+      edits: collectEditableFields(),
+      idempotencyKey: idempotencyKey.current,
+    }))
+    const delivery = await recordDexterEmailDraftDelivery(messageId, receipt.id)
+    setStatus(delivery.status)
+    onDraftChange?.({ ...draft, delivery })
+  }
+
+  return <section aria-label="Editable email draft">
+    <RefinementControl onSubmit={(instruction) => refineDraft(messageId, instruction)} />
+    <MailboxSelect value={draft.mailboxId} sendCapableOnly />
+    <RecipientFields to={draft.to} cc={draft.cc} bcc={draft.bcc} />
+    <Input aria-label="Subject" value={draft.subject} />
+    <Textarea aria-label="Message" value={draft.bodyText} onSelect={showSelectionActions} />
+    <Button aria-label="Send email" disabled={status === "sending"} onClick={send}>
+      <SendHorizontal aria-hidden />
+    </Button>
+    <p role="status">{deliveryStatusCopy(status)}</p>
+  </section>
+}`,
+    usageCode: `<DexterEmailComposeCard
+  messageId={message.id}
+  draft={message.emailDraft}
+  onDraftChange={(nextDraft) => updateConversationMessage(message.id, nextDraft)}
+/>
+
+// message.emailDraft must come from Dexter's structured prepare_email_draft
+// result. The component resolves send-capable mailboxes through Inbox and
+// never sends until the operator selects the paper plane.`,
+  },
+  {
     id: "dexter-action-pill",
     name: "Ask Dexter Shader Button",
     category: "Agent Dexter",
@@ -2239,6 +2292,7 @@ export const galleryComponents = [
       { label: "CRM contacts", route: "/crm/contacts" },
       { label: "CRM deals", route: "/crm/deals" },
       { label: "CRM lists", route: "/crm/lists" },
+      { label: "Inbox", route: "/inbox" },
       { label: "Components", route: "/components?component=dexter-action-pill" },
     ],
     componentCode: `export function DexterActionPill({ label = "Ask Dexter", icon: Icon = Sparkles, iconOnly = false, onClick }) {\n  return (\n    <Button\n      type="button"\n      variant="ghost"\n      aria-label={label}\n      data-icon-only={iconOnly || undefined}\n      className="md-dexter-pill relative h-10 min-w-[132px] overflow-hidden rounded-[var(--md-radius-lg)] px-3.5 text-[13px] font-medium text-white"\n      onClick={onClick}\n    >\n      <span className="md-dexter-pill__shader" aria-hidden>\n        <SpectralBloomShader />\n      </span>\n      <span className="md-dexter-pill__contrast" aria-hidden />\n      <Icon className="relative z-10 size-3.5" strokeWidth={1.25} />\n      {iconOnly ? null : <SlotLabel label={label} />}\n    </Button>\n  )\n}`,
@@ -2277,11 +2331,11 @@ export const galleryComponents = [
     id: "toast",
     name: "Toast",
     category: "Feedback",
-    description: "A floating bottom-middle notification for short confirmations that need to be readable without stealing the workflow.",
-    details: "Use for save, export, copy, and lightweight route feedback. Keep the title direct, add one short supporting line only when it helps the operator understand what happened.",
+    description: "A compact bottom-right notification with a clear status icon, stacked multi-toast view, and a five-second visual dismissal indicator.",
+    details: "Use for save, export, copy, and lightweight route feedback. Keep the title direct and add one short supporting line only when it helps. Multiple notifications fan into a visible stack and expand on hover or keyboard access; hovering pauses dismissal so the operator has time to read.",
     foundOn: [{ label: "Customers", route: "/customers" }, { label: "Bookings", route: "/bookings" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
-    componentCode: `export function Toaster(props) {\n  return (\n    <Sonner\n      position="bottom-center"\n      className="toaster group md-toaster"\n      style={{\n        "--normal-bg": "rgba(251, 253, 253, 0.92)",\n        "--normal-text": "var(--md-ink)",\n        "--normal-border": "transparent",\n        "--border-radius": "var(--md-radius-xl)",\n        "--width": "min(520px, calc(100vw - 32px))",\n      }}\n      toastOptions={{\n        classNames: {\n          toast: "cn-toast md-toast",\n          icon: "md-toast-icon",\n          title: "md-toast-title",\n          description: "md-toast-description",\n        },\n      }}\n      {...props}\n    />\n  )\n}`,
-    usageCode: `<Toaster />\n\ntoast.success("Customer CSV prepared", {\n  description: "The export is ready for Northwind Forwarding.",\n})`,
+    componentCode: `const toastLifetimeMs = 5_000\n\nexport function Toaster(props) {\n  return (\n    <Sonner\n      position="bottom-right"\n      duration={toastLifetimeMs}\n      visibleToasts={4}\n      gap={12}\n      closeButton\n      className="toaster group md-toaster"\n      icons={{\n        success: <ToastStatusIcon src={toastSuccessIcon} kind="success" />,\n        info: <ToastStatusIcon src={toastGeneralIcon} kind="general" />,\n        warning: <ToastStatusIcon src={toastErrorIcon} kind="warning" />,\n        error: <ToastStatusIcon src={toastErrorIcon} kind="error" />,\n        close: <span>Dismiss</span>,\n      }}\n      style={{\n        "--normal-bg": "color-mix(in srgb, var(--md-surface) 94%, transparent)",\n        "--normal-text": "var(--md-ink)",\n        "--normal-border": "transparent",\n        "--border-radius": "var(--md-radius-2xl)",\n        "--width": "min(520px, calc(100vw - 32px))",\n        "--md-toast-duration": "5000ms",\n      }}\n      toastOptions={{\n        classNames: {\n          toast: "cn-toast md-toast",\n          icon: "md-toast-icon",\n          title: "md-toast-title",\n          description: "md-toast-description",\n          actionButton: "md-toast-action",\n          closeButton: "md-toast-close",\n        },\n      }}\n      {...props}\n    />\n  )\n}`,
+    usageCode: `<Toaster />\n\ntoast.success("Customer CSV prepared", {\n  description: "The export is ready to download.",\n})\n\n// Triggering several toasts shows a compact stack. Hover or focus it to expand.\ntoast.warning("Declaration needs attention", {\n  description: "Two checks still need review.",\n})`,
   },
   {
     id: "metric-card",
@@ -2529,7 +2583,7 @@ export const galleryComponents = [
     category: "Operations",
     description: "A reusable initials avatar for customer records, contacts, table rows, cards, and detail headers.",
     details: "Use when a customer or contact needs a compact identity marker. Keep tone tied to the record so the same account feels familiar across lists and detail views.",
-    foundOn: [{ label: "Customers", route: "/customers" }, { label: "Customer detail", route: "/customers/marlow-apparel" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "CRM accounts", route: "/crm/accounts" }, { label: "Account detail", route: "/crm/accounts/de1000c1-5eed-4ead-8000-000000000001" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Contact detail", route: "/crm/contacts/de1000c3-5eed-4ead-8000-000000000001" }, { label: "Components", route: "/components" }],
     componentCode: `export function CustomerAvatar({ initials, tone = "teal", size = "md" }) {\n  return (\n    <span\n      className={cn(\n        "grid shrink-0 place-items-center rounded-[var(--md-radius-md)] font-medium",\n        avatarToneClass[tone] ?? avatarToneClass.teal,\n        size === "sm" && "size-8 text-[12px]",\n        size === "md" && "size-10 text-[13px]",\n        size === "lg" && "size-[74px] rounded-[var(--md-radius-lg)] text-[30px]",\n      )}\n    >\n      {initials}\n    </span>\n  )\n}`,
     usageCode: `<CustomerAvatar initials="MA" tone="olive" />\n<CustomerAvatar initials="BI" tone="blue" size="sm" />\n<CustomerAvatar initials="MA" tone="olive" size="lg" />`,
   },
@@ -2579,7 +2633,7 @@ export const galleryComponents = [
     category: "Controls",
     description: "A branded glass date-range selector with one trigger, paired months, highlighted in-between days, and an optional comparison mode.",
     details: "Use for date pairs such as cargo ready/requested collection, ETD/ETA, dashboard custom ranges, and booking search ranges. Comparison mode keeps its checkbox and quick ranges inside the popover, then expands into aligned current and comparison calendars.",
-    foundOn: [{ label: "Overview", route: "/" }, { label: "New booking", route: "/bookings/new" }, { label: "Bookings", route: "/bookings" }, { label: "Email marketing", route: "/crm/emails" }, { label: "Components", route: "/components?component=date-range-picker" }],
+    foundOn: [{ label: "Overview", route: "/" }, { label: "New booking", route: "/bookings/new" }, { label: "Bookings", route: "/bookings" }, { label: "Inbox", route: "/inbox" }, { label: "Email marketing", route: "/crm/emails" }, { label: "Components", route: "/components?component=date-range-picker" }],
     componentCode: `export function MultideckDateRangePicker({ value, onChange, comparison }) {\n  return (\n    <Popover>\n      <PopoverTrigger asChild>\n        <Button>\n          <CalendarDays />\n          {formatDateRangeLabel(value)}\n        </Button>\n      </PopoverTrigger>\n      <PopoverContent className="backdrop-blur-2xl">\n        {comparison ? <Checkbox checked={comparison.enabled} onCheckedChange={comparison.onEnabledChange}>Compare</Checkbox> : null}\n        {comparison?.enabled ? <ComparisonCalendarPair /> : <CalendarMonthPair />}\n        <Button onClick={() => closePicker()}>Apply dates</Button>\n      </PopoverContent>\n    </Popover>\n  )\n}`,
     usageCode: `const [collectionDates, setCollectionDates] = useState({ start: "2026-05-25", end: "2026-06-04" })\nconst [comparing, setComparing] = useState(false)\nconst [comparisonDates, setComparisonDates] = useState({ start: "2026-05-14", end: "2026-05-24" })\n\n<MultideckDateRangePicker\n  value={collectionDates}\n  onChange={setCollectionDates}\n  title="Collection dates"\n  comparison={{\n    enabled: comparing,\n    value: comparisonDates,\n    onEnabledChange: setComparing,\n    onChange: setComparisonDates,\n    options: [\n      { id: "previous-period", label: "Previous period", range: { start: "2026-05-14", end: "2026-05-24" } },\n      { id: "custom", label: "Custom", range: null },\n    ],\n  }}\n/>`,
   },
@@ -2742,10 +2796,10 @@ export const galleryComponents = [
     name: "Multi-select Menu",
     category: "Navigation",
     description: "A compact checkbox menu for fields that can hold several choices without expanding the form.",
-    details: "Use when choices can be combined, such as multimodal freight transport. It supports required, invalid, disabled, RTL, and translated states.",
-    foundOn: [{ label: "Quote details", route: "/quotes" }, { label: "Components", route: "/components?component=multi-select-menu" }],
-    componentCode: `export function MultiSelectMenu({ value, options, onValueChange, placeholder }) {\n  return (\n    <DropdownMenu>\n      <DropdownMenuTrigger asChild><Button>{value.length ? value.join(" + ") : placeholder}</Button></DropdownMenuTrigger>\n      <DropdownMenuContent>{options.map((option) => <DropdownMenuCheckboxItem key={option} checked={value.includes(option)}>{option}</DropdownMenuCheckboxItem>)}</DropdownMenuContent>\n    </DropdownMenu>\n  )\n}`,
-    usageCode: `<MultiSelectMenu\n  value={transportModes}\n  options={["Sea FCL", "Sea LCL", "Air", "Road", "Rail"]}\n  onValueChange={setTransportModes}\n  placeholder="Select transport modes"\n/>`,
+    details: "Use when choices can be combined, such as multimodal freight transport or warehouse access. Options may be plain translated strings or stable values with data-driven labels. It supports required, invalid, disabled, RTL, and translated states.",
+    foundOn: [{ label: "Quote details", route: "/quotes" }, { label: "Customer warehouse access", route: "/customers" }, { label: "Components", route: "/components?component=multi-select-menu" }],
+    componentCode: `export function MultiSelectMenu({ value, options, onValueChange, placeholder }) {\n  const items = options.map((option) => typeof option === "string" ? { value: option, label: option } : option)\n  const selectedLabels = items.filter((option) => value.includes(option.value)).map((option) => option.label)\n  const toggle = (optionValue) => onValueChange(value.includes(optionValue) ? value.filter((item) => item !== optionValue) : [...value, optionValue])\n  return (\n    <DropdownMenu>\n      <DropdownMenuTrigger asChild><Button>{selectedLabels.length ? selectedLabels.join(" + ") : placeholder}</Button></DropdownMenuTrigger>\n      <DropdownMenuContent>{items.map((option) => <DropdownMenuCheckboxItem key={option.value} checked={value.includes(option.value)} onCheckedChange={() => toggle(option.value)}>{option.label}</DropdownMenuCheckboxItem>)}</DropdownMenuContent>\n    </DropdownMenu>\n  )\n}`,
+    usageCode: `<MultiSelectMenu\n  value={warehouseIds}\n  options={warehouses.map((warehouse) => ({\n    value: warehouse.id,\n    label: \`\${warehouse.code} · \${warehouse.name}\`,\n  }))}\n  onValueChange={setWarehouseIds}\n  placeholder="Select warehouses"\n  label="Warehouses"\n/>`,
   },
   {
     id: "inbox-thread-row",
@@ -2842,11 +2896,42 @@ export const galleryComponents = [
 />`,
   },
   {
+    id: "email-delivery-status",
+    name: "Email Delivery Status",
+    category: "Operations",
+    description: "A compact icon and label showing the strongest available evidence for an outbound email.",
+    details: "Use beside a sent message. The trigger stays quiet while the popover separates provider-confirmed sent, delivered, replied, failed and bounced events from estimated opens. Open tracking never claims certainty: image blocking can hide an open and privacy proxies can load the image before a person reads the email.",
+    foundOn: [{ label: "Inbox", route: "/inbox" }, { label: "Components", route: "/components?component=email-delivery-status" }],
+    componentCode: `export function EmailDeliveryStatus({ delivery }) {
+  const { language, t } = useLanguage()
+  const presentation = presentationFor(delivery.status, t)
+  const Icon = presentation.icon
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button type="button" aria-label={presentation.label}>
+          <Icon aria-hidden="true" />
+          <span>{presentation.label}</span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent>
+        <h2>{presentation.label}</h2>
+        <p>{presentation.detail}</p>
+        <DeliveryEventTimes delivery={delivery} language={language} />
+        {delivery.openTrackingEnabled ? <OpenTrackingNotice /> : null}
+      </PopoverContent>
+    </Popover>
+  )
+}`,
+    usageCode: `<EmailDeliveryStatus delivery={message.delivery} />`,
+  },
+  {
     id: "email-message-renderer",
     name: "Email Message Renderer",
     category: "Operations",
-    description: "Renders one email body and its secure remote images inside an isolated surface.",
-    details: "Use for any provider email body. HTML is sanitised on the server and still treated as untrusted here: it never reaches `dangerouslySetInnerHTML`, it goes into a sandboxed iframe whose own Content Security Policy blocks scripts, frames, forms and every network request except HTTPS images. Images load with the message under a no-referrer policy. When there is no sanitised HTML the plain-text alternative is rendered directly. The frame is sized to its content, so the thread keeps one scroll axis.",
+    description: "Renders one email body with theme-safe contrast and private inline images inside an isolated surface.",
+    details: "Use for any provider email body. HTML is sanitised on the server and still treated as untrusted here: it never reaches `dangerouslySetInnerHTML`, it goes into a sandboxed iframe whose own Content Security Policy blocks scripts, frames, forms and every network request except HTTPS, data and authenticated private blob images. Sender-authored text and backgrounds retain readable contrast in light and dark appearance, while photos and logos keep their original colours. When there is no sanitised HTML the plain-text alternative is rendered directly. The frame is sized to its content, so the thread keeps one scroll axis.",
     foundOn: [{ label: "Inbox", route: "/inbox" }, { label: "Components", route: "/components?component=email-message-renderer" }],
     componentCode: `const sandboxPermissions = "allow-same-origin allow-popups allow-popups-to-escape-sandbox"
 
@@ -2859,11 +2944,11 @@ function contentPolicy() {
     "form-action 'none'",
     "base-uri 'none'",
     "style-src 'unsafe-inline'",
-    "img-src data: https:",
+    "img-src data: blob: https:",
   ].join("; ")
 }
 
-export function EmailMessageRenderer({ sanitizedHtml, bodyText }) {
+export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachments = [] }) {
   if (!sanitizedHtml) {
     return <div data-i18n-skip dir="auto" className="whitespace-pre-wrap">{bodyText}</div>
   }
@@ -2873,7 +2958,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText }) {
       <iframe
         title="Message content"
         sandbox={sandboxPermissions}
-        srcDoc={buildDocument({ html: sanitizedHtml, theme, direction, language })}
+        srcDoc={buildDocument({ html: replaceInlineImageSources(sanitizedHtml, inlineImageSources), theme, direction, language })}
         loading="eager"
         scrolling="no"
         style={{ height: frameHeight > 0 ? \`\${frameHeight}px\` : "72px" }}
@@ -2884,6 +2969,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText }) {
     usageCode: `<EmailMessageRenderer
   sanitizedHtml={message.sanitizedHtml}
   bodyText={message.bodyText}
+  inlineAttachments={message.attachments}
 />`,
   },
   {
@@ -2933,10 +3019,10 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText }) {
     id: "mail-composer",
     name: "Mail Composer",
     category: "Operations",
-    description: "The docked composer for a new message, a reply, a reply all or a forward, with Save draft and an expand mode.",
-    details: "Use wherever an operator answers mail. For every response mode the browser reports only what was typed or changed by hand: it never computes the final recipient list, because the server reads the source message and resolves who receives a Reply all, so a thread that moved on in another tab cannot drop somebody quietly. The composer states that plainly instead of showing a recipient list it cannot guarantee. Height animates between two explicit values, so reopening mid-close retargets without a jump, and inputs stay at 16px on mobile so iOS does not zoom the page.",
+    description: "The docked composer for a new message, draft, reply, reply all or forward, with Dexter wording, Save draft and an expand mode.",
+    details: "Use wherever an operator answers mail. Compose with Dexter, Draft with Dexter and Reply with Dexter all prepare editable wording in place using Luna's low-thinking lane, the verified thread and the operator's enabled email-writing profile; they never send or save. For every response mode the browser reports only what was typed or changed by hand: it never computes the final recipient list, because the server reads the source message and resolves who receives a Reply all, so a thread that moved on in another tab cannot drop somebody quietly. Height animates between two explicit values, so reopening mid-close retargets without a jump, and inputs stay at 16px on mobile so iOS does not zoom the page.",
     foundOn: [{ label: "Inbox", route: "/inbox" }, { label: "Components", route: "/components?component=mail-composer" }],
-    componentCode: `export function MailComposer({ state, onStateChange, mailbox, status, error, canSend, onSend, onSaveDraft, onDiscard }) {
+    componentCode: `export function MailComposer({ state, onStateChange, mailbox, status, error, canSend, onSend, onSaveDraft, onDiscard, onComposeWithDexter, dexterAction, dexterStatus }) {
   const readOnly = mailbox ? !mailbox.outboundEnabled : true
   const expanded = state.presentation === "expanded"
   const open = state.presentation !== "docked"
@@ -2952,7 +3038,14 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText }) {
       initial={false}
       transition={reduceMotion(shouldReduceMotion, mdMotion.panel)}
     >
-      <ComposerHeader mode={state.mode} mailbox={mailbox} expanded={expanded} onChange={onStateChange} />
+      <ComposerHeader mode={state.mode} mailbox={mailbox} expanded={expanded} onChange={onStateChange}>
+        <DexterActionPill
+          label={dexterStatus === "drafting" ? "Dexter is drafting" : dexterAction === "reply" ? "Reply with Dexter" : dexterAction === "draft" ? "Draft with Dexter" : "Compose with Dexter"}
+          className="md-inbox-summarise h-9 min-w-[154px] rounded-full px-3 text-[12.5px]"
+          disabled={readOnly || dexterStatus === "drafting"}
+          onClick={onComposeWithDexter}
+        />
+      </ComposerHeader>
       <ComposerFields state={state} onChange={onStateChange} readOnly={readOnly} />
       <footer>
         <Button disabled={!canSend || readOnly} onClick={onSend}>Send</Button>
@@ -2973,6 +3066,9 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText }) {
   onSend={() => void sendComposer()}
   onSaveDraft={() => void saveComposerDraft()}
   onDiscard={discardComposer}
+  onComposeWithDexter={() => void composeWithDexter()}
+  dexterAction={composer.mode.startsWith("reply") ? "reply" : remoteDraftId ? "draft" : "compose"}
+  dexterStatus={dexterComposerStatus}
 />`,
   },
   {
@@ -3064,6 +3160,61 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText }) {
     foundOn: [{ label: "Warehouse", route: "/warehouse" }, { label: "Components", route: "/components?component=warehouse-form-field" }],
     componentCode: `export function WarehouseFormField({ label, htmlFor, hint, error, required, className, children }) {\n  return (\n    <div className={cn("grid gap-1.5", className)}>\n      <label htmlFor={htmlFor} className="flex items-center gap-1 text-[12px] font-medium text-[var(--md-ink)]">\n        {label}\n        {required ? <span className="text-[var(--md-red)]" aria-hidden="true">*</span> : null}\n      </label>\n      {children}\n      {error ? (\n        <p className="flex items-center gap-1 text-[11.5px] text-[var(--md-red)]">\n          <AlertCircle className="size-3" strokeWidth={1.5} aria-hidden="true" />\n          {error}\n        </p>\n      ) : hint ? (\n        <p className="text-[11.5px] leading-4 text-[var(--md-subtle)]">{hint}</p>\n      ) : null}\n    </div>\n  )\n}`,
     usageCode: `<WarehouseFormField label="Facility code" htmlFor="facility-code" required hint="A short unique code, e.g. FXT-DC1." error={firstFieldError(errors, "Code")}>\n  <Input id="facility-code" dir="ltr" value={form.code} onChange={(event) => update("code", event.target.value)} className={fieldControlClass} />\n</WarehouseFormField>`,
+  },
+  {
+    id: "warehouse-quantity-uom-field",
+    name: "Warehouse Quantity & UOM Field",
+    category: "Operations",
+    description: "A quantity input that keeps the product's count, weight, or volume unit visible at the point of entry.",
+    details: "Use for receipts, partial moves, sampling, damage, quarantine, and adjustments. The unit is fixed from the stock balance so an operator cannot accidentally post kilograms as litres or count units.",
+    foundOn: [{ label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Components", route: "/components?component=warehouse-quantity-uom-field" }],
+    componentCode: `export function WarehouseQuantityUomField({ value, onChange, uomCode, max, label }) {
+  return <WarehouseFormField label={label} required>
+    <div className="quantity-uom-grid">
+      <Input type="number" value={value} max={max} onChange={(event) => onChange(event.target.value)} />
+      <span dir="ltr">{uomCode}</span>
+    </div>
+  </WarehouseFormField>
+}`,
+    usageCode: `<WarehouseQuantityUomField
+  label="Quantity to sample"
+  value={quantity}
+  onChange={setQuantity}
+  uomCode={balance.uomCode}
+  max={balance.onHandQuantity}
+/>`,
+  },
+  {
+    id: "warehouse-object-summary",
+    name: "Warehouse Object Summary",
+    category: "Operations",
+    description: "A compact identity and contents summary for pallets, IBCs, cartons, drums, totes, and labelled loose stock.",
+    details: "Use wherever an operator chooses, moves, or consolidates a warehouse object. It keeps the label, lifecycle state, stock-line count, and physical location together.",
+    foundOn: [{ label: "Warehouse objects", route: "/warehouse/inventory" }, { label: "Components", route: "/components?component=warehouse-object-summary" }],
+    componentCode: `export function WarehouseObjectSummary({ unit }) {
+  return <div>
+    <div>{unit.code}<StatusPill>{unit.lifecycleStatusCode}</StatusPill></div>
+    <p>{unit.typeName} · {unit.contents.length} stock lines</p>
+    <p>{unit.locationCode ?? "No physical location"}</p>
+  </div>
+}`,
+    usageCode: `<WarehouseObjectSummary unit={selectedPallet} />`,
+  },
+  {
+    id: "warehouse-exception-summary",
+    name: "Warehouse Exception Summary",
+    category: "Operations",
+    description: "A compact investigation summary for empty bins, location overrides, damage, shortages, and sampling events.",
+    details: "Use before resolving an inventory exception or approving a loss. It keeps the issue, workflow state, and expected physical location visible while the operator decides what happened.",
+    foundOn: [{ label: "Warehouse exceptions", route: "/warehouse/inventory" }, { label: "Components", route: "/components?component=warehouse-exception-summary" }],
+    componentCode: `export function WarehouseExceptionSummary({ exception }) {
+  return <div>
+    <div>{exception.title}<StatusPill>{exception.statusCode}</StatusPill></div>
+    <p>{exception.description ?? exception.typeCode}</p>
+    <p>Expected: {exception.expectedLocationCode}</p>
+  </div>
+}`,
+    usageCode: `<WarehouseExceptionSummary exception={selectedException} />`,
   },
   {
     id: "warehouse-kanban-board",
@@ -3345,11 +3496,24 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText }) {
     id: "dexter-prompt-composer",
     name: "Dexter Prompt Composer",
     category: "Agent Dexter",
-    description: "The central command box for Agent Dexter: @ mentions, attached context, model and role choices, live context usage, plus explicit approval or full-access control.",
-    details: "Use on the Agent Dexter landing and conversation footer. Operators can type @ to reference a booking, customer, lead, quote, document, or page in place; Approve remains the safe default and Full access is a deliberately warning-toned state for allowlisted writes.",
-    foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components" }],
+    description: "The central command box for Agent Dexter: @ mentions, attached context, slash commands, model and role choices, live context usage, plus explicit approval or full-access control.",
+    details: "Use on the Agent Dexter landing and conversation footer. Operators can type @ to reference workspace context or / to switch between Chat and Watch; Approve remains the safe default and Full access is a deliberately warning-toned state for allowlisted writes.",
+    foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components?component=dexter-prompt-composer" }],
     componentCode: `export function DexterPromptComposer({ value, selectedSpecialistId, selectedModelId, accessMode, contextUsedTokens, contextMaxTokens, attachments, onChange, onOpenAttachments, onSelectSpecialist, onSelectModel, onAccessModeChange, onSend }) {\n  return (\n    <div className="md-composer md-composer-bloom relative overflow-hidden rounded-[26px]">\n      <span aria-hidden className="md-composer-bloom__shader">\n        <SpectralBloomShader shape="composer" />\n      </span>\n      <span aria-hidden className="md-composer-bloom__contrast" />\n      <div className="relative z-[2] flex h-[44px] items-center px-3">\n        <DexterRoleMenu selectedId={selectedSpecialistId} onSelect={onSelectSpecialist} />\n      </div>\n      <div className="relative z-[2] mx-1.5 mb-1.5 rounded-[21px] bg-[var(--md-composer-panel-bg)]">\n        {attachments.map((attachment) => <ContextChip key={attachment.id} attachment={attachment} />)}\n        <textarea\n          value={value}\n          rows={1}\n          onChange={(event) => onChange(event.target.value)}\n          onKeyDown={(event) => {\n            if (event.key === "Enter" && !event.shiftKey) {\n              event.preventDefault()\n              if (value.trim()) onSend()\n            }\n          }}\n        />\n        <button onClick={onOpenAttachments}>Attach</button>\n        <DexterModelMenu selectedId={selectedModelId} onSelect={onSelectModel} />\n        <Context\n          usedTokens={contextUsedTokens}\n          maxTokens={contextMaxTokens}\n          label={t("Conversation context")}\n          description={t("How much of this chat Dexter can keep in mind.")}\n        >\n          <ContextTrigger />\n          <ContextContent><ContextContentHeader /></ContextContent>\n        </Context>\n        <DexterAccessModeToggle mode={accessMode} onChange={onAccessModeChange} />\n        <DexterActionPill icon={ArrowUp} iconOnly disabled={!value.trim()} onClick={onSend} />\n      </div>\n    </div>\n  )\n}`,
-    usageCode: `<DexterPromptComposer\n  value={prompt}\n  selectedSpecialistId={selectedSpecialistId}\n  selectedModelId={selectedModelId}\n  accessMode={accessMode}\n  contextUsedTokens={contextUsedTokens}\n  contextMaxTokens={128_000}\n  attachments={attachedItems}\n  onChange={setPrompt}\n  onOpenAttachments={() => setShowAttachments(true)}\n  onSelectSpecialist={setSelectedSpecialistId}\n  onSelectModel={setSelectedModelId}\n  onAccessModeChange={setAccessMode}\n  onSend={startConversation}\n/>`,
+    usageCode: `<DexterPromptComposer\n  value={prompt}\n  selectedSpecialistId={selectedSpecialistId}\n  selectedModelId={selectedModelId}\n  accessMode={accessMode}\n  contextUsedTokens={contextUsedTokens}\n  contextMaxTokens={128_000}\n  attachments={attachedItems}\n  commands={slashCommands}\n  onChange={setPrompt}\n  onOpenAttachments={() => setShowAttachments(true)}\n  onSelectSpecialist={setSelectedSpecialistId}\n  onSelectModel={setSelectedModelId}\n  onAccessModeChange={setAccessMode}\n  onCommand={handleSlashCommand}\n  onSend={startConversation}\n/>`,
+  },
+  {
+    id: "watch-mode-aurora",
+    name: "Watch Mode Aurora",
+    category: "Agent Dexter",
+    description: "A quiet full-surface shader that distinguishes Watch mode using tones derived from the operator's chosen accent colour.",
+    details: "Use behind Dexter only while Watch mode is active. The light rises from the bottom, stays non-interactive, fades before it reaches the main content, follows live accent changes, and becomes still when reduced motion is enabled.",
+    foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components?component=watch-mode-aurora" }],
+    componentCode: `<WatchModeAurora active={dexterMode === "watch"} />`,
+    usageCode: `<div className="relative min-h-screen overflow-hidden bg-[var(--md-bg)]">
+  <WatchModeAurora active={dexterMode === "watch"} />
+  <main className="relative z-10">{children}</main>
+</div>`,
   },
   {
     id: "context-usage-meter",
@@ -3617,6 +3781,47 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText }) {
     foundOn: [{ label: "CRM marketing", route: "/crm/marketing" }, { label: "Components", route: "/components" }],
     componentCode: `export function CrmAssetRow({ asset, onOpen }) {\n  const Icon = asset.icon ?? FileText\n\n  return (\n    <button onClick={() => onOpen?.(asset)}>\n      <Icon />\n      <span data-i18n-skip dir="ltr">{asset.name}</span>\n      <span>{asset.usage}</span>\n      <span data-i18n-skip dir="ltr">{asset.type}</span>\n      <span data-i18n-skip dir="ltr">{asset.size}</span>\n      <span>{asset.updated}</span>\n    </button>\n  )\n}`,
     usageCode: `<Button onClick={() => setOpenedFolderId(null)}>\n  <ArrowLeft />\n  Marketing drive\n</Button>\n\n<div className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-3">\n  {folderAssets.map((asset) => (\n    <CrmAssetRow\n      key={asset.id}\n      asset={asset}\n      onOpen={(selectedAsset) => openAsset(selectedAsset)}\n    />\n  ))}\n</div>`,
+  },
+  {
+    id: "contact-create-dialog",
+    name: "Contact Create Dialog",
+    category: "CRM",
+    description: "The shared account-linked form for creating a CRM contact with role, department, and recorded marketing consent.",
+    details: "Use from the Contacts directory or inside an account workspace. Pass a fixed account when the operator starts from an account so the same form stays scoped to that customer.",
+    foundOn: [{ label: "CRM contacts", route: "/crm/contacts" }, { label: "Account details", route: "/crm/accounts/de1000c1-5eed-4ead-8000-000000000001" }, { label: "Components", route: "/components?component=contact-create-dialog" }],
+    componentCode: `export function ContactCreateDialog({ open, onOpenChange, accounts, fixedAccountId, onCreated }) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>New contact</DialogTitle>
+          <DialogDescription>Connect this person to an account and record only what helps the relationship now.</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={createContact}>
+          <AccountSelect accounts={accounts} value={fixedAccountId ?? accountId} disabled={Boolean(fixedAccountId)} />
+          <ContactIdentityFields />
+          <ContactRoleFields />
+          <MarketingConsentFields />
+          <DialogFooter><Button type="submit">Create contact</Button></DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}`,
+    usageCode: `<ContactCreateDialog
+  open={createOpen}
+  onOpenChange={setCreateOpen}
+  accounts={accounts}
+  onCreated={(contact) => navigate(\`/crm/contacts/\${contact.id}\`)}
+/>
+
+<ContactCreateDialog
+  open={createOpen}
+  onOpenChange={setCreateOpen}
+  accounts={[account]}
+  fixedAccountId={account.id}
+  onCreated={refreshAccount}
+/>`,
   },
   {
     id: "crm-contact-table",
@@ -4037,6 +4242,46 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText }) {
     componentCode: `export function SignedOutPanel({ onSignBackIn, onSwitchAccount }) {\n  return (\n    <div className="w-full max-w-[560px]">\n      <BrandLockup />\n      <h2>You're signed out</h2>\n      {signedOutStats.map(([value, label]) => <StatRow key={label} value={value} label={label} />)}\n      <Button onClick={onSignBackIn}>Sign back in</Button>\n      <Button onClick={onSwitchAccount}>Switch account</Button>\n    </div>\n  )\n}`,
     usageCode: `<SignedOutPanel\n  onSignBackIn={() => setStep("signin")}\n  onSwitchAccount={() => {\n    setEmail("")\n    setStep("signin")\n  }}\n/>`,
   },
+  {
+    id: "contact-card-layout-picker",
+    name: "Contact Card Layout Picker",
+    category: "CRM",
+    description: "Four visual presets for choosing how a public QR contact card is arranged without exposing layout jargon.",
+    details: "Use in Contact Card design settings. Each option previews its hierarchy, supports keyboard selection, and leaves colour and QR styling independent.",
+    foundOn: [{ label: "Contact Cards", route: "/crm/contact-cards" }, { label: "Components", route: "/components?component=contact-card-layout-picker" }],
+    componentCode: `export function ContactCardLayoutPicker({ value, onChange }) {\n  return (\n    <div role="radiogroup" aria-label="Layout preset">\n      {layoutPresets.map((preset) => (\n        <button role="radio" aria-checked={value === preset.id} onClick={() => onChange(preset.id)}>\n          <LayoutThumbnail preset={preset.id} />\n          <span>{preset.label}</span>\n          <small>{preset.detail}</small>\n        </button>\n      ))}\n    </div>\n  )\n}`,
+    usageCode: `<ContactCardLayoutPicker\n  value={card.branding.layout}\n  onChange={(layout) => updateBranding(card.id, { layout })}\n/>`,
+  },
+  {
+    id: "contact-card-social-links-editor",
+    name: "Contact Card Social Links Editor",
+    category: "CRM",
+    description: "A reorderable, branded social-link editor for LinkedIn, Facebook, Instagram, WhatsApp, email, and website details.",
+    details: "Use for person-owned public contact profiles. Blank links remain safely disabled, while enabled links keep the exact order shown in the editor.",
+    foundOn: [{ label: "Contact Card settings", route: "/crm/contact-cards" }, { label: "Components", route: "/components?component=contact-card-social-links-editor" }],
+    componentCode: `export function ContactCardSocialLinksEditor({ links, onChange }) {\n  return links.map((link, index) => (\n    <div key={link.id}>\n      <ContactSocialMark kind={link.kind} />\n      <Input value={link.value} onChange={(event) => update(link.id, event.target.value)} />\n      <MoveButtons index={index} onMove={move} />\n      <Switch checked={link.enabled} disabled={!link.value.trim()} />\n    </div>\n  ))\n}`,
+    usageCode: `<ContactCardSocialLinksEditor\n  links={card.person.socialLinks}\n  onChange={(socialLinks) => updatePerson(card.id, { socialLinks })}\n/>`,
+  },
+  {
+    id: "automation-run-history",
+    name: "Automation Run History",
+    category: "CRM",
+    description: "An operator-friendly record of automation runs with expandable failures, preserved input, step traces, and safe reruns.",
+    details: "Use below an automation canvas. Start with status, time, duration, and affected records; reveal the technical evidence only when a run needs investigation.",
+    foundOn: [{ label: "Contact Card automation", route: "/crm/contact-cards" }, { label: "Components", route: "/components?component=automation-run-history" }],
+    componentCode: `export function AutomationRunHistory({ runs, onRerun }) {\n  return runs.map((run) => (\n    <section key={run.id}>\n      <button aria-expanded={expanded === run.id} onClick={() => setExpanded(run.id)}>\n        <StatusPill>{run.status}</StatusPill>\n        <time>{run.startedAt}</time>\n        <span>{run.durationMs}ms</span>\n      </button>\n      {expanded === run.id ? <RunEvidence run={run} onRerun={onRerun} /> : null}\n    </section>\n  ))\n}`,
+    usageCode: `<AutomationRunHistory\n  runs={card.automation.runs}\n  onRerun={(run) => rerunAutomationRun(run.id)}\n/>`,
+  },
+  {
+    id: "marketing-opt-in-control",
+    name: "Marketing Opt-in Control",
+    category: "CRM",
+    description: "A compact, auditable consent toggle for lead, contact, and customer records.",
+    details: "Use on live CRM record detail views. The current state stays easy to scan while the source and last change remain visible as supporting evidence.",
+    foundOn: [{ label: "CRM lead details", route: "/crm/leads" }, { label: "Account details", route: "/crm/accounts/de1000c1-5eed-4ead-8000-000000000001" }, { label: "Contact details", route: "/crm/contacts/de1000c3-5eed-4ead-8000-000000000001" }, { label: "Components", route: "/components?component=marketing-opt-in-control" }],
+    componentCode: `export function MarketingOptInControl({ checked, source, updatedAt, onCheckedChange }) {\n  return (\n    <div>\n      <div>\n        <p>Opt-in marketing</p>\n        <p>{checked ? "Can receive marketing updates." : "No marketing updates will be sent."}</p>\n        <small>{source} · {updatedAt}</small>\n      </div>\n      <Switch checked={checked} onCheckedChange={onCheckedChange} />\n    </div>\n  )\n}`,
+    usageCode: `<MarketingOptInControl\n  checked={lead.marketingOptIn}\n  source={lead.marketingConsentSource}\n  updatedAt={lead.marketingConsentUpdatedAt}\n  onCheckedChange={(checked) => setMarketingOptIn("lead", lead.id, checked)}\n/>`,
+  },
 ]
 
 export const galleryCategories = ["All", "Design System", "Foundation", "Controls", "Navigation", "Data", "Visualizations", "Feedback", "Operations", "CRM", "Agent Dexter"]
@@ -4090,6 +4335,9 @@ export const galleryIcons = {
   "filter-chips": Users,
   "data-table": Users,
   "warehouse-table": Boxes,
+  "warehouse-quantity-uom-field": Boxes,
+  "warehouse-object-summary": Boxes,
+  "warehouse-exception-summary": Boxes,
   "warehouse-kanban-board": LayoutDashboard,
   "geo-panel": Globe2,
   "record-header": BriefcaseBusiness,
@@ -4119,6 +4367,7 @@ export const galleryIcons = {
   "crm-pipeline-board": BriefcaseBusiness,
   "crm-asset-folder-card": Boxes,
   "crm-asset-row": FileText,
+  "contact-create-dialog": Users,
   "crm-contact-table": Mail,
   "crm-lead-qualification-table": Users,
   "crm-lead-detail-panel": Users,
@@ -4153,4 +4402,8 @@ export const galleryIcons = {
   "auth-verification-panel": Mail,
   "auth-code-input": KeyRound,
   "auth-signed-out-panel": BarChart3,
+  "contact-card-layout-picker": QrCode,
+  "contact-card-social-links-editor": Users,
+  "automation-run-history": Workflow,
+  "marketing-opt-in-control": BadgeCheck,
 } satisfies Record<string, LucideIcon>

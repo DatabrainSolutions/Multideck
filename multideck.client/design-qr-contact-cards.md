@@ -34,6 +34,7 @@ Card workspace tabs: **Overview · Design · Automation · Analytics · Settings
 | `src/lib/qr-code.ts` | Dependency-free QR encoder. Byte mode, versions 1–10, levels M/Q/H. Styled geometry and logo knockout. |
 | `src/lib/color.ts` | Contrast maths and the accent-safety gates. |
 | `src/lib/card-theme.ts` | Branding → concrete colours, radii and CSS custom properties. |
+| `src/lib/card-layout.ts` | The four layout presets as whole arrangements: mark placement, type scale, field style, rhythm. |
 | `src/lib/contact-card-store.ts` | Demo store: localStorage, simulated latency, migration, all mutations. |
 | `src/data/contact-card-data.ts` | Types, seeded demo cards, derived analytics. |
 | `src/components/multideck/contact-card-components.tsx` | QR rendering, code panel, status, metrics, shared states. |
@@ -77,6 +78,17 @@ payload, across versions 1, 4, 7 and 10.
 ---
 
 ## 4. Design rules the code holds to
+
+**A preset is a template, not a margin.** The four layouts differ in what they
+put where, not only in how wide they are: Classic sets the mark above a balanced
+sentence, Editorial opens with an accent rule and a tracked-out company line and
+credits the person in a byline under a 34px headline, Compact puts a rounded
+tile beside the name so everything clears the fold, and Spotlight centres a
+haloed portrait and sets the form down on its own surface. Field drawing changes
+with them — boxed everywhere, underlined in Editorial, where focus fills the
+well so the ring has something to enclose. `card-layout.ts` is the single table
+all of it resolves from, so the picker thumbnail, the live preview and the
+visitor's page can never disagree.
 
 **Nothing is promised before it is true.** The exchange screen only exists after
 a confirmed write. There is no optimistic success.

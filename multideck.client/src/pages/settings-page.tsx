@@ -113,6 +113,16 @@ import {
 } from "@/lib/support-ticket"
 import { getDexterUsage, type DexterUsage, type DexterUsageEntry } from "@/lib/dexter-api"
 import {
+  consentToDexterWritingProfile,
+  DexterWritingProfileError,
+  getDexterWritingProfile,
+  refreshDexterWritingProfile,
+  resetDexterWritingProfile,
+  updateDexterWritingProfile,
+  type DexterWritingProfile,
+} from "@/lib/dexter-writing-profile-api"
+import { dexterModelPrices, estimateDexterModelCost } from "@/lib/dexter-costs"
+import {
   addGmailGroupMailbox,
   addOutlookSharedMailbox,
   authorizeInboxProvider,
@@ -129,7 +139,7 @@ import {
 } from "@/lib/inbox-api"
 import { useShortcutBinding } from "@/lib/keyboard-shortcuts"
 import { DEXTER_CONVERSATIONS_CHANGED_EVENT } from "@/lib/dexter-navigation"
-import { clockDisplayLabelFromMode, clockDisplayLabels, clockDisplayModeFromLabel, readClockDisplayMode, resetAiAgentName, useAiAgentName, writeAiAgentName, writeClockDisplayMode } from "@/lib/user-preferences"
+import { clockDisplayLabelFromMode, clockDisplayLabels, clockDisplayModeFromLabel, readClockDisplayMode, useAiAgentName, writeClockDisplayMode } from "@/lib/user-preferences"
 import type { AuthUserSummary } from "@/lib/auth-user"
 import { getSupabaseSession, supabase } from "@/lib/supabase"
 import {
@@ -641,7 +651,7 @@ function ProfileTab({
 
   function discardProfileChanges() {
     setProfile(savedProfile)
-    toast.message("Changes discarded")
+    toast.info("Changes discarded")
   }
 
   async function saveProfileChanges() {
@@ -2001,74 +2011,262 @@ function ShortcutsTab() {
   )
 }
 
+function writingProfileErrorCopy(
+  error: unknown,
+  fallback: string,
+  t: (value: string) => string,
+) {
+  if (!(error instanceof DexterWritingProfileError)) return t(fallback)
+  if (error.code === "feature_disabled") return t("Personal email style is not enabled for this workspace yet.")
+  if (error.code === "authentication_required") return t("Sign in again to manage your writing profile.")
+  if (error.code === "operator_unavailable") return t("Your Multideck operator profile is unavailable.")
+  if (error.code === "consent_required") return t("Turn on personal email style before refreshing it.")
+  if (error.code === "profile_too_long") return t("Keep the writing profile within 2,400 characters.")
+  return t(fallback)
+}
+
 function AgentDexterTab() {
-  const aiAgentName = useAiAgentName()
+  const { language, t } = useLanguage()
+  const [profile, setProfile] = useState<DexterWritingProfile | null>(null)
+  const [profileText, setProfileText] = useState("")
+  const [loading, setLoading] = useState(true)
+  const [operation, setOperation] = useState<"consent" | "save" | "refresh" | "reset" | "toggle" | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [featureUnavailable, setFeatureUnavailable] = useState(false)
+  const [resetOpen, setResetOpen] = useState(false)
+
+  const loadProfile = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const next = await getDexterWritingProfile()
+      setProfile(next)
+      setProfileText(next.profileText)
+      setFeatureUnavailable(false)
+    } catch (loadError) {
+      const unavailable = loadError instanceof DexterWritingProfileError && loadError.code === "feature_disabled"
+      setFeatureUnavailable(unavailable)
+      setError(writingProfileErrorCopy(loadError, "Unable to load your email writing profile.", t))
+    } finally {
+      setLoading(false)
+    }
+  }, [t])
+
+  useEffect(() => {
+    void loadProfile()
+  }, [loadProfile])
+
+  function acceptProfile(next: DexterWritingProfile) {
+    setProfile(next)
+    setProfileText(next.profileText)
+    setError(null)
+  }
+
+  async function learnStyle() {
+    if (operation) return
+    setOperation("consent")
+    setError(null)
+    try {
+      acceptProfile(await consentToDexterWritingProfile())
+      toast.success(t("Dexter has learned your email writing style."))
+    } catch (learnError) {
+      setError(writingProfileErrorCopy(learnError, "Dexter could not create your writing profile. Try again.", t))
+    } finally {
+      setOperation(null)
+    }
+  }
+
+  async function toggleStyle(enabled: boolean) {
+    if (operation) return
+    if (enabled && (!profile?.exists || !profile.profileText)) {
+      await learnStyle()
+      return
+    }
+    setOperation("toggle")
+    setError(null)
+    try {
+      acceptProfile(await updateDexterWritingProfile(enabled, profileText))
+    } catch (toggleError) {
+      setError(writingProfileErrorCopy(toggleError, "Dexter could not update this setting. Try again.", t))
+    } finally {
+      setOperation(null)
+    }
+  }
+
+  async function saveProfile() {
+    if (!profile || operation) return
+    setOperation("save")
+    setError(null)
+    try {
+      acceptProfile(await updateDexterWritingProfile(profile.enabled, profileText))
+      toast.success(t("Email writing profile saved"))
+    } catch (saveError) {
+      setError(writingProfileErrorCopy(saveError, "Dexter could not save your writing profile. Try again.", t))
+    } finally {
+      setOperation(null)
+    }
+  }
+
+  async function refreshProfile() {
+    if (operation) return
+    setOperation("refresh")
+    setError(null)
+    try {
+      acceptProfile(await refreshDexterWritingProfile())
+      toast.success(t("Email writing profile refreshed"))
+    } catch (refreshError) {
+      setError(writingProfileErrorCopy(refreshError, "Dexter could not refresh your writing profile. Your saved profile is unchanged.", t))
+    } finally {
+      setOperation(null)
+    }
+  }
+
+  async function resetProfile() {
+    if (operation) return
+    setOperation("reset")
+    setError(null)
+    try {
+      acceptProfile(await resetDexterWritingProfile())
+      setResetOpen(false)
+      toast.success(t("Email writing profile reset"))
+    } catch (resetError) {
+      setError(writingProfileErrorCopy(resetError, "Dexter could not reset your writing profile. Nothing was deleted.", t))
+    } finally {
+      setOperation(null)
+    }
+  }
+
+  const busy = operation !== null
+  const dirty = Boolean(profile && profileText !== profile.profileText)
+  const formattedRefresh = profile?.lastGeneratedAt
+    ? new Intl.DateTimeFormat(language, { dateStyle: "medium" }).format(new Date(profile.lastGeneratedAt))
+    : t("Not yet")
+  const statusMessage = loading
+    ? t("Loading your private writing profile...")
+    : profile?.status === "processing" || operation === "consent" || operation === "refresh"
+      ? t("Dexter is learning the patterns in your eligible sent emails. You can leave this page.")
+      : profile?.status === "insufficient"
+        ? t("Dexter needs at least 10 eligible sent emails before it can learn your style.")
+        : profile?.status === "error"
+          ? t("Dexter could not create the profile. Your previous profile is unchanged.")
+          : profile?.status === "ready"
+            ? t("Ready. Dexter uses this only when you ask it to write an email.")
+            : t("Nothing has been analysed. Turn this on when you want Dexter to learn how you write.")
 
   return (
     <>
       <SettingsPageHeader
-        eyebrow={`Workspace / Agent ${aiAgentName}`}
-        title={`Agent ${aiAgentName}`}
-        description={`Tune how proactive ${aiAgentName} is, what it watches by default, and when it should escalate to a human. Changes apply to everything ${aiAgentName} does in your workspace.`}
+        title={t("Dexter")}
+        description={t("Let Dexter learn the tone and structure of your sent emails. It never uses this profile for ordinary answers or as a source of facts.")}
         actions={
-          <>
-            {compactAction("Reset to defaults", () => {
-              resetAiAgentName()
-              toast.message("AI agent defaults restored")
-            })}
-            {primaryAction("Save", () => toast.success(`Agent ${aiAgentName} settings saved`))}
-          </>
+          profile?.exists ? (
+            <Button type="button" variant="ghost" disabled={busy} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-hover)]" onClick={() => void refreshProfile()}>
+              {operation === "refresh" ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <History className="size-3.5" strokeWidth={1.5} aria-hidden="true" />}
+              {t(operation === "refresh" ? "Refreshing" : "Refresh now")}
+            </Button>
+          ) : undefined
         }
       />
       <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
-        <SettingsPanel title="Agent identity" description="System administrators can choose the workspace AI agent name shown across Multideck.">
-          <SettingsFieldRow label="AI agent name" description="Used in navigation, action buttons, chat panels, and operator-facing copy.">
-            <SettingsInput aria-label="AI agent name" value={aiAgentName} onChange={(event) => writeAiAgentName(event.target.value)} placeholder="Dexter" />
-          </SettingsFieldRow>
-        </SettingsPanel>
-
         <SettingsPanel
-          title="Autonomy level"
-          description={`Pick how much ${aiAgentName} does on its own. You can always override per-task by setting an approval rule below.`}
-          action={<span className="text-[12px] font-medium text-[var(--md-accent)]">Current - Suggest</span>}
+          title={t("Personal email style")}
+          description={t("Built from up to 40 eligible emails you sent in the last 12 months. Dexter stores only the compact style profile, not copied email bodies.")}
         >
-          <div className="px-5 py-5">
-            <OptionCards
-              initialValue="Suggest"
-              options={[
-                { label: "Off", description: "No background agents. Manual chats only." },
-                { label: "Manual", description: `${aiAgentName} answers when asked. Never acts.` },
-                { label: "Suggest", description: "Drafts and proposes. Always asks before sending or changing data." },
-                { label: "Autopilot", description: "Acts within your rules. Asks only for irreversible or high-value actions." },
-              ]}
-            />
-          </div>
+          {featureUnavailable ? (
+            <div className="px-5 py-4">
+              <p role="status" className="text-[13px] leading-5 text-[var(--md-text)]">{error}</p>
+            </div>
+          ) : (
+            <>
+              <SettingsToggleRow
+                title={t("Write emails like me")}
+                description={t("When on, Dexter applies your private style profile only to email drafts, replies and rewrites.")}
+                checked={profile?.enabled === true}
+                disabled={loading || busy}
+                onCheckedChange={(checked) => void toggleStyle(checked)}
+                meta={<span>{t(profile?.enabled ? "On" : "Off")}</span>}
+              />
+              <SettingsFieldRow label={t("Profile status")} description={t("Learning never sends mail and never changes operational records.")} align="start">
+                <div>
+                  <p role={error ? "alert" : "status"} aria-live="polite" className={cn("text-[13px] leading-5", error ? "text-[var(--md-red)]" : "text-[var(--md-text)]")}>
+                    {error ?? statusMessage}
+                  </p>
+                  {!profile?.exists && !loading ? (
+                    <Button type="button" disabled={busy} className="mt-3 h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] active:scale-[0.96] motion-reduce:active:scale-100" onClick={() => void learnStyle()}>
+                      {operation === "consent" ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <WandSparkles className="size-3.5" strokeWidth={1.5} aria-hidden="true" />}
+                      {t(operation === "consent" ? "Learning your style" : "Learn my email style")}
+                    </Button>
+                  ) : null}
+                </div>
+              </SettingsFieldRow>
+              <SettingsFieldRow label={t("Eligible history")} description={t("Automated mail, trivial replies, quoted threads, footers and unproven shared-mailbox messages are excluded.")} align="start">
+                <dl className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 py-2.5 shadow-[var(--md-shadow-line)]">
+                    <dt className="text-[11.5px] text-[var(--md-subtle)]">{t("Eligible messages")}</dt>
+                    <dd className="mt-1 text-[16px] font-medium tabular-nums text-[var(--md-ink)]">{profile?.eligibleMessageCount ?? 0}</dd>
+                  </div>
+                  <div className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 py-2.5 shadow-[var(--md-shadow-line)]">
+                    <dt className="text-[11.5px] text-[var(--md-subtle)]">{t("Last refreshed")}</dt>
+                    <dd className="mt-1 text-[13px] font-medium text-[var(--md-ink)]">{formattedRefresh}</dd>
+                  </div>
+                </dl>
+              </SettingsFieldRow>
+              <SettingsFieldRow label={t("Writing profile")} description={t("Edit the guidance Dexter applies. Keep facts, names, prices and commitments out of this profile.")} align="start" labelFor="dexter-writing-profile">
+                <div>
+                  <SettingsTextarea
+                    id="dexter-writing-profile"
+                    value={profileText}
+                    maxLength={2400}
+                    disabled={loading || busy || !profile?.exists}
+                    aria-describedby="dexter-writing-profile-count"
+                    className="min-h-[260px] resize-y text-[16px] leading-[1.6] sm:text-[14px]"
+                    placeholder={t("Your tone, structure, greetings, sign-offs and preferred terminology will appear here.")}
+                    onChange={(event) => setProfileText(event.target.value)}
+                  />
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                    <span id="dexter-writing-profile-count" className="text-[11.5px] tabular-nums text-[var(--md-subtle)]">{profileText.length.toLocaleString(language)} / 2,400</span>
+                    <Button type="button" disabled={!dirty || busy} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] active:scale-[0.96] disabled:opacity-50 motion-reduce:active:scale-100" onClick={() => void saveProfile()}>
+                      {operation === "save" ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : null}
+                      {t(operation === "save" ? "Saving profile" : "Save profile")}
+                    </Button>
+                  </div>
+                </div>
+              </SettingsFieldRow>
+            </>
+          )}
         </SettingsPanel>
 
-        <SettingsPanel title="Default watchers" description={`Background agents ${aiAgentName} runs for you. Toggle any off, or add more from the ${aiAgentName} workspace.`}>
-          <ToggleSetting title="Doc parse confidence < 80%" description={`Flags documents ${aiAgentName} is unsure about for your review.`} initialChecked />
-          <ToggleSetting title="Customs hold raised" description="Pings within 60 seconds of any new hold." initialChecked />
-          <ToggleSetting title="ETA slip > 6 hours" description="Notifies you and the customer after approval." initialChecked />
-          <ToggleSetting title="Carrier on-time degradation" description="Watches for any carrier dropping 5%+ vs trailing 90d." initialChecked />
-          <ToggleSetting title="Demurrage / detention risk" description="Flags containers nearing free-time expiry." initialChecked />
-          <ToggleSetting title="Quote silence > 48h" description="Drafts a follow-up after two days of silence on open quotes." initialChecked={false} />
-        </SettingsPanel>
-
-        <SettingsPanel title="Approval rules" description={`${aiAgentName} will always pause for explicit approval when any rule below is true, regardless of autonomy level.`}>
-          <SettingsFieldRow label="Outbound emails to customers">
-            <ChoiceSetting options={["Always ask", "Ask if > EUR 1k impact", "Never ask"]} initialValue="Always ask" />
+        <SettingsPanel title={t("Privacy and control")} description={t("This is your personal preference. It is never shared across the company and does not create Watching for you activity.")}>
+          <SettingsFieldRow label={t("Reset writing profile")} description={t("Delete the derived profile and stop future refreshes. Your original sent emails remain in their provider and Inbox history.")}>
+            <Button type="button" variant="ghost" disabled={!profile?.exists || busy} className="h-10 rounded-[var(--md-radius-lg)] bg-[rgba(209,78,78,0.08)] px-4 text-[13px] font-medium text-[var(--md-red)] hover:bg-[rgba(209,78,78,0.12)]" onClick={() => setResetOpen(true)}>
+              <Trash2 className="size-3.5" strokeWidth={1.5} aria-hidden="true" />
+              {t("Reset profile")}
+            </Button>
           </SettingsFieldRow>
-          <SettingsFieldRow label="Booking confirmations & bookings">
-            <ChoiceSetting options={["Always ask", "Ask if > EUR 5k", "Never ask"]} initialValue="Always ask" />
-          </SettingsFieldRow>
-          <SettingsFieldRow label="Changes to booking data">
-            <ChoiceSetting options={["Always ask", "Ask non-reversible", "Never ask"]} initialValue="Ask non-reversible" />
-          </SettingsFieldRow>
-          <SettingsFieldRow label="Watcher creation & modification">
-            <ChoiceSetting options={["Always ask", "Within defaults", "Never ask"]} initialValue="Within defaults" />
+          <SettingsFieldRow label={t("Sending approval")} description={t("Dexter never sends automatically. Only selecting the paper plane on an editable draft sends the email.")}>
+            <span className="inline-flex min-h-9 items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 text-[12px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
+              <ShieldCheck className="size-3.5 text-[var(--md-green)]" strokeWidth={1.5} aria-hidden="true" />
+              {t("Operator click required")}
+            </span>
           </SettingsFieldRow>
         </SettingsPanel>
       </div>
+
+      <Dialog open={resetOpen} onOpenChange={setResetOpen}>
+        <DialogContent className="border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[440px]">
+          <DialogHeader className="text-start">
+            <DialogTitle>{t("Reset email writing profile?")}</DialogTitle>
+            <DialogDescription>{t("This deletes Dexter’s derived style profile and stops monthly refreshes. It does not delete any email from Gmail, Outlook or Inbox.")}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="ghost" disabled={operation === "reset"} onClick={() => setResetOpen(false)}>{t("Cancel")}</Button>
+            <Button type="button" disabled={operation === "reset"} className="bg-[var(--md-red)] text-[var(--md-accent-ink)] hover:opacity-90" onClick={() => void resetProfile()}>
+              {operation === "reset" ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : null}
+              {t(operation === "reset" ? "Resetting profile" : "Reset profile")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
@@ -2841,6 +3039,10 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
   const [groupMailboxError, setGroupMailboxError] = useState<string | null>(null)
   const [sharedMailboxAddress, setSharedMailboxAddress] = useState("")
   const [sharedMailboxError, setSharedMailboxError] = useState<string | null>(null)
+  const [writingProfilePrompt, setWritingProfilePrompt] = useState<DexterWritingProfile | null>(null)
+  const [writingProfilePromptBusy, setWritingProfilePromptBusy] = useState(false)
+  const [writingProfilePromptKey, setWritingProfilePromptKey] = useState<string | null>(null)
+  const [writingProfilePromptDismissed, setWritingProfilePromptDismissed] = useState(true)
 
   const loadConnections = useCallback(async () => {
     setLoadError(null)
@@ -2877,6 +3079,52 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
   useEffect(() => {
     void loadConnections()
   }, [loadConnections])
+
+  useEffect(() => {
+    let active = true
+    if (!supabase) return
+    void supabase.auth.getUser().then(({ data }) => {
+      if (!active || !data.user) return
+      const key = `multideck.dexter-writing-profile-prompt-dismissed:${window.location.host}:${data.user.id}`
+      setWritingProfilePromptKey(key)
+      setWritingProfilePromptDismissed(window.localStorage.getItem(key) === "true")
+    })
+    return () => { active = false }
+  }, [])
+
+  useEffect(() => {
+    if (writingProfilePromptDismissed || !mailboxes?.some((mailbox) => mailbox.indexStatus === "ready")) return
+    let active = true
+    void getDexterWritingProfile().then((profile) => {
+      if (active && !profile.exists && profile.status === "not_started" && profile.eligibleMessageCount >= 10) {
+        setWritingProfilePrompt(profile)
+      }
+    }).catch(() => undefined)
+    return () => { active = false }
+  }, [mailboxes, writingProfilePromptDismissed])
+
+  async function acceptWritingProfilePrompt() {
+    if (writingProfilePromptBusy) return
+    setWritingProfilePromptBusy(true)
+    try {
+      const profile = await consentToDexterWritingProfile()
+      setWritingProfilePrompt(profile)
+      toast.success(t("Dexter has learned your email writing style."), {
+        description: t("You can edit or turn it off in Dexter settings."),
+      })
+      setWritingProfilePrompt(null)
+    } catch (profileError) {
+      toast.error(writingProfileErrorCopy(profileError, "Dexter could not create your writing profile. Try again.", t))
+    } finally {
+      setWritingProfilePromptBusy(false)
+    }
+  }
+
+  function dismissWritingProfilePrompt() {
+    if (writingProfilePromptKey) window.localStorage.setItem(writingProfilePromptKey, "true")
+    setWritingProfilePromptDismissed(true)
+    setWritingProfilePrompt(null)
+  }
 
   useEffect(() => {
     if (typeof window === "undefined") return
@@ -3004,7 +3252,7 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
       <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
         <SettingsPanel
           title="Mail"
-          description={t("Mail powers the Inbox workspace. Multideck syncs message details and sanitised bodies into this tenant's isolated data store so operators can search, reply and ask Dexter for a summary; Gmail or Microsoft remains the source mailbox.")}
+          description={t("Mail powers the Inbox workspace. Multideck securely syncs the last 12 months of useful mail, 30 days of Spam and Trash, and current drafts so operators can search, reply and use Dexter; Gmail or Microsoft remains the source mailbox.")}
           action={
             <Button
               type="button"
@@ -3016,6 +3264,25 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
             </Button>
           }
         >
+          {writingProfilePrompt ? (
+            <div className="grid gap-4 bg-[var(--md-accent-a10)] px-5 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+              <div className="min-w-0">
+                <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Let Dexter learn how you write")}</p>
+                <p className="mt-1 max-w-[68ch] text-pretty text-[12px] leading-5 text-[var(--md-text)]">
+                  {t("Dexter can learn tone and structure from your eligible sent emails. Nothing is analysed until you accept, and copied email bodies are never stored in the profile.")}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                <Button type="button" variant="ghost" disabled={writingProfilePromptBusy} className="h-10 rounded-[var(--md-radius-lg)] px-3 text-[13px] font-medium text-[var(--md-text)]" onClick={dismissWritingProfilePrompt}>
+                  {t("Not now")}
+                </Button>
+                <Button type="button" disabled={writingProfilePromptBusy} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] active:scale-[0.96] motion-reduce:active:scale-100" onClick={() => void acceptWritingProfilePrompt()}>
+                  {writingProfilePromptBusy ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <WandSparkles className="size-3.5" strokeWidth={1.5} aria-hidden="true" />}
+                  {t(writingProfilePromptBusy ? "Learning your style" : "Learn my email style")}
+                </Button>
+              </div>
+            </div>
+          ) : null}
           {loadError ? (
             <div className="px-5 py-4">
               <p className="text-[13px] font-medium text-[var(--md-ink)]" role="alert">Unable to load your mail connections</p>
@@ -3427,7 +3694,7 @@ function AiUsageOverview({
   onRetry: () => void
   onViewHistory: () => void
 }) {
-  const { t } = useLanguage()
+  const { language, t } = useLanguage()
   const totalUsage = usage?.includedActionsLimit ?? 10_000
   const usedUsage = usage?.actionsUsed ?? 0
   const remainingUsage = Math.max(0, totalUsage - usedUsage)
@@ -3450,6 +3717,24 @@ function AiUsageOverview({
     [Cpu, "Input tokens", (usage?.inputTokens ?? 0).toLocaleString(), "Workspace context Dexter reviewed"],
     [WandSparkles, "Output tokens", (usage?.outputTokens ?? 0).toLocaleString(), "Responses Dexter generated"],
   ]
+  const modelUsage = (["fast", "smart", "worker"] as const).map((model) => {
+    const recorded = usage?.modelBreakdown?.find((entry) => entry.model === model)
+    const price = dexterModelPrices[model]
+    const providerModel = recorded?.providerModel ?? price.providerModel
+    const reasoningEffort = recorded?.reasoningEffort ?? (model === "smart" ? "high" : "medium")
+    const inputTokens = recorded?.inputTokens ?? 0
+    const outputTokens = recorded?.outputTokens ?? 0
+    const cost = estimateDexterModelCost({ model, providerModel, reasoningEffort, inputTokens, outputTokens, totalTokens: inputTokens + outputTokens })
+    return { model, providerModel, reasoningEffort, inputTokens, outputTokens, cost }
+  })
+  const hasModelBreakdown = Array.isArray(usage?.modelBreakdown)
+  const estimatedCostUsd = modelUsage.reduce((total, entry) => total + entry.cost.totalUsd, 0)
+  const formatUsd = (value: number) => new Intl.NumberFormat(language, {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: value > 0 && value < 0.01 ? 4 : 2,
+    maximumFractionDigits: value > 0 && value < 0.01 ? 4 : 2,
+  }).format(value)
 
   return (
     <>
@@ -3668,6 +3953,48 @@ function AiUsageOverview({
           </div>
         </SettingsPanel>
       </div>
+
+      <SettingsPanel title="Development cost estimate" description="Internal estimate from this month's recorded API tokens. It is not an invoice.">
+        <div className="flex flex-col gap-4 px-5 pb-4 pt-5 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Estimated API cost")}</p>
+            <p className="mt-1 text-[28px] font-medium tracking-[-0.03em] tabular-nums text-[var(--md-ink)]" data-i18n-skip>{hasModelBreakdown ? formatUsd(estimatedCostUsd) : "—"}</p>
+          </div>
+          <p className="max-w-[480px] text-[12px] leading-5 text-[var(--md-text)]">
+            {hasModelBreakdown
+              ? t("Uses each recorded model and thinking mode. Thinking mode changes token use, while the model's token rate remains the same. Prompt caching, tool calls, batch or priority processing, taxes, and other provider fees are excluded.")
+              : t("Model-level token data will appear after the usage reporting migration is applied.")}
+          </p>
+        </div>
+        <div className="overflow-x-auto border-t border-[var(--md-line)]">
+          <table className="w-full min-w-[680px] text-start">
+            <thead className="bg-[var(--md-surface-soft)] text-[11px] text-[var(--md-text)]">
+              <tr>
+                {["Engine", "Model", "Thinking mode", "Input tokens", "Output tokens", "Rates per 1M", "Estimated cost"].map((label) => (
+                  <th key={label} scope="col" className="px-5 py-3 text-start font-medium">{t(label)}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[var(--md-line)]">
+              {modelUsage.map(({ model, providerModel, reasoningEffort, inputTokens, outputTokens, cost }) => {
+                const price = dexterModelPrices[model]
+                const engine = model === "smart" ? "Balanced" : model === "fast" ? "Fast" : "Worker"
+                return (
+                  <tr key={model}>
+                    <th scope="row" className="px-5 py-4 text-[13px] font-medium text-[var(--md-ink)]">{t(engine)}</th>
+                    <td className="px-5 py-4 text-[12px] text-[var(--md-text)]" data-i18n-skip>{providerModel}</td>
+                    <td className="px-5 py-4 text-[12px] capitalize text-[var(--md-text)]">{t(reasoningEffort)}</td>
+                    <td className="px-5 py-4 text-[13px] tabular-nums text-[var(--md-ink)]" data-i18n-skip>{hasModelBreakdown ? inputTokens.toLocaleString() : "—"}</td>
+                    <td className="px-5 py-4 text-[13px] tabular-nums text-[var(--md-ink)]" data-i18n-skip>{hasModelBreakdown ? outputTokens.toLocaleString() : "—"}</td>
+                    <td className="px-5 py-4 text-[12px] tabular-nums text-[var(--md-text)]" data-i18n-skip>${price.inputPerMillionUsd.toFixed(2)} in · ${price.outputPerMillionUsd.toFixed(2)} out</td>
+                    <td className="px-5 py-4 text-[13px] font-medium tabular-nums text-[var(--md-ink)]" data-i18n-skip>{hasModelBreakdown ? formatUsd(cost.totalUsd) : "—"}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </SettingsPanel>
     </>
   )
 }
@@ -4480,6 +4807,8 @@ function TabContent({
       return <CustomisationTab />
     case "shortcuts":
       return <ShortcutsTab />
+    case "dexter":
+      return <AgentDexterTab />
     case "notifications":
       return <NotificationsTab />
     case "permissions":

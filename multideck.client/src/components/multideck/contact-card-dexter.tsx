@@ -9,22 +9,15 @@ import { ACTION_ICONS } from "@/components/multideck/contact-card-canvas"
 import { useLanguage } from "@/i18n/language-provider"
 import { mdEaseOut, staggerRamp } from "@/lib/motion"
 import { useAiAgentName } from "@/lib/user-preferences"
+import { proposeContactCardAutomation, type DexterAutomationProposal } from "@/lib/dexter-api"
 import {
   AUTOMATION_ACTION_LABELS,
   AUTOMATION_CONDITION_LABELS,
-  type AutomationAction,
-  type AutomationActionKind,
-  type AutomationCondition,
-  type AutomationConditionKind,
   type ContactCard,
 } from "@/data/contact-card-data"
 import { cn } from "@/lib/utils"
 
-export type DexterProposal = {
-  summary: string
-  conditions: AutomationCondition[]
-  actions: AutomationAction[]
-}
+export type DexterProposal = DexterAutomationProposal
 
 const EXAMPLES = [
   "Email everyone who scans, 15 minutes later",
@@ -33,99 +26,11 @@ const EXAMPLES = [
   "Add new leads to the event follow-up list and tell me",
 ]
 
-function newId(prefix: string) {
-  return `${prefix}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e4).toString(36)}`
-}
-
-function condition(kind: AutomationConditionKind, negated = false, value = ""): AutomationCondition {
-  return { id: newId("condition"), kind, negated, value, enabled: true }
-}
-
-function action(kind: AutomationActionKind, config: Record<string, string>, delayMinutes = 0): AutomationAction {
-  return { id: newId("action"), kind, enabled: true, config, delayMinutes }
-}
-
-/**
- * Turns a plain-language request into a proposal.
- *
- * This is a local, deterministic stand-in for the real assistant: it reads the
- * phrasing for intent so the interaction is honest about what it produced, and
- * every step it suggests still has to be reviewed and accepted before anything
- * is added. Swapping this for a model call should not change the surrounding UI.
- */
-export function proposeAutomation(prompt: string, card: ContactCard): DexterProposal {
-  const text = prompt.toLowerCase()
-  const has = (...terms: string[]) => terms.some((term) => text.includes(term))
-
-  const conditions: AutomationCondition[] = []
-  const actions: AutomationAction[] = []
-  const connectedPipeline = card.automation.actions.find((item) => item.kind === "pipeline-stage")?.config
-
-  if (has("real compan", "not personal", "personal email", "free email", "gmail", "business email", "work email")) {
-    conditions.push(condition("free-email", true))
-  }
-  if (has("existing customer", "known customer", "current customer", "already a customer")) {
-    conditions.push(condition("known-company"))
-  }
-  if (has("new lead", "not already", "first time", "haven't met", "havent met", "new people")) {
-    conditions.push(condition("new-lead"))
-  }
-  if (has("during the event", "event dates", "at the show", "while the event")) {
-    conditions.push(condition("within-dates", false, card.context))
-  }
-
-  if (has("email", "follow up", "follow-up", "send", "reply", "get in touch")) {
-    const delay = has("immediately", "straight away", "right away")
-      ? 0
-      : has("hour", "an hour")
-        ? 60
-        : has("next day", "tomorrow", "day later")
-          ? 1440
-          : 15
-    actions.push(action("send-email", { template: "Nice to meet you", from: card.person.email }, delay))
-  }
-  if (has("remind", "task", "call", "phone", "ring", "chase")) {
-    actions.push(action("create-task", { assignee: card.person.fullName, dueInDays: has("same day", "today") ? "0" : "1" }))
-  }
-  if (has("tell me", "notify", "alert", "let me know", "ping")) {
-    actions.push(action("notify-user", { user: card.person.fullName }))
-  }
-  if (has("list", "newsletter", "campaign", "mailing")) {
-    actions.push(action("add-to-list", { list: "Event follow-up" }))
-  }
-  if (has("pipeline", "deal", "opportunity", "stage")) {
-    if (connectedPipeline?.pipelineId && connectedPipeline.stageId) {
-      actions.push(action("pipeline-stage", { ...connectedPipeline }))
-    }
-  }
-  if (has("assign", "owner", "give it to", "hand to")) {
-    actions.push(action("assign-owner", { owner: card.person.fullName, ownerId: card.ownerUserId }))
-  }
-
-  // Never return an empty proposal: fall back to the safe, internal-only pair.
-  if (actions.length === 0) {
-    actions.push(action("assign-owner", { owner: card.person.fullName, ownerId: card.ownerUserId }))
-    actions.push(action("create-task", { assignee: card.person.fullName, dueInDays: "1" }))
-  }
-
-  const external = actions.some((item) => AUTOMATION_ACTION_LABELS[item.kind].external)
-
-  const summary = [
-    conditions.length > 0
-      ? `Runs only when ${conditions.length === 1 ? "one condition is" : `all ${conditions.length} conditions are`} met`
-      : "Runs on every exchange",
-    `${actions.length} ${actions.length === 1 ? "step" : "steps"}`,
-    external ? "one of which emails the lead" : "all inside the workspace",
-  ].join(" · ")
-
-  return { summary, conditions, actions }
-}
-
 /* -------------------------------------------------------------------------- */
 /* Drawer                                                                      */
 /* -------------------------------------------------------------------------- */
 
-type Phase = "prompt" | "thinking" | "proposal"
+type Phase = "prompt" | "thinking" | "proposal" | "error"
 
 export function AskDexterDrawer({
   card,
@@ -138,7 +43,7 @@ export function AskDexterDrawer({
   onClose: () => void
   onApply: (proposal: DexterProposal) => void
 }) {
-  const { t } = useLanguage()
+  const { t, language } = useLanguage()
   const agentName = useAiAgentName()
   const shouldReduceMotion = useReducedMotion()
   const reduce = Boolean(shouldReduceMotion)
@@ -146,9 +51,9 @@ export function AskDexterDrawer({
   const [phase, setPhase] = useState<Phase>("prompt")
   const [prompt, setPrompt] = useState("")
   const [proposal, setProposal] = useState<DexterProposal | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const [accepted, setAccepted] = useState<Set<string>>(new Set())
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const timerRef = useRef<number | null>(null)
 
   useEffect(() => {
     if (open) {
@@ -158,23 +63,23 @@ export function AskDexterDrawer({
     setPhase("prompt")
     setPrompt("")
     setProposal(null)
+    setError(null)
     setAccepted(new Set())
   }, [open])
 
-  useEffect(() => () => {
-    if (timerRef.current !== null) window.clearTimeout(timerRef.current)
-  }, [])
-
-  function submit(value: string) {
+  async function submit(value: string) {
     if (!value.trim()) return
     setPhase("thinking")
-    // A real request would land here; the delay keeps the working state honest.
-    timerRef.current = window.setTimeout(() => {
-      const next = proposeAutomation(value, card)
+    setError(null)
+    try {
+      const next = await proposeContactCardAutomation({ cardId: card.id, message: value.trim(), locale: language })
       setProposal(next)
       setAccepted(new Set([...next.conditions.map((item) => item.id), ...next.actions.map((item) => item.id)]))
       setPhase("proposal")
-    }, 1100)
+    } catch (proposalError) {
+      setError(proposalError instanceof Error ? proposalError.message : t("Dexter could not suggest automation steps."))
+      setPhase("error")
+    }
   }
 
   const acceptedCount = accepted.size
@@ -275,6 +180,27 @@ export function AskDexterDrawer({
                 {[0, 1, 2].map((index) => (
                   <div key={index} className="h-[58px] animate-pulse rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)]" />
                 ))}
+              </div>
+            </motion.div>
+          ) : phase === "error" ? (
+            <motion.div
+              key="error"
+              initial={reduce ? false : { opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: reduce ? 0.12 : 0.24, ease: mdEaseOut }}
+              className="grid gap-4 py-4"
+              role="alert"
+            >
+              <div className="flex items-start gap-3 rounded-[var(--md-radius-md)] bg-[rgba(180,57,57,0.08)] p-3.5 text-[var(--md-red)]">
+                <TriangleAlert className="mt-0.5 size-4 shrink-0" strokeWidth={1.6} />
+                <div>
+                  <p className="text-[13px] font-medium">{t("Dexter could not suggest the steps")}</p>
+                  <p className="mt-1 text-[12.5px] leading-5 text-[var(--md-text)]">{error}</p>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="ghost" className="h-9 rounded-[var(--md-radius-md)] text-[13px]" onClick={() => setPhase("prompt")}>{t("Edit description")}</Button>
+                <Button className="h-9 rounded-[var(--md-radius-md)] text-[13px]" onClick={() => void submit(prompt)}>{t("Try again")}</Button>
               </div>
             </motion.div>
           ) : (

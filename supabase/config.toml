@@ -406,6 +406,12 @@ verify_jwt = false
 [functions.agent-dexter]
 verify_jwt = true
 
+[functions.dexter-email-refine]
+verify_jwt = true
+
+[functions.dexter-email-compose]
+verify_jwt = true
+
 [functions.email-oauth]
 verify_jwt = false
 
@@ -438,6 +444,11 @@ verify_jwt = true
 # Invoked by tenant-local pg_cron. The function validates a separate random
 # Vault-backed secret before it reads any watch or mailbox data.
 [functions.email-watch-worker]
+verify_jwt = false
+
+# User calls are authorised inside the function. Tenant-local pg_cron uses a
+# separate Vault-backed worker secret for the monthly refresh check.
+[functions.dexter-writing-profile]
 verify_jwt = false
 
 [functions.customer-documents]

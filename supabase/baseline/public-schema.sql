@@ -9449,6 +9449,11 @@ begin
     select
       message."AIMSG_ID" as id,
       coalesce(conversation."AICNV_Title", 'Dexter conversation') as title,
+      case lower(coalesce(message."AIMSG_ContentJSON" ->> 'model', 'fast'))
+        when 'smart' then 'smart'
+        when 'worker' then 'worker'
+        else 'fast'
+      end as model,
       greatest(coalesce(message."AIMSG_PromptTokens", 0), 0) as input_tokens,
       greatest(coalesce(message."AIMSG_CompletionTokens", 0), 0) as output_tokens,
       message."AIMSG_ConversationID" as conversation_id,
@@ -9492,6 +9497,20 @@ begin
       from generate_series(0, 5) series(index)
     ) week
   ),
+  model_breakdown as (
+    select jsonb_agg(
+      jsonb_build_object(
+        'model', lane.model,
+        'inputTokens', coalesce(sum(month.input_tokens), 0),
+        'outputTokens', coalesce(sum(month.output_tokens), 0),
+        'totalTokens', coalesce(sum(month.input_tokens + month.output_tokens), 0)
+      )
+      order by lane.position
+    ) as value
+    from (values ('fast'::text, 1), ('smart', 2), ('worker', 3)) as lane(model, position)
+    left join month_rows month on month.model = lane.model
+    group by lane.model, lane.position
+  ),
   recent as (
     select coalesce(jsonb_agg(item.value order by item.created_at desc), '[]'::jsonb) as value
     from (
@@ -9527,6 +9546,7 @@ begin
     'inputTokens', coalesce((select sum(input_tokens) from month_rows), 0),
     'outputTokens', coalesce((select sum(output_tokens) from month_rows), 0),
     'totalTokens', coalesce((select sum(input_tokens + output_tokens) from month_rows), 0),
+    'modelBreakdown', coalesce((select value from model_breakdown), '[]'::jsonb),
     'trend', coalesce((select value from trend), '[]'::jsonb),
     'recentEntries', coalesce((select value from recent), '[]'::jsonb)
   )
@@ -10748,6 +10768,44 @@ $$;
 ALTER FUNCTION "public"."multideck_dexter_search_email"("p_providers" "text"[], "p_query" "text", "p_after" timestamp with time zone, "p_before" timestamp with time zone, "p_take" integer) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."multideck_contact_card_preview"("p_slug" "text") RETURNS "jsonb"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'pg_catalog', 'public', 'auth'
+    AS $$
+declare
+  v_context record;
+  v_result jsonb;
+begin
+  if auth.uid() is null then
+    raise exception 'Sign in again to preview this contact card.' using errcode = '42501';
+  end if;
+  select * into v_context from public._multideck_crm_context();
+  select jsonb_build_object(
+    'ContactCard_ID', c."ContactCard_ID", 'ContactCard_Slug', c."ContactCard_Slug", 'ContactCard_Label', c."ContactCard_Label",
+    'ContactCard_Status', c."ContactCard_Status", 'ContactCard_Person', c."ContactCard_Person", 'ContactCard_Branding', c."ContactCard_Branding",
+    'ContactCard_TenantName', company."Company_Name", 'ContactCard_ShowTenantName', c."ContactCard_ShowTenantName",
+    'ContactCard_PublicHeading', c."ContactCard_PublicHeading", 'ContactCard_PublicSubheading', c."ContactCard_PublicSubheading",
+    'ContactCard_SubmitLabel', c."ContactCard_SubmitLabel", 'ContactCard_ThanksHeading', c."ContactCard_ThanksHeading",
+    'ContactCard_ThanksBody', c."ContactCard_ThanksBody", 'ContactCard_PhoneField', c."ContactCard_PhoneField",
+    'ContactCard_ShowPhone', c."ContactCard_ShowPhone", 'ContactCard_ShowWebsite', c."ContactCard_ShowWebsite",
+    'ContactCard_ConsentEnabled', c."ContactCard_ConsentEnabled", 'ContactCard_ConsentCopy', c."ContactCard_ConsentCopy",
+    'ContactCard_PrivacyUrl', c."ContactCard_PrivacyUrl", 'ContactCard_CreatedAt', c."ContactCard_CreatedAt"
+  ) into v_result
+  from public."CRM_ContactCards" c
+  join public."cmp_Company" company on company."Company_ID" = c."Company_ID"
+  where c."Company_ID" = v_context.company_id and c."ContactCard_Slug" = lower(btrim(p_slug))
+    and c."ContactCard_DeletedAt" is null limit 1;
+  return v_result;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."multideck_contact_card_preview"("p_slug" "text") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."multideck_contact_card_preview"("p_slug" "text") IS 'Returns a tenant-scoped contact card in any active authoring state for signed-in operator previews.';
+
+
 CREATE OR REPLACE FUNCTION "public"."multideck_public_contact_card"("p_slug" "text") RETURNS "jsonb"
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'pg_catalog', 'public'
@@ -11440,6 +11498,21 @@ $$;
 ALTER FUNCTION "public"."warehouse_edge_order_mutation"("p_action" "text", "p_order_id" "uuid", "p_payload" "jsonb", "p_actor_user_id" "uuid", "p_actor_portal_user_id" "uuid", "p_allowed_facility_ids" "uuid"[], "p_allowed_organisation_ids" "uuid"[]) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."warehouse_edge_auth_user_id_by_email"("p_email" "text") RETURNS "uuid"
+    LANGUAGE "sql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select auth_user.id
+  from auth.users auth_user
+  where lower(auth_user.email) = lower(trim(p_email))
+  order by auth_user.created_at
+  limit 1;
+$$;
+
+
+ALTER FUNCTION "public"."warehouse_edge_auth_user_id_by_email"("p_email" "text") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."warehouse_edge_portal_mutation"("p_action" "text", "p_customer_org_id" "uuid", "p_portal_user_id" "uuid", "p_payload" "jsonb", "p_actor_user_id" "uuid", "p_actor_portal_user_id" "uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -11479,9 +11552,15 @@ begin
     return null;
   end if;
   if v_user_id is null then raise exception 'WMS400: This customer portal user does not exist.'; end if;
-  insert into public."Portal_UserOrganisations" ("PortalUserOrg_ID","PortalUserOrg_PortalUserID","PortalUserOrg_OrgID","PortalUserOrg_AudienceTypeCode","PortalUserOrg_StatusCode","PortalUserOrg_IsPrimary","PortalUserOrg_CanManageOrgUsers","PortalUserOrg_FieldPolicyJSON","PortalUserOrg_CreatedAt","PortalUserOrg_CreatedBy") values(gen_random_uuid(),v_user_id,p_customer_org_id,'customer','active',true,v_role_code='warehouse_customer_admin','{}',v_now,p_actor_user_id) on conflict ("PortalUserOrg_PortalUserID","PortalUserOrg_OrgID") do update set "PortalUserOrg_StatusCode"='active',"PortalUserOrg_CanManageOrgUsers"=excluded."PortalUserOrg_CanManageOrgUsers";
+  insert into public."Portal_UserOrganisations" ("PortalUserOrg_ID","PortalUserOrg_PortalUserID","PortalUserOrg_OrgID","PortalUserOrg_AudienceTypeCode","PortalUserOrg_StatusCode","PortalUserOrg_IsPrimary","PortalUserOrg_CanManageOrgUsers","PortalUserOrg_FieldPolicyJSON","PortalUserOrg_CreatedAt","PortalUserOrg_CreatedBy") values(gen_random_uuid(),v_user_id,p_customer_org_id,'customer','active',true,v_role_code='warehouse_customer_admin','{}',v_now,p_actor_user_id) on conflict ("PortalUserOrg_PortalUserID","PortalUserOrg_OrgID","PortalUserOrg_AudienceTypeCode") do update set "PortalUserOrg_StatusCode"='active',"PortalUserOrg_CanManageOrgUsers"=excluded."PortalUserOrg_CanManageOrgUsers";
   update public."Portal_UserRoles" set "PortalUserRole_StatusCode"='revoked' where "PortalUserRole_PortalUserID"=v_user_id and "PortalUserRole_OrgID"=p_customer_org_id;
-  insert into public."Portal_UserRoles" ("PortalUserRole_ID","PortalUserRole_PortalUserID","PortalUserRole_RoleID","PortalUserRole_SiteID","PortalUserRole_OrgID","PortalUserRole_StatusCode","PortalUserRole_ValidFrom","PortalUserRole_AssignedAt","PortalUserRole_AssignedBy") values(gen_random_uuid(),v_user_id,v_role_id,v_site_id,p_customer_org_id,'active',v_now,v_now,p_actor_user_id);
+  insert into public."Portal_UserRoles" ("PortalUserRole_ID","PortalUserRole_PortalUserID","PortalUserRole_RoleID","PortalUserRole_SiteID","PortalUserRole_OrgID","PortalUserRole_StatusCode","PortalUserRole_ValidFrom","PortalUserRole_AssignedAt","PortalUserRole_AssignedBy") values(gen_random_uuid(),v_user_id,v_role_id,v_site_id,p_customer_org_id,'active',v_now,v_now,p_actor_user_id)
+  on conflict on constraint "Portal_UserRoles_unique_role" do update set
+    "PortalUserRole_StatusCode"='active',
+    "PortalUserRole_ValidFrom"=excluded."PortalUserRole_ValidFrom",
+    "PortalUserRole_ValidUntil"=null,
+    "PortalUserRole_AssignedAt"=excluded."PortalUserRole_AssignedAt",
+    "PortalUserRole_AssignedBy"=excluded."PortalUserRole_AssignedBy";
   if p_actor_user_id is not null and jsonb_typeof(p_payload->'facilityIds')='array' then
     select array_agg(value::uuid) into v_facilities from jsonb_array_elements_text(p_payload->'facilityIds'); if coalesce(array_length(v_facilities,1),0)=0 then raise exception 'WMS400: Choose at least one warehouse for this customer.'; end if;
     update public."WMS_CustomerFacilityAccess" set "WMSCustomerFacilityAccess_IsActive"=("WMSCustomerFacilityAccess_FacilityID"=any(v_facilities)),"WMSCustomerFacilityAccess_UpdatedAt"=v_now where "WMSCustomerFacilityAccess_CustomerOrgID"=p_customer_org_id;
@@ -15896,6 +15975,9 @@ CREATE TABLE IF NOT EXISTS "public"."Org_Master" (
     "Org_CRMIsLead" boolean DEFAULT false NOT NULL,
     "Org_CRMIsPotentialCustomer" boolean DEFAULT false NOT NULL,
     "Org_CRMUpdatedAt" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "Org_MarketingOptIn" boolean DEFAULT false NOT NULL,
+    "Org_MarketingConsentSource" character varying(120),
+    "Org_MarketingConsentUpdatedAt" timestamp with time zone,
     "Org_AccCode" character varying(20) NOT NULL
 );
 
@@ -16959,6 +17041,7 @@ CREATE TABLE IF NOT EXISTS "public"."CRM_ContactCards" (
     "ContactCard_ShowWebsite" boolean DEFAULT true NOT NULL,
     "ContactCard_ConsentEnabled" boolean DEFAULT false NOT NULL,
     "ContactCard_ConsentCopy" "text" DEFAULT ''::"text" NOT NULL,
+    "ContactCard_ShowTenantName" boolean DEFAULT true NOT NULL,
     "ContactCard_PrivacyUrl" "text" DEFAULT ''::"text" NOT NULL,
     "ContactCard_CreatedAt" timestamp with time zone DEFAULT "now"() NOT NULL,
     "ContactCard_UpdatedAt" timestamp with time zone DEFAULT "now"() NOT NULL,
@@ -17511,7 +17594,10 @@ CREATE TABLE IF NOT EXISTS "public"."CRM_Leads" (
     "CRMLead_CreatedBy" "uuid",
     "CRMLead_UpdatedAt" timestamp with time zone DEFAULT "now"() NOT NULL,
     "CRMLead_UpdatedBy" "uuid",
-    "CRMLead_IsDeleted" boolean DEFAULT false NOT NULL
+    "CRMLead_IsDeleted" boolean DEFAULT false NOT NULL,
+    "CRMLead_MarketingOptIn" boolean DEFAULT false NOT NULL,
+    "CRMLead_MarketingConsentSource" character varying(120),
+    "CRMLead_MarketingConsentUpdatedAt" timestamp with time zone
 );
 
 
@@ -19199,6 +19285,7 @@ CREATE TABLE IF NOT EXISTS "public"."Comm_ConsentPreferences" (
     "CommConsent_IdentityID" "uuid",
     "CommConsent_OrgID" "uuid",
     "CommConsent_ContactID" "uuid",
+    "CommConsent_LeadID" "uuid",
     "CommConsent_Address" character varying(320),
     "CommConsent_NormalizedAddress" character varying(320),
     "CommConsent_StatusCode" character varying(40) DEFAULT 'unknown'::character varying NOT NULL,
@@ -19245,7 +19332,10 @@ CREATE TABLE IF NOT EXISTS "public"."Org_Contacts" (
     "OrgContact_ID" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "Org_ID" "uuid" NOT NULL,
     "OrgContact_FirstName" character varying(50),
-    "OrgContact_LastName" character varying(50)
+    "OrgContact_LastName" character varying(50),
+    "OrgContact_MarketingOptIn" boolean DEFAULT false NOT NULL,
+    "OrgContact_MarketingConsentSource" character varying(120),
+    "OrgContact_MarketingConsentUpdatedAt" timestamp with time zone
 );
 
 
@@ -32690,6 +32780,10 @@ CREATE TABLE IF NOT EXISTS "public"."WMS_Items" (
     "WMSItem_ECCNCode" character varying(40),
     "WMSItem_CountryOfOriginCode" character varying(2),
     "WMSItem_BaseUOMCode" character varying(20) DEFAULT 'EA'::character varying NOT NULL,
+    "WMSItem_QuantityBasisCode" "text" DEFAULT 'count'::"text" NOT NULL,
+    "WMSItem_QuantityScale" smallint DEFAULT 0 NOT NULL,
+    "WMSItem_MinimumMovementQuantity" numeric(18,6) DEFAULT 1 NOT NULL,
+    "WMSItem_AllowsFractionalQuantity" boolean DEFAULT false NOT NULL,
     "WMSItem_LengthM" numeric(18,6),
     "WMSItem_WidthM" numeric(18,6),
     "WMSItem_HeightM" numeric(18,6),
@@ -32709,7 +32803,10 @@ CREATE TABLE IF NOT EXISTS "public"."WMS_Items" (
     "WMSItem_CreatedAt" timestamp with time zone DEFAULT "now"() NOT NULL,
     "WMSItem_CreatedBy" "uuid",
     "WMSItem_UpdatedAt" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "WMSItem_IsDeleted" boolean DEFAULT false NOT NULL
+    "WMSItem_IsDeleted" boolean DEFAULT false NOT NULL,
+    CONSTRAINT "CK_WMS_Items_quantity_basis" CHECK (("WMSItem_QuantityBasisCode" = ANY (ARRAY['count'::"text", 'weight'::"text", 'volume'::"text"]))),
+    CONSTRAINT "CK_WMS_Items_quantity_scale" CHECK ((("WMSItem_QuantityScale" >= 0) AND ("WMSItem_QuantityScale" <= 6))),
+    CONSTRAINT "CK_WMS_Items_minimum_movement" CHECK (("WMSItem_MinimumMovementQuantity" > (0)::numeric))
 );
 
 
@@ -32963,7 +33060,10 @@ CREATE TABLE IF NOT EXISTS "public"."WMS_Exceptions" (
     "WMSException_RaisedBy" "uuid",
     "WMSException_ResolvedAt" timestamp with time zone,
     "WMSException_ResolvedBy" "uuid",
-    "WMSException_MetadataJSON" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL
+    "WMSException_MetadataJSON" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
+    "WMSException_ExpectedLocationID" "uuid",
+    "WMSException_ActualLocationID" "uuid",
+    "WMSException_MovementGroupID" "uuid"
 );
 
 
@@ -33270,6 +33370,10 @@ CREATE TABLE IF NOT EXISTS "public"."WMS_HandlingUnits" (
     "WMSHU_LocationID" "uuid",
     "WMSHU_InventoryStatusCode" character varying(60) DEFAULT 'available'::character varying NOT NULL,
     "WMSHU_CustomsStatusCode" character varying(60) DEFAULT 'free_circulation'::character varying NOT NULL,
+    "WMSHU_LifecycleStatusCode" "text" DEFAULT 'open'::"text" NOT NULL,
+    "WMSHU_ConsumedIntoHU_ID" "uuid",
+    "WMSHU_ConsumedAt" timestamp with time zone,
+    "WMSHU_Version" integer DEFAULT 1 NOT NULL,
     "WMSHU_GrossWeightKG" numeric(18,6),
     "WMSHU_NetWeightKG" numeric(18,6),
     "WMSHU_VolumeCBM" numeric(18,6),
@@ -33278,7 +33382,8 @@ CREATE TABLE IF NOT EXISTS "public"."WMS_HandlingUnits" (
     "WMSHU_CreatedAt" timestamp with time zone DEFAULT "now"() NOT NULL,
     "WMSHU_CreatedBy" "uuid",
     "WMSHU_UpdatedAt" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "WMSHU_IsDeleted" boolean DEFAULT false NOT NULL
+    "WMSHU_IsDeleted" boolean DEFAULT false NOT NULL,
+    CONSTRAINT "CK_WMS_HandlingUnits_lifecycle" CHECK (("WMSHU_LifecycleStatusCode" = ANY (ARRAY['open'::"text", 'sealed'::"text", 'consumed'::"text", 'closed'::"text", 'investigation'::"text"])))
 );
 
 
@@ -33527,12 +33632,39 @@ CREATE TABLE IF NOT EXISTS "public"."WMS_InventoryTransactions" (
     "WMSTransaction_Reference" character varying(180),
     "WMSTransaction_Notes" "text",
     "WMSTransaction_MetadataJSON" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
+    "WMSTransaction_MovementGroupID" "uuid",
+    "WMSTransaction_ReasonCode" "text",
+    "WMSTransaction_IdempotencyKey" "uuid",
     "WMSTransaction_CreatedAt" timestamp with time zone DEFAULT "now"() NOT NULL,
     "WMSTransaction_CreatedBy" "uuid"
 );
 
 
 ALTER TABLE "public"."WMS_InventoryTransactions" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."WMS_InventoryOperations" (
+    "WMSOperation_ID" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "WMSOperation_RequestID" "uuid" NOT NULL,
+    "WMSOperation_FacilityID" "uuid" NOT NULL,
+    "WMSOperation_ActionCode" character varying(60) NOT NULL,
+    "WMSOperation_MovementGroupID" "uuid" NOT NULL,
+    "WMSOperation_PayloadJSON" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
+    "WMSOperation_ResultJSON" "jsonb",
+    "WMSOperation_CreatedAt" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "WMSOperation_CreatedBy" "uuid",
+    CONSTRAINT "CK_WMS_InventoryOperations_payload" CHECK (("jsonb_typeof"("WMSOperation_PayloadJSON") = 'object'::"text")),
+    CONSTRAINT "CK_WMS_InventoryOperations_result" CHECK ((("WMSOperation_ResultJSON" IS NULL) OR ("jsonb_typeof"("WMSOperation_ResultJSON") = 'object'::"text")))
+);
+
+
+ALTER TABLE "public"."WMS_InventoryOperations" OWNER TO "postgres";
+
+
+CREATE INDEX "IX_WMS_InventoryOperations_facility_created" ON "public"."WMS_InventoryOperations" USING "btree" ("WMSOperation_FacilityID", "WMSOperation_CreatedAt" DESC);
+
+
+CREATE INDEX "IX_WMS_InventoryTransactions_movement_group" ON "public"."WMS_InventoryTransactions" USING "btree" ("WMSTransaction_MovementGroupID", "WMSTransaction_CreatedAt");
 
 
 CREATE TABLE IF NOT EXISTS "public"."WMS_ItemBarcodes" (
@@ -45255,6 +45387,14 @@ ALTER TABLE ONLY "public"."WMS_InventoryTransactions"
     ADD CONSTRAINT "WMS_InventoryTransactions_pkey" PRIMARY KEY ("WMSTransaction_ID");
 
 
+ALTER TABLE ONLY "public"."WMS_InventoryOperations"
+    ADD CONSTRAINT "WMS_InventoryOperations_pkey" PRIMARY KEY ("WMSOperation_ID");
+
+
+ALTER TABLE ONLY "public"."WMS_InventoryOperations"
+    ADD CONSTRAINT "WMS_InventoryOperations_request_key" UNIQUE ("WMSOperation_RequestID");
+
+
 
 ALTER TABLE ONLY "public"."WMS_ItemBarcodes"
     ADD CONSTRAINT "WMS_ItemBarcodes_WMSItemBarcode_ItemID_WMSItemBarcode_Barco_key" UNIQUE ("WMSItemBarcode_ItemID", "WMSItemBarcode_Barcode");
@@ -56118,6 +56258,11 @@ ALTER TABLE ONLY "public"."Comm_ConsentPreferences"
 
 
 ALTER TABLE ONLY "public"."Comm_ConsentPreferences"
+    ADD CONSTRAINT "Comm_ConsentPreferences_CommConsent_LeadID_fkey" FOREIGN KEY ("CommConsent_LeadID") REFERENCES "public"."CRM_Leads"("CRMLead_ID") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."Comm_ConsentPreferences"
     ADD CONSTRAINT "Comm_ConsentPreferences_CommConsent_IdentityID_fkey" FOREIGN KEY ("CommConsent_IdentityID") REFERENCES "public"."Comm_Identities"("CommIdentity_ID") ON DELETE SET NULL;
 
 
@@ -66741,6 +66886,14 @@ ALTER TABLE ONLY "public"."WMS_Exceptions"
     ADD CONSTRAINT "WMS_Exceptions_WMSException_BalanceID_fkey" FOREIGN KEY ("WMSException_BalanceID") REFERENCES "public"."WMS_InventoryBalances"("WMSBalance_ID");
 
 
+ALTER TABLE ONLY "public"."WMS_Exceptions"
+    ADD CONSTRAINT "WMS_Exceptions_WMSException_ExpectedLocationID_fkey" FOREIGN KEY ("WMSException_ExpectedLocationID") REFERENCES "public"."WMS_Locations"("WMSLocation_ID");
+
+
+ALTER TABLE ONLY "public"."WMS_Exceptions"
+    ADD CONSTRAINT "WMS_Exceptions_WMSException_ActualLocationID_fkey" FOREIGN KEY ("WMSException_ActualLocationID") REFERENCES "public"."WMS_Locations"("WMSLocation_ID");
+
+
 
 ALTER TABLE ONLY "public"."WMS_Exceptions"
     ADD CONSTRAINT "WMS_Exceptions_WMSException_FacilityID_fkey" FOREIGN KEY ("WMSException_FacilityID") REFERENCES "public"."WMS_Facilities"("WMSFacility_ID");
@@ -66929,6 +67082,10 @@ ALTER TABLE ONLY "public"."WMS_HandlingUnits"
 
 ALTER TABLE ONLY "public"."WMS_HandlingUnits"
     ADD CONSTRAINT "WMS_HandlingUnits_WMSHU_ParentHU_ID_fkey" FOREIGN KEY ("WMSHU_ParentHU_ID") REFERENCES "public"."WMS_HandlingUnits"("WMSHU_ID");
+
+
+ALTER TABLE ONLY "public"."WMS_HandlingUnits"
+    ADD CONSTRAINT "WMS_HandlingUnits_WMSHU_ConsumedIntoHU_ID_fkey" FOREIGN KEY ("WMSHU_ConsumedIntoHU_ID") REFERENCES "public"."WMS_HandlingUnits"("WMSHU_ID");
 
 
 
@@ -67249,6 +67406,14 @@ ALTER TABLE ONLY "public"."WMS_InventoryTransactionLinks"
 
 ALTER TABLE ONLY "public"."WMS_InventoryTransactions"
     ADD CONSTRAINT "WMS_InventoryTransactions_WMSTransaction_BalanceID_fkey" FOREIGN KEY ("WMSTransaction_BalanceID") REFERENCES "public"."WMS_InventoryBalances"("WMSBalance_ID");
+
+
+ALTER TABLE ONLY "public"."WMS_InventoryOperations"
+    ADD CONSTRAINT "WMS_InventoryOperations_WMSOperation_FacilityID_fkey" FOREIGN KEY ("WMSOperation_FacilityID") REFERENCES "public"."WMS_Facilities"("WMSFacility_ID");
+
+
+ALTER TABLE ONLY "public"."WMS_InventoryOperations"
+    ADD CONSTRAINT "WMS_InventoryOperations_WMSOperation_CreatedBy_fkey" FOREIGN KEY ("WMSOperation_CreatedBy") REFERENCES "public"."cmp_Users"("User_ID");
 
 
 
@@ -71493,6 +71658,9 @@ ALTER TABLE "public"."WMS_InventoryTransactionLinks" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."WMS_InventoryTransactions" ENABLE ROW LEVEL SECURITY;
 
 
+ALTER TABLE "public"."WMS_InventoryOperations" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."WMS_ItemBarcodes" ENABLE ROW LEVEL SECURITY;
 
 
@@ -73839,6 +74007,13 @@ GRANT ALL ON FUNCTION "public"."multideck_public_contact_card"("p_slug" "text") 
 
 
 
+REVOKE ALL ON FUNCTION "public"."multideck_contact_card_preview"("p_slug" "text") FROM PUBLIC;
+REVOKE ALL ON FUNCTION "public"."multideck_contact_card_preview"("p_slug" "text") FROM "anon";
+GRANT ALL ON FUNCTION "public"."multideck_contact_card_preview"("p_slug" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."multideck_contact_card_preview"("p_slug" "text") TO "service_role";
+
+
+
 GRANT ALL ON FUNCTION "public"."rls_auto_enable"() TO "anon";
 GRANT ALL ON FUNCTION "public"."rls_auto_enable"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."rls_auto_enable"() TO "service_role";
@@ -73895,6 +74070,11 @@ GRANT ALL ON FUNCTION "public"."sync_cmp_user_from_auth_user"() TO "service_role
 
 REVOKE ALL ON FUNCTION "public"."warehouse_edge_order_mutation"("p_action" "text", "p_order_id" "uuid", "p_payload" "jsonb", "p_actor_user_id" "uuid", "p_actor_portal_user_id" "uuid", "p_allowed_facility_ids" "uuid"[], "p_allowed_organisation_ids" "uuid"[]) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."warehouse_edge_order_mutation"("p_action" "text", "p_order_id" "uuid", "p_payload" "jsonb", "p_actor_user_id" "uuid", "p_actor_portal_user_id" "uuid", "p_allowed_facility_ids" "uuid"[], "p_allowed_organisation_ids" "uuid"[]) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."warehouse_edge_auth_user_id_by_email"("p_email" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."warehouse_edge_auth_user_id_by_email"("p_email" "text") TO "service_role";
 
 
 
@@ -79645,6 +79825,9 @@ GRANT ALL ON TABLE "public"."WMS_InventoryTransactions" TO "authenticated";
 GRANT ALL ON TABLE "public"."WMS_InventoryTransactions" TO "service_role";
 
 
+GRANT ALL ON TABLE "public"."WMS_InventoryOperations" TO "service_role";
+
+
 
 GRANT ALL ON TABLE "public"."WMS_ItemBarcodes" TO "anon";
 GRANT ALL ON TABLE "public"."WMS_ItemBarcodes" TO "authenticated";
@@ -82308,3 +82491,922 @@ ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TAB
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "anon";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "authenticated";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "service_role";
+
+
+-- Dexter personal email writing profile snapshot. Operational Vault secret
+-- creation and schedule activation remain migration-time concerns.
++
+-- A compact, operator-owned style profile. Raw sent-email bodies are selected
+-- only inside the bounded generation call and are never persisted here.
+create table if not exists public."AI_DexterWritingProfiles" (
+  "AIDexterWritingProfile_ID" uuid primary key default gen_random_uuid(),
+  "AIDexterWritingProfile_CompanyID" uuid not null references public."cmp_Company"("Company_ID") on delete cascade,
+  "AIDexterWritingProfile_UserID" uuid not null references public."cmp_Users"("User_ID") on delete cascade,
+  "AIDexterWritingProfile_IsEnabled" boolean not null default false,
+  "AIDexterWritingProfile_StatusCode" varchar(24) not null default 'not_started',
+  "AIDexterWritingProfile_ProfileText" text not null default '',
+  "AIDexterWritingProfile_ProfileJSON" jsonb not null default '{}'::jsonb,
+  "AIDexterWritingProfile_EligibleMessageCount" integer not null default 0,
+  "AIDexterWritingProfile_AnalysedMessageCount" integer not null default 0,
+  "AIDexterWritingProfile_ConsentAt" timestamptz,
+  "AIDexterWritingProfile_LastSourceMessageAt" timestamptz,
+  "AIDexterWritingProfile_LastCheckedAt" timestamptz,
+  "AIDexterWritingProfile_LastGeneratedAt" timestamptz,
+  "AIDexterWritingProfile_NextRefreshAt" timestamptz,
+  "AIDexterWritingProfile_LastError" varchar(500),
+  "AIDexterWritingProfile_GeneratorModel" varchar(120),
+  "AIDexterWritingProfile_GeneratorVersion" varchar(120),
+  "AIDexterWritingProfile_CreatedAt" timestamptz not null default now(),
+  "AIDexterWritingProfile_UpdatedAt" timestamptz not null default now(),
+  constraint "UX_AI_DexterWritingProfiles_owner" unique (
+    "AIDexterWritingProfile_CompanyID",
+    "AIDexterWritingProfile_UserID"
+  ),
+  constraint "CK_AI_DexterWritingProfiles_status" check (
+    "AIDexterWritingProfile_StatusCode" in ('not_started','processing','ready','insufficient','error')
+  ),
+  constraint "CK_AI_DexterWritingProfiles_text" check (
+    char_length("AIDexterWritingProfile_ProfileText") <= 2400
+  ),
+  constraint "CK_AI_DexterWritingProfiles_profile_object" check (
+    jsonb_typeof("AIDexterWritingProfile_ProfileJSON") = 'object'
+  ),
+  constraint "CK_AI_DexterWritingProfiles_counts" check (
+    "AIDexterWritingProfile_EligibleMessageCount" >= 0
+    and "AIDexterWritingProfile_AnalysedMessageCount" >= 0
+  )
+);
+
+create index if not exists "IX_AI_DexterWritingProfiles_due"
+  on public."AI_DexterWritingProfiles" (
+    "AIDexterWritingProfile_StatusCode",
+    "AIDexterWritingProfile_IsEnabled",
+    "AIDexterWritingProfile_NextRefreshAt"
+  )
+  where "AIDexterWritingProfile_IsEnabled";
+
+create table if not exists public."AI_DexterWritingProfileAudit" (
+  "AIDexterWritingAudit_ID" uuid primary key default gen_random_uuid(),
+  "AIDexterWritingAudit_ProfileID" uuid references public."AI_DexterWritingProfiles"("AIDexterWritingProfile_ID") on delete set null,
+  "AIDexterWritingAudit_CompanyID" uuid not null,
+  "AIDexterWritingAudit_UserID" uuid not null references public."cmp_Users"("User_ID") on delete cascade,
+  "AIDexterWritingAudit_EventCode" varchar(40) not null,
+  "AIDexterWritingAudit_StatusCode" varchar(24),
+  "AIDexterWritingAudit_MessageCount" integer not null default 0,
+  "AIDexterWritingAudit_CreatedAt" timestamptz not null default now(),
+  constraint "CK_AI_DexterWritingProfileAudit_event" check (
+    "AIDexterWritingAudit_EventCode" in ('consented','generated','refreshed','edited','enabled','disabled','reset','generation_failed','draft_prepared','email_sent','email_queued','email_failed')
+  ),
+  constraint "CK_AI_DexterWritingProfileAudit_count" check (
+    "AIDexterWritingAudit_MessageCount" >= 0
+  )
+);
+
+create index if not exists "IX_AI_DexterWritingProfileAudit_owner_created"
+  on public."AI_DexterWritingProfileAudit" (
+    "AIDexterWritingAudit_CompanyID",
+    "AIDexterWritingAudit_UserID",
+    "AIDexterWritingAudit_CreatedAt" desc
+  );
+
+alter table public."AI_DexterWritingProfiles" enable row level security;
+alter table public."AI_DexterWritingProfileAudit" enable row level security;
+revoke all on table public."AI_DexterWritingProfiles", public."AI_DexterWritingProfileAudit"
+  from public, anon, authenticated;
+grant all on table public."AI_DexterWritingProfiles", public."AI_DexterWritingProfileAudit"
+  to service_role;
+
+create or replace function public._multideck_dexter_writing_profile_audit(
+  p_profile_id uuid,
+  p_company_id uuid,
+  p_user_id uuid,
+  p_event text,
+  p_status text default null,
+  p_message_count integer default 0
+)
+returns void
+language sql
+volatile
+security definer
+set search_path = pg_catalog, public
+as $$
+  insert into public."AI_DexterWritingProfileAudit" (
+    "AIDexterWritingAudit_ProfileID",
+    "AIDexterWritingAudit_CompanyID",
+    "AIDexterWritingAudit_UserID",
+    "AIDexterWritingAudit_EventCode",
+    "AIDexterWritingAudit_StatusCode",
+    "AIDexterWritingAudit_MessageCount"
+  ) values (
+    p_profile_id,
+    p_company_id,
+    p_user_id,
+    left(btrim(coalesce(p_event, '')), 40),
+    nullif(left(btrim(coalesce(p_status, '')), 24), ''),
+    greatest(coalesce(p_message_count, 0), 0)
+  );
+$$;
+
+revoke all on function public._multideck_dexter_writing_profile_audit(uuid, uuid, uuid, text, text, integer)
+  from public, anon, authenticated;
+grant execute on function public._multideck_dexter_writing_profile_audit(uuid, uuid, uuid, text, text, integer)
+  to service_role;
+
+create or replace function public._multideck_dexter_writing_profile_source_for(
+  p_company_id uuid,
+  p_user_id uuid,
+  p_take integer default 40,
+  p_after timestamptz default null
+)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  v_take integer := least(greatest(coalesce(p_take, 40), 1), 40);
+  v_result jsonb;
+begin
+  if not public._multideck_dexter_has_permission(p_user_id, 'Email.Read')
+     or not public._multideck_dexter_has_permission(p_user_id, 'Email.AIRead') then
+    raise exception 'You do not have permission to use email with Dexter.' using errcode = '42501';
+  end if;
+
+  if not exists (
+    select 1 from public."cmp_Users" profile
+    where profile."User_ID" = p_user_id
+      and profile."Company_ID" = p_company_id
+  ) then
+    raise exception 'This operator is outside the tenant workspace.' using errcode = '42501';
+  end if;
+
+  with permitted_mailboxes as materialized (
+    select permitted.mailbox_id
+    from public._multideck_dexter_email_mailboxes(p_user_id, p_company_id) permitted
+  ),
+  eligible as materialized (
+    select
+      message."CommMessage_ID" as message_id,
+      message."CommMessage_ThreadID" as thread_id,
+      message."CommMessage_BodyText" as body_text,
+      coalesce(message."CommMessage_MessageDate", message."CommMessage_SentAt", message."CommMessage_CreatedAt") as occurred_at,
+      coalesce(recipients.recipient_key, message."CommMessage_ThreadID"::text) as recipient_key,
+      row_number() over (
+        partition by message."CommMessage_ThreadID"
+        order by coalesce(message."CommMessage_MessageDate", message."CommMessage_SentAt", message."CommMessage_CreatedAt") desc,
+          message."CommMessage_ID" desc
+      ) as thread_rank
+    from public."Comm_Messages" message
+    join permitted_mailboxes permitted on permitted.mailbox_id = message."CommMessage_MailboxID"
+    join public."Comm_Mailboxes" mailbox on mailbox."CommMailbox_ID" = message."CommMessage_MailboxID"
+    join public."Comm_ProviderConnections" connection on connection."CommConn_ID" = mailbox."CommMailbox_ConnectionID"
+    left join lateral (
+      select min(recipient."CommRecipient_NormalizedAddress") as recipient_key
+      from public."Comm_MessageRecipients" recipient
+      where recipient."CommRecipient_MessageID" = message."CommMessage_ID"
+        and recipient."CommRecipient_RecipientTypeCode" = 'to'
+        and recipient."CommRecipient_IsExternal"
+        and not recipient."CommRecipient_IsSuppressed"
+    ) recipients on true
+    where message."CommMessage_DirectionCode" = 'outbound'
+      and not message."CommMessage_IsInbound"
+      and message."CommMessage_StatusCode" in ('sent','delivered')
+      and not message."CommMessage_IsDraft"
+      and not message."CommMessage_IsSpam"
+      and not message."CommMessage_IsDeleted"
+      and not message."CommMessage_IsBodyRedacted"
+      and nullif(btrim(message."CommMessage_BodyText"), '') is not null
+      and char_length(btrim(message."CommMessage_BodyText")) between 40 and 12000
+      and coalesce(message."CommMessage_MessageDate", message."CommMessage_SentAt", message."CommMessage_CreatedAt") >= now() - interval '12 months'
+      and (p_after is null or coalesce(message."CommMessage_MessageDate", message."CommMessage_SentAt", message."CommMessage_CreatedAt") > p_after)
+      and (
+        (
+          mailbox."CommMailbox_TypeCode" = 'personal'
+          and mailbox."CommMailbox_UserID" = p_user_id
+          and connection."CommConn_UserID" = p_user_id
+        )
+        or message."CommMessage_CreatedBy" = p_user_id
+      )
+      and lower(coalesce(message."CommMessage_Subject", '') || ' ' || left(message."CommMessage_BodyText", 800)) !~
+        '(automatic reply|auto.?reply|out of office|undeliverable|delivery status|mail delivery|do.?not.?reply|no.?reply|newsletter|unsubscribe|password reset|verification code|support ticket)'
+  ),
+  diversified as materialized (
+    select eligible.*,
+      row_number() over (
+        partition by eligible.recipient_key
+        order by eligible.occurred_at desc, eligible.message_id desc
+      ) as recipient_rank
+    from eligible
+    where thread_rank = 1
+  ),
+  selected as (
+    select * from diversified
+    order by recipient_rank, occurred_at desc, message_id desc
+    limit v_take
+  )
+  select jsonb_build_object(
+    'eligibleCount', (select count(*) from diversified),
+    'messages', coalesce((
+      select jsonb_agg(
+        jsonb_build_object(
+          'messageId', selected.message_id,
+          'bodyText', selected.body_text,
+          'occurredAt', selected.occurred_at
+        ) order by selected.occurred_at desc, selected.message_id desc
+      ) from selected
+    ), '[]'::jsonb),
+    'latestMessageAt', (select max(occurred_at) from diversified)
+  ) into v_result;
+
+  return coalesce(v_result, jsonb_build_object('eligibleCount', 0, 'messages', '[]'::jsonb, 'latestMessageAt', null));
+end;
+$$;
+
+revoke all on function public._multideck_dexter_writing_profile_source_for(uuid, uuid, integer, timestamptz)
+  from public, anon, authenticated;
+grant execute on function public._multideck_dexter_writing_profile_source_for(uuid, uuid, integer, timestamptz)
+  to service_role;
+
+-- Raw source samples are available only to the privileged profile generator.
+-- Browser roles manage the derived profile through the owner-scoped RPCs below.
+
+create or replace function public.multideck_dexter_get_writing_profile()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = pg_catalog, public, auth
+as $$
+declare
+  v_context record;
+  v_profile public."AI_DexterWritingProfiles";
+  v_source jsonb;
+  v_exists boolean := false;
+begin
+  select * into v_context from public._multideck_dexter_context();
+  select * into v_profile
+  from public."AI_DexterWritingProfiles" profile
+  where profile."AIDexterWritingProfile_CompanyID" = v_context.company_id
+    and profile."AIDexterWritingProfile_UserID" = v_context.user_id;
+  v_exists := found;
+
+  begin
+    v_source := public._multideck_dexter_writing_profile_source_for(v_context.company_id, v_context.user_id, 1, null);
+  exception when insufficient_privilege then
+    v_source := jsonb_build_object('eligibleCount', 0, 'messages', '[]'::jsonb, 'latestMessageAt', null);
+  end;
+
+  return jsonb_build_object(
+    'exists', v_exists,
+    'enabled', coalesce(v_profile."AIDexterWritingProfile_IsEnabled", false),
+    'status', coalesce(v_profile."AIDexterWritingProfile_StatusCode", 'not_started'),
+    'profileText', coalesce(v_profile."AIDexterWritingProfile_ProfileText", ''),
+    'eligibleMessageCount', greatest(coalesce((v_source ->> 'eligibleCount')::integer, v_profile."AIDexterWritingProfile_EligibleMessageCount", 0), 0),
+    'analysedMessageCount', coalesce(v_profile."AIDexterWritingProfile_AnalysedMessageCount", 0),
+    'consentedAt', v_profile."AIDexterWritingProfile_ConsentAt",
+    'lastGeneratedAt', v_profile."AIDexterWritingProfile_LastGeneratedAt",
+    'nextRefreshAt', v_profile."AIDexterWritingProfile_NextRefreshAt",
+    'lastError', v_profile."AIDexterWritingProfile_LastError"
+  );
+end;
+$$;
+
+revoke all on function public.multideck_dexter_get_writing_profile() from public, anon;
+grant execute on function public.multideck_dexter_get_writing_profile() to authenticated;
+
+create or replace function public.multideck_dexter_begin_writing_profile()
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = pg_catalog, public, auth
+as $$
+declare
+  v_context record;
+  v_profile_id uuid;
+  v_already_consented boolean := false;
+begin
+  select * into v_context from public._multideck_dexter_context();
+  if not public._multideck_dexter_has_permission(v_context.user_id, 'Email.Read')
+     or not public._multideck_dexter_has_permission(v_context.user_id, 'Email.AIRead') then
+    raise exception 'You do not have permission to use email with Dexter.' using errcode = '42501';
+  end if;
+
+  select profile."AIDexterWritingProfile_ConsentAt" is not null
+  into v_already_consented
+  from public."AI_DexterWritingProfiles" profile
+  where profile."AIDexterWritingProfile_CompanyID" = v_context.company_id
+    and profile."AIDexterWritingProfile_UserID" = v_context.user_id;
+
+  insert into public."AI_DexterWritingProfiles" (
+    "AIDexterWritingProfile_CompanyID",
+    "AIDexterWritingProfile_UserID",
+    "AIDexterWritingProfile_IsEnabled",
+    "AIDexterWritingProfile_StatusCode",
+    "AIDexterWritingProfile_ConsentAt",
+    "AIDexterWritingProfile_LastError",
+    "AIDexterWritingProfile_UpdatedAt"
+  ) values (
+    v_context.company_id,
+    v_context.user_id,
+    true,
+    'processing',
+    now(),
+    null,
+    now()
+  )
+  on conflict ("AIDexterWritingProfile_CompanyID", "AIDexterWritingProfile_UserID") do update
+  set "AIDexterWritingProfile_IsEnabled" = true,
+      "AIDexterWritingProfile_StatusCode" = 'processing',
+      "AIDexterWritingProfile_ConsentAt" = coalesce(public."AI_DexterWritingProfiles"."AIDexterWritingProfile_ConsentAt", now()),
+      "AIDexterWritingProfile_LastError" = null,
+      "AIDexterWritingProfile_UpdatedAt" = now()
+  returning "AIDexterWritingProfile_ID" into v_profile_id;
+
+  if not coalesce(v_already_consented, false) then
+    perform public._multideck_dexter_writing_profile_audit(
+      v_profile_id, v_context.company_id, v_context.user_id, 'consented', 'processing', 0
+    );
+  end if;
+  return public.multideck_dexter_get_writing_profile();
+end;
+$$;
+
+revoke all on function public.multideck_dexter_begin_writing_profile() from public, anon;
+grant execute on function public.multideck_dexter_begin_writing_profile() to authenticated;
+
+create or replace function public.multideck_dexter_update_writing_profile(
+  p_enabled boolean,
+  p_profile_text text
+)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = pg_catalog, public, auth
+as $$
+declare
+  v_context record;
+  v_profile_id uuid;
+  v_profile_text text := btrim(coalesce(p_profile_text, ''));
+  v_event text;
+begin
+  select * into v_context from public._multideck_dexter_context();
+  if char_length(v_profile_text) > 2400 then
+    raise exception 'Keep the writing profile within 2,400 characters.' using errcode = '22023';
+  end if;
+
+  update public."AI_DexterWritingProfiles" profile
+  set "AIDexterWritingProfile_IsEnabled" = coalesce(p_enabled, false),
+      "AIDexterWritingProfile_ProfileText" = v_profile_text,
+      "AIDexterWritingProfile_StatusCode" = case
+        when v_profile_text = '' then 'not_started'
+        else 'ready'
+      end,
+      "AIDexterWritingProfile_LastError" = null,
+      "AIDexterWritingProfile_UpdatedAt" = now()
+  where profile."AIDexterWritingProfile_CompanyID" = v_context.company_id
+    and profile."AIDexterWritingProfile_UserID" = v_context.user_id
+  returning profile."AIDexterWritingProfile_ID" into v_profile_id;
+
+  if not found then
+    raise exception 'Create your writing profile before editing it.' using errcode = 'P0002';
+  end if;
+
+  v_event := case when not coalesce(p_enabled, false) then 'disabled' else 'edited' end;
+  perform public._multideck_dexter_writing_profile_audit(
+    v_profile_id, v_context.company_id, v_context.user_id, v_event,
+    case when v_profile_text = '' then 'not_started' else 'ready' end, 0
+  );
+  return public.multideck_dexter_get_writing_profile();
+end;
+$$;
+
+revoke all on function public.multideck_dexter_update_writing_profile(boolean, text) from public, anon;
+grant execute on function public.multideck_dexter_update_writing_profile(boolean, text) to authenticated;
+
+create or replace function public.multideck_dexter_reset_writing_profile()
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = pg_catalog, public, auth
+as $$
+declare
+  v_context record;
+  v_profile_id uuid;
+begin
+  select * into v_context from public._multideck_dexter_context();
+  delete from public."AI_DexterWritingProfiles" profile
+  where profile."AIDexterWritingProfile_CompanyID" = v_context.company_id
+    and profile."AIDexterWritingProfile_UserID" = v_context.user_id
+  returning profile."AIDexterWritingProfile_ID" into v_profile_id;
+  if v_profile_id is not null then
+    perform public._multideck_dexter_writing_profile_audit(
+      null, v_context.company_id, v_context.user_id, 'reset', 'not_started', 0
+    );
+  end if;
+  return public.multideck_dexter_get_writing_profile();
+end;
+$$;
+
+revoke all on function public.multideck_dexter_reset_writing_profile() from public, anon;
+grant execute on function public.multideck_dexter_reset_writing_profile() to authenticated;
+
+-- Narrow compose context for server-confirmed reply and reply-all fields. This
+-- deliberately excludes message bodies; Dexter's existing email tools provide
+-- content only when the operator has selected or searched for it.
+create or replace function public.multideck_dexter_resolve_email_draft_source(
+  p_message_id uuid
+)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = pg_catalog, public, auth
+as $$
+declare
+  v_context record;
+  v_result jsonb;
+begin
+  select * into v_context from public._multideck_dexter_context();
+  if not public._multideck_dexter_has_permission(v_context.user_id, 'Email.Read')
+     or not public._multideck_dexter_has_permission(v_context.user_id, 'Email.AIRead') then
+    raise exception 'You do not have permission to use email with Dexter.' using errcode = '42501';
+  end if;
+
+  select jsonb_build_object(
+    'messageId', message."CommMessage_ID",
+    'threadId', message."CommMessage_ThreadID",
+    'mailboxId', message."CommMessage_MailboxID",
+    'mailboxAddress', coalesce(mailbox."CommMailbox_NormalizedAddress", mailbox."CommMailbox_Address", ''),
+    'direction', message."CommMessage_DirectionCode",
+    'subject', coalesce(message."CommMessage_Subject", ''),
+    'from', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'address', recipient."CommRecipient_Address",
+        'displayName', recipient."CommRecipient_DisplayNameSnapshot"
+      ) order by recipient."CommRecipient_CreatedAt", recipient."CommRecipient_ID")
+      from public."Comm_MessageRecipients" recipient
+      where recipient."CommRecipient_MessageID" = message."CommMessage_ID"
+        and recipient."CommRecipient_RecipientTypeCode" = 'from'
+        and not recipient."CommRecipient_IsSuppressed"
+    ), '[]'::jsonb),
+    'to', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'address', recipient."CommRecipient_Address",
+        'displayName', recipient."CommRecipient_DisplayNameSnapshot"
+      ) order by recipient."CommRecipient_CreatedAt", recipient."CommRecipient_ID")
+      from public."Comm_MessageRecipients" recipient
+      where recipient."CommRecipient_MessageID" = message."CommMessage_ID"
+        and recipient."CommRecipient_RecipientTypeCode" = 'to'
+        and not recipient."CommRecipient_IsSuppressed"
+    ), '[]'::jsonb),
+    'cc', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'address', recipient."CommRecipient_Address",
+        'displayName', recipient."CommRecipient_DisplayNameSnapshot"
+      ) order by recipient."CommRecipient_CreatedAt", recipient."CommRecipient_ID")
+      from public."Comm_MessageRecipients" recipient
+      where recipient."CommRecipient_MessageID" = message."CommMessage_ID"
+        and recipient."CommRecipient_RecipientTypeCode" = 'cc'
+        and not recipient."CommRecipient_IsSuppressed"
+    ), '[]'::jsonb)
+  ) into v_result
+  from public."Comm_Messages" message
+  join public._multideck_dexter_email_mailboxes(v_context.user_id, v_context.company_id) permitted
+    on permitted.mailbox_id = message."CommMessage_MailboxID"
+  join public."Comm_Mailboxes" mailbox
+    on mailbox."CommMailbox_ID" = message."CommMessage_MailboxID"
+  where message."CommMessage_ID" = p_message_id
+    and not message."CommMessage_IsDeleted"
+    and not message."CommMessage_IsDraft"
+    and not message."CommMessage_IsSpam"
+    and not exists (
+      select 1
+      from public."Comm_MessageFolders" membership
+      join public."Comm_MailFolders" folder
+        on folder."CommMailFolder_ID" = membership."CommMessageFolder_FolderID"
+      where membership."CommMessageFolder_MessageID" = message."CommMessage_ID"
+        and folder."CommMailFolder_RoleCode" in ('drafts','spam','trash')
+    );
+
+  if v_result is null then
+    raise exception 'This email update was not found.' using errcode = 'P0002';
+  end if;
+  return v_result;
+end;
+$$;
+
+revoke all on function public.multideck_dexter_resolve_email_draft_source(uuid)
+  from public, anon;
+grant execute on function public.multideck_dexter_resolve_email_draft_source(uuid)
+  to authenticated;
+
+create or replace function public.multideck_dexter_record_writing_profile_event(
+  p_event text
+)
+returns void
+language plpgsql
+volatile
+security definer
+set search_path = pg_catalog, public, auth
+as $$
+declare
+  v_context record;
+  v_profile_id uuid;
+begin
+  if p_event <> 'draft_prepared' then
+    raise exception 'This writing-profile event is not supported.' using errcode = '22023';
+  end if;
+  select * into v_context from public._multideck_dexter_context();
+  select profile."AIDexterWritingProfile_ID" into v_profile_id
+  from public."AI_DexterWritingProfiles" profile
+  where profile."AIDexterWritingProfile_CompanyID" = v_context.company_id
+    and profile."AIDexterWritingProfile_UserID" = v_context.user_id;
+  perform public._multideck_dexter_writing_profile_audit(
+    v_profile_id, v_context.company_id, v_context.user_id, p_event, null, 0
+  );
+end;
+$$;
+
+revoke all on function public.multideck_dexter_record_writing_profile_event(text)
+  from public, anon;
+grant execute on function public.multideck_dexter_record_writing_profile_event(text)
+  to authenticated;
+
+-- Extend the saved conversation payload with a structured email draft while
+-- keeping all existing response-version, attachment and reasoning metadata.
+create or replace function public._multideck_dexter_conversation_json(
+  p_conversation_id uuid,
+  p_user_id uuid,
+  p_company_id uuid
+)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = pg_catalog, public
+as $$
+  select jsonb_build_object(
+    'id', conversation."AICNV_ID",
+    'title', coalesce(conversation."AICNV_Title", 'Dexter conversation'),
+    'summary', coalesce(conversation."AICNV_SummaryText", ''),
+    'updatedAt', conversation."AICNV_UpdatedAt",
+    'messages', coalesce((
+      select jsonb_agg(
+        jsonb_build_object(
+          'id', message."AIMSG_ID",
+          'role', message."AIMSG_Role",
+          'content', message."AIMSG_ContentText",
+          'createdAt', message."AIMSG_CreatedAt",
+          'specialist', nullif(message."AIMSG_ContentJSON" ->> 'specialist', ''),
+          'attachments', case when jsonb_typeof(message."AIMSG_ContentJSON" -> 'attachments') = 'array'
+            then message."AIMSG_ContentJSON" -> 'attachments' else '[]'::jsonb end,
+          'parentResponseMessageId', nullif(message."AIMSG_ContentJSON" #>> '{metadata,parentResponseMessageId}', ''),
+          'pendingAction', case when jsonb_typeof(message."AIMSG_ContentJSON" #> '{metadata,pendingAction}') = 'object'
+            then message."AIMSG_ContentJSON" #> '{metadata,pendingAction}' else null end,
+          'reasoningSummary', nullif(message."AIMSG_ContentJSON" #>> '{metadata,reasoningSummary}', ''),
+          'emailAttachments', case when jsonb_typeof(message."AIMSG_ContentJSON" #> '{metadata,emailAttachments}') = 'array'
+            then message."AIMSG_ContentJSON" #> '{metadata,emailAttachments}' else '[]'::jsonb end,
+          'emailDraft', case when jsonb_typeof(message."AIMSG_ContentJSON" #> '{metadata,emailDraft}') = 'object'
+            then message."AIMSG_ContentJSON" #> '{metadata,emailDraft}' else null end,
+          'responseToUserMessageId', nullif(message."AIMSG_ContentJSON" #>> '{metadata,responseToUserMessageId}', ''),
+          'responseVersion', case when coalesce(message."AIMSG_ContentJSON" #>> '{metadata,responseVersion}', '') ~ '^[1-9][0-9]*$'
+            then (message."AIMSG_ContentJSON" #>> '{metadata,responseVersion}')::integer else null end
+        ) order by message."AIMSG_CreatedAt", message."AIMSG_ID"
+      )
+      from public."AI_Messages" message
+      where message."AIMSG_ConversationID" = conversation."AICNV_ID"
+        and message."AIMSG_ContentText" is not null
+    ), '[]'::jsonb)
+  )
+  from public."AI_Conversations" conversation
+  where conversation."AICNV_ID" = p_conversation_id
+    and conversation."AICNV_CompanyID" = p_company_id
+    and conversation."AICNV_OwnerUserID" = p_user_id
+    and conversation."AICNV_Channel" = 'chat'
+    and conversation."AICNV_EndedAt" is null
+    and conversation."AICNV_DomainCode" in ('multideck', 'warehouse');
+$$;
+
+create or replace function public.multideck_dexter_record_email_draft_delivery(
+  p_message_id uuid,
+  p_send_request_id uuid
+)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = pg_catalog, public, auth
+as $$
+declare
+  v_context record;
+  v_message public."AI_Messages";
+  v_send public."Comm_SendRequests";
+  v_status text;
+begin
+  select * into v_context from public._multideck_dexter_context();
+  select message.* into v_message
+  from public."AI_Messages" message
+  join public."AI_Conversations" conversation on conversation."AICNV_ID" = message."AIMSG_ConversationID"
+  where message."AIMSG_ID" = p_message_id
+    and message."AIMSG_Role" = 'assistant'
+    and conversation."AICNV_CompanyID" = v_context.company_id
+    and conversation."AICNV_OwnerUserID" = v_context.user_id
+    and jsonb_typeof(message."AIMSG_ContentJSON" #> '{metadata,emailDraft}') = 'object'
+  for update;
+  if not found then
+    raise exception 'This Dexter email draft is unavailable.' using errcode = 'P0002';
+  end if;
+
+  select send.* into v_send
+  from public."Comm_SendRequests" send
+  where send."CommSend_ID" = p_send_request_id
+    and send."CommSend_RequestedBy" = v_context.user_id;
+  if not found then
+    raise exception 'This email send receipt is unavailable.' using errcode = 'P0002';
+  end if;
+
+  v_status := case lower(v_send."CommSend_StatusCode")
+    when 'sent' then 'sent'
+    when 'delivered' then 'sent'
+    when 'failed' then 'failed'
+    else 'queued'
+  end;
+
+  update public."AI_Messages"
+  set "AIMSG_ContentJSON" = jsonb_set(
+    "AIMSG_ContentJSON",
+    '{metadata,emailDraft,delivery}',
+    jsonb_strip_nulls(jsonb_build_object(
+      'status', v_status,
+      'sendRequestId', v_send."CommSend_ID",
+      'messageId', v_send."CommSend_MessageID",
+      'threadId', v_send."CommSend_ThreadID",
+      'updatedAt', v_send."CommSend_UpdatedAt"
+    )),
+    true
+  )
+  where "AIMSG_ID" = p_message_id;
+
+  perform public._multideck_dexter_writing_profile_audit(
+    null, v_context.company_id, v_context.user_id,
+    case v_status when 'sent' then 'email_sent' when 'failed' then 'email_failed' else 'email_queued' end,
+    v_status, 0
+  );
+
+  return jsonb_build_object(
+    'status', v_status,
+    'sendRequestId', v_send."CommSend_ID",
+    'messageId', v_send."CommSend_MessageID",
+    'threadId', v_send."CommSend_ThreadID",
+    'updatedAt', v_send."CommSend_UpdatedAt"
+  );
+end;
+$$;
+
+revoke all on function public.multideck_dexter_record_email_draft_delivery(uuid, uuid)
+  from public, anon;
+grant execute on function public.multideck_dexter_record_email_draft_delivery(uuid, uuid)
+  to authenticated;
+
+create or replace function public.multideck_dexter_duplicate_sent_email_draft(
+  p_message_id uuid
+)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = pg_catalog, public, auth
+as $$
+declare
+  v_context record;
+  v_message public."AI_Messages";
+  v_new_message_id uuid := gen_random_uuid();
+  v_new_draft jsonb;
+  v_content jsonb;
+  v_response_version integer;
+begin
+  select * into v_context from public._multideck_dexter_context();
+  select message.* into v_message
+  from public."AI_Messages" message
+  join public."AI_Conversations" conversation
+    on conversation."AICNV_ID" = message."AIMSG_ConversationID"
+  where message."AIMSG_ID" = p_message_id
+    and message."AIMSG_Role" = 'assistant'
+    and conversation."AICNV_CompanyID" = v_context.company_id
+    and conversation."AICNV_OwnerUserID" = v_context.user_id
+    and jsonb_typeof(message."AIMSG_ContentJSON" #> '{metadata,emailDraft}') = 'object'
+  for update;
+  if not found then
+    raise exception 'This Dexter email draft is unavailable.' using errcode = 'P0002';
+  end if;
+
+  if coalesce(v_message."AIMSG_ContentJSON" #>> '{metadata,emailDraft,delivery,status}', 'draft') <> 'sent' then
+    raise exception 'Only a sent email can be copied into a new draft.' using errcode = '22023';
+  end if;
+
+  v_new_draft := jsonb_set(
+    jsonb_set(
+      v_message."AIMSG_ContentJSON" #> '{metadata,emailDraft}',
+      '{id}', to_jsonb(gen_random_uuid()::text), true
+    ),
+    '{delivery}', jsonb_build_object('status', 'draft'), true
+  );
+  v_response_version := greatest(
+    coalesce((v_message."AIMSG_ContentJSON" #>> '{metadata,responseVersion}')::integer, 1) + 1,
+    2
+  );
+  v_content := jsonb_set(
+    jsonb_set(v_message."AIMSG_ContentJSON", '{metadata,emailDraft}', v_new_draft, true),
+    '{metadata,responseVersion}', to_jsonb(v_response_version), true
+  );
+
+  insert into public."AI_Messages" (
+    "AIMSG_ID", "AIMSG_ConversationID", "AIMSG_ParentMessageID", "AIMSG_Role",
+    "AIMSG_ModelID", "AIMSG_ContentText", "AIMSG_ContentJSON", "AIMSG_SecurityClass",
+    "AIMSG_IsTrainingCandidate", "AIMSG_IsTrainingAllowed", "AIMSG_CreatedAt", "AIMSG_CreatedBy"
+  ) values (
+    v_new_message_id, v_message."AIMSG_ConversationID", v_message."AIMSG_ParentMessageID", 'assistant',
+    v_message."AIMSG_ModelID", v_message."AIMSG_ContentText", v_content, v_message."AIMSG_SecurityClass",
+    false, false, now(), v_context.user_id
+  );
+
+  return jsonb_build_object('messageId', v_new_message_id, 'draft', v_new_draft);
+end;
+$$;
+
+revoke all on function public.multideck_dexter_duplicate_sent_email_draft(uuid)
+  from public, anon;
+grant execute on function public.multideck_dexter_duplicate_sent_email_draft(uuid)
+  to authenticated;
+
+create or replace function public.multideck_dexter_update_email_draft(
+  p_message_id uuid,
+  p_draft jsonb
+)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = pg_catalog, public, auth
+as $$
+declare
+  v_context record;
+  v_message public."AI_Messages";
+  v_current_delivery jsonb;
+  v_draft jsonb;
+begin
+  select * into v_context from public._multideck_dexter_context();
+  if jsonb_typeof(p_draft) <> 'object'
+     or coalesce(p_draft ->> 'mode', '') not in ('new','reply','reply_all','forward')
+     or jsonb_typeof(coalesce(p_draft -> 'to', '[]'::jsonb)) <> 'array'
+     or jsonb_typeof(coalesce(p_draft -> 'cc', '[]'::jsonb)) <> 'array'
+     or jsonb_typeof(coalesce(p_draft -> 'bcc', '[]'::jsonb)) <> 'array'
+     or jsonb_array_length(coalesce(p_draft -> 'to', '[]'::jsonb)) > 50
+     or jsonb_array_length(coalesce(p_draft -> 'cc', '[]'::jsonb)) > 50
+     or jsonb_array_length(coalesce(p_draft -> 'bcc', '[]'::jsonb)) > 50
+     or char_length(coalesce(p_draft ->> 'subject', '')) > 500
+     or char_length(coalesce(p_draft ->> 'bodyText', '')) > 50000
+     or pg_column_size(p_draft) > 100000 then
+    raise exception 'This email draft is not valid.' using errcode = '22023';
+  end if;
+
+  select message.* into v_message
+  from public."AI_Messages" message
+  join public."AI_Conversations" conversation on conversation."AICNV_ID" = message."AIMSG_ConversationID"
+  where message."AIMSG_ID" = p_message_id
+    and message."AIMSG_Role" = 'assistant'
+    and conversation."AICNV_CompanyID" = v_context.company_id
+    and conversation."AICNV_OwnerUserID" = v_context.user_id
+    and jsonb_typeof(message."AIMSG_ContentJSON" #> '{metadata,emailDraft}') = 'object'
+  for update;
+  if not found then
+    raise exception 'This Dexter email draft is unavailable.' using errcode = 'P0002';
+  end if;
+
+  v_current_delivery := coalesce(
+    v_message."AIMSG_ContentJSON" #> '{metadata,emailDraft,delivery}',
+    jsonb_build_object('status', 'draft')
+  );
+  if coalesce(v_current_delivery ->> 'status', 'draft') = 'sent' then
+    raise exception 'A sent email cannot be edited.' using errcode = '22023';
+  end if;
+
+  v_draft := jsonb_strip_nulls(jsonb_build_object(
+    'id', left(coalesce(p_draft ->> 'id', gen_random_uuid()::text), 80),
+    'mode', p_draft ->> 'mode',
+    'mailboxId', nullif(left(coalesce(p_draft ->> 'mailboxId', ''), 80), ''),
+    'sourceMessageId', nullif(left(coalesce(p_draft ->> 'sourceMessageId', ''), 80), ''),
+    'threadId', nullif(left(coalesce(p_draft ->> 'threadId', ''), 80), ''),
+    'to', coalesce(p_draft -> 'to', '[]'::jsonb),
+    'cc', coalesce(p_draft -> 'cc', '[]'::jsonb),
+    'bcc', coalesce(p_draft -> 'bcc', '[]'::jsonb),
+    'subject', left(coalesce(p_draft ->> 'subject', ''), 500),
+    'bodyText', left(coalesce(p_draft ->> 'bodyText', ''), 50000),
+    'trackOpens', coalesce((p_draft ->> 'trackOpens')::boolean, false),
+    'delivery', v_current_delivery
+  ));
+
+  update public."AI_Messages"
+  set "AIMSG_ContentJSON" = jsonb_set(
+    "AIMSG_ContentJSON", '{metadata,emailDraft}', v_draft, true
+  )
+  where "AIMSG_ID" = p_message_id;
+  return v_draft;
+end;
+$$;
+
+revoke all on function public.multideck_dexter_update_email_draft(uuid, jsonb)
+  from public, anon;
+grant execute on function public.multideck_dexter_update_email_draft(uuid, jsonb)
+  to authenticated;
+
+create or replace function public."AI_GetDexterWritingProfileWorkerSecret"()
+returns text
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select decrypted_secret
+  from vault.decrypted_secrets
+  where name = 'multideck_dexter_writing_profile_worker_secret'
+  limit 1;
+$$;
+
+revoke all on function public."AI_GetDexterWritingProfileWorkerSecret"()
+  from public, anon, authenticated;
+grant execute on function public."AI_GetDexterWritingProfileWorkerSecret"()
+  to service_role;
+
+create extension if not exists pg_cron;
+create extension if not exists pg_net;
+
+create or replace function public."AI_ConfigureDexterWritingProfileSchedule"()
+returns boolean
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  v_endpoint text;
+  v_job_id bigint;
+begin
+  select decrypted_secret into v_endpoint
+  from vault.decrypted_secrets
+  where name = 'multideck_dexter_writing_profile_worker_endpoint'
+  limit 1;
+
+  if nullif(btrim(v_endpoint), '') is null then
+    return false;
+  end if;
+
+  for v_job_id in
+    select jobid from cron.job
+    where jobname = 'multideck-dexter-writing-profile-refresh'
+  loop
+    perform cron.unschedule(v_job_id);
+  end loop;
+
+  perform cron.schedule(
+    'multideck-dexter-writing-profile-refresh',
+    '15 3 * * *',
+    format(
+      $command$
+        select net.http_post(
+          url := %L,
+          headers := jsonb_build_object(
+            'Content-Type', 'application/json',
+            'x-multideck-writing-profile-secret', (
+              select decrypted_secret
+              from vault.decrypted_secrets
+              where name = 'multideck_dexter_writing_profile_worker_secret'
+              limit 1
+            )
+          ),
+          body := jsonb_build_object('operation', 'monthly', 'requestedAt', now()),
+          timeout_milliseconds := 55000
+        );
+      $command$,
+      btrim(v_endpoint)
+    )
+  );
+
+  return true;
+end;
+$$;
+
+revoke all on function public."AI_ConfigureDexterWritingProfileSchedule"()
+  from public, anon, authenticated, service_role;
+
+-- Each tenant installs its own endpoint secret. The daily check performs work
+-- only for profiles whose monthly refresh is due and have ten new messages.
+
+comment on table public."AI_DexterWritingProfiles" is
+  'Private, operator-owned email style guidance derived with explicit consent. Raw source emails are never stored here.';
+comment on function public._multideck_dexter_writing_profile_source_for(uuid, uuid, integer, timestamptz) is
+  'Selects bounded, provably authored sent email for one operator. Private preferences do not emit Watching for you signals.';

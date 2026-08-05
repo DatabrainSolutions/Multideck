@@ -82,7 +82,7 @@ export function ContactCardPublicPage({ slug }: { slug: string }) {
   useEffect(() => {
     let cancelled = false
 
-    loadPublicCard(slug)
+    loadPublicCard(slug, preview)
       .then((found) => {
         if (cancelled) return
         if (!found) {

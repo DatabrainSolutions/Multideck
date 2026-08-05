@@ -1,12 +1,14 @@
 import { useMemo, useRef, useState } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { Check, ImageUp, Info, Trash2, TriangleAlert } from "lucide-react"
+import { ArrowDown, ArrowUp, Check, ImageUp, Info, QrCode, Trash2, TriangleAlert } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { SegmentedControl } from "@/components/multideck/workflow-components"
 import { QrCodeImage } from "@/components/multideck/contact-card-components"
+import { ContactSocialMark } from "@/components/multideck/contact-social-mark"
 import {
   EMPTY_PUBLIC_FORM,
   PublicCardExchange,
@@ -19,8 +21,9 @@ import { useLanguage } from "@/i18n/language-provider"
 import { mdEaseOut } from "@/lib/motion"
 import { bestInkContrast, accentCanCarryActions } from "@/lib/color"
 import { resolveCardTheme } from "@/lib/card-theme"
+import { CARD_LAYOUT_SPECS } from "@/lib/card-layout"
 import { cardPublicUrl, readLogoFile, updateBranding, MAX_LOGO_BYTES } from "@/lib/contact-card-store"
-import type { CardHeaderStyle, CardLayout, CardTheme, ContactCard } from "@/data/contact-card-data"
+import { CARD_SOCIAL_LABELS, type CardHeaderStyle, type CardLayout, type CardSocialKind, type CardSocialLink, type CardTheme, type ContactCard } from "@/data/contact-card-data"
 import type { QrEyeStyle, QrModuleStyle } from "@/lib/qr-code"
 import { cn } from "@/lib/utils"
 
@@ -35,12 +38,196 @@ const ACCENT_PRESETS = [
   "#2b2f2e",
 ]
 
-const SAMPLE_VALUES = {
-  ...EMPTY_PUBLIC_FORM,
-  firstName: "Nadia",
-  lastName: "Perera",
-  email: "nadia.perera@halcyontextiles.com",
-  company: "Halcyon Textiles",
+/* -------------------------------------------------------------------------- */
+/* Layout picker                                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A miniature of the real template, not a generic wireframe.
+ *
+ * Each one carries the single detail that makes its preset recognisable: where
+ * the mark sits, how loud the heading is, and how the fields are drawn. Someone
+ * should be able to pick the right one without opening the preview.
+ */
+function LayoutThumbnail({ id }: { id: CardLayout }) {
+  const ink = "bg-[rgba(11,20,19,0.16)]"
+  const faint = "bg-[rgba(11,20,19,0.08)]"
+  const field = "rounded-[3px] bg-[rgba(11,20,19,0.05)] shadow-[inset_0_0_0_1px_rgba(11,20,19,0.08)]"
+
+  if (id === "editorial") {
+    return (
+      <span className="flex h-full flex-col p-2.5">
+        <span className="h-[3px] w-4 rounded-full bg-[var(--md-accent)]" />
+        <span className={cn("mt-2 h-[3px] w-7 rounded-full", faint)} />
+        <span className={cn("mt-1.5 h-[7px] w-[88%] rounded-[2px]", "bg-[rgba(11,20,19,0.24)]")} />
+        <span className={cn("mt-1 h-[7px] w-[58%] rounded-[2px]", "bg-[rgba(11,20,19,0.24)]")} />
+        <span className="mt-2 flex items-center gap-1.5 border-t border-[rgba(11,20,19,0.1)] pt-2">
+          <span className="size-3 rounded-full bg-[var(--md-accent-a22)]" />
+          <span className={cn("h-1 w-9 rounded-full", ink)} />
+        </span>
+        <span className="mt-auto grid gap-2">
+          <span className="h-px w-full bg-[rgba(11,20,19,0.18)]" />
+          <span className="h-px w-full bg-[rgba(11,20,19,0.18)]" />
+        </span>
+      </span>
+    )
+  }
+
+  if (id === "compact") {
+    return (
+      <span className="flex h-full flex-col p-2">
+        <span className="flex items-center gap-1.5">
+          <span className="size-[15px] rounded-[5px] bg-[var(--md-accent)]" />
+          <span className="grid gap-[3px]">
+            <span className={cn("h-1 w-10 rounded-full", ink)} />
+            <span className={cn("h-[3px] w-6 rounded-full", faint)} />
+          </span>
+        </span>
+        <span className={cn("mt-2 h-1.5 w-[64%] rounded-full", ink)} />
+        <span className="mt-auto grid gap-[3px]">
+          <span className={cn(field, "h-[9px] w-full")} />
+          <span className={cn(field, "h-[9px] w-full")} />
+          <span className={cn(field, "h-[9px] w-full")} />
+        </span>
+      </span>
+    )
+  }
+
+  if (id === "spotlight") {
+    return (
+      <span className="flex h-full flex-col items-center p-2">
+        <span className="mt-0.5 size-[19px] rounded-full bg-[var(--md-accent)] shadow-[0_0_0_3px_var(--md-accent-a22)]" />
+        <span className={cn("mt-2 h-1.5 w-[56%] rounded-full", ink)} />
+        <span className={cn("mt-1 h-1 w-[38%] rounded-full", faint)} />
+        <span className="mt-auto grid w-full gap-1 rounded-[7px] bg-[var(--md-surface)] p-1.5 shadow-[0_1px_2px_rgba(11,20,19,0.07)]">
+          <span className={cn(field, "h-[9px] w-full")} />
+          <span className={cn(field, "h-[9px] w-full")} />
+        </span>
+      </span>
+    )
+  }
+
+  return (
+    <span className="flex h-full flex-col p-2.5">
+      <span className="size-4 rounded-full bg-[var(--md-accent)]" />
+      <span className={cn("mt-2 h-1.5 w-[76%] rounded-full", ink)} />
+      <span className={cn("mt-1.5 h-1 w-[54%] rounded-full", faint)} />
+      <span className="mt-auto grid gap-1.5">
+        <span className={cn(field, "h-[11px] w-full")} />
+        <span className={cn(field, "h-[11px] w-full")} />
+      </span>
+    </span>
+  )
+}
+
+export function ContactCardLayoutPicker({ value, onChange }: { value: CardLayout; onChange: (value: CardLayout) => void }) {
+  const { t } = useLanguage()
+
+  return (
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="radiogroup" aria-label={t("Layout preset")}>
+      {CARD_LAYOUT_SPECS.map((preset) => {
+        const selected = value === preset.id
+        return (
+          <button
+            key={preset.id}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            onClick={() => onChange(preset.id)}
+            className={cn(
+              "group rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-2.5 text-start shadow-[var(--md-shadow-line)]",
+              "transition-[transform,box-shadow,background-color] duration-[180ms] ease-[cubic-bezier(0.22,1,0.36,1)] hover:shadow-[var(--md-shadow-soft)] active:scale-[0.96]",
+              "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a22)] motion-reduce:transition-none motion-reduce:active:scale-100",
+              selected && "bg-[var(--md-accent-a08)] shadow-[inset_0_0_0_1px_var(--md-accent),var(--md-shadow-soft)]",
+            )}
+          >
+            {/* Constant surface: the miniature has to read the same selected or not. */}
+            <span className="relative block h-[92px] overflow-hidden rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)]" aria-hidden="true">
+              <LayoutThumbnail id={preset.id} />
+            </span>
+            <span className="mt-2 flex items-center justify-between gap-2">
+              <span className="text-[12.5px] font-medium text-[var(--md-ink)]">{t(preset.label)}</span>
+              <AnimatePresence initial={false}>
+                {selected ? (
+                  <motion.span
+                    initial={{ opacity: 0, scale: 0.6 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.6 }}
+                    transition={{ type: "spring", stiffness: 520, damping: 30 }}
+                  >
+                    <Check className="size-3.5 text-[var(--md-accent)]" strokeWidth={2} />
+                  </motion.span>
+                ) : null}
+              </AnimatePresence>
+            </span>
+            <span className="mt-0.5 block text-[11px] leading-4 text-[var(--md-subtle)]">{t(preset.detail)}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+const SOCIAL_PLACEHOLDERS: Record<CardSocialKind, string> = {
+  linkedin: "linkedin.com/in/harry-phillips",
+  facebook: "facebook.com/your-name",
+  instagram: "@your-name",
+  whatsapp: "+44 7700 900000",
+  email: "name@company.com",
+  website: "company.com",
+}
+
+export function ContactCardSocialLinksEditor({ links, onChange }: { links: CardSocialLink[]; onChange: (links: CardSocialLink[]) => void }) {
+  const { t } = useLanguage()
+
+  function update(id: string, update: Partial<CardSocialLink>) {
+    onChange(links.map((link) => (link.id === id ? { ...link, ...update } : link)))
+  }
+
+  function move(index: number, direction: -1 | 1) {
+    const target = index + direction
+    if (target < 0 || target >= links.length) return
+    const next = [...links]
+    const [item] = next.splice(index, 1)
+    next.splice(target, 0, item)
+    onChange(next)
+  }
+
+  return (
+    <div className="grid gap-2">
+      {links.map((link, index) => {
+        const label = CARD_SOCIAL_LABELS[link.kind]
+        return (
+          <div key={link.id} className="grid items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-2 sm:grid-cols-[36px_minmax(0,1fr)_auto]">
+            <span className="grid size-9 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-line)]" aria-hidden="true">
+              <ContactSocialMark kind={link.kind} className="size-4" />
+            </span>
+            <label className="min-w-0">
+              <span className="sr-only">{t(label)}</span>
+              <Input
+                className="h-9 bg-[var(--md-surface)] text-[13px]"
+                dir="ltr"
+                type={link.kind === "email" ? "email" : "text"}
+                value={link.value}
+                placeholder={SOCIAL_PLACEHOLDERS[link.kind]}
+                onChange={(event) => update(link.id, { value: event.target.value, enabled: link.enabled || Boolean(event.target.value.trim()) })}
+              />
+            </label>
+            <div className="flex items-center justify-end gap-0.5">
+              <Button variant="ghost" size="icon" className="size-8 rounded-[var(--md-radius-md)]" disabled={index === 0} aria-label={`${t("Move earlier")}: ${t(label)}`} onClick={() => move(index, -1)}>
+                <ArrowUp className="size-3.5" strokeWidth={1.5} />
+              </Button>
+              <Button variant="ghost" size="icon" className="size-8 rounded-[var(--md-radius-md)]" disabled={index === links.length - 1} aria-label={`${t("Move later")}: ${t(label)}`} onClick={() => move(index, 1)}>
+                <ArrowDown className="size-3.5" strokeWidth={1.5} />
+              </Button>
+              <Switch checked={link.enabled} disabled={!link.value.trim()} aria-label={`${t("Show")}: ${t(label)}`} onCheckedChange={(enabled) => update(link.id, { enabled })} />
+            </div>
+          </div>
+        )
+      })}
+      <p className="text-[12px] leading-5 text-[var(--md-subtle)]">{t("Only enabled links appear on the public card. The order here is the order visitors see.")}</p>
+    </div>
+  )
 }
 
 /* -------------------------------------------------------------------------- */
@@ -215,7 +402,7 @@ function CardPreview({ card }: { card: ContactCard }) {
               form={
                 <PublicCardForm
                   card={card}
-                  values={SAMPLE_VALUES}
+                  values={EMPTY_PUBLIC_FORM}
                   errors={{}}
                   submitting={false}
                   slow={false}
@@ -372,14 +559,8 @@ export function CardDesignPanel({ card }: { card: ContactCard }) {
               />
             </ControlRow>
 
-            <ControlRow label={t("Layout")}>
-              <SegmentedControl
-                options={["classic", "centred", "compact"] as const satisfies readonly CardLayout[]}
-                value={branding.layout}
-                onChange={(layout) => updateBranding(card.id, { layout })}
-                ariaLabel={t("Layout")}
-                renderOption={(option) => t(option === "classic" ? "Classic" : option === "centred" ? "Centred" : "Compact")}
-              />
+            <ControlRow label={t("Layout preset")} hint={t("Choose the arrangement first, then tune the colours and code.")} stacked>
+              <ContactCardLayoutPicker value={branding.layout} onChange={(layout) => updateBranding(card.id, { layout })} />
             </ControlRow>
 
             <ControlRow label={t("Corners")}>
@@ -427,8 +608,18 @@ export function CardDesignPanel({ card }: { card: ContactCard }) {
               </ControlRow>
             </div>
 
-            <div className="rounded-[var(--md-radius-xl)] p-3 shadow-[var(--md-shadow-line)]" style={{ backgroundColor: branding.qrLight }}>
-              <QrCodeImage value={url} branding={branding} label={t("Code preview")} />
+            <div className="grid gap-3">
+              <div className="rounded-[var(--md-radius-xl)] p-3 shadow-[var(--md-shadow-line)]" style={{ backgroundColor: branding.qrLight }}>
+                <QrCodeImage value={url} branding={branding} label={t("Code preview")} />
+              </div>
+              <Button
+                variant="outline"
+                className="h-9 rounded-[var(--md-radius-md)] text-[13px]"
+                onClick={() => window.open(url, "_blank", "noopener,noreferrer")}
+              >
+                <QrCode data-icon="inline-start" strokeWidth={1.5} />
+                {t("Test QR code")}
+              </Button>
             </div>
           </div>
         </Surface>

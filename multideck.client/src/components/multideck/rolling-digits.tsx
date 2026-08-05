@@ -11,7 +11,7 @@ import { mdMotion } from "@/lib/motion"
  */
 const DigitCell = memo(function DigitCell({ char, roll }: { char: string; roll: boolean }) {
   if (!roll) {
-    return <span className="inline-block text-center" style={{ width: "1ch" }}>{char}</span>
+    return <span className="inline-flex h-[1em] items-center justify-center text-center leading-none" style={{ width: "0.42ch" }}>{char}</span>
   }
 
   return (
@@ -59,7 +59,7 @@ export function RollingDigits({
   }
 
   return (
-    <span className={cn("inline-flex items-baseline tabular-nums leading-none", className)} dir="ltr" role="text" aria-label={label ?? value}>
+    <span className={cn("inline-flex items-center tabular-nums leading-none", className)} dir="ltr" role="text" aria-label={label ?? value}>
       {value.split("").map((char, index) => (
         <DigitCell key={`${index}-${/\d/.test(char) ? "d" : char}`} char={char} roll={/\d/.test(char)} />
       ))}

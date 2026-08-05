@@ -50,11 +50,14 @@ const BookingsPage = lazy(() => import("@/pages/bookings-page").then((module) =>
 const RoadControlPage = lazy(() => import("@/pages/road-control-page").then((module) => ({ default: module.RoadControlPage })))
 const DomesticRoadBookingPage = lazy(() => import("@/pages/domestic-road-booking-page").then((module) => ({ default: module.DomesticRoadBookingPage })))
 const CrmOverviewPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmOverviewPage })))
+const CrmAccountsPage = lazy(() => import("@/pages/crm-accounts-page").then((module) => ({ default: module.CrmAccountsPage })))
+const CrmAccountDetailPage = lazy(() => import("@/pages/crm-account-detail-page").then((module) => ({ default: module.CrmAccountDetailPage })))
 const CrmLeadsPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmLeadsPage })))
 const CrmLeadDetailPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmLeadDetailPage })))
 const LeadConversionPage = lazy(() => import("@/pages/lead-conversion-page").then((module) => ({ default: module.LeadConversionPage })))
 const CrmActivityPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmActivityPage })))
-const CrmContactsPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmContactsPage })))
+const CrmContactsPage = lazy(() => import("@/pages/crm-contacts-page").then((module) => ({ default: module.CrmContactsPage })))
+const CrmContactDetailPage = lazy(() => import("@/pages/crm-contact-detail-page").then((module) => ({ default: module.CrmContactDetailPage })))
 const CrmDealsPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmDealsPage })))
 const CrmEmailsPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmEmailsPage })))
 const CrmEmailStatsPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmEmailStatsPage })))
@@ -167,6 +170,14 @@ function isCrmLeadDetailRoute(path: string) {
   return /^\/crm\/leads\/[^/]+$/.test(path)
 }
 
+function isCrmAccountDetailRoute(path: string) {
+  return /^\/crm\/accounts\/[^/]+$/.test(path)
+}
+
+function isCrmContactDetailRoute(path: string) {
+  return /^\/crm\/contacts\/[^/]+$/.test(path)
+}
+
 function isContactCardDetailRoute(path: string) {
   return /^\/crm\/contact-cards\/[^/]+$/.test(path)
 }
@@ -197,6 +208,7 @@ function isCrmEmailEditRoute(path: string) {
 }
 
 function getRoute() {
+  if (window.location.pathname === "/app" || window.location.pathname === "/app/") return "/"
   const legacyBookingRoute = getLegacyBookingRoute(window.location.pathname)
   if (legacyBookingRoute) return legacyBookingRoute
   if (window.location.pathname.startsWith("/reports/rpt-")) return window.location.pathname
@@ -205,6 +217,8 @@ function getRoute() {
   if (isCustomsDeclarationEditRoute(window.location.pathname)) return window.location.pathname
   if (isQuoteDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCustomerDetailRoute(window.location.pathname)) return window.location.pathname
+  if (isCrmAccountDetailRoute(window.location.pathname)) return window.location.pathname
+  if (isCrmContactDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCrmLeadConversionRoute(window.location.pathname)) return window.location.pathname
   if (isCrmLeadDetailRoute(window.location.pathname)) return window.location.pathname
   if (isContactCardDetailRoute(window.location.pathname)) return window.location.pathname
@@ -255,7 +269,7 @@ function RouteFallback({ fullScreen = false }: { fullScreen?: boolean }) {
   )
 }
 
-function WorkspaceFailureFallback() {
+function WorkspaceFailureFallback({ error }: { error?: Error | null }) {
   const { t } = useLanguage()
 
   return (
@@ -269,6 +283,7 @@ function WorkspaceFailureFallback() {
         <p className="mt-2 text-[14px] leading-6 text-[var(--md-text)]">
           {t("This workspace view could not be displayed. Reload the page to continue.")}
         </p>
+        {import.meta.env.DEV && error ? <p className="mt-3 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] p-3 text-start text-[12px] leading-5 text-[var(--md-red)]" dir="ltr">{error.message}</p> : null}
         <button
           type="button"
           className="mt-6 h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] shadow-[var(--md-shadow-line)] transition-colors hover:bg-[var(--md-accent-hover)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a20)]"
@@ -302,7 +317,7 @@ class WorkspaceErrorBoundary extends Component<{
   }
 
   render() {
-    return this.state.error ? <WorkspaceFailureFallback /> : this.props.children
+    return this.state.error ? <WorkspaceFailureFallback error={this.state.error} /> : this.props.children
   }
 }
 
@@ -317,6 +332,18 @@ export default function App() {
   // Shortcuts and the Dexter summon belong to the signed-in workspace. The
   // sign-in screen and the public contact card must stay inert.
   const isWorkspaceRoute = !isContactCardPublicRoute(route) && route !== "/auth" && (authStatus === "authenticated" || isLocalNavigationLab)
+
+  useEffect(() => {
+    if (authStatus !== "authenticated" || currentUser?.actorType === "customer") return
+
+    const timeoutId = window.setTimeout(() => {
+      void import("@/lib/crm-prefetch")
+        .then(({ prefetchCrmCollections }) => prefetchCrmCollections())
+        .catch(() => undefined)
+    }, 250)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [authStatus, currentUser?.actorType])
   const handleProfilePhotoChange = useCallback((profilePhoto: UserProfilePhoto | null, profilePhotoUrl: string | null) => {
     setCurrentUser((user) => user ? { ...user, profilePhoto, profilePhotoUrl } : user)
   }, [])
@@ -460,8 +487,7 @@ export default function App() {
 
     if (authStatus === "unauthenticated" && route !== "/auth" && !isLocalNavigationLab) {
       rememberAuthReturnPath()
-      window.history.replaceState({}, "", "/auth")
-      startTransition(() => setRoute(getRoute()))
+      window.location.replace(import.meta.env.DEV ? "/auth" : "/")
       return
     }
 
@@ -484,7 +510,7 @@ export default function App() {
     }
     if (path === route) return
     rememberRecentWorkContext(route)
-    window.history.pushState({}, "", path)
+    window.history.pushState({}, "", path === "/" ? "/app" : path)
     startTransition(() => setRoute(getRoute()))
   }
 
@@ -536,13 +562,16 @@ export default function App() {
                     />
                   ) : null}
                   {route === "/crm" ? <CrmOverviewPage /> : null}
-                  {route === "/crm/accounts" || route === "/crm/leads" ? <CrmLeadsPage navigate={navigate} /> : null}
+                  {route === "/crm/accounts" ? <CrmAccountsPage navigate={navigate} /> : null}
+                  {isCrmAccountDetailRoute(route) ? <CrmAccountDetailPage accountId={route.split("/").at(-1) ?? ""} navigate={navigate} /> : null}
+                  {route === "/crm/leads" ? <CrmLeadsPage navigate={navigate} /> : null}
                   {isCrmLeadConversionRoute(route) ? <LeadConversionPage navigate={navigate} leadId={route.split("/").at(-2) ?? ""} /> : null}
                   {isCrmLeadDetailRoute(route) ? <CrmLeadDetailPage navigate={navigate} leadId={route.split("/").at(-1) ?? ""} /> : null}
                   {route === "/crm/contact-cards" ? <ContactCardsPage navigate={navigate} /> : null}
                   {isContactCardDetailRoute(route) ? <ContactCardDetailPage key={route} navigate={navigate} cardId={route.split("/").at(-1) ?? ""} /> : null}
                   {route === "/crm/activity" ? <CrmActivityPage navigate={navigate} /> : null}
-                  {route === "/crm/contacts" ? <CrmContactsPage /> : null}
+                  {route === "/crm/contacts" ? <CrmContactsPage navigate={navigate} /> : null}
+                  {isCrmContactDetailRoute(route) ? <CrmContactDetailPage contactId={route.split("/").at(-1) ?? ""} navigate={navigate} /> : null}
                   {route === "/crm/deals" ? <CrmDealsPage currentUser={currentUser} /> : null}
                   {route === "/crm/emails" ? <CrmEmailsPage navigate={navigate} /> : null}
                   {route === "/crm/forms" ? <CrmFormsPage /> : null}

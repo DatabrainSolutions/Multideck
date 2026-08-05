@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react"
 import { Download, FileText, LoaderCircle, Mail, Plus, RefreshCw, ShieldCheck, Trash2 } from "lucide-react"
 import { CustomerAvatar } from "@/components/multideck/customer-components"
+import { MarketingOptInControl } from "@/components/multideck/marketing-opt-in-control"
+import { MultiSelectMenu } from "@/components/multideck/multi-select-menu"
 import { Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { Button } from "@/components/ui/button"
@@ -10,7 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner"
 import { useLanguage } from "@/i18n/language-provider"
 import { getCustomer, getCustomerDocumentUrl, listCustomerDocuments, type ApiCustomerDetail, type ApiCustomerDocument, type ApiCustomerDocumentListing } from "@/lib/customer-api"
-import { getWarehousePortalReference, inviteWarehousePortalUser, listWarehousePortalUsers, revokeWarehousePortalUser, updateWarehousePortalUser, type WarehousePortalReference, type WarehousePortalUser } from "@/lib/warehouse"
+import { setMarketingOptIn, type MarketingConsentRecordType } from "@/lib/marketing-consent-api"
+import { getWarehousePortalReference, inviteWarehousePortalUser, listWarehousePortalUsers, revokeWarehousePortalUser, sendWarehousePortalAccessLink, updateWarehousePortalUser, type WarehousePortalReference, type WarehousePortalUser } from "@/lib/warehouse"
 
 export function CustomerDetailPage({ customerId }: { customerId: string }) {
   const [customer, setCustomer] = useState<ApiCustomerDetail | null>(null)
@@ -47,6 +50,34 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
     <CustomerDocuments customerId={customerId} documents={documentListing?.documents ?? []} loading={documentsLoading} error={documentsError} />
   </div>
   if (!customer) return <div className="md-page grid min-h-[360px] place-items-center"><LoaderCircle className="size-5 animate-spin text-[var(--md-accent)]" /></div>
+
+  async function changeMarketingOptIn(recordType: MarketingConsentRecordType, recordId: string, optedIn: boolean) {
+    try {
+      const result = await setMarketingOptIn(recordType, recordId, optedIn)
+      setCustomer((current) => {
+        if (!current) return current
+        if (recordType === "customer") return {
+          ...current,
+          marketingOptIn: result.marketingOptIn,
+          marketingConsentSource: result.marketingConsentSource,
+          marketingConsentUpdatedAt: result.marketingConsentUpdatedAt,
+        }
+        return {
+          ...current,
+          contacts: current.contacts.map((contact) => contact.id === recordId ? {
+            ...contact,
+            consentMarketing: result.marketingOptIn,
+            marketingConsentSource: result.marketingConsentSource,
+            marketingConsentUpdatedAt: result.marketingConsentUpdatedAt,
+          } : contact),
+        }
+      })
+      toast.success(t(optedIn ? "Marketing opt-in recorded" : "Marketing opt-out recorded"))
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : t("Marketing consent could not be updated."))
+      throw cause
+    }
+  }
 
   const accountFacts = [
     [t("Segment"), customer.segment],
@@ -95,9 +126,9 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
         <div className="md-panel-column">
           <Surface className="overflow-hidden rounded-[var(--md-radius-xl)]" padding="none">
             <PanelTitle title={t("Contacts")} meta={String(customer.contacts.length)} />
-            {customer.contacts.length ? customer.contacts.map((contact) => <div key={contact.id} className="flex gap-3 border-t border-[rgba(11,20,19,0.06)] px-5 py-4"><CustomerAvatar initials={contact.initials || "?"} tone="blue" /><div className="min-w-0"><p className="truncate text-[14px] font-medium text-[var(--md-ink)]">{contact.name || t("Unnamed contact")}</p><p className="truncate text-[12px] text-[var(--md-text)]">{contact.role || t("No role recorded")}</p>{contact.email ? <a className="mt-1 block truncate text-[12px] text-[var(--md-accent)]" href={`mailto:${contact.email}`}>{contact.email}</a> : null}</div></div>) : <EmptyRow text={t("No contacts are recorded for this customer.")} />}
+            {customer.contacts.length ? customer.contacts.map((contact) => <div key={contact.id} className="border-t border-[rgba(11,20,19,0.06)] px-5 py-4"><div className="flex gap-3"><CustomerAvatar initials={contact.initials || "?"} tone="blue" /><div className="min-w-0 flex-1"><p className="truncate text-[14px] font-medium text-[var(--md-ink)]">{contact.name || t("Unnamed contact")}</p><p className="truncate text-[12px] text-[var(--md-text)]">{contact.role || t("No role recorded")}</p>{contact.email ? <a className="mt-1 block truncate text-[12px] text-[var(--md-accent)]" href={`mailto:${contact.email}`}>{contact.email}</a> : null}</div></div><MarketingOptInControl compact className="mt-3 pt-3 shadow-[var(--md-stroke-top)]" checked={contact.consentMarketing} source={contact.marketingConsentSource} updatedAt={contact.marketingConsentUpdatedAt} onCheckedChange={(optedIn) => changeMarketingOptIn("contact", contact.id, optedIn)} /></div>) : <EmptyRow text={t("No contacts are recorded for this customer.")} />}
           </Surface>
-          <Surface className="rounded-[var(--md-radius-xl)]" padding="none"><PanelTitle title={t("Account")} />{accountFacts.length ? <div className="px-5 pb-5">{accountFacts.map(([label, value]) => <div key={label} className="grid grid-cols-[120px_1fr] gap-4 border-t border-[rgba(11,20,19,0.06)] py-3"><p className="text-[13px] text-[var(--md-text)]">{label}</p><p className="text-right text-[13px] font-medium text-[var(--md-ink)]">{value}</p></div>)}</div> : <EmptyRow text={t("No additional account details are recorded.")} />}</Surface>
+          <Surface className="rounded-[var(--md-radius-xl)]" padding="none"><PanelTitle title={t("Account")} /><div className="px-5 py-4 shadow-[var(--md-stroke-top)]"><MarketingOptInControl checked={Boolean(customer.marketingOptIn)} source={customer.marketingConsentSource} updatedAt={customer.marketingConsentUpdatedAt} onCheckedChange={(optedIn) => changeMarketingOptIn("customer", customer.id, optedIn)} /></div>{accountFacts.length ? <div className="px-5 pb-5">{accountFacts.map(([label, value]) => <div key={label} className="grid grid-cols-[120px_1fr] gap-4 border-t border-[rgba(11,20,19,0.06)] py-3"><p className="text-[13px] text-[var(--md-text)]">{label}</p><p className="text-right text-[13px] font-medium text-[var(--md-ink)]">{value}</p></div>)}</div> : <EmptyRow text={t("No additional account details are recorded.")} />}</Surface>
         </div>
       </div>
     </div>
@@ -166,6 +197,7 @@ export function CustomerWarehouseAccess({
   const [roleCode, setRoleCode] = useState("warehouse_operator")
   const [facilityIds, setFacilityIds] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
+  const [sendingAccessLinkUserId, setSendingAccessLinkUserId] = useState<string | null>(null)
 
   async function refresh() {
     setError(null)
@@ -191,10 +223,6 @@ export function CustomerWarehouseAccess({
     setEditing(user); setDisplayName(user.displayName); setEmail(user.email); setRoleCode(user.roleCode); setFacilityIds(user.facilityIds); setOpen(true); setError(null)
   }
 
-  function toggleFacility(id: string) {
-    setFacilityIds((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id])
-  }
-
   async function save() {
     if (!editing && !email.trim()) return
     setSaving(true); setError(null)
@@ -218,6 +246,14 @@ export function CustomerWarehouseAccess({
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
   }
 
+  async function sendAccessLink(user: WarehousePortalUser) {
+    setSendingAccessLinkUserId(user.id); setError(null)
+    try {
+      await sendWarehousePortalAccessLink(customerId, user.id)
+      toast.success(t("Access link sent"), { description: user.email })
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) } finally { setSendingAccessLinkUserId(null) }
+  }
+
   const roleName = (code: string) => reference?.roles.find((role) => role.code === code)?.name ?? code
   const isCurrentUser = (user: WarehousePortalUser) =>
     Boolean(selfService && currentUserEmail && user.email.trim().toLowerCase() === currentUserEmail.trim().toLowerCase())
@@ -233,7 +269,7 @@ export function CustomerWarehouseAccess({
         <div className="min-w-0 flex-1"><div className="flex items-center gap-2"><p className="truncate text-[14px] font-medium text-[var(--md-ink)]">{user.displayName}</p>{isCurrentUser(user) ? <StatusPill tone="neutral">{t("You")}</StatusPill> : null}</div><p dir="ltr" className="truncate text-start text-[12px] text-[var(--md-text)]">{user.email}</p></div>
         <StatusPill tone={user.status === "active" ? "green" : "amber"}>{t(user.status)}</StatusPill>
         <p className="min-w-[190px] text-[12px] text-[var(--md-text)]">{t(roleName(user.roleCode))}</p>
-        {!isCurrentUser(user) ? <div className="flex gap-1"><Button type="button" variant="ghost" onClick={() => showEdit(user)} className="h-9 rounded-[var(--md-radius-lg)]">{t("Edit access")}</Button><Button type="button" variant="ghost" size="icon" aria-label={t("Revoke access")} onClick={() => void revoke(user)} className="size-9 rounded-[var(--md-radius-lg)] text-[var(--md-red)]"><Trash2 className="size-4" /></Button></div> : null}
+        {!isCurrentUser(user) ? <div className="flex flex-wrap gap-1">{!user.lastLoginAt ? <Button type="button" variant="ghost" disabled={sendingAccessLinkUserId === user.id} onClick={() => void sendAccessLink(user)} className="h-9 rounded-[var(--md-radius-lg)]">{sendingAccessLinkUserId === user.id ? <LoaderCircle className="size-4 animate-spin" /> : <Mail className="size-4" />}{t("Send access link")}</Button> : null}<Button type="button" variant="ghost" onClick={() => showEdit(user)} className="h-9 rounded-[var(--md-radius-lg)]">{t("Edit access")}</Button><Button type="button" variant="ghost" size="icon" aria-label={t("Revoke access")} onClick={() => void revoke(user)} className="size-9 rounded-[var(--md-radius-lg)] text-[var(--md-red)]"><Trash2 className="size-4" /></Button></div> : null}
       </div>) : <p className="border-t border-[rgba(11,20,19,0.06)] px-5 py-6 text-[13px] text-[var(--md-text)]">{t("No customer users have warehouse access yet.")}</p>}
     </Surface>
     <Dialog open={open} onOpenChange={setOpen}><DialogContent className="border-0 bg-[var(--md-surface)] sm:max-w-[560px]">
@@ -241,7 +277,7 @@ export function CustomerWarehouseAccess({
       <div className="grid gap-4 py-2">
         {!editing ? <div className="grid gap-3 sm:grid-cols-2"><label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">{t("Name")}<Input dir="auto" value={displayName} onChange={(event) => setDisplayName(event.target.value)} className="h-10 rounded-[var(--md-radius-lg)] border-0 bg-white/68 shadow-[var(--md-shadow-line)]" /></label><label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">{t("Email")}<Input dir="ltr" type="email" value={email} onChange={(event) => setEmail(event.target.value)} className="h-10 rounded-[var(--md-radius-lg)] border-0 bg-white/68 text-start shadow-[var(--md-shadow-line)]" /></label></div> : <p dir="ltr" className="text-start text-[13px] text-[var(--md-text)]">{editing.email}</p>}
         <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">{t("Role")}<Select value={roleCode} onValueChange={setRoleCode}><SelectTrigger className="h-10 rounded-[var(--md-radius-lg)] border-0 bg-white/68 shadow-[var(--md-shadow-line)]"><SelectValue /></SelectTrigger><SelectContent>{reference?.roles.map((role) => <SelectItem key={role.code} value={role.code}><span>{t(role.name)}</span></SelectItem>)}</SelectContent></Select><span className="font-normal leading-5 text-[var(--md-subtle)]">{t(reference?.roles.find((role) => role.code === roleCode)?.description ?? "")}</span></label>
-        {selfService ? <div className="rounded-[var(--md-radius-lg)] bg-white/48 px-3 py-3 text-[12px] leading-5 text-[var(--md-text)] shadow-[var(--md-shadow-line)]">{t("Users inherit access to the warehouses assigned to this organisation. Only your warehouse provider can change those assignments.")}</div> : <div><p className="text-[12px] font-medium text-[var(--md-text)]">{t("Warehouses")}</p><div className="mt-2 grid gap-2 rounded-[var(--md-radius-xl)] bg-white/36 p-3 shadow-[var(--md-shadow-line)] sm:grid-cols-2">{reference?.facilities.map((facility) => { const selected = facilityIds.includes(facility.id); return <button key={facility.id} type="button" aria-pressed={selected} onClick={() => toggleFacility(facility.id)} className={`rounded-[var(--md-radius-lg)] px-3 py-2 text-start text-[12px] shadow-[var(--md-shadow-line)] ${selected ? "bg-[var(--md-accent-a11)] text-[var(--md-accent)]" : "bg-white/58 text-[var(--md-text)]"}`}><span dir="ltr" className="font-medium">{facility.code}</span><span className="ms-2">{facility.name}</span></button> })}</div></div>}
+        {selfService ? <div className="rounded-[var(--md-radius-lg)] bg-white/48 px-3 py-3 text-[12px] leading-5 text-[var(--md-text)] shadow-[var(--md-shadow-line)]">{t("Users inherit access to the warehouses assigned to this organisation. Only your warehouse provider can change those assignments.")}</div> : <div><p className="text-[12px] font-medium text-[var(--md-text)]">{t("Warehouses")}</p><MultiSelectMenu value={facilityIds} options={reference?.facilities.map((facility) => ({ value: facility.id, label: `${facility.code} · ${facility.name}` })) ?? []} onValueChange={setFacilityIds} placeholder="Select warehouses" label="Warehouses" className="mt-2 h-10 rounded-[var(--md-radius-lg)] bg-white/68 px-3 text-[12px]" /></div>}
         {error ? <p className="rounded-[var(--md-radius-lg)] bg-[rgba(185,28,28,0.07)] px-3 py-2 text-[12px] text-[var(--md-red)]">{error}</p> : null}
       </div>
       <DialogFooter><Button type="button" variant="ghost" onClick={() => setOpen(false)}>{t("Cancel")}</Button><Button type="button" disabled={saving || facilityIds.length === 0 || (!editing && !email.trim())} onClick={() => void save()} className="bg-[var(--md-accent)] text-[var(--md-accent-ink)]">{saving ? <LoaderCircle className="size-4 animate-spin" /> : null}{t(editing ? "Save access" : "Send invitation")}</Button></DialogFooter>

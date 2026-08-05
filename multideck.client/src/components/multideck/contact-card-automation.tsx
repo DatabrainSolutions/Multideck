@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { CircleCheck, CirclePause, CirclePlay, Filter, LoaderCircle, Mail, TriangleAlert, Workflow, Zap } from "lucide-react"
+import { ChevronDown, ChevronUp, CircleCheck, CirclePause, CirclePlay, Filter, LoaderCircle, Mail, RotateCcw, TestTube2, TriangleAlert, Workflow, X, Zap } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import {
@@ -14,7 +14,6 @@ import {
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
-import { SideDrawer } from "@/components/multideck/side-drawer"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { PanelMessage, StatusBand, automationHealth } from "@/components/multideck/contact-card-components"
@@ -25,8 +24,10 @@ import { mdMotion, reduceMotion } from "@/lib/motion"
 import {
   pauseAutomation,
   publishAutomation,
+  rerunAutomationRun,
   resumeAutomation,
   sendAutomationTest,
+  testAutomation,
   turnAutomationOff,
   updateAutomation,
   useContactCardStore,
@@ -40,6 +41,7 @@ import {
   type AutomationActionKind,
   type AutomationCondition,
   type AutomationConditionKind,
+  type AutomationRun,
   type ContactCard,
 } from "@/data/contact-card-data"
 import { cn } from "@/lib/utils"
@@ -49,6 +51,28 @@ function defaultActionConfig(kind: AutomationActionKind, card: ContactCard): Rec
   const existing = card.automation.actions.find((action) => action.kind === kind)?.config
   if (existing) return { ...existing }
   switch (kind) {
+    case "add-to-crm": {
+      const pipeline = card.automation.actions.find((action) => action.config.pipelineId)?.config
+      return {
+        destination: "crm",
+        recordType: "lead",
+        duplicateHandling: "update",
+        owner: card.person.fullName,
+        ownerId: card.ownerUserId,
+        pipeline: pipeline?.pipeline ?? "",
+        pipelineId: pipeline?.pipelineId ?? "",
+        stage: pipeline?.stage ?? "",
+        stageId: pipeline?.stageId ?? "",
+        dealName: `${card.person.company || "New"} enquiry`,
+        fieldMappings: JSON.stringify([
+          { source: "firstName", target: "firstName" },
+          { source: "lastName", target: "lastName" },
+          { source: "email", target: "email" },
+          { source: "company", target: "company" },
+          { source: "phone", target: "phone" },
+        ]),
+      }
+    }
     case "assign-owner":
       return { owner: card.person.fullName, ownerId: card.ownerUserId }
     case "pipeline-stage":
@@ -64,17 +88,52 @@ function defaultActionConfig(kind: AutomationActionKind, card: ContactCard): Rec
   }
 }
 
+type FieldMapping = { source: string; target: string }
+
+const SOURCE_FIELDS = [
+  { value: "firstName", label: "First name" },
+  { value: "lastName", label: "Last name" },
+  { value: "email", label: "Email" },
+  { value: "company", label: "Company" },
+  { value: "phone", label: "Phone" },
+]
+
+const CRM_TARGETS = {
+  lead: [
+    { value: "firstName", label: "First name" },
+    { value: "lastName", label: "Last name" },
+    { value: "email", label: "Email" },
+    { value: "company", label: "Company" },
+    { value: "phone", label: "Phone" },
+  ],
+  deal: [
+    { value: "name", label: "Deal name" },
+    { value: "contactEmail", label: "Contact email" },
+    { value: "company", label: "Company" },
+    { value: "customerNeed", label: "Customer need" },
+  ],
+} as const
+
+function readMappings(value: string | undefined): FieldMapping[] {
+  try {
+    const parsed = JSON.parse(value ?? "[]")
+    return Array.isArray(parsed) ? parsed.filter((item): item is FieldMapping => typeof item?.source === "string" && typeof item?.target === "string") : []
+  } catch {
+    return []
+  }
+}
+
 const DELAYS = [0, 15, 60, 240, 1440]
 
 const MAX_CONDITIONS = 5
 const MAX_ACTIONS = 8
 
 function newId(prefix: string) {
-  return `${prefix}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1000).toString(36)}`
+  return `${prefix}-${crypto.randomUUID()}`
 }
 
 /* -------------------------------------------------------------------------- */
-/* Drawers                                                                     */
+/* In-canvas inspectors                                                        */
 /* -------------------------------------------------------------------------- */
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
@@ -84,6 +143,24 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
       <span className="mt-1.5 block">{children}</span>
       {hint ? <span className="mt-1.5 block text-[12px] text-[var(--md-subtle)]">{hint}</span> : null}
     </label>
+  )
+}
+
+function InspectorShell({ title, eyebrow, onClose, children }: { title: string; eyebrow: string; onClose: () => void; children: React.ReactNode }) {
+  const { t } = useLanguage()
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex items-start justify-between gap-3 px-4 py-3.5 shadow-[inset_0_-1px_0_rgba(11,20,19,0.07)]">
+        <div className="min-w-0">
+          <p className="text-[11px] font-medium uppercase tracking-[0.06em] text-[var(--md-subtle)]">{eyebrow}</p>
+          <h3 className="mt-0.5 truncate text-[15px] font-medium text-[var(--md-ink)]">{title}</h3>
+        </div>
+        <Button variant="ghost" size="icon" className="size-8 rounded-[var(--md-radius-md)]" aria-label={t("Close details")} onClick={onClose}>
+          <X className="size-4" strokeWidth={1.5} />
+        </Button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-4 md-scrollbar">{children}</div>
+    </div>
   )
 }
 
@@ -103,11 +180,11 @@ function ConditionDrawer({
 
   useEffect(() => setDraft(condition), [condition])
 
-  if (!draft) return null
+  if (!open || !draft) return null
   const definition = AUTOMATION_CONDITION_LABELS[draft.kind]
 
   return (
-    <SideDrawer open={open} onClose={onClose} eyebrow={t("Condition")} title={t(definition.label)} icon={Filter} width={440}>
+    <InspectorShell eyebrow={t("Condition")} title={t(definition.label)} onClose={onClose}>
       <div className="space-y-[var(--md-gap-lg)] p-1">
         <Field label={t("Condition")}>
           <Select value={draft.kind} onValueChange={(kind) => setDraft({ ...draft, kind: kind as AutomationConditionKind, value: "" })}>
@@ -168,7 +245,7 @@ function ConditionDrawer({
           </Button>
         </div>
       </div>
-    </SideDrawer>
+    </InspectorShell>
   )
 }
 
@@ -189,13 +266,16 @@ function ActionDrawer({
 
   useEffect(() => setDraft(action), [action])
 
-  if (!draft) return null
+  if (!open || !draft) return null
   const definition = AUTOMATION_ACTION_LABELS[draft.kind]
   const setConfig = (key: string, value: string) => setDraft({ ...draft, config: { ...draft.config, [key]: value } })
   const selectedPipeline = pipelines.find((pipeline) => pipeline.id === draft.config.pipelineId)
+  const mappings = readMappings(draft.config.fieldMappings)
+  const targetOptions = draft.config.recordType === "deal" ? CRM_TARGETS.deal : CRM_TARGETS.lead
+  const setMappings = (next: FieldMapping[]) => setConfig("fieldMappings", JSON.stringify(next))
 
   return (
-    <SideDrawer open={open} onClose={onClose} eyebrow={t("Action")} title={t(definition.label)} icon={ACTION_ICONS[draft.kind]} width={440}>
+    <InspectorShell eyebrow={t("Action")} title={t(definition.label)} onClose={onClose}>
       <div className="space-y-[var(--md-gap-lg)] p-1">
         <Field label={t("Action")}>
           <Select value={draft.kind} onValueChange={(kind) => setDraft({ ...draft, kind: kind as AutomationActionKind, config: {} })}>
@@ -211,6 +291,117 @@ function ActionDrawer({
             </SelectContent>
           </Select>
         </Field>
+
+        {draft.kind === "add-to-crm" ? (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label={t("Destination")}>
+                <Select value="crm" disabled>
+                  <SelectTrigger className="h-9 w-full text-[13px]"><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="crm">{t("CRM")}</SelectItem></SelectContent>
+                </Select>
+              </Field>
+              <Field label={t("Record type")}>
+                <Select
+                  value={draft.config.recordType ?? "lead"}
+                  onValueChange={(recordType) => {
+                    const defaults = recordType === "deal"
+                      ? [{ source: "company", target: "name" }, { source: "email", target: "contactEmail" }]
+                      : SOURCE_FIELDS.map((field) => ({ source: field.value, target: field.value }))
+                    setDraft({ ...draft, config: { ...draft.config, recordType, fieldMappings: JSON.stringify(defaults) } })
+                  }}
+                >
+                  <SelectTrigger className="h-9 w-full text-[13px]"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="lead">{t("Lead")}</SelectItem>
+                    <SelectItem value="deal">{t("Deal")}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+            </div>
+
+            <Field label={t("Duplicate handling")} hint={t("Choose what happens when the email already exists in the CRM.")}>
+              <Select value={draft.config.duplicateHandling ?? "update"} onValueChange={(duplicateHandling) => setConfig("duplicateHandling", duplicateHandling)}>
+                <SelectTrigger className="h-9 w-full text-[13px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="update">{t("Update the existing record")}</SelectItem>
+                  <SelectItem value="skip">{t("Keep it and skip this step")}</SelectItem>
+                  <SelectItem value="fail">{t("Fail the run for review")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+
+            <Field label={t("Owner")}>
+              <Select
+                value={draft.config.ownerId ?? ""}
+                onValueChange={(value) => {
+                  const owner = owners.find((item) => item.id === value)
+                  setDraft({ ...draft, config: { ...draft.config, ownerId: value, owner: owner?.name ?? "" } })
+                }}
+              >
+                <SelectTrigger className="h-9 w-full text-[13px]"><SelectValue placeholder={t("Choose an owner")} /></SelectTrigger>
+                <SelectContent>{owners.map((owner) => <SelectItem key={owner.id} value={owner.id}>{owner.name}</SelectItem>)}</SelectContent>
+              </Select>
+            </Field>
+
+            <Field label={t("Pipeline")}>
+              <Select
+                value={draft.config.pipelineId ?? ""}
+                onValueChange={(value) => {
+                  const pipeline = pipelines.find((item) => item.id === value)
+                  const stage = pipeline?.stages.find((item) => item.isDefaultEntry) ?? pipeline?.stages[0]
+                  setDraft({ ...draft, config: { ...draft.config, pipelineId: value, pipeline: pipeline?.name ?? "", stageId: stage?.id ?? "", stage: stage?.name ?? "" } })
+                }}
+              >
+                <SelectTrigger className="h-9 w-full text-[13px]"><SelectValue placeholder={t("Choose a pipeline")} /></SelectTrigger>
+                <SelectContent>{pipelines.map((pipeline) => <SelectItem key={pipeline.id} value={pipeline.id}>{pipeline.name}</SelectItem>)}</SelectContent>
+              </Select>
+            </Field>
+            <Field label={draft.config.recordType === "deal" ? t("Deal stage") : t("Lead stage")}>
+              <Select value={draft.config.stageId ?? ""} disabled={!selectedPipeline} onValueChange={(value) => {
+                const stage = selectedPipeline?.stages.find((item) => item.id === value)
+                setDraft({ ...draft, config: { ...draft.config, stageId: value, stage: stage?.name ?? "" } })
+              }}>
+                <SelectTrigger className="h-9 w-full text-[13px]"><SelectValue placeholder={t("Choose a stage")} /></SelectTrigger>
+                <SelectContent>{(selectedPipeline?.stages ?? []).map((stage) => <SelectItem key={stage.id} value={stage.id}>{stage.name}</SelectItem>)}</SelectContent>
+              </Select>
+            </Field>
+
+            {draft.config.recordType === "deal" ? (
+              <Field label={t("Deal name")} hint={t("Use {company} to insert the submitted company name.")}>
+                <Input className="h-9 text-[13px]" value={draft.config.dealName ?? "{company} enquiry"} onChange={(event) => setConfig("dealName", event.target.value)} />
+              </Field>
+            ) : null}
+
+            <div>
+              <div className="mb-2">
+                <p className="text-[12.5px] font-medium text-[var(--md-text)]">{t("Map fields")}</p>
+                <p className="mt-0.5 text-[12px] text-[var(--md-subtle)]">{t("Choose exactly where each submitted value is saved.")}</p>
+              </div>
+              <div className="grid gap-1.5">
+                {mappings.map((mapping, index) => (
+                  <div key={`${mapping.source}-${index}`} className="grid grid-cols-[minmax(0,1fr)_18px_minmax(0,1fr)_32px] items-center gap-1.5">
+                    <Select value={mapping.source} onValueChange={(source) => setMappings(mappings.map((item, itemIndex) => itemIndex === index ? { ...item, source } : item))}>
+                      <SelectTrigger className="h-8 text-[12px]"><SelectValue /></SelectTrigger>
+                      <SelectContent>{SOURCE_FIELDS.map((field) => <SelectItem key={field.value} value={field.value}>{t(field.label)}</SelectItem>)}</SelectContent>
+                    </Select>
+                    <span className="text-center text-[var(--md-subtle)]" aria-hidden="true">→</span>
+                    <Select value={mapping.target} onValueChange={(target) => setMappings(mappings.map((item, itemIndex) => itemIndex === index ? { ...item, target } : item))}>
+                      <SelectTrigger className="h-8 text-[12px]"><SelectValue /></SelectTrigger>
+                      <SelectContent>{targetOptions.map((field) => <SelectItem key={field.value} value={field.value}>{t(field.label)}</SelectItem>)}</SelectContent>
+                    </Select>
+                    <Button variant="ghost" size="icon" className="size-8 rounded-[var(--md-radius-md)]" aria-label={t("Remove mapping")} onClick={() => setMappings(mappings.filter((_, itemIndex) => itemIndex !== index))}>
+                      <X className="size-3.5" strokeWidth={1.5} />
+                    </Button>
+                  </div>
+                ))}
+                <Button variant="ghost" className="h-8 justify-start rounded-[var(--md-radius-md)] px-2 text-[12px] text-[var(--md-accent)]" onClick={() => setMappings([...mappings, { source: "email", target: draft.config.recordType === "deal" ? "contactEmail" : "email" }])}>
+                  + {t("Add mapping")}
+                </Button>
+              </div>
+            </div>
+          </>
+        ) : null}
 
         {draft.kind === "assign-owner" ? (
           <Field label={t("Owner")}>
@@ -409,7 +600,7 @@ function ActionDrawer({
           </Button>
         </div>
       </div>
-    </SideDrawer>
+    </InspectorShell>
   )
 }
 
@@ -529,6 +720,98 @@ function PublishDialog({
 /* Panel                                                                       */
 /* -------------------------------------------------------------------------- */
 
+export function AutomationRunHistory({ runs, onRerun }: { runs: AutomationRun[]; onRerun: (run: AutomationRun) => Promise<void> }) {
+  const { t } = useLanguage()
+  const [expanded, setExpanded] = useState<string | null>(runs.find((run) => run.status === "failed")?.id ?? null)
+  const [rerunning, setRerunning] = useState<string | null>(null)
+
+  async function rerun(run: AutomationRun) {
+    setRerunning(run.id)
+    try {
+      await onRerun(run)
+      toast.success(t("Failed steps reran successfully"))
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("Unable to rerun these steps. Check the setup and try again."))
+    } finally {
+      setRerunning(null)
+    }
+  }
+
+  if (runs.length === 0) {
+    return <PanelMessage title={t("Nothing has run yet")} body={t("Runs appear here as soon as someone shares their details or you test the automation.")} />
+  }
+
+  return (
+    <div className="overflow-hidden rounded-[var(--md-radius-lg)] shadow-[var(--md-shadow-line)]">
+      <div className="hidden grid-cols-[110px_minmax(180px,1fr)_100px_90px_36px] gap-3 bg-[var(--md-surface-tint)] px-3 py-2 text-[11px] font-medium text-[var(--md-subtle)] sm:grid">
+        <span>{t("Status")}</span><span>{t("Started")}</span><span>{t("Duration")}</span><span>{t("Records")}</span><span />
+      </div>
+      <div className="divide-y divide-[rgba(11,20,19,0.07)]">
+        {runs.map((run) => {
+          const open = expanded === run.id
+          const tone = run.status === "failed" ? "red" : run.status === "succeeded" ? "green" : "neutral"
+          return (
+            <div key={run.id}>
+              <button
+                type="button"
+                aria-expanded={open}
+                onClick={() => setExpanded(open ? null : run.id)}
+                className="grid w-full gap-2 px-3 py-2.5 text-start transition-colors duration-[140ms] hover:bg-[var(--md-surface-tint)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-[var(--md-accent-a22)] sm:grid-cols-[110px_minmax(180px,1fr)_100px_90px_36px] sm:items-center sm:gap-3"
+              >
+                <span><StatusPill tone={tone}>{t(run.status === "failed" ? "Failed" : run.status === "succeeded" ? "Succeeded" : run.status === "running" ? "Running" : "Skipped")}</StatusPill>{run.isTest ? <span className="ms-1.5 text-[10px] text-[var(--md-subtle)]">{t("Test")}</span> : null}</span>
+                <span className="text-[12.5px] text-[var(--md-text)] tabular-nums">{new Date(run.startedAt).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}<span className="ms-2 text-[var(--md-subtle)]">{run.trigger}</span></span>
+                <span className="text-[12px] text-[var(--md-subtle)] tabular-nums">{run.durationMs < 1000 ? `${run.durationMs}ms` : `${(run.durationMs / 1000).toFixed(1)}s`}</span>
+                <span className="text-[12px] text-[var(--md-subtle)] tabular-nums">{run.recordsAffected}</span>
+                <span className="grid size-8 place-items-center text-[var(--md-subtle)]">{open ? <ChevronUp className="size-4" strokeWidth={1.5} /> : <ChevronDown className="size-4" strokeWidth={1.5} />}</span>
+              </button>
+
+              {open ? (
+                <div className="grid gap-4 bg-[var(--md-surface-soft)] px-3 pb-4 pt-2 lg:grid-cols-[minmax(0,0.9fr)_minmax(300px,1.1fr)]">
+                  <div className="grid gap-3">
+                    {run.status === "failed" ? (
+                      <div className="rounded-[var(--md-radius-md)] bg-[rgba(209,78,78,0.08)] p-3">
+                        <p className="text-[12px] font-medium text-[var(--md-red)]">{t("What happened")}</p>
+                        <p className="mt-1 text-[13px] leading-5 text-[var(--md-ink)]">{run.errorSummary}</p>
+                        <p className="mt-2 text-[12px] font-medium text-[var(--md-text)]">{t("How to fix it")}</p>
+                        <p className="mt-1 text-[12.5px] leading-5 text-[var(--md-text)]">{run.recovery ?? t("Review the failed step, save the correction, then rerun it.")}</p>
+                      </div>
+                    ) : null}
+                    <div>
+                      <p className="text-[12px] font-medium text-[var(--md-text)]">{t("Preserved input")}</p>
+                      <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] p-3 shadow-[var(--md-shadow-line)]">
+                        {Object.entries(run.input).map(([key, value]) => <div key={key} className="min-w-0"><dt className="text-[10.5px] text-[var(--md-subtle)]">{key}</dt><dd className="truncate text-[12px] text-[var(--md-ink)]" dir="auto">{String(value)}</dd></div>)}
+                      </dl>
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-[12px] font-medium text-[var(--md-text)]">{t("Step trace")}</p>
+                    <ol className="mt-2 grid gap-1.5">
+                      {run.steps.map((step) => (
+                        <li key={step.id} className={cn("grid grid-cols-[18px_minmax(0,1fr)_auto] items-start gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] px-2.5 py-2 shadow-[var(--md-shadow-line)]", step.status === "failed" && "bg-[rgba(209,78,78,0.06)]")}>
+                          <span className={cn("mt-0.5 size-3.5 rounded-full", step.status === "succeeded" ? "bg-[var(--md-green)]" : step.status === "failed" ? "bg-[var(--md-red)]" : "bg-[var(--md-subtle)]")} />
+                          <span className="min-w-0"><span className="block text-[12.5px] text-[var(--md-ink)]">{step.label}</span><span className="mt-0.5 block text-[11.5px] leading-4 text-[var(--md-subtle)]">{step.detail}</span></span>
+                          <span className="text-[11px] text-[var(--md-subtle)] tabular-nums">{step.durationMs}ms</span>
+                        </li>
+                      ))}
+                    </ol>
+                    {run.status === "failed" && !run.isTest ? (
+                      <Button className="mt-3 h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] text-[13px] text-[var(--md-accent-ink)]" disabled={rerunning === run.id} onClick={() => void rerun(run)}>
+                        {rerunning === run.id ? <LoaderCircle data-icon="inline-start" className="animate-spin" strokeWidth={1.5} /> : <RotateCcw data-icon="inline-start" strokeWidth={1.5} />}
+                        {t("Rerun failed steps")}
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export function CardAutomationPanel({ card }: { card: ContactCard }) {
   const { t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
@@ -543,7 +826,7 @@ export function CardAutomationPanel({ card }: { card: ContactCard }) {
 
   const hasLiveExternal = automation.actions.some((action) => action.enabled && isExternalAction(action))
 
-  const runLog = useMemo(() => [...card.exchanges].reverse().slice(0, 8), [card.exchanges])
+  const runLog = useMemo(() => [...automation.runs].sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, 12), [automation.runs])
 
   function toggleStep(id: string) {
     updateAutomation(card.id, (current) => ({
@@ -590,6 +873,28 @@ export function CardAutomationPanel({ card }: { card: ContactCard }) {
     }
     publishAutomation(card.id)
     toast.success(t("Automation published"))
+  }
+
+  function saveCondition(condition: AutomationCondition) {
+    updateAutomation(card.id, (current) => ({
+      ...current,
+      conditions: current.conditions.some((item) => item.id === condition.id)
+        ? current.conditions.map((item) => (item.id === condition.id ? condition : item))
+        : insertAt(current.conditions, condition, pendingInsert?.group === "condition" ? pendingInsert.index : undefined),
+    }))
+    setPendingInsert(null)
+    setEditingCondition(null)
+  }
+
+  function saveAction(action: AutomationAction) {
+    updateAutomation(card.id, (current) => ({
+      ...current,
+      actions: current.actions.some((item) => item.id === action.id)
+        ? current.actions.map((item) => (item.id === action.id ? action : item))
+        : insertAt(current.actions, action, pendingInsert?.group === "action" ? pendingInsert.index : undefined),
+    }))
+    setPendingInsert(null)
+    setEditingAction(null)
   }
 
   return (
@@ -672,12 +977,47 @@ export function CardAutomationPanel({ card }: { card: ContactCard }) {
       </AnimatePresence>
 
       <Surface padding="none" className="overflow-hidden p-3">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 px-1">
+          <div>
+            <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Automation canvas")}</p>
+            <p className="mt-0.5 text-[12px] text-[var(--md-subtle)]">{t("Select a step to edit it without leaving the flow.")}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              className="h-9 rounded-[var(--md-radius-md)] text-[13px]"
+              onClick={() => void testAutomation(card.id).then(() => toast.success(t("Test run added to the history"))).catch((error) => toast.error(error instanceof Error ? error.message : t("Unable to test this automation.")))}
+            >
+              <TestTube2 data-icon="inline-start" strokeWidth={1.5} />
+              {t("Test automation")}
+            </Button>
+            {automation.hasUnpublishedChanges ? (
+              <Button className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] text-[13px] text-[var(--md-accent-ink)]" onClick={publish}>
+                {t("Publish changes")}
+              </Button>
+            ) : null}
+          </div>
+        </div>
         <AutomationCanvas
           card={card}
-          onEditCondition={setEditingCondition}
-          onEditAction={setEditingAction}
+          onEditCondition={(condition) => { setEditingAction(null); setEditingCondition(condition) }}
+          onEditAction={(action) => { setEditingCondition(null); setEditingAction(action) }}
+          onAddCondition={(index) => {
+            if (automation.conditions.length >= MAX_CONDITIONS) {
+              toast.error(t("An automation can have up to five conditions."))
+              return
+            }
+            setPendingInsert({ group: "condition", index })
+            setEditingAction(null)
+            setEditingCondition({ id: newId("condition"), kind: "new-lead", negated: false, value: "", enabled: true })
+          }}
           onAddAction={(kind, index) => {
+            if (automation.actions.length >= MAX_ACTIONS) {
+              toast.error(t("An automation can have up to eight actions."))
+              return
+            }
             setPendingInsert({ group: "action", index })
+            setEditingCondition(null)
             setEditingAction({
               id: newId("action"),
               kind,
@@ -689,87 +1029,22 @@ export function CardAutomationPanel({ card }: { card: ContactCard }) {
           onToggleStep={toggleStep}
           onRemoveStep={removeStep}
           onReorder={reorder}
+          inspector={
+            editingCondition ? (
+              <ConditionDrawer condition={editingCondition} open onClose={() => setEditingCondition(null)} onSave={saveCondition} />
+            ) : editingAction ? (
+              <ActionDrawer action={editingAction} open onClose={() => setEditingAction(null)} onSave={saveAction} />
+            ) : null
+          }
         />
       </Surface>
 
       <Surface padding="md" className="p-5">
-        <SectionHeader title={t("Run log")} meta={t("The most recent exchanges and what the automation did.")} />
+        <SectionHeader title={t("Run history")} meta={t("Open any run to see each step, preserved input and a clear recovery path.")} />
         <div className="mt-3">
-          {runLog.length === 0 ? (
-            <PanelMessage title={t("Nothing has run yet")} body={t("Runs appear here as soon as someone shares their details.")} />
-          ) : (
-            <ul className="divide-y divide-[rgba(11,20,19,0.06)]">
-              {runLog.map((exchange) => (
-                <li key={exchange.id} className="flex items-start justify-between gap-4 py-2.5">
-                  <div className="min-w-0">
-                    <p className="truncate text-[13px] text-[var(--md-ink)]">
-                      {exchange.firstName} {exchange.lastName}
-                      <span className="text-[var(--md-subtle)]"> · {exchange.company}</span>
-                    </p>
-                    <p className="mt-0.5 truncate text-[12px] text-[var(--md-subtle)]">{exchange.automationDetail}</p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-3">
-                    <span className="text-[12px] text-[var(--md-subtle)] tabular-nums">
-                      {new Date(exchange.at).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
-                    </span>
-                    <StatusPill
-                      tone={
-                        exchange.automationOutcome === "failed"
-                          ? "red"
-                          : exchange.automationOutcome === "ran"
-                            ? "green"
-                            : "neutral"
-                      }
-                    >
-                      {t(
-                        exchange.automationOutcome === "ran"
-                          ? "Ran"
-                          : exchange.automationOutcome === "failed"
-                            ? "Failed"
-                            : exchange.automationOutcome === "skipped"
-                              ? "Skipped"
-                              : "Off",
-                      )}
-                    </StatusPill>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
+          <AutomationRunHistory runs={runLog} onRerun={async (run) => rerunAutomationRun(run.id)} />
         </div>
       </Surface>
-
-      <ConditionDrawer
-        condition={editingCondition}
-        open={editingCondition !== null}
-        onClose={() => setEditingCondition(null)}
-        onSave={(condition) => {
-          updateAutomation(card.id, (current) => ({
-            ...current,
-            conditions: current.conditions.some((item) => item.id === condition.id)
-              ? current.conditions.map((item) => (item.id === condition.id ? condition : item))
-              : insertAt(current.conditions, condition, pendingInsert?.group === "condition" ? pendingInsert.index : undefined),
-          }))
-          setPendingInsert(null)
-          setEditingCondition(null)
-        }}
-      />
-
-      <ActionDrawer
-        action={editingAction}
-        open={editingAction !== null}
-        onClose={() => setEditingAction(null)}
-        onSave={(action) => {
-          updateAutomation(card.id, (current) => ({
-            ...current,
-            actions: current.actions.some((item) => item.id === action.id)
-              ? current.actions.map((item) => (item.id === action.id ? action : item))
-              : insertAt(current.actions, action, pendingInsert?.group === "action" ? pendingInsert.index : undefined),
-          }))
-          setPendingInsert(null)
-          setEditingAction(null)
-        }}
-      />
 
       <PublishDialog
         card={card}

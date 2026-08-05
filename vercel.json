@@ -1,6 +1,6 @@
 {
   "installCommand": "cd multideck.client && npm ci",
-  "buildCommand": "cd multideck.client && npm run build",
+  "buildCommand": "node build-deployment.mjs",
   "outputDirectory": "multideck.client/dist",
   "redirects": [
     {
@@ -16,8 +16,72 @@
   ],
   "rewrites": [
     {
-      "source": "/(.*)",
-      "destination": "/index.html"
+      "source": "/auth",
+      "destination": "/app/index.html"
+    },
+    {
+      "source": "/app",
+      "destination": "/app/index.html"
+    },
+    {
+      "source": "/agent-dexter",
+      "destination": "/app/index.html"
+    },
+    {
+      "source": "/components",
+      "destination": "/app/index.html"
+    },
+    {
+      "source": "/crm/:path*",
+      "destination": "/app/index.html"
+    },
+    {
+      "source": "/customers/:path*",
+      "destination": "/app/index.html"
+    },
+    {
+      "source": "/inbox",
+      "destination": "/app/index.html"
+    },
+    {
+      "source": "/documents",
+      "destination": "/app/index.html"
+    },
+    {
+      "source": "/customs/:path*",
+      "destination": "/app/index.html"
+    },
+    {
+      "source": "/paper-tray",
+      "destination": "/app/index.html"
+    },
+    {
+      "source": "/quotes/:path*",
+      "destination": "/app/index.html"
+    },
+    {
+      "source": "/reports/:path*",
+      "destination": "/app/index.html"
+    },
+    {
+      "source": "/settings",
+      "destination": "/app/index.html"
+    },
+    {
+      "source": "/warehouse/:path*",
+      "destination": "/app/index.html"
+    },
+    {
+      "source": "/bookings/:path*",
+      "destination": "/app/index.html"
+    },
+    {
+      "source": "/road-control/:path*",
+      "destination": "/app/index.html"
+    },
+    {
+      "source": "/card/:path*",
+      "destination": "/app/index.html"
     }
   ]
 }

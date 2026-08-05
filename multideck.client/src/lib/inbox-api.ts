@@ -8,9 +8,11 @@ import {
   InboxApiError,
   buildSendPayload,
   normalizeConnection,
+  normalizeAutomaticReplySettings,
   normalizeDexterEmailContextSource,
   normalizeDraft,
   normalizeMailbox,
+  normalizeMailboxFolder,
   normalizeProviderAvailability,
   normalizeSummary,
   normalizeThreadDetail,
@@ -25,11 +27,14 @@ import {
   type ConnectionStatus,
   type DexterEmailContextSource,
   type InboxConnection,
+  type AutomaticReplySettings,
+  type AutomaticReplyUpdate,
   type InboxDraft,
   type InboxProviderAvailability,
   type InboxThreadDetail,
   type MailProvider,
   type Mailbox,
+  type MailboxFolder,
   type OutboundAttachment,
   type SendReceipt,
   type SendRequest,
@@ -54,6 +59,17 @@ const inboxFunctionName = "inbox-api"
 const inboxBasePath = `${supabaseFunctionsUrl}/${inboxFunctionName}`
 const sessionRefreshLeewaySeconds = 30
 const mailboxSyncPageLimit = 5
+const inlineAttachmentCacheLimit = 96
+const inlineAttachmentCacheTtlMs = 10 * 60_000
+
+type InlineAttachmentCacheEntry = {
+  url: string | null
+  pending: Promise<string> | null
+  lastUsedAt: number
+  consumers: number
+}
+
+const inlineAttachmentCache = new Map<string, InlineAttachmentCacheEntry>()
 
 export type MailboxSyncResult = {
   synced: number
@@ -218,6 +234,26 @@ export async function listInboxConnections(): Promise<InboxConnection[]> {
   })
 }
 
+export async function loadInboxWorkspace(): Promise<{ connections: InboxConnection[]; mailboxes: Mailbox[]; folders: MailboxFolder[] }> {
+  return inboxRequest("/workspace", {
+    method: "GET",
+    normalize: (payload) => {
+      const record = readRecord(payload)
+      return {
+        connections: readList(pickField(record, "connections", "items"))
+          .map((connection) => normalizeConnection(connection))
+          .filter((connection) => connection.id !== ""),
+        mailboxes: readList(pickField(record, "mailboxes"))
+          .map((mailbox) => normalizeMailbox(mailbox))
+          .filter((mailbox) => mailbox.id !== ""),
+        folders: readList(pickField(record, "folders"))
+          .map((folder) => normalizeMailboxFolder(folder))
+          .filter((folder) => folder.id !== "" && folder.mailboxId !== ""),
+      }
+    },
+  })
+}
+
 export async function listInboxProviders(): Promise<InboxProviderAvailability[]> {
   return inboxRequest("/providers", {
     method: "GET",
@@ -346,10 +382,29 @@ export async function syncMailbox(mailboxId: string): Promise<MailboxSyncResult>
   }
 }
 
-export function buildThreadQueryString({ mailboxId, folder = "inbox", query, cursor, limit = 25 }: ThreadQuery) {
+export async function getAutomaticReply(mailboxId: string): Promise<AutomaticReplySettings> {
+  return inboxRequest(`/mailboxes/${encodeURIComponent(mailboxId)}/automatic-reply`, {
+    method: "GET",
+    normalize: normalizeAutomaticReplySettings,
+  })
+}
+
+export async function updateAutomaticReply(
+  mailboxId: string,
+  update: AutomaticReplyUpdate,
+): Promise<AutomaticReplySettings> {
+  return inboxRequest(`/mailboxes/${encodeURIComponent(mailboxId)}/automatic-reply`, {
+    method: "PATCH",
+    body: JSON.stringify(update),
+    normalize: normalizeAutomaticReplySettings,
+  })
+}
+
+export function buildThreadQueryString({ mailboxId, folder = "inbox", folderId, query, cursor, limit = 25 }: ThreadQuery) {
   const params = new URLSearchParams()
   params.set("mailboxId", mailboxId)
   params.set("folder", folder)
+  if (folderId) params.set("folderId", folderId)
   if (query?.trim()) params.set("query", query.trim())
   if (cursor) params.set("cursor", cursor)
   params.set("limit", String(limit))
@@ -488,9 +543,125 @@ export async function readFileAsAttachment(file: File): Promise<OutboundAttachme
  * the file inherits the caller's authorization rather than a public link.
  */
 export async function getAttachmentBlobUrl(attachmentId: string): Promise<{ url: string; revoke: () => void }> {
+  return getSecureAttachmentBlobUrl(attachmentId, false)
+}
+
+/**
+ * Inline email images use the same authenticated transport as downloads. The
+ * resulting private blob URL exists only in this browser tab. A small bounded
+ * cache lets conversation prefetch finish the download before the operator
+ * selects the email; active renderers retain their entry until they unmount.
+ */
+export async function getInlineAttachmentBlobUrl(attachmentId: string): Promise<{ url: string; revoke: () => void }> {
+  const url = await loadInlineAttachmentBlobUrl(attachmentId)
+  return retainInlineAttachmentBlobUrl(attachmentId, url)
+}
+
+/** Returns a ready prefetched image synchronously, before the first paint. */
+export function getCachedInlineAttachmentBlobUrl(attachmentId: string): { url: string; revoke: () => void } | null {
+  const entry = inlineAttachmentCache.get(attachmentId)
+  if (!entry?.url) return null
+  entry.lastUsedAt = Date.now()
+  return retainInlineAttachmentBlobUrl(attachmentId, entry.url)
+}
+
+/** Warms only the inline images that can appear in one rendered conversation. */
+export async function prefetchThreadInlineAttachmentBlobUrls(detail: InboxThreadDetail): Promise<void> {
+  const attachmentIds = Array.from(new Set(
+    [...detail.messages].reverse().flatMap((message) => message.attachments)
+      .filter((attachment) => attachment.isInline && attachment.contentId)
+      .map((attachment) => attachment.id),
+  )).slice(0, 24)
+
+  await Promise.allSettled(attachmentIds.map((attachmentId) => loadInlineAttachmentBlobUrl(attachmentId)))
+}
+
+/** Clears private image material whenever the authenticated workspace changes. */
+export function clearInlineAttachmentBlobCache() {
+  for (const entry of inlineAttachmentCache.values()) {
+    if (entry.url) URL.revokeObjectURL(entry.url)
+  }
+  inlineAttachmentCache.clear()
+}
+
+function retainInlineAttachmentBlobUrl(attachmentId: string, url: string) {
+  const entry = inlineAttachmentCache.get(attachmentId)
+  if (!entry || entry.url !== url) {
+    throw new InboxApiError("This private image is no longer available. Reopen the message to try again.", {
+      code: "unauthenticated",
+    })
+  }
+  entry.consumers += 1
+  let released = false
+  return {
+    url,
+    revoke: () => {
+      if (released) return
+      released = true
+      const current = inlineAttachmentCache.get(attachmentId)
+      if (current?.url === url) current.consumers = Math.max(0, current.consumers - 1)
+      pruneInlineAttachmentCache()
+    },
+  }
+}
+
+async function loadInlineAttachmentBlobUrl(attachmentId: string): Promise<string> {
+  const now = Date.now()
+  pruneInlineAttachmentCache(now)
+  const cached = inlineAttachmentCache.get(attachmentId)
+  if (cached?.url) {
+    cached.lastUsedAt = now
+    return cached.url
+  }
+  if (cached?.pending) return cached.pending
+
+  const entry: InlineAttachmentCacheEntry = cached ?? { url: null, pending: null, lastUsedAt: now, consumers: 0 }
+  const pending = getSecureAttachmentBlobUrl(attachmentId, true)
+    .then((result) => {
+      if (inlineAttachmentCache.get(attachmentId) !== entry) {
+        result.revoke()
+        throw new InboxApiError("This private image is no longer available. Reopen the message to try again.", {
+          code: "unauthenticated",
+        })
+      }
+      entry.url = result.url
+      entry.pending = null
+      entry.lastUsedAt = Date.now()
+      pruneInlineAttachmentCache()
+      return result.url
+    })
+    .catch((error) => {
+      if (inlineAttachmentCache.get(attachmentId) === entry) inlineAttachmentCache.delete(attachmentId)
+      throw error
+    })
+  entry.pending = pending
+  inlineAttachmentCache.set(attachmentId, entry)
+  return pending
+}
+
+function pruneInlineAttachmentCache(now = Date.now()) {
+  for (const [attachmentId, entry] of inlineAttachmentCache) {
+    if (entry.url && entry.consumers === 0 && now - entry.lastUsedAt > inlineAttachmentCacheTtlMs) {
+      URL.revokeObjectURL(entry.url)
+      inlineAttachmentCache.delete(attachmentId)
+    }
+  }
+
+  if (inlineAttachmentCache.size <= inlineAttachmentCacheLimit) return
+  const removable = [...inlineAttachmentCache.entries()]
+    .filter(([, entry]) => entry.url && entry.consumers === 0)
+    .sort(([, left], [, right]) => left.lastUsedAt - right.lastUsedAt)
+  while (inlineAttachmentCache.size > inlineAttachmentCacheLimit && removable.length) {
+    const [attachmentId, entry] = removable.shift()!
+    URL.revokeObjectURL(entry.url!)
+    inlineAttachmentCache.delete(attachmentId)
+  }
+}
+
+async function getSecureAttachmentBlobUrl(attachmentId: string, inline: boolean): Promise<{ url: string; revoke: () => void }> {
   let response: Response
   try {
-    response = await fetchInboxEdge(`/attachments/${encodeURIComponent(attachmentId)}`, {
+    response = await fetchInboxEdge(`/attachments/${encodeURIComponent(attachmentId)}${inline ? "?disposition=inline" : ""}`, {
       method: "GET",
       headers: { Accept: "application/octet-stream" },
     })

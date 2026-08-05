@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react"
 import {
+  ArrowRightLeft,
   ArrowDownRight,
   ArrowLeft,
   ArrowRight,
   ArrowUpRight,
+  Building2,
   ChartNoAxesCombined,
   CirclePause,
   Download,
@@ -25,6 +27,7 @@ import {
   SlidersHorizontal,
   Upload,
   UploadCloud,
+  UserRound,
   Users,
   Workflow,
   X,
@@ -32,11 +35,12 @@ import {
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
-import { ContactProfileModule } from "@/components/multideck/customer-components"
 import {
   getDateKey,
   MultideckDateRangePicker,
@@ -48,7 +52,6 @@ import {
   CrmActivityTimeline,
   CrmAssetFolderCard,
   CrmAssetRow,
-  CrmContactTable,
   CrmDealDetailPanel,
   CrmForecastPanel,
   CrmLeadDetailPanel,
@@ -75,7 +78,6 @@ import { StatusPill } from "@/components/multideck/status-pill"
 import { SegmentedControl } from "@/components/multideck/workflow-components"
 import {
   crmActivities,
-  crmContacts,
   crmPipelineBoards,
   crmPipelineStages,
   type StatusTone,
@@ -83,29 +85,30 @@ import {
 import { useLanguage } from "@/i18n/language-provider"
 import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
 import { getApiTeamUsers } from "@/lib/api"
+import { createCustomer, createCustomerContact, getCustomerReference, listCustomers, type ApiCustomer } from "@/lib/customer-api"
 import { listDeals, markDealWon, moveDealStage, type ApiDeal } from "@/lib/deal-api"
 import {
-  decideLeadTransfer,
+  createFollowUpLead,
   getCrmDashboard,
+  getCrmFollowUpOpportunities,
   getLead,
   listCrmTransferUsers,
   listLeads,
-  listLeadTransferRequests,
-  requestLeadTransfer,
   transferLead,
   type ApiLead,
   type ApiLeadDetail,
   type CrmDashboardData,
-  type CrmLeadTransferRequest,
+  type CrmFollowUpData,
+  type CrmFollowUpOpportunity,
   type CrmTransferUser,
 } from "@/lib/lead-api"
 import { getPipelineSettings, type ApiPipeline } from "@/lib/pipeline-api"
 import { createProfilePhotoSignedUrls } from "@/lib/profile-photo"
+import { setMarketingOptIn } from "@/lib/marketing-consent-api"
 import { getSupabaseSession } from "@/lib/supabase"
 
 const rowsPerPageOptions = [10, 20, 30, 50]
 type CrmPipeline = CrmPipelineBoardData
-type CrmContact = (typeof crmContacts)[number]
 type Lead = ApiLead
 
 const dealCloseDateFormatter = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" })
@@ -942,7 +945,6 @@ function CrmPageHeader({
   meta,
   action,
   onSpeakToDexter,
-  compact = false,
 }: {
   eyebrow?: string
   title: string
@@ -950,7 +952,6 @@ function CrmPageHeader({
   meta?: string
   action?: ReactNode
   onSpeakToDexter?: () => void
-  compact?: boolean
 }) {
   const actions = action || onSpeakToDexter ? (
     <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -959,32 +960,17 @@ function CrmPageHeader({
     </div>
   ) : null
 
-  if (compact) {
-    return (
-      <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-        <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:gap-5">
-          <h1 className="shrink-0 text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">{title}</h1>
-          {summary || meta ? (
-            <div className="min-w-0 text-[12px] leading-5">
-              {meta ? <p className="font-medium text-[var(--md-text)]">{meta}</p> : null}
-              {summary ? <p className="text-[var(--md-subtle)]">{summary}</p> : null}
-            </div>
-          ) : null}
-        </div>
-        {actions ? <div className="lg:justify-self-end">{actions}</div> : null}
-      </div>
-    )
-  }
-
   return (
-    <div className="flex flex-col gap-[var(--md-gap-lg)] xl:flex-row xl:items-end xl:justify-between">
+    <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
       <div className="min-w-0">
-        <p className="text-[12px] font-medium uppercase tracking-normal text-[var(--md-subtle)]">{eyebrow}</p>
-        <h1 className="mt-2 text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">{title}</h1>
-        {summary ? <p className="mt-2 max-w-[860px] text-[15px] leading-6 text-[var(--md-text)]">{summary}</p> : null}
-        {meta ? <p className="mt-2 text-[12px] font-medium text-[var(--md-subtle)]">{meta}</p> : null}
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+          <h1 className="text-[22px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">{title}</h1>
+          {eyebrow !== "CRM" ? <p className="text-[11px] font-medium text-[var(--md-subtle)]">{eyebrow}</p> : null}
+          {meta ? <p className="text-[11px] font-medium text-[var(--md-subtle)]">{meta}</p> : null}
+        </div>
+        {summary ? <p className="mt-1 max-w-[900px] text-[12px] leading-5 text-[var(--md-text)]">{summary}</p> : null}
       </div>
-      {actions}
+      {actions ? <div className="lg:justify-self-end">{actions}</div> : null}
     </div>
   )
 }
@@ -998,6 +984,186 @@ function PrimaryActionButton({ children, onClick }: { children: ReactNode; onCli
       <Plus data-icon="inline-start" strokeWidth={1.2} />
       {children}
     </Button>
+  )
+}
+
+type FollowUpCreateKind = "lead" | "contact" | "account"
+
+function personNameParts(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  return { firstName: parts.shift() || null, lastName: parts.join(" ") || null }
+}
+
+function companyNameFromEmail(email: string) {
+  const domain = email.split("@")[1]?.split(".")[0] || ""
+  return domain ? domain.charAt(0).toLocaleUpperCase() + domain.slice(1).replaceAll(/[-_]/g, " ") : ""
+}
+
+function FollowUpCreateMenu({ opportunity, onChoose }: { opportunity: CrmFollowUpOpportunity; onChoose: (kind: FollowUpCreateKind) => void }) {
+  const { t } = useLanguage()
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-3 text-[12px] font-medium text-[var(--md-accent-ink)] shadow-[var(--md-shadow-line)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]"
+          onClick={(event) => event.stopPropagation()}
+          aria-label={t("Create CRM record")}
+        >
+          <Plus className="size-3.5" strokeWidth={1.4} />
+          {t("Create")}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-52" onClick={(event) => event.stopPropagation()}>
+        <DropdownMenuLabel>{t("Create from this email")}</DropdownMenuLabel>
+        <DropdownMenuItem onSelect={() => onChoose("lead")}>
+          <Users className="size-4 text-[var(--md-accent)]" strokeWidth={1.3} />
+          <span><span className="block font-medium text-[var(--md-ink)]">{t("Lead")}</span><span className="block text-[11px] text-[var(--md-subtle)]">{t("New sales opportunity")}</span></span>
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onChoose("contact")}>
+          <UserRound className="size-4 text-[var(--md-blue)]" strokeWidth={1.3} />
+          <span><span className="block font-medium text-[var(--md-ink)]">{t("Contact")}</span><span className="block text-[11px] text-[var(--md-subtle)]">{t("Person at an existing account")}</span></span>
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onChoose("account")}>
+          <Building2 className="size-4 text-[var(--md-green)]" strokeWidth={1.3} />
+          <span><span className="block font-medium text-[var(--md-ink)]">{t("Account")}</span><span className="block text-[11px] text-[var(--md-subtle)]">{t("New customer organisation")}</span></span>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+function FollowUpRecordDialog({
+  opportunity,
+  kind,
+  onClose,
+  onCreated,
+}: {
+  opportunity: CrmFollowUpOpportunity | null
+  kind: FollowUpCreateKind | null
+  onClose: () => void
+  onCreated: () => void
+}) {
+  const { t } = useLanguage()
+  const [personName, setPersonName] = useState("")
+  const [companyName, setCompanyName] = useState("")
+  const [email, setEmail] = useState("")
+  const [accountId, setAccountId] = useState("")
+  const [accounts, setAccounts] = useState<ApiCustomer[]>([])
+  const [accountState, setAccountState] = useState<"idle" | "loading" | "ready" | "error">("idle")
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!opportunity || !kind) return
+    setPersonName(opportunity.personName || "")
+    setCompanyName(opportunity.companyName || companyNameFromEmail(opportunity.email || ""))
+    setEmail(opportunity.email || "")
+    setAccountId("")
+    setError(null)
+    if (kind !== "contact") {
+      setAccountState("idle")
+      return
+    }
+    let active = true
+    setAccountState("loading")
+    listCustomers()
+      .then((rows) => {
+        if (!active) return
+        setAccounts(rows)
+        setAccountState("ready")
+      })
+      .catch(() => {
+        if (!active) return
+        setAccountState("error")
+      })
+    return () => { active = false }
+  }, [kind, opportunity])
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!opportunity || !kind) return
+    setSubmitting(true)
+    setError(null)
+    try {
+      if (kind === "lead") {
+        await createFollowUpLead({ email, personName, companyName, threadId: opportunity.threadId })
+      } else if (kind === "contact") {
+        if (!accountId) throw new Error(t("Choose the account this contact belongs to."))
+        const name = personNameParts(personName)
+        await createCustomerContact(accountId, { ...name, email })
+      } else {
+        const reference = await getCustomerReference()
+        const orgType = reference.organisationTypes.find((type) => type.name.toLocaleLowerCase() === "customer") ?? reference.organisationTypes[0]
+        if (!orgType) throw new Error(t("No customer account type is configured."))
+        const name = personNameParts(personName)
+        await createCustomer({
+          name: companyName,
+          orgTypeId: orgType.id,
+          addressLine1: null,
+          townCity: null,
+          postZipCode: null,
+          countryCode: null,
+          contactFirstName: name.firstName,
+          contactLastName: name.lastName,
+          contactEmail: email,
+        })
+      }
+      toast.success(t(kind === "lead" ? "Lead created" : kind === "contact" ? "Contact created" : "Account created"))
+      onCreated()
+      onClose()
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : t("This CRM record could not be created."))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const title = kind === "lead" ? t("Create lead") : kind === "contact" ? t("Create contact") : t("Create account")
+  return (
+    <Dialog open={Boolean(opportunity && kind)} onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent className="border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[520px]">
+        <DialogHeader className="text-start">
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{t("Review the details found in the email before adding them to CRM.")}</DialogDescription>
+        </DialogHeader>
+        <form className="grid gap-4" onSubmit={submit}>
+          {kind !== "contact" ? (
+            <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
+              {kind === "account" ? t("Account name") : t("Company")}
+              <Input required value={companyName} onChange={(event) => setCompanyName(event.target.value)} className="h-10" dir="auto" />
+            </label>
+          ) : (
+            <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
+              {t("Account")}
+              <Select value={accountId} onValueChange={setAccountId} disabled={accountState !== "ready"}>
+                <SelectTrigger className="h-10"><SelectValue placeholder={accountState === "loading" ? t("Loading accounts…") : t("Choose account")} /></SelectTrigger>
+                <SelectContent>{accounts.map((account) => <SelectItem key={account.id} value={account.id}><span dir="auto">{account.name}</span></SelectItem>)}</SelectContent>
+              </Select>
+              {accountState === "error" ? <span className="text-[11px] text-[var(--md-red)]">{t("Accounts could not be loaded.")}</span> : null}
+            </label>
+          )}
+          <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
+            {t("Person")}
+            <Input required value={personName} onChange={(event) => setPersonName(event.target.value)} className="h-10" dir="auto" />
+          </label>
+          <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
+            {t("Email")}
+            <Input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} className="h-10" dir="ltr" />
+          </label>
+          {error ? <p role="alert" className="rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red)_9%,transparent)] px-3 py-2 text-[12px] text-[var(--md-red)]" dir="auto">{t(error)}</p> : null}
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={onClose}>{t("Cancel")}</Button>
+            <Button type="submit" disabled={submitting || !email.trim() || !personName.trim() || (kind === "contact" && !accountId) || (kind !== "contact" && !companyName.trim())}>
+              {submitting ? <LoaderCircle className="size-4 animate-spin" /> : null}
+              {submitting ? t("Creating…") : title}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -1022,21 +1188,26 @@ function DealDetailDrawer({
 export function CrmOverviewPage() {
   const { language, t } = useLanguage()
   const [dexterOpen, setDexterOpen] = useState(false)
-  const [inactivityDays, setInactivityDays] = useState<30 | 90 | 180>(90)
-  const [area, setArea] = useState("all")
   const [data, setData] = useState<CrmDashboardData | null>(null)
+  const [followUpData, setFollowUpData] = useState<CrmFollowUpData | null>(null)
   const [state, setState] = useState<"loading" | "ready" | "error">("loading")
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
+  const [createOpportunity, setCreateOpportunity] = useState<CrmFollowUpOpportunity | null>(null)
+  const [createKind, setCreateKind] = useState<FollowUpCreateKind | null>(null)
 
   useEffect(() => {
     let active = true
     setState("loading")
     setError(null)
-    getCrmDashboard(inactivityDays, area === "all" ? null : area)
-      .then((result) => {
+    Promise.all([
+      getCrmDashboard(90),
+      getCrmFollowUpOpportunities(),
+    ])
+      .then(([result, followUps]) => {
         if (!active) return
         setData(result)
+        setFollowUpData(followUps)
         setState("ready")
       })
       .catch((loadError) => {
@@ -1045,7 +1216,24 @@ export function CrmOverviewPage() {
         setState("error")
       })
     return () => { active = false }
-  }, [area, inactivityDays, reloadKey, t])
+  }, [reloadKey, t])
+
+  useEffect(() => {
+    const refresh = () => setReloadKey((key) => key + 1)
+    const refreshWhenVisible = () => { if (document.visibilityState === "visible") refresh() }
+    window.addEventListener("focus", refresh)
+    window.addEventListener("multideck:crm-changed", refresh)
+    window.addEventListener("multideck:inbox-changed", refresh)
+    document.addEventListener("visibilitychange", refreshWhenVisible)
+    const interval = window.setInterval(refreshWhenVisible, 120_000)
+    return () => {
+      window.removeEventListener("focus", refresh)
+      window.removeEventListener("multideck:crm-changed", refresh)
+      window.removeEventListener("multideck:inbox-changed", refresh)
+      document.removeEventListener("visibilitychange", refreshWhenVisible)
+      window.clearInterval(interval)
+    }
+  }, [])
 
   const money = useMemo(() => new Intl.NumberFormat(language, {
     style: "currency",
@@ -1060,38 +1248,9 @@ export function CrmOverviewPage() {
       <CrmPageHeader
         title={t("CRM dashboard")}
         summary={<>{t("Your assigned leads, deals, follow-ups and recent sales activity in one consistent view.")}</>}
-        meta={t("Live CRM data · scoped to your assigned records")}
         onSpeakToDexter={() => setDexterOpen(true)}
         action={<Button className="h-10 rounded-[var(--md-radius-lg)]" onClick={() => { window.location.href = "/crm/deals" }}>{t("Open deals")}</Button>}
       />
-
-      <Surface padding="md" className="rounded-[var(--md-radius-xl)]">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Follow-up view")}</p>
-            <p className="mt-1 text-[11px] text-[var(--md-subtle)]">{t("Never-contacted leads are shown first, followed by the oldest contact date.")}</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <label className="grid gap-1 text-[11px] font-medium text-[var(--md-subtle)]">
-              {t("Inactive for")}
-              <Select value={String(inactivityDays)} onValueChange={(value) => setInactivityDays(Number(value) as 30 | 90 | 180)}>
-                <SelectTrigger className="h-9 min-w-[126px] rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] shadow-[var(--md-shadow-line)]"><SelectValue /></SelectTrigger>
-                <SelectContent>{[30, 90, 180].map((days) => <SelectItem key={days} value={String(days)}>{days} {t("days")}</SelectItem>)}</SelectContent>
-              </Select>
-            </label>
-            <label className="grid gap-1 text-[11px] font-medium text-[var(--md-subtle)]">
-              {t("Area")}
-              <Select value={area} onValueChange={setArea}>
-                <SelectTrigger className="h-9 min-w-[190px] rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] shadow-[var(--md-shadow-line)]"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">{t("All assigned areas")}</SelectItem>
-                  {(data?.areas ?? []).map((option) => <SelectItem key={option.key} value={option.key}><span dir="auto">{option.label}</span> · {option.count}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </label>
-          </div>
-        </div>
-      </Surface>
 
       {state === "loading" ? (
         <Surface padding="lg" className="grid min-h-[320px] place-items-center rounded-[var(--md-radius-xl)]" role="status">
@@ -1110,8 +1269,8 @@ export function CrmOverviewPage() {
         <>
           <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
             {[
-              [t("Open leads"), data.summary.openLeads], [t("Needs follow-up"), data.summary.staleLeads],
-              [t("Due now"), data.summary.dueFollowUps], [t("Open deals"), data.summary.openDeals],
+              [t("Open leads"), data.summary.openLeads], [t("Needs follow-up"), followUpData?.summary.total ?? 0],
+              [t("Replies due"), followUpData?.summary.repliesDue ?? 0], [t("Open deals"), data.summary.openDeals],
               [t("Pipeline value"), money.format(data.summary.pipelineValue)], [t("Areas"), data.areas.length],
             ].map(([label, value]) => (
               <Surface key={String(label)} padding="md" className="rounded-[var(--md-radius-xl)]">
@@ -1122,34 +1281,46 @@ export function CrmOverviewPage() {
           </div>
 
           <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-            <div className="px-4 py-4 sm:px-5"><SectionHeader title={t("Leads needing follow-up")} meta={t("Oldest contact first")} /></div>
-            {data.followUps.length ? (
+            <div className="flex flex-col gap-2 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+              <SectionHeader title={t("Who needs following up")} meta={followUpData ? t("Prioritised from live email and CRM activity") : undefined} />
+              {followUpData?.generatedAt ? <p className="text-[11px] text-[var(--md-subtle)]">{t("Checked")} {dateTime.format(new Date(followUpData.generatedAt))}</p> : null}
+            </div>
+            {followUpData?.items.length ? (
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader><TableRow>
-                    {["Company", "Decision maker", "Previous conversation or lane", "Email", "Location", "Last contact", "Next action", "Stage", "Value"].map((label) => <TableHead key={label} className="whitespace-nowrap">{t(label)}</TableHead>)}
+                    {["Person or account", "Why now", "Latest conversation", "Last activity", "CRM", "Action"].map((label) => <TableHead key={label} className="whitespace-nowrap">{t(label)}</TableHead>)}
                   </TableRow></TableHeader>
                   <TableBody>
-                    {data.followUps.map((lead) => (
-                      <TableRow key={lead.id} className="cursor-pointer" onClick={() => { window.location.href = `/crm/leads/${lead.id}` }}>
-                        <TableCell className="font-medium text-[var(--md-ink)]" dir="auto">{lead.companyName}</TableCell>
-                        <TableCell dir="auto">{lead.decisionMaker || t("Not recorded")}</TableCell>
-                        <TableCell className="max-w-[260px]"><span className="line-clamp-2" dir="auto">{lead.previousConversation || lead.laneContext || t("No context recorded")}</span></TableCell>
-                        <TableCell dir="ltr">{lead.email || t("Not recorded")}</TableCell>
-                        <TableCell dir="auto">{lead.location || t("Not recorded")}</TableCell>
-                        <TableCell className="whitespace-nowrap">{lead.neverContacted ? <StatusPill tone="amber">{t("Never contacted")}</StatusPill> : dateTime.format(new Date(lead.lastContactAt!))}</TableCell>
-                        <TableCell className="whitespace-nowrap">{lead.nextActionAt ? dateTime.format(new Date(lead.nextActionAt)) : t("Not scheduled")}</TableCell>
-                        <TableCell><StatusPill tone="blue">{lead.stage}</StatusPill></TableCell>
-                        <TableCell className="whitespace-nowrap tabular-nums">{lead.opportunityValue === null ? t("Not recorded") : new Intl.NumberFormat(language, { style: "currency", currency: lead.currencyCode || "GBP", maximumFractionDigits: 0 }).format(lead.opportunityValue)}</TableCell>
+                    {followUpData.items.map((opportunity) => {
+                      const reason = opportunity.reasonCode === "reply_due" ? t("Reply waiting")
+                        : opportunity.reasonCode === "first_follow_up" ? t("3 days without a reply")
+                          : opportunity.reasonCode === "second_follow_up" ? t("5 days since the last follow-up")
+                            : opportunity.reasonCode === "never_contacted" ? t("Never contacted") : t("Scheduled follow-up due")
+                      const openRecord = () => {
+                        if (opportunity.recordType === "lead" && opportunity.recordId) window.location.href = `/crm/leads/${opportunity.recordId}`
+                        else if (opportunity.threadId && opportunity.mailboxId) window.location.href = `/inbox?mailbox=${encodeURIComponent(opportunity.mailboxId)}&thread=${encodeURIComponent(opportunity.threadId)}`
+                      }
+                      return (
+                      <TableRow key={opportunity.id} className={opportunity.recordId || opportunity.threadId ? "cursor-pointer" : undefined} onClick={openRecord}>
+                        <TableCell className="min-w-[210px]">
+                          <p className="font-medium text-[var(--md-ink)]" dir="auto">{opportunity.personName || opportunity.companyName || opportunity.email || t("Unknown sender")}</p>
+                          <p className="mt-0.5 text-[11px] text-[var(--md-subtle)]" dir="auto">{opportunity.companyName && opportunity.companyName !== opportunity.personName ? opportunity.companyName : opportunity.email}</p>
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap"><StatusPill tone={opportunity.reasonCode === "reply_due" ? "red" : opportunity.reasonCode === "second_follow_up" ? "amber" : "blue"}>{reason}</StatusPill><p className="mt-1 text-[10.5px] text-[var(--md-subtle)]">{opportunity.daysWaiting === 0 ? t("Today") : `${opportunity.daysWaiting} ${t("days")}`}</p></TableCell>
+                        <TableCell className="max-w-[380px]"><p className="line-clamp-1 font-medium text-[var(--md-ink)]" dir="auto">{opportunity.subject}</p><p className="mt-1 line-clamp-2 text-[11px] text-[var(--md-subtle)]" dir="auto">{opportunity.context || t("No message preview available")}</p></TableCell>
+                        <TableCell className="whitespace-nowrap">{dateTime.format(new Date(opportunity.lastActivityAt))}</TableCell>
+                        <TableCell><StatusPill tone={opportunity.canCreate ? "amber" : "green"}>{opportunity.canCreate ? t("Not in CRM") : t(opportunity.recordType === "lead" ? "Lead" : opportunity.recordType === "contact" ? "Contact" : "Account")}</StatusPill></TableCell>
+                        <TableCell onClick={(event) => event.stopPropagation()}>{opportunity.canCreate ? <FollowUpCreateMenu opportunity={opportunity} onChoose={(kind) => { setCreateOpportunity(opportunity); setCreateKind(kind) }} /> : <Button type="button" variant="ghost" size="sm" className="h-8 rounded-[var(--md-radius-lg)] px-2.5 text-[12px]" onClick={openRecord}>{t(opportunity.threadId ? "Open conversation" : "Open record")}<ArrowRight className="size-3.5" /></Button>}</TableCell>
                       </TableRow>
-                    ))}
+                    )})}
                   </TableBody>
                 </Table>
               </div>
             ) : (
               <div className="px-5 py-12 text-center">
-                <p className="text-[14px] font-medium text-[var(--md-ink)]">{area === "all" ? t("No assigned leads need follow-up at this threshold.") : t("No leads match this area and inactivity filter.")}</p>
-                <p className="mt-2 text-[12px] text-[var(--md-subtle)]">{area === "all" ? t("New assigned leads and overdue conversations will appear here automatically.") : t("Choose another area or change the inactivity threshold.")}</p>
+                <p className="text-[14px] font-medium text-[var(--md-ink)]">{t("No follow-up opportunities right now.")}</p>
+                <p className="mt-2 text-[12px] text-[var(--md-subtle)]">{t("Human replies, overdue sent email, and due CRM activity will appear here automatically.")}</p>
               </div>
             )}
           </Surface>
@@ -1170,6 +1341,12 @@ export function CrmOverviewPage() {
           </div>
         </>
       ) : null}
+      <FollowUpRecordDialog
+        opportunity={createOpportunity}
+        kind={createKind}
+        onClose={() => { setCreateOpportunity(null); setCreateKind(null) }}
+        onCreated={() => setReloadKey((key) => key + 1)}
+      />
     </DexterDockedPage>
   )
 }
@@ -1226,14 +1403,10 @@ export function CrmLeadsPage({ navigate }: { navigate: (path: string) => void })
     setLoadState("loading")
     setLoadError(null)
 
-    Promise.all([
-      listLeads(),
-      loadLeadOwnerPhotoUrls().catch(() => new Map<string, string>()),
-    ])
-      .then(([data, nextOwnerPhotoUrls]) => {
+    listLeads(undefined, { forceRefresh: reloadToken > 0 })
+      .then((data) => {
         if (!isMounted) return
         setLeads(data)
-        setOwnerPhotoUrls(nextOwnerPhotoUrls)
         setLoadState("ready")
       })
       .catch((error: unknown) => {
@@ -1241,6 +1414,12 @@ export function CrmLeadsPage({ navigate }: { navigate: (path: string) => void })
         setLoadError(error instanceof Error ? error.message : t("Unable to load CRM leads. Check your connection and try again."))
         setLoadState("error")
       })
+
+    loadLeadOwnerPhotoUrls()
+      .then((nextOwnerPhotoUrls) => {
+        if (isMounted) setOwnerPhotoUrls(nextOwnerPhotoUrls)
+      })
+      .catch(() => undefined)
 
     return () => {
       isMounted = false
@@ -1404,7 +1583,6 @@ export function CrmLeadsPage({ navigate }: { navigate: (path: string) => void })
   return (
     <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t("Leads")} className="md-page md-page-stack-compact">
       <CrmPageHeader
-        compact
         title={t("Leads")}
         summary={
           <>
@@ -1637,10 +1815,8 @@ export function CrmLeadDetailPage({
   const [loadError, setLoadError] = useState<string | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
   const [transferUsers, setTransferUsers] = useState<CrmTransferUser[]>([])
-  const [transferRequests, setTransferRequests] = useState<CrmLeadTransferRequest[]>([])
   const [transferOpen, setTransferOpen] = useState(false)
-  const [transferTarget, setTransferTarget] = useState("")
-  const [transferReason, setTransferReason] = useState("")
+  const [transferSearch, setTransferSearch] = useState("")
   const [transferSaving, setTransferSaving] = useState(false)
   const { t } = useLanguage()
 
@@ -1653,14 +1829,12 @@ export function CrmLeadDetailPage({
       getLead(leadId),
       loadLeadOwnerPhotoUrls().catch(() => new Map<string, string>()),
       listCrmTransferUsers(),
-      listLeadTransferRequests(leadId),
     ])
-      .then(([data, nextOwnerPhotoUrls, users, requests]) => {
+      .then(([data, nextOwnerPhotoUrls, users]) => {
         if (!isMounted) return
         setLead(data)
         setOwnerPhotoUrls(nextOwnerPhotoUrls)
         setTransferUsers(users)
-        setTransferRequests(requests)
         setLoadState("ready")
       })
       .catch((error: unknown) => {
@@ -1676,24 +1850,20 @@ export function CrmLeadDetailPage({
 
   const currentTransferUser = transferUsers.find((user) => user.isCurrentUser)
   const isOwner = Boolean(currentTransferUser && lead?.ownerId === currentTransferUser.id)
-  const pendingRequestsToDecide = transferRequests.filter((request) => request.status === "pending" && request.fromUserId === currentTransferUser?.id)
-  const ownPendingRequest = transferRequests.find((request) => request.status === "pending" && request.requesterId === currentTransferUser?.id)
+  const availableTransferUsers = transferUsers.filter((user) => {
+    if (user.id === lead?.ownerId) return false
+    const query = transferSearch.trim().toLocaleLowerCase()
+    return !query || `${user.name} ${user.email}`.toLocaleLowerCase().includes(query)
+  })
 
-  async function submitTransfer() {
-    if (!lead || transferSaving) return
+  async function submitTransfer(targetUser: CrmTransferUser) {
+    if (!lead || !isOwner || transferSaving) return
     setTransferSaving(true)
     try {
-      if (isOwner) {
-        if (!transferTarget) return
-        await transferLead(lead.id, transferTarget, transferReason)
-        toast.success(t("Lead transferred"))
-      } else {
-        await requestLeadTransfer(lead.id, transferReason)
-        toast.success(t("Ownership request sent"))
-      }
+      await transferLead(lead.id, targetUser.id)
+      toast.success(`${t("Lead transferred to")} ${targetUser.name}`)
       setTransferOpen(false)
-      setTransferReason("")
-      setTransferTarget("")
+      setTransferSearch("")
       setReloadToken((token) => token + 1)
     } catch (submitError) {
       toast.error(submitError instanceof Error ? submitError.message : t("Lead ownership could not be updated."))
@@ -1702,13 +1872,39 @@ export function CrmLeadDetailPage({
     }
   }
 
-  async function decideTransfer(request: CrmLeadTransferRequest, decision: "approved" | "declined") {
+  async function changeLeadMarketingOptIn(optedIn: boolean) {
+    if (!lead) return
     try {
-      await decideLeadTransfer(request.id, decision)
-      toast.success(decision === "approved" ? t("Ownership request approved") : t("Ownership request declined"))
-      setReloadToken((token) => token + 1)
-    } catch (decisionError) {
-      toast.error(decisionError instanceof Error ? decisionError.message : t("The transfer request could not be updated."))
+      const result = await setMarketingOptIn("lead", lead.id, optedIn)
+      setLead((current) => current ? {
+        ...current,
+        marketingOptIn: result.marketingOptIn,
+        marketingConsentSource: result.marketingConsentSource,
+        marketingConsentUpdatedAt: result.marketingConsentUpdatedAt,
+      } : current)
+      toast.success(t(optedIn ? "Marketing opt-in recorded" : "Marketing opt-out recorded"))
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : t("Marketing consent could not be updated."))
+      throw cause
+    }
+  }
+
+  async function changeContactMarketingOptIn(contactId: string, optedIn: boolean) {
+    try {
+      const result = await setMarketingOptIn("contact", contactId, optedIn)
+      setLead((current) => current ? {
+        ...current,
+        contacts: current.contacts.map((contact) => contact.id === contactId ? {
+          ...contact,
+          marketingOptIn: result.marketingOptIn,
+          marketingConsentSource: result.marketingConsentSource,
+          marketingConsentUpdatedAt: result.marketingConsentUpdatedAt,
+        } : contact),
+      } : current)
+      toast.success(t(optedIn ? "Marketing opt-in recorded" : "Marketing opt-out recorded"))
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : t("Marketing consent could not be updated."))
+      throw cause
     }
   }
 
@@ -1754,88 +1950,76 @@ export function CrmLeadDetailPage({
 
   return (
     <div className="md-page md-page-stack-compact">
-      <Surface padding="md" className="rounded-[var(--md-radius-xl)]">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Lead ownership")}</p>
-            <p className="mt-1 text-[11px] text-[var(--md-subtle)]" dir="auto">
-              {lead.ownerName ? `${t("Current owner")}: ${lead.ownerName}` : t("No owner assigned")}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {ownPendingRequest ? <StatusPill tone="amber">{t("Ownership requested")}</StatusPill> : null}
-            <Button variant="outline" disabled={Boolean(ownPendingRequest) && !isOwner} onClick={() => setTransferOpen(true)}>
-              {isOwner ? t("Transfer lead") : t("Request ownership")}
-            </Button>
-          </div>
-        </div>
-        {pendingRequestsToDecide.length ? (
-          <div className="mt-4 grid gap-2">
-            {pendingRequestsToDecide.map((request) => (
-              <div key={request.id} className="flex flex-col gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-3 sm:flex-row sm:items-center sm:justify-between">
-                <div><p className="text-[12px] font-medium text-[var(--md-ink)]" dir="auto">{request.requesterName} {t("requested ownership")}</p>{request.requestNote ? <p className="mt-1 text-[11px] text-[var(--md-text)]" dir="auto">{request.requestNote}</p> : null}</div>
-                <div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => void decideTransfer(request, "declined")}>{t("Decline")}</Button><Button size="sm" onClick={() => void decideTransfer(request, "approved")}>{t("Approve")}</Button></div>
-              </div>
-            ))}
-          </div>
-        ) : null}
-      </Surface>
       <CrmLeadDetailPanel
         lead={lead}
         ownerPhotoUrl={lead.ownerId ? ownerPhotoUrls.get(lead.ownerId) : undefined}
+        ownerAction={isOwner ? (
+          <Popover open={transferOpen} onOpenChange={(open) => {
+            setTransferOpen(open)
+            if (!open) setTransferSearch("")
+          }}>
+            <PopoverTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-7 shrink-0 rounded-[var(--md-radius-sm)] text-[var(--md-text)] hover:bg-[var(--md-surface-tint)] hover:text-[var(--md-ink)]"
+                aria-label={t("Transfer ownership")}
+                title={t("Transfer ownership")}
+              >
+                <ArrowRightLeft className="size-4" strokeWidth={1.4} aria-hidden="true" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-[min(320px,calc(100vw-32px))] rounded-[var(--md-radius-lg)] border-0 p-0 shadow-[var(--md-shadow-lift)]">
+              <div className="p-3 shadow-[var(--md-stroke-bottom)]">
+                <p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Transfer ownership")}</p>
+                <p className="mt-1 text-[11px] text-[var(--md-subtle)]">{t("Choose the team member who should own this lead.")}</p>
+                <div className="relative mt-3">
+                  <Search className="pointer-events-none absolute start-3 top-1/2 size-3.5 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.4} aria-hidden="true" />
+                  <Input
+                    autoFocus
+                    value={transferSearch}
+                    onChange={(event) => setTransferSearch(event.target.value)}
+                    placeholder={t("Search team members…")}
+                    aria-label={t("Search team members")}
+                    className="h-9 rounded-[var(--md-radius-md)] ps-9 text-[12px]"
+                  />
+                </div>
+              </div>
+              <div className="md-scrollbar max-h-64 overflow-y-auto p-1.5" role="listbox" aria-label={t("Team members")}>
+                {availableTransferUsers.length ? availableTransferUsers.map((user) => (
+                  <button
+                    key={user.id}
+                    type="button"
+                    role="option"
+                    aria-selected="false"
+                    disabled={transferSaving}
+                    className="flex min-h-11 w-full items-center gap-3 rounded-[var(--md-radius-md)] px-2.5 py-2 text-start transition-colors hover:bg-[var(--md-surface-tint)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] disabled:opacity-50"
+                    onClick={() => void submitTransfer(user)}
+                  >
+                    <span className="grid size-8 shrink-0 place-items-center rounded-full bg-[var(--md-accent-a11)] text-[11px] font-medium text-[var(--md-accent)]" aria-hidden="true">
+                      {user.name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[12px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{user.name}</span>
+                      <span className="block truncate text-[11px] text-[var(--md-subtle)]" data-i18n-skip dir="ltr">{user.email}</span>
+                    </span>
+                    {transferSaving ? <LoaderCircle className="size-4 animate-spin text-[var(--md-subtle)]" aria-hidden="true" /> : null}
+                  </button>
+                )) : (
+                  <p className="px-3 py-6 text-center text-[12px] text-[var(--md-subtle)]">{t("No team members match this search.")}</p>
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
+        ) : undefined}
         onBack={() => navigate("/crm/leads")}
+        onMarketingOptInChange={changeLeadMarketingOptIn}
+        onContactMarketingOptInChange={changeContactMarketingOptIn}
       />
-      <Dialog open={transferOpen} onOpenChange={setTransferOpen}>
-        <DialogContent className="rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[500px]">
-          <DialogHeader><DialogTitle>{isOwner ? t("Transfer lead") : t("Request ownership")}</DialogTitle><DialogDescription>{isOwner ? t("The new owner will also receive this lead's open opportunities.") : t("The current owner must approve before this lead moves to you.")}</DialogDescription></DialogHeader>
-          <div className="grid gap-4">
-            {isOwner ? <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">{t("New owner")}<Select value={transferTarget} onValueChange={setTransferTarget}><SelectTrigger className="h-10 rounded-[var(--md-radius-md)]"><SelectValue placeholder={t("Choose a user")} /></SelectTrigger><SelectContent>{transferUsers.filter((user) => !user.isCurrentUser).map((user) => <SelectItem key={user.id} value={user.id}><span dir="auto">{user.name}</span></SelectItem>)}</SelectContent></Select></label> : null}
-            <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">{isOwner ? t("Handover note (optional)") : t("Why do you need this lead? (optional)")}<Textarea value={transferReason} onChange={(event) => setTransferReason(event.target.value)} className="min-h-[96px] rounded-[var(--md-radius-md)]" /></label>
-          </div>
-          <DialogFooter><Button variant="outline" disabled={transferSaving} onClick={() => setTransferOpen(false)}>{t("Cancel")}</Button><Button disabled={transferSaving || (isOwner && !transferTarget)} onClick={() => void submitTransfer()}>{transferSaving ? <LoaderCircle className="size-4 animate-spin" /> : null}{isOwner ? t("Transfer lead") : t("Send request")}</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }
-export function CrmContactsPage() {
-  const [selectedEmail, setSelectedEmail] = useState(crmContacts[0].email)
-  const [dexterOpen, setDexterOpen] = useState(false)
-  const selectedContact = crmContacts.find((contact) => contact.email === selectedEmail) ?? crmContacts[0]
-
-  return (
-    <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel="Contacts" className="md-page md-page-stack">
-      <CrmPageHeader
-        title="Contacts"
-        summary={
-          <>
-            A contact book for the people who actually move freight decisions: decision makers, customs leads, finance owners, and daily operators.
-          </>
-        }
-        meta={`${crmContacts.length} contacts · 5 leads · customer preferences visible inline`}
-        onSpeakToDexter={() => setDexterOpen(true)}
-        action={<PrimaryActionButton onClick={() => toast.success("Contact draft created")}>New contact</PrimaryActionButton>}
-      />
-
-      <div className="md-panel-grid 2xl:grid-cols-[minmax(0,1fr)_430px]">
-        <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-          <div className="px-5 py-4">
-            <SectionHeader title="Relationship contacts" meta="selected contact opens full context beside the list" />
-          </div>
-          <div className="px-5 pb-5">
-            <CrmContactTable
-              contacts={crmContacts}
-              selectedEmail={selectedEmail}
-              onSelectContact={(contact: CrmContact) => setSelectedEmail(contact.email)}
-            />
-          </div>
-        </Surface>
-        <ContactProfileModule contact={selectedContact} />
-      </div>
-    </DexterDockedPage>
-  )
-}
-
 function EmailTemplatePreview({ variant }: { variant: string }) {
   return (
     <div className="rounded-[calc(var(--md-radius-xl)-4px)] bg-[var(--md-surface-tint)] p-4 shadow-[var(--md-shadow-line)]">
@@ -3408,7 +3592,10 @@ export function CrmDealsPage({ currentUser }: { currentUser?: AuthUserSummary | 
     let active = true
     setLoading(true)
     setLoadError(null)
-    Promise.all([getPipelineSettings(), listDeals()])
+    Promise.all([
+      getPipelineSettings({ forceRefresh: reloadKey > 0 }),
+      listDeals({ forceRefresh: reloadKey > 0 }),
+    ])
       .then(([settings, deals]) => {
         if (!active) return
         setLivePipelines(settings.pipelines)

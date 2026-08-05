@@ -21,7 +21,7 @@ import {
   uuid,
 } from "../shared/mod.ts";
 
-async function orderContext(admin, actor) {
+export async function orderContext(admin, actor) {
   requireCapability(actor, "warehouse_orders:read");
   const facilityIds = await companyFacilityIds(admin, actor);
   const [facilities, orgs, items, locations, types, statuses, customs] = await Promise.all([
@@ -122,7 +122,7 @@ async function mapOrders(admin, rows, context) {
           pickedQuantity: l.WMSOrderLine_PickedQuantity,
           packedQuantity: l.WMSOrderLine_PackedQuantity,
           dispatchedQuantity: l.WMSOrderLine_DispatchedQuantity,
-          remainingQuantity: Math.max(0, Number(l.WMSOrderLine_OrderedQuantity) - progressed),
+          remainingQuantity: l.WMSOrderLine_StatusCode === "short" ? 0 : Math.max(0, Number(l.WMSOrderLine_OrderedQuantity) - progressed),
           uomCode: l.WMSOrderLine_UOMCode,
           lotNumber: l.WMSOrderLine_LotNumber,
           expiryDate: l.WMSOrderLine_ExpiryDate,
@@ -241,16 +241,23 @@ export async function handleOrders(request, path, url, admin, actor) {
       throw new HttpError(403, "This operation is reserved for the warehouse team.");
     }
   }
-  const { data, error } = await admin.rpc("warehouse_edge_order_mutation", {
+  const allowedOrganisationIds = actor.companyId ? context.orgs.map((r)=>r.Org_id) : [
+    ...actor.organisationIds
+  ];
+  const { data, error } = action === "receive" ? await admin.rpc("warehouse_edge_receive_mutation", {
+    p_order_id: orderId,
+    p_payload: input,
+    p_actor_user_id: actor.userId,
+    p_allowed_facility_ids: context.facilityIds,
+    p_allowed_organisation_ids: allowedOrganisationIds
+  }) : await admin.rpc("warehouse_edge_order_mutation", {
     p_action: action,
     p_order_id: orderId,
     p_payload: input,
     p_actor_user_id: actor.userId,
     p_actor_portal_user_id: actor.portalUserId,
     p_allowed_facility_ids: context.facilityIds,
-    p_allowed_organisation_ids: actor.companyId ? context.orgs.map((r)=>r.Org_id) : [
-      ...actor.organisationIds
-    ]
+    p_allowed_organisation_ids: allowedOrganisationIds
   });
   if (error) {
     throw new HttpError(error.message.includes("WMS400:") ? 400 : error.message.includes("WMS409:") ? 409 : 500, error.message.replace(/^.*WMS(?:400|409):\s*/, ""));

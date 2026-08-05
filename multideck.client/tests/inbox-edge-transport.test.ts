@@ -10,6 +10,8 @@ const appSidebarSource = await readFile(new URL("../src/components/multideck/app
 const threadSummarySource = await readFile(new URL("../src/components/multideck/thread-summary.tsx", import.meta.url), "utf8")
 const emailRendererSource = await readFile(new URL("../src/components/multideck/email-message-renderer.tsx", import.meta.url), "utf8")
 const globalStyles = await readFile(new URL("../src/styles.css", import.meta.url), "utf8")
+const appShellSource = await readFile(new URL("../src/components/multideck/app-shell.tsx", import.meta.url), "utf8")
+const threadRowSource = await readFile(new URL("../src/components/multideck/inbox-thread-row.tsx", import.meta.url), "utf8")
 
 test("Inbox uses the tenant Supabase Edge Function, never the .NET API", () => {
   assert.match(source, /supabaseFunctionsUrl/)
@@ -27,14 +29,46 @@ test("every Inbox Edge request carries the current tenant identity", () => {
   assert.match(source, /inboxAccessToken\(true\)/)
 })
 
+test("Inbox navigation stays warm and conversation intent prefetches detail", () => {
+  assert.match(source, /inboxRequest\("\/workspace"/)
+  assert.match(appShellSource, /InboxWorkspaceProvider cacheScope=\{currentUser\?\.id \?\? null\}/)
+  assert.match(inboxWorkspaceSource, /threadPageRequestsRef/)
+  assert.match(inboxWorkspaceSource, /threadDetailRequestsRef/)
+  assert.match(inboxWorkspaceSource, /threadDetailCacheTtlMs = 60_000/)
+  assert.match(inboxWorkspaceSource, /page\.items\.slice\(0, 3\)/)
+  assert.match(inboxWorkspaceSource, /await prefetchThreadInlineAttachmentBlobUrls\(detail\)/)
+  assert.match(threadRowSource, /onPointerEnter=\{onPrefetch\}/)
+  assert.match(threadRowSource, /onFocus=\{onPrefetch\}/)
+  assert.match(inboxPageSource, /onPrefetch=\{\(\) => prefetchThreadDetail\(item\.id\)\}/)
+  assert.match(inboxPageSource, /selectedThreadPreview/)
+  assert.match(inboxPageSource, /Loading the full conversation/)
+})
+
+test("provider folders stay mailbox-scoped from workspace bootstrap through thread paging", () => {
+  assert.match(source, /folders: readList\(pickField\(record, "folders"\)\)/)
+  assert.match(source, /if \(folderId\) params\.set\("folderId", folderId\)/)
+  assert.match(inboxWorkspaceSource, /folders\.some\(\(folder\) => folder\.id === folderId && folder\.mailboxId === nextMailbox\?\.id\)/)
+  assert.match(inboxWorkspaceSource, /writeSelection\(mailbox\.provider, mailbox\.id, nextView, nextFolder\.id\)/)
+  assert.match(appSidebarSource, /folder\.role === "custom"/)
+  assert.match(appSidebarSource, /paddingInlineStart/)
+  assert.match(appSidebarSource, /layoutId=\{activeFolderLayoutId\}/)
+  assert.match(appSidebarSource, /reduceMotion\(Boolean\(shouldReduceMotion\), mdMotion\.panel\)/)
+})
+
 test("send keeps its idempotency key in both the Edge header and payload", () => {
   assert.match(source, /"Idempotency-Key": request\.idempotencyKey/)
   assert.match(source, /idempotencyKey: request\.idempotencyKey/)
 })
 
 test("attachments are fetched from the same authenticated Edge transport", () => {
-  assert.match(source, /fetchInboxEdge\(`\/attachments\/\$\{encodeURIComponent\(attachmentId\)\}`/)
+  assert.match(source, /fetchInboxEdge\(`\/attachments\/\$\{encodeURIComponent\(attachmentId\)\}\$\{inline/)
   assert.match(source, /URL\.createObjectURL\(await response\.blob\(\)\)/)
+  assert.match(source, /getInlineAttachmentBlobUrl/)
+  assert.match(source, /getCachedInlineAttachmentBlobUrl/)
+  assert.match(source, /inlineAttachmentCacheLimit = 96/)
+  assert.match(source, /prefetchThreadInlineAttachmentBlobUrls/)
+  assert.match(source, /\[\.\.\.detail\.messages\]\.reverse\(\)/)
+  assert.match(source, /\?disposition=inline/)
 })
 
 test("shared Outlook access is explicit and the mailbox is added through the Edge transport", () => {
@@ -71,13 +105,19 @@ test("Dexter summaries are explicitly requested and use the dimmed shader surfac
 })
 
 test("rendered email images load automatically without weakening the frame sandbox", () => {
-  assert.match(emailRendererSource, /"img-src data: https:"/)
+  assert.match(emailRendererSource, /"img-src data: blob: https:"/)
   assert.match(emailRendererSource, /sandbox=\{sandboxPermissions\}/)
   assert.match(emailRendererSource, /<meta name="referrer" content="no-referrer"/)
   assert.match(emailRendererSource, /loading="eager"/)
   assert.match(emailRendererSource, /<img\\b\[\^>\]\*>/)
   assert.match(emailRendererSource, /fetchpriority="high"/)
   assert.match(emailRendererSource, /replace\(\/\\s\+loading/)
+  assert.match(emailRendererSource, /replaceInlineImageSources/)
+  assert.match(emailRendererSource, /getInlineAttachmentBlobUrl/)
+  assert.match(emailRendererSource, /getCachedInlineAttachmentBlobUrl/)
+  assert.match(emailRendererSource, /useLayoutEffect/)
+  assert.match(emailRendererSource, /filter: invert\(1\) hue-rotate\(180deg\)/)
+  assert.match(emailRendererSource, /img, picture, video \{ filter: invert\(1\) hue-rotate\(180deg\)/)
   assert.doesNotMatch(emailRendererSource, /Images are blocked/)
   assert.doesNotMatch(emailRendererSource, /Load images/)
   assert.doesNotMatch(emailRendererSource, /dangerouslySetInnerHTML\s*=/)

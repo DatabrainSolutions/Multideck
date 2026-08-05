@@ -10,7 +10,6 @@ import {
 import type { ExtractedInvoiceLine } from "../src/lib/customs-invoice-import.ts"
 
 const values = new Map<string, string>()
-let rejectEvidence = false
 const sessionStorage = {
   get length() { return values.size },
   clear() { values.clear() },
@@ -18,7 +17,6 @@ const sessionStorage = {
   key(index: number) { return [...values.keys()][index] ?? null },
   removeItem(key: string) { values.delete(key) },
   setItem(key: string, value: string) {
-    if (rejectEvidence && value.includes('"blocks"')) throw new Error("quota")
     values.set(key, value)
   },
 }
@@ -30,7 +28,6 @@ Object.defineProperty(globalThis, "window", {
 
 beforeEach(() => {
   sessionStorage.clear()
-  rejectEvidence = false
 })
 
 const line: ExtractedInvoiceLine = {
@@ -53,6 +50,7 @@ const line: ExtractedInvoiceLine = {
 
 function recovery() {
   return {
+    extractionId: "11111111-1111-4111-8111-111111111111",
     invoiceName: "commercial-invoice.pdf",
     extractedInvoiceNumber: "INV-44",
     lines: [line],
@@ -70,12 +68,14 @@ function recovery() {
   }
 }
 
-test("restores extracted fields and review decisions for one declaration", () => {
+test("restores a compact server extraction reference and review decisions", () => {
   saveCustomsInvoiceImportRecovery("declaration-1", recovery(), 50)
 
   const restored = readCustomsInvoiceImportRecovery("declaration-1")
+  assert.equal(restored?.extractionId, "11111111-1111-4111-8111-111111111111")
   assert.equal(restored?.invoiceName, "commercial-invoice.pdf")
-  assert.equal(restored?.lines[0].commodityCode, "8471300000")
+  assert.deepEqual(restored?.lines, [])
+  assert.deepEqual(restored?.evidencePages, [])
   assert.equal(restored?.selections["line-1"].include, false)
   assert.equal(restored?.descriptionOverrides["group-8471300000"], "Rugged computers")
   assert.equal(restored?.reviewFilter, "approved")
@@ -85,13 +85,14 @@ test("restores extracted fields and review decisions for one declaration", () =>
   assert.equal(readCustomsInvoiceImportRecovery("declaration-2"), null)
 })
 
-test("keeps the fields when evidence is too large for session storage", () => {
-  rejectEvidence = true
-  saveCustomsInvoiceImportRecovery("declaration-1", recovery(), 60)
+test("migrates legacy recovery with inline extracted fields", () => {
+  const legacy = { ...recovery(), extractionId: undefined, version: 1, savedAt: 60 }
+  values.set("multideck.customs.invoice-import.declaration-1", JSON.stringify(legacy))
 
   const restored = readCustomsInvoiceImportRecovery("declaration-1")
+  assert.equal(restored?.extractionId, "")
   assert.equal(restored?.lines[0].description, "Rugged laptop computer")
-  assert.deepEqual(restored?.evidencePages, [])
+  assert.equal(restored?.evidencePages[0].blocks[0].id, "row-1")
 })
 
 test("clears recovery after the import is applied", () => {
@@ -113,6 +114,6 @@ test("ignores corrupt and empty recovery records", () => {
   values.set("multideck.customs.invoice-import.declaration-1", "not-json")
   assert.equal(readCustomsInvoiceImportRecovery("declaration-1"), null)
 
-  saveCustomsInvoiceImportRecovery("declaration-2", { ...recovery(), lines: [] })
+  saveCustomsInvoiceImportRecovery("declaration-2", { ...recovery(), extractionId: "", lines: [] })
   assert.equal(hasCustomsInvoiceImportRecovery("declaration-2"), false)
 })

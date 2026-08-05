@@ -46,6 +46,15 @@ const emailSearchRankingMigration = read(
 const emailSearchCleanupMigration = read(
   "supabase/migrations/20260802131500_dexter_email_remove_superseded_index.sql",
 )
+const emailSearchRecoveryMigration = read(
+  "supabase/migrations/20260803161000_dexter_email_search_recovery.sql",
+)
+const emailAttachmentSearchMigration = read(
+  "supabase/migrations/20260803162000_dexter_email_attachment_name_index.sql",
+)
+const guardedDomainSearchMigration = read(
+  "supabase/migrations/20260803170000_dexter_guarded_domain_search.sql",
+)
 const emailConversationContextMigration = read(
   "supabase/migrations/20260803101500_dexter_email_conversation_provider_context.sql",
 )
@@ -87,6 +96,17 @@ const supabaseConfig = read(
 const notificationEmailFunction = read(
   "supabase/functions/send-notification-email/index.ts",
 )
+
+test("Dexter clearly leaves warehouse customer access-link delivery to the audited product flow", () => {
+  assert.match(edgeFunction, /Warehouse customer-user invitations and access-link emails are available only from the customer's Warehouse customer access panel/)
+  assert.match(edgeFunction, /They are not connected to Dexter writes or Watching for you/)
+})
+
+test("Dexter and Watching for you fail closed for provider automatic-reply settings", () => {
+  assert.match(edgeFunction, /Mailbox automatic replies are available only from the selected mailbox's Inbox settings/)
+  assert.match(edgeFunction, /not connected to Dexter reads, writes, or Watching for you/)
+  assert.match(edgeFunction, /Never claim to inspect, change, or watch an out-of-office setting/)
+})
 const dexterClient = read(
   "multideck.client/src/lib/dexter-api.ts",
 )
@@ -221,8 +241,12 @@ test("Dexter watches compile once and evaluate owner-private source changes with
   assert.match(edgeFunction, /status: \{ type: "string", enum: \["ready", "clarification", "unsupported"\] \}/)
   assert.match(edgeFunction, /multideck_dexter_create_watch/)
   assert.match(dexterClient, /listDexterWatches/)
-  assert.match(dexterPage, /command === "\/watch"/)
-  assert.match(dexterPage, /command === "\/chat"/)
+  assert.match(dexterPage, /command: "\/watch"/)
+  assert.match(dexterPage, /command: "\/chat"/)
+  assert.doesNotMatch(dexterPage, /command: "\/create-skill"/)
+  assert.doesNotMatch(edgeFunction, /list-skills|create_hosted_skill|skill_reference/)
+  assert.doesNotMatch(dexterClient, /DexterSkill|skillIds/)
+  assert.match(dexterComponents, /Try chat or watch\./)
   assert.match(dexterPage, /What do you want me to watch\?/)
   assert.match(dexterComponents, /Prepared action - approval required/)
   assert.match(dexterComponents, /Dexter has not run this action/)
@@ -308,7 +332,8 @@ test("Watch mode accepts exact @ record context and handoff waits for Send", () 
   assert.match(dexterPage, /mention\.type === "email"/)
   assert.match(dexterPage, /\^\[0-9a-f\]\{8\}/)
   assert.match(dexterPage, /Describe the change, or @ the record to watch/)
-  assert.match(dexterPage, /attachments: composerMessageAttachments\(\)/)
+  assert.match(dexterPage, /const messageAttachments = composerMessageAttachments\(\)/)
+  assert.match(dexterPage, /createDexterWatch\(\{[\s\S]*attachments: messageAttachments/)
   assert.match(edgeFunction, /Items in attachments are context the operator deliberately selected with @/)
   assert.match(edgeFunction, /const exactMention = attachments\.find/)
   assert.match(dexterPage, /onAskEvent=\{\(monitor\) => \{[\s\S]*attachWatchUpdate\(context\)/)
@@ -353,6 +378,17 @@ test("live deals are exact @ mentions in Dexter chat and Watch mode", () => {
   assert.match(edgeFunction, /keep only the returned record whose recordId matches the attached ID/)
   assert.match(watchMigration, /\('deals', 'Deals'/)
   assert.match(watchMigration, /TR_CRM_Opportunities_dexter_watch/)
+})
+
+test("the docked Dexter panel shares the main Dexter UI and uses live CRM context", () => {
+  assert.match(dexterCompanion, /DexterBrandMark/)
+  assert.match(dexterCompanion, /DexterSuggestionGrid/)
+  assert.match(dexterCompanion, /customerResult\.value\.length/)
+  assert.match(dexterCompanion, /leadResult\.value\.length/)
+  assert.match(dexterCompanion, /dealResult\.value\.length/)
+  assert.doesNotMatch(dexterCompanion, /Marlow Apparel|Bauhaus Importe|Pacific Goods/)
+  assert.match(clientStyles, /\.md-dexter-companion-panel[\s\S]*color-mix\(in srgb, var\(--md-accent\)/)
+  assert.match(clientStyles, /\.md-dexter-companion-suggestions button[\s\S]*var\(--md-accent-a08\)/)
 })
 
 test("customer documents list and open only through the authenticated Supabase Edge boundary", () => {
@@ -423,6 +459,7 @@ test("Dexter attaches clickable inline citations only to records returned by its
   assert.match(edgeFunction, /\/crm\/leads\/\$\{encodeURIComponent\(recordId\)\}/)
   assert.match(edgeFunction, /\/crm\/deals\?record=/)
   assert.match(edgeFunction, /\/quotes\?search=/)
+  assert.match(edgeFunction, /\/customers\/\$\{encodeURIComponent\(recordId\)\}/)
   assert.match(edgeFunction, /\/warehouse\/orders\?/)
   assert.match(edgeFunction, /\/warehouse\/inventory\?search=/)
   assert.match(edgeFunction, /Use only citation URLs returned by the data tool/)
@@ -435,6 +472,27 @@ test("Dexter attaches clickable inline citations only to records returned by its
   assert.match(translations, /"Open source": \{ de:/)
   assert.match(translations, /"Previous source": \{ de:/)
   assert.match(translations, /"Next source": \{ de:/)
+})
+
+test("workspace searches recover guarded typos without turning weak candidates into facts", () => {
+  assert.match(guardedDomainSearchMigration, /create or replace function public\._multideck_dexter_search_evidence/)
+  assert.match(guardedDomainSearchMigration, /exact_identifier/)
+  assert.match(guardedDomainSearchMigration, /exact_phrase/)
+  assert.match(guardedDomainSearchMigration, /all_terms/)
+  assert.match(guardedDomainSearchMigration, /corrected_text/)
+  assert.match(guardedDomainSearchMigration, /v_best_similarity >= 0\.72/)
+  assert.match(guardedDomainSearchMigration, /length\(v_search\) >= 7 and v_best_similarity >= 0\.78/)
+  assert.match(guardedDomainSearchMigration, /multideck_dexter_domain_customers/)
+  assert.match(guardedDomainSearchMigration, /multideck_dexter_domain_leads/)
+  assert.match(guardedDomainSearchMigration, /multideck_dexter_domain_deals/)
+  assert.match(guardedDomainSearchMigration, /multideck_dexter_domain_quotes/)
+  assert.match(guardedDomainSearchMigration, /multideck_dexter_domain_warehouse/)
+  assert.match(guardedDomainSearchMigration, /owner\."Auth_User_ID" = auth\.uid\(\)/)
+  assert.match(guardedDomainSearchMigration, /_multideck_dexter_has_permission/)
+  assert.match(guardedDomainSearchMigration, /revoke all on function public\._multideck_dexter_search_evidence[\s\S]*authenticated/)
+  assert.match(edgeFunction, /corrected_text is only a likely spelling correction/)
+  assert.match(edgeFunction, /Do not prepare a write against a corrected_text result/)
+  assert.match(edgeFunction, /retry at most twice/)
 })
 
 test("Dexter never fills evidence gaps with invented people, data, or outcomes", () => {
@@ -512,13 +570,15 @@ test("Dexter streams directly through the authenticated Edge Function and persis
   assert.doesNotMatch(dexterClient, /\/api\/v1\/agent-dexter/)
 })
 
-test("Gmail and Outlook tools are feature flagged and scoped to explicit provider context", () => {
+test("Gmail and Outlook tools are automatic in Full access and explicitly scoped in Approve mode", () => {
   assert.match(emailContext, /DEXTER_EMAIL_CONTEXT_ENABLED/)
   assert.match(emailContext, /item\.type\.toLowerCase\(\) !== "email"/)
   assert.match(emailContext, /id === "gmail" \|\| id === "outlook"/)
   assert.match(edgeFunction, /buildEmailTools\(searchableEmailProviders, retainedEmailReferences\.length > 0\)/)
   assert.match(edgeFunction, /searchProviders: searchableEmailProviders/)
+  assert.match(edgeFunction, /accessMode === "full"[\s\S]*\["gmail", "outlook"\] satisfies DexterEmailProvider\[\]/)
   assert.match(edgeFunction, /requestedEmailProviders, \.\.\.previousEmailProviders/)
+  assert.match(edgeFunction, /Gmail or Outlook does not need to be tagged, named, or specially requested/)
   assert.match(emailContext, /parseConversationEmailContext/)
   assert.match(emailConversationContextMigration, /attachment\.value ->> 'type' = 'email'/)
   assert.match(emailConversationContextMigration, /lower\(regexp_replace\(attachment\.value ->> 'id', '\^email:', ''\)\)/)
@@ -570,6 +630,29 @@ test("email search is ranked, freshness-aware and excludes non-evidence folders"
   assert.match(emailContextMigration, /'url', '\/inbox\?provider='/)
 })
 
+test("email search can recover a likely sender typo without relaxing every clue", () => {
+  assert.match(emailContext, /sender: \{ type: \["string", "null"\]/)
+  assert.match(emailContext, /hasAttachment: \{ type: \["boolean", "null"\]/)
+  assert.match(emailContext, /p_sender: sender/)
+  assert.match(emailContext, /p_has_attachment: hasAttachment/)
+  assert.match(edgeFunction, /matchQuality as corrected_sender or possible_sender/)
+  assert.match(edgeFunction, /Never silently substitute a different domain/)
+  assert.match(emailSearchRecoveryMigration, /create extension if not exists pg_trgm with schema extensions/)
+  assert.match(emailSearchRecoveryMigration, /CommRecipient_RecipientTypeCode" = 'from'/)
+  assert.match(emailSearchRecoveryMigration, /sender_domain = scored\.address_domain/)
+  assert.match(emailSearchRecoveryMigration, /local_similarity >= 0\.65/)
+  assert.match(emailSearchRecoveryMigration, /local_similarity >= 0\.45[\s\S]*candidate_has_attachment[\s\S]*query_exact/)
+  assert.match(emailSearchRecoveryMigration, /p_has_attachment is distinct from true/)
+  assert.match(emailSearchRecoveryMigration, /'matchQuality', ordered\.match_quality/)
+  assert.match(emailSearchRecoveryMigration, /grant execute on function public\.multideck_dexter_search_email[\s\S]*to authenticated/)
+  assert.match(emailAttachmentSearchMigration, /Comm_MessageAttachments/)
+  assert.match(emailAttachmentSearchMigration, /CommAttachment_FileName/)
+  assert.match(emailAttachmentSearchMigration, /regexp_replace[\s\S]*\[\^\[:alnum:\]@\]\+/)
+  assert.match(emailAttachmentSearchMigration, /not attachment\."CommAttachment_IsInline"/)
+  assert.match(emailAttachmentSearchMigration, /TR_Comm_MessageAttachments_dexter_email_search/)
+  assert.doesNotMatch(emailAttachmentSearchMigration, /StoragePath|ExternalURL|MetadataJSON/)
+})
+
 test("thread and attachment analysis stay bounded and treat provider content as untrusted", () => {
   assert.match(emailContext, /MAX_THREAD_PAGES = 3/)
   assert.match(emailContext, /MAX_THREAD_CHARACTERS = 60_000/)
@@ -598,6 +681,8 @@ test("surfaced attachments stream inline, persist as branch context and remain s
   assert.match(emailContextMigration, /multideck_dexter_conversation_email_context/)
   assert.match(emailContextMigration, /"AICNV_OwnerUserID" = v_context\.user_id/)
   assert.match(dexterClient, /payload\.type === "email_attachment"/)
+  assert.match(dexterClient, /retainStreamedEmailAttachments/)
+  assert.match(dexterClient, /streamedEmailAttachments\.set\(attachment\.id, attachment\)/)
   assert.match(dexterPage, /onEmailAttachment:/)
   assert.match(dexterPage, /<DexterEmailAttachmentCard/)
   assert.match(dexterEmailAttachmentCard, /getAttachmentBlobUrl/)

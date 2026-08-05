@@ -2,6 +2,9 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } 
 import { useTheme } from "next-themes"
 import { ArrowLeft, ArrowRight, Bell, Check, Clipboard, Cloud, Component, Download, FileText, Folder, Image, KeyRound, Mail, Pin, Search, Ship, Sparkles, UserRound } from "lucide-react"
 import { toast } from "sonner"
+import toastErrorIcon from "@/assets/toasts/toast-error.png"
+import toastGeneralIcon from "@/assets/toasts/toast-general.png"
+import toastSuccessIcon from "@/assets/toasts/toast-success.png"
 import { Button } from "@/components/ui/button"
 import {
   Context,
@@ -50,9 +53,14 @@ import {
 } from "@/components/multideck/customer-components"
 import { CrmActivityTimeline, CrmAssetFolderCard, CrmAssetRow, CrmContactTable, CrmForecastPanel, CrmLeadDetailPanel, CrmLeadQualificationTable, CrmLeadSignalList, CrmMetricsGrid, CrmPipelineBoard, CrmPriorityActionsPanel, CrmRevenueMixPanel, CrmSalesCommandCenter, CrmSalesFunnelPanel, CrmSettingsBuilder } from "@/components/multideck/crm-components"
 import { CopyableField } from "@/components/multideck/copyable-field"
+import { ContactCardLayoutPicker, ContactCardSocialLinksEditor } from "@/components/multideck/contact-card-design"
+import { ContactCreateDialog } from "@/components/multideck/contact-create-dialog"
+import { AutomationRunHistory } from "@/components/multideck/contact-card-automation"
+import { MarketingOptInControl } from "@/components/multideck/marketing-opt-in-control"
 import { CrmPipelineEditor } from "@/components/multideck/crm-pipeline-editor"
 import { ChoiceControl, FilterChips, SegmentedControl, TabsRail } from "@/components/multideck/workflow-components"
 import { EmailMessageRenderer } from "@/components/multideck/email-message-renderer"
+import { EmailDeliveryStatus } from "@/components/multideck/email-delivery-status"
 import { InboxThreadRow } from "@/components/multideck/inbox-thread-row"
 import { MailboxProviderSwitch } from "@/components/multideck/mailbox-provider-switch"
 import { MailComposer, type ComposerState } from "@/components/multideck/mail-composer"
@@ -67,6 +75,8 @@ import { BookingSearchBuilder } from "@/components/multideck/booking-search-buil
 import { DomesticJobStageRail, DomesticRoadJobCard, DomesticRoadKanbanBoard, domesticRoadJobs, roadJobStageStatus, roadJobStages } from "@/components/multideck/domestic-road-components"
 import { WarehouseKanbanBoardPreview, WarehouseOrdersTable, WarehouseProductsTable, WarehouseStockTable } from "@/components/multideck/warehouse-components"
 import { WarehouseFormField } from "@/components/multideck/warehouse-management-components"
+import { WarehouseExceptionSummary, WarehouseObjectSummary, WarehouseQuantityUomField } from "@/components/multideck/warehouse-inventory-workspace"
+import type { WarehouseHandlingUnit, WarehouseInventoryException } from "@/lib/warehouse"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   DexterAttachmentPalette,
@@ -90,8 +100,11 @@ import {
 import { DexterActionApproval } from "@/components/multideck/dexter-action-approval"
 import { DexterInlineCitation } from "@/components/multideck/dexter-inline-citation"
 import { DexterEmailAttachmentCard } from "@/components/multideck/dexter-email-attachment-card"
+import { DexterEmailComposeCard } from "@/components/multideck/dexter-email-compose-card"
+import { WatchModeAurora } from "@/components/multideck/aurora-background"
 import { defaultDexterModelId, type DexterModelId } from "@/data/dexter-models"
 import { defaultDexterMentionItems } from "@/data/dexter-mentions"
+import type { AutomationRun, CardLayout, CardSocialLink } from "@/data/contact-card-data"
 import {
   AreaChartCard,
   BarChartCard,
@@ -199,17 +212,17 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["paper-tray-stack", "document-viewer", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-kanban-board", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
+    ids: ["paper-tray-stack", "document-viewer", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
   },
   {
     label: "CRM",
     helper: "Leads, contacts, deals, activity, marketing, settings",
-    ids: ["crm-sales-command-center", "crm-metrics-grid", "crm-sales-funnel-panel", "crm-revenue-mix-panel", "crm-forecast-panel", "crm-priority-actions-panel", "crm-pipeline-board", "crm-pipeline-editor", "crm-asset-folder-card", "crm-asset-row", "crm-lead-qualification-table", "copyable-field", "crm-lead-detail-panel", "crm-contact-table", "crm-activity-timeline", "crm-lead-signals", "crm-settings-builder"],
+    ids: ["crm-sales-command-center", "crm-metrics-grid", "crm-sales-funnel-panel", "crm-revenue-mix-panel", "crm-forecast-panel", "crm-priority-actions-panel", "crm-pipeline-board", "crm-pipeline-editor", "crm-asset-folder-card", "crm-asset-row", "crm-lead-qualification-table", "copyable-field", "crm-lead-detail-panel", "contact-create-dialog", "crm-contact-table", "crm-activity-timeline", "crm-lead-signals", "crm-settings-builder"],
   },
   {
     label: "Agent Dexter",
     helper: "Prompt, context, specialists, answers",
-    ids: ["dashboard-customise-panel", "dexter-action-pill", "dexter-companion-sidebar", "dexter-summon-prompt", "dexter-mention-input", "dexter-prompt-composer", "context-usage-meter", "dexter-live-reasoning", "dexter-reasoning-summary", "dexter-action-approval", "dexter-specialist-picker", "dexter-specialist-menu", "dexter-attachment-palette", "dexter-history-list", "dexter-monitor-card", "dexter-monitor-detail", "dexter-response-blocks"],
+    ids: ["dashboard-customise-panel", "dexter-action-pill", "dexter-companion-sidebar", "dexter-summon-prompt", "dexter-mention-input", "dexter-prompt-composer", "dexter-email-compose-card", "watch-mode-aurora", "context-usage-meter", "dexter-live-reasoning", "dexter-reasoning-summary", "dexter-action-approval", "dexter-specialist-picker", "dexter-specialist-menu", "dexter-attachment-palette", "dexter-history-list", "dexter-monitor-card", "dexter-monitor-detail", "dexter-response-blocks"],
   },
   {
     label: "Feedback",
@@ -785,6 +798,10 @@ function previewMailbox(overrides: Partial<Mailbox> & Pick<Mailbox, "id" | "disp
     indexedCount: 2_480,
     estimatedTotal: 2_480,
     indexPercent: 100,
+    coreCoverageStart: "2025-07-31T09:38:00Z",
+    wasteCoverageStart: "2026-07-01T09:38:00Z",
+    coreRetentionMonths: 12,
+    wasteRetentionDays: 30,
     error: null,
     ...overrides,
   }
@@ -877,6 +894,71 @@ function DocumentEvidenceViewerPreview() {
   )
 }
 
+const previewAutomationRuns: AutomationRun[] = [
+  {
+    id: "gallery-run-failed",
+    exchangeId: "exchange-gallery-1",
+    leadId: null,
+    status: "failed",
+    startedAt: "2026-08-03T10:42:18.000Z",
+    completedAt: "2026-08-03T10:42:18.684Z",
+    durationMs: 684,
+    recordsAffected: 1,
+    trigger: "Contact details shared",
+    errorSummary: "The deal stage no longer exists in the selected pipeline.",
+    recovery: "Choose a current stage in the Add to CRM step, publish the change, then rerun the failed steps.",
+    input: { name: "Nadia Perera", email: "nadia@halcyontextiles.com", company: "Halcyon Textiles" },
+    rerunOf: null,
+    isTest: false,
+    steps: [
+      { id: "gallery-step-1", actionId: "add-lead", kind: "add-to-crm", label: "Add lead to CRM", status: "succeeded", detail: "Created lead and kept the submitted details.", startedAt: "2026-08-03T10:42:18.000Z", durationMs: 416 },
+      { id: "gallery-step-2", actionId: "add-deal", kind: "add-to-crm", label: "Create deal", status: "failed", detail: "Stage ‘Qualified’ was not found.", startedAt: "2026-08-03T10:42:18.416Z", durationMs: 268 },
+    ],
+  },
+  {
+    id: "gallery-run-success",
+    exchangeId: "exchange-gallery-2",
+    leadId: "lead-gallery-2",
+    status: "succeeded",
+    startedAt: "2026-08-03T09:18:04.000Z",
+    completedAt: "2026-08-03T09:18:04.521Z",
+    durationMs: 521,
+    recordsAffected: 2,
+    trigger: "Contact details shared",
+    errorSummary: null,
+    recovery: null,
+    input: { name: "Owen Hughes", email: "owen@northgate.example", company: "Northgate" },
+    rerunOf: null,
+    isTest: false,
+    steps: [
+      { id: "gallery-step-3", actionId: "add-lead", kind: "add-to-crm", label: "Add lead to CRM", status: "succeeded", detail: "Matched the existing lead and refreshed its details.", startedAt: "2026-08-03T09:18:04.000Z", durationMs: 521 },
+    ],
+  },
+]
+
+const previewWarehouseObject: WarehouseHandlingUnit = {
+  id: "gallery-pallet", facilityId: "gallery-facility", parentHandlingUnitId: null,
+  typeCode: "pallet", typeName: "Pallet", code: "PLT-000184", sscc: null,
+  externalReference: "ASN-4419", customerOrgId: "gallery-customer", customerName: "Marlow Apparel",
+  locationId: "gallery-location", locationCode: "A-03-02", inventoryStatusCode: "available",
+  inventoryStatusName: "Available", customsStatusCode: "free_circulation", lifecycleStatusCode: "open",
+  consumedIntoHandlingUnitId: null, grossWeightKg: 486.5, netWeightKg: 452, volumeCbm: 1.28,
+  sealed: false, updatedAt: "2026-08-04T09:30:00Z",
+  contents: [
+    { balanceId: "gallery-balance-1", itemId: "gallery-item-1", sku: "INK-BLK-25", description: "Black industrial ink", quantity: 387.5, uomCode: "KG", statusCode: "available", customsStatusCode: "free_circulation", lotNumber: "LOT-442", batchNumber: null },
+    { balanceId: "gallery-balance-2", itemId: "gallery-item-2", sku: "CAP-38MM", description: "38 mm closure caps", quantity: 2_400, uomCode: "EA", statusCode: "available", customsStatusCode: "free_circulation", lotNumber: null, batchNumber: null },
+  ],
+  events: [],
+}
+
+const previewWarehouseException: WarehouseInventoryException = {
+  id: "gallery-exception", facilityId: "gallery-facility", typeCode: "location_empty", statusCode: "open", severityCode: "high",
+  balanceId: "gallery-balance-1", title: "Expected stock missing from B-01-04",
+  description: "The bin was scanned and physically confirmed empty. Stock is held as unlocated while the count is investigated.",
+  expectedLocationId: "gallery-location", expectedLocationCode: "B-01-04", actualLocationId: null, actualLocationCode: null,
+  movementGroupId: "gallery-movement", raisedAt: "2026-08-04T10:15:00Z", resolvedAt: null, metadata: {},
+}
+
 function ComponentPreview({ id }: { id: string }) {
   const { language, t } = useLanguage()
   const [previewSidebarPinnedIds, setPreviewSidebarPinnedIds] = useState<string[]>([])
@@ -904,10 +986,21 @@ function ComponentPreview({ id }: { id: string }) {
     showCc: true,
     showBcc: false,
     attachments: [],
-    trackOpens: false,
+    trackOpens: true,
     presentation: "open",
   })
   const [previewCheckbox, setPreviewCheckbox] = useState(true)
+  const [previewWarehouseQuantity, setPreviewWarehouseQuantity] = useState("12.5")
+  const [previewContactLayout, setPreviewContactLayout] = useState<CardLayout>("editorial")
+  const [previewMarketingOptIn, setPreviewMarketingOptIn] = useState(true)
+  const [previewSocialLinks, setPreviewSocialLinks] = useState<CardSocialLink[]>([
+    { id: "gallery-linkedin", kind: "linkedin", value: "linkedin.com/in/maya-stone", enabled: true },
+    { id: "gallery-facebook", kind: "facebook", value: "facebook.com/maya.stone", enabled: true },
+    { id: "gallery-instagram", kind: "instagram", value: "@maya.moves.freight", enabled: true },
+    { id: "gallery-whatsapp", kind: "whatsapp", value: "+44 7700 900000", enabled: true },
+    { id: "gallery-email", kind: "email", value: "maya@multideck.app", enabled: true },
+    { id: "gallery-website", kind: "website", value: "multideck.app", enabled: true },
+  ])
   const [previewCustomerView, setPreviewCustomerView] = useState<CustomerViewMode>("List")
   const [previewSelectedIds, setPreviewSelectedIds] = useState<Set<string>>(new Set(["marlow-apparel"]))
   const [previewCustomerTab, setPreviewCustomerTab] = useState("Overview")
@@ -970,6 +1063,7 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewCrmDealId, setPreviewCrmDealId] = useState(crmPipelineStages[0].deals[0].id)
   const [previewCrmLeadId, setPreviewCrmLeadId] = useState(previewCrmLeads[0].id)
   const [previewCrmContactEmail, setPreviewCrmContactEmail] = useState(crmContacts[0].email)
+  const [previewContactCreateOpen, setPreviewContactCreateOpen] = useState(false)
   const [previewMarketingFolderId, setPreviewMarketingFolderId] = useState(previewMarketingFolders[0].id)
   const [previewPaperDocumentId, setPreviewPaperDocumentId] = useState<string | null>(null)
   const [previewTransportModes, setPreviewTransportModes] = useState(["Sea FCL", "Road"])
@@ -1294,29 +1388,56 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "toast" ? (
-        <div className="relative flex min-h-[340px] w-full max-w-[760px] items-center justify-center overflow-hidden rounded-[var(--md-radius-xl)] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--md-surface)_72%,transparent),color-mix(in_srgb,var(--md-surface-tint)_72%,transparent))] p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+        <div className="relative flex min-h-[300px] w-full max-w-[760px] items-start justify-center overflow-hidden rounded-[var(--md-radius-xl)] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--md-surface)_72%,transparent),color-mix(in_srgb,var(--md-surface-tint)_72%,transparent))] p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
           <Button
             type="button"
             variant="ghost"
             className="h-10 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-surface)_78%,transparent)] px-4 text-[13px] font-medium shadow-[var(--md-shadow-line)]"
-            onClick={() =>
-              toast.success("Customer CSV prepared", {
-                description: "The export is ready for Northwind Forwarding.",
+            onClick={() => {
+              toast.success(t("Customer CSV prepared"), {
+                description: t("The export is ready to download."),
               })
-            }
+              toast.warning(t("Declaration needs attention"), {
+                description: t("Two checks still need review."),
+              })
+              toast.info(t("New notification"), {
+                description: t("A booking was assigned to you."),
+              })
+            }}
           >
-            Trigger toast
+            {t("Trigger toast stack")}
           </Button>
 
-          <div className="pointer-events-none absolute bottom-6 right-6 w-[min(520px,calc(100%-48px))]">
-            <div data-type="success" className="md-toast flex items-start">
-              <div className="md-toast-icon shrink-0">
-                <Check className="size-4.5" strokeWidth={1.5} />
+          <div aria-hidden="true" className="md-toast-gallery-stack pointer-events-none absolute bottom-5 end-5 flex w-[min(520px,calc(100%-40px))] flex-col gap-2">
+            <div data-type="info" className="md-toast flex">
+              <div className="md-toast-icon shrink-0" data-icon="">
+                <img alt="" className="md-toast-status-art" data-toast-icon-kind="general" src={toastGeneralIcon} />
               </div>
-              <div className="min-w-0 flex-1">
-                <p className="md-toast-title">Customer CSV prepared</p>
-                <p className="md-toast-description">The export is ready for Northwind Forwarding.</p>
+              <div className="min-w-0 flex-1" data-content="">
+                <p className="md-toast-title" data-title="">{t("New notification")}</p>
+                <p className="md-toast-description" data-description="">{t("A booking was assigned to you.")}</p>
               </div>
+              <button className="md-toast-close" tabIndex={-1} type="button"><span className="md-toast-dismiss-label">{t("Dismiss")}</span></button>
+            </div>
+            <div data-type="warning" className="md-toast flex">
+              <div className="md-toast-icon shrink-0" data-icon="">
+                <img alt="" className="md-toast-status-art" data-toast-icon-kind="warning" src={toastErrorIcon} />
+              </div>
+              <div className="min-w-0 flex-1" data-content="">
+                <p className="md-toast-title" data-title="">{t("Declaration needs attention")}</p>
+                <p className="md-toast-description" data-description="">{t("Two checks still need review.")}</p>
+              </div>
+              <button className="md-toast-close" tabIndex={-1} type="button"><span className="md-toast-dismiss-label">{t("Dismiss")}</span></button>
+            </div>
+            <div data-type="success" className="md-toast flex">
+              <div className="md-toast-icon shrink-0" data-icon="">
+                <img alt="" className="md-toast-status-art" data-toast-icon-kind="success" src={toastSuccessIcon} />
+              </div>
+              <div className="min-w-0 flex-1" data-content="">
+                <p className="md-toast-title" data-title="">{t("Customer CSV prepared")}</p>
+                <p className="md-toast-description" data-description="">{t("The export is ready to download.")}</p>
+              </div>
+              <button className="md-toast-close" tabIndex={-1} type="button"><span className="md-toast-dismiss-label">{t("Dismiss")}</span></button>
             </div>
           </div>
         </div>
@@ -1547,7 +1668,7 @@ function ComponentPreview({ id }: { id: string }) {
             stages={previewExtractionStages}
             activeStageId="extracting"
             footnote="Nothing is added to the declaration until you approve it."
-            onCancel={() => toast.message("Would cancel the import")}
+            onCancel={() => toast.info("Would cancel the import")}
           />
         </div>
       ) : null}
@@ -1746,6 +1867,50 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "email-delivery-status" ? (
+        <div className="flex w-full max-w-[520px] flex-wrap items-center justify-center gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <EmailDeliveryStatus
+            delivery={{
+              status: "sent",
+              sentAt: "2026-08-03T14:42:00.000Z",
+              deliveredAt: null,
+              openedAt: null,
+              repliedAt: null,
+              failedAt: null,
+              bouncedAt: null,
+              openTrackingEnabled: false,
+              confidence: "none",
+            }}
+          />
+          <EmailDeliveryStatus
+            delivery={{
+              status: "opened_estimated",
+              sentAt: "2026-08-03T14:42:00.000Z",
+              deliveredAt: null,
+              openedAt: "2026-08-03T14:48:00.000Z",
+              repliedAt: null,
+              failedAt: null,
+              bouncedAt: null,
+              openTrackingEnabled: true,
+              confidence: "estimated",
+            }}
+          />
+          <EmailDeliveryStatus
+            delivery={{
+              status: "bounced",
+              sentAt: "2026-08-03T14:42:00.000Z",
+              deliveredAt: null,
+              openedAt: null,
+              repliedAt: null,
+              failedAt: null,
+              bouncedAt: "2026-08-03T14:43:00.000Z",
+              openTrackingEnabled: true,
+              confidence: "confirmed",
+            }}
+          />
+        </div>
+      ) : null}
+
       {id === "mailbox-provider-switch" ? (
         <div className="w-full max-w-[300px] rounded-[var(--md-radius-xl)] bg-white/50 p-3 shadow-[var(--md-shadow-line)]">
           <MailboxProviderSwitch
@@ -1832,6 +1997,8 @@ function ComponentPreview({ id }: { id: string }) {
             onSend={() => toast.success("Would send with mode and source message only")}
             onSaveDraft={() => toast.success("Draft saved")}
             onDiscard={() => setPreviewComposer((current) => ({ ...current, bodyText: "", presentation: "docked" }))}
+            onComposeWithDexter={() => toast.success("Dexter would prepare wording in place")}
+            dexterAction={previewComposer.mode === "reply" || previewComposer.mode === "reply_all" ? "reply" : "compose"}
           />
         </div>
       ) : null}
@@ -1959,6 +2126,24 @@ function ComponentPreview({ id }: { id: string }) {
           <WarehouseFormField label="Country code" htmlFor="gallery-country" error="Country code must be a 2-letter ISO code.">
             <Input id="gallery-country" dir="ltr" defaultValue="GBR" className="h-10 w-full rounded-[var(--md-radius-lg)] border-0 bg-white/68 px-3 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]" />
           </WarehouseFormField>
+        </div>
+      ) : null}
+
+      {id === "warehouse-quantity-uom-field" ? (
+        <div className="w-full max-w-[420px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <WarehouseQuantityUomField label="Quantity to sample" value={previewWarehouseQuantity} onChange={setPreviewWarehouseQuantity} uomCode="KG" max={387.5} />
+        </div>
+      ) : null}
+
+      {id === "warehouse-object-summary" ? (
+        <div className="w-full max-w-[480px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <WarehouseObjectSummary unit={previewWarehouseObject} />
+        </div>
+      ) : null}
+
+      {id === "warehouse-exception-summary" ? (
+        <div className="w-full max-w-[560px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <WarehouseExceptionSummary exception={previewWarehouseException} />
         </div>
       ) : null}
 
@@ -2260,6 +2445,29 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "dexter-email-compose-card" ? (
+        <div className="w-full max-w-[720px]">
+          <DexterEmailComposeCard
+            messageId="gallery-dexter-message"
+            preview
+            draft={{
+              id: "gallery-dexter-email-draft",
+              mode: "reply",
+              mailboxId: "preview-mailbox",
+              threadId: "gallery-thread",
+              sourceMessageId: "gallery-source-message",
+              to: [{ address: "maya@pacificgoods.example", displayName: "Maya Chen" }],
+              cc: [],
+              bcc: [],
+              subject: "Re: Felixstowe handover",
+              bodyText: "Hi Maya,\n\nThanks for checking. The cleared documents are with the local team, and I’ll confirm the handover time as soon as the carrier updates the booking.\n\nBest,\nHarry",
+              trackOpens: false,
+              delivery: { status: "draft", sendRequestId: null, messageId: null, threadId: null, updatedAt: null },
+            }}
+          />
+        </div>
+      ) : null}
+
       {id === "dexter-prompt-composer" ? (
         <div className="w-full max-w-[760px]">
           <DexterPromptComposer
@@ -2281,6 +2489,19 @@ function ComponentPreview({ id }: { id: string }) {
             onRemoveAttachment={togglePreviewDexterAttachment}
             onSend={() => toast.success("Dexter conversation started")}
           />
+        </div>
+      ) : null}
+
+      {id === "watch-mode-aurora" ? (
+        <div className="relative h-[420px] w-full max-w-[820px] overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-bg)] shadow-[var(--md-shadow-line)]">
+          <WatchModeAurora active />
+          <div className="relative z-10 flex h-full items-center justify-center px-6 text-center">
+            <div>
+              <Sparkles className="mx-auto size-6 text-[var(--md-accent)]" strokeWidth={1.35} />
+              <p className="mt-4 text-[20px] font-medium text-[var(--md-ink)]">What do you want me to watch?</p>
+              <p className="mt-2 text-[13px] text-[var(--md-text)]">A subtle, accent-matched mode cue rises from the bottom edge.</p>
+            </div>
+          </div>
         </div>
       ) : null}
 
@@ -2592,6 +2813,21 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "contact-create-dialog" ? (
+        <div className="grid w-full max-w-[520px] place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-8 shadow-[var(--md-shadow-line)]">
+          <Button onClick={() => setPreviewContactCreateOpen(true)}>New contact</Button>
+          <ContactCreateDialog
+            open={previewContactCreateOpen}
+            onOpenChange={setPreviewContactCreateOpen}
+            accounts={[
+              { id: "preview-marlow", name: "Marlow Apparel" },
+              { id: "preview-northstar", name: "Northstar Components" },
+            ]}
+            onCreated={() => setPreviewContactCreateOpen(false)}
+          />
+        </div>
+      ) : null}
+
       {id === "crm-lead-qualification-table" ? (
         <div className="w-full max-w-[1240px]">
           <CrmLeadQualificationTable
@@ -2776,6 +3012,35 @@ function ComponentPreview({ id }: { id: string }) {
         <div className="grid w-full max-w-[820px] gap-4 rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-soft)] sm:grid-cols-2">
           <SettingsProgressRing value={86} label="Profile readiness" detail="Identity details are ready for customer-facing ownership." />
           <SettingsProgressRing value={68} label="Monthly AI budget" detail="EUR 1,024 of EUR 1,500 used." tone="blue" />
+        </div>
+      ) : null}
+
+      {id === "contact-card-layout-picker" ? (
+        <div className="w-full max-w-[860px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <ContactCardLayoutPicker value={previewContactLayout} onChange={setPreviewContactLayout} />
+        </div>
+      ) : null}
+
+      {id === "contact-card-social-links-editor" ? (
+        <div className="w-full max-w-[760px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <ContactCardSocialLinksEditor links={previewSocialLinks} onChange={setPreviewSocialLinks} />
+        </div>
+      ) : null}
+
+      {id === "automation-run-history" ? (
+        <div className="w-full max-w-[920px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <AutomationRunHistory runs={previewAutomationRuns} onRerun={async () => undefined} />
+        </div>
+      ) : null}
+
+      {id === "marketing-opt-in-control" ? (
+        <div className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <MarketingOptInControl
+            checked={previewMarketingOptIn}
+            source="manual_override"
+            updatedAt="2026-08-03T14:30:00.000Z"
+            onCheckedChange={async (checked) => setPreviewMarketingOptIn(checked)}
+          />
         </div>
       ) : null}
 

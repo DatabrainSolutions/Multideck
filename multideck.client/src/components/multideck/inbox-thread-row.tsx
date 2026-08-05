@@ -45,6 +45,7 @@ export function InboxThreadRow({
   ownAddresses = [],
   selectionLayoutId,
   onSelect,
+  onPrefetch,
   onToggleStar,
 }: {
   thread: InboxThreadListItem
@@ -57,6 +58,8 @@ export function InboxThreadRow({
    */
   selectionLayoutId?: string
   onSelect: () => void
+  /** Warm the read-only detail request from pointer or keyboard intent. */
+  onPrefetch?: () => void
   onToggleStar?: () => void
 }) {
   const { language, t } = useLanguage()
@@ -90,6 +93,9 @@ export function InboxThreadRow({
         type="button"
         aria-current={selected ? "true" : undefined}
         className="grid w-full min-h-[44px] grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-3 gap-y-1 rounded-[var(--md-radius-lg)] px-3 py-2.5 text-start outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a20)]"
+        onPointerEnter={onPrefetch}
+        onPointerDown={onPrefetch}
+        onFocus={onPrefetch}
         onClick={onSelect}
       >
         <span className="flex min-w-0 items-center gap-1.5">

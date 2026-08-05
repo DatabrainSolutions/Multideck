@@ -29,6 +29,8 @@ export type ResolvedCardTheme = {
   errorInk: string
   errorSoft: string
   radiusOuter: string
+  /** For a panel that wraps fields: concentric with the field inside it. */
+  radiusPanel: string
   radiusField: string
   radiusPill: string
   shadow: string
@@ -94,6 +96,9 @@ export function resolveCardTheme(branding: CardBranding): ResolvedCardTheme {
     errorInk: isDark ? "#f08c8c" : "#c2453f",
     errorSoft: isDark ? "rgba(240, 140, 140, 0.14)" : "rgba(194, 69, 63, 0.08)",
     radiusOuter: soft ? "18px" : "4px",
+    // 12px fields inside 18px of padding want a 30px corner. Sharp keeps its own
+    // language instead: concentricity there would undo the choice.
+    radiusPanel: soft ? "30px" : "5px",
     radiusField: soft ? "12px" : "3px",
     radiusPill: soft ? "999px" : "4px",
     shadow: base.shadow,
@@ -122,6 +127,7 @@ export function cardThemeVariables(theme: ResolvedCardTheme): React.CSSPropertie
     "--card-error-ink": theme.errorInk,
     "--card-error-soft": theme.errorSoft,
     "--card-radius-outer": theme.radiusOuter,
+    "--card-radius-panel": theme.radiusPanel,
     "--card-radius-field": theme.radiusField,
     "--card-radius-pill": theme.radiusPill,
     "--card-shadow": theme.shadow,

@@ -8,6 +8,7 @@ import {
   attachmentRejection,
   buildSendPayload,
   composerEdits,
+  emptyComposerState,
   dedupeThreads,
   mergeThreadPage,
   isInboxNotFound,
@@ -16,6 +17,7 @@ import {
   normalizeThreadPage,
   normalizeConnection,
   normalizeMailbox,
+  normalizeMailboxFolder,
   normalizeProviderAvailability,
   readEmailConnectionResult,
   readInboxThreadDeepLink,
@@ -31,6 +33,7 @@ import {
   type SendMode,
 } from "../src/lib/inbox-contract.ts"
 import { isEmptyEdits } from "../src/lib/inbox-drafts.ts"
+import { labelColourContrast, mailboxLabelTone } from "../src/lib/mailbox-label-colour.ts"
 
 test("Outlook shared access is exposed as a boolean without leaking OAuth scopes", () => {
   const elevated = normalizeConnection({
@@ -44,6 +47,96 @@ test("Outlook shared access is exposed as a boolean without leaking OAuth scopes
   assert.equal(elevated.sharedMailboxAccess, true)
   assert.equal(personal.sharedMailboxAccess, false)
   assert.equal("oauthScopes" in elevated, false)
+})
+
+test("provider folders expose only bounded display metadata and a local hierarchy", () => {
+  const folder = normalizeMailboxFolder({
+    id: "4c8ab61f-5965-4ee5-bdd5-6ac789b86bd6",
+    mailboxId: "mailbox-1",
+    parentId: "f3848c35-eac4-4a73-89aa-0fd15cde7517",
+    role: "custom",
+    displayName: "Priority freight",
+    unreadCount: 7,
+    totalCount: 14,
+    backgroundColor: "#AABBCC",
+    textColor: "javascript:bad",
+    kind: "user",
+    providerFolderId: "must-not-cross-the-wire",
+  })
+
+  assert.equal(folder.displayName, "Priority freight")
+  assert.equal(folder.unreadCount, 7)
+  assert.equal(folder.backgroundColor, "#AABBCC")
+  assert.equal(folder.textColor, null)
+  assert.equal("providerFolderId" in folder, false)
+})
+
+test("Gmail labels keep an opaque accessible colour independent of the app theme", () => {
+  const providerTone = mailboxLabelTone({
+    displayName: "Priority freight",
+    backgroundColor: "#FFF475",
+    textColor: "#FFFFFF",
+  })
+  const fallbackTone = mailboxLabelTone({
+    displayName: "Client approvals",
+    backgroundColor: null,
+    textColor: null,
+  })
+
+  assert.equal(providerTone.backgroundColor, "#FFF475")
+  assert.equal(providerTone.foregroundColor, "#17211F")
+  assert.deepEqual(
+    mailboxLabelTone({ displayName: "Client approvals", backgroundColor: null, textColor: null }),
+    fallbackTone,
+  )
+  assert.match(fallbackTone.backgroundColor, /^#[0-9A-F]{6}$/)
+  assert.ok(labelColourContrast(providerTone.foregroundColor, providerTone.backgroundColor) >= 4.5)
+  assert.ok(labelColourContrast(fallbackTone.foregroundColor, fallbackTone.backgroundColor) >= 4.5)
+})
+
+test("new composers track opens by default and keep an explicit opt-out", () => {
+  const composer = emptyComposerState("new", "open")
+  assert.equal(composer.trackOpens, true)
+  assert.equal(composerEdits({ ...composer, trackOpens: false }).trackOpens, false)
+})
+
+test("outbound delivery evidence is normalised without adding it to inbound mail", () => {
+  const detail = normalizeThreadDetail({
+    id: "thread-1",
+    messages: [
+      {
+        id: "outbound-1",
+        direction: "outbound",
+        sentAt: "2026-08-03T14:42:00.000Z",
+        delivery: {
+          status: "opened_estimated",
+          sentAt: "2026-08-03T14:42:00.000Z",
+          openedAt: "2026-08-03T14:48:00.000Z",
+          openTrackingEnabled: true,
+          confidence: "estimated",
+        },
+      },
+      {
+        id: "inbound-1",
+        direction: "inbound",
+        receivedAt: "2026-08-03T15:00:00.000Z",
+        delivery: { status: "delivered" },
+      },
+    ],
+  }, "thread-1")
+
+  assert.deepEqual(detail.messages[0].delivery, {
+    status: "opened_estimated",
+    sentAt: "2026-08-03T14:42:00.000Z",
+    deliveredAt: null,
+    openedAt: "2026-08-03T14:48:00.000Z",
+    repliedAt: null,
+    failedAt: null,
+    bouncedAt: null,
+    openTrackingEnabled: true,
+    confidence: "estimated",
+  })
+  assert.equal(detail.messages[1].delivery, undefined)
 })
 
 test("server-issued Inbox citations restore their provider, mailbox and thread", () => {
@@ -78,6 +171,7 @@ function composerState(mode: SendMode): ComposerState {
     showCc: false,
     showBcc: false,
     attachments: [],
+    trackOpens: true,
     presentation: "open",
   }
 }
@@ -119,6 +213,10 @@ function mailbox(id: string, overrides: Partial<Mailbox> = {}): Mailbox {
     indexedCount: 0,
     estimatedTotal: null,
     indexPercent: 0,
+    coreCoverageStart: "2025-01-01T00:00:00.000Z",
+    wasteCoverageStart: "2025-12-02T00:00:00.000Z",
+    coreRetentionMonths: 12,
+    wasteRetentionDays: 30,
     error: null,
     ...overrides,
   }
@@ -153,6 +251,7 @@ const edits: ComposerEdits = {
   addedBcc: [],
   removedAddresses: [],
   attachments: [],
+  trackOpens: true,
 }
 
 /* ----------------------------------------------------------------- pagination */
@@ -226,6 +325,7 @@ test("the cache key separates mailbox, folder and query", () => {
   assert.notEqual(threadCacheKey("mbx-a", "inbox", ""), threadCacheKey("mbx-b", "inbox", ""))
   assert.notEqual(threadCacheKey("mbx-a", "inbox", ""), threadCacheKey("mbx-a", "archive", ""))
   assert.notEqual(threadCacheKey("mbx-a", "inbox", ""), threadCacheKey("mbx-a", "inbox", "customs"))
+  assert.notEqual(threadCacheKey("mbx-a", "inbox", "", "folder-a"), threadCacheKey("mbx-a", "inbox", "", "folder-b"))
 })
 
 test("the cache key ignores query casing and padding, so one search hits one entry", () => {
@@ -314,11 +414,13 @@ test("a reply payload carries no computed recipient list", () => {
     "sourceMessageId",
     "subject",
     "threadId",
+    "trackOpens",
   ])
   assert.equal("to" in payload, false)
   assert.equal("cc" in payload, false)
   assert.equal("recipients" in payload, false)
   assert.equal(payload.sourceMessageId, "m9")
+  assert.equal(payload.trackOpens, true)
 })
 
 test("replies put hand-typed additions on cc; new messages and forwards put them on to", () => {

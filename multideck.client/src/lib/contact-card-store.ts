@@ -3,7 +3,12 @@ import {
   cardTotals,
   defaultAutomation,
   defaultBranding,
+  defaultSocialLinks,
+  emptyCardAnalytics,
   isExternalAction,
+  type AutomationRun,
+  type BreakdownRow,
+  type CardAnalytics,
   type CardBranding,
   type CardExchange,
   type CardScan,
@@ -23,16 +28,21 @@ type StoreState = {
   pipelines: ContactCardPipelineOption[]
   owners: ContactCardOwnerOption[]
   currentUserId: string | null
+  tenantName: string
   save: { status: SaveStatus; cardId: string | null }
 }
 
 type WorkspacePayload = {
+  tenantName?: string
   cards?: Record<string, unknown>[]
   automations?: Record<string, unknown>[]
   conditions?: Record<string, unknown>[]
   actions?: Record<string, unknown>[]
+  analytics?: Record<string, unknown>[]
   scans?: Record<string, unknown>[]
   exchanges?: Record<string, unknown>[]
+  runs?: Record<string, unknown>[]
+  runSteps?: Record<string, unknown>[]
   pipelines?: ContactCardPipelineOption[]
   owners?: ContactCardOwnerOption[]
 }
@@ -44,10 +54,12 @@ let state: StoreState = {
   pipelines: [],
   owners: [],
   currentUserId: null,
+  tenantName: "Multideck",
   save: { status: "idle", cardId: null },
 }
 const listeners = new Set<() => void>()
 const saveTimers = new Map<string, number>()
+const unsavedCardIds = new Set<string>()
 const publicCardCache = new Map<string, ContactCard>()
 let loadPromise: Promise<void> | null = null
 
@@ -69,12 +81,80 @@ function bool(row: Record<string, unknown>, key: string, fallback = false) {
   return typeof row[key] === "boolean" ? (row[key] as boolean) : fallback
 }
 
+function number(row: Record<string, unknown>, key: string, fallback = 0) {
+  const value = Number(row[key])
+  return Number.isFinite(value) ? value : fallback
+}
+
+function analyticsNumber(value: unknown, fallback = 0) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function mapBreakdownRows(value: unknown): BreakdownRow[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return []
+    const row = item as Record<string, unknown>
+    const name = typeof row.name === "string" ? row.name : ""
+    return name ? [{ name, value: analyticsNumber(row.value), share: analyticsNumber(row.share) }] : []
+  })
+}
+
+function mapTimeline(value: unknown): CardAnalytics["timelineDay"] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return []
+    const row = item as Record<string, unknown>
+    if (typeof row.iso !== "string" || !row.iso) return []
+    return [{ iso: row.iso, scans: analyticsNumber(row.scans), exchanges: analyticsNumber(row.exchanges) }]
+  })
+}
+
+function mapAnalytics(value: unknown): CardAnalytics {
+  if (!value || typeof value !== "object") return emptyCardAnalytics()
+  const analytics = value as Record<string, unknown>
+  const totals = analytics.totals && typeof analytics.totals === "object" ? analytics.totals as Record<string, unknown> : {}
+  const location = analytics.location && typeof analytics.location === "object" ? analytics.location as Record<string, unknown> : {}
+
+  return {
+    totals: {
+      scans: analyticsNumber(totals.scans),
+      uniqueScans: analyticsNumber(totals.uniqueScans),
+      started: analyticsNumber(totals.started),
+      exchanges: analyticsNumber(totals.exchanges),
+      leadsCreated: analyticsNumber(totals.leadsCreated),
+      leadsMatched: analyticsNumber(totals.leadsMatched),
+      conversion: totals.conversion === null || totals.conversion === undefined ? null : analyticsNumber(totals.conversion),
+    },
+    timelineHour: mapTimeline(analytics.timelineHour),
+    timelineDay: mapTimeline(analytics.timelineDay),
+    devices: mapBreakdownRows(analytics.devices),
+    browsers: mapBreakdownRows(analytics.browsers),
+    channels: mapBreakdownRows(analytics.channels),
+    location: {
+      rows: mapBreakdownRows(location.rows),
+      suppressedRegions: analyticsNumber(location.suppressedRegions),
+      suppressedScans: analyticsNumber(location.suppressedScans),
+    },
+    automationOutcomes: mapBreakdownRows(analytics.automationOutcomes),
+    automationRunsToday: analyticsNumber(analytics.automationRunsToday),
+    automationFailures: analyticsNumber(analytics.automationFailures),
+  }
+}
+
 function mapWorkspace(payload: WorkspacePayload): ContactCard[] {
+  const tenantName = typeof payload.tenantName === "string" && payload.tenantName.trim()
+    ? payload.tenantName.trim()
+    : "Multideck"
   const automations = new Map((payload.automations ?? []).map((row) => [text(row, "ContactCard_ID"), row]))
   const conditions = payload.conditions ?? []
   const actions = payload.actions ?? []
+  const analytics = new Map((payload.analytics ?? []).map((row) => [text(row, "ContactCard_ID"), row.Analytics]))
   const scans = payload.scans ?? []
   const exchanges = payload.exchanges ?? []
+  const runs = payload.runs ?? []
+  const runSteps = payload.runSteps ?? []
 
   return (payload.cards ?? []).map((row) => {
     const id = text(row, "ContactCard_ID")
@@ -94,17 +174,73 @@ function mapWorkspace(payload: WorkspacePayload): ContactCard[] {
         automationOutcome: text(item, "Exchange_AutomationOutcome", "none") as CardExchange["automationOutcome"],
         automationDetail: text(item, "Exchange_AutomationDetail"),
       }))
-    const today = new Date().toDateString()
+    const personRow = (row.ContactCard_Person ?? {}) as Partial<ContactCard["person"]>
+    const person = {
+      fullName: personRow.fullName ?? "",
+      role: personRow.role ?? "",
+      company: personRow.company ?? "",
+      email: personRow.email ?? "",
+      phone: personRow.phone ?? "",
+      website: personRow.website ?? "",
+      profileImageDataUrl: personRow.profileImageDataUrl ?? null,
+      socialLinks: Array.isArray(personRow.socialLinks)
+        ? personRow.socialLinks
+        : defaultSocialLinks(personRow.email ?? "", personRow.website ?? ""),
+    }
+    const cardRuns: AutomationRun[] = runs
+      .filter((item) => text(item, "ContactCard_ID") === id)
+      .map((item) => {
+        const runId = text(item, "AutomationRun_ID")
+        return {
+          id: runId,
+          exchangeId: text(item, "Exchange_ID") || null,
+          leadId: text(item, "CRMLead_ID") || null,
+          status: text(item, "AutomationRun_Status", "skipped") as AutomationRun["status"],
+          startedAt: text(item, "AutomationRun_StartedAt"),
+          completedAt: text(item, "AutomationRun_CompletedAt") || null,
+          durationMs: number(item, "AutomationRun_DurationMs"),
+          recordsAffected: number(item, "AutomationRun_RecordsAffected"),
+          trigger: text(item, "AutomationRun_Trigger", "Lead submitted"),
+          errorSummary: text(item, "AutomationRun_ErrorSummary") || null,
+          recovery: text(item, "AutomationRun_Recovery") || null,
+          input: (item.AutomationRun_Input ?? {}) as Record<string, string | boolean>,
+          rerunOf: text(item, "AutomationRun_RerunOf") || null,
+          isTest: bool(item, "AutomationRun_IsTest"),
+          steps: runSteps
+            .filter((step) => text(step, "AutomationRun_ID") === runId)
+            .map((step) => ({
+              id: text(step, "AutomationRunStep_ID"),
+              actionId: text(step, "Action_ID") || null,
+              kind: text(step, "AutomationRunStep_Kind"),
+              label: text(step, "AutomationRunStep_Label"),
+              status: text(step, "AutomationRunStep_Status", "skipped") as AutomationRun["steps"][number]["status"],
+              detail: text(step, "AutomationRunStep_Detail"),
+              startedAt: text(step, "AutomationRunStep_StartedAt"),
+              durationMs: number(step, "AutomationRunStep_DurationMs"),
+            })),
+        }
+      })
+    const cardAnalytics = mapAnalytics(analytics.get(id))
 
     return {
       id,
       ownerUserId: text(row, "Owner_User_ID"),
+      tenantName: text(row, "ContactCard_TenantName", tenantName),
+      showTenantName: bool(row, "ContactCard_ShowTenantName", true),
       slug: text(row, "ContactCard_Slug"),
       label: text(row, "ContactCard_Label"),
       context: text(row, "ContactCard_Context"),
       status: text(row, "ContactCard_Status", "draft") as ContactCard["status"],
-      person: (row.ContactCard_Person ?? {}) as ContactCard["person"],
-      branding: { ...defaultBranding(), ...((row.ContactCard_Branding ?? {}) as CardBranding) },
+      person,
+      branding: (() => {
+        const saved = (row.ContactCard_Branding ?? {}) as Partial<CardBranding>
+        const savedLayout = (row.ContactCard_Branding as Record<string, unknown> | null)?.layout
+        return {
+          ...defaultBranding(),
+          ...saved,
+          layout: savedLayout === "centred" ? "spotlight" : saved.layout ?? "classic",
+        } as CardBranding
+      })(),
       leadSource: text(row, "ContactCard_LeadSource"),
       publicHeading: text(row, "ContactCard_PublicHeading"),
       publicSubheading: text(row, "ContactCard_PublicSubheading"),
@@ -122,8 +258,8 @@ function mapWorkspace(payload: WorkspacePayload): ContactCard[] {
         hasUnpublishedChanges: bool(automationRow, "Automation_HasUnpublishedChanges"),
         lastRunAt: text(automationRow, "Automation_LastRunAt") || cardExchanges.filter((item) => item.automationOutcome === "ran").at(-1)?.at || null,
         autoPausedReason: text(automationRow, "Automation_AutoPausedReason") || null,
-        runsToday: cardExchanges.filter((item) => item.automationOutcome === "ran" && new Date(item.at).toDateString() === today).length,
-        failures: cardExchanges.filter((item) => item.automationOutcome === "failed").length,
+        runsToday: cardAnalytics.automationRunsToday,
+        failures: cardAnalytics.automationFailures,
         conditions: conditions
           .filter((item) => text(item, "ContactCard_ID") === id)
           .map((item) => ({
@@ -142,7 +278,9 @@ function mapWorkspace(payload: WorkspacePayload): ContactCard[] {
             config: (item.Action_Config ?? {}) as Record<string, string>,
             delayMinutes: Number(item.Action_DelayMinutes ?? 0),
           })),
+        runs: cardRuns,
       },
+      analytics: cardAnalytics,
       createdAt: text(row, "ContactCard_CreatedAt"),
       scans: scans
         .filter((item) => text(item, "ContactCard_ID") === id)
@@ -185,6 +323,7 @@ async function loadWorkspace() {
       pipelines: payload.pipelines ?? [],
       owners,
       currentUserId: owners.find((owner) => owner.email.toLowerCase() === session?.user.email?.toLowerCase())?.id ?? owners[0]?.id ?? null,
+      tenantName: typeof payload.tenantName === "string" && payload.tenantName.trim() ? payload.tenantName.trim() : "Multideck",
     })
   } catch (error) {
     emit({ status: "error", error: error instanceof Error ? error.message : "Unable to load your contact cards. Check your connection and try again.", cards: [] })
@@ -218,7 +357,13 @@ function commit(cards: ContactCard[]) {
 async function persistCard(card: ContactCard) {
   emit({ save: { status: "saving", cardId: card.id } })
   try {
-    await callRpc<string>("multideck_contact_card_save", { p_card: card })
+    const creating = unsavedCardIds.has(card.id)
+    await callRpc<string>(creating ? "multideck_contact_card_create" : "multideck_contact_card_save", { p_card: card })
+    if (creating) unsavedCardIds.delete(card.id)
+    await callRpc<void>("multideck_contact_card_set_tenant_name_visibility", {
+      p_card_id: card.id,
+      p_show: card.showTenantName,
+    })
     emit({ save: { status: "saved", cardId: card.id } })
     window.setTimeout(() => {
       if (state.save.cardId === card.id && state.save.status === "saved") emit({ save: { status: "idle", cardId: null } })
@@ -261,11 +406,22 @@ export function createCard(input: {
   const card: ContactCard = {
     id,
     ownerUserId: owner?.id ?? "",
+    tenantName: state.tenantName,
+    showTenantName: true,
     slug,
     label: input.label || input.fullName,
     context: input.context,
     status: "draft",
-    person: { fullName: input.fullName, role: input.role, company: input.company || "Multideck", email: input.email, phone: input.phone, website: "multideck.solutions" },
+    person: {
+      fullName: input.fullName,
+      role: input.role,
+      company: input.company || "Multideck",
+      email: input.email,
+      phone: input.phone,
+      website: "multideck.solutions",
+      profileImageDataUrl: null,
+      socialLinks: defaultSocialLinks(input.email, "multideck.solutions"),
+    },
     branding: defaultBranding(),
     leadSource: input.leadSource,
     publicHeading: "Let's stay in touch",
@@ -276,14 +432,16 @@ export function createCard(input: {
     phoneField: "optional",
     showPhone: Boolean(input.phone),
     showWebsite: true,
-    consentEnabled: false,
-    consentCopy: "",
+    consentEnabled: true,
+    consentCopy: `Send me occasional updates from ${state.tenantName}.`,
     privacyUrl: "https://multideck.solutions/privacy",
     automation: defaultAutomation(owner?.name ?? input.fullName, owner?.id ?? "", pipeline),
+    analytics: emptyCardAnalytics(),
     createdAt: new Date().toISOString(),
     scans: [],
     exchanges: [],
   }
+  unsavedCardIds.add(id)
   commit([card, ...state.cards])
   void persistCard(card)
   return card
@@ -337,19 +495,32 @@ export function resumeAutomation(cardId: string) { updateCard(cardId, (card) => 
 export function turnAutomationOff(cardId: string) { updateCard(cardId, (card) => ({ ...card, automation: { ...card.automation, state: "off" } })) }
 export async function sendAutomationTest() { throw new Error("Email test delivery is not configured for this workspace.") }
 
+export async function testAutomation(cardId: string) {
+  await callRpc("multideck_contact_card_test_automation", { p_card_id: cardId })
+  await reloadContactCards()
+}
+
+export async function rerunAutomationRun(runId: string) {
+  await callRpc("multideck_contact_card_rerun", { p_run_id: runId })
+  await reloadContactCards()
+}
+
 export function findCardBySlug(slug: string) { return state.cards.find((card) => card.slug === slug) ?? publicCardCache.get(slug) ?? null }
 
 function mapPublicCard(row: Record<string, unknown>): ContactCard {
   return mapWorkspace({ cards: [row], automations: [], conditions: [], actions: [], scans: [], exchanges: [] })[0]
 }
 
-export async function loadPublicCard(slug: string): Promise<ContactCard | null> {
+export async function loadPublicCard(slug: string, preview = false): Promise<ContactCard | null> {
   const local = findCardBySlug(slug)
   if (local) return local
-  const row = await callRpc<Record<string, unknown> | null>("multideck_public_contact_card", { p_slug: slug })
+  const row = await callRpc<Record<string, unknown> | null>(
+    preview ? "multideck_contact_card_preview" : "multideck_public_contact_card",
+    { p_slug: slug },
+  )
   if (!row) return null
   const card = mapPublicCard(row)
-  publicCardCache.set(slug, card)
+  if (!preview) publicCardCache.set(slug, card)
   return card
 }
 
@@ -384,8 +555,9 @@ export async function submitExchange(cardId: string, scanId: string | null, inpu
     const exchange: CardExchange = { id: crypto.randomUUID(), ...input, at: new Date().toISOString(), outcome: "created", automationOutcome: "none", automationDetail: "Preview submission — nothing was saved." }
     return { outcome: exchange.outcome, exchange }
   }
-  const result = await callRpc<{ outcome: CardExchange["outcome"]; exchangeId: string }>("multideck_contact_card_submit_exchange", { p_slug: card.slug, p_scan_id: scanId, p_input: input })
-  const exchange: CardExchange = { id: result.exchangeId, ...input, email: input.email.trim().toLowerCase(), at: new Date().toISOString(), outcome: result.outcome, automationOutcome: "ran", automationDetail: "Saved to Supabase CRM." }
+  const result = await callRpc<{ outcome: CardExchange["outcome"]; exchangeId: string; automationOutcome: "succeeded" | "failed" | "skipped" | "running" }>("multideck_contact_card_submit_exchange", { p_slug: card.slug, p_scan_id: scanId, p_input: input })
+  const automationOutcome: CardExchange["automationOutcome"] = result.automationOutcome === "succeeded" ? "ran" : result.automationOutcome === "running" ? "none" : result.automationOutcome
+  const exchange: CardExchange = { id: result.exchangeId, ...input, email: input.email.trim().toLowerCase(), at: new Date().toISOString(), outcome: result.outcome, automationOutcome, automationDetail: automationOutcome === "ran" ? "Connected CRM actions completed." : automationOutcome === "failed" ? "An automation step failed. The input was preserved for rerun." : "The automation was off or a condition did not match." }
   return { outcome: result.outcome, exchange }
 }
 
@@ -397,6 +569,19 @@ export function buildVCard(card: ContactCard) {
   const lines = ["BEGIN:VCARD", "VERSION:3.0", `N:${escapeVCard(rest.join(" "))};${escapeVCard(firstName)};;;`, `FN:${escapeVCard(card.person.fullName)}`, `ORG:${escapeVCard(card.person.company)}`, `TITLE:${escapeVCard(card.person.role)}`, `EMAIL;TYPE=INTERNET,WORK:${escapeVCard(card.person.email)}`]
   if (card.showPhone && card.person.phone) lines.push(`TEL;TYPE=CELL,WORK:${escapeVCard(card.person.phone)}`)
   if (card.showWebsite && card.person.website) lines.push(`URL:https://${escapeVCard(card.person.website)}`)
+  for (const link of card.person.socialLinks.filter((item) => item.enabled && item.value.trim() && !["email", "website"].includes(item.kind))) {
+    const value = link.value.trim()
+    const url = /^https?:\/\//i.test(value)
+      ? value
+      : link.kind === "linkedin"
+        ? `https://linkedin.com/in/${value.replace(/^@/, "")}`
+        : link.kind === "facebook"
+          ? `https://facebook.com/${value.replace(/^@/, "")}`
+          : link.kind === "instagram"
+            ? `https://instagram.com/${value.replace(/^@/, "")}`
+            : `https://wa.me/${value.replace(/[^0-9]/g, "")}`
+    lines.push(`X-SOCIALPROFILE;TYPE=${link.kind.toUpperCase()}:${escapeVCard(url)}`)
+  }
   lines.push("END:VCARD")
   return lines.join("\\r\\n")
 }

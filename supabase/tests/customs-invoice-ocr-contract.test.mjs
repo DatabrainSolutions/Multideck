@@ -5,10 +5,11 @@ import test from "node:test"
 const root = new URL("../../", import.meta.url)
 const read = (path) => readFile(new URL(path, root), "utf8")
 
-test("customs invoice extraction remains authenticated, server-side and Mistral-only", async () => {
-  const [edge, shared, config] = await Promise.all([
+test("customs invoice extraction remains authenticated, private, cached and Mistral-only", async () => {
+  const [edge, shared, migration, config] = await Promise.all([
     read("supabase/functions/customs-invoice-ocr/index.ts"),
     read("supabase/functions/_shared/customs-invoice-ocr.ts"),
+    read("supabase/migrations/20260804133000_customs_invoice_extraction_cache.sql"),
     read("supabase/config.toml"),
   ])
 
@@ -16,7 +17,7 @@ test("customs invoice extraction remains authenticated, server-side and Mistral-
   assert.match(edge, /currentInternalUser\(admin, user\)/)
   assert.match(edge, /Deno\.env\.get\("MISTRAL_OCR_API_KEY"\)/)
   assert.match(edge, /https:\/\/api\.mistral\.ai\/v1\/ocr/)
-  assert.match(edge, /https:\/\/api\.mistral\.ai\/v1\/chat\/completions/)
+  assert.doesNotMatch(edge, /chat\/completions|embeddedText|mistral-small/i)
   assert.match(edge, /document_annotation_format/)
   assert.doesNotMatch(edge, /confidence_scores_granularity/)
   // Blocks carry the bounding boxes the review screen draws over the operator's own document.
@@ -28,24 +29,37 @@ test("customs invoice extraction remains authenticated, server-side and Mistral-
   assert.match(edge, /image_limit: 0/)
   assert.match(edge, /Ignore logos, product photography, signatures, stamps and other decorative images/)
   assert.match(edge, /hasPdfSignature/)
-  assert.match(edge, /fallbackToMistralOcr/)
+  assert.match(edge, /sha256Hex\(input\.bytes\)/)
+  assert.match(edge, /createSignedUrl\(objectPath, signedUrlLifetimeSeconds\)/)
+  assert.match(edge, /Customs_InvoiceExtractions/)
+  assert.match(edge, /readyCanonical/)
+  assert.match(edge, /cloneCachedExtraction/)
+  assert.match(edge, /cleanupTemporaryInvoice/)
+  assert.match(edge, /validateDeclaration/)
+  assert.doesNotMatch(edge, /data:application\/pdf;base64|bytesToBase64/)
   assert.match(edge, /Server-Timing/)
   assert.match(shared, /MISTRAL_OCR_MODEL = "mistral-ocr-4-0"/)
-  assert.match(shared, /MISTRAL_TEXT_MODEL = "mistral-small-latest"/)
+  assert.match(shared, /COMMERCIAL_INVOICE_SCHEMA_VERSION = 2/)
   assert.match(shared, /MAX_COMMERCIAL_INVOICE_BYTES = 10 \* 1024 \* 1024/)
-  assert.match(shared, /MAX_COMMERCIAL_INVOICE_TEXT_CHARS = 160_000/)
   assert.match(shared, /strict: true/)
   assert.match(shared, /MAX_INVOICE_EVIDENCE_BUDGET_CHARS = 120_000/)
   assert.match(shared, /export function normalizeInvoiceEvidencePages/)
   assert.doesNotMatch(shared, /confidence:/)
   assert.doesNotMatch(edge, /tesseract|textract|firecrawl/i)
+  assert.match(migration, /create table if not exists public\."Customs_InvoiceExtractions"/)
+  assert.match(migration, /enable row level security/)
+  assert.match(migration, /revoke all on table public\."Customs_InvoiceExtractions" from public, anon, authenticated/)
+  assert.match(migration, /UX_Customs_InvoiceExtractions_active_canonical/)
+  assert.match(migration, /CUSTIE_SourceExtractionID/)
+  assert.match(migration, /CUSTIE_SHA256/)
   assert.match(config, /\[functions\.customs-invoice-ocr\]\s+verify_jwt = true/)
 })
 
-test("the client uses embedded PDF text first, falls back only to Mistral OCR and applies reviewed lines", async () => {
-  const [transport, pdfText, workspace, declarations, phrases, folderAnimation, importLogic, dexter] = await Promise.all([
+test("the client uploads immediately, restores server results and applies reviewed lines", async () => {
+  const [transport, preview, recovery, workspace, declarations, phrases, folderAnimation, importLogic, dexter] = await Promise.all([
     read("multideck.client/src/lib/customs-invoice-import-api.ts"),
-    read("multideck.client/src/lib/customs-invoice-pdf-text.ts"),
+    read("multideck.client/src/lib/customs-invoice-pdf-preview.ts"),
+    read("multideck.client/src/lib/customs-invoice-import-recovery.ts"),
     read("multideck.client/src/pages/customs-invoice-import-workspace.tsx"),
     read("multideck.client/src/pages/customs-declarations-page.tsx"),
     read("multideck.client/src/i18n/customs-declaration-phrases.ts"),
@@ -57,20 +71,28 @@ test("the client uses embedded PDF text first, falls back only to Mistral OCR an
   assert.match(transport, /supabaseFunctionsUrl/)
   assert.match(transport, /Authorization: `Bearer \$\{token\}`/)
   assert.match(transport, /apikey: supabasePublicApiKey/)
-  assert.match(transport, /extractEmbeddedPdfText\(file\)/)
-  assert.match(transport, /fallbackToMistralOcr/)
   assert.match(transport, /form\.set\("file", file, file\.name\)/)
+  assert.match(transport, /form\.set\("extractionId", extractionId\)/)
+  assert.match(transport, /XMLHttpRequest/)
+  assert.match(transport, /request\.upload\.addEventListener\("load", onUploaded/)
+  assert.match(transport, /readCommercialInvoiceExtraction/)
+  assert.match(transport, /cancelCommercialInvoiceExtraction/)
+  assert.doesNotMatch(transport, /extractEmbeddedPdfText|fallbackToMistralOcr|embedded_text|mistral-small/i)
   assert.doesNotMatch(transport, /MISTRAL_OCR_API_KEY/)
-  assert.match(pdfText, /import\("pdfjs-dist"\)/)
-  assert.match(pdfText, /pdf\.worker\.min\.mjs\?url/)
-  assert.doesNotMatch(pdfText, /tesseract|ocr/i)
-  // Text PDFs keep their own row geometry so both routes can point at the page.
-  assert.match(pdfText, /export function buildTextRowPage/)
+  // PDF.js remains presentation-only so operators can inspect their own document.
+  assert.match(preview, /import\("pdfjs-dist"\)/)
+  assert.match(preview, /pdf\.worker\.min\.mjs\?url/)
+  assert.doesNotMatch(preview, /getTextContent|tesseract|ocr/i)
+  assert.match(recovery, /const recoveryVersion = 2/)
+  assert.match(recovery, /extractionId/)
+  assert.match(recovery, /lines: \[\], evidencePages: \[\]/)
   assert.match(transport, /evidencePages/)
-  assert.match(transport, /onStage\?\.\("reading"\)/)
+  assert.match(transport, /onStage\?\.\("uploading"\)/)
   assert.match(transport, /onStage\?\.\("extracting"\)/)
   assert.match(transport, /onStage\?\.\("organising"\)/)
   assert.match(workspace, /extractCommercialInvoice\(file, \{/)
+  assert.match(workspace, /readCommercialInvoiceExtraction\(recovered\.extractionId/)
+  assert.match(workspace, /cancelCommercialInvoiceExtraction/)
   assert.match(workspace, /buildInvoiceLineEvidence\(lines, evidencePages\)/)
   assert.match(workspace, /<DocumentEvidenceViewer/)
   assert.match(workspace, /<DocumentExtractionProgress/)
@@ -88,7 +110,8 @@ test("the client uses embedded PDF text first, falls back only to Mistral OCR an
   assert.doesNotMatch(phrases, /Mistral|\bOCR\b|API key|AI extraction/i)
   assert.match(folderAnimation, /"nm":"Folder"/)
   assert.match(importLogic, /include: Boolean\(line\.description\.trim\(\)\)/)
-  assert.match(dexter, /no conventional OCR fallback is used/)
+  assert.match(dexter, /Every uploaded invoice is processed server-side with Mistral OCR 4/)
+  assert.match(dexter, /no browser text extraction or conventional OCR fallback is used/)
   assert.match(dexter, /You cannot upload or process the invoice from chat or claim that extraction ran/)
-  assert.match(dexter, /Watching for you has no event to monitor at this stage/)
+  assert.match(dexter, /Temporary upload and extraction states are not meaningful watch events/)
 })

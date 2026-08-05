@@ -1,4 +1,6 @@
 import type { DexterModelId } from "@/data/dexter-models"
+import type { AutomationAction, AutomationCondition } from "@/data/contact-card-data"
+import { retainStreamedEmailAttachments } from "@/lib/dexter-streamed-attachments"
 import {
   getSupabaseSession,
   supabase,
@@ -26,7 +28,47 @@ export type DexterMessage = {
   responseVersion?: number | null
   parentResponseMessageId?: string | null
   emailAttachments?: DexterEmailAttachment[]
+  emailDraft?: DexterEmailDraft | null
   attachments?: DexterMessageAttachment[]
+}
+
+export type DexterEmailDraftAddress = {
+  address: string
+  displayName: string | null
+}
+
+export type DexterEmailDraftDelivery = {
+  status: "draft" | "sending" | "queued" | "sent" | "failed"
+  sendRequestId?: string | null
+  messageId?: string | null
+  threadId?: string | null
+  updatedAt?: string | null
+}
+
+export type DexterEmailDraft = {
+  id: string
+  mode: "new" | "reply" | "reply_all" | "forward"
+  mailboxId: string | null
+  sourceMessageId: string | null
+  threadId: string | null
+  to: DexterEmailDraftAddress[]
+  cc: DexterEmailDraftAddress[]
+  bcc: DexterEmailDraftAddress[]
+  subject: string
+  bodyText: string
+  trackOpens: boolean
+  delivery: DexterEmailDraftDelivery
+}
+
+export type InboxDexterDraftInput = {
+  mode: DexterEmailDraft["mode"]
+  sourceMessageId: string | null
+  to: DexterEmailDraftAddress[]
+  cc: DexterEmailDraftAddress[]
+  bcc: DexterEmailDraftAddress[]
+  subject: string
+  bodyText: string
+  locale: string
 }
 
 export type DexterEmailAttachment = {
@@ -83,6 +125,15 @@ export type DexterUsageEntry = {
   createdAt: string
 }
 
+export type DexterModelUsage = {
+  model: DexterModelId
+  providerModel: string
+  reasoningEffort: "low" | "medium" | "high" | "xhigh"
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+}
+
 export type DexterUsage = {
   periodStart: string
   periodEnd: string
@@ -93,6 +144,7 @@ export type DexterUsage = {
   inputTokens: number
   outputTokens: number
   totalTokens: number
+  modelBreakdown: DexterModelUsage[]
   trend: DexterUsageTrendPoint[]
   recentEntries: DexterUsageEntry[]
 }
@@ -171,6 +223,12 @@ export type DexterWatch = {
 export type CreateDexterWatchResult =
   | { status: "created"; message: string; watch: DexterWatch }
   | { status: "clarification" | "unsupported"; message: string }
+
+export type DexterAutomationProposal = {
+  summary: string
+  conditions: AutomationCondition[]
+  actions: AutomationAction[]
+}
 
 export type SendDexterMessageInput = {
   conversationId?: string | null
@@ -301,6 +359,92 @@ export async function deleteDexterConversation(conversationId: string) {
   )
 }
 
+export async function recordDexterEmailDraftDelivery(messageId: string, sendRequestId: string) {
+  if (!supabase) throw new DexterApiError("Agent Dexter is not connected to this workspace.")
+  const { data, error } = await supabase.rpc("multideck_dexter_record_email_draft_delivery", {
+    p_message_id: messageId,
+    p_send_request_id: sendRequestId,
+  })
+  if (error) throw new DexterApiError("The email was sent, but Dexter could not save its delivery status. Refresh the conversation to check it.")
+  if (!data || typeof data !== "object") throw new DexterApiError("Dexter could not confirm the saved delivery status.")
+  return data as DexterEmailDraftDelivery
+}
+
+export async function duplicateSentDexterEmailDraft(messageId: string) {
+  if (!supabase) throw new DexterApiError("Agent Dexter is not connected to this workspace.")
+  const { data, error } = await supabase.rpc("multideck_dexter_duplicate_sent_email_draft", {
+    p_message_id: messageId,
+  })
+  if (error || !data || typeof data !== "object") {
+    throw new DexterApiError("Dexter could not create an editable copy of this sent email.")
+  }
+  const result = data as { messageId?: unknown; draft?: unknown }
+  if (typeof result.messageId !== "string" || !result.draft || typeof result.draft !== "object") {
+    throw new DexterApiError("Dexter could not confirm the editable email copy.")
+  }
+  return { messageId: result.messageId, draft: result.draft as DexterEmailDraft }
+}
+
+export async function refineDexterEmailDraft(input: {
+  messageId: string
+  instruction: string
+  draft: DexterEmailDraft
+  selection: { start: number; end: number } | null
+}) {
+  if (!supabase) throw new DexterApiError("Agent Dexter is not connected to this workspace.")
+  const { data, error } = await supabase.functions.invoke<{ draft: DexterEmailDraft }>(
+    "dexter-email-refine",
+    { body: input },
+  )
+  if (error) {
+    throw await dexterFunctionError(
+      error,
+      "Dexter could not refine this draft. Your current wording is unchanged.",
+    )
+  }
+  if (!data?.draft || typeof data.draft !== "object") {
+    throw new DexterApiError("Dexter could not confirm the refined draft.")
+  }
+  return data.draft
+}
+
+/**
+ * Drafts directly inside Inbox without creating a hidden Dexter conversation.
+ * The server re-authorises reply context and returns wording only; the normal
+ * Inbox controls remain responsible for saving and sending.
+ */
+export async function prepareInboxDexterDraft(input: InboxDexterDraftInput) {
+  if (!supabase) throw new DexterApiError("Agent Dexter is not connected to this workspace.")
+  const { data, error } = await supabase.functions.invoke<{
+    draft: { subject: string; bodyText: string }
+    model: string
+    reasoningEffort: "low"
+    personalised: boolean
+  }>("dexter-email-compose", { body: input })
+  if (error) {
+    throw await dexterFunctionError(
+      error,
+      "Dexter could not draft this email. Your current wording is unchanged.",
+    )
+  }
+  if (!data?.draft || typeof data.draft.subject !== "string" || typeof data.draft.bodyText !== "string") {
+    throw new DexterApiError("Dexter could not confirm the email draft.")
+  }
+  return data
+}
+
+export async function updateDexterEmailDraft(messageId: string, draft: DexterEmailDraft) {
+  if (!supabase) throw new DexterApiError("Agent Dexter is not connected to this workspace.")
+  const { data, error } = await supabase.rpc("multideck_dexter_update_email_draft", {
+    p_message_id: messageId,
+    p_draft: draft,
+  })
+  if (error || !data || typeof data !== "object") {
+    throw new DexterApiError("Dexter could not save the email draft. Keep this conversation open and try again.")
+  }
+  return data as DexterEmailDraft
+}
+
 export async function listDexterWatches() {
   const result = await invokeDexter<{ watches: DexterWatch[] }>(
     { operation: "list-watches" },
@@ -318,6 +462,26 @@ export async function createDexterWatch(input: {
     { operation: "create-watch", ...input },
     "Dexter could not set up that watch.",
   )
+}
+
+export async function proposeContactCardAutomation(input: {
+  cardId: string
+  message: string
+  locale: string
+}) {
+  const result = await invokeDexter<{ proposal: Omit<DexterAutomationProposal, "conditions" | "actions"> & {
+    conditions: Omit<AutomationCondition, "id" | "enabled">[]
+    actions: Omit<AutomationAction, "id" | "enabled">[]
+  } }>(
+    { operation: "propose-contact-card-automation", ...input },
+    "Dexter could not suggest automation steps.",
+  )
+
+  return {
+    summary: result.proposal.summary,
+    conditions: result.proposal.conditions.map((condition) => ({ ...condition, id: crypto.randomUUID(), enabled: true })),
+    actions: result.proposal.actions.map((action) => ({ ...action, id: crypto.randomUUID(), enabled: true })),
+  } satisfies DexterAutomationProposal
 }
 
 export async function setDexterWatchStatus(watchId: string, status: "active" | "paused") {
@@ -350,6 +514,7 @@ export async function streamDexterMessage(
     onPendingAction?: (action: DexterPendingAction) => void
     onEmailAttachment?: (attachment: DexterEmailAttachment) => void
   },
+  signal?: AbortSignal,
   // Declared explicitly: `completed` is only ever assigned inside the event
   // closure, which control-flow analysis cannot see, so an inferred return type
   // collapses to `never` at the call site.
@@ -368,6 +533,7 @@ export async function streamDexterMessage(
 
   const response = await fetch(`${supabaseFunctionsUrl}/agent-dexter`, {
     method: "POST",
+    signal,
     headers: {
       Accept: "text/event-stream",
       apikey: supabasePublicApiKey,
@@ -394,6 +560,7 @@ export async function streamDexterMessage(
   const decoder = new TextDecoder()
   let buffer = ""
   let completed: DexterConversation | null = null
+  const streamedEmailAttachments = new Map<string, DexterEmailAttachment>()
 
   const processEvent = (eventBlock: string) => {
     const lines = eventBlock.split("\n")
@@ -430,9 +597,14 @@ export async function streamDexterMessage(
       typeof payload.attachment === "object" &&
       payload.attachment !== null
     ) {
-      onEmailAttachment?.(payload.attachment as DexterEmailAttachment)
+      const attachment = payload.attachment as DexterEmailAttachment
+      streamedEmailAttachments.set(attachment.id, attachment)
+      onEmailAttachment?.(attachment)
     } else if ("type" in payload && payload.type === "complete" && "conversation" in payload) {
-      completed = payload.conversation as DexterConversation
+      completed = retainStreamedEmailAttachments(
+        payload.conversation as DexterConversation,
+        [...streamedEmailAttachments.values()],
+      )
     } else if ("type" in payload && payload.type === "error") {
       const message = "message" in payload && typeof payload.message === "string"
         ? payload.message
