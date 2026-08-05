@@ -213,6 +213,10 @@ function mailbox(id: string, overrides: Partial<Mailbox> = {}): Mailbox {
     indexedCount: 0,
     estimatedTotal: null,
     indexPercent: 0,
+    coreCoverageStart: "2025-01-01T00:00:00.000Z",
+    wasteCoverageStart: "2025-12-02T00:00:00.000Z",
+    coreRetentionMonths: 12,
+    wasteRetentionDays: 30,
     error: null,
     ...overrides,
   }

@@ -194,7 +194,7 @@ export function buildEmailTools(providers: DexterEmailProvider[], allowAttachmen
     {
       type: "function",
       name: "search_email",
-      description: "Search the operator's authorised, synced Gmail or Outlook email. Returns matching thread metadata and trusted Multideck citations, not full message bodies. Separate a named sender from the other identifying clues so Dexter can safely recover a minor sender-address typo without relaxing the whole search.",
+      description: "Search the operator's authorised, synced Gmail or Outlook email from Multideck's rolling 12-month retained window. Returns coverage metadata, matching thread metadata and trusted Multideck citations, not full message bodies. Separate a named sender from the other identifying clues so Dexter can safely recover a minor sender-address typo without relaxing the whole search.",
       strict: true,
       parameters: {
         type: "object",

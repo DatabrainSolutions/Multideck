@@ -954,7 +954,7 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
             Object.entries(current).filter(([key]) => !importedMailboxIds.has(key.split("::", 1)[0])),
           ))
           toast.success(t(hasMore
-            ? "Your mailbox is connected. Older mail will keep indexing in the background."
+            ? "Your mailbox is connected. Email from the last 12 months will keep indexing in the background."
             : "Your mailbox is ready"))
         } catch (error) {
           toast.error(errorMessageFor(error, t("The account connected, but its first mail import could not finish. Try Refresh.")))
@@ -1451,7 +1451,7 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
       const sync = await runMailboxSync(activeMailbox.id)
       if (!sync) return
       toast.success(t(sync.hasMore
-        ? "Mailbox refreshed. Older mail is still indexing in the background."
+        ? "Mailbox refreshed. Email from the last 12 months is still indexing in the background."
         : "Mailbox refreshed"))
     } catch (error) {
       toast.error(errorMessageFor(error, t("Unable to refresh this mailbox.")))
@@ -1885,7 +1885,7 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
         {activeMailbox && activeMailbox.indexStatus !== "ready" ? (
           <div className="mt-1.5 px-1 pb-0.5" role="status" aria-live="polite">
             <div className="mb-1.5 flex items-center justify-between gap-3 text-[11.5px] text-[var(--md-subtle)]">
-              <span>{t(activeMailbox.indexStatus === "error" ? "Indexing paused" : "Indexing your inbox")}</span>
+              <span>{t(activeMailbox.indexStatus === "error" ? "Indexing paused" : "Indexing the last 12 months")}</span>
               <span data-i18n-skip dir="ltr" className="shrink-0 tabular-nums">
                 {activeMailbox.indexPercent}%
               </span>

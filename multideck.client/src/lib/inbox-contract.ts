@@ -131,6 +131,10 @@ export type Mailbox = {
   indexedCount: number
   estimatedTotal: number | null
   indexPercent: number
+  coreCoverageStart: string
+  wasteCoverageStart: string
+  coreRetentionMonths: number
+  wasteRetentionDays: number
   error: string | null
 }
 
@@ -603,6 +607,10 @@ export function normalizeMailbox(value: unknown, fallbackStatus?: ConnectionStat
     indexedCount,
     estimatedTotal,
     indexPercent,
+    coreCoverageStart: readText(pickField(record, "coreCoverageStart", "core_coverage_start")),
+    wasteCoverageStart: readText(pickField(record, "wasteCoverageStart", "waste_coverage_start")),
+    coreRetentionMonths: readCount(pickField(record, "coreRetentionMonths", "core_retention_months"), 12),
+    wasteRetentionDays: readCount(pickField(record, "wasteRetentionDays", "waste_retention_days"), 30),
     error: readOptionalText(pickField(record, "error", "errorMessage")),
   }
 }

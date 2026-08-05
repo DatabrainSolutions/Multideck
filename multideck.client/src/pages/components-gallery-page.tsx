@@ -798,6 +798,10 @@ function previewMailbox(overrides: Partial<Mailbox> & Pick<Mailbox, "id" | "disp
     indexedCount: 2_480,
     estimatedTotal: 2_480,
     indexPercent: 100,
+    coreCoverageStart: "2025-07-31T09:38:00Z",
+    wasteCoverageStart: "2026-07-01T09:38:00Z",
+    coreRetentionMonths: 12,
+    wasteRetentionDays: 30,
     error: null,
     ...overrides,
   }

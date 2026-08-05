@@ -64,6 +64,7 @@ type ProviderIndexBatch = {
 }
 type ProviderSync = {
   messages: ProviderMessage[]
+  removedProviderMessageIds?: string[]
   cursor: string
   hasMore: boolean
   index: ProviderIndexBatch
@@ -91,6 +92,74 @@ const OUTLOOK_BACKFILL_PAGE_SIZE = 20
 const FOLDER_CATALOG_REFRESH_MS = 15 * 60 * 1000
 const MAX_PROVIDER_FOLDERS = 500
 const OUTLOOK_CUSTOM_FOLDER_BATCH = 4
+export const INBOX_CORE_RETENTION_MONTHS = 12
+export const INBOX_WASTE_RETENTION_DAYS = 30
+const HTML_DUPLICATE_TEXT_LIMIT = 20_000
+const DEXTER_SEARCH_BODY_LIMIT = 512_000
+const OUTLOOK_RETENTION_CURSOR_KIND = "outlook_retention_v1"
+
+type RetentionCutoffs = {
+  core: Date
+  waste: Date
+}
+
+type OutlookFolderSyncState = {
+  phase: "list" | "delta_init" | "delta"
+  next?: string
+}
+
+function subtractUtcCalendarMonths(value: Date, months: number) {
+  const shifted = new Date(value)
+  const originalDay = shifted.getUTCDate()
+  shifted.setUTCDate(1)
+  shifted.setUTCMonth(shifted.getUTCMonth() - months)
+  const daysInTargetMonth = new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth() + 1, 0)).getUTCDate()
+  shifted.setUTCDate(Math.min(originalDay, daysInTargetMonth))
+  return shifted
+}
+
+export function inboxRetentionCutoffs(now = new Date()): RetentionCutoffs {
+  return {
+    core: subtractUtcCalendarMonths(now, INBOX_CORE_RETENTION_MONTHS),
+    waste: new Date(now.getTime() - INBOX_WASTE_RETENTION_DAYS * 24 * 60 * 60 * 1_000),
+  }
+}
+
+function normalizedProviderFolders(message: ProviderMessage) {
+  return new Set(message.folders.map((folder) => cleanString(folder, 320).toLowerCase()))
+}
+
+function providerMessageIsWaste(message: ProviderMessage) {
+  const folders = normalizedProviderFolders(message)
+  return message.isSpam
+    || folders.has("spam")
+    || folders.has("trash")
+    || folders.has("junkemail")
+    || folders.has("deleteditems")
+}
+
+export function providerMessageWithinRetention(message: ProviderMessage, cutoffs = inboxRetentionCutoffs()) {
+  if (message.isDraft) return true
+  const occurredAt = Date.parse(message.occurredAt)
+  if (!Number.isFinite(occurredAt)) return false
+  return occurredAt >= (providerMessageIsWaste(message) ? cutoffs.waste : cutoffs.core).getTime()
+}
+
+function gmailAfterDate(value: Date) {
+  return value.toISOString().slice(0, 10).replaceAll("-", "/")
+}
+
+function gmailRetentionQuery(cutoffs: RetentionCutoffs) {
+  // Drafts are intentionally unbounded while they still exist at Gmail. The
+  // exact timestamp/Spam/Trash decision is made from metadata before the full
+  // message body is requested.
+  return `{after:${gmailAfterDate(cutoffs.core)} is:draft}`
+}
+
+function operationalProviderHeaders(headers: Record<string, string>) {
+  const retained = ["references", "in-reply-to", "list-unsubscribe", "list-unsubscribe-post", "list-id", "auto-submitted", "precedence"]
+  return Object.fromEntries(retained.flatMap((name) => headers[name] ? [[name, cleanString(headers[name], 8_000)]] : []))
+}
 
 export function runtimeClients(authorization: string) {
   const url = Deno.env.get("SUPABASE_URL") ?? ""
@@ -280,6 +349,7 @@ export async function listMailboxes(admin: Db, actor: Actor, checkPermission = t
   ])
   const connectionMap = new Map((connections ?? []).map((row) => [row.CommConn_ID, row]))
   const unread = new Map((unreadRows ?? []).map((row) => [row.mailbox_id, Math.max(0, Number(row.unread_count) || 0)]))
+  const retention = inboxRetentionCutoffs()
   return rows.map((row) => {
     const connection = connectionMap.get(row.CommMailbox_ConnectionID)
     const indexStatus = ["pending", "indexing", "ready", "error"].includes(row.CommMailbox_IndexStatus)
@@ -310,6 +380,10 @@ export async function listMailboxes(admin: Db, actor: Actor, checkPermission = t
       indexedCount,
       estimatedTotal,
       indexPercent,
+      coreCoverageStart: retention.core.toISOString(),
+      wasteCoverageStart: retention.waste.toISOString(),
+      coreRetentionMonths: INBOX_CORE_RETENTION_MONTHS,
+      wasteRetentionDays: INBOX_WASTE_RETENTION_DAYS,
       error: connection?.CommConn_ErrorMessage ?? null,
     }
   }).sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || a.displayName.localeCompare(b.displayName))
@@ -740,8 +814,8 @@ function gmailBodies(payload: Row) {
   const visit = (part: Row) => {
     const mime = cleanString(part.mimeType, 200)
     const body = isObject(part.body) ? part.body : {}
-    if (body.data) {
-      const decoded = new TextDecoder().decode(base64UrlDecode(cleanString(body.data, 4_000_000)))
+    if (typeof body.data === "string" && body.data) {
+      const decoded = new TextDecoder().decode(base64UrlDecode(body.data))
       if (mime === "text/plain" && text === null) text = decoded
       if (mime === "text/html" && html === null) html = decoded
     }
@@ -778,6 +852,7 @@ function parseGmailMessage(row: Row): ProviderMessage {
 
 async function syncGmail(admin: Db, mailbox: Row, token: string, options: SyncOptions = {}): Promise<ProviderSync> {
   const base = "https://gmail.googleapis.com/gmail/v1/users/me"
+  const retention = inboxRetentionCutoffs()
   const groupAddress = mailbox.CommMailbox_TypeCode === "group"
     ? normalizeEmail(mailbox.CommMailbox_NormalizedAddress ?? mailbox.CommMailbox_Address)
     : null
@@ -785,6 +860,7 @@ async function syncGmail(admin: Db, mailbox: Row, token: string, options: SyncOp
     throw new InboxHttpError(409, "This Google Group address is invalid. Remove it and connect it again.", "group_mailbox_address_invalid")
   }
   let messageIds: string[] = []
+  let removedProviderMessageIds: string[] = []
   const liveMessageIds = new Set<string>()
   let cursor = cleanString(mailbox.CommMailbox_SyncCursor, 2_000)
   const startingCursor = cursor
@@ -832,16 +908,25 @@ async function syncGmail(admin: Db, mailbox: Row, token: string, options: SyncOp
     url.searchParams.append("historyTypes", "messageAdded")
     url.searchParams.append("historyTypes", "labelAdded")
     url.searchParams.append("historyTypes", "labelRemoved")
+    url.searchParams.append("historyTypes", "messageDeleted")
     url.searchParams.set("maxResults", "100")
     if (pageToken) url.searchParams.set("pageToken", pageToken)
     const history = await providerJson(url.toString(), token)
-    const ids: string[] = (Array.isArray(history.history) ? history.history : []).flatMap((item: Row) => [
+    const historyRows: Row[] = Array.isArray(history.history) ? history.history : []
+    const deletedIds = historyRows.flatMap((item: Row) => (
+      Array.isArray(item.messagesDeleted)
+        ? item.messagesDeleted.map((deleted: Row) => cleanString(deleted.message?.id, 500))
+        : []
+    ))
+    const deleted = new Set(deletedIds.filter((id): id is string => !!id))
+    const ids: string[] = historyRows.flatMap((item: Row) => [
       ...(Array.isArray(item.messagesAdded) ? item.messagesAdded.map((added: Row) => cleanString(added.message?.id, 500)) : []),
       ...(Array.isArray(item.labelsAdded) ? item.labelsAdded.map((added: Row) => cleanString(added.message?.id, 500)) : []),
       ...(Array.isArray(item.labelsRemoved) ? item.labelsRemoved.map((removed: Row) => cleanString(removed.message?.id, 500)) : []),
     ])
     return {
-      ids: [...new Set(ids.filter((id): id is string => !!id))],
+      ids: [...new Set(ids.filter((id): id is string => !!id && !deleted.has(id)))],
+      deletedIds: [...deleted],
       nextPageToken: cleanString(history.nextPageToken, 2_000),
       historyId: cleanString(history.historyId, 2_000) || startHistoryId,
     }
@@ -849,23 +934,42 @@ async function syncGmail(admin: Db, mailbox: Row, token: string, options: SyncOp
 
   const fetchMessages = async (ids: string[], liveIds = new Set(ids)) => {
     const fetched = await mapWithConcurrency(ids.slice(0, 100), 8, async (id) => {
-      let row: Row
+      let metadata: Row
       try {
-        row = await providerJson(`${base}/messages/${encodeURIComponent(id)}?format=full`, token)
+        metadata = await providerJson(`${base}/messages/${encodeURIComponent(id)}?format=metadata`, token)
       } catch (error) {
         // Provider result sets can race a deletion or retention purge. A
         // vanished message must not discard the rest of the durable changes.
-        if (error instanceof InboxHttpError && error.providerStatus === 404) return null
+        if (error instanceof InboxHttpError && error.providerStatus === 404) {
+          removedProviderMessageIds.push(id)
+          return null
+        }
         throw error
       }
-      const parsed = parseGmailMessage(row)
-      const payload = isObject(row.payload) ? row.payload : {}
+      const metadataMessage = parseGmailMessage(metadata)
+      const payload = isObject(metadata.payload) ? metadata.payload : {}
       const matchesGroup = !groupAddress || !liveIds.has(id) || gmailMessageMatchesGroup({
         groupAddress,
-        recipients: [...parsed.to, ...parsed.cc, ...parsed.bcc],
+        recipients: [...metadataMessage.to, ...metadataMessage.cc, ...metadataMessage.bcc],
         headers: payload.headers,
       })
-      return !parsed.isDraft && matchesGroup ? parsed : null
+      if (!matchesGroup || !providerMessageWithinRetention(metadataMessage, retention)) {
+        if (liveIds.has(id) || !providerMessageWithinRetention(metadataMessage, retention)) {
+          removedProviderMessageIds.push(metadataMessage.providerMessageId || id)
+        }
+        return null
+      }
+      try {
+        const row = await providerJson(`${base}/messages/${encodeURIComponent(id)}?format=full`, token)
+        const parsed = parseGmailMessage(row)
+        return providerMessageWithinRetention(parsed, retention) ? parsed : null
+      } catch (error) {
+        if (error instanceof InboxHttpError && error.providerStatus === 404) {
+          removedProviderMessageIds.push(id)
+          return null
+        }
+        throw error
+      }
     })
     return fetched.filter((message): message is ProviderMessage => message !== null)
   }
@@ -877,6 +981,7 @@ async function syncGmail(admin: Db, mailbox: Row, token: string, options: SyncOp
     const liveStartHistoryId = snapshot.liveStartHistoryId ?? snapshot.historyId
     try {
       const history = await readHistoryPage(liveStartHistoryId, snapshot.livePageToken)
+      removedProviderMessageIds = history.deletedIds
       cursor = JSON.stringify({
         kind: "gmail_hybrid",
         pageToken: snapshot.pageToken,
@@ -885,6 +990,7 @@ async function syncGmail(admin: Db, mailbox: Row, token: string, options: SyncOp
       })
       return {
         messages: await fetchMessages(history.ids, new Set(history.ids)),
+        removedProviderMessageIds,
         cursor,
         hasMore: true,
         index: {
@@ -927,6 +1033,7 @@ async function syncGmail(admin: Db, mailbox: Row, token: string, options: SyncOp
     const newIds = listedIds.filter((id: string) => !knownIds.has(id))
     return {
       messages: await fetchMessages(newIds),
+      removedProviderMessageIds,
       cursor: "",
       hasMore: true,
       index: {
@@ -946,6 +1053,7 @@ async function syncGmail(admin: Db, mailbox: Row, token: string, options: SyncOp
     try {
       const history = await readHistoryPage(startHistoryId, historyPage?.pageToken)
       messageIds = history.ids
+      removedProviderMessageIds = history.deletedIds
       for (const id of messageIds) liveMessageIds.add(id)
       hasMore = !!history.nextPageToken
       cursor = history.nextPageToken
@@ -969,6 +1077,7 @@ async function syncGmail(admin: Db, mailbox: Row, token: string, options: SyncOp
     try {
       const history = await readHistoryPage(liveStartHistoryId, snapshot.livePageToken)
       messageIds = history.ids
+      removedProviderMessageIds = history.deletedIds
       for (const id of messageIds) liveMessageIds.add(id)
 
       if (history.nextPageToken) {
@@ -999,6 +1108,7 @@ async function syncGmail(admin: Db, mailbox: Row, token: string, options: SyncOp
           const messages = await fetchMessages(messageIds, liveMessageIds)
           return {
             messages,
+            removedProviderMessageIds,
             cursor,
             hasMore,
             index: { initial: true, reset: false, processed: 0, totalEstimate },
@@ -1007,7 +1117,10 @@ async function syncGmail(admin: Db, mailbox: Row, token: string, options: SyncOp
         const url = new URL(`${base}/messages`)
         url.searchParams.set("maxResults", String(remaining))
         url.searchParams.set("includeSpamTrash", "true")
-        if (groupAddress) url.searchParams.set("q", gmailGroupQuery(groupAddress))
+        url.searchParams.set(
+          "q",
+          [groupAddress ? gmailGroupQuery(groupAddress) : "", gmailRetentionQuery(retention)].filter(Boolean).join(" "),
+        )
         url.searchParams.set("pageToken", snapshot.pageToken)
         const list = await providerJson(url.toString(), token)
         const snapshotIds = (Array.isArray(list.messages) ? list.messages : [])
@@ -1045,23 +1158,19 @@ async function syncGmail(admin: Db, mailbox: Row, token: string, options: SyncOp
     const url = new URL(`${base}/messages`)
     url.searchParams.set("maxResults", String(GMAIL_BACKFILL_PAGE_SIZE))
     url.searchParams.set("includeSpamTrash", "true")
-    if (groupAddress) url.searchParams.set("q", gmailGroupQuery(groupAddress))
+    url.searchParams.set(
+      "q",
+      [groupAddress ? gmailGroupQuery(groupAddress) : "", gmailRetentionQuery(retention)].filter(Boolean).join(" "),
+    )
     const list = await providerJson(url.toString(), token)
     messageIds = (Array.isArray(list.messages) ? list.messages : []).map((entry: Row) => cleanString(entry.id, 500)).filter(Boolean)
     snapshotProcessed = messageIds.length
     const profile = await providerJson(`${base}/profile`, token)
     const listEstimate = Number(list.resultSizeEstimate)
-    const profileTotal = Number(profile.messagesTotal)
-    // `resultSizeEstimate` may describe only the current Gmail result page.
-    // Personal mailboxes use the profile-wide total so the progress bar never
-    // claims 99% while substantial history is still behind the page token.
-    totalEstimate = groupAddress
-      ? (Number.isFinite(listEstimate) && listEstimate >= 0 ? Math.floor(listEstimate) : null)
-      : (Number.isFinite(profileTotal) && profileTotal >= 0
-          ? Math.floor(profileTotal)
-          : Number.isFinite(listEstimate) && listEstimate >= 0
-            ? Math.floor(listEstimate)
-            : null)
+    // The query is retention-bounded, so the listing estimate is the relevant
+    // progress total. The profile-wide count includes mail Multideck will never
+    // download and would leave large mailboxes apparently indexing forever.
+    totalEstimate = Number.isFinite(listEstimate) && listEstimate >= 0 ? Math.floor(listEstimate) : null
     const historyId = cleanString(profile.historyId, 2_000)
     const nextPageToken = cleanString(list.nextPageToken, 2_000)
     hasMore = !!nextPageToken
@@ -1071,6 +1180,7 @@ async function syncGmail(admin: Db, mailbox: Row, token: string, options: SyncOp
   const messages = await fetchMessages(messageIds, liveMessageIds)
   return {
     messages,
+    removedProviderMessageIds,
     cursor,
     hasMore,
     index: {
@@ -1095,7 +1205,8 @@ function graphAddresses(rows: unknown): MailAddress[] {
 async function parseGraphMessage(row: Row, owner: string, token: string): Promise<ProviderMessage> {
   const body = isObject(row.body) ? row.body : {}
   const headers = headerMap(row.internetMessageHeaders)
-  const html = cleanString(body.contentType, 40).toLowerCase() === "html" ? cleanString(body.content, 2_000_000) : null
+  const bodyContent = typeof body.content === "string" ? body.content : ""
+  const html = cleanString(body.contentType, 40).toLowerCase() === "html" ? bodyContent : null
   const referenced = new Set(emailHtmlContentIds(html))
   let attachments: ProviderMessage["attachments"] = []
   if (graphMessageNeedsAttachmentFetch(row.hasAttachments, html)) {
@@ -1126,7 +1237,7 @@ async function parseGraphMessage(row: Row, owner: string, token: string): Promis
       }
     })
   }
-  const text = html ? stripHtml(html) : cleanString(body.content, 2_000_000) || null
+  const text = html ? stripHtml(html) : bodyContent || null
   return {
     providerMessageId: cleanString(row.id, 1000), providerThreadId: cleanString(row.conversationId ?? row.id, 1000), providerConversationId: cleanString(row.conversationId, 1000) || null,
     internetMessageId: cleanString(row.internetMessageId, 500) || null, subject: repairMojibake(cleanString(row.subject, 500) || "(No subject)"), preview: cleanString(decodeHtmlEntities(row.bodyPreview), 1000),
@@ -1144,7 +1255,8 @@ async function syncOutlook(admin: Db, mailbox: Row, token: string, options: Sync
   // metadata, so keep the bounded sync projection to fields supported by the
   // collection and delta endpoints.
   const select = "id,conversationId,internetMessageId,subject,bodyPreview,body,receivedDateTime,sentDateTime,isDraft,hasAttachments,from,toRecipients,ccRecipients,bccRecipients"
-  const folders = ["inbox", "sentitems", "drafts", "junkemail", "deleteditems"] as const
+  const folders = ["inbox", "sentitems", "drafts", "archive", "junkemail", "deleteditems"] as const
+  const retention = inboxRetentionCutoffs()
   const customFolderCandidates = options.liveOnly
     ? []
     : await result<Row[]>(admin.from("Comm_MailFolders")
@@ -1156,37 +1268,28 @@ async function syncOutlook(admin: Db, mailbox: Row, token: string, options: Sync
       .order("CommMailFolder_UpdatedAt", { ascending: true })
       .limit(OUTLOOK_CUSTOM_FOLDER_BATCH + 1)) ?? []
   const customFolders = customFolderCandidates.slice(0, OUTLOOK_CUSTOM_FOLDER_BATCH)
-  let saved: Record<string, string> = {}
   let rawCursor = cleanString(mailbox.CommMailbox_SyncCursor, 20_000)
-  const existingProcessed = Math.max(0, Number(mailbox.CommMailbox_IndexProcessedCount) || 0)
-  const existingEstimate = Math.max(0, Number(mailbox.CommMailbox_IndexTotalEstimate) || 0)
-  // Earlier Outlook indexing used `$top` on the delta URL. Graph can treat
-  // that as the maximum changes for the entire round and issue a delta token
-  // after only that subset. If the durable provider estimate proves the
-  // supposedly-ready index is incomplete, safely restart the delta snapshot;
-  // provider IDs make the existing rows idempotent upserts rather than copies.
-  if (
-    rawCursor
-    && mailbox.CommMailbox_IndexStatus === "ready"
-    && existingEstimate > 0
-    && existingProcessed < existingEstimate
-  ) rawCursor = ""
+  let saved: Record<string, OutlookFolderSyncState> = {}
+  let validRetentionCursor = false
   if (rawCursor) {
     try {
       const parsed = JSON.parse(rawCursor)
-      if (isObject(parsed)) saved = Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
-    } catch {
-      // Expand safely from the original single-inbox delta cursor.
-      saved.inbox = rawCursor
-    }
+      if (isObject(parsed) && parsed.kind === OUTLOOK_RETENTION_CURSOR_KIND && isObject(parsed.folders)) {
+        validRetentionCursor = true
+        saved = Object.fromEntries(Object.entries(parsed.folders).flatMap(([folder, value]) => {
+          if (!isObject(value) || !["list", "delta_init", "delta"].includes(cleanString(value.phase, 20))) return []
+          const next = cleanString(value.next, 8_000)
+          return [[folder, { phase: cleanString(value.phase, 20) as OutlookFolderSyncState["phase"], ...(next ? { next } : {}) }]]
+        }))
+      }
+    } catch { /* Legacy cursors restart inside the bounded retention window. */ }
   }
+  if (!validRetentionCursor) rawCursor = ""
   const messages: ProviderMessage[] = []
-  const cursors: Record<string, string> = {}
-  const initial = !rawCursor || Object.values(saved).some((value) => {
-    const normalized = value.toLowerCase()
-    return !normalized.includes("$deltatoken") && !normalized.includes("%24deltatoken")
-  })
-  if (options.liveOnly && initial) {
+  const removedProviderMessageIds = new Set<string>()
+  const systemStates: Record<string, OutlookFolderSyncState> = { ...saved }
+  const systemInitial = !rawCursor || folders.some((folder) => saved[folder]?.phase !== "delta")
+  if (options.liveOnly && systemInitial) {
     const liveUrl = `https://graph.microsoft.com/v1.0/${owner}/mailFolders/inbox/messages?$select=${encodeURIComponent(select)}&$orderby=receivedDateTime%20desc&$top=50`
     const page = await providerJson(liveUrl, token)
     const providerRows: Row[] = (Array.isArray(page.value) ? page.value : [])
@@ -1209,7 +1312,7 @@ async function syncOutlook(admin: Db, mailbox: Row, token: string, options: Sync
       },
     )
     return {
-      messages,
+      messages: messages.filter((message) => providerMessageWithinRetention(message, retention)),
       cursor: rawCursor,
       hasMore: true,
       index: {
@@ -1222,92 +1325,119 @@ async function syncOutlook(admin: Db, mailbox: Row, token: string, options: Sync
       },
     }
   }
-  let totalEstimate: number | null = null
-  if (!rawCursor) {
-    const catalogCounts = await result<Row[]>(admin.from("Comm_MailFolders")
-      .select("CommMailFolder_TotalCount")
-      .eq("CommMailFolder_MailboxID", mailbox.CommMailbox_ID)
-      .eq("CommMailFolder_IsHidden", false)
-      .eq("CommMailFolder_CanHoldMessages", true)) ?? []
-    totalEstimate = catalogCounts.reduce((total, row) => total + (nullableProviderCount(row.CommMailFolder_TotalCount) ?? 0), 0)
-  }
   let processed = 0
-  // More catalogue rows alone must not keep the client in a tight continuation
-  // loop forever. Continue quickly only while a sampled folder has no durable
-  // cursor; otherwise the normal 20-second delta cadence rotates the batch.
-  let hasMore = customFolderCandidates.some((folder) => !cleanString(folder.CommMailFolder_SyncCursor, 8_000))
+  let hasMore = customFolderCandidates.length > OUTLOOK_CUSTOM_FOLDER_BATCH
   let customInitial = false
   const folderCursors: Array<{ folderId: string; cursor: string }> = []
-  for (const folder of folders) {
-    let next = cleanString(saved[folder], 8_000)
-    if (next) {
-      try {
-        const parsed = new URL(next)
-        if (parsed.protocol !== "https:" || parsed.hostname !== "graph.microsoft.com") next = ""
-      } catch { next = "" }
+
+  const validGraphUrl = (candidate: string) => {
+    if (!candidate) return ""
+    try {
+      const parsed = new URL(candidate)
+      return parsed.protocol === "https:" && parsed.hostname === "graph.microsoft.com" ? parsed.toString() : ""
+    } catch { return "" }
+  }
+  const decodeFolderState = (candidate: unknown): OutlookFolderSyncState | null => {
+    if (!candidate) return null
+    try {
+      const parsed = typeof candidate === "string" ? JSON.parse(candidate) : candidate
+      if (!isObject(parsed) || !["list", "delta_init", "delta"].includes(cleanString(parsed.phase, 20))) return null
+      const next = validGraphUrl(cleanString(parsed.next, 8_000))
+      return { phase: cleanString(parsed.phase, 20) as OutlookFolderSyncState["phase"], ...(next ? { next } : {}) }
+    } catch { return null }
+  }
+  const syncFolder = async (
+    providerFolderId: string,
+    role: string,
+    current: OutlookFolderSyncState | null,
+  ): Promise<OutlookFolderSyncState> => {
+    const state = current ?? { phase: "list" as const }
+    const cutoff = role === "drafts" ? null : role === "junkemail" || role === "deleteditems" ? retention.waste : retention.core
+    const baseUrl = `https://graph.microsoft.com/v1.0/${owner}/mailFolders/${encodeURIComponent(providerFolderId)}/messages`
+    let next = validGraphUrl(state.next ?? "")
+    if (!next && state.phase === "list") {
+      const url = new URL(baseUrl)
+      url.searchParams.set("$select", select)
+      url.searchParams.set("$orderby", "receivedDateTime desc")
+      url.searchParams.set("$top", String(OUTLOOK_BACKFILL_PAGE_SIZE))
+      if (cutoff) url.searchParams.set("$filter", `receivedDateTime ge ${cutoff.toISOString()}`)
+      next = url.toString()
+    } else if (!next) {
+      const url = new URL(`${baseUrl}/delta`)
+      url.searchParams.set("$select", select)
+      if (cutoff) url.searchParams.set("$filter", `receivedDateTime ge ${cutoff.toISOString()}`)
+      next = url.toString()
     }
-    next ||= `https://graph.microsoft.com/v1.0/${owner}/mailFolders/${folder}/messages/delta?$select=${encodeURIComponent(select)}`
     const page = await providerJson(next, token, {
       headers: { Prefer: `odata.maxpagesize=${OUTLOOK_BACKFILL_PAGE_SIZE}` },
     })
-    const providerValues: unknown[] = Array.isArray(page.value) ? page.value : []
-    const providerRows: Row[] = providerValues
-      .filter((row: unknown): row is Row => isObject(row) && !row["@removed"])
-    if (initial) processed += providerRows.length
-    const fetched = await mapWithConcurrency<Row, ProviderMessage>(
-      providerRows,
-      8,
-      async (row) => {
-        const parsed = await parseGraphMessage(row, owner, token)
-        parsed.folders = [folder]
-        parsed.isSpam = folder === "junkemail"
-        return parsed
-      },
-    )
-    messages.push(...fetched)
-    const nextLink = cleanString(page["@odata.nextLink"], 8_000)
-    if (nextLink) hasMore = true
-    cursors[folder] = nextLink || cleanString(page["@odata.deltaLink"], 8_000)
+    const providerValues: Row[] = (Array.isArray(page.value) ? page.value : []).filter((row: unknown): row is Row => isObject(row))
+    for (const row of providerValues) {
+      if (row["@removed"]) {
+        const removedId = cleanString(row.id, 240)
+        if (removedId) removedProviderMessageIds.add(removedId)
+      }
+    }
+    let providerRows = providerValues.filter((row) => !row["@removed"])
+    if (state.phase === "delta_init" && providerRows.length) {
+      const listedIds = providerRows.map((row) => cleanString(row.id, 240)).filter(Boolean)
+      const known = await result<Row[]>(admin.from("Comm_Messages")
+        .select("CommMessage_ProviderMessageID")
+        .eq("CommMessage_MailboxID", mailbox.CommMailbox_ID)
+        .in("CommMessage_ProviderMessageID", listedIds)) ?? []
+      const knownIds = new Set(known.map((row) => cleanString(row.CommMessage_ProviderMessageID, 240)))
+      providerRows = providerRows.filter((row) => !knownIds.has(cleanString(row.id, 240)))
+    }
+    if (state.phase === "list") processed += providerValues.filter((row) => !row["@removed"]).length
+    const fetched = await mapWithConcurrency(providerRows, 8, async (row) => {
+      const parsed = await parseGraphMessage(row, owner, token)
+      parsed.folders = [providerFolderId]
+      parsed.isSpam = role === "junkemail"
+      return parsed
+    })
+    for (const message of fetched) {
+      if (providerMessageWithinRetention(message, retention)) messages.push(message)
+      else removedProviderMessageIds.add(message.providerMessageId)
+    }
+
+    const nextLink = validGraphUrl(cleanString(page["@odata.nextLink"], 8_000))
+    if (nextLink) {
+      hasMore = true
+      return { phase: state.phase, next: nextLink }
+    }
+    if (state.phase === "list") {
+      hasMore = true
+      return { phase: "delta_init" }
+    }
+    const deltaLink = validGraphUrl(cleanString(page["@odata.deltaLink"], 8_000))
+    if (!deltaLink) throw new InboxHttpError(502, "Microsoft did not return a safe mailbox cursor.", "provider_cursor_missing")
+    return { phase: "delta", next: deltaLink }
+  }
+
+  for (const folder of folders) {
+    systemStates[folder] = await syncFolder(folder, folder, systemStates[folder] ?? null)
   }
   for (const folder of customFolders) {
     const providerFolderId = cleanString(folder.CommMailFolder_ProviderFolderID, 320)
     if (!providerFolderId) continue
-    let next = cleanString(folder.CommMailFolder_SyncCursor, 8_000)
-    if (!next) customInitial = true
-    if (next) {
-      try {
-        const parsed = new URL(next)
-        if (parsed.protocol !== "https:" || parsed.hostname !== "graph.microsoft.com") next = ""
-      } catch { next = "" }
-    }
-    next ||= `https://graph.microsoft.com/v1.0/${owner}/mailFolders/${encodeURIComponent(providerFolderId)}/messages/delta?$select=${encodeURIComponent(select)}`
-    const page = await providerJson(next, token, {
-      headers: { Prefer: `odata.maxpagesize=${OUTLOOK_BACKFILL_PAGE_SIZE}` },
-    })
-    const providerRows: Row[] = (Array.isArray(page.value) ? page.value : [])
-      .filter((row: unknown): row is Row => isObject(row) && !row["@removed"])
-    if (!folder.CommMailFolder_SyncCursor) processed += providerRows.length
-    const fetched = await mapWithConcurrency(providerRows, 8, async (row) => {
-      const parsed = await parseGraphMessage(row, owner, token)
-      parsed.folders = [providerFolderId]
-      return parsed
-    })
-    messages.push(...fetched)
-    const nextLink = cleanString(page["@odata.nextLink"], 8_000)
-    const cursor = nextLink || cleanString(page["@odata.deltaLink"], 8_000)
-    if (nextLink) hasMore = true
-    folderCursors.push({ folderId: folder.CommMailFolder_ID, cursor })
+    const current = decodeFolderState(folder.CommMailFolder_SyncCursor)
+    if (current?.phase !== "delta") customInitial = true
+    const state = await syncFolder(providerFolderId, "custom", current)
+    if (state.phase !== "delta") customInitial = true
+    folderCursors.push({ folderId: folder.CommMailFolder_ID, cursor: JSON.stringify(state) })
   }
+  const indexStillInitial = folders.some((folder) => systemStates[folder]?.phase !== "delta") || customInitial || hasMore
   return {
     messages,
-    cursor: JSON.stringify(cursors),
+    removedProviderMessageIds: [...removedProviderMessageIds],
+    cursor: JSON.stringify({ kind: OUTLOOK_RETENTION_CURSOR_KIND, folders: systemStates }),
     hasMore,
     folderCursors,
     index: {
-      initial: initial || customInitial,
-      reset: !rawCursor,
+      initial: indexStillInitial,
+      reset: !validRetentionCursor,
       processed,
-      totalEstimate,
+      totalEstimate: null,
     },
   }
 }
@@ -1323,7 +1453,16 @@ async function addRecipients(admin: Db, messageId: string, values: MailAddress[]
 }
 
 async function persistSync(admin: Db, actor: Actor, mailbox: Row, connection: Row, sync: ProviderSync) {
-  const { messages, cursor } = sync
+  const cursor = sync.cursor
+  const retention = inboxRetentionCutoffs()
+  const messages = sync.messages.filter((message) => providerMessageWithinRetention(message, retention))
+  const removedProviderMessageIds = [...new Set((sync.removedProviderMessageIds ?? []).map((id) => cleanString(id, 240)).filter(Boolean))]
+  if (removedProviderMessageIds.length) {
+    await result(admin.rpc("comm_remove_provider_messages", {
+      p_mailbox_id: mailbox.CommMailbox_ID,
+      p_provider_message_ids: removedProviderMessageIds,
+    }), "Expired or provider-removed email could not be reconciled.")
+  }
   const providerIds = messages.map((message) => cleanString(message.providerMessageId, 240))
   const known = providerIds.length ? await result<Row[]>(admin.from("Comm_Messages").select("CommMessage_ID,CommMessage_ProviderMessageID").eq("CommMessage_MailboxID", mailbox.CommMailbox_ID).in("CommMessage_ProviderMessageID", providerIds)) ?? [] : []
   const knownIds = new Set(known.map((row) => row.CommMessage_ProviderMessageID))
@@ -1360,6 +1499,9 @@ async function persistSync(admin: Db, actor: Actor, mailbox: Row, connection: Ro
     const senderIsMailbox = incoming.from.some((address) => address.address === mailbox.CommMailbox_NormalizedAddress)
     const messageId = crypto.randomUUID()
     const safeHtml = incoming.bodyHtml ? sanitizeEmailHtml(incoming.bodyHtml) : null
+    const storedBodyText = safeHtml
+      ? cleanString(incoming.bodyText, HTML_DUPLICATE_TEXT_LIMIT) || null
+      : incoming.bodyText
     await result(admin.from("Comm_Messages").insert({
       CommMessage_ID: messageId, CommMessage_ThreadID: threadId, CommMessage_MailboxID: mailbox.CommMailbox_ID,
       CommMessage_ChannelCode: "email", CommMessage_DirectionCode: senderIsMailbox ? "outbound" : "inbound",
@@ -1368,8 +1510,8 @@ async function persistSync(admin: Db, actor: Actor, mailbox: Row, connection: Ro
       CommMessage_SensitivityCode: mailbox.CommMailbox_DefaultSensitivityCode ?? "internal", CommMessage_ProviderMessageID: cleanString(incoming.providerMessageId, 240),
       CommMessage_ProviderThreadID: providerThreadId, CommMessage_ProviderConversationID: cleanString(incoming.providerConversationId, 240) || null,
       CommMessage_InternetMessageID: cleanString(incoming.internetMessageId, 500) || null, CommMessage_Subject: cleanString(incoming.subject, 500), CommMessage_BodyPreview: cleanString(incoming.preview, 1_000),
-      CommMessage_BodyText: incoming.bodyText, CommMessage_BodyHTML: safeHtml, CommMessage_BodyJSON: "{}",
-      CommMessage_HeaderJSON: JSON.stringify(incoming.headers), CommMessage_MessageDate: incoming.occurredAt,
+      CommMessage_BodyText: storedBodyText, CommMessage_BodyHTML: safeHtml, CommMessage_BodyJSON: "{}",
+      CommMessage_HeaderJSON: JSON.stringify(operationalProviderHeaders(incoming.headers)), CommMessage_MessageDate: incoming.occurredAt,
       CommMessage_ReceivedAt: senderIsMailbox ? null : incoming.occurredAt, CommMessage_SentAt: senderIsMailbox ? incoming.occurredAt : null,
       CommMessage_HasAttachments: incoming.attachments.length > 0, CommMessage_IsInbound: !senderIsMailbox, CommMessage_IsInternal: false,
       CommMessage_IsDraft: incoming.isDraft, CommMessage_IsSpam: incoming.isSpam, CommMessage_IsBodyRedacted: false,
@@ -1390,6 +1532,10 @@ async function persistSync(admin: Db, actor: Actor, mailbox: Row, connection: Ro
         CommAttachment_CreatedAt: now, CommAttachment_CreatedBy: actor.userId,
       }))))
     }
+    await result(admin.rpc("multideck_index_dexter_email_body", {
+      p_message_id: messageId,
+      p_body_text: cleanString(incoming.bodyText, DEXTER_SEARCH_BODY_LIMIT),
+    }), "Dexter email search could not index this message.")
     await result(admin.from("Comm_Threads").update({
       CommThread_Subject: cleanString(incoming.subject, 500), CommThread_LastMessageID: messageId, CommThread_LastMessageAt: incoming.occurredAt,
       CommThread_UpdatedAt: now, CommThread_UpdatedBy: actor.userId,

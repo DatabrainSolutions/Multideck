@@ -88,7 +88,7 @@ function emailSourceMeta(source: DexterEmailContextSource | undefined, failed: b
   if (failed) return "Email availability could not be checked. Open Settings to try again."
   if (!source) return "Checking email access…"
   if (source.status === "available") return "Connected and available to Dexter"
-  if (source.status === "indexing") return "Connected; Dexter can search indexed mail while older email continues indexing"
+  if (source.status === "indexing") return "Connected; Dexter can search indexed mail while the last 12 months continues indexing"
   if (source.status === "permission_required") return "Ask an administrator for AI email access"
   if (source.status === "reauthorization_required") return "Reconnect this email provider in Settings to use it with Dexter"
   if (source.status === "provider_not_configured") return "This email provider is not configured for this workspace"
