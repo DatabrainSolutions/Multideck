@@ -24,7 +24,12 @@ const featureMenuMedia = {
   "live-tracking": { src: "/assets/menu/deals.webp", position: "72% 42%" },
   quotes: { src: "/assets/menu/quotes.png", position: "50% 42%" },
   warehouse: { src: "/assets/menu/warehouse.png", position: "50% 42%" },
-  dexter: { src: "/assets/menu/dexter.webp", position: "52% 40%" },
+  dexter: {
+    src: "/assets/menu/dexter-long.png",
+    position: "50% 50%",
+    width: 1837,
+    height: 974,
+  },
 };
 
 /* These areas belong in the product story now, but do not yet have dedicated
@@ -35,7 +40,6 @@ const supplementaryMenuFeatures = [
   { slug: "quoting", title: "Quoting", href: "/features", mediaKey: "quotes", icon: "receipt" },
   { slug: "warehouse", title: "Warehouse", href: "/features", mediaKey: "warehouse", icon: "building" },
   { slug: "finance", title: "Finance", href: "/features", mediaKey: "document-extraction", icon: "receipt" },
-  { slug: "rates", title: "Rates", href: "/features", mediaKey: "sales-crm", icon: "gauge" },
   { slug: "operations", title: "Operations", href: "/features", mediaKey: "bookings", icon: "workflow" },
 ];
 
@@ -48,12 +52,19 @@ const escapeAttr = (value) =>
 
 function headerMarkup({ route, enquireHref }) {
   const current = (href) => (route === href ? ' aria-current="page"' : "");
+  const dexterFeature = features.find((feature) => feature.slug === "dexter");
   const menuFeatures = [
-    ...features.map((feature) => ({ ...feature, href: featureHref(feature.slug), mediaKey: feature.slug, icon: featureIcon[feature.slug] })),
+    ...(dexterFeature
+      ? [{ ...dexterFeature, href: featureHref("dexter"), mediaKey: "dexter", icon: featureIcon.dexter, wide: true }]
+      : []),
+    ...features
+      .filter((feature) => feature.slug !== "dexter")
+      .map((feature) => ({ ...feature, href: featureHref(feature.slug), mediaKey: feature.slug, icon: featureIcon[feature.slug] })),
     ...supplementaryMenuFeatures,
   ];
 
-  /* Two six-card rows keep the whole operational story visible at a glance. */
+  /* Dexter leads with a two-column visual; the remaining cards complete two
+     balanced six-column rows without adding another navigation tier. */
   const menuCards = menuFeatures
     .map(
       (feature, index) => {
@@ -61,7 +72,7 @@ function headerMarkup({ route, enquireHref }) {
 
         return `
           <a
-            class="menu-card"
+            class="menu-card${feature.wide ? " menu-card--wide" : ""}"
             href="${feature.href}"
             style="--menu-i:${index};--menu-object-position:${media.position}"
           >
@@ -69,8 +80,8 @@ function headerMarkup({ route, enquireHref }) {
               <img
                 src="${media.src}"
                 alt=""
-                width="974"
-                height="974"
+                width="${media.width || 974}"
+                height="${media.height || 974}"
                 decoding="async"
                 fetchpriority="low"
               >

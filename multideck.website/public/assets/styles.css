@@ -680,6 +680,11 @@ html.no-js .deck-rise i:nth-child(3) { opacity: 1; }
     box-shadow 180ms var(--e);
 }
 
+.menu-card--wide {
+  grid-column: span 2;
+  aspect-ratio: auto;
+}
+
 .menu-card:hover,
 .menu-card:focus-visible {
   border-color: rgba(10, 112, 104, 0.28);
