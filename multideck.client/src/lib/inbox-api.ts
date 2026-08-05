@@ -59,6 +59,17 @@ const inboxFunctionName = "inbox-api"
 const inboxBasePath = `${supabaseFunctionsUrl}/${inboxFunctionName}`
 const sessionRefreshLeewaySeconds = 30
 const mailboxSyncPageLimit = 5
+const inlineAttachmentCacheLimit = 96
+const inlineAttachmentCacheTtlMs = 10 * 60_000
+
+type InlineAttachmentCacheEntry = {
+  url: string | null
+  pending: Promise<string> | null
+  lastUsedAt: number
+  consumers: number
+}
+
+const inlineAttachmentCache = new Map<string, InlineAttachmentCacheEntry>()
 
 export type MailboxSyncResult = {
   synced: number
@@ -537,11 +548,114 @@ export async function getAttachmentBlobUrl(attachmentId: string): Promise<{ url:
 
 /**
  * Inline email images use the same authenticated transport as downloads. The
- * resulting private blob URL exists only in this browser tab and is revoked as
- * soon as the message renderer no longer needs it.
+ * resulting private blob URL exists only in this browser tab. A small bounded
+ * cache lets conversation prefetch finish the download before the operator
+ * selects the email; active renderers retain their entry until they unmount.
  */
 export async function getInlineAttachmentBlobUrl(attachmentId: string): Promise<{ url: string; revoke: () => void }> {
-  return getSecureAttachmentBlobUrl(attachmentId, true)
+  const url = await loadInlineAttachmentBlobUrl(attachmentId)
+  return retainInlineAttachmentBlobUrl(attachmentId, url)
+}
+
+/** Returns a ready prefetched image synchronously, before the first paint. */
+export function getCachedInlineAttachmentBlobUrl(attachmentId: string): { url: string; revoke: () => void } | null {
+  const entry = inlineAttachmentCache.get(attachmentId)
+  if (!entry?.url) return null
+  entry.lastUsedAt = Date.now()
+  return retainInlineAttachmentBlobUrl(attachmentId, entry.url)
+}
+
+/** Warms only the inline images that can appear in one rendered conversation. */
+export async function prefetchThreadInlineAttachmentBlobUrls(detail: InboxThreadDetail): Promise<void> {
+  const attachmentIds = Array.from(new Set(
+    detail.messages.flatMap((message) => message.attachments)
+      .filter((attachment) => attachment.isInline && attachment.contentId)
+      .map((attachment) => attachment.id),
+  )).slice(0, 24)
+
+  await Promise.allSettled(attachmentIds.map((attachmentId) => loadInlineAttachmentBlobUrl(attachmentId)))
+}
+
+/** Clears private image material whenever the authenticated workspace changes. */
+export function clearInlineAttachmentBlobCache() {
+  for (const entry of inlineAttachmentCache.values()) {
+    if (entry.url) URL.revokeObjectURL(entry.url)
+  }
+  inlineAttachmentCache.clear()
+}
+
+function retainInlineAttachmentBlobUrl(attachmentId: string, url: string) {
+  const entry = inlineAttachmentCache.get(attachmentId)
+  if (!entry || entry.url !== url) {
+    throw new InboxApiError("This private image is no longer available. Reopen the message to try again.", {
+      code: "unauthenticated",
+    })
+  }
+  entry.consumers += 1
+  let released = false
+  return {
+    url,
+    revoke: () => {
+      if (released) return
+      released = true
+      const current = inlineAttachmentCache.get(attachmentId)
+      if (current?.url === url) current.consumers = Math.max(0, current.consumers - 1)
+      pruneInlineAttachmentCache()
+    },
+  }
+}
+
+async function loadInlineAttachmentBlobUrl(attachmentId: string): Promise<string> {
+  const now = Date.now()
+  pruneInlineAttachmentCache(now)
+  const cached = inlineAttachmentCache.get(attachmentId)
+  if (cached?.url) {
+    cached.lastUsedAt = now
+    return cached.url
+  }
+  if (cached?.pending) return cached.pending
+
+  const entry: InlineAttachmentCacheEntry = cached ?? { url: null, pending: null, lastUsedAt: now, consumers: 0 }
+  const pending = getSecureAttachmentBlobUrl(attachmentId, true)
+    .then((result) => {
+      if (inlineAttachmentCache.get(attachmentId) !== entry) {
+        result.revoke()
+        throw new InboxApiError("This private image is no longer available. Reopen the message to try again.", {
+          code: "unauthenticated",
+        })
+      }
+      entry.url = result.url
+      entry.pending = null
+      entry.lastUsedAt = Date.now()
+      pruneInlineAttachmentCache()
+      return result.url
+    })
+    .catch((error) => {
+      if (inlineAttachmentCache.get(attachmentId) === entry) inlineAttachmentCache.delete(attachmentId)
+      throw error
+    })
+  entry.pending = pending
+  inlineAttachmentCache.set(attachmentId, entry)
+  return pending
+}
+
+function pruneInlineAttachmentCache(now = Date.now()) {
+  for (const [attachmentId, entry] of inlineAttachmentCache) {
+    if (entry.url && entry.consumers === 0 && now - entry.lastUsedAt > inlineAttachmentCacheTtlMs) {
+      URL.revokeObjectURL(entry.url)
+      inlineAttachmentCache.delete(attachmentId)
+    }
+  }
+
+  if (inlineAttachmentCache.size <= inlineAttachmentCacheLimit) return
+  const removable = [...inlineAttachmentCache.entries()]
+    .filter(([, entry]) => entry.url && entry.consumers === 0)
+    .sort(([, left], [, right]) => left.lastUsedAt - right.lastUsedAt)
+  while (inlineAttachmentCache.size > inlineAttachmentCacheLimit && removable.length) {
+    const [attachmentId, entry] = removable.shift()!
+    URL.revokeObjectURL(entry.url!)
+    inlineAttachmentCache.delete(attachmentId)
+  }
 }
 
 async function getSecureAttachmentBlobUrl(attachmentId: string, inline: boolean): Promise<{ url: string; revoke: () => void }> {

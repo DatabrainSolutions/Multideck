@@ -1,6 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { useLanguage } from "@/i18n/language-provider"
-import { getInlineAttachmentBlobUrl, type MailAttachment } from "@/lib/inbox-api"
+import {
+  getCachedInlineAttachmentBlobUrl,
+  getInlineAttachmentBlobUrl,
+  type MailAttachment,
+} from "@/lib/inbox-api"
 import { cn } from "@/lib/utils"
 
 /**
@@ -196,17 +200,31 @@ export function EmailMessageRenderer({
     .map((attachment) => `${attachment.id}:${attachment.contentId}`)
     .join("|")
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     let cancelled = false
     const opened: Array<{ url: string; revoke: () => void }> = []
     const candidates = inlineAttachments
       .filter((attachment) => attachment.isInline && attachment.contentId)
       .slice(0, 24)
 
-    setInlineImageSources(new Map())
+    const readyEntries: Array<readonly [string, string]> = []
+    const missing: MailAttachment[] = []
+    for (const attachment of candidates) {
+      const cached = getCachedInlineAttachmentBlobUrl(attachment.id)
+      if (!cached) {
+        missing.push(attachment)
+        continue
+      }
+      opened.push(cached)
+      readyEntries.push([normalizeContentId(attachment.contentId ?? ""), cached.url])
+    }
+
+    // A layout effect applies ready prefetched URLs before the browser paints,
+    // so selecting a warmed conversation never flashes broken CID images.
+    setInlineImageSources(new Map(readyEntries))
     if (!candidates.length) return
 
-    void Promise.all(candidates.map(async (attachment) => {
+    void Promise.all(missing.map(async (attachment) => {
       try {
         const result = await getInlineAttachmentBlobUrl(attachment.id)
         if (cancelled) {
@@ -221,7 +239,12 @@ export function EmailMessageRenderer({
         return null
       }
     })).then((entries) => {
-      if (!cancelled) setInlineImageSources(new Map(entries.filter((entry): entry is readonly [string, string] => entry !== null)))
+      if (!cancelled) {
+        setInlineImageSources(new Map([
+          ...readyEntries,
+          ...entries.filter((entry): entry is readonly [string, string] => entry !== null),
+        ]))
+      }
     })
 
     return () => {

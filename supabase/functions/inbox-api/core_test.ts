@@ -21,6 +21,8 @@ import {
   sanitizeEmailHtml,
   emailHtmlContentIds,
   graphMessageNeedsAttachmentFetch,
+  inferGraphContentIdFromFileName,
+  mimeInlineAttachmentHeaders,
 } from "./core.ts"
 
 Deno.test("parses hosted and local inbox-api route paths", () => {
@@ -135,6 +137,27 @@ Deno.test("Outlook inline-only images still trigger an attachment lookup", () =>
   assertEquals(graphMessageNeedsAttachmentFetch(false, html), true)
   assertEquals(graphMessageNeedsAttachmentFetch(false, "<p>No images</p>"), false)
   assertEquals(graphMessageNeedsAttachmentFetch(true, "<p>Invoice attached</p>"), true)
+  assertEquals(inferGraphContentIdFromFileName("image001.png", ["image001.png@01dd2103", "image002.png@01dd2103"]), "image001.png@01dd2103")
+  assertEquals(inferGraphContentIdFromFileName("image001.png", ["image001.png@one", "image001.png@two"]), null)
+  assertEquals(inferGraphContentIdFromFileName("invoice.pdf", ["image001.png@example"]), null)
+})
+
+Deno.test("Outlook MIME headers map opaque inline Content-IDs to filenames", () => {
+  const mime = [
+    'Content-Type: multipart/related; boundary="example"',
+    '',
+    '--example',
+    'Content-Type: image/png; name="image001.png"',
+    'Content-Disposition: inline; filename="image001.png"',
+    'Content-ID: <366d8887-f081-4b3a-afa8-9482215688ac>',
+    '',
+    'base64-data',
+    '--example--',
+  ].join('\r\n')
+  assertEquals(mimeInlineAttachmentHeaders(mime), [{
+    contentId: "366d8887-f081-4b3a-afa8-9482215688ac",
+    fileName: "image001.png",
+  }])
 })
 
 Deno.test("email previews decode safe named and numeric HTML entities", () => {

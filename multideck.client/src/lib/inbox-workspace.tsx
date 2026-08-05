@@ -11,10 +11,12 @@ import {
   type ReactNode,
 } from "react"
 import {
+  clearInlineAttachmentBlobCache,
   getThread,
   listThreads,
   loadInboxWorkspace,
   mergeThreadPage,
+  prefetchThreadInlineAttachmentBlobUrls,
   resolveMailboxForProvider,
   threadCacheKey,
   type InboxConnection,
@@ -171,6 +173,7 @@ export function InboxWorkspaceProvider({ children, cacheScope }: { children: Rea
     threadDetailsRef.current.clear()
     threadPageRequestsRef.current.clear()
     threadDetailRequestsRef.current.clear()
+    clearInlineAttachmentBlobCache()
     if (!cacheScope) {
       setAccountState("loading")
       return
@@ -218,7 +221,11 @@ export function InboxWorkspaceProvider({ children, cacheScope }: { children: Rea
     const pending = threadDetailRequestsRef.current.get(threadId)
     if (!force && pending) return pending
     const next = getThread(threadId)
-      .then((detail) => {
+      .then(async (detail) => {
+        // Conversation intent includes its private inline images. Start this
+        // before selection and only publish the cached detail once they settle,
+        // so even a fast click cannot reveal the body ahead of its CID images.
+        await prefetchThreadInlineAttachmentBlobUrls(detail)
         threadDetailsRef.current.set(threadId, { detail, cachedAt: Date.now() })
         return detail
       })

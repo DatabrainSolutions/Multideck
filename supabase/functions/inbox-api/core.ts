@@ -233,6 +233,43 @@ export function emailHtmlContentIds(value: unknown) {
   return [...ids]
 }
 
+/**
+ * Exchange occasionally omits fileAttachment.contentId even though the HTML
+ * references the signature asset by its filename plus an Outlook-generated
+ * suffix (for example image001.png@01ABC...). Infer only a single exact
+ * filename match; ambiguity deliberately returns null instead of guessing.
+ */
+export function inferGraphContentIdFromFileName(fileName: unknown, referencedContentIds: Iterable<string>) {
+  const normalizedFileName = cleanString(fileName, 260).trim().toLowerCase()
+  if (!normalizedFileName) return null
+  const matches = [...referencedContentIds]
+    .map((value) => cleanString(value, 240).replace(/^<|>$/g, "").toLowerCase())
+    .filter((contentId) => contentId === normalizedFileName || contentId.startsWith(`${normalizedFileName}@`))
+  return matches.length === 1 ? matches[0] : null
+}
+
+/** Extract only Content-ID/filename pairs from multipart MIME headers. */
+export function mimeInlineAttachmentHeaders(value: unknown) {
+  const mime = typeof value === "string" ? value.slice(0, 8_000_000) : ""
+  const matches: Array<{ contentId: string; fileName: string }> = []
+  const seen = new Set<string>()
+  for (const part of mime.matchAll(/(?:^|\r?\n)--[^\r\n]+\r?\n((?:[^\r\n]+(?:\r?\n[ \t][^\r\n]*)*\r?\n)+)\r?\n/g)) {
+    const headers = String(part[1] ?? "").replace(/\r?\n[ \t]+/g, " ")
+    const contentId = cleanString(headers.match(/^content-id\s*:\s*<?([^>\r\n]+)>?\s*$/im)?.[1], 240)
+      .replace(/^<|>$/g, "").toLowerCase()
+    const fileName = cleanString(
+      headers.match(/^content-disposition\s*:[^\r\n]*?filename\s*=\s*(?:"([^"]+)"|'([^']+)'|([^;\s\r\n]+))/im)?.slice(1).find(Boolean)
+      ?? headers.match(/^content-type\s*:[^\r\n]*?name\s*=\s*(?:"([^"]+)"|'([^']+)'|([^;\s\r\n]+))/im)?.slice(1).find(Boolean),
+      260,
+    )
+    const key = `${contentId}:${fileName.toLowerCase()}`
+    if (!contentId || !fileName || seen.has(key)) continue
+    seen.add(key)
+    matches.push({ contentId, fileName })
+  }
+  return matches
+}
+
 export function graphMessageNeedsAttachmentFetch(hasAttachments: unknown, bodyHtml: unknown) {
   return hasAttachments === true || emailHtmlContentIds(bodyHtml).length > 0
 }

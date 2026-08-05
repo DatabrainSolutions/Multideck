@@ -15,8 +15,10 @@ import {
   gmailMessageMatchesGroup,
   headerMap,
   graphMessageNeedsAttachmentFetch,
+  inferGraphContentIdFromFileName,
   isObject,
   mapWithConcurrency,
+  mimeInlineAttachmentHeaders,
   normalizeAddresses,
   normalizeEmail,
   normalizeSubject,
@@ -524,6 +526,15 @@ async function providerJson(url: string, token: string, init: RequestInit = {}) 
   } finally {
     clearTimeout(timeoutId)
   }
+}
+
+async function outlookMimeInlineAttachmentHeaders(owner: string, messageId: string, token: string) {
+  const response = await fetch(`https://graph.microsoft.com/v1.0/${owner}/messages/${encodeURIComponent(messageId)}/$value`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!response.ok) throw providerErrorStatus(response)
+  const bytes = await readLimitedProviderBody(response, 8 * 1024 * 1024)
+  return mimeInlineAttachmentHeaders(new TextDecoder().decode(bytes))
 }
 
 function nullableProviderCount(value: unknown) {
@@ -1085,6 +1096,7 @@ async function parseGraphMessage(row: Row, owner: string, token: string): Promis
   const body = isObject(row.body) ? row.body : {}
   const headers = headerMap(row.internetMessageHeaders)
   const html = cleanString(body.contentType, 40).toLowerCase() === "html" ? cleanString(body.content, 2_000_000) : null
+  const referenced = new Set(emailHtmlContentIds(html))
   let attachments: ProviderMessage["attachments"] = []
   if (graphMessageNeedsAttachmentFetch(row.hasAttachments, html)) {
     const list = await providerJson(`https://graph.microsoft.com/v1.0/${owner}/messages/${encodeURIComponent(row.id)}/attachments?$select=id,name,contentType,size,isInline`, token)
@@ -1092,9 +1104,10 @@ async function parseGraphMessage(row: Row, owner: string, token: string): Promis
       let contentId = cleanString(item.contentId, 240) || null
       // Graph's attachment collection is deliberately projected to base
       // properties: asking that collection for fileAttachment.contentId can
-      // fail for mixed attachment types. Resolve only the small inline subset
-      // through its typed detail endpoint instead.
-      if (item.isInline === true && !contentId && item.id) {
+      // fail for mixed attachment types. Outlook also sometimes reports CID-
+      // referenced signature files with isInline=false, so resolve every
+      // bounded candidate when the HTML proves that inline content exists.
+      if (!contentId && item.id && (item.isInline === true || referenced.size > 0)) {
         try {
           const detail = await providerJson(`https://graph.microsoft.com/v1.0/${owner}/messages/${encodeURIComponent(row.id)}/attachments/${encodeURIComponent(item.id)}?$select=id,contentId`, token)
           contentId = cleanString(detail.contentId, 240) || null
@@ -1103,9 +1116,13 @@ async function parseGraphMessage(row: Row, owner: string, token: string): Promis
           // get another bounded repair attempt when the thread is opened.
         }
       }
+      contentId ||= inferGraphContentIdFromFileName(item.name, referenced)
+      const normalizedContentId = cleanString(contentId, 240).replace(/^<|>$/g, "").toLowerCase()
       return {
         providerAttachmentId: cleanString(item.id, 1000), fileName: safeFileName(item.name), mimeType: cleanString(item.contentType, 200) || null,
-        sizeBytes: Number.isFinite(Number(item.size)) ? Number(item.size) : null, isInline: item.isInline === true, contentId,
+        sizeBytes: Number.isFinite(Number(item.size)) ? Number(item.size) : null,
+        isInline: item.isInline === true || Boolean(normalizedContentId && referenced.has(normalizedContentId)),
+        contentId,
       }
     })
   }
@@ -2055,7 +2072,6 @@ async function hydrateOutlookInlineContentIds(admin: Db, actor: Actor, messages:
     && !cleanString(item.CommAttachment_ContentID, 240)
     && cleanString(messageById.get(item.CommAttachment_MessageID)?.CommMessage_BodyHTML, 2_000_000).toLowerCase().includes("cid:")
   )).slice(0, 24)
-  if (!missing.length) return
 
   const mailboxContexts = new Map<string, Promise<{ mailbox: Row; connection: Row; accessToken: string }>>()
   const contextFor = (mailboxId: string) => {
@@ -2118,15 +2134,42 @@ async function hydrateOutlookInlineContentIds(admin: Db, actor: Actor, messages:
       const list = await providerJson(`https://graph.microsoft.com/v1.0/${owner}/messages/${encodeURIComponent(message.CommMessage_ProviderMessageID)}/attachments?$select=id,name,contentType,size,isInline`, accessToken)
       const referenced = new Set(emailHtmlContentIds(message.CommMessage_BodyHTML))
       const indexedForMessage = attachments.filter((item) => item.CommAttachment_MessageID === message.CommMessage_ID)
+      let mimeContentIdByFileName = new Map<string, string>()
+      try {
+        const mimeHeaders = await outlookMimeInlineAttachmentHeaders(owner, message.CommMessage_ProviderMessageID, accessToken)
+        const candidatesByFileName = new Map<string, string[]>()
+        for (const item of mimeHeaders) {
+          if (!referenced.has(item.contentId)) continue
+          const normalizedFileName = item.fileName.toLowerCase()
+          candidatesByFileName.set(normalizedFileName, [...candidatesByFileName.get(normalizedFileName) ?? [], item.contentId])
+        }
+        mimeContentIdByFileName = new Map([...candidatesByFileName]
+          .filter(([, contentIds]) => contentIds.length === 1)
+          .map(([fileName, contentIds]) => [fileName, contentIds[0]]))
+      } catch {
+        // A large or unavailable raw message must not block ordinary content.
+      }
 
-      await mapWithConcurrency((Array.isArray(list.value) ? list.value : []).filter((item: Row) => item.isInline === true).slice(0, 24), 4, async (item: Row) => {
+      // Do not trust Graph's isInline flag as the only signal here. Real
+      // Outlook signatures can reference a file by CID while the collection
+      // reports isInline=false. Read a bounded set of typed attachment details
+      // and retain only exact Content-ID matches from the sanitised message.
+      await mapWithConcurrency((Array.isArray(list.value) ? list.value : []).slice(0, 24), 4, async (item: Row) => {
         const providerAttachmentId = cleanString(item.id, 1_000)
         if (!providerAttachmentId) return
         let contentId = cleanString(item.contentId, 240).replace(/^<|>$/g, "")
         if (!contentId) {
-          const detail = await providerJson(`https://graph.microsoft.com/v1.0/${owner}/messages/${encodeURIComponent(message.CommMessage_ProviderMessageID)}/attachments/${encodeURIComponent(providerAttachmentId)}?$select=id,contentId`, accessToken)
-          contentId = cleanString(detail.contentId, 240).replace(/^<|>$/g, "")
+          try {
+            const detail = await providerJson(`https://graph.microsoft.com/v1.0/${owner}/messages/${encodeURIComponent(message.CommMessage_ProviderMessageID)}/attachments/${encodeURIComponent(providerAttachmentId)}?$select=id,contentId`, accessToken)
+            contentId = cleanString(detail.contentId, 240).replace(/^<|>$/g, "")
+          } catch {
+            // Item/reference attachments do not expose fileAttachment.contentId.
+            // Fall through to an exact filename-to-CID match so one mixed
+            // attachment cannot prevent the remaining images being repaired.
+          }
         }
+        contentId ||= inferGraphContentIdFromFileName(item.name, referenced) ?? ""
+        contentId ||= mimeContentIdByFileName.get(cleanString(item.name, 260).toLowerCase()) ?? ""
         if (!contentId || !referenced.has(contentId.toLowerCase())) return
 
         const alreadyIndexed = indexedForMessage.some((existing) => {
