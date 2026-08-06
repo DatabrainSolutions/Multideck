@@ -40,7 +40,18 @@ where "Job_InternalNotes" like '[DEMO ONLY]%' and exists (
   where o."Office_ID"=coalesce("Job_OrgOfficeID","Job_OfficeID") and c."Company_Name"='Development');
 
 do $$
-declare office_id uuid; operator_id uuid;
+declare
+  office_id uuid;
+  operator_id uuid;
+  northstar_id uuid;
+  atelier_id uuid;
+  kestrel_id uuid;
+  northstar_quote_id uuid;
+  atelier_quote_id uuid;
+  kestrel_quote_id uuid;
+  service_report_id uuid;
+  margin_report_id uuid;
+  exception_report_id uuid;
 begin
   select o."Office_ID" into office_id from public."cmp_Offices" o join public."cmp_Company" c on c."Company_ID"=o."Company_ID"
   where c."Company_Name"='Development' and exists(select 1 from public."cmp_Users" u where u."Company_ID"=c."Company_ID" and u."Auth_User_ID" is not null) limit 1;
@@ -48,36 +59,68 @@ begin
   where c."Company_Name"='Development' and u."Auth_User_ID" is not null order by u."User_ID" limit 1;
   if office_id is null or operator_id is null then raise exception 'Provisioned Development workspace not found'; end if;
 
-  insert into public."CusQuote_Header"("CusQuoteHeader_ID","CusQuoteHeader_Number","CusQuoteHeader_CustomerID","CusQuoteHeader_CreatedDate","CusQuoteHeader_CreatedBy","CusQuoteHeader_LastEditedBy","CusQuoteHeader_LastEditedDate","CusQuoteHeader_OrgOfficeID","OrgOffice_ID","CusQuoteHeader_Status","CusQuoteHeader_ModeCode","CusQuoteHeader_ShipmentTypeCode","CusQuoteHeader_ServiceLevel","CusQuoteHeader_CurrencyCode","CusQuoteHeader_OriginExtra","CusQuoteHeader_DestinationExtra","CusQuoteHeader_Direction","CusQuoteHeader_Incoterm","CusQuoteHeader_ValidFrom","CusQuoteHeader_ValidTo","CusQuoteHeader_InternalNotes")
-  values
-  ('7a100001-0000-4000-8000-000000000001',19158,'de1000c1-5eed-4ead-8000-000000000001',now()-interval '4 days',operator_id,operator_id,now()-interval '2 hours',office_id,office_id,1,'sea','FCL','Standard','GBP','GBBRS · Bristol','JPUKB · Kobe','export','DAP',current_date,current_date+30,'Commercial review'),
-  ('7a100001-0000-4000-8000-000000000002',19157,'de1000c1-5eed-4ead-8000-000000000002',now()-interval '5 days',operator_id,operator_id,now()-interval '5 hours',office_id,office_id,2,'sea','FCL','Priority','GBP','SGSIN · Singapore','GBSOU · Southampton','import','FOB',current_date-1,current_date+27,'Ready to issue'),
-  ('7a100001-0000-4000-8000-000000000003',19154,'de1000c1-5eed-4ead-8000-000000000003',now()-interval '2 days',operator_id,operator_id,now()-interval '45 minutes',office_id,office_id,3,'air','Air freight','Express','GBP','AEDXB · Dubai','GBLHR · Heathrow','import','DAP',current_date,current_date+7,'Supplier pricing required')
-  on conflict("CusQuoteHeader_ID") do update set "CusQuoteHeader_LastEditedDate"=excluded."CusQuoteHeader_LastEditedDate","CusQuoteHeader_OrgOfficeID"=excluded."CusQuoteHeader_OrgOfficeID","OrgOffice_ID"=excluded."OrgOffice_ID","CusQuoteHeader_Status"=excluded."CusQuoteHeader_Status","CusQuoteHeader_InternalNotes"=excluded."CusQuoteHeader_InternalNotes","CusQuoteHeader_IsDeleted"=false;
+  select "Org_id" into northstar_id from public."Org_Master" where "Org_AccCode"='DEMO-DE100001' limit 1;
+  select "Org_id" into atelier_id from public."Org_Master" where "Org_AccCode"='DEMO-DE100002' limit 1;
+  select "Org_id" into kestrel_id from public."Org_Master" where "Org_AccCode"='DEMO-DE100003' limit 1;
+  if northstar_id is null or atelier_id is null or kestrel_id is null then raise exception 'Canonical Development demo customers not found'; end if;
+
+  select "CusQuoteHeader_ID" into northstar_quote_id from public."CusQuote_Header" where "CusQuoteHeader_Number"=19158 and coalesce("CusQuoteHeader_OrgOfficeID","OrgOffice_ID")=office_id limit 1;
+  if northstar_quote_id is null then
+    northstar_quote_id := gen_random_uuid();
+    insert into public."CusQuote_Header"("CusQuoteHeader_ID","CusQuoteHeader_Number","CusQuoteHeader_CustomerID","CusQuoteHeader_CreatedDate","CusQuoteHeader_CreatedBy","CusQuoteHeader_LastEditedBy","CusQuoteHeader_LastEditedDate","CusQuoteHeader_OrgOfficeID","OrgOffice_ID","CusQuoteHeader_Status","CusQuoteHeader_ModeCode","CusQuoteHeader_ShipmentTypeCode","CusQuoteHeader_ServiceLevel","CusQuoteHeader_CurrencyCode","CusQuoteHeader_OriginExtra","CusQuoteHeader_DestinationExtra","CusQuoteHeader_Direction","CusQuoteHeader_Incoterm","CusQuoteHeader_ValidFrom","CusQuoteHeader_ValidTo","CusQuoteHeader_InternalNotes")
+    values(northstar_quote_id,19158,northstar_id,now()-interval '4 days',operator_id,operator_id,now()-interval '2 hours',office_id,office_id,1,'sea','FCL','Standard','GBP','GBBRS · Bristol','JPUKB · Kobe','export','DAP',current_date,current_date+30,'Commercial review');
+  else
+    update public."CusQuote_Header" set "CusQuoteHeader_CustomerID"=northstar_id,"CusQuoteHeader_LastEditedDate"=now()-interval '2 hours',"CusQuoteHeader_OrgOfficeID"=office_id,"OrgOffice_ID"=office_id,"CusQuoteHeader_Status"=1,"CusQuoteHeader_InternalNotes"='Commercial review',"CusQuoteHeader_IsDeleted"=false where "CusQuoteHeader_ID"=northstar_quote_id;
+  end if;
+
+  select "CusQuoteHeader_ID" into atelier_quote_id from public."CusQuote_Header" where "CusQuoteHeader_Number"=19157 and coalesce("CusQuoteHeader_OrgOfficeID","OrgOffice_ID")=office_id limit 1;
+  if atelier_quote_id is null then
+    atelier_quote_id := gen_random_uuid();
+    insert into public."CusQuote_Header"("CusQuoteHeader_ID","CusQuoteHeader_Number","CusQuoteHeader_CustomerID","CusQuoteHeader_CreatedDate","CusQuoteHeader_CreatedBy","CusQuoteHeader_LastEditedBy","CusQuoteHeader_LastEditedDate","CusQuoteHeader_OrgOfficeID","OrgOffice_ID","CusQuoteHeader_Status","CusQuoteHeader_ModeCode","CusQuoteHeader_ShipmentTypeCode","CusQuoteHeader_ServiceLevel","CusQuoteHeader_CurrencyCode","CusQuoteHeader_OriginExtra","CusQuoteHeader_DestinationExtra","CusQuoteHeader_Direction","CusQuoteHeader_Incoterm","CusQuoteHeader_ValidFrom","CusQuoteHeader_ValidTo","CusQuoteHeader_InternalNotes")
+    values(atelier_quote_id,19157,atelier_id,now()-interval '5 days',operator_id,operator_id,now()-interval '5 hours',office_id,office_id,2,'sea','FCL','Priority','GBP','SGSIN · Singapore','GBSOU · Southampton','import','FOB',current_date-1,current_date+27,'Ready to issue');
+  else
+    update public."CusQuote_Header" set "CusQuoteHeader_CustomerID"=atelier_id,"CusQuoteHeader_LastEditedDate"=now()-interval '5 hours',"CusQuoteHeader_OrgOfficeID"=office_id,"OrgOffice_ID"=office_id,"CusQuoteHeader_Status"=2,"CusQuoteHeader_InternalNotes"='Ready to issue',"CusQuoteHeader_IsDeleted"=false where "CusQuoteHeader_ID"=atelier_quote_id;
+  end if;
+
+  select "CusQuoteHeader_ID" into kestrel_quote_id from public."CusQuote_Header" where "CusQuoteHeader_Number"=19154 and coalesce("CusQuoteHeader_OrgOfficeID","OrgOffice_ID")=office_id limit 1;
+  if kestrel_quote_id is null then
+    kestrel_quote_id := gen_random_uuid();
+    insert into public."CusQuote_Header"("CusQuoteHeader_ID","CusQuoteHeader_Number","CusQuoteHeader_CustomerID","CusQuoteHeader_CreatedDate","CusQuoteHeader_CreatedBy","CusQuoteHeader_LastEditedBy","CusQuoteHeader_LastEditedDate","CusQuoteHeader_OrgOfficeID","OrgOffice_ID","CusQuoteHeader_Status","CusQuoteHeader_ModeCode","CusQuoteHeader_ShipmentTypeCode","CusQuoteHeader_ServiceLevel","CusQuoteHeader_CurrencyCode","CusQuoteHeader_OriginExtra","CusQuoteHeader_DestinationExtra","CusQuoteHeader_Direction","CusQuoteHeader_Incoterm","CusQuoteHeader_ValidFrom","CusQuoteHeader_ValidTo","CusQuoteHeader_InternalNotes")
+    values(kestrel_quote_id,19154,kestrel_id,now()-interval '2 days',operator_id,operator_id,now()-interval '45 minutes',office_id,office_id,3,'air','Air freight','Express','GBP','AEDXB · Dubai','GBLHR · Heathrow','import','DAP',current_date,current_date+7,'Supplier pricing required');
+  else
+    update public."CusQuote_Header" set "CusQuoteHeader_CustomerID"=kestrel_id,"CusQuoteHeader_LastEditedDate"=now()-interval '45 minutes',"CusQuoteHeader_OrgOfficeID"=office_id,"OrgOffice_ID"=office_id,"CusQuoteHeader_Status"=3,"CusQuoteHeader_InternalNotes"='Supplier pricing required',"CusQuoteHeader_IsDeleted"=false where "CusQuoteHeader_ID"=kestrel_quote_id;
+  end if;
 
   insert into public."CusQuote_Lines"("CusQuoteLine_ID","CusQuoteHeader_ID","CusQuoteLine_Number","CusQuoteLine_Description","CusQuoteLine_InternalNotes","CusQuoteLine_CostROE","CusQuoteLine_CostAmountCurrency","CusQuoteLine_CostAmountLocal","CusQuoteLine_RevenueROE","CusQuoteLine_RevenueAmountCurrency","CusQuoteLine_RevenueAmountLocal","CusQuoteLine_CreatedBy","CusQuoteLine_UpdatedBy")
   values
-  ('7a200001-0000-4000-8000-000000000001','7a100001-0000-4000-8000-000000000001',1,'Ocean freight','SEA',1,920,920,1,1125,1125,operator_id,operator_id),
-  ('7a200001-0000-4000-8000-000000000002','7a100001-0000-4000-8000-000000000001',2,'Export customs clearance','CES',1,78,78,1,135,135,operator_id,operator_id),
-  ('7a200001-0000-4000-8000-000000000003','7a100001-0000-4000-8000-000000000001',3,'Destination handling','SEA',1,315,315,1,306.42,306.42,operator_id,operator_id),
-  ('7a200001-0000-4000-8000-000000000004','7a100001-0000-4000-8000-000000000002',1,'Ocean freight','SEA',1,2140,2140,1,2580,2580,operator_id,operator_id),
-  ('7a200001-0000-4000-8000-000000000005','7a100001-0000-4000-8000-000000000002',2,'Origin and destination handling','SEA',1,574.8,574.8,1,747,747,operator_id,operator_id),
-  ('7a200001-0000-4000-8000-000000000006','7a100001-0000-4000-8000-000000000003',1,'Air freight · rate pending','AIR',1,0,0,1,0,0,operator_id,operator_id)
-  on conflict("CusQuoteLine_ID") do update set "CusQuoteLine_Description"=excluded."CusQuoteLine_Description","CusQuoteLine_CostAmountLocal"=excluded."CusQuoteLine_CostAmountLocal","CusQuoteLine_RevenueAmountLocal"=excluded."CusQuoteLine_RevenueAmountLocal","CusQuoteLine_UpdatedAt"=now();
+  (gen_random_uuid(),northstar_quote_id,1,'Ocean freight','SEA',1,920,920,1,1125,1125,operator_id,operator_id),
+  (gen_random_uuid(),northstar_quote_id,2,'Export customs clearance','CES',1,78,78,1,135,135,operator_id,operator_id),
+  (gen_random_uuid(),northstar_quote_id,3,'Destination handling','SEA',1,315,315,1,306.42,306.42,operator_id,operator_id),
+  (gen_random_uuid(),atelier_quote_id,1,'Ocean freight','SEA',1,2140,2140,1,2580,2580,operator_id,operator_id),
+  (gen_random_uuid(),atelier_quote_id,2,'Origin and destination handling','SEA',1,574.8,574.8,1,747,747,operator_id,operator_id),
+  (gen_random_uuid(),kestrel_quote_id,1,'Air freight · rate pending','AIR',1,0,0,1,0,0,operator_id,operator_id)
+  on conflict("CusQuoteHeader_ID","CusQuoteLine_Number") do update set "CusQuoteLine_Description"=excluded."CusQuoteLine_Description","CusQuoteLine_CostAmountLocal"=excluded."CusQuoteLine_CostAmountLocal","CusQuoteLine_RevenueAmountLocal"=excluded."CusQuoteLine_RevenueAmountLocal","CusQuoteLine_UpdatedAt"=now();
 
   insert into public."RPT_ReportDefinitions"("RPTReport_ID","RPTReport_Code","RPTReport_Name","RPTReport_ModuleCode","RPTReport_Description","RPTReport_QueryRef")
   values
-  ('7a300001-0000-4000-8000-000000000001','DEMO_CLIENT_SERVICE','Client service review','jobs','Monthly delivery performance and exceptions.','App_Live_Bookings'),
-  ('7a300001-0000-4000-8000-000000000002','DEMO_MARGIN','Shipment margin review','finance','Revenue, cost and gross-profit performance.','App_Live_Quotes'),
-  ('7a300001-0000-4000-8000-000000000003','DEMO_EXCEPTION','Exception and recovery log','jobs','Current exceptions and recovery ownership.','App_Live_Bookings')
+  (gen_random_uuid(),'DEMO_CLIENT_SERVICE','Client service review','jobs','Monthly delivery performance and exceptions.','App_Live_Bookings'),
+  (gen_random_uuid(),'DEMO_MARGIN','Shipment margin review','finance','Revenue, cost and gross-profit performance.','App_Live_Quotes'),
+  (gen_random_uuid(),'DEMO_EXCEPTION','Exception and recovery log','jobs','Current exceptions and recovery ownership.','App_Live_Bookings')
   on conflict("RPTReport_Code") do update set "RPTReport_Name"=excluded."RPTReport_Name","RPTReport_Description"=excluded."RPTReport_Description","RPTReport_IsActive"=true;
 
+  select "RPTReport_ID" into service_report_id from public."RPT_ReportDefinitions" where "RPTReport_Code"='DEMO_CLIENT_SERVICE';
+  select "RPTReport_ID" into margin_report_id from public."RPT_ReportDefinitions" where "RPTReport_Code"='DEMO_MARGIN';
+  select "RPTReport_ID" into exception_report_id from public."RPT_ReportDefinitions" where "RPTReport_Code"='DEMO_EXCEPTION';
+
   insert into public."RPT_ReportRuns"("RPTReportRun_ID","RPTReportRun_ReportID","RPTReportRun_StatusCode","RPTReportRun_RequestedBy","RPTReportRun_ParametersJSON","RPTReportRun_StartedAt","RPTReportRun_FinishedAt","RPTReportRun_CreatedAt")
-  values
-  ('7a400001-0000-4000-8000-000000000001','7a300001-0000-4000-8000-000000000001','completed',operator_id,'{"period":"July 2026"}',now()-interval '2 days',now()-interval '2 days'+interval '18 seconds',now()-interval '2 days'),
-  ('7a400001-0000-4000-8000-000000000002','7a300001-0000-4000-8000-000000000002','completed',operator_id,'{"period":"Week 32"}',now()-interval '5 hours',now()-interval '5 hours'+interval '12 seconds',now()-interval '5 hours'),
-  ('7a400001-0000-4000-8000-000000000003','7a300001-0000-4000-8000-000000000003','queued',operator_id,'{"period":"Today"}',null,null,now()+interval '1 hour')
-  on conflict("RPTReportRun_ID") do update set "RPTReportRun_StatusCode"=excluded."RPTReportRun_StatusCode","RPTReportRun_ParametersJSON"=excluded."RPTReportRun_ParametersJSON";
+  select gen_random_uuid(),service_report_id,'completed',operator_id,'{"period":"July 2026","demo_key":"client-service-july-2026"}',now()-interval '2 days',now()-interval '2 days'+interval '18 seconds',now()-interval '2 days'
+  where not exists(select 1 from public."RPT_ReportRuns" where "RPTReportRun_ParametersJSON"->>'demo_key'='client-service-july-2026');
+  insert into public."RPT_ReportRuns"("RPTReportRun_ID","RPTReportRun_ReportID","RPTReportRun_StatusCode","RPTReportRun_RequestedBy","RPTReportRun_ParametersJSON","RPTReportRun_StartedAt","RPTReportRun_FinishedAt","RPTReportRun_CreatedAt")
+  select gen_random_uuid(),margin_report_id,'completed',operator_id,'{"period":"Week 32","demo_key":"margin-week-32"}',now()-interval '5 hours',now()-interval '5 hours'+interval '12 seconds',now()-interval '5 hours'
+  where not exists(select 1 from public."RPT_ReportRuns" where "RPTReportRun_ParametersJSON"->>'demo_key'='margin-week-32');
+  insert into public."RPT_ReportRuns"("RPTReportRun_ID","RPTReportRun_ReportID","RPTReportRun_StatusCode","RPTReportRun_RequestedBy","RPTReportRun_ParametersJSON","RPTReportRun_StartedAt","RPTReportRun_FinishedAt","RPTReportRun_CreatedAt")
+  select gen_random_uuid(),exception_report_id,'queued',operator_id,'{"period":"Today","demo_key":"exception-today"}',null,null,now()+interval '1 hour'
+  where not exists(select 1 from public."RPT_ReportRuns" where "RPTReportRun_ParametersJSON"->>'demo_key'='exception-today');
 end $$;
 
 create or replace view public."App_Live_Bookings" with(security_invoker=true) as
