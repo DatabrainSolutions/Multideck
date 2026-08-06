@@ -391,6 +391,9 @@ verify_jwt = true
 [functions.render-document]
 verify_jwt = true
 
+[functions.document-studio]
+verify_jwt = true
+
 [functions.document-download]
 verify_jwt = true
 

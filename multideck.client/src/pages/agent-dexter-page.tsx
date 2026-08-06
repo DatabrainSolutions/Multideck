@@ -94,6 +94,7 @@ import {
   type DexterWatch,
 } from "@/lib/dexter-api"
 import { supabase } from "@/lib/supabase"
+import { takeGeneratedDocumentForDexter } from "@/lib/generated-document-handoff"
 import {
   conversationBranchFor,
   responseGroupsFor,
@@ -1639,6 +1640,23 @@ export function AgentDexterPage({
     version: 0,
   })
   const attachedItems = useAttachedItems(selectedAttachmentIds)
+  const generatedDocumentHandoffRef = useRef(false)
+
+  useEffect(() => {
+    if (generatedDocumentHandoffRef.current) return
+    generatedDocumentHandoffRef.current = true
+    const handoff = takeGeneratedDocumentForDexter()
+    if (!handoff) return
+    const cleanUrl = new URL(window.location.href)
+    cleanUrl.searchParams.delete("generated-document")
+    window.history.replaceState(window.history.state, "", `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`)
+    setComposerValue(t("Help me with this generated document for job {jobNumber}.").replace("{jobNumber}", handoff.jobNumber))
+    setIsUploadingDocument(true)
+    void uploadDexterDocument(new File([handoff.blob], handoff.fileName, { type: handoff.mimeType }))
+      .then((document) => setComposerUploadedDocuments([document]))
+      .catch((handoffError) => setUploadError(handoffError instanceof Error ? handoffError.message : t("Dexter could not upload that document.")))
+      .finally(() => setIsUploadingDocument(false))
+  }, [t])
   const watchMentionItems = useMemo(() => mentionItems.filter((mention) => {
     if (mention.type === "email") return true
     if (!(["booking", "lead", "deal", "quote"] as const).includes(mention.type as "booking" | "lead" | "deal" | "quote")) return false

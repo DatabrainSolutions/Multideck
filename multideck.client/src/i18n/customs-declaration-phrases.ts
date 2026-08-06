@@ -3,6 +3,11 @@ import type { LanguageCode } from "./languages"
 type PhraseDictionary = Record<string, Partial<Record<LanguageCode, string>>>
 
 export const customsDeclarationPhrases: PhraseDictionary = {
+  "Declaration view": { de: "Anmeldungsansicht", fr: "Vue de la déclaration", ar: "عرض الإقرار" },
+  "Tab view": { de: "Registeransicht", fr: "Vue par onglets", ar: "عرض علامات التبويب" },
+  "Form view": { de: "Formularansicht", fr: "Vue formulaire", ar: "عرض النموذج" },
+  General: { de: "Allgemein", fr: "Général", ar: "عام" },
+  "Scan and complete the declaration in one compact form, with goods lines kept in Items.": { de: "Prüfen und vervollständigen Sie die Anmeldung in einem kompakten Formular; Warenpositionen bleiben unter Positionen.", fr: "Parcourez et complétez la déclaration dans un formulaire compact ; les lignes de marchandises restent dans Articles.", ar: "راجع الإقرار وأكمله في نموذج مدمج، مع إبقاء بنود البضاعة ضمن الأصناف." },
   "Loading saved declarations": { de: "Gespeicherte Anmeldungen werden geladen", fr: "Chargement des déclarations enregistrées", ar: "جارٍ تحميل الإقرارات المحفوظة" },
   "Saved declarations unavailable": { de: "Gespeicherte Anmeldungen nicht verfügbar", fr: "Déclarations enregistrées indisponibles", ar: "الإقرارات المحفوظة غير متاحة" },
   "Refresh the page to try loading the declaration register again.": { de: "Aktualisieren Sie die Seite, um das Anmelderegister erneut zu laden.", fr: "Actualisez la page pour recharger le registre des déclarations.", ar: "حدّث الصفحة لمحاولة تحميل سجل الإقرارات مرة أخرى." },
@@ -174,7 +179,9 @@ export const customsDeclarationPhrases: PhraseDictionary = {
   "declaration lines": { de: "Anmeldungspositionen", fr: "lignes de déclaration", ar: "بنود الإقرار" },
   "Customs box numbers": { de: "Zollfeldnummern", fr: "Numéros de cases douanières", ar: "أرقام خانات الجمارك" },
   "Mandatory goods-line fields": { de: "Pflichtfelder der Warenpositionen", fr: "Champs obligatoires des lignes de marchandises", ar: "الحقول الإلزامية لبنود البضاعة" },
-  "Add rows and enter the essentials here. Select any row to expand its full details below.": { de: "Zeilen hinzufügen und die Pflichtangaben direkt eingeben. Eine Zeile auswählen, um unten alle Details zu bearbeiten.", fr: "Ajoutez des lignes et saisissez ici les informations essentielles. Sélectionnez une ligne pour afficher tous ses détails ci-dessous.", ar: "أضف صفوفاً وأدخل البيانات الأساسية هنا. اختر أي صف لعرض جميع تفاصيله أدناه." },
+  "Add rows and enter the essentials here. Expand a line to edit all of its details in place.": { de: "Zeilen hinzufügen und die Pflichtangaben direkt eingeben. Eine Position aufklappen, um alle Details direkt dort zu bearbeiten.", fr: "Ajoutez des lignes et saisissez ici les informations essentielles. Développez une ligne pour modifier tous ses détails sur place.", ar: "أضف صفوفاً وأدخل البيانات الأساسية هنا. وسّع أي بند لتعديل جميع تفاصيله في مكانه." },
+  "Expand item details": { de: "Positionsdetails aufklappen", fr: "Développer les détails de l’article", ar: "توسيع تفاصيل الصنف" },
+  "Collapse item details": { de: "Positionsdetails einklappen", fr: "Réduire les détails de l’article", ar: "طي تفاصيل الصنف" },
   Line: { de: "Pos.", fr: "Ligne", ar: "البند" },
   "Price / currency": { de: "Preis / Währung", fr: "Prix / devise", ar: "السعر / العملة" },
   required: { de: "offen", fr: "requis", ar: "مطلوب" },

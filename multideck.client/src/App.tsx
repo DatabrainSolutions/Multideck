@@ -1,4 +1,4 @@
-import { Component, lazy, startTransition, Suspense, useCallback, useEffect, useState, type CSSProperties, type ErrorInfo, type ReactNode } from "react"
+import { Component, lazy, startTransition, Suspense, useCallback, useEffect, useRef, useState, type CSSProperties, type ErrorInfo, type ReactNode } from "react"
 import type { Session } from "@supabase/supabase-js"
 import { MotionConfig } from "motion/react"
 import { ThemeProvider } from "next-themes"
@@ -115,6 +115,7 @@ const validRoutes = new Set([
   "/customers",
   "/inbox",
   "/documents",
+  "/documents/templates",
   "/customs/standalone/export",
   "/customs/standalone/export/new",
   "/customs/standalone/import",
@@ -326,6 +327,7 @@ export default function App() {
   const [authStatus, setAuthStatus] = useState<AuthStatus>(isSupabaseConfigured ? "checking" : "unauthenticated")
   const [currentUser, setCurrentUser] = useState<AuthUserSummary | null>(null)
   const [profileMediaUrls, setProfileMediaUrls] = useState<ProfileMediaUrls>(emptyProfileMediaUrls)
+  const hasResolvedAuthenticatedSessionRef = useRef(false)
   const isLocalNavigationLab = import.meta.env.DEV
     && (route === "/playground/navigation" || route === "/settings")
   const isPasswordRecoveryRoute = route === "/auth" && new URLSearchParams(window.location.search).get("mode") === "reset-password"
@@ -410,17 +412,23 @@ export default function App() {
     let cancelled = false
 
     let sessionRequest = 0
+    let activeAccessToken: string | null = null
     const applySession = (session: Session | null) => {
       if (cancelled) return
-      const requestId = ++sessionRequest
 
       if (!session?.user) {
+        activeAccessToken = null
+        hasResolvedAuthenticatedSessionRef.current = false
         setCurrentUser(null)
         setAuthStatus("unauthenticated")
         return
       }
 
-      setAuthStatus("checking")
+      if (activeAccessToken === session.access_token) return
+      activeAccessToken = session.access_token
+      const requestId = ++sessionRequest
+
+      if (!hasResolvedAuthenticatedSessionRef.current) setAuthStatus("checking")
       getApiAuthSession(session.access_token)
         .then((apiSession) => apiSession.profile)
         .catch((error) => {
@@ -431,6 +439,7 @@ export default function App() {
           if (cancelled || requestId !== sessionRequest) return
           const nextUser = summarizeAuthUser(session.user, apiProfile)
 
+          hasResolvedAuthenticatedSessionRef.current = true
           setCurrentUser(nextUser)
           setAuthStatus("authenticated")
         })
@@ -584,7 +593,7 @@ export default function App() {
                   {route === "/customers" ? <CustomersPage navigate={navigate} /> : null}
                   {isCustomerDetailRoute(route) ? <CustomerDetailPage customerId={route.split("/").at(-1) ?? ""} /> : null}
                   {route === "/inbox" ? <InboxPage navigate={navigate} /> : null}
-                  {route === "/documents" ? <DocumentsPage navigate={navigate} /> : null}
+                  {route === "/documents" || route === "/documents/templates" ? <DocumentsPage navigate={navigate} /> : null}
                   {route.startsWith("/customs/") ? <CustomsDeclarationsPage route={route} navigate={navigate} /> : null}
                   {route === "/paper-tray" ? <PaperTrayPage /> : null}
                   {route === "/playground/navigation" ? <NavigationLabPage /> : null}

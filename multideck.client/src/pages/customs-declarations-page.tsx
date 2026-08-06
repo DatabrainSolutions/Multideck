@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
-import { ArrowLeft, CheckCircle2, CircleAlert, Copy, ExternalLink, FileCheck2, Link2, Plus, Sparkles, Trash2 } from "lucide-react"
+import { ArrowLeft, CheckCircle2, ChevronDown, CircleAlert, Copy, ExternalLink, FileCheck2, Link2, Plus, Sparkles, Trash2 } from "lucide-react"
+import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -9,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
+import { SegmentedControl, TabsRail } from "@/components/multideck/workflow-components"
 import { CustomsInvoiceImportWorkspace } from "@/pages/customs-invoice-import-workspace"
 import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
@@ -23,13 +25,16 @@ import {
 import { createEmptyCustomsReferenceData, useCustomsReferenceData, type CustomsCatalogCode, type CustomsReferenceData } from "@/lib/customs-reference-data"
 import { listStandaloneExportDrafts, loadStandaloneExportDraft, saveStandaloneExportDraft, type CustomsDraftSummary } from "@/lib/customs-drafts-api"
 import { hasCustomsInvoiceImportRecovery, moveCustomsInvoiceImportRecovery } from "@/lib/customs-invoice-import-recovery"
+import { mdMotion, reduceMotion } from "@/lib/motion"
 
 type DeclarationKind = "export" | "import"
 type EditorTab = "declaration" | "parties" | "transport" | "documents" | "items" | "review"
-type ItemTab = "commodity" | "packaging" | "values" | "documents" | "parties"
+type EditorViewMode = "tabs" | "form"
+type FormTab = "general" | "items"
 
 const CustomsBoxVisibilityContext = createContext(false)
 const CustomsReferenceDataContext = createContext<{ data: CustomsReferenceData; loading: boolean; error: string | null }>({ data: createEmptyCustomsReferenceData(), loading: true, error: null })
+const CompactCustomsFormContext = createContext(false)
 
 export function CustomsDeclarationsPage({
   route,
@@ -169,7 +174,8 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
   const referenceData = useCustomsReferenceData("export")
   const [draft, setDraft] = useState<StandaloneExportDraft>(createStandaloneExportDraft)
   const [tab, setTab] = useState<EditorTab>("declaration")
-  const [itemTab, setItemTab] = useState<ItemTab>("commodity")
+  const [viewMode, setViewMode] = useState<EditorViewMode>("tabs")
+  const [formTab, setFormTab] = useState<FormTab>("general")
   const [activeItemId, setActiveItemId] = useState(draft.items[0].id)
   const [showDataElements, setShowDataElements] = useState(true)
   const [showCustomsBoxNumbers, setShowCustomsBoxNumbers] = useState(false)
@@ -220,7 +226,7 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
       target?.querySelector<HTMLElement>("input, textarea, button")?.focus({ preventScroll: true })
     }, 80)
     return () => window.clearTimeout(timer)
-  }, [activeItemId, focusTarget, itemTab, tab])
+  }, [activeItemId, focusTarget, formTab, tab, viewMode])
 
   function update<K extends keyof StandaloneExportDraft>(field: K, value: StandaloneExportDraft[K]) {
     setDraft((current) => ({ ...current, [field]: value }))
@@ -241,10 +247,14 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
     setValidated(true)
     const first = completion.issues[0]
     if (first) {
-      setTab(first.scope === "item" ? "items" : generalTabForField(first.field))
+      if (viewMode === "form") {
+        setFormTab(first.scope === "item" ? "items" : "general")
+      } else {
+        setTab(first.scope === "item" ? "items" : generalTabForField(first.field))
+      }
       toast.warning(t("Declaration needs attention"), { description: `${completion.issues.length} ${t("checks remain")}` })
     } else {
-      setTab("review")
+      if (viewMode === "tabs") setTab("review")
       toast.success(t("Current form checks passed"))
     }
   }
@@ -270,7 +280,6 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
     setValidated(true)
     if (issue.scope === "item") {
       if (issue.itemId) setActiveItemId(issue.itemId)
-      setItemTab(itemTabForField(issue.field))
       setTab("items")
     } else {
       setTab(generalTabForField(issue.field))
@@ -282,8 +291,8 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
     const item = createExportDeclarationItem(draft.items.length + 1)
     setDraft((current) => ({ ...current, items: [...current.items, item] }))
     setActiveItemId(item.id)
-    setTab("items")
-    setItemTab("commodity")
+    if (viewMode === "form") setFormTab("items")
+    else setTab("items")
   }
 
   function duplicateItem(itemId = activeItem.id) {
@@ -305,8 +314,8 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
     const importedItems = items.map((item, index) => ({ ...item, id: `invoice-${importKey}-${index + 1}` }))
     setDraft((current) => ({ ...current, items: mode === "append" ? [...current.items, ...importedItems] : importedItems }))
     setActiveItemId(importedItems[0].id)
-    setItemTab("commodity")
-    setTab("items")
+    if (viewMode === "form") setFormTab("items")
+    else setTab("items")
     setInvoiceImportOpen(false)
     toast.success(t("Invoice lines added"), { description: `${sourceLineCount} ${t("source lines became")} ${importedItems.length} ${t("declaration lines")}` })
   }
@@ -342,15 +351,24 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
             <StatusPill tone="teal">{t("Standalone export")}</StatusPill>
             <StatusPill>{t("Draft")}</StatusPill>
           </div>
-          <p className="mt-1 text-[13px] text-[var(--md-text)]">{t("Complete one focused section at a time. Move between sections whenever you need.")}</p>
+          <p className="mt-1 text-[13px] text-[var(--md-text)]">{t(viewMode === "tabs" ? "Complete one focused section at a time. Move between sections whenever you need." : "Scan and complete the declaration in one compact form, with goods lines kept in Items.")}</p>
         </div>
       </header>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <Toggle checked={showDataElements} onChange={setShowDataElements}>{t("Data Elements")}</Toggle>
-          <Toggle checked={showCustomsBoxNumbers} onChange={setShowCustomsBoxNumbers}>{t("Customs box numbers")}</Toggle>
-          <Toggle checked={showOptional} onChange={setShowOptional}>{t("Optional fields")}</Toggle>
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
+          <SegmentedControl
+            options={["tabs", "form"] as const}
+            value={viewMode}
+            onChange={setViewMode}
+            ariaLabel={t("Declaration view")}
+            renderOption={(option) => t(option === "tabs" ? "Tab view" : "Form view")}
+          />
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <Toggle checked={showDataElements} onChange={setShowDataElements}>{t("Data Elements")}</Toggle>
+            <Toggle checked={showCustomsBoxNumbers} onChange={setShowCustomsBoxNumbers}>{t("Customs box numbers")}</Toggle>
+            <Toggle checked={showOptional} onChange={setShowOptional}>{t("Optional fields")}</Toggle>
+          </div>
         </div>
         <div className="flex shrink-0 items-center gap-2 sm:justify-end">
           <Button type="button" variant="outline" size="sm" className="h-9" disabled={savingDraft} onClick={() => void saveDraft()}>{t(savingDraft ? "Saving draft" : "Save draft")}</Button>
@@ -359,7 +377,7 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
         </div>
       </div>
 
-      <nav className="max-w-full overflow-x-auto rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)]" aria-label={t("Declaration sections")}>
+      {viewMode === "tabs" ? <nav className="max-w-full overflow-x-auto rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)]" aria-label={t("Declaration sections")}>
         <div className="grid min-w-[840px] grid-cols-6 gap-1">
           {editorTabs.map((entry, index) => (
             <button key={entry.id} type="button" onClick={() => setTab(entry.id)} aria-current={tab === entry.id ? "step" : undefined} className={cn("flex min-h-[52px] items-center gap-2 rounded-[var(--md-radius-lg)] px-3 text-start", tab === entry.id ? "bg-[var(--md-selected-bg)] text-[var(--md-selected-text)]" : "text-[var(--md-text)] hover:bg-[var(--md-hover)]")}>
@@ -368,17 +386,27 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
             </button>
           ))}
         </div>
-      </nav>
+      </nav> : <TabsRail
+        tabs={[
+          { label: t("General") },
+          { label: t("Items"), value: String(draft.items.length) },
+        ]}
+        activeTab={formTab === "general" ? t("General") : t("Items")}
+        onChange={(nextTab) => setFormTab(nextTab === t("Items") ? "items" : "general")}
+        className="px-1"
+      />}
 
       {referenceData.loading ? <Surface padding="sm" className="rounded-[var(--md-radius-lg)]"><p className="text-[11px] text-[var(--md-text)]">{t("Loading Customs reference data")}</p></Surface> : null}
       {referenceData.error ? <Surface padding="sm" className="rounded-[var(--md-radius-lg)]"><div className="flex items-center gap-2 text-[11px] text-[var(--md-red)]"><CircleAlert className="size-4 shrink-0" /><span><strong>{t("Customs reference data unavailable")}</strong> {t("Selection fields remain locked until the database catalogue is available.")}</span></div></Surface> : null}
 
-      {tab === "declaration" ? <DeclarationSection draft={draft} update={update} showDataElements={showDataElements} issues={issueFields} highlightedField={focusTarget?.field} t={t} /> : null}
-      {tab === "parties" ? <PartiesSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} highlightedField={focusTarget?.field} t={t} /> : null}
-      {tab === "transport" ? <TransportSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} highlightedField={focusTarget?.field} t={t} /> : null}
-      {tab === "documents" ? <DocumentsSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} highlightedField={focusTarget?.field} t={t} /> : null}
-      {tab === "items" ? <ItemsSection items={draft.items} activeItem={activeItem} activeItemId={activeItemId} onSelectItem={setActiveItemId} onAdd={addItem} onOpenInvoiceImport={() => setInvoiceImportOpen(true)} onDuplicate={duplicateItem} onRemove={removeItem} itemTab={itemTab} onItemTabChange={setItemTab} update={updateItem} updateRow={updateItemById} showDataElements={showDataElements} showOptional={showOptional} issues={activeItemIssueFields} validated={validated} highlightedField={focusTarget?.field} t={t} /> : null}
-      {tab === "review" ? <ReviewSection draft={draft} completion={completion} fallbackUrl={fallbackUrl} onValidate={validate} onFixIssue={fixIssue} t={t} /> : null}
+      {viewMode === "form" && formTab === "general" ? <GeneralFormView draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} highlightedField={focusTarget?.field} t={t} /> : null}
+      {viewMode === "form" && formTab === "items" ? <ItemsSection items={draft.items} activeItem={activeItem} activeItemId={activeItemId} onSelectItem={setActiveItemId} onAdd={addItem} onOpenInvoiceImport={() => setInvoiceImportOpen(true)} onDuplicate={duplicateItem} onRemove={removeItem} update={updateItem} updateRow={updateItemById} showDataElements={showDataElements} showOptional={showOptional} issues={activeItemIssueFields} validated={validated} highlightedField={focusTarget?.field} t={t} /> : null}
+      {viewMode === "tabs" && tab === "declaration" ? <DeclarationSection draft={draft} update={update} showDataElements={showDataElements} issues={issueFields} highlightedField={focusTarget?.field} t={t} /> : null}
+      {viewMode === "tabs" && tab === "parties" ? <PartiesSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} highlightedField={focusTarget?.field} t={t} /> : null}
+      {viewMode === "tabs" && tab === "transport" ? <TransportSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} highlightedField={focusTarget?.field} t={t} /> : null}
+      {viewMode === "tabs" && tab === "documents" ? <DocumentsSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} highlightedField={focusTarget?.field} t={t} /> : null}
+      {viewMode === "tabs" && tab === "items" ? <ItemsSection items={draft.items} activeItem={activeItem} activeItemId={activeItemId} onSelectItem={setActiveItemId} onAdd={addItem} onOpenInvoiceImport={() => setInvoiceImportOpen(true)} onDuplicate={duplicateItem} onRemove={removeItem} update={updateItem} updateRow={updateItemById} showDataElements={showDataElements} showOptional={showOptional} issues={activeItemIssueFields} validated={validated} highlightedField={focusTarget?.field} t={t} /> : null}
+      {viewMode === "tabs" && tab === "review" ? <ReviewSection draft={draft} completion={completion} fallbackUrl={fallbackUrl} onValidate={validate} onFixIssue={fixIssue} t={t} /> : null}
     </div>
     {invoiceImportOpen ? <CustomsInvoiceImportWorkspace key={invoiceImportRecoveryKey} recoveryKey={invoiceImportRecoveryKey} onClose={() => setInvoiceImportOpen(false)} onApply={applyInvoiceItems} existingItemCount={draft.items.length} /> : null}
     </CustomsBoxVisibilityContext.Provider>
@@ -404,6 +432,17 @@ type SectionProps = {
   issues: Set<string>
   highlightedField?: string
   t: (text: string) => string
+}
+
+function GeneralFormView(props: SectionProps & { showOptional: boolean }) {
+  return <CompactCustomsFormContext.Provider value>
+    <div className="grid gap-[var(--md-page-stack-gap-compact)]">
+      <DeclarationSection {...props} />
+      <PartiesSection {...props} />
+      <TransportSection {...props} />
+      <DocumentsSection {...props} />
+    </div>
+  </CompactCustomsFormContext.Provider>
 }
 
 function DeclarationSection({ draft, update, showDataElements, issues, highlightedField, t }: SectionProps) {
@@ -482,31 +521,35 @@ function DocumentsSection({ draft, update, showDataElements, showOptional, issue
   </SectionFrame>
 }
 
-function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, onOpenInvoiceImport, onDuplicate, onRemove, itemTab, onItemTabChange, update, updateRow, showDataElements, showOptional, issues, validated, highlightedField, t }: { items: ExportDeclarationItem[]; activeItem: ExportDeclarationItem; activeItemId: string; onSelectItem: (id: string) => void; onAdd: () => void; onOpenInvoiceImport: () => void; onDuplicate: (itemId?: string) => void; onRemove: (itemId?: string) => void; itemTab: ItemTab; onItemTabChange: (tab: ItemTab) => void; update: <K extends keyof ExportDeclarationItem>(field: K, value: ExportDeclarationItem[K]) => void; updateRow: <K extends keyof ExportDeclarationItem>(itemId: string, field: K, value: ExportDeclarationItem[K]) => void; showDataElements: boolean; showOptional: boolean; issues: Set<string>; validated: boolean; highlightedField?: string; t: (text: string) => string }) {
+function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, onOpenInvoiceImport, onDuplicate, onRemove, update, updateRow, showDataElements, showOptional, issues, validated, highlightedField, t }: { items: ExportDeclarationItem[]; activeItem: ExportDeclarationItem; activeItemId: string; onSelectItem: (id: string) => void; onAdd: () => void; onOpenInvoiceImport: () => void; onDuplicate: (itemId?: string) => void; onRemove: (itemId?: string) => void; update: <K extends keyof ExportDeclarationItem>(field: K, value: ExportDeclarationItem[K]) => void; updateRow: <K extends keyof ExportDeclarationItem>(itemId: string, field: K, value: ExportDeclarationItem[K]) => void; showDataElements: boolean; showOptional: boolean; issues: Set<string>; validated: boolean; highlightedField?: string; t: (text: string) => string }) {
   const { direction } = useLanguage()
-  const tabs: Array<[ItemTab, string]> = [["commodity", "Commodity"], ["packaging", "Packaging & procedure"], ["values", "Weights & values"], ["documents", "Documents"], ["parties", "Parties & transport"]]
+  const shouldReduceMotion = Boolean(useReducedMotion())
+  const [expandedItemId, setExpandedItemId] = useState<string | null>(activeItemId)
   const packageKinds = useReferenceOptions("package_kind", t)
-  const packageKindFields = useReferenceOptions("package_kind", t, "Select package")
   const countries = useReferenceOptions("country", t)
-  const countryFields = useReferenceOptions("country", t, "Select country")
-  const optionalCountries = useReferenceOptions("country", t, "Not specified")
   const procedureCodes = useReferenceOptions("procedure_code", t)
-  const procedureCodeFields = useReferenceOptions("procedure_code", t, "Select procedure")
   const additionalProcedureCodes = useReferenceOptions("additional_procedure_code", t)
-  const additionalProcedureCodeFields = useReferenceOptions("additional_procedure_code", t, "Select procedure")
   const currencies = useReferenceOptions("currency", t)
-  const currencyFields = useReferenceOptions("currency", t, "Select currency")
-  const previousDocumentTypes = useReferenceOptions("previous_document_type", t, "Select document type")
+
+  useEffect(() => {
+    setExpandedItemId(activeItemId)
+  }, [activeItemId])
+
+  const toggleItem = (itemId: string) => {
+    if (itemId !== activeItemId) onSelectItem(itemId)
+    setExpandedItemId((current) => current === itemId ? null : itemId)
+  }
+
   return <div className="min-w-0 space-y-4">
     <Surface padding="none" className="w-full min-w-0 max-w-full overflow-hidden rounded-[var(--md-radius-xl)]">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--md-line)] px-4 py-3">
         <span>
           <h2 className="text-[14px] font-medium text-[var(--md-ink)]">{t("Mandatory goods-line fields")}</h2>
-          <p className="mt-0.5 text-[11px] text-[var(--md-subtle)]">{t("Add rows and enter the essentials here. Select any row to expand its full details below.")}</p>
+          <p className="mt-0.5 text-[11px] text-[var(--md-subtle)]">{t("Add rows and enter the essentials here. Expand a line to edit all of its details in place.")}</p>
         </span>
         <div className="flex flex-wrap items-center gap-2"><Button type="button" variant="outline" size="sm" onClick={onOpenInvoiceImport}><Sparkles className="size-3.5" />{t("Import invoice")}</Button><Button type="button" size="sm" onClick={onAdd}><Plus className="size-3.5" />{t("Add item")}</Button></div>
       </header>
-      <div className="w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain" data-testid="mandatory-goods-line-scroll">
+      <div className="w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain [container-type:inline-size]" data-testid="mandatory-goods-line-scroll">
         <table className="w-full min-w-[1780px] table-fixed border-collapse text-start" aria-label={t("Mandatory goods-line fields")}>
           <thead className="bg-[var(--md-surface-soft)] text-[9px] font-medium uppercase tracking-[0.035em] text-[var(--md-subtle)]">
             <tr>
@@ -531,13 +574,19 @@ function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, on
             {items.map((item, index) => {
               const missing = mandatoryItemGaps(item)
               const selected = item.id === activeItemId
+              const expanded = item.id === expandedItemId
               const inputClass = "h-7 rounded-[var(--md-radius-xs)] border-transparent bg-[var(--md-surface-tint)] px-1.5 text-[10px] shadow-none focus-visible:border-[var(--md-accent)] focus-visible:ring-1 focus-visible:ring-[var(--md-accent)]"
               return <ContextMenuPrimitive.Root key={item.id} dir={direction}>
                 <ContextMenuPrimitive.Trigger asChild>
-                <tr onClick={() => onSelectItem(item.id)} onFocus={() => onSelectItem(item.id)} onContextMenu={() => onSelectItem(item.id)} aria-selected={selected} className={cn("group cursor-pointer bg-[var(--md-surface)] transition-colors hover:bg-[var(--md-hover)]", selected && "bg-[var(--md-selected-bg)] hover:bg-[var(--md-selected-bg)]")}>
-                <td className={cn("sticky start-0 z-[5] border-e border-[var(--md-line)] px-2 py-1", selected ? "bg-[var(--md-selected-bg)]" : "bg-[var(--md-surface)] group-hover:bg-[var(--md-hover)]")}>
-                  <strong className="block text-[11px] font-semibold text-[var(--md-ink)]">{index + 1}</strong>
-                  <span className={cn("mt-0.5 block text-[8px] font-medium", missing.length ? "text-[var(--md-amber)]" : "text-[var(--md-green)]")}>{missing.length ? `${missing.length} ${t("required")}` : t("Complete")}</span>
+                <tr onClick={(event) => { if (!(event.target as HTMLElement).closest("input, button, [role='combobox']")) toggleItem(item.id) }} onFocus={(event) => { if (!(event.target as HTMLElement).closest("[data-item-disclosure]")) onSelectItem(item.id) }} onContextMenu={() => onSelectItem(item.id)} aria-selected={selected} className={cn("group cursor-pointer bg-[var(--md-surface)] transition-colors duration-150 hover:bg-[var(--md-hover)]", selected && "bg-[var(--md-selected-bg)] hover:bg-[var(--md-selected-bg)]")}>
+                <td className={cn("sticky start-0 z-[5] border-e border-[var(--md-line)] p-1", selected ? "bg-[var(--md-selected-bg)]" : "bg-[var(--md-surface)] group-hover:bg-[var(--md-hover)]")}>
+                  <button type="button" data-item-disclosure aria-expanded={expanded} aria-controls={`item-details-${item.id}`} aria-label={`${t(expanded ? "Collapse item details" : "Expand item details")} ${index + 1}`} onClick={(event) => { event.stopPropagation(); toggleItem(item.id) }} className="group/disclosure flex min-h-9 w-full items-center gap-1.5 rounded-[var(--md-radius-sm)] px-1 text-start outline-none transition-colors duration-150 hover:bg-[var(--md-surface)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] focus-visible:ring-offset-1 active:bg-[var(--md-hover)]">
+                    <ChevronDown className={cn("size-3.5 shrink-0 text-[var(--md-subtle)] transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none", expanded && "rotate-180")} aria-hidden="true" />
+                    <span className="min-w-0">
+                      <strong className="block text-[11px] font-semibold text-[var(--md-ink)]">{index + 1}</strong>
+                      <span className={cn("mt-0.5 block text-[8px] font-medium", missing.length ? "text-[var(--md-amber)]" : "text-[var(--md-green)]")}>{missing.length ? `${missing.length} ${t("required")}` : t("Complete")}</span>
+                    </span>
+                  </button>
                 </td>
                 <ItemTableCell><Input aria-label={`${t("Commodity code")} ${index + 1}`} className={cn(inputClass, validatedItemField(issues, missing, "commodityCode") && "ring-1 ring-[var(--md-red)]")} value={item.commodityCode} onChange={(event) => updateRow(item.id, "commodityCode", event.target.value.replace(/\D/g, "").slice(0, 10))} /></ItemTableCell>
                 <ItemTableCell><Input aria-label={`${t("Description of goods")} ${index + 1}`} className={cn(inputClass, validatedItemField(issues, missing, "description") && "ring-1 ring-[var(--md-red)]")} value={item.description} onChange={(event) => updateRow(item.id, "description", event.target.value)} /></ItemTableCell>
@@ -555,6 +604,44 @@ function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, on
                 <ItemTableCell><button type="button" aria-label={`${t("Remove")} ${t("Item")} ${index + 1}`} disabled={items.length === 1} onClick={(event) => { event.stopPropagation(); onRemove(item.id) }} className="grid size-8 place-items-center rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] hover:bg-[var(--md-surface)] hover:text-[var(--md-red)] disabled:opacity-30"><Trash2 className="size-3.5" /></button></ItemTableCell>
                 </tr>
                 </ContextMenuPrimitive.Trigger>
+                <AnimatePresence initial={false}>
+                  {expanded ? (
+                    <motion.tr
+                      key={`${item.id}-details`}
+                      initial={shouldReduceMotion ? false : { opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={reduceMotion(shouldReduceMotion, mdMotion.exit)}
+                    >
+                      <td colSpan={15} className="bg-[var(--md-surface-soft)] p-0 align-top">
+                        <motion.div
+                          id={`item-details-${item.id}`}
+                          initial={shouldReduceMotion ? false : { height: 0 }}
+                          animate={{ height: "auto" }}
+                          exit={{ height: 0 }}
+                          transition={reduceMotion(shouldReduceMotion, expanded ? mdMotion.panel : mdMotion.exit)}
+                          className="overflow-hidden"
+                        >
+                          <div className="sticky start-0 w-[100cqw] p-3">
+                            <ItemDetailsEditor
+                              item={item}
+                              itemNumber={index + 1}
+                              onDuplicate={() => onDuplicate(item.id)}
+                              onRemove={() => onRemove(item.id)}
+                              canRemove={items.length > 1}
+                              update={update}
+                              showDataElements={showDataElements}
+                              showOptional={showOptional}
+                              issues={issues}
+                              highlightedField={highlightedField}
+                              t={t}
+                            />
+                          </div>
+                        </motion.div>
+                      </td>
+                    </motion.tr>
+                  ) : null}
+                </AnimatePresence>
                 <ContextMenuPrimitive.Portal>
                   <ContextMenuPrimitive.Content collisionPadding={14} className="md-sidebar-menu premium-stroke z-50 origin-(--radix-context-menu-content-transform-origin) rounded-[var(--md-radius-xl)] bg-[color-mix(in_srgb,var(--md-surface)_96%,transparent)] p-1 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] backdrop-blur-xl">
                     <ContextMenuPrimitive.Item className="md-sidebar-menu-item group/menu flex h-9 cursor-default select-none items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2 text-[13px] font-medium text-[var(--md-text)] outline-none transition-[background,color] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] data-[highlighted]:bg-[var(--md-hover)] data-[highlighted]:text-[var(--md-ink)]" onSelect={() => onDuplicate(item.id)}>
@@ -580,45 +667,96 @@ function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, on
       </footer>
     </Surface>
 
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-wrap items-center gap-2"><StatusPill tone="teal">{t("Editing item")} {items.findIndex((item) => item.id === activeItemId) + 1}</StatusPill><div className="flex flex-wrap gap-1 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)]">{tabs.map(([id, label]) => <button key={id} type="button" onClick={() => onItemTabChange(id)} className={cn("rounded-[var(--md-radius-md)] px-3 py-2 text-[11px] font-medium", itemTab === id ? "bg-[var(--md-selected-bg)] text-[var(--md-selected-text)]" : "text-[var(--md-text)] hover:bg-[var(--md-hover)]")}>{t(label)}</button>)}</div></div>
-        <div className="flex gap-2"><Button type="button" variant="outline" size="sm" onClick={() => onDuplicate()} className="group/duplicate transition-[transform,background,color,box-shadow] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:-translate-y-px hover:shadow-[var(--md-shadow-soft)] active:translate-y-0 active:scale-[0.96] motion-reduce:transform-none motion-reduce:transition-none"><span className="relative size-3.5" aria-hidden="true"><Copy className="absolute inset-0 size-3.5 opacity-0 transition-[transform,opacity] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover/duplicate:-translate-x-[2px] group-hover/duplicate:translate-y-[2px] group-hover/duplicate:opacity-30 group-active/duplicate:scale-[0.92] motion-reduce:transform-none motion-reduce:transition-none" /><Copy className="absolute inset-0 size-3.5 transition-transform duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover/duplicate:translate-x-[1px] group-hover/duplicate:-translate-y-[1px] group-active/duplicate:scale-[0.92] motion-reduce:transform-none motion-reduce:transition-none" /></span>{t("Duplicate")}</Button><Button type="button" variant="ghost" size="sm" disabled={items.length === 1} onClick={() => onRemove()}><Trash2 className="size-3.5" />{t("Remove")}</Button></div>
+  </div>
+}
+
+function ItemDetailsEditor({ item, itemNumber, onDuplicate, onRemove, canRemove, update, showDataElements, showOptional, issues, highlightedField, t }: {
+  item: ExportDeclarationItem
+  itemNumber: number
+  onDuplicate: () => void
+  onRemove: () => void
+  canRemove: boolean
+  update: <K extends keyof ExportDeclarationItem>(field: K, value: ExportDeclarationItem[K]) => void
+  showDataElements: boolean
+  showOptional: boolean
+  issues: Set<string>
+  highlightedField?: string
+  t: (text: string) => string
+}) {
+  const packageKindFields = useReferenceOptions("package_kind", t, "Select package")
+  const countryFields = useReferenceOptions("country", t, "Select country")
+  const optionalCountries = useReferenceOptions("country", t, "Not specified")
+  const procedureCodeFields = useReferenceOptions("procedure_code", t, "Select procedure")
+  const additionalProcedureCodeFields = useReferenceOptions("additional_procedure_code", t, "Select procedure")
+  const currencyFields = useReferenceOptions("currency", t, "Select currency")
+  const previousDocumentTypes = useReferenceOptions("previous_document_type", t, "Select document type")
+
+  return <div className="overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]" aria-label={`${t("Item details")} ${itemNumber}`}>
+    <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5">
+      <StatusPill tone="teal">{t("Editing item")} {itemNumber}</StatusPill>
+      <div className="flex gap-2">
+        <Button type="button" variant="outline" size="sm" onClick={onDuplicate} className="group/duplicate transition-[transform,background,color,box-shadow] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:-translate-y-px hover:shadow-[var(--md-shadow-soft)] active:translate-y-0 active:scale-[0.96] motion-reduce:transform-none motion-reduce:transition-none"><span className="relative size-3.5" aria-hidden="true"><Copy className="absolute inset-0 size-3.5 opacity-0 transition-[transform,opacity] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover/duplicate:-translate-x-[2px] group-hover/duplicate:translate-y-[2px] group-hover/duplicate:opacity-30 motion-reduce:transform-none motion-reduce:transition-none" /><Copy className="absolute inset-0 size-3.5 transition-transform duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover/duplicate:translate-x-[1px] group-hover/duplicate:-translate-y-[1px] motion-reduce:transform-none motion-reduce:transition-none" /></span>{t("Duplicate")}</Button>
+        <Button type="button" variant="ghost" size="sm" disabled={!canRemove} onClick={onRemove}><Trash2 className="size-3.5" />{t("Remove")}</Button>
       </div>
-      <SectionFrame title={t(tabs.find(([id]) => id === itemTab)?.[1] ?? "Item details")} description={t("Only fields for this item section are shown.")}>
+    </div>
+    <div className="space-y-7 bg-[var(--md-surface-soft)] px-4 pb-5 pt-4">
+      <ItemDetailGroup title={t("Commodity")}>
         <FieldGrid>
-          {itemTab === "commodity" ? <>
-            <TextField label={t("Commodity code")} dataElement="6/14" customsBox="33" required showDataElements={showDataElements} value={activeItem.commodityCode} onChange={(value) => update("commodityCode", value.replace(/\D/g, "").slice(0, 10))} invalid={issues.has("commodityCode")} fieldKey="commodityCode" highlighted={highlightedField === "commodityCode"} />
-            <TextAreaField label={t("Description of goods")} dataElement="6/8" customsBox="31" required showDataElements={showDataElements} value={activeItem.description} onChange={(value) => update("description", value)} invalid={issues.has("description")} fieldKey="description" highlighted={highlightedField === "description"} className="md:col-span-2" />
-            <TextField label={t("UN dangerous goods code")} dataElement="6/12" customsBox="31" showDataElements={showDataElements} value={activeItem.dangerousGoodsCode} onChange={(value) => update("dangerousGoodsCode", value)} />
-            {showOptional ? <><TextField label={t("TARIC additional code")} dataElement="6/16" customsBox="33" showDataElements={showDataElements} value={activeItem.taricCode} onChange={(value) => update("taricCode", value)} /><TextField label={t("National additional code")} dataElement="6/17" customsBox="33" showDataElements={showDataElements} value={activeItem.nationalCode} onChange={(value) => update("nationalCode", value)} /><TextField label={t("CUS code")} dataElement="6/13" customsBox="31" showDataElements={showDataElements} value={activeItem.cusCode} onChange={(value) => update("cusCode", value)} /></> : null}
-          </> : null}
-          {itemTab === "packaging" ? <>
-            <SelectField label={t("Package kind")} dataElement="6/9" customsBox="31" required showDataElements={showDataElements} value={activeItem.packageKind} onChange={(value) => update("packageKind", value)} invalid={issues.has("packageKind")} fieldKey="packageKind" highlighted={highlightedField === "packageKind"} options={packageKindFields} />
-            <TextField label={t("Package marks")} dataElement="6/11" customsBox="31" required showDataElements={showDataElements} value={activeItem.packageMarks} onChange={(value) => update("packageMarks", value)} invalid={issues.has("packageMarks")} fieldKey="packageMarks" highlighted={highlightedField === "packageMarks"} />
-            <TextField label={t("Package count")} dataElement="6/10" customsBox="31" required showDataElements={showDataElements} value={activeItem.packageCount} onChange={(value) => update("packageCount", value)} invalid={issues.has("packageCount")} fieldKey="packageCount" highlighted={highlightedField === "packageCount"} />
-            <SelectField label={t("Non-preferential origin")} dataElement="5/15" customsBox="34" required showDataElements={showDataElements} value={activeItem.nonPreferentialOrigin} onChange={(value) => update("nonPreferentialOrigin", value)} invalid={issues.has("nonPreferentialOrigin")} fieldKey="nonPreferentialOrigin" highlighted={highlightedField === "nonPreferentialOrigin"} options={countryFields} />
-            <SelectField label={t("Procedure code")} dataElement="1/10" customsBox="37" required showDataElements={showDataElements} value={activeItem.procedureCode} onChange={(value) => update("procedureCode", value)} invalid={issues.has("procedureCode")} fieldKey="procedureCode" highlighted={highlightedField === "procedureCode"} options={procedureCodeFields} />
-            <SelectField label={t("Additional procedure code")} dataElement="1/11" customsBox="37" required showDataElements={showDataElements} value={activeItem.additionalProcedureCode} onChange={(value) => update("additionalProcedureCode", value)} invalid={issues.has("additionalProcedureCode")} fieldKey="additionalProcedureCode" highlighted={highlightedField === "additionalProcedureCode"} options={additionalProcedureCodeFields} />
-          </> : null}
-          {itemTab === "values" ? <>
-            <TextField label={t("Tariff quantity")} dataElement="6/2" customsBox="41" showDataElements={showDataElements} value={activeItem.tariffQuantity} onChange={(value) => update("tariffQuantity", value)} />
-            <TextField label={t("Gross mass")} dataElement="6/5" customsBox="35" required showDataElements={showDataElements} value={activeItem.grossMass} onChange={(value) => update("grossMass", value)} invalid={issues.has("grossMass")} fieldKey="grossMass" highlighted={highlightedField === "grossMass"} suffix="kg" />
-            <TextField label={t("Net mass")} dataElement="6/1" customsBox="38" required showDataElements={showDataElements} value={activeItem.netMass} onChange={(value) => update("netMass", value)} invalid={issues.has("netMass")} fieldKey="netMass" highlighted={highlightedField === "netMass"} suffix="kg" />
-            <TextField label={t("Item price")} dataElement="4/14" customsBox="42" required showDataElements={showDataElements} value={activeItem.itemPrice} onChange={(value) => update("itemPrice", value)} invalid={issues.has("itemPrice")} fieldKey="itemPrice" highlighted={highlightedField === "itemPrice"} />
-            <SelectField label={t("Currency code")} dataElement="4/10" customsBox="22" required showDataElements={showDataElements} value={activeItem.currency} onChange={(value) => update("currency", value)} options={currencyFields} />
-            <TextField label={t("Statistical value")} dataElement="8/6" customsBox="46" required showDataElements={showDataElements} value={activeItem.statisticalValue} onChange={(value) => update("statisticalValue", value)} invalid={issues.has("statisticalValue")} fieldKey="statisticalValue" highlighted={highlightedField === "statisticalValue"} />
-          </> : null}
-          {itemTab === "documents" ? <>
-            <SelectField label={t("Previous document type")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={activeItem.previousDocumentType} onChange={(value) => update("previousDocumentType", value)} options={previousDocumentTypes} />
-            <TextField label={t("Previous document reference")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={activeItem.previousDocumentReference} onChange={(value) => update("previousDocumentReference", value)} invalid={issues.has("previousDocumentReference")} fieldKey="previousDocumentReference" highlighted={highlightedField === "previousDocumentReference"} />
-            {showOptional ? <><TextField label={t("Additional document category")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={activeItem.additionalDocumentCategory} onChange={(value) => update("additionalDocumentCategory", value)} /><TextField label={t("Additional document ID")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={activeItem.additionalDocumentId} onChange={(value) => update("additionalDocumentId", value)} /><TextField label={t("Additional document name")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={activeItem.additionalDocumentName} onChange={(value) => update("additionalDocumentName", value)} /><TextField label={t("LPCO exemption code")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={activeItem.lpcoExemptionCode} onChange={(value) => update("lpcoExemptionCode", value)} /></> : null}
-          </> : null}
-          {itemTab === "parties" ? <><TextField label={t("Consignor")} dataElement="3/7" customsBox="2" showDataElements={showDataElements} value={activeItem.consignor} onChange={(value) => update("consignor", value)} /><TextField label={t("Consignee")} dataElement="3/9" customsBox="8" showDataElements={showDataElements} value={activeItem.consignee} onChange={(value) => update("consignee", value)} /><SelectField label={t("Destination country")} dataElement="5/8" customsBox="17" showDataElements={showDataElements} value={activeItem.destinationCountry} onChange={(value) => update("destinationCountry", value)} options={optionalCountries} /><TextField label={t("Reference number or UCR")} dataElement="2/4" customsBox="44" showDataElements={showDataElements} value={activeItem.ucr} onChange={(value) => update("ucr", value)} /><TextField label={t("Container identification number")} dataElement="7/10" customsBox="31" showDataElements={showDataElements} value={activeItem.containerId} onChange={(value) => update("containerId", value)} /></> : null}
+          <TextField label={t("Commodity code")} dataElement="6/14" customsBox="33" required showDataElements={showDataElements} value={item.commodityCode} onChange={(value) => update("commodityCode", value.replace(/\D/g, "").slice(0, 10))} invalid={issues.has("commodityCode")} fieldKey="commodityCode" highlighted={highlightedField === "commodityCode"} />
+          <TextAreaField label={t("Description of goods")} dataElement="6/8" customsBox="31" required showDataElements={showDataElements} value={item.description} onChange={(value) => update("description", value)} invalid={issues.has("description")} fieldKey="description" highlighted={highlightedField === "description"} className="md:col-span-2" />
+          <TextField label={t("UN dangerous goods code")} dataElement="6/12" customsBox="31" showDataElements={showDataElements} value={item.dangerousGoodsCode} onChange={(value) => update("dangerousGoodsCode", value)} />
+          {showOptional ? <><TextField label={t("TARIC additional code")} dataElement="6/16" customsBox="33" showDataElements={showDataElements} value={item.taricCode} onChange={(value) => update("taricCode", value)} /><TextField label={t("National additional code")} dataElement="6/17" customsBox="33" showDataElements={showDataElements} value={item.nationalCode} onChange={(value) => update("nationalCode", value)} /><TextField label={t("CUS code")} dataElement="6/13" customsBox="31" showDataElements={showDataElements} value={item.cusCode} onChange={(value) => update("cusCode", value)} /></> : null}
         </FieldGrid>
-      </SectionFrame>
+      </ItemDetailGroup>
+
+      <ItemDetailGroup title={t("Packaging & procedure")}>
+        <FieldGrid>
+          <SelectField label={t("Package kind")} dataElement="6/9" customsBox="31" required showDataElements={showDataElements} value={item.packageKind} onChange={(value) => update("packageKind", value)} invalid={issues.has("packageKind")} fieldKey="packageKind" highlighted={highlightedField === "packageKind"} options={packageKindFields} />
+          <TextField label={t("Package marks")} dataElement="6/11" customsBox="31" required showDataElements={showDataElements} value={item.packageMarks} onChange={(value) => update("packageMarks", value)} invalid={issues.has("packageMarks")} fieldKey="packageMarks" highlighted={highlightedField === "packageMarks"} />
+          <TextField label={t("Package count")} dataElement="6/10" customsBox="31" required showDataElements={showDataElements} value={item.packageCount} onChange={(value) => update("packageCount", value)} invalid={issues.has("packageCount")} fieldKey="packageCount" highlighted={highlightedField === "packageCount"} />
+          <SelectField label={t("Non-preferential origin")} dataElement="5/15" customsBox="34" required showDataElements={showDataElements} value={item.nonPreferentialOrigin} onChange={(value) => update("nonPreferentialOrigin", value)} invalid={issues.has("nonPreferentialOrigin")} fieldKey="nonPreferentialOrigin" highlighted={highlightedField === "nonPreferentialOrigin"} options={countryFields} />
+          <SelectField label={t("Procedure code")} dataElement="1/10" customsBox="37" required showDataElements={showDataElements} value={item.procedureCode} onChange={(value) => update("procedureCode", value)} invalid={issues.has("procedureCode")} fieldKey="procedureCode" highlighted={highlightedField === "procedureCode"} options={procedureCodeFields} />
+          <SelectField label={t("Additional procedure code")} dataElement="1/11" customsBox="37" required showDataElements={showDataElements} value={item.additionalProcedureCode} onChange={(value) => update("additionalProcedureCode", value)} invalid={issues.has("additionalProcedureCode")} fieldKey="additionalProcedureCode" highlighted={highlightedField === "additionalProcedureCode"} options={additionalProcedureCodeFields} />
+        </FieldGrid>
+      </ItemDetailGroup>
+
+      <ItemDetailGroup title={t("Weights & values")}>
+        <FieldGrid>
+          <TextField label={t("Tariff quantity")} dataElement="6/2" customsBox="41" showDataElements={showDataElements} value={item.tariffQuantity} onChange={(value) => update("tariffQuantity", value)} />
+          <TextField label={t("Gross mass")} dataElement="6/5" customsBox="35" required showDataElements={showDataElements} value={item.grossMass} onChange={(value) => update("grossMass", value)} invalid={issues.has("grossMass")} fieldKey="grossMass" highlighted={highlightedField === "grossMass"} suffix="kg" />
+          <TextField label={t("Net mass")} dataElement="6/1" customsBox="38" required showDataElements={showDataElements} value={item.netMass} onChange={(value) => update("netMass", value)} invalid={issues.has("netMass")} fieldKey="netMass" highlighted={highlightedField === "netMass"} suffix="kg" />
+          <TextField label={t("Item price")} dataElement="4/14" customsBox="42" required showDataElements={showDataElements} value={item.itemPrice} onChange={(value) => update("itemPrice", value)} invalid={issues.has("itemPrice")} fieldKey="itemPrice" highlighted={highlightedField === "itemPrice"} />
+          <SelectField label={t("Currency code")} dataElement="4/10" customsBox="22" required showDataElements={showDataElements} value={item.currency} onChange={(value) => update("currency", value)} options={currencyFields} />
+          <TextField label={t("Statistical value")} dataElement="8/6" customsBox="46" required showDataElements={showDataElements} value={item.statisticalValue} onChange={(value) => update("statisticalValue", value)} invalid={issues.has("statisticalValue")} fieldKey="statisticalValue" highlighted={highlightedField === "statisticalValue"} />
+        </FieldGrid>
+      </ItemDetailGroup>
+
+      <ItemDetailGroup title={t("Documents")}>
+        <FieldGrid>
+          <SelectField label={t("Previous document type")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={item.previousDocumentType} onChange={(value) => update("previousDocumentType", value)} options={previousDocumentTypes} />
+          <TextField label={t("Previous document reference")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={item.previousDocumentReference} onChange={(value) => update("previousDocumentReference", value)} invalid={issues.has("previousDocumentReference")} fieldKey="previousDocumentReference" highlighted={highlightedField === "previousDocumentReference"} />
+          {showOptional ? <><TextField label={t("Additional document category")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={item.additionalDocumentCategory} onChange={(value) => update("additionalDocumentCategory", value)} /><TextField label={t("Additional document ID")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={item.additionalDocumentId} onChange={(value) => update("additionalDocumentId", value)} /><TextField label={t("Additional document name")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={item.additionalDocumentName} onChange={(value) => update("additionalDocumentName", value)} /><TextField label={t("LPCO exemption code")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={item.lpcoExemptionCode} onChange={(value) => update("lpcoExemptionCode", value)} /></> : null}
+        </FieldGrid>
+      </ItemDetailGroup>
+
+      <ItemDetailGroup title={t("Parties & transport")}>
+        <FieldGrid>
+          <TextField label={t("Consignor")} dataElement="3/7" customsBox="2" showDataElements={showDataElements} value={item.consignor} onChange={(value) => update("consignor", value)} />
+          <TextField label={t("Consignee")} dataElement="3/9" customsBox="8" showDataElements={showDataElements} value={item.consignee} onChange={(value) => update("consignee", value)} />
+          <SelectField label={t("Destination country")} dataElement="5/8" customsBox="17" showDataElements={showDataElements} value={item.destinationCountry} onChange={(value) => update("destinationCountry", value)} options={optionalCountries} />
+          <TextField label={t("Reference number or UCR")} dataElement="2/4" customsBox="44" showDataElements={showDataElements} value={item.ucr} onChange={(value) => update("ucr", value)} />
+          <TextField label={t("Container identification number")} dataElement="7/10" customsBox="31" showDataElements={showDataElements} value={item.containerId} onChange={(value) => update("containerId", value)} />
+        </FieldGrid>
+      </ItemDetailGroup>
     </div>
   </div>
+}
+
+function ItemDetailGroup({ title, children }: { title: string; children: ReactNode }) {
+  return <section aria-label={title}>
+    <h3 className="mb-3 text-[14px] font-medium text-[var(--md-ink)]">{title}</h3>
+    {children}
+  </section>
 }
 
 function ItemTableHeading({ children, className }: { children: ReactNode; className?: string }) {
@@ -681,14 +819,6 @@ function generalTabForField(field: string): EditorTab {
   return "declaration"
 }
 
-function itemTabForField(field: string): ItemTab {
-  if (["commodityCode", "description", "dangerousGoodsCode", "taricCode", "nationalCode", "cusCode"].includes(field)) return "commodity"
-  if (["packageKind", "packageMarks", "packageCount", "nonPreferentialOrigin", "procedureCode", "additionalProcedureCode"].includes(field)) return "packaging"
-  if (["tariffQuantity", "grossMass", "netMass", "itemPrice", "currency", "statisticalValue"].includes(field)) return "values"
-  if (["previousDocumentType", "previousDocumentReference", "additionalDocumentCategory", "additionalDocumentId", "additionalDocumentName", "lpcoExemptionCode"].includes(field)) return "documents"
-  return "parties"
-}
-
 function KindButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
   return <button type="button" onClick={onClick} className={cn("min-w-[112px] rounded-[var(--md-radius-md)] px-4 py-2 text-[12px] font-medium", active ? "bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-line)]" : "text-[var(--md-text)]")}>{children}</button>
 }
@@ -698,30 +828,36 @@ function Toggle({ checked, onChange, children }: { checked: boolean; onChange: (
 }
 
 function SectionFrame({ title, description, children }: { title: string; description: string; children: ReactNode }) {
-  return <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]"><header className="border-b border-[var(--md-line)] px-5 py-4"><h2 className="text-[15px] font-medium text-[var(--md-ink)]">{title}</h2><p className="mt-1 text-[12px] text-[var(--md-subtle)]">{description}</p></header><div className="bg-[var(--md-surface-soft)] p-5">{children}</div></Surface>
+  const compact = useContext(CompactCustomsFormContext)
+  return <Surface padding="none" className={cn("overflow-hidden", compact ? "rounded-[var(--md-radius-lg)]" : "rounded-[var(--md-radius-xl)]")}><header className={cn("border-b border-[var(--md-line)]", compact ? "px-3 py-2.5" : "px-5 py-4")}><h2 className={cn("font-medium text-[var(--md-ink)]", compact ? "text-[13px]" : "text-[15px]")}>{title}</h2><p className={cn("text-[var(--md-subtle)]", compact ? "mt-0.5 text-[10.5px] leading-4" : "mt-1 text-[12px]")}>{description}</p></header><div className={cn("bg-[var(--md-surface-soft)]", compact ? "p-3" : "p-5")}>{children}</div></Surface>
 }
 
 function FieldGrid({ children }: { children: ReactNode }) {
-  return <div className="grid gap-x-3 gap-y-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">{children}</div>
+  const compact = useContext(CompactCustomsFormContext)
+  return <div className={cn("grid", compact ? "gap-1.5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4" : "gap-x-3 gap-y-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4")}>{children}</div>
 }
 
 function FieldShell({ label, dataElement, customsBox, required, showDataElements, invalid, highlighted, fieldKey, className, children }: { label: string; dataElement?: string; customsBox?: string; required?: boolean; showDataElements: boolean; invalid?: boolean; highlighted?: boolean; fieldKey?: string; className?: string; children: ReactNode }) {
   const showCustomsBoxNumbers = useContext(CustomsBoxVisibilityContext)
+  const compact = useContext(CompactCustomsFormContext)
   const showAnnotations = (showDataElements && dataElement) || (showCustomsBoxNumbers && customsBox)
-  return <label className={cn("min-w-0", className)}><span className="mb-1.5 flex min-h-5 items-center gap-1.5 text-[11px] font-medium text-[var(--md-text)]"><span className="truncate">{label}</span>{required ? <span className="text-[var(--md-red)]">*</span> : null}{showAnnotations ? <span className="ms-auto flex shrink-0 items-center gap-1">{showDataElements && dataElement ? <span className="rounded-[var(--md-radius-sm)] bg-[color-mix(in_srgb,var(--md-blue)_8%,transparent)] px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-[var(--md-blue)]" dir="ltr">DE {dataElement}</span> : null}{showCustomsBoxNumbers && customsBox ? <span className="rounded-[var(--md-radius-sm)] bg-[var(--md-accent-a10)] px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-[var(--md-accent)]" dir="ltr">{`Box ${customsBox}`}</span> : null}</span> : null}</span><span data-customs-field={fieldKey} className={cn("block rounded-[var(--md-radius-md)] transition-[box-shadow] duration-300", invalid && "ring-2 ring-[color-mix(in_srgb,var(--md-red)_22%,transparent)]", highlighted && "ring-2 ring-[var(--md-accent)] shadow-[0_0_20px_var(--md-accent)]")}>{children}</span></label>
+  return <label className={cn("min-w-0", compact && "grid grid-cols-[minmax(76px,0.42fr)_minmax(0,0.58fr)] items-center gap-1.5", className)}><span className={cn("flex items-center gap-1.5 font-medium text-[var(--md-text)]", compact ? "min-h-0 text-[10.5px] leading-[1.15]" : "mb-1.5 min-h-5 text-[11px]")}><span className={cn(compact ? "line-clamp-2" : "truncate")}>{label}</span>{required ? <span className="text-[var(--md-red)]">*</span> : null}{showAnnotations ? <span className={cn("flex shrink-0 items-center gap-1", !compact && "ms-auto")}>{showDataElements && dataElement ? <span className={cn("rounded-[var(--md-radius-sm)] bg-[color-mix(in_srgb,var(--md-blue)_8%,transparent)] font-medium tabular-nums text-[var(--md-blue)]", compact ? "px-1 py-0.5 text-[8.5px]" : "px-1.5 py-0.5 text-[10px]")} dir="ltr">DE {dataElement}</span> : null}{showCustomsBoxNumbers && customsBox ? <span className={cn("rounded-[var(--md-radius-sm)] bg-[var(--md-accent-a10)] font-medium tabular-nums text-[var(--md-accent)]", compact ? "px-1 py-0.5 text-[8.5px]" : "px-1.5 py-0.5 text-[10px]")} dir="ltr">{`Box ${customsBox}`}</span> : null}</span> : null}</span><span data-customs-field={fieldKey} className={cn("block rounded-[var(--md-radius-md)] transition-[box-shadow] duration-300", invalid && "ring-2 ring-[color-mix(in_srgb,var(--md-red)_22%,transparent)]", highlighted && "ring-2 ring-[var(--md-accent)] shadow-[0_0_20px_var(--md-accent)]")}>{children}</span></label>
 }
 
 function TextField({ label, value, onChange, dataElement, customsBox, required, showDataElements, invalid, highlighted, fieldKey, placeholder, suffix }: { label: string; value: string; onChange: (value: string) => void; dataElement?: string; customsBox?: string; required?: boolean; showDataElements: boolean; invalid?: boolean; highlighted?: boolean; fieldKey?: string; placeholder?: string; suffix?: string }) {
-  return <FieldShell label={label} dataElement={dataElement} customsBox={customsBox} required={required} showDataElements={showDataElements} invalid={invalid} highlighted={highlighted} fieldKey={fieldKey}><div className="relative"><Input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} aria-invalid={invalid || undefined} dir="ltr" className={cn("h-9 border-0 bg-[var(--md-field-bg)] text-[13px] shadow-[var(--md-shadow-line)]", suffix && "pe-10")} />{suffix ? <span className="pointer-events-none absolute end-3 top-1/2 -translate-y-1/2 text-[10px] text-[var(--md-subtle)]">{suffix}</span> : null}</div></FieldShell>
+  const compact = useContext(CompactCustomsFormContext)
+  return <FieldShell label={label} dataElement={dataElement} customsBox={customsBox} required={required} showDataElements={showDataElements} invalid={invalid} highlighted={highlighted} fieldKey={fieldKey}><div className="relative"><Input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} aria-invalid={invalid || undefined} dir="ltr" className={cn("border-0 bg-[var(--md-field-bg)] shadow-[var(--md-shadow-line)]", compact ? "h-8 px-2 text-[11px]" : "h-9 text-[13px]", suffix && "pe-10")} />{suffix ? <span className="pointer-events-none absolute end-3 top-1/2 -translate-y-1/2 text-[10px] text-[var(--md-subtle)]">{suffix}</span> : null}</div></FieldShell>
 }
 
 function TextAreaField({ label, value, onChange, dataElement, customsBox, required, showDataElements, invalid, highlighted, fieldKey, className }: { label: string; value: string; onChange: (value: string) => void; dataElement?: string; customsBox?: string; required?: boolean; showDataElements: boolean; invalid?: boolean; highlighted?: boolean; fieldKey?: string; className?: string }) {
-  return <FieldShell label={label} dataElement={dataElement} customsBox={customsBox} required={required} showDataElements={showDataElements} invalid={invalid} highlighted={highlighted} fieldKey={fieldKey} className={className}><Textarea value={value} onChange={(event) => onChange(event.target.value)} aria-invalid={invalid || undefined} className="min-h-9 border-0 bg-[var(--md-field-bg)] text-[13px] shadow-[var(--md-shadow-line)]" /></FieldShell>
+  const compact = useContext(CompactCustomsFormContext)
+  return <FieldShell label={label} dataElement={dataElement} customsBox={customsBox} required={required} showDataElements={showDataElements} invalid={invalid} highlighted={highlighted} fieldKey={fieldKey} className={className}><Textarea value={value} onChange={(event) => onChange(event.target.value)} aria-invalid={invalid || undefined} className={cn("border-0 bg-[var(--md-field-bg)] shadow-[var(--md-shadow-line)]", compact ? "min-h-8 px-2 py-1.5 text-[11px]" : "min-h-9 text-[13px]")} /></FieldShell>
 }
 
 function SelectField({ label, value, onChange, options, dataElement, customsBox, required, showDataElements, invalid, highlighted, fieldKey }: { label: string; value: string; onChange: (value: string) => void; options: ReadonlyArray<readonly [string, string]>; dataElement?: string; customsBox?: string; required?: boolean; showDataElements: boolean; invalid?: boolean; highlighted?: boolean; fieldKey?: string }) {
   const referenceState = useContext(CustomsReferenceDataContext)
-  return <FieldShell label={label} dataElement={dataElement} customsBox={customsBox} required={required} showDataElements={showDataElements} invalid={invalid} highlighted={highlighted} fieldKey={fieldKey}><Select value={value || undefined} onValueChange={onChange} disabled={referenceState.loading || Boolean(referenceState.error) || options.length <= 1}><SelectTrigger className="h-9 w-full border-0 bg-[var(--md-field-bg)] text-[13px] shadow-[var(--md-shadow-line)]"><SelectValue placeholder={options[0]?.[1]} /></SelectTrigger><SelectContent>{options.filter(([optionValue]) => optionValue).map(([optionValue, optionLabel]) => <SelectItem key={optionValue} value={optionValue}>{optionLabel}</SelectItem>)}</SelectContent></Select></FieldShell>
+  const compact = useContext(CompactCustomsFormContext)
+  return <FieldShell label={label} dataElement={dataElement} customsBox={customsBox} required={required} showDataElements={showDataElements} invalid={invalid} highlighted={highlighted} fieldKey={fieldKey}><Select value={value || undefined} onValueChange={onChange} disabled={referenceState.loading || Boolean(referenceState.error) || options.length <= 1}><SelectTrigger className={cn("w-full border-0 bg-[var(--md-field-bg)] shadow-[var(--md-shadow-line)]", compact ? "h-8 px-2 text-[11px]" : "h-9 text-[13px]")}><SelectValue placeholder={options[0]?.[1]} /></SelectTrigger><SelectContent>{options.filter(([optionValue]) => optionValue).map(([optionValue, optionLabel]) => <SelectItem key={optionValue} value={optionValue}>{optionLabel}</SelectItem>)}</SelectContent></Select></FieldShell>
 }
 
 function Summary({ label, value }: { label: string; value: string }) {
