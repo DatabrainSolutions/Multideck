@@ -12,6 +12,13 @@ This document is the canonical boundary for Multideck App, Multideck Live, and M
 
 Every tenant has one operational Supabase project. Its App and Live deployments use different authorised interfaces over that same project. There are no tenant source forks.
 
+`multideck.mobile` is an Android-first native client of Multideck App, not a fourth product or a
+control plane. An operator supplies a workspace slug and the mobile client discovers that tenant's
+public Supabase configuration from the exact HTTPS App hostname at
+`/.well-known/multideck-mobile.json`. The response must identify the same slug. Mobile never accepts
+an arbitrary URL, never receives a service-role key, and connects to only the selected tenant's
+Supabase project. Switching workspaces signs out and discards the previous tenant client first.
+
 ```text
 Operator browser -> App Vercel -> tenant Supabase public/App APIs
 Customer browser -> Live Vercel -> tenant Supabase live_api projections
