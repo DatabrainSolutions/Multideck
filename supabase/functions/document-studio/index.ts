@@ -3,34 +3,51 @@ import {
   corsHeaders,
   FunctionError,
   jsonResponse,
+  isUuid,
   maximumGeneratedFileBytes,
   parseJobNumber,
+  templateSourcesBucket,
   toFunctionError,
 } from "../_shared/document-functions.ts"
 
 type ContentSection = "job" | "customer" | "shipper" | "consignee" | "cargo" | "routing"
 
 type StudioRequest = {
-  action?: "component" | "open" | "preview"
+  action?: "component" | "open" | "preview" | "save" | "bootstrap" | "approve"
   templateCode?: string
+  multideckTemplateId?: string
   jobNumber?: string
   contentSections?: unknown
   templateBase64?: string
+  sampleData?: unknown
 }
 
 type StudioSession = {
   templateCode: string
   templateName: string
   templateVersion: number
+  multideckTemplateId?: string
   carboneTemplateReference: string
+  carboneTemplateId?: string
+  carboneVersionId?: string
+  dataModuleCode?: string
+  dataModuleName?: string
   languageCode: string
   jobReference: string
   dataset: Record<string, unknown>
 }
 
+type TemplateRegistration = {
+  multideckTemplateId: string
+  multideckVersion: number
+  carboneTemplateId: string
+  carboneVersionId: string
+}
+
 const allowedContentSections: ContentSection[] = ["job", "customer", "shipper", "consignee", "cargo", "routing"]
 const maximumStudioTemplateBytes = 15 * 1024 * 1024
 const maximumStudioComponentBytes = 5 * 1024 * 1024
+const maximumStudioSampleBytes = 1024 * 1024
 
 function getCarboneAuthorization() {
   const explicitHeader = Deno.env.get("CARBONE_AUTH_HEADER")?.trim()
@@ -120,6 +137,29 @@ function fromBase64(value: string) {
   return bytes
 }
 
+async function sha256Hex(bytes: Uint8Array) {
+  const digest = await crypto.subtle.digest("SHA-256", bytes)
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("")
+}
+
+function parseSampleData(value: unknown) {
+  if (value === undefined) return null
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new FunctionError(400, "The preview data must be a JSON object.", "Studio sample data was not an object")
+  }
+
+  let encoded: string
+  try {
+    encoded = JSON.stringify(value)
+  } catch {
+    throw new FunctionError(400, "The preview data is not valid JSON.", "Studio sample data could not be serialized")
+  }
+  if (new TextEncoder().encode(encoded).byteLength > maximumStudioSampleBytes) {
+    throw new FunctionError(400, "The preview data is too large.", "Studio sample data exceeded 1 MiB")
+  }
+  return value as Record<string, unknown>
+}
+
 function binaryResponse(request: Request, bytes: Uint8Array, contentType: string) {
   return new Response(bytes, {
     status: 200,
@@ -195,6 +235,139 @@ async function prepareSession(
   return data as StudioSession
 }
 
+async function authorizeTemplateSave(
+  context: Awaited<ReturnType<typeof authenticateRequest>>,
+  templateId: string,
+) {
+  const { data, error } = await context.admin
+    .schema("document_api")
+    .rpc("authorize_studio_template_save", {
+      caller_auth_user_id: context.userId,
+      requested_template_id: templateId,
+    })
+  if (error || !data) throw error ?? new Error("Document template authorisation returned no data")
+  return data as { templateId: string; templateCode: string; templateName: string; carboneTemplateId?: string }
+}
+
+async function registerTemplateVersion(
+  context: Awaited<ReturnType<typeof authenticateRequest>>,
+  templateId: string,
+  providerTemplateId: string,
+  providerVersionId: string,
+) {
+  const { data, error } = await context.admin
+    .schema("document_api")
+    .rpc("register_studio_template_version", {
+      caller_auth_user_id: context.userId,
+      requested_template_id: templateId,
+      provider_template_id: providerTemplateId,
+      provider_version_id: providerVersionId,
+    })
+  if (error || !data) throw error ?? new Error("Document template registration returned no data")
+  return data as TemplateRegistration
+}
+
+async function recordTemplateSource(
+  context: Awaited<ReturnType<typeof authenticateRequest>>,
+  registration: TemplateRegistration,
+  bytes: Uint8Array,
+  sha256: string,
+) {
+  const sourcePath = `templates/${registration.multideckTemplateId}/source/${sha256}.docx`
+  const sourceFileName = `${registration.carboneTemplateId}-${registration.carboneVersionId}.docx`
+  const { error: uploadError } = await context.admin.storage
+    .from(templateSourcesBucket)
+    .upload(sourcePath, bytes, {
+      contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      cacheControl: "31536000",
+      upsert: true,
+    })
+  if (uploadError) throw new Error(`Template source upload failed: ${uploadError.message}`)
+
+  const { error: catalogueError } = await context.admin
+    .schema("document_api")
+    .rpc("record_template_source", {
+      caller_auth_user_id: context.userId,
+      requested_template_id: registration.multideckTemplateId,
+      requested_version_no: registration.multideckVersion,
+      source_bucket: templateSourcesBucket,
+      source_path: sourcePath,
+      source_file_name: sourceFileName,
+      source_mime_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      source_size_bytes: bytes.byteLength,
+      source_sha256: sha256,
+    })
+  if (catalogueError) throw catalogueError
+}
+
+async function saveTemplateToCarbone(
+  context: Awaited<ReturnType<typeof authenticateRequest>>,
+  templateId: string,
+  templateBase64: string,
+  templateBytes: Uint8Array,
+  comment: string,
+) {
+  const templateSha256 = await sha256Hex(templateBytes)
+  const authorisedTemplate = await authorizeTemplateSave(context, templateId)
+  const saveResponse = await fetch(`${getCarboneBaseUrl()}/template`, {
+    method: "POST",
+    headers: {
+      "Authorization": getCarboneAuthorization(),
+      "Content-Type": "application/json",
+      "carbone-version": Deno.env.get("CARBONE_API_VERSION")?.trim() || "5",
+    },
+    body: JSON.stringify({
+      template: templateBase64,
+      versioning: true,
+      ...(authorisedTemplate.carboneTemplateId ? { id: authorisedTemplate.carboneTemplateId } : {}),
+      name: authorisedTemplate.templateName,
+      comment,
+      category: "Multideck",
+      tags: ["multideck", authorisedTemplate.templateCode.toLowerCase()],
+    }),
+  })
+  if (!saveResponse.ok) {
+    throw new FunctionError(502, "The template could not be saved to Carbone.", `Carbone template save returned HTTP ${saveResponse.status}`)
+  }
+
+  const savePayload = await saveResponse.json() as {
+    success?: boolean
+    data?: { id?: unknown; versionId?: unknown }
+  }
+  const providerTemplateId = savePayload.data?.id
+  const providerVersionId = savePayload.data?.versionId
+  if (savePayload.success !== true
+    || typeof providerTemplateId !== "string"
+    || !/^[0-9]{1,20}$/.test(providerTemplateId)
+    || typeof providerVersionId !== "string"
+    || !/^[0-9a-f]{64}$/.test(providerVersionId)) {
+    throw new FunctionError(502, "Carbone did not return a valid template ID.", "Carbone template save identifiers were invalid")
+  }
+
+  const registration = await registerTemplateVersion(
+    context,
+    authorisedTemplate.templateId,
+    providerTemplateId,
+    providerVersionId,
+  )
+  await recordTemplateSource(context, registration, templateBytes, templateSha256)
+  return registration
+}
+
+async function approveTemplate(
+  context: Awaited<ReturnType<typeof authenticateRequest>>,
+  templateId: string,
+) {
+  const { data, error } = await context.admin
+    .schema("document_api")
+    .rpc("approve_studio_template_version", {
+      caller_auth_user_id: context.userId,
+      requested_template_id: templateId,
+    })
+  if (error || !data) throw error ?? new Error("Document template approval returned no data")
+  return data
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders(request) })
   if (request.method !== "POST") return jsonResponse(request, { error: "Method not allowed" }, 405)
@@ -205,6 +378,27 @@ Deno.serve(async (request) => {
 
     if (payload.action === "component") {
       return await studioComponentResponse(request)
+    }
+
+    if (payload.action === "bootstrap") {
+      if (!isUuid(payload.multideckTemplateId) || typeof payload.templateBase64 !== "string") {
+        throw new FunctionError(400, "Choose a valid template source.", "Studio bootstrap request was invalid")
+      }
+      const templateBytes = fromBase64(payload.templateBase64)
+      return jsonResponse(request, await saveTemplateToCarbone(
+        context,
+        payload.multideckTemplateId,
+        payload.templateBase64,
+        templateBytes,
+        "Initial source saved from Multideck",
+      ))
+    }
+
+    if (payload.action === "approve") {
+      if (!isUuid(payload.multideckTemplateId)) {
+        throw new FunctionError(400, "Choose a valid document template.", "Studio approval request was invalid")
+      }
+      return jsonResponse(request, await approveTemplate(context, payload.multideckTemplateId))
     }
 
     const templateCode = parseTemplateCode(payload.templateCode)
@@ -247,6 +441,11 @@ Deno.serve(async (request) => {
           templateType: "docx",
           templateName: session.templateName,
           templateVersion: session.templateVersion,
+          multideckTemplateId: session.multideckTemplateId,
+          carboneTemplateId: session.carboneTemplateId,
+          carboneVersionId: session.carboneVersionId,
+          dataModuleCode: session.dataModuleCode,
+          dataModuleName: session.dataModuleName,
           jobReference: session.jobReference,
           renderOptions: {
             data: session.dataset,
@@ -260,11 +459,26 @@ Deno.serve(async (request) => {
         })
       }
 
+      if (payload.action === "save" && typeof payload.templateBase64 === "string") {
+        if (!session.multideckTemplateId) {
+          throw new FunctionError(409, "Refresh the document builder before saving this template.", "Studio session did not include a Multideck template identity")
+        }
+        const registration = await saveTemplateToCarbone(
+          context,
+          session.multideckTemplateId,
+          payload.templateBase64,
+          fromBase64(payload.templateBase64),
+          `Saved from Multideck · ${session.jobReference}`,
+        )
+        return jsonResponse(request, registration)
+      }
+
       if (payload.action !== "preview" || typeof payload.templateBase64 !== "string") {
         throw new FunctionError(400, "Choose a valid Studio action.", "Studio action validation failed")
       }
 
       fromBase64(payload.templateBase64)
+      const sampleData = parseSampleData(payload.sampleData)
       const response = await fetch(`${getCarboneBaseUrl()}/render/template?download=true`, {
         method: "POST",
         headers: {
@@ -273,7 +487,7 @@ Deno.serve(async (request) => {
           "carbone-version": Deno.env.get("CARBONE_API_VERSION")?.trim() || "5",
         },
         body: JSON.stringify({
-          data: session.dataset,
+          data: sampleData ?? session.dataset,
           template: payload.templateBase64,
           convertTo: "pdf",
           converter: "L",

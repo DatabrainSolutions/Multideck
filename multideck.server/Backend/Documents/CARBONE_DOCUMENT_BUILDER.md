@@ -66,17 +66,20 @@ No browser storage policy is created. Storage access is granted only to the Edge
 
 ### Embedded Studio boundary
 
-The Create Document dialog uses the self-hosted Carbone Studio `5.9.0` web component in `embedded` mode. The authenticated `document-studio` Edge Function retrieves the pinned component from the protected Carbone host, so Carbone credentials remain server-side. Template and preview requests use the same gateway.
+The Create Document workspace uses the self-hosted Carbone Studio `5.9.0` web component in `embedded` mode. The authenticated `document-studio` Edge Function retrieves the pinned component from the protected Carbone host, so Carbone credentials remain server-side. The product presents two authoring panes: Carbone's JSON editor and a Multideck-owned live PDF preview. The generic Carbone template-management surface is not exposed.
 
 - `document_api.prepare_studio_job_session` repeats company, office, job, template-scope and permission checks without creating a render job.
 - The Edge Function downloads only the resolved published template from Carbone and returns it with the selected authorised job snapshot.
-- Studio preview requests cannot send their edited JSON to Carbone. The Edge Function discards browser-provided data and rebuilds the authorised snapshot.
+- The authorised job snapshot is the initial JSON. Operators may change that JSON as disposable preview data; the Edge Function accepts only a JSON object up to 1 MiB and uses it only for the current preview.
 - Preview rendering uses `POST /render/template?download=true`; the PDF is returned directly and kept only in browser memory. There is no reusable Carbone render ID.
-- Template save, deployment, deletion and version-management endpoints are not proxied from Document Builder.
+- Operators edit the Word source locally through download and upload actions. The browser keeps an authenticated-user-scoped IndexedDB draft so the template bytes survive refresh and back navigation; the job is always re-authorised before the draft reopens.
+- Users with `Documents.Manage` may save the current template through the gateway. Carbone v5 versioning returns a stable 64-bit template ID and a SHA-256 version ID. Multideck records the stable ID and keeps changed files as draft template versions; publish, deploy and delete remain separate actions and are not proxied from Document Builder.
 - Final creation uses the current Studio DOCX but rebuilds the data again through `prepare_job_render`; the template SHA-256 and byte size are added to the render audit before generation.
 - Carbone and Supabase secrets remain server-side.
 
 The Studio version can be changed with the server-side `CARBONE_STUDIO_VERSION` secret. It must be a pinned semantic version compatible with the installed Carbone backend.
+
+**Dexter exception:** binary template editing and provider-version creation remain an operator-only Document Builder workflow. They require a locally reviewed DOCX and `Documents.Manage`, so Dexter must not offer or claim a template-save action. No Watching event is emitted for a draft save; a future reviewed publish lifecycle is the appropriate event boundary.
 
 ### Template resolution
 
@@ -106,9 +109,9 @@ If two published templates with the same code have the same winning specificity,
 
 1. The UI calls `document-builder-workspace` with the caller's normal Supabase session.
 2. The workspace function returns only published templates visible to the user's offices, the latest 50 authorised documents, and permission flags.
-3. The user chooses a template, enters the operator-facing job number (including tenant prefixes such as `JE`, `JI`, or `JQ`), chooses the allowed information and opens the job in Studio.
-4. `document-studio` authorises the job and resolved published template, then loads the DOCX and selected job snapshot into the embedded component. Live previews are rendered through the same authenticated gateway.
-5. The user arranges fields and chooses PDF or DOCX.
+3. The user chooses a template. Its data module is assigned from the template scope (the FIATA template uses Jobs), then the user enters the operator-facing job number and opens the builder.
+4. `document-studio` authorises the job and resolved published template, then loads the selected job JSON into the Carbone data editor and renders the PDF in the adjacent Multideck preview.
+5. The user can download the DOCX, edit it locally, upload it to refresh the preview, and save it as a provider-backed template version if they have `Documents.Manage`.
 6. `render-document` validates the request shape. The browser cannot submit a table name, storage path, template ID, SQL or replacement job data. It may submit only the edited DOCX template.
 7. `document_api.prepare_job_render` checks identity, permission, company, office, job, customer, template scope, version, and output format.
 8. The same transaction assembles the fixed dataset and inserts a `rendering` row in `DOCB_RenderJobs`, including the immutable `DOCBRJ_InputSnapshotJSON`.
@@ -237,7 +240,7 @@ Do not place any Carbone or Supabase secret in a browser `.env` variable. In par
 4. Test long customer names, a multi-line address, no shipper address, no routing, multiple cargo lines, multiple route legs, large weights, and RTL text.
 5. Upload the template to Carbone once. Retain the returned template ID.
 6. After every production template change, retain the new immutable Carbone version ID. Published MultiDeck versions should use `versionId`; use the mutable template ID only during controlled development.
-7. Keep the editable source in the agreed version-controlled or backed-up document library. Carbone IDs are references, not the source-of-truth design files.
+7. Keep the editable source in the tenant's private `multideck-template-sources` bucket, catalogued against its Multideck template version and backed by the reviewed provisioning package. Carbone IDs are rendering references, not the source-of-truth design files.
 
 Carbone's HTTP flow and tag syntax are documented at <https://carbone.io/documentation/developer/http-api/introduction.html>.
 
@@ -377,7 +380,11 @@ All four functions require `Authorization: Bearer <the user's Supabase access to
 
 ### `document-studio`
 
-`action: "open"` accepts the template code, operator-facing job number and selected content sections. It returns the authorised DOCX and render options required by the embedded Studio. `action: "preview"` accepts the current DOCX template but replaces all browser-provided data with a newly authorised snapshot before returning a PDF preview. Neither action exposes the Carbone credentials or permits template management.
+`action: "open"` accepts the template code, operator-facing job number and selected content sections. It returns the authorised DOCX, resolved module metadata and render options required by the embedded Studio.
+
+`action: "preview"` accepts the current DOCX and an optional JSON object used only as disposable preview data. It re-authorises the selected job and returns a PDF without exposing provider credentials.
+
+`action: "save"` is restricted to `Documents.Manage`. It uploads the DOCX with Carbone v5 versioning, returns the stable Carbone template ID and version ID, and records the result in Multideck. A changed file is stored as a draft; this action does not publish, deploy or delete a template.
 
 ### `document-builder-workspace`
 

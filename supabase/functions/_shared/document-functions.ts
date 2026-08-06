@@ -2,6 +2,7 @@
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
 
 export const generatedDocumentsBucket = "multideck-generated"
+export const templateSourcesBucket = "multideck-template-sources"
 export const signedUrlLifetimeSeconds = 300
 export const maximumGeneratedFileBytes = 50 * 1024 * 1024
 

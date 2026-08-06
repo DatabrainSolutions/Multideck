@@ -73,6 +73,11 @@ export type DocumentStudioSession = {
   templateType: "docx"
   templateName: string
   templateVersion: number
+  multideckTemplateId?: string
+  carboneTemplateId?: string
+  carboneVersionId?: string
+  dataModuleCode?: string
+  dataModuleName?: string
   jobReference: string
   renderOptions: {
     data: Record<string, unknown>
@@ -89,6 +94,21 @@ export type DocumentStudioRequest = {
   templateCode: string
   jobNumber: string
   contentSections: DocumentContentSectionCode[]
+}
+
+export type SaveDocumentStudioTemplateResponse = {
+  multideckTemplateId: string
+  templateCode: string
+  carboneTemplateId: string
+  carboneVersionId: string
+  multideckVersion: number
+  status: "draft" | "published"
+}
+
+export type ApproveDocumentStudioTemplateResponse = {
+  templateCode: string
+  templateVersion: number
+  status: "published"
 }
 
 export type RenderDocumentResponse = {
@@ -112,8 +132,19 @@ function requireDocumentClient() {
   return supabase
 }
 
-function toFunctionError(error: unknown, fallback: string) {
-  if (error instanceof Error && error.message.trim()) return error
+async function toFunctionError(error: unknown, fallback: string) {
+  const context = typeof error === "object" && error && "context" in error
+    ? (error as { context?: unknown }).context
+    : null
+  if (context instanceof Response) {
+    try {
+      const payload = await context.clone().json() as { error?: unknown }
+      if (typeof payload.error === "string" && payload.error.trim()) return new Error(payload.error)
+    } catch {
+      // Keep the safe fallback when the gateway did not return JSON.
+    }
+  }
+  if (error instanceof Error && error.message.trim() && !error.message.includes("non-2xx")) return error
   return new Error(fallback)
 }
 
@@ -124,7 +155,7 @@ export async function getDocumentBuilderWorkspace(): Promise<DocumentBuilderWork
     body: {},
   })
 
-  if (error) throw toFunctionError(error, "The document workspace could not be loaded.")
+  if (error) throw await toFunctionError(error, "The document workspace could not be loaded.")
   if (!data) throw new Error("The document workspace returned no data.")
   return data
 }
@@ -136,7 +167,7 @@ export async function renderDocument(request: RenderDocumentRequest): Promise<Re
     body: request,
   })
 
-  if (error) throw toFunctionError(error, "The document could not be generated.")
+  if (error) throw await toFunctionError(error, "The document could not be generated.")
   if (!data) throw new Error("The render service returned no document.")
   return data
 }
@@ -200,7 +231,7 @@ export async function getDocumentStudioComponent(): Promise<Blob> {
 }
 
 export async function renderDocumentStudioPreview(
-  request: DocumentStudioRequest & { templateBase64: string },
+  request: DocumentStudioRequest & { templateBase64: string; sampleData?: Record<string, unknown> },
 ): Promise<Response> {
   requireDocumentClient()
   const session = await getSupabaseSession()
@@ -230,6 +261,91 @@ export async function renderDocumentStudioPreview(
   return response
 }
 
+export async function saveDocumentStudioTemplate(
+  request: DocumentStudioRequest & { templateBase64: string },
+): Promise<SaveDocumentStudioTemplateResponse> {
+  requireDocumentClient()
+  const session = await getSupabaseSession()
+  if (!session) throw new Error("Sign in again to save this template.")
+  if (!supabaseFunctionsUrl || !supabasePublicApiKey) throw new Error("The secure document service is not configured for this workspace.")
+
+  const response = await fetch(`${supabaseFunctionsUrl}/document-studio`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      apikey: supabasePublicApiKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ action: "save", ...request }),
+  })
+
+  if (!response.ok) {
+    let message = "The template could not be saved."
+    try {
+      const payload = await response.json() as { error?: string }
+      if (payload.error) message = payload.error
+    } catch {
+      // Keep the safe fallback when the gateway did not return JSON.
+    }
+    throw new Error(message)
+  }
+  return response.json() as Promise<SaveDocumentStudioTemplateResponse>
+}
+
+export async function bootstrapDocumentStudioTemplate(templateId: string, templateBase64: string) {
+  requireDocumentClient()
+  const session = await getSupabaseSession()
+  if (!session) throw new Error("Sign in to manage templates.")
+  if (!supabaseFunctionsUrl || !supabasePublicApiKey) throw new Error("The secure document service is not configured for this workspace.")
+  const response = await fetch(`${supabaseFunctionsUrl}/document-studio`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      apikey: supabasePublicApiKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ action: "bootstrap", multideckTemplateId: templateId, templateBase64 }),
+  })
+  if (!response.ok) {
+    let message = "The template source could not be saved."
+    try {
+      const payload = await response.json() as { error?: string }
+      if (payload.error) message = payload.error
+    } catch {
+      // Keep the safe fallback when the gateway did not return JSON.
+    }
+    throw new Error(message)
+  }
+  return response.json() as Promise<SaveDocumentStudioTemplateResponse>
+}
+
+export async function approveDocumentStudioTemplate(templateId: string) {
+  requireDocumentClient()
+  const session = await getSupabaseSession()
+  if (!session) throw new Error("Sign in to manage templates.")
+  if (!supabaseFunctionsUrl || !supabasePublicApiKey) throw new Error("The secure document service is not configured for this workspace.")
+  const response = await fetch(`${supabaseFunctionsUrl}/document-studio`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      apikey: supabasePublicApiKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ action: "approve", multideckTemplateId: templateId }),
+  })
+  if (!response.ok) {
+    let message = "The template could not be approved."
+    try {
+      const payload = await response.json() as { error?: string }
+      if (payload.error) message = payload.error
+    } catch {
+      // Keep the safe fallback when the gateway did not return JSON.
+    }
+    throw new Error(message)
+  }
+  return response.json() as Promise<ApproveDocumentStudioTemplateResponse>
+}
+
 export async function getGeneratedDocumentDownload(generatedDocumentId: string): Promise<DocumentDownloadResponse> {
   const client = requireDocumentClient()
   const { data, error } = await client.functions.invoke<DocumentDownloadResponse>("document-download", {
@@ -237,7 +353,7 @@ export async function getGeneratedDocumentDownload(generatedDocumentId: string):
     body: { generatedDocumentId },
   })
 
-  if (error) throw toFunctionError(error, "A secure download link could not be created.")
+  if (error) throw await toFunctionError(error, "A secure download link could not be created.")
   if (!data) throw new Error("The download service returned no link.")
   return data
 }
