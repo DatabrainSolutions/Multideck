@@ -5,20 +5,38 @@ import { MapContainer, Marker, Polyline, TileLayer, Tooltip, useMap, ZoomControl
 import "leaflet/dist/leaflet.css"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import { Progress } from "@/components/ui/progress"
-import { liveBookings } from "@/data/multideck-data"
+import type { DashboardBooking } from "@/lib/dashboard-live-data"
 import { cn } from "@/lib/utils"
 import { toneToVar } from "./status-pill"
 
-type Booking = (typeof liveBookings)[number]
+type Booking = DashboardBooking & { from: string; to: string; originPoint: Coordinate; destinationPoint: Coordinate; time: string }
 type Coordinate = readonly [number, number]
 
 const mapCenter: LatLngExpression = [42, 36]
-const mapBounds = L.latLngBounds(
-  liveBookings.flatMap((booking) => [
-    [booking.origin[0], booking.origin[1]] as [number, number],
-    [booking.destination[0], booking.destination[1]] as [number, number],
-  ]),
-)
+const locationCoordinates: Record<string, Coordinate> = {
+  GBBRS: [51.4545, -2.5879], Bristol: [51.4545, -2.5879], JPUKB: [34.6901, 135.1955], Kobe: [34.6901, 135.1955],
+  SGSIN: [1.2644, 103.82], Singapore: [1.2644, 103.82], GBSOU: [50.8998, -1.4044], Southampton: [50.8998, -1.4044],
+  AEDXB: [25.2532, 55.3657], Dubai: [25.2532, 55.3657], GBLHR: [51.47, -0.4543], Heathrow: [51.47, -0.4543],
+  GBFXT: [51.954, 1.351], Felixstowe: [51.954, 1.351], NLRTM: [51.9244, 4.4777], Rotterdam: [51.9244, 4.4777],
+  DEHAM: [53.5511, 9.9937], Hamburg: [53.5511, 9.9937], CNSHA: [31.2304, 121.4737], Shanghai: [31.2304, 121.4737],
+  CNYTN: [22.5565, 114.2369], Yantian: [22.5565, 114.2369], CNNGB: [29.8683, 121.544], Ningbo: [29.8683, 121.544],
+  USLAX: [33.7405, -118.2775], "Long Beach": [33.7701, -118.1937], USJFK: [40.6413, -73.7781], JFK: [40.6413, -73.7781],
+  DEFRA: [50.0379, 8.5622], Frankfurt: [50.1109, 8.6821], TRIST: [41.0082, 28.9784], Istanbul: [41.0082, 28.9784],
+}
+
+function coordinateFor(value: string): Coordinate | null {
+  const match = Object.entries(locationCoordinates).find(([key]) => value.toLowerCase().includes(key.toLowerCase()))
+  return match?.[1] ?? null
+}
+
+function resolveBookings(bookings: DashboardBooking[]): Booking[] {
+  return bookings.flatMap((booking) => {
+    const originPoint = coordinateFor(booking.origin)
+    const destinationPoint = coordinateFor(booking.destination)
+    if (!originPoint || !destinationPoint) return []
+    return [{ ...booking, from: booking.origin, to: booking.destination, originPoint, destinationPoint, time: "" }]
+  })
+}
 
 function curvedRoute(origin: Coordinate, destination: Coordinate) {
   const [startLat, startLng] = origin
@@ -59,10 +77,12 @@ function markerIcon(color: string, variant: "terminal" | "current", selected = f
 }
 
 function FitBookingBounds({
+  mapBounds,
   selectedId,
   routeLookup,
   focusSelected = false,
 }: {
+  mapBounds: L.LatLngBounds
   selectedId: string
   routeLookup: Map<string, [number, number][]>
   focusSelected?: boolean
@@ -109,7 +129,7 @@ function FitBookingBounds({
       window.clearTimeout(settledFit)
       resizeObserver?.disconnect()
     }
-  }, [focusSelected, map, routeLookup, selectedId])
+  }, [focusSelected, map, mapBounds, routeLookup, selectedId])
 
   return null
 }
@@ -123,17 +143,19 @@ function MapStatusChip({ booking }: { booking: Booking }) {
 }
 
 function BookingRouteLayers({
+  bookings,
   selectedId,
   routeLookup,
   onSelect,
 }: {
+  bookings: Booking[]
   selectedId: string
   routeLookup: Map<string, [number, number][]>
   onSelect: (id: string) => void
 }) {
   return (
     <>
-      {liveBookings.map((booking) => {
+      {bookings.map((booking) => {
         const selected = booking.id === selectedId
         const route = routeLookup.get(booking.id) ?? []
         const color = toneToVar(booking.tone)
@@ -156,10 +178,10 @@ function BookingRouteLayers({
                 {booking.id}: {booking.from} to {booking.to}
               </Tooltip>
             </Polyline>
-            <Marker position={toLatLng(booking.origin)} icon={markerIcon(color, "terminal")}>
+            <Marker position={toLatLng(booking.originPoint)} icon={markerIcon(color, "terminal")}>
               <Tooltip>{booking.from}</Tooltip>
             </Marker>
-            <Marker position={toLatLng(booking.destination)} icon={markerIcon(color, "terminal")}>
+            <Marker position={toLatLng(booking.destinationPoint)} icon={markerIcon(color, "terminal")}>
               <Tooltip>{booking.to}</Tooltip>
             </Marker>
             <Marker position={currentPosition} icon={markerIcon(color, "current", selected)} eventHandlers={{ click: () => onSelect(booking.id) }}>
@@ -175,11 +197,15 @@ function BookingRouteLayers({
 }
 
 function BookingMapCanvas({
+  bookings,
+  mapBounds,
   selectedId,
   routeLookup,
   onSelect,
   fullscreen = false,
 }: {
+  bookings: Booking[]
+  mapBounds: L.LatLngBounds
   selectedId: string
   routeLookup: Map<string, [number, number][]>
   onSelect: (id: string) => void
@@ -200,8 +226,8 @@ function BookingMapCanvas({
         url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
       />
       <ZoomControl position="bottomright" />
-      <FitBookingBounds selectedId={selectedId} routeLookup={routeLookup} focusSelected={fullscreen} />
-      <BookingRouteLayers selectedId={selectedId} routeLookup={routeLookup} onSelect={onSelect} />
+      <FitBookingBounds mapBounds={mapBounds} selectedId={selectedId} routeLookup={routeLookup} focusSelected={fullscreen} />
+      <BookingRouteLayers bookings={bookings} selectedId={selectedId} routeLookup={routeLookup} onSelect={onSelect} />
     </MapContainer>
   )
 }
@@ -246,12 +272,14 @@ function BookingMapCard({
 }
 
 function FullscreenRouteSidebar({
+  bookings,
   selectedBooking,
   selectedId,
   onSelect,
   onPrevious,
   onNext,
 }: {
+  bookings: Booking[]
   selectedBooking: Booking
   selectedId: string
   onSelect: (id: string) => void
@@ -302,7 +330,7 @@ function FullscreenRouteSidebar({
       </div>
 
       <div className="md-scrollbar flex gap-2 overflow-x-auto px-5 pb-5 md:flex-1 md:flex-col md:overflow-y-auto">
-        {liveBookings.map((booking) => {
+        {bookings.map((booking) => {
           const selected = booking.id === selectedId
 
           return (
@@ -338,28 +366,36 @@ function FullscreenRouteSidebar({
   )
 }
 
-export function InteractiveBookingMap({ className }: { className?: string }) {
-  const [selectedId, setSelectedId] = useState(liveBookings[0].id)
+export function InteractiveBookingMap({ bookings: sourceBookings = [], className }: { bookings?: DashboardBooking[]; className?: string }) {
+  const bookings = useMemo(() => resolveBookings(sourceBookings), [sourceBookings])
+  const [selectedId, setSelectedId] = useState(bookings[0]?.id ?? "")
   const [fullscreenOpen, setFullscreenOpen] = useState(false)
-  const selectedBooking = liveBookings.find((booking) => booking.id === selectedId) ?? liveBookings[0]
+  const selectedBooking = bookings.find((booking) => booking.id === selectedId) ?? bookings[0]
+
+  useEffect(() => {
+    if (!bookings.some((booking) => booking.id === selectedId)) setSelectedId(bookings[0]?.id ?? "")
+  }, [bookings, selectedId])
 
   const routeLookup = useMemo(() => {
-    return new Map(liveBookings.map((booking) => [booking.id, curvedRoute(booking.origin, booking.destination)]))
-  }, [])
+    return new Map(bookings.map((booking) => [booking.id, curvedRoute(booking.originPoint, booking.destinationPoint)]))
+  }, [bookings])
+  const mapBounds = useMemo(() => L.latLngBounds(bookings.flatMap((booking) => [toLatLng(booking.originPoint), toLatLng(booking.destinationPoint)])), [bookings])
 
   const selectPreviousRoute = () => {
-    const selectedIndex = liveBookings.findIndex((booking) => booking.id === selectedId)
-    const nextIndex = selectedIndex <= 0 ? liveBookings.length - 1 : selectedIndex - 1
+    const selectedIndex = bookings.findIndex((booking) => booking.id === selectedId)
+    const nextIndex = selectedIndex <= 0 ? bookings.length - 1 : selectedIndex - 1
 
-    setSelectedId(liveBookings[nextIndex].id)
+    setSelectedId(bookings[nextIndex].id)
   }
 
   const selectNextRoute = () => {
-    const selectedIndex = liveBookings.findIndex((booking) => booking.id === selectedId)
-    const nextIndex = selectedIndex >= liveBookings.length - 1 ? 0 : selectedIndex + 1
+    const selectedIndex = bookings.findIndex((booking) => booking.id === selectedId)
+    const nextIndex = selectedIndex >= bookings.length - 1 ? 0 : selectedIndex + 1
 
-    setSelectedId(liveBookings[nextIndex].id)
+    setSelectedId(bookings[nextIndex].id)
   }
+
+  if (!selectedBooking || mapBounds.isValid() === false) return <div className={cn("md-live-map-fallback", className)}>No routes with mapped locations are available.</div>
 
   return (
     <>
@@ -373,10 +409,10 @@ export function InteractiveBookingMap({ className }: { className?: string }) {
         >
           <Maximize2 className="size-4" strokeWidth={1.3} />
         </button>
-        <BookingMapCanvas selectedId={selectedId} routeLookup={routeLookup} onSelect={setSelectedId} />
+        <BookingMapCanvas bookings={bookings} mapBounds={mapBounds} selectedId={selectedId} routeLookup={routeLookup} onSelect={setSelectedId} />
       </div>
       <div className="grid overflow-x-auto border-t border-[rgba(11,20,19,0.08)] md:grid-cols-5 md-scrollbar">
-        {liveBookings.map((booking) => (
+        {bookings.map((booking) => (
           <BookingMapCard key={booking.id} booking={booking} selected={booking.id === selectedId} onSelect={() => setSelectedId(booking.id)} />
         ))}
       </div>
@@ -397,8 +433,9 @@ export function InteractiveBookingMap({ className }: { className?: string }) {
             >
               <X className="size-4" strokeWidth={1.3} />
             </button>
-            <BookingMapCanvas selectedId={selectedId} routeLookup={routeLookup} onSelect={setSelectedId} fullscreen />
+            <BookingMapCanvas bookings={bookings} mapBounds={mapBounds} selectedId={selectedId} routeLookup={routeLookup} onSelect={setSelectedId} fullscreen />
             <FullscreenRouteSidebar
+              bookings={bookings}
               selectedBooking={selectedBooking}
               selectedId={selectedId}
               onSelect={setSelectedId}

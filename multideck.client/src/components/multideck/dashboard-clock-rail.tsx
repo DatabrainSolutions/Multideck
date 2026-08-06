@@ -12,7 +12,8 @@ import {
   useMinuteTick,
   type CityClock,
 } from "@/lib/clock"
-import { cityQueues, timezoneWorkQueues, type StatusTone } from "@/data/multideck-data"
+import { cityQueues, type StatusTone } from "@/data/multideck-data"
+import type { DashboardClockQueue } from "@/lib/dashboard-live-data"
 import { useClockDisplayMode, type ClockDisplayMode } from "@/lib/user-preferences"
 import { RollingDigits } from "./rolling-digits"
 import { StatusPill, toneToVar } from "./status-pill"
@@ -96,6 +97,7 @@ type ClockChipProps = {
   onFocusChip: (index: number) => void
   onKeyNavigate: (event: ReactKeyboardEvent<HTMLButtonElement>, index: number) => void
   onViewQueue?: (code: string) => void
+  queue?: DashboardClockQueue
 }
 
 /**
@@ -111,10 +113,10 @@ const ClockChip = memo(function ClockChip({
   onFocusChip,
   onKeyNavigate,
   onViewQueue,
+  queue,
 }: ClockChipProps) {
   const { t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
-  const queue = timezoneWorkQueues[clock.code]
   const statusLabel = getLongStatusLabel(clock.tone)
   const progress = getDayProgress(clock)
   const isOoh = clock.tone === "neutral"
@@ -222,11 +224,11 @@ const ClockChip = memo(function ClockChip({
               ))}
             </div>
             <p className="text-[11.5px] leading-4 text-[var(--md-text)]">
-              {t("Pickup cutoff")}{" "}
+              {t("Operating cutoff")}{" "}
               <span className="font-medium text-[var(--md-ink)]" dir="ltr">
-                {queue.cutoff.replace(" local", "")}
+                17:00
               </span>{" "}
-              · {queue.cutoffCountdown} {t("left")}
+              · {t("local time")}
             </p>
             {onViewQueue ? (
               <Button
@@ -248,9 +250,11 @@ const ClockChip = memo(function ClockChip({
 
 export function ClockRail({
   onViewQueue,
+  queues = {},
   className,
 }: {
   onViewQueue?: (code: string) => void
+  queues?: Record<string, DashboardClockQueue>
   className?: string
 }) {
   const now = useMinuteTick()
@@ -310,6 +314,7 @@ export function ClockRail({
               onFocusChip={setFocusedIndex}
               onKeyNavigate={handleKeyNavigate}
               onViewQueue={onViewQueue}
+              queue={queues[clock.code]}
             />
           </motion.div>
         ))}

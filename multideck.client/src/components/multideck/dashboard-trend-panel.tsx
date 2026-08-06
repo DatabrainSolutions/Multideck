@@ -1,30 +1,31 @@
 import { useMemo } from "react"
 import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
-import { dashboardSnapshots, dashboardTrends, type DashboardRange } from "@/data/multideck-data"
+import type { DashboardKpi, DashboardTrendPoint } from "@/lib/dashboard-live-data"
 import type { AreaChartPoint } from "@/lib/area-chart"
 import { DashboardAreaChart } from "./dashboard-area-chart"
 import { StatusPill, toneToVar } from "./status-pill"
 import { Surface } from "./surface"
 
 export function DashboardTrendPanel({
-  range,
+  kpis,
+  trends,
   metricLabel,
   className,
 }: {
-  range: DashboardRange
+  kpis: DashboardKpi[]
+  trends: Record<string, DashboardTrendPoint[]>
   metricLabel: string
   className?: string
 }) {
   const { t } = useLanguage()
-  const snapshot = dashboardSnapshots[range] ?? dashboardSnapshots.today
-  const metric = snapshot.kpis.find((item) => item.label === metricLabel) ?? snapshot.kpis[0]
+  const metric = kpis.find((item) => item.label === metricLabel) ?? kpis[0]
   const accent = toneToVar(metric.tone)
 
   const points = useMemo<AreaChartPoint[]>(() => {
-    const series = dashboardTrends[range]?.[metric.label] ?? []
+    const series = trends[metric.label] ?? []
     return series.map((point) => ({ label: point.period, value: point.value, target: point.target }))
-  }, [range, metric.label])
+  }, [metric.label, trends])
 
   const peak = points.reduce((highest, point) => Math.max(highest, point.value), 0)
   const last = points.at(-1)

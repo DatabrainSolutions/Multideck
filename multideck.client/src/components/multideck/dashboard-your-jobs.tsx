@@ -4,13 +4,14 @@ import { ArrowRight, Clock3, Star } from "lucide-react"
 import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
 import { mdMotion, staggerRamp } from "@/lib/motion"
-import { currentOperator, operatorJobs, type StatusTone } from "@/data/multideck-data"
+import type { StatusTone } from "@/data/multideck-data"
+import type { DashboardJob } from "@/lib/dashboard-live-data"
 import { useMinuteTick } from "@/lib/clock"
 import { ProgressRing, SegmentedArc, type ArcSegment } from "./dashboard-radials"
 import { Surface } from "./surface"
 import { StatusPill, toneToVar } from "./status-pill"
 
-export type OperatorJobCard = (typeof operatorJobs)[number]
+export type OperatorJobCard = DashboardJob
 
 /** The ring fills over the last eight hours before a job is due. */
 const dueRingWindowMinutes = 480
@@ -130,11 +131,15 @@ const JobRow = memo(function JobRow({
 
 export function YourJobsPanel({
   favouriteIds,
+  jobs: liveJobs,
+  operatorName,
   onToggleFavourite,
   onOpenJob,
   className,
 }: {
   favouriteIds: Set<string>
+  jobs: DashboardJob[]
+  operatorName: string
   onToggleFavourite: (bookingId: string) => void
   onOpenJob?: (job: OperatorJobCard) => void
   className?: string
@@ -149,10 +154,10 @@ export function YourJobsPanel({
    */
   const jobs = useMemo(
     () =>
-      [...operatorJobs]
+      [...liveJobs]
         .map((job) => ({ job, minutesUntil: getMinutesUntil(job.due, now) }))
         .sort((left, right) => left.minutesUntil - right.minutesUntil),
-    [now],
+    [liveJobs, now],
   )
 
   /** The job mix used to be its own card; it belongs in this panel's header. */
@@ -180,7 +185,7 @@ export function YourJobsPanel({
           <h2 className="md-panel-title">{t("Your jobs")}</h2>
           <p className="md-panel-meta">
             {jobs.length} {t("open")}
-            {overdue ? ` · ${overdue} ${t("past due")}` : ""} · {currentOperator.name}
+            {overdue ? ` · ${overdue} ${t("past due")}` : ""} · {operatorName}
           </p>
         </div>
         <div className="md-jobs-mix">

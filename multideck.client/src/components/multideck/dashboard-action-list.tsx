@@ -5,7 +5,7 @@ import { ArrowRight, Check, Mail, ReceiptText, RotateCcw, Ship, Sparkles, Triang
 import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
 import { mdMotion, reduceMotion, staggerRamp } from "@/lib/motion"
-import { dashboardSnapshots, type DashboardRange, type StatusTone } from "@/data/multideck-data"
+import type { StatusTone } from "@/data/multideck-data"
 import { Surface } from "./surface"
 import { toneToVar } from "./status-pill"
 
@@ -99,17 +99,18 @@ export const ActionListRow = memo(function ActionListRow({
 })
 
 export function TodayActionList({
-  range,
+  items: liveItems,
+  briefLead,
   onOpenItem,
   className,
 }: {
-  range: DashboardRange
+  items: DashboardActionListItem[]
+  briefLead: string
   onOpenItem?: (label: string) => void
   className?: string
 }) {
   const { t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
-  const snapshot = dashboardSnapshots[range] ?? dashboardSnapshots.today
   const [striking, setStriking] = useState<string[]>([])
   const [done, setDone] = useState<string[]>([])
   const timersRef = useRef<number[]>([])
@@ -117,7 +118,7 @@ export function TodayActionList({
   useEffect(() => {
     setStriking([])
     setDone([])
-  }, [range])
+  }, [liveItems])
 
   useEffect(() => {
     const timers = timersRef.current
@@ -152,7 +153,7 @@ export function TodayActionList({
     [restore, shouldReduceMotion, t],
   )
 
-  const allItems = snapshot.briefItems as DashboardActionListItem[]
+  const allItems = liveItems
   const items = useMemo(() => allItems.filter((item) => !done.includes(item.label)), [allItems, done])
   const clearedRatio = allItems.length === 0 ? 0 : done.length / allItems.length
 
@@ -178,7 +179,7 @@ export function TodayActionList({
       </div>
 
       <div className="md-action-list-body md-scrollbar">
-        <p className="md-action-list-lead">{snapshot.briefLead}</p>
+        <p className="md-action-list-lead">{briefLead}</p>
         <div className="md-action-timeline">
           <span className="md-action-timeline-spine" aria-hidden="true">
             <motion.span
