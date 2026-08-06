@@ -44,7 +44,7 @@
       "destination": "/app/index.html"
     },
     {
-      "source": "/documents",
+      "source": "/documents/:path*",
       "destination": "/app/index.html"
     },
     {
