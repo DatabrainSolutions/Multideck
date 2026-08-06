@@ -2,6 +2,21 @@
   "installCommand": "cd multideck.client && npm ci",
   "buildCommand": "node build-deployment.mjs",
   "outputDirectory": "multideck.client/dist",
+  "headers": [
+    {
+      "source": "/.well-known/multideck-mobile.json",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=300"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        }
+      ]
+    }
+  ],
   "redirects": [
     {
       "source": "/multideck.client",
