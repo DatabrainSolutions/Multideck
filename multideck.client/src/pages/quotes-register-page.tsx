@@ -14,9 +14,10 @@ import {
   type QuoteSearchQuery,
 } from "@/components/multideck/quote-search-builder"
 import { StatusPill } from "@/components/multideck/status-pill"
-import { quoteRegisterRecords, type QuoteRegisterRecord } from "@/data/quote-register-data"
+import type { QuoteRegisterRecord } from "@/data/quote-register-data"
 import { Button } from "@/components/ui/button"
 import { useLanguage } from "@/i18n/language-provider"
+import { listSalesQuotes } from "@/lib/quote-api"
 import { cn } from "@/lib/utils"
 
 const rowsPerPageOptions = [10, 20, 30, 50]
@@ -39,17 +40,31 @@ export function QuotesRegisterPage({ navigate }: { navigate: (path: string) => v
   const [page, setPage] = useState(1)
   const [rowsPerPage, setRowsPerPage] = useState(10)
   const [dexterOpen, setDexterOpen] = useState(false)
+  const [quotes, setQuotes] = useState<QuoteRegisterRecord[]>([])
+  const [quotesLoading, setQuotesLoading] = useState(true)
+  const [quotesError, setQuotesError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setQuotesLoading(true)
+    setQuotesError(null)
+    void listSalesQuotes()
+      .then((records) => { if (!cancelled) setQuotes(records) })
+      .catch((error) => { if (!cancelled) setQuotesError(error instanceof Error ? error.message : "Quotes could not be loaded.") })
+      .finally(() => { if (!cancelled) setQuotesLoading(false) })
+    return () => { cancelled = true }
+  }, [])
 
   const filteredQuotes = useMemo(() => {
     const quickQuery = quickSearch.trim().toLocaleLowerCase()
-    return quoteRegisterRecords.filter((quote) => {
+    return quotes.filter((quote) => {
       if (!quoteMatchesSearch(quote, search)) return false
       if (!quickQuery) return true
       return Object.entries(quote)
         .filter(([key]) => key !== "statusTone" && key !== "priorityTone")
         .some(([, value]) => String(value ?? "").toLocaleLowerCase().includes(quickQuery))
     })
-  }, [quickSearch, search])
+  }, [quickSearch, quotes, search])
   const activeConditionCount = useMemo(() => countActiveQuoteConditions(search), [search])
   const pageCount = Math.max(Math.ceil(filteredQuotes.length / rowsPerPage), 1)
   const paginatedQuotes = filteredQuotes.slice((page - 1) * rowsPerPage, page * rowsPerPage)
@@ -169,13 +184,15 @@ export function QuotesRegisterPage({ navigate }: { navigate: (path: string) => v
         </div>
       </header>
 
+      {quotesError ? <div role="alert" className="rounded-[var(--md-radius-lg)] bg-[rgba(209,78,78,0.08)] px-4 py-3 text-[13px] text-[var(--md-red)]">{t("Quotes could not be loaded.")} <span className="text-[12px]">{quotesError}</span></div> : null}
+
       {advancedSearchOpen ? <QuoteSearchBuilder value={search} onChange={setSearch} /> : null}
 
       <DataTable
         ariaLabel="Quote register"
         columnsButtonLabel="Manage quote columns"
         columns={columns}
-        rows={paginatedQuotes}
+        rows={quotesLoading ? [] : paginatedQuotes}
         getRowKey={(quote) => quote.reference}
         storageKey="quote-register"
         rowClassName="hover:bg-[var(--md-hover)]"
@@ -228,7 +245,9 @@ export function QuotesRegisterPage({ navigate }: { navigate: (path: string) => v
             </button>
           </div>
         )}
-        emptyState={(
+        emptyState={quotesLoading ? (
+          <div className="mx-auto grid max-w-sm place-items-center py-8 text-center text-[13px] text-[var(--md-text)]">{t("Loading quotes...")}</div>
+        ) : (
           <div className="mx-auto grid max-w-sm place-items-center py-3 text-center">
             <span className="grid size-9 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]">
               <Search className="size-4" strokeWidth={1.3} />

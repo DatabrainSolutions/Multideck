@@ -1,13 +1,36 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 import { GeneratedReportsTable, NewReportTemplateCard, ReportTemplateCard } from "@/components/multideck/report-components"
 import { FilterChips } from "@/components/multideck/workflow-components"
-import { generatedReports, reportFilters, reportTemplates, type GeneratedReport, type ReportTemplate } from "@/data/multideck-data"
+import { reportFilters, type GeneratedReport, type ReportTemplate } from "@/data/multideck-data"
+import { listLiveReports, listLiveReportTemplates } from "@/lib/application-data-api"
 
 type ReportFilter = (typeof reportFilters)[number]
 
 export function ReportsPage({ navigate }: { navigate: (path: string) => void }) {
   const [activeFilter, setActiveFilter] = useState<ReportFilter>("All")
+  const [generatedReports, setGeneratedReports] = useState<GeneratedReport[]>([])
+  const [reportTemplates, setReportTemplates] = useState<ReportTemplate[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    Promise.all([listLiveReports(), listLiveReportTemplates()]).then(([runs, templates]) => {
+      if (cancelled) return
+      setReportTemplates(templates)
+      setGeneratedReports(runs.map((run) => ({
+        id: run.id,
+        title: run.title,
+        subtitle: `${run.type} · Supabase`,
+        scope: run.customer ?? "Workspace",
+        period: run.period,
+        created: run.generatedAt ?? run.scheduledFor ?? "",
+        status: run.status === "completed" ? "Ready" : run.status === "queued" ? "Scheduled" : "Generating",
+      })))
+    }).catch((loadError) => { if (!cancelled) setError(loadError instanceof Error ? loadError.message : "Reports could not be loaded.") }).finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [])
 
   const visibleReports = useMemo(() => {
     if (activeFilter === "Ready") return generatedReports.filter((report) => report.status === "Ready")
@@ -39,6 +62,8 @@ export function ReportsPage({ navigate }: { navigate: (path: string) => void }) 
   return (
     <div className="md-page md-page-sections">
       <section className="md-section-stack">
+        {loading ? <p className="text-[13px] text-[var(--md-text)]">Loading reports...</p> : null}
+        {error ? <p role="alert" className="text-[13px] text-[var(--md-red)]">Reports could not be loaded. {error}</p> : null}
         <div className="flex flex-col gap-1.5 sm:flex-row sm:items-baseline sm:gap-4">
           <h1 className="text-[18px] font-medium leading-7 text-[var(--md-ink)]">Templates</h1>
           <p className="text-[14px] text-[var(--md-text)]">Reusable layouts — every report starts from one</p>

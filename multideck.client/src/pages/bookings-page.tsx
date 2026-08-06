@@ -23,9 +23,10 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
-import { currentOperator, getBookingShape, initialFavouriteBookingIds, bookingScopeTabs, bookings } from "@/data/multideck-data"
+import { currentOperator, getBookingShape, bookingScopeTabs } from "@/data/multideck-data"
 import { useLanguage } from "@/i18n/language-provider"
 import { getSavedView, saveView } from "@/lib/view-preferences"
+import { listLiveBookings } from "@/lib/application-data-api"
 
 const rowsPerPageOptions = [10, 20, 30, 50]
 const bookingViewStorageKey = "multideck.view.bookings"
@@ -164,9 +165,11 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
   const { t } = useLanguage()
   const [scope, setScope] = useState<BookingScope>("All Jobs")
   const [viewMode, setViewMode] = useState<BookingViewMode>(() => getSavedView(bookingViewStorageKey, bookingViewModes, bookingViewModes[0]))
-  const [bookingRecords, setBookingRecords] = useState<Booking[]>(() => bookings.map((booking) => ({ ...booking })))
+  const [bookingRecords, setBookingRecords] = useState<Booking[]>([])
+  const [bookingsLoading, setBookingsLoading] = useState(true)
+  const [bookingsError, setBookingsError] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [favouriteIds, setFavouriteIds] = useState<Set<string>>(() => new Set(initialFavouriteBookingIds))
+  const [favouriteIds, setFavouriteIds] = useState<Set<string>>(() => new Set())
   const [searchCriteria, setSearchCriteria] = useState<BookingSearchCriterion[]>(initialSearchCriteria)
   const [quickSearch, setQuickSearch] = useState("")
   const [advancedSearchOpen, setAdvancedSearchOpen] = useState(false)
@@ -177,6 +180,21 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
   const [modeFilter, setModeFilter] = useState<(typeof modeFilters)[number]>(modeFilters[0])
   const [shipmentTypeFilter, setShipmentTypeFilter] = useState<ShipmentTypeFilter>("All types")
   const shipmentTypeFilters = shipmentTypeFiltersByMode[modeFilter]
+
+  useEffect(() => {
+    let cancelled = false
+    setBookingsLoading(true)
+    setBookingsError(null)
+    void listLiveBookings().then((records) => {
+      if (!cancelled) {
+        setBookingRecords(records as Booking[])
+        setFavouriteIds(new Set(records.filter((record) => record.isFavourite).map((record) => record.id)))
+      }
+    }).catch((error) => {
+      if (!cancelled) setBookingsError(error instanceof Error ? error.message : "Bookings could not be loaded.")
+    }).finally(() => { if (!cancelled) setBookingsLoading(false) })
+    return () => { cancelled = true }
+  }, [])
 
   const scopedBookings = useMemo(() => {
     return (
@@ -425,6 +443,7 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
         ) : null}
       </section>
       <BookingMetricStrip />
+      {bookingsError ? <div role="alert" className="rounded-[var(--md-radius-lg)] bg-[rgba(209,78,78,0.08)] px-4 py-3 text-[13px] text-[var(--md-red)]">{t("Bookings could not be loaded.")} {bookingsError}</div> : null}
       {advancedSearchOpen ? (
         <BookingSearchBuilder
           value={searchCriteria}
@@ -439,7 +458,7 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
           ariaLabel={t("Booking register")}
           columnsButtonLabel={t("Manage booking columns")}
           columns={columns}
-          rows={paginatedBookings}
+          rows={bookingsLoading ? [] : paginatedBookings}
           getRowKey={(booking) => booking.id}
           storageKey="booking-register"
           rowClassName={(booking) => selectedIds.has(booking.id) ? "bg-[var(--md-surface-tint)]" : "hover:bg-[var(--md-hover)]"}
@@ -486,7 +505,7 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
               </Button>
             </div>
           )}
-          emptyState={(
+          emptyState={bookingsLoading ? <div className="mx-auto py-8 text-center text-[13px] text-[var(--md-text)]">{t("Loading bookings...")}</div> : (
             <div className="mx-auto grid max-w-sm place-items-center py-3 text-center">
               <span className="grid size-9 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)]">
                 <Search className="size-4" strokeWidth={1.3} aria-hidden="true" />

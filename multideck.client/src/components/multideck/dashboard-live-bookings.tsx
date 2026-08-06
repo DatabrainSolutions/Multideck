@@ -1,10 +1,11 @@
 import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { ArrowRight } from "lucide-react"
+import { ArrowRight, PackageCheck, Plane, Ship } from "lucide-react"
 import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
 import { mdMotion, reduceMotion, staggerRamp } from "@/lib/motion"
-import { bookingModes, liveBookingFeed, type LiveBookingFeedItem, type StatusTone } from "@/data/multideck-data"
+import type { StatusTone } from "@/data/multideck-data"
+import type { DashboardBooking } from "@/lib/dashboard-live-data"
 import { Surface } from "./surface"
 import { StatusPill, toneToVar } from "./status-pill"
 import { SegmentedControl } from "./workflow-components"
@@ -15,6 +16,7 @@ const InteractiveBookingMap = lazy(() =>
 
 const boardViews = ["list", "map"] as const
 type BoardView = (typeof boardViews)[number]
+export type LiveBookingFeedItem = DashboardBooking
 
 export const LiveBookingRow = memo(function LiveBookingRow({
   booking,
@@ -95,7 +97,7 @@ export const LiveBookingRow = memo(function LiveBookingRow({
  * only imported once the operator asks for the map view, and only mounted once
  * the panel has actually scrolled into the viewport.
  */
-function LazyBookingMap() {
+function LazyBookingMap({ bookings }: { bookings: DashboardBooking[] }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [inView, setInView] = useState(false)
 
@@ -126,7 +128,7 @@ function LazyBookingMap() {
     <div ref={containerRef} className="flex min-h-[320px] flex-1 flex-col">
       {inView ? (
         <Suspense fallback={<BookingMapFallback />}>
-          <InteractiveBookingMap className="md-live-bookings-map min-h-[320px] flex-1" />
+          <InteractiveBookingMap bookings={bookings} className="md-live-bookings-map min-h-[320px] flex-1" />
         </Suspense>
       ) : (
         <BookingMapFallback />
@@ -150,9 +152,11 @@ function BookingMapFallback() {
 }
 
 export function LiveBookingsBoard({
+  bookings: liveBookings,
   onOpenBooking,
   className,
 }: {
+  bookings: DashboardBooking[]
   onOpenBooking?: (booking: LiveBookingFeedItem) => void
   className?: string
 }) {
@@ -160,12 +164,17 @@ export function LiveBookingsBoard({
   const shouldReduceMotion = useReducedMotion()
   const [view, setView] = useState<BoardView>("list")
   const [modeFilter, setModeFilter] = useState<string | null>(null)
+  const bookingModes = useMemo(() => [
+    { label: "Ocean", count: liveBookings.filter((booking) => booking.mode === "Ocean").length, icon: Ship, tone: "teal" as StatusTone },
+    { label: "Air", count: liveBookings.filter((booking) => booking.mode === "Air").length, icon: Plane, tone: "blue" as StatusTone },
+    { label: "Road", count: liveBookings.filter((booking) => booking.mode === "Road").length, icon: PackageCheck, tone: "green" as StatusTone },
+  ].filter((mode) => mode.count > 0), [liveBookings])
 
   const bookings = useMemo(
-    () => (modeFilter ? liveBookingFeed.filter((booking) => booking.mode === modeFilter) : liveBookingFeed),
-    [modeFilter],
+    () => (modeFilter ? liveBookings.filter((booking) => booking.mode === modeFilter) : liveBookings),
+    [liveBookings, modeFilter],
   )
-  const exceptions = liveBookingFeed.filter((booking) => booking.tone === "red" || booking.tone === "amber").length
+  const exceptions = liveBookings.filter((booking) => booking.tone === "red" || booking.tone === "amber").length
 
   return (
     <Surface padding="none" className={cn("md-live-board", className)}>
@@ -251,7 +260,7 @@ export function LiveBookingsBoard({
               transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.exit)}
               className="flex min-h-[320px] flex-col px-3 pb-3"
             >
-              <LazyBookingMap />
+              <LazyBookingMap bookings={liveBookings} />
             </motion.div>
           )}
         </AnimatePresence>

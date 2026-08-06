@@ -4,13 +4,11 @@ import { Maximize2 } from "lucide-react"
 import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
 import { mdMotion, reduceMotion, staggerRamp } from "@/lib/motion"
-import { dashboardSnapshots, type DashboardRange } from "@/data/multideck-data"
+import type { DashboardKpi } from "@/lib/dashboard-live-data"
 import { MiniAreaChart } from "./dashboard-area-chart"
 import { CountUpValue } from "./rolling-digits"
 import { StatusPill, toneToVar } from "./status-pill"
 import { makeDashboardDrilldownId } from "./overview-panels"
-
-type Kpi = (typeof dashboardSnapshots)["today"]["kpis"][number]
 
 /**
  * One metric in about eighty pixels of height: label, figure, what changed, and
@@ -24,7 +22,7 @@ const KpiCell = memo(function KpiCell({
   onSelect,
   onOpen,
 }: {
-  kpi: Kpi
+  kpi: DashboardKpi
   index: number
   selected: boolean
   onSelect?: () => void
@@ -80,20 +78,18 @@ const KpiCell = memo(function KpiCell({
 })
 
 export function KpiStrip({
-  range,
+  kpis,
   selectedLabel,
   onSelect,
   onOpenDrilldown,
   className,
 }: {
-  range: DashboardRange
+  kpis: DashboardKpi[]
   selectedLabel?: string
   onSelect?: (label: string) => void
   onOpenDrilldown?: (id: string) => void
   className?: string
 }) {
-  const kpis = (dashboardSnapshots[range] ?? dashboardSnapshots.today).kpis
-
   return (
     <div className={cn("md-kpi-strip", className)}>
       {kpis.map((kpi, index) => (
