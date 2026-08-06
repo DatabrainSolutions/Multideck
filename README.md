@@ -8,6 +8,7 @@ Each tenant uses a dedicated Vercel project named `multideck-app-{slug}`, an exa
 
 ```
 multideck.client/                  → Web client and all browser-facing code
+multideck.mobile/                  → React Native Android operator client
 multideck.server/                  → .NET 10 Web API backend
 multideck.server/Backend/          → Backend libraries and infrastructure
 multideck.server/Backend/supabase/ → Supabase functions and migrations
@@ -29,6 +30,20 @@ npm run dev
 ```
 
 The operator app runs on `http://127.0.0.1:3000`. The authenticated document centre is at `/documents`.
+
+## Running the Android app
+
+```bash
+cd multideck.mobile
+npm ci
+npm run android
+```
+
+On first launch the operator enters the workspace slug, such as `dev`. The app resolves only
+`https://dev.multideck.app/.well-known/multideck-mobile.json`, validates that the response belongs
+to `dev`, and creates a Supabase client from that tenant's public configuration. Each tenant App
+deployment emits this document from its own build-time environment. Service-role credentials are
+never included.
 
 ## Transitional .NET Server
 
