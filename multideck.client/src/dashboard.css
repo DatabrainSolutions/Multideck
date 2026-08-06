@@ -938,6 +938,20 @@
     }
   }
 
+  /* Six metrics need a middle step of three, otherwise the row goes from two
+     columns straight to six and the figures collapse mid-range. */
+  @container md-dash (min-width: 560px) {
+    .md-kpi-strip[data-columns="6"] {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  @container md-dash (min-width: 1120px) {
+    .md-kpi-strip[data-columns="6"] {
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+    }
+  }
+
   .md-kpi-cell {
     position: relative;
     min-width: 0;
@@ -968,6 +982,28 @@
 
   .md-kpi-cell-button:focus-visible {
     box-shadow: var(--md-shadow-soft), var(--md-dashboard-ring);
+  }
+
+  /* The metric's subject, parked in the corner. No container: a tinted tile
+     here would read as a second object competing with the figure. */
+  .md-kpi-cell-icon {
+    position: absolute;
+    inset-block-start: 10px;
+    inset-inline-end: 11px;
+    display: grid;
+    place-items: center;
+    color: var(--md-kpi-accent, var(--md-accent));
+    opacity: 0.55;
+    transition: opacity var(--md-motion);
+  }
+
+  .md-kpi-cell-button:hover .md-kpi-cell-icon {
+    opacity: 1;
+  }
+
+  /* Keep the figure clear of the corner glyph. */
+  .md-kpi-cell-button[data-has-icon="true"] .md-kpi-cell-label {
+    padding-inline-end: 22px;
   }
 
   .md-kpi-cell-copy {
@@ -1878,6 +1914,776 @@
     font-weight: 500;
     color: var(--md-text);
   }
+
+  /* ═══ CRM dashboard ═══════════════════════════════════════════════════════
+     The sales side of the same cockpit. It reuses the dashboard's tokens, KPI
+     strip and arrival cadence, so moving between /crm and the operations
+     overview does not feel like moving between two products.
+
+     Panels here are separated by a hairline stroke rather than an elevation
+     shadow: this screen is a single dense plane of numbers, and eight floating
+     cards on one page reads as clutter rather than depth. */
+
+  .md-crm-dashboard {
+    container: md-dash / inline-size;
+  }
+
+  .md-crm-dashboard .md-kpi-cell-button,
+  .md-crm-dashboard .md-kpi-cell-button:hover {
+    box-shadow: var(--md-shadow-line);
+  }
+
+  .md-crm-dashboard .md-kpi-cell-button {
+    transition: background-color var(--md-motion);
+  }
+
+  .md-crm-dashboard .md-kpi-cell-button:hover {
+    background: var(--md-surface-soft);
+  }
+
+  .md-crm-dashboard .md-kpi-cell-button:focus-visible {
+    box-shadow: var(--md-shadow-line), var(--md-dashboard-ring);
+  }
+
+  /* Two bands of panels. The lead band gives the queue the wider half; the
+     support band splits evenly. */
+  .md-crm-lead,
+  .md-crm-trio {
+    display: grid;
+    gap: var(--md-page-stack-gap-compact);
+    align-items: stretch;
+  }
+
+  @container md-dash (min-width: 860px) {
+    .md-crm-lead {
+      grid-template-columns: minmax(300px, 0.82fr) minmax(0, 1.18fr);
+    }
+
+    .md-crm-trio {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @container md-dash (min-width: 1180px) {
+    .md-crm-trio {
+      grid-template-columns: minmax(0, 1.24fr) minmax(0, 0.88fr) minmax(0, 0.88fr);
+    }
+  }
+
+  /* ── Panel shell ─────────────────────────────────────────────────────── */
+
+  .md-crm-panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+    padding: 0;
+    border-radius: var(--md-radius-xl);
+    background: var(--md-surface);
+    box-shadow: var(--md-shadow-line);
+  }
+
+  .md-crm-panel-head {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--md-gap-md);
+    padding: 12px 12px 8px 14px;
+  }
+
+  .md-crm-panel-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: -0.005em;
+    color: var(--md-ink);
+  }
+
+  .md-crm-panel-link {
+    flex-shrink: 0;
+    height: 24px;
+    padding-inline: 8px;
+    border-radius: var(--md-radius-md);
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--md-subtle);
+    transition-property: color, background-color, scale;
+    transition-duration: 160ms;
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .md-crm-panel-link:hover {
+    color: var(--md-ink);
+  }
+
+  .md-crm-panel-link:active {
+    scale: 0.96;
+  }
+
+  .md-crm-panel-link-arrow {
+    translate: 0 0;
+    transition: translate var(--md-motion-fast);
+  }
+
+  .md-crm-panel-link:hover .md-crm-panel-link-arrow {
+    translate: 2px 0;
+  }
+
+  [dir="rtl"] .md-crm-panel-link-arrow {
+    scale: -1 1;
+  }
+
+  /* ── Opportunity value gauge ─────────────────────────────────────────── */
+
+  .md-crm-gauge {
+    position: relative;
+    display: grid;
+    flex: 1;
+    place-items: center;
+    padding: 4px 14px 8px;
+  }
+
+  .md-crm-gauge-svg {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    overflow: visible;
+  }
+
+  /* One CSS one-shot per tick. Forty-six spring instances would be forty-six
+     JavaScript animations a frame; this is none, and the arc still lights up in
+     sequence. `backwards` holds the first frame through the delay so no tick is
+     ever painted at full opacity before its turn. */
+  .md-crm-gauge-tick {
+    opacity: 1;
+    animation: md-crm-tick-in 280ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+    transition: opacity var(--md-motion-fast);
+  }
+
+  .md-crm-gauge-tick[data-dimmed="true"] {
+    opacity: 0.3;
+  }
+
+  .md-crm-gauge-centre {
+    position: absolute;
+    inset-block-start: 42%;
+    display: grid;
+    justify-items: center;
+    gap: 3px;
+    pointer-events: none;
+  }
+
+  .md-crm-gauge-value {
+    font-size: 30px;
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: -0.025em;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-ink);
+  }
+
+  .md-crm-gauge-caption {
+    font-size: 11px;
+    color: var(--md-subtle);
+  }
+
+  .md-crm-legend {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 1px;
+    padding: 2px 10px 10px;
+  }
+
+  .md-crm-legend-row {
+    display: grid;
+    grid-template-columns: 7px minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 9px;
+    padding: 5px 8px;
+    border-radius: var(--md-radius-lg);
+    text-align: start;
+    outline: none;
+    transition-property: background-color, opacity;
+    transition-duration: 160ms;
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .md-crm-legend-row:hover {
+    background: var(--md-dashboard-hush);
+  }
+
+  .md-crm-legend-row:focus-visible {
+    box-shadow: var(--md-dashboard-ring);
+  }
+
+  .md-crm-legend-row[data-dimmed="true"] {
+    opacity: 0.45;
+  }
+
+  .md-crm-legend-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+  }
+
+  .md-crm-legend-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    color: var(--md-text);
+  }
+
+  .md-crm-legend-count,
+  .md-crm-legend-value {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .md-crm-legend-count {
+    font-size: 11px;
+    color: var(--md-subtle);
+  }
+
+  .md-crm-legend-value {
+    min-width: 54px;
+    font-size: 12px;
+    font-weight: 500;
+    text-align: end;
+    color: var(--md-ink);
+  }
+
+  /* ── The shared row ──────────────────────────────────────────────────── */
+
+  /* Panel radius 14 less the list's 4px inset gives the row 10 — concentric,
+     so the row never looks pinched inside its panel. */
+  .md-crm-list {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 2px;
+    padding: 0 4px 8px;
+    /* The rows own their layer work. Containing layout and paint stops a filter
+       change inside one panel from asking the whole page to re-lay-out. */
+    contain: layout paint;
+  }
+
+  /* Three fixed rails — glyph, body, and a right-hand block of a set width — so
+     pills, values and ages line up down the panel instead of stopping wherever
+     each row's text happens to end. Ragged right edges are most of what makes a
+     list of records look thrown together. */
+  .md-crm-row {
+    position: relative;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    padding: 9px 12px;
+    border-radius: var(--md-radius-lg);
+    transition: background-color var(--md-motion-fast);
+  }
+
+  .md-crm-row[data-metered="true"] {
+    grid-template-columns: auto minmax(0, 1fr) 84px auto;
+  }
+
+  .md-crm-row[data-openable="true"] {
+    cursor: pointer;
+  }
+
+  .md-crm-row:hover {
+    background: var(--md-dashboard-hush);
+  }
+
+  .md-crm-row:focus-visible {
+    outline: none;
+    box-shadow: var(--md-dashboard-ring);
+  }
+
+  .md-crm-row-glyph {
+    display: flex;
+    flex-shrink: 0;
+  }
+
+  /* A ringed disc rather than a tinted square. The ring is where the record's
+     tone lives now, which lets the row itself stay completely uncoloured until
+     the pointer is on it. */
+  .md-crm-avatar {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--md-row-accent, var(--md-accent)) 11%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-row-accent, var(--md-accent)) 24%, transparent);
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    color: var(--md-row-accent, var(--md-accent));
+    transition: box-shadow var(--md-motion-fast);
+  }
+
+  .md-crm-row:hover .md-crm-avatar {
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-row-accent, var(--md-accent)) 44%, transparent);
+  }
+
+  .md-crm-row-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .md-crm-row-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 17px;
+    letter-spacing: -0.006em;
+    color: var(--md-ink);
+  }
+
+  .md-crm-row-title-aside {
+    font-weight: 400;
+    color: var(--md-subtle);
+  }
+
+  .md-crm-row-sub {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11.5px;
+    line-height: 16px;
+    color: var(--md-subtle);
+  }
+
+  .md-crm-meter {
+    display: block;
+    width: 100%;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--md-dashboard-track);
+    overflow: hidden;
+  }
+
+  .md-crm-meter-fill {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--md-row-accent, var(--md-accent)) 55%, transparent),
+      var(--md-row-accent, var(--md-accent))
+    );
+    transform-origin: left center;
+  }
+
+  [dir="rtl"] .md-crm-meter-fill {
+    transform-origin: right center;
+    background: linear-gradient(
+      270deg,
+      color-mix(in srgb, var(--md-row-accent, var(--md-accent)) 55%, transparent),
+      var(--md-row-accent, var(--md-accent))
+    );
+  }
+
+  .md-crm-row-side {
+    display: flex;
+    flex-shrink: 0;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 4px;
+    min-width: 88px;
+    text-align: end;
+  }
+
+  .md-crm-row-value {
+    font-size: 12.5px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-ink);
+  }
+
+  .md-crm-row-age {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    white-space: nowrap;
+    font-size: 10.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-subtle);
+  }
+
+  /* The arrow is the row's only travelling part: hidden at rest, it steps out
+     from behind the age on hover so the row reads as a door, not a label. */
+  .md-crm-row-arrow {
+    opacity: 0;
+    translate: -4px 0;
+    transition-property: opacity, translate;
+    transition-duration: 160ms;
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .md-crm-row[data-openable="true"]:hover .md-crm-row-arrow,
+  .md-crm-row[data-openable="true"]:focus-visible .md-crm-row-arrow {
+    opacity: 1;
+    translate: 0 0;
+  }
+
+  [dir="rtl"] .md-crm-row-arrow {
+    scale: -1 1;
+  }
+
+  /* ── Queue filters ───────────────────────────────────────────────────── */
+
+  .md-crm-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    padding: 0 14px 9px;
+  }
+
+  .md-crm-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+
+  .md-crm-chip {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 24px;
+    padding-inline: 9px;
+    border-radius: var(--md-radius-lg);
+    background: var(--md-dashboard-hush);
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--md-text);
+    outline: none;
+    transition-property: background-color, color, scale;
+    transition-duration: 160ms;
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .md-crm-chip:hover {
+    background: var(--md-dashboard-hush-hover);
+    color: var(--md-ink);
+  }
+
+  .md-crm-chip:active {
+    scale: 0.96;
+  }
+
+  .md-crm-chip:focus-visible {
+    box-shadow: var(--md-dashboard-ring);
+  }
+
+  .md-crm-chip[aria-pressed="true"] {
+    color: var(--md-ink);
+  }
+
+  .md-crm-chip-indicator {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    border-radius: var(--md-radius-lg);
+    background: color-mix(in srgb, var(--md-chip-accent, var(--md-accent)) 14%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-chip-accent, var(--md-accent)) 28%, transparent);
+  }
+
+  .md-crm-chip-label,
+  .md-crm-chip-count {
+    position: relative;
+    z-index: 1;
+  }
+
+  .md-crm-chip-count {
+    font-variant-numeric: tabular-nums;
+    color: var(--md-subtle);
+  }
+
+  .md-crm-chip[aria-pressed="true"] .md-crm-chip-count {
+    color: var(--md-chip-accent, var(--md-accent));
+  }
+
+  /* ── Leads by area: treemap heat ─────────────────────────────────────── */
+
+  .md-crm-heat {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 9px;
+    padding: 0 14px 12px;
+  }
+
+  /* The plot is laid out in percentages against its own box, so the map
+     reflows with the panel and never needs measuring. */
+  .md-crm-heat-plot {
+    position: relative;
+    flex: 1;
+    min-height: 168px;
+  }
+
+  .md-crm-heat-tile {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-end;
+    gap: 1px;
+    padding: 7px 8px;
+    overflow: hidden;
+    text-align: start;
+    outline: none;
+    /* An inset border rather than a margin: the rects already tile the plot
+       exactly, so the gap has to come out of each tile, not out of the grid. */
+    border: 1.5px solid var(--md-surface);
+    border-radius: var(--md-radius-lg);
+    background: var(--md-heat, var(--md-accent));
+    transition-property: opacity, filter, scale;
+    transition-duration: 160ms;
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .md-crm-heat-tile:hover {
+    filter: brightness(1.1);
+  }
+
+  .md-crm-heat-tile:active {
+    scale: 0.985;
+  }
+
+  .md-crm-heat-tile:focus-visible {
+    box-shadow: var(--md-dashboard-ring);
+  }
+
+  .md-crm-heat-tile[data-dimmed="true"] {
+    opacity: 0.45;
+  }
+
+  .md-crm-heat-label,
+  .md-crm-heat-count {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--md-ink);
+  }
+
+  .md-crm-heat-label {
+    font-size: 11px;
+    line-height: 14px;
+    opacity: 0.75;
+  }
+
+  .md-crm-heat-count {
+    font-size: 15px;
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .md-crm-heat-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 11px;
+    color: var(--md-subtle);
+  }
+
+  .md-crm-heat-foot-value {
+    font-variant-numeric: tabular-nums;
+    color: var(--md-text);
+  }
+
+  /* ── Activity feed ───────────────────────────────────────────────────── */
+
+  .md-crm-feed {
+    position: relative;
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    padding: 0 14px 12px;
+  }
+
+  .md-crm-feed-spine {
+    position: absolute;
+    inset-block: 18px 26px;
+    inset-inline-start: 18px;
+    width: 1.5px;
+    border-radius: 999px;
+    background: var(--md-dashboard-track);
+  }
+
+  /* The timestamp sits on its own rail rather than under the subject: one
+     column of times reads as a timeline, a time under every line reads as a
+     paragraph. */
+  .md-crm-feed-row {
+    position: relative;
+    display: grid;
+    grid-template-columns: 9px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    padding: 7px 8px 7px 0;
+    border-radius: var(--md-radius-lg);
+  }
+
+  .md-crm-feed-node {
+    position: relative;
+    z-index: 1;
+    width: 9px;
+    height: 9px;
+    border-radius: 999px;
+    background: var(--md-surface);
+    box-shadow: inset 0 0 0 2px var(--md-accent);
+    transition: box-shadow var(--md-motion-fast);
+  }
+
+  .md-crm-feed-row:hover .md-crm-feed-node {
+    box-shadow: inset 0 0 0 4.5px var(--md-accent);
+  }
+
+  .md-crm-feed-subject {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 17px;
+    color: var(--md-ink);
+  }
+
+  .md-crm-feed-when {
+    white-space: nowrap;
+    font-size: 10.5px;
+    line-height: 15px;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-subtle);
+  }
+
+  /* ── Empty states ────────────────────────────────────────────────────── */
+
+  .md-crm-empty {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 26px 18px 30px;
+    text-align: center;
+  }
+
+  .md-crm-empty-glyph {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    margin-bottom: 5px;
+    border-radius: var(--md-radius-lg);
+    background: var(--md-dashboard-hush);
+    color: var(--md-subtle);
+  }
+
+  .md-crm-empty-title {
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--md-ink);
+  }
+
+  .md-crm-empty-body {
+    max-width: 320px;
+    font-size: 11px;
+    line-height: 16px;
+    color: var(--md-subtle);
+  }
+
+  /* ── Loading skeleton ────────────────────────────────────────────────── */
+
+  .md-crm-skeleton {
+    display: flex;
+    flex-direction: column;
+    gap: var(--md-page-stack-gap-compact);
+  }
+
+  .md-crm-skeleton-kpis {
+    display: grid;
+    gap: var(--md-gap-sm);
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  @container md-dash (min-width: 560px) {
+    .md-crm-skeleton-kpis {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  @container md-dash (min-width: 1120px) {
+    .md-crm-skeleton-kpis {
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+    }
+  }
+
+  /* Sized to the real panels, so the swap to loaded content changes opacity
+     only — no reflow, no scroll jump. */
+  .md-crm-skeleton-block {
+    display: block;
+    border-radius: var(--md-radius-xl);
+    background: var(--md-surface);
+    box-shadow: var(--md-shadow-line);
+    animation: md-crm-skeleton-breathe 1600ms cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  }
+
+  .md-crm-skeleton-kpi {
+    height: 84px;
+  }
+
+  .md-crm-skeleton-panel-lg {
+    height: 336px;
+  }
+
+  .md-crm-skeleton-panel {
+    height: 262px;
+  }
+
+  .md-crm-skeleton-still .md-crm-skeleton-block {
+    animation: none;
+    opacity: 0.72;
+  }
+}
+
+@keyframes md-crm-tick-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes md-crm-skeleton-breathe {
+  0%,
+  100% {
+    opacity: 0.58;
+  }
+
+  50% {
+    opacity: 0.92;
+  }
 }
 
 /* Nothing on this page should animate for operators who asked for stillness.
@@ -1885,7 +2691,10 @@
 @media (prefers-reduced-motion: reduce) {
   .md-dashboard *,
   .md-dashboard *::before,
-  .md-dashboard *::after {
+  .md-dashboard *::after,
+  .md-crm-dashboard *,
+  .md-crm-dashboard *::before,
+  .md-crm-dashboard *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
@@ -1895,8 +2704,21 @@
   .md-job-row-arrow,
   .md-kpi-cell-marker,
   .md-action-row-actions,
-  .md-live-row:hover .md-live-row-arrow {
+  .md-live-row:hover .md-live-row-arrow,
+  .md-crm-row[data-openable="true"]:hover .md-crm-row-arrow,
+  .md-crm-panel-link:hover .md-crm-panel-link-arrow,
+  .md-crm-chip:active,
+  .md-crm-heat-tile:active,
+  .md-crm-panel-link:active {
     translate: 0 0;
+    scale: 1 1;
     transform: none;
+  }
+
+  /* The arrow and the reason edge still respond to hover — only their travel
+     is removed, so the row keeps its static cue. */
+  .md-crm-row[data-openable="true"]:hover .md-crm-row-arrow,
+  .md-crm-row[data-openable="true"]:focus-visible .md-crm-row-arrow {
+    opacity: 1;
   }
 }

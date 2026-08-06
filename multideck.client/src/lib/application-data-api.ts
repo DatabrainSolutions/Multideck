@@ -7,6 +7,7 @@ type BookingStatus = "On track" | "Delayed" | "Exception"
 type BookingDirection = "Import" | "Export" | "Domestic" | "Cross trade"
 
 export type LiveBooking = {
+  sourceId: string
   id: string
   customer: string
   route: string
@@ -16,6 +17,7 @@ export type LiveBooking = {
   value: string
   eta: string
   time: string
+  currentLocation: string
   status: BookingStatus
   progress: number
   owner: string
@@ -191,6 +193,7 @@ function tone(value: unknown): StatusTone {
 
 function toLiveBooking(row: Record<string, unknown>): LiveBooking {
   return {
+    sourceId: String(row.Job_ID ?? ""),
     id: String(row.Booking_Reference),
     customer: String(row.Customer_Name ?? ""),
     route: String(row.Route ?? ""),
@@ -200,6 +203,7 @@ function toLiveBooking(row: Record<string, unknown>): LiveBooking {
     value: String(row.Value_Display ?? ""),
     eta: String(row.Eta_Display ?? ""),
     time: String(row.Time_Display ?? ""),
+    currentLocation: String(row.Time_Display ?? ""),
     status: row.Status as BookingStatus,
     progress: Number(row.Progress ?? 0),
     owner: String(row.Owner_Code ?? ""),

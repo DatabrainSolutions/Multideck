@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react"
+import { AnimatePresence, motion } from "motion/react"
 import {
+  AlarmClock,
   ArrowRightLeft,
   ArrowDownRight,
   ArrowLeft,
   ArrowRight,
   ArrowUpRight,
+  Briefcase,
   Building2,
   ChartNoAxesCombined,
   CirclePause,
@@ -16,10 +19,12 @@ import {
   ListFilter,
   LoaderCircle,
   MailCheck,
+  MapPin,
   MousePointerClick,
   PenLine,
   Plus,
   RefreshCw,
+  Reply,
   RotateCcw,
   Search,
   Send,
@@ -29,6 +34,7 @@ import {
   UploadCloud,
   UserRound,
   Users,
+  Wallet,
   Workflow,
   X,
 } from "lucide-react"
@@ -69,6 +75,16 @@ import {
   type CrmAssetFile,
   type CrmAssetFolder,
 } from "@/components/multideck/crm-components"
+import {
+  CrmActivityFeed,
+  CrmAreaHeatmap,
+  CrmBand,
+  CrmDashboardSkeleton,
+  CrmFollowUpQueue,
+  CrmOpportunityValue,
+  CrmQuietLeads,
+} from "@/components/multideck/crm-dashboard"
+import { KpiStrip } from "@/components/multideck/dashboard-kpi-strip"
 import { Pagination } from "@/components/multideck/pagination"
 import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
@@ -83,6 +99,8 @@ import {
   type StatusTone,
 } from "@/data/multideck-data"
 import { useLanguage } from "@/i18n/language-provider"
+import type { DashboardKpi } from "@/lib/dashboard-live-data"
+import { mdMotion } from "@/lib/motion"
 import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
 import { getApiTeamUsers } from "@/lib/api"
 import { createCustomer, createCustomerContact, getCustomerReference, listCustomers, type ApiCustomer } from "@/lib/customer-api"
@@ -1185,6 +1203,9 @@ function DealDetailDrawer({
   )
 }
 
+/** How long an open lead can sit without contact before it counts as quiet. */
+const crmInactivityDays = 90
+
 export function CrmOverviewPage() {
   const { language, t } = useLanguage()
   const [dexterOpen, setDexterOpen] = useState(false)
@@ -1201,7 +1222,7 @@ export function CrmOverviewPage() {
     setState("loading")
     setError(null)
     Promise.all([
-      getCrmDashboard(90),
+      getCrmDashboard(crmInactivityDays),
       getCrmFollowUpOpportunities(),
     ])
       .then(([result, followUps]) => {
@@ -1242,9 +1263,57 @@ export function CrmOverviewPage() {
     maximumFractionDigits: 1,
   }), [data?.summary.currencyCode, language])
   const dateTime = useMemo(() => new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }), [language])
+  const shortDate = useMemo(() => new Intl.DateTimeFormat(language, { day: "numeric", month: "short" }), [language])
+  const formatDateTime = useCallback((value: string) => dateTime.format(new Date(value)), [dateTime])
+  const formatShortDate = useCallback((value: string) => shortDate.format(new Date(value)), [shortDate])
+  const formatMoney = useCallback(
+    (value: number, currency: string) =>
+      new Intl.NumberFormat(language, { style: "currency", currency: currency || "GBP", notation: "compact", maximumFractionDigits: 1 }).format(value),
+    [language],
+  )
+
+  /**
+   * Six numbers, each with a real destination. There is no previous period in
+   * the CRM snapshot, so no cell claims a delta it cannot evidence — the
+   * supporting line carries a second real fact instead.
+   */
+  const kpis = useMemo<DashboardKpi[]>(() => {
+    if (!data) return []
+    const queueTotal = followUpData?.summary.total ?? 0
+    const notInCrm = followUpData?.summary.notInCrm ?? 0
+    const largestArea = data.areas.reduce<{ label: string; count: number } | null>(
+      (best, area) => (!best || area.count > best.count ? { label: area.label.split(" · ")[0], count: area.count } : best),
+      null,
+    )
+    return [
+      { label: t("Open leads"), value: String(data.summary.openLeads), detail: data.summary.staleLeads ? `${data.summary.staleLeads} ${t("gone quiet")}` : t("all recently touched"), tone: "teal", icon: Users },
+      { label: t("Needs follow-up"), value: String(queueTotal), detail: notInCrm ? `${notInCrm} ${t("not in CRM yet")}` : t("all already on record"), tone: "amber", icon: AlarmClock },
+      { label: t("Replies due"), value: String(followUpData?.summary.repliesDue ?? 0), detail: t("people waiting on you"), tone: "red", icon: Reply },
+      { label: t("Open deals"), value: String(data.summary.openDeals), detail: `${data.pipeline.length} ${data.pipeline.length === 1 ? t("stage in play") : t("stages in play")}`, tone: "blue", icon: Briefcase },
+      { label: t("Pipeline value"), value: money.format(data.summary.pipelineValue), detail: t("open and unweighted"), tone: "green", icon: Wallet },
+      { label: t("Areas"), value: String(data.areas.length), detail: largestArea ? `${t("most in")} ${largestArea.label}` : t("no address on file"), tone: "neutral", icon: MapPin },
+    ]
+  }, [data, followUpData, money, t])
+
+  const openKpi = useCallback((label: string) => {
+    if (label === t("Open deals") || label === t("Pipeline value")) window.location.href = "/crm/deals"
+    else if (label === t("Areas")) window.location.href = "/crm/accounts"
+    else if (label === t("Open leads")) window.location.href = "/crm/leads"
+  }, [t])
+
+  const openFollowUp = useCallback((opportunity: CrmFollowUpOpportunity) => {
+    if (opportunity.recordType === "lead" && opportunity.recordId) window.location.href = `/crm/leads/${opportunity.recordId}`
+    else if (opportunity.threadId && opportunity.mailboxId) window.location.href = `/inbox?mailbox=${encodeURIComponent(opportunity.mailboxId)}&thread=${encodeURIComponent(opportunity.threadId)}`
+  }, [])
+
+  const renderCreate = useCallback((opportunity: CrmFollowUpOpportunity) => (
+    <FollowUpCreateMenu opportunity={opportunity} onChoose={(kind) => { setCreateOpportunity(opportunity); setCreateKind(kind) }} />
+  ), [])
+
+  const openLead = useCallback((leadId: string) => { window.location.href = `/crm/leads/${leadId}` }, [])
 
   return (
-    <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t("CRM dashboard")} className="md-page md-page-stack-compact">
+    <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t("CRM dashboard")} className="md-page md-page-stack-compact md-dashboard md-crm-dashboard">
       <CrmPageHeader
         title={t("CRM dashboard")}
         summary={<>{t("Your assigned leads, deals, follow-ups and recent sales activity in one consistent view.")}</>}
@@ -1252,95 +1321,73 @@ export function CrmOverviewPage() {
         action={<Button className="h-10 rounded-[var(--md-radius-lg)]" onClick={() => { window.location.href = "/crm/deals" }}>{t("Open deals")}</Button>}
       />
 
-      {state === "loading" ? (
-        <Surface padding="lg" className="grid min-h-[320px] place-items-center rounded-[var(--md-radius-xl)]" role="status">
-          <div className="text-center"><LoaderCircle className="mx-auto size-6 animate-spin text-[var(--md-accent)]" /><p className="mt-3 text-[13px] text-[var(--md-text)]">{t("Loading your CRM dashboard…")}</p></div>
-        </Surface>
-      ) : null}
-
-      {state === "error" ? (
-        <Surface padding="lg" className="rounded-[var(--md-radius-xl)]" role="alert">
-          <SectionHeader title={t("The CRM dashboard could not be loaded.")} meta={error ?? undefined} />
-          <Button variant="outline" className="mt-4" onClick={() => setReloadKey((key) => key + 1)}><RefreshCw className="size-4" />{t("Retry")}</Button>
-        </Surface>
-      ) : null}
-
-      {state === "ready" && data ? (
-        <>
-          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
-            {[
-              [t("Open leads"), data.summary.openLeads], [t("Needs follow-up"), followUpData?.summary.total ?? 0],
-              [t("Replies due"), followUpData?.summary.repliesDue ?? 0], [t("Open deals"), data.summary.openDeals],
-              [t("Pipeline value"), money.format(data.summary.pipelineValue)], [t("Areas"), data.areas.length],
-            ].map(([label, value]) => (
-              <Surface key={String(label)} padding="md" className="rounded-[var(--md-radius-xl)]">
-                <p className="text-[11px] font-medium text-[var(--md-subtle)]">{label}</p>
-                <p className="mt-2 text-[22px] font-medium tabular-nums text-[var(--md-ink)]" data-i18n-skip>{value}</p>
-              </Surface>
-            ))}
-          </div>
-
-          <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-            <div className="flex flex-col gap-2 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-              <SectionHeader title={t("Who needs following up")} meta={followUpData ? t("Prioritised from live email and CRM activity") : undefined} />
-              {followUpData?.generatedAt ? <p className="text-[11px] text-[var(--md-subtle)]">{t("Checked")} {dateTime.format(new Date(followUpData.generatedAt))}</p> : null}
-            </div>
-            {followUpData?.items.length ? (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader><TableRow>
-                    {["Person or account", "Why now", "Latest conversation", "Last activity", "CRM", "Action"].map((label) => <TableHead key={label} className="whitespace-nowrap">{t(label)}</TableHead>)}
-                  </TableRow></TableHeader>
-                  <TableBody>
-                    {followUpData.items.map((opportunity) => {
-                      const reason = opportunity.reasonCode === "reply_due" ? t("Reply waiting")
-                        : opportunity.reasonCode === "first_follow_up" ? t("3 days without a reply")
-                          : opportunity.reasonCode === "second_follow_up" ? t("5 days since the last follow-up")
-                            : opportunity.reasonCode === "never_contacted" ? t("Never contacted") : t("Scheduled follow-up due")
-                      const openRecord = () => {
-                        if (opportunity.recordType === "lead" && opportunity.recordId) window.location.href = `/crm/leads/${opportunity.recordId}`
-                        else if (opportunity.threadId && opportunity.mailboxId) window.location.href = `/inbox?mailbox=${encodeURIComponent(opportunity.mailboxId)}&thread=${encodeURIComponent(opportunity.threadId)}`
-                      }
-                      return (
-                      <TableRow key={opportunity.id} className={opportunity.recordId || opportunity.threadId ? "cursor-pointer" : undefined} onClick={openRecord}>
-                        <TableCell className="min-w-[210px]">
-                          <p className="font-medium text-[var(--md-ink)]" dir="auto">{opportunity.personName || opportunity.companyName || opportunity.email || t("Unknown sender")}</p>
-                          <p className="mt-0.5 text-[11px] text-[var(--md-subtle)]" dir="auto">{opportunity.companyName && opportunity.companyName !== opportunity.personName ? opportunity.companyName : opportunity.email}</p>
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap"><StatusPill tone={opportunity.reasonCode === "reply_due" ? "red" : opportunity.reasonCode === "second_follow_up" ? "amber" : "blue"}>{reason}</StatusPill><p className="mt-1 text-[10.5px] text-[var(--md-subtle)]">{opportunity.daysWaiting === 0 ? t("Today") : `${opportunity.daysWaiting} ${t("days")}`}</p></TableCell>
-                        <TableCell className="max-w-[380px]"><p className="line-clamp-1 font-medium text-[var(--md-ink)]" dir="auto">{opportunity.subject}</p><p className="mt-1 line-clamp-2 text-[11px] text-[var(--md-subtle)]" dir="auto">{opportunity.context || t("No message preview available")}</p></TableCell>
-                        <TableCell className="whitespace-nowrap">{dateTime.format(new Date(opportunity.lastActivityAt))}</TableCell>
-                        <TableCell><StatusPill tone={opportunity.canCreate ? "amber" : "green"}>{opportunity.canCreate ? t("Not in CRM") : t(opportunity.recordType === "lead" ? "Lead" : opportunity.recordType === "contact" ? "Contact" : "Account")}</StatusPill></TableCell>
-                        <TableCell onClick={(event) => event.stopPropagation()}>{opportunity.canCreate ? <FollowUpCreateMenu opportunity={opportunity} onChoose={(kind) => { setCreateOpportunity(opportunity); setCreateKind(kind) }} /> : <Button type="button" variant="ghost" size="sm" className="h-8 rounded-[var(--md-radius-lg)] px-2.5 text-[12px]" onClick={openRecord}>{t(opportunity.threadId ? "Open conversation" : "Open record")}<ArrowRight className="size-3.5" /></Button>}</TableCell>
-                      </TableRow>
-                    )})}
-                  </TableBody>
-                </Table>
-              </div>
-            ) : (
-              <div className="px-5 py-12 text-center">
-                <p className="text-[14px] font-medium text-[var(--md-ink)]">{t("No follow-up opportunities right now.")}</p>
-                <p className="mt-2 text-[12px] text-[var(--md-subtle)]">{t("Human replies, overdue sent email, and due CRM activity will appear here automatically.")}</p>
-              </div>
-            )}
-          </Surface>
-
-          <div className="grid gap-[var(--md-page-stack-gap-compact)] xl:grid-cols-2">
-            <Surface padding="lg" className="rounded-[var(--md-radius-xl)]">
-              <SectionHeader title={t("Pipeline by stage")} meta={t("Your assigned open deals")} />
-              <div className="mt-4 grid gap-2">
-                {data.pipeline.length ? data.pipeline.map((stage) => <div key={stage.stageId} className="grid grid-cols-[1fr_auto_auto] items-center gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] px-3 py-3"><div><p className="text-[13px] font-medium text-[var(--md-ink)]" dir="auto">{stage.stage}</p><p className="text-[11px] text-[var(--md-subtle)]" dir="auto">{stage.pipeline}</p></div><span className="text-[12px] tabular-nums">{stage.count}</span><span className="text-[12px] font-medium tabular-nums">{new Intl.NumberFormat(language, { style: "currency", currency: stage.currencyCode || data.summary.currencyCode || "GBP", notation: "compact" }).format(stage.value)}</span></div>) : <p className="py-8 text-center text-[12px] text-[var(--md-subtle)]">{t("No assigned open deals yet.")}</p>}
-              </div>
+      {/* The skeleton reserves the loaded page's geometry, so arriving data
+          changes opacity rather than pushing the page around. */}
+      <AnimatePresence mode="wait" initial={false}>
+        {state === "loading" ? (
+          <motion.div key="loading" exit={{ opacity: 0 }} transition={mdMotion.exit}>
+            <CrmDashboardSkeleton />
+          </motion.div>
+        ) : state === "error" ? (
+          <motion.div key="error" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={mdMotion.enter}>
+            <Surface padding="lg" className="rounded-[var(--md-radius-xl)]" role="alert">
+              <SectionHeader title={t("The CRM dashboard could not be loaded.")} meta={error ?? undefined} />
+              <Button variant="outline" className="mt-4" onClick={() => setReloadKey((key) => key + 1)}><RefreshCw className="size-4" />{t("Retry")}</Button>
             </Surface>
-            <Surface padding="lg" className="rounded-[var(--md-radius-xl)]">
-              <SectionHeader title={t("Recent activity")} meta={t("Your CRM work")} />
-              <div className="mt-4 grid gap-3">
-                {data.activity.length ? data.activity.map((item) => <div key={item.id} className="grid grid-cols-[auto_1fr] gap-3"><span className="mt-1.5 size-2 rounded-full bg-[var(--md-accent)]" /><div><p className="text-[13px] font-medium text-[var(--md-ink)]" dir="auto">{item.subject}</p>{item.summary ? <p className="mt-1 line-clamp-2 text-[12px] text-[var(--md-text)]" dir="auto">{item.summary}</p> : null}<p className="mt-1 text-[11px] text-[var(--md-subtle)]">{dateTime.format(new Date(item.at))}</p></div></div>) : <p className="py-8 text-center text-[12px] text-[var(--md-subtle)]">{t("No assigned CRM activity yet.")}</p>}
-              </div>
-            </Surface>
-          </div>
-        </>
-      ) : null}
+          </motion.div>
+        ) : data ? (
+          <motion.div
+            key="ready"
+            className="flex flex-col gap-[var(--md-page-stack-gap-compact)]"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={mdMotion.enter}
+          >
+            <CrmBand index={0}>
+              <KpiStrip kpis={kpis} columns={6} onSelect={openKpi} />
+            </CrmBand>
+
+            {/* What the pipeline is worth, beside the work that is waiting —
+                the pair a salesperson actually operates from. */}
+            <CrmBand index={1} className="md-crm-lead">
+              <CrmOpportunityValue
+                stages={data.pipeline}
+                totalValue={data.summary.pipelineValue}
+                totalDeals={data.summary.openDeals}
+                currencyCode={data.summary.currencyCode || "GBP"}
+                formatValue={formatMoney}
+                onOpen={() => { window.location.href = "/crm/deals" }}
+              />
+              <CrmFollowUpQueue
+                data={followUpData}
+                onOpen={openFollowUp}
+                renderCreate={renderCreate}
+                onViewAll={() => { window.location.href = "/inbox" }}
+              />
+            </CrmBand>
+
+            {/* Money quietly at risk, where the leads are, and what has just
+                happened — the three supporting reads. */}
+            <CrmBand index={2} className="md-crm-trio">
+              <CrmQuietLeads
+                leads={data.followUps}
+                inactivityDays={crmInactivityDays}
+                formatValue={formatMoney}
+                formatDate={formatShortDate}
+                onOpenLead={openLead}
+                onViewAll={() => { window.location.href = "/crm/leads" }}
+              />
+              <CrmAreaHeatmap areas={data.areas} onOpen={() => { window.location.href = "/crm/accounts" }} />
+              <CrmActivityFeed
+                activity={data.activity}
+                formatDateTime={formatDateTime}
+                onOpen={() => { window.location.href = "/crm/activity" }}
+              />
+            </CrmBand>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
       <FollowUpRecordDialog
         opportunity={createOpportunity}
         kind={createKind}

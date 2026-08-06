@@ -169,7 +169,7 @@ function NotificationBell() {
           type="button"
           aria-label={t("Open notifications")}
           title={t("Open notifications")}
-          className="group relative grid size-10 shrink-0 place-items-center overflow-hidden rounded-full bg-[var(--md-glass)] text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] hover:shadow-[var(--md-shadow-soft)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] data-[state=open]:bg-[var(--md-bg-strong)] data-[state=open]:text-[var(--md-accent)]"
+          className="group relative grid size-9 shrink-0 place-items-center overflow-hidden rounded-full bg-[var(--md-glass)] text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] hover:shadow-[var(--md-shadow-soft)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] data-[state=open]:bg-[var(--md-bg-strong)] data-[state=open]:text-[var(--md-accent)]"
         >
           <motion.span
             aria-hidden="true"
@@ -180,10 +180,10 @@ function NotificationBell() {
             transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
             className="relative"
           >
-            <Bell className="size-4" strokeWidth={1.3} />
+            <Bell className="size-3.5" strokeWidth={1.3} />
           </motion.span>
           {unreadCount > 0 ? <motion.span
-            className="absolute end-2.5 top-2.5 size-1.5 rounded-full bg-[var(--md-amber)] shadow-[0_0_0_2px_var(--md-glass)]"
+            className="absolute end-2 top-2 size-1.5 rounded-full bg-[var(--md-amber)] shadow-[0_0_0_2px_var(--md-glass)]"
             animate={shouldReduceMotion ? undefined : { scale: [1, 1.35, 1] }}
             transition={{ duration: 0.54, delay: 0.32, ease: [0.22, 1, 0.36, 1] }}
           /> : null}
@@ -354,7 +354,7 @@ export function SidebarNavItem({
       title={t(item.label)}
       className={cn(
         buttonVariants({ variant: "ghost", size: "sm" }),
-        "group relative h-10 w-full justify-start gap-2 overflow-hidden rounded-[var(--md-radius-md)] px-2.5 text-[14px] font-medium text-[var(--md-text)] transition-[color,opacity,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+        "group relative h-10 w-full justify-start gap-2 overflow-hidden rounded-[var(--md-radius-lg)] px-2.5 text-[14px] font-medium text-[var(--md-text)] transition-[color,opacity,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
         nested && "h-9 text-[13px]",
         "bg-transparent hover:bg-transparent hover:text-[var(--md-ink)] aria-expanded:bg-transparent dark:hover:bg-transparent focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]",
         isDexterItem && "md-sidebar-dexter-item !text-white hover:!text-white focus-visible:!text-white",
@@ -362,12 +362,11 @@ export function SidebarNavItem({
         isActive && "text-[var(--md-selected-text)]",
         accent === "dexter" && isActive && "!text-white",
         isDisabled && "cursor-default opacity-55 hover:text-[var(--md-text)]",
-        !isDisabled && !collapsed && !isDexterItem && "hover:scale-[1.004] active:scale-[0.986] motion-reduce:hover:scale-100 motion-reduce:active:scale-100",
         className,
       )}
       style={{
         transitionDuration: "150ms",
-        transitionProperty: "color, opacity, scale, box-shadow",
+        transitionProperty: "color, opacity",
         transitionTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1)",
       }}
       disabled={isDisabled}
@@ -385,7 +384,7 @@ export function SidebarNavItem({
             <span
               data-sidebar-active-surface
               aria-hidden="true"
-              className="pointer-events-none absolute inset-0 z-[1] rounded-[var(--md-radius-md)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.48),0_7px_16px_rgba(42,52,50,0.12)]"
+              className="pointer-events-none absolute inset-0 z-[1] rounded-[var(--md-radius-lg)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.48),0_7px_16px_rgba(42,52,50,0.12)]"
             />
           ) : null}
         </>
@@ -395,43 +394,44 @@ export function SidebarNavItem({
             layoutId={activeLayoutId}
             data-sidebar-active-surface
             aria-hidden="true"
-            className="pointer-events-none absolute inset-0 rounded-[var(--md-radius-md)] bg-[var(--md-bg-strong)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.68),0_8px_18px_rgba(42,52,50,0.08)]"
+            className={cn(
+              "pointer-events-none absolute inset-0 rounded-[var(--md-radius-lg)] bg-[var(--md-bg-strong)]",
+              nested ? "shadow-[inset_0_0_0_1px_var(--md-hairline)]" : "shadow-[inset_0_0_0_1px_rgba(255,255,255,0.68),0_8px_18px_rgba(42,52,50,0.08)]",
+            )}
             transition={mdMotion.fast}
           />
         ) : (
           <span
             data-sidebar-active-surface
             aria-hidden="true"
-            className="pointer-events-none absolute inset-0 rounded-[var(--md-radius-md)] bg-[var(--md-bg-strong)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.68),0_8px_18px_rgba(42,52,50,0.08)]"
+            className={cn(
+              "pointer-events-none absolute inset-0 rounded-[var(--md-radius-lg)] bg-[var(--md-bg-strong)]",
+              nested ? "shadow-[inset_0_0_0_1px_var(--md-hairline)]" : "shadow-[inset_0_0_0_1px_rgba(255,255,255,0.68),0_8px_18px_rgba(42,52,50,0.08)]",
+            )}
           />
         )
       ) : !isDisabled ? (
         <span
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 scale-[0.985] rounded-[var(--md-radius-md)] bg-[var(--md-hover)] opacity-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_1px_2px_rgba(11,20,19,0.035)] transition-[opacity,transform] duration-100 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-100 group-hover:opacity-100 group-focus-visible:scale-100 group-focus-visible:opacity-100 motion-reduce:transition-none"
+          className="pointer-events-none absolute inset-0 rounded-[var(--md-radius-lg)] bg-[var(--md-hover)] opacity-0 transition-opacity duration-100 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none"
           style={{
             transitionDuration: "100ms",
-            transitionProperty: "opacity, scale",
+            transitionProperty: "opacity",
             transitionTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1)",
           }}
         />
       ) : null}
       <span
         className={cn(
-          "relative grid size-5 place-items-center text-[var(--md-subtle)] transition-[background,color] duration-200",
-          !isActive && "rounded-[var(--md-radius-sm)] group-hover:bg-[var(--md-icon-well)] group-hover:text-[var(--md-ink)]",
+          "relative grid size-5 place-items-center text-[var(--md-subtle)] transition-colors duration-150",
+          !isActive && "group-hover:text-[var(--md-ink)] group-focus-visible:text-[var(--md-ink)]",
           isActive && "text-[var(--md-selected-text)]",
           isDexterItem && "z-10 !text-white group-hover:bg-white/10 group-hover:!text-white",
         )}
       >
         <span
           aria-hidden="true"
-          className="grid size-full place-items-center transition-transform duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.04] group-active:scale-[0.94] motion-reduce:transition-none motion-reduce:group-hover:scale-100 motion-reduce:group-active:scale-100"
-          style={{
-            transitionDuration: "150ms",
-            transitionProperty: "translate, scale",
-            transitionTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1)",
-          }}
+          className="grid size-full place-items-center"
         >
           <Icon data-icon={collapsed ? undefined : "inline-start"} strokeWidth={1.2} />
         </span>
@@ -1420,12 +1420,12 @@ export function AppSidebar({
             aria-label={t(collapsed ? "Expand sidebar" : "Collapse sidebar")}
             title={t(collapsed ? "Expand sidebar" : "Collapse sidebar")}
             className={cn(
-              "size-10 rounded-[var(--md-radius-md)] bg-[var(--md-glass)] text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]",
-              !collapsed && "ms-1 size-9",
+              "size-9 rounded-full bg-[var(--md-glass)] text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]",
+              !collapsed && "ms-1",
             )}
             onClick={() => onCollapsedChange(!collapsed)}
           >
-            {collapsed ? <PanelLeftOpen className="size-4" strokeWidth={1.3} /> : <PanelLeftClose className="size-4" strokeWidth={1.3} />}
+            {collapsed ? <PanelLeftOpen className="size-3.5" strokeWidth={1.3} /> : <PanelLeftClose className="size-3.5" strokeWidth={1.3} />}
           </Button>
         ) : null}
       </div>
@@ -1853,7 +1853,7 @@ export function AppSidebar({
                             exit={shouldReduceMotion ? undefined : { height: 0, opacity: 0 }}
                             transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.fast)}
                           >
-                            <div className="md-sidebar-expanded-options flex flex-col gap-1 rounded-[var(--md-radius-lg)] bg-[rgba(255,255,255,0.3)] p-1 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.48),0_1px_0_rgba(11,20,19,0.03)] dark:bg-[rgba(255,255,255,0.03)]">
+                            <div className="md-sidebar-expanded-options flex flex-col gap-1 rounded-[var(--md-radius-xl)] bg-[var(--md-bg-strong)] p-1 dark:bg-[var(--md-surface-soft)]">
                               <AnimatePresence initial={false}>
                                 {destination.children?.map((child) => {
                                   const childId = nestedDestinationId(destination.id, child)

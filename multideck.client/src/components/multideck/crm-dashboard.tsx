@@ -1,0 +1,904 @@
+import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { AnimatePresence, motion, useReducedMotion } from "motion/react"
+import { ArrowRight, Inbox, MapPin, Moon, Workflow } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { useLanguage } from "@/i18n/language-provider"
+import { cn } from "@/lib/utils"
+import { mdMotion, staggerRamp } from "@/lib/motion"
+import type {
+  CrmDashboardData,
+  CrmDashboardFollowUp,
+  CrmFollowUpData,
+  CrmFollowUpOpportunity,
+  CrmFollowUpReason,
+} from "@/lib/lead-api"
+import type { StatusTone } from "@/data/multideck-data"
+import { CountUpValue } from "./rolling-digits"
+import { StatusPill, toneToVar } from "./status-pill"
+import { Surface } from "./surface"
+
+/* ── Shared panel shell ──────────────────────────────────────────────────── */
+
+/**
+ * Every panel on this dashboard is the same object: a title, an optional link,
+ * and a body that grows. One shell is what lets five panels of very different
+ * content still read as one grid.
+ */
+function Panel({
+  title,
+  action,
+  children,
+  className,
+}: {
+  title: string
+  action?: ReactNode
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <Surface padding="none" className={cn("md-crm-panel", className)}>
+      <div className="md-crm-panel-head">
+        <h2 className="md-crm-panel-title">{title}</h2>
+        {action}
+      </div>
+      {children}
+    </Surface>
+  )
+}
+
+function PanelLink({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <Button type="button" variant="ghost" size="sm" className="md-crm-panel-link" onClick={onClick}>
+      {label}
+      <ArrowRight className="md-crm-panel-link-arrow size-3" strokeWidth={1.6} />
+    </Button>
+  )
+}
+
+function EmptyState({ icon: Icon, title, body }: { icon: typeof Inbox; title: string; body: string }) {
+  return (
+    <div className="md-crm-empty">
+      <span className="md-crm-empty-glyph" aria-hidden="true"><Icon className="size-4" strokeWidth={1.4} /></span>
+      <p className="md-crm-empty-title">{title}</p>
+      <p className="md-crm-empty-body">{body}</p>
+    </div>
+  )
+}
+
+/**
+ * The dashboard's one row shape: a glyph, a two-line body, and a right-hand
+ * stack. Three panels use it, which is why a queue entry, a quiet lead and a
+ * logged activity scan at the same rhythm.
+ */
+function Row({
+  index,
+  accent,
+  glyph,
+  title,
+  sub,
+  meter,
+  side,
+  onOpen,
+  ariaLabel,
+}: {
+  index: number
+  accent?: string
+  glyph?: ReactNode
+  title: ReactNode
+  sub?: ReactNode
+  /** A proportional bar between the body and the side, used where rows carry a
+   *  comparable number. */
+  meter?: ReactNode
+  side: ReactNode
+  onOpen?: () => void
+  ariaLabel?: string
+}) {
+  const shouldReduceMotion = useReducedMotion()
+
+  return (
+    <motion.div
+      layout="position"
+      className="md-crm-row"
+      data-openable={onOpen ? "true" : undefined}
+      data-metered={meter ? "true" : undefined}
+      style={accent ? { ["--md-row-accent" as string]: accent } : undefined}
+      role={onOpen ? "button" : undefined}
+      tabIndex={onOpen ? 0 : undefined}
+      aria-label={onOpen ? ariaLabel : undefined}
+      onClick={onOpen}
+      onKeyDown={
+        onOpen
+          ? (event) => {
+              if (event.key !== "Enter" && event.key !== " ") return
+              event.preventDefault()
+              onOpen()
+            }
+          : undefined
+      }
+      initial={shouldReduceMotion ? false : { opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={shouldReduceMotion ? undefined : { opacity: 0, y: -5 }}
+      transition={shouldReduceMotion ? { duration: 0 } : { ...mdMotion.enter, delay: staggerRamp(index, 0.028) }}
+    >
+      {glyph ? <span className="md-crm-row-glyph">{glyph}</span> : null}
+      <span className="md-crm-row-body">
+        <span className="md-crm-row-title" dir="auto">{title}</span>
+        {sub ? <span className="md-crm-row-sub" dir="auto">{sub}</span> : null}
+      </span>
+      {meter}
+      <span className="md-crm-row-side">{side}</span>
+    </motion.div>
+  )
+}
+
+/** Grown with a transform rather than a width, so a sweep of bars never asks the
+ *  panel for a layout pass. */
+function Meter({ share, index, className }: { share: number; index: number; className?: string }) {
+  const shouldReduceMotion = useReducedMotion()
+
+  return (
+    <span className={cn("md-crm-meter", className)} aria-hidden="true">
+      <motion.span
+        className="md-crm-meter-fill"
+        initial={shouldReduceMotion ? false : { scaleX: 0 }}
+        animate={{ scaleX: Math.max(share, 0.014) }}
+        transition={shouldReduceMotion ? { duration: 0 } : { ...mdMotion.morph, delay: staggerRamp(index, 0.05) }}
+      />
+    </span>
+  )
+}
+
+/* ── Opportunity value ───────────────────────────────────────────────────── */
+
+const gaugeTickCount = 46
+const gaugeSweep = 244
+const gaugeRadius = 78
+const gaugeTickLength = 15
+const gaugeSize = (gaugeRadius + gaugeTickLength / 2 + 3) * 2
+
+/**
+ * Ordered stages read as progression, so the arc uses one hue deepening across
+ * the pipeline rather than five unrelated colours. The ramp is mixed against the
+ * panel surface rather than transparency: a 46%-alpha tick on a dark panel reads
+ * as an empty track, and none of this arc is empty.
+ */
+function stageShade(index: number, total: number) {
+  const step = total <= 1 ? 1 : index / (total - 1)
+  return `color-mix(in srgb, var(--md-accent) ${Math.round(46 + step * 54)}%, var(--md-surface))`
+}
+
+/**
+ * Open opportunity value, drawn as one arc split by stage. The ticks are the
+ * graph and the centre is the answer: an operator should be able to read the
+ * total and the shape of it in the same glance.
+ *
+ * The arc is a value breakdown, not progress towards a target — the CRM
+ * snapshot carries no quota, so nothing here implies one.
+ */
+export function CrmOpportunityValue({
+  stages,
+  totalValue,
+  totalDeals,
+  currencyCode,
+  formatValue,
+  onOpen,
+}: {
+  stages: CrmDashboardData["pipeline"]
+  totalValue: number
+  totalDeals: number
+  currencyCode: string
+  formatValue: (value: number, currency: string) => string
+  onOpen?: () => void
+}) {
+  const { t } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
+  const [hovered, setHovered] = useState<string | null>(null)
+
+  /**
+   * Ticks are handed to stages by cumulative share, with one blank slot left
+   * between stages so the breakdown is readable as segments rather than one
+   * gradient. Every stage carrying value keeps at least one tick, so a stage
+   * worth 2% of the pipeline is still on the arc.
+   */
+  const { ticks, legend } = useMemo(() => {
+    const gaps = Math.max(stages.length - 1, 0)
+    const usable = Math.max(gaugeTickCount - gaps, stages.length)
+    const basis = stages.reduce((sum, stage) => sum + stage.value, 0)
+    const weights = stages.map((stage) => (basis > 0 ? stage.value / basis : 1 / Math.max(stages.length, 1)))
+    const raw = weights.map((weight) => weight * usable)
+    const counts = raw.map((value, index) => (weights[index] > 0 ? Math.max(1, Math.floor(value)) : 0))
+
+    let spare = usable - counts.reduce((sum, count) => sum + count, 0)
+    const byRemainder = raw
+      .map((value, index) => ({ index, remainder: value - Math.floor(value) }))
+      .sort((a, b) => b.remainder - a.remainder)
+    for (let step = 0; spare > 0 && byRemainder.length; step += 1) {
+      counts[byRemainder[step % byRemainder.length].index] += 1
+      spare -= 1
+    }
+
+    /** `null` marks a spacer slot: it holds its place on the arc and paints nothing. */
+    const assigned: Array<{ stageId: string; color: string } | null> = []
+    stages.forEach((stage, index) => {
+      if (index > 0) assigned.push(null)
+      const color = stageShade(index, stages.length)
+      for (let n = 0; n < counts[index]; n += 1) assigned.push({ stageId: stage.stageId, color })
+    })
+
+    return {
+      ticks: assigned,
+      legend: stages.map((stage, index) => ({ ...stage, color: stageShade(index, stages.length) })),
+    }
+  }, [stages])
+
+  const centre = gaugeSize / 2
+
+  return (
+    <Panel
+      title={t("Opportunity value")}
+      action={onOpen ? <PanelLink label={t("Deals")} onClick={onOpen} /> : undefined}
+      className="md-crm-gauge-panel"
+    >
+      {stages.length ? (
+        <>
+          <div className="md-crm-gauge">
+            <svg
+              className="md-crm-gauge-svg"
+              width={gaugeSize}
+              height={gaugeSize * 0.86}
+              viewBox={`0 0 ${gaugeSize} ${gaugeSize * 0.86}`}
+              role="img"
+              aria-label={`${t("Opportunity value")} ${formatValue(totalValue, currencyCode)}`}
+            >
+              {ticks.map((tick, index) => {
+                if (!tick) return null
+                const angle = (-gaugeSweep / 2 + (index / (gaugeTickCount - 1)) * gaugeSweep) * (Math.PI / 180)
+                const sin = Math.sin(angle)
+                const cos = Math.cos(angle)
+                const inner = gaugeRadius - gaugeTickLength / 2
+                const outer = gaugeRadius + gaugeTickLength / 2
+                return (
+                  <line
+                    key={index}
+                    className="md-crm-gauge-tick"
+                    data-dimmed={hovered && hovered !== tick.stageId ? "true" : undefined}
+                    x1={centre + inner * sin}
+                    y1={centre - inner * cos}
+                    x2={centre + outer * sin}
+                    y2={centre - outer * cos}
+                    stroke={tick.color}
+                    strokeWidth={5}
+                    strokeLinecap="round"
+                    // A CSS one-shot rather than 46 motion values: the sweep
+                    // costs no React work and no per-frame JavaScript at all,
+                    // and the whole arc lands inside a quarter of a second.
+                    style={shouldReduceMotion ? undefined : { animationDelay: `${index * 5}ms` }}
+                  />
+                )
+              })}
+            </svg>
+
+            <div className="md-crm-gauge-centre">
+              <CountUpValue value={formatValue(totalValue, currencyCode)} className="md-crm-gauge-value" />
+              <p className="md-crm-gauge-caption">
+                {totalDeals} {totalDeals === 1 ? t("open deal") : t("open deals")}
+              </p>
+            </div>
+          </div>
+
+          <div className="md-crm-legend" onMouseLeave={() => setHovered(null)}>
+            {legend.map((stage) => (
+              <button
+                key={stage.stageId}
+                type="button"
+                className="md-crm-legend-row"
+                data-dimmed={hovered && hovered !== stage.stageId ? "true" : undefined}
+                onMouseEnter={() => setHovered(stage.stageId)}
+                onFocus={() => setHovered(stage.stageId)}
+                onBlur={() => setHovered(null)}
+                onClick={onOpen}
+              >
+                <span className="md-crm-legend-dot" style={{ background: stage.color }} aria-hidden="true" />
+                <span className="md-crm-legend-name" dir="auto">{stage.stage}</span>
+                <span className="md-crm-legend-count" data-i18n-skip dir="ltr">{stage.count}</span>
+                <span className="md-crm-legend-value" data-i18n-skip dir="ltr">
+                  {formatValue(stage.value, stage.currencyCode || currencyCode)}
+                </span>
+              </button>
+            ))}
+          </div>
+        </>
+      ) : (
+        <EmptyState
+          icon={Workflow}
+          title={t("No assigned open deals yet.")}
+          body={t("Deals you own will build this profile as they move through the pipeline.")}
+        />
+      )}
+    </Panel>
+  )
+}
+
+/* ── Follow-up queue ─────────────────────────────────────────────────────── */
+
+/**
+ * The five reason codes the server returns collapse into four buckets an
+ * operator actually sorts by. They stay mutually exclusive, so the chip counts
+ * always add up to the queue total.
+ */
+export type CrmQueueBucket = "reply_due" | "awaiting_reply" | "scheduled" | "never_contacted"
+
+const bucketOfReason: Record<CrmFollowUpReason, CrmQueueBucket> = {
+  reply_due: "reply_due",
+  first_follow_up: "awaiting_reply",
+  second_follow_up: "awaiting_reply",
+  scheduled_due: "scheduled",
+  never_contacted: "never_contacted",
+}
+
+const bucketTone: Record<CrmQueueBucket, StatusTone> = {
+  reply_due: "red",
+  awaiting_reply: "amber",
+  scheduled: "blue",
+  never_contacted: "neutral",
+}
+
+/** Untranslated keys — each call site runs them through the language layer. */
+const bucketLabel: Record<CrmQueueBucket, string> = {
+  reply_due: "Reply waiting",
+  awaiting_reply: "Awaiting reply",
+  scheduled: "Scheduled",
+  never_contacted: "Never contacted",
+}
+
+const bucketOrder: CrmQueueBucket[] = ["reply_due", "awaiting_reply", "scheduled", "never_contacted"]
+
+function initialsOf(source: string) {
+  const words = source.replace(/@.*$/, "").split(/[\s._-]+/).filter(Boolean)
+  const letters = words.length > 1 ? `${words[0][0]}${words[1][0]}` : source.slice(0, 2)
+  return letters.toLocaleUpperCase()
+}
+
+function QueueFilterChips({
+  counts,
+  total,
+  active,
+  onSelect,
+}: {
+  counts: Record<CrmQueueBucket, number>
+  total: number
+  active: CrmQueueBucket | null
+  onSelect: (bucket: CrmQueueBucket | null) => void
+}) {
+  const { t } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
+  const chips: Array<{ key: CrmQueueBucket | null; label: string; count: number; tone: StatusTone }> = [
+    { key: null, label: "All", count: total, tone: "teal" },
+    ...bucketOrder
+      .filter((bucket) => counts[bucket] > 0)
+      .map((bucket) => ({ key: bucket, label: bucketLabel[bucket], count: counts[bucket], tone: bucketTone[bucket] })),
+  ]
+
+  return (
+    <div className="md-crm-chips" role="group" aria-label={t("Filter the follow-up queue")}>
+      {chips.map((chip) => {
+        const selected = active === chip.key
+        return (
+          <button
+            key={chip.key ?? "all"}
+            type="button"
+            className="md-crm-chip"
+            aria-pressed={selected}
+            style={{ ["--md-chip-accent" as string]: toneToVar(chip.tone) }}
+            onClick={() => onSelect(chip.key)}
+          >
+            {/* One indicator for the whole row. Motion interpolates it between
+                chips, so switching filters slides rather than blinks — and a
+                change mid-flight retargets instead of restarting. */}
+            {selected ? (
+              <motion.span
+                layoutId="md-crm-chip-indicator"
+                className="md-crm-chip-indicator"
+                aria-hidden="true"
+                transition={shouldReduceMotion ? { duration: 0 } : mdMotion.spring}
+              />
+            ) : null}
+            <span className="md-crm-chip-label">{t(chip.label)}</span>
+            <span className="md-crm-chip-count" data-i18n-skip dir="ltr">{chip.count}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+const QueueRow = memo(function QueueRow({
+  opportunity,
+  index,
+  onOpen,
+  renderCreate,
+}: {
+  opportunity: CrmFollowUpOpportunity
+  index: number
+  onOpen: (opportunity: CrmFollowUpOpportunity) => void
+  renderCreate: (opportunity: CrmFollowUpOpportunity) => ReactNode
+}) {
+  const { t } = useLanguage()
+  const bucket = bucketOfReason[opportunity.reasonCode]
+  const tone = bucketTone[bucket]
+  const name = opportunity.personName || opportunity.companyName || opportunity.email || t("Unknown sender")
+  const openable = Boolean(opportunity.recordId || opportunity.threadId)
+
+  return (
+    <Row
+      index={index}
+      accent={toneToVar(tone)}
+      ariaLabel={`${name} — ${opportunity.subject}`}
+      onOpen={openable ? () => onOpen(opportunity) : undefined}
+      glyph={<span className="md-crm-avatar" aria-hidden="true">{initialsOf(name)}</span>}
+      title={
+        <>
+          {name}
+          {opportunity.companyName && opportunity.companyName !== opportunity.personName ? (
+            <span className="md-crm-row-title-aside"> · {opportunity.companyName}</span>
+          ) : null}
+        </>
+      }
+      sub={opportunity.subject}
+      side={
+        <>
+          <StatusPill tone={tone}>{t(bucketLabel[bucket])}</StatusPill>
+          {opportunity.canCreate ? (
+            <span onClick={(event) => event.stopPropagation()}>{renderCreate(opportunity)}</span>
+          ) : (
+            <span className="md-crm-row-age" data-i18n-skip={opportunity.daysWaiting === 0 ? undefined : ""}>
+              {opportunity.daysWaiting === 0 ? t("today") : `${opportunity.daysWaiting}${t("d")}`}
+              <ArrowRight className="md-crm-row-arrow size-3" strokeWidth={1.6} aria-hidden="true" />
+            </span>
+          )}
+        </>
+      }
+    />
+  )
+})
+
+export function CrmFollowUpQueue({
+  data,
+  onOpen,
+  renderCreate,
+  onViewAll,
+  limit = 6,
+}: {
+  data: CrmFollowUpData | null
+  onOpen: (opportunity: CrmFollowUpOpportunity) => void
+  renderCreate: (opportunity: CrmFollowUpOpportunity) => ReactNode
+  onViewAll?: () => void
+  limit?: number
+}) {
+  const { t } = useLanguage()
+  const [active, setActive] = useState<CrmQueueBucket | null>(null)
+  const items = data?.items ?? []
+
+  const counts = useMemo(() => {
+    const next: Record<CrmQueueBucket, number> = { reply_due: 0, awaiting_reply: 0, scheduled: 0, never_contacted: 0 }
+    for (const item of items) next[bucketOfReason[item.reasonCode]] += 1
+    return next
+  }, [items])
+
+  const visible = useMemo(
+    () => (active ? items.filter((item) => bucketOfReason[item.reasonCode] === active) : items).slice(0, limit),
+    [items, active, limit],
+  )
+  const select = useCallback((bucket: CrmQueueBucket | null) => setActive(bucket), [])
+
+  const listRef = useRef<HTMLDivElement>(null)
+  const [reserve, setReserve] = useState<number>()
+
+  /** Recorded on the unfiltered pass only, so the reserve always describes the
+   *  full queue rather than whatever the last filter left behind. */
+  useLayoutEffect(() => {
+    if (active || !listRef.current) return
+    setReserve(listRef.current.getBoundingClientRect().height)
+  }, [active, items])
+
+  return (
+    <Panel
+      title={t("Who needs following up")}
+      action={items.length && onViewAll ? <PanelLink label={t("Inbox")} onClick={onViewAll} /> : undefined}
+    >
+      {items.length ? (
+        <>
+          <div className="md-crm-controls">
+            <QueueFilterChips counts={counts} total={items.length} active={active} onSelect={select} />
+          </div>
+          {/* The list holds the height of the unfiltered queue. Without it a
+              filter down to two rows collapses the panel and shunts everything
+              below it up the page — the filter would move more of the screen
+              than it changes. Measured rather than assumed, because a row
+              offering a Create action is taller than one that is not. */}
+          <div ref={listRef} className="md-crm-list" style={reserve ? { minHeight: reserve } : undefined}>
+            <AnimatePresence initial={false} mode="popLayout">
+              {visible.map((opportunity, index) => (
+                <QueueRow
+                  key={opportunity.id}
+                  opportunity={opportunity}
+                  index={index}
+                  onOpen={onOpen}
+                  renderCreate={renderCreate}
+                />
+              ))}
+            </AnimatePresence>
+          </div>
+        </>
+      ) : (
+        <EmptyState
+          icon={Inbox}
+          title={t("No follow-up opportunities right now.")}
+          body={t("Human replies, overdue sent email, and due CRM activity will appear here automatically.")}
+        />
+      )}
+    </Panel>
+  )
+}
+
+/* ── Leads by area ───────────────────────────────────────────────────────── */
+
+/** The first segment of a stored address label is the town; the rest is county,
+ *  postcode and country, which is noise on a tile. */
+function areaTown(label: string) {
+  return label.split(" · ")[0] || label
+}
+
+type TreemapRect = { x: number; y: number; w: number; h: number }
+
+/** Aspect-ratio penalty for a candidate row — the value squarify minimises. */
+function worstRatio(row: number[], sum: number, short: number) {
+  const max = Math.max(...row)
+  const min = Math.min(...row)
+  const area = sum * sum
+  const side = short * short
+  return Math.max((side * max) / area, area / (side * min))
+}
+
+/**
+ * Squarified treemap over a 100×100 space, so the result is pure percentages
+ * and the panel needs no measurement to lay out or to resize. Tiles are packed
+ * largest-first into rows along whichever edge is currently shorter, which is
+ * what keeps them close to square instead of degenerating into slivers.
+ */
+function squarify(values: number[]): TreemapRect[] {
+  const result: TreemapRect[] = values.map(() => ({ x: 0, y: 0, w: 0, h: 0 }))
+  const order = values.map((value, index) => ({ value, index })).sort((a, b) => b.value - a.value)
+  const total = order.reduce((sum, entry) => sum + entry.value, 0)
+  if (total <= 0) return result
+
+  const areas = order.map((entry) => (entry.value / total) * 10_000)
+  let free: TreemapRect = { x: 0, y: 0, w: 100, h: 100 }
+  let start = 0
+
+  while (start < areas.length) {
+    const short = Math.min(free.w, free.h)
+    let end = start + 1
+    let sum = areas[start]
+    let ratio = worstRatio(areas.slice(start, end), sum, short)
+
+    while (end < areas.length) {
+      const nextSum = sum + areas[end]
+      const nextRatio = worstRatio(areas.slice(start, end + 1), nextSum, short)
+      if (nextRatio > ratio) break
+      sum = nextSum
+      ratio = nextRatio
+      end += 1
+    }
+
+    const alongHeight = free.w >= free.h
+    const thickness = sum / (alongHeight ? free.h : free.w)
+    let offset = alongHeight ? free.y : free.x
+
+    for (let slot = start; slot < end; slot += 1) {
+      const length = areas[slot] / thickness
+      result[order[slot].index] = alongHeight
+        ? { x: free.x, y: offset, w: thickness, h: length }
+        : { x: offset, y: free.y, w: length, h: thickness }
+      offset += length
+    }
+
+    free = alongHeight
+      ? { x: free.x + thickness, y: free.y, w: free.w - thickness, h: free.h }
+      : { x: free.x, y: free.y + thickness, w: free.w, h: free.h - thickness }
+    start = end
+  }
+
+  return result
+}
+
+/**
+ * Where the leads are, as area rather than as rows. Tile size is the share of
+ * leads and tile heat is the same figure again, so the busiest places read
+ * first from across the room and the long tail still has a place on the map.
+ */
+export function CrmAreaHeatmap({
+  areas,
+  onOpen,
+  limit = 12,
+}: {
+  areas: CrmDashboardData["areas"]
+  onOpen?: () => void
+  limit?: number
+}) {
+  const { t } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
+  const [hovered, setHovered] = useState<string | null>(null)
+
+  const tiles = useMemo(() => {
+    const ranked = [...areas].sort((a, b) => b.count - a.count).slice(0, limit)
+    const peak = Math.max(...ranked.map((area) => area.count), 1)
+    const rects = squarify(ranked.map((area) => area.count))
+    return ranked.map((area, index) => ({
+      ...area,
+      town: areaTown(area.label),
+      rect: rects[index],
+      /* Heat is the share of the busiest area, floored so the quietest tile is
+         still a tile and not a hole in the map, and capped short of full accent
+         so the label keeps its contrast on the hottest tile in both themes. */
+      heat: 22 + (area.count / peak) * 56,
+    }))
+  }, [areas, limit])
+
+  const total = areas.reduce((sum, area) => sum + area.count, 0)
+
+  return (
+    <Panel
+      title={t("Leads by area")}
+      action={tiles.length && onOpen ? <PanelLink label={t("Accounts")} onClick={onOpen} /> : undefined}
+    >
+      {tiles.length ? (
+        <div className="md-crm-heat" onMouseLeave={() => setHovered(null)}>
+          <div className="md-crm-heat-plot">
+            {tiles.map((tile, index) => (
+              <motion.button
+                key={tile.key}
+                type="button"
+                className="md-crm-heat-tile"
+                data-dimmed={hovered && hovered !== tile.key ? "true" : undefined}
+                style={{
+                  insetInlineStart: `${tile.rect.x}%`,
+                  insetBlockStart: `${tile.rect.y}%`,
+                  width: `${tile.rect.w}%`,
+                  height: `${tile.rect.h}%`,
+                  ["--md-heat" as string]: `color-mix(in srgb, var(--md-accent) ${Math.round(tile.heat)}%, var(--md-surface))`,
+                }}
+                title={`${tile.label} — ${tile.count}`}
+                aria-label={`${tile.town}, ${tile.count} ${tile.count === 1 ? t("lead") : t("leads")}`}
+                onMouseEnter={() => setHovered(tile.key)}
+                onFocus={() => setHovered(tile.key)}
+                onBlur={() => setHovered(null)}
+                onClick={onOpen}
+                initial={shouldReduceMotion ? false : { opacity: 0, scale: 0.94 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={
+                  shouldReduceMotion ? { duration: 0 } : { ...mdMotion.enter, delay: staggerRamp(index, 0.03) }
+                }
+              >
+                {/* Below roughly a fifth of the plot a label is unreadable, so
+                    the tile carries its count alone and names itself on hover. */}
+                {tile.rect.w > 20 && tile.rect.h > 17 ? (
+                  <span className="md-crm-heat-label" dir="auto">{tile.town}</span>
+                ) : null}
+                <span className="md-crm-heat-count" data-i18n-skip dir="ltr">{tile.count}</span>
+              </motion.button>
+            ))}
+          </div>
+          <p className="md-crm-heat-foot">
+            <span>{tiles.length < areas.length ? `${t("Top")} ${tiles.length} ${t("of")} ${areas.length}` : t("All areas")}</span>
+            <span className="md-crm-heat-foot-value">
+              <span data-i18n-skip dir="ltr">{total}</span> {total === 1 ? t("lead") : t("leads")}
+            </span>
+          </p>
+        </div>
+      ) : (
+        <EmptyState
+          icon={MapPin}
+          title={t("No areas on file yet.")}
+          body={t("Leads get an area once their account has an address recorded.")}
+        />
+      )}
+    </Panel>
+  )
+}
+
+/* ── Recent activity ─────────────────────────────────────────────────────── */
+
+export function CrmActivityFeed({
+  activity,
+  formatDateTime,
+  onOpen,
+  limit = 6,
+}: {
+  activity: CrmDashboardData["activity"]
+  formatDateTime: (value: string) => string
+  onOpen?: () => void
+  limit?: number
+}) {
+  const { t } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
+  const visible = activity.slice(0, limit)
+
+  return (
+    <Panel
+      title={t("Recent activity")}
+      action={activity.length && onOpen ? <PanelLink label={t("All activity")} onClick={onOpen} /> : undefined}
+    >
+      {visible.length ? (
+        <div className="md-crm-feed">
+          <span className="md-crm-feed-spine" aria-hidden="true" />
+          {visible.map((item, index) => (
+            <motion.div
+              key={item.id}
+              className="md-crm-feed-row"
+              initial={shouldReduceMotion ? false : { opacity: 0, x: -6 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={shouldReduceMotion ? { duration: 0 } : { ...mdMotion.enter, delay: staggerRamp(index, 0.03) }}
+            >
+              <span className="md-crm-feed-node" aria-hidden="true" />
+              <p className="md-crm-feed-subject" dir="auto">{item.subject}</p>
+              <p className="md-crm-feed-when">{formatDateTime(item.at)}</p>
+            </motion.div>
+          ))}
+        </div>
+      ) : (
+        <EmptyState
+          icon={Inbox}
+          title={t("No assigned CRM activity yet.")}
+          body={t("Calls, emails and notes you log against your records will appear here.")}
+        />
+      )}
+    </Panel>
+  )
+}
+
+/* ── Leads gone quiet ────────────────────────────────────────────────────── */
+
+/**
+ * Open leads with no contact inside the inactivity window, ranked by how much
+ * is sitting on them. The bar makes the money comparable at a glance, which is
+ * the whole point of the panel: what am I quietly losing.
+ */
+export function CrmQuietLeads({
+  leads,
+  inactivityDays,
+  formatValue,
+  formatDate,
+  onOpenLead,
+  onViewAll,
+  limit = 6,
+}: {
+  leads: CrmDashboardFollowUp[]
+  inactivityDays: number
+  formatValue: (value: number, currency: string) => string
+  formatDate: (value: string) => string
+  onOpenLead: (leadId: string) => void
+  onViewAll?: () => void
+  limit?: number
+}) {
+  const { t } = useLanguage()
+  const ranked = useMemo(
+    () => [...leads].sort((a, b) => (b.opportunityValue ?? 0) - (a.opportunityValue ?? 0)).slice(0, limit),
+    [leads, limit],
+  )
+  const peak = Math.max(...ranked.map((lead) => lead.opportunityValue ?? 0), 1)
+
+  return (
+    <Panel
+      title={`${t("Leads gone quiet")} · ${inactivityDays}${t("d")}`}
+      action={leads.length && onViewAll ? <PanelLink label={t("Leads")} onClick={onViewAll} /> : undefined}
+    >
+      {ranked.length ? (
+        <div className="md-crm-list md-crm-list-bars">
+          {ranked.map((lead, index) => (
+            <Row
+              key={lead.id}
+              index={index}
+              accent={toneToVar(lead.neverContacted ? "red" : "amber")}
+              ariaLabel={lead.companyName}
+              onOpen={() => onOpenLead(lead.id)}
+              glyph={<span className="md-crm-avatar" aria-hidden="true">{initialsOf(lead.companyName)}</span>}
+              title={
+                <>
+                  {lead.companyName}
+                  {lead.decisionMaker ? <span className="md-crm-row-title-aside"> · {lead.decisionMaker}</span> : null}
+                </>
+              }
+              sub={[lead.stage, lead.laneContext].filter(Boolean).join(" · ")}
+              meter={<Meter share={(lead.opportunityValue ?? 0) / peak} index={index} />}
+              side={
+                <>
+                  <span className="md-crm-row-value" data-i18n-skip dir="ltr">
+                    {lead.opportunityValue ? formatValue(lead.opportunityValue, lead.currencyCode) : "—"}
+                  </span>
+                  <span className="md-crm-row-age">
+                    {lead.neverContacted
+                      ? t("never contacted")
+                      : lead.lastContactAt
+                        ? `${t("quiet since")} ${formatDate(lead.lastContactAt)}`
+                        : t("no contact recorded")}
+                    <ArrowRight className="md-crm-row-arrow size-3" strokeWidth={1.6} aria-hidden="true" />
+                  </span>
+                </>
+              }
+            />
+          ))}
+        </div>
+      ) : (
+        <EmptyState
+          icon={Moon}
+          title={t("Every open lead has been contacted recently.")}
+          body={t("Leads drop into this list once they pass the inactivity threshold without a conversation.")}
+        />
+      )}
+    </Panel>
+  )
+}
+
+/* ── Loading ─────────────────────────────────────────────────────────────── */
+
+/**
+ * The skeleton holds the loaded page's geometry, so arriving data changes
+ * opacity only. Nothing reflows and the scroll position never jumps.
+ */
+export function CrmDashboardSkeleton() {
+  const { t } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
+
+  return (
+    <div
+      className={cn("md-crm-skeleton", shouldReduceMotion && "md-crm-skeleton-still")}
+      role="status"
+      aria-label={t("Loading your CRM dashboard…")}
+    >
+      <div className="md-crm-skeleton-kpis">
+        {Array.from({ length: 6 }, (_, index) => (
+          <span key={index} className="md-crm-skeleton-block md-crm-skeleton-kpi" style={{ animationDelay: `${index * 60}ms` }} />
+        ))}
+      </div>
+      <div className="md-crm-lead">
+        <span className="md-crm-skeleton-block md-crm-skeleton-panel-lg" style={{ animationDelay: "180ms" }} />
+        <span className="md-crm-skeleton-block md-crm-skeleton-panel-lg" style={{ animationDelay: "220ms" }} />
+      </div>
+      <div className="md-crm-trio">
+        {Array.from({ length: 3 }, (_, index) => (
+          <span key={index} className="md-crm-skeleton-block md-crm-skeleton-panel" style={{ animationDelay: `${270 + index * 40}ms` }} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/* ── Page entrance ───────────────────────────────────────────────────────── */
+
+/**
+ * One settling group rather than a dozen independent fades — the same cadence
+ * the operations dashboard arrives on, so the two screens feel like one product.
+ */
+export function CrmBand({
+  index,
+  className,
+  children,
+}: {
+  index: number
+  className?: string
+  children: ReactNode
+}) {
+  const shouldReduceMotion = useReducedMotion()
+
+  return (
+    <motion.div
+      className={className}
+      initial={shouldReduceMotion ? false : { opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={shouldReduceMotion ? { duration: 0 } : { ...mdMotion.enter, delay: staggerRamp(index, 0.042) }}
+    >
+      {children}
+    </motion.div>
+  )
+}

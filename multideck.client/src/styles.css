@@ -1016,22 +1016,6 @@ button {
   transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* Light mode needs the same clear group boundary as the dark sidebar, but with
-   the tenant accent instead of a neutral outline. This pseudo-element leaves
-   the existing dark treatment entirely unchanged. */
-:root:not(.dark) .md-sidebar-expanded-options {
-  position: relative;
-}
-
-:root:not(.dark) .md-sidebar-expanded-options::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-accent) 34%, transparent);
-  pointer-events: none;
-}
-
 /* ── Sidebar row affordance arrows ───────────────────────────────────────────
    `branch` rows open another sidebar pane, `group` rows unfold in place. Both
    sit in the same fixed 20px trailing slot, so the glyphs share one optical
@@ -2906,12 +2890,7 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
 
   .md-sidebar-dexter-item:hover,
   .md-sidebar-dexter-item:focus-visible {
-    background: var(--md-accent) !important;
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.26),
-      inset 0 0 0 1px rgba(255, 255, 255, 0.18),
-      0 0 0 1px var(--md-accent-deep-a14),
-      0 10px 22px var(--md-accent-deep-a20);
+    background: color-mix(in srgb, var(--md-accent) 88%, var(--md-hover)) !important;
   }
 
   .md-dexter-pill:hover,
@@ -5324,4 +5303,383 @@ html.md-summon-picking {
     transition-duration: 0.01ms !important;
     transition-delay: 0ms !important;
   }
+}
+
+/* --------------------------------------------------------------------------
+   Settings → AI usage
+   The tab answers two questions: what did Dexter give back, and what is left.
+   The hero is deliberately dark in both themes — it carries a photographic
+   field image, and committing to one ink colour is what keeps the figures on
+   top legible without a heavier scrim.
+   -------------------------------------------------------------------------- */
+
+.md-ai-usage {
+  --md-ai-track: color-mix(in srgb, var(--md-text) 10%, transparent);
+  --md-ai-track-strong: color-mix(in srgb, var(--md-text) 14%, transparent);
+  --md-ai-hero-ink: #f2f7f2;
+  --md-ai-hero-text: rgba(233, 243, 234, 0.74);
+  --md-ai-hero-line: rgba(233, 243, 234, 0.16);
+  --md-ai-hero-track: rgba(233, 243, 234, 0.16);
+  --md-ai-hero-value: #9eecdd;
+  --md-ai-hero-cost: #f2c94c;
+  --md-ai-field-ink: #f2f7f2;
+  --md-ai-field-text: rgba(233, 243, 234, 0.74);
+  /* The chart is borrowed from the dashboard, which scopes its neutrals to
+     `.md-dashboard`; re-declare them here so the gridlines survive the move. */
+  --md-chart-grid: color-mix(in srgb, var(--md-text) 14%, transparent);
+  --md-dashboard-ring: 0 0 0 2px var(--md-accent-a20);
+}
+
+.md-ai-hero {
+  background:
+    linear-gradient(104deg, var(--md-accent-abyss) 0%, var(--md-accent-deep) 62%, color-mix(in srgb, var(--md-accent-glow-core) 32%, var(--md-accent-abyss)) 100%);
+  box-shadow: var(--md-premium-stroke), 0 18px 40px rgba(6, 36, 32, 0.22);
+}
+
+.md-ai-hero__image,
+.md-ai-field-header__image {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* The field is used for its movement, not its hue. Blending it as luminosity
+     over the accent-derived base means the streaks survive while the colour
+     follows whichever accent the workspace has chosen — so the hero never
+     fights a plum or indigo theme. */
+  mix-blend-mode: luminosity;
+  opacity: 0.78;
+  filter: contrast(1.12);
+  pointer-events: none;
+  user-select: none;
+}
+
+.md-ai-hero__scrim {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  /* Heaviest under the headline, lightest on the far side, so the figures keep
+     a solid ground while the image stays visible where nothing sits on it. */
+  background:
+    linear-gradient(
+      100deg,
+      color-mix(in srgb, var(--md-accent-abyss) 84%, transparent) 0%,
+      color-mix(in srgb, var(--md-accent-abyss) 46%, transparent) 44%,
+      color-mix(in srgb, var(--md-accent-abyss) 22%, transparent) 100%
+    ),
+    radial-gradient(120% 140% at 88% 6%, color-mix(in srgb, var(--md-accent-lift-strong) 14%, transparent), transparent 60%);
+  pointer-events: none;
+}
+
+/* A single slow pass of light while usage refreshes. It is opacity-and-transform
+   only, it never reflows the figures underneath, and it stops entirely when the
+   user has asked for less motion. */
+.md-ai-hero__sheen {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 42%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.07), transparent);
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .md-ai-hero__sheen {
+    animation: md-ai-sheen 2.4s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+  }
+}
+
+@keyframes md-ai-sheen {
+  from {
+    transform: translate3d(-100%, 0, 0);
+  }
+
+  to {
+    transform: translate3d(340%, 0, 0);
+  }
+}
+
+.md-ai-glass {
+  background: rgba(11, 34, 30, 0.42);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  box-shadow:
+    inset 0 0 0 1px rgba(233, 243, 234, 0.14),
+    0 12px 30px rgba(3, 20, 17, 0.28);
+}
+
+.md-ai-hero-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: rgba(233, 243, 234, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(233, 243, 234, 0.14);
+  color: var(--md-ai-hero-ink);
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.md-ai-hero-chip--bright {
+  background: color-mix(in srgb, var(--md-accent-lift-strong) 20%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-accent-lift-strong) 34%, transparent);
+  color: var(--md-accent-lift-strong);
+}
+
+.md-ai-hero-chip__label {
+  color: var(--md-ai-hero-text);
+  font-size: 11.5px;
+  font-weight: 400;
+}
+
+/* The scenario control sits on glass, so it borrows dark-surface tokens rather
+   than the page's light ones. */
+.md-ai-scenario {
+  --md-selected-bg: rgba(233, 243, 234, 0.16);
+  --md-selected-text: var(--md-ai-hero-ink);
+  background: rgba(4, 24, 21, 0.4);
+  box-shadow: inset 0 0 0 1px rgba(233, 243, 234, 0.12);
+}
+
+.md-ai-scenario > button {
+  flex: 1 1 0;
+  color: var(--md-ai-hero-text);
+}
+
+.md-ai-scenario > button:hover {
+  color: var(--md-ai-hero-ink);
+}
+
+.md-ai-workings-toggle {
+  border-radius: var(--md-radius-sm);
+  transition: color var(--md-motion);
+}
+
+.md-ai-workings-toggle:hover {
+  color: var(--md-ai-hero-ink);
+}
+
+.md-ai-workings-toggle:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--md-accent-lift-strong) 60%, transparent);
+  outline-offset: 3px;
+}
+
+/* Height that animates without ever interpolating to `auto`. */
+.md-ai-workings {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-ai-workings[data-open] {
+  grid-template-rows: 1fr;
+}
+
+.md-ai-field-header {
+  background: linear-gradient(96deg, var(--md-accent-abyss) 0%, var(--md-accent-deep) 100%);
+  min-height: 96px;
+}
+
+.md-ai-field-header__scrim {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(
+    96deg,
+    color-mix(in srgb, var(--md-accent-abyss) 90%, transparent) 8%,
+    color-mix(in srgb, var(--md-accent-abyss) 46%, transparent) 100%
+  );
+  pointer-events: none;
+}
+
+.md-ai-field-figure {
+  display: inline-flex;
+  align-items: baseline;
+  padding: 6px 12px;
+  border-radius: var(--md-radius-md);
+  background: rgba(233, 243, 234, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(233, 243, 234, 0.14);
+  color: var(--md-ai-field-ink);
+  font-size: 15px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Allowance meter -------------------------------------------------------- */
+
+.md-ai-allowance-meter {
+  background: var(--md-surface-soft);
+  box-shadow: inset 0 0 0 1px var(--md-line-strong);
+}
+
+.md-ai-allowance-meter__weave {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle, color-mix(in srgb, var(--md-text) 22%, transparent) 1px, transparent 1.2px);
+  background-size: 12px 12px;
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.md-ai-allowance-meter__fill {
+  border-radius: var(--md-radius-lg);
+  background: linear-gradient(100deg, var(--md-accent), color-mix(in srgb, var(--md-accent) 62%, var(--md-blue)));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+.md-ai-allowance-meter__projection {
+  border-start-end-radius: var(--md-radius-lg);
+  border-end-end-radius: var(--md-radius-lg);
+  background:
+    repeating-linear-gradient(
+      118deg,
+      color-mix(in srgb, var(--md-accent) 46%, transparent) 0 5px,
+      transparent 5px 10px
+    ),
+    color-mix(in srgb, var(--md-accent) 9%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-accent) 26%, transparent);
+}
+
+/* Small months and fresh periods leave a fill only a few pixels wide. A floor
+   keeps "some usage" visually distinct from "none at all". */
+.md-ai-allowance-meter__fill {
+  min-width: 8px;
+}
+
+.md-ai-allowance-meter__pace {
+  width: 2px;
+  margin-inline-start: -1px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--md-ink) 52%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--md-surface) 70%, transparent);
+}
+
+.md-ai-key {
+  width: 12px;
+  height: 8px;
+  border-radius: 3px;
+  flex: none;
+}
+
+.md-ai-key--used {
+  background: linear-gradient(100deg, var(--md-accent), color-mix(in srgb, var(--md-accent) 62%, var(--md-blue)));
+}
+
+.md-ai-key--projected {
+  background: repeating-linear-gradient(
+    118deg,
+    color-mix(in srgb, var(--md-accent) 42%, transparent) 0 3px,
+    transparent 3px 6px
+  );
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-accent) 26%, transparent);
+}
+
+.md-ai-key--pace {
+  width: 2px;
+  height: 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--md-ink) 52%, transparent);
+}
+
+/* Panels and rows -------------------------------------------------------- */
+
+.md-ai-panel {
+  transition: box-shadow var(--md-motion);
+}
+
+.md-ai-tile {
+  transition:
+    transform var(--md-motion),
+    box-shadow var(--md-motion);
+}
+
+.md-ai-tile:hover {
+  transform: translate3d(0, -2px, 0);
+  box-shadow: var(--md-premium-stroke), 0 16px 32px rgba(42, 52, 50, 0.11);
+}
+
+.md-ai-tile__icon {
+  transition: transform var(--md-motion);
+}
+
+.md-ai-tile:hover .md-ai-tile__icon {
+  transform: scale(1.05);
+}
+
+.md-ai-row {
+  transition: background-color var(--md-motion);
+}
+
+.md-ai-row:hover {
+  background: var(--md-hover);
+}
+
+.md-ai-ghost-button {
+  transition:
+    background-color var(--md-motion),
+    color var(--md-motion),
+    transform 140ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-ai-ghost-button:active {
+  transform: scale(0.97);
+}
+
+.md-ai-chart {
+  container-type: inline-size;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-ai-hero__sheen {
+    animation: none;
+  }
+
+  .md-ai-workings,
+  .md-ai-panel,
+  .md-ai-tile,
+  .md-ai-tile__icon,
+  .md-ai-row,
+  .md-ai-ghost-button {
+    transition-duration: 0.01ms;
+  }
+
+  .md-ai-tile:hover {
+    transform: none;
+  }
+}
+
+/* An amber projection reads as a warning without recolouring what has already
+   been spent — the used segment stays the accent it always was. */
+.md-ai-allowance-meter[data-pace="watch"] .md-ai-allowance-meter__projection {
+  background:
+    repeating-linear-gradient(
+      118deg,
+      color-mix(in srgb, var(--md-amber) 48%, transparent) 0 5px,
+      transparent 5px 10px
+    ),
+    color-mix(in srgb, var(--md-amber) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-amber) 28%, transparent);
+}
+
+.md-ai-allowance-meter[data-pace="over"] .md-ai-allowance-meter__projection {
+  background:
+    repeating-linear-gradient(
+      118deg,
+      color-mix(in srgb, var(--md-red) 48%, transparent) 0 5px,
+      transparent 5px 10px
+    ),
+    color-mix(in srgb, var(--md-red) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-red) 28%, transparent);
+}
+
+/* The panel is narrower than the dashboard the chart was built for, so the last
+   axis label would clip against the svg edge. The panel's own padding gives it
+   room once the svg stops cropping. */
+.md-ai-chart svg {
+  overflow: visible;
 }

@@ -113,6 +113,8 @@ Current Multideck components:
 - `MetricCard`: overview KPI component.
 - `DocumentExtractionProgress`: the waiting state for staged document work. The operator's own page sits under a reading sweep, the bar keeps moving through a slow stage without claiming to be finished, and the stage list ticks off what is already done.
 - `DocumentEvidenceViewer`: a document beside the data taken from it, with a page-fraction box over the place each value was read. Interpolated boxes, such as one row of a transcribed table, are drawn with a dashed edge.
+- `KpiStrip`: the shared metric row for both dashboards. Label, figure, and supporting line are required; `change`, `series` and `icon` are optional, so a surface with no comparable previous period leaves the delta off rather than inventing one. `columns` switches between the four-up operations row and the six-up CRM row.
+- `CrmOpportunityValue`, `CrmFollowUpQueue`, `CrmQuietLeads`, `CrmAreaHeatmap`, `CrmActivityFeed`: the CRM dashboard panels. One panel shell, one row shape, and one arrival cadence shared with the operations overview.
 - `LineChartCard`, `AreaChartCard`, `BarChartCard`, `StackedBarChartCard`, `DonutChartCard`, `FunnelChartCard`, `HeatmapChartCard`, `RadialGoalChartCard`, `ScatterChartCard`, and `MixedChartCard`: reusable report-ready visualization components.
 - `ReportVisualizationBlock`: report-builder adapter for chart variants such as single bars, comparison bars, pie charts with or without keys, and variable-step funnels.
 - `CommandInput`: search and jump entry point. Shows the live `search.focus` binding and claims it while it is on screen.
@@ -167,6 +169,14 @@ Overview:
 - Live bookings should use the real interactive map component, not a decorative route illustration.
 - Operational lists should scan vertically.
 - AI content should feel assistive and specific.
+
+CRM dashboard:
+
+- Lead with the graph. Open opportunity value is a segmented arc, and leads by area is a treemap heat map — not two more tables.
+- The arc is a value breakdown, not progress towards a target. The CRM snapshot carries no quota, so nothing on this screen may imply one.
+- Panels on this screen use a hairline stroke and no elevation shadow. It is one dense plane of numbers; eight floating cards read as clutter rather than depth.
+- Every panel is the same shell and every list uses the same row, so a queue entry, a quiet lead and a logged activity scan at one rhythm.
+- Filtering the follow-up queue must not resize the panel around it. Reserve the unfiltered height.
 
 Customers:
 

@@ -1,16 +1,25 @@
+import type { LucideIcon } from "lucide-react"
 import type { StatusTone } from "@/data/multideck-data"
 import type { QuoteRegisterRecord } from "@/data/quote-register-data"
 import type { LiveBooking } from "@/lib/application-data-api"
 
 export type DashboardRange = "today" | "week" | "month" | "quarter" | "custom"
 
+/**
+ * One metric in the shared KPI strip. Only the label, the figure and the
+ * supporting line are required: a surface that has no comparable previous period
+ * or no stored history should leave `change` and `series` off rather than invent
+ * them. `icon` marks the domain the metric belongs to when a strip mixes
+ * subjects — leads, deals and money in one row, for example.
+ */
 export type DashboardKpi = {
   label: string
   value: string
-  change: string
+  change?: string
   detail: string
   tone: StatusTone
-  series: number[]
+  series?: number[]
+  icon?: LucideIcon
 }
 
 export type DashboardAction = {
@@ -137,7 +146,7 @@ export function buildDashboardLiveData(range: DashboardRange, bookings: LiveBook
     kpis,
     actions,
     briefLead: actions.length ? "Prioritised from current booking exceptions and quote workflow status." : "No booking exceptions or quote actions are currently open.",
-    trends: Object.fromEntries(kpis.map((kpi) => [kpi.label, trend(kpi.series, range)])),
+    trends: Object.fromEntries(kpis.map((kpi) => [kpi.label, trend(kpi.series ?? [], range)])),
   }
 }
 

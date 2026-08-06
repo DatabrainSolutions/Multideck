@@ -31,6 +31,7 @@ const KpiCell = memo(function KpiCell({
   const { t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
   const accent = toneToVar(kpi.tone)
+  const Icon = kpi.icon
 
   return (
     <motion.div
@@ -46,15 +47,25 @@ const KpiCell = memo(function KpiCell({
         aria-pressed={selected}
         onClick={onSelect}
         className="md-kpi-cell-button"
+        data-has-icon={Icon ? "true" : undefined}
         whileHover={shouldReduceMotion ? undefined : { y: -2 }}
         whileTap={shouldReduceMotion ? undefined : { scale: 0.99 }}
         transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.micro)}
       >
+        {/* Parked in the corner with no container of its own: the glyph is a
+            quiet label for the metric's subject, not a second object competing
+            with the figure. It brightens on hover so the cell still answers the
+            pointer. */}
+        {Icon ? (
+          <span className="md-kpi-cell-icon" aria-hidden="true">
+            <Icon className="size-[15px]" strokeWidth={1.5} />
+          </span>
+        ) : null}
         <span className="md-kpi-cell-copy">
           <span className="md-kpi-cell-label">{kpi.label}</span>
           <span className="md-kpi-cell-figure">
             <CountUpValue value={kpi.value} className="md-kpi-cell-value" />
-            <StatusPill tone={kpi.tone}>{kpi.change}</StatusPill>
+            {kpi.change ? <StatusPill tone={kpi.tone}>{kpi.change}</StatusPill> : null}
             <span className="md-kpi-cell-detail">{kpi.detail}</span>
           </span>
         </span>
@@ -82,16 +93,19 @@ export function KpiStrip({
   selectedLabel,
   onSelect,
   onOpenDrilldown,
+  columns = 4,
   className,
 }: {
   kpis: DashboardKpi[]
   selectedLabel?: string
   onSelect?: (label: string) => void
   onOpenDrilldown?: (id: string) => void
+  /** Widest-breakpoint column count. Six halves at the middle breakpoint. */
+  columns?: 4 | 6
   className?: string
 }) {
   return (
-    <div className={cn("md-kpi-strip", className)}>
+    <div className={cn("md-kpi-strip", className)} data-columns={columns}>
       {kpis.map((kpi, index) => (
         <KpiCell
           // Keyed by slot so a range change animates the numbers inside a stable

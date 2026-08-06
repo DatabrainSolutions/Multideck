@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react"
-import { Search, SlidersHorizontal, Star, X } from "lucide-react"
+import { CalendarClock, Search, SlidersHorizontal, Star, TriangleAlert, X } from "lucide-react"
 import {
   BookingBoardPreview,
   BookingListHeader,
@@ -25,7 +25,7 @@ import { Progress } from "@/components/ui/progress"
 import { currentOperator, getBookingShape, bookingScopeTabs } from "@/data/multideck-data"
 import { useLanguage } from "@/i18n/language-provider"
 import { getSavedView, saveView } from "@/lib/view-preferences"
-import { listLiveBookings } from "@/lib/application-data-api"
+import { listLiveBookings, type LiveBooking } from "@/lib/application-data-api"
 
 const rowsPerPageOptions = [10, 20, 30, 50]
 const bookingViewStorageKey = "multideck.view.bookings"
@@ -46,6 +46,42 @@ type ShipmentTypeFilter = (typeof shipmentTypeFiltersByMode)[keyof typeof shipme
 
 function normalized(value: string) {
   return value.trim().toLocaleLowerCase()
+}
+
+function getCustomField(booking: LiveBooking, labels: readonly string[]) {
+  const normalizedLabels = labels.map(normalized)
+  return booking.customFields.find((field) => normalizedLabels.includes(normalized(field.label)))?.value ?? ""
+}
+
+function getBookingExceptionSummary(booking: LiveBooking) {
+  const detail = getCustomField(booking, ["Exception", "Delay reason", "Licence", "Blocker", "Tracking"])
+  if (detail) return detail
+  if (booking.status === "Exception") return "Action required"
+  if (booking.status === "Delayed") return "Schedule changed"
+  return "No open exception"
+}
+
+function getBookingNextAction(booking: LiveBooking) {
+  if (booking.status === "Exception") return getBookingExceptionSummary(booking)
+  if (booking.status === "Delayed") return "Review schedule and update customer"
+  if (booking.progress >= 100) return "Complete"
+  if (booking.progress < 25) return "Confirm booking and departure"
+  if (booking.progress < 75) return "Monitor movement"
+  return "Prepare arrival and delivery"
+}
+
+function formatOperationalDate(value: string, language: string) {
+  if (!value) return "—"
+  const date = new Date(`${value}T00:00:00Z`)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat(language, { day: "2-digit", month: "short", timeZone: "UTC" }).format(date)
+}
+
+function formatLastActivity(value: string, language: string) {
+  if (!value) return "Not available"
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat(language, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(date)
 }
 
 function getCustomFieldValues(booking: Booking) {
@@ -162,10 +198,10 @@ function bookingMatchesSearch(booking: Booking, criteria: BookingSearchCriterion
 }
 
 export function BookingsPage({ navigate }: { navigate: (path: string) => void }) {
-  const { t } = useLanguage()
+  const { language, t } = useLanguage()
   const [scope, setScope] = useState<BookingScope>("All Jobs")
   const [viewMode, setViewMode] = useState<BookingViewMode>(() => getSavedView(bookingViewStorageKey, bookingViewModes, bookingViewModes[0]))
-  const [bookingRecords, setBookingRecords] = useState<Booking[]>([])
+  const [bookingRecords, setBookingRecords] = useState<LiveBooking[]>([])
   const [bookingsLoading, setBookingsLoading] = useState(true)
   const [bookingsError, setBookingsError] = useState<string | null>(null)
   const [favouriteIds, setFavouriteIds] = useState<Set<string>>(() => new Set())
@@ -187,7 +223,7 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
     setBookingsError(null)
     void listLiveBookings().then((records) => {
       if (!cancelled) {
-        setBookingRecords(records as Booking[])
+        setBookingRecords(records)
         setFavouriteIds(new Set(records.filter((record) => record.isFavourite).map((record) => record.id)))
       }
     }).catch((error) => {
@@ -262,13 +298,13 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
     setPage(1)
   }
 
-  const columns = useMemo<DataTableColumn<Booking>[]>(() => [
+  const columns = useMemo<DataTableColumn<LiveBooking>[]>(() => [
     {
       id: "star",
       label: t("Star"),
-      width: 64,
-      minWidth: 64,
-      maxWidth: 64,
+      width: 52,
+      minWidth: 52,
+      maxWidth: 52,
       resizable: false,
       cell: (booking) => {
         const favourite = favouriteIds.has(booking.id)
@@ -278,7 +314,7 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
             variant="ghost"
             size="icon"
             aria-label={t(`${favourite ? "Remove" : "Add"} ${booking.id} favourite`)}
-            className={favourite ? "size-8 text-[var(--md-amber)]" : "size-8 text-[var(--md-subtle)]"}
+            className={favourite ? "size-8 text-[var(--md-amber)] transition-transform active:scale-[0.96] motion-reduce:transition-none" : "size-8 text-[var(--md-subtle)] transition-transform active:scale-[0.96] motion-reduce:transition-none"}
             onClick={(event) => {
               event.stopPropagation()
               toggleFavourite(booking.id)
@@ -290,89 +326,132 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
       },
     },
     {
+      id: "status",
+      label: t("Status and exception"),
+      width: 220,
+      minWidth: 188,
+      resizable: true,
+      defaultPinned: true,
+      sortValue: (booking) => `${booking.status} ${getBookingExceptionSummary(booking)}`,
+      cell: (booking) => (
+        <div className="min-w-0">
+          <BookingStatusPill status={booking.status} />
+          <p className="mt-1.5 truncate text-[11px] leading-4 text-[var(--md-text)]" title={getBookingExceptionSummary(booking)}>
+            {t(getBookingExceptionSummary(booking))}
+          </p>
+        </div>
+      ),
+    },
+    {
       id: "booking",
-      label: t("Booking"),
-      width: 142,
-      minWidth: 120,
+      label: t("Booking and references"),
+      width: 188,
+      minWidth: 164,
       resizable: true,
       defaultPinned: true,
       sortValue: (booking) => booking.id,
       cell: (booking) => (
-        <div className="flex items-center gap-3" dir="ltr">
-          <span className="size-2.5 rounded-full" style={{ background: toneToVar(booking.tone) }} />
-          <span className="text-[13px] font-medium text-[var(--md-accent)]">{booking.id}</span>
+        <div className="min-w-0" dir="ltr">
+          <div className="flex items-center gap-2">
+            <span className="size-2 shrink-0 rounded-full" style={{ background: toneToVar(booking.tone) }} />
+            <span className="truncate text-[13px] font-medium text-[var(--md-accent)]">{booking.id}</span>
+          </div>
+          <p className="mt-1.5 truncate ps-4 text-[11px] text-[var(--md-text)]" title={booking.jobRef || booking.customerRef}>
+            {booking.jobRef || booking.customerRef || t("No linked reference")}
+          </p>
         </div>
       ),
     },
     {
-      id: "customer",
-      label: t("Customer and route"),
-      width: 300,
-      minWidth: 220,
-      maxWidth: 420,
+      id: "customerCargo",
+      label: t("Customer and cargo"),
+      width: 240,
+      minWidth: 200,
+      maxWidth: 340,
       resizable: true,
       sortValue: (booking) => booking.customer,
       cell: (booking) => (
         <div className="min-w-0">
-          <p className="truncate text-[13px] font-medium text-[var(--md-ink)]">{booking.customer}</p>
-          <p className="mt-1 truncate text-[12px] text-[var(--md-text)]">{booking.route}</p>
+          <p className="truncate text-[13px] font-medium text-[var(--md-ink)]" title={booking.customer}>{booking.customer}</p>
+          <p className="mt-1 truncate text-[11px] text-[var(--md-text)]" title={`${booking.shipmentType} · ${booking.container}`}>
+            {booking.shipmentType || t("General cargo")} · <bdi>{booking.container || t("Equipment pending")}</bdi>
+          </p>
         </div>
       ),
     },
     {
-      id: "carrier",
-      label: t("Carrier and container"),
-      width: 210,
-      minWidth: 170,
+      id: "movement",
+      label: t("Movement"),
+      width: 300,
+      minWidth: 240,
+      maxWidth: 420,
       resizable: true,
-      sortValue: (booking) => booking.carrier,
+      sortValue: (booking) => `${booking.origin} ${booking.destination} ${booking.carrier}`,
       cell: (booking) => (
         <div className="min-w-0">
-          <p className="truncate text-[13px] font-medium text-[var(--md-ink)]">{booking.carrier}</p>
-          <p className="mt-1 truncate text-[12px] text-[var(--md-text)]" dir="ltr">{booking.container}</p>
+          <div className="flex min-w-0 items-center gap-2">
+            <BookingShapeCell booking={booking} />
+            <span className="truncate text-[11px] text-[var(--md-subtle)]">{booking.carrier}</span>
+          </div>
+          <p className="mt-1.5 truncate text-[12px] font-medium text-[var(--md-ink)]" title={booking.route}>{booking.route}</p>
+          {booking.vessel ? <p className="mt-0.5 truncate text-[11px] text-[var(--md-text)]" title={booking.vessel}>{booking.vessel}</p> : null}
         </div>
       ),
     },
     {
-      id: "shape",
-      label: t("Direction and mode"),
+      id: "schedule",
+      label: t("Schedule"),
       width: 190,
       minWidth: 170,
       resizable: true,
-      sortValue: (booking) => `${getBookingShape(booking.id).direction} ${booking.mode}`,
-      cell: (booking) => <BookingShapeCell booking={booking} />,
-    },
-    {
-      id: "value",
-      label: t("Value"),
-      width: 120,
-      minWidth: 100,
-      resizable: true,
-      sortValue: (booking) => Number(booking.value.replace(/[^0-9.-]/g, "")),
-      cell: (booking) => <span className="text-[13px] font-medium tabular-nums text-[var(--md-ink)]" dir="ltr">{booking.value}</span>,
-    },
-    {
-      id: "eta",
-      label: t("ETA"),
-      width: 122,
-      minWidth: 104,
-      resizable: true,
       sortValue: (booking) => booking.arrivalDate,
       cell: (booking) => (
-        <div dir="ltr">
-          <p className="text-[13px] font-medium text-[var(--md-ink)]">{booking.eta}</p>
-          <p className="text-[11px] text-[var(--md-text)]">{booking.time}</p>
+        <div className="grid grid-cols-2 gap-3 tabular-nums" dir="ltr">
+          <div>
+            <p className="text-[10px] font-medium text-[var(--md-subtle)]">{t("ETD")}</p>
+            <p className="mt-1 text-[12px] font-medium text-[var(--md-ink)]">{formatOperationalDate(booking.departureDate, language)}</p>
+          </div>
+          <div>
+            <p className="text-[10px] font-medium text-[var(--md-subtle)]">{t("ETA")}</p>
+            <p className="mt-1 text-[12px] font-medium text-[var(--md-ink)]">{formatOperationalDate(booking.arrivalDate, language)}</p>
+          </div>
         </div>
       ),
     },
     {
-      id: "status",
-      label: t("Status"),
-      width: 120,
-      minWidth: 110,
+      id: "nextAction",
+      label: t("Next action"),
+      width: 220,
+      minWidth: 180,
+      maxWidth: 300,
       resizable: true,
-      sortValue: (booking) => booking.status,
-      cell: (booking) => <BookingStatusPill status={booking.status} />,
+      sortValue: (booking) => getBookingNextAction(booking),
+      cell: (booking) => (
+        <div className="flex min-w-0 items-start gap-2">
+          {booking.status === "Exception" ? <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-[var(--md-red)]" strokeWidth={1.5} aria-hidden="true" /> : <CalendarClock className="mt-0.5 size-3.5 shrink-0 text-[var(--md-accent)]" strokeWidth={1.5} aria-hidden="true" />}
+          <div className="min-w-0">
+            <p className="line-clamp-2 text-[12px] font-medium leading-4 text-[var(--md-ink)]">{t(getBookingNextAction(booking))}</p>
+            <p className="mt-1 text-[11px] text-[var(--md-text)]">{booking.eta} · <bdi>{booking.currentLocation}</bdi></p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: "ownerActivity",
+      label: t("Owner and activity"),
+      width: 160,
+      minWidth: 140,
+      resizable: true,
+      sortValue: (booking) => booking.updatedAt,
+      cell: (booking) => (
+        <div className="flex items-center gap-2.5">
+          <span className="grid size-8 shrink-0 place-items-center rounded-full bg-[var(--md-accent-a12)] text-[12px] font-medium text-[var(--md-accent)]">{booking.owner || "—"}</span>
+          <div className="min-w-0">
+            <p className="text-[11px] font-medium text-[var(--md-ink)]">{t("Updated")}</p>
+            <p className="mt-0.5 truncate text-[10px] tabular-nums text-[var(--md-text)]" title={formatLastActivity(booking.updatedAt, language)}>{t(formatLastActivity(booking.updatedAt, language))}</p>
+          </div>
+        </div>
+      ),
     },
     {
       id: "progress",
@@ -380,6 +459,7 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
       width: 172,
       minWidth: 140,
       resizable: true,
+      defaultHidden: true,
       sortValue: (booking) => booking.progress,
       cell: (booking) => (
         <div className="flex items-center gap-3">
@@ -393,15 +473,46 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
       ),
     },
     {
-      id: "owner",
-      label: t("Owner"),
-      width: 88,
-      minWidth: 76,
+      id: "value",
+      label: t("Booking value"),
+      width: 130,
+      minWidth: 110,
       resizable: true,
-      sortValue: (booking) => booking.owner,
-      cell: (booking) => <span className="grid size-8 place-items-center rounded-full bg-[var(--md-accent-a12)] text-[12px] font-medium text-[var(--md-accent)]">{booking.owner}</span>,
+      defaultHidden: true,
+      sortValue: (booking) => Number(booking.value.replace(/[^0-9.-]/g, "")),
+      cell: (booking) => <span className="text-[13px] font-medium tabular-nums text-[var(--md-ink)]" dir="ltr">{booking.value || "—"}</span>,
     },
-  ], [favouriteIds, t])
+    {
+      id: "customerReference",
+      label: t("Customer reference"),
+      width: 170,
+      minWidth: 140,
+      resizable: true,
+      defaultHidden: true,
+      sortValue: (booking) => booking.customerRef,
+      cell: (booking) => <span className="text-[12px] text-[var(--md-ink)]" dir="auto">{booking.customerRef || "—"}</span>,
+    },
+    {
+      id: "supplierReference",
+      label: t("Supplier reference"),
+      width: 170,
+      minWidth: 140,
+      resizable: true,
+      defaultHidden: true,
+      sortValue: (booking) => booking.supplierRef,
+      cell: (booking) => <span className="text-[12px] text-[var(--md-ink)]" dir="auto">{booking.supplierRef || "—"}</span>,
+    },
+    {
+      id: "invoice",
+      label: t("Invoice"),
+      width: 160,
+      minWidth: 130,
+      resizable: true,
+      defaultHidden: true,
+      sortValue: (booking) => booking.invoice,
+      cell: (booking) => <span className="text-[12px] text-[var(--md-ink)]" dir="ltr">{booking.invoice || t("Not raised")}</span>,
+    },
+  ], [favouriteIds, language, t])
 
   return (
     <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t("Bookings")} className="md-page md-page-stack">
@@ -426,7 +537,7 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
           </>
         ) : null}
       </section>
-      <BookingMetricStrip />
+      <BookingMetricStrip rows={scopedBookings} />
       {bookingsError ? <div role="alert" className="rounded-[var(--md-radius-lg)] bg-[rgba(209,78,78,0.08)] px-4 py-3 text-[13px] text-[var(--md-red)]">{t("Bookings could not be loaded.")} {bookingsError}</div> : null}
       {advancedSearchOpen ? (
         <BookingSearchBuilder
@@ -444,7 +555,7 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
           columns={columns}
           rows={bookingsLoading ? [] : paginatedBookings}
           getRowKey={(booking) => booking.id}
-          storageKey="booking-register"
+          storageKey="booking-register-operations-v2"
           rowClassName={() => "hover:bg-[var(--md-hover)]"}
           onRowClick={openBooking}
           toolbarLeading={(
@@ -509,9 +620,13 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
           rows={visibleBookings}
           onOpenBooking={openBooking}
           onMoveBooking={(_bookingId, _status, orderedRows) => {
-            const orderedIds = new Set(orderedRows.map((booking) => booking.id))
-            const orderedIterator = orderedRows[Symbol.iterator]()
-            setBookingRecords((current) => current.map((booking) => orderedIds.has(booking.id) ? orderedIterator.next().value ?? booking : booking))
+            const orderedIndex = new Map(orderedRows.map((booking, index) => [booking.id, index]))
+            setBookingRecords((current) => [...current].sort((first, second) => {
+              const firstIndex = orderedIndex.get(first.id)
+              const secondIndex = orderedIndex.get(second.id)
+              if (firstIndex === undefined || secondIndex === undefined) return 0
+              return firstIndex - secondIndex
+            }))
           }}
         />
       ) : null}

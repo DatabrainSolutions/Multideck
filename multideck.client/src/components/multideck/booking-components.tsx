@@ -1,10 +1,9 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react"
 import { createPortal } from "react-dom"
-import { motion } from "motion/react"
+import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { toast } from "sonner"
 import {
   Activity,
-  ArrowLeft,
   ArrowDownAZ,
   ArrowUpAZ,
   Building2,
@@ -15,12 +14,14 @@ import {
   Database,
   FileText,
   KanbanSquare,
-  MapPin,
   MessageCircle,
   PanelRightClose,
   Paperclip,
+  Pencil,
   Plus,
   Route,
+  RotateCcw,
+  Save,
   Search,
   SendHorizontal,
   SlidersHorizontal,
@@ -63,8 +64,7 @@ import { StatusPill, toneToVar } from "./status-pill"
 import { Surface } from "./surface"
 import { AnimatedList } from "./animated-list"
 import { PageSettingsMenu, type PageSettingsViewOption } from "./page-settings-menu"
-import multideckFullLogo from "@/assets/brand/multideck-full-logo.svg"
-import { getLiveBooking, listLiveBookings, type LiveBooking } from "@/lib/application-data-api"
+import { getLiveBooking, type LiveBooking } from "@/lib/application-data-api"
 
 export type Booking = (typeof bookings)[number]
 export type OperatorJob = (typeof operatorJobs)[number]
@@ -74,7 +74,7 @@ export const bookingViewOptions = [
   { value: "Table", label: "Table", icon: Table2 },
   { value: "Board", label: "Board", icon: KanbanSquare },
 ] satisfies readonly PageSettingsViewOption<BookingViewMode>[]
-const bookingDetailTabs = ["Overview", "Movement", "Parties & cargo", "Documents", "Customs", "Finance", "Activity"] as const
+const bookingDetailTabs = ["Overview", "Details", "Documents", "Customs", "Finance", "Audit"] as const
 type BookingDetailTab = (typeof bookingDetailTabs)[number]
 export const bookingSearchFieldOptions = [
   { value: "any", label: "Any field", placeholder: "ID, invoice, customer, VIN..." },
@@ -171,7 +171,12 @@ export function BookingModePill({ mode }: { mode: BookingMode }) {
 }
 
 export function BookingShapeCell({ booking }: { booking: Booking }) {
-  const shape = getBookingShape(booking.id)
+  const liveShape = booking as Booking & Partial<Pick<LiveBooking, "direction" | "shipmentType">>
+  const storedShape = getBookingShape(booking.id)
+  const shape = {
+    direction: liveShape.direction || storedShape.direction,
+    shipmentType: liveShape.shipmentType || storedShape.shipmentType,
+  }
 
   return (
     <div className="min-w-0">
@@ -184,7 +189,7 @@ export function BookingShapeCell({ booking }: { booking: Booking }) {
   )
 }
 
-export function BookingMetricCard({ label, value, tone }: (typeof bookingMetrics)[number]) {
+export function BookingMetricCard({ label, value, tone }: { label: string; value: string; tone: StatusTone }) {
   return (
     <Surface padding="none" className="flex min-h-[52px] items-center justify-between gap-3 rounded-[var(--md-radius-xl)] px-4 py-2.5">
       <p className="text-[12px] font-medium text-[var(--md-text)]">{label}</p>
@@ -201,11 +206,22 @@ export function BookingMetricCard({ label, value, tone }: (typeof bookingMetrics
   )
 }
 
-export function BookingMetricStrip() {
+export function BookingMetricStrip({ rows = bookings }: { rows?: readonly Booking[] }) {
+  const { t } = useLanguage()
+  const metrics = [
+    { label: "Active", value: String(rows.filter((booking) => booking.progress < 100).length), tone: "neutral" as StatusTone },
+    { label: "In transit", value: String(rows.filter((booking) => booking.progress >= 25 && booking.progress < 75).length), tone: "teal" as StatusTone },
+    { label: "At destination", value: String(rows.filter((booking) => booking.progress >= 75 && booking.progress < 100).length), tone: "blue" as StatusTone },
+    { label: "Exceptions", value: String(rows.filter((booking) => booking.status === "Exception").length), tone: "red" as StatusTone },
+    { label: "Complete", value: String(rows.filter((booking) => booking.progress >= 100).length), tone: "green" as StatusTone },
+  ]
+
   return (
-    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
-      {bookingMetrics.map((metric) => (
-        <BookingMetricCard key={metric.label} {...metric} />
+    <div className="grid grid-cols-2 gap-2 lg:grid-cols-5">
+      {metrics.map((metric, index) => (
+        <div key={metric.label} className={index === metrics.length - 1 ? "col-span-2 lg:col-span-1" : undefined}>
+          <BookingMetricCard {...metric} label={t(metric.label)} />
+        </div>
       ))}
     </div>
   )
@@ -1065,39 +1081,22 @@ function BookingKanbanCardBody({ booking }: { booking: Booking }) {
   )
 }
 
-function DetailSideRail({ navigate, activeBookingId, bookings }: { navigate: (path: string) => void; activeBookingId: string; bookings: LiveBooking[] }) {
-  const { t } = useLanguage()
-  const related = bookings.filter((booking) => booking.id !== activeBookingId).slice(0, 4)
-
-  return (
-    <aside className="hidden h-screen min-h-0 w-[262px] shrink-0 overflow-hidden bg-[var(--md-sidebar-bg)] px-[var(--md-page-stack-gap)] py-[var(--md-page-pad)] shadow-[var(--md-stroke-right)] lg:block">
-      <img src={multideckFullLogo} alt="Multideck" className="h-[28px] w-auto" />
-      <button type="button" className="mt-[calc(var(--md-page-section-gap)+var(--md-gap-xl))] flex items-center gap-[var(--md-gap-sm)] text-[14px] font-medium text-[var(--md-text)] transition-[color] duration-150 hover:text-[var(--md-ink)]" onClick={() => navigate("/bookings")}>
-        <ArrowLeft className="icon-directional size-4" strokeWidth={1.5} />
-        {t("All bookings")}
-      </button>
-      <p className="mt-[var(--md-page-section-gap)] text-[12px] font-medium text-[var(--md-subtle)]">{t("Related bookings")}</p>
-      <div className="mt-[var(--md-page-stack-gap)] flex flex-col gap-[var(--md-page-stack-gap)]">
-        {related.map((booking) => (
-          <button key={booking.id} type="button" className="grid grid-cols-[10px_1fr] gap-3 text-start" onClick={() => navigate(getBookingDetailPath(booking.id))}>
-            <span className="mt-2 size-2 rounded-full" style={{ background: toneToVar(booking.tone) }} />
-            <span>
-              <span className="block text-[13px] text-[var(--md-text)]">{booking.id}</span>
-              <span className="block text-[14px] font-medium leading-5 text-[var(--md-ink)]">{booking.route}</span>
-            </span>
-          </button>
-        ))}
-      </div>
-    </aside>
-  )
-}
-
 function BookingDetailHeader({
   activeTab,
+  detailsEditable,
+  detailsDirty,
+  onDiscardDetails,
+  onEditDetails,
+  onSaveDetails,
   onTabChange,
   record,
 }: {
   activeTab: BookingDetailTab
+  detailsEditable: boolean
+  detailsDirty: boolean
+  onDiscardDetails: () => void
+  onEditDetails: () => void
+  onSaveDetails: () => void
   onTabChange: (tab: BookingDetailTab) => void
   record: BookingDetailRecord
 }) {
@@ -1106,32 +1105,100 @@ function BookingDetailHeader({
   const statusLabel = record.job?.status ?? record.booking.status
   const statusTone = record.job?.tone ?? record.booking.tone
   const primaryAction = record.job?.task ?? (record.booking.status === "Exception" ? "Review blocker" : record.booking.progress === 100 ? "Close booking" : "Open workflow")
+  const headerFacts = activeTab === "Details"
+    ? [
+        ["Job reference", record.booking.jobRef],
+        ["Mode / direction", `${record.booking.mode} · ${record.booking.direction}`],
+        ["Operational owner", record.booking.owner],
+        ["Current location", record.booking.currentLocation],
+      ]
+    : [
+        ["Customer", record.booking.customer],
+        ["Route", record.booking.route],
+        ["Progress", `${record.booking.progress}%`],
+        ["Status", statusLabel],
+      ]
 
   return (
-    <header className="px-[var(--md-page-pad)] pt-[var(--md-page-pad)] shadow-[var(--md-stroke-bottom)]">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2 text-[12px] font-medium text-[var(--md-text)]">
-            <span>{t("Booking")}</span>
-            <span data-i18n-skip dir="ltr" className="font-medium text-[var(--md-ink)]">{record.id}</span>
-            <StatusPill tone={statusTone}>{t(statusLabel)}</StatusPill>
-            <StatusPill tone="neutral">{record.booking.mode} · {record.booking.container}</StatusPill>
+    <header className="grid items-stretch gap-2 xl:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
+      <div className="grid min-w-0 grid-rows-[auto_auto] gap-1.5">
+        <section className="flex min-w-0 flex-col gap-2 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] px-3 py-1.5 shadow-[var(--md-shadow-line)] lg:flex-row lg:flex-nowrap lg:items-center lg:justify-between">
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <h1 className="shrink-0 text-[14px] font-medium leading-5 text-[var(--md-ink)]">{t("Booking")}</h1>
+            <span data-i18n-skip dir="ltr" className="inline-flex h-7 items-center rounded-[var(--md-radius-md)] bg-[var(--md-accent-a10)] px-2 text-[14px] font-medium text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">{record.id}</span>
+            <StatusPill tone={statusTone} className="h-6 shrink-0 px-2 text-[10px]">{t(statusLabel)}</StatusPill>
+            <span className="min-w-0 truncate text-[12px] text-[var(--md-text)]">{record.booking.route}</span>
           </div>
-          <div className="mt-3">
-            <h1 className="text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)] md:text-[30px]">{record.booking.route}</h1>
-            <p className="mt-2 text-[13px] font-medium text-[var(--md-text)]">{record.booking.customer} · {record.booking.carrier}</p>
+          <div className="flex shrink-0 items-center gap-1 overflow-x-auto">
+            {activeTab === "Details" ? (
+              detailsEditable ? (
+                <>
+                  <Button variant="ghost" className="h-8 shrink-0 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-2.5 text-[11px] font-medium shadow-[var(--md-shadow-line)]" onClick={onDiscardDetails}>
+                    <RotateCcw data-icon="inline-start" className="size-3.5" strokeWidth={1.4} />
+                    {t("Discard")}
+                  </Button>
+                  <Button disabled={!detailsDirty} className="h-8 shrink-0 rounded-[var(--md-radius-lg)] px-2.5 text-[11px] font-medium" onClick={onSaveDetails}>
+                    <Save data-icon="inline-start" className="size-3.5" strokeWidth={1.4} />
+                    {t("Save")}
+                  </Button>
+                </>
+              ) : (
+                <Button className="h-8 shrink-0 rounded-[var(--md-radius-lg)] px-2.5 text-[11px] font-medium" onClick={onEditDetails}>
+                  <Pencil data-icon="inline-start" className="size-3.5" strokeWidth={1.4} />
+                  {t("Edit details")}
+                </Button>
+              )
+            ) : (
+              <>
+                <Button variant="ghost" className="h-8 shrink-0 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-2.5 text-[11px] font-medium shadow-[var(--md-shadow-line)]" onClick={() => toast.success(t("Update draft prepared"))}>
+                  {t("Prepare update")}
+                </Button>
+                <Button className="h-8 shrink-0 rounded-[var(--md-radius-lg)] px-2.5 text-[11px] font-medium" onClick={() => toast.success(t("Workflow opened"))}>
+                  {t(primaryAction)}
+                </Button>
+              </>
+            )}
           </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="ghost" className="h-10 rounded-[var(--md-radius-lg)] bg-white/35 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/65" onClick={() => toast.success(t("Update draft prepared"))}>
-            {t("Prepare update")}
-          </Button>
-          <Button className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-white hover:bg-[#0b6f67]" onClick={() => toast.success(t("Workflow opened"))}>
-            {t(primaryAction)}
-          </Button>
-        </div>
+        </section>
+
+        <Surface padding="none" tone="soft" className="min-w-0 w-full overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)]">
+          <div className="flex w-full items-center gap-1 overflow-x-auto" role="tablist" aria-label={t("Booking workspace")}>
+            {tabs.map((tab) => {
+              const selected = tab.id === activeTab
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  className={cn(
+                    "h-8 shrink-0 rounded-[var(--md-radius-lg)] px-2.5 text-[12px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,transform] duration-200 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] active:scale-[0.985]",
+                    selected && "bg-[var(--md-surface-tint)] text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
+                  )}
+                  onClick={() => onTabChange(tab.id as BookingDetailTab)}
+                >
+                  {tab.label}
+                </button>
+              )
+            })}
+          </div>
+        </Surface>
       </div>
-      <TabsRail tabs={tabs} activeTab={activeTab} onChange={(tab) => onTabChange(tab as BookingDetailTab)} className="mt-[var(--md-page-stack-gap)]" />
+
+      <Surface padding="none" className="rounded-[var(--md-radius-xl)] px-3 py-2 shadow-[var(--md-shadow-line)]">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[11px] font-medium text-[var(--md-text)]">{t(activeTab === "Overview" ? "Movement context" : "Booking context")}</p>
+          <StatusPill tone="neutral" className="h-5 px-2 text-[10px]">{record.booking.mode} · {record.booking.container}</StatusPill>
+        </div>
+        <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2">
+          {headerFacts.map(([label, value]) => (
+            <div key={label} className="min-w-0">
+              <dt className="text-[10px] text-[var(--md-subtle)]">{t(label)}</dt>
+              <dd data-i18n-skip dir="auto" className="mt-0.5 truncate text-[11px] font-medium text-[var(--md-ink)]" title={value}>{value}</dd>
+            </div>
+          ))}
+        </dl>
+      </Surface>
     </header>
   )
 }
@@ -1646,7 +1713,7 @@ function getBookingNextAction(record: BookingDetailRecord) {
   if (record.booking.progress === 100) return { title: "Complete financial close", detail: "Confirm final costs, proof of delivery, and customer billing before closing the record.", tone: "green" as StatusTone }
   if (record.booking.status === "Delayed") return { title: "Prepare a revised ETA update", detail: "Confirm the latest carrier timing before sharing the movement change with the customer.", tone: "amber" as StatusTone }
   if (record.booking.status === "Exception") return { title: "Review the open blocker", detail: getBookingBlocker(record)?.value ?? "Open the operational workflow and assign the next action.", tone: "red" as StatusTone }
-  return { title: "Monitor the next movement", detail: `Keep ${record.booking.eta} ${record.booking.time} under watch and act if the carrier timing changes.`, tone: "teal" as StatusTone }
+  return { title: "Monitor the next movement", detail: `Keep ${record.booking.eta} under watch while the shipment remains at ${record.booking.currentLocation}.`, tone: "teal" as StatusTone }
 }
 
 function getMovementSteps(record: BookingDetailRecord) {
@@ -1691,43 +1758,186 @@ function BookingFactRows({ rows }: { rows: readonly (readonly [string, string])[
   )
 }
 
-function MovementProgress({ record }: { record: BookingDetailRecord }) {
+function BookingCargoWiseField({
+  editable = false,
+  label,
+  onChange,
+  options,
+  span = false,
+  value,
+}: {
+  editable?: boolean
+  label: string
+  onChange?: (value: string) => void
+  options?: readonly string[]
+  span?: boolean
+  value: string
+}) {
   const { t } = useLanguage()
-  const steps = getMovementSteps(record)
 
   return (
-    <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-      <BookingSectionHeading icon={<Route className="size-4" strokeWidth={1.5} />} title={t("Current movement")} meta={`${record.booking.progress}%`} />
-      <div className="px-5 py-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div className="min-w-0">
-            <p className="text-[12px] font-medium text-[var(--md-subtle)]">{t("Route")}</p>
-            <p className="mt-1 text-[19px] font-medium leading-7 text-[var(--md-ink)]">{record.booking.origin} → {record.booking.destination}</p>
-            <p className="mt-2 text-[13px] text-[var(--md-text)]">{record.booking.carrier} · {record.booking.vessel || record.booking.container}</p>
-          </div>
-          <div className="shrink-0 lg:text-end">
-            <p className="text-[12px] text-[var(--md-subtle)]">{t("Current ETA")}</p>
-            <p className="mt-1 text-[18px] font-medium text-[var(--md-ink)]">{record.booking.eta} · {record.booking.time}</p>
-          </div>
-        </div>
-        <Progress
-          value={record.booking.progress}
-          className="mt-5 h-1.5 rounded-full bg-[rgba(90,103,100,0.12)] [&>div]:bg-[var(--movement-color)]"
-          style={{ "--movement-color": toneToVar(record.booking.tone) } as CSSProperties}
-        />
-        <div className="mt-5 overflow-x-auto pb-1 md-scrollbar">
-          <div className="grid min-w-[620px] grid-cols-5 gap-3" role="list" aria-label={t("Operational milestones")}>
-            {steps.map((step) => (
-              <div key={step.label} role="listitem" className="min-w-0">
-                <span className={cn("block h-1.5 rounded-full bg-[rgba(90,103,100,0.14)]", step.state === "done" && "bg-[var(--md-green)]", step.state === "current" && "bg-[var(--md-accent)]")} />
-                <p className="mt-2 truncate text-[12px] font-medium text-[var(--md-ink)]">{t(step.label)}</p>
-                <p className="mt-0.5 truncate text-[11px] text-[var(--md-text)]">{step.detail}</p>
+    <div className={cn("grid min-w-0 grid-cols-[var(--md-field-label-width,76px)_minmax(0,1fr)] items-center gap-1.5", span && "md:col-span-2")}>
+      <label className="min-w-0 whitespace-normal break-words text-end text-[11px] font-medium leading-[1.15] text-[var(--md-text)]">{t(label)}</label>
+      {editable && onChange ? (
+        options ? (
+          <Select value={value} onValueChange={onChange}>
+            <SelectTrigger aria-label={t(label)} className="h-8 min-w-0 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-2 text-[11px] font-medium shadow-[var(--md-shadow-line)]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {options.map((option) => <SelectItem key={option} value={option}>{t(option)}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        ) : (
+          <Input
+            aria-label={t(label)}
+            data-i18n-skip
+            dir="auto"
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            className="h-8 min-w-0 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-2 text-[11px] font-medium shadow-[var(--md-shadow-line)]"
+          />
+        )
+      ) : (
+        <span data-i18n-skip dir="auto" title={value} className="min-h-8 min-w-0 truncate rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-2 py-1.5 text-[11px] font-medium leading-5 text-[var(--md-ink)] shadow-[var(--md-shadow-line)]">
+          {value || "—"}
+        </span>
+      )}
+    </div>
+  )
+}
+
+function BookingCargoWiseGroup({
+  title,
+  children,
+  compact = false,
+  className,
+  contentClassName,
+}: {
+  title: string
+  children: ReactNode
+  compact?: boolean
+  className?: string
+  contentClassName?: string
+}) {
+  const { t } = useLanguage()
+
+  return (
+    <section className={cn("h-full overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]", compact ? "p-2" : "p-2.5", className)}>
+      <h3 className={cn("min-w-0 text-[12px] font-medium leading-4 text-[var(--md-ink)]", compact ? "mb-1.5" : "mb-2")}>{t(title)}</h3>
+      <div className={cn("grid", compact ? "gap-1.5" : "gap-2", contentClassName)}>{children}</div>
+    </section>
+  )
+}
+
+function BookingOverviewSignals({ record }: { record: BookingDetailRecord }) {
+  const { t } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
+  const steps = getMovementSteps(record)
+  const operationalScore = record.booking.status === "Exception"
+    ? 34
+    : record.booking.status === "Delayed"
+      ? Math.max(48, Math.min(68, record.booking.progress + 4))
+      : record.booking.progress === 100
+        ? 96
+        : 84
+  const needleAngle = -90 + (operationalScore / 100) * 180
+  const operationalLabel = record.booking.status === "Exception"
+    ? "Action needed"
+    : record.booking.status === "Delayed"
+      ? "Schedule watch"
+      : record.booking.progress === 100
+        ? "Complete"
+        : "On track"
+  const operationalTone: StatusTone = record.booking.status === "Exception" ? "red" : record.booking.status === "Delayed" ? "amber" : "green"
+  const metadata = [
+    ["Operational owner", record.booking.owner],
+    ["Current location", record.booking.currentLocation],
+    ["Departure", record.booking.departureDate],
+    ["Current ETA", record.booking.eta],
+  ] as const
+
+  return (
+    <div className="grid gap-2 lg:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
+      <div className="grid min-h-0 grid-rows-2 gap-2">
+        <Surface padding="none" className="md-scrollbar flex min-h-0 items-center overflow-x-auto rounded-[var(--md-radius-xl)] p-1.5">
+          <div className="grid w-full min-w-[560px] grid-cols-5 gap-1" role="list" aria-label={t("Operational milestones")}>
+            {steps.map((step, index) => (
+              <div
+                key={step.label}
+                role="listitem"
+                aria-current={step.state === "current" ? "step" : undefined}
+                className={cn(
+                  "relative min-w-0 overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] px-2.5 py-2 shadow-[var(--md-shadow-line)]",
+                  step.state === "current" && "bg-[var(--md-accent-a10)]",
+                )}
+              >
+                <motion.span
+                  aria-hidden="true"
+                  className={cn("absolute inset-x-0 top-0 h-0.5 origin-left bg-[var(--md-green)]", step.state === "current" && "bg-[var(--md-accent)]", step.state === "pending" && "bg-[var(--md-stroke)]")}
+                  initial={false}
+                  animate={{ scaleX: step.state === "pending" ? 0.18 : step.state === "current" ? Math.max(0.22, (record.booking.progress % 25) / 25) : 1 }}
+                  transition={{ duration: shouldReduceMotion ? 0 : 0.32, ease: [0.22, 1, 0.36, 1] }}
+                />
+                <div className="flex items-center justify-between gap-1">
+                  <span className="truncate text-[11px] font-medium text-[var(--md-ink)]">{t(step.label)}</span>
+                  <span className="text-[9px] font-medium tabular-nums text-[var(--md-subtle)]">{index + 1}/5</span>
+                </div>
+                <p data-i18n-skip dir="auto" className="mt-1 truncate text-[10px] text-[var(--md-text)]">{step.detail}</p>
               </div>
             ))}
           </div>
-        </div>
+        </Surface>
+
+        <Surface padding="none" className="min-h-0 overflow-hidden rounded-[var(--md-radius-xl)] px-3 py-1.5">
+          <dl className="grid h-full grid-cols-2 items-center gap-3 sm:grid-cols-4">
+            {metadata.map(([label, value]) => (
+              <div key={label} className="min-w-0">
+                <dt className="text-[10px] text-[var(--md-subtle)]">{t(label)}</dt>
+                <dd title={value} data-i18n-skip dir="auto" className="mt-0.5 truncate text-[11px] font-medium text-[var(--md-ink)]">{value}</dd>
+              </div>
+            ))}
+          </dl>
+        </Surface>
       </div>
-    </Surface>
+
+      <Surface padding="none" className="relative overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-accent-abyss-deep)] p-2 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_0_0_1px_var(--md-accent-veil-ring-a12),0_10px_22px_var(--md-accent-veil-cast-a18)]">
+        <span aria-hidden="true" className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_75%_10%,rgba(87,205,180,0.22),transparent_52%),linear-gradient(145deg,rgba(2,13,11,0.04),rgba(1,9,8,0.36))]" />
+        <div className="relative z-10 flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <p className="flex items-center gap-1 text-[11px] font-medium uppercase leading-3 tracking-[0.02em] text-white/68"><Activity className="size-3 text-white/85" strokeWidth={1.5} />{t("Operational health")}</p>
+            <p className="mt-0.5 text-[13px] font-medium text-white">{operationalScore}% · {t(operationalLabel)}</p>
+          </div>
+          <StatusPill tone={operationalTone} className="border-0 bg-white/12 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.16)]">{t(record.booking.status)}</StatusPill>
+        </div>
+        <div className="relative z-10 mx-auto h-[58px] w-full overflow-hidden">
+          <svg viewBox="0 0 220 124" className="h-full w-full" role="img" aria-label={`${t("Operational health")}: ${operationalScore}%`}>
+            <defs>
+              <linearGradient id={`booking-health-${record.id}`} x1="30" y1="104" x2="190" y2="104" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stopColor="var(--md-red)" />
+                <stop offset="52%" stopColor="var(--md-amber)" />
+                <stop offset="100%" stopColor="var(--md-green)" />
+              </linearGradient>
+            </defs>
+            <path d="M 30 104 A 80 80 0 0 1 190 104" fill="none" stroke={`url(#booking-health-${record.id})`} strokeWidth="14" strokeLinecap="round" />
+            <motion.g
+              initial={false}
+              animate={{ rotate: needleAngle }}
+              transition={{ duration: shouldReduceMotion ? 0 : 0.38, ease: [0.22, 1, 0.36, 1] }}
+              style={{ transformOrigin: "110px 104px" }}
+            >
+              <line x1="110" y1="104" x2="110" y2="42" stroke="white" strokeWidth="4" strokeLinecap="round" />
+              <circle cx="110" cy="104" r="8" fill="white" stroke="rgba(2,13,11,0.72)" strokeWidth="3" />
+            </motion.g>
+          </svg>
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-between px-4 text-[9.5px] font-medium text-white/72">
+            <span>{t("At risk")}</span>
+            <span>{t("Healthy")}</span>
+          </div>
+        </div>
+        <p className="relative z-10 mt-0.5 text-[9.5px] text-white/58">{t("Derived from the current booking status and movement progress")}</p>
+      </Surface>
+    </div>
   )
 }
 
@@ -1779,7 +1989,7 @@ function BookingAvailabilityInspector({ record }: { record: BookingDetailRecord 
 
   return (
     <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-      <BookingSectionHeading icon={<Database className="size-4" strokeWidth={1.5} />} title={t("Data availability")} />
+      <BookingSectionHeading icon={<Database className="size-4" strokeWidth={1.5} />} title={t("Operational readiness")} />
       <div className="px-5 py-2">
         {rows.map(([label, state, tone]) => (
           <div key={label} className="flex items-center justify-between gap-4 py-3 shadow-[inset_0_1px_0_rgba(11,20,19,0.06)] first:shadow-none">
@@ -1793,40 +2003,73 @@ function BookingAvailabilityInspector({ record }: { record: BookingDetailRecord 
 }
 
 function BookingDecisionOverview({ record }: { record: BookingDetailRecord }) {
-  const { t } = useLanguage()
+  const { language, t } = useLanguage()
   const nextAction = getBookingNextAction(record)
+  const updatedDate = new Date(record.booking.updatedAt)
+  const updatedAt = !record.booking.updatedAt
+    ? t("Not available")
+    : Number.isNaN(updatedDate.getTime())
+      ? record.booking.updatedAt
+      : new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }).format(updatedDate)
 
   return (
-    <div className="flex flex-col gap-[var(--md-page-stack-gap)]">
-      <section className="grid gap-4 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] px-5 py-4 shadow-[var(--md-shadow-line)] lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="text-[12px] font-medium text-[var(--md-subtle)]">{t("Immediate next action")}</p>
-            <StatusPill tone={nextAction.tone}>{record.job ? t(record.job.status) : t(record.booking.status)}</StatusPill>
-          </div>
-          <h2 className="mt-2 text-[18px] font-medium leading-6 text-[var(--md-ink)]">{t(nextAction.title)}</h2>
-          <p className="mt-1 max-w-[780px] text-[13px] leading-5 text-[var(--md-text)]">{t(nextAction.detail)}</p>
-        </div>
-        <Button className="h-10 rounded-[var(--md-radius-lg)] px-4 text-[13px]" onClick={() => toast.success(t("Workflow opened"))}>{t("Open workflow")}</Button>
-      </section>
+    <div className="grid gap-2">
+      <BookingOverviewSignals record={record} />
 
-      <div className="grid gap-[var(--md-page-stack-gap)] 2xl:grid-cols-[minmax(0,1fr)_380px]">
-        <div className="flex min-w-0 flex-col gap-[var(--md-page-stack-gap)]">
-          <MovementProgress record={record} />
+      <div className="grid gap-2 lg:grid-cols-[1fr_1fr_0.9fr]">
+        <BookingCargoWiseGroup title="Booking header" compact>
+          <div className="grid gap-1 min-[1500px]:grid-cols-2">
+            <BookingCargoWiseField label="Booking ref" value={record.booking.id} />
+            <BookingCargoWiseField label="Job ref" value={record.booking.jobRef} />
+            <BookingCargoWiseField label="Customer" value={record.booking.customer} />
+            <BookingCargoWiseField label="Owner" value={record.booking.owner} />
+            <BookingCargoWiseField label="Status" value={record.booking.status} />
+            <BookingCargoWiseField label="Updated" value={updatedAt} />
+          </div>
+        </BookingCargoWiseGroup>
+
+        <BookingCargoWiseGroup title="Routing" compact>
+          <div className="grid gap-1 min-[1500px]:grid-cols-2">
+            <BookingCargoWiseField label="Mode" value={record.booking.mode} />
+            <BookingCargoWiseField label="Direction" value={record.booking.direction} />
+            <BookingCargoWiseField label="Origin" value={record.booking.origin} />
+            <BookingCargoWiseField label="Destination" value={record.booking.destination} />
+            <BookingCargoWiseField label="Departure" value={record.booking.departureDate} />
+            <BookingCargoWiseField label="ETA" value={record.booking.eta} />
+            <BookingCargoWiseField label="Current location" value={record.booking.currentLocation} />
+          </div>
+        </BookingCargoWiseGroup>
+
+        <BookingCargoWiseGroup title="Cargo & commercial" compact>
+          <div className="grid gap-1 min-[1500px]:grid-cols-2">
+            <BookingCargoWiseField label="Shipment" value={record.booking.shipmentType} />
+            <BookingCargoWiseField label="Equipment" value={record.booking.container} />
+            <BookingCargoWiseField label="Carrier" value={record.booking.carrier} />
+            <BookingCargoWiseField label="Vessel / flight" value={record.booking.vessel || t("Not supplied")} />
+            <BookingCargoWiseField label="Value" value={record.booking.value} />
+            <BookingCargoWiseField label="Invoice" value={record.booking.invoice || t("Not raised")} />
+          </div>
+        </BookingCargoWiseGroup>
+      </div>
+
+      <div className="grid gap-2 xl:grid-cols-[minmax(0,1.05fr)_minmax(340px,0.95fr)]">
+        <div className="grid min-w-0 gap-2">
+          <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
+            <div className="grid gap-3 px-4 py-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-[11px] font-medium text-[var(--md-subtle)]">{t("Immediate next action")}</p>
+                  <StatusPill tone={nextAction.tone}>{record.job ? t(record.job.status) : t(record.booking.status)}</StatusPill>
+                </div>
+                <h2 className="mt-1.5 text-[16px] font-medium leading-5 text-[var(--md-ink)]">{t(nextAction.title)}</h2>
+                <p className="mt-1 max-w-[760px] text-[12px] leading-5 text-[var(--md-text)]">{t(nextAction.detail)}</p>
+              </div>
+              <Button className="h-8 rounded-[var(--md-radius-lg)] px-3 text-[11px]" onClick={() => toast.success(t("Workflow opened"))}>{t("Open workflow")}</Button>
+            </div>
+          </Surface>
           <BookingBlockerSection record={record} />
         </div>
-        <aside className="flex min-w-0 flex-col gap-[var(--md-page-stack-gap)]" aria-label={t("Booking context")}>
-          <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-            <BookingSectionHeading icon={<CalendarClock className="size-4" strokeWidth={1.5} />} title={t("Core booking facts")} />
-            <BookingFactRows rows={[
-              ["Customer", record.booking.customer],
-              ["Mode", `${record.booking.mode} · ${record.booking.container}`],
-              ["Carrier", record.booking.carrier],
-              ["Owner", record.booking.owner],
-              ["Job reference", record.booking.jobRef],
-              ["Customer reference", record.booking.customerRef],
-            ]} />
-          </Surface>
+        <aside aria-label={t("Booking context")}>
           <BookingAvailabilityInspector record={record} />
         </aside>
       </div>
@@ -1834,55 +2077,128 @@ function BookingDecisionOverview({ record }: { record: BookingDetailRecord }) {
   )
 }
 
-function BookingMovementPage({ record }: { record: BookingDetailRecord }) {
-  const { t } = useLanguage()
+function BookingRecordDetails({
+  editable,
+  onBookingChange,
+  onCustomFieldChange,
+  record,
+}: {
+  editable: boolean
+  onBookingChange: (field: keyof LiveBooking, value: string | boolean) => void
+  onCustomFieldChange: (index: number, value: string) => void
+  record: BookingDetailRecord
+}) {
+  const { language, t } = useLanguage()
+  const updatedDate = new Date(record.booking.updatedAt)
+  const updatedAt = !record.booking.updatedAt
+    ? t("Not available")
+    : Number.isNaN(updatedDate.getTime())
+      ? record.booking.updatedAt
+      : new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }).format(updatedDate)
+
+  const unavailable = t("Not available in the booking register")
+  const editField = (field: keyof LiveBooking) => ({
+    editable,
+    onChange: (value: string) => onBookingChange(field, value),
+  })
 
   return (
-    <div className="grid gap-[var(--md-page-stack-gap)] 2xl:grid-cols-[minmax(0,1fr)_360px]">
-      <MovementProgress record={record} />
-      <Surface padding="none" className="h-fit overflow-hidden rounded-[var(--md-radius-xl)]">
-        <BookingSectionHeading icon={<MapPin className="size-4" strokeWidth={1.5} />} title={t("Route and schedule")} />
-        <BookingFactRows rows={[
-          ["Origin", record.booking.origin],
-          ["Destination", record.booking.destination],
-          ["Departure", record.booking.departureDate],
-          ["Arrival", record.booking.arrivalDate],
-          ["Vessel / flight", record.booking.vessel || "Not supplied"],
-          ["ETA", `${record.booking.eta} · ${record.booking.time}`],
-        ]} />
-      </Surface>
-    </div>
-  )
-}
+    <div className="grid items-start gap-[var(--md-page-stack-gap-compact)]">
+      <BookingCargoWiseGroup title="Job data">
+        <div className="grid gap-3 xl:grid-cols-3">
+          <div className="grid content-start gap-1.5">
+            <h4 className="text-[10.5px] font-medium text-[var(--md-subtle)]">{t("Booking control")}</h4>
+            <div className="grid gap-1.5 md:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+              <BookingCargoWiseField label="Booking ref" value={record.booking.id} />
+              <BookingCargoWiseField label="Job ref" value={record.booking.jobRef} {...editField("jobRef")} />
+              <BookingCargoWiseField label="Status" value={record.booking.status} options={["On track", "Delayed", "Exception"]} {...editField("status")} />
+              <BookingCargoWiseField label="Progress" value={`${record.booking.progress}%`} />
+              <BookingCargoWiseField label="Mode" value={record.booking.mode} options={["OCEAN", "AIR", "ROAD", "FAS", "FSA"]} {...editField("mode")} />
+              <BookingCargoWiseField label="Last updated" value={updatedAt} />
+            </div>
+          </div>
+          <div className="grid content-start gap-1.5">
+            <h4 className="text-[10.5px] font-medium text-[var(--md-subtle)]">{t("Ownership")}</h4>
+            <div className="grid gap-1.5 md:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+              <BookingCargoWiseField label="Owner" value={record.booking.owner} {...editField("owner")} />
+              <BookingCargoWiseField label="Direction" value={record.booking.direction} options={["Import", "Export", "Domestic", "Cross trade"]} {...editField("direction")} />
+              <BookingCargoWiseField label="Favourite" value={record.booking.isFavourite ? "Yes" : "No"} options={["Yes", "No"]} editable={editable} onChange={(value) => onBookingChange("isFavourite", value === "Yes")} />
+              <BookingCargoWiseField label="Current location" value={record.booking.currentLocation} {...editField("currentLocation")} />
+              <BookingCargoWiseField label="Source ID" value={record.booking.sourceId} span />
+            </div>
+          </div>
+          <div className="grid content-start gap-1.5">
+            <h4 className="text-[10.5px] font-medium text-[var(--md-subtle)]">{t("References")}</h4>
+            <div className="grid gap-1.5 md:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+              <BookingCargoWiseField label="Customer ref" value={record.booking.customerRef} {...editField("customerRef")} />
+              <BookingCargoWiseField label="Supplier ref" value={record.booking.supplierRef} {...editField("supplierRef")} />
+              <BookingCargoWiseField label="Invoice" value={record.booking.invoice} {...editField("invoice")} />
+              <BookingCargoWiseField label="Documents" value={t("Not connected")} />
+              <BookingCargoWiseField label="Workflow" value={record.booking.status} />
+            </div>
+          </div>
+        </div>
+      </BookingCargoWiseGroup>
 
-function BookingPartiesCargoPage({ record }: { record: BookingDetailRecord }) {
-  const { t } = useLanguage()
-  const hasFixture = hasPrototypeDetailData(record)
-  const cargoRows: readonly (readonly [string, string])[] = hasFixture
-    ? bookingCargo.map(([label, value]) => [label, value] as const)
-    : [
-        ["Load unit", record.booking.container],
-        ["Mode", record.booking.mode],
-        ...record.booking.customFields.map((field) => [field.label, field.value] as [string, string]),
-      ]
+      <div className="grid items-stretch gap-[var(--md-page-stack-gap-compact)] xl:grid-cols-[1.26fr_1.08fr_1fr]">
+        <BookingCargoWiseGroup title="Customer" className="[--md-field-label-width:64px]">
+          <BookingCargoWiseField label="Name" value={record.booking.customer} span {...editField("customer")} />
+          <BookingCargoWiseField label="Code / ref" value={record.booking.customerRef} span {...editField("customerRef")} />
+          <BookingCargoWiseField label="Address" value={unavailable} span />
+          <BookingCargoWiseField label="Contact" value={unavailable} span />
+        </BookingCargoWiseGroup>
+        <BookingCargoWiseGroup title="Shipper" className="[--md-field-label-width:64px]">
+          <BookingCargoWiseField label="Name" value={unavailable} span />
+          <BookingCargoWiseField label="Reference" value={record.booking.supplierRef} span {...editField("supplierRef")} />
+          <BookingCargoWiseField label="Collection" value={record.booking.origin} span {...editField("origin")} />
+          <BookingCargoWiseField label="Address" value={unavailable} span />
+        </BookingCargoWiseGroup>
+        <BookingCargoWiseGroup title="Consignee" className="[--md-field-label-width:64px]">
+          <BookingCargoWiseField label="Name" value={unavailable} span />
+          <BookingCargoWiseField label="Reference" value={t("Not supplied")} span />
+          <BookingCargoWiseField label="Delivery" value={record.booking.destination} span {...editField("destination")} />
+          <BookingCargoWiseField label="Address" value={unavailable} span />
+        </BookingCargoWiseGroup>
+      </div>
 
-  return (
-    <div className="grid gap-[var(--md-page-stack-gap)] 2xl:grid-cols-2">
-      <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-        <BookingSectionHeading icon={<Building2 className="size-4" strokeWidth={1.5} />} title={t("Parties")} meta={t("Booking register")} />
-        <BookingFactRows rows={[
-          ["Customer", record.booking.customer],
-          ["Carrier / supplier", record.booking.carrier],
-          ["Supplier reference", record.booking.supplierRef || "Not supplied"],
-          ["Consignor", "Not available in the booking register"],
-          ["Consignee", "Not available in the booking register"],
-          ["Operational owner", record.booking.owner],
-        ]} />
-      </Surface>
-      <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-        <BookingSectionHeading icon={<Container className="size-4" strokeWidth={1.5} />} title={t("Cargo and consignment")} meta={t(hasFixture ? "Prototype fixture" : "Booking register")} />
-        <BookingFactRows rows={cargoRows} />
-      </Surface>
+      <div className="grid items-stretch gap-[var(--md-page-stack-gap-compact)] xl:grid-cols-[1.35fr_0.65fr]">
+        <BookingCargoWiseGroup title="Service & carrier">
+          <div className="grid gap-3 xl:grid-cols-2">
+            <div className="grid content-start gap-1.5">
+              <h4 className="text-[10.5px] font-medium text-[var(--md-subtle)]">{t("Service")}</h4>
+              <div className="grid gap-1.5 md:grid-cols-2">
+                <BookingCargoWiseField label="Shipment type" value={record.booking.shipmentType} {...editField("shipmentType")} />
+                <BookingCargoWiseField label="Equipment / load" value={record.booking.container} {...editField("container")} />
+                <BookingCargoWiseField label="From" value={record.booking.origin} {...editField("origin")} />
+                <BookingCargoWiseField label="To" value={record.booking.destination} {...editField("destination")} />
+                <BookingCargoWiseField label="Departure" value={record.booking.departureDate} {...editField("departureDate")} />
+                <BookingCargoWiseField label="Arrival" value={record.booking.arrivalDate} {...editField("arrivalDate")} />
+                <BookingCargoWiseField label="ETA" value={record.booking.eta} {...editField("eta")} />
+                <BookingCargoWiseField label="Route" value={record.booking.route} />
+              </div>
+            </div>
+            <div className="grid content-start gap-1.5">
+              <h4 className="text-[10.5px] font-medium text-[var(--md-subtle)]">{t("Carrier & supplier")}</h4>
+              <div className="grid gap-1.5 md:grid-cols-2">
+                <BookingCargoWiseField label="Carrier" value={record.booking.carrier} {...editField("carrier")} />
+                <BookingCargoWiseField label="Vessel / flight" value={record.booking.vessel} {...editField("vessel")} />
+                <BookingCargoWiseField label="Supplier ref" value={record.booking.supplierRef} {...editField("supplierRef")} />
+                <BookingCargoWiseField label="Current location" value={record.booking.currentLocation} {...editField("currentLocation")} />
+              </div>
+            </div>
+          </div>
+        </BookingCargoWiseGroup>
+
+        <BookingCargoWiseGroup title="Goods" contentClassName="md:grid-cols-2">
+          <BookingCargoWiseField label="Booking value" value={record.booking.value} {...editField("value")} />
+          <BookingCargoWiseField label="VIN" value={record.booking.vin} {...editField("vin")} />
+          {record.booking.customFields.length
+            ? record.booking.customFields.map((field, index) => <BookingCargoWiseField key={`${field.label}-${index}`} label={field.label} value={field.value} editable={editable} onChange={(value) => onCustomFieldChange(index, value)} />)
+            : <BookingCargoWiseField label="Custom fields" value={t("No additional fields recorded")} span />}
+        </BookingCargoWiseGroup>
+      </div>
+
+      <BookingAvailabilityInspector record={record} />
     </div>
   )
 }
@@ -1994,13 +2310,24 @@ function BookingActivityWorkspace({ record }: { record: BookingDetailRecord }) {
   )
 }
 
-function BookingDetailTabPage({ activeTab, record }: { activeTab: BookingDetailTab; record: BookingDetailRecord }) {
-  if (activeTab === "Movement") return <BookingMovementPage record={record} />
-  if (activeTab === "Parties & cargo") return <BookingPartiesCargoPage record={record} />
+function BookingDetailTabPage({
+  activeTab,
+  detailsEditable,
+  onBookingChange,
+  onCustomFieldChange,
+  record,
+}: {
+  activeTab: BookingDetailTab
+  detailsEditable: boolean
+  onBookingChange: (field: keyof LiveBooking, value: string | boolean) => void
+  onCustomFieldChange: (index: number, value: string) => void
+  record: BookingDetailRecord
+}) {
+  if (activeTab === "Details") return <BookingRecordDetails editable={detailsEditable} onBookingChange={onBookingChange} onCustomFieldChange={onCustomFieldChange} record={record} />
   if (activeTab === "Documents") return <BookingDocumentsWorkspace record={record} />
   if (activeTab === "Customs") return <BookingCustomsWorkspace record={record} />
   if (activeTab === "Finance") return <BookingFinanceWorkspace record={record} />
-  if (activeTab === "Activity") return <BookingActivityWorkspace record={record} />
+  if (activeTab === "Audit") return <BookingActivityWorkspace record={record} />
   return <BookingDecisionOverview record={record} />
 }
 
@@ -2150,19 +2477,31 @@ export function BookingDetailWorkspace({
   navigate: (path: string) => void
   bookingId?: string
 }) {
-  const { t } = useLanguage()
+  const { direction, t } = useLanguage()
+  const reduceMotion = useReducedMotion()
   const [activeTab, setActiveTab] = useState<BookingDetailTab>("Overview")
+  const [tabTravelDirection, setTabTravelDirection] = useState(1)
   const [record, setRecord] = useState<BookingDetailRecord | null>(null)
-  const [relatedBookings, setRelatedBookings] = useState<LiveBooking[]>([])
+  const [draftBooking, setDraftBooking] = useState<LiveBooking | null>(null)
+  const [detailsEditable, setDetailsEditable] = useState(false)
   const [loadState, setLoadState] = useState<"loading" | "ready" | "not-found" | "error">("loading")
+
+  function changeActiveTab(nextTab: BookingDetailTab) {
+    const currentIndex = bookingDetailTabs.indexOf(activeTab)
+    const nextIndex = bookingDetailTabs.indexOf(nextTab)
+    setTabTravelDirection(nextIndex >= currentIndex ? 1 : -1)
+    setActiveTab(nextTab)
+  }
 
   useEffect(() => {
     let cancelled = false
     const normalizedId = bookingId.trim().toUpperCase()
 
     setActiveTab("Overview")
+    setTabTravelDirection(1)
     setRecord(null)
-    setRelatedBookings([])
+    setDraftBooking(null)
+    setDetailsEditable(false)
     setLoadState("loading")
 
     void getLiveBooking(normalizedId).then((booking) => {
@@ -2172,12 +2511,8 @@ export function BookingDetailWorkspace({
         return
       }
       setRecord({ id: booking.id, booking })
+      setDraftBooking(booking)
       setLoadState("ready")
-      void listLiveBookings().then((liveBookings) => {
-        if (!cancelled) setRelatedBookings(liveBookings)
-      }).catch(() => {
-        if (!cancelled) setRelatedBookings([])
-      })
     }).catch(() => {
       if (!cancelled) setLoadState("error")
     })
@@ -2187,7 +2522,7 @@ export function BookingDetailWorkspace({
 
   if (loadState === "loading") {
     return (
-      <main className="grid min-h-screen place-items-center bg-[var(--md-bg)] px-[var(--md-page-pad)] text-[var(--md-ink)]">
+      <main className="grid min-h-full place-items-center bg-[var(--md-analytics-bg)] px-[var(--md-page-pad)] text-[var(--md-ink)]">
         <p className="text-[13px] text-[var(--md-text)]">{t("Loading booking...")}</p>
       </main>
     )
@@ -2195,7 +2530,7 @@ export function BookingDetailWorkspace({
 
   if (loadState === "not-found") {
     return (
-      <main className="grid min-h-screen place-items-center bg-[var(--md-bg)] px-[var(--md-page-pad)] text-[var(--md-ink)]">
+      <main className="grid min-h-full place-items-center bg-[var(--md-analytics-bg)] px-[var(--md-page-pad)] text-[var(--md-ink)]">
         <Surface padding="lg" className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] text-center">
           <h1 className="text-[20px] font-medium">{t("Booking not found")}</h1>
           <p className="mt-2 text-[13px] leading-6 text-[var(--md-text)]">{t("The requested booking is not available in this workspace. No fallback record has been substituted.")}</p>
@@ -2207,7 +2542,7 @@ export function BookingDetailWorkspace({
 
   if (loadState === "error" || !record) {
     return (
-      <main className="grid min-h-screen place-items-center bg-[var(--md-bg)] px-[var(--md-page-pad)] text-[var(--md-ink)]">
+      <main className="grid min-h-full place-items-center bg-[var(--md-analytics-bg)] px-[var(--md-page-pad)] text-[var(--md-ink)]">
         <Surface padding="lg" className="w-full max-w-[520px] rounded-[var(--md-radius-xl)] text-center">
           <h1 className="text-[20px] font-medium">{t("Booking could not be loaded")}</h1>
           <p className="mt-2 text-[13px] leading-6 text-[var(--md-text)]">{t("We could not verify this booking in the current workspace. Check your connection or access and try again.")}</p>
@@ -2217,17 +2552,86 @@ export function BookingDetailWorkspace({
     )
   }
 
+  const loadedRecord = record
+  const detailsDirty = Boolean(draftBooking && JSON.stringify(draftBooking) !== JSON.stringify(loadedRecord.booking))
+  const visibleRecord = detailsEditable && draftBooking ? { ...loadedRecord, booking: draftBooking } : loadedRecord
+  const visualTabTravelDirection = tabTravelDirection * (direction === "rtl" ? -1 : 1)
+
+  function updateDraftBooking(field: keyof LiveBooking, value: string | boolean) {
+    setDraftBooking((current) => {
+      if (!current) return current
+      const next = { ...current, [field]: value } as LiveBooking
+      if (field === "origin" || field === "destination") next.route = `${next.origin} → ${next.destination}`
+      if (field === "status") next.tone = statusTone[next.status]
+      return next
+    })
+  }
+
+  function updateDraftCustomField(index: number, value: string) {
+    setDraftBooking((current) => current ? {
+      ...current,
+      customFields: current.customFields.map((field, fieldIndex) => fieldIndex === index ? { ...field, value } : field),
+    } : current)
+  }
+
+  function editDetails() {
+    setDraftBooking(loadedRecord.booking)
+    setDetailsEditable(true)
+  }
+
+  function discardDetails() {
+    setDraftBooking(loadedRecord.booking)
+    setDetailsEditable(false)
+  }
+
+  function saveDetails() {
+    if (!draftBooking || !detailsDirty) return
+    const savedBooking = { ...draftBooking, updatedAt: new Date().toISOString() }
+    setRecord({ ...loadedRecord, booking: savedBooking })
+    setDraftBooking(savedBooking)
+    setDetailsEditable(false)
+    toast.success(t("Booking changes saved"), { description: t("The updated details are available for this booking session.") })
+  }
+
   return (
-    <div className="h-screen overflow-hidden bg-[var(--md-bg)] text-[var(--md-ink)]">
-      <div className="flex h-screen min-h-0">
-        <DetailSideRail navigate={navigate} activeBookingId={record.id} bookings={relatedBookings} />
-        <main className="md-scrollbar min-h-0 min-w-0 flex-1 overflow-y-auto">
-          <BookingDetailHeader activeTab={activeTab} onTabChange={setActiveTab} record={record} />
-          <div className="px-[var(--md-page-pad)] py-[var(--md-page-stack-gap)] pb-[var(--md-page-bottom-pad)]">
-            <BookingDetailTabPage activeTab={activeTab} record={record} />
-          </div>
-        </main>
+    <main className="min-h-full bg-[var(--md-analytics-bg)] px-4 py-4 text-[var(--md-ink)] sm:px-5">
+      <div className="grid w-full gap-2">
+        <BookingDetailHeader
+          activeTab={activeTab}
+          detailsEditable={detailsEditable}
+          detailsDirty={detailsDirty}
+          onDiscardDetails={discardDetails}
+          onEditDetails={editDetails}
+          onSaveDetails={saveDetails}
+          onTabChange={changeActiveTab}
+          record={visibleRecord}
+        />
+        <div className="relative min-h-px overflow-x-clip">
+          <AnimatePresence initial={false} mode="popLayout" custom={visualTabTravelDirection}>
+            <motion.div
+              key={activeTab}
+              custom={visualTabTravelDirection}
+              variants={{
+                enter: (travel: number) => ({ opacity: 0, x: travel * 12 }),
+                active: { opacity: 1, x: 0 },
+                exit: (travel: number) => ({ opacity: 0, x: travel * -8 }),
+              }}
+              initial="enter"
+              animate="active"
+              exit="exit"
+              transition={{ duration: reduceMotion ? 0 : 0.22, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <BookingDetailTabPage
+                activeTab={activeTab}
+                detailsEditable={detailsEditable}
+                onBookingChange={updateDraftBooking}
+                onCustomFieldChange={updateDraftCustomField}
+                record={visibleRecord}
+              />
+            </motion.div>
+          </AnimatePresence>
+        </div>
       </div>
-    </div>
+    </main>
   )
 }
