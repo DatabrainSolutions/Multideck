@@ -48,6 +48,61 @@ final result: passed
 
 # Design QA
 
+Feature: Quote Overview compact five-stage progress rail
+
+Source visual truth:
+- `/var/folders/lb/stflsq1d6llcfy2t4f_q0ny40000gn/T/codex-clipboard-33af50b4-a9d4-46e3-acd2-9e29cec2b311.png`
+- Selected source region: progress-bar style 1, labels above state dots and segmented rails.
+
+Implementation evidence:
+- Local URL: `http://localhost:3000/quotes/q-19157`, authenticated Overview tab.
+- First implementation screenshot: `/tmp/multideck-quote-progress-option-1.png`.
+- Revised implementation screenshot: `/tmp/multideck-quote-progress-option-1-v2.png`.
+- Normalized focused comparison: `/tmp/multideck-quote-progress-comparison.png`.
+- Browser viewport: `1512 x 771` CSS px at device pixel ratio `2`.
+- Source pixels: `735 x 841`; selected reference crop `577 x 79`, normalized to `848 x 116`.
+- Implementation pixels: `1512 x 771`; selected implementation crop `848 x 100`.
+- State: light theme, desktop quote Overview, Review is the current stage.
+
+Full-view comparison evidence:
+- The revised screenshot confirms the progress panel remains aligned with the adjacent AI temperature panel and the quote overview grid.
+- The progress card measures `840 x 99` CSS px; its five-stage grid uses `816 x 42` CSS px, leaving 12px inline padding and a compact centred vertical rhythm.
+
+Focused region comparison evidence:
+- The normalized comparison places reference style 1 above the implementation in one image.
+- Both use the same information order: label, state dot, then segmented rail.
+- Multideck intentionally keeps five freight stages and semantic stage colours instead of copying the reference's four generic monochrome steps.
+
+Required fidelity surfaces:
+- Fonts and typography: existing Multideck system font and medium-weight compact labels retained; labels increased to 11px for clearer scanning.
+- Spacing and layout rhythm: rails now use the full available width with 12px panel padding, 12px segment gaps, and a 99px card height.
+- Colors and visual tokens: existing semantic stage colours, surface tokens, and focus treatments retained; pending stages remain visually quiet.
+- Image quality and asset fidelity: no image assets are required inside this interface component; the supplied image is used only as the layout reference.
+- Copy and content: the five freight-specific labels remain Intake, Costing, Review, Sent, and Outcome, with localized tooltip descriptions.
+
+Comparison history:
+- Pass 1 finding: the five-stage structure matched the reference, but the 620px maximum width left excessive inline whitespace and the adjacent gauge kept the row taller than necessary.
+- Fix: removed the internal width cap, increased label/dot/rail sizing, used a partial rail for the current stage, reduced the gauge height from 58px to 50px, and tightened panel padding.
+- Pass 2 evidence: `/tmp/multideck-quote-progress-option-1-v2.png` and `/tmp/multideck-quote-progress-comparison.png` show the rail filling the card with the same label-dot-bar rhythm as reference style 1.
+
+Checks:
+- Exactly five stages render in the expected order.
+- Review exposes `aria-current="step"`.
+- The current marker measures `7 x 7` CSS px and the rail measures `9px` high.
+- RTL animation origin remains direction-aware; the symmetric grid and logical padding require no physical left/right overrides.
+- Production Vite build passes.
+- No browser console errors were observed during the authenticated render check.
+
+Findings:
+- No actionable P0/P1/P2 findings remain.
+- P3 follow-up: a future data-backed version should derive the current stage and partial completion from the quote record instead of the current static overview fixture.
+
+final result: passed
+
+---
+
+# Design QA
+
 Feature: Dexter inline email composer refinement
 
 Source visual truth:

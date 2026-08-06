@@ -299,6 +299,7 @@ export function providerScopes(provider: EmailProvider, accessMode: EmailAccessM
       "email",
       "profile",
       "https://www.googleapis.com/auth/gmail.modify",
+      "https://www.googleapis.com/auth/gmail.settings.basic",
     ]
   }
 
@@ -310,6 +311,7 @@ export function providerScopes(provider: EmailProvider, accessMode: EmailAccessM
     "User.Read",
     "Mail.ReadWrite",
     "Mail.Send",
+    "MailboxSettings.ReadWrite",
   ]
   if (accessMode === "shared") {
     scopes.push(

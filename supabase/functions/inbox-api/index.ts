@@ -19,6 +19,7 @@ import {
   deleteDraft,
   disconnect,
   getThread,
+  getAutomaticReply,
   inboxWorkspace,
   listMailboxes,
   listThreads,
@@ -31,6 +32,7 @@ import {
   syncMailbox,
   trashThread,
   updateThreadState,
+  updateAutomaticReply,
 } from "./runtime.ts"
 
 const allowedOrigins = readAllowedOrigins({
@@ -96,6 +98,12 @@ Deno.serve(async (request) => {
     if (method === "POST" && path.length === 3 && path[0] === "mailboxes" && path[2] === "sync") {
       return jsonResponse(request, allowedOrigins, await syncMailbox(clients.admin, actor, path[1]))
     }
+    if (method === "GET" && path.length === 3 && path[0] === "mailboxes" && path[2] === "automatic-reply") {
+      return jsonResponse(request, allowedOrigins, await getAutomaticReply(clients.admin, actor, path[1]))
+    }
+    if (method === "PATCH" && path.length === 3 && path[0] === "mailboxes" && path[2] === "automatic-reply") {
+      return jsonResponse(request, allowedOrigins, await updateAutomaticReply(clients.admin, actor, path[1], await readJson(request)))
+    }
     if (method === "GET" && path.length === 1 && path[0] === "threads") {
       return jsonResponse(request, allowedOrigins, await listThreads(clients.admin, actor, new URL(request.url)))
     }
@@ -128,7 +136,8 @@ Deno.serve(async (request) => {
       return jsonResponse(request, allowedOrigins, await sendMail(clients.admin, actor, await readJson(request, 24_000_000), request.headers.get("Idempotency-Key")?.trim() ?? ""))
     }
     if (method === "GET" && path.length === 2 && path[0] === "attachments") {
-      const download = await attachment(clients.admin, actor, path[1])
+      const inline = new URL(request.url).searchParams.get("disposition") === "inline"
+      const download = await attachment(clients.admin, actor, path[1], inline)
       const attachmentBuffer = new ArrayBuffer(download.bytes.byteLength)
       new Uint8Array(attachmentBuffer).set(download.bytes)
       return new Response(attachmentBuffer, {
@@ -137,7 +146,7 @@ Deno.serve(async (request) => {
           ...corsHeaders(request, allowedOrigins),
           "Cache-Control": "private, no-store",
           "Content-Type": download.mimeType,
-          "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(safeFileName(download.fileName))}`,
+          "Content-Disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(safeFileName(download.fileName))}`,
           "Content-Length": String(download.bytes.byteLength),
           "X-Content-Type-Options": "nosniff",
           "X-Content-Safety": "unscanned-provider-content",

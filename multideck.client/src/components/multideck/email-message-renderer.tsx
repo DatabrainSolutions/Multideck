@@ -1,5 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { useLanguage } from "@/i18n/language-provider"
+import {
+  getCachedInlineAttachmentBlobUrl,
+  getInlineAttachmentBlobUrl,
+  type MailAttachment,
+} from "@/lib/inbox-api"
 import { cn } from "@/lib/utils"
 
 /**
@@ -28,7 +33,7 @@ function contentPolicy() {
     "form-action 'none'",
     "base-uri 'none'",
     "style-src 'unsafe-inline'",
-    "img-src data: https:",
+    "img-src data: blob: https:",
   ].join("; ")
 }
 
@@ -40,11 +45,21 @@ function contentPolicy() {
 const emojiFonts = `"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Segoe UI Symbol", emoji`
 
 function frameStyles(theme: "light" | "dark") {
-  const ink = theme === "dark" ? "#e8f1eb" : "#0b1413"
-  const text = theme === "dark" ? "#b6c2bd" : "#4f5b58"
+  const ink = "#0b1413"
+  const text = "#4f5b58"
   const line = theme === "dark" ? "rgba(232,241,235,0.14)" : "rgba(11,20,19,0.12)"
-  const link = theme === "dark" ? "#7fd8ca" : "#0a7068"
-  const quote = theme === "dark" ? "rgba(232,241,235,0.20)" : "rgba(11,20,19,0.14)"
+  const link = "#0a7068"
+  const quote = "rgba(11,20,19,0.14)"
+  const darkAppearance = theme === "dark"
+    ? `
+    /* Email HTML commonly hard-codes black text and white surfaces. Invert the
+       complete document in dark appearance so those authored pairs keep their
+       contrast, then cancel the filter for media so photographs and logos keep
+       their original colours. */
+    body { filter: invert(1) hue-rotate(180deg); }
+    img, picture, video { filter: invert(1) hue-rotate(180deg); }
+    `
+    : ""
 
   return `
     :root { color-scheme: ${theme}; }
@@ -87,16 +102,33 @@ function frameStyles(theme: "light" | "dark") {
     }
     pre, code { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif, ${emojiFonts}; font-size: 12.5px; white-space: pre-wrap; }
     hr { border: 0; border-top: 1px solid ${line}; margin: 16px 0; }
+    ${darkAppearance}
   `
+}
+
+function normalizeContentId(value: string) {
+  let decoded = value
+  try { decoded = decodeURIComponent(value) } catch { /* Keep the provider value. */ }
+  return decoded.trim().replace(/^<|>$/g, "").toLowerCase()
+}
+
+function replaceInlineImageSources(html: string, sources: ReadonlyMap<string, string>) {
+  if (!sources.size) return html
+  return html.replace(/(\s+src\s*=\s*["'])cid:([^"']+)(["'])/gi, (match, start, rawContentId, end) => {
+    const source = sources.get(normalizeContentId(String(rawContentId)))
+    return source ? `${start}${source}${end}` : match
+  })
 }
 
 function buildDocument({
   html,
+  inlineImageSources,
   theme,
   direction,
   language,
 }: {
   html: string
+  inlineImageSources: ReadonlyMap<string, string>
   theme: "light" | "dark"
   direction: "ltr" | "rtl"
   language: string
@@ -105,7 +137,7 @@ function buildDocument({
   // website, but it makes an opened email look broken until the frame nears the
   // viewport. Preserve the sender's markup while making every secure image an
   // immediate load inside the already sandboxed document.
-  const eagerHtml = html.replace(/<img\b[^>]*>/gi, (tag) => {
+  const eagerHtml = replaceInlineImageSources(html, inlineImageSources).replace(/<img\b[^>]*>/gi, (tag) => {
     const withoutLoadingHints = tag
       .replace(/\s+loading\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")
       .replace(/\s+fetchpriority\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")
@@ -146,18 +178,83 @@ function useIsDarkTheme() {
 export function EmailMessageRenderer({
   sanitizedHtml,
   bodyText,
+  inlineAttachments = [],
   className,
 }: {
   /** Server-sanitised HTML. Rendered only inside the sandboxed frame. */
   sanitizedHtml: string | null
   /** The plain-text alternative, used whenever there is no sanitised HTML. */
   bodyText: string | null
+  /** Inline attachments whose content IDs are referenced by `cid:` image URLs. */
+  inlineAttachments?: MailAttachment[]
   className?: string
 }) {
   const { direction, language, t } = useLanguage()
   const isDark = useIsDarkTheme()
   const frameRef = useRef<HTMLIFrameElement | null>(null)
   const [frameHeight, setFrameHeight] = useState(0)
+  const [inlineImageSources, setInlineImageSources] = useState<ReadonlyMap<string, string>>(() => new Map())
+
+  const inlineImageKey = inlineAttachments
+    .filter((attachment) => attachment.isInline && attachment.contentId)
+    .map((attachment) => `${attachment.id}:${attachment.contentId}`)
+    .join("|")
+
+  useLayoutEffect(() => {
+    let cancelled = false
+    const opened: Array<{ url: string; revoke: () => void }> = []
+    const candidates = inlineAttachments
+      .filter((attachment) => attachment.isInline && attachment.contentId)
+      .slice(0, 24)
+
+    const readyEntries: Array<readonly [string, string]> = []
+    const missing: MailAttachment[] = []
+    for (const attachment of candidates) {
+      const cached = getCachedInlineAttachmentBlobUrl(attachment.id)
+      if (!cached) {
+        missing.push(attachment)
+        continue
+      }
+      opened.push(cached)
+      readyEntries.push([normalizeContentId(attachment.contentId ?? ""), cached.url])
+    }
+
+    // A layout effect applies ready prefetched URLs before the browser paints,
+    // so selecting a warmed conversation never flashes broken CID images.
+    setInlineImageSources(new Map(readyEntries))
+    if (!candidates.length) return
+
+    void Promise.all(missing.map(async (attachment) => {
+      try {
+        const result = await getInlineAttachmentBlobUrl(attachment.id)
+        if (cancelled) {
+          result.revoke()
+          return null
+        }
+        opened.push(result)
+        return [normalizeContentId(attachment.contentId ?? ""), result.url] as const
+      } catch {
+        // The message remains readable and keeps its alt text if an individual
+        // provider image has expired or is blocked by the mailbox policy.
+        return null
+      }
+    })).then((entries) => {
+      if (!cancelled) {
+        setInlineImageSources(new Map([
+          ...readyEntries,
+          ...entries.filter((entry): entry is readonly [string, string] => entry !== null),
+        ]))
+      }
+    })
+
+    return () => {
+      cancelled = true
+      opened.forEach((result) => result.revoke())
+    }
+    // The stable scalar key prevents a parent array identity change from
+    // downloading the same private images again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inlineImageKey])
 
   useEffect(() => {
     setFrameHeight(0)
@@ -168,12 +265,13 @@ export function EmailMessageRenderer({
       sanitizedHtml
         ? buildDocument({
             html: sanitizedHtml,
+            inlineImageSources,
             theme: isDark ? "dark" : "light",
             direction,
             language,
           })
         : null,
-    [direction, isDark, language, sanitizedHtml],
+    [direction, inlineImageSources, isDark, language, sanitizedHtml],
   )
 
   useEffect(() => {

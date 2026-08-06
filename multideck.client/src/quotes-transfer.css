@@ -119,129 +119,188 @@
     margin: 10px 13px;
   }
 
-  .md-quote-stage-panel__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-  }
-
-  .md-quote-stage-panel__count {
-    display: grid;
-    flex: 0 0 auto;
-    place-items: center;
-    min-width: 40px;
-    height: 22px;
-    padding-inline: 8px;
-    border-radius: var(--md-radius-md);
-    font-family: var(--font-sans);
-    font-size: 9px;
-    color: var(--md-text);
-    background: var(--md-surface-soft);
-    box-shadow: var(--md-shadow-line);
-  }
-
   .md-quote-stage-panel__steps {
     display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-    gap: 7px;
-    margin-top: 9px;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    width: 100%;
+    gap: 8px;
+    margin: 0 auto;
   }
 
   .md-quote-stage-panel__step {
+    --md-quote-stage-color: var(--md-accent);
+    --md-quote-stage-progress: 0%;
+    --md-quote-stage-track: color-mix(in srgb, var(--md-quote-stage-color) 18%, transparent);
+    --md-quote-stage-track-text: color-mix(in srgb, var(--md-quote-stage-color) 72%, black);
     min-width: 0;
-    transition:
-      opacity 170ms ease,
-      filter 170ms ease,
-      transform 190ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
-  .md-quote-stage-panel__step button {
-    display: block;
-    width: 100%;
-    min-width: 0;
-    text-align: start;
-    outline: none;
+  .md-quote-stage-panel__step[data-stage="intake"] {
+    --md-quote-stage-color: #0b6f68;
   }
 
-  .md-quote-stage-panel__rail {
+  .md-quote-stage-panel__step[data-stage="costing"] {
+    --md-quote-stage-color: #2563a8;
+  }
+
+  .md-quote-stage-panel__step[data-stage="review"] {
+    --md-quote-stage-color: #a84f08;
+  }
+
+  .md-quote-stage-panel__step[data-stage="sent"] {
+    --md-quote-stage-color: #6d4aa0;
+  }
+
+  .md-quote-stage-panel__step[data-stage="outcome"] {
+    --md-quote-stage-color: #207342;
+  }
+
+  .dark .md-quote-stage-panel__step[data-stage="intake"] {
+    --md-quote-stage-color: #107b73;
+  }
+
+  .dark .md-quote-stage-panel__step[data-stage="costing"] {
+    --md-quote-stage-color: #2e69aa;
+  }
+
+  .dark .md-quote-stage-panel__step[data-stage="review"] {
+    --md-quote-stage-color: #ab550c;
+  }
+
+  .dark .md-quote-stage-panel__step[data-stage="sent"] {
+    --md-quote-stage-color: #7451a7;
+  }
+
+  .dark .md-quote-stage-panel__step[data-stage="outcome"] {
+    --md-quote-stage-color: #2c7b50;
+  }
+
+  .dark .md-quote-stage-panel__step {
+    --md-quote-stage-track: color-mix(in srgb, var(--md-quote-stage-color) 22%, transparent);
+    --md-quote-stage-track-text: rgba(255, 255, 255, 0.92);
+  }
+
+  .md-quote-stage-panel .md-quote-stage-panel__step button {
     position: relative;
-    display: block;
-    height: 11px;
-    overflow: hidden;
-    border-radius: var(--md-radius-sm);
-    background: var(--md-surface-soft);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.5),
-      inset 0 0 0 1px rgba(11, 20, 19, 0.035);
-    transition: transform 170ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 170ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
-
-  .md-quote-stage-panel__rail i {
+    isolation: isolate;
     display: block;
     width: 100%;
-    height: 100%;
-    border-radius: inherit;
-    opacity: 0.28;
-    background: var(--md-quote-stage-color);
-    transition: opacity 170ms cubic-bezier(0.22, 1, 0.36, 1), filter 170ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
-
-  .md-quote-stage-panel__step[data-state="done"] .md-quote-stage-panel__rail i {
-    opacity: 0.82;
-  }
-
-  .md-quote-stage-panel__step[data-state="current"] .md-quote-stage-panel__rail i {
-    opacity: 1;
-    filter: saturate(1.08);
-    box-shadow: 0 0 9px color-mix(in srgb, var(--md-quote-stage-color) 28%, transparent);
-  }
-
-  .md-quote-stage-panel__step button:hover .md-quote-stage-panel__rail,
-  .md-quote-stage-panel__step button:focus-visible .md-quote-stage-panel__rail {
-    transform: scaleY(1.08);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.5),
-      0 0 0 3px color-mix(in srgb, var(--md-quote-stage-color) 12%, transparent),
-      0 5px 12px color-mix(in srgb, var(--md-quote-stage-color) 16%, transparent);
-  }
-
-  .md-quote-stage-panel__step button:hover .md-quote-stage-panel__rail i,
-  .md-quote-stage-panel__step button:focus-visible .md-quote-stage-panel__rail i {
-    opacity: 1;
-  }
-
-  .md-quote-stage-panel__steps:has(button:hover, button:focus-visible) .md-quote-stage-panel__step {
-    opacity: 0.34;
-    filter: saturate(0.55);
-    transform: scale(0.985);
-  }
-
-  .md-quote-stage-panel__steps:has(button:hover, button:focus-visible) .md-quote-stage-panel__step:has(button:hover, button:focus-visible) {
-    z-index: 1;
-    opacity: 1;
-    filter: none;
-    transform: translateY(-1px) scale(1.01);
-  }
-
-  .md-quote-stage-panel__step p {
+    min-width: 0;
+    min-height: 34px;
+    padding: 0;
     overflow: hidden;
-    margin-top: 4px;
+    border-radius: calc(var(--md-radius-xl) - 6px) !important;
+    text-align: center;
+    background-color: var(--md-quote-stage-track) !important;
+    box-shadow: none;
+    outline: none;
+    transition:
+      transform 150ms cubic-bezier(0.22, 1, 0.36, 1),
+      filter 150ms ease,
+      box-shadow 150ms ease;
+  }
+
+  .md-quote-stage-panel .md-quote-stage-panel__step button::before {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+    z-index: -1;
+    inline-size: var(--md-quote-stage-progress);
+    border-start-start-radius: inherit;
+    border-end-start-radius: inherit;
+    background-color: var(--md-quote-stage-color);
+    content: "";
+    transition: inline-size 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .md-quote-stage-panel .md-quote-stage-panel__step[data-state="done"] button::before {
+    border-radius: inherit;
+  }
+
+  .md-quote-stage-panel .md-quote-stage-panel__step button:hover,
+  .md-quote-stage-panel .md-quote-stage-panel__step button:focus-visible {
+    z-index: 1;
+    filter: brightness(1.08) saturate(1);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px color-mix(in srgb, var(--md-quote-stage-color) 24%, transparent);
+  }
+
+  .md-quote-stage-panel .md-quote-stage-panel__step button:focus-visible {
+    outline: 2px solid var(--md-ink);
+    outline-offset: 2px;
+  }
+
+  .md-quote-stage-panel .md-quote-stage-panel__step button:active {
+    transform: scale(0.96);
+  }
+
+  .md-quote-stage-panel__label {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    min-width: 0;
+    padding: 7px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+
+  .md-quote-stage-panel__label > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .md-quote-stage-panel__label > small {
+    flex: 0 0 auto;
     font-size: 9px;
+    font-weight: 600;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .md-quote-stage-panel__label--track {
+    color: var(--md-quote-stage-track-text);
+  }
+
+  .md-quote-stage-panel__label--fill {
+    color: #fff;
+    clip-path: inset(0 calc(100% - var(--md-quote-stage-progress)) 0 0);
+  }
+
+  [dir="rtl"] .md-quote-stage-panel__label--fill {
+    clip-path: inset(0 0 0 calc(100% - var(--md-quote-stage-progress)));
+  }
+
+  .md-quote-stage-metadata dl > div + div {
+    padding-inline-start: 12px;
+    border-inline-start: 1px solid var(--md-line);
+  }
+
+  .md-quote-stage-metadata dt {
+    overflow: hidden;
+    font-size: 9.5px;
     font-weight: 500;
+    line-height: 1.2;
     color: var(--md-subtle);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .md-quote-stage-panel__step[data-state="done"] p,
-  .md-quote-stage-panel__step[data-state="current"] p {
+  .md-quote-stage-metadata dd {
+    overflow: hidden;
+    margin-top: 3px;
+    font-size: 11px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.2;
     color: var(--md-ink);
-  }
-
-  .md-quote-stage-panel__step button:hover p,
-  .md-quote-stage-panel__step button:focus-visible p {
-    color: var(--md-quote-stage-color);
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .md-quote-stage-tooltip {
@@ -320,27 +379,46 @@
   }
 
   @media (max-width: 479px) {
+    .md-quote-stage-stack {
+      grid-template-rows: auto auto;
+    }
+
     .md-quote-stage-panel__steps {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 4px;
+      padding-block: 2px;
+    }
+
+    .md-quote-stage-panel__label {
+      gap: 2px;
+      padding-inline: 3px;
+      font-size: 9px;
+    }
+
+    .md-quote-stage-panel__label > small {
+      font-size: 7.5px;
+    }
+
+    .md-quote-stage-metadata dl {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       row-gap: 10px;
     }
 
-    .md-quote-stage-panel__step p {
-      font-size: 9.5px;
+    .md-quote-stage-metadata dl > div:nth-child(3) {
+      padding-inline-start: 0;
+      border-inline-start: 0;
     }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .md-quote-stage-panel__step,
-    .md-quote-stage-panel__rail,
-    .md-quote-stage-panel__rail i {
+    .md-quote-stage-panel .md-quote-stage-panel__step button,
+    .md-quote-stage-panel .md-quote-stage-panel__step button::before {
       transition-duration: 0.01ms !important;
     }
 
-    .md-quote-stage-panel__steps:has(button:hover, button:focus-visible) .md-quote-stage-panel__step,
-    .md-quote-stage-panel__steps:has(button:hover, button:focus-visible) .md-quote-stage-panel__step:has(button:hover, button:focus-visible),
-    .md-quote-stage-panel__step button:hover .md-quote-stage-panel__rail,
-    .md-quote-stage-panel__step button:focus-visible .md-quote-stage-panel__rail {
+    .md-quote-stage-panel .md-quote-stage-panel__step button:hover,
+    .md-quote-stage-panel .md-quote-stage-panel__step button:focus-visible,
+    .md-quote-stage-panel .md-quote-stage-panel__step button:active {
       transform: none;
     }
   }

@@ -1,7 +1,6 @@
 export const MISTRAL_OCR_MODEL = "mistral-ocr-4-0"
-export const MISTRAL_TEXT_MODEL = "mistral-small-latest"
+export const COMMERCIAL_INVOICE_SCHEMA_VERSION = 2
 export const MAX_COMMERCIAL_INVOICE_BYTES = 10 * 1024 * 1024
-export const MAX_COMMERCIAL_INVOICE_TEXT_CHARS = 160_000
 
 export const MAX_INVOICE_EVIDENCE_PAGES = 30
 export const MAX_INVOICE_EVIDENCE_BLOCKS = 320

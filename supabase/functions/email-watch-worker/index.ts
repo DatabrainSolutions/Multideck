@@ -146,8 +146,52 @@ Deno.serve(async (request) => {
             if (!mailboxId) continue
             try {
               const { sync, attempts } = await syncMailboxWithRetry(admin, actor, mailboxId, mode === "live")
+              let retention: Record<string, unknown> | null = null
+              if (mode === "backfill") {
+                const { data: purge, error: purgeError } = await admin.rpc("comm_purge_expired_provider_mail", {
+                  p_mailbox_id: mailboxId,
+                  p_batch_size: 250,
+                })
+                if (purgeError) {
+                  await admin
+                    .from("Comm_Mailboxes")
+                    .update({
+                      CommMailbox_RetentionError: cleanString(purgeError.message, 1_000) || "Retention cleanup failed.",
+                      CommMailbox_UpdatedAt: new Date().toISOString(),
+                    })
+                    .eq("CommMailbox_ID", mailboxId)
+                    .eq("CommMailbox_IsDeleted", false)
+                  throw purgeError
+                }
+                const purgeResult = purge && typeof purge === "object" ? purge as Record<string, unknown> : null
+                let compaction: Record<string, unknown> | null = null
+                // Prioritise reclaiming expired rows. Once that queue is
+                // drained, compact retained search/body data in its own small
+                // lock-safe batch.
+                if (purgeResult?.hasMore !== true) {
+                  const { data: compacted, error: compactionError } = await admin.rpc("comm_compact_provider_mail", {
+                    p_mailbox_id: mailboxId,
+                    p_batch_size: 100,
+                  })
+                  if (compactionError) {
+                    await admin
+                      .from("Comm_Mailboxes")
+                      .update({
+                        CommMailbox_RetentionError: cleanString(compactionError.message, 1_000) || "Mailbox compaction failed.",
+                        CommMailbox_UpdatedAt: new Date().toISOString(),
+                      })
+                      .eq("CommMailbox_ID", mailboxId)
+                      .eq("CommMailbox_IsDeleted", false)
+                    throw compactionError
+                  }
+                  compaction = compacted && typeof compacted === "object"
+                    ? compacted as Record<string, unknown>
+                    : null
+                }
+                retention = { purge: purgeResult, compaction }
+              }
               successful += 1
-              mailboxResults.push({ mailboxId, ok: true, synced: sync.synced, hasMore: sync.hasMore, attempts })
+              mailboxResults.push({ mailboxId, ok: true, synced: sync.synced, hasMore: sync.hasMore, attempts, retention })
             } catch (error) {
               const message = error instanceof Error ? error.message : "Mailbox sync failed."
               failures.push(message)

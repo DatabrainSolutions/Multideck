@@ -945,7 +945,6 @@ function CrmPageHeader({
   meta,
   action,
   onSpeakToDexter,
-  compact = false,
 }: {
   eyebrow?: string
   title: string
@@ -953,7 +952,6 @@ function CrmPageHeader({
   meta?: string
   action?: ReactNode
   onSpeakToDexter?: () => void
-  compact?: boolean
 }) {
   const actions = action || onSpeakToDexter ? (
     <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -962,32 +960,17 @@ function CrmPageHeader({
     </div>
   ) : null
 
-  if (compact) {
-    return (
-      <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-        <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:gap-5">
-          <h1 className="shrink-0 text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">{title}</h1>
-          {summary || meta ? (
-            <div className="min-w-0 text-[12px] leading-5">
-              {meta ? <p className="font-medium text-[var(--md-text)]">{meta}</p> : null}
-              {summary ? <p className="text-[var(--md-subtle)]">{summary}</p> : null}
-            </div>
-          ) : null}
-        </div>
-        {actions ? <div className="lg:justify-self-end">{actions}</div> : null}
-      </div>
-    )
-  }
-
   return (
-    <div className="flex flex-col gap-[var(--md-gap-lg)] xl:flex-row xl:items-end xl:justify-between">
+    <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
       <div className="min-w-0">
-        <p className="text-[12px] font-medium uppercase tracking-normal text-[var(--md-subtle)]">{eyebrow}</p>
-        <h1 className="mt-2 text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">{title}</h1>
-        {summary ? <p className="mt-2 max-w-[860px] text-[15px] leading-6 text-[var(--md-text)]">{summary}</p> : null}
-        {meta ? <p className="mt-2 text-[12px] font-medium text-[var(--md-subtle)]">{meta}</p> : null}
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+          <h1 className="text-[22px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">{title}</h1>
+          {eyebrow !== "CRM" ? <p className="text-[11px] font-medium text-[var(--md-subtle)]">{eyebrow}</p> : null}
+          {meta ? <p className="text-[11px] font-medium text-[var(--md-subtle)]">{meta}</p> : null}
+        </div>
+        {summary ? <p className="mt-1 max-w-[900px] text-[12px] leading-5 text-[var(--md-text)]">{summary}</p> : null}
       </div>
-      {actions}
+      {actions ? <div className="lg:justify-self-end">{actions}</div> : null}
     </div>
   )
 }
@@ -1205,7 +1188,6 @@ function DealDetailDrawer({
 export function CrmOverviewPage() {
   const { language, t } = useLanguage()
   const [dexterOpen, setDexterOpen] = useState(false)
-  const [area, setArea] = useState("all")
   const [data, setData] = useState<CrmDashboardData | null>(null)
   const [followUpData, setFollowUpData] = useState<CrmFollowUpData | null>(null)
   const [state, setState] = useState<"loading" | "ready" | "error">("loading")
@@ -1219,8 +1201,8 @@ export function CrmOverviewPage() {
     setState("loading")
     setError(null)
     Promise.all([
-      getCrmDashboard(90, area === "all" ? null : area),
-      getCrmFollowUpOpportunities(area === "all" ? null : area),
+      getCrmDashboard(90),
+      getCrmFollowUpOpportunities(),
     ])
       .then(([result, followUps]) => {
         if (!active) return
@@ -1234,7 +1216,7 @@ export function CrmOverviewPage() {
         setState("error")
       })
     return () => { active = false }
-  }, [area, reloadKey, t])
+  }, [reloadKey, t])
 
   useEffect(() => {
     const refresh = () => setReloadKey((key) => key + 1)
@@ -1266,31 +1248,9 @@ export function CrmOverviewPage() {
       <CrmPageHeader
         title={t("CRM dashboard")}
         summary={<>{t("Your assigned leads, deals, follow-ups and recent sales activity in one consistent view.")}</>}
-        meta={t("Live CRM data · scoped to your assigned records")}
         onSpeakToDexter={() => setDexterOpen(true)}
         action={<Button className="h-10 rounded-[var(--md-radius-lg)]" onClick={() => { window.location.href = "/crm/deals" }}>{t("Open deals")}</Button>}
       />
-
-      <Surface padding="md" className="rounded-[var(--md-radius-xl)]">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Follow-up opportunities")}</p>
-            <p className="mt-1 text-[11px] text-[var(--md-subtle)]">{t("Human replies and CRM activity are checked automatically. Sent email is prompted after 3 days, then 5 days after the next attempt.")}</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <label className="grid gap-1 text-[11px] font-medium text-[var(--md-subtle)]">
-              {t("Area")}
-              <Select value={area} onValueChange={setArea}>
-                <SelectTrigger className="h-9 min-w-[190px] rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] shadow-[var(--md-shadow-line)]"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">{t("All assigned areas")}</SelectItem>
-                  {(data?.areas ?? []).map((option) => <SelectItem key={option.key} value={option.key}><span dir="auto">{option.label}</span> · {option.count}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </label>
-          </div>
-        </div>
-      </Surface>
 
       {state === "loading" ? (
         <Surface padding="lg" className="grid min-h-[320px] place-items-center rounded-[var(--md-radius-xl)]" role="status">
@@ -1623,7 +1583,6 @@ export function CrmLeadsPage({ navigate }: { navigate: (path: string) => void })
   return (
     <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t("Leads")} className="md-page md-page-stack-compact">
       <CrmPageHeader
-        compact
         title={t("Leads")}
         summary={
           <>

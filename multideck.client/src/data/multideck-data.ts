@@ -2292,6 +2292,7 @@ export const galleryComponents = [
       { label: "CRM contacts", route: "/crm/contacts" },
       { label: "CRM deals", route: "/crm/deals" },
       { label: "CRM lists", route: "/crm/lists" },
+      { label: "Inbox", route: "/inbox" },
       { label: "Components", route: "/components?component=dexter-action-pill" },
     ],
     componentCode: `export function DexterActionPill({ label = "Ask Dexter", icon: Icon = Sparkles, iconOnly = false, onClick }) {\n  return (\n    <Button\n      type="button"\n      variant="ghost"\n      aria-label={label}\n      data-icon-only={iconOnly || undefined}\n      className="md-dexter-pill relative h-10 min-w-[132px] overflow-hidden rounded-[var(--md-radius-lg)] px-3.5 text-[13px] font-medium text-white"\n      onClick={onClick}\n    >\n      <span className="md-dexter-pill__shader" aria-hidden>\n        <SpectralBloomShader />\n      </span>\n      <span className="md-dexter-pill__contrast" aria-hidden />\n      <Icon className="relative z-10 size-3.5" strokeWidth={1.25} />\n      {iconOnly ? null : <SlotLabel label={label} />}\n    </Button>\n  )\n}`,
@@ -2330,11 +2331,11 @@ export const galleryComponents = [
     id: "toast",
     name: "Toast",
     category: "Feedback",
-    description: "A floating bottom-middle notification for short confirmations that need to be readable without stealing the workflow.",
-    details: "Use for save, export, copy, and lightweight route feedback. Keep the title direct, add one short supporting line only when it helps the operator understand what happened.",
+    description: "A compact bottom-right notification with a clear status icon, stacked multi-toast view, and a five-second visual dismissal indicator.",
+    details: "Use for save, export, copy, and lightweight route feedback. Keep the title direct and add one short supporting line only when it helps. Multiple notifications fan into a visible stack and expand on hover or keyboard access; hovering pauses dismissal so the operator has time to read.",
     foundOn: [{ label: "Customers", route: "/customers" }, { label: "Bookings", route: "/bookings" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
-    componentCode: `export function Toaster(props) {\n  return (\n    <Sonner\n      position="bottom-center"\n      className="toaster group md-toaster"\n      style={{\n        "--normal-bg": "rgba(251, 253, 253, 0.92)",\n        "--normal-text": "var(--md-ink)",\n        "--normal-border": "transparent",\n        "--border-radius": "var(--md-radius-xl)",\n        "--width": "min(520px, calc(100vw - 32px))",\n      }}\n      toastOptions={{\n        classNames: {\n          toast: "cn-toast md-toast",\n          icon: "md-toast-icon",\n          title: "md-toast-title",\n          description: "md-toast-description",\n        },\n      }}\n      {...props}\n    />\n  )\n}`,
-    usageCode: `<Toaster />\n\ntoast.success("Customer CSV prepared", {\n  description: "The export is ready for Northwind Forwarding.",\n})`,
+    componentCode: `const toastLifetimeMs = 5_000\n\nexport function Toaster(props) {\n  return (\n    <Sonner\n      position="bottom-right"\n      duration={toastLifetimeMs}\n      visibleToasts={4}\n      gap={12}\n      closeButton\n      className="toaster group md-toaster"\n      icons={{\n        success: <ToastStatusIcon src={toastSuccessIcon} kind="success" />,\n        info: <ToastStatusIcon src={toastGeneralIcon} kind="general" />,\n        warning: <ToastStatusIcon src={toastErrorIcon} kind="warning" />,\n        error: <ToastStatusIcon src={toastErrorIcon} kind="error" />,\n        close: <span>Dismiss</span>,\n      }}\n      style={{\n        "--normal-bg": "color-mix(in srgb, var(--md-surface) 94%, transparent)",\n        "--normal-text": "var(--md-ink)",\n        "--normal-border": "transparent",\n        "--border-radius": "var(--md-radius-2xl)",\n        "--width": "min(520px, calc(100vw - 32px))",\n        "--md-toast-duration": "5000ms",\n      }}\n      toastOptions={{\n        classNames: {\n          toast: "cn-toast md-toast",\n          icon: "md-toast-icon",\n          title: "md-toast-title",\n          description: "md-toast-description",\n          actionButton: "md-toast-action",\n          closeButton: "md-toast-close",\n        },\n      }}\n      {...props}\n    />\n  )\n}`,
+    usageCode: `<Toaster />\n\ntoast.success("Customer CSV prepared", {\n  description: "The export is ready to download.",\n})\n\n// Triggering several toasts shows a compact stack. Hover or focus it to expand.\ntoast.warning("Declaration needs attention", {\n  description: "Two checks still need review.",\n})`,
   },
   {
     id: "metric-card",
@@ -2632,7 +2633,7 @@ export const galleryComponents = [
     category: "Controls",
     description: "A branded glass date-range selector with one trigger, paired months, highlighted in-between days, and an optional comparison mode.",
     details: "Use for date pairs such as cargo ready/requested collection, ETD/ETA, dashboard custom ranges, and booking search ranges. Comparison mode keeps its checkbox and quick ranges inside the popover, then expands into aligned current and comparison calendars.",
-    foundOn: [{ label: "Overview", route: "/" }, { label: "New booking", route: "/bookings/new" }, { label: "Bookings", route: "/bookings" }, { label: "Email marketing", route: "/crm/emails" }, { label: "Components", route: "/components?component=date-range-picker" }],
+    foundOn: [{ label: "Overview", route: "/" }, { label: "New booking", route: "/bookings/new" }, { label: "Bookings", route: "/bookings" }, { label: "Inbox", route: "/inbox" }, { label: "Email marketing", route: "/crm/emails" }, { label: "Components", route: "/components?component=date-range-picker" }],
     componentCode: `export function MultideckDateRangePicker({ value, onChange, comparison }) {\n  return (\n    <Popover>\n      <PopoverTrigger asChild>\n        <Button>\n          <CalendarDays />\n          {formatDateRangeLabel(value)}\n        </Button>\n      </PopoverTrigger>\n      <PopoverContent className="backdrop-blur-2xl">\n        {comparison ? <Checkbox checked={comparison.enabled} onCheckedChange={comparison.onEnabledChange}>Compare</Checkbox> : null}\n        {comparison?.enabled ? <ComparisonCalendarPair /> : <CalendarMonthPair />}\n        <Button onClick={() => closePicker()}>Apply dates</Button>\n      </PopoverContent>\n    </Popover>\n  )\n}`,
     usageCode: `const [collectionDates, setCollectionDates] = useState({ start: "2026-05-25", end: "2026-06-04" })\nconst [comparing, setComparing] = useState(false)\nconst [comparisonDates, setComparisonDates] = useState({ start: "2026-05-14", end: "2026-05-24" })\n\n<MultideckDateRangePicker\n  value={collectionDates}\n  onChange={setCollectionDates}\n  title="Collection dates"\n  comparison={{\n    enabled: comparing,\n    value: comparisonDates,\n    onEnabledChange: setComparing,\n    onChange: setComparisonDates,\n    options: [\n      { id: "previous-period", label: "Previous period", range: { start: "2026-05-14", end: "2026-05-24" } },\n      { id: "custom", label: "Custom", range: null },\n    ],\n  }}\n/>`,
   },
@@ -2929,8 +2930,8 @@ export const galleryComponents = [
     id: "email-message-renderer",
     name: "Email Message Renderer",
     category: "Operations",
-    description: "Renders one email body and its secure remote images inside an isolated surface.",
-    details: "Use for any provider email body. HTML is sanitised on the server and still treated as untrusted here: it never reaches `dangerouslySetInnerHTML`, it goes into a sandboxed iframe whose own Content Security Policy blocks scripts, frames, forms and every network request except HTTPS images. Images load with the message under a no-referrer policy. When there is no sanitised HTML the plain-text alternative is rendered directly. The frame is sized to its content, so the thread keeps one scroll axis.",
+    description: "Renders one email body with theme-safe contrast and private inline images inside an isolated surface.",
+    details: "Use for any provider email body. HTML is sanitised on the server and still treated as untrusted here: it never reaches `dangerouslySetInnerHTML`, it goes into a sandboxed iframe whose own Content Security Policy blocks scripts, frames, forms and every network request except HTTPS, data and authenticated private blob images. Sender-authored text and backgrounds retain readable contrast in light and dark appearance, while photos and logos keep their original colours. When there is no sanitised HTML the plain-text alternative is rendered directly. The frame is sized to its content, so the thread keeps one scroll axis.",
     foundOn: [{ label: "Inbox", route: "/inbox" }, { label: "Components", route: "/components?component=email-message-renderer" }],
     componentCode: `const sandboxPermissions = "allow-same-origin allow-popups allow-popups-to-escape-sandbox"
 
@@ -2943,11 +2944,11 @@ function contentPolicy() {
     "form-action 'none'",
     "base-uri 'none'",
     "style-src 'unsafe-inline'",
-    "img-src data: https:",
+    "img-src data: blob: https:",
   ].join("; ")
 }
 
-export function EmailMessageRenderer({ sanitizedHtml, bodyText }) {
+export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachments = [] }) {
   if (!sanitizedHtml) {
     return <div data-i18n-skip dir="auto" className="whitespace-pre-wrap">{bodyText}</div>
   }
@@ -2957,7 +2958,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText }) {
       <iframe
         title="Message content"
         sandbox={sandboxPermissions}
-        srcDoc={buildDocument({ html: sanitizedHtml, theme, direction, language })}
+        srcDoc={buildDocument({ html: replaceInlineImageSources(sanitizedHtml, inlineImageSources), theme, direction, language })}
         loading="eager"
         scrolling="no"
         style={{ height: frameHeight > 0 ? \`\${frameHeight}px\` : "72px" }}
@@ -2968,6 +2969,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText }) {
     usageCode: `<EmailMessageRenderer
   sanitizedHtml={message.sanitizedHtml}
   bodyText={message.bodyText}
+  inlineAttachments={message.attachments}
 />`,
   },
   {
@@ -3017,10 +3019,10 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText }) {
     id: "mail-composer",
     name: "Mail Composer",
     category: "Operations",
-    description: "The docked composer for a new message, a reply, a reply all or a forward, with Save draft and an expand mode.",
-    details: "Use wherever an operator answers mail. For every response mode the browser reports only what was typed or changed by hand: it never computes the final recipient list, because the server reads the source message and resolves who receives a Reply all, so a thread that moved on in another tab cannot drop somebody quietly. The composer states that plainly instead of showing a recipient list it cannot guarantee. Height animates between two explicit values, so reopening mid-close retargets without a jump, and inputs stay at 16px on mobile so iOS does not zoom the page.",
+    description: "The docked composer for a new message, draft, reply, reply all or forward, with Dexter wording, Save draft and an expand mode.",
+    details: "Use wherever an operator answers mail. Compose with Dexter, Draft with Dexter and Reply with Dexter all prepare editable wording in place using Luna's low-thinking lane, the verified thread and the operator's enabled email-writing profile; they never send or save. For every response mode the browser reports only what was typed or changed by hand: it never computes the final recipient list, because the server reads the source message and resolves who receives a Reply all, so a thread that moved on in another tab cannot drop somebody quietly. Height animates between two explicit values, so reopening mid-close retargets without a jump, and inputs stay at 16px on mobile so iOS does not zoom the page.",
     foundOn: [{ label: "Inbox", route: "/inbox" }, { label: "Components", route: "/components?component=mail-composer" }],
-    componentCode: `export function MailComposer({ state, onStateChange, mailbox, status, error, canSend, onSend, onSaveDraft, onDiscard }) {
+    componentCode: `export function MailComposer({ state, onStateChange, mailbox, status, error, canSend, onSend, onSaveDraft, onDiscard, onComposeWithDexter, dexterAction, dexterStatus }) {
   const readOnly = mailbox ? !mailbox.outboundEnabled : true
   const expanded = state.presentation === "expanded"
   const open = state.presentation !== "docked"
@@ -3036,7 +3038,14 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText }) {
       initial={false}
       transition={reduceMotion(shouldReduceMotion, mdMotion.panel)}
     >
-      <ComposerHeader mode={state.mode} mailbox={mailbox} expanded={expanded} onChange={onStateChange} />
+      <ComposerHeader mode={state.mode} mailbox={mailbox} expanded={expanded} onChange={onStateChange}>
+        <DexterActionPill
+          label={dexterStatus === "drafting" ? "Dexter is drafting" : dexterAction === "reply" ? "Reply with Dexter" : dexterAction === "draft" ? "Draft with Dexter" : "Compose with Dexter"}
+          className="md-inbox-summarise h-9 min-w-[154px] rounded-full px-3 text-[12.5px]"
+          disabled={readOnly || dexterStatus === "drafting"}
+          onClick={onComposeWithDexter}
+        />
+      </ComposerHeader>
       <ComposerFields state={state} onChange={onStateChange} readOnly={readOnly} />
       <footer>
         <Button disabled={!canSend || readOnly} onClick={onSend}>Send</Button>
@@ -3057,6 +3066,9 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText }) {
   onSend={() => void sendComposer()}
   onSaveDraft={() => void saveComposerDraft()}
   onDiscard={discardComposer}
+  onComposeWithDexter={() => void composeWithDexter()}
+  dexterAction={composer.mode.startsWith("reply") ? "reply" : remoteDraftId ? "draft" : "compose"}
+  dexterStatus={dexterComposerStatus}
 />`,
   },
   {

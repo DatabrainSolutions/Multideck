@@ -404,6 +404,10 @@ export function DexterEmailComposeCard({
           indexedCount: 40,
           estimatedTotal: 40,
           indexPercent: 100,
+          coreCoverageStart: "2025-01-01T00:00:00.000Z",
+          wasteCoverageStart: "2025-12-02T00:00:00.000Z",
+          coreRetentionMonths: 12,
+          wasteRetentionDays: 30,
           error: null,
         },
       ]);

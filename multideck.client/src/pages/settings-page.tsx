@@ -651,7 +651,7 @@ function ProfileTab({
 
   function discardProfileChanges() {
     setProfile(savedProfile)
-    toast.message("Changes discarded")
+    toast.info("Changes discarded")
   }
 
   async function saveProfileChanges() {
@@ -3252,7 +3252,7 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
       <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
         <SettingsPanel
           title="Mail"
-          description={t("Mail powers the Inbox workspace. Multideck syncs message details and sanitised bodies into this tenant's isolated data store so operators can search, reply and ask Dexter for a summary; Gmail or Microsoft remains the source mailbox.")}
+          description={t("Mail powers the Inbox workspace. Multideck securely syncs the last 12 months of useful mail, 30 days of Spam and Trash, and current drafts so operators can search, reply and use Dexter; Gmail or Microsoft remains the source mailbox.")}
           action={
             <Button
               type="button"

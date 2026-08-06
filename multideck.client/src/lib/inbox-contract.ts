@@ -15,10 +15,44 @@ export type MailboxKind = "personal" | "shared" | "group"
 export type ConnectionStatus = "connected" | "syncing" | "reauthorization_required" | "error" | "disconnected"
 export type MailboxIndexStatus = "pending" | "indexing" | "ready" | "error"
 export type MailFolder = "inbox" | "sent" | "drafts" | "archive" | "spam" | "trash"
+export type MailboxFolderRole = MailFolder | "important" | "custom"
+export type MailboxFolder = {
+  id: string
+  mailboxId: string
+  parentId: string | null
+  role: MailboxFolderRole
+  displayName: string
+  totalCount: number | null
+  unreadCount: number | null
+  backgroundColor: string | null
+  textColor: string | null
+  kind: "system" | "user" | "provider"
+}
 export type ThreadSummaryStatus = "none" | "pending" | "ready" | "stale" | "failed"
 export type MessageDirection = "inbound" | "outbound"
 export type SendMode = "new" | "reply" | "reply_all" | "forward"
 export type SendStatus = "queued" | "sent" | "failed"
+export type AutomaticReplyStatus = "disabled" | "scheduled" | "always_on"
+export type AutomaticReplyAudience = "everyone" | "internal_only"
+
+export type AutomaticReplySettings = {
+  provider: MailProvider
+  supported: boolean
+  canUpdate: boolean
+  requiresReconnect: boolean
+  reason: string | null
+  status: AutomaticReplyStatus
+  startAt: string | null
+  endAt: string | null
+  subject: string
+  message: string
+  audience: AutomaticReplyAudience
+}
+
+export type AutomaticReplyUpdate = Pick<
+  AutomaticReplySettings,
+  "status" | "startAt" | "endAt" | "subject" | "message" | "audience"
+>
 
 export type MailAddress = {
   address: string
@@ -97,6 +131,10 @@ export type Mailbox = {
   indexedCount: number
   estimatedTotal: number | null
   indexPercent: number
+  coreCoverageStart: string
+  wasteCoverageStart: string
+  coreRetentionMonths: number
+  wasteRetentionDays: number
   error: string | null
 }
 
@@ -133,6 +171,8 @@ export type MailAttachment = {
   mimeType: string | null
   sizeBytes: number | null
   isInline: boolean
+  /** Matches a `cid:` URL in the sanitised HTML for an embedded email image. */
+  contentId: string | null
   scanStatus: "clean" | "pending" | "blocked" | "unknown"
 }
 
@@ -286,6 +326,7 @@ export type SendRequest = {
 export type ThreadQuery = {
   mailboxId: string
   folder?: MailFolder
+  folderId?: string | null
   query?: string
   cursor?: string | null
   limit?: number
@@ -566,7 +607,56 @@ export function normalizeMailbox(value: unknown, fallbackStatus?: ConnectionStat
     indexedCount,
     estimatedTotal,
     indexPercent,
+    coreCoverageStart: readText(pickField(record, "coreCoverageStart", "core_coverage_start")),
+    wasteCoverageStart: readText(pickField(record, "wasteCoverageStart", "waste_coverage_start")),
+    coreRetentionMonths: readCount(pickField(record, "coreRetentionMonths", "core_retention_months"), 12),
+    wasteRetentionDays: readCount(pickField(record, "wasteRetentionDays", "waste_retention_days"), 30),
     error: readOptionalText(pickField(record, "error", "errorMessage")),
+  }
+}
+
+export function normalizeMailboxFolder(value: unknown): MailboxFolder {
+  const record = readRecord(value)
+  const rawRole = readText(pickField(record, "role")).toLowerCase()
+  const role: MailboxFolderRole = ["inbox", "sent", "drafts", "archive", "spam", "trash", "important", "custom"].includes(rawRole)
+    ? rawRole as MailboxFolderRole
+    : "custom"
+  const nullableCount = (field: unknown) => field === null || field === undefined ? null : Math.max(0, readCount(field))
+  const safeColour = (field: unknown) => {
+    const colour = readOptionalText(field)
+    return colour && /^#[0-9a-f]{6}$/i.test(colour) ? colour : null
+  }
+  const kind = readText(pickField(record, "kind")).toLowerCase()
+  return {
+    id: readText(pickField(record, "id", "folderId")),
+    mailboxId: readText(pickField(record, "mailboxId", "mailbox_id")),
+    parentId: readOptionalText(pickField(record, "parentId", "parent_id")),
+    role,
+    displayName: readText(pickField(record, "displayName", "name"), "Folder"),
+    totalCount: nullableCount(pickField(record, "totalCount", "total_count")),
+    unreadCount: nullableCount(pickField(record, "unreadCount", "unread_count")),
+    backgroundColor: safeColour(pickField(record, "backgroundColor", "background_color")),
+    textColor: safeColour(pickField(record, "textColor", "text_color")),
+    kind: kind === "system" || kind === "user" ? kind : "provider",
+  }
+}
+
+export function normalizeAutomaticReplySettings(value: unknown): AutomaticReplySettings {
+  const record = readRecord(value)
+  const rawStatus = readText(pickField(record, "status")).toLowerCase()
+  const rawAudience = readText(pickField(record, "audience")).toLowerCase()
+  return {
+    provider: normalizeProvider(pickField(record, "provider")),
+    supported: readFlag(pickField(record, "supported")),
+    canUpdate: readFlag(pickField(record, "canUpdate", "can_update")),
+    requiresReconnect: readFlag(pickField(record, "requiresReconnect", "requires_reconnect")),
+    reason: readOptionalText(pickField(record, "reason")),
+    status: rawStatus === "scheduled" ? "scheduled" : rawStatus === "always_on" ? "always_on" : "disabled",
+    startAt: readOptionalText(pickField(record, "startAt", "start_at")),
+    endAt: readOptionalText(pickField(record, "endAt", "end_at")),
+    subject: readText(pickField(record, "subject")),
+    message: readText(pickField(record, "message")),
+    audience: rawAudience === "internal_only" ? "internal_only" : "everyone",
   }
 }
 
@@ -604,6 +694,7 @@ function normalizeAttachment(value: unknown): MailAttachment {
     mimeType: readOptionalText(pickField(record, "mimeType", "contentType")),
     sizeBytes: typeof pickField(record, "sizeBytes", "size") === "number" ? readCount(pickField(record, "sizeBytes", "size")) : null,
     isInline: readFlag(pickField(record, "isInline")),
+    contentId: readOptionalText(pickField(record, "contentId", "cid")),
     scanStatus:
       rawScan === "clean" || rawScan === "passed" ? "clean" :
       rawScan === "blocked" || rawScan === "infected" ? "blocked" :
@@ -908,8 +999,8 @@ export type ThreadCacheEntry = {
   hasMore: boolean
 }
 
-export function threadCacheKey(mailboxId: string, folder: MailFolder, query: string) {
-  return `${mailboxId}::${folder}::${query.trim().toLowerCase()}`
+export function threadCacheKey(mailboxId: string, folder: MailFolder, query: string, folderId?: string | null) {
+  return `${mailboxId}::${folderId ? `provider:${folderId}` : folder}::${query.trim().toLowerCase()}`
 }
 
 /**

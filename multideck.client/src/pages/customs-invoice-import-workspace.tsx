@@ -29,8 +29,10 @@ import {
   saveCustomsInvoiceImportRecovery,
 } from "@/lib/customs-invoice-import-recovery"
 import {
+  cancelCommercialInvoiceExtraction,
   CommercialInvoiceExtractionError,
   extractCommercialInvoice,
+  readCommercialInvoiceExtraction,
   type InvoiceImportStage,
 } from "@/lib/customs-invoice-import-api"
 import { buildInvoiceLineEvidence, type EvidencePage, type InvoiceLineEvidence } from "@/lib/customs-invoice-evidence"
@@ -60,6 +62,7 @@ export function CustomsInvoiceImportWorkspace({
 }) {
   const { t } = useLanguage()
   const recovered = useMemo(() => readCustomsInvoiceImportRecovery(recoveryKey), [recoveryKey])
+  const [extractionId, setExtractionId] = useState(() => recovered?.extractionId ?? "")
   const [invoiceName, setInvoiceName] = useState(() => recovered?.invoiceName ?? "")
   const [extractedInvoiceNumber, setExtractedInvoiceNumber] = useState(() => recovered?.extractedInvoiceNumber ?? "")
   const [lines, setLines] = useState<ExtractedInvoiceLine[]>(() => recovered?.lines ?? [])
@@ -73,7 +76,7 @@ export function CustomsInvoiceImportWorkspace({
   const [activeLineId, setActiveLineId] = useState(() => recovered?.activeLineId ?? "")
   const [reviewFilter, setReviewFilter] = useState<ReviewFilter>(() => recovered?.reviewFilter ?? "all")
   const [reviewTab, setReviewTab] = useState<ReviewTab>(() => recovered?.reviewTab ?? "lines")
-  const [extracting, setExtracting] = useState(false)
+  const [extracting, setExtracting] = useState(() => Boolean(recovered?.extractionId && !recovered.lines.length))
   const [stage, setStage] = useState<InvoiceImportStage | null>(null)
   const [extractionError, setExtractionError] = useState("")
   const [isDraggingInvoice, setIsDraggingInvoice] = useState(false)
@@ -120,8 +123,8 @@ export function CustomsInvoiceImportWorkspace({
   }), [attentionLineIds, evidence, lines, t])
 
   const extractionStages = useMemo<ExtractionStage[]>(() => [
-    { id: "reading", label: t("Reading the document"), detail: t("Opening the PDF and collecting its text and layout."), ceiling: 24, expectedMs: 1_400 },
-    { id: "extracting", label: t("Finding the item lines"), detail: t("Picking out goods rows, quantities, values and codes."), ceiling: 88, expectedMs: 9_000 },
+    { id: "uploading", label: t("Uploading securely"), detail: t("Sending the PDF to your private workspace."), ceiling: 24, expectedMs: 1_400 },
+    { id: "extracting", label: t("Finding the item lines"), detail: t("Reading the complete document and extracting goods rows, quantities, values and codes."), ceiling: 88, expectedMs: 9_000 },
     { id: "organising", label: t("Preparing the review"), detail: t("Grouping by commodity code and locating each line on the page."), ceiling: 99, expectedMs: 1_200 },
   ], [t])
 
@@ -137,8 +140,44 @@ export function CustomsInvoiceImportWorkspace({
   }, [])
 
   useEffect(() => {
-    if (!lines.length) return
+    if (!recovered?.extractionId || recovered.lines.length) return
+    const requestId = extractionRequest.current + 1
+    extractionRequest.current = requestId
+    const controller = new AbortController()
+    abortExtraction.current = controller
+    setStage("extracting")
+    setExtracting(true)
+    setExtractionError("")
+
+    readCommercialInvoiceExtraction(recovered.extractionId, controller.signal)
+      .then((result) => {
+        if (extractionRequest.current !== requestId) return
+        setExtractionId(result.extractionId)
+        setExtractedInvoiceNumber(result.invoiceNumber)
+        setLines(result.lines)
+        setSelections(Object.keys(recovered.selections).length ? recovered.selections : createDefaultInvoiceSelections(result.lines))
+        setEvidencePages(result.evidencePages)
+        setActiveLineId(recovered.activeLineId || result.lines[0]?.id || "")
+      })
+      .catch((error: unknown) => {
+        if (extractionRequest.current !== requestId || controller.signal.aborted) return
+        const message = error instanceof CommercialInvoiceExtractionError ? error.message : "Unable to restore this invoice review. Upload the invoice again."
+        setExtractionError(t(message))
+      })
+      .finally(() => {
+        if (extractionRequest.current === requestId) {
+          setExtracting(false)
+          setStage(null)
+        }
+      })
+
+    return () => controller.abort()
+  }, [recovered, t])
+
+  useEffect(() => {
+    if (!extractionId && !lines.length) return
     saveCustomsInvoiceImportRecovery(recoveryKey, {
+      extractionId,
       invoiceName,
       extractedInvoiceNumber,
       lines,
@@ -149,7 +188,7 @@ export function CustomsInvoiceImportWorkspace({
       reviewFilter,
       reviewTab,
     })
-  }, [activeLineId, descriptionOverrides, evidencePages, extractedInvoiceNumber, invoiceName, lines, recoveryKey, reviewFilter, reviewTab, selections])
+  }, [activeLineId, descriptionOverrides, evidencePages, extractedInvoiceNumber, extractionId, invoiceName, lines, recoveryKey, reviewFilter, reviewTab, selections])
 
   function updateSelection(lineId: string, update: Partial<InvoiceLineSelection>) {
     setSelections((current) => ({ ...current, [lineId]: { ...current[lineId], ...update } }))
@@ -185,6 +224,7 @@ export function CustomsInvoiceImportWorkspace({
 
   async function selectInvoice(file: File | undefined) {
     if (!file) return
+    if (extractionId) void cancelCommercialInvoiceExtraction(extractionId)
     const requestId = extractionRequest.current + 1
     extractionRequest.current = requestId
     const isCurrent = () => extractionRequest.current === requestId
@@ -193,8 +233,10 @@ export function CustomsInvoiceImportWorkspace({
     const controller = new AbortController()
     abortExtraction.current = controller
     clearCustomsInvoiceImportRecovery(recoveryKey)
+    const nextExtractionId = crypto.randomUUID()
 
     releaseDocumentPages()
+    setExtractionId(nextExtractionId)
     setInvoiceName(file.name)
     setExtractedInvoiceNumber("")
     setLines([])
@@ -205,7 +247,7 @@ export function CustomsInvoiceImportWorkspace({
     setReviewFilter("all")
     setReviewTab("lines")
     setExtractionError("")
-    setStage("reading")
+    setStage("uploading")
     setExtracting(true)
 
     // Page images are drawn while the item lines are being found, so the document is
@@ -224,10 +266,13 @@ export function CustomsInvoiceImportWorkspace({
 
     try {
       const result = await extractCommercialInvoice(file, {
+        extractionId: nextExtractionId,
+        declarationId: recoveryKey,
         signal: controller.signal,
         onStage: (nextStage) => { if (isCurrent()) setStage(nextStage) },
       })
       if (!isCurrent()) return
+      setExtractionId(result.extractionId)
       setExtractedInvoiceNumber(result.invoiceNumber)
       setLines(result.lines)
       setSelections(createDefaultInvoiceSelections(result.lines))
@@ -250,15 +295,18 @@ export function CustomsInvoiceImportWorkspace({
   }
 
   function cancelExtraction() {
+    const currentExtractionId = extractionId
     extractionRequest.current += 1
     abortExtraction.current?.abort()
     abortExtraction.current = null
     releaseDocumentPages()
     setExtracting(false)
     setStage(null)
+    setExtractionId("")
     setInvoiceName("")
     setExtractionError("")
     clearCustomsInvoiceImportRecovery(recoveryKey)
+    if (currentExtractionId) void cancelCommercialInvoiceExtraction(currentExtractionId)
   }
 
   function handleInvoiceDragEnter(event: DragEvent<HTMLButtonElement>) {

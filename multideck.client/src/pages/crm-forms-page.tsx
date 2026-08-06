@@ -22,10 +22,10 @@ export function CrmFormsPage() {
 
   return (
     <div className="md-page md-page-stack-compact">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <div className="flex items-center gap-2"><h1 className="text-[24px] font-medium text-[var(--md-ink)]">{t("Forms")}</h1><StatusPill tone="amber">{t("Planned")}</StatusPill></div>
-          <p className="mt-2 max-w-3xl text-[13px] leading-5 text-[var(--md-text)]">{t("Preview the intended form library, data mapping and request workflow. Creation, sending and electronic signatures are not connected yet.")}</p>
+      <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1"><h1 className="text-[22px] font-medium leading-tight text-[var(--md-ink)]">{t("Forms")}</h1><StatusPill tone="amber">{t("Planned")}</StatusPill></div>
+          <p className="mt-1 max-w-[900px] text-[12px] leading-5 text-[var(--md-text)]">{t("Preview the intended form library, data mapping and request workflow. Creation, sending and electronic signatures are not connected yet.")}</p>
         </div>
         <SegmentedControl options={[t("Templates"), t("Requests")]} value={t(view)} onChange={(value) => setView(value === t("Requests") ? "Requests" : "Templates")} ariaLabel={t("Forms view")} />
       </div>

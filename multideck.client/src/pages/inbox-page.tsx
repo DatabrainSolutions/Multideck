@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import {
   Archive,
   ArrowLeft,
+  CalendarClock,
   ChevronDown,
   CornerUpLeft,
   CornerUpRight,
@@ -21,12 +22,24 @@ import {
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Progress } from "@/components/ui/progress"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Switch } from "@/components/ui/switch"
 import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import { EmailMessageRenderer } from "@/components/multideck/email-message-renderer"
 import { EmailDeliveryStatus } from "@/components/multideck/email-delivery-status"
 import { InboxThreadRow, formatThreadTimestamp, threadParticipantLabel } from "@/components/multideck/inbox-thread-row"
+import { PageSettingsMenu } from "@/components/multideck/page-settings-menu"
+import { SegmentedControl } from "@/components/multideck/workflow-components"
+import { MultideckDateRangePicker, type MultideckDateRange } from "@/components/multideck/date-picker"
 import {
   MailProviderMark,
   mailProviderLabels,
@@ -61,8 +74,11 @@ import {
   type InboxMessage,
   type InboxThreadDetail,
   type InboxThreadListItem,
+  type AutomaticReplySettings,
+  type AutomaticReplyStatus,
   type MailAddress,
   type MailAttachment,
+  type Mailbox,
   type MailProvider,
   type SendMode,
   type ThreadCacheEntry,
@@ -70,10 +86,12 @@ import {
 } from "@/lib/inbox-api"
 import {
   discardDraft,
+  fetchAutomaticReply,
   generateThreadSummary,
   patchThreadState,
   requestMailboxSync,
   saveDraft,
+  saveAutomaticReply,
   startProviderAuthorization,
   submitSend,
   trashThread,
@@ -86,6 +104,7 @@ import {
   readLocalDraft,
   saveLocalDraft,
 } from "@/lib/inbox-drafts"
+import { prepareInboxDexterDraft } from "@/lib/dexter-api"
 import { cn } from "@/lib/utils"
 
 /**
@@ -158,6 +177,316 @@ function errorMessageFor(error: unknown, fallback: string) {
   if (error instanceof InboxApiError) return error.message
   if (error instanceof Error && error.message) return error.message
   return fallback
+}
+
+function localDateTimeValue(value: string | null) {
+  if (!value) return ""
+  const date = new Date(value)
+  if (!Number.isFinite(date.getTime())) return ""
+  const offset = date.getTimezoneOffset() * 60_000
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16)
+}
+
+function isoFromLocalDateTime(value: string) {
+  const timestamp = Date.parse(value)
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null
+}
+
+function AutomaticReplyDialog({
+  open,
+  onOpenChange,
+  mailbox,
+  settings,
+  onSettingsChange,
+  onReconnect,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  mailbox: Mailbox | null
+  settings: AutomaticReplySettings | null
+  onSettingsChange: (settings: AutomaticReplySettings) => void
+  onReconnect: (provider: MailProvider) => void
+}) {
+  const { language, t } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [loadRevision, setLoadRevision] = useState(0)
+  const [status, setStatus] = useState<AutomaticReplyStatus>("scheduled")
+  const [enabled, setEnabled] = useState(false)
+  const [startAt, setStartAt] = useState("")
+  const [endAt, setEndAt] = useState("")
+  const [subject, setSubject] = useState("")
+  const [message, setMessage] = useState("")
+  const [audience, setAudience] = useState<"everyone" | "internal_only">("everyone")
+  const onSettingsChangeRef = useRef(onSettingsChange)
+  const translateRef = useRef(t)
+
+  useEffect(() => {
+    onSettingsChangeRef.current = onSettingsChange
+  }, [onSettingsChange])
+
+  useEffect(() => {
+    translateRef.current = t
+  }, [t])
+
+  const applyLocal = useCallback((next: AutomaticReplySettings) => {
+    setEnabled(next.status !== "disabled")
+    setStatus(next.status === "disabled" ? "scheduled" : next.status)
+    setStartAt(localDateTimeValue(next.startAt))
+    setEndAt(localDateTimeValue(next.endAt))
+    setSubject(next.subject)
+    setMessage(next.message)
+    setAudience(next.audience)
+  }, [])
+
+  const apply = useCallback((next: AutomaticReplySettings) => {
+    onSettingsChangeRef.current(next)
+    applyLocal(next)
+  }, [applyLocal])
+
+  useEffect(() => {
+    if (open && settings) applyLocal(settings)
+  }, [applyLocal, open, settings])
+
+  useEffect(() => {
+    if (!open || !mailbox) return
+    let cancelled = false
+    setError(null)
+    setLoading(true)
+    void fetchAutomaticReply(mailbox.id)
+      .then((next) => {
+        if (!cancelled) apply(next)
+      })
+      .catch((failure) => {
+        if (!cancelled) setError(errorMessageFor(failure, translateRef.current("Unable to load automatic replies.")))
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [apply, loadRevision, mailbox?.id, open])
+
+  async function save() {
+    if (!mailbox || saving) return
+    const nextStatus: AutomaticReplyStatus = enabled ? status : "disabled"
+    setSaving(true)
+    setError(null)
+    try {
+      const next = await saveAutomaticReply(mailbox.id, {
+        status: nextStatus,
+        startAt: nextStatus === "scheduled" ? isoFromLocalDateTime(startAt) : null,
+        endAt: nextStatus === "scheduled" ? isoFromLocalDateTime(endAt) : null,
+        subject,
+        message,
+        audience,
+      })
+      apply(next)
+      toast.success(t(nextStatus === "disabled" ? "Automatic reply turned off" : "Automatic reply saved"))
+      onOpenChange(false)
+    } catch (failure) {
+      setError(errorMessageFor(failure, t("Unable to save automatic replies.")))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const needsSchedule = enabled && status === "scheduled"
+  const scheduleValid = !needsSchedule || Boolean(
+    isoFromLocalDateTime(startAt)
+    && isoFromLocalDateTime(endAt)
+    && Date.parse(endAt) > Date.parse(startAt)
+    && Date.parse(endAt) > Date.now(),
+  )
+  const canSave = Boolean(settings?.supported && settings.canUpdate && (!enabled || message.trim() && scheduleValid) && !loading && !saving)
+  const validationMessage = !enabled
+    ? null
+    : !message.trim()
+    ? t("Write a reply message to continue.")
+    : !scheduleValid
+      ? t("Choose a future end time after the start time.")
+      : null
+  const scheduleLabel = useMemo(() => {
+    if (status === "always_on") return t("No end date")
+    const start = isoFromLocalDateTime(startAt)
+    const end = isoFromLocalDateTime(endAt)
+    if (!start || !end) return t("Choose dates")
+    const formatter = new Intl.DateTimeFormat(language, { day: "numeric", month: "short" })
+    return `${formatter.format(new Date(start))} – ${formatter.format(new Date(end))}`
+  }, [endAt, language, startAt, status, t])
+  const scheduleRange: MultideckDateRange = {
+    start: startAt ? startAt.slice(0, 10) : null,
+    end: endAt ? endAt.slice(0, 10) : null,
+  }
+
+  function updateScheduleRange(range: MultideckDateRange) {
+    if (!range.start && !range.end) {
+      setStatus("always_on")
+      setStartAt("")
+      setEndAt("")
+      return
+    }
+    setStatus("scheduled")
+    if (range.start) setStartAt(`${range.start}T${startAt.slice(11, 16) || "09:00"}`)
+    else setStartAt("")
+    if (range.end) setEndAt(`${range.end}T${endAt.slice(11, 16) || "17:00"}`)
+    else setEndAt("")
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[min(90dvh,760px)] w-[min(780px,calc(100vw-1.5rem))] max-w-none overflow-y-auto rounded-[var(--md-radius-2xl)] bg-[var(--md-bg)] p-0 sm:max-w-none">
+        <DialogHeader className="grid gap-3 px-5 pb-0 pt-5 pe-14 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+          <div className="min-w-0 text-start">
+            <DialogTitle className="text-[18px] font-medium text-[var(--md-ink)]">{t("Out of office")}</DialogTitle>
+            <DialogDescription className="sr-only">
+              {t("Set the automatic reply on the selected mailbox. Gmail or Outlook remains the source of truth.")}
+            </DialogDescription>
+            {mailbox ? (
+              <bdi data-i18n-skip dir="ltr" className="mt-1 block truncate text-[11.5px] text-[var(--md-subtle)]">{mailbox.address}</bdi>
+            ) : null}
+          </div>
+
+          {settings?.supported && settings.canUpdate ? (
+            <motion.div layout className="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end" transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.spring)}>
+              <SegmentedControl
+                options={["internal_only", "everyone"] as const}
+                value={audience}
+                onChange={setAudience}
+                ariaLabel={t("Automatic reply audience")}
+                className="min-w-[176px] flex-1 !rounded-full sm:flex-none [&>button]:!rounded-full [&>button]:flex-1 [&>button]:px-3 [&>button>span]:!rounded-full"
+                renderOption={(option) => t(option === "everyone" ? "Everyone" : "Internal")}
+              />
+
+              <MultideckDateRangePicker
+                value={scheduleRange}
+                onChange={updateScheduleRange}
+                triggerLabel={scheduleLabel}
+                placeholder="Choose dates"
+                title="Out-of-office dates"
+                description="Choose the first and last day for this automatic reply. Clear the dates to leave it on until you turn it off."
+                footerLabel="Out-of-office dates"
+                align="end"
+                active={enabled}
+                disabled={!enabled}
+                allowClear
+                triggerClassName="h-10 w-[154px] !rounded-full px-3 text-[12px]"
+                popoverClassName="w-[min(94vw,590px)]"
+              />
+
+              <motion.label
+                layout
+                className={cn(
+                  "flex h-10 shrink-0 items-center gap-2 overflow-hidden rounded-full px-3 text-[12px] font-medium shadow-[var(--md-shadow-line)] transition-[background-color,color] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
+                  enabled ? "bg-[var(--md-accent-a10)] text-[var(--md-ink)]" : "bg-[var(--md-field-bg)] text-[var(--md-text)]",
+                )}
+                transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.spring)}
+              >
+                <span aria-live="polite" className="relative inline-grid min-w-[22px] overflow-hidden text-end">
+                  <AnimatePresence initial={false} mode="popLayout">
+                    <motion.span
+                      key={enabled ? "on" : "off"}
+                      initial={shouldReduceMotion ? false : { opacity: 0, x: enabled ? -5 : 5, filter: "blur(3px)" }}
+                      animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
+                      exit={shouldReduceMotion ? undefined : { opacity: 0, x: enabled ? 5 : -5, filter: "blur(2px)" }}
+                      transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.fast)}
+                    >
+                      {t(enabled ? "On" : "Off")}
+                    </motion.span>
+                  </AnimatePresence>
+                </span>
+                <Switch
+                  checked={enabled}
+                  aria-label={t("Automatic reply on or off")}
+                  className="duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] [&_[data-slot=switch-thumb]]:duration-200 [&_[data-slot=switch-thumb]]:ease-[cubic-bezier(0.22,1,0.36,1)]"
+                  onCheckedChange={(checked) => {
+                    setEnabled(checked)
+                  }}
+                />
+              </motion.label>
+            </motion.div>
+          ) : null}
+        </DialogHeader>
+
+        <div className="grid gap-4 px-5 pb-5">
+          {loading && !settings ? (
+            <div className="flex min-h-[240px] items-center justify-center gap-2 text-[13px] text-[var(--md-text)]" aria-live="polite">
+              <Loader2 className="size-4 animate-spin motion-reduce:animate-none" strokeWidth={1.5} aria-hidden="true" />
+              {t("Checking automatic replies...")}
+            </div>
+          ) : error && !settings ? (
+            <div className="grid min-h-[240px] place-items-center text-center">
+              <div className="max-w-[38ch]">
+                <p role="alert" className="text-[13px] leading-[1.5] text-[var(--md-red)]">{error}</p>
+                <Button type="button" variant="ghost" className="mt-4 h-10 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]" onClick={() => setLoadRevision((revision) => revision + 1)}>
+                  {t("Try again")}
+                </Button>
+              </div>
+            </div>
+          ) : settings && (!settings.supported || !settings.canUpdate) ? (
+            <div className="grid min-h-[240px] place-items-center px-1 py-8 sm:min-h-[260px] sm:py-10">
+              <div className="w-full max-w-[420px] text-center">
+                {mailbox ? (
+                  <div className="flex items-center justify-center gap-2.5">
+                    <span className="grid size-11 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-white shadow-[var(--md-shadow-line)]">
+                      <MailProviderMark provider={mailbox.provider} className="size-6" />
+                    </span>
+                    <span data-i18n-skip className="text-[13px] font-medium text-[var(--md-text)]">
+                      {mailProviderLabels[mailbox.provider]}
+                    </span>
+                  </div>
+                ) : null}
+                <p className="mt-5 text-[15px] font-medium text-[var(--md-ink)]">
+                  {t(settings.requiresReconnect ? "Reconnect to manage out of office" : "Manage this mailbox with your provider")}
+                </p>
+                <p className="mx-auto mt-1.5 max-w-[44ch] text-pretty text-[12.5px] leading-[1.55] text-[var(--md-text)]">
+                  {t(settings.reason ?? "Automatic replies are unavailable for this mailbox.")}
+                </p>
+                {settings.requiresReconnect && mailbox ? (
+                  <div className="mt-5 flex justify-center">
+                    <Button
+                      type="button"
+                      className="h-10 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,scale] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-accent-deep)] motion-reduce:transition-none"
+                      onClick={() => onReconnect(mailbox.provider)}
+                    >
+                      {t(`Reconnect ${mailProviderLabels[mailbox.provider]}`)}
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ) : settings ? (
+            <>
+              {mailbox?.provider === "gmail" ? (
+                <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-ink)]">
+                  {t("Subject")}
+                  <input value={subject} maxLength={200} onChange={(event) => setSubject(event.target.value)} placeholder={t("Out of office")} className="h-11 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-3 text-[16px] font-normal text-[var(--md-ink)] outline-none placeholder:text-[var(--md-subtle)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a20)] sm:text-[13px]" />
+                </label>
+              ) : null}
+
+              <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-ink)]">
+                {t("Reply message")}
+                <textarea value={message} maxLength={10_000} rows={10} onChange={(event) => setMessage(event.target.value)} placeholder={t("Thanks for your email. I am currently out of office and will reply when I return.")} className="min-h-[260px] resize-y rounded-[var(--md-radius-xl)] bg-[var(--md-field-bg)] px-4 py-3 text-[16px] font-normal leading-[1.55] text-[var(--md-ink)] outline-none placeholder:text-[var(--md-subtle)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a20)] sm:text-[13px]" />
+              </label>
+            </>
+          ) : null}
+
+          {error && settings ? <p role="alert" className="text-[12px] leading-[1.45] text-[var(--md-red)]">{error}</p> : null}
+        </div>
+
+        {settings?.supported && settings.canUpdate ? (
+          <DialogFooter className="m-0 rounded-b-[var(--md-radius-2xl)] px-5 py-4">
+            {validationMessage ? <p className="me-auto text-[11.5px] text-[var(--md-subtle)]">{validationMessage}</p> : null}
+            <Button type="button" disabled={!canSave} className="h-10 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)]" onClick={() => void save()}>
+              {saving ? <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" strokeWidth={1.5} aria-hidden="true" /> : null}
+              {t(saving ? "Saving" : enabled ? "Save automatic reply" : "Turn off automatic reply")}
+            </Button>
+          </DialogFooter>
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  )
 }
 
 /* ------------------------------------------------------------------------- */
@@ -440,7 +769,11 @@ function MessageCard({
             className="grid overflow-hidden"
           >
             <div className="min-h-0 px-3.5 pb-3.5">
-              <EmailMessageRenderer sanitizedHtml={message.sanitizedHtml} bodyText={message.bodyText} />
+              <EmailMessageRenderer
+                sanitizedHtml={message.sanitizedHtml}
+                bodyText={message.bodyText}
+                inlineAttachments={message.attachments}
+              />
               {message.attachments.filter((attachment) => !attachment.isInline).length > 0 ? (
                 <div className="mt-3">
                   <p className="mb-1.5 text-[11px] font-medium uppercase tracking-[0.07em] text-[var(--md-subtle)]">
@@ -479,6 +812,8 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
     provider,
     mailboxId,
     folder,
+    folderId,
+    selectedFolder,
     refreshAccounts,
     adjustMailboxUnread,
     threadCache,
@@ -514,6 +849,8 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
   const [composerError, setComposerError] = useState<string | null>(null)
   const [remoteDraftId, setRemoteDraftId] = useState<string | null>(null)
   const [draftRestored, setDraftRestored] = useState(false)
+  const [dexterComposerStatus, setDexterComposerStatus] = useState<"idle" | "drafting">("idle")
+  const [dexterComposerError, setDexterComposerError] = useState<string | null>(null)
   // Files a recovered draft used to carry. The bytes are never kept on the
   // device, so the composer asks for them by name instead of pretending.
   const [restoredAttachmentNames, setRestoredAttachmentNames] = useState<string[]>([])
@@ -521,6 +858,8 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
   const [stage, setStage] = useState<MobileStage>(initialThreadDeepLink ? "message" : "threads")
   const [syncingMailboxId, setSyncingMailboxId] = useState<string | null>(null)
   const [connectingProvider, setConnectingProvider] = useState<MailProvider | null>(null)
+  const [automaticReplyOpen, setAutomaticReplyOpen] = useState(false)
+  const [automaticReplies, setAutomaticReplies] = useState<Record<string, AutomaticReplySettings>>({})
   const [connectionResult] = useState(() => (
     typeof window === "undefined" ? null : readEmailConnectionResult(window.location.search)
   ))
@@ -529,6 +868,7 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
   const listRequestRef = useRef(0)
   const threadRequestRef = useRef(0)
   const summaryRequestRef = useRef(0)
+  const dexterComposerIdentityRef = useRef("")
   const discardingDraftRef = useRef(false)
   const messageRefs = useRef(new Map<string, HTMLElement>())
   const summaryRef = useRef<HTMLDivElement | null>(null)
@@ -536,13 +876,20 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
   const highlightTimerRef = useRef<number | null>(null)
   const connectionResultHandledRef = useRef(false)
   const mailboxSyncInFlightRef = useRef<string | null>(null)
+  dexterComposerIdentityRef.current = [
+    selectedThreadId ?? "none",
+    composer.mode,
+    composer.threadId ?? "new",
+    composer.sourceMessageId ?? "none",
+    composer.presentation,
+  ].join(":")
 
   const activeMailbox = useMemo(
     () => mailboxes.find((candidate) => candidate.id === mailboxId) ?? null,
     [mailboxes, mailboxId],
   )
   const ownAddresses = useMemo(() => mailboxes.map((mailbox) => mailbox.address), [mailboxes])
-  const cacheKey = mailboxId ? threadCacheKey(mailboxId, folder, query) : null
+  const cacheKey = mailboxId ? threadCacheKey(mailboxId, folder, query, folderId) : null
   const listEntry = cacheKey ? threadCache[cacheKey] : undefined
   const threads = listEntry?.items ?? []
   const selectedThreadPreview = selectedThreadId
@@ -553,6 +900,11 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
   // shared address look as if it owned unread mail from the personal inbox.
   const unreadTotal = activeMailbox?.unreadCount ?? 0
   const canSendFromMailbox = Boolean(activeMailbox?.outboundEnabled) && !thread?.readOnly
+  const activeAutomaticReply = activeMailbox ? automaticReplies[activeMailbox.id] ?? null : null
+  const rememberAutomaticReply = useCallback((settings: AutomaticReplySettings) => {
+    if (!activeMailbox) return
+    setAutomaticReplies((current) => ({ ...current, [activeMailbox.id]: settings }))
+  }, [activeMailbox])
 
   useEffect(() => {
     if (!connectionResult || connectionResultHandledRef.current) return
@@ -602,7 +954,7 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
             Object.entries(current).filter(([key]) => !importedMailboxIds.has(key.split("::", 1)[0])),
           ))
           toast.success(t(hasMore
-            ? "Your mailbox is connected. Older mail will keep indexing in the background."
+            ? "Your mailbox is connected. Email from the last 12 months will keep indexing in the background."
             : "Your mailbox is ready"))
         } catch (error) {
           toast.error(errorMessageFor(error, t("The account connected, but its first mail import could not finish. Try Refresh.")))
@@ -660,7 +1012,7 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
       setListError(null)
 
       try {
-        await fetchThreadPage({ mailboxId, folder, query, cursor, limit: pageSize }, append, force)
+        await fetchThreadPage({ mailboxId, folder, folderId, query, cursor, limit: pageSize }, append, force)
         // A newer request for a different mailbox, folder or query has taken over.
         if (requestId !== listRequestRef.current) return
         setListState("ready")
@@ -670,12 +1022,12 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
         setListState("error")
       }
     },
-    [fetchThreadPage, folder, mailboxId, query, t],
+    [fetchThreadPage, folder, folderId, mailboxId, query, t],
   )
 
   useEffect(() => {
     if (!mailboxId) return
-    const key = threadCacheKey(mailboxId, folder, query)
+    const key = threadCacheKey(mailboxId, folder, query, folderId)
     // A list already in the cache stays on screen, so switching mailbox or
     // provider and coming back is instant and keeps the scroll and selection.
     // `threadCache` is read from this render rather than watched, because the
@@ -685,7 +1037,7 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
       return
     }
     void loadThreads(null)
-  }, [folder, loadThreads, mailboxId, query, threadCache])
+  }, [folder, folderId, loadThreads, mailboxId, query, threadCache])
 
   const runMailboxSync = useCallback(async (targetMailboxId: string) => {
     if (mailboxSyncInFlightRef.current) return null
@@ -982,12 +1334,12 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
 
   // The desktop sidebar and the mobile mailbox switch share this selection. If
   // either changes it, keep a thread only when it belongs to the new mailbox.
-  const previousScopeRef = useRef({ mailboxId, folder })
+  const previousScopeRef = useRef({ mailboxId, folder, folderId })
   useEffect(() => {
     const previous = previousScopeRef.current
-    if (previous.mailboxId === mailboxId && previous.folder === folder) return
-    previousScopeRef.current = { mailboxId, folder }
-    const keptThreadId = previous.folder === folder
+    if (previous.mailboxId === mailboxId && previous.folder === folder && previous.folderId === folderId) return
+    previousScopeRef.current = { mailboxId, folder, folderId }
+    const keptThreadId = previous.folder === folder && previous.folderId === folderId
       ? resolveSelectionForMailbox(selectedThreadId, selectedThreadMailboxId, mailboxId ?? "")
       : null
     setSelectedThreadId(keptThreadId)
@@ -996,7 +1348,7 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
       setThread(null)
       setStage("threads")
     }
-  }, [folder, mailboxId, selectedThreadId, selectedThreadMailboxId])
+  }, [folder, folderId, mailboxId, selectedThreadId, selectedThreadMailboxId])
 
   function focusMessage(messageId: string) {
     setExpandedMessageIds((current) => new Set(current).add(messageId))
@@ -1099,7 +1451,7 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
       const sync = await runMailboxSync(activeMailbox.id)
       if (!sync) return
       toast.success(t(sync.hasMore
-        ? "Mailbox refreshed. Older mail is still indexing in the background."
+        ? "Mailbox refreshed. Email from the last 12 months is still indexing in the background."
         : "Mailbox refreshed"))
     } catch (error) {
       toast.error(errorMessageFor(error, t("Unable to refresh this mailbox.")))
@@ -1118,6 +1470,8 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
     setRestoredAttachmentNames(stored?.attachmentNames ?? [])
     setComposerStatus("idle")
     setComposerError(null)
+    setDexterComposerStatus("idle")
+    setDexterComposerError(null)
     setComposer({
       ...emptyComposerState(mode, "open"),
       threadId: mode === "new" ? null : thread?.id ?? null,
@@ -1232,6 +1586,7 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
       }
 
       setComposerStatus(receipt.status === "queued" ? "queued" : "idle")
+      setDexterComposerError(null)
       toast.success(receipt.status === "queued" ? t("Message queued to send") : t("Message sent"))
       setComposer(emptyComposerState(composer.mode))
       if (composer.threadId) {
@@ -1245,6 +1600,37 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
       persistLocalDraft(true)
       setComposerStatus("failed")
       setComposerError(errorMessageFor(error, t("Unable to send this message. It is kept as a draft on this device.")))
+    }
+  }
+
+  async function composeWithDexter() {
+    if (dexterComposerStatus === "drafting") return
+    const requestIdentity = dexterComposerIdentityRef.current
+    setDexterComposerStatus("drafting")
+    setDexterComposerError(null)
+    try {
+      const result = await prepareInboxDexterDraft({
+        mode: composer.mode,
+        sourceMessageId: composer.sourceMessageId,
+        to: composer.to,
+        cc: composer.cc,
+        bcc: composer.bcc,
+        subject: composer.mode === "new" || composer.mode === "forward" ? composer.subject : thread?.subject ?? "",
+        bodyText: composer.bodyText,
+        locale: language,
+      })
+      if (dexterComposerIdentityRef.current !== requestIdentity) return
+      setComposer((current) => ({
+        ...current,
+        subject: current.mode === "new" || current.mode === "forward" ? result.draft.subject : current.subject,
+        bodyText: result.draft.bodyText,
+      }))
+      toast.success(result.personalised ? t("Dexter drafted this in your email style") : t("Dexter prepared an email draft"))
+    } catch (error) {
+      if (dexterComposerIdentityRef.current !== requestIdentity) return
+      setDexterComposerError(errorMessageFor(error, t("Dexter could not draft this email. Your current wording is unchanged.")))
+    } finally {
+      if (dexterComposerIdentityRef.current === requestIdentity) setDexterComposerStatus("idle")
     }
   }
 
@@ -1279,6 +1665,8 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
       setRestoredAttachmentNames([])
       setComposerStatus("idle")
       setComposerError(null)
+      setDexterComposerStatus("idle")
+      setDexterComposerError(null)
       if (hadDraftContent) toast.success(t("Draft discarded"))
       return true
     } finally {
@@ -1402,7 +1790,9 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
             detail: t("Multideck resolves the full list from the message you are replying to when it sends."),
           }
         : null
-  const emptyFolderTitle = folder === "archive"
+  const emptyFolderTitle = selectedFolder
+    ? t("No messages in this folder")
+    : folder === "archive"
     ? t("Nothing archived yet")
     : folder === "sent"
       ? t("No sent messages")
@@ -1413,7 +1803,9 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
           : folder === "trash"
             ? t("Trash is empty")
         : t("This folder is empty")
-  const emptyFolderDescription = folder === "archive"
+  const emptyFolderDescription = selectedFolder
+    ? t("Messages with this folder or label will appear here.")
+    : folder === "archive"
     ? t("Conversations you archive from the inbox are kept here.")
     : folder === "sent"
       ? t("Messages you send from this mailbox will appear here.")
@@ -1459,7 +1851,9 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
 
         <div className="mt-2.5 flex items-center justify-between gap-2 px-1">
           <p className="truncate text-[12px] font-medium uppercase tracking-[0.07em] text-[var(--md-subtle)]">
-            {t(folder === "sent"
+            {selectedFolder ? (
+              <bdi data-i18n-skip dir="auto" title={selectedFolder.displayName}>{selectedFolder.displayName}</bdi>
+            ) : t(folder === "sent"
               ? "Sent items"
               : folder === "drafts"
                 ? "Drafts"
@@ -1491,7 +1885,7 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
         {activeMailbox && activeMailbox.indexStatus !== "ready" ? (
           <div className="mt-1.5 px-1 pb-0.5" role="status" aria-live="polite">
             <div className="mb-1.5 flex items-center justify-between gap-3 text-[11.5px] text-[var(--md-subtle)]">
-              <span>{t(activeMailbox.indexStatus === "error" ? "Indexing paused" : "Indexing your inbox")}</span>
+              <span>{t(activeMailbox.indexStatus === "error" ? "Indexing paused" : "Indexing the last 12 months")}</span>
               <span data-i18n-skip dir="ltr" className="shrink-0 tabular-nums">
                 {activeMailbox.indexPercent}%
               </span>
@@ -1643,6 +2037,14 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
       onSend={() => void sendComposer()}
       onSaveDraft={() => void saveComposerDraft()}
       onDiscard={() => void discardComposer()}
+      onComposeWithDexter={() => void composeWithDexter()}
+      dexterAction={composer.mode === "reply" || composer.mode === "reply_all"
+        ? "reply"
+        : remoteDraftId || composer.bodyText.trim() || composer.subject.trim()
+          ? "draft"
+          : "compose"}
+      dexterStatus={dexterComposerStatus}
+      dexterError={dexterComposerError}
       onOpen={() => {
         if (
           composer.mode !== "new"
@@ -1942,6 +2344,26 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
             <span data-i18n-skip dir="ltr" className="tabular-nums">{unreadTotal}</span> {t("unread")}
           </span>
         ) : null}
+        {activeAutomaticReply && activeAutomaticReply.status !== "disabled" ? (
+          <button
+            type="button"
+            className="hidden h-8 shrink-0 items-center gap-1.5 rounded-full bg-[rgba(47,133,90,0.09)] px-2.5 text-[11.5px] font-medium text-[var(--md-green)] shadow-[inset_0_0_0_1px_rgba(47,133,90,0.14)] transition-[background-color,scale] duration-150 hover:bg-[rgba(47,133,90,0.14)] active:scale-[0.97] sm:inline-flex"
+            onClick={() => setAutomaticReplyOpen(true)}
+          >
+            <CalendarClock className="size-3.5" strokeWidth={1.5} aria-hidden="true" />
+            {t("Out of office on")}
+          </button>
+        ) : null}
+        <PageSettingsMenu
+          title={t("Inbox settings")}
+          actions={[{
+            id: "automatic-reply",
+            label: activeAutomaticReply && activeAutomaticReply.status !== "disabled" ? t("Edit out of office") : t("Set out of office"),
+            icon: CalendarClock,
+            onSelect: () => setAutomaticReplyOpen(true),
+          }]}
+          className="shrink-0"
+        />
         <Button
           type="button"
           variant="ghost"
@@ -1959,6 +2381,15 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
           {t("Compose")}
         </Button>
       </div>
+
+      <AutomaticReplyDialog
+        open={automaticReplyOpen}
+        onOpenChange={setAutomaticReplyOpen}
+        mailbox={activeMailbox}
+        settings={activeAutomaticReply}
+        onSettingsChange={rememberAutomaticReply}
+        onReconnect={(candidate) => void reconnect(candidate)}
+      />
 
       {/* Desktop keeps the conversation list and message side by side while the
           main sidebar owns accounts and folders. Mobile and tablet become one

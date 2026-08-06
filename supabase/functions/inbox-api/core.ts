@@ -214,6 +214,66 @@ export function sanitizeEmailHtml(value: unknown) {
   return html
 }
 
+/**
+ * Microsoft Graph's `hasAttachments` flag deliberately ignores inline-only
+ * images. A signature can therefore contain several `cid:` sources while the
+ * message claims to have no attachments. Treat the HTML reference as the
+ * second, provider-documented signal that the attachment collection must be
+ * read.
+ */
+export function emailHtmlContentIds(value: unknown) {
+  const html = typeof value === "string" ? value.slice(0, 2_000_000) : ""
+  const ids = new Set<string>()
+  for (const match of html.matchAll(/\bsrc\s*=\s*["']cid:([^"']+)["']/gi)) {
+    let contentId = String(match[1] ?? "").trim()
+    try { contentId = decodeURIComponent(contentId) } catch { /* Keep the provider value. */ }
+    contentId = contentId.replace(/^<|>$/g, "").toLowerCase()
+    if (contentId) ids.add(contentId)
+  }
+  return [...ids]
+}
+
+/**
+ * Exchange occasionally omits fileAttachment.contentId even though the HTML
+ * references the signature asset by its filename plus an Outlook-generated
+ * suffix (for example image001.png@01ABC...). Infer only a single exact
+ * filename match; ambiguity deliberately returns null instead of guessing.
+ */
+export function inferGraphContentIdFromFileName(fileName: unknown, referencedContentIds: Iterable<string>) {
+  const normalizedFileName = cleanString(fileName, 260).trim().toLowerCase()
+  if (!normalizedFileName) return null
+  const matches = [...referencedContentIds]
+    .map((value) => cleanString(value, 240).replace(/^<|>$/g, "").toLowerCase())
+    .filter((contentId) => contentId === normalizedFileName || contentId.startsWith(`${normalizedFileName}@`))
+  return matches.length === 1 ? matches[0] : null
+}
+
+/** Extract only Content-ID/filename pairs from multipart MIME headers. */
+export function mimeInlineAttachmentHeaders(value: unknown) {
+  const mime = typeof value === "string" ? value.slice(0, 8_000_000) : ""
+  const matches: Array<{ contentId: string; fileName: string }> = []
+  const seen = new Set<string>()
+  for (const part of mime.matchAll(/(?:^|\r?\n)--[^\r\n]+\r?\n((?:[^\r\n]+(?:\r?\n[ \t][^\r\n]*)*\r?\n)+)\r?\n/g)) {
+    const headers = String(part[1] ?? "").replace(/\r?\n[ \t]+/g, " ")
+    const contentId = cleanString(headers.match(/^content-id\s*:\s*<?([^>\r\n]+)>?\s*$/im)?.[1], 240)
+      .replace(/^<|>$/g, "").toLowerCase()
+    const fileName = cleanString(
+      headers.match(/^content-disposition\s*:[^\r\n]*?filename\s*=\s*(?:"([^"]+)"|'([^']+)'|([^;\s\r\n]+))/im)?.slice(1).find(Boolean)
+      ?? headers.match(/^content-type\s*:[^\r\n]*?name\s*=\s*(?:"([^"]+)"|'([^']+)'|([^;\s\r\n]+))/im)?.slice(1).find(Boolean),
+      260,
+    )
+    const key = `${contentId}:${fileName.toLowerCase()}`
+    if (!contentId || !fileName || seen.has(key)) continue
+    seen.add(key)
+    matches.push({ contentId, fileName })
+  }
+  return matches
+}
+
+export function graphMessageNeedsAttachmentFetch(hasAttachments: unknown, bodyHtml: unknown) {
+  return hasAttachments === true || emailHtmlContentIds(bodyHtml).length > 0
+}
+
 function escapeAttribute(value: string) {
   return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;")
 }

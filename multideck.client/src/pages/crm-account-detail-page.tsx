@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react"
 import { AnimatePresence, motion } from "motion/react"
-import { ArrowLeft, ArrowRight, Building2, Check, FileText, LoaderCircle, Mail, MapPin, Pencil, Plus, RefreshCw, Ship, Sparkles, Users } from "lucide-react"
+import { ArrowLeft, ArrowRight, Check, FileText, LoaderCircle, Mail, MapPin, Pencil, Plus, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 import { ContactCreateDialog } from "@/components/multideck/contact-create-dialog"
 import { CustomerAvatar } from "@/components/multideck/customer-components"
+import { SpectralBloomShader } from "@/components/multideck/dexter-action-pill"
 import { MarketingOptInControl } from "@/components/multideck/marketing-opt-in-control"
 import { Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
@@ -74,7 +75,7 @@ export function CrmAccountDetailPage({ accountId, navigate }: { accountId: strin
       <div className="flex flex-wrap gap-2"><Button onClick={() => setEditOpen(true)} className="bg-[var(--md-accent)] text-[var(--md-accent-ink)] active:scale-[0.96] motion-reduce:transform-none"><Pencil className="size-4" />{t("Edit account")}</Button></div>
     </header>
 
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Metric icon={Users} label={t("Contacts")} value={String(account.contacts.length)} /><Metric icon={Ship} label={t("Active shipments")} value={String(account.activeShipments.length)} /><Metric icon={Sparkles} label={t("Account health")} value={account.healthScore == null ? "—" : `${Math.round(account.healthScore)}%`} /><Metric icon={Building2} label={t("Open exceptions")} value={String(openExceptions)} tone={openExceptions ? "amber" : "neutral"} /></div>
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Metric label={t("Contacts")} value={String(account.contacts.length)} /><Metric label={t("Active shipments")} value={String(account.activeShipments.length)} /><Metric label={t("Account health")} value={account.healthScore == null ? "—" : `${Math.round(account.healthScore)}%`} tone="health" /><Metric label={t("Open exceptions")} value={String(openExceptions)} tone={openExceptions ? "amber" : "neutral"} /></div>
 
     <div className="grid gap-[var(--md-page-stack-gap)] 2xl:grid-cols-[minmax(0,1fr)_390px]">
       <div className="grid content-start gap-[var(--md-page-stack-gap)]">
@@ -128,7 +129,10 @@ function toDraft(account: ApiCustomerDetail): AccountDraft {
 }
 
 function Panel({ title, meta, action, children }: { title: string; meta?: string; action?: ReactNode; children: ReactNode }) { return <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]"><div className="flex items-center justify-between gap-3 px-5 py-4"><h2 className="text-[15px] font-medium text-[var(--md-ink)]">{title}</h2>{meta || action ? <div className="flex items-center gap-2">{meta ? <span className="text-[12px] text-[var(--md-text)]">{meta}</span> : null}{action}</div> : null}</div>{children}</Surface> }
-function Metric({ icon: Icon, label, value, tone = "neutral" }: { icon: typeof Users; label: string; value: string; tone?: "neutral" | "amber" }) { return <Surface padding="none" className="rounded-[var(--md-radius-xl)]"><div className="flex min-h-14 items-center gap-3 px-4 py-2.5"><span className={`grid size-7 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] ${tone === "amber" ? "text-[var(--md-amber)]" : "text-[var(--md-accent)]"}`}><Icon className="size-3.5" strokeWidth={1.4} /></span><p className="min-w-0 flex-1 truncate text-[12px] text-[var(--md-text)]">{label}</p><p className="shrink-0 text-[18px] font-medium tabular-nums text-[var(--md-ink)]">{value}</p></div></Surface> }
+function Metric({ label, value, tone = "neutral" }: { label: string; value: string; tone?: "neutral" | "amber" | "health" }) {
+  if (tone === "health") return <Surface padding="none" className="md-dexter-pill relative overflow-hidden rounded-[var(--md-radius-xl)] text-white"><span aria-hidden="true" className="md-dexter-pill__shader"><SpectralBloomShader /></span><span aria-hidden="true" className="md-dexter-pill__contrast" /><div className="relative z-10 flex min-h-14 items-center gap-3 px-4 py-2.5"><p className="min-w-0 flex-1 truncate text-[12px] text-white/72">{label}</p><p className="shrink-0 text-[18px] font-medium tabular-nums text-white">{value}</p></div></Surface>
+  return <Surface padding="none" className="rounded-[var(--md-radius-xl)]"><div className="flex min-h-14 items-center gap-3 px-4 py-2.5"><p className="min-w-0 flex-1 truncate text-[12px] text-[var(--md-text)]">{label}</p><p className={`shrink-0 text-[18px] font-medium tabular-nums ${tone === "amber" ? "text-[var(--md-amber)]" : "text-[var(--md-ink)]"}`}>{value}</p></div></Surface>
+}
 function ActivityRow({ activity, last }: { activity: ApiCustomerDetail["activities"][number]; last: boolean }) { const { t } = useLanguage(); return <div className={`grid grid-cols-[10px_minmax(0,1fr)_auto] gap-3 px-5 py-4 ${last ? "" : "border-b border-[var(--md-line)]"}`}><span className="mt-1.5 size-2 rounded-full bg-[var(--md-accent)] shadow-[0_0_0_4px_var(--md-accent-a08)]" /><div><p className="text-[14px] font-medium text-[var(--md-ink)]">{activity.subject}</p>{activity.summary ? <p className="mt-1 text-[13px] leading-5 text-[var(--md-text)]">{activity.summary}</p> : null}</div><p className="shrink-0 text-[12px] tabular-nums text-[var(--md-subtle)]">{relativeDate(activity.occurredAt, t)}</p></div> }
 function DetailList({ rows }: { rows: [string, string | null | undefined][] }) { const { t } = useLanguage(); const visible = rows.filter(([, value]) => value); return visible.length ? <dl className="px-5 pb-4">{visible.map(([label, value]) => <div key={label} className="grid grid-cols-[minmax(100px,0.8fr)_minmax(0,1.2fr)] gap-4 border-t border-[var(--md-line)] py-3 first:border-t-0"><dt className="text-[12px] text-[var(--md-text)]">{label}</dt><dd className="text-end text-[13px] font-medium text-[var(--md-ink)]" dir="auto">{value}</dd></div>)}</dl> : <Empty text={t("No details recorded.")} /> }
 function Empty({ text }: { text: string }) { return <p className="border-t border-[var(--md-line)] px-5 py-6 text-[13px] leading-5 text-[var(--md-text)]">{text}</p> }

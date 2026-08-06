@@ -101,6 +101,12 @@ test("Dexter clearly leaves warehouse customer access-link delivery to the audit
   assert.match(edgeFunction, /Warehouse customer-user invitations and access-link emails are available only from the customer's Warehouse customer access panel/)
   assert.match(edgeFunction, /They are not connected to Dexter writes or Watching for you/)
 })
+
+test("Dexter and Watching for you fail closed for provider automatic-reply settings", () => {
+  assert.match(edgeFunction, /Mailbox automatic replies are available only from the selected mailbox's Inbox settings/)
+  assert.match(edgeFunction, /not connected to Dexter reads, writes, or Watching for you/)
+  assert.match(edgeFunction, /Never claim to inspect, change, or watch an out-of-office setting/)
+})
 const dexterClient = read(
   "multideck.client/src/lib/dexter-api.ts",
 )

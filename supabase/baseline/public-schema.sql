@@ -10768,6 +10768,44 @@ $$;
 ALTER FUNCTION "public"."multideck_dexter_search_email"("p_providers" "text"[], "p_query" "text", "p_after" timestamp with time zone, "p_before" timestamp with time zone, "p_take" integer) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."multideck_contact_card_preview"("p_slug" "text") RETURNS "jsonb"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'pg_catalog', 'public', 'auth'
+    AS $$
+declare
+  v_context record;
+  v_result jsonb;
+begin
+  if auth.uid() is null then
+    raise exception 'Sign in again to preview this contact card.' using errcode = '42501';
+  end if;
+  select * into v_context from public._multideck_crm_context();
+  select jsonb_build_object(
+    'ContactCard_ID', c."ContactCard_ID", 'ContactCard_Slug', c."ContactCard_Slug", 'ContactCard_Label', c."ContactCard_Label",
+    'ContactCard_Status', c."ContactCard_Status", 'ContactCard_Person', c."ContactCard_Person", 'ContactCard_Branding', c."ContactCard_Branding",
+    'ContactCard_TenantName', company."Company_Name", 'ContactCard_ShowTenantName', c."ContactCard_ShowTenantName",
+    'ContactCard_PublicHeading', c."ContactCard_PublicHeading", 'ContactCard_PublicSubheading', c."ContactCard_PublicSubheading",
+    'ContactCard_SubmitLabel', c."ContactCard_SubmitLabel", 'ContactCard_ThanksHeading', c."ContactCard_ThanksHeading",
+    'ContactCard_ThanksBody', c."ContactCard_ThanksBody", 'ContactCard_PhoneField', c."ContactCard_PhoneField",
+    'ContactCard_ShowPhone', c."ContactCard_ShowPhone", 'ContactCard_ShowWebsite', c."ContactCard_ShowWebsite",
+    'ContactCard_ConsentEnabled', c."ContactCard_ConsentEnabled", 'ContactCard_ConsentCopy', c."ContactCard_ConsentCopy",
+    'ContactCard_PrivacyUrl', c."ContactCard_PrivacyUrl", 'ContactCard_CreatedAt', c."ContactCard_CreatedAt"
+  ) into v_result
+  from public."CRM_ContactCards" c
+  join public."cmp_Company" company on company."Company_ID" = c."Company_ID"
+  where c."Company_ID" = v_context.company_id and c."ContactCard_Slug" = lower(btrim(p_slug))
+    and c."ContactCard_DeletedAt" is null limit 1;
+  return v_result;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."multideck_contact_card_preview"("p_slug" "text") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."multideck_contact_card_preview"("p_slug" "text") IS 'Returns a tenant-scoped contact card in any active authoring state for signed-in operator previews.';
+
+
 CREATE OR REPLACE FUNCTION "public"."multideck_public_contact_card"("p_slug" "text") RETURNS "jsonb"
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'pg_catalog', 'public'
@@ -73966,6 +74004,13 @@ REVOKE ALL ON FUNCTION "public"."multideck_public_contact_card"("p_slug" "text")
 GRANT ALL ON FUNCTION "public"."multideck_public_contact_card"("p_slug" "text") TO "anon";
 GRANT ALL ON FUNCTION "public"."multideck_public_contact_card"("p_slug" "text") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."multideck_public_contact_card"("p_slug" "text") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."multideck_contact_card_preview"("p_slug" "text") FROM PUBLIC;
+REVOKE ALL ON FUNCTION "public"."multideck_contact_card_preview"("p_slug" "text") FROM "anon";
+GRANT ALL ON FUNCTION "public"."multideck_contact_card_preview"("p_slug" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."multideck_contact_card_preview"("p_slug" "text") TO "service_role";
 
 
 

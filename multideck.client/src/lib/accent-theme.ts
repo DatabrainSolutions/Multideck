@@ -223,6 +223,12 @@ const brandRecipes = {
   shaderA: { l: 0.321, c: 0.74, dh: -14.5 },
   shaderB: { l: 0.486, c: 1.11, dh: -13.2 },
   shaderC: { l: 0.129, c: 0.085, dh: -11.4 },
+  /* Watch mode's ambient background sits directly on the workspace. Its light
+     ramp must remain luminous, unlike the deliberately dark Dexter brand ramp
+     used by buttons and the composer. */
+  watchLightA: { l: 0.91, c: 0.28, dh: -14.5 },
+  watchLightB: { l: 0.98, c: 0.06, dh: -13.2 },
+  watchLightC: { l: 0.9, c: 0.35, dh: -11.4 },
   brandA: { l: 0.508, c: 1.14, dh: -10.6 },
   brandB: { l: 0.735, c: 1.46, dh: -10.9 },
   brandC: { l: 0.24, c: 0.45, dh: -8.5 },
@@ -260,6 +266,7 @@ export type AccentBrandRamp = {
   liftStrong: string
   liftWarm: string
   shader: ShaderStops
+  watchLight: ShaderStops
   brand: ShaderStops
 }
 
@@ -309,6 +316,11 @@ export function buildAccentRamp(id: AccentPresetId): AccentRamp {
         derive(light, brandRecipes.shaderA),
         derive(light, brandRecipes.shaderB),
         derive(light, brandRecipes.shaderC),
+      ],
+      watchLight: [
+        derive(light, brandRecipes.watchLightA),
+        derive(light, brandRecipes.watchLightB),
+        derive(light, brandRecipes.watchLightC),
       ],
       brand: [
         derive(light, brandRecipes.brandA),
@@ -428,6 +440,7 @@ function blendBrandRamp(from: AccentBrandRamp, to: AccentBrandRamp, progress: nu
   const next = {} as AccentBrandRamp
   for (const key of brandRampKeys) next[key] = mixHexOklab(from[key], to[key], progress)
   next.shader = from.shader.map((stop, index) => mixHexOklab(stop, to.shader[index], progress)) as ShaderStops
+  next.watchLight = from.watchLight.map((stop, index) => mixHexOklab(stop, to.watchLight[index], progress)) as ShaderStops
   next.brand = from.brand.map((stop, index) => mixHexOklab(stop, to.brand[index], progress)) as ShaderStops
   return next
 }

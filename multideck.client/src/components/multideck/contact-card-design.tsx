@@ -21,6 +21,7 @@ import { useLanguage } from "@/i18n/language-provider"
 import { mdEaseOut } from "@/lib/motion"
 import { bestInkContrast, accentCanCarryActions } from "@/lib/color"
 import { resolveCardTheme } from "@/lib/card-theme"
+import { CARD_LAYOUT_SPECS } from "@/lib/card-layout"
 import { cardPublicUrl, readLogoFile, updateBranding, MAX_LOGO_BYTES } from "@/lib/contact-card-store"
 import { CARD_SOCIAL_LABELS, type CardHeaderStyle, type CardLayout, type CardSocialKind, type CardSocialLink, type CardTheme, type ContactCard } from "@/data/contact-card-data"
 import type { QrEyeStyle, QrModuleStyle } from "@/lib/qr-code"
@@ -37,19 +38,94 @@ const ACCENT_PRESETS = [
   "#2b2f2e",
 ]
 
-const LAYOUT_PRESETS: { id: CardLayout; label: string; detail: string }[] = [
-  { id: "classic", label: "Classic", detail: "Balanced and familiar" },
-  { id: "editorial", label: "Editorial", detail: "Strong left edge" },
-  { id: "compact", label: "Compact", detail: "More visible at once" },
-  { id: "spotlight", label: "Spotlight", detail: "Centred on the person" },
-]
+/* -------------------------------------------------------------------------- */
+/* Layout picker                                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A miniature of the real template, not a generic wireframe.
+ *
+ * Each one carries the single detail that makes its preset recognisable: where
+ * the mark sits, how loud the heading is, and how the fields are drawn. Someone
+ * should be able to pick the right one without opening the preview.
+ */
+function LayoutThumbnail({ id }: { id: CardLayout }) {
+  const ink = "bg-[rgba(11,20,19,0.16)]"
+  const faint = "bg-[rgba(11,20,19,0.08)]"
+  const field = "rounded-[3px] bg-[rgba(11,20,19,0.05)] shadow-[inset_0_0_0_1px_rgba(11,20,19,0.08)]"
+
+  if (id === "editorial") {
+    return (
+      <span className="flex h-full flex-col p-2.5">
+        <span className="h-[3px] w-4 rounded-full bg-[var(--md-accent)]" />
+        <span className={cn("mt-2 h-[3px] w-7 rounded-full", faint)} />
+        <span className={cn("mt-1.5 h-[7px] w-[88%] rounded-[2px]", "bg-[rgba(11,20,19,0.24)]")} />
+        <span className={cn("mt-1 h-[7px] w-[58%] rounded-[2px]", "bg-[rgba(11,20,19,0.24)]")} />
+        <span className="mt-2 flex items-center gap-1.5 border-t border-[rgba(11,20,19,0.1)] pt-2">
+          <span className="size-3 rounded-full bg-[var(--md-accent-a22)]" />
+          <span className={cn("h-1 w-9 rounded-full", ink)} />
+        </span>
+        <span className="mt-auto grid gap-2">
+          <span className="h-px w-full bg-[rgba(11,20,19,0.18)]" />
+          <span className="h-px w-full bg-[rgba(11,20,19,0.18)]" />
+        </span>
+      </span>
+    )
+  }
+
+  if (id === "compact") {
+    return (
+      <span className="flex h-full flex-col p-2">
+        <span className="flex items-center gap-1.5">
+          <span className="size-[15px] rounded-[5px] bg-[var(--md-accent)]" />
+          <span className="grid gap-[3px]">
+            <span className={cn("h-1 w-10 rounded-full", ink)} />
+            <span className={cn("h-[3px] w-6 rounded-full", faint)} />
+          </span>
+        </span>
+        <span className={cn("mt-2 h-1.5 w-[64%] rounded-full", ink)} />
+        <span className="mt-auto grid gap-[3px]">
+          <span className={cn(field, "h-[9px] w-full")} />
+          <span className={cn(field, "h-[9px] w-full")} />
+          <span className={cn(field, "h-[9px] w-full")} />
+        </span>
+      </span>
+    )
+  }
+
+  if (id === "spotlight") {
+    return (
+      <span className="flex h-full flex-col items-center p-2">
+        <span className="mt-0.5 size-[19px] rounded-full bg-[var(--md-accent)] shadow-[0_0_0_3px_var(--md-accent-a22)]" />
+        <span className={cn("mt-2 h-1.5 w-[56%] rounded-full", ink)} />
+        <span className={cn("mt-1 h-1 w-[38%] rounded-full", faint)} />
+        <span className="mt-auto grid w-full gap-1 rounded-[7px] bg-[var(--md-surface)] p-1.5 shadow-[0_1px_2px_rgba(11,20,19,0.07)]">
+          <span className={cn(field, "h-[9px] w-full")} />
+          <span className={cn(field, "h-[9px] w-full")} />
+        </span>
+      </span>
+    )
+  }
+
+  return (
+    <span className="flex h-full flex-col p-2.5">
+      <span className="size-4 rounded-full bg-[var(--md-accent)]" />
+      <span className={cn("mt-2 h-1.5 w-[76%] rounded-full", ink)} />
+      <span className={cn("mt-1.5 h-1 w-[54%] rounded-full", faint)} />
+      <span className="mt-auto grid gap-1.5">
+        <span className={cn(field, "h-[11px] w-full")} />
+        <span className={cn(field, "h-[11px] w-full")} />
+      </span>
+    </span>
+  )
+}
 
 export function ContactCardLayoutPicker({ value, onChange }: { value: CardLayout; onChange: (value: CardLayout) => void }) {
   const { t } = useLanguage()
 
   return (
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="radiogroup" aria-label={t("Layout preset")}>
-      {LAYOUT_PRESETS.map((preset) => {
+      {CARD_LAYOUT_SPECS.map((preset) => {
         const selected = value === preset.id
         return (
           <button
@@ -65,15 +141,24 @@ export function ContactCardLayoutPicker({ value, onChange }: { value: CardLayout
               selected && "bg-[var(--md-accent-a08)] shadow-[inset_0_0_0_1px_var(--md-accent),var(--md-shadow-soft)]",
             )}
           >
-            <span className={cn("relative block h-[76px] overflow-hidden rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] p-2", selected && "bg-[var(--md-surface)]")}>
-              <span className={cn("block h-2 rounded-[var(--md-radius-xs)] bg-[var(--md-accent-a22)]", preset.id === "compact" ? "w-8" : "w-12", preset.id === "spotlight" && "mx-auto")} />
-              <span className={cn("mt-2 block h-1.5 rounded-[var(--md-radius-xs)] bg-[rgba(11,20,19,0.16)]", preset.id === "editorial" ? "w-4/5" : "w-3/5", preset.id === "spotlight" && "mx-auto")} />
-              <span className={cn("mt-1.5 block h-1.5 rounded-[var(--md-radius-xs)] bg-[rgba(11,20,19,0.09)]", preset.id === "compact" ? "w-2/3" : "w-full", preset.id === "spotlight" && "mx-auto w-2/3")} />
-              <span className={cn("absolute bottom-2 size-6 rounded-[var(--md-radius-sm)] bg-[var(--md-ink)]", preset.id === "classic" && "right-2", preset.id === "editorial" && "right-2", preset.id === "compact" && "right-2 size-5", preset.id === "spotlight" && "left-1/2 -translate-x-1/2 rounded-full")} />
+            {/* Constant surface: the miniature has to read the same selected or not. */}
+            <span className="relative block h-[92px] overflow-hidden rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)]" aria-hidden="true">
+              <LayoutThumbnail id={preset.id} />
             </span>
             <span className="mt-2 flex items-center justify-between gap-2">
               <span className="text-[12.5px] font-medium text-[var(--md-ink)]">{t(preset.label)}</span>
-              {selected ? <Check className="size-3.5 text-[var(--md-accent)]" strokeWidth={2} /> : null}
+              <AnimatePresence initial={false}>
+                {selected ? (
+                  <motion.span
+                    initial={{ opacity: 0, scale: 0.6 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.6 }}
+                    transition={{ type: "spring", stiffness: 520, damping: 30 }}
+                  >
+                    <Check className="size-3.5 text-[var(--md-accent)]" strokeWidth={2} />
+                  </motion.span>
+                ) : null}
+              </AnimatePresence>
             </span>
             <span className="mt-0.5 block text-[11px] leading-4 text-[var(--md-subtle)]">{t(preset.detail)}</span>
           </button>
