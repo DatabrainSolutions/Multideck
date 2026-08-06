@@ -189,47 +189,52 @@ function tone(value: unknown): StatusTone {
   return typeof value === "string" && tones.has(value as StatusTone) ? value as StatusTone : "neutral"
 }
 
+function toLiveBooking(row: Record<string, unknown>): LiveBooking {
+  return {
+    id: String(row.Booking_Reference),
+    customer: String(row.Customer_Name ?? ""),
+    route: String(row.Route ?? ""),
+    carrier: String(row.Carrier ?? ""),
+    container: String(row.Equipment ?? ""),
+    mode: row.Mode as BookingMode,
+    value: String(row.Value_Display ?? ""),
+    eta: String(row.Eta_Display ?? ""),
+    time: String(row.Time_Display ?? ""),
+    status: row.Status as BookingStatus,
+    progress: Number(row.Progress ?? 0),
+    owner: String(row.Owner_Code ?? ""),
+    tone: tone(row.Tone),
+    invoice: String(row.Invoice_Reference ?? ""),
+    jobRef: String(row.Job_Reference ?? ""),
+    customerRef: String(row.Customer_Reference ?? ""),
+    supplierRef: String(row.Supplier_Reference ?? ""),
+    origin: String(row.Origin ?? ""),
+    destination: String(row.Destination ?? ""),
+    vessel: String(row.Vessel ?? ""),
+    departureDate: String(row.Departure_Date ?? ""),
+    arrivalDate: String(row.Arrival_Date ?? ""),
+    vin: String(row.Vin ?? ""),
+    direction: row.Direction as BookingDirection,
+    shipmentType: String(row.Shipment_Type ?? ""),
+    isFavourite: Boolean(row.Is_Favourite),
+    customFields: Array.isArray(row.Custom_Fields) ? row.Custom_Fields as { label: string; value: string }[] : [],
+    updatedAt: String(row.Updated_At ?? ""),
+  }
+}
+
 export async function listLiveBookings(): Promise<LiveBooking[]> {
   const { data, error } = await requireClient().from("App_Live_Bookings").select("*").order("Updated_At", { ascending: false })
   if (error) throw error
-  return (data ?? []).map((row) => ({
-    id: row.Booking_Reference,
-    customer: row.Customer_Name,
-    route: row.Route,
-    carrier: row.Carrier,
-    container: row.Equipment,
-    mode: row.Mode as BookingMode,
-    value: row.Value_Display,
-    eta: row.Eta_Display,
-    time: row.Time_Display,
-    status: row.Status as BookingStatus,
-    progress: Number(row.Progress),
-    owner: row.Owner_Code,
-    tone: tone(row.Tone),
-    invoice: row.Invoice_Reference,
-    jobRef: row.Job_Reference,
-    customerRef: row.Customer_Reference,
-    supplierRef: row.Supplier_Reference,
-    origin: row.Origin,
-    destination: row.Destination,
-    vessel: row.Vessel,
-    departureDate: row.Departure_Date ?? "",
-    arrivalDate: row.Arrival_Date ?? "",
-    vin: row.Vin,
-    direction: row.Direction as BookingDirection,
-    shipmentType: row.Shipment_Type,
-    isFavourite: Boolean(row.Is_Favourite),
-    customFields: Array.isArray(row.Custom_Fields) ? row.Custom_Fields as { label: string; value: string }[] : [],
-    updatedAt: row.Updated_At,
-  }))
+  return (data ?? []).map((row) => toLiveBooking(row as Record<string, unknown>))
 }
 
-export async function getLiveBooking(reference: string) {
-  const { data, error } = await requireClient().from("App_Live_Bookings").select("*").eq("Booking_Reference", reference).maybeSingle()
+export async function getLiveBooking(reference: string): Promise<LiveBooking | null> {
+  const normalizedReference = reference.trim().toUpperCase()
+  if (!normalizedReference) return null
+
+  const { data, error } = await requireClient().from("App_Live_Bookings").select("*").eq("Booking_Reference", normalizedReference).maybeSingle()
   if (error) throw error
-  if (!data) return null
-  const records = await listLiveBookings()
-  return records.find((record) => record.id === reference) ?? null
+  return data ? toLiveBooking(data as Record<string, unknown>) : null
 }
 
 export type CreateLiveBookingInput = {

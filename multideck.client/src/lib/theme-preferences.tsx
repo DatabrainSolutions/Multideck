@@ -1,4 +1,5 @@
 import { useEffect } from "react"
+import { flushSync } from "react-dom"
 import { useTheme } from "next-themes"
 import { supabase } from "@/lib/supabase"
 
@@ -16,6 +17,17 @@ let lastPersistedTheme: ThemeMode | null = null
  */
 let localChoice: { mode: ThemeMode; at: number } | null = null
 let saveQueue: Promise<void> = Promise.resolve()
+
+type ThemeViewTransition = {
+  finished: Promise<void>
+  skipTransition?: () => void
+}
+
+type ThemeTransitionDocument = Document & {
+  startViewTransition?: (update: () => void | Promise<void>) => ThemeViewTransition
+}
+
+let activeThemeTransition: ThemeViewTransition | null = null
 
 function isThemeMode(value: unknown): value is ThemeMode {
   return value === "light" || value === "dark"
@@ -70,7 +82,28 @@ export function setThemeWithProfileIntent(setTheme: (mode: string) => void, mode
   // Module scope, so the choice outlives any superseded sync instance whose
   // asynchronous profile read finishes after its React effect was cleaned up.
   localChoice = { mode, at: performance.now() }
-  setTheme(mode)
+
+  const transitionDocument = document as ThemeTransitionDocument
+  const shouldReduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  const startViewTransition = transitionDocument.startViewTransition
+
+  if (!startViewTransition || shouldReduceMotion) {
+    setTheme(mode)
+  } else {
+    activeThemeTransition?.skipTransition?.()
+
+    const transition = startViewTransition.call(transitionDocument, () => {
+      // Flush the theme state into the DOM before Chrome captures the new frame.
+      // This keeps the previous frame visible until the dark tokens and every
+      // theme-aware React surface agree on the new appearance.
+      flushSync(() => setTheme(mode))
+    })
+
+    activeThemeTransition = transition
+    void transition.finished.catch(() => undefined).finally(() => {
+      if (activeThemeTransition === transition) activeThemeTransition = null
+    })
+  }
 
   if (lastPersistedTheme !== mode) saveTheme(mode)
 }

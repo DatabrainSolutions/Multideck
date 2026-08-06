@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { AnimatePresence, motion } from "motion/react"
+import { motion, useReducedMotion } from "motion/react"
 import { Moon, Sun } from "lucide-react"
 import { useTheme } from "next-themes"
 import { useLanguage } from "@/i18n/language-provider"
@@ -9,11 +9,13 @@ import { cn } from "@/lib/utils"
 type ThemeToggleProps = {
   className?: string
   compact?: boolean
+  showAppearanceLabel?: boolean
 }
 
-export function ThemeToggle({ className, compact = false }: ThemeToggleProps) {
+export function ThemeToggle({ className, compact = false, showAppearanceLabel = true }: ThemeToggleProps) {
   const { resolvedTheme, setTheme } = useTheme()
-  const { t } = useLanguage()
+  const { direction, t } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => setMounted(true), [])
@@ -26,6 +28,8 @@ export function ThemeToggle({ className, compact = false }: ThemeToggleProps) {
   return (
     <button
       type="button"
+      role="switch"
+      aria-checked={isDark}
       aria-label={label}
       title={label}
       data-theme-toggle-state={isDark ? "dark" : "light"}
@@ -38,25 +42,38 @@ export function ThemeToggle({ className, compact = false }: ThemeToggleProps) {
     >
       {compact ? null : (
         <span className="min-w-0">
-          <span className="block text-[12px] font-medium text-[var(--md-subtle)]">{t("Appearance")}</span>
-          <span className="block truncate text-[13px] text-[var(--md-ink)]">{modeLabel}</span>
+          {showAppearanceLabel ? <span className="block text-[12px] font-medium leading-[1.35] text-[var(--md-subtle)]">{t("Appearance")}</span> : null}
+          <span className="block truncate text-[13px] font-medium leading-[1.4] text-[var(--md-ink)]">{modeLabel}</span>
         </span>
       )}
 
-      <span className="relative grid size-7 shrink-0 place-items-center overflow-hidden rounded-[var(--md-radius-md)] bg-[var(--md-icon-well)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">
-        <AnimatePresence mode="popLayout" initial={false}>
+      <span className={cn(
+        "relative h-[30px] shrink-0 overflow-hidden rounded-full bg-[var(--md-icon-well)] text-[var(--md-accent)] shadow-[inset_0_0_0_1px_rgba(11,20,19,0.06)] transition-[background-color,box-shadow] duration-200 dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]",
+        compact ? "w-[30px]" : "w-12",
+      )}>
+        <motion.span
+          aria-hidden="true"
+          className="absolute start-[3px] top-[3px] grid size-6 place-items-center rounded-full bg-[var(--md-surface)] shadow-[0_2px_8px_rgba(11,20,19,0.16),inset_0_0_0_1px_rgba(255,255,255,0.7)]"
+          animate={{ x: compact ? 0 : isDark ? (direction === "rtl" ? -18 : 18) : 0 }}
+          transition={shouldReduceMotion ? { duration: 0 } : { type: "spring", duration: 0.3, bounce: 0 }}
+        >
           <motion.span
-            key={isDark ? "moon" : "sun"}
-            aria-hidden="true"
-            className="absolute grid size-5 place-items-center"
-            initial={{ opacity: 0, scale: 0.25, filter: "blur(4px)" }}
-            animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
-            exit={{ opacity: 0, scale: 0.25, filter: "blur(4px)" }}
-            transition={{ type: "spring", duration: 0.3, bounce: 0 }}
+            className="absolute grid place-items-center"
+            initial={false}
+            animate={{ opacity: isDark ? 0 : 1, scale: isDark ? 0.25 : 1 }}
+            transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
           >
-            {isDark ? <Moon className="size-4" strokeWidth={1.25} /> : <Sun className="size-4" strokeWidth={1.25} />}
+            <Sun className="size-4" strokeWidth={1.25} />
           </motion.span>
-        </AnimatePresence>
+          <motion.span
+            className="absolute grid place-items-center"
+            initial={false}
+            animate={{ opacity: isDark ? 1 : 0, scale: isDark ? 1 : 0.25 }}
+            transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <Moon className="size-4" strokeWidth={1.25} />
+          </motion.span>
+        </motion.span>
       </span>
     </button>
   )

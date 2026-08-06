@@ -1029,7 +1029,6 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewWidgetQuery, setPreviewWidgetQuery] = useState("")
   const [previewWidgetId, setPreviewWidgetId] = useState(reportWidgets[0].id)
   const [previewDataEditorOpen, setPreviewDataEditorOpen] = useState(false)
-  const [previewBookingSelectedIds, setPreviewBookingSelectedIds] = useState<Set<string>>(new Set(["MD-22455"]))
   const [previewFavouriteBookingIds, setPreviewFavouriteBookingIds] = useState<Set<string>>(() => new Set(initialFavouriteBookingIds))
   const [previewRoadFavouriteBookingIds, setPreviewRoadFavouriteBookingIds] = useState<Set<string>>(() => new Set(["MD-22676"]))
   const [previewRoadJobs, setPreviewRoadJobs] = useState(() => [...domesticRoadJobs])
@@ -1139,15 +1138,6 @@ function ComponentPreview({ id }: { id: string }) {
 
   function togglePreviewCustomer(id: string) {
     setPreviewSelectedIds((current) => {
-      const next = new Set(current)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
-  function togglePreviewBooking(id: string) {
-    setPreviewBookingSelectedIds((current) => {
       const next = new Set(current)
       if (next.has(id)) next.delete(id)
       else next.add(id)
@@ -2228,9 +2218,7 @@ function ComponentPreview({ id }: { id: string }) {
         <div className="w-full max-w-[1120px] overflow-x-auto md-scrollbar">
           <BookingsTable
             rows={bookings.slice(0, 4)}
-            selectedIds={previewBookingSelectedIds}
             favouriteIds={previewFavouriteBookingIds}
-            onToggleBooking={togglePreviewBooking}
             onToggleFavourite={togglePreviewFavouriteBooking}
             onOpenBooking={(booking) => toast.success(`${booking.id} opened`)}
           />

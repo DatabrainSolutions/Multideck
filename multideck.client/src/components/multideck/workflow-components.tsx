@@ -1,4 +1,4 @@
-import { useId, type ReactNode } from "react"
+import { useId, type KeyboardEvent, type ReactNode } from "react"
 import { Check } from "lucide-react"
 import { motion, useReducedMotion } from "motion/react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils"
 import { mdMotion, reduceMotion } from "@/lib/motion"
 
 export type LabelOption = {
+  id?: string
   label: string
   value?: string
 }
@@ -16,6 +17,31 @@ export type ChoiceOption<T extends string> = {
   value: T
   label: string
   disabled?: boolean
+}
+
+function moveChoiceFocus<T extends string>(
+  event: KeyboardEvent<HTMLButtonElement>,
+  options: readonly T[],
+  value: T,
+  onChange: (value: T) => void,
+) {
+  const isHorizontalArrow = event.key === "ArrowLeft" || event.key === "ArrowRight"
+  if (!isHorizontalArrow && event.key !== "Home" && event.key !== "End") return
+
+  event.preventDefault()
+  const currentIndex = Math.max(options.indexOf(value), 0)
+  const isRtl = window.getComputedStyle(event.currentTarget).direction === "rtl"
+  const step = event.key === "ArrowRight" ? (isRtl ? -1 : 1) : event.key === "ArrowLeft" ? (isRtl ? 1 : -1) : 0
+  const nextIndex = event.key === "Home"
+    ? 0
+    : event.key === "End"
+      ? options.length - 1
+      : (currentIndex + step + options.length) % options.length
+  const nextValue = options[nextIndex]
+  const buttons = event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>("button")
+
+  onChange(nextValue)
+  buttons?.[nextIndex]?.focus()
 }
 
 export function SegmentedControl<T extends string>({
@@ -40,7 +66,7 @@ export function SegmentedControl<T extends string>({
 
   return (
     <div
-      role="group"
+      role="radiogroup"
       aria-label={ariaLabel}
       className={cn(
         "relative isolate inline-flex max-w-full rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-1 shadow-[var(--md-shadow-line)]",
@@ -52,13 +78,16 @@ export function SegmentedControl<T extends string>({
         <button
           key={option}
           type="button"
-          aria-pressed={value === option}
+          role="radio"
+          aria-checked={value === option}
+          tabIndex={value === option ? 0 : -1}
           disabled={disabled}
           className={cn(
             "relative h-8 min-w-0 rounded-[var(--md-radius-md)] px-3 text-[13px] font-medium text-[var(--md-text)] outline-none transition-[color,opacity,scale,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.96] hover:text-[var(--md-ink)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a24)] disabled:cursor-not-allowed disabled:active:scale-100",
             value === option && "text-[var(--md-selected-text)]",
           )}
           onClick={() => onChange(option)}
+          onKeyDown={(event) => moveChoiceFocus(event, options, value, onChange)}
         >
           {value === option ? (
             <motion.span
@@ -227,20 +256,25 @@ export function TabsRail({
   const railId = useId()
   const shouldReduceMotion = useReducedMotion()
 
+  const tabIds = tabs.map((tab) => tab.id ?? tab.label)
+
   return (
-    <div className={cn("relative flex gap-[var(--md-page-stack-gap)] overflow-x-auto shadow-[inset_0_-1px_0_rgba(11,20,19,0.08)] md-scrollbar", className)}>
+    <div role="tablist" className={cn("relative flex gap-[var(--md-page-stack-gap)] overflow-x-auto shadow-[inset_0_-1px_0_rgba(11,20,19,0.08)] md-scrollbar", className)}>
       {tabs.map((tab) => (
         <button
-          key={tab.label}
+          key={tab.id ?? tab.label}
           type="button"
-          aria-pressed={activeTab === tab.label}
+          role="tab"
+          aria-selected={activeTab === (tab.id ?? tab.label)}
+          tabIndex={activeTab === (tab.id ?? tab.label) ? 0 : -1}
           className={cn(
             "relative flex h-12 shrink-0 items-center gap-2 text-[14px] font-medium text-[var(--md-text)] transition-[color,opacity,scale,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.96] hover:text-[var(--md-ink)]",
-            activeTab === tab.label && "text-[var(--md-ink)]",
+            activeTab === (tab.id ?? tab.label) && "text-[var(--md-ink)]",
           )}
-          onClick={() => onChange(tab.label)}
+          onClick={() => onChange(tab.id ?? tab.label)}
+          onKeyDown={(event) => moveChoiceFocus(event, tabIds, activeTab, onChange)}
         >
-          {activeTab === tab.label ? (
+          {activeTab === (tab.id ?? tab.label) ? (
             <motion.span
               aria-hidden="true"
               layoutId={`${railId}-active-tab`}

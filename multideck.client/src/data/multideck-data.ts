@@ -849,7 +849,7 @@ export const currentOperator = {
   initials: "EM",
 }
 
-export const bookingScopeTabs = ["My Jobs", "All Jobs", "Starred Jobs"] as const
+export const bookingScopeTabs = ["My Jobs", "All Jobs", "Staged Jobs"] as const
 export const customerScopeTabs = ["All customers", "My customers"] as const
 export const initialFavouriteBookingIds = ["MD-22481", "MD-22455", "MD-22414"] as const
 
@@ -916,7 +916,7 @@ export const bookingMetrics = [
   { label: "In transit", value: "23", tone: "teal" as StatusTone },
   { label: "At destination", value: "6", tone: "blue" as StatusTone },
   { label: "Exceptions", value: "2", tone: "red" as StatusTone },
-  { label: "Delivered · 7d", value: "48", tone: "green" as StatusTone },
+  { label: "Delivered", value: "48", tone: "green" as StatusTone },
 ]
 
 export const bookingMilestones = [
@@ -2521,10 +2521,10 @@ export const galleryComponents = [
     id: "theme-toggle",
     name: "Theme Toggle",
     category: "Navigation",
-    description: "The sidebar appearance control for switching between light and dark mode without leaving the workspace.",
-    details: "Use in persistent navigation surfaces where the user's preference should feel immediate and calm. Keep it token-led so every page inherits the same mode.",
+    description: "The sidebar appearance switch for moving between light and dark mode without leaving the workspace.",
+    details: "Use in persistent navigation surfaces where the user's preference should feel immediate and calm. The thumb travels with the selected mode while persistent sun and moon layers cross-fade without remounting or filter flicker. Reduced-motion users receive the same clear state without spatial movement.",
     foundOn: [{ label: "Overview sidebar", route: "/" }, { label: "Components", route: "/components" }],
-    componentCode: `export function ThemeToggle() {\n  const { resolvedTheme, setTheme } = useTheme()\n  const { t } = useLanguage()\n  const isDark = resolvedTheme === "dark"\n  const label = t(isDark ? "Switch to light mode" : "Switch to dark mode")\n\n  return (\n    <button\n      type="button"\n      aria-label={label}\n      onClick={() => setTheme(isDark ? "light" : "dark")}\n    >\n      <span>\n        <span>{t("Appearance")}</span>\n        <span>{t(isDark ? "Dark mode" : "Light mode")}</span>\n      </span>\n      <motion.span key={isDark ? "moon" : "sun"}>\n        {isDark ? <Moon /> : <Sun />}\n      </motion.span>\n    </button>\n  )\n}`,
+    componentCode: `export function ThemeToggle({ compact = false, showAppearanceLabel = true }) {\n  const { resolvedTheme, setTheme } = useTheme()\n  const { direction, t } = useLanguage()\n  const shouldReduceMotion = useReducedMotion()\n  const isDark = resolvedTheme === "dark"\n\n  return (\n    <button\n      type="button"\n      role="switch"\n      aria-checked={isDark}\n      aria-label={t(isDark ? "Switch to light mode" : "Switch to dark mode")}\n      onClick={() => setTheme(isDark ? "light" : "dark")}\n    >\n      {compact ? null : (\n        <span>\n          {showAppearanceLabel ? <span>{t("Appearance")}</span> : null}\n          <span>{t(isDark ? "Dark mode" : "Light mode")}</span>\n        </span>\n      )}\n      <span className="relative h-[30px] w-12 rounded-full">\n        <motion.span\n          animate={{ x: compact ? 0 : isDark ? (direction === "rtl" ? -18 : 18) : 0 }}\n          transition={shouldReduceMotion ? { duration: 0 } : { type: "spring", duration: 0.3, bounce: 0 }}\n        >\n          <motion.span initial={false} animate={{ opacity: isDark ? 0 : 1, scale: isDark ? 0.25 : 1 }}><Sun /></motion.span>\n          <motion.span initial={false} animate={{ opacity: isDark ? 1 : 0, scale: isDark ? 1 : 0.25 }}><Moon /></motion.span>\n        </motion.span>\n      </span>\n    </button>\n  )\n}`,
     usageCode: `<ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} storageKey="multideck.theme">\n  <AppShell>\n    <ThemeToggle />\n  </AppShell>\n</ThemeProvider>`,
   },
   {
@@ -3293,7 +3293,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     description: "A single compact KPI tile for booking list headers, designed for quick count scanning.",
     details: "Use one per metric in booking-heavy views. Keep the card to a short label and one number so the row stays calm and scannable.",
     foundOn: [{ label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components" }],
-    componentCode: `export function BookingMetricCard({ label, value, tone }) {\n  return (\n    <Surface padding="md" className="min-h-[92px] rounded-[var(--md-radius-xl)]">\n      <p className="text-[13px] font-medium text-[var(--md-text)]">{label}</p>\n      <strong\n        className={cn("mt-2 block text-[30px] font-medium leading-none", tone === "neutral" && "text-[var(--md-ink)]")}\n        style={{ color: tone === "neutral" ? undefined : toneToVar(tone) }}\n      >\n        {value}\n      </strong>\n    </Surface>\n  )\n}`,
+    componentCode: `export function BookingMetricCard({ label, value, tone }) {\n  return (\n    <Surface padding="none" className="flex min-h-[52px] items-center justify-between gap-3 rounded-[var(--md-radius-xl)] px-4 py-2.5">\n      <p className="text-[12px] font-medium text-[var(--md-text)]">{label}</p>\n      <strong\n        className={cn("block text-[22px] font-medium leading-none", tone === "neutral" && "text-[var(--md-ink)]")}\n        style={{ color: tone === "neutral" ? undefined : toneToVar(tone) }}\n      >\n        {value}\n      </strong>\n    </Surface>\n  )\n}`,
     usageCode: `<BookingMetricCard\n  label="In transit"\n  value="23"\n  tone="teal"\n/>`,
   },
   {
@@ -3310,7 +3310,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     id: "bookings-table",
     name: "Booking Register",
     category: "Data",
-    description: "The booking configuration of the common Data Table, with search, sorting, columns, resizing, pinning, selection, and favourites.",
+    description: "The booking configuration of the common Data Table, with search, sorting, columns, resizing, pinning, and favourites.",
     details: "Use for the primary booking register. It intentionally shares the Quotes table engine and persists each operator's column layout.",
     foundOn: [{ label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components" }],
     componentCode: `export function BookingRegister({ rows, columns, onOpenBooking }) {\n  return (\n    <DataTable\n      columns={columns}\n      rows={rows}\n      getRowKey={(booking) => booking.id}\n      storageKey="booking-register"\n      onRowClick={onOpenBooking}\n    />\n  )\n}`,

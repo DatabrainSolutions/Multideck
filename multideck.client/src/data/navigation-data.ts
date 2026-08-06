@@ -241,7 +241,6 @@ export const sidebarAreas: SidebarArea[] = [
 
 export const sidebarPrimary: NavItem[] = [
   { label: "Overview", value: "G O", icon: LayoutDashboard, route: "/" },
-  { label: "Bookings", value: "7", icon: Ship, route: "/bookings" },
   { label: "Warehouse", value: "12", icon: Boxes, route: "/warehouse" },
   { label: "Customers", value: "39", icon: Users, route: "/customers" },
   { label: "CRM", value: "9", icon: BriefcaseBusiness, route: "/crm" },

@@ -986,6 +986,16 @@ button {
   animation: md-sidebar-menu-out 110ms cubic-bezier(0.55, 0, 1, 0.45) both;
 }
 
+.md-account-sheet[data-state="open"] {
+  animation: md-account-sheet-in 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  transform-origin: bottom center;
+}
+
+.md-account-sheet[data-state="closed"] {
+  animation: md-account-sheet-out 190ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: bottom center;
+}
+
 .md-sidebar-menu[data-state="open"] .md-sidebar-menu-item {
   animation: md-sidebar-menu-item-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
@@ -2072,6 +2082,53 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
   }
 }
 
+@keyframes md-account-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes md-account-sheet-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.992);
+  }
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 180ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  mix-blend-mode: normal;
+}
+
+::view-transition-old(root) {
+  animation-name: md-theme-frame-out;
+}
+
+::view-transition-new(root) {
+  animation-name: md-theme-frame-in;
+}
+
+@keyframes md-theme-frame-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes md-theme-frame-in {
+  from { opacity: 0.72; }
+  to { opacity: 1; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -2089,10 +2146,16 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
   .md-dropdown-content,
   .md-dropdown-option,
   .md-sidebar-menu,
-  .md-sidebar-menu-item {
+  .md-sidebar-menu-item,
+  .md-account-sheet {
     animation: none !important;
     filter: none !important;
     transform: none !important;
+  }
+
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none !important;
   }
 }
 

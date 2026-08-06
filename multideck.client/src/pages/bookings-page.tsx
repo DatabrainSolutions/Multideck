@@ -20,7 +20,6 @@ import { DexterDockedPage } from "@/components/multideck/dexter-companion-sideba
 import { ChoiceControl } from "@/components/multideck/workflow-components"
 import { toneToVar } from "@/components/multideck/status-pill"
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
 import { currentOperator, getBookingShape, bookingScopeTabs } from "@/data/multideck-data"
@@ -31,6 +30,7 @@ import { listLiveBookings } from "@/lib/application-data-api"
 const rowsPerPageOptions = [10, 20, 30, 50]
 const bookingViewStorageKey = "multideck.view.bookings"
 type BookingScope = (typeof bookingScopeTabs)[number]
+type BookingSortDirection = "asc" | "desc"
 const initialSearchCriteria: BookingSearchCriterion[] = [{ id: "booking-search-any", field: "any", value: "", valueTo: "" }]
 const directionFilters = ["All directions", "Import", "Export", "Domestic", "Cross trade"] as const
 const modeFilters = ["All modes", "OCEAN", "AIR", "ROAD", "FAS", "FSA"] as const
@@ -168,8 +168,8 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
   const [bookingRecords, setBookingRecords] = useState<Booking[]>([])
   const [bookingsLoading, setBookingsLoading] = useState(true)
   const [bookingsError, setBookingsError] = useState<string | null>(null)
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [favouriteIds, setFavouriteIds] = useState<Set<string>>(() => new Set())
+  const [sortDirection, setSortDirection] = useState<BookingSortDirection>("asc")
   const [searchCriteria, setSearchCriteria] = useState<BookingSearchCriterion[]>(initialSearchCriteria)
   const [quickSearch, setQuickSearch] = useState("")
   const [advancedSearchOpen, setAdvancedSearchOpen] = useState(false)
@@ -199,10 +199,10 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
   const scopedBookings = useMemo(() => {
     return (
       scope === "My Jobs" ? bookingRecords.filter((booking) => booking.owner === currentOperator.initials) :
-        scope === "Starred Jobs" ? bookingRecords.filter((booking) => favouriteIds.has(booking.id)) :
+        scope === "Staged Jobs" ? bookingRecords.filter((booking) => booking.progress < 25) :
           bookingRecords
     )
-  }, [bookingRecords, favouriteIds, scope])
+  }, [bookingRecords, scope])
 
   const visibleBookings = useMemo(() => {
     const quickQuery = normalized(quickSearch)
@@ -214,8 +214,11 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
         (shipmentTypeFilter === "All types" || shape.shipmentType === shipmentTypeFilter)
       const matchesQuickSearch = !quickQuery || getBookingSearchValues(booking, "any").some((candidate) => normalized(candidate).includes(quickQuery))
       return matchesShape && matchesQuickSearch && bookingMatchesSearch(booking, searchCriteria)
+    }).sort((a, b) => {
+      const result = a.customer.localeCompare(b.customer, undefined, { sensitivity: "base" }) || a.id.localeCompare(b.id)
+      return sortDirection === "asc" ? result : -result
     })
-  }, [directionFilter, modeFilter, quickSearch, scopedBookings, searchCriteria, shipmentTypeFilter])
+  }, [directionFilter, modeFilter, quickSearch, scopedBookings, searchCriteria, shipmentTypeFilter, sortDirection])
 
   const pageCount = Math.max(Math.ceil(visibleBookings.length / rowsPerPage), 1)
   const paginatedBookings = visibleBookings.slice((page - 1) * rowsPerPage, page * rowsPerPage)
@@ -231,15 +234,6 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
   useEffect(() => {
     if (page > pageCount) setPage(pageCount)
   }, [page, pageCount])
-
-  function toggleBooking(id: string) {
-    setSelectedIds((current) => {
-      const next = new Set(current)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
 
   function toggleFavourite(id: string) {
     setFavouriteIds((current) => {
@@ -269,25 +263,6 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
   }
 
   const columns = useMemo<DataTableColumn<Booking>[]>(() => [
-    {
-      id: "select",
-      label: t("Select"),
-      width: 54,
-      minWidth: 54,
-      maxWidth: 54,
-      canHide: false,
-      canPin: false,
-      resizable: false,
-      cell: (booking) => (
-        <span onClick={(event) => event.stopPropagation()}>
-          <Checkbox
-            checked={selectedIds.has(booking.id)}
-            onCheckedChange={() => toggleBooking(booking.id)}
-            aria-label={t(`Select ${booking.id}`)}
-          />
-        </span>
-      ),
-    },
     {
       id: "star",
       label: t("Star"),
@@ -426,11 +401,20 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
       sortValue: (booking) => booking.owner,
       cell: (booking) => <span className="grid size-8 place-items-center rounded-full bg-[var(--md-accent-a12)] text-[12px] font-medium text-[var(--md-accent)]">{booking.owner}</span>,
     },
-  ], [favouriteIds, selectedIds, t])
+  ], [favouriteIds, t])
 
   return (
     <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t("Bookings")} className="md-page md-page-stack">
-      <BookingListHeader viewMode={viewMode} onViewModeChange={setViewMode} onSpeakToDexter={() => setDexterOpen(true)} scopeOptions={bookingScopeTabs} scope={scope} onScopeChange={setScope} />
+      <BookingListHeader
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        onSpeakToDexter={() => setDexterOpen(true)}
+        scopeOptions={bookingScopeTabs}
+        scope={scope}
+        onScopeChange={setScope}
+        sortDirection={sortDirection}
+        onSortDirectionChange={setSortDirection}
+      />
       <section aria-label={t("Booking shape")} className="flex flex-wrap items-center gap-2 rounded-[var(--md-radius-xl)] bg-[color-mix(in_srgb,var(--md-surface)_32%,transparent)] p-2.5 shadow-[var(--md-shadow-line)]">
         <ShapeFilter label={t("Direction")} options={directionFilters} value={directionFilter} onChange={setDirectionFilter} />
         <span className="hidden h-7 w-px bg-[var(--md-line-strong)] sm:block" aria-hidden="true" />
@@ -461,7 +445,7 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
           rows={bookingsLoading ? [] : paginatedBookings}
           getRowKey={(booking) => booking.id}
           storageKey="booking-register"
-          rowClassName={(booking) => selectedIds.has(booking.id) ? "bg-[var(--md-surface-tint)]" : "hover:bg-[var(--md-hover)]"}
+          rowClassName={() => "hover:bg-[var(--md-hover)]"}
           onRowClick={openBooking}
           toolbarLeading={(
             <div className="flex min-w-0 items-center gap-2 px-1.5">

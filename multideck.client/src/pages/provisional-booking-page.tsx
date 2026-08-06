@@ -4,7 +4,6 @@ import {
   Check,
   Edit3,
   FileText,
-  Link2,
   LockKeyhole,
   MoreHorizontal,
   Paperclip,
@@ -21,8 +20,9 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tabs, TabsContent } from "@/components/ui/tabs"
 import { StatusPill } from "@/components/multideck/status-pill"
+import { TabsRail } from "@/components/multideck/workflow-components"
 import { cn } from "@/lib/utils"
 import { useLanguage } from "@/i18n/language-provider"
 
@@ -91,16 +91,17 @@ const initialValues: FormValues = {
 }
 
 const bookingTabs = [
-  ["details", "Details", Edit3],
-  ["additional", "Additional details", MoreHorizontal],
-  ["custom", "Custom fields", FileText],
-  ["documents", "Document selection", FileText],
-  ["workflow", "Workflow & tracking", Link2],
-  ["addresses", "Addresses", Search],
-  ["edocs", "eDocs", Paperclip],
-  ["notes", "Notes", Edit3],
-  ["log", "Logs", FileText],
+  ["details", "Details"],
+  ["additional", "Additional details"],
+  ["custom", "Custom fields"],
+  ["documents", "Document selection"],
+  ["workflow", "Workflow & tracking"],
+  ["addresses", "Addresses"],
+  ["edocs", "eDocs"],
+  ["notes", "Notes"],
+  ["log", "Logs"],
 ] as const
+type ProvisionalBookingTab = (typeof bookingTabs)[number][0]
 
 const bookingRail = [
   ["Client", "Northbridge Safety Trading", "clear"],
@@ -117,8 +118,8 @@ function Panel({ title, children, className }: { title: string; children: ReactN
   const { t } = useLanguage()
 
   return (
-    <section className={cn("min-w-0 rounded-[6px] bg-[var(--md-surface-soft)] p-2 shadow-[inset_0_0_0_1px_var(--md-accent-a18)]", className)}>
-      <h2 className="mb-1.5 text-[11px] font-semibold leading-4 text-[var(--md-ink)]">{t(title)}</h2>
+    <section className={cn("min-w-0 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] px-4 py-3 shadow-[var(--md-shadow-line)]", className)}>
+      <h2 className="mb-3 text-[13px] font-medium leading-5 text-[var(--md-ink)]">{t(title)}</h2>
       {children}
     </section>
   )
@@ -142,8 +143,8 @@ function Field({
   const { t } = useLanguage()
 
   return (
-    <label className={cn("grid min-w-0 grid-cols-[88px_minmax(0,1fr)] items-center gap-1", className)}>
-      <span className="truncate text-end text-[10.5px] font-medium text-[var(--md-text)]">{t(label)}</span>
+    <label className={cn("grid min-w-0 grid-cols-1 items-center gap-1.5 sm:grid-cols-[104px_minmax(0,1fr)]", className)}>
+      <span className="truncate text-start text-[11px] font-medium text-[var(--md-text)] sm:text-end">{t(label)}</span>
       <Input
         value={value}
         type={type}
@@ -151,7 +152,7 @@ function Field({
         onChange={(event) => onChange(event.target.value)}
         data-i18n-skip
         dir="auto"
-        className="h-6 min-w-0 rounded-[3px] border-0 bg-[var(--md-surface)] px-1.5 text-[11px] font-medium text-[var(--md-ink)] shadow-[inset_0_0_0_1px_var(--md-accent-a18)] disabled:cursor-default disabled:opacity-100"
+        className="h-8 min-w-0 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-soft)] px-2 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] disabled:cursor-default disabled:opacity-100"
       />
     </label>
   )
@@ -174,15 +175,15 @@ function LookupField({
   const Icon = action === "date" ? CalendarDays : action === "more" ? MoreHorizontal : Search
 
   return (
-    <div className="grid min-w-0 grid-cols-[88px_minmax(0,1fr)_24px] items-center gap-1">
-      <span className="truncate text-end text-[10.5px] font-medium text-[var(--md-text)]">{t(label)}</span>
+    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_32px] items-center gap-1.5 sm:grid-cols-[104px_minmax(0,1fr)_32px]">
+      <span className="col-span-2 truncate text-start text-[11px] font-medium text-[var(--md-text)] sm:col-span-1 sm:text-end">{t(label)}</span>
       <Input
         value={value}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
         data-i18n-skip
         dir="auto"
-        className="h-6 min-w-0 rounded-[3px] border-0 bg-[var(--md-surface)] px-1.5 text-[11px] font-medium text-[var(--md-ink)] shadow-[inset_0_0_0_1px_var(--md-accent-a18)] disabled:cursor-default disabled:opacity-100"
+        className="h-8 min-w-0 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-soft)] px-2 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] disabled:cursor-default disabled:opacity-100"
       />
       <Button
         type="button"
@@ -190,7 +191,7 @@ function LookupField({
         disabled={disabled}
         onClick={() => toast.info(t(`Lookup opened for ${label}`))}
         aria-label={t(`Search ${label}`)}
-        className="size-6 rounded-[3px] bg-[var(--md-surface)] p-0 text-[var(--md-accent)] shadow-[var(--md-shadow-line)] disabled:opacity-45"
+        className="size-8 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] p-0 text-[var(--md-accent)] shadow-[var(--md-shadow-line)] disabled:opacity-45"
       >
         <Icon className="size-3.5" strokeWidth={1.4} />
       </Button>
@@ -214,10 +215,10 @@ function SelectField({
   const { t } = useLanguage()
 
   return (
-    <div className="grid min-w-0 grid-cols-[88px_minmax(0,1fr)] items-center gap-1">
-      <span className="truncate text-end text-[10.5px] font-medium text-[var(--md-text)]">{t(label)}</span>
+    <div className="grid min-w-0 grid-cols-1 items-center gap-1.5 sm:grid-cols-[104px_minmax(0,1fr)]">
+      <span className="truncate text-start text-[11px] font-medium text-[var(--md-text)] sm:text-end">{t(label)}</span>
       <Select value={value} onValueChange={onChange} disabled={disabled}>
-        <SelectTrigger className="h-6 min-w-0 rounded-[3px] border-0 bg-[var(--md-surface)] px-1.5 text-[11px] font-medium text-[var(--md-ink)] shadow-[inset_0_0_0_1px_var(--md-accent-a18)] disabled:cursor-default disabled:opacity-100">
+        <SelectTrigger className="h-8 min-w-0 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-soft)] px-2 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] disabled:cursor-default disabled:opacity-100">
           <SelectValue />
         </SelectTrigger>
         <SelectContent className="rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface)] shadow-[var(--md-shadow-lift)]">
@@ -286,6 +287,35 @@ function PlaceholderPanel({ title, detail, actionLabel }: { title: string; detai
   )
 }
 
+function BookingChecksOverview({ values }: { values: FormValues }) {
+  const { t } = useLanguage()
+  const checks = bookingRail.map(([label, detail, state]) => {
+    if (label === "Consignee") return [label, values.consigneeCode === "Unassigned" ? "Organisation required" : values.consigneeName, values.consigneeCode === "Unassigned" ? "watch" : "clear"] as const
+    if (label === "Booking status") return [label, values.status, state] as const
+    return [label, detail, state] as const
+  })
+
+  return (
+    <section className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] px-4 py-3 shadow-[var(--md-shadow-line)]">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-[13px] font-medium text-[var(--md-ink)]">{t("Booking checks")}</h2>
+        <p className="text-[11px] text-[var(--md-text)]">{t("Quote charges remain linked until confirmation")}</p>
+      </div>
+      <div className="mt-3 grid gap-x-5 sm:grid-cols-2 xl:grid-cols-4">
+        {checks.map(([label, detail, state]) => (
+          <div key={label} className="grid min-w-0 grid-cols-[8px_minmax(0,1fr)] gap-2 py-2 shadow-[inset_0_1px_0_rgba(11,20,19,0.06)] first:shadow-none sm:[&:nth-child(2)]:shadow-none xl:[&:nth-child(-n+4)]:shadow-none">
+            <span className={cn("mt-1.5 size-2 rounded-full", state === "watch" ? "bg-[var(--md-amber)]" : state === "clear" ? "bg-[var(--md-green)]" : "bg-[var(--md-accent)]")} />
+            <div className="min-w-0">
+              <p className="text-[11px] font-medium text-[var(--md-ink)]">{t(label)}</p>
+              <p data-i18n-skip dir="auto" className="mt-0.5 truncate text-[11px] text-[var(--md-text)]">{detail}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 export function ProvisionalBookingPage({ navigate }: { navigate: (path: string) => void }) {
   const { direction, t } = useLanguage()
   const [savedValues, setSavedValues] = useState<FormValues>(initialValues)
@@ -293,6 +323,7 @@ export function ProvisionalBookingPage({ navigate }: { navigate: (path: string) 
   const [editable, setEditable] = useState(false)
   const [domestic, setDomestic] = useState(false)
   const [nvocc, setNvocc] = useState(false)
+  const [activeTab, setActiveTab] = useState<ProvisionalBookingTab>("details")
   const dirty = useMemo(() => JSON.stringify(values) !== JSON.stringify(savedValues), [savedValues, values])
 
   function setValue(key: string, value: string) {
@@ -315,21 +346,21 @@ export function ProvisionalBookingPage({ navigate }: { navigate: (path: string) 
   }
 
   return (
-    <main dir={direction} className="min-h-full bg-[var(--md-bg-strong)] px-1.5 py-1.5 sm:px-2">
-      <div className="grid w-full gap-1.5">
-        <header className="flex flex-col gap-1.5 rounded-[4px] bg-[var(--md-surface-tint)] px-2 py-1.5 shadow-[inset_0_0_0_1px_var(--md-accent-a24)] lg:flex-row lg:items-center lg:justify-between">
+    <main dir={direction} className="min-h-full bg-[var(--md-analytics-bg)] px-3 py-3 sm:px-4">
+      <div className="grid w-full gap-3">
+        <header className="flex flex-col gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] px-4 py-3 shadow-[var(--md-shadow-line)] lg:flex-row lg:items-center lg:justify-between">
           <div className="flex min-w-0 items-center gap-2">
-            <span className="grid size-7 shrink-0 place-items-center rounded-[3px] bg-[var(--md-accent-a12)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]"><FileText className="size-3.5" /></span>
+            <span className="grid size-9 shrink-0 place-items-center rounded-[var(--md-radius-lg)] bg-[rgba(14,125,116,0.12)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]"><FileText className="size-4" strokeWidth={1.5} /></span>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-1.5">
-                <h1 className="text-[15px] font-medium leading-5 text-[var(--md-ink)]">{t("Provisional booking")}</h1>
+                <h1 className="text-[18px] font-medium leading-6 text-[var(--md-ink)]">{t("Provisional booking")}</h1>
                 <StatusPill tone="amber">{t("Provisional")}</StatusPill>
                 <StatusPill tone="teal">{t("From spot quote")}</StatusPill>
                 <span data-i18n-skip dir="ltr" className="text-[12px] font-medium text-[var(--md-subtle)]">{values.bookingNumber}</span>
                 <span className="text-[12px] text-[var(--md-subtle)]">/</span>
                 <span data-i18n-skip dir="ltr" className="text-[12px] font-medium text-[var(--md-ink)]">{values.quoteNumber}</span>
               </div>
-              <p className="mt-0.5 truncate text-[12px] font-medium text-[var(--md-text)]"><span data-i18n-skip dir="auto">{values.clientName}</span><span className="px-1.5 text-[var(--md-subtle)]">/</span><span data-i18n-skip dir="auto">Bristol to Kobe via Singapore</span></p>
+              <p className="mt-1 truncate text-[12px] font-medium text-[var(--md-text)]"><span data-i18n-skip dir="auto">{values.clientName}</span><span className="px-1.5 text-[var(--md-subtle)]">/</span><span data-i18n-skip dir="auto">Bristol to Kobe via Singapore</span></p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
@@ -351,36 +382,24 @@ export function ProvisionalBookingPage({ navigate }: { navigate: (path: string) 
           </div>
         </header>
 
-        <Tabs defaultValue="details" className="grid min-w-0 gap-1.5 xl:grid-cols-[188px_minmax(0,1fr)]">
-          <aside className="hidden self-start rounded-[4px] bg-[var(--md-surface-tint)] p-1.5 shadow-[inset_0_0_0_1px_var(--md-accent-a20)] xl:block">
-              <p className="px-1 py-1 text-[10px] font-semibold uppercase tracking-[0.04em] text-[var(--md-subtle)]">{t("Booking checks")}</p>
-              <div className="grid gap-0.5">
-                {bookingRail.map(([label, detail, state]) => (
-                  <button key={label} type="button" className="grid gap-0.5 rounded-[3px] px-1.5 py-1.5 text-start hover:bg-[var(--md-hover)]">
-                    <span className="flex items-center justify-between gap-2"><span className="text-[10.5px] font-medium text-[var(--md-ink)]">{t(label)}</span><span className={cn("size-1.5 rounded-full", state === "watch" ? "bg-[var(--md-amber)]" : state === "clear" ? "bg-[var(--md-green)]" : "bg-[var(--md-accent)]")} /></span>
-                    <span className="truncate text-[10px] text-[var(--md-text)]">{t(detail)}</span>
-                  </button>
-                ))}
-              </div>
-              <div className="mt-2 rounded-[3px] bg-[var(--md-accent-a09)] p-1.5">
-                <p className="text-[10px] font-semibold text-[var(--md-ink)]">{t("Quote linkage")}</p>
-                <p className="mt-0.5 text-[10px] leading-3 text-[var(--md-text)]">{t("Costs and selling lines carry over when you confirm the provisional booking.")}</p>
-              </div>
-          </aside>
-          <div className="min-w-0">
-            <TabsList variant="line" className="h-auto flex-wrap justify-start gap-0.5 rounded-[4px] bg-[var(--md-surface-tint)] p-0.5 shadow-[inset_0_0_0_1px_var(--md-accent-a22)]">
-              {bookingTabs.map(([value, label, Icon]) => <TabsTrigger key={value} value={value} className="h-7 rounded-[3px] px-2 text-[11px]"><Icon data-icon="inline-start" className="size-3.5" />{t(label)}</TabsTrigger>)}
-            </TabsList>
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as ProvisionalBookingTab)} className="min-w-0 gap-3">
+          <TabsRail
+            tabs={bookingTabs.map(([id, label]) => ({ id, label: t(label) }))}
+            activeTab={activeTab}
+            onChange={(value) => setActiveTab(value as ProvisionalBookingTab)}
+            className="rounded-t-[var(--md-radius-xl)] bg-[var(--md-surface)] px-4 shadow-[var(--md-shadow-line)]"
+          />
 
           <TabsContent value="details" className="mt-0">
-            <div className="grid gap-1.5">
-                <div className="grid gap-1.5 2xl:grid-cols-3">
+            <div className="grid gap-3">
+                <BookingChecksOverview values={values} />
+                <div className="grid gap-3 2xl:grid-cols-3">
                   <PartyPanel title="Client" codeKey="clientCode" nameKey="clientName" addressKey="clientAddress" values={values} setValue={setValue} editable={editable} />
                   <PartyPanel title="Consignor" codeKey="consignorCode" nameKey="consignorName" addressKey="consignorAddress" values={values} setValue={setValue} editable={editable} />
                   <PartyPanel title="Consignee" codeKey="consigneeCode" nameKey="consigneeName" addressKey="consigneeAddress" values={values} setValue={setValue} editable={editable} />
                 </div>
 
-                <div className="grid gap-1.5 2xl:grid-cols-[1.08fr_1.12fr_0.9fr]">
+                <div className="grid gap-3 2xl:grid-cols-[1.08fr_1.12fr_0.9fr]">
                   <Panel title="Booking and service">
                     <div className="grid gap-1 md:grid-cols-2">
                       <LookupField label="Booking" value={values.bookingNumber} onChange={(value) => setValue("bookingNumber", value)} disabled={!editable} action="more" />
@@ -425,7 +444,7 @@ export function ProvisionalBookingPage({ navigate }: { navigate: (path: string) 
                   </Panel>
                 </div>
 
-                <div className="grid gap-1.5 2xl:grid-cols-[0.88fr_1fr_0.95fr_0.8fr]">
+                <div className="grid gap-3 xl:grid-cols-2 2xl:grid-cols-4">
                   <Panel title="Goods details">
                     <div className="grid gap-1"><Field label="Outers" value={values.goodsOuters} onChange={(value) => setValue("goodsOuters", value)} disabled={!editable} /><SelectField label="Package type" value={values.packageType} options={["PLT - Pallets", "CTN - Cartons", "PKG - Packages"]} onChange={(value) => setValue("packageType", value)} disabled={!editable} /><Field label="Weight" value={values.weight} onChange={(value) => setValue("weight", value)} disabled={!editable} /><Field label="Volume" value={values.volume} onChange={(value) => setValue("volume", value)} disabled={!editable} /><Field label="Chargeable" value={values.chargeable} onChange={(value) => setValue("chargeable", value)} disabled={!editable} /></div>
                   </Panel>
@@ -454,7 +473,6 @@ export function ProvisionalBookingPage({ navigate }: { navigate: (path: string) 
           <TabsContent value="edocs" className="mt-0"><PlaceholderPanel title="Electronic documents" detail="Generate booking confirmations, carrier instructions, customer copies, and supporting eDocs here." actionLabel="Generate document" /></TabsContent>
           <TabsContent value="notes" className="mt-0"><PlaceholderPanel title="Notes" detail="Keep the operational handover concise, factual, and visible to the people working the booking." actionLabel="Add note" /></TabsContent>
           <TabsContent value="log" className="mt-0"><PlaceholderPanel title="Activity log" detail="A record of quote conversion, booking edits, document events, and customer-facing actions will appear here." actionLabel="Add log entry" /></TabsContent>
-          </div>
         </Tabs>
       </div>
     </main>

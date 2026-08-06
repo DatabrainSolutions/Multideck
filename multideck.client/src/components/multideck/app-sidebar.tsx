@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Archive, ArrowLeft, Bell, Boxes, Check, ChevronDown, ChevronRight, Clock3, CreditCard, FileText, Folder, Inbox, LifeBuoy, LoaderCircle, LogOut, MailWarning, Pencil, Plus, PanelLeftClose, PanelLeftOpen, Pin, Search, Send, Settings, Sparkles, Tags, Trash2, TriangleAlert, Users, X, type LucideIcon } from "lucide-react"
+import { Archive, ArrowLeft, Bell, Boxes, Check, ChevronDown, ChevronRight, Clock3, FileText, Folder, Inbox, LifeBuoy, LoaderCircle, LogOut, MailWarning, Pencil, Plus, PanelLeftClose, PanelLeftOpen, Pin, Search, Send, Settings, Sparkles, Tags, Trash2, TriangleAlert, Users, X, type LucideIcon } from "lucide-react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -1071,6 +1071,7 @@ export function AppSidebar({
   const accountDetail = currentUser?.name && currentUser.email ? currentUser.email : t("Signed in")
   const accountInitials = currentUser?.initials ?? "MD"
   const [accountPhotoUrl, setAccountPhotoUrl] = useState<string | null>(currentUser?.profilePhotoUrl ?? null)
+  const [accountCoverPhotoUrl, setAccountCoverPhotoUrl] = useState<string | null>(null)
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   const profileIsActive = false
   const [arrangingScopeId, setArrangingScopeId] = useState<string | null>(null)
@@ -1204,6 +1205,27 @@ export function AppSidebar({
       cancelled = true
     }
   }, [currentUser?.profilePhoto, currentUser?.profilePhotoUrl])
+
+  useEffect(() => {
+    const coverPhoto = currentUser?.coverPhoto
+    if (!coverPhoto) {
+      setAccountCoverPhotoUrl(null)
+      return
+    }
+
+    setAccountCoverPhotoUrl(null)
+    let cancelled = false
+    createProfilePhotoSignedUrl(coverPhoto).then((signedUrl) => {
+      if (!cancelled) setAccountCoverPhotoUrl(signedUrl)
+    }).catch((error) => {
+      console.error("The sidebar cover photo could not be loaded.", error)
+      if (!cancelled) setAccountCoverPhotoUrl(null)
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [currentUser?.coverPhoto])
 
   useEffect(() => {
     const routeArea = isSettingsRoute
@@ -1980,25 +2002,53 @@ export function AppSidebar({
             </button>
           </PopoverTrigger>
           <PopoverContent
-            side={direction === "rtl" ? "left" : "right"}
-            align="end"
-            alignOffset={-4}
-            sideOffset={12}
-            collisionPadding={18}
-            className="w-[248px] overflow-hidden rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-surface)] p-2 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)]"
+            side="top"
+            align="start"
+            sideOffset={-48}
+            collisionPadding={8}
+            className="md-account-sheet w-[232px] max-w-[calc(100vw-32px)] gap-0 overflow-hidden rounded-[var(--md-radius-2xl)] border-0 bg-[var(--md-surface)] p-0 text-[var(--md-ink)] shadow-[0_22px_60px_rgba(11,20,19,0.20),inset_0_0_0_1px_rgba(255,255,255,0.72)]"
           >
-            <div className="px-2 pb-2 pt-1">
-              <p className="truncate text-[13px] font-medium text-[var(--md-ink)]" dir="auto" data-i18n-skip>{accountName}</p>
-              <p className="mt-0.5 truncate text-[12px] text-[var(--md-text)]" dir={currentUser?.email ? "ltr" : "auto"} data-i18n-skip={currentUser?.email ? true : undefined}>{accountDetail}</p>
+            <div className="relative h-[112px] overflow-hidden bg-[color-mix(in_srgb,var(--md-accent)_11%,var(--md-surface-soft))]">
+              {accountCoverPhotoUrl ? (
+                <img src={accountCoverPhotoUrl} alt="" className="size-full object-cover" decoding="async" />
+              ) : (
+                <div
+                  aria-hidden="true"
+                  className="absolute inset-0 opacity-70"
+                  style={{
+                    backgroundImage: "radial-gradient(circle at 20% 16%, color-mix(in srgb, var(--md-accent) 28%, transparent), transparent 34%), radial-gradient(circle at 82% 82%, color-mix(in srgb, var(--md-accent) 16%, transparent), transparent 38%)",
+                  }}
+                />
+              )}
+              <div aria-hidden="true" className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(0,0,0,0.04)_0%,rgba(0,0,0,0.08)_44%,color-mix(in_srgb,var(--md-surface)_96%,transparent)_100%)]" />
+              <button
+                type="button"
+                aria-label={t("Close menu")}
+                className="absolute end-3 top-3 grid size-8 place-items-center rounded-full bg-black/20 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_4px_12px_rgba(0,0,0,0.12)] transition-[background-color,box-shadow,transform] duration-150 hover:bg-black/32 active:scale-[0.96] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-white/40 motion-reduce:transition-none motion-reduce:active:scale-100"
+                onClick={() => setAccountMenuOpen(false)}
+              >
+                <X className="size-3.5" strokeWidth={1.5} aria-hidden="true" />
+              </button>
             </div>
-            <Separator className="my-1 bg-[var(--md-line-strong)]" />
-            <div onClick={() => setAccountMenuOpen(false)}>
-              <ThemeToggle className="h-11 rounded-[var(--md-radius-md)] shadow-none" />
+
+            <div className="relative -mt-8 px-3 pb-2">
+              <Avatar className="size-16 rounded-full bg-[var(--md-surface)] p-[3px] shadow-[0_9px_26px_rgba(11,20,19,0.18)] outline outline-1 outline-black/10 dark:outline-white/10">
+                {accountPhotoUrl ? <AvatarImage src={accountPhotoUrl} alt="" className="rounded-full object-cover" /> : null}
+                <AvatarFallback className="rounded-full bg-[var(--md-accent)] text-[18px] font-medium text-[var(--md-accent-ink)]" data-i18n-skip>
+                  {accountInitials}
+                </AvatarFallback>
+              </Avatar>
+              <div className="mt-2 min-w-0 px-1">
+                <p className="truncate text-[14px] font-medium leading-[1.35] tracking-[-0.01em] text-[var(--md-ink)]" dir="auto" data-i18n-skip>{accountName}</p>
+                <p className="mt-0.5 truncate text-[12px] leading-[1.45] text-[var(--md-text)]" dir={currentUser?.email ? "ltr" : "auto"} data-i18n-skip={currentUser?.email ? true : undefined}>{accountDetail}</p>
+              </div>
             </div>
-            <Separator className="my-1 bg-[var(--md-line-strong)]" />
+
+            <Separator className="mx-3 bg-[var(--md-line-strong)]" />
+            <div className="p-2">
             {!isCustomer ? <button
               type="button"
-              className="flex h-9 w-full items-center gap-2 rounded-[var(--md-radius-md)] px-2 text-left text-[13px] font-medium text-[var(--md-text)] transition-[background,color,opacity,transform] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
+              className="group/action flex h-10 w-full items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 text-start text-[13px] font-medium text-[var(--md-text)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] motion-reduce:transition-none motion-reduce:active:scale-100"
               onClick={() => {
                 setAccountMenuOpen(false)
                 openSettingsSection("profile")
@@ -2011,7 +2061,7 @@ export function AppSidebar({
               <>
                 <button
                   type="button"
-                  className="flex h-9 w-full items-center gap-2 rounded-[var(--md-radius-md)] px-2 text-left text-[13px] font-medium text-[var(--md-text)] transition-[background,color,opacity,transform] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
+                  className="group/action flex h-10 w-full items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 text-start text-[13px] font-medium text-[var(--md-text)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] motion-reduce:transition-none motion-reduce:active:scale-100"
                   onClick={() => {
                     setAccountMenuOpen(false)
                     openSettingsSection("ai-usage")
@@ -2020,22 +2070,11 @@ export function AppSidebar({
                   <Sparkles data-icon="inline-start" className="size-4" strokeWidth={1.4} />
                   <span className="min-w-0 flex-1 truncate">{t("AI usage")}</span>
                 </button>
-                <button
-                  type="button"
-                  className="flex h-9 w-full items-center gap-2 rounded-[var(--md-radius-md)] px-2 text-left text-[13px] font-medium text-[var(--md-text)] transition-[background,color,opacity,transform] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
-                  onClick={() => {
-                    setAccountMenuOpen(false)
-                    openSettingsSection("billing")
-                  }}
-                >
-                  <CreditCard data-icon="inline-start" className="size-4" strokeWidth={1.4} />
-                  <span className="min-w-0 flex-1 truncate">{t("Payment & billing")}</span>
-                </button>
               </>
             ) : null}
             <button
               type="button"
-              className="flex h-9 w-full items-center gap-2 rounded-[var(--md-radius-md)] px-2 text-left text-[13px] font-medium text-[var(--md-text)] transition-[background,color,opacity,transform] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
+              className="group/action flex h-10 w-full items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 text-start text-[13px] font-medium text-[var(--md-text)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] motion-reduce:transition-none motion-reduce:active:scale-100"
               onClick={() => {
                 setAccountMenuOpen(false)
                 openSettingsSection("support")
@@ -2045,9 +2084,11 @@ export function AppSidebar({
               <span className="min-w-0 flex-1 truncate">{t("Support")}</span>
             </button>
             <Separator className="my-1 bg-[var(--md-line-strong)]" />
+            <ThemeToggle showAppearanceLabel={false} className="h-11 rounded-[var(--md-radius-lg)] px-2.5 shadow-none" />
+            <Separator className="my-1 bg-[var(--md-line-strong)]" />
             <button
               type="button"
-              className="flex h-9 w-full items-center gap-2 rounded-[var(--md-radius-md)] px-2 text-left text-[13px] font-medium text-[var(--md-red)] transition-[background,color,opacity,transform] hover:bg-[rgba(209,78,78,0.08)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(209,78,78,0.14)]"
+              className="flex h-10 w-full items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 text-start text-[13px] font-medium text-[var(--md-red)] transition-[background-color,color,transform] duration-150 hover:bg-[rgba(209,78,78,0.08)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(209,78,78,0.14)] motion-reduce:transition-none motion-reduce:active:scale-100"
               onClick={() => {
                 setAccountMenuOpen(false)
                 void supabase?.auth.signOut()
@@ -2056,6 +2097,7 @@ export function AppSidebar({
               <LogOut data-icon="inline-start" className="size-4" strokeWidth={1.4} />
               <span className="min-w-0 flex-1 truncate">{t("Sign out")}</span>
             </button>
+            </div>
           </PopoverContent>
         </Popover>
       </div>
