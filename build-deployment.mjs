@@ -1,14 +1,12 @@
 #!/usr/bin/env node
 
-import { cp, mkdir, readFile, writeFile } from "node:fs/promises"
+import { readFile } from "node:fs/promises"
 import { spawn } from "node:child_process"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const root = dirname(fileURLToPath(import.meta.url))
 const clientDirectory = join(root, "multideck.client")
-const websiteDirectory = join(root, "multideck.website")
-const clientOutput = join(clientDirectory, "dist")
 
 async function deploymentEnvironment() {
   const environment = { ...process.env }
@@ -36,16 +34,7 @@ function run(command, args, cwd, environment) {
 async function build() {
   const environment = await deploymentEnvironment()
   await run("npm", ["run", "build"], clientDirectory, environment)
-  const appDocument = await readFile(join(clientOutput, "index.html"), "utf8")
-
-  await run("node", ["build.mjs"], websiteDirectory, environment)
-  await cp(join(websiteDirectory, "dist"), clientOutput, { recursive: true, force: true })
-
-  const appDirectory = join(clientOutput, "app")
-  await mkdir(appDirectory, { recursive: true })
-  await writeFile(join(appDirectory, "index.html"), appDocument, "utf8")
-
-  console.log("\nCombined deployment ready: website at /, app at /app, authentication at /auth")
+  console.log("\nMultideck App deployment ready: app at /app and authentication at /auth")
 }
 
 build().catch((error) => {

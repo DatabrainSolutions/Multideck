@@ -496,7 +496,7 @@ export default function App() {
 
     if (authStatus === "unauthenticated" && route !== "/auth" && !isLocalNavigationLab) {
       rememberAuthReturnPath()
-      window.location.replace(import.meta.env.DEV ? "/auth" : "/")
+      window.location.replace("/auth")
       return
     }
 

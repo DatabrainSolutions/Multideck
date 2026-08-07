@@ -132,16 +132,17 @@ function AuthWebsiteHeader({
   onMenuToggle: () => void
 }) {
   const { t } = useLanguage()
+  const websiteUrl = (import.meta.env.VITE_MULTIDECK_WEBSITE_URL || "https://www.multideck.co.uk").replace(/\/$/, "")
   const navLinks = [
-    { label: t("Features"), href: "/features" },
-    { label: t("About"), href: "/about" },
-    { label: t("Contact"), href: "/contact" },
+    { label: t("Website"), href: websiteUrl },
+    { label: t("About"), href: `${websiteUrl}/our-story` },
   ]
+  const enquiryUrl = `${websiteUrl}/#register-interest`
 
   return (
     <header className="relative z-50 h-[68px] bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[0_1px_0_rgba(11,20,19,0.06)] [--md-accent:#0a7068] [--md-accent-a16:rgba(10,112,104,0.16)] [--md-accent-a20:rgba(10,112,104,0.2)] [--md-accent-hover:#095e57] [--md-accent-ink:#fff] [--md-ink:#0b1413] [--md-surface:#fff] [--md-surface-soft:#f7f6f2] [--md-text:#4d5956]">
       <div className="mx-auto flex h-full w-full max-w-[1320px] items-center px-[clamp(20px,4.4vw,64px)]">
-        <a href="/" aria-label={t("Multideck — home")} className="flex min-h-11 items-center gap-2.5 rounded-[var(--md-radius-lg)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a16)]">
+        <a href={websiteUrl} aria-label={t("Multideck — home")} className="flex min-h-11 items-center gap-2.5 rounded-[var(--md-radius-lg)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a16)]">
           <img src={multideckLogoMark} alt="" className="h-[19px] w-[26px] object-contain" />
           <span className="text-[18px] font-medium leading-none">Multideck</span>
         </a>
@@ -155,7 +156,7 @@ function AuthWebsiteHeader({
           <a href="/auth" aria-current="page" className="flex min-h-11 items-center rounded-[var(--md-radius-lg)] px-3 text-[14px] font-medium text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a16)]">
             {t("Log in")}
           </a>
-          <a href="/contact#enquire" className="ms-1 flex min-h-10 items-center rounded-[var(--md-radius-xl)] bg-[var(--md-accent)] px-5 text-[14px] font-medium text-[var(--md-accent-ink)] shadow-[var(--md-shadow-soft)] transition-colors hover:bg-[var(--md-accent-hover)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a20)]">
+          <a href={enquiryUrl} className="ms-1 flex min-h-10 items-center rounded-[var(--md-radius-xl)] bg-[var(--md-accent)] px-5 text-[14px] font-medium text-[var(--md-accent-ink)] shadow-[var(--md-shadow-soft)] transition-colors hover:bg-[var(--md-accent-hover)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a20)]">
             {t("Enquire")}
           </a>
         </nav>
@@ -183,7 +184,7 @@ function AuthWebsiteHeader({
             <a href="/auth" aria-current="page" className="flex min-h-11 items-center rounded-[var(--md-radius-lg)] px-3 text-[14px] font-medium text-[var(--md-ink)]">
               {t("Log in")}
             </a>
-            <a href="/contact#enquire" className="mt-2 flex min-h-11 items-center justify-center rounded-[var(--md-radius-xl)] bg-[var(--md-accent)] px-5 text-[14px] font-medium text-[var(--md-accent-ink)]">
+            <a href={enquiryUrl} className="mt-2 flex min-h-11 items-center justify-center rounded-[var(--md-radius-xl)] bg-[var(--md-accent)] px-5 text-[14px] font-medium text-[var(--md-accent-ink)]">
               {t("Enquire")}
             </a>
           </div>
