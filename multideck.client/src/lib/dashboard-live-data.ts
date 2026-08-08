@@ -4,6 +4,7 @@ import type { QuoteRegisterRecord } from "@/data/quote-register-data"
 import type { LiveBooking } from "@/lib/application-data-api"
 
 export type DashboardRange = "today" | "week" | "month" | "quarter" | "custom"
+export type DashboardCustomDateRange = { start: string | null; end: string | null }
 
 /**
  * One metric in the shared KPI strip. Only the label, the figure and the
@@ -89,45 +90,119 @@ export function dashboardClockQueues(bookings: LiveBooking[], quotes: QuoteRegis
 
 const rangeDays: Record<DashboardRange, number> = { today: 1, week: 7, month: 30, quarter: 90, custom: 30 }
 
-function startOfRange(range: DashboardRange) {
-  return Date.now() - rangeDays[range] * 24 * 60 * 60 * 1000
+type DashboardRangeWindow = { start: number; end: number }
+
+function localDateBoundary(value: string | null | undefined, endExclusive = false) {
+  if (!value) return null
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim())
+  if (dateOnly) {
+    const date = new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
+    if (endExclusive) date.setDate(date.getDate() + 1)
+    return date.getTime()
+  }
+  const timestamp = new Date(value).getTime()
+  return Number.isFinite(timestamp) ? timestamp : null
 }
 
-function bucketSeries(dates: string[], range: DashboardRange, cumulative = false) {
+export function dashboardRangeWindow(
+  range: DashboardRange,
+  customRange?: DashboardCustomDateRange,
+  now = new Date(),
+): DashboardRangeWindow {
+  const todayStart = new Date(now)
+  todayStart.setHours(0, 0, 0, 0)
+  const tomorrowStart = new Date(todayStart)
+  tomorrowStart.setDate(tomorrowStart.getDate() + 1)
+
+  if (range === "custom") {
+    const customStart = localDateBoundary(customRange?.start)
+    const customEnd = localDateBoundary(customRange?.end, true)
+    if (customStart !== null && customEnd !== null && customEnd > customStart) {
+      return { start: customStart, end: customEnd }
+    }
+  }
+
+  const start = new Date(todayStart)
+  start.setDate(start.getDate() - (rangeDays[range] - 1))
+  return { start: start.getTime(), end: tomorrowStart.getTime() }
+}
+
+function recordOverlapsWindow(
+  startsAt: string | null | undefined,
+  endsAt: string | null | undefined,
+  fallbackAt: string | null | undefined,
+  window: DashboardRangeWindow,
+) {
+  const start = localDateBoundary(startsAt)
+  const end = localDateBoundary(endsAt, true)
+  if (start !== null && end !== null) return start < window.end && end > window.start
+  if (start !== null) return start >= window.start && start < window.end
+  if (end !== null) return end > window.start && end <= window.end
+  const fallback = localDateBoundary(fallbackAt)
+  return fallback !== null && fallback >= window.start && fallback < window.end
+}
+
+function occupancySeries<T>(
+  records: T[],
+  startsAt: (record: T) => string | null | undefined,
+  endsAt: (record: T) => string | null | undefined,
+  fallbackAt: (record: T) => string | null | undefined,
+  window: DashboardRangeWindow,
+) {
   const bucketCount = 10
-  const start = startOfRange(range)
-  const width = Math.max((Date.now() - start) / bucketCount, 1)
-  const buckets = Array.from({ length: bucketCount }, () => 0)
-  dates.forEach((date) => {
-    const timestamp = new Date(date).getTime()
-    if (!Number.isFinite(timestamp) || timestamp < start) return
-    const index = Math.min(bucketCount - 1, Math.max(0, Math.floor((timestamp - start) / width)))
-    buckets[index] += 1
+  const width = Math.max((window.end - window.start) / bucketCount, 1)
+  return Array.from({ length: bucketCount }, (_, index) => {
+    const point = window.start + width * (index + 1)
+    return records.filter((record) => {
+      const start = localDateBoundary(startsAt(record))
+      const end = localDateBoundary(endsAt(record), true)
+      if (start !== null && end !== null) return start <= point && end > point
+      if (start !== null) return start <= point
+      if (end !== null) return end > point
+      const fallback = localDateBoundary(fallbackAt(record))
+      return fallback !== null && fallback <= point
+    }).length
   })
-  if (!cumulative) return buckets
-  let total = 0
-  return buckets.map((value) => (total += value))
 }
 
-function trend(series: number[], range: DashboardRange): DashboardTrendPoint[] {
+function trend(series: number[], range: DashboardRange, window: DashboardRangeWindow): DashboardTrendPoint[] {
   const formatter = new Intl.DateTimeFormat(undefined, range === "today" ? { hour: "2-digit" } : { month: "short", day: "numeric" })
-  const start = startOfRange(range)
-  const width = (Date.now() - start) / series.length
-  return series.map((value, index) => ({ period: formatter.format(new Date(start + width * (index + 1))), value }))
+  const width = (window.end - window.start) / series.length
+  return series.map((value, index) => ({ period: formatter.format(new Date(window.start + width * (index + 1))), value }))
 }
 
-export function buildDashboardLiveData(range: DashboardRange, bookings: LiveBooking[], quotes: QuoteRegisterRecord[]): DashboardLiveSnapshot {
-  const start = startOfRange(range)
-  const rangeBookings = bookings.filter((booking) => new Date(booking.updatedAt).getTime() >= start)
-  const rangeQuotes = quotes.filter((quote) => new Date(quote.createdAt).getTime() >= start)
+export function buildDashboardLiveData(
+  range: DashboardRange,
+  bookings: LiveBooking[],
+  quotes: QuoteRegisterRecord[],
+  customRange?: DashboardCustomDateRange,
+  now = new Date(),
+): DashboardLiveSnapshot {
+  const window = dashboardRangeWindow(range, customRange, now)
+  const nowTimestamp = now.getTime()
+  const seriesWindow = nowTimestamp > window.start && nowTimestamp < window.end
+    ? { start: window.start, end: nowTimestamp }
+    : window
+  const rangeBookings = bookings.filter((booking) => booking.progress < 100 && recordOverlapsWindow(
+    booking.departureDate,
+    booking.arrivalDate,
+    booking.updatedAt,
+    window,
+  ))
+  const rangeQuotes = quotes.filter((quote) => recordOverlapsWindow(
+    quote.estimatedDeparture,
+    quote.estimatedArrival,
+    quote.createdAt,
+    window,
+  ))
   const exceptions = rangeBookings.filter((booking) => booking.status !== "On track")
   const readyQuotes = rangeQuotes.filter((quote) => quote.status === "Ready to send")
   const openQuotes = rangeQuotes.filter((quote) => quote.status !== "Sent" && quote.status !== "Accepted")
 
-  const bookingSeries = bucketSeries(rangeBookings.map((booking) => booking.updatedAt), range, true)
-  const exceptionSeries = bucketSeries(exceptions.map((booking) => booking.updatedAt), range, true)
-  const quoteSeries = bucketSeries(rangeQuotes.map((quote) => quote.createdAt), range, true)
-  const readyQuoteSeries = bucketSeries(readyQuotes.map((quote) => quote.createdAt), range, true)
+  const bookingSeries = occupancySeries(rangeBookings, (booking) => booking.departureDate, (booking) => booking.arrivalDate, (booking) => booking.updatedAt, seriesWindow)
+  const exceptionSeries = occupancySeries(exceptions, (booking) => booking.departureDate, (booking) => booking.arrivalDate, (booking) => booking.updatedAt, seriesWindow)
+  const quoteSeries = occupancySeries(rangeQuotes, (quote) => quote.estimatedDeparture, (quote) => quote.estimatedArrival, (quote) => quote.createdAt, seriesWindow)
+  const readyQuoteSeries = occupancySeries(readyQuotes, (quote) => quote.estimatedDeparture, (quote) => quote.estimatedArrival, (quote) => quote.createdAt, seriesWindow)
 
   const kpis: DashboardKpi[] = [
     { label: "Active jobs", value: String(rangeBookings.length), change: `${exceptions.length} need action`, detail: "in selected period", tone: exceptions.length ? "amber" : "green", series: bookingSeries },
@@ -146,7 +221,7 @@ export function buildDashboardLiveData(range: DashboardRange, bookings: LiveBook
     kpis,
     actions,
     briefLead: actions.length ? "Prioritised from current booking exceptions and quote workflow status." : "No booking exceptions or quote actions are currently open.",
-    trends: Object.fromEntries(kpis.map((kpi) => [kpi.label, trend(kpi.series ?? [], range)])),
+    trends: Object.fromEntries(kpis.map((kpi) => [kpi.label, trend(kpi.series ?? [], range, seriesWindow)])),
   }
 }
 

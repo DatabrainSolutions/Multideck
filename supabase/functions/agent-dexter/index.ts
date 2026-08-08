@@ -53,7 +53,7 @@ const MAX_PROMPT_CHARACTERS = 4_000
 const MAX_HISTORY_MESSAGES = 30
 const MAX_TOOL_ROUNDS = 4
 const MAX_TOOL_CALLS = 6
-const PROMPT_VERSION = "freight-coworker-2026-08-04-warehouse-inventory"
+const PROMPT_VERSION = "freight-coworker-2026-08-08-freight-bookings"
 const EMAIL_STYLE_TOOL = "load_operator_email_style"
 const PREPARE_EMAIL_DRAFT_TOOL = "prepare_email_draft"
 
@@ -494,6 +494,8 @@ function watchTargetLabel(capability: string, record: JsonObject) {
       ? ["name"]
       : capability === "quotes"
         ? ["quoteNumber"]
+        : capability === "bookings"
+          ? ["bookingReference", "jobReference", "customerReference"]
         : ["orderNumber", "customerReference", "containerNumber", "handlingUnitCode", "code", "sku", "title", "locationCode"]
   return keys.map((key) => cleanString(record[key], 240)).find(Boolean) ?? "Watched record"
 }
@@ -572,6 +574,24 @@ function addDomainCitations(domain: string, value: unknown) {
         const title = cleanString(record.name, 240) || "Customer"
         return recordId
           ? addRecordCitation(record, title, `/customers/${encodeURIComponent(recordId)}`, "Customer record")
+          : record
+      }),
+    }
+  }
+
+  if (domain === "bookings" && Array.isArray(data)) {
+    return {
+      ...value,
+      data: data.map((record) => {
+        if (!isObject(record)) return record
+        const bookingReference = cleanReference(record.bookingReference, 120)
+        return bookingReference
+          ? addRecordCitation(
+            record,
+            bookingReference,
+            `/bookings/${encodeURIComponent(bookingReference.toLowerCase())}`,
+            "Freight booking record",
+          )
           : record
       }),
     }
@@ -749,6 +769,7 @@ ${emailSummary}
 
 # Tool and safety rules
 Use query_data_domain whenever the operator asks about company records or metrics. Use only the listed domain codes.
+Use the bookings domain for freight bookings and jobs. Use warehouse only for warehouse orders, dock activity, inventory, handling units and warehouse exceptions. Never substitute one for the other when a domain returns no records.
 For a named workspace record, search with the strongest concise name, reference, email, SKU, container number, location or lane from the request. Do not pass the whole conversational sentence as the search value.
 Workspace search results can include searchEvidence. exact_identifier, exact_text, exact_phrase and all_terms are evidence-backed matches. corrected_text is only a likely spelling correction: compare its matchedValue with the returned record's other identifying fields, state the actual name or reference you found, and do not describe it as confirmed when another candidate is plausible. Never substitute a different named company, person, reference or record type.
 If a workspace search returns no matching records, retry at most twice: first remove filler or status wording, then use one stable identifier fragment. Do not remove every identifying clue. After those checks, say what was not found and ask for one useful clue. Never fill the gap from conversation history or general knowledge.
@@ -1887,7 +1908,7 @@ Deno.serve(async (request) => {
       lead: "leads",
       deal: "deals",
       quote: "quotes",
-      booking: "warehouse",
+      booking: "bookings",
     }
     const exactMention = attachments.find((attachment) => mentionCapability[attachment.type] === capability)
     if (exactMention) {

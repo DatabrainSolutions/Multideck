@@ -26,8 +26,8 @@ type AccountDraft = UpdateAccountInput & { customFields: CustomField[] }
  *
  * The previous screen showed the record and hid every field behind one large
  * dialog, so changing a trade lane meant opening a form of forty inputs, finding
- * the one, and saving all of it. Here each fact is its own control: it reads as
- * text, becomes an input when you ask, and writes on its own. The dialog is gone.
+ * the one, and saving all of it. Here each fact is its own always-visible control
+ * and writes on its own, using the same stable field treatment as quote detail.
  */
 export function CrmAccountDetailPage({ accountId, navigate }: { accountId: string; navigate: (path: string) => void }) {
   const { t } = useLanguage()
@@ -151,6 +151,7 @@ export function CrmAccountDetailPage({ accountId, navigate }: { accountId: strin
                 label="Summary"
                 kind="textarea"
                 align="start"
+                directEdit
                 value={currentAccount.summary ?? ""}
                 placeholder="What this account buys, and what matters to them"
                 onSave={(summary) => patch({ summary: summary || null })}
@@ -254,7 +255,7 @@ export function CrmAccountDetailPage({ accountId, navigate }: { accountId: strin
             )) : <Empty text={t("Add the people you deal with at this account.")} />}
           </Panel>
 
-          <InlineFieldCard title="Account profile">
+          <InlineFieldCard title="Account profile" directEdit>
             <InlineSelectField
               label="Relationship"
               value={currentAccount.relationshipStatus}
@@ -291,7 +292,7 @@ export function CrmAccountDetailPage({ accountId, navigate }: { accountId: strin
             />
           </InlineFieldCard>
 
-          <InlineFieldCard title="Address">
+          <InlineFieldCard title="Address" directEdit>
             <InlineField label="Line 1" value={address?.line1 ?? ""} onSave={(line1) => patch({ address: { ...emptyAddress, ...address, line1: line1 || null } })} />
             <InlineField label="Line 2" value={address?.line2 ?? ""} onSave={(line2) => patch({ address: { ...emptyAddress, ...address, line2: line2 || null } })} />
             <InlineField label="Town or city" value={address?.townCity ?? ""} onSave={(townCity) => patch({ address: { ...emptyAddress, ...address, townCity: townCity || null } })} />
@@ -310,7 +311,7 @@ export function CrmAccountDetailPage({ accountId, navigate }: { accountId: strin
             ) : null}
           </InlineFieldCard>
 
-          <InlineFieldCard title="Communication">
+          <InlineFieldCard title="Communication" directEdit>
             <InlineField label="Preferred channel" value={engagement?.preferredChannel ?? ""} onSave={(preferredChannel) => patch({ engagement: { ...defaultEngagement, ...engagement, preferredChannel: preferredChannel || null } })} />
             <InlineField
               label="Minimum gap"
@@ -330,6 +331,7 @@ export function CrmAccountDetailPage({ accountId, navigate }: { accountId: strin
               is recorded against your name, so it asks what it was based on first. */}
           <InlineFieldCard
             title="Marketing consent"
+            directEdit
             action={<Button type="button" variant="ghost" className="h-8 rounded-[var(--md-radius-md)] px-2 text-[12px] active:scale-[0.96] motion-reduce:transform-none" onClick={() => setConsentOpen(true)}>{t("Change")}</Button>}
           >
             <InlineField label="Status" value={t(currentAccount.marketingOptIn ? "Opted in" : "Opted out")} readOnly />
@@ -339,7 +341,7 @@ export function CrmAccountDetailPage({ accountId, navigate }: { accountId: strin
             </p>
           </InlineFieldCard>
 
-          <InlineFieldCard title="Additional fields" meta={customFields.length ? String(customFields.length) : undefined}>
+          <InlineFieldCard title="Additional fields" meta={customFields.length ? String(customFields.length) : undefined} directEdit>
             {customFields.length ? customFields.map((field) => (
               <div key={field.id} className="group grid grid-cols-[minmax(96px,0.7fr)_minmax(0,1fr)_auto] items-start gap-2">
                 <InlineField

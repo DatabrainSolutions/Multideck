@@ -524,17 +524,6 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
         sortDirection={sortDirection}
         onSortDirectionChange={setSortDirection}
       />
-      <section aria-label={t("Booking shape")} className="flex flex-wrap items-center gap-2 rounded-[var(--md-radius-xl)] bg-[color-mix(in_srgb,var(--md-surface)_32%,transparent)] p-2.5 shadow-[var(--md-shadow-line)]">
-        <ShapeFilter label={t("Direction")} options={directionFilters} value={directionFilter} onChange={setDirectionFilter} />
-        <span className="hidden h-7 w-px bg-[var(--md-line-strong)] sm:block" aria-hidden="true" />
-        <ShapeFilter label={t("Mode")} options={modeFilters} value={modeFilter} onChange={changeMode} />
-        {shipmentTypeFilters.length > 1 ? (
-          <>
-            <span className="hidden h-7 w-px bg-[var(--md-line-strong)] sm:block" aria-hidden="true" />
-            <ShapeFilter label={t("Type")} options={shipmentTypeFilters} value={shipmentTypeFilter} onChange={setShipmentTypeFilter} />
-          </>
-        ) : null}
-      </section>
       <BookingMetricStrip rows={scopedBookings} />
       {bookingsError ? <div role="alert" className="rounded-[var(--md-radius-lg)] bg-[rgba(209,78,78,0.08)] px-4 py-3 text-[13px] text-[var(--md-red)]">{t("Bookings could not be loaded.")} {bookingsError}</div> : null}
       {advancedSearchOpen ? (
@@ -548,7 +537,7 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
 
       {viewMode === "Table" ? (
         <DataTable
-          ariaLabel={t("Booking register")}
+          ariaLabel={t("Bookings")}
           columnsButtonLabel={t("Manage booking columns")}
           columns={columns}
           rows={bookingsLoading ? [] : paginatedBookings}
@@ -557,9 +546,12 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
           rowClassName={() => "hover:bg-[var(--md-hover)]"}
           onRowClick={openBooking}
           toolbarLeading={(
-            <div className="flex min-w-0 items-center gap-2 px-1.5">
-              <span className="text-[12px] font-medium text-[var(--md-ink)]">{t("Booking register")}</span>
-              <span className="text-[11px] text-[var(--md-subtle)]" data-i18n-skip dir="ltr">{visibleBookings.length}</span>
+            <div aria-label={t("Booking shape")} className="flex max-w-full flex-wrap items-center gap-1.5">
+              <ShapeFilter compact label={t("Direction")} options={directionFilters} value={directionFilter} onChange={setDirectionFilter} />
+              <ShapeFilter compact label={t("Mode")} options={modeFilters} value={modeFilter} onChange={changeMode} />
+              {shipmentTypeFilters.length > 1 ? (
+                <ShapeFilter compact label={t("Type")} options={shipmentTypeFilters} value={shipmentTypeFilter} onChange={setShipmentTypeFilter} />
+              ) : null}
             </div>
           )}
           toolbarActions={(
@@ -646,17 +638,18 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
   )
 }
 
-function ShapeFilter<T extends string>({ label, options, value, onChange }: { label: string; options: readonly T[]; value: T; onChange: (value: T) => void }) {
+function ShapeFilter<T extends string>({ label, options, value, onChange, compact = false }: { label: string; options: readonly T[]; value: T; onChange: (value: T) => void; compact?: boolean }) {
   const { t } = useLanguage()
 
   return (
     <div className="min-w-0">
-      <p className="mb-1.5 px-0.5 text-[11px] font-medium text-[var(--md-subtle)]">{label}</p>
+      <p className={compact ? "mb-0.5 px-0.5 text-[10px] font-medium text-[var(--md-subtle)]" : "mb-1.5 px-0.5 text-[11px] font-medium text-[var(--md-subtle)]"}>{label}</p>
       <ChoiceControl
         options={options.map((option) => ({ value: option, label: t(option) }))}
         value={value}
         onChange={onChange}
         ariaLabel={label}
+        className={compact ? "h-8 min-w-[148px] px-2.5 text-[12px]" : undefined}
       />
     </div>
   )

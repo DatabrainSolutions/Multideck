@@ -55,6 +55,9 @@ const emailAttachmentSearchMigration = read(
 const guardedDomainSearchMigration = read(
   "supabase/migrations/20260803170000_dexter_guarded_domain_search.sql",
 )
+const freightBookingsMigration = read(
+  "supabase/migrations/20260808174358_dexter_freight_bookings_parity.sql",
+)
 const emailConversationContextMigration = read(
   "supabase/migrations/20260803101500_dexter_email_conversation_provider_context.sql",
 )
@@ -100,6 +103,20 @@ const notificationEmailFunction = read(
 test("Dexter clearly leaves warehouse customer access-link delivery to the audited product flow", () => {
   assert.match(edgeFunction, /Warehouse customer-user invitations and access-link emails are available only from the customer's Warehouse customer access panel/)
   assert.match(edgeFunction, /They are not connected to Dexter writes or Watching for you/)
+})
+
+test("Dexter keeps freight bookings separate from warehouse activity", () => {
+  assert.match(freightBookingsMigration, /multideck_dexter_domain_bookings/)
+  assert.match(freightBookingsMigration, /office\."Company_ID" = p_company_id/)
+  assert.match(freightBookingsMigration, /'bookingReference', 'MD-' \|\| job\."Job_Number"/)
+  assert.match(freightBookingsMigration, /'bookings',[\s\S]*'Freight bookings'/)
+  assert.match(freightBookingsMigration, /TR_Job_Header_dexter_booking_watch/)
+  assert.match(freightBookingsMigration, /'bookings',[\s\S]*tg_table_name,[\s\S]*new\."Job_ID"/)
+  assert.match(edgeFunction, /Use the bookings domain for freight bookings and jobs\./)
+  assert.match(edgeFunction, /booking: "bookings"/)
+  assert.match(edgeFunction, /domain === "bookings"/)
+  assert.match(edgeFunction, /`\/bookings\/\$\{encodeURIComponent\(bookingReference\.toLowerCase\(\)\)\}`/)
+  assert.doesNotMatch(edgeFunction, /booking: "warehouse"/)
 })
 
 test("Dexter and Watching for you fail closed for provider automatic-reply settings", () => {

@@ -1,6 +1,9 @@
-import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { ArrowRight, Inbox, MapPin, Moon, Workflow } from "lucide-react"
+import L from "leaflet"
+import { CircleMarker, MapContainer, TileLayer, Tooltip, useMap } from "react-leaflet"
+import "leaflet/dist/leaflet.css"
 import { Button } from "@/components/ui/button"
 import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
@@ -77,6 +80,7 @@ function Row({
   title,
   sub,
   meter,
+  status,
   side,
   onOpen,
   ariaLabel,
@@ -89,6 +93,9 @@ function Row({
   /** A proportional bar between the body and the side, used where rows carry a
    *  comparable number. */
   meter?: ReactNode
+  /** A dedicated state rail used by queues where status must scan separately
+   *  from the row action. */
+  status?: ReactNode
   side: ReactNode
   onOpen?: () => void
   ariaLabel?: string
@@ -101,6 +108,7 @@ function Row({
       className="md-crm-row"
       data-openable={onOpen ? "true" : undefined}
       data-metered={meter ? "true" : undefined}
+      data-status-column={status ? "true" : undefined}
       style={accent ? { ["--md-row-accent" as string]: accent } : undefined}
       role={onOpen ? "button" : undefined}
       tabIndex={onOpen ? 0 : undefined}
@@ -126,6 +134,7 @@ function Row({
         {sub ? <span className="md-crm-row-sub" dir="auto">{sub}</span> : null}
       </span>
       {meter}
+      {status ? <span className="md-crm-row-status">{status}</span> : null}
       <span className="md-crm-row-side">{side}</span>
     </motion.div>
   )
@@ -445,9 +454,9 @@ const QueueRow = memo(function QueueRow({
         </>
       }
       sub={opportunity.subject}
+      status={<StatusPill tone={tone}>{t(bucketLabel[bucket])}</StatusPill>}
       side={
         <>
-          <StatusPill tone={tone}>{t(bucketLabel[bucket])}</StatusPill>
           {opportunity.canCreate ? (
             <span onClick={(event) => event.stopPropagation()}>{renderCreate(opportunity)}</span>
           ) : (
@@ -511,6 +520,9 @@ export function CrmFollowUpQueue({
           <div className="md-crm-controls">
             <QueueFilterChips counts={counts} total={items.length} active={active} onSelect={select} />
           </div>
+          <div className="md-crm-queue-columns">
+            <span className="md-crm-queue-status-label">{t("Status")}</span>
+          </div>
           {/* The list holds the height of the unfiltered queue. Without it a
               filter down to two rows collapses the panel and shunts everything
               below it up the page — the filter would move more of the screen
@@ -544,78 +556,107 @@ export function CrmFollowUpQueue({
 /* ── Leads by area ───────────────────────────────────────────────────────── */
 
 /** The first segment of a stored address label is the town; the rest is county,
- *  postcode and country, which is noise on a tile. */
+ *  postcode and country, which is noise on a compact map label. */
 function areaTown(label: string) {
   return label.split(" · ")[0] || label
 }
 
-type TreemapRect = { x: number; y: number; w: number; h: number }
-
-/** Aspect-ratio penalty for a candidate row — the value squarify minimises. */
-function worstRatio(row: number[], sum: number, short: number) {
-  const max = Math.max(...row)
-  const min = Math.min(...row)
-  const area = sum * sum
-  const side = short * short
-  return Math.max((side * max) / area, area / (side * min))
-}
+type AreaCoordinate = readonly [number, number]
 
 /**
- * Squarified treemap over a 100×100 space, so the result is pure percentages
- * and the panel needs no measurement to lay out or to resize. Tiles are packed
- * largest-first into rows along whichever edge is currently shorter, which is
- * what keeps them close to square instead of degenerating into slivers.
+ * Dashboard area records currently carry a human address label rather than a
+ * geocode. Resolve the towns we support locally so the dashboard remains fast,
+ * deterministic and does not send customer addresses to a third-party
+ * geocoding service. Unknown places stay explicit in the footer.
  */
-function squarify(values: number[]): TreemapRect[] {
-  const result: TreemapRect[] = values.map(() => ({ x: 0, y: 0, w: 0, h: 0 }))
-  const order = values.map((value, index) => ({ value, index })).sort((a, b) => b.value - a.value)
-  const total = order.reduce((sum, entry) => sum + entry.value, 0)
-  if (total <= 0) return result
+const areaCoordinates: Record<string, AreaCoordinate> = {
+  aberdeen: [57.1497, -2.0943],
+  belfast: [54.5973, -5.9301],
+  birmingham: [52.4862, -1.8904],
+  bradford: [53.795, -1.7594],
+  brighton: [50.8225, -0.1372],
+  bristol: [51.4545, -2.5879],
+  cambridge: [52.2053, 0.1218],
+  cardiff: [51.4816, -3.1791],
+  coventry: [52.4068, -1.5197],
+  derby: [52.9225, -1.4746],
+  dundee: [56.462, -2.9707],
+  edinburgh: [55.9533, -3.1883],
+  exeter: [50.7184, -3.5339],
+  glasgow: [55.8642, -4.2518],
+  gloucester: [51.8642, -2.2382],
+  hull: [53.7676, -0.3274],
+  leeds: [53.8008, -1.5491],
+  leicester: [52.6369, -1.1398],
+  liverpool: [53.4084, -2.9916],
+  london: [51.5072, -0.1276],
+  manchester: [53.4808, -2.2426],
+  middlesbrough: [54.5742, -1.235],
+  newcastle: [54.9783, -1.6178],
+  northampton: [52.2405, -0.9027],
+  norwich: [52.6309, 1.2974],
+  nottingham: [52.9548, -1.1581],
+  oxford: [51.752, -1.2577],
+  peterborough: [52.5695, -0.2405],
+  plymouth: [50.3755, -4.1427],
+  portsmouth: [50.8198, -1.088],
+  preston: [53.7632, -2.7031],
+  reading: [51.4543, -0.9781],
+  sheffield: [53.3811, -1.4701],
+  southampton: [50.9097, -1.4044],
+  stoke: [53.0027, -2.1794],
+  sunderland: [54.9069, -1.3838],
+  swansea: [51.6214, -3.9436],
+  york: [53.959, -1.0815],
+}
 
-  const areas = order.map((entry) => (entry.value / total) * 10_000)
-  let free: TreemapRect = { x: 0, y: 0, w: 100, h: 100 }
-  let start = 0
+function coordinateForArea(label: string): AreaCoordinate | null {
+  const town = areaTown(label).trim().toLocaleLowerCase()
+  const exact = areaCoordinates[town]
+  if (exact) return exact
 
-  while (start < areas.length) {
-    const short = Math.min(free.w, free.h)
-    let end = start + 1
-    let sum = areas[start]
-    let ratio = worstRatio(areas.slice(start, end), sum, short)
+  const match = Object.entries(areaCoordinates).find(([name]) => town.includes(name) || name.includes(town))
+  return match?.[1] ?? null
+}
 
-    while (end < areas.length) {
-      const nextSum = sum + areas[end]
-      const nextRatio = worstRatio(areas.slice(start, end + 1), nextSum, short)
-      if (nextRatio > ratio) break
-      sum = nextSum
-      ratio = nextRatio
-      end += 1
+function FitAreaBounds({ points }: { points: AreaCoordinate[] }) {
+  const map = useMap()
+
+  useEffect(() => {
+    const fit = () => {
+      map.invalidateSize({ pan: false })
+      if (points.length === 1) {
+        map.setView([points[0][0], points[0][1]], 7, { animate: false })
+        return
+      }
+      if (points.length > 1) {
+        map.fitBounds(L.latLngBounds(points.map(([lat, lng]) => L.latLng(lat, lng))), {
+          animate: false,
+          padding: [28, 28],
+          maxZoom: 7,
+        })
+      }
     }
 
-    const alongHeight = free.w >= free.h
-    const thickness = sum / (alongHeight ? free.h : free.w)
-    let offset = alongHeight ? free.y : free.x
+    const frame = window.requestAnimationFrame(fit)
+    const settled = window.setTimeout(fit, 220)
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(fit)
+    observer?.observe(map.getContainer())
 
-    for (let slot = start; slot < end; slot += 1) {
-      const length = areas[slot] / thickness
-      result[order[slot].index] = alongHeight
-        ? { x: free.x, y: offset, w: thickness, h: length }
-        : { x: offset, y: free.y, w: length, h: thickness }
-      offset += length
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.clearTimeout(settled)
+      observer?.disconnect()
     }
+  }, [map, points])
 
-    free = alongHeight
-      ? { x: free.x + thickness, y: free.y, w: free.w - thickness, h: free.h }
-      : { x: free.x, y: free.y + thickness, w: free.w, h: free.h - thickness }
-    start = end
-  }
-
-  return result
+  return null
 }
 
 /**
- * Where the leads are, as area rather than as rows. Tile size is the share of
- * leads and tile heat is the same figure again, so the busiest places read
- * first from across the room and the long tail still has a place on the map.
+ * Where the leads are on an actual geographic canvas. Dot area and opacity
+ * encode lead count, while the basemap preserves the spatial relationship an
+ * operator needs when planning local coverage.
  */
 export function CrmAreaHeatmap({
   areas,
@@ -627,80 +668,75 @@ export function CrmAreaHeatmap({
   limit?: number
 }) {
   const { t } = useLanguage()
-  const shouldReduceMotion = useReducedMotion()
-  const [hovered, setHovered] = useState<string | null>(null)
-
-  const tiles = useMemo(() => {
+  const points = useMemo(() => {
     const ranked = [...areas].sort((a, b) => b.count - a.count).slice(0, limit)
     const peak = Math.max(...ranked.map((area) => area.count), 1)
-    const rects = squarify(ranked.map((area) => area.count))
-    return ranked.map((area, index) => ({
-      ...area,
-      town: areaTown(area.label),
-      rect: rects[index],
-      /* Heat is the share of the busiest area, floored so the quietest tile is
-         still a tile and not a hole in the map, and capped short of full accent
-         so the label keeps its contrast on the hottest tile in both themes. */
-      heat: 22 + (area.count / peak) * 56,
-    }))
+    return ranked.flatMap((area) => {
+      const coordinate = coordinateForArea(area.label)
+      return coordinate ? [{ ...area, town: areaTown(area.label), coordinate, share: area.count / peak }] : []
+    })
   }, [areas, limit])
 
   const total = areas.reduce((sum, area) => sum + area.count, 0)
+  const mappedTotal = points.reduce((sum, point) => sum + point.count, 0)
+  const unmappedTotal = Math.max(total - mappedTotal, 0)
+  const boundsPoints = useMemo(() => points.map((point) => point.coordinate), [points])
 
   return (
     <Panel
       title={t("Leads by area")}
-      action={tiles.length && onOpen ? <PanelLink label={t("Accounts")} onClick={onOpen} /> : undefined}
+      action={points.length && onOpen ? <PanelLink label={t("Accounts")} onClick={onOpen} /> : undefined}
     >
-      {tiles.length ? (
-        <div className="md-crm-heat" onMouseLeave={() => setHovered(null)}>
+      {points.length ? (
+        <div className="md-crm-heat">
           <div className="md-crm-heat-plot">
-            {tiles.map((tile, index) => (
-              <motion.button
-                key={tile.key}
-                type="button"
-                className="md-crm-heat-tile"
-                data-dimmed={hovered && hovered !== tile.key ? "true" : undefined}
-                style={{
-                  insetInlineStart: `${tile.rect.x}%`,
-                  insetBlockStart: `${tile.rect.y}%`,
-                  width: `${tile.rect.w}%`,
-                  height: `${tile.rect.h}%`,
-                  ["--md-heat" as string]: `color-mix(in srgb, var(--md-accent) ${Math.round(tile.heat)}%, var(--md-surface))`,
-                }}
-                title={`${tile.label} — ${tile.count}`}
-                aria-label={`${tile.town}, ${tile.count} ${tile.count === 1 ? t("lead") : t("leads")}`}
-                onMouseEnter={() => setHovered(tile.key)}
-                onFocus={() => setHovered(tile.key)}
-                onBlur={() => setHovered(null)}
-                onClick={onOpen}
-                initial={shouldReduceMotion ? false : { opacity: 0, scale: 0.94 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={
-                  shouldReduceMotion ? { duration: 0 } : { ...mdMotion.enter, delay: staggerRamp(index, 0.03) }
-                }
-              >
-                {/* Below roughly a fifth of the plot a label is unreadable, so
-                    the tile carries its count alone and names itself on hover. */}
-                {tile.rect.w > 20 && tile.rect.h > 17 ? (
-                  <span className="md-crm-heat-label" dir="auto">{tile.town}</span>
-                ) : null}
-                <span className="md-crm-heat-count" data-i18n-skip dir="ltr">{tile.count}</span>
-              </motion.button>
-            ))}
+            <MapContainer
+              center={[54.4, -3.2]}
+              zoom={5}
+              minZoom={4}
+              maxZoom={9}
+              zoomControl={false}
+              scrollWheelZoom={false}
+              className="md-booking-map md-crm-area-map absolute inset-0 h-full w-full"
+            >
+              <TileLayer
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+                url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+              />
+              <FitAreaBounds points={boundsPoints} />
+              {points.map((point) => (
+                <CircleMarker
+                  key={point.key}
+                  center={[point.coordinate[0], point.coordinate[1]]}
+                  radius={8 + Math.sqrt(point.share) * 10}
+                  pathOptions={{
+                    className: "md-crm-area-dot",
+                    color: "var(--md-surface)",
+                    fillColor: "var(--md-accent)",
+                    fillOpacity: 0.34 + point.share * 0.46,
+                    opacity: 0.9,
+                    weight: 2,
+                  }}
+                >
+                  <Tooltip permanent direction="top" offset={[0, -8]} opacity={1}>
+                    <span dir="auto">{point.town}</span> · <span dir="ltr">{point.count}</span> {point.count === 1 ? t("lead") : t("leads")}
+                  </Tooltip>
+                </CircleMarker>
+              ))}
+            </MapContainer>
           </div>
           <p className="md-crm-heat-foot">
-            <span>{tiles.length < areas.length ? `${t("Top")} ${tiles.length} ${t("of")} ${areas.length}` : t("All areas")}</span>
+            <span>{mappedTotal} {mappedTotal === 1 ? t("lead mapped") : t("leads mapped")}</span>
             <span className="md-crm-heat-foot-value">
-              <span data-i18n-skip dir="ltr">{total}</span> {total === 1 ? t("lead") : t("leads")}
+              {unmappedTotal ? <><span data-i18n-skip dir="ltr">{unmappedTotal}</span> {unmappedTotal === 1 ? t("without an area") : t("without areas")}</> : t("All areas mapped")}
             </span>
           </p>
         </div>
       ) : (
         <EmptyState
           icon={MapPin}
-          title={t("No areas on file yet.")}
-          body={t("Leads get an area once their account has an address recorded.")}
+          title={t(areas.length ? "No mappable areas yet." : "No areas on file yet.")}
+          body={t(areas.length ? "Add a recognised town or city to each account address to place its leads on the map." : "Leads get an area once their account has an address recorded.")}
         />
       )}
     </Panel>

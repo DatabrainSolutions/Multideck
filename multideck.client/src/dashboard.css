@@ -2295,6 +2295,13 @@
     grid-template-columns: auto minmax(0, 1fr) 84px auto;
   }
 
+  .md-crm-row[data-status-column="true"] {
+    grid-template-columns: 28px minmax(0, 1fr) 104px 70px;
+    min-height: 44px;
+    gap: 10px;
+    padding: 5px 10px;
+  }
+
   .md-crm-row[data-openable="true"] {
     cursor: pointer;
   }
@@ -2409,6 +2416,22 @@
     text-align: end;
   }
 
+  .md-crm-row-status {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: flex-start;
+  }
+
+  .md-crm-row[data-status-column="true"] .md-crm-row-side {
+    min-width: 0;
+  }
+
+  .md-crm-row[data-status-column="true"] .md-crm-avatar {
+    width: 28px;
+    height: 28px;
+  }
+
   .md-crm-row-value {
     font-size: 12.5px;
     font-weight: 500;
@@ -2453,6 +2476,42 @@
     flex-wrap: wrap;
     gap: 5px;
     padding: 0 14px 9px;
+  }
+
+  .md-crm-queue-columns {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr) 104px 70px;
+    gap: 10px;
+    padding: 0 14px 3px;
+  }
+
+  .md-crm-queue-status-label {
+    grid-column: 3;
+    font-size: 10px;
+    font-weight: 500;
+    line-height: 14px;
+    color: var(--md-subtle);
+  }
+
+  @media (max-width: 600px) {
+    .md-crm-row[data-status-column="true"],
+    .md-crm-queue-columns {
+      grid-template-columns: 28px minmax(0, 1fr) 92px 70px;
+      gap: 6px;
+    }
+
+    .md-crm-row[data-status-column="true"] {
+      padding-inline: 6px;
+    }
+
+    .md-crm-queue-columns {
+      padding-inline: 10px;
+    }
+
+    .md-crm-row-status .inline-flex {
+      max-width: 100%;
+      padding-inline: 7px;
+    }
   }
 
   .md-crm-chips {
@@ -2520,7 +2579,7 @@
     color: var(--md-chip-accent, var(--md-accent));
   }
 
-  /* ── Leads by area: treemap heat ─────────────────────────────────────── */
+  /* ── Leads by area: geographic heat map ─────────────────────────────── */
 
   .md-crm-heat {
     display: flex;
@@ -2535,67 +2594,69 @@
   .md-crm-heat-plot {
     position: relative;
     flex: 1;
-    min-height: 168px;
+    min-height: 220px;
+    overflow: hidden;
+    border-radius: var(--md-radius-lg);
+    background: var(--md-bg-strong);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-ink) 7%, transparent);
   }
 
-  .md-crm-heat-tile {
-    position: absolute;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    justify-content: flex-end;
-    gap: 1px;
-    padding: 7px 8px;
-    overflow: hidden;
-    text-align: start;
-    outline: none;
-    /* An inset border rather than a margin: the rects already tile the plot
-       exactly, so the gap has to come out of each tile, not out of the grid. */
-    border: 1.5px solid var(--md-surface);
-    border-radius: var(--md-radius-lg);
-    background: var(--md-heat, var(--md-accent));
-    transition-property: opacity, filter, scale;
+  .md-crm-area-map {
+    z-index: 0;
+    background: var(--md-bg-strong);
+  }
+
+  .md-crm-area-map .leaflet-tile-pane {
+    filter: saturate(0.28) contrast(0.9) brightness(1.03);
+  }
+
+  .dark .md-crm-area-map .leaflet-tile-pane {
+    filter: invert(0.88) hue-rotate(160deg) saturate(0.22) brightness(0.54) contrast(1.15);
+  }
+
+  .md-crm-area-map .leaflet-interactive {
+    transition-property: fill-opacity, stroke-width;
     transition-duration: 160ms;
     transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
   }
 
-  .md-crm-heat-tile:hover {
-    filter: brightness(1.1);
+  .md-crm-area-map .leaflet-interactive:hover,
+  .md-crm-area-map .leaflet-interactive:focus-visible {
+    fill-opacity: 0.92;
+    stroke-width: 3px;
   }
 
-  .md-crm-heat-tile:active {
-    scale: 0.985;
-  }
-
-  .md-crm-heat-tile:focus-visible {
-    box-shadow: var(--md-dashboard-ring);
-  }
-
-  .md-crm-heat-tile[data-dimmed="true"] {
-    opacity: 0.45;
-  }
-
-  .md-crm-heat-label,
-  .md-crm-heat-count {
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: var(--md-ink);
-  }
-
-  .md-crm-heat-label {
+  .md-crm-area-map .leaflet-tooltip {
+    padding: 5px 8px;
+    border: 0;
+    border-radius: var(--md-radius-md);
+    background: color-mix(in srgb, var(--md-surface) 92%, transparent);
+    box-shadow: var(--md-shadow-line);
+    font-family: inherit;
     font-size: 11px;
-    line-height: 14px;
-    opacity: 0.75;
+    color: var(--md-ink);
+    backdrop-filter: blur(12px);
   }
 
-  .md-crm-heat-count {
-    font-size: 15px;
-    font-weight: 500;
-    line-height: 1;
-    letter-spacing: -0.02em;
-    font-variant-numeric: tabular-nums;
+  .md-crm-area-map .leaflet-tooltip-top::before {
+    border-top-color: color-mix(in srgb, var(--md-surface) 92%, transparent);
+  }
+
+  .md-crm-area-map .leaflet-control-attribution {
+    padding: 2px 4px;
+    background: color-mix(in srgb, var(--md-surface) 78%, transparent);
+    font-size: 8px;
+    line-height: 11px;
+    color: var(--md-subtle);
+    backdrop-filter: blur(8px);
+  }
+
+  .md-crm-area-map .leaflet-control-attribution a {
+    color: var(--md-text);
+  }
+
+  [dir="rtl"] .md-crm-area-map {
+    direction: ltr;
   }
 
   .md-crm-heat-foot {
@@ -2814,7 +2875,6 @@
   .md-crm-row[data-openable="true"]:hover .md-crm-row-arrow,
   .md-crm-panel-link:hover .md-crm-panel-link-arrow,
   .md-crm-chip:active,
-  .md-crm-heat-tile:active,
   .md-crm-panel-link:active {
     translate: 0 0;
     scale: 1 1;

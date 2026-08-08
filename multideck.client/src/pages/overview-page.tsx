@@ -107,7 +107,10 @@ export function OverviewPage({ navigate }: { navigate: (path: string) => void })
     return () => { cancelled = true }
   }, [])
 
-  const snapshot = useMemo(() => buildDashboardLiveData(range, bookings, quotes), [bookings, quotes, range])
+  const snapshot = useMemo(
+    () => buildDashboardLiveData(range, bookings, quotes, customRange),
+    [bookings, customRange, quotes, range],
+  )
   const liveJobs = useMemo(() => dashboardJobs(bookings), [bookings])
   const liveBookingRows = useMemo(() => dashboardBookings(bookings), [bookings])
   const clockQueues = useMemo(() => dashboardClockQueues(bookings, quotes), [bookings, quotes])

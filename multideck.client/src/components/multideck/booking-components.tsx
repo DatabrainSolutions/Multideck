@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react"
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { toast } from "sonner"
@@ -17,7 +17,6 @@ import {
   MessageCircle,
   PanelRightClose,
   Paperclip,
-  Pencil,
   Plus,
   Route,
   RotateCcw,
@@ -65,6 +64,7 @@ import { Surface } from "./surface"
 import { AnimatedList } from "./animated-list"
 import { PageSettingsMenu, type PageSettingsViewOption } from "./page-settings-menu"
 import { getLiveBooking, type LiveBooking } from "@/lib/application-data-api"
+import { CopyFeedbackTransition, CopyStatusIcon } from "./copyable-field"
 
 export type Booking = (typeof bookings)[number]
 export type OperatorJob = (typeof operatorJobs)[number]
@@ -1083,71 +1083,106 @@ function BookingKanbanCardBody({ booking }: { booking: Booking }) {
 
 function BookingDetailHeader({
   activeTab,
-  detailsEditable,
   detailsDirty,
   onDiscardDetails,
-  onEditDetails,
   onSaveDetails,
   onTabChange,
   record,
 }: {
   activeTab: BookingDetailTab
-  detailsEditable: boolean
   detailsDirty: boolean
   onDiscardDetails: () => void
-  onEditDetails: () => void
   onSaveDetails: () => void
   onTabChange: (tab: BookingDetailTab) => void
   record: BookingDetailRecord
 }) {
-  const { t } = useLanguage()
+  const { direction, t } = useLanguage()
+  const [bookingRefCopied, setBookingRefCopied] = useState(false)
+  const bookingCopyResetTimerRef = useRef<number | null>(null)
   const tabs = bookingDetailTabs.map((label) => ({ id: label, label: t(label) }))
   const statusLabel = record.job?.status ?? record.booking.status
   const statusTone = record.job?.tone ?? record.booking.tone
   const primaryAction = record.job?.task ?? (record.booking.status === "Exception" ? "Review blocker" : record.booking.progress === 100 ? "Close booking" : "Open workflow")
-  const headerFacts = activeTab === "Details"
-    ? [
-        ["Job reference", record.booking.jobRef],
-        ["Mode / direction", `${record.booking.mode} · ${record.booking.direction}`],
-        ["Operational owner", record.booking.owner],
-        ["Current location", record.booking.currentLocation],
-      ]
-    : [
-        ["Customer", record.booking.customer],
-        ["Route", record.booking.route],
-        ["Progress", `${record.booking.progress}%`],
-        ["Status", statusLabel],
-      ]
+
+  useEffect(() => () => {
+    if (bookingCopyResetTimerRef.current !== null) window.clearTimeout(bookingCopyResetTimerRef.current)
+  }, [])
+
+  async function copyBookingReference() {
+    try {
+      await navigator.clipboard.writeText(record.id)
+      if (bookingCopyResetTimerRef.current !== null) window.clearTimeout(bookingCopyResetTimerRef.current)
+      setBookingRefCopied(true)
+      bookingCopyResetTimerRef.current = window.setTimeout(() => {
+        setBookingRefCopied(false)
+        bookingCopyResetTimerRef.current = null
+      }, 1800)
+    } catch {
+      setBookingRefCopied(false)
+    }
+  }
+
+  function moveBookingTabFocus(event: KeyboardEvent<HTMLButtonElement>, currentTab: BookingDetailTab) {
+    const currentIndex = bookingDetailTabs.indexOf(currentTab)
+    const previousKey = direction === "rtl" ? "ArrowRight" : "ArrowLeft"
+    const nextKey = direction === "rtl" ? "ArrowLeft" : "ArrowRight"
+    let nextIndex: number | null = null
+
+    if (event.key === previousKey) nextIndex = (currentIndex - 1 + bookingDetailTabs.length) % bookingDetailTabs.length
+    if (event.key === nextKey) nextIndex = (currentIndex + 1) % bookingDetailTabs.length
+    if (event.key === "Home") nextIndex = 0
+    if (event.key === "End") nextIndex = bookingDetailTabs.length - 1
+    if (nextIndex === null) return
+
+    event.preventDefault()
+    onTabChange(bookingDetailTabs[nextIndex])
+    const tabButtons = event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')
+    tabButtons?.[nextIndex]?.focus()
+  }
 
   return (
-    <header className="grid items-stretch gap-2 xl:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
+    <header>
       <div className="grid min-w-0 grid-rows-[auto_auto] gap-1.5">
         <section className="flex min-w-0 flex-col gap-2 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] px-3 py-1.5 shadow-[var(--md-shadow-line)] lg:flex-row lg:flex-nowrap lg:items-center lg:justify-between">
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
             <h1 className="shrink-0 text-[14px] font-medium leading-5 text-[var(--md-ink)]">{t("Booking")}</h1>
-            <span data-i18n-skip dir="ltr" className="inline-flex h-7 items-center rounded-[var(--md-radius-md)] bg-[var(--md-accent-a10)] px-2 text-[14px] font-medium text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">{record.id}</span>
+            <button
+              type="button"
+              aria-label={t(bookingRefCopied ? "Booking reference copied" : "Copy booking reference")}
+              title={t(bookingRefCopied ? "Copied" : "Copy booking reference")}
+              className="group inline-flex h-7 shrink-0 items-center gap-1.5 rounded-[var(--md-radius-md)] bg-[var(--md-accent-a10)] px-2 text-[14px] font-medium text-[var(--md-accent)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,transform] duration-200 hover:bg-[var(--md-accent-a16)] hover:shadow-[var(--md-shadow-soft)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] active:scale-[0.985]"
+              onClick={() => void copyBookingReference()}
+            >
+              <CopyFeedbackTransition
+                value={record.id}
+                copiedValue={t("Copied")}
+                active={bookingRefCopied}
+                effect="slot"
+                inline
+                ariaHidden
+                className="h-[1em] leading-none"
+                originalDirection="ltr"
+                copiedDirection={direction}
+              />
+              <CopyStatusIcon copied={bookingRefCopied} iconClassName="size-3.5" className="shrink-0" />
+            </button>
             <StatusPill tone={statusTone} className="h-6 shrink-0 px-2 text-[10px]">{t(statusLabel)}</StatusPill>
             <span className="min-w-0 truncate text-[12px] text-[var(--md-text)]">{record.booking.route}</span>
           </div>
           <div className="flex shrink-0 items-center gap-1 overflow-x-auto">
             {activeTab === "Details" ? (
-              detailsEditable ? (
+              detailsDirty ? (
                 <>
                   <Button variant="ghost" className="h-8 shrink-0 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-2.5 text-[11px] font-medium shadow-[var(--md-shadow-line)]" onClick={onDiscardDetails}>
                     <RotateCcw data-icon="inline-start" className="size-3.5" strokeWidth={1.4} />
                     {t("Discard")}
                   </Button>
-                  <Button disabled={!detailsDirty} className="h-8 shrink-0 rounded-[var(--md-radius-lg)] px-2.5 text-[11px] font-medium" onClick={onSaveDetails}>
+                  <Button className="h-8 shrink-0 rounded-[var(--md-radius-lg)] px-2.5 text-[11px] font-medium" onClick={onSaveDetails}>
                     <Save data-icon="inline-start" className="size-3.5" strokeWidth={1.4} />
                     {t("Save")}
                   </Button>
                 </>
-              ) : (
-                <Button className="h-8 shrink-0 rounded-[var(--md-radius-lg)] px-2.5 text-[11px] font-medium" onClick={onEditDetails}>
-                  <Pencil data-icon="inline-start" className="size-3.5" strokeWidth={1.4} />
-                  {t("Edit details")}
-                </Button>
-              )
+              ) : null
             ) : (
               <>
                 <Button variant="ghost" className="h-8 shrink-0 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-2.5 text-[11px] font-medium shadow-[var(--md-shadow-line)]" onClick={() => toast.success(t("Update draft prepared"))}>
@@ -1161,8 +1196,8 @@ function BookingDetailHeader({
           </div>
         </section>
 
-        <Surface padding="none" tone="soft" className="min-w-0 w-full overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)]">
-          <div className="flex w-full items-center gap-1 overflow-x-auto" role="tablist" aria-label={t("Booking workspace")}>
+        <Surface padding="none" tone="soft" className="min-w-0 max-w-full justify-self-start overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)]">
+          <div className="flex w-max max-w-full items-center gap-1 overflow-x-auto" role="tablist" aria-label={t("Booking workspace")}>
             {tabs.map((tab) => {
               const selected = tab.id === activeTab
               return (
@@ -1171,11 +1206,13 @@ function BookingDetailHeader({
                   type="button"
                   role="tab"
                   aria-selected={selected}
+                  tabIndex={selected ? 0 : -1}
                   className={cn(
                     "h-8 shrink-0 rounded-[var(--md-radius-lg)] px-2.5 text-[12px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,transform] duration-200 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] active:scale-[0.985]",
-                    selected && "bg-[var(--md-surface-tint)] text-[var(--md-ink)] shadow-[var(--md-shadow-line)]",
+                    selected && "bg-[var(--md-accent)] text-[var(--md-accent-ink)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.16),var(--md-shadow-soft)] hover:bg-[var(--md-accent-hover)] hover:text-[var(--md-accent-ink)]",
                   )}
                   onClick={() => onTabChange(tab.id as BookingDetailTab)}
+                  onKeyDown={(event) => moveBookingTabFocus(event, tab.id as BookingDetailTab)}
                 >
                   {tab.label}
                 </button>
@@ -1184,21 +1221,6 @@ function BookingDetailHeader({
           </div>
         </Surface>
       </div>
-
-      <Surface padding="none" className="rounded-[var(--md-radius-xl)] px-3 py-2 shadow-[var(--md-shadow-line)]">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-[11px] font-medium text-[var(--md-text)]">{t(activeTab === "Overview" ? "Movement context" : "Booking context")}</p>
-          <StatusPill tone="neutral" className="h-5 px-2 text-[10px]">{record.booking.mode} · {record.booking.container}</StatusPill>
-        </div>
-        <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2">
-          {headerFacts.map(([label, value]) => (
-            <div key={label} className="min-w-0">
-              <dt className="text-[10px] text-[var(--md-subtle)]">{t(label)}</dt>
-              <dd data-i18n-skip dir="auto" className="mt-0.5 truncate text-[11px] font-medium text-[var(--md-ink)]" title={value}>{value}</dd>
-            </div>
-          ))}
-        </dl>
-      </Surface>
     </header>
   )
 }
@@ -2312,18 +2334,16 @@ function BookingActivityWorkspace({ record }: { record: BookingDetailRecord }) {
 
 function BookingDetailTabPage({
   activeTab,
-  detailsEditable,
   onBookingChange,
   onCustomFieldChange,
   record,
 }: {
   activeTab: BookingDetailTab
-  detailsEditable: boolean
   onBookingChange: (field: keyof LiveBooking, value: string | boolean) => void
   onCustomFieldChange: (index: number, value: string) => void
   record: BookingDetailRecord
 }) {
-  if (activeTab === "Details") return <BookingRecordDetails editable={detailsEditable} onBookingChange={onBookingChange} onCustomFieldChange={onCustomFieldChange} record={record} />
+  if (activeTab === "Details") return <BookingRecordDetails editable onBookingChange={onBookingChange} onCustomFieldChange={onCustomFieldChange} record={record} />
   if (activeTab === "Documents") return <BookingDocumentsWorkspace record={record} />
   if (activeTab === "Customs") return <BookingCustomsWorkspace record={record} />
   if (activeTab === "Finance") return <BookingFinanceWorkspace record={record} />
@@ -2483,7 +2503,6 @@ export function BookingDetailWorkspace({
   const [tabTravelDirection, setTabTravelDirection] = useState(1)
   const [record, setRecord] = useState<BookingDetailRecord | null>(null)
   const [draftBooking, setDraftBooking] = useState<LiveBooking | null>(null)
-  const [detailsEditable, setDetailsEditable] = useState(false)
   const [loadState, setLoadState] = useState<"loading" | "ready" | "not-found" | "error">("loading")
 
   function changeActiveTab(nextTab: BookingDetailTab) {
@@ -2501,7 +2520,6 @@ export function BookingDetailWorkspace({
     setTabTravelDirection(1)
     setRecord(null)
     setDraftBooking(null)
-    setDetailsEditable(false)
     setLoadState("loading")
 
     void getLiveBooking(normalizedId).then((booking) => {
@@ -2554,7 +2572,7 @@ export function BookingDetailWorkspace({
 
   const loadedRecord = record
   const detailsDirty = Boolean(draftBooking && JSON.stringify(draftBooking) !== JSON.stringify(loadedRecord.booking))
-  const visibleRecord = detailsEditable && draftBooking ? { ...loadedRecord, booking: draftBooking } : loadedRecord
+  const visibleRecord = activeTab === "Details" && draftBooking ? { ...loadedRecord, booking: draftBooking } : loadedRecord
   const visualTabTravelDirection = tabTravelDirection * (direction === "rtl" ? -1 : 1)
 
   function updateDraftBooking(field: keyof LiveBooking, value: string | boolean) {
@@ -2574,14 +2592,8 @@ export function BookingDetailWorkspace({
     } : current)
   }
 
-  function editDetails() {
-    setDraftBooking(loadedRecord.booking)
-    setDetailsEditable(true)
-  }
-
   function discardDetails() {
     setDraftBooking(loadedRecord.booking)
-    setDetailsEditable(false)
   }
 
   function saveDetails() {
@@ -2589,7 +2601,6 @@ export function BookingDetailWorkspace({
     const savedBooking = { ...draftBooking, updatedAt: new Date().toISOString() }
     setRecord({ ...loadedRecord, booking: savedBooking })
     setDraftBooking(savedBooking)
-    setDetailsEditable(false)
     toast.success(t("Booking changes saved"), { description: t("The updated details are available for this booking session.") })
   }
 
@@ -2598,10 +2609,8 @@ export function BookingDetailWorkspace({
       <div className="grid w-full gap-2">
         <BookingDetailHeader
           activeTab={activeTab}
-          detailsEditable={detailsEditable}
           detailsDirty={detailsDirty}
           onDiscardDetails={discardDetails}
-          onEditDetails={editDetails}
           onSaveDetails={saveDetails}
           onTabChange={changeActiveTab}
           record={visibleRecord}
@@ -2623,7 +2632,6 @@ export function BookingDetailWorkspace({
             >
               <BookingDetailTabPage
                 activeTab={activeTab}
-                detailsEditable={detailsEditable}
                 onBookingChange={updateDraftBooking}
                 onCustomFieldChange={updateDraftCustomField}
                 record={visibleRecord}

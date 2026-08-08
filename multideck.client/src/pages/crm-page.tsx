@@ -1942,7 +1942,7 @@ export function CrmLeadDetailPage({
           inline fields the account, contact and deal records use, so one record
           does not behave differently from the next. */}
       <div className="grid gap-[var(--md-page-stack-gap)] xl:grid-cols-2">
-        <InlineFieldCard title="The lead">
+        <InlineFieldCard title="The lead" directEdit>
           <InlineField label="Company" value={lead.companyName ?? ""} required onSave={(companyName) => patchLead({ companyName })} />
           <InlineField label="Contact" value={lead.primaryContactName ?? ""} onSave={(primaryContactName) => patchLead({ primaryContactName: primaryContactName || null })} />
           <InlineField label="Email" kind="email" placeholder="name@example.com" value={lead.primaryContactEmail ?? ""} onSave={(primaryContactEmail) => patchLead({ primaryContactEmail: primaryContactEmail || null })} />
@@ -1951,7 +1951,7 @@ export function CrmLeadDetailPage({
           <InlineField label="Status" value={lead.statusName ?? ""} readOnly />
         </InlineFieldCard>
 
-        <InlineFieldCard title="What they want">
+        <InlineFieldCard title="What they want" directEdit>
           <InlineField label="Service" value={lead.serviceInterest ?? ""} onSave={(serviceInterest) => patchLead({ serviceInterest: serviceInterest || null })} />
           <InlineField label="Trade lane" value={lead.tradeLane ?? ""} onSave={(tradeLane) => patchLead({ tradeLane: tradeLane || null })} />
           <InlineField

@@ -100,7 +100,7 @@ export function CrmContactDetailPage({ contactId, navigate }: { contactId: strin
         </Panel>
         <Panel title={t("Activity")} meta={contact.activities.length ? t("Newest first") : undefined}>{contact.activities.length ? contact.activities.map((activity, index) => <div key={activity.id} className={`grid grid-cols-[10px_minmax(0,1fr)_auto] gap-3 px-5 py-4 ${index ? "border-t border-[var(--md-line)]" : ""}`}><span className="mt-1.5 size-2 rounded-full bg-[var(--md-accent)] shadow-[0_0_0_4px_var(--md-accent-a08)]" /><div><p className="text-[14px] font-medium text-[var(--md-ink)]">{activity.subject}</p>{activity.summary ? <p className="mt-1 text-[13px] leading-5 text-[var(--md-text)]">{activity.summary}</p> : null}</div><p className="shrink-0 text-[12px] tabular-nums text-[var(--md-subtle)]">{relativeDate(activity.occurredAt, t)}</p></div>) : <Empty text={t("No activity has been recorded for this contact yet.")} />}</Panel>
         <div className="grid gap-[var(--md-page-stack-gap)] px-5 py-5 shadow-[var(--md-stroke-top)] sm:px-6">
-          <InlineFieldCard title="Who they are">
+          <InlineFieldCard title="Who they are" directEdit>
             <InlineField label="First name" value={currentContact.firstName ?? ""} required={!currentContact.lastName} onSave={(firstName) => patch({ firstName: firstName || null })} />
             <InlineField label="Last name" value={currentContact.lastName ?? ""} required={!currentContact.firstName} onSave={(lastName) => patch({ lastName: lastName || null })} />
             <InlineField label="Job title" value={currentContact.jobTitle ?? ""} onSave={(jobTitle) => patch({ jobTitle: jobTitle || null })} />
@@ -116,7 +116,7 @@ export function CrmContactDetailPage({ contactId, navigate }: { contactId: strin
             />
           </InlineFieldCard>
 
-          <InlineFieldCard title="How to reach them">
+          <InlineFieldCard title="How to reach them" directEdit>
             <InlineField label="Work email" kind="email" placeholder="name@example.com" value={currentContact.email ?? ""} onSave={(email) => patch({ email: email || null })} />
             <InlineField label="Phone" kind="tel" value={currentContact.phone ?? ""} onSave={(phone) => patch({ phone: phone || null })} />
             <InlineField label="Preferred channel" value={currentContact.preferredChannel ?? ""} onSave={(preferredChannel) => patch({ preferredChannel: preferredChannel || null })} />
@@ -124,7 +124,7 @@ export function CrmContactDetailPage({ contactId, navigate }: { contactId: strin
             <InlineField label="Last contact" value={currentContact.lastContactAt ? relativeDate(currentContact.lastContactAt, t) : ""} readOnly />
           </InlineFieldCard>
 
-          <InlineFieldCard title="Notes">
+          <InlineFieldCard title="Notes" directEdit>
             <InlineField
               label="Internal notes"
               kind="textarea"
@@ -139,6 +139,7 @@ export function CrmContactDetailPage({ contactId, navigate }: { contactId: strin
               recorded against your name, so it asks what it was based on first. */}
           <InlineFieldCard
             title="Consent and privacy"
+            directEdit
             action={<Button type="button" variant="ghost" className="h-8 rounded-[var(--md-radius-md)] px-2 text-[12px] active:scale-[0.96] motion-reduce:transform-none" onClick={() => setConsentOpen(true)}>{t("Change marketing")}</Button>}
           >
             <InlineField label="Marketing" value={t(currentContact.consentMarketing ? "Opted in" : "Opted out")} readOnly />
@@ -147,7 +148,7 @@ export function CrmContactDetailPage({ contactId, navigate }: { contactId: strin
             <InlineSwitchField label="Allow AI training on approved data" checked={currentContact.trainingAllowed} onSave={(trainingAllowed) => patch({ trainingAllowed })} />
           </InlineFieldCard>
 
-          <InlineFieldCard title="Additional fields" meta={customFields.length ? String(customFields.length) : undefined}>
+          <InlineFieldCard title="Additional fields" meta={customFields.length ? String(customFields.length) : undefined} directEdit>
             {customFields.map((field) => (
               <div key={field.id} className="group grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
                 <InlineField label={field.label} value={field.value} onSave={(value) => patch({ customFields: customFields.map((item) => item.id === field.id ? { ...item, value } : item) })} />
