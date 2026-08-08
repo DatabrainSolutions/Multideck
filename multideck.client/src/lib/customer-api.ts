@@ -180,6 +180,12 @@ export type ApiCustomerDocumentListing = {
 
 export class CustomerApiError extends Error {}
 
+function countryCode(value: string | null | undefined) {
+  const code = value?.trim().toUpperCase() || null
+  if (code && !/^[A-Z]{2}$/.test(code)) throw new CustomerApiError("Enter a two-letter ISO country code, such as GB.")
+  return code
+}
+
 export async function listCustomers(search?: string, options?: CrmReadOptions) {
   const session = await requireCustomerSession("Sign in again to view accounts.")
   const normalizedSearch = search?.trim() ?? ""
@@ -219,9 +225,10 @@ export async function updateContact(contactId: string, input: UpdateContactInput
 }
 
 export async function createCustomer(input: CreateCustomerInput) {
+  const payload = { ...input, countryCode: countryCode(input.countryCode) }
   const session = await requireCustomerSession("Sign in again to create an account.")
   const customer = await customerRequest<ApiCustomer>("", session.access_token, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
   })
   invalidateCrmResources(session.user.id, ["accounts:"])
   return customer
@@ -242,9 +249,10 @@ export async function getCustomer(customerId: string) {
 }
 
 export async function updateAccount(accountId: string, input: UpdateAccountInput) {
+  const payload = { ...input, address: { ...input.address, countryCode: countryCode(input.address.countryCode) } }
   const session = await requireCustomerSession("Sign in again to update this account.")
   const account = await customerRequest<ApiCustomerDetail>(`/${encodeURIComponent(accountId)}`, session.access_token, {
-    method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
   })
   invalidateCrmResources(session.user.id, ["accounts:", "contacts:"])
   return account

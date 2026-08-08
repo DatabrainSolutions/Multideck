@@ -344,6 +344,47 @@ const quoteQueue: QuoteRecord[] = [
   },
 ]
 
+const newQuoteDraft: QuoteRecord = {
+  ...quoteQueue[0],
+  id: "NEW",
+  status: "Draft",
+  statusTone: "neutral",
+  localRef: "",
+  source: "Manual",
+  workflowStatus: "Draft",
+  holdReason: "None",
+  customerPO: "",
+  shipperReference: "",
+  agentReference: "",
+  carrierReference: "",
+  docsStatus: "Draft",
+  workflow: "Intake",
+  revisionReason: "",
+  createdAt: "Now",
+  customer: "",
+  clientCode: "",
+  customerAddress: "",
+  customerContact: "",
+  customerEmail: "",
+  shipperCode: "",
+  shipperName: "",
+  shipperAddress: "",
+  shipperContact: "",
+  collectionAddress: "",
+  consigneeCode: "",
+  consigneeName: "",
+  consigneeAddress: "",
+  deliveryAddress: "",
+  route: "",
+  origin: "",
+  destination: "",
+  via: "",
+  margin: "0.00%",
+  profit: 0,
+  cost: 0,
+  revenue: 0,
+}
+
 const salesRepresentativeOptions = systemPeople
   .filter((person) => person.roles.includes("sales"))
   .map((person) => `${person.code} - ${person.name}`)
@@ -1179,7 +1220,6 @@ function ChargeSidePanel({
       width: 112,
       minWidth: 96,
       maxWidth: 180,
-      defaultPinned: true,
       resizable: true,
       sortValue: (row) => row.code,
       cell: (row) => editable ? (
@@ -1206,7 +1246,6 @@ function ChargeSidePanel({
       width: 240,
       minWidth: 180,
       maxWidth: 420,
-      defaultPinned: true,
       resizable: true,
       sortValue: (row) => row.description,
       cell: (row) => <EditableChargeCell value={row.description} editable={editable} onChange={(value) => onChargeChange(row.id, "description", value)} />,
@@ -2924,6 +2963,7 @@ function quoteRecordFromRegister(quote: QuoteRegisterRecord): QuoteRecord {
 
 function getInitialQuoteRecord(quoteId?: string) {
   const normalizedId = quoteId?.toUpperCase()
+  if (normalizedId === "NEW") return newQuoteDraft
   if (!normalizedId || normalizedId === "3") return quoteQueue[0]
   const workspaceQuote = quoteQueue.find((quote) => quote.id.toUpperCase() === normalizedId)
   if (workspaceQuote) return workspaceQuote

@@ -952,6 +952,102 @@
     }
   }
 
+  /* Seven is prime, so there is no clean halfway split. Two, then four, then the
+     full row: four-plus-three reads as one band, where three-plus-three-plus-one
+     leaves an orphan. The middle step comes early because a compact cell only
+     needs about 150px — holding two columns to 780px would stack the band four
+     rows deep on a laptop. */
+  @container md-dash (min-width: 460px) {
+    .md-kpi-strip[data-columns="7"] {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @container md-dash (min-width: 620px) {
+    .md-kpi-strip[data-columns="7"] {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+  }
+
+  @container md-dash (min-width: 1120px) {
+    .md-kpi-strip[data-columns="7"] {
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+    }
+  }
+
+  /* A strip used outside the two dashboard shells still needs the container the
+     column queries above resolve against. */
+  .md-kpi-scope {
+    container: md-dash / inline-size;
+  }
+
+  /* ── Compact KPI band ────────────────────────────────────────────────────
+     Half the height of the standard cell: label and figure share one line, the
+     glyph moves inline, and the supporting sentence is carried in the markup for
+     assistive technology instead of on screen. Use it where the metrics are a
+     header band above the real work. */
+  .md-kpi-strip[data-density="compact"] {
+    gap: var(--md-gap-xs);
+  }
+
+  .md-kpi-strip[data-density="compact"] .md-kpi-cell-button {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    height: 54px;
+    padding: 0 12px;
+    border-radius: var(--md-radius-lg);
+    box-shadow: var(--md-shadow-line);
+  }
+
+  .md-kpi-strip[data-density="compact"] .md-kpi-cell-button:hover {
+    box-shadow: var(--md-shadow-line);
+  }
+
+  .md-kpi-strip[data-density="compact"] .md-kpi-cell-icon {
+    position: static;
+    flex-shrink: 0;
+    opacity: 0.9;
+  }
+
+  .md-kpi-strip[data-density="compact"] .md-kpi-cell-copy {
+    flex: 1 1 auto;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .md-kpi-strip[data-density="compact"] .md-kpi-cell-button[data-has-icon="true"] .md-kpi-cell-label {
+    padding-inline-end: 0;
+  }
+
+  /* Sentence case at 11.5px rather than tracked-out caps: at seven across, an
+     uppercase "Ready to dispatch" runs out of room before the figure does. */
+  .md-kpi-strip[data-density="compact"] .md-kpi-cell-label {
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--md-text);
+  }
+
+  .md-kpi-strip[data-density="compact"] .md-kpi-cell-figure {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    column-gap: 6px;
+  }
+
+  .md-kpi-strip[data-density="compact"] .md-kpi-cell-value {
+    font-size: 19px;
+    letter-spacing: -0.01em;
+  }
+
+  .md-kpi-strip[data-density="compact"] .md-kpi-cell-marker {
+    inset-inline: 10px;
+  }
+
   .md-kpi-cell {
     position: relative;
     min-width: 0;
@@ -980,8 +1076,15 @@
     box-shadow: var(--md-shadow-lift);
   }
 
+  /* The fallback lets the strip keep its focus ring on screens that are not one
+     of the two dashboards, which is where the token is declared. */
   .md-kpi-cell-button:focus-visible {
-    box-shadow: var(--md-shadow-soft), var(--md-dashboard-ring);
+    box-shadow: var(--md-shadow-soft), var(--md-dashboard-ring, 0 0 0 2px var(--md-accent-a20));
+  }
+
+  /* A readout rather than a control: no pointer, no lift, no focus ring. */
+  .md-kpi-cell-button[data-static="true"] {
+    cursor: default;
   }
 
   /* The metric's subject, parked in the corner. No container: a tinted tile
@@ -2694,7 +2797,10 @@
   .md-dashboard *::after,
   .md-crm-dashboard *,
   .md-crm-dashboard *::before,
-  .md-crm-dashboard *::after {
+  .md-crm-dashboard *::after,
+  .md-kpi-scope *,
+  .md-kpi-scope *::before,
+  .md-kpi-scope *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;

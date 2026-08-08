@@ -331,7 +331,6 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
       width: 220,
       minWidth: 188,
       resizable: true,
-      defaultPinned: true,
       sortValue: (booking) => `${booking.status} ${getBookingExceptionSummary(booking)}`,
       cell: (booking) => (
         <div className="min-w-0">
@@ -348,7 +347,6 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
       width: 188,
       minWidth: 164,
       resizable: true,
-      defaultPinned: true,
       sortValue: (booking) => booking.id,
       cell: (booking) => (
         <div className="min-w-0" dir="ltr">

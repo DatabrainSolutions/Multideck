@@ -59,6 +59,104 @@
   }
 }
 
+/* ------------------------------------------------------ form validation */
+
+@keyframes md-field-invalid-nudge-a {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  28% {
+    translate: -3px 0;
+  }
+  56% {
+    translate: 2px 0;
+  }
+  78% {
+    translate: -1px 0;
+  }
+}
+
+@keyframes md-field-invalid-nudge-b {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  28% {
+    translate: -3px 0;
+  }
+  56% {
+    translate: 2px 0;
+  }
+  78% {
+    translate: -1px 0;
+  }
+}
+
+:where(
+  [data-slot="input"],
+  [data-slot="textarea"],
+  [data-slot="select-trigger"],
+  [data-slot="checkbox"],
+  [data-slot="switch"],
+  input:not([type="hidden"]),
+  textarea,
+  select
+)[aria-invalid="true"],
+form:not([novalidate]) :where(input:not([type="hidden"]), textarea, select):user-invalid,
+[data-field-invalid="true"] :where(
+  [data-slot="input"],
+  [data-slot="textarea"],
+  [data-slot="select-trigger"],
+  [data-slot="checkbox"],
+  [data-slot="switch"]
+) {
+  border-color: var(--md-red);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--md-red) 74%, transparent),
+    0 0 0 3px color-mix(in srgb, var(--md-red) 13%, transparent);
+}
+
+:where(
+  [data-slot="input"],
+  [data-slot="textarea"],
+  [data-slot="select-trigger"],
+  input:not([type="hidden"]),
+  textarea,
+  select
+)[aria-invalid="true"],
+form:not([novalidate]) :where(input:not([type="hidden"]), textarea, select):user-invalid,
+[data-field-invalid="true"] :where(
+  [data-slot="input"],
+  [data-slot="textarea"],
+  [data-slot="select-trigger"]
+) {
+  background-color: color-mix(in srgb, var(--md-red) 4%, var(--md-field-bg));
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-invalid-feedback="a"],
+  [data-field-invalid="true"] [data-slot][data-invalid-feedback="a"] {
+    animation: md-field-invalid-nudge-a 180ms ease-out;
+  }
+
+  [data-invalid-feedback="b"],
+  [data-field-invalid="true"] [data-slot][data-invalid-feedback="b"] {
+    animation: md-field-invalid-nudge-b 180ms ease-out;
+  }
+
+  form:not([novalidate]) :where(input:not([type="hidden"]), textarea, select):user-invalid:not([data-invalid-feedback]),
+  [data-field-invalid="true"] :where(
+    [data-slot="input"],
+    [data-slot="textarea"],
+    [data-slot="select-trigger"],
+    [data-slot="checkbox"],
+    [data-slot="switch"]
+  ):not([data-invalid-feedback]) {
+    animation: md-field-invalid-nudge-a 180ms ease-out;
+  }
+}
+
 @theme inline {
   /* The colour emoji families are named last on purpose: a subject line or a
      message preview that contains 🎉 must render it in colour rather than
@@ -218,6 +316,8 @@
   --md-surface: #ffffff;
   --md-surface-soft: #f7f9f8;
   --md-surface-tint: #eef1f0;
+  --md-table-pinned-bg: color-mix(in srgb, var(--md-accent) 7%, var(--md-surface));
+  --md-table-pinned-selected-bg: color-mix(in srgb, var(--md-accent) 14%, var(--md-surface));
   --md-field-bg: #e5e9e7;
   --md-field-bg-hover: #dfe5e2;
   --md-selected-bg: #c8dcd6;
@@ -373,6 +473,8 @@
   --md-surface: #1b1e20;
   --md-surface-soft: #222527;
   --md-surface-tint: #292d30;
+  --md-table-pinned-bg: color-mix(in srgb, var(--md-accent-deep) 52%, var(--md-surface));
+  --md-table-pinned-selected-bg: color-mix(in srgb, var(--md-accent-deep) 68%, var(--md-surface));
   --md-field-bg: #303538;
   --md-field-bg-hover: #373d40;
   --md-selected-bg: #263b37;
@@ -5682,4 +5784,410 @@ html.md-summon-picking {
    room once the svg stops cropping. */
 .md-ai-chart svg {
   overflow: visible;
+}
+
+/* ------------------------------------------------------------------------ Drive
+   The company's private file workspace. Two tile shapes share one visual system:
+   a folder carries an operator-chosen colour, a file carries its own picture.
+
+   Folder colour reuses the ten accent presets, so a folder can never land on a
+   tone the product has not already checked for contrast in both themes. Both
+   members of the pair are written onto the element and CSS picks the one for the
+   current theme — that keeps the choice out of JavaScript, and means switching
+   theme cannot flash the wrong colour for a frame. */
+.md-drive-tone {
+  --md-drive-ink: var(--md-drive-ink-light);
+  --md-drive-wash: 7%;
+  --md-drive-wash-strong: 13%;
+  --md-drive-sheet: 15%;
+  --md-drive-edge: 14%;
+}
+
+:root.dark .md-drive-tone {
+  --md-drive-ink: var(--md-drive-ink-dark);
+  --md-drive-wash: 9%;
+  --md-drive-wash-strong: 15%;
+  --md-drive-sheet: 19%;
+  --md-drive-edge: 20%;
+}
+
+.md-drive-grid {
+  display: grid;
+  gap: var(--md-gap-md);
+  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
+}
+
+/* --------------------------------------------------------------- folder tile */
+
+/* Two thin sheets sit behind the top edge, so the tile reads as something that
+   holds files rather than as another card. On hover they fan a couple of pixels
+   further out — the cheapest possible hint that there is something inside. */
+.md-drive-folder {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding-top: 6px;
+  text-align: start;
+  border-radius: var(--md-radius-xl);
+  outline: none;
+}
+
+.md-drive-folder__sheet {
+  position: absolute;
+  height: 14px;
+  border-start-start-radius: var(--md-radius-md);
+  border-start-end-radius: var(--md-radius-md);
+  transition: transform 340ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+
+.md-drive-folder__sheet--back {
+  inset-inline: 18px;
+  top: 0;
+  background: color-mix(in srgb, var(--md-drive-ink) calc(var(--md-drive-sheet) * 0.5), var(--md-surface));
+}
+
+.md-drive-folder__sheet--front {
+  inset-inline: 10px;
+  top: 3px;
+  background: color-mix(in srgb, var(--md-drive-ink) var(--md-drive-sheet), var(--md-surface));
+}
+
+.md-drive-folder__body {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: var(--md-radius-xl);
+  background: color-mix(in srgb, var(--md-drive-ink) var(--md-drive-wash), var(--md-surface));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--md-drive-ink) var(--md-drive-edge), transparent),
+    0 1px 2px rgba(11, 20, 19, 0.04);
+  transition:
+    transform 260ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 260ms cubic-bezier(0.16, 1, 0.3, 1),
+    background-color 200ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+.md-drive-folder:hover .md-drive-folder__body,
+.md-drive-folder:focus-visible .md-drive-folder__body {
+  background: color-mix(in srgb, var(--md-drive-ink) var(--md-drive-wash-strong), var(--md-surface));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--md-drive-ink) calc(var(--md-drive-edge) + 8%), transparent),
+    0 12px 26px color-mix(in srgb, var(--md-drive-ink) 14%, transparent);
+  transform: translate3d(0, -3px, 0);
+}
+
+.md-drive-folder:hover .md-drive-folder__sheet--back,
+.md-drive-folder:focus-visible .md-drive-folder__sheet--back {
+  transform: translate3d(0, -3px, 0);
+}
+
+.md-drive-folder:hover .md-drive-folder__sheet--front,
+.md-drive-folder:focus-visible .md-drive-folder__sheet--front {
+  transform: translate3d(0, -1.5px, 0);
+}
+
+.md-drive-folder:focus-visible .md-drive-folder__body {
+  outline: 2px solid color-mix(in srgb, var(--md-drive-ink) 62%, transparent);
+  outline-offset: 2px;
+}
+
+/* Presses are short and shallow: it should feel like the tile took the click, not
+   like it bounced. */
+.md-drive-folder[data-pressed="true"] .md-drive-folder__body {
+  transform: translate3d(0, -1px, 0) scale(0.985);
+  transition-duration: 110ms;
+}
+
+.md-drive-folder__icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--md-radius-md);
+  color: var(--md-drive-ink);
+  background: color-mix(in srgb, var(--md-drive-ink) 13%, var(--md-surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-drive-ink) 16%, transparent);
+  transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1), background-color 200ms;
+}
+
+.md-drive-folder:hover .md-drive-folder__icon {
+  transform: scale(1.06);
+  background: color-mix(in srgb, var(--md-drive-ink) 19%, var(--md-surface));
+}
+
+/* ----------------------------------------------------------------- file tile */
+
+.md-drive-file {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  /* 4px against the tile's 14px radius puts the thumbnail on exactly 10px, so the
+     corners stay concentric instead of drifting apart. */
+  padding: 4px 4px 6px;
+  text-align: start;
+  border-radius: var(--md-radius-xl);
+  background: var(--md-surface);
+  box-shadow: var(--md-premium-stroke);
+  outline: none;
+  transition:
+    transform 260ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 260ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+
+.md-drive-file:hover,
+.md-drive-file:focus-visible {
+  transform: translate3d(0, -3px, 0);
+  box-shadow: var(--md-premium-stroke), 0 14px 30px rgba(42, 52, 50, 0.11);
+}
+
+.md-drive-file:focus-visible {
+  outline: 2px solid var(--md-accent);
+  outline-offset: 2px;
+}
+
+.md-drive-file[data-pressed="true"] {
+  transform: translate3d(0, -1px, 0) scale(0.985);
+  transition-duration: 110ms;
+}
+
+.md-drive-thumb {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--md-radius-lg);
+  background: var(--md-surface-tint);
+  /* Its own paint layer, so a hovered thumbnail's zoom cannot invalidate the
+     whole grid. */
+  contain: paint;
+}
+
+.md-drive-thumb__layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 560ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+
+/* The seed is the ~1 KB preview carried on the row itself. It paints on the first
+   frame, blurred and slightly overscaled so its low resolution reads as depth of
+   field rather than as a broken image, and it stays underneath the real
+   thumbnail for good — there is nothing to remove, so nothing can flicker. */
+.md-drive-thumb__seed {
+  filter: blur(9px) saturate(1.06);
+  transform: scale(1.1);
+}
+
+.md-drive-thumb__image {
+  opacity: 0;
+  transition:
+    opacity 400ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 560ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.md-drive-thumb__image[data-loaded="true"] {
+  opacity: 1;
+}
+
+.md-drive-file:hover .md-drive-thumb__image[data-loaded="true"],
+.md-drive-file:hover .md-drive-thumb__seed:only-child {
+  transform: scale(1.04);
+}
+
+/* Vector art and page renders are artwork on a sheet, not photography: cropping
+   them to fill the box would cut the logo in half. */
+.md-drive-thumb[data-fit="contain"] .md-drive-thumb__image {
+  object-fit: contain;
+  padding: 10px;
+}
+
+.md-drive-thumb[data-fit="contain"] {
+  background: color-mix(in srgb, var(--md-ink) 4%, var(--md-surface-soft));
+}
+
+.md-drive-thumb__glyph {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: color-mix(in srgb, var(--md-ink) 34%, transparent);
+  transition: transform 380ms cubic-bezier(0.16, 1, 0.3, 1), color 200ms;
+}
+
+.md-drive-file:hover .md-drive-thumb__glyph {
+  transform: scale(1.05);
+  color: color-mix(in srgb, var(--md-ink) 48%, transparent);
+}
+
+/* A pending tile starts with no picture at all — the preview is still being
+   rendered from the file. When the seed does land it eases in rather than
+   appearing, which is the one place in the grid where an image arrives into a box
+   that is already on screen. */
+.md-drive-thumb[data-pending="true"] .md-drive-thumb__seed {
+  animation: md-drive-seed-in 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes md-drive-seed-in {
+  from {
+    opacity: 0;
+    transform: scale(1.16);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+/* A pending upload keeps the same box the finished file will occupy, so nothing
+   moves when it lands. The sweep is the only thing that says "still working". */
+.md-drive-thumb[data-pending="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    color-mix(in srgb, var(--md-surface) 62%, transparent) 50%,
+    transparent 80%
+  );
+  animation: md-drive-sweep 1400ms cubic-bezier(0.5, 0.02, 0.5, 0.98) infinite;
+}
+
+@keyframes md-drive-sweep {
+  from {
+    transform: translate3d(-120%, 0, 0);
+  }
+  to {
+    transform: translate3d(120%, 0, 0);
+  }
+}
+
+.md-drive-progress-track {
+  stroke: color-mix(in srgb, var(--md-ink) 12%, transparent);
+}
+
+.md-drive-progress-value {
+  stroke: var(--md-accent);
+  /* Progress arrives in jumps from the network; easing the arc between them is
+     what makes it read as a continuous transfer. */
+  transition: stroke-dashoffset 320ms cubic-bezier(0.33, 0.8, 0.35, 1);
+}
+
+/* ------------------------------------------------------------------ dropzone */
+
+.md-drive-dropzone {
+  position: relative;
+  border-radius: var(--md-radius-2xl);
+  transition:
+    background-color 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-drive-dropzone[data-dragging="true"] {
+  background: color-mix(in srgb, var(--md-accent) 5%, transparent);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--md-accent) 34%, transparent);
+}
+
+.md-drive-drop-hint {
+  animation: md-drive-drop-hint-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes md-drive-drop-hint-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+/* ------------------------------------------------------------- colour swatch */
+
+.md-drive-swatch {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--md-drive-ink);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-ink) 10%, transparent);
+  transition: transform 220ms cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+.md-drive-swatch:hover {
+  transform: scale(1.12);
+}
+
+.md-drive-swatch[aria-checked="true"] {
+  transform: scale(1.06);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--md-ink) 10%, transparent),
+    0 0 0 2px var(--md-surface),
+    0 0 0 4px color-mix(in srgb, var(--md-drive-ink) 70%, transparent);
+}
+
+.md-drive-icon-choice {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--md-radius-lg);
+  color: var(--md-text);
+  transition:
+    background-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 220ms cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+.md-drive-icon-choice:hover {
+  background: var(--md-hover);
+  color: var(--md-ink);
+}
+
+.md-drive-icon-choice[aria-checked="true"] {
+  color: var(--md-drive-ink);
+  background: color-mix(in srgb, var(--md-drive-ink) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-drive-ink) 26%, transparent);
+  transform: scale(1.04);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-drive-folder__sheet,
+  .md-drive-folder__body,
+  .md-drive-folder__icon,
+  .md-drive-file,
+  .md-drive-thumb__layer,
+  .md-drive-thumb__glyph,
+  .md-drive-swatch,
+  .md-drive-icon-choice,
+  .md-drive-dropzone,
+  .md-drive-progress-value {
+    transition-duration: 0.01ms;
+  }
+
+  .md-drive-folder:hover .md-drive-folder__body,
+  .md-drive-folder:hover .md-drive-folder__sheet--back,
+  .md-drive-folder:hover .md-drive-folder__sheet--front,
+  .md-drive-folder:hover .md-drive-folder__icon,
+  .md-drive-file:hover,
+  .md-drive-file:hover .md-drive-thumb__image[data-loaded="true"],
+  .md-drive-file:hover .md-drive-thumb__glyph {
+    transform: none;
+  }
+
+  .md-drive-thumb[data-pending="true"]::after,
+  .md-drive-thumb[data-pending="true"] .md-drive-thumb__seed,
+  .md-drive-drop-hint {
+    animation: none;
+  }
 }

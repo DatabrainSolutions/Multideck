@@ -37,6 +37,13 @@ export function staggerRamp(index: number, base = 0.048, decay = 3.2) {
   return base * decay * (1 - Math.exp(-index / decay))
 }
 
+/**
+ * A shared element travelling between two layouts — a register row rising into a
+ * detail header and back down again. Long enough to follow across the screen,
+ * short enough that opening a record still feels immediate.
+ */
+export const sharedElementTransition = { duration: 0.38, ease: mdEase } as const
+
 export function reduceMotion(shouldReduce: boolean, transition: Transition = mdMotion.fast): Transition {
   return shouldReduce ? { duration: 0 } : transition
 }

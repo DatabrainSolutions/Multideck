@@ -7153,6 +7153,19 @@ $$;
 ALTER FUNCTION "public"."get_current_user_cover_photo"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."get_current_user_default_inbox_provider"() RETURNS TABLE("provider" "text")
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+  select workspace_user."User_DefaultInboxProviderCode"
+  from public."cmp_Users" as workspace_user
+  where workspace_user."Auth_User_ID" = (select auth.uid());
+$$;
+
+
+ALTER FUNCTION "public"."get_current_user_default_inbox_provider"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."get_current_user_language_preference"() RETURNS TABLE("locale" "text")
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO ''
@@ -11150,6 +11163,37 @@ $_$;
 ALTER FUNCTION "public"."set_current_user_cover_photo"("p_bucket" "text", "p_path" "text", "p_mime_type" "text", "p_size_bytes" bigint) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."set_current_user_default_inbox_provider"("p_provider" "text") RETURNS TABLE("provider" "text")
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+declare
+  v_auth_user_id uuid := auth.uid();
+begin
+  if v_auth_user_id is null then
+    raise exception 'Authentication is required.';
+  end if;
+
+  if p_provider is null or p_provider not in ('gmail', 'outlook') then
+    raise exception 'The inbox provider is invalid.' using errcode = '22023';
+  end if;
+
+  update public."cmp_Users"
+  set "User_DefaultInboxProviderCode" = p_provider
+  where "Auth_User_ID" = v_auth_user_id;
+
+  if not found then
+    raise exception 'The signed-in account is not linked to a Multideck user profile.';
+  end if;
+
+  return query select p_provider;
+end
+$$;
+
+
+ALTER FUNCTION "public"."set_current_user_default_inbox_provider"("p_provider" "text") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."set_current_user_language_preference"("p_locale" "text") RETURNS TABLE("locale" "text")
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO ''
@@ -11463,6 +11507,14 @@ begin
     if exists(select 1 from public."WMS_OrderLines" where "WMSOrderLine_OrderID"=p_order_id and ("WMSOrderLine_ReceivedQuantity">0 or "WMSOrderLine_DispatchedQuantity">0)) then raise exception 'WMS409: An order with posted stock movements cannot be cancelled.'; end if;
     update public."WMS_OrderLines" set "WMSOrderLine_StatusCode"='cancelled' where "WMSOrderLine_OrderID"=p_order_id;
     update public."WMS_Orders" set "WMSOrder_StatusCode"='cancelled',"WMSOrder_UpdatedAt"=v_now,"WMSOrder_UpdatedBy"=p_actor_user_id where "WMSOrder_ID"=p_order_id;
+    return p_order_id;
+  end if;
+
+  if p_action = 'reschedule' then
+    if nullif(p_payload->>'appointmentStartAt','') is null or nullif(p_payload->>'appointmentEndAt','') is null then raise exception 'WMS400: A slot needs both a start and an end.'; end if;
+    if (p_payload->>'appointmentEndAt')::timestamptz <= (p_payload->>'appointmentStartAt')::timestamptz then raise exception 'WMS400: A slot has to end after it starts.'; end if;
+    update public."WMS_Orders" set "WMSOrder_AppointmentStartAt"=(p_payload->>'appointmentStartAt')::timestamptz,"WMSOrder_AppointmentEndAt"=(p_payload->>'appointmentEndAt')::timestamptz,"WMSOrder_UpdatedAt"=v_now,"WMSOrder_UpdatedBy"=p_actor_user_id where "WMSOrder_ID"=p_order_id;
+    update public."WMS_InboundAdvices" set "WMSAdvice_ExpectedArrivalAt"=(p_payload->>'appointmentStartAt')::timestamptz where "WMSAdvice_OrderID"=p_order_id;
     return p_order_id;
   end if;
 
@@ -13485,8 +13537,10 @@ CREATE TABLE IF NOT EXISTS "public"."cmp_Users" (
     "User_Locale" "text",
     "User_AccentPreset" "text",
     "User_ThemeMode" "text",
+    "User_DefaultInboxProviderCode" "text",
     CONSTRAINT "CK_cmp_Users_AccentPreset" CHECK ((("User_AccentPreset" IS NULL) OR ("User_AccentPreset" = ANY (ARRAY['teal'::"text", 'meadow'::"text", 'sky'::"text", 'ocean'::"text", 'indigo'::"text", 'violet'::"text", 'plum'::"text", 'rose'::"text", 'ember'::"text", 'graphite'::"text"])))),
     CONSTRAINT "CK_cmp_Users_CoverPhoto" CHECK (((("User_CoverPhotoBucket" IS NULL) AND ("User_CoverPhotoPath" IS NULL) AND ("User_CoverPhotoMimeType" IS NULL) AND ("User_CoverPhotoSizeBytes" IS NULL) AND ("User_CoverPhotoUpdatedAt" IS NULL)) OR ((("User_CoverPhotoBucket")::"text" = 'profile-photos'::"text") AND ("User_CoverPhotoPath" IS NOT NULL) AND (("User_CoverPhotoMimeType")::"text" = ANY ((ARRAY['image/jpeg'::character varying, 'image/png'::character varying, 'image/webp'::character varying])::"text"[])) AND (("User_CoverPhotoSizeBytes" >= 1) AND ("User_CoverPhotoSizeBytes" <= 5242880)) AND ("User_CoverPhotoUpdatedAt" IS NOT NULL)))),
+    CONSTRAINT "CK_cmp_Users_DefaultInboxProvider" CHECK ((("User_DefaultInboxProviderCode" IS NULL) OR ("User_DefaultInboxProviderCode" = ANY (ARRAY['gmail'::"text", 'outlook'::"text"])))),
     CONSTRAINT "CK_cmp_Users_Locale" CHECK ((("User_Locale" IS NULL) OR ("User_Locale" = ANY (ARRAY['en-GB'::"text", 'en-US'::"text", 'de'::"text", 'fr'::"text", 'ar'::"text"])))),
     CONSTRAINT "CK_cmp_Users_ProfilePhoto" CHECK (((("User_ProfilePhotoBucket" IS NULL) AND ("User_ProfilePhotoPath" IS NULL) AND ("User_ProfilePhotoMimeType" IS NULL) AND ("User_ProfilePhotoSizeBytes" IS NULL) AND ("User_ProfilePhotoUpdatedAt" IS NULL)) OR ((("User_ProfilePhotoBucket")::"text" = 'profile-photos'::"text") AND ("User_ProfilePhotoPath" IS NOT NULL) AND (("User_ProfilePhotoMimeType")::"text" = ANY ((ARRAY['image/jpeg'::character varying, 'image/png'::character varying, 'image/webp'::character varying])::"text"[])) AND (("User_ProfilePhotoSizeBytes" >= 1) AND ("User_ProfilePhotoSizeBytes" <= 5242880)) AND ("User_ProfilePhotoUpdatedAt" IS NOT NULL)))),
     CONSTRAINT "CK_cmp_Users_SidebarLayout" CHECK ("private"."is_valid_sidebar_layout"("User_SidebarLayout")),
@@ -13495,6 +13549,9 @@ CREATE TABLE IF NOT EXISTS "public"."cmp_Users" (
 
 
 ALTER TABLE "public"."cmp_Users" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."cmp_Users"."User_DefaultInboxProviderCode" IS 'Private operator preference for the initial Inbox and email-composer provider. It does not emit Watching for you events and does not grant provider or mailbox access.';
 
 
 CREATE OR REPLACE VIEW "public"."Audit_AccessEventSummary" AS
@@ -73759,6 +73816,12 @@ GRANT ALL ON FUNCTION "public"."get_current_user_cover_photo"() TO "service_role
 
 
 
+REVOKE ALL ON FUNCTION "public"."get_current_user_default_inbox_provider"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."get_current_user_default_inbox_provider"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."get_current_user_default_inbox_provider"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."get_current_user_language_preference"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."get_current_user_language_preference"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."get_current_user_language_preference"() TO "service_role";
@@ -74035,6 +74098,12 @@ GRANT ALL ON FUNCTION "public"."set_current_user_accent_preference"("p_accent_pr
 REVOKE ALL ON FUNCTION "public"."set_current_user_cover_photo"("p_bucket" "text", "p_path" "text", "p_mime_type" "text", "p_size_bytes" bigint) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."set_current_user_cover_photo"("p_bucket" "text", "p_path" "text", "p_mime_type" "text", "p_size_bytes" bigint) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."set_current_user_cover_photo"("p_bucket" "text", "p_path" "text", "p_mime_type" "text", "p_size_bytes" bigint) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."set_current_user_default_inbox_provider"("p_provider" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."set_current_user_default_inbox_provider"("p_provider" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."set_current_user_default_inbox_provider"("p_provider" "text") TO "service_role";
 
 
 

@@ -42,10 +42,12 @@ import {
   isLikelyEmailAddress,
   listMailboxes,
   parseAddressInput,
+  resolveDefaultOutboundMailbox,
   sendMail,
   type MailAddress,
   type Mailbox,
 } from "@/lib/inbox-api";
+import { loadDefaultInboxProvider } from "@/lib/inbox-provider-preference";
 import { cn } from "@/lib/utils";
 
 type DraftStatus = DexterEmailDraft["delivery"]["status"];
@@ -418,8 +420,17 @@ export function DexterEmailComposeCard({
 
     let active = true;
     setMailboxesLoading(true);
-    void listMailboxes()
-      .then((items) => {
+    void Promise.all([
+      listMailboxes(),
+      loadDefaultInboxProvider().catch((preferenceError: unknown) => {
+        console.warn(
+          "Your default inbox provider could not be loaded for this email draft.",
+          preferenceError,
+        );
+        return null;
+      }),
+    ])
+      .then(([items, preferredProvider]) => {
         if (!active) return;
         setMailboxes(items);
         const capable = items.filter(
@@ -428,11 +439,7 @@ export function DexterEmailComposeCard({
             (mailbox.status === "connected" || mailbox.status === "syncing"),
         );
         setMailboxId((current) =>
-          capable.some((mailbox) => mailbox.id === current)
-            ? current
-            : (capable.find((mailbox) => mailbox.isDefault)?.id ??
-              capable[0]?.id ??
-              ""),
+          resolveDefaultOutboundMailbox(capable, preferredProvider, current)?.id ?? "",
         );
       })
       .catch(() => {

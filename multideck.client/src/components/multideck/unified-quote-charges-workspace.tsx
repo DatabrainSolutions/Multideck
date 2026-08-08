@@ -750,7 +750,6 @@ export function UnifiedQuoteChargesWorkspace({
       width: 104,
       minWidth: 88,
       maxWidth: 160,
-      defaultPinned: true,
       canHide: false,
       resizable: true,
       sortValue: (row) => row.code,
@@ -772,7 +771,6 @@ export function UnifiedQuoteChargesWorkspace({
       width: 230,
       minWidth: 170,
       maxWidth: 420,
-      defaultPinned: true,
       resizable: true,
       sortValue: (row) => row.description,
       cell: (row) => (

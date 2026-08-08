@@ -15,6 +15,7 @@ import {
   RotateCcw,
   Ship,
   Sparkles,
+  TriangleAlert,
   Trash2,
   X,
 } from "lucide-react"
@@ -782,7 +783,12 @@ function FieldShell({
   const Shell = asDiv ? motion.div : motion.label
 
   return (
-    <Shell variants={fieldMotion} className="grid min-w-0 content-start gap-1.5" data-field-label={label}>
+    <Shell
+      variants={fieldMotion}
+      className="grid min-w-0 content-start gap-1.5"
+      data-field-label={label}
+      data-field-invalid={missing || undefined}
+    >
       <span className="flex min-h-[18px] items-center justify-between gap-3">
         <span className="text-[13px] font-medium text-[var(--md-ink)]">
           {label}
@@ -791,7 +797,14 @@ function FieldShell({
         {action ? <span className="flex items-center gap-1.5">{action}</span> : null}
       </span>
       {children}
-      {helper ? <span className="text-[12px] leading-5 text-[var(--md-text)]">{helper}</span> : null}
+      {missing ? (
+        <span className="flex items-start gap-1.5 text-[12px] leading-5 text-[var(--md-red)]">
+          <TriangleAlert className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.6} aria-hidden="true" />
+          This field is required.
+        </span>
+      ) : helper ? (
+        <span className="text-[12px] leading-5 text-[var(--md-text)]">{helper}</span>
+      ) : null}
     </Shell>
   )
 }
@@ -3358,6 +3371,7 @@ export function BookingWizardPage({ navigate }: { navigate: (path: string) => vo
             : []
 
         if (sourceMissing.length) {
+          setFocusFieldLabel(sourceMissing[0])
           toast.warning("Select the source first", {
             description: sourceMissing.join(", "),
           })
@@ -3369,6 +3383,7 @@ export function BookingWizardPage({ navigate }: { navigate: (path: string) => vo
       }
 
       if (missingCurrent.length) {
+        setFocusFieldLabel(missingCurrent[0])
         toast.warning("Complete required fields first", {
           description: missingCurrent.slice(0, 3).join(", "),
         })

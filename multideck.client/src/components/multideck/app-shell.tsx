@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react"
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react"
 import { Menu } from "lucide-react"
 import type { AuthUserSummary } from "@/lib/auth-user"
 import { useSidebarCollapsed } from "@/lib/sidebar-preferences"
@@ -9,6 +9,26 @@ import { AppSidebar } from "./app-sidebar"
 import { TopBar } from "./top-bar"
 import { cn } from "@/lib/utils"
 import { InboxWorkspaceProvider } from "@/lib/inbox-workspace"
+
+const warehouseItemsScrollKey = "multideck:warehouse:items:scroll-top"
+
+function readWarehouseItemsScrollTop() {
+  try {
+    const value = Number(window.sessionStorage.getItem(warehouseItemsScrollKey))
+    return Number.isFinite(value) && value > 0 ? value : 0
+  } catch {
+    return 0
+  }
+}
+
+function writeWarehouseItemsScrollTop(value: number) {
+  try {
+    window.sessionStorage.setItem(warehouseItemsScrollKey, String(Math.max(0, value)))
+  } catch {
+    // Navigation still works when browser storage is unavailable; only the
+    // convenience of restoring this register position is skipped.
+  }
+}
 
 export function AppShell({
   route,
@@ -34,7 +54,35 @@ export function AppShell({
   const isChromeTightRoute = route.startsWith("/quotes/") || isBookingDetailRoute || route === "/bookings/provisional"
   const [sidebarCollapsed, setSidebarCollapsed] = useSidebarCollapsed()
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
+  const pageScrollRef = useRef<HTMLElement>(null)
   const { direction, t } = useLanguage()
+
+  useLayoutEffect(() => {
+    const scrollRegion = pageScrollRef.current
+    if (!scrollRegion || route !== "/warehouse/items") return
+
+    const target = readWarehouseItemsScrollTop()
+    let frame = 0
+    let attempts = 0
+
+    // The register rows arrive asynchronously. Restore as soon as its full
+    // height can contain the saved position instead of letting an early,
+    // clamped scroll-to-zero win the race.
+    const restore = () => {
+      const maxScrollTop = Math.max(0, scrollRegion.scrollHeight - scrollRegion.clientHeight)
+      scrollRegion.scrollTop = Math.min(target, maxScrollTop)
+      if (maxScrollTop >= target || attempts >= 120) return
+      attempts += 1
+      frame = window.requestAnimationFrame(restore)
+    }
+
+    restore()
+
+    return () => {
+      window.cancelAnimationFrame(frame)
+      writeWarehouseItemsScrollTop(scrollRegion.scrollTop)
+    }
+  }, [route])
 
   const shell = (
     <div className="h-screen overflow-hidden bg-[var(--md-bg)] text-[var(--md-ink)]">
@@ -81,6 +129,8 @@ export function AppShell({
           </Sheet>
         ) : null}
         <main
+          ref={pageScrollRef}
+          onScroll={route === "/warehouse/items" ? (event) => writeWarehouseItemsScrollTop(event.currentTarget.scrollTop) : undefined}
           className={cn(
             "min-h-0 min-w-0 flex-1",
             isFullHeightRoute ? "overflow-hidden" : "overflow-y-auto md-scrollbar",

@@ -122,6 +122,10 @@ Current Multideck components:
 - `KeyboardShortcutsPanel`: the editable shortcut list — grouped rows, inline recorder, conflict warnings, per-row reset. Used by the Keyboard shortcuts settings section and by the ⌘/ overlay.
 - `AppShortcuts`: the one place every shell-level shortcut is bound, so the settings list and the real behaviour cannot drift apart. Also draws the sequence hint while a two-key run is half typed.
 - `DexterSummon` / `DexterSummonPrompt`: the summon gesture. Hold the platform modifier and double-click anything, or press ⌘D / Ctrl+D, and Dexter traces that element with a shader ring and opens a stripped prompt box against it, carrying that element's context. With nothing named, the screen dims lightly and the same ring becomes an area picker.
+- `DriveFolderTile` / `DriveFileTile`: the two tiles Drive is built from. A folder carries the operator's colour and icon, with two thin sheets behind its top edge so it reads as something that holds files. A file is its own picture: the ~1 KB preview seed on the row paints on the first frame and the stored thumbnail cross-fades over it, so a folder never opens as a grid of empty boxes.
+- `ContextMenu`: the right-click menu. Shares the dropdown's surface, rows, and motion, so a menu opened by pointer reads the same as one opened from a trigger.
+- `DotGridLoader`: the product's one waiting state — twenty-five cells lit as a travelling square spiral. Every wait uses it, from a route still downloading to a register still fetching rows, so a wait always looks like the same object rather than a different feature loading. It animates only opacity and transform and reserves its own box, so it can sit inside the space the loaded content will occupy without moving anything around it.
+- `RegisterToolbar` (`RegisterViewSwitch`, `RegisterFacetSelect`, `RegisterSearchField`, `RegisterRefreshButton`, `RegisterToolbarActions`): the controls that live inside a `DataTable` toolbar. The view switch and the create action lead; the filters and the search trail. Two levels, deliberately — the switch changes what is fetched, the filters narrow what came back — so they cannot contradict each other.
 - `SegmentedControl`: spring-animated mutually-exclusive mode switch for two to four short choices.
 - `ChoiceControl`: adaptive exclusive-choice control. Use a switch for a boolean, the segmented pill for two to four choices, and a dropdown for five or more.
 - `Checkbox`: independent multi-select control for rows, permissions, overrides, and checklist choices.
@@ -194,6 +198,25 @@ Component gallery:
 - Every component should show why it exists, how to use it, and a code snippet.
 - Visualization components should show meaningful variants in the preview, not only the default state. Bar charts should show single-series and comparison variants, pie charts should show legend and no-legend states, and funnels should show different step counts.
 
+Drive:
+
+- Drive is the company's own file workspace, not a summary screen. The panel is the folders and files and nothing else — no storage dashboard, no activity sidebar, no owner column.
+- Folders come before files, each in its own auto-filling grid, so the two tile heights never fight over a shared row.
+- Folder colour is one of the ten accent presets rather than a free colour picker, so a folder can only land on a tone already checked for contrast in both themes. Both members of the pair go onto the element and CSS picks one, so switching theme cannot flash the wrong colour.
+- Every thumbnail paints in two passes over one box, and the low-resolution pass is never removed. There is no state in which a tile has nothing in it, so there is nothing that can flicker.
+- A file still uploading holds the exact box its finished tile will occupy, keyed the same, so the grid does not move when the upload lands.
+- Renaming happens in place, in the tile, with the field inheriting the label's own box.
+- Folder navigation is real history: opening a folder pushes a URL, and browser back walks out of it.
+
+Warehouse:
+
+- The header band is the shared `KpiStrip` at compact density and seven across: half the height of a dashboard tile, label and figure on one line, and the supporting sentence carried for assistive technology rather than printed. Every figure answers a different question — the row must never spend two tiles restating one number.
+- Screens that give their header row to the work show the first three figures as chips beside the page actions instead, and a chip with a route is a shortcut to the screen that answers it.
+- A warehouse order is a record with its own address (`/warehouse/orders/<number>`), not a dialog. An operator receiving a delivery is reading a docket, counting pallets and typing quantities at once; that needs the whole window, a link a supervisor can be sent, and a back button to the register it came from. The register to return to is carried in `?from=`, so it survives a reload.
+- Its layout leads with the progress rail: the fill is the quantity actually posted and the nodes are the milestones that quantity has crossed, so a part-received order reads as part-received rather than as a status word. Every order line is on screen at once — paging through them hides how much of the delivery is still untouched.
+- Stock, objects and exceptions are short records, so they open a right-hand `SideDrawer` rather than a page or a centred dialog. The register stays visible behind the panel, and the commit button sticks to the bottom of the scroll area so a long form never hides it.
+- The action a panel is posting is chosen with a segmented control, not chips: one indicator travelling between segments reads as one control changing its mind.
+
 Report builder:
 
 - Chart widgets should use the shared visualization components rather than custom report-only drawings.
@@ -220,8 +243,12 @@ Controls should be real:
 Canonical register behaviour:
 
 - Primary registers use `DataTable` for search, sorting, column visibility, resizing, pinning, ordering, and saved layouts.
-- Advanced filters open inline above the register and update results immediately; do not move this work into a modal with a separate Apply step.
-- Quotes and Bookings are the reference implementations for this shared register behaviour.
+- Search, filters and the warehouse or scope dropdown belong in the table's own toolbar, not in a filter bar stacked above it. A register should not spend a third of the screen before its first row.
+- The toolbar wraps by group, never by control: the leading group keeps the view switch and the create action, and the trailing group drops to its own line as one block once the row runs out of room.
+- Facet options come from the rows in hand, so a menu can never offer a value that returns nothing. A trigger takes the accent colour while its filter is on.
+- Typing narrows what is already loaded on the same frame; the server is asked once the operator stops. Only the newest response is allowed to write, so a slow earlier request cannot replace newer rows.
+- Revalidation never blanks a table. Rows stay on screen and the toolbar shows the small dot-grid mark; the full loader only appears when there is nothing to show yet.
+- Quotes, Warehouse inventory and Warehouse orders are the reference implementations for this shared register behaviour.
 
 Dropdowns should feel anchored, compact, and unambiguous:
 

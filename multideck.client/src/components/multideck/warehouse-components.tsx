@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react"
+import { createContext, Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
 import {
@@ -10,21 +10,22 @@ import {
   ChevronRight,
   Plus,
   Search,
-  SlidersHorizontal,
-  Warehouse,
   type LucideIcon,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Popover, PopoverAnchor, PopoverClose, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Progress } from "@/components/ui/progress"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { KpiStrip } from "@/components/multideck/dashboard-kpi-strip"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
 import { FilterChips, SegmentedControl } from "@/components/multideck/workflow-components"
 import { cn } from "@/lib/utils"
-import { mdMotion } from "@/lib/motion"
+import { mdMotion, reduceMotion, sharedElementTransition, staggerRamp } from "@/lib/motion"
+import { minutesToTimeKey, useCalendarEventDrag, type CalendarDragMode, type CalendarDragPreview } from "@/lib/calendar-drag"
+import type { WarehouseHeaderAction } from "@/lib/warehouse"
 import { useKanbanPointerDrag } from "@/lib/kanban-drag"
 import { useLanguage } from "@/i18n/language-provider"
 import {
@@ -82,7 +83,8 @@ const warehouseTableRowTransition = {
   exit: { opacity: 0, y: -4, transition: mdMotion.fast },
 }
 
-const stockMorphTransition = { duration: 0.38, ease: [0.22, 1, 0.36, 1] as const }
+// One value for every select-to-detail morph in Warehouse.
+const stockMorphTransition = sharedElementTransition
 const tableHeadClass = "h-9 border-r border-[rgba(90,103,100,0.12)] bg-[rgba(90,103,100,0.06)] px-3 py-2 text-[11.5px] font-medium text-[var(--md-text)] last:border-r-0"
 const tableCellClass = "border-r border-[rgba(90,103,100,0.09)] px-3 py-2 last:border-r-0"
 export type WarehouseKanbanCardData = {
@@ -152,6 +154,8 @@ export type WarehouseCalendarEvent = {
   endTime: string
   title: string
   type: string
+  /** Which way the stock is moving. Drawn as a texture rather than a label. */
+  direction: "inbound" | "outbound"
   customerId: string
   tone: StatusTone
   reference?: string
@@ -538,17 +542,19 @@ function WarehouseToolbar({
   meta,
   children,
 }: {
-  title: string
+  title?: string
   meta?: string
   children?: ReactNode
 }) {
   return (
     <div className="flex flex-col gap-[var(--md-gap-md)] lg:flex-row lg:items-center lg:justify-between">
-      <div className="min-w-0">
-        <h2 className="text-[15px] font-medium text-[var(--md-ink)]">{title}</h2>
-        {meta ? <p className="mt-1 text-[13px] leading-5 text-[var(--md-text)]">{meta}</p> : null}
-      </div>
-      <div className="flex flex-wrap items-center gap-2">{children}</div>
+      {title ? (
+        <div className="min-w-0">
+          <h2 className="text-[15px] font-medium text-[var(--md-ink)]">{title}</h2>
+          {meta ? <p className="mt-1 text-[13px] leading-5 text-[var(--md-text)]">{meta}</p> : null}
+        </div>
+      ) : null}
+      <div className={cn("flex flex-wrap items-center gap-2", !title && "lg:ms-auto")}>{children}</div>
     </div>
   )
 }
@@ -557,8 +563,8 @@ export function WarehouseInventoryTable<T extends { id: string }>({
   rows,
   columns,
   minWidth = 1060,
-  emptyMessage = "No warehouse rows match this view.",
-  rowLabel = "warehouse rows",
+  emptyMessage = "Nothing matches this view",
+  emptyHint,
   onRowClick,
   rowClassName,
   renderExpandedRow,
@@ -569,7 +575,8 @@ export function WarehouseInventoryTable<T extends { id: string }>({
   columns: WarehouseTableColumn<T>[]
   minWidth?: number
   emptyMessage?: string
-  rowLabel?: string
+  /** The one thing to do next. Defaults to clearing a filter. */
+  emptyHint?: string
   onRowClick?: (row: T) => void
   rowClassName?: (row: T) => string | undefined
   renderExpandedRow?: (row: T, columnCount: number) => ReactNode
@@ -577,7 +584,7 @@ export function WarehouseInventoryTable<T extends { id: string }>({
   rowDetailLabel?: (row: T) => string
 }) {
   const shouldReduceMotion = useReducedMotion()
-  const { direction } = useLanguage()
+  const { direction, t } = useLanguage()
   const [openRowId, setOpenRowId] = useState<string | null>(null)
 
   useEffect(() => {
@@ -627,7 +634,10 @@ export function WarehouseInventoryTable<T extends { id: string }>({
                 tabIndex={isInteractiveRow ? 0 : undefined}
                 aria-haspopup={hasRowDetail ? "dialog" : undefined}
                 aria-expanded={hasRowDetail ? isDetailOpen : undefined}
-                aria-label={hasRowDetail ? rowDetailLabel?.(row) ?? `Open details for ${row.id}` : undefined}
+                // A row that opens a panel needs a name too, not only one that
+                // opens the inline popover: a focusable row announced as its own
+                // cell contents gives a screen-reader user nothing to act on.
+                aria-label={isInteractiveRow ? t(rowDetailLabel?.(row) ?? `Open details for ${row.id}`) : undefined}
                 className={cn(
                   "h-[52px] border-b border-[rgba(90,103,100,0.09)] bg-[var(--md-surface)] transition-[background,color,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[rgba(90,103,100,0.045)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]",
                   isInteractiveRow && "cursor-pointer",
@@ -668,8 +678,8 @@ export function WarehouseInventoryTable<T extends { id: string }>({
               <TableRow key="warehouse-table-empty" className="h-[160px] border-0 hover:bg-transparent">
                 <TableCell colSpan={columns.length} className="text-center">
                   <div className="mx-auto max-w-[360px]">
-                    <p className="text-[14px] font-medium text-[var(--md-ink)]">{emptyMessage}</p>
-                    <p className="mt-1 text-[13px] leading-5 text-[var(--md-text)]">Change a filter or search a wider set of {rowLabel}.</p>
+                    <p className="text-[14px] font-medium text-[var(--md-ink)]">{t(emptyMessage)}</p>
+                    <p className="mt-1 text-[13px] leading-5 text-[var(--md-text)]">{t(emptyHint ?? "Clear a filter or widen the search to see more.")}</p>
                   </div>
                 </TableCell>
               </TableRow>
@@ -1002,7 +1012,7 @@ export function WarehouseProductsTable({ rows = warehouseProducts }: { rows?: re
       rows={[...rows]}
       columns={productColumns}
       minWidth={1160}
-      rowLabel="products"
+      emptyHint="Clear a filter or widen the search to see more products."
       emptyMessage="No products match this product view."
       renderRowDetail={(product) => <WarehouseProductDetail product={product} />}
       rowDetailLabel={(product) => `Open product details for ${product.name}`}
@@ -1138,7 +1148,7 @@ function WarehouseSelectedStockPanel({ stock, onBack }: { stock: WarehouseStockR
           rows={[...stock.branchLocations]}
           columns={stockLocationColumns(stock)}
           minWidth={1080}
-          rowLabel="stock locations"
+          emptyHint="This item has no stock in any location yet."
           emptyMessage="No locations match this stock view."
         />
       </div>
@@ -1160,7 +1170,7 @@ export function WarehouseStockTable({
       rows={[...rows]}
       columns={stockColumns}
       minWidth={1340}
-      rowLabel="stock rows"
+      emptyHint="Clear a filter or widen the search to see more stock."
       emptyMessage="No stock rows match this view."
       onRowClick={onSelectStock}
       rowClassName={(row) => row.id === selectedStockId ? "bg-[var(--md-accent-a055)] shadow-[inset_3px_0_0_var(--md-accent)]" : undefined}
@@ -1174,7 +1184,7 @@ export function WarehouseOrdersTable({ rows = warehouseOrders }: { rows?: readon
       rows={[...rows]}
       columns={orderColumns}
       minWidth={980}
-      rowLabel="orders"
+      emptyHint="Clear a filter or widen the search to see more orders."
       emptyMessage="No orders match this view."
       renderRowDetail={(order) => <WarehouseOrderDetail order={order} />}
       rowDetailLabel={(order) => `Open order details for ${order.id}`}
@@ -1188,65 +1198,132 @@ function WarehouseMovementsTable({ rows = warehouseGoodsMovements }: { rows?: re
       rows={[...rows]}
       columns={movementColumns}
       minWidth={1060}
-      rowLabel="goods movements"
+      emptyHint="Every receipt and dispatch posted today appears here."
       emptyMessage="No goods movements match this view."
     />
   )
 }
 
+/**
+ * The warehouse header band. It is the shared `KpiStrip` at compact density and
+ * seven across, so a warehouse figure looks and behaves exactly like one on the
+ * operations and CRM dashboards. The wrapper carries the container the strip's
+ * column queries resolve against.
+ */
 export function WarehouseMetricStrip({ metrics = warehouseMetrics }: { metrics?: readonly WarehouseMetric[] }) {
   const { t } = useLanguage()
+  // Translated here rather than inside the strip: the cell renders the label as
+  // given, and the shared component has no reason to know about the language layer.
+  const kpis = useMemo(
+    () => metrics.map((metric) => ({ ...metric, label: t(metric.label), detail: t(metric.detail) })),
+    [metrics, t],
+  )
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      {metrics.map((metric) => {
-        const Icon = metric.icon
-
-        return (
-          <Surface key={metric.label} padding="md" className="min-h-[106px] rounded-[var(--md-radius-xl)]">
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <p className="text-[13px] font-medium text-[var(--md-text)]">{t(metric.label)}</p>
-                <strong className="mt-2 block text-[28px] font-medium leading-none tracking-normal text-[var(--md-ink)]">{metric.value}</strong>
-              </div>
-              <span className="grid size-9 place-items-center rounded-[var(--md-radius-lg)] bg-white/56 text-[var(--metric-tone)] shadow-[var(--md-shadow-line)]" style={{ "--metric-tone": toneToVar(metric.tone) } as CSSProperties}>
-                <Icon className="size-4" strokeWidth={1.25} />
-              </span>
-            </div>
-            <p className="mt-3 text-[12px] leading-5 text-[var(--md-text)]">{t(metric.detail)}</p>
-          </Surface>
-        )
-      })}
+    <div className="md-kpi-scope">
+      <KpiStrip kpis={kpis} columns={7} density="compact" />
     </div>
   )
 }
 
-export function WarehousePageHeader({ customer = false }: { customer?: boolean }) {
+/**
+ * One live warehouse figure as a chip, for the screens that give the header row
+ * to the work rather than to a metric band. A chip with a route is a shortcut to
+ * the screen that answers it; one without is a plain readout.
+ */
+function WarehouseHeaderChip({ action, onNavigate }: { action: WarehouseHeaderAction; onNavigate?: (route: string) => void }) {
   const { t } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
+  const Icon = action.icon
+  const route = action.route
+  const label = t(action.label)
+
+  const body = (
+    <>
+      <Icon className="size-3.5 shrink-0 transition-opacity duration-200 group-hover:opacity-100" strokeWidth={1.4} style={{ color: toneToVar(action.tone), opacity: 0.85 }} />
+      <span className="truncate text-[12px] font-medium text-[var(--md-text)] transition-colors duration-200 group-hover:text-[var(--md-ink)]">{label}</span>
+      <StatusPill tone={action.tone}>{action.value}</StatusPill>
+    </>
+  )
+
+  const shell = "group flex h-9 min-w-0 items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] ps-2.5 pe-1.5 shadow-[var(--md-shadow-line)]"
+
+  if (!route || !onNavigate) {
+    return <div className={shell}>{body}</div>
+  }
 
   return (
-    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-      <div className="flex min-w-0 items-center gap-3">
-        <span className="grid size-11 shrink-0 place-items-center rounded-[var(--md-radius-lg)] bg-white/58 text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">
-          <Warehouse className="size-5" strokeWidth={1.25} />
-        </span>
-        <div className="min-w-0">
-          <h1 className="text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">{t("Warehouse")}</h1>
-          <p className="mt-1 max-w-[680px] text-[13px] leading-5 text-[var(--md-text)]">
-            {t(customer ? "View your stock, manage items, and send inbound or outbound requests to the warehouse team." : "Inventory, stock, goods movements, warehouse orders, and operator planning in one calm workspace.")}
-          </p>
-        </div>
+    <motion.button
+      type="button"
+      onClick={() => onNavigate(route)}
+      aria-label={`${label}: ${action.value}`}
+      className={cn(shell, "cursor-pointer outline-none transition-shadow duration-200 hover:shadow-[var(--md-shadow-soft)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]")}
+      whileHover={shouldReduceMotion ? undefined : { y: -1 }}
+      whileTap={shouldReduceMotion ? undefined : { scale: 0.97 }}
+      transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.micro)}
+    >
+      {body}
+    </motion.button>
+  )
+}
+
+/**
+ * The warehouse page header: title, one line of orientation, the live figures an
+ * operator needs regardless of which warehouse screen they are on. The title
+ * carries no icon tile — the sidebar already says which
+ * area this is, and the tile only pushed the table further down the screen.
+ */
+export function WarehousePageHeader({
+  customer = false,
+  actions = [],
+  onNavigate,
+  title = "Warehouse",
+  description,
+  children,
+}: {
+  customer?: boolean
+  /** Live figures shown beside the page actions. Empty hides the group. */
+  actions?: readonly WarehouseHeaderAction[]
+  onNavigate?: (route: string) => void
+  /** The active warehouse workspace, shown in the page orientation. */
+  title?: string
+  /** One concise description of the active workspace. */
+  description?: string
+  /** Contextual controls that belong on the same row as the page orientation. */
+  children?: ReactNode
+}) {
+  const { t } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
+
+  return (
+    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+      <div className="min-w-0">
+        <h1 className="text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">{t(title)}</h1>
+        <p className="mt-0.5 max-w-[680px] text-[13px] leading-5 text-[var(--md-text)]">
+          {t(description ?? (customer ? "Check your stock, manage items, and send inbound or outbound requests to the warehouse team." : "Stock, movements, orders and operator planning in one workspace."))}
+        </p>
       </div>
-      {!customer ? <div className="flex flex-wrap items-center gap-2">
-        <Button variant="ghost" className="h-10 rounded-[var(--md-radius-lg)] bg-white/48 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/74">
-          <SlidersHorizontal data-icon="inline-start" className="size-4" strokeWidth={1.25} />
-          {t("Filters")}
-        </Button>
-        <Button className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] shadow-[0_10px_22px_var(--md-accent-a14)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]">
-          <Plus data-icon="inline-start" className="size-4" strokeWidth={1.25} />
-          {t("New pick")}
-        </Button>
-      </div> : null}
+      <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-2 md:justify-end">
+        {children}
+        {/* The chips arrive on a short ramp so the group settles as one band
+            rather than three separate pop-ins, and they animate in place: the
+            figure inside a chip can update without the row rebuilding. */}
+        <AnimatePresence initial={false}>
+          {actions.map((action, index) => (
+            <motion.div
+              key={action.label}
+              layout={shouldReduceMotion ? false : "position"}
+              initial={shouldReduceMotion ? false : { opacity: 0, y: 4, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.98, transition: mdMotion.exit }}
+              transition={shouldReduceMotion ? { duration: 0 } : { ...mdMotion.enter, delay: staggerRamp(index, 0.04) }}
+              className="min-w-0"
+            >
+              <WarehouseHeaderChip action={action} onNavigate={onNavigate} />
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
     </div>
   )
 }
@@ -1257,8 +1334,10 @@ function WarehouseActivityPanel({ rows = warehouseGoodsMovements }: { rows?: rea
 
   return (
     <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-      <div className="px-5 py-4 shadow-[var(--md-stroke-bottom)]">
+      <div className="grid grid-cols-[minmax(0,1fr)_94px_112px] items-end gap-3 px-5 py-4 shadow-[var(--md-stroke-bottom)]">
         <SectionHeader title={t("Recent warehouse activity")} meta={t("Latest receiving and dispatch movements posted by the warehouse team.")} />
+        <span className="hidden text-right text-[11px] font-medium text-[var(--md-subtle)] sm:block">{t("When")}</span>
+        <span className="hidden text-right text-[11px] font-medium text-[var(--md-subtle)] sm:block">{t("Status")}</span>
       </div>
       <motion.div
         className="divide-y divide-[rgba(90,103,100,0.09)]"
@@ -1267,7 +1346,7 @@ function WarehouseActivityPanel({ rows = warehouseGoodsMovements }: { rows?: rea
         animate={shouldReduceMotion ? undefined : "show"}
       >
         {rows.slice(0, 5).map((movement) => (
-          <motion.div key={movement.id} variants={shouldReduceMotion ? undefined : rowReveal} className="grid grid-cols-[34px_minmax(0,1fr)_auto] gap-3 px-5 py-3">
+          <motion.div key={movement.id} variants={shouldReduceMotion ? undefined : rowReveal} className="grid grid-cols-[34px_minmax(0,1fr)_94px_112px] items-center gap-3 px-5 py-3">
             <span className={cn("grid size-[34px] place-items-center rounded-[var(--md-radius-md)] shadow-[var(--md-shadow-line)]", movement.direction === "In" ? "bg-[var(--md-accent-a10)] text-[var(--md-accent)]" : "bg-[rgba(74,125,156,0.1)] text-[var(--md-blue)]")}>
               {movement.direction === "In" ? <ArrowDownToLine className="size-4" strokeWidth={1.25} /> : <ArrowUpFromLine className="size-4" strokeWidth={1.25} />}
             </span>
@@ -1277,8 +1356,8 @@ function WarehouseActivityPanel({ rows = warehouseGoodsMovements }: { rows?: rea
             </div>
             <div className="text-right">
               <p className="text-[12px] font-medium text-[var(--md-ink)]">{movement.time}</p>
-              <StatusPill tone={movement.tone} className="mt-1">{movement.status}</StatusPill>
             </div>
+            <div className="justify-self-end"><StatusPill tone={movement.tone}>{movement.status}</StatusPill></div>
           </motion.div>
         ))}
         {!rows.length ? <p className="px-5 py-8 text-center text-[13px] text-[var(--md-subtle)]">{t("No warehouse movements have been posted yet.")}</p> : null}
@@ -1304,7 +1383,6 @@ export function WarehouseDashboard({
       <div className="grid gap-[var(--md-page-stack-gap)] 2xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.75fr)]">
         <div className="grid gap-[var(--md-gap-md)]">
           <WarehouseToolbar title={t("Open warehouse orders")} meta={t("Live inbound and outbound work that still needs operator action.")}>
-            <StatusPill tone="amber">{orders.length} {t("active")}</StatusPill>
           </WarehouseToolbar>
           <WarehouseOrdersTable rows={orders.slice(0, 5)} />
         </div>
@@ -1637,8 +1715,7 @@ function WarehouseCalendarCustomerKey({
   const hasSelectedCustomers = selectedCustomerIds.length > 0
 
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-[var(--md-radius-xl)] bg-[color-mix(in_srgb,var(--md-surface)_76%,transparent)] p-2 shadow-[var(--md-shadow-line)]">
-      <span className="px-2 text-[12px] font-medium text-[var(--md-text)]">{t("Customer key")}</span>
+    <div className="flex flex-wrap items-center gap-2 rounded-full bg-[color-mix(in_srgb,var(--md-surface)_76%,transparent)] p-2 shadow-[var(--md-shadow-line)]">
       {customers.map((customer) => {
         const isSelected = selectedCustomerIds.includes(customer.id)
         const isDimmed = hasSelectedCustomers && !isSelected
@@ -1652,7 +1729,7 @@ function WarehouseCalendarCustomerKey({
             data-i18n-skip
             dir="auto"
             className={cn(
-              "inline-flex h-7 items-center gap-2 rounded-[var(--md-radius-md)] pe-2.5 ps-2 text-[12px] font-medium text-[var(--md-ink)] outline-none shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,opacity,scale] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-[var(--md-surface)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]",
+              "inline-flex h-7 items-center gap-2 rounded-full pe-2.5 ps-2 text-[12px] font-medium text-[var(--md-ink)] outline-none shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,opacity,scale] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-[var(--md-surface)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]",
               isSelected ? "bg-[var(--md-surface)]" : "bg-[color-mix(in_srgb,var(--md-surface)_82%,transparent)]",
               isDimmed && "opacity-45 hover:opacity-80",
             )}
@@ -1664,31 +1741,94 @@ function WarehouseCalendarCustomerKey({
           </button>
         )
       })}
-    </div>
-  )
-}
 
-function WarehouseCalendarDetailRow({
-  label,
-  value,
-  skipTranslation,
-}: {
-  label: string
-  value: ReactNode
-  skipTranslation?: boolean
-}) {
-  const { t } = useLanguage()
-
-  return (
-    <div className="grid grid-cols-[88px_minmax(0,1fr)] gap-3 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-3 py-2 shadow-[var(--md-shadow-line)]">
-      <span className="text-[11px] font-medium text-[var(--md-text)]">{t(label)}</span>
-      <span data-i18n-skip={skipTranslation ? true : undefined} dir={skipTranslation ? "auto" : undefined} className="min-w-0 truncate text-[12px] font-medium text-[var(--md-ink)]">
-        {value}
+      {/* The direction key sits in the same rail as the customers, because the two
+          are read together: whose booking it is, and which way the stock is going.
+          The swatches carry the same fill the blocks do, so the key is a sample of
+          the calendar rather than a description of it. */}
+      <span aria-hidden="true" className="mx-1 h-5 w-px shrink-0 bg-[var(--md-line)]" />
+      <span className="inline-flex h-7 items-center gap-3 rounded-full bg-[color-mix(in_srgb,var(--md-surface)_82%,transparent)] px-2.5 text-[12px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
+        <span className="inline-flex items-center gap-1.5">
+          <span
+            aria-hidden="true"
+            className="size-2.5 rounded-[3px] shadow-[inset_0_0_0_1px_rgba(90,103,100,0.28)]"
+            style={{ background: "repeating-linear-gradient(135deg, rgba(90,103,100,0.55) 0 1px, transparent 1px 4px), color-mix(in srgb, var(--md-ink) 12%, transparent)" }}
+          />
+          {t("Inbound")}
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span
+            aria-hidden="true"
+            className="size-2.5 rounded-[3px] shadow-[inset_0_0_0_1px_rgba(90,103,100,0.28)]"
+            style={{ background: "color-mix(in srgb, var(--md-ink) 12%, transparent)" }}
+          />
+          {t("Outbound")}
+        </span>
       </span>
     </div>
   )
 }
 
+/**
+ * One fact, as a label beside its value. A hairline between rows rather than a
+ * box around each: six stacked boxes read as six objects when they are one list.
+ * The value keeps its full text in `title` because it is allowed to truncate.
+ */
+/**
+ * The calendar's "open the record behind this event" handler. Held in context
+ * because the grid, the day cell and the event card all sit between the calendar
+ * and the popover, and none of them has any use for it.
+ */
+const WarehouseCalendarOpenOrderContext = createContext<((event: WarehouseCalendarEvent) => void) | null>(null)
+
+type CalendarDragHandle = {
+  begin: (event: ReactPointerEvent, seed: { eventId: string; mode: CalendarDragMode; dateKey: string; startMinutes: number; endMinutes: number }) => void
+  preview: CalendarDragPreview | null
+  /** Undefined where rescheduling is not offered, which leaves the blocks inert. */
+  enabled: boolean
+}
+
+/**
+ * The week grid's drag session. Held in context because the grid, the day column
+ * and the event block sit between the calendar and the grip, and none of them has
+ * any use for it.
+ */
+const WarehouseCalendarDragContext = createContext<CalendarDragHandle | null>(null)
+
+function WarehouseCalendarDetailRow({
+  label,
+  value,
+  code,
+}: {
+  label: string
+  /** Set for order numbers, references and codes: kept left-to-right and untranslated. */
+  code?: boolean
+  value: string
+}) {
+  const { t } = useLanguage()
+
+  return (
+    <div className="grid grid-cols-[76px_minmax(0,1fr)] items-baseline gap-3 py-[7px] first:pt-0 last:pb-0">
+      <dt className="text-[11.5px] leading-4 text-[var(--md-text)]">{t(label)}</dt>
+      <dd
+        title={value}
+        data-i18n-skip={code ? true : undefined}
+        dir={code ? "ltr" : "auto"}
+        className={cn("min-w-0 truncate text-[12.5px] font-medium leading-4 text-[var(--md-ink)]", code && "tabular-nums")}
+      >
+        {value}
+      </dd>
+    </div>
+  )
+}
+
+/**
+ * What a calendar event actually is, in the order an operator asks for it: which
+ * kind of movement, whose it is, when it lands, and then the references needed to
+ * find it elsewhere. The customer's colour runs down the leading edge, the same
+ * edge the card carries, so the popover reads as that card opened rather than as
+ * a new panel arriving from nowhere.
+ */
 function WarehouseCalendarEventDetails({
   event,
   customer,
@@ -1697,36 +1837,84 @@ function WarehouseCalendarEventDetails({
   customer: WarehouseCalendarCustomer
 }) {
   const { language, t } = useLanguage()
-  const dateLabel = new Intl.DateTimeFormat(language, { weekday: "short", day: "numeric", month: "short" }).format(parseDateKey(event.date))
+  const openOrder = useContext(WarehouseCalendarOpenOrderContext)
+  const onOpenOrder = openOrder ? () => openOrder(event) : undefined
+  const eventDate = parseDateKey(event.date)
+  const dateLabel = new Intl.DateTimeFormat(language, { weekday: "long", day: "numeric", month: "long" }).format(eventDate)
+  const startMinutes = getTimeInMinutes(event.time)
+  const durationMinutes = Math.max(0, getCalendarEventEndMinutes(event) - startMinutes)
+  const durationLabel = durationMinutes >= 60
+    ? `${Math.floor(durationMinutes / 60)}h${durationMinutes % 60 ? ` ${durationMinutes % 60}m` : ""}`
+    : `${durationMinutes}m`
 
   return (
     <PopoverContent
       side="top"
       align="start"
-      sideOffset={8}
+      sideOffset={10}
       collisionPadding={16}
-      className="w-[min(92vw,340px)] gap-0 overflow-hidden rounded-[var(--md-radius-xl)] border-0 !bg-white p-2 text-[var(--md-ink)] backdrop-blur-0 dark:!bg-[var(--md-surface)]"
-      style={{ boxShadow: "var(--md-premium-stroke), 0 24px 60px rgba(42, 52, 50, 0.2)" }}
+      // The product's own menu motion: a 220ms decelerating rise with a blur that
+      // resolves, and a quicker, quieter exit. Reused rather than reinvented so a
+      // calendar popover opens exactly like every other menu in the app.
+      className="md-dropdown-content w-[min(92vw,320px)] gap-0 overflow-hidden rounded-[var(--md-radius-xl)] border-0 !bg-[var(--md-surface)] p-0 text-[var(--md-ink)] backdrop-blur-0"
+      style={{
+        boxShadow: "var(--md-premium-stroke), 0 24px 60px rgba(42, 52, 50, 0.22)",
+        ["--warehouse-calendar-color" as string]: customer.color,
+      }}
     >
-      <div className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-3 shadow-[var(--md-shadow-line)]">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[11px] font-medium text-[var(--md-subtle)]">{t("Calendar details")}</p>
-            <h3 className="mt-1 text-[14px] font-medium leading-5 text-[var(--md-ink)]">{event.title}</h3>
-          </div>
-          <span className="mt-1 size-3 shrink-0 rounded-full" style={{ background: customer.color }} />
+      <span aria-hidden="true" className="absolute inset-y-0 start-0 w-[3px]" style={{ background: "var(--warehouse-calendar-color)" }} />
+
+      <div className="ps-[3px]">
+        <header className="px-3.5 pb-3 pt-3">
+          <p className="truncate text-[11.5px] font-medium leading-4" style={{ color: "var(--warehouse-calendar-color)" }}>
+            {t(event.type)}
+          </p>
+          {/* Balanced so a two-line reference splits evenly instead of leaving one
+              word alone on the second line. */}
+          <h3 data-i18n-skip dir="auto" className="mt-1 text-[15px] font-medium leading-[1.3] tracking-[-0.01em] text-balance text-[var(--md-ink)]">
+            {event.title}
+          </h3>
+          <p data-i18n-skip dir="auto" className="mt-0.5 truncate text-[12px] leading-4 text-[var(--md-text)]">
+            {customer.name}
+          </p>
+        </header>
+
+        {/* The one thing a calendar event is really being asked: when. Tabular
+            figures so the range never shifts width between events. */}
+        <div className="px-3.5 py-3 shadow-[var(--md-stroke-top)]">
+          <p className="text-[11.5px] leading-4 text-[var(--md-text)]">{dateLabel}</p>
+          <p className="mt-1 flex items-baseline gap-2">
+            <span data-i18n-skip dir="ltr" className="text-[17px] font-medium leading-none tracking-[-0.01em] tabular-nums text-[var(--md-ink)]">
+              {event.time}–{event.endTime}
+            </span>
+            <span data-i18n-skip dir="ltr" className="text-[11.5px] leading-none tabular-nums text-[var(--md-subtle)]">{durationLabel}</span>
+          </p>
         </div>
-        <p data-i18n-skip dir="auto" className="mt-2 truncate text-[12px] font-medium text-[var(--md-text)]">
-          {customer.name}
-        </p>
-      </div>
-      <div className="mt-2 grid gap-1.5">
-        <WarehouseCalendarDetailRow label="Customer" value={customer.name} skipTranslation />
-        <WarehouseCalendarDetailRow label="Date" value={dateLabel} />
-        <WarehouseCalendarDetailRow label="Time" value={`${event.time}-${event.endTime}`} skipTranslation />
-        <WarehouseCalendarDetailRow label="Type" value={event.type} />
-        <WarehouseCalendarDetailRow label="Reference" value={event.reference ?? event.id.toUpperCase()} skipTranslation />
-        {event.location ? <WarehouseCalendarDetailRow label="Warehouse" value={event.location} skipTranslation /> : null}
+
+        <dl className="px-3.5 py-2.5 shadow-[var(--md-stroke-top)]">
+          <WarehouseCalendarDetailRow label="Order" value={event.reference ?? event.id.toUpperCase()} code />
+          {event.location ? <WarehouseCalendarDetailRow label="Warehouse" value={event.location} /> : null}
+        </dl>
+
+        {onOpenOrder ? (
+          <div className="p-1.5 shadow-[var(--md-stroke-top)]">
+            {/* Closed by Radix before the route changes. Without it the popover is
+                left portalled to the body and hangs over the next screen while the
+                calendar behind it is still finishing its exit. */}
+            <PopoverClose asChild>
+              <button
+                type="button"
+                onClick={onOpenOrder}
+                className="group flex h-9 w-full items-center justify-between rounded-[var(--md-radius-md)] px-2 text-[12.5px] font-medium text-[var(--md-text)] outline-none transition-[background,color] duration-200 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:bg-[var(--md-hover)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a24)]"
+              >
+                {t("Open this order")}
+                {/* A 2px nudge on hover: enough to say the row leads somewhere,
+                    small enough that a pointer crossing the popover stays calm. */}
+                <ChevronRight className="size-3.5 shrink-0 text-[var(--md-subtle)] transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:translate-x-0.5 group-hover:text-[var(--md-ink)] rtl:group-hover:-translate-x-0.5 motion-reduce:transform-none" strokeWidth={1.5} />
+              </button>
+            </PopoverClose>
+          </div>
+        ) : null}
       </div>
     </PopoverContent>
   )
@@ -1745,7 +1933,9 @@ function WarehouseCalendarEventCard({
   const { t } = useLanguage()
   const eventStyle = {
     "--warehouse-calendar-color": customer.color,
-    background: "color-mix(in srgb, var(--warehouse-calendar-color) 10%, var(--md-surface))",
+    background: event.direction === "inbound"
+      ? "repeating-linear-gradient(135deg, color-mix(in srgb, var(--warehouse-calendar-color) 18%, transparent) 0 2px, transparent 2px 7px), color-mix(in srgb, var(--warehouse-calendar-color) 10%, var(--md-surface))"
+      : "color-mix(in srgb, var(--warehouse-calendar-color) 10%, var(--md-surface))",
     boxShadow: "inset 0 0 0 1px color-mix(in srgb, var(--warehouse-calendar-color) 28%, transparent), 0 10px 24px rgba(42, 52, 50, 0.06)",
   } as CSSProperties
 
@@ -1762,14 +1952,9 @@ function WarehouseCalendarEventCard({
           style={eventStyle}
         >
           <span aria-hidden="true" className="absolute inset-y-3 start-2 w-0.5 rounded-full" style={{ background: "var(--warehouse-calendar-color)" }} />
-          <div className="flex items-center justify-between gap-2">
-            <span data-i18n-skip dir="ltr" className="text-[11px] font-medium tabular-nums" style={{ color: "var(--warehouse-calendar-color)" }}>
-              {event.time}-{event.endTime}
-            </span>
-            <span className="truncate rounded-full bg-[color-mix(in_srgb,var(--md-surface)_58%,transparent)] px-2 py-0.5 text-[10px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
-              {event.type}
-            </span>
-          </div>
+          <span data-i18n-skip dir="ltr" className="block text-[11px] font-medium tabular-nums" style={{ color: "var(--warehouse-calendar-color)" }}>
+            {event.time}–{event.endTime}
+          </span>
           <p className={cn("mt-1 font-medium text-[var(--md-ink)]", compact ? "line-clamp-2 text-[12px] leading-4" : "text-[13px] leading-5")}>{event.title}</p>
           <p data-i18n-skip dir="auto" className="mt-2 truncate text-[11px] font-medium text-[var(--md-text)]">
             {customer.shortName}
@@ -1791,15 +1976,34 @@ function WarehouseCalendarTimedEvent({
   const { event, top, height, column, columnCount } = positionedEvent
   const customer = getWarehouseCalendarCustomer(event.customerId, customers)
   const { t } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
+  const drag = useContext(WarehouseCalendarDragContext)
+  const isDragging = drag?.preview?.eventId === event.id
   const compact = height < 58 || columnCount > 1
+  const startMinutes = getTimeInMinutes(event.time)
+  const endMinutes = getCalendarEventEndMinutes(event)
+
+  function grip(mode: CalendarDragMode) {
+    return (pointerEvent: ReactPointerEvent) => {
+      if (!drag?.enabled) return
+      pointerEvent.stopPropagation()
+      drag.begin(pointerEvent, { eventId: event.id, mode, dateKey: event.date, startMinutes, endMinutes })
+    }
+  }
   const eventStyle = {
     "--warehouse-calendar-color": customer.color,
     top: `${top + 4}px`,
     height: `${Math.max(height - 8, 30)}px`,
     insetInlineStart: `${(column / columnCount) * 100}%`,
     width: `calc(${100 / columnCount}% - ${columnCount > 1 ? 4 : 0}px)`,
-    background: "color-mix(in srgb, var(--warehouse-calendar-color) 13%, var(--md-surface))",
-    boxShadow: "inset 0 0 0 1px color-mix(in srgb, var(--warehouse-calendar-color) 32%, transparent), 0 12px 24px rgba(42, 52, 50, 0.08)",
+    background: event.direction === "inbound"
+      ? "repeating-linear-gradient(135deg, color-mix(in srgb, var(--warehouse-calendar-color) 21%, transparent) 0 2px, transparent 2px 7px), color-mix(in srgb, var(--warehouse-calendar-color) 13%, var(--md-surface))"
+      : "color-mix(in srgb, var(--warehouse-calendar-color) 13%, var(--md-surface))",
+    // The block being dragged lifts off the grid: a stronger edge and a deeper
+    // shadow, so the one under the pointer is obviously the one that will move.
+    boxShadow: isDragging
+      ? "inset 0 0 0 1px color-mix(in srgb, var(--warehouse-calendar-color) 62%, transparent), 0 18px 36px rgba(42, 52, 50, 0.22)"
+      : "inset 0 0 0 1px color-mix(in srgb, var(--warehouse-calendar-color) 32%, transparent), 0 12px 24px rgba(42, 52, 50, 0.08)",
   } as CSSProperties
 
   return (
@@ -1808,23 +2012,43 @@ function WarehouseCalendarTimedEvent({
         <button
           type="button"
           aria-label={`${t("Open calendar event details")}: ${event.title}`}
-          className="absolute z-10 overflow-hidden rounded-[var(--md-radius-md)] p-2 ps-3 text-left outline-none transition-[box-shadow,scale,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:z-20 hover:scale-[1.01] focus-visible:z-20 focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
+          onPointerDown={drag?.enabled ? grip("move") : undefined}
+          className={cn(
+            "absolute z-10 overflow-hidden rounded-[var(--md-radius-md)] p-2 ps-3 text-left outline-none transition-[box-shadow,scale,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] focus-visible:z-20 focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]",
+            drag?.enabled && "cursor-grab active:cursor-grabbing touch-none",
+            isDragging ? "z-30 scale-[1.02]" : "hover:z-20 hover:scale-[1.01]",
+            shouldReduceMotion && "transition-none",
+          )}
           style={eventStyle}
-          title={`${event.title} ${event.time}-${event.endTime}`}
+          title={`${event.title} ${event.time}–${event.endTime}`}
         >
           <span aria-hidden="true" className="absolute inset-y-2 start-1.5 w-0.5 rounded-full" style={{ background: "var(--warehouse-calendar-color)" }} />
-          <div className="flex min-w-0 items-start justify-between gap-2">
-            <div className="min-w-0">
-              <p className={cn("truncate font-medium text-[var(--md-ink)]", compact ? "text-[11px] leading-4" : "text-[12px] leading-4")}>{event.title}</p>
-              <p data-i18n-skip dir="ltr" className="mt-0.5 truncate text-[11px] font-medium tabular-nums text-[var(--md-text)]">
-                {event.time}-{event.endTime}
-              </p>
-            </div>
-            {!compact ? (
-              <span className="shrink-0 rounded-full bg-[color-mix(in_srgb,var(--md-surface)_60%,transparent)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
-                {event.type}
-              </span>
-            ) : null}
+          {/* Six pixels of grab at each edge, the same target a window resize uses.
+              They sit above the block's own press handler so an edge drag changes
+              the length instead of moving the whole booking. */}
+          {drag?.enabled ? (
+            <>
+              <span
+                role="separator"
+                aria-orientation="horizontal"
+                aria-label={`${t("Change start time")}: ${event.title}`}
+                onPointerDown={grip("resize-start")}
+                className="absolute inset-x-0 top-0 z-10 h-1.5 cursor-ns-resize touch-none after:absolute after:inset-x-2 after:top-[2px] after:h-[2px] after:rounded-full after:bg-[var(--warehouse-calendar-color)] after:opacity-0 after:transition-opacity after:duration-200 hover:after:opacity-70"
+              />
+              <span
+                role="separator"
+                aria-orientation="horizontal"
+                aria-label={`${t("Change end time")}: ${event.title}`}
+                onPointerDown={grip("resize-end")}
+                className="absolute inset-x-0 bottom-0 z-10 h-1.5 cursor-ns-resize touch-none after:absolute after:inset-x-2 after:bottom-[2px] after:h-[2px] after:rounded-full after:bg-[var(--warehouse-calendar-color)] after:opacity-0 after:transition-opacity after:duration-200 hover:after:opacity-70"
+              />
+            </>
+          ) : null}
+          <div className="min-w-0">
+            <p className={cn("truncate font-medium text-[var(--md-ink)]", compact ? "text-[11px] leading-4" : "text-[12px] leading-4")}>{event.title}</p>
+            <p data-i18n-skip dir="ltr" className="mt-0.5 truncate text-[11px] font-medium tabular-nums text-[var(--md-text)]">
+              {event.time}–{event.endTime}
+            </p>
           </div>
           {!compact ? (
             <p data-i18n-skip dir="auto" className="mt-1 truncate text-[11px] font-medium text-[var(--md-text)]">
@@ -1860,13 +2084,58 @@ function WarehouseCalendarTimedDayColumn({ day, customers }: { day: WarehouseCal
   )
 }
 
-function WarehouseCalendarWeekGrid({ days, customers }: { days: WarehouseCalendarDay[]; customers: readonly WarehouseCalendarCustomer[] }) {
-  const { language } = useLanguage()
+function applyCalendarPreview(days: WarehouseCalendarDay[], preview: CalendarDragPreview | null) {
+  if (!preview) return days
+  const moved = days.flatMap((day) => day.events).find((event) => event.id === preview.eventId)
+  if (!moved) return days
+
+  const previewed: WarehouseCalendarEvent = {
+    ...moved,
+    date: preview.dateKey,
+    time: minutesToTimeKey(preview.startMinutes),
+    endTime: minutesToTimeKey(preview.endMinutes),
+  }
+
+  return days.map((day) => {
+    const withoutMoved = day.events.filter((event) => event.id !== preview.eventId)
+    return day.dateKey === preview.dateKey
+      ? { ...day, events: [...withoutMoved, previewed] }
+      : withoutMoved.length === day.events.length ? day : { ...day, events: withoutMoved }
+  })
+}
+
+function WarehouseCalendarWeekGrid({
+  days,
+  customers,
+  onReschedule,
+}: {
+  days: WarehouseCalendarDay[]
+  customers: readonly WarehouseCalendarCustomer[]
+  onReschedule?: (change: { eventId: string; dateKey: string; startMinutes: number; endMinutes: number }) => void
+}) {
+  const { direction, language } = useLanguage()
+  const gridRef = useRef<HTMLDivElement>(null)
+  const dayKeys = useMemo(() => days.map((day) => day.dateKey), [days])
+
+  const { preview, begin } = useCalendarEventDrag({
+    gridRef,
+    dayKeys,
+    hourHeight: warehouseCalendarHourHeight,
+    gridStartMinutes: warehouseCalendarGridStartMinutes,
+    gridEndMinutes: warehouseCalendarGridEndMinutes,
+    direction,
+    columnsInset: 64,
+    onCommit: (change) => onReschedule?.(change),
+  })
+
+  const dragHandle = useMemo<CalendarDragHandle>(() => ({ begin, preview, enabled: Boolean(onReschedule) }), [begin, preview, onReschedule])
+  const previewDays = useMemo(() => applyCalendarPreview(days, preview), [days, preview])
   const timeZoneLabel = new Intl.DateTimeFormat(language, { timeZoneName: "short" })
     .formatToParts(days[0]?.date ?? new Date())
     .find((part) => part.type === "timeZoneName")?.value ?? "Local"
 
   return (
+    <WarehouseCalendarDragContext.Provider value={dragHandle}>
     <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
       <div className="overflow-x-auto md-scrollbar">
         <div className="min-w-[1120px]">
@@ -1903,7 +2172,7 @@ function WarehouseCalendarWeekGrid({ days, customers }: { days: WarehouseCalenda
               )
             })}
           </div>
-          <div className="grid grid-cols-[64px_repeat(7,minmax(0,1fr))] bg-[color-mix(in_srgb,var(--md-surface)_72%,transparent)]">
+          <div ref={gridRef} data-calendar-columns className="grid grid-cols-[64px_repeat(7,minmax(0,1fr))] bg-[color-mix(in_srgb,var(--md-surface)_72%,transparent)]">
             <div className="relative shadow-[inset_0_1px_0_rgba(90,103,100,0.12)]" style={{ height: warehouseCalendarGridHeight }}>
               {warehouseCalendarHourMarks.map((hour, index) => (
                 <span
@@ -1917,13 +2186,14 @@ function WarehouseCalendarWeekGrid({ days, customers }: { days: WarehouseCalenda
                 </span>
               ))}
             </div>
-            {days.map((day) => (
+            {previewDays.map((day) => (
               <WarehouseCalendarTimedDayColumn key={day.dateKey} day={day} customers={customers} />
             ))}
           </div>
         </div>
       </div>
     </Surface>
+    </WarehouseCalendarDragContext.Provider>
   )
 }
 
@@ -1973,9 +2243,18 @@ function WarehouseCalendarDayCell({
 export function WarehouseCalendarView({
   customers = warehouseCalendarCustomers,
   events = warehouseCalendarEvents,
+  onOpenOrder,
+  onReschedule,
 }: {
   customers?: readonly WarehouseCalendarCustomer[]
   events?: readonly WarehouseCalendarEvent[]
+  /** Opens the warehouse order behind an event. Omitted leaves the popover read-only. */
+  onOpenOrder?: (event: WarehouseCalendarEvent) => void
+  /**
+   * Moves a booking to a new slot. Omitted leaves the blocks inert — no grips, no
+   * grab cursor — so a read-only calendar cannot suggest an action it will not take.
+   */
+  onReschedule?: (change: { eventId: string; dateKey: string; startTime: string; endTime: string }) => void
 }) {
   const { language, t } = useLanguage()
   const [calendarView, setCalendarView] = useState<WarehouseCalendarViewMode>("Week")
@@ -1993,7 +2272,6 @@ export function WarehouseCalendarView({
   ), [allCalendarDays, selectedCustomerIds])
   const visibleCustomerIds = useMemo(() => new Set(allCalendarDays.flatMap((day) => day.events.map((event) => event.customerId))), [allCalendarDays])
   const visibleCustomers = customers.filter((customer) => visibleCustomerIds.has(customer.id))
-  const eventCount = calendarDays.reduce((total, day) => total + day.events.length, 0)
   const periodLabel = formatCalendarPeriodLabel(calendarView, language, anchorDate)
 
   function handleSelectCustomer(customerId: string) {
@@ -2024,8 +2302,12 @@ export function WarehouseCalendarView({
   }
 
   return (
+    <WarehouseCalendarOpenOrderContext.Provider value={onOpenOrder ?? null}>
     <div className="grid gap-[var(--md-page-stack-gap)]">
-      <WarehouseToolbar title={t("Calendar")} meta={t("Dock bookings, count windows, dispatch cutoffs and stock-take planning.")}>
+      <WarehousePageHeader
+        title="Calendar"
+        description="Dock bookings, count windows, dispatch cutoffs and stock-take planning."
+      >
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1">
             <Button
@@ -2033,7 +2315,7 @@ export function WarehouseCalendarView({
               variant="ghost"
               size="icon-sm"
               aria-label={t(calendarView === "Week" ? "Previous week" : "Previous month")}
-              className="rounded-[var(--md-radius-md)] bg-white/48 shadow-[var(--md-shadow-line)] hover:bg-white/74"
+              className="size-10 rounded-[var(--md-radius-md)] bg-white/48 shadow-[var(--md-shadow-line)] hover:bg-white/74"
               onClick={() => moveCalendarPeriod(-1)}
             >
               <ChevronLeft className="size-4 rtl:rotate-180" strokeWidth={1.25} />
@@ -2041,7 +2323,7 @@ export function WarehouseCalendarView({
             <Button
               type="button"
               variant="ghost"
-              className="h-8 rounded-[var(--md-radius-md)] bg-white/48 px-3 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/74"
+              className="h-10 rounded-[var(--md-radius-md)] bg-white/48 px-3 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/74"
               onClick={showToday}
             >
               {t("Today")}
@@ -2051,25 +2333,31 @@ export function WarehouseCalendarView({
               variant="ghost"
               size="icon-sm"
               aria-label={t(calendarView === "Week" ? "Next week" : "Next month")}
-              className="rounded-[var(--md-radius-md)] bg-white/48 shadow-[var(--md-shadow-line)] hover:bg-white/74"
+              className="size-10 rounded-[var(--md-radius-md)] bg-white/48 shadow-[var(--md-shadow-line)] hover:bg-white/74"
               onClick={() => moveCalendarPeriod(1)}
             >
               <ChevronRight className="size-4 rtl:rotate-180" strokeWidth={1.25} />
             </Button>
           </div>
-          <div className="flex h-9 items-center gap-2 rounded-[var(--md-radius-md)] bg-[color-mix(in_srgb,var(--md-surface)_72%,transparent)] px-3 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]">
+          <div className="flex h-10 items-center gap-2 rounded-[var(--md-radius-md)] bg-[color-mix(in_srgb,var(--md-surface)_72%,transparent)] px-3 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]">
             <CalendarDays data-icon="inline-start" className="size-4 text-[var(--md-accent)]" strokeWidth={1.25} />
             <span>{calendarView === "Week" ? `${t("Week of")} ${periodLabel}` : periodLabel}</span>
           </div>
-          <StatusPill tone="teal">
-            {eventCount} {t(eventCount === 1 ? "Event" : "Events")}
-          </StatusPill>
           <SegmentedControl options={warehouseCalendarViewModes} value={calendarView} onChange={changeCalendarView} />
         </div>
-      </WarehouseToolbar>
+      </WarehousePageHeader>
       {visibleCustomers.length ? <WarehouseCalendarCustomerKey customers={visibleCustomers} selectedCustomerIds={selectedCustomerIds} onSelectCustomer={handleSelectCustomer} /> : null}
       {calendarView === "Week" ? (
-        <WarehouseCalendarWeekGrid days={calendarDays} customers={customers} />
+        <WarehouseCalendarWeekGrid
+          days={calendarDays}
+          customers={customers}
+          onReschedule={onReschedule ? (change) => onReschedule({
+            eventId: change.eventId,
+            dateKey: change.dateKey,
+            startTime: minutesToTimeKey(change.startMinutes),
+            endTime: minutesToTimeKey(change.endMinutes),
+          }) : undefined}
+        />
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
           {calendarDays.map((day) => (
@@ -2078,6 +2366,7 @@ export function WarehouseCalendarView({
         </div>
       )}
     </div>
+    </WarehouseCalendarOpenOrderContext.Provider>
   )
 }
 

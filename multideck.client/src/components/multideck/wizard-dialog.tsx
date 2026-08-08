@@ -1,0 +1,231 @@
+import { useEffect, useRef, useState, type ReactNode } from "react"
+import { AnimatePresence, motion, useReducedMotion } from "motion/react"
+import { ArrowLeft, ArrowRight, Check, Loader2 } from "lucide-react"
+
+import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { useLanguage } from "@/i18n/language-provider"
+import { mdMotion } from "@/lib/motion"
+import { cn } from "@/lib/utils"
+
+export type WizardStep = {
+  id: string
+  label: string
+  /** One line under the step's fields saying what this step is for. */
+  hint?: string
+  /** Marks the step done in the rail. Leave undefined for steps with nothing required. */
+  complete?: boolean
+}
+
+/**
+ * A record being created or edited, one group of fields at a time, with the whole
+ * shape of the job visible from the first screen.
+ *
+ * Every step is reachable at any moment — the rail is a map, not a gate. These
+ * forms validate on submit against the server's own rules, so blocking step two
+ * until step one is perfect would invent a constraint the backend does not have
+ * and trap an operator who filled things out of order.
+ *
+ * The rail's fill is the only thing that animates on the progress track, and it
+ * scales rather than resizing, so stepping is one composited frame however wide
+ * the dialog is.
+ */
+export function WizardDialog({
+  open,
+  onOpenChange,
+  title,
+  description,
+  steps,
+  activeStepId,
+  onStepChange,
+  submitLabel,
+  onSubmit,
+  saving = false,
+  submitDisabled = false,
+  secondaryAction,
+  bodyMinHeight = 320,
+  className,
+  children,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  title: string
+  description?: string
+  steps: WizardStep[]
+  activeStepId: string
+  onStepChange: (id: string) => void
+  submitLabel: string
+  onSubmit: () => void
+  saving?: boolean
+  submitDisabled?: boolean
+  /** Sits on the far side of the footer. Used for Delete when editing. */
+  secondaryAction?: ReactNode
+  /**
+   * Reserves the tallest step's height so moving between steps does not resize the
+   * dialog under the pointer.
+   */
+  bodyMinHeight?: number
+  className?: string
+  children: ReactNode
+}) {
+  const { t } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
+  const activeIndex = Math.max(0, steps.findIndex((step) => step.id === activeStepId))
+  const isLastStep = activeIndex === steps.length - 1
+  // Which way the content travels. Reading it from the last index rather than
+  // from the click means the rail, the Back button and a keyboard shortcut all
+  // produce the same direction.
+  const [direction, setDirection] = useState(1)
+  const previousIndex = useRef(activeIndex)
+
+  useEffect(() => {
+    if (activeIndex === previousIndex.current) return
+    setDirection(activeIndex > previousIndex.current ? 1 : -1)
+    previousIndex.current = activeIndex
+  }, [activeIndex])
+
+  function goTo(index: number) {
+    const next = steps[Math.max(0, Math.min(steps.length - 1, index))]
+    if (next && next.id !== activeStepId) onStepChange(next.id)
+  }
+
+  const travel = shouldReduceMotion ? 0 : 14
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className={cn("gap-0 overflow-hidden border-0 bg-[var(--md-surface)] p-0 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[720px]", className)}>
+        <DialogHeader className="gap-1 px-6 pb-4 pt-5 text-start shadow-[var(--md-stroke-bottom)]">
+          <DialogTitle className="text-[16px] font-medium">{t(title)}</DialogTitle>
+          {description ? <DialogDescription className="text-[13px] leading-5 text-[var(--md-text)]">{t(description)}</DialogDescription> : null}
+        </DialogHeader>
+
+        {/* The rail answers three questions at once: how many steps there are,
+            which one this is, and which are already filled in. */}
+        <nav aria-label={t("Steps")} className="px-6 pb-4 pt-4">
+          <ol className="relative flex items-start justify-between gap-2">
+            <span aria-hidden="true" className="absolute inset-x-0 top-[11px] h-px bg-[var(--md-line)]" />
+            <motion.span
+              aria-hidden="true"
+              className="absolute inset-x-0 top-[11px] h-px origin-left bg-[var(--md-accent)] rtl:origin-right"
+              initial={false}
+              animate={{ scaleX: steps.length > 1 ? activeIndex / (steps.length - 1) : 1 }}
+              transition={shouldReduceMotion ? { duration: 0 } : mdMotion.panel}
+            />
+            {steps.map((step, index) => {
+              const isCurrent = index === activeIndex
+              const isDone = step.complete === true && !isCurrent
+              return (
+                <li key={step.id} className="relative z-[1] flex min-w-0 flex-1 justify-center first:justify-start last:justify-end">
+                  <button
+                    type="button"
+                    onClick={() => goTo(index)}
+                    aria-current={isCurrent ? "step" : undefined}
+                    className="group flex min-w-0 flex-col items-center gap-1.5 rounded-[var(--md-radius-md)] px-1 py-0.5 outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a24)]"
+                  >
+                    <span
+                      className={cn(
+                        "grid size-[22px] shrink-0 place-items-center rounded-full text-[11px] font-medium tabular-nums transition-[background-color,color,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
+                        isCurrent
+                          ? "bg-[var(--md-accent)] text-[var(--md-accent-ink)] shadow-[0_0_0_3px_var(--md-accent-a14)]"
+                          : isDone
+                            ? "bg-[var(--md-accent-a10)] text-[var(--md-accent)]"
+                            : "bg-[var(--md-surface-tint)] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)] group-hover:text-[var(--md-text)]",
+                      )}
+                    >
+                      {isDone ? <Check className="size-3" strokeWidth={2} aria-hidden="true" /> : <span data-i18n-skip dir="ltr">{index + 1}</span>}
+                    </span>
+                    <span className={cn("max-w-[130px] truncate text-[11.5px] leading-4 transition-colors duration-200", isCurrent ? "font-medium text-[var(--md-ink)]" : "text-[var(--md-text)] group-hover:text-[var(--md-ink)]")}>
+                      {t(step.label)}
+                    </span>
+                  </button>
+                </li>
+              )
+            })}
+          </ol>
+        </nav>
+
+        <div className="md-scrollbar overflow-y-auto px-6 pb-5" style={{ minHeight: bodyMinHeight }}>
+          {/* mode="wait" with a short exit: the outgoing step is gone before the
+              next arrives, so two sets of fields are never stacked, and rapid
+              stepping still feels answered. */}
+          <AnimatePresence mode="wait" initial={false} custom={direction}>
+            <motion.div
+              key={activeStepId}
+              custom={direction}
+              initial={shouldReduceMotion ? false : { opacity: 0, x: direction * travel }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, x: direction * -travel, transition: { ...mdMotion.exit, duration: 0.12 } }}
+              transition={shouldReduceMotion ? { duration: 0 } : mdMotion.enter}
+              className="grid content-start gap-4"
+            >
+              {steps[activeIndex]?.hint ? (
+                <p className="text-[12px] leading-4 text-[var(--md-text)]">{t(steps[activeIndex].hint!)}</p>
+              ) : null}
+              {children}
+            </motion.div>
+          </AnimatePresence>
+        </div>
+
+        <div className="flex flex-row items-center justify-between gap-2 bg-[var(--md-surface-soft)] px-6 py-4 shadow-[var(--md-stroke-top)]">
+          <div className="flex items-center gap-2">
+            {secondaryAction}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={activeIndex === 0}
+              onClick={() => goTo(activeIndex - 1)}
+              className="h-10 rounded-[var(--md-radius-lg)] px-3 text-[13px] font-medium text-[var(--md-text)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] disabled:opacity-40"
+            >
+              <ArrowLeft data-icon="inline-start" className="size-4 rtl:rotate-180" strokeWidth={1.4} />
+              {t("Back")}
+            </Button>
+            {isLastStep ? (
+              <Button
+                type="button"
+                onClick={onSubmit}
+                disabled={saving || submitDisabled}
+                className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] shadow-[0_10px_22px_var(--md-accent-a14)] transition-[background-color,box-shadow,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)] active:scale-[0.97] motion-reduce:transform-none"
+              >
+                {saving ? <Loader2 data-icon="inline-start" className="size-4 animate-spin" strokeWidth={1.6} /> : null}
+                {t(submitLabel)}
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                onClick={() => goTo(activeIndex + 1)}
+                className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] shadow-[0_10px_22px_var(--md-accent-a14)] transition-[background-color,box-shadow,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)] active:scale-[0.97] motion-reduce:transform-none"
+              >
+                {t("Next")}
+                <ArrowRight data-icon="inline-end" className="size-4 rtl:rotate-180" strokeWidth={1.4} />
+              </Button>
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/**
+ * Lets a wizard submit from any step without the operator having to walk to the
+ * end. Rendered beside Delete so the footer's right-hand side stays a single
+ * forward path.
+ */
+export function WizardSaveNowButton({ label, onSubmit, saving, disabled }: { label: string; onSubmit: () => void; saving?: boolean; disabled?: boolean }) {
+  const { t } = useLanguage()
+
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      onClick={onSubmit}
+      disabled={saving || disabled}
+      className="h-10 rounded-[var(--md-radius-lg)] px-3 text-[13px] font-medium text-[var(--md-text)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]"
+    >
+      {saving ? <Loader2 data-icon="inline-start" className="size-4 animate-spin" strokeWidth={1.6} /> : null}
+      {t(label)}
+    </Button>
+  )
+}

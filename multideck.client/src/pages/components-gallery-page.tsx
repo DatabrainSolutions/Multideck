@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { useTheme } from "next-themes"
-import { ArrowLeft, ArrowRight, Bell, Check, Clipboard, Cloud, Component, Download, FileText, Folder, Image, KeyRound, Mail, Pin, Search, Ship, Sparkles, UserRound } from "lucide-react"
+import { ArrowLeft, ArrowRight, Bell, Check, Clipboard, Cloud, Component, Download, Eye, FileText, Folder, Image, KeyRound, Mail, Pencil, Pin, Search, Ship, Sparkles, Trash2, UserRound } from "lucide-react"
 import { toast } from "sonner"
 import toastErrorIcon from "@/assets/toasts/toast-error.png"
 import toastGeneralIcon from "@/assets/toasts/toast-general.png"
@@ -18,12 +18,31 @@ import {
   ReasoningTrigger,
 } from "@/components/ai-elements/reasoning"
 import { Checkbox } from "@/components/ui/checkbox"
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu"
+import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
+import {
+  RegisterFacetSelect,
+  RegisterRefreshButton,
+  RegisterSearchField,
+  RegisterToolbarActions,
+  RegisterToolbarDivider,
+  RegisterViewSwitch,
+  registerButtonClass,
+} from "@/components/multideck/register-toolbar"
 import { Input } from "@/components/ui/input"
 import { Kbd, KbdGroup } from "@/components/ui/kbd"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
+import { DriveFileTile, DriveFolderTile } from "@/components/multideck/drive-components"
 import { accentShiftDurationMs, useAccentPresetId } from "@/lib/accent-theme"
+import type { DriveFile, DriveFolder, DriveFolderStats } from "@/lib/drive-api"
 import { cn } from "@/lib/utils"
 import type { ApiLead, ApiLeadDetail } from "@/lib/lead-api"
 import { activityItems, cityQueues, crmAccountSignals, crmActivities, crmContacts, crmLeadFieldSettings, crmPipelineSettings, crmPipelineStages, crmSummaryMetrics, customerFilters, customerScopeTabs, customers, customsQueue, galleryComponents, galleryIcons, generatedReports, initialFavouriteBookingIds, liveBookings, marlowContacts, marlowMetrics, metricCards, quoteAuditEvents, reportTemplates, bookingFilters, bookingMetrics, bookings, warehouseOrders, warehouseProducts, warehouseStockRows } from "@/data/multideck-data"
@@ -51,7 +70,7 @@ import {
   LaneMixPanel,
   PrimaryContactsPanel,
 } from "@/components/multideck/customer-components"
-import { CrmActivityTimeline, CrmAssetFolderCard, CrmAssetRow, CrmContactTable, CrmForecastPanel, CrmLeadDetailPanel, CrmLeadQualificationTable, CrmLeadSignalList, CrmMetricsGrid, CrmPipelineBoard, CrmPriorityActionsPanel, CrmRevenueMixPanel, CrmSalesCommandCenter, CrmSalesFunnelPanel, CrmSettingsBuilder } from "@/components/multideck/crm-components"
+import { CrmActivityTimeline, CrmContactTable, CrmForecastPanel, CrmLeadDetailPanel, CrmLeadQualificationTable, CrmLeadSignalList, CrmMetricsGrid, CrmPipelineBoard, CrmPriorityActionsPanel, CrmRevenueMixPanel, CrmSalesCommandCenter, CrmSalesFunnelPanel, CrmSettingsBuilder } from "@/components/multideck/crm-components"
 import { CopyableField } from "@/components/multideck/copyable-field"
 import { ContactCardLayoutPicker, ContactCardSocialLinksEditor } from "@/components/multideck/contact-card-design"
 import { ContactCreateDialog } from "@/components/multideck/contact-create-dialog"
@@ -197,7 +216,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Button & control components",
     helper: "Navigation and input controls",
-    ids: ["command", "app-breadcrumbs", "sidebar", "sidebar-item-menu", "sidebar-arrange-canvas", "theme-toggle", "page-settings-menu", "date-range-picker", "segmented-control", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "pagination", "kbd", "shortcut-keys", "settings-controls", "settings-option-card"],
+    ids: ["command", "app-breadcrumbs", "sidebar", "sidebar-item-menu", "sidebar-arrange-canvas", "theme-toggle", "page-settings-menu", "date-range-picker", "segmented-control", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "context-menu", "register-toolbar", "pagination", "kbd", "shortcut-keys", "settings-controls", "settings-option-card"],
   },
   {
     label: "Auth components",
@@ -212,12 +231,12 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["paper-tray-stack", "document-viewer", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
+    ids: ["paper-tray-stack", "document-viewer", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
   },
   {
     label: "CRM",
-    helper: "Leads, contacts, deals, activity, marketing, settings",
-    ids: ["crm-sales-command-center", "crm-metrics-grid", "crm-sales-funnel-panel", "crm-revenue-mix-panel", "crm-forecast-panel", "crm-priority-actions-panel", "crm-pipeline-board", "crm-pipeline-editor", "crm-asset-folder-card", "crm-asset-row", "crm-lead-qualification-table", "copyable-field", "crm-lead-detail-panel", "contact-create-dialog", "crm-contact-table", "crm-activity-timeline", "crm-lead-signals", "crm-settings-builder"],
+    helper: "Leads, contacts, deals, activity, Drive, settings",
+    ids: ["crm-sales-command-center", "crm-metrics-grid", "crm-sales-funnel-panel", "crm-revenue-mix-panel", "crm-forecast-panel", "crm-priority-actions-panel", "crm-pipeline-board", "crm-pipeline-editor", "drive-folder-tile", "drive-file-tile", "crm-lead-qualification-table", "copyable-field", "crm-lead-detail-panel", "contact-create-dialog", "crm-contact-table", "crm-activity-timeline", "crm-lead-signals", "crm-settings-builder"],
   },
   {
     label: "Agent Dexter",
@@ -259,85 +278,92 @@ const previewUnifiedChargeRowsSeed: UnifiedQuoteChargeRow[] = [
 ]
 
 const previewChargeColumns: DataTableColumn<PreviewChargeRow>[] = [
-  { id: "code", label: "Code", width: 100, defaultPinned: true, cell: (row) => <span dir="ltr">{row.id}</span>, sortValue: (row) => row.id },
+  { id: "code", label: "Code", width: 100, cell: (row) => <span dir="ltr">{row.id}</span>, sortValue: (row) => row.id },
   { id: "description", label: "Description", width: 220, cell: (row) => row.description, sortValue: (row) => row.description },
   { id: "supplier", label: "Supplier", width: 210, cell: (row) => row.supplier, sortValue: (row) => row.supplier },
   { id: "cost", label: "Cost", width: 110, cell: (row) => `£${row.cost.toFixed(2)}`, sortValue: (row) => row.cost },
   { id: "sell", label: "Sell", width: 110, cell: (row) => `£${row.sell.toFixed(2)}`, sortValue: (row) => row.sell },
 ]
 
-const previewMarketingFolders = [
-  {
-    id: "brand-logos",
-    name: "Brand logos",
-    description: "Primary marks, partner lockups, favicon exports, and approved logo variations.",
-    itemCount: 9,
-    size: "48 MB",
-    updated: "Updated today",
-    owner: "Elena",
-    tone: "green" as const,
-    icon: Folder,
-  },
-  {
-    id: "graphics",
-    name: "Graphics",
-    description: "Lane visuals, customer education graphics, hero images, and social-ready artwork.",
-    itemCount: 14,
-    size: "312 MB",
-    updated: "Updated Tue",
-    owner: "Will",
-    tone: "green" as const,
-    icon: Image,
-  },
-  {
-    id: "sales-collateral",
-    name: "Sales collateral",
-    description: "One-pagers, trade-lane explainers, customer report inserts, and proposal assets.",
-    itemCount: 11,
-    size: "186 MB",
-    updated: "Updated Jun 7",
-    owner: "Mina",
-    tone: "green" as const,
-    icon: FileText,
-  },
+/* Stands in for a real preview seed: the same kind of ~1 KB inline image a stored
+   file carries, so the tile can demonstrate its instant first paint offline. Two
+   flat rects rather than a gradient, because a gradient needs a fragment reference
+   and a data URI is the wrong place to be escaping one. */
+function previewSeed(base: string, accent: string) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 6"><rect width="8" height="6" fill="${base}"/><rect x="3" y="2" width="6" height="5" fill="${accent}" opacity="0.7"/></svg>`
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`
+}
+
+const previewDriveTimestamp = "2026-08-05T09:12:00.000Z"
+
+const previewDriveFolders: DriveFolder[] = [
+  { id: "preview-brand", parentId: null, name: "Brand", colour: "teal", icon: "palette", createdAt: previewDriveTimestamp, updatedAt: previewDriveTimestamp },
+  { id: "preview-graphics", parentId: null, name: "Graphics", colour: "violet", icon: "image", createdAt: previewDriveTimestamp, updatedAt: previewDriveTimestamp },
+  { id: "preview-decks", parentId: null, name: "Customer decks", colour: "ember", icon: "presentation", createdAt: previewDriveTimestamp, updatedAt: previewDriveTimestamp },
 ]
 
-const previewMarketingAssets = [
+const previewDriveFolderStats = new Map<string, DriveFolderStats>([
+  ["preview-brand", { folderCount: 2, fileCount: 9, byteTotal: 48 * 1024 * 1024, lastActivityAt: previewDriveTimestamp }],
+  ["preview-graphics", { folderCount: 0, fileCount: 14, byteTotal: 312 * 1024 * 1024, lastActivityAt: previewDriveTimestamp }],
+  ["preview-decks", { folderCount: 0, fileCount: 0, byteTotal: 0, lastActivityAt: null }],
+])
+
+const previewDriveFiles: DriveFile[] = [
   {
-    id: "md-primary-logo-svg",
-    folderId: "brand-logos",
+    id: "preview-logo",
+    folderId: "preview-brand",
     name: "multideck-primary-logo.svg",
-    type: "SVG",
-    size: "124 KB",
-    updated: "Today",
-    owner: "Elena",
-    usage: "Approved primary logo for light surfaces",
-    tone: "green" as const,
-    icon: FileText,
+    mimeType: "image/svg+xml",
+    sizeBytes: 126_976,
+    storagePath: "preview/files/logo.svg",
+    thumbnailPath: null,
+    previewSeed: previewSeed("#e6efed", "#bcd6d1"),
+    previewWidth: 1200,
+    previewHeight: 400,
+    createdAt: previewDriveTimestamp,
+    updatedAt: previewDriveTimestamp,
   },
   {
-    id: "peak-season-hero",
-    folderId: "graphics",
+    id: "preview-hero",
+    folderId: "preview-graphics",
     name: "peak-season-capacity-hero.png",
-    type: "PNG",
-    size: "18.6 MB",
-    updated: "Tue",
-    owner: "Will",
-    usage: "Hero graphic for peak-season advisory",
-    tone: "green" as const,
-    icon: Image,
+    mimeType: "image/png",
+    sizeBytes: 19_508_428,
+    storagePath: "preview/files/hero.png",
+    thumbnailPath: null,
+    previewSeed: previewSeed("#2f5f7d", "#9dc0d4"),
+    previewWidth: 2400,
+    previewHeight: 1350,
+    createdAt: previewDriveTimestamp,
+    updatedAt: previewDriveTimestamp,
   },
   {
-    id: "monthly-rates-html",
-    folderId: "email-templates",
-    name: "monthly-rates-newsletter.html",
-    type: "HTML",
-    size: "86 KB",
-    updated: "Jun 10",
-    owner: "Jamie",
-    usage: "Reusable rates newsletter shell",
-    tone: "green" as const,
-    icon: Mail,
+    id: "preview-review",
+    folderId: "preview-decks",
+    name: "quarterly-review.pdf",
+    mimeType: "application/pdf",
+    sizeBytes: 3_251_200,
+    storagePath: "preview/files/review.pdf",
+    thumbnailPath: null,
+    previewSeed: previewSeed("#f6f6f4", "#dedbd2"),
+    previewWidth: 1240,
+    previewHeight: 1754,
+    createdAt: previewDriveTimestamp,
+    updatedAt: previewDriveTimestamp,
+  },
+  {
+    id: "preview-tariff",
+    folderId: "preview-decks",
+    name: "2026-tariff-schedule.xlsx",
+    mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    sizeBytes: 88_064,
+    storagePath: "preview/files/tariff.xlsx",
+    thumbnailPath: null,
+    previewSeed: null,
+    previewWidth: null,
+    previewHeight: null,
+    createdAt: previewDriveTimestamp,
+    updatedAt: previewDriveTimestamp,
   },
 ]
 
@@ -936,6 +962,8 @@ const previewAutomationRuns: AutomationRun[] = [
   },
 ]
 
+const galleryRegisterViews = ["Stock", "Objects", "Movements", "Exceptions"] as const
+
 const previewWarehouseObject: WarehouseHandlingUnit = {
   id: "gallery-pallet", facilityId: "gallery-facility", parentHandlingUnitId: null,
   typeCode: "pallet", typeName: "Pallet", code: "PLT-000184", sscc: null,
@@ -991,6 +1019,10 @@ function ComponentPreview({ id }: { id: string }) {
   })
   const [previewCheckbox, setPreviewCheckbox] = useState(true)
   const [previewWarehouseQuantity, setPreviewWarehouseQuantity] = useState("12.5")
+  const [galleryRegisterView, setGalleryRegisterView] = useState<(typeof galleryRegisterViews)[number]>("Stock")
+  const [galleryRegisterCondition, setGalleryRegisterCondition] = useState("")
+  const [galleryRegisterSearch, setGalleryRegisterSearch] = useState("")
+  const [galleryRegisterPending, setGalleryRegisterPending] = useState(false)
   const [previewContactLayout, setPreviewContactLayout] = useState<CardLayout>("editorial")
   const [previewMarketingOptIn, setPreviewMarketingOptIn] = useState(true)
   const [previewSocialLinks, setPreviewSocialLinks] = useState<CardSocialLink[]>([
@@ -1063,7 +1095,7 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewCrmLeadId, setPreviewCrmLeadId] = useState(previewCrmLeads[0].id)
   const [previewCrmContactEmail, setPreviewCrmContactEmail] = useState(crmContacts[0].email)
   const [previewContactCreateOpen, setPreviewContactCreateOpen] = useState(false)
-  const [previewMarketingFolderId, setPreviewMarketingFolderId] = useState(previewMarketingFolders[0].id)
+  const [previewDriveRenamingId, setPreviewDriveRenamingId] = useState<string | null>(null)
   const [previewPaperDocumentId, setPreviewPaperDocumentId] = useState<string | null>(null)
   const [previewTransportModes, setPreviewTransportModes] = useState(["Sea FCL", "Road"])
   const [previewUnifiedChargeRows, setPreviewUnifiedChargeRows] = useState<UnifiedQuoteChargeRow[]>(previewUnifiedChargeRowsSeed)
@@ -2764,31 +2796,141 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
-      {id === "crm-asset-folder-card" ? (
-        <div className="grid w-full max-w-[980px] gap-3 md:grid-cols-3">
-          {previewMarketingFolders.map((folder) => (
-            <CrmAssetFolderCard
+      {id === "drive-folder-tile" ? (
+        <div className="md-drive-grid w-full max-w-[760px]">
+          {previewDriveFolders.map((folder) => (
+            <DriveFolderTile
               key={folder.id}
               folder={folder}
-              selected={folder.id === previewMarketingFolderId}
-              onSelect={(nextFolder) => setPreviewMarketingFolderId(nextFolder.id)}
+              stats={previewDriveFolderStats.get(folder.id)}
+              renaming={previewDriveRenamingId === folder.id}
+              onOpen={(target) => toast.success(`${target.name} opened`)}
+              onRename={(target, name) => {
+                setPreviewDriveRenamingId(null)
+                toast.success(`${target.name} renamed to ${name}`)
+              }}
+              onStartRename={(target) => setPreviewDriveRenamingId(target.id)}
+              onCancelRename={() => setPreviewDriveRenamingId(null)}
+              onCustomise={(target) => toast.success(`${target.name} appearance opened`)}
+              onDelete={(target) => toast.success(`${target.name} delete confirmed`)}
             />
           ))}
         </div>
       ) : null}
 
-      {id === "crm-asset-row" ? (
-        <div className="w-full max-w-[920px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-3 shadow-[var(--md-shadow-line)]">
-          <div className="grid gap-1 rounded-[var(--md-radius-lg)] bg-white/62 p-1 shadow-[var(--md-shadow-line)]">
-            {previewMarketingAssets.map((asset) => (
-              <CrmAssetRow
-                key={asset.id}
-                asset={asset}
-                onOpen={(selectedAsset) => toast.success(`${selectedAsset.name} opened`)}
-              />
-            ))}
+      {id === "drive-file-tile" ? (
+        <div className="md-drive-grid w-full max-w-[760px]">
+          {previewDriveFiles.map((file, index) => (
+            <DriveFileTile
+              key={file.id}
+              file={file}
+              thumbnailUrl={null}
+              pending={index === previewDriveFiles.length - 1}
+              progress={0.42}
+              renaming={previewDriveRenamingId === file.id}
+              onOpen={(target) => toast.success(`${target.name} opened`)}
+              onRename={(target, name) => {
+                setPreviewDriveRenamingId(null)
+                toast.success(`${target.name} renamed to ${name}`)
+              }}
+              onStartRename={(target) => setPreviewDriveRenamingId(target.id)}
+              onCancelRename={() => setPreviewDriveRenamingId(null)}
+              onDownload={(target) => toast.success(`${target.name} downloaded`)}
+              onDelete={(target) => toast.success(`${target.name} delete confirmed`)}
+            />
+          ))}
+        </div>
+      ) : null}
+
+      {id === "dot-grid-loader" ? (
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid min-h-[132px] place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] shadow-[var(--md-shadow-line)]">
+            <DotGridLoader label="Loading…" />
+          </div>
+          <div className="grid min-h-[132px] place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] shadow-[var(--md-shadow-line)]">
+            <DotGridLoader />
+          </div>
+          <div className="grid min-h-[132px] place-items-center gap-2 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] p-3 shadow-[var(--md-shadow-line)]">
+            <div className="flex h-8 items-center gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] px-2.5 shadow-[var(--md-shadow-line)]">
+              <DotGridLoader size="sm" />
+              <span className="text-[12px] text-[var(--md-text)]">Toolbar size</span>
+            </div>
           </div>
         </div>
+      ) : null}
+
+      {id === "register-toolbar" ? (
+        <div className="overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]">
+          <div className="flex min-h-10 flex-wrap items-center justify-between gap-x-2 gap-y-1.5 bg-[color-mix(in_srgb,var(--md-surface)_92%,transparent)] px-2 py-1 shadow-[inset_0_-1px_0_rgba(11,20,19,0.05)]">
+            <div className="flex min-w-0 items-center gap-2">
+              <RegisterViewSwitch
+                options={galleryRegisterViews}
+                value={galleryRegisterView}
+                onChange={setGalleryRegisterView}
+                counts={{ Stock: 33, Objects: 32, Movements: 71, Exceptions: 13 }}
+                ariaLabel="Inventory view"
+              />
+              <RegisterToolbarDivider />
+              <button type="button" className={registerButtonClass}>New</button>
+            </div>
+            <div className="ms-auto flex min-w-[min(100%,560px)] flex-1 flex-wrap items-center justify-end gap-1.5">
+              <RegisterToolbarActions pending={galleryRegisterPending}>
+                <RegisterFacetSelect
+                  label="Condition"
+                  allLabel="All conditions"
+                  value={galleryRegisterCondition}
+                  options={[{ value: "available", label: "Available" }, { value: "quarantine", label: "Quarantine" }]}
+                  onChange={setGalleryRegisterCondition}
+                  className="w-[132px] sm:w-[150px]"
+                />
+                <RegisterSearchField
+                  value={galleryRegisterSearch}
+                  onChange={setGalleryRegisterSearch}
+                  onClear={() => setGalleryRegisterSearch("")}
+                  label="Search warehouse records"
+                  placeholder="SKU, pallet, batch"
+                />
+                <RegisterRefreshButton pending={galleryRegisterPending} onRefresh={() => setGalleryRegisterPending((current) => !current)} />
+              </RegisterToolbarActions>
+            </div>
+          </div>
+          <p className="px-3 py-6 text-center text-[12px] text-[var(--md-text)]">
+            The table body goes here. Press refresh to see the revalidation mark appear beside the filters.
+          </p>
+        </div>
+      ) : null}
+
+      {id === "context-menu" ? (
+        <ContextMenu>
+          <ContextMenuTrigger asChild>
+            <div
+              role="button"
+              tabIndex={0}
+              className="grid h-[132px] w-full max-w-[420px] place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] text-[13px] text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background-color] duration-160 hover:bg-[var(--md-surface-tint)]"
+            >
+              Right-click anywhere in here
+            </div>
+          </ContextMenuTrigger>
+          <ContextMenuContent>
+            <ContextMenuItem onSelect={() => toast.success("Preview opened")}>
+              <Eye strokeWidth={1.3} />
+              Preview
+            </ContextMenuItem>
+            <ContextMenuItem onSelect={() => toast.success("Rename started")}>
+              <Pencil strokeWidth={1.3} />
+              Rename
+            </ContextMenuItem>
+            <ContextMenuItem onSelect={() => toast.success("Download started")}>
+              <Download strokeWidth={1.3} />
+              Download
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+            <ContextMenuItem variant="destructive" onSelect={() => toast.success("Delete confirmed")}>
+              <Trash2 strokeWidth={1.3} />
+              Delete
+            </ContextMenuItem>
+          </ContextMenuContent>
+        </ContextMenu>
       ) : null}
 
       {id === "crm-contact-table" ? (

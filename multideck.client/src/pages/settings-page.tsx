@@ -133,12 +133,17 @@ import {
   listInboxProviders,
   listMailboxes,
   readEmailConnectionResult,
+  resolveDefaultInboxProvider,
   syncMailbox,
   type InboxConnection,
   type InboxProviderAvailability,
   type MailProvider,
   type Mailbox,
 } from "@/lib/inbox-api"
+import {
+  loadDefaultInboxProvider,
+  saveDefaultInboxProvider,
+} from "@/lib/inbox-provider-preference"
 import { useShortcutBinding } from "@/lib/keyboard-shortcuts"
 import { DEXTER_CONVERSATIONS_CHANGED_EVENT } from "@/lib/dexter-navigation"
 import { clockDisplayLabelFromMode, clockDisplayLabels, clockDisplayModeFromLabel, readClockDisplayMode, useAiAgentName, writeClockDisplayMode } from "@/lib/user-preferences"
@@ -3037,6 +3042,10 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [mailboxLoadError, setMailboxLoadError] = useState<string | null>(null)
   const [busyProvider, setBusyProvider] = useState<MailProvider | null>(null)
+  const [defaultInboxProvider, setDefaultInboxProvider] = useState<MailProvider | null>(null)
+  const [defaultInboxProviderLoaded, setDefaultInboxProviderLoaded] = useState(false)
+  const [defaultInboxProviderError, setDefaultInboxProviderError] = useState<string | null>(null)
+  const [savingDefaultInboxProvider, setSavingDefaultInboxProvider] = useState<MailProvider | null>(null)
   const [groupMailboxAddress, setGroupMailboxAddress] = useState("")
   const [groupMailboxError, setGroupMailboxError] = useState<string | null>(null)
   const [sharedMailboxAddress, setSharedMailboxAddress] = useState("")
@@ -3045,15 +3054,30 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
   const [writingProfilePromptBusy, setWritingProfilePromptBusy] = useState(false)
   const [writingProfilePromptKey, setWritingProfilePromptKey] = useState<string | null>(null)
   const [writingProfilePromptDismissed, setWritingProfilePromptDismissed] = useState(true)
+  const connectedMailProviders = useMemo(() => (["gmail", "outlook"] as MailProvider[]).filter((provider) => {
+    const connection = connections?.find((candidate) => candidate.provider === provider)
+    return Boolean(
+      connection
+      && (connection.status === "connected" || connection.status === "syncing")
+      && mailboxes?.some((mailbox) => mailbox.provider === provider),
+    )
+  }), [connections, mailboxes])
+  const effectiveDefaultInboxProvider = resolveDefaultInboxProvider(
+    mailboxes ?? [],
+    defaultInboxProvider,
+  ) ?? connectedMailProviders[0] ?? null
 
   const loadConnections = useCallback(async () => {
     setLoadError(null)
     setMailboxLoadError(null)
     setProviderAvailabilityError(null)
-    const [connectionsResult, availabilityResult, mailboxesResult] = await Promise.allSettled([
+    setDefaultInboxProviderError(null)
+    setDefaultInboxProviderLoaded(false)
+    const [connectionsResult, availabilityResult, mailboxesResult, preferenceResult] = await Promise.allSettled([
       listInboxConnections(),
       listInboxProviders(),
       listMailboxes(),
+      loadDefaultInboxProvider(),
     ])
 
     if (connectionsResult.status === "fulfilled") {
@@ -3076,6 +3100,14 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
       setMailboxes([])
       setMailboxLoadError(t("Existing shared mailboxes could not be loaded. Try again."))
     }
+
+    if (preferenceResult.status === "fulfilled") {
+      setDefaultInboxProvider(preferenceResult.value)
+    } else {
+      setDefaultInboxProvider(null)
+      setDefaultInboxProviderError(t("Your saved default mail provider could not be loaded. You can choose it again below."))
+    }
+    setDefaultInboxProviderLoaded(true)
   }, [t])
 
   useEffect(() => {
@@ -3244,6 +3276,31 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
     }
   }
 
+  async function chooseDefaultInboxProvider(provider: MailProvider) {
+    if (!connectedMailProviders.includes(provider) || savingDefaultInboxProvider) return
+    const previous = defaultInboxProvider
+    setDefaultInboxProvider(provider)
+    setDefaultInboxProviderError(null)
+    setSavingDefaultInboxProvider(provider)
+    try {
+      await saveDefaultInboxProvider(provider)
+      toast.success(t("Default mail provider updated"), {
+        description: t(provider === "gmail"
+          ? "Inbox and new email composers will now start with Gmail."
+          : "Inbox and new email composers will now start with Outlook."),
+      })
+    } catch (error) {
+      setDefaultInboxProvider(previous)
+      const message = error instanceof Error && error.message.trim()
+        ? error.message
+        : t("Your default mail provider could not be saved. Try again.")
+      setDefaultInboxProviderError(message)
+      toast.error(message)
+    } finally {
+      setSavingDefaultInboxProvider(null)
+    }
+  }
+
   return (
     <>
       <SettingsPageHeader
@@ -3303,7 +3360,67 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
               <p className="text-[12px] text-[var(--md-text)]">Checking your mail connections...</p>
             </div>
           ) : (
-            (["gmail", "outlook"] as MailProvider[]).map((provider) => {
+            <>
+              <SettingsFieldRow
+                label={t("Default mail provider")}
+                description={t("Choose which connected provider opens first in Inbox and is preselected for new email composers. You can still switch provider at any time.")}
+                align="start"
+              >
+                <div>
+                  <div
+                    role="radiogroup"
+                    aria-label={t("Default mail provider")}
+                    aria-busy={savingDefaultInboxProvider !== null}
+                    className="inline-flex max-w-full rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-1 shadow-[var(--md-shadow-line)]"
+                  >
+                    {(["gmail", "outlook"] as MailProvider[]).map((provider) => {
+                      const selected = effectiveDefaultInboxProvider === provider
+                      const connected = connectedMailProviders.includes(provider)
+                      return (
+                        <button
+                          key={provider}
+                          type="button"
+                          role="radio"
+                          aria-checked={selected}
+                          disabled={!connected || !defaultInboxProviderLoaded || savingDefaultInboxProvider !== null}
+                          className={cn(
+                            "inline-flex min-h-10 min-w-[112px] items-center justify-center gap-2 rounded-[var(--md-radius-md)] px-3 text-[13px] font-medium outline-none transition-[background-color,box-shadow,color,opacity,scale] duration-200 focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a24)] active:scale-[0.97] disabled:cursor-not-allowed disabled:active:scale-100 motion-reduce:transition-none motion-reduce:active:scale-100",
+                            selected
+                              ? "bg-[var(--md-selected-bg)] text-[var(--md-selected-text)] shadow-[inset_0_0_0_1px_var(--md-accent-a14),0_2px_5px_rgba(11,20,19,0.06)]"
+                              : "text-[var(--md-text)] hover:text-[var(--md-ink)]",
+                            !connected && "opacity-45",
+                          )}
+                          onClick={() => void chooseDefaultInboxProvider(provider)}
+                        >
+                          <img src={mailProviderLogos[provider]} alt="" aria-hidden="true" className="size-4 object-contain" />
+                          <span>{mailProviderCopy[provider].label}</span>
+                          {savingDefaultInboxProvider === provider ? (
+                            <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                          ) : selected ? (
+                            <Check className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
+                          ) : null}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  {connectedMailProviders.length < 2 ? (
+                    <p className="mt-2 text-[11.5px] leading-5 text-[var(--md-subtle)]">
+                      {t("Connect a provider before choosing it as the default.")}
+                    </p>
+                  ) : null}
+                  <p
+                    role={defaultInboxProviderError ? "alert" : "status"}
+                    aria-live="polite"
+                    className={cn(
+                      "mt-2 min-h-5 text-[11.5px] leading-5",
+                      defaultInboxProviderError ? "text-[var(--md-red)]" : "text-[var(--md-subtle)]",
+                    )}
+                  >
+                    {defaultInboxProviderError ?? (savingDefaultInboxProvider ? t("Saving preference") : "")}
+                  </p>
+                </div>
+              </SettingsFieldRow>
+              {(["gmail", "outlook"] as MailProvider[]).map((provider) => {
               const connection = connections.find((candidate) => candidate.provider === provider) ?? null
               const copy = mailProviderCopy[provider]
               const configured = providerAvailability?.find((candidate) => candidate.provider === provider)?.configured === true
@@ -3516,7 +3633,8 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
                   ) : null}
                 </Fragment>
               )
-            })
+              })}
+            </>
           )}
         </SettingsPanel>
 

@@ -354,7 +354,6 @@ function DetailedAuditTable({ records }: { records: readonly QuoteAuditRecord[] 
       width: 190,
       minWidth: 176,
       maxWidth: 230,
-      defaultPinned: true,
       canHide: false,
       resizable: true,
       sortValue: (record) => new Date(record.timestamp).getTime(),

@@ -157,3 +157,54 @@ export function SideDrawer({
     </AnimatePresence>
   )
 }
+
+/**
+ * A record opened into a drawer rather than a page or a centred dialog. Use it
+ * where the record is short enough to read in one panel: the register stays
+ * visible behind it, so the row that was picked and the next one are both still
+ * on screen while the operator works.
+ *
+ * The layout is fixed on purpose — the record's own facts first, then whatever
+ * the caller adds, then an action bar that sticks to the bottom of the scroll
+ * area so a long form never hides the button that commits it.
+ */
+export function RecordDrawer({
+  open,
+  onClose,
+  eyebrow,
+  title,
+  icon,
+  width = 560,
+  summary,
+  children,
+  actions,
+  closeLabel = "Close",
+}: {
+  open: boolean
+  onClose: () => void
+  eyebrow: string
+  title: string
+  icon?: LucideIcon
+  width?: number
+  /** The record's own facts, before anything asks the operator a question. */
+  summary: ReactNode
+  children?: ReactNode
+  /** The primary action. The dismiss control is supplied for you. */
+  actions?: ReactNode
+  closeLabel?: string
+}) {
+  const { t } = useLanguage()
+
+  return (
+    <SideDrawer open={open} onClose={onClose} eyebrow={eyebrow} title={title} icon={icon} width={width} bodyClassName="px-0">
+      <div className="grid gap-3 pb-1">
+        <div className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-3.5 shadow-[var(--md-shadow-line)]">{summary}</div>
+        {children}
+      </div>
+      <div className="sticky bottom-0 mt-3 flex items-center justify-end gap-2 rounded-[var(--md-radius-xl)] bg-[color-mix(in_srgb,var(--md-surface)_92%,transparent)] p-2 shadow-[var(--md-shadow-line)] backdrop-blur-xl">
+        <Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-md)] text-[12.5px]" onClick={onClose}>{t(closeLabel)}</Button>
+        {actions}
+      </div>
+    </SideDrawer>
+  )
+}

@@ -1077,3 +1077,41 @@ export function resolveMailboxForProvider(
     ?? candidates.find((mailbox) => mailbox.kind === "personal")
     ?? candidates[0]
 }
+
+/**
+ * Resolves the provider used when a mail surface opens without an explicit
+ * provider. A saved operator preference wins, but never over a provider named
+ * by a deep link and never when that provider has no accessible mailbox.
+ */
+export function resolveDefaultInboxProvider(
+  mailboxes: Mailbox[],
+  preferredProvider: MailProvider | null,
+  requestedProvider: MailProvider | null = null,
+): MailProvider | null {
+  const availableProviders = (["gmail", "outlook"] as MailProvider[])
+    .filter((provider) => mailboxes.some((mailbox) => mailbox.provider === provider))
+
+  if (requestedProvider && availableProviders.includes(requestedProvider)) return requestedProvider
+  if (preferredProvider && availableProviders.includes(preferredProvider)) return preferredProvider
+
+  return mailboxes.find((mailbox) => mailbox.isDefault)?.provider
+    ?? availableProviders[0]
+    ?? null
+}
+
+/** The first send-capable mailbox for a new composer, scoped to its preferred provider. */
+export function resolveDefaultOutboundMailbox(
+  mailboxes: Mailbox[],
+  preferredProvider: MailProvider | null,
+  currentMailboxId: string | null = null,
+): Mailbox | null {
+  const capable = mailboxes.filter((mailbox) =>
+    mailbox.outboundEnabled
+    && (mailbox.status === "connected" || mailbox.status === "syncing"))
+  const current = capable.find((mailbox) => mailbox.id === currentMailboxId)
+  if (current) return current
+
+  const provider = resolveDefaultInboxProvider(capable, preferredProvider)
+  if (!provider) return null
+  return resolveMailboxForProvider(capable, provider, null)
+}

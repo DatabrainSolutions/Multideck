@@ -16,6 +16,7 @@ import {
   Gauge,
   Globe2,
   Grid3X3,
+  HardDrive,
   House,
   IdCard,
   Inbox,
@@ -64,8 +65,8 @@ export type SidebarArea = {
 }
 
 export const warehouseNavigation: SidebarDestination[] = [
-  { id: "warehouse-dashboard", label: "Dashboard", value: "Live", icon: LayoutDashboard, route: "/warehouse" },
-  { id: "warehouse-calendar", label: "Calendar", value: "7d", icon: CalendarDays, route: "/warehouse/calendar" },
+  { id: "warehouse-dashboard", label: "Dashboard", icon: LayoutDashboard, route: "/warehouse" },
+  { id: "warehouse-calendar", label: "Calendar", icon: CalendarDays, route: "/warehouse/calendar" },
   { id: "warehouse-inventory", label: "Inventory", icon: Boxes, route: "/warehouse/inventory" },
   { id: "warehouse-goods-in", label: "Goods in", icon: PackagePlus, route: "/warehouse/goods-in" },
   { id: "warehouse-goods-out", label: "Goods out", icon: PackageMinus, route: "/warehouse/goods-out" },
@@ -135,7 +136,7 @@ export const sidebarAreas: SidebarArea[] = [
         children: [
           { label: "Leads", value: "39", icon: Users, route: "/crm/leads" },
           { label: "Contact cards", icon: IdCard, route: "/crm/contact-cards" },
-          { label: "Deals", value: "12", icon: BriefcaseBusiness, route: "/crm/deals" },
+          { label: "Deals", icon: BriefcaseBusiness, route: "/crm/deals" },
         ],
       },
       {
@@ -144,7 +145,7 @@ export const sidebarAreas: SidebarArea[] = [
         icon: Palette,
         children: [
           { label: "Email marketing", icon: Mail, route: "/crm/emails" },
-          { label: "Brand guidelines", icon: Palette, route: "/crm/marketing" },
+          { label: "Drive", icon: HardDrive, route: "/crm/drive" },
         ],
       },
       {
@@ -262,10 +263,10 @@ export const crmSidebarItems: NavItem[] = [
   { label: "Leads", value: "39", icon: Users, route: "/crm/leads" },
   { label: "Contact cards", icon: IdCard, route: "/crm/contact-cards" },
   { label: "Contacts", icon: Mail, route: "/crm/contacts" },
-  { label: "Deals", value: "12", icon: BriefcaseBusiness, route: "/crm/deals" },
+  { label: "Deals", icon: BriefcaseBusiness, route: "/crm/deals" },
   { label: "Forms", icon: FileText, route: "/crm/forms" },
   { label: "Emails", icon: Mail, route: "/crm/emails" },
   { label: "Lists", icon: ListOrdered, route: "/crm/lists" },
-  { label: "Marketing", icon: Palette, route: "/crm/marketing" },
+  { label: "Drive", icon: HardDrive, route: "/crm/drive" },
   { label: "Activity", value: "24h", icon: Clock3, route: "/crm/activity" },
 ]

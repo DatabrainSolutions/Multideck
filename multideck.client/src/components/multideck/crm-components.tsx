@@ -13,7 +13,6 @@ import {
   Clock3,
   ExternalLink,
   FileText,
-  Folder,
   Globe2,
   GripVertical,
   Mail,
@@ -131,31 +130,6 @@ type CrmSalesFunnelStage = (typeof crmSalesFunnel)[number]
 type CrmRevenueMixItem = (typeof crmRevenueMix)[number]
 type CrmForecastTrendItem = (typeof crmForecastTrend)[number]
 type CrmPriorityAction = (typeof crmPriorityActions)[number]
-
-export type CrmAssetFolder = {
-  id: string
-  name: string
-  description: string
-  itemCount: number
-  size: string
-  updated: string
-  owner: string
-  tone: StatusTone
-  icon?: LucideIcon
-}
-
-export type CrmAssetFile = {
-  id: string
-  folderId: string
-  name: string
-  type: string
-  size: string
-  updated: string
-  owner: string
-  usage: string
-  tone: StatusTone
-  icon?: LucideIcon
-}
 
 function cloneStages(stages: readonly CrmPipelineStage[]) {
   return stages.map((stage) => ({ ...stage, deals: [...stage.deals] }))
@@ -407,79 +381,6 @@ export function CrmMetricsGrid({ metrics = crmSummaryMetrics }: { metrics?: read
         <CrmMetricCard key={metric.label} metric={metric} />
       ))}
     </div>
-  )
-}
-
-export function CrmAssetFolderCard({
-  folder,
-  selected,
-  onSelect,
-}: {
-  folder: CrmAssetFolder
-  selected?: boolean
-  onSelect?: (folder: CrmAssetFolder) => void
-}) {
-  const Icon = folder.icon ?? Folder
-
-  return (
-    <button
-      type="button"
-      aria-pressed={selected}
-      className={cn(
-        "group grid min-h-[168px] content-between rounded-[var(--md-radius-xl)] bg-[var(--md-green-card)] p-4 text-left shadow-[var(--md-shadow-green-card)] transition-[background,box-shadow,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-[var(--md-green-card-hover)] hover:shadow-[var(--md-shadow-green-card-hover)]",
-        selected && "bg-[var(--md-green-card-selected)] shadow-[var(--md-shadow-green-card-selected)]",
-      )}
-      onClick={() => onSelect?.(folder)}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <span className="grid size-10 place-items-center rounded-[var(--md-radius-md)] bg-white/82 text-[var(--md-accent)] shadow-[var(--md-shadow-line),0_8px_18px_var(--md-accent-a08)]">
-          <Icon className="size-5" strokeWidth={1.2} />
-        </span>
-        <StatusPill tone="green" className="bg-white/64 text-[var(--md-accent)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.72),0_0_0_1px_var(--md-accent-a08)]">{folder.itemCount} items</StatusPill>
-      </div>
-      <div className="mt-5">
-        <h3 className="text-[14px] font-medium leading-5 text-[var(--md-ink)]">{folder.name}</h3>
-        <p className="mt-2 line-clamp-2 text-[12px] leading-5 text-[var(--md-text)]">{folder.description}</p>
-        <div className="mt-4 grid grid-cols-[1fr_auto] gap-3 shadow-[inset_0_1px_0_rgba(11,20,19,0.06)] pt-3 text-[11px] text-[var(--md-subtle)]">
-          <span>{folder.updated}</span>
-          <span data-i18n-skip dir="ltr">{folder.size}</span>
-        </div>
-      </div>
-    </button>
-  )
-}
-
-export function CrmAssetRow({
-  asset,
-  onOpen,
-}: {
-  asset: CrmAssetFile
-  onOpen?: (asset: CrmAssetFile) => void
-}) {
-  const Icon = asset.icon ?? FileText
-
-  return (
-    <button
-      type="button"
-      className="grid w-full gap-3 rounded-[var(--md-radius-lg)] px-3 py-3 text-left transition-[background,box-shadow] hover:bg-[var(--md-surface-soft)] hover:shadow-[var(--md-shadow-line)] sm:grid-cols-[minmax(0,1fr)_96px_108px_120px] sm:items-center"
-      onClick={() => onOpen?.(asset)}
-    >
-      <span className="grid min-w-0 grid-cols-[36px_1fr] items-center gap-3">
-        <span className="grid size-9 place-items-center rounded-[var(--md-radius-sm)] bg-[var(--md-surface-tint)] text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
-          <Icon className="size-4" strokeWidth={1.2} />
-        </span>
-        <span className="min-w-0">
-          <span className="block truncate text-[13px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="ltr">{asset.name}</span>
-          <span className="mt-1 block truncate text-[12px] text-[var(--md-subtle)]">{asset.usage}</span>
-        </span>
-      </span>
-      <span className="text-[12px] font-medium text-[var(--md-text)]" data-i18n-skip dir="ltr">{asset.type}</span>
-      <span className="text-[12px] text-[var(--md-subtle)]" data-i18n-skip dir="ltr">{asset.size}</span>
-      <span className="flex items-center justify-between gap-3 sm:justify-end">
-        <span className="text-[12px] text-[var(--md-text)]">{asset.updated}</span>
-        <span className="size-2.5 rounded-full" style={{ background: toneToVar(asset.tone) }} aria-hidden="true" />
-      </span>
-    </button>
   )
 }
 
@@ -1077,7 +978,6 @@ export function CrmLeadQualificationTable({
       width: 240,
       minWidth: 190,
       maxWidth: 360,
-      defaultPinned: true,
       resizable: true,
       sortValue: (lead) => lead.companyName,
       cell: (lead) => (

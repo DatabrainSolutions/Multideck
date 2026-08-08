@@ -1,4 +1,7 @@
 import {
+  AlarmClock,
+  ArrowDownToLine,
+  ArrowUpFromLine,
   ArrowUpDown,
   BadgeCheck,
   BarChart3,
@@ -44,6 +47,7 @@ import {
   Search,
   ScanText,
   Settings2,
+  ShieldAlert,
   ShieldCheck,
   Ship,
   SlidersHorizontal,
@@ -462,11 +466,19 @@ export const warehouseProductFilters = ["All · 128", "Low stock · 8", "Inbound
 export const warehouseOrderFilters = ["All orders · 6", "Inbound · 2", "Outbound · 3", "Hold · 1"] as const
 export const warehouseStockFilters = ["All stock · 642", "Low stock · 8", "Allocated · 184", "Quarantine · 3"] as const
 
+/**
+ * The warehouse header band. Seven figures, each answering a different question —
+ * the live set in `lib/warehouse.ts` uses the same labels, so the mock and the
+ * real dashboard read as one screen.
+ */
 export const warehouseMetrics = [
-  { label: "Inventory value", value: "GBP 1.42M", detail: "Across Felixstowe DC and Southampton overflow.", tone: "teal" as StatusTone, icon: Boxes },
-  { label: "Orders due today", value: "46", detail: "14 pick waves, 9 dispatches, 7 receiving slots.", tone: "amber" as StatusTone, icon: Clock3 },
-  { label: "Stock accuracy", value: "98.4%", detail: "Last cycle count variance was down 0.7%.", tone: "green" as StatusTone, icon: PackageCheck },
-  { label: "Capacity used", value: "76%", detail: "Aisle B is the tightest zone after inbound apparel.", tone: "blue" as StatusTone, icon: Gauge },
+  { label: "Ready to receive", value: "12", detail: "Inbound orders with lines still to book in.", tone: "amber" as StatusTone, icon: ArrowDownToLine },
+  { label: "Ready to dispatch", value: "9", detail: "Outbound orders with lines still to pick and load.", tone: "blue" as StatusTone, icon: ArrowUpFromLine },
+  { label: "Stock holds", value: "3", detail: "Stock lines held in quarantine, damage or investigation.", tone: "red" as StatusTone, icon: ShieldAlert },
+  { label: "Past due", value: "2", detail: "Open orders whose expected day has already passed.", tone: "red" as StatusTone, icon: AlarmClock },
+  { label: "Booked today", value: "46", detail: "Orders expected on the dock today.", tone: "teal" as StatusTone, icon: Clock3 },
+  { label: "SKUs on hand", value: "128", detail: "Distinct items with physical stock in the warehouse.", tone: "neutral" as StatusTone, icon: Boxes },
+  { label: "Available SKUs", value: "114", detail: "Distinct items free to allocate to an order.", tone: "green" as StatusTone, icon: PackageCheck },
 ]
 
 export const warehouseProducts = [
@@ -786,30 +798,31 @@ export type WarehouseCalendarEvent = {
   endTime: string
   title: string
   type: string
+  direction: "inbound" | "outbound"
   customerId: WarehouseCalendarCustomerId
   tone: StatusTone
 }
 
 export const warehouseCalendarEvents: WarehouseCalendarEvent[] = [
-  { id: "wh-cal-0602-atlas", date: "2026-06-02", time: "08:20", endTime: "09:40", title: "Desk pod container unload", type: "Goods in", customerId: "atlas", tone: "blue" },
-  { id: "wh-cal-0604-mediterranean", date: "2026-06-04", time: "11:10", endTime: "12:00", title: "Herb cartons QC sample", type: "Stock check", customerId: "mediterranean", tone: "green" },
-  { id: "wh-cal-0605-bauhaus", date: "2026-06-05", time: "14:30", endTime: "15:20", title: "Lamp pallet dock audit", type: "Goods in", customerId: "bauhaus", tone: "teal" },
-  { id: "wh-cal-0609-marlow", date: "2026-06-09", time: "09:45", endTime: "11:00", title: "Retail labels print run", type: "Goods out", customerId: "marlow", tone: "amber" },
-  { id: "wh-cal-0611-black-forest", date: "2026-06-11", time: "18:30", endTime: "19:10", title: "Chilled dispatch handoff", type: "Dispatch", customerId: "black-forest", tone: "green" },
-  { id: "wh-cal-0616-northwind", date: "2026-06-16", time: "10:15", endTime: "11:15", title: "Router quarantine review", type: "Hold", customerId: "northwind", tone: "red" },
-  { id: "wh-cal-0618-pacific", date: "2026-06-18", time: "13:20", endTime: "14:10", title: "Milano road pallet transfer", type: "Dispatch", customerId: "pacific", tone: "blue" },
-  { id: "wh-cal-0619-internal", date: "2026-06-19", time: "16:00", endTime: "17:00", title: "Aisle A reserve sweep", type: "Capacity", customerId: "internal", tone: "neutral" },
-  { id: "wh-cal-0622-mediterranean", date: "2026-06-22", time: "09:15", endTime: "10:45", title: "Mediterranean herbs receiving", type: "Goods in", customerId: "mediterranean", tone: "teal" },
-  { id: "wh-cal-0623-atlas", date: "2026-06-23", time: "08:00", endTime: "09:30", title: "Atlas furniture preload", type: "Dispatch", customerId: "atlas", tone: "blue" },
-  { id: "wh-cal-0623-bauhaus", date: "2026-06-23", time: "11:30", endTime: "12:30", title: "Bauhaus dock slot", type: "Goods in", customerId: "bauhaus", tone: "teal" },
-  { id: "wh-cal-0624-internal", date: "2026-06-24", time: "10:00", endTime: "11:30", title: "Aisle B cycle count", type: "Stock check", customerId: "internal", tone: "green" },
-  { id: "wh-cal-0624-marlow", date: "2026-06-24", time: "10:30", endTime: "11:15", title: "Marlow urgent relabel", type: "Goods out", customerId: "marlow", tone: "amber" },
-  { id: "wh-cal-0624-bauhaus", date: "2026-06-24", time: "10:45", endTime: "11:45", title: "Bauhaus lamp QA", type: "Stock check", customerId: "bauhaus", tone: "teal" },
-  { id: "wh-cal-0625-marlow-pick", date: "2026-06-25", time: "13:30", endTime: "15:00", title: "Marlow pick wave", type: "Goods out", customerId: "marlow", tone: "amber" },
-  { id: "wh-cal-0625-northwind", date: "2026-06-25", time: "16:00", endTime: "17:00", title: "Router licence review", type: "Hold", customerId: "northwind", tone: "red" },
-  { id: "wh-cal-0626-mediterranean", date: "2026-06-26", time: "09:00", endTime: "10:00", title: "Food ambient variance close", type: "Stock check", customerId: "mediterranean", tone: "green" },
-  { id: "wh-cal-0627-internal", date: "2026-06-27", time: "10:30", endTime: "11:30", title: "Overflow warehouse sweep", type: "Capacity", customerId: "internal", tone: "neutral" },
-  { id: "wh-cal-0628-internal", date: "2026-06-28", time: "12:00", endTime: "12:30", title: "Quiet day monitor", type: "OOH", customerId: "internal", tone: "neutral" },
+  { id: "wh-cal-0602-atlas", date: "2026-06-02", time: "08:20", endTime: "09:40", title: "Desk pod container unload", type: "Goods in", direction: "inbound", customerId: "atlas", tone: "blue" },
+  { id: "wh-cal-0604-mediterranean", date: "2026-06-04", time: "11:10", endTime: "12:00", title: "Herb cartons QC sample", type: "Stock check", direction: "outbound", customerId: "mediterranean", tone: "green" },
+  { id: "wh-cal-0605-bauhaus", date: "2026-06-05", time: "14:30", endTime: "15:20", title: "Lamp pallet dock audit", type: "Goods in", direction: "inbound", customerId: "bauhaus", tone: "teal" },
+  { id: "wh-cal-0609-marlow", date: "2026-06-09", time: "09:45", endTime: "11:00", title: "Retail labels print run", type: "Goods out", direction: "outbound", customerId: "marlow", tone: "amber" },
+  { id: "wh-cal-0611-black-forest", date: "2026-06-11", time: "18:30", endTime: "19:10", title: "Chilled dispatch handoff", type: "Dispatch", direction: "outbound", customerId: "black-forest", tone: "green" },
+  { id: "wh-cal-0616-northwind", date: "2026-06-16", time: "10:15", endTime: "11:15", title: "Router quarantine review", type: "Hold", direction: "outbound", customerId: "northwind", tone: "red" },
+  { id: "wh-cal-0618-pacific", date: "2026-06-18", time: "13:20", endTime: "14:10", title: "Milano road pallet transfer", type: "Dispatch", direction: "outbound", customerId: "pacific", tone: "blue" },
+  { id: "wh-cal-0619-internal", date: "2026-06-19", time: "16:00", endTime: "17:00", title: "Aisle A reserve sweep", type: "Capacity", direction: "outbound", customerId: "internal", tone: "neutral" },
+  { id: "wh-cal-0622-mediterranean", date: "2026-06-22", time: "09:15", endTime: "10:45", title: "Mediterranean herbs receiving", type: "Goods in", direction: "inbound", customerId: "mediterranean", tone: "teal" },
+  { id: "wh-cal-0623-atlas", date: "2026-06-23", time: "08:00", endTime: "09:30", title: "Atlas furniture preload", type: "Dispatch", direction: "outbound", customerId: "atlas", tone: "blue" },
+  { id: "wh-cal-0623-bauhaus", date: "2026-06-23", time: "11:30", endTime: "12:30", title: "Bauhaus dock slot", type: "Goods in", direction: "inbound", customerId: "bauhaus", tone: "teal" },
+  { id: "wh-cal-0624-internal", date: "2026-06-24", time: "10:00", endTime: "11:30", title: "Aisle B cycle count", type: "Stock check", direction: "outbound", customerId: "internal", tone: "green" },
+  { id: "wh-cal-0624-marlow", date: "2026-06-24", time: "10:30", endTime: "11:15", title: "Marlow urgent relabel", type: "Goods out", direction: "outbound", customerId: "marlow", tone: "amber" },
+  { id: "wh-cal-0624-bauhaus", date: "2026-06-24", time: "10:45", endTime: "11:45", title: "Bauhaus lamp QA", type: "Stock check", direction: "outbound", customerId: "bauhaus", tone: "teal" },
+  { id: "wh-cal-0625-marlow-pick", date: "2026-06-25", time: "13:30", endTime: "15:00", title: "Marlow pick wave", type: "Goods out", direction: "outbound", customerId: "marlow", tone: "amber" },
+  { id: "wh-cal-0625-northwind", date: "2026-06-25", time: "16:00", endTime: "17:00", title: "Router licence review", type: "Hold", direction: "outbound", customerId: "northwind", tone: "red" },
+  { id: "wh-cal-0626-mediterranean", date: "2026-06-26", time: "09:00", endTime: "10:00", title: "Food ambient variance close", type: "Stock check", direction: "outbound", customerId: "mediterranean", tone: "green" },
+  { id: "wh-cal-0627-internal", date: "2026-06-27", time: "10:30", endTime: "11:30", title: "Overflow warehouse sweep", type: "Capacity", direction: "outbound", customerId: "internal", tone: "neutral" },
+  { id: "wh-cal-0628-internal", date: "2026-06-28", time: "12:00", endTime: "12:30", title: "Quiet day monitor", type: "OOH", direction: "outbound", customerId: "internal", tone: "neutral" },
 ]
 
 export type BookingStatus = "On track" | "Delayed" | "Exception"
@@ -2792,6 +2805,132 @@ export const galleryComponents = [
     usageCode: `<AuditWorkspace\n  records={QUOTE_AUDIT_SAMPLE_DATA}\n  defaultView="summary"\n/>`,
   },
   {
+    id: "dot-grid-loader",
+    name: "Dot Grid Loader",
+    category: "Feedback",
+    description: "The product's one waiting state: twenty-five cells lit as a travelling square spiral.",
+    details: "Use it for every wait long enough to need a mark — a route still downloading, a register still fetching rows, a panel still resolving a document list. One object across the whole product means a wait never looks like a different feature loading. It animates only opacity and transform, so it can sit inside the box the loaded content will occupy without moving anything around it, and it reserves its own size so rows arriving cannot shift the page. `size=\"sm\"` fits a 32px toolbar; `decorative` drops the status role where the surrounding block already announces the wait in words. Reduced-motion mode holds the centre cell lit instead of cycling.",
+    foundOn: [{ label: "Every route", route: "/" }, { label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Components", route: "/components?component=dot-grid-loader" }],
+    componentCode: `const spiralOrder = [
+  0, 1, 2, 3, 4,
+  15, 16, 17, 18, 5,
+  14, 23, 24, 19, 6,
+  13, 22, 21, 20, 7,
+  12, 11, 10, 9, 8,
+]
+
+export const DotGridLoader = memo(function DotGridLoader({ label, size = "md", decorative = false }) {
+  const { t } = useLanguage()
+  const announced = label ? t(label) : undefined
+
+  return (
+    <div role={decorative ? undefined : "status"} aria-live={decorative ? undefined : "polite"} className="flex flex-col items-center gap-3.5">
+      <div className="grid grid-cols-5 gap-[3px] text-[var(--md-accent)]" aria-hidden="true">
+        {spiralOrder.map((order) => (
+          <span key={order} className={cn("md-thinking-dot block rounded-full bg-current", dotSize[size])} style={{ animationDelay: \`\${order * 48 - 576}ms\` }} />
+        ))}
+      </div>
+      {announced ? <p className="text-[13px] font-medium text-[var(--md-text)]">{announced}</p> : null}
+    </div>
+  )
+})`,
+    usageCode: `// A route still downloading
+<DotGridLoader label="Loading…" />
+
+// A register still fetching rows: the toolbar and the column
+// header stay put, and only the table body carries the wait.
+<DataTable rows={rows} emptyState={<DotGridLoaderPanel label="Loading warehouse records" minHeight={0} />} />
+
+// Beside a block that already says "Loading facilities" in words
+<StateBlock icon={<DotGridLoader decorative />} title="Loading facilities" detail="" />`,
+  },
+  {
+    id: "register-toolbar",
+    name: "Register Toolbar",
+    category: "Operations",
+    description: "The view switch, filters and search that live inside a data table's own toolbar.",
+    details: "Every register in the product puts its controls in the table's toolbar instead of stacking a filter bar above it: the view switch and the create action lead, the filters and the search trail. Two levels, deliberately — the switch changes what is fetched, the filters narrow what came back, so the two can never contradict each other. Facet options are built from the rows actually in hand, so a menu can never offer a value that returns nothing, and a trigger takes the accent colour while its filter is on. Search narrows the loaded rows on the same frame and only asks the server once the operator stops typing. Every control is 32px so the row stays one line, and the trailing group carries a minimum width so it drops to its own line as one block rather than wrapping control by control around the leading group.",
+    foundOn: [{ label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Facilities", route: "/warehouse/facilities" }, { label: "Items", route: "/warehouse/items" }, { label: "Goods in", route: "/warehouse/goods-in" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Components", route: "/components?component=register-toolbar" }],
+    componentCode: `export function RegisterViewSwitch({ options, value, onChange, counts, ariaLabel }) {
+  const { t } = useLanguage()
+
+  return (
+    <SegmentedControl
+      options={options}
+      value={value}
+      onChange={onChange}
+      ariaLabel={ariaLabel}
+      className="p-[3px]"
+      renderOption={(option) => (
+        <>
+          <span>{t(option)}</span>
+          {counts?.[option] === undefined ? null : (
+            <span data-i18n-skip dir="ltr" className="text-[10.5px] tabular-nums">{counts[option]}</span>
+          )}
+        </>
+      )}
+    />
+  )
+}`,
+    usageCode: `<DataTable
+  columns={columns}
+  rows={filteredRows}
+  getRowKey={(row) => row.id}
+  toolbarLeading={(
+    <div className="flex min-w-0 items-center gap-2">
+      <RegisterViewSwitch options={views} value={view} onChange={setView} counts={counts} ariaLabel="Inventory view" />
+      <RegisterToolbarDivider />
+      <NewRecordMenu />
+    </div>
+  )}
+  toolbarActions={(
+    <RegisterToolbarActions pending={pending && loaded}>
+      <RegisterFacetSelect label="Condition" allLabel="All conditions" value={condition} options={conditionOptions} onChange={setCondition} />
+      <RegisterFacetSelect label="Warehouse" allLabel="All warehouses" value={facilityId} options={facilityOptions} onChange={setFacilityId} />
+      <RegisterSearchField value={search} onChange={setSearch} onClear={clearSearch} label="Search warehouse records" placeholder="SKU, pallet, batch" />
+      <RegisterRefreshButton pending={pending} onRefresh={refresh} />
+    </RegisterToolbarActions>
+  )}
+/>`,
+  },
+  {
+    id: "context-menu",
+    name: "Context Menu",
+    category: "Navigation",
+    description: "The right-click menu for an item that has actions of its own.",
+    details: "Use where an item can be acted on directly — a Drive folder or file, a row, a card — rather than adding a row of buttons to every tile. It shares the dropdown's surface, option rows, and motion, so a menu opened by pointer reads the same as one opened from a trigger: a 220ms blur-and-scale entry with the options following in a short cascade. Destructive items take the `destructive` variant. Reduced-motion mode drops the animation.",
+    foundOn: [{ label: "Drive", route: "/crm/drive" }, { label: "Components", route: "/components?component=context-menu" }],
+    componentCode: `export function ContextMenuContent({ className, collisionPadding = 12, ...props }) {
+  return (
+    <ContextMenuPrimitive.Portal>
+      <ContextMenuPrimitive.Content
+        collisionPadding={collisionPadding}
+        className={cn("md-dropdown-content premium-stroke z-50 min-w-44 rounded-[var(--md-radius-xl)] p-1 shadow-[var(--md-shadow-lift)] backdrop-blur-xl", className)}
+        {...props}
+      />
+    </ContextMenuPrimitive.Portal>
+  )
+}`,
+    usageCode: `<ContextMenu>
+  <ContextMenuTrigger asChild>{tile}</ContextMenuTrigger>
+  <ContextMenuContent>
+    <ContextMenuItem onSelect={() => onOpen(file)}>
+      <Eye strokeWidth={1.3} />
+      Preview
+    </ContextMenuItem>
+    <ContextMenuItem onSelect={() => onStartRename(file)}>
+      <Pencil strokeWidth={1.3} />
+      Rename
+    </ContextMenuItem>
+    <ContextMenuSeparator />
+    <ContextMenuItem variant="destructive" onSelect={() => onDelete(file)}>
+      <Trash2 strokeWidth={1.3} />
+      Delete
+    </ContextMenuItem>
+  </ContextMenuContent>
+</ContextMenu>`,
+  },
+  {
     id: "multi-select-menu",
     name: "Multi-select Menu",
     category: "Navigation",
@@ -3117,7 +3256,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "Data",
     description: "A configurable operational table with pinning, pointer and keyboard reordering, keyboard-accessible resizing, sorting, selection, and visibility controls.",
     details: "Use for dense operational records where each operator may need a different working view. Saved layouts and sorting are restored per table, and every column-layout action remains available without a pointer.",
-    foundOn: [{ label: "Quotes", route: "/quotes" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Quotes", route: "/quotes" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Bookings", route: "/bookings" }, { label: "Facilities", route: "/warehouse/facilities" }, { label: "Locations", route: "/warehouse/locations" }, { label: "Items", route: "/warehouse/items" }, { label: "Components", route: "/components" }],
     componentCode: `export function DataTable({ columns, rows, getRowKey, storageKey, selectedRowKey, selectedRowKeys, onRowClick }) {\n  return (\n    <Table>\n      <TableHeader>{/* sortable, resizable, draggable columns */}</TableHeader>\n      <TableBody>{/* rows follow the saved live column layout and selection */}</TableBody>\n    </Table>\n  )\n}`,
     usageCode: `<DataTable\n  ariaLabel="Supplier charges"\n  columns={chargeColumns}\n  rows={charges}\n  getRowKey={(charge) => charge.id}\n  storageKey="quote-charges-in"\n  onRowClick={selectCharge}\n/>`,
   },
@@ -3763,24 +3902,88 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     usageCode: `<CrmPipelineBoard\n  selectedDealId={detailOpen ? selectedDeal.id : undefined}\n  onSelectDeal={(deal) => {\n    setSelectedDeal(deal)\n    setDetailOpen(true)\n  }}\n  onPipelineChange={(pipeline) => {\n    setSelectedDeal(firstDeal(pipeline))\n    setDetailOpen(false)\n  }}\n  onOpenSettings={() => setSettingsOpen(true)}\n/>\n<DealDetailDrawer deal={selectedDeal} open={detailOpen} />\n<PipelineSettingsDrawer open={settingsOpen} />`,
   },
   {
-    id: "crm-asset-folder-card",
-    name: "CRM Asset Folder Card",
+    id: "drive-folder-tile",
+    name: "Drive Folder Tile",
     category: "CRM",
-    description: "A green drive-style folder tile for marketing assets, brand files, templates, and customer collateral.",
-    details: "Use on the Marketing drive root when CRM or marketing needs storage hierarchy before individual files. Clicking a folder should navigate into a folder-detail view; do not reveal files underneath the root folder grid.",
-    foundOn: [{ label: "CRM marketing", route: "/crm/marketing" }, { label: "Components", route: "/components" }],
-    componentCode: `export function CrmAssetFolderCard({ folder, selected, onSelect }) {\n  const Icon = folder.icon ?? Folder\n\n  return (\n    <button aria-pressed={selected} onClick={() => onSelect?.(folder)}>\n      <span><Icon /></span>\n      <StatusPill tone="green">{folder.itemCount} items</StatusPill>\n      <h3>{folder.name}</h3>\n      <p>{folder.description}</p>\n      <footer>{folder.updated} - {folder.size}</footer>\n    </button>\n  )\n}`,
-    usageCode: `<div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">\n  {marketingFolders.map((folder) => (\n    <CrmAssetFolderCard\n      key={folder.id}\n      folder={folder}\n      selected={false}\n      onSelect={(nextFolder) => setOpenedFolderId(nextFolder.id)}\n    />\n  ))}\n</div>`,
+    description: "A folder in Drive, carrying the colour and icon the operator chose for it.",
+    details: "Use in the Drive grid. Two thin sheets sit behind the top edge so the tile reads as something that holds files rather than as another card, and they fan out a little further on hover. Colour comes from the ten accent presets, so a folder can only land on a tone already checked for contrast in both themes. The meta line counts the whole subtree, not just the immediate children. Right-click opens open, rename, colour and icon, and delete.",
+    foundOn: [{ label: "Drive", route: "/crm/drive" }, { label: "Components", route: "/components?component=drive-folder-tile" }],
+    componentCode: `export function DriveFolderTile({ folder, stats, renaming, onOpen, onRename, onCustomise, onDelete }) {
+  const Icon = folderIconGlyphs[folder.icon]
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div role="button" tabIndex={0} className="md-drive-folder md-drive-tone" style={driveToneStyle(folder.colour)} onClick={() => onOpen(folder)}>
+          <span className="md-drive-folder__sheet md-drive-folder__sheet--back" />
+          <span className="md-drive-folder__sheet md-drive-folder__sheet--front" />
+          <div className="md-drive-folder__body">
+            <span className="md-drive-folder__icon"><Icon /></span>
+            <DriveInlineName value={folder.name} editing={renaming} onCommit={(next) => onRename(folder, next)} />
+            <span>{folderMeta(stats)}</span>
+          </div>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>…</ContextMenuContent>
+    </ContextMenu>
+  )
+}`,
+    usageCode: `<div className="md-drive-grid">
+  {childFolders.map((folder) => (
+    <DriveGridItem key={folder.id} revealDelay={entryDelay(index)}>
+      <DriveFolderTile
+        folder={folder}
+        stats={stats?.get(folder.id)}
+        renaming={renamingId === folder.id}
+        onOpen={openFolder}
+        onRename={renameFolder}
+        onStartRename={(target) => setRenamingId(target.id)}
+        onCancelRename={() => setRenamingId(null)}
+        onCustomise={startCustomiseFolder}
+        onDelete={(target) => setRemoval({ kind: "folder", folder: target })}
+      />
+    </DriveGridItem>
+  ))}
+</div>`,
   },
   {
-    id: "crm-asset-row",
-    name: "CRM Asset Row",
+    id: "drive-file-tile",
+    name: "Drive File Tile",
     category: "CRM",
-    description: "A compact file row for assets shown after the operator has opened a marketing drive folder.",
-    details: "Use inside a dedicated folder-detail view below a breadcrumb/back control. Do not use asset rows directly under the root folder grid.",
-    foundOn: [{ label: "CRM marketing", route: "/crm/marketing" }, { label: "Components", route: "/components" }],
-    componentCode: `export function CrmAssetRow({ asset, onOpen }) {\n  const Icon = asset.icon ?? FileText\n\n  return (\n    <button onClick={() => onOpen?.(asset)}>\n      <Icon />\n      <span data-i18n-skip dir="ltr">{asset.name}</span>\n      <span>{asset.usage}</span>\n      <span data-i18n-skip dir="ltr">{asset.type}</span>\n      <span data-i18n-skip dir="ltr">{asset.size}</span>\n      <span>{asset.updated}</span>\n    </button>\n  )\n}`,
-    usageCode: `<Button onClick={() => setOpenedFolderId(null)}>\n  <ArrowLeft />\n  Marketing drive\n</Button>\n\n<div className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-3">\n  {folderAssets.map((asset) => (\n    <CrmAssetRow\n      key={asset.id}\n      asset={asset}\n      onOpen={(selectedAsset) => openAsset(selectedAsset)}\n    />\n  ))}\n</div>`,
+    description: "A stored file shown as its own picture, with an inline preview that paints on the first frame.",
+    details: "Use in the Drive grid. The thumbnail arrives in two passes over one box: the ~1 KB preview seed carried on the file row paints immediately, blurred, and the stored WebP thumbnail cross-fades over it once decoded. The seed is never removed, so the box is never empty and nothing can flicker. Files with no renderable preview show their type glyph instead. Set `pending` while a file is still uploading to hold the same box with a progress ring, so nothing moves when the upload lands.",
+    foundOn: [{ label: "Drive", route: "/crm/drive" }, { label: "Components", route: "/components?component=drive-file-tile" }],
+    componentCode: `export function DriveFileTile({ file, thumbnailUrl, pending, progress, renaming, onOpen, onRename, onDownload, onDelete }) {
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div role="button" tabIndex={0} className="md-drive-file" onClick={() => onOpen(file)}>
+          <span className="md-drive-thumb" data-fit={thumbnailFit(driveKindOf(file))}>
+            {file.previewSeed ? <img src={file.previewSeed} className="md-drive-thumb__layer md-drive-thumb__seed" /> : null}
+            {thumbnailUrl ? <img src={thumbnailUrl} data-loaded={loaded} className="md-drive-thumb__layer md-drive-thumb__image" onLoad={() => setLoaded(true)} /> : null}
+            {pending ? <DriveProgressRing value={progress} /> : null}
+          </span>
+          <DriveInlineName value={file.name} editing={renaming} onCommit={(next) => onRename(file, next)} />
+          <span>{driveFileTypeLabel(file)} · {formatDriveBytes(file.sizeBytes)}</span>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>…</ContextMenuContent>
+    </ContextMenu>
+  )
+}`,
+    usageCode: `<DriveFileTile
+  file={file}
+  thumbnailUrl={file.thumbnailPath ? thumbnailUrls[file.thumbnailPath] : null}
+  pending={Boolean(upload)}
+  progress={upload?.progress}
+  renaming={renamingId === file.id}
+  onOpen={openPreview}
+  onRename={renameFile}
+  onStartRename={(target) => setRenamingId(target.id)}
+  onCancelRename={() => setRenamingId(null)}
+  onDownload={download}
+  onDelete={(target) => setRemoval({ kind: "file", file: target })}
+/>`,
   },
   {
     id: "contact-create-dialog",

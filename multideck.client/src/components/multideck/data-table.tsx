@@ -20,7 +20,6 @@ export type DataTableColumn<Row> = {
   cellClassName?: string
   canHide?: boolean
   canPin?: boolean
-  defaultPinned?: boolean
   defaultHidden?: boolean
   resizable?: boolean
   sortValue?: (row: Row) => string | number | null | undefined
@@ -53,6 +52,8 @@ type DataTableProps<Row> = {
   columnsButtonLabel?: string
   toolbarLeading?: ReactNode
   toolbarActions?: ReactNode
+  /** Lets an intentionally compact register keep its controls on one desktop row. */
+  compactToolbar?: boolean
   emptyState?: ReactNode
   className?: string
   tableClassName?: string
@@ -62,7 +63,7 @@ function readLayout(storageKey: string | undefined, columns: DataTableColumn<unk
   const fallback = {
     order: columns.map((column) => column.id),
     hidden: columns.filter((column) => column.defaultHidden).map((column) => column.id),
-    pinned: columns.filter((column) => column.defaultPinned).map((column) => column.id),
+    pinned: [],
     widths: {},
     sort: null,
   }
@@ -102,6 +103,7 @@ export function DataTable<Row>({
   columnsButtonLabel,
   toolbarLeading,
   toolbarActions,
+  compactToolbar = false,
   emptyState,
   className,
   tableClassName,
@@ -109,7 +111,6 @@ export function DataTable<Row>({
   const { direction, t } = useLanguage()
   const reduceMotion = useReducedMotion()
   const columnIds = useMemo(() => columns.map((column) => column.id), [columns])
-  const defaultPinned = useMemo(() => columns.filter((column) => column.defaultPinned).map((column) => column.id), [columns])
   const defaultHidden = useMemo(() => columns.filter((column) => column.defaultHidden).map((column) => column.id), [columns])
   const initialLayout = useMemo(() => readLayout(storageKey, columns as DataTableColumn<unknown>[]), [columns, storageKey])
   const [order, setOrder] = useState(initialLayout.order)
@@ -216,7 +217,7 @@ export function DataTable<Row>({
   })
 
   const minimumWidth = visibleColumns.reduce((width, column) => width + columnWidth(column), 0)
-  const hasCustomLayout = Boolean(sort) || hidden.size !== defaultHidden.length || [...hidden].some((id) => !defaultHidden.includes(id)) || Object.keys(widths).length > 0 || pinned.size !== defaultPinned.length || [...pinned].some((id) => !defaultPinned.includes(id)) || order.some((id, index) => id !== columnIds[index])
+  const hasCustomLayout = Boolean(sort) || hidden.size !== defaultHidden.length || [...hidden].some((id) => !defaultHidden.includes(id)) || Object.keys(widths).length > 0 || pinned.size > 0 || order.some((id, index) => id !== columnIds[index])
   const contextColumn = contextMenu ? columns.find((column) => column.id === contextMenu.columnId) : undefined
   const sortedRows = useMemo(() => {
     if (!sort) return rows
@@ -296,7 +297,7 @@ export function DataTable<Row>({
   function resetLayout() {
     setOrder(columnIds)
     setHidden(new Set(defaultHidden))
-    setPinned(new Set(defaultPinned))
+    setPinned(new Set())
     setWidths({})
     setSort(null)
   }
@@ -367,9 +368,16 @@ export function DataTable<Row>({
 
   return (
     <div className={cn("w-full min-w-0 overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]", className)}>
-      <div className={cn("flex min-h-10 flex-wrap items-center gap-2 bg-[color-mix(in_srgb,var(--md-surface)_92%,transparent)] px-2 py-1 shadow-[inset_0_-1px_0_rgba(11,20,19,0.05)] sm:flex-nowrap", toolbarLeading ? "justify-between" : "justify-end")}>
+      {/* The toolbar wraps by group, never by control. A register with a view
+          switch, three filters and a search will not fit one line on a laptop, and
+          two clean rows read far better than a leading group floating in the
+          middle of a ragged three-row block. */}
+      <div className={cn("flex min-h-10 flex-wrap items-center gap-x-2 gap-y-1.5 bg-[color-mix(in_srgb,var(--md-surface)_92%,transparent)] px-2 py-1 shadow-[inset_0_-1px_0_rgba(11,20,19,0.05)]", toolbarLeading ? "justify-between" : "justify-end")}>
         {toolbarLeading ? <div className="flex min-w-0 shrink-0 items-center gap-1">{toolbarLeading}</div> : null}
-        <div className="ms-auto flex min-w-0 flex-1 items-center justify-end gap-1.5">
+        {/* The minimum width is what makes the trailing controls drop to their own
+            line as one block. Without it they wrap control by control around the
+            leading group and the row loses its reading order. */}
+        <div className={cn("ms-auto flex flex-1 flex-wrap items-center justify-end gap-1.5", compactToolbar ? "min-w-[min(100%,520px)]" : "min-w-[min(100%,560px)]")}>
           {toolbarActions ? <div className="flex min-w-0 flex-1 items-center justify-end">{toolbarActions}</div> : null}
           <Popover>
           <PopoverTrigger asChild>
@@ -440,7 +448,7 @@ export function DataTable<Row>({
               const isPinned = stickyColumnsEnabled && pinned.has(column.id)
               return (
                 <TableHead
-                  key={column.id}
+                  key={`${column.id}:${isPinned ? "pinned" : "unpinned"}`}
                   draggable
                   onDragStart={(event) => {
                     if (resizeStart.current) {
@@ -455,7 +463,7 @@ export function DataTable<Row>({
                   onContextMenu={(event) => openColumnContextMenu(column, event)}
                   aria-sort={sort?.id === column.id ? (sort.direction === "asc" ? "ascending" : "descending") : undefined}
                   style={{ width: columnWidth(column), minWidth: columnWidth(column), ...stickyStyle(column) }}
-                  className={cn("group/header relative z-[1] bg-[var(--md-surface)] pe-3 text-[12px] font-medium text-[var(--md-text)] transition-[background,box-shadow,opacity] duration-200", isPinned && "z-[3] bg-[color-mix(in_srgb,var(--md-surface)_94%,transparent)] backdrop-blur-xl", isPinned && (direction === "rtl" ? "shadow-[-2px_0_0_var(--md-line)]" : "shadow-[2px_0_0_var(--md-line)]"), draggingId === column.id && "opacity-40", resizingId === column.id && "bg-[var(--md-surface-tint)]", column.headerClassName)}
+                  className={cn("group/header relative z-[1] bg-[var(--md-surface)] pe-3 text-[12px] font-medium text-[var(--md-text)] transition-[background,box-shadow,opacity] duration-200", isPinned && "z-[3] bg-[var(--md-table-pinned-bg)]", isPinned && (direction === "rtl" ? "shadow-[-2px_0_0_var(--md-line)]" : "shadow-[2px_0_0_var(--md-line)]"), draggingId === column.id && "opacity-40", resizingId === column.id && "bg-[var(--md-surface-tint)]", column.headerClassName)}
                 >
                   <span className="inline-flex min-w-0 items-center gap-1.5">
                     <GripVertical className="size-3 -ms-1 text-[var(--md-subtle)] opacity-0 transition-opacity group-hover/header:opacity-70" strokeWidth={1.3} aria-hidden="true" />
@@ -509,13 +517,18 @@ export function DataTable<Row>({
                   const isPinned = stickyColumnsEnabled && pinned.has(column.id)
                   return (
                     <TableCell
-                      key={column.id}
+                      // Recreate the cell when it crosses the sticky boundary. Chromium
+                      // can otherwise keep the former sticky layer painted until hover.
+                      key={`${column.id}:${isPinned ? "pinned" : "unpinned"}`}
                       style={{ width: columnWidth(column), minWidth: columnWidth(column), ...stickyStyle(column) }}
                       className={cn(
                         "transition-[background,box-shadow,opacity] duration-200",
-                        isPinned && "z-[2] backdrop-blur-xl",
+                        // The pinned colour is opaque. A backdrop filter here creates a
+                        // separate Chromium compositor layer that can retain stale pixels
+                        // after unpinning until every cell is hovered and repainted.
+                        isPinned && "z-[2]",
                         isPinned && (direction === "rtl" ? "shadow-[-2px_0_0_var(--md-line)]" : "shadow-[2px_0_0_var(--md-line)]"),
-                        isPinned && (isSelected ? "bg-[color-mix(in_srgb,var(--md-accent)_8%,var(--md-surface))]" : "bg-[color-mix(in_srgb,var(--md-surface)_94%,transparent)]"),
+                        isPinned && (isSelected ? "bg-[var(--md-table-pinned-selected-bg)]" : "bg-[var(--md-table-pinned-bg)]"),
                         column.cellClassName,
                       )}
                     >

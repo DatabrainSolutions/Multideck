@@ -311,8 +311,8 @@ export function CrmOpportunityValue({
       ) : (
         <EmptyState
           icon={Workflow}
-          title={t("No assigned open deals yet.")}
-          body={t("Deals you own will build this profile as they move through the pipeline.")}
+          title={t("No open deals yet.")}
+          body={t("Company deals will build this profile as they move through the pipeline.")}
         />
       )}
     </Panel>

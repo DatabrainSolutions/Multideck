@@ -8,6 +8,8 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
+import { RegisterFacetSelect, RegisterSearchField, RegisterViewSwitch } from "@/components/multideck/register-toolbar"
 import { Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { SegmentedControl, TabsRail } from "@/components/multideck/workflow-components"
@@ -67,6 +69,9 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, t }: {
   const [drafts, setDrafts] = useState<CustomsDraftSummary[]>([])
   const [loading, setLoading] = useState(!jobRelated && kind === "export")
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [search, setSearch] = useState("")
+  const [statusFilter, setStatusFilter] = useState("")
+  const [destinationFilter, setDestinationFilter] = useState("")
 
   useEffect(() => {
     if (jobRelated || kind !== "export") return
@@ -87,6 +92,85 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, t }: {
     return () => { cancelled = true }
   }, [jobRelated, kind])
 
+  const columns = useMemo<DataTableColumn<CustomsDraftSummary>[]>(() => [
+    {
+      id: "reference",
+      label: "Reference",
+      width: 250,
+      minWidth: 180,
+      resizable: true,
+      sortValue: (draft) => draft.reference,
+      cell: (draft) => <strong className="block text-[12px] font-medium tabular-nums text-[var(--md-ink)]" dir="ltr">{draft.reference}</strong>,
+    },
+    {
+      id: "status",
+      label: "Status",
+      width: 120,
+      minWidth: 104,
+      resizable: true,
+      sortValue: (draft) => draft.status,
+      cell: (draft) => <StatusPill>{t(titleCase(draft.status))}</StatusPill>,
+    },
+    {
+      id: "traderReference",
+      label: "Trader reference",
+      width: 190,
+      minWidth: 140,
+      resizable: true,
+      sortValue: (draft) => draft.traderReference,
+      cell: (draft) => <span className="text-[12px] text-[var(--md-text)]">{draft.traderReference || t("Not set")}</span>,
+    },
+    {
+      id: "items",
+      label: "Items",
+      width: 100,
+      minWidth: 84,
+      resizable: true,
+      sortValue: (draft) => draft.itemCount,
+      cell: (draft) => <span className="text-[12px] tabular-nums text-[var(--md-text)]" dir="ltr">{draft.itemCount}</span>,
+    },
+    {
+      id: "destination",
+      label: "Destination",
+      width: 140,
+      minWidth: 112,
+      resizable: true,
+      sortValue: (draft) => draft.destinationCountry,
+      cell: (draft) => <span className="text-[12px] text-[var(--md-text)]">{draft.destinationCountry || t("Not set")}</span>,
+    },
+    {
+      id: "value",
+      label: "Value",
+      width: 150,
+      minWidth: 112,
+      resizable: true,
+      sortValue: (draft) => draft.amount,
+      cell: (draft) => <span className="text-[12px] tabular-nums text-[var(--md-text)]" dir="ltr">{formatDraftAmount(draft.amount, draft.currency)}</span>,
+    },
+    {
+      id: "lastSaved",
+      label: "Last saved",
+      width: 190,
+      minWidth: 150,
+      resizable: true,
+      sortValue: (draft) => new Date(draft.updatedAt).getTime(),
+      cell: (draft) => <span className="text-[11px] text-[var(--md-subtle)]">{new Date(draft.updatedAt).toLocaleString()}</span>,
+    },
+  ], [t])
+
+  const statuses = useMemo(() => [...new Set(drafts.map((draft) => draft.status).filter(Boolean))].sort(), [drafts])
+  const destinations = useMemo(() => [...new Set(drafts.map((draft) => draft.destinationCountry).filter((value): value is string => Boolean(value)))].sort(), [drafts])
+  const filteredDrafts = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase()
+    return drafts.filter((draft) => {
+      if (statusFilter && draft.status !== statusFilter) return false
+      if (destinationFilter && draft.destinationCountry !== destinationFilter) return false
+      if (!query) return true
+      return [draft.reference, draft.traderReference, draft.status, draft.destinationCountry, draft.currency, draft.amount]
+        .some((value) => String(value ?? "").toLocaleLowerCase().includes(query))
+    })
+  }, [destinationFilter, drafts, search, statusFilter])
+
   return (
     <div className="space-y-5">
       <header className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
@@ -101,46 +185,74 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, t }: {
               : "Create and manage declarations that are not linked to a Multideck job.")}
           </p>
         </div>
-        <div className="grid grid-cols-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-1 shadow-[var(--md-shadow-line)]">
-          <KindButton active={kind === "export"} onClick={() => navigate(`${base}/export`)}>{t("Export")}</KindButton>
-          <KindButton active={kind === "import"} onClick={() => navigate(`${base}/import`)}>{t("Import")}</KindButton>
+        <div className="self-start xl:self-auto">
+          <RegisterViewSwitch
+            options={["Export", "Import"] as const}
+            value={kind === "export" ? "Export" : "Import"}
+            onChange={(nextKind) => navigate(`${base}/${nextKind.toLocaleLowerCase()}`)}
+            ariaLabel={t("Declaration direction")}
+          />
         </div>
       </header>
 
-      <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-        <div className="flex flex-col gap-3 border-b border-[var(--md-line)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <span>
-            <h2 className="text-[15px] font-medium text-[var(--md-ink)]">{t(`${kind === "export" ? "Export" : "Import"} declarations`)}</h2>
-            <p className="mt-1 text-[12px] text-[var(--md-subtle)]">
-              {t(jobRelated ? "Select a job before starting the declaration." : "Drafts and submitted declarations will appear here.")}
-            </p>
-          </span>
-          <Button
-            type="button"
-            disabled={kind === "import" || jobRelated}
-            onClick={() => navigate("/customs/standalone/export/new")}
-          >
-            <Plus className="size-4" />
-            {t(`New ${kind} declaration`)}
-          </Button>
-        </div>
-        {loading ? <div className="grid min-h-[240px] place-items-center px-6 py-12 text-center text-[13px] text-[var(--md-text)]">{t("Loading saved declarations")}</div> : null}
-        {loadError ? <div className="grid min-h-[240px] place-items-center px-6 py-12 text-center"><div className="max-w-[520px]"><CircleAlert className="mx-auto size-6 text-[var(--md-red)]" /><h3 className="mt-3 text-[15px] font-medium text-[var(--md-ink)]">{t("Saved declarations unavailable")}</h3><p className="mt-2 text-[12px] text-[var(--md-text)]">{t("Refresh the page to try loading the declaration register again.")}</p></div></div> : null}
-        {!loading && !loadError && drafts.length ? <div className="divide-y divide-[var(--md-line)]">
-          <div className="hidden grid-cols-[1.3fr_1fr_90px_90px_120px_120px] gap-4 bg-[var(--md-surface-tint)] px-5 py-2 text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--md-subtle)] md:grid">
-            <span>{t("Reference")}</span><span>{t("Trader reference")}</span><span>{t("Items")}</span><span>{t("Destination")}</span><span>{t("Value")}</span><span>{t("Last saved")}</span>
+      <DataTable
+        ariaLabel={t("Declaration register")}
+        columnsButtonLabel={t("Manage declaration columns")}
+        columns={columns}
+        rows={loading || loadError ? [] : filteredDrafts}
+        getRowKey={(draft) => draft.id}
+        storageKey={`customs-${jobRelated ? "job-related" : "standalone"}-${kind}-register`}
+        rowClassName="hover:bg-[var(--md-hover)]"
+        onRowClick={!jobRelated && kind === "export" ? (draft) => navigate(`/customs/standalone/export/${draft.id}`) : undefined}
+        toolbarLeading={(
+          <div className="flex min-w-0 items-center gap-2 px-1.5">
+            <span className="text-[12px] font-medium text-[var(--md-ink)]">{t("Declaration register")}</span>
+            <span className="text-[11px] text-[var(--md-subtle)]" data-i18n-skip dir="ltr">{filteredDrafts.length}</span>
           </div>
-          {drafts.map((savedDraft) => <button key={savedDraft.id} type="button" onClick={() => navigate(`/customs/standalone/export/${savedDraft.id}`)} className="grid w-full gap-2 px-5 py-4 text-start hover:bg-[var(--md-hover)] md:grid-cols-[1.3fr_1fr_90px_90px_120px_120px] md:items-center md:gap-4">
-            <span><strong className="block text-[12px] font-medium tabular-nums text-[var(--md-ink)]" dir="ltr">{savedDraft.reference}</strong><StatusPill className="mt-1">{t(savedDraft.status === "draft" ? "Draft" : savedDraft.status)}</StatusPill></span>
-            <span className="text-[12px] text-[var(--md-text)]">{savedDraft.traderReference || t("Not set")}</span>
-            <span className="text-[12px] text-[var(--md-text)]">{savedDraft.itemCount}</span>
-            <span className="text-[12px] text-[var(--md-text)]">{savedDraft.destinationCountry || t("Not set")}</span>
-            <span className="text-[12px] text-[var(--md-text)]">{formatDraftAmount(savedDraft.amount, savedDraft.currency)}</span>
-            <span className="text-[11px] text-[var(--md-subtle)]">{new Date(savedDraft.updatedAt).toLocaleString()}</span>
-          </button>)}
-        </div> : null}
-        {!loading && !loadError && !drafts.length ? <div className="grid min-h-[300px] place-items-center px-6 py-12 text-center">
-          <div className="max-w-[440px]">
+        )}
+        toolbarActions={(
+          <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-1.5">
+            <RegisterFacetSelect
+              label="Status"
+              allLabel="All statuses"
+              value={statusFilter}
+              options={statuses.map((status) => ({ value: status, label: titleCase(status) }))}
+              onChange={setStatusFilter}
+              className="w-[132px]"
+            />
+            <RegisterFacetSelect
+              label="Destination"
+              allLabel="All destinations"
+              value={destinationFilter}
+              options={destinations.map((destination) => ({ value: destination, label: destination }))}
+              onChange={setDestinationFilter}
+              className="w-[148px]"
+            />
+            <RegisterSearchField
+              value={search}
+              onChange={setSearch}
+              onClear={() => setSearch("")}
+              label="Search declarations"
+              placeholder="Search declarations"
+            />
+          </div>
+        )}
+        compactToolbar
+        emptyState={loading ? (
+          <div className="mx-auto py-8 text-center text-[13px] text-[var(--md-text)]">{t("Loading saved declarations")}</div>
+        ) : loadError ? (
+          <div role="alert" className="mx-auto max-w-[520px] py-8 text-center">
+            <CircleAlert className="mx-auto size-6 text-[var(--md-red)]" />
+            <h3 className="mt-3 text-[15px] font-medium text-[var(--md-ink)]">{t("Saved declarations unavailable")}</h3>
+            <p className="mt-2 text-[12px] text-[var(--md-text)]">{t("Refresh the page to try loading the declaration register again.")}</p>
+          </div>
+        ) : drafts.length && !filteredDrafts.length ? (
+          <div className="mx-auto max-w-[440px] py-8 text-center">
+            <h3 className="text-[15px] font-medium text-[var(--md-ink)]">{t("No declarations match these filters")}</h3>
+            <p className="mt-2 text-[12px] text-[var(--md-text)]">{t("Change or clear a filter to see more declarations.")}</p>
+          </div>
+        ) : (
+          <div className="mx-auto grid max-w-[440px] place-items-center py-8 text-center">
             <div className="mx-auto grid size-11 place-items-center rounded-full bg-[var(--md-accent-a10)] text-[var(--md-accent)]">
               <FileCheck2 className="size-5" strokeWidth={1.4} />
             </div>
@@ -153,10 +265,14 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, t }: {
                 : "We will enable this after the standalone export workflow is agreed and connected.")}
             </p>
           </div>
-        </div> : null}
-      </Surface>
+        )}
+      />
     </div>
   )
+}
+
+function titleCase(value: string) {
+  return value.replace(/[_-]+/g, " ").replace(/\b\w/g, (character) => character.toLocaleUpperCase())
 }
 
 function formatDraftAmount(amount: number | null, currency: string | null) {
@@ -553,7 +669,7 @@ function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, on
         <table className="w-full min-w-[1780px] table-fixed border-collapse text-start" aria-label={t("Mandatory goods-line fields")}>
           <thead className="bg-[var(--md-surface-soft)] text-[9px] font-medium uppercase tracking-[0.035em] text-[var(--md-subtle)]">
             <tr>
-              <ItemTableHeading className="sticky start-0 z-10 w-[64px] bg-[var(--md-surface-soft)]">{t("Line")}</ItemTableHeading>
+              <ItemTableHeading className="w-[64px]">{t("Line")}</ItemTableHeading>
               <ItemTableHeading className="w-[120px]">{t("Commodity code")}</ItemTableHeading>
               <ItemTableHeading className="w-[200px]">{t("Description of goods")}</ItemTableHeading>
               <ItemTableHeading className="w-[96px]">{t("Package kind")}</ItemTableHeading>
@@ -579,7 +695,7 @@ function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, on
               return <ContextMenuPrimitive.Root key={item.id} dir={direction}>
                 <ContextMenuPrimitive.Trigger asChild>
                 <tr onClick={(event) => { if (!(event.target as HTMLElement).closest("input, button, [role='combobox']")) toggleItem(item.id) }} onFocus={(event) => { if (!(event.target as HTMLElement).closest("[data-item-disclosure]")) onSelectItem(item.id) }} onContextMenu={() => onSelectItem(item.id)} aria-selected={selected} className={cn("group cursor-pointer bg-[var(--md-surface)] transition-colors duration-150 hover:bg-[var(--md-hover)]", selected && "bg-[var(--md-selected-bg)] hover:bg-[var(--md-selected-bg)]")}>
-                <td className={cn("sticky start-0 z-[5] border-e border-[var(--md-line)] p-1", selected ? "bg-[var(--md-selected-bg)]" : "bg-[var(--md-surface)] group-hover:bg-[var(--md-hover)]")}>
+                <td className={cn("border-e border-[var(--md-line)] p-1", selected ? "bg-[var(--md-selected-bg)]" : "bg-[var(--md-surface)] group-hover:bg-[var(--md-hover)]")}>
                   <button type="button" data-item-disclosure aria-expanded={expanded} aria-controls={`item-details-${item.id}`} aria-label={`${t(expanded ? "Collapse item details" : "Expand item details")} ${index + 1}`} onClick={(event) => { event.stopPropagation(); toggleItem(item.id) }} className="group/disclosure flex min-h-9 w-full items-center gap-1.5 rounded-[var(--md-radius-sm)] px-1 text-start outline-none transition-colors duration-150 hover:bg-[var(--md-surface)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] focus-visible:ring-offset-1 active:bg-[var(--md-hover)]">
                     <ChevronDown className={cn("size-3.5 shrink-0 text-[var(--md-subtle)] transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none", expanded && "rotate-180")} aria-hidden="true" />
                     <span className="min-w-0">
@@ -771,7 +887,7 @@ function ItemTableCell({ children }: { children: ReactNode }) {
 function ItemTableSelect({ label, value, onChange, options, invalid }: { label: string; value: string; onChange: (value: string) => void; options: ReadonlyArray<readonly [string, string]>; invalid?: boolean }) {
   const referenceState = useContext(CustomsReferenceDataContext)
   return <Select value={value || undefined} onValueChange={onChange} disabled={referenceState.loading || Boolean(referenceState.error) || !options.length}>
-    <SelectTrigger aria-label={label} className={cn("h-7 rounded-[var(--md-radius-xs)] border-transparent bg-[var(--md-surface-tint)] px-1.5 text-[10px] shadow-none focus:ring-1 focus:ring-[var(--md-accent)]", invalid && "ring-1 ring-[var(--md-red)]")}><SelectValue placeholder="—" /></SelectTrigger>
+    <SelectTrigger aria-label={label} aria-invalid={invalid || undefined} className={cn("h-7 rounded-[var(--md-radius-xs)] border-transparent bg-[var(--md-surface-tint)] px-1.5 text-[10px] shadow-none focus:ring-1 focus:ring-[var(--md-accent)]", invalid && "ring-1 ring-[var(--md-red)]")}><SelectValue placeholder="—" /></SelectTrigger>
     <SelectContent>{options.map(([optionValue, optionLabel]) => <SelectItem key={optionValue} value={optionValue}>{optionLabel}</SelectItem>)}</SelectContent>
   </Select>
 }
@@ -820,10 +936,6 @@ function generalTabForField(field: string): EditorTab {
   return "declaration"
 }
 
-function KindButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
-  return <button type="button" onClick={onClick} className={cn("min-w-[112px] rounded-[var(--md-radius-md)] px-4 py-2 text-[12px] font-medium", active ? "bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-line)]" : "text-[var(--md-text)]")}>{children}</button>
-}
-
 function Toggle({ checked, onChange, children }: { checked: boolean; onChange: (checked: boolean) => void; children: ReactNode }) {
   return <label className="flex h-9 items-center gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] px-3 text-[12px] text-[var(--md-text)] shadow-[var(--md-shadow-line)]"><Checkbox checked={checked} onCheckedChange={(value) => onChange(value === true)} />{children}</label>
 }
@@ -842,7 +954,7 @@ function FieldShell({ label, dataElement, customsBox, required, showDataElements
   const showCustomsBoxNumbers = useContext(CustomsBoxVisibilityContext)
   const compact = useContext(CompactCustomsFormContext)
   const showAnnotations = (showDataElements && dataElement) || (showCustomsBoxNumbers && customsBox)
-  return <label className={cn("min-w-0", compact && "grid grid-cols-[minmax(76px,0.42fr)_minmax(0,0.58fr)] items-center gap-1.5", className)}><span className={cn("flex items-center gap-1.5 font-medium text-[var(--md-text)]", compact ? "min-h-0 text-[10.5px] leading-[1.15]" : "mb-1.5 min-h-5 text-[11px]")}><span className={cn(compact ? "line-clamp-2" : "truncate")}>{label}</span>{required ? <span className="text-[var(--md-red)]">*</span> : null}{showAnnotations ? <span className={cn("flex shrink-0 items-center gap-1", !compact && "ms-auto")}>{showDataElements && dataElement ? <span className={cn("rounded-[var(--md-radius-sm)] bg-[color-mix(in_srgb,var(--md-blue)_8%,transparent)] font-medium tabular-nums text-[var(--md-blue)]", compact ? "px-1 py-0.5 text-[8.5px]" : "px-1.5 py-0.5 text-[10px]")} dir="ltr">DE {dataElement}</span> : null}{showCustomsBoxNumbers && customsBox ? <span className={cn("rounded-[var(--md-radius-sm)] bg-[var(--md-accent-a10)] font-medium tabular-nums text-[var(--md-accent)]", compact ? "px-1 py-0.5 text-[8.5px]" : "px-1.5 py-0.5 text-[10px]")} dir="ltr">{`Box ${customsBox}`}</span> : null}</span> : null}</span><span data-customs-field={fieldKey} className={cn("block rounded-[var(--md-radius-md)] transition-[box-shadow] duration-300", invalid && "ring-2 ring-[color-mix(in_srgb,var(--md-red)_22%,transparent)]", highlighted && "ring-2 ring-[var(--md-accent)] shadow-[0_0_20px_var(--md-accent)]")}>{children}</span></label>
+  return <label data-field-invalid={invalid || undefined} className={cn("min-w-0", compact && "grid grid-cols-[minmax(76px,0.42fr)_minmax(0,0.58fr)] items-center gap-1.5", className)}><span className={cn("flex items-center gap-1.5 font-medium text-[var(--md-text)]", compact ? "min-h-0 text-[10.5px] leading-[1.15]" : "mb-1.5 min-h-5 text-[11px]")}><span className={cn(compact ? "line-clamp-2" : "truncate")}>{label}</span>{required ? <span className="text-[var(--md-red)]">*</span> : null}{showAnnotations ? <span className={cn("flex shrink-0 items-center gap-1", !compact && "ms-auto")}>{showDataElements && dataElement ? <span className={cn("rounded-[var(--md-radius-sm)] bg-[color-mix(in_srgb,var(--md-blue)_8%,transparent)] font-medium tabular-nums text-[var(--md-blue)]", compact ? "px-1 py-0.5 text-[8.5px]" : "px-1.5 py-0.5 text-[10px]")} dir="ltr">DE {dataElement}</span> : null}{showCustomsBoxNumbers && customsBox ? <span className={cn("rounded-[var(--md-radius-sm)] bg-[var(--md-accent-a10)] font-medium tabular-nums text-[var(--md-accent)]", compact ? "px-1 py-0.5 text-[8.5px]" : "px-1.5 py-0.5 text-[10px]")} dir="ltr">{`Box ${customsBox}`}</span> : null}</span> : null}</span><span data-customs-field={fieldKey} className={cn("block rounded-[var(--md-radius-md)] transition-[box-shadow] duration-300", invalid && "ring-2 ring-[color-mix(in_srgb,var(--md-red)_22%,transparent)]", highlighted && "ring-2 ring-[var(--md-accent)] shadow-[0_0_20px_var(--md-accent)]")}>{children}</span></label>
 }
 
 function TextField({ label, value, onChange, dataElement, customsBox, required, showDataElements, invalid, highlighted, fieldKey, placeholder, suffix }: { label: string; value: string; onChange: (value: string) => void; dataElement?: string; customsBox?: string; required?: boolean; showDataElements: boolean; invalid?: boolean; highlighted?: boolean; fieldKey?: string; placeholder?: string; suffix?: string }) {
@@ -858,7 +970,7 @@ function TextAreaField({ label, value, onChange, dataElement, customsBox, requir
 function SelectField({ label, value, onChange, options, dataElement, customsBox, required, showDataElements, invalid, highlighted, fieldKey }: { label: string; value: string; onChange: (value: string) => void; options: ReadonlyArray<readonly [string, string]>; dataElement?: string; customsBox?: string; required?: boolean; showDataElements: boolean; invalid?: boolean; highlighted?: boolean; fieldKey?: string }) {
   const referenceState = useContext(CustomsReferenceDataContext)
   const compact = useContext(CompactCustomsFormContext)
-  return <FieldShell label={label} dataElement={dataElement} customsBox={customsBox} required={required} showDataElements={showDataElements} invalid={invalid} highlighted={highlighted} fieldKey={fieldKey}><Select value={value || undefined} onValueChange={onChange} disabled={referenceState.loading || Boolean(referenceState.error) || options.length <= 1}><SelectTrigger className={cn("w-full border-0 bg-[var(--md-field-bg)] shadow-[var(--md-shadow-line)]", compact ? "h-8 px-2 text-[11px]" : "h-9 text-[13px]")}><SelectValue placeholder={options[0]?.[1]} /></SelectTrigger><SelectContent>{options.filter(([optionValue]) => optionValue).map(([optionValue, optionLabel]) => <SelectItem key={optionValue} value={optionValue}>{optionLabel}</SelectItem>)}</SelectContent></Select></FieldShell>
+  return <FieldShell label={label} dataElement={dataElement} customsBox={customsBox} required={required} showDataElements={showDataElements} invalid={invalid} highlighted={highlighted} fieldKey={fieldKey}><Select value={value || undefined} onValueChange={onChange} disabled={referenceState.loading || Boolean(referenceState.error) || options.length <= 1}><SelectTrigger aria-invalid={invalid || undefined} className={cn("w-full border-0 bg-[var(--md-field-bg)] shadow-[var(--md-shadow-line)]", compact ? "h-8 px-2 text-[11px]" : "h-9 text-[13px]")}><SelectValue placeholder={options[0]?.[1]} /></SelectTrigger><SelectContent>{options.filter(([optionValue]) => optionValue).map(([optionValue, optionLabel]) => <SelectItem key={optionValue} value={optionValue}>{optionLabel}</SelectItem>)}</SelectContent></Select></FieldShell>
 }
 
 function Summary({ label, value }: { label: string; value: string }) {

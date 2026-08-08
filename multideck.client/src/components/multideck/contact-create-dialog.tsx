@@ -1,9 +1,7 @@
-import { useEffect, useState, type FormEvent } from "react"
-import { LoaderCircle } from "lucide-react"
+import { useEffect, useState } from "react"
 import { toast } from "sonner"
-import { Button } from "@/components/ui/button"
+import { WizardDialog, type WizardStep } from "@/components/multideck/wizard-dialog"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { useLanguage } from "@/i18n/language-provider"
 import { createCustomerContact, type ApiCustomerContact } from "@/lib/customer-api"
@@ -53,6 +51,7 @@ export function ContactCreateDialog({
   const [draft, setDraft] = useState<ContactDraft>(() => emptyDraft(defaultAccountId))
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
+  const [section, setSection] = useState("account")
 
   useEffect(() => {
     setDraft((current) => {
@@ -63,11 +62,11 @@ export function ContactCreateDialog({
 
   function changeOpen(nextOpen: boolean) {
     setCreateError(null)
+    if (nextOpen) setSection("account")
     onOpenChange(nextOpen)
   }
 
-  async function create(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
+  async function create() {
     if (!draft.accountId) return
     setCreating(true)
     setCreateError(null)
@@ -93,14 +92,32 @@ export function ContactCreateDialog({
     }
   }
 
+  const steps: WizardStep[] = [
+    { id: "account", label: "Account", hint: "Choose the account this contact belongs to.", complete: Boolean(draft.accountId) },
+    { id: "contact", label: "Contact details", hint: "Record the person and a reliable way to reach them.", complete: Boolean((draft.firstName || draft.lastName) && draft.email) },
+    { id: "relationship", label: "Relationship", hint: "Add their role and only record marketing consent when evidence exists.", complete: Boolean(draft.role || draft.jobTitle || draft.department || (draft.marketingOptIn && draft.marketingConsentReason)) },
+  ]
+
+  const submitDisabled = !draft.accountId || !draft.email || (!draft.firstName && !draft.lastName) || (draft.marketingOptIn && !draft.marketingConsentReason.trim())
+
   return (
-    <Dialog open={open} onOpenChange={changeOpen}>
-      <DialogContent className="max-h-[88vh] overflow-y-auto border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[620px]">
-        <DialogHeader className="text-start">
-          <DialogTitle>{t("New contact")}</DialogTitle>
-          <DialogDescription>{t("Connect this person to an account and record only what helps the relationship now.")}</DialogDescription>
-        </DialogHeader>
-        <form className="grid gap-4" onSubmit={create}>
+    <WizardDialog
+      open={open}
+      onOpenChange={changeOpen}
+      title="New contact"
+      description="Connect this person to an account and record only what helps the relationship now."
+      steps={steps}
+      activeStepId={section}
+      onStepChange={setSection}
+      submitLabel="Create contact"
+      onSubmit={() => void create()}
+      saving={creating}
+      submitDisabled={submitDisabled}
+      bodyMinHeight={320}
+      className="sm:max-w-[760px]"
+    >
+      {section === "account" ? (
+        <div className="grid gap-4">
           <label className="grid gap-1.5 text-start text-[13px] font-medium">
             <span>{t("Account")} *</span>
             <select
@@ -114,11 +131,19 @@ export function ContactCreateDialog({
               {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
             </select>
           </label>
+        </div>
+      ) : null}
+      {section === "contact" ? (
+        <div className="grid gap-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <ContactField label={t("First name")} required={!draft.lastName} value={draft.firstName} onChange={(value) => setDraft((current) => ({ ...current, firstName: value }))} />
             <ContactField label={t("Last name")} required={!draft.firstName} value={draft.lastName} onChange={(value) => setDraft((current) => ({ ...current, lastName: value }))} />
           </div>
           <ContactField label={t("Work email")} type="email" required value={draft.email} onChange={(value) => setDraft((current) => ({ ...current, email: value }))} />
+        </div>
+      ) : null}
+      {section === "relationship" ? (
+        <div className="grid gap-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <ContactField label={t("Job title")} value={draft.jobTitle} onChange={(value) => setDraft((current) => ({ ...current, jobTitle: value }))} />
             <ContactField label={t("Department")} value={draft.department} onChange={(value) => setDraft((current) => ({ ...current, department: value }))} />
@@ -133,15 +158,9 @@ export function ContactCreateDialog({
           </label>
           {draft.marketingOptIn ? <ContactField label={t("Consent source or evidence")} required value={draft.marketingConsentReason} onChange={(value) => setDraft((current) => ({ ...current, marketingConsentReason: value }))} /> : null}
           {createError ? <p role="alert" className="text-[13px] text-[var(--md-red)]">{createError}</p> : null}
-          <DialogFooter>
-            <Button type="button" variant="outline" disabled={creating} onClick={() => changeOpen(false)}>{t("Cancel")}</Button>
-            <Button type="submit" disabled={creating || !draft.accountId || !draft.email || (!draft.firstName && !draft.lastName) || (draft.marketingOptIn && !draft.marketingConsentReason.trim())}>
-              {creating ? <LoaderCircle className="size-4 animate-spin" /> : null}{t(creating ? "Creating contact…" : "Create contact")}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+        </div>
+      ) : null}
+    </WizardDialog>
   )
 }
 

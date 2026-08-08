@@ -56,8 +56,6 @@ import {
 } from "@/components/multideck/date-picker"
 import {
   CrmActivityTimeline,
-  CrmAssetFolderCard,
-  CrmAssetRow,
   CrmDealDetailPanel,
   CrmForecastPanel,
   CrmLeadDetailPanel,
@@ -72,8 +70,6 @@ import {
   CrmSettingsBuilder,
   type CrmDeal,
   type CrmPipelineBoardData,
-  type CrmAssetFile,
-  type CrmAssetFolder,
 } from "@/components/multideck/crm-components"
 import {
   CrmActivityFeed,
@@ -124,6 +120,7 @@ import { getPipelineSettings, type ApiPipeline } from "@/lib/pipeline-api"
 import { createProfilePhotoSignedUrls } from "@/lib/profile-photo"
 import { setMarketingOptIn } from "@/lib/marketing-consent-api"
 import { getSupabaseSession } from "@/lib/supabase"
+import { subscribeTopBarAction, topBarActionEvents } from "@/lib/top-bar-action-events"
 
 const rowsPerPageOptions = [10, 20, 30, 50]
 type CrmPipeline = CrmPipelineBoardData
@@ -351,216 +348,6 @@ const crmEmailLists = [
     ],
   },
 ]
-
-const crmMarketingFolders: CrmAssetFolder[] = [
-  {
-    id: "brand-logos",
-    name: "Brand logos",
-    description: "Primary marks, partner lockups, favicon exports, and approved logo variations.",
-    itemCount: 9,
-    size: "48 MB",
-    updated: "Updated today",
-    owner: "Elena",
-    tone: "teal" as StatusTone,
-    icon: Folder,
-  },
-  {
-    id: "graphics",
-    name: "Graphics",
-    description: "Lane visuals, customer education graphics, hero images, and social-ready artwork.",
-    itemCount: 14,
-    size: "312 MB",
-    updated: "Updated Tue",
-    owner: "Will",
-    tone: "green" as StatusTone,
-    icon: Image,
-  },
-  {
-    id: "email-templates",
-    name: "Email templates",
-    description: "Reusable HTML blocks, header images, advisory layouts, and footer snippets.",
-    itemCount: 6,
-    size: "22 MB",
-    updated: "Updated Jun 10",
-    tone: "amber" as StatusTone,
-    owner: "Jamie",
-    icon: LayoutTemplate,
-  },
-  {
-    id: "sales-collateral",
-    name: "Sales collateral",
-    description: "One-pagers, trade-lane explainers, customer report inserts, and proposal assets.",
-    itemCount: 11,
-    size: "186 MB",
-    updated: "Updated Jun 7",
-    tone: "blue" as StatusTone,
-    owner: "Mina",
-    icon: FileText,
-  },
-]
-
-const crmMarketingAssetCount = crmMarketingFolders.reduce((total, folder) => total + folder.itemCount, 0)
-
-const crmMarketingAssets: CrmAssetFile[] = [
-  {
-    id: "md-primary-logo-svg",
-    folderId: "brand-logos",
-    name: "multideck-primary-logo.svg",
-    type: "SVG",
-    size: "124 KB",
-    updated: "Today",
-    owner: "Elena",
-    usage: "Approved primary logo for light surfaces",
-    tone: "green" as StatusTone,
-    icon: FileText,
-  },
-  {
-    id: "md-full-lockup-png",
-    folderId: "brand-logos",
-    name: "multideck-full-lockup-dark.png",
-    type: "PNG",
-    size: "1.8 MB",
-    updated: "Today",
-    owner: "Elena",
-    usage: "Dark-background lockup for decks and webinars",
-    tone: "green" as StatusTone,
-    icon: Image,
-  },
-  {
-    id: "partner-badge-set",
-    folderId: "brand-logos",
-    name: "partner-badge-set.zip",
-    type: "ZIP",
-    size: "9.4 MB",
-    updated: "Jun 11",
-    owner: "Will",
-    usage: "Approved partner badges for customer announcements",
-    tone: "blue" as StatusTone,
-    icon: Folder,
-  },
-  {
-    id: "peak-season-hero",
-    folderId: "graphics",
-    name: "peak-season-capacity-hero.png",
-    type: "PNG",
-    size: "18.6 MB",
-    updated: "Tue",
-    owner: "Will",
-    usage: "Hero graphic for peak-season advisory",
-    tone: "green" as StatusTone,
-    icon: Image,
-  },
-  {
-    id: "customs-checklist-graphic",
-    folderId: "graphics",
-    name: "customs-checklist-carousel.fig",
-    type: "FIG",
-    size: "42 MB",
-    updated: "Mon",
-    owner: "Mina",
-    usage: "Editable carousel graphics for customs education",
-    tone: "amber" as StatusTone,
-    icon: Image,
-  },
-  {
-    id: "air-freight-map",
-    folderId: "graphics",
-    name: "air-freight-response-map.jpg",
-    type: "JPG",
-    size: "7.2 MB",
-    updated: "Jun 6",
-    owner: "Jamie",
-    usage: "Map visual for delayed ocean quote follow-up",
-    tone: "blue" as StatusTone,
-    icon: Image,
-  },
-  {
-    id: "monthly-rates-html",
-    folderId: "email-templates",
-    name: "monthly-rates-newsletter.html",
-    type: "HTML",
-    size: "86 KB",
-    updated: "Jun 10",
-    owner: "Jamie",
-    usage: "Reusable rates newsletter shell",
-    tone: "green" as StatusTone,
-    icon: LayoutTemplate,
-  },
-  {
-    id: "service-advisory-template",
-    folderId: "email-templates",
-    name: "service-advisory-single-cta.html",
-    type: "HTML",
-    size: "64 KB",
-    updated: "Jun 8",
-    owner: "Elena",
-    usage: "Urgent service update with one clear action",
-    tone: "amber" as StatusTone,
-    icon: LayoutTemplate,
-  },
-  {
-    id: "customer-reactivation-copy",
-    folderId: "email-templates",
-    name: "customer-reactivation-copy.docx",
-    type: "DOCX",
-    size: "210 KB",
-    updated: "Jun 5",
-    owner: "Will",
-    usage: "Copy blocks for dormant account follow-up",
-    tone: "green" as StatusTone,
-    icon: FileText,
-  },
-  {
-    id: "eu-apparel-one-pager",
-    folderId: "sales-collateral",
-    name: "eu-apparel-lane-one-pager.pdf",
-    type: "PDF",
-    size: "4.8 MB",
-    updated: "Jun 7",
-    owner: "Mina",
-    usage: "One-pager for apparel importers",
-    tone: "blue" as StatusTone,
-    icon: FileText,
-  },
-  {
-    id: "customs-readiness-pack",
-    folderId: "sales-collateral",
-    name: "customs-readiness-pack.pdf",
-    type: "PDF",
-    size: "6.1 MB",
-    updated: "Jun 6",
-    owner: "Elena",
-    usage: "Document checklist pack for onboarding",
-    tone: "amber" as StatusTone,
-    icon: FileText,
-  },
-  {
-    id: "qbr-insert",
-    folderId: "sales-collateral",
-    name: "qbr-report-insert.key",
-    type: "KEY",
-    size: "26 MB",
-    updated: "Jun 4",
-    owner: "Jamie",
-    usage: "Reusable QBR insert for customer reports",
-    tone: "green" as StatusTone,
-    icon: LayoutTemplate,
-  },
-]
-
-const crmMarketingStorageStats = [
-  ["Storage used", "568 MB"],
-  ["Shared folders", "4"],
-  ["Recently updated", "7 assets"],
-  ["Owners", "4 people"],
-]
-
-const crmMarketingActivity = [
-  ["Today 10:18", "Elena added the dark logo lockup"],
-  ["Tue 15:42", "Will refreshed peak-season graphics"],
-  ["Jun 10", "Jamie updated the newsletter template"],
-]
-
 const crmEmailTemplates = [
   {
     name: "Monthly rates newsletter",
@@ -1056,11 +843,13 @@ function FollowUpCreateMenu({ opportunity, onChoose }: { opportunity: CrmFollowU
 function FollowUpRecordDialog({
   opportunity,
   kind,
+  open = false,
   onClose,
   onCreated,
 }: {
   opportunity: CrmFollowUpOpportunity | null
   kind: FollowUpCreateKind | null
+  open?: boolean
   onClose: () => void
   onCreated: () => void
 }) {
@@ -1068,6 +857,12 @@ function FollowUpRecordDialog({
   const [personName, setPersonName] = useState("")
   const [companyName, setCompanyName] = useState("")
   const [email, setEmail] = useState("")
+  const [addressLine1, setAddressLine1] = useState("")
+  const [addressLine2, setAddressLine2] = useState("")
+  const [townCity, setTownCity] = useState("")
+  const [countyState, setCountyState] = useState("")
+  const [postZipCode, setPostZipCode] = useState("")
+  const [countryCode, setCountryCode] = useState("")
   const [accountId, setAccountId] = useState("")
   const [accounts, setAccounts] = useState<ApiCustomer[]>([])
   const [accountState, setAccountState] = useState<"idle" | "loading" | "ready" | "error">("idle")
@@ -1075,10 +870,16 @@ function FollowUpRecordDialog({
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!opportunity || !kind) return
-    setPersonName(opportunity.personName || "")
-    setCompanyName(opportunity.companyName || companyNameFromEmail(opportunity.email || ""))
-    setEmail(opportunity.email || "")
+    if (!kind || (!opportunity && !open)) return
+    setPersonName(opportunity?.personName || "")
+    setCompanyName(opportunity?.companyName || companyNameFromEmail(opportunity?.email || ""))
+    setEmail(opportunity?.email || "")
+    setAddressLine1("")
+    setAddressLine2("")
+    setTownCity("")
+    setCountyState("")
+    setPostZipCode("")
+    setCountryCode("")
     setAccountId("")
     setError(null)
     if (kind !== "contact") {
@@ -1098,16 +899,29 @@ function FollowUpRecordDialog({
         setAccountState("error")
       })
     return () => { active = false }
-  }, [kind, opportunity])
+  }, [kind, open, opportunity])
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!opportunity || !kind) return
+    if (!kind || (!opportunity && !open)) return
     setSubmitting(true)
     setError(null)
     try {
       if (kind === "lead") {
-        await createFollowUpLead({ email, personName, companyName, threadId: opportunity.threadId })
+        await createFollowUpLead({
+          email,
+          personName,
+          companyName,
+          threadId: opportunity?.threadId,
+          address: {
+            line1: addressLine1 || null,
+            line2: addressLine2 || null,
+            townCity: townCity || null,
+            countyState: countyState || null,
+            postZipCode: postZipCode || null,
+            countryCode: countryCode || null,
+          },
+        })
       } else if (kind === "contact") {
         if (!accountId) throw new Error(t("Choose the account this contact belongs to."))
         const name = personNameParts(personName)
@@ -1139,13 +953,13 @@ function FollowUpRecordDialog({
     }
   }
 
-  const title = kind === "lead" ? t("Create lead") : kind === "contact" ? t("Create contact") : t("Create account")
+  const title = kind === "lead" ? t(opportunity ? "Create lead" : "New lead") : kind === "contact" ? t("Create contact") : t("Create account")
   return (
-    <Dialog open={Boolean(opportunity && kind)} onOpenChange={(open) => { if (!open) onClose() }}>
-      <DialogContent className="border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[520px]">
+    <Dialog open={Boolean(kind && (opportunity || open))} onOpenChange={(nextOpen) => { if (!nextOpen) onClose() }}>
+      <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[520px]">
         <DialogHeader className="text-start">
           <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{t("Review the details found in the email before adding them to CRM.")}</DialogDescription>
+          <DialogDescription>{t(opportunity ? "Review the details found in the email before adding them to CRM." : "New sales opportunity")}</DialogDescription>
         </DialogHeader>
         <form className="grid gap-4" onSubmit={submit}>
           {kind !== "contact" ? (
@@ -1171,10 +985,51 @@ function FollowUpRecordDialog({
             {t("Email")}
             <Input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} className="h-10" dir="ltr" />
           </label>
+          {kind === "lead" ? (
+            <div className="grid gap-3 border-t border-[var(--md-line)] pt-4">
+              <span className="text-[12px] font-medium text-[var(--md-text)]">{t("Address")}</span>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
+                  {t("Address line 1")}
+                  <Input value={addressLine1} onChange={(event) => setAddressLine1(event.target.value)} className="h-10" dir="auto" />
+                </label>
+                <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
+                  {t("Address line 2")}
+                  <Input value={addressLine2} onChange={(event) => setAddressLine2(event.target.value)} className="h-10" dir="auto" />
+                </label>
+                <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
+                  {t("Town or city")}
+                  <Input value={townCity} onChange={(event) => setTownCity(event.target.value)} className="h-10" dir="auto" />
+                </label>
+                <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
+                  {t("County / State")}
+                  <Input value={countyState} onChange={(event) => setCountyState(event.target.value)} className="h-10" dir="auto" />
+                </label>
+                <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
+                  {t("Postcode")}
+                  <Input value={postZipCode} onChange={(event) => setPostZipCode(event.target.value)} className="h-10" dir="ltr" />
+                </label>
+                <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
+                  {t("Country code")}
+                  <Input
+                    value={countryCode}
+                    onChange={(event) => setCountryCode(event.target.value.toUpperCase())}
+                    className="h-10"
+                    dir="ltr"
+                    maxLength={2}
+                    aria-invalid={Boolean(countryCode && !/^[A-Z]{2}$/.test(countryCode))}
+                  />
+                  {countryCode && !/^[A-Z]{2}$/.test(countryCode) ? (
+                    <span className="text-[11px] text-[var(--md-red)]">{t("Enter a two-letter ISO country code, such as GB.")}</span>
+                  ) : null}
+                </label>
+              </div>
+            </div>
+          ) : null}
           {error ? <p role="alert" className="rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red)_9%,transparent)] px-3 py-2 text-[12px] text-[var(--md-red)]" dir="auto">{t(error)}</p> : null}
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={onClose}>{t("Cancel")}</Button>
-            <Button type="submit" disabled={submitting || !email.trim() || !personName.trim() || (kind === "contact" && !accountId) || (kind !== "contact" && !companyName.trim())}>
+            <Button type="submit" disabled={submitting || !email.trim() || !personName.trim() || (kind === "lead" && Boolean(countryCode) && !/^[A-Z]{2}$/.test(countryCode)) || (kind === "contact" && !accountId) || (kind !== "contact" && !companyName.trim())}>
               {submitting ? <LoaderCircle className="size-4 animate-spin" /> : null}
               {submitting ? t("Creating…") : title}
             </Button>
@@ -1316,7 +1171,7 @@ export function CrmOverviewPage() {
     <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t("CRM dashboard")} className="md-page md-page-stack-compact md-dashboard md-crm-dashboard">
       <CrmPageHeader
         title={t("CRM dashboard")}
-        summary={<>{t("Your assigned leads, deals, follow-ups and recent sales activity in one consistent view.")}</>}
+        summary={<>{t("Your assigned leads and follow-ups, with the company deal pipeline in one consistent view.")}</>}
         onSpeakToDexter={() => setDexterOpen(true)}
         action={<Button className="h-10 rounded-[var(--md-radius-lg)]" onClick={() => { window.location.href = "/crm/deals" }}>{t("Open deals")}</Button>}
       />
@@ -1438,12 +1293,15 @@ export function CrmLeadsPage({ navigate }: { navigate: (path: string) => void })
   const [followUpFilter, setFollowUpFilter] = useState("all")
   const [valueFilter, setValueFilter] = useState("all")
   const [dexterOpen, setDexterOpen] = useState(false)
+  const [createLeadOpen, setCreateLeadOpen] = useState(false)
   const [leads, setLeads] = useState<Lead[]>([])
   const [ownerPhotoUrls, setOwnerPhotoUrls] = useState<Map<string, string>>(new Map())
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading")
   const [loadError, setLoadError] = useState<string | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
   const { language, t } = useLanguage()
+
+  useEffect(() => subscribeTopBarAction(topBarActionEvents.createCrmLead, () => setCreateLeadOpen(true)), [])
 
   useEffect(() => {
     let isMounted = true
@@ -1845,6 +1703,13 @@ export function CrmLeadsPage({ navigate }: { navigate: (path: string) => void })
           />
         </>
       ) : null}
+      <FollowUpRecordDialog
+        opportunity={null}
+        kind="lead"
+        open={createLeadOpen}
+        onClose={() => setCreateLeadOpen(false)}
+        onCreated={() => setReloadToken((token) => token + 1)}
+      />
     </DexterDockedPage>
   )
 }
@@ -3476,149 +3341,6 @@ export function CrmEmailEditPage({ navigate, campaignId }: { navigate: (path: st
   )
 }
 
-export function CrmMarketingPage() {
-  const [openedFolderId, setOpenedFolderId] = useState<string | null>(null)
-  const openedFolder = openedFolderId ? crmMarketingFolders.find((folder) => folder.id === openedFolderId) ?? null : null
-  const openedFolderAssets = openedFolder ? crmMarketingAssets.filter((asset) => asset.folderId === openedFolder.id) : []
-
-  return (
-    <div className="md-page md-page-stack">
-      <CrmPageHeader
-        title="Marketing"
-        summary={
-          <>
-            A shared drive for brand logos, graphics, templates, and collateral used across emails, reports, and customer follow-up.
-          </>
-        }
-        meta={`${crmMarketingFolders.length} folders · ${crmMarketingAssetCount} assets · connected to email templates and CRM`}
-        action={
-          <>
-            <Button
-              variant="ghost"
-              className="h-10 rounded-[var(--md-radius-lg)] bg-white/55 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/78"
-              onClick={() => toast.success("Asset upload opened")}
-            >
-              <UploadCloud data-icon="inline-start" strokeWidth={1.2} />
-              Upload asset
-            </Button>
-            <PrimaryActionButton onClick={() => toast.success("Folder draft created")}>New folder</PrimaryActionButton>
-          </>
-        }
-      />
-
-      <div className="md-panel-grid 2xl:grid-cols-[minmax(0,1fr)_360px]">
-        <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-          {!openedFolder ? (
-            <>
-              <div className="px-5 py-4">
-                <SectionHeader title="Folders" meta="logos, graphics, templates, and collateral" />
-              </div>
-              <div className="grid gap-3 px-5 pb-5 md:grid-cols-2 xl:grid-cols-4">
-                {crmMarketingFolders.map((folder) => (
-                  <CrmAssetFolderCard
-                    key={folder.id}
-                    folder={folder}
-                    selected={false}
-                    onSelect={(nextFolder) => setOpenedFolderId(nextFolder.id)}
-                  />
-                ))}
-              </div>
-            </>
-          ) : (
-            <div className="px-5 py-4">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div className="min-w-0">
-                  <div className="mb-4 flex flex-wrap items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/80"
-                      onClick={() => setOpenedFolderId(null)}
-                    >
-                      <ArrowLeft data-icon="inline-start" strokeWidth={1.2} />
-                      Marketing drive
-                    </Button>
-                    <span className="text-[12px] font-medium text-[var(--md-subtle)]">/</span>
-                    <span className="text-[13px] font-medium text-[var(--md-ink)]">{openedFolder.name}</span>
-                  </div>
-                  <SectionHeader
-                    title={openedFolder.name}
-                    meta={`${openedFolder.itemCount} stored assets · ${openedFolder.owner} owns this folder · ${openedFolder.updated}`}
-                  />
-                </div>
-                <Button
-                  variant="ghost"
-                  className="h-10 rounded-[var(--md-radius-lg)] bg-white/55 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/78"
-                  onClick={() => toast.success(`Upload opened for ${openedFolder.name}`)}
-                >
-                  <UploadCloud data-icon="inline-start" strokeWidth={1.2} />
-                  Upload asset
-                </Button>
-              </div>
-
-              <div className="mt-5 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-3 shadow-[var(--md-shadow-line)]">
-                <div className="hidden grid-cols-[minmax(0,1fr)_96px_108px_120px] gap-3 px-3 pb-2 text-[11px] font-medium uppercase tracking-normal text-[var(--md-subtle)] sm:grid">
-                  <span>Name</span>
-                  <span>Type</span>
-                  <span>Size</span>
-                  <span className="text-right">Updated</span>
-                </div>
-                <div className="grid gap-1 rounded-[var(--md-radius-lg)] bg-white/62 p-1 shadow-[var(--md-shadow-line)]">
-                  {openedFolderAssets.map((asset) => (
-                    <CrmAssetRow
-                      key={asset.id}
-                      asset={asset}
-                      onOpen={(selectedAsset) => toast.success(`${selectedAsset.name} opened`)}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-        </Surface>
-
-        <Surface padding="lg" className="rounded-[var(--md-radius-xl)]">
-          <SectionHeader title="Drive summary" meta="library health" />
-          <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-gap-md)]">
-            {crmMarketingStorageStats.map(([label, value]) => (
-              <div key={label} className="grid grid-cols-[1fr_auto] gap-4 shadow-[inset_0_1px_0_rgba(11,20,19,0.06)] py-3 first:shadow-none">
-                <span className="text-[13px] font-medium text-[var(--md-ink)]">{label}</span>
-                <span className="max-w-[170px] text-right text-[12px] leading-5 text-[var(--md-text)]" data-i18n-skip={label === "Storage used" ? true : undefined} dir={label === "Storage used" ? "ltr" : undefined}>{value}</span>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-6 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-4 shadow-[var(--md-shadow-line)]">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-[13px] font-medium text-[var(--md-ink)]">Recent activity</p>
-                <p className="mt-1 text-[12px] text-[var(--md-text)]">Latest asset changes</p>
-              </div>
-              <StatusPill tone="green">Synced</StatusPill>
-            </div>
-            <div className="mt-4 grid gap-3">
-              {crmMarketingActivity.map(([time, activity]) => (
-                <div key={activity} className="grid grid-cols-[72px_1fr] gap-3 text-[12px]">
-                  <span className="text-[var(--md-subtle)]">{time}</span>
-                  <span className="leading-5 text-[var(--md-text)]">{activity}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="mt-4 rounded-[var(--md-radius-lg)] bg-white/50 p-4 shadow-[var(--md-shadow-line)]">
-            <p className="text-[13px] font-medium text-[var(--md-ink)]">Connected surfaces</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {["Emails", "Reports", "CRM lists", "Customer decks"].map((surface) => (
-                <StatusPill key={surface} tone="neutral">{surface}</StatusPill>
-              ))}
-            </div>
-          </div>
-        </Surface>
-      </div>
-    </div>
-  )
-}
-
 export function CrmDealsPage({ currentUser }: { currentUser?: AuthUserSummary | null }) {
   const { t } = useLanguage()
   const [selectedDeal, setSelectedDeal] = useState<CrmDeal | null>(null)
@@ -3752,10 +3474,7 @@ export function CrmDealsPage({ currentUser }: { currentUser?: AuthUserSummary | 
             title: t("Deals"),
             instruction: t("Drag cards between stages"),
             actions: (
-              <>
-                <DexterActionPill onClick={() => setDexterOpen(true)} />
-                <PrimaryActionButton onClick={() => toast.success(t("Deal draft created"))}>{t("New deal")}</PrimaryActionButton>
-              </>
+              <DexterActionPill onClick={() => setDexterOpen(true)} />
             ),
           }}
           selectedDealId={detailOpen && selectedDeal ? selectedDeal.id : undefined}

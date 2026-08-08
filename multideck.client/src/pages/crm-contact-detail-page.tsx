@@ -1,15 +1,16 @@
-import { lazy, Suspense, useEffect, useState, type FormEvent, type ReactNode } from "react"
-import { ArrowLeft, ArrowRight, BriefcaseBusiness, Building2, CalendarDays, Languages, LoaderCircle, Mail, Phone, Plus, RefreshCw, Save, UsersRound } from "lucide-react"
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
+import { ArrowLeft, ArrowRight, BriefcaseBusiness, Building2, CalendarDays, Languages, Mail, Phone, Plus, RefreshCw, Trash2, UsersRound } from "lucide-react"
 import { toast } from "sonner"
 import { CopyableField } from "@/components/multideck/copyable-field"
 import { CustomerAvatar } from "@/components/multideck/customer-components"
+import { DotGridLoaderPanel } from "@/components/multideck/dot-grid-loader"
+import { InlineField, InlineFieldCard, InlineSwitchField } from "@/components/multideck/inline-field"
 import { MarketingOptInControl } from "@/components/multideck/marketing-opt-in-control"
 import { Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
 import { useLanguage } from "@/i18n/language-provider"
 import { getContact, updateContact, type ApiContactDetail, type UpdateContactInput } from "@/lib/customer-api"
 
@@ -31,17 +32,16 @@ function CrmDetailOverviewShader() {
 export function CrmContactDetailPage({ contactId, navigate }: { contactId: string; navigate: (path: string) => void }) {
   const { t } = useLanguage()
   const [contact, setContact] = useState<ApiContactDetail | null>(null)
-  const [draft, setDraft] = useState<ContactDraft | null>(null)
   const [state, setState] = useState<"loading" | "ready" | "error">("loading")
   const [error, setError] = useState<string | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
-  const [saving, setSaving] = useState(false)
+  const [consentOpen, setConsentOpen] = useState(false)
 
   useEffect(() => {
     let active = true
     setState("loading")
     setError(null)
-    getContact(contactId).then((data) => { if (active) { setContact(data); setDraft(toDraft(data)); setState("ready") } }).catch((cause) => {
+    getContact(contactId).then((data) => { if (active) { setContact(data); setState("ready") } }).catch((cause) => {
       if (!active) return
       setError(cause instanceof Error ? cause.message : t("This contact could not be loaded. Check your connection and try again."))
       setState("error")
@@ -49,30 +49,29 @@ export function CrmContactDetailPage({ contactId, navigate }: { contactId: strin
     return () => { active = false }
   }, [contactId, reloadToken, t])
 
-  async function save(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (!draft) return
-    setSaving(true)
-    try {
-      const metadata = { ...draft.metadata, customFields: Object.fromEntries(draft.customFields.filter((field) => field.label.trim()).map((field) => [field.label.trim(), field.value.trim()])) }
-      const updated = await updateContact(contactId, { ...draft, metadata })
-      setContact(updated)
-      setDraft(toDraft(updated))
-      toast.success(t("Contact updated"))
-    } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : t("The contact could not be updated. Your changes are still in the form."))
-    } finally {
-      setSaving(false)
+  /**
+   * One field's change, sent as a complete record because the endpoint takes the
+   * whole shape. Rebuilt from the contact each time rather than held in state, so
+   * a save can never carry a stale copy of a neighbouring field. It throws on
+   * failure: the field that was edited catches it and shows the reason itself.
+   */
+  const patch = useCallback(async (change: Partial<ContactDraft>) => {
+    const current = contact
+    if (!current) return
+    const next = { ...toDraft(current), ...change }
+    const metadata = {
+      ...next.metadata,
+      customFields: Object.fromEntries(next.customFields.filter((field) => field.label.trim()).map((field) => [field.label.trim(), field.value.trim()])),
     }
-  }
+    setContact(await updateContact(contactId, { ...next, metadata }))
+  }, [contact, contactId])
 
-  if (state === "loading") return <PageState icon={<LoaderCircle className="size-6 animate-spin" />} title={t("Loading contact…")} />
+  if (state === "loading") return <div className="md-page"><Surface padding="lg" className="grid min-h-[320px] place-items-center rounded-[var(--md-radius-xl)]"><DotGridLoaderPanel label="Loading contact" minHeight={0} /></Surface></div>
   if (state === "error" || !contact) return <div className="md-page md-page-stack"><Button variant="ghost" className="w-fit" onClick={() => navigate("/crm/contacts")}><ArrowLeft className="size-4 rtl:rotate-180" />{t("Back to contacts")}</Button><PageState icon={<RefreshCw className="size-6" />} title={t("Contact unavailable")} detail={error ?? undefined} action={<Button variant="outline" onClick={() => setReloadToken((value) => value + 1)}>{t("Try again")}</Button>} embedded /></div>
 
   const actionHref = contact.email ? `mailto:${contact.email}` : undefined
-  const updateDraft = (next: ContactDraft) => setDraft(next)
-  const dirty = Boolean(draft && JSON.stringify(comparableDraft(draft)) !== JSON.stringify(comparableDraft(toDraft(contact))))
-  const consentReasonMissing = Boolean(draft && draft.marketingOptIn !== contact.consentMarketing && !draft.marketingConsentReason?.trim())
+  const currentContact = contact
+  const customFields = crmCustomFields(currentContact.metadata)
 
   const overviewRows = [
     { key: "account", label: t("Account"), value: contact.accountName, icon: Building2, direction: "auto" as const },
@@ -86,13 +85,13 @@ export function CrmContactDetailPage({ contactId, navigate }: { contactId: strin
   ]
 
   return <div className="md-page">
-    <form id="contact-detail-form" className="grid items-start gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1fr)_400px] 2xl:grid-cols-[minmax(0,1fr)_440px]" onSubmit={save}>
+    <div className="grid items-start gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1fr)_400px] 2xl:grid-cols-[minmax(0,1fr)_440px]">
       <Surface padding="none" className="min-w-0 overflow-hidden rounded-[var(--md-radius-xl)]">
         <header className="px-5 py-5 shadow-[var(--md-stroke-bottom)] sm:px-6">
           <Button type="button" variant="ghost" className="-ms-2 mb-4 h-8 w-fit rounded-[var(--md-radius-md)] px-2 text-[12px] font-medium text-[var(--md-text)] hover:bg-[var(--md-surface-tint)]" onClick={() => navigate("/crm/contacts")}><ArrowLeft data-icon="inline-start" className="size-3.5" strokeWidth={1.3} />{t("Back to contacts")}</Button>
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex min-w-0 items-start gap-3.5"><CustomerAvatar initials={contact.initials} tone="blue" size="lg" className="size-14 rounded-full text-[18px]" /><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h1 className="truncate text-[24px] font-medium leading-8 text-[var(--md-ink)]" data-i18n-skip dir="auto">{contact.name}</h1><StatusPill tone={contact.consentMarketing ? "green" : "neutral"}>{t(contact.consentMarketing ? "Marketing opted in" : "Marketing opted out")}</StatusPill>{contact.consentSalesContact ? <StatusPill tone="teal">{t("Sales contact allowed")}</StatusPill> : null}</div><button type="button" onClick={() => navigate(`/crm/accounts/${contact.accountId}`)} className="mt-2 inline-flex items-center gap-1.5 rounded-[var(--md-radius-sm)] text-[13px] font-medium text-[var(--md-accent)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"><span data-i18n-skip dir="auto">{contact.accountName}</span><ArrowRight data-icon="inline-end" className="size-3.5" strokeWidth={1.4} /></button><p className="mt-2 text-[13px] text-[var(--md-text)]" data-i18n-skip dir="auto">{[contact.jobTitle || contact.role, contact.department, contact.location].filter(Boolean).join(" · ") || t("No role or location recorded")}</p></div></div>
-            <div className="flex flex-wrap gap-2">{actionHref ? <Button asChild variant="outline"><a href={actionHref}><Mail className="size-4" />{t("Email")}</a></Button> : null}{contact.phone ? <Button asChild variant="outline"><a href={`tel:${contact.phone}`}><Phone className="size-4" />{t("Call")}</a></Button> : null}<Button type="submit" disabled={!dirty || saving || !draft || (!draft.firstName && !draft.lastName) || consentReasonMissing} className="bg-[var(--md-accent)] text-[var(--md-accent-ink)] active:scale-[0.96] motion-reduce:transform-none">{saving ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}{t(saving ? "Saving…" : dirty ? "Save changes" : "Saved")}</Button></div>
+            <div className="flex flex-wrap gap-2">{actionHref ? <Button asChild variant="outline"><a href={actionHref}><Mail className="size-4" strokeWidth={1.5} />{t("Email")}</a></Button> : null}{contact.phone ? <Button asChild variant="outline"><a href={`tel:${contact.phone}`}><Phone className="size-4" strokeWidth={1.5} />{t("Call")}</a></Button> : null}</div>
           </div>
         </header>
 
@@ -100,11 +99,76 @@ export function CrmContactDetailPage({ contactId, navigate }: { contactId: strin
           {!contact.recentEmails.available ? <Empty text={t("You need email access to see conversations with this contact.")} /> : contact.recentEmails.items.length ? contact.recentEmails.items.map((email, index) => <button key={email.id} type="button" onClick={() => navigate(`/inbox?thread=${email.threadId}`)} className={`group flex w-full items-start gap-3 px-5 py-4 text-start hover:bg-[var(--md-surface-soft)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-[var(--md-accent-a14)] ${index ? "border-t border-[var(--md-line)]" : ""}`}><span className={`mt-0.5 grid size-8 shrink-0 place-items-center rounded-[var(--md-radius-md)] ${email.direction === "inbound" ? "bg-[var(--md-accent-a11)] text-[var(--md-accent)]" : "bg-[var(--md-surface-tint)] text-[var(--md-text)]"}`}><Mail className="size-4" strokeWidth={1.4} /></span><span className="min-w-0 flex-1"><span className="flex items-center justify-between gap-4"><span className="truncate text-[14px] font-medium text-[var(--md-ink)]">{email.subject}</span><span className="shrink-0 text-[12px] tabular-nums text-[var(--md-subtle)]">{relativeDate(email.occurredAt, t)}</span></span>{email.preview ? <span className="mt-1 block truncate text-[12px] text-[var(--md-text)]">{email.preview}</span> : null}</span><ArrowRight className="mt-2 size-4 text-[var(--md-subtle)] transition-transform duration-150 group-hover:translate-x-0.5 rtl:rotate-180 rtl:group-hover:-translate-x-0.5 motion-reduce:transition-none" strokeWidth={1.4} /></button>) : <Empty text={t("No recent emails are linked to this contact.")} />}
         </Panel>
         <Panel title={t("Activity")} meta={contact.activities.length ? t("Newest first") : undefined}>{contact.activities.length ? contact.activities.map((activity, index) => <div key={activity.id} className={`grid grid-cols-[10px_minmax(0,1fr)_auto] gap-3 px-5 py-4 ${index ? "border-t border-[var(--md-line)]" : ""}`}><span className="mt-1.5 size-2 rounded-full bg-[var(--md-accent)] shadow-[0_0_0_4px_var(--md-accent-a08)]" /><div><p className="text-[14px] font-medium text-[var(--md-ink)]">{activity.subject}</p>{activity.summary ? <p className="mt-1 text-[13px] leading-5 text-[var(--md-text)]">{activity.summary}</p> : null}</div><p className="shrink-0 text-[12px] tabular-nums text-[var(--md-subtle)]">{relativeDate(activity.occurredAt, t)}</p></div>) : <Empty text={t("No activity has been recorded for this contact yet.")} />}</Panel>
-        <Panel title={t("Internal notes")}><div className="px-5 pb-5 pt-1"><Textarea aria-label={t("Internal notes")} value={draft?.notes ?? ""} onChange={(event) => draft && updateDraft({ ...draft, notes: event.target.value || null })} placeholder={t("Add context that helps the next conversation.")} className="min-h-[120px] rounded-[var(--md-radius-md)] bg-white/68 text-[16px] shadow-[var(--md-shadow-line)] sm:text-[14px]" /></div></Panel>
-        {draft ? <Panel title={t("Contact details")}><div className="grid gap-4 px-5 pb-5"><div className="grid grid-cols-2 gap-4"><Field label={t("First name")} required={!draft.lastName} value={draft.firstName ?? ""} onChange={(value) => updateDraft({ ...draft, firstName: value || null })} /><Field label={t("Last name")} required={!draft.firstName} value={draft.lastName ?? ""} onChange={(value) => updateDraft({ ...draft, lastName: value || null })} /></div><Field label={t("Work email")} type="email" value={draft.email ?? ""} onChange={(value) => updateDraft({ ...draft, email: value || null })} /><Field label={t("Phone")} type="tel" value={draft.phone ?? ""} onChange={(value) => updateDraft({ ...draft, phone: value || null })} /><Field label={t("Job title")} value={draft.jobTitle ?? ""} onChange={(value) => updateDraft({ ...draft, jobTitle: value || null })} /><Field label={t("Department")} value={draft.department ?? ""} onChange={(value) => updateDraft({ ...draft, department: value || null })} /><Field label={t("Relationship role")} value={draft.role ?? ""} onChange={(value) => updateDraft({ ...draft, role: value || null })} /><Field label={t("Influence level")} value={draft.influenceLevel ?? ""} onChange={(value) => updateDraft({ ...draft, influenceLevel: value || null })} /><Field label={t("Relationship strength")} type="number" value={draft.relationshipStrength == null ? "" : String(draft.relationshipStrength)} onChange={(value) => updateDraft({ ...draft, relationshipStrength: value === "" ? null : Math.max(0, Math.min(100, Number(value))) })} /><Field label={t("Preferred channel")} value={draft.preferredChannel ?? ""} onChange={(value) => updateDraft({ ...draft, preferredChannel: value || null })} /><Field label={t("Preferred language")} value={draft.preferredLanguage ?? ""} onChange={(value) => updateDraft({ ...draft, preferredLanguage: value || null })} />{contact.lastContactAt ? <p className="text-[12px] text-[var(--md-text)]">{t("Last contact")}: <span className="font-medium text-[var(--md-ink)]">{relativeDate(contact.lastContactAt, t)}</span></p> : null}</div></Panel> : null}
-        {draft ? <Panel title={t("Consent and privacy")}><div className="grid gap-3 px-5 pb-5"><CheckRow label={t("Direct sales contact allowed")} checked={draft.consentSalesContact} onChange={(checked) => updateDraft({ ...draft, consentSalesContact: checked })} /><CheckRow label={t("Allow AI training with approved contact data")} checked={draft.trainingAllowed} onChange={(checked) => updateDraft({ ...draft, trainingAllowed: checked })} /><div className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-4 shadow-[var(--md-shadow-line)]"><MarketingOptInControl checked={draft.marketingOptIn} source={contact.marketingConsentSource} updatedAt={contact.marketingConsentUpdatedAt} onCheckedChange={(checked) => updateDraft({ ...draft, marketingOptIn: checked })} /></div>{draft.marketingOptIn !== contact.consentMarketing ? <Field label={t("Reason or evidence")} required value={draft.marketingConsentReason ?? ""} onChange={(value) => updateDraft({ ...draft, marketingConsentReason: value || null })} /> : null}</div></Panel> : null}
+        <div className="grid gap-[var(--md-page-stack-gap)] px-5 py-5 shadow-[var(--md-stroke-top)] sm:px-6">
+          <InlineFieldCard title="Who they are">
+            <InlineField label="First name" value={currentContact.firstName ?? ""} required={!currentContact.lastName} onSave={(firstName) => patch({ firstName: firstName || null })} />
+            <InlineField label="Last name" value={currentContact.lastName ?? ""} required={!currentContact.firstName} onSave={(lastName) => patch({ lastName: lastName || null })} />
+            <InlineField label="Job title" value={currentContact.jobTitle ?? ""} onSave={(jobTitle) => patch({ jobTitle: jobTitle || null })} />
+            <InlineField label="Department" value={currentContact.department ?? ""} onSave={(department) => patch({ department: department || null })} />
+            <InlineField label="Role" value={currentContact.role ?? ""} hint="How they relate to the deal — decision maker, finance, operations" onSave={(role) => patch({ role: role || null })} />
+            <InlineField label="Influence" value={currentContact.influenceLevel ?? ""} onSave={(influenceLevel) => patch({ influenceLevel: influenceLevel || null })} />
+            <InlineField
+              label="Relationship"
+              kind="number"
+              hint="0 to 100"
+              value={currentContact.relationshipStrength == null ? "" : String(currentContact.relationshipStrength)}
+              onSave={(value) => patch({ relationshipStrength: value === "" ? null : Math.max(0, Math.min(100, Number(value) || 0)) })}
+            />
+          </InlineFieldCard>
+
+          <InlineFieldCard title="How to reach them">
+            <InlineField label="Work email" kind="email" placeholder="name@example.com" value={currentContact.email ?? ""} onSave={(email) => patch({ email: email || null })} />
+            <InlineField label="Phone" kind="tel" value={currentContact.phone ?? ""} onSave={(phone) => patch({ phone: phone || null })} />
+            <InlineField label="Preferred channel" value={currentContact.preferredChannel ?? ""} onSave={(preferredChannel) => patch({ preferredChannel: preferredChannel || null })} />
+            <InlineField label="Language" value={currentContact.preferredLanguage ?? ""} onSave={(preferredLanguage) => patch({ preferredLanguage: preferredLanguage || null })} />
+            <InlineField label="Last contact" value={currentContact.lastContactAt ? relativeDate(currentContact.lastContactAt, t) : ""} readOnly />
+          </InlineFieldCard>
+
+          <InlineFieldCard title="Notes">
+            <InlineField
+              label="Internal notes"
+              kind="textarea"
+              align="start"
+              value={currentContact.notes ?? ""}
+              placeholder="What would help whoever speaks to them next?"
+              onSave={(notes) => patch({ notes: notes || null })}
+            />
+          </InlineFieldCard>
+
+          {/* Consent is the one thing that does not save on a toggle. A change is
+              recorded against your name, so it asks what it was based on first. */}
+          <InlineFieldCard
+            title="Consent and privacy"
+            action={<Button type="button" variant="ghost" className="h-8 rounded-[var(--md-radius-md)] px-2 text-[12px] active:scale-[0.96] motion-reduce:transform-none" onClick={() => setConsentOpen(true)}>{t("Change marketing")}</Button>}
+          >
+            <InlineField label="Marketing" value={t(currentContact.consentMarketing ? "Opted in" : "Opted out")} readOnly />
+            <InlineField label="Source" value={humanize(currentContact.marketingConsentSource) ?? ""} readOnly />
+            <InlineSwitchField label="Allow direct sales contact" checked={currentContact.consentSalesContact} onSave={(consentSalesContact) => patch({ consentSalesContact })} />
+            <InlineSwitchField label="Allow AI training on approved data" checked={currentContact.trainingAllowed} onSave={(trainingAllowed) => patch({ trainingAllowed })} />
+          </InlineFieldCard>
+
+          <InlineFieldCard title="Additional fields" meta={customFields.length ? String(customFields.length) : undefined}>
+            {customFields.map((field) => (
+              <div key={field.id} className="group grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
+                <InlineField label={field.label} value={field.value} onSave={(value) => patch({ customFields: customFields.map((item) => item.id === field.id ? { ...item, value } : item) })} />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`${t("Remove")} ${field.label}`}
+                  className="mt-0.5 size-7 shrink-0 rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] opacity-0 transition-opacity duration-150 hover:text-[var(--md-red)] focus-visible:opacity-100 group-hover:opacity-100"
+                  onClick={() => void patch({ customFields: customFields.filter((item) => item.id !== field.id) }).catch((cause) => toast.error(cause instanceof Error ? cause.message : t("That field could not be removed.")))}
+                >
+                  <Trash2 className="size-3.5" strokeWidth={1.5} />
+                </Button>
+              </div>
+            ))}
+            <AddCustomField onAdd={(label, value) => patch({ customFields: [...customFields, { id: label, label, value }] })} />
+          </InlineFieldCard>
+        </div>
+
+
         {contact.consentHistory.length ? <Panel title={t("Consent history")} meta={String(contact.consentHistory.length)}><div className="px-5 pb-4">{contact.consentHistory.map((item) => <div key={item.id} className="border-t border-[var(--md-line)] py-3 first:border-t-0"><div className="flex items-center justify-between gap-3"><StatusPill tone={item.status === "opted_in" ? "green" : "neutral"}>{t(item.status === "opted_in" ? "Opted in" : "Opted out")}</StatusPill><span className="text-[12px] tabular-nums text-[var(--md-subtle)]">{formatDate(item.effectiveAt)}</span></div><p className="mt-2 text-[12px] leading-5 text-[var(--md-text)]">{[humanize(item.source), item.reason].filter(Boolean).join(" · ")}</p></div>)}</div></Panel> : null}
-        {draft ? <Panel title={t("Additional fields")}><div className="grid gap-3 px-5 pb-5">{draft.customFields.map((field) => <div key={field.id} className="grid gap-2"><Input aria-label={t("Field name")} value={field.label} onChange={(event) => updateDraft({ ...draft, customFields: draft.customFields.map((item) => item.id === field.id ? { ...item, label: event.target.value } : item) })} placeholder={t("Field name")} className="h-10 bg-white/68 text-[16px] sm:text-[14px]" /><div className="flex gap-2"><Input aria-label={t("Field value")} value={field.value} onChange={(event) => updateDraft({ ...draft, customFields: draft.customFields.map((item) => item.id === field.id ? { ...item, value: event.target.value } : item) })} placeholder={t("Value")} className="h-10 min-w-0 bg-white/68 text-[16px] sm:text-[14px]" /><Button type="button" variant="ghost" onClick={() => updateDraft({ ...draft, customFields: draft.customFields.filter((item) => item.id !== field.id) })}>{t("Remove")}</Button></div></div>)}<Button type="button" variant="outline" className="w-fit" onClick={() => updateDraft({ ...draft, customFields: [...draft.customFields, { id: crypto.randomUUID(), label: "", value: "" }] })}><Plus className="size-4" />{t("Add field")}</Button></div></Panel> : null}
       </Surface>
 
       <aside className="relative min-w-0 self-start overflow-hidden rounded-[var(--md-radius-xl)] bg-[#06030a] px-5 py-5 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_0_0_1px_var(--md-accent-veil-ring-a16),0_16px_36px_var(--md-accent-veil-cast-a18)] xl:sticky xl:top-[76px]" aria-labelledby={`contact-overview-${contact.id}`}>
@@ -120,15 +184,125 @@ export function CrmContactDetailPage({ contactId, navigate }: { contactId: strin
           </dl>
         </div>
       </aside>
-    </form>
+      <ContactConsentDialog
+        open={consentOpen}
+        onOpenChange={setConsentOpen}
+        current={currentContact.consentMarketing}
+        source={currentContact.marketingConsentSource}
+        updatedAt={currentContact.marketingConsentUpdatedAt}
+        onSave={async (marketingOptIn, marketingConsentReason) => {
+          await patch({ marketingOptIn, marketingConsentReason })
+          toast.success(t(marketingOptIn ? "Marketing consent recorded" : "Marketing opt-out recorded"))
+        }}
+      />
+    </div>
   </div>
 }
 
-function toDraft(contact: ApiContactDetail): ContactDraft { const metadata = contact.metadata ?? {}; const fields = metadata.customFields && typeof metadata.customFields === "object" ? metadata.customFields as Record<string, unknown> : {}; return { firstName: contact.firstName, lastName: contact.lastName, email: contact.email, phone: contact.phone, jobTitle: contact.jobTitle, department: contact.department, role: contact.role, influenceLevel: contact.influenceLevel, relationshipStrength: contact.relationshipStrength, preferredChannel: contact.preferredChannel, preferredLanguage: contact.preferredLanguage, consentSalesContact: contact.consentSalesContact, marketingOptIn: contact.consentMarketing, marketingConsentReason: "", notes: contact.notes, trainingAllowed: contact.trainingAllowed, metadata, customFields: Object.entries(fields).map(([label, value]) => ({ id: crypto.randomUUID(), label, value: typeof value === "string" ? value : String(value) })) } }
+/**
+ * The only change on this record that cannot happen on a toggle. The endpoint
+ * requires a reason, and the reason is what makes the consent trail defensible,
+ * so the control asks for it before it will save.
+ */
+function ContactConsentDialog({ open, onOpenChange, current, source, updatedAt, onSave }: { open: boolean; onOpenChange: (open: boolean) => void; current: boolean; source: string | null; updatedAt: string | null; onSave: (optIn: boolean, reason: string) => Promise<void> }) {
+  const { t } = useLanguage()
+  const [optIn, setOptIn] = useState(current)
+  const [reason, setReason] = useState("")
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => { if (open) { setOptIn(current); setReason("") } }, [open, current])
+
+  const changed = optIn !== current
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[520px]">
+        <DialogHeader className="text-start">
+          <DialogTitle>{t("Marketing consent")}</DialogTitle>
+          <DialogDescription>{t("This change is recorded against your name and the time you made it.")}</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4">
+          <div className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-4 shadow-[var(--md-shadow-line)]">
+            <MarketingOptInControl checked={optIn} source={source} updatedAt={updatedAt} onCheckedChange={setOptIn} />
+          </div>
+          <label className="grid gap-1.5 text-[13px] font-medium text-[var(--md-ink)]">
+            {t("What is this based on?")}
+            <Input value={reason} onChange={(event) => setReason(event.target.value)} placeholder={t("Signed agreement, call on 3 June, web form…")} className="h-10 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] text-base shadow-[var(--md-shadow-line)] sm:text-[14px]" />
+            {changed && !reason.trim() ? <span className="text-[11.5px] font-normal text-[var(--md-text)]">{t("Needed before a consent change can be saved.")}</span> : null}
+          </label>
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="outline" disabled={saving} onClick={() => onOpenChange(false)}>{t("Cancel")}</Button>
+          <Button
+            type="button"
+            disabled={saving || !changed || !reason.trim()}
+            className="bg-[var(--md-accent)] text-[var(--md-accent-ink)] active:scale-[0.96] motion-reduce:transform-none"
+            onClick={async () => {
+              setSaving(true)
+              try { await onSave(optIn, reason.trim()); onOpenChange(false) }
+              catch (error) { toast.error(error instanceof Error ? error.message : t("The consent change could not be saved.")) }
+              finally { setSaving(false) }
+            }}
+          >
+            {t(optIn ? "Record opt-in" : "Record opt-out")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** Custom fields live in metadata as a flat map. The label is the identity. */
+function crmCustomFields(metadata: Record<string, unknown> | null | undefined) {
+  const stored = metadata?.customFields
+  const record = stored && typeof stored === "object" ? stored as Record<string, unknown> : {}
+  return Object.entries(record).map(([label, value]) => ({ id: label, label, value: typeof value === "string" ? value : String(value) }))
+}
+
+function AddCustomField({ onAdd }: { onAdd: (label: string, value: string) => Promise<void> }) {
+  const { t } = useLanguage()
+  const [open, setOpen] = useState(false)
+  const [label, setLabel] = useState("")
+  const [value, setValue] = useState("")
+  const [saving, setSaving] = useState(false)
+
+  if (!open) {
+    return (
+      <Button type="button" variant="ghost" className="mt-1 h-8 w-fit rounded-[var(--md-radius-md)] px-2 text-[12px] active:scale-[0.96] motion-reduce:transform-none" onClick={() => setOpen(true)}>
+        <Plus className="size-3.5" strokeWidth={1.5} />
+        {t("Add a field")}
+      </Button>
+    )
+  }
+
+  async function save() {
+    if (!label.trim()) return
+    setSaving(true)
+    try {
+      await onAdd(label.trim(), value.trim())
+      setLabel(""); setValue(""); setOpen(false)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("That field could not be added."))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="mt-1 grid gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] p-2 shadow-[var(--md-shadow-line)]">
+      <Input autoFocus value={label} onChange={(event) => setLabel(event.target.value)} placeholder={t("Field name")} aria-label={t("Field name")} className="h-8 rounded-[var(--md-radius-sm)] border-0 bg-[var(--md-surface)] text-base shadow-[var(--md-shadow-line)] sm:text-[13px]" />
+      <Input value={value} onChange={(event) => setValue(event.target.value)} placeholder={t("Value")} aria-label={t("Value")} className="h-8 rounded-[var(--md-radius-sm)] border-0 bg-[var(--md-surface)] text-base shadow-[var(--md-shadow-line)] sm:text-[13px]" />
+      <div className="flex justify-end gap-1.5">
+        <Button type="button" variant="ghost" className="h-8 rounded-[var(--md-radius-sm)] px-2 text-[12px]" onClick={() => { setOpen(false); setLabel(""); setValue("") }}>{t("Cancel")}</Button>
+        <Button type="button" disabled={saving || !label.trim()} className="h-8 rounded-[var(--md-radius-sm)] bg-[var(--md-accent)] px-2.5 text-[12px] text-[var(--md-accent-ink)] active:scale-[0.96] motion-reduce:transform-none" onClick={() => void save()}>{t("Add field")}</Button>
+      </div>
+    </div>
+  )
+}
+
+function toDraft(contact: ApiContactDetail): ContactDraft { const metadata = contact.metadata ?? {}; const fields = metadata.customFields && typeof metadata.customFields === "object" ? metadata.customFields as Record<string, unknown> : {}; return { firstName: contact.firstName, lastName: contact.lastName, email: contact.email, phone: contact.phone, jobTitle: contact.jobTitle, department: contact.department, role: contact.role, influenceLevel: contact.influenceLevel, relationshipStrength: contact.relationshipStrength, preferredChannel: contact.preferredChannel, preferredLanguage: contact.preferredLanguage, consentSalesContact: contact.consentSalesContact, marketingOptIn: contact.consentMarketing, marketingConsentReason: "", notes: contact.notes, trainingAllowed: contact.trainingAllowed, metadata, customFields: Object.entries(fields).map(([label, value]) => ({ id: label, label, value: typeof value === "string" ? value : String(value) })) } }
 function comparableDraft(draft: ContactDraft) { return { ...draft, marketingConsentReason: null, customFields: draft.customFields.map(({ label, value }) => ({ label, value })) } }
 function Panel({ title, meta, children }: { title: string; meta?: string; children: ReactNode }) { return <section className="overflow-hidden shadow-[var(--md-stroke-top)]"><div className="flex items-center justify-between gap-3 px-5 py-4 sm:px-6"><h2 className="text-[15px] font-medium text-[var(--md-ink)]">{title}</h2>{meta ? <span className="text-[12px] text-[var(--md-text)]">{meta}</span> : null}</div>{children}</section> }
-function Field({ label, value, onChange, required, type = "text" }: { label: string; value: string; onChange: (value: string) => void; required?: boolean; type?: string }) { return <label className="grid gap-1.5 text-[13px] font-medium text-[var(--md-ink)]"><span>{label}{required ? " *" : ""}</span><Input dir={["email","tel","number"].includes(type) ? "ltr" : "auto"} type={type} required={required} value={value} onChange={(event) => onChange(event.target.value)} className="h-10 rounded-[var(--md-radius-md)] bg-white/68 text-[16px] shadow-[var(--md-shadow-line)] sm:text-[14px]" /></label> }
-function CheckRow({ label, checked, onChange, detail }: { label: string; checked: boolean; onChange: (checked: boolean) => void; detail?: string }) { return <label className="flex min-h-11 items-start gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-3 shadow-[var(--md-shadow-line)]"><Checkbox checked={checked} onCheckedChange={(value) => onChange(value === true)} className="mt-0.5" /><span><span className="block text-[13px] font-medium text-[var(--md-ink)]">{label}</span>{detail ? <span className="mt-1 block text-[12px] leading-5 text-[var(--md-text)]">{detail}</span> : null}</span></label> }
 function Empty({ text }: { text: string }) { return <p className="border-t border-[var(--md-line)] px-5 py-6 text-[13px] leading-5 text-[var(--md-text)]">{text}</p> }
 function PageState({ icon, title, detail, action, embedded = false }: { icon: ReactNode; title: string; detail?: string; action?: ReactNode; embedded?: boolean }) { return <div className={embedded ? "" : "md-page"}><Surface padding="lg" className="grid min-h-[320px] place-items-center rounded-[var(--md-radius-xl)] text-center"><div className="max-w-md"><span className="mx-auto grid size-11 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] text-[var(--md-accent)]">{icon}</span><p className="mt-4 text-[15px] font-medium text-[var(--md-ink)]">{title}</p>{detail ? <p className="mt-2 text-[13px] leading-5 text-[var(--md-text)]">{detail}</p> : null}{action ? <div className="mt-4">{action}</div> : null}</div></Surface></div> }
 function humanize(value: string | null | undefined) { return value ? value.replace(/[_-]+/g, " ").replace(/^./, (letter) => letter.toUpperCase()) : null }

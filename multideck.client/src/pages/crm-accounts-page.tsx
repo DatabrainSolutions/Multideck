@@ -1,30 +1,41 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react"
-import { ArrowRight, Building2, LoaderCircle, Plus, RefreshCw, Search, Sparkles } from "lucide-react"
+import { useEffect, useId, useMemo, useState, type ReactNode } from "react"
+import { ArrowRight, Building2, LoaderCircle, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
+import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
+import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
 import { CustomerAvatar } from "@/components/multideck/customer-components"
+import { RegisterFacetSelect, RegisterSearchField, RegisterToolbarActions, RegisterViewSwitch } from "@/components/multideck/register-toolbar"
 import { Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
+import { WizardDialog, type WizardStep } from "@/components/multideck/wizard-dialog"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useLanguage } from "@/i18n/language-provider"
 import { createCustomer, getCustomerReference, listCustomers, type ApiCustomer, type CreateCustomerInput, type CustomerReference } from "@/lib/customer-api"
+import { subscribeTopBarAction, topBarActionEvents } from "@/lib/top-bar-action-events"
 
 const emptyAccount = (orgTypeId = ""): CreateCustomerInput => ({
   name: "", orgTypeId, addressLine1: null, townCity: null, postZipCode: null, countryCode: null,
   contactFirstName: null, contactLastName: null, contactEmail: null,
 })
 
+const marketingScopes = ["All", "Opted in", "Opted out"] as const
+type MarketingScope = typeof marketingScopes[number]
+
 export function CrmAccountsPage({ navigate }: { navigate: (path: string) => void }) {
   const { language, t } = useLanguage()
   const [accounts, setAccounts] = useState<ApiCustomer[]>([])
   const [query, setQuery] = useState("")
+  const [marketingScope, setMarketingScope] = useState<MarketingScope>("All")
+  const [relationshipFilter, setRelationshipFilter] = useState("")
+  const [ownerFilter, setOwnerFilter] = useState("")
   const [state, setState] = useState<"loading" | "ready" | "error">("loading")
   const [reloadToken, setReloadToken] = useState(0)
   const [dexterOpen, setDexterOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
+  const [createSection, setCreateSection] = useState("account")
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   const [reference, setReference] = useState<CustomerReference | null>(null)
@@ -46,18 +57,69 @@ export function CrmAccountsPage({ navigate }: { navigate: (path: string) => void
     }).catch((error) => console.error("Account reference data could not be loaded.", error))
   }, [])
 
+  useEffect(() => subscribeTopBarAction(topBarActionEvents.createCrmAccount, openCreate), [])
+
   const filtered = useMemo(() => {
     const term = query.trim().toLowerCase()
-    return !term ? accounts : accounts.filter((account) => [account.name, account.location, account.industry, account.ownerName, account.relationshipStatus].some((value) => value?.toLowerCase().includes(term)))
-  }, [accounts, query])
+    return accounts.filter((account) => {
+      if (marketingScope === "Opted in" && !account.marketingOptIn) return false
+      if (marketingScope === "Opted out" && account.marketingOptIn) return false
+      if (relationshipFilter && account.relationshipStatus !== relationshipFilter) return false
+      if (ownerFilter === "__unassigned__" && account.ownerId) return false
+      if (ownerFilter && ownerFilter !== "__unassigned__" && account.ownerId !== ownerFilter) return false
+      return !term || [account.name, account.location, account.industry, account.ownerName, account.relationshipStatus].some((value) => value?.toLowerCase().includes(term))
+    })
+  }, [accounts, marketingScope, ownerFilter, query, relationshipFilter])
   const needsAttention = accounts.filter((account) => account.nextActionDueAt && new Date(account.nextActionDueAt) <= new Date()).length
   const contactTotal = accounts.reduce((total, account) => total + account.contactCount, 0)
   const marketingOptIns = accounts.filter((account) => account.marketingOptIn).length
   const unassignedAccounts = accounts.filter((account) => !account.ownerId).length
   const healthyAccounts = accounts.filter((account) => account.healthScore !== null && account.healthScore >= 70).length
+  const accountFiltersActive = Boolean(query || relationshipFilter || ownerFilter || marketingScope !== "All")
+  const relationshipOptions = useMemo(() => [...new Set(accounts.map((account) => account.relationshipStatus).filter(Boolean))].sort().map((value) => ({ value, label: humanize(value) })), [accounts])
+  const ownerOptions = useMemo(() => {
+    const assigned = [...new Map(accounts.filter((account) => account.ownerId && account.ownerName).map((account) => [account.ownerId as string, account.ownerName as string])).entries()]
+      .map(([value, label]) => ({ value, label }))
+      .sort((left, right) => left.label.localeCompare(right.label))
+    return accounts.some((account) => !account.ownerId) ? [...assigned, { value: "__unassigned__", label: "Unassigned" }] : assigned
+  }, [accounts])
 
-  async function create(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
+  const accountColumns = useMemo<DataTableColumn<ApiCustomer>[]>(() => [
+    {
+      id: "account", label: "Account", width: 300, minWidth: 230, maxWidth: 430, canHide: false, resizable: true,
+      sortValue: (account) => account.name,
+      cell: (account) => <div className="flex min-h-11 items-center gap-3"><CustomerAvatar initials={account.initials} tone="teal" /><span className="min-w-0"><span className="block truncate text-[14px] font-medium text-[var(--md-ink)]">{account.name}</span><span className="mt-0.5 block truncate text-[12px] text-[var(--md-text)]">{[account.industry, account.location].filter(Boolean).join(" · ") || t("No location recorded")}</span></span></div>,
+    },
+    { id: "relationship", label: "Relationship", width: 160, minWidth: 130, resizable: true, sortValue: (account) => account.relationshipStatus || account.status, cell: (account) => <StatusPill tone={account.healthScore != null && account.healthScore < 50 ? "amber" : "neutral"}>{humanize(account.relationshipStatus || account.status)}</StatusPill> },
+    { id: "owner", label: "Owner", width: 160, minWidth: 130, resizable: true, sortValue: (account) => account.ownerName, cellClassName: "text-[13px] text-[var(--md-text)]", cell: (account) => account.ownerName || t("Unassigned") },
+    { id: "last-contact", label: "Last contact", width: 130, minWidth: 110, resizable: true, sortValue: (account) => account.lastContactAt ? new Date(account.lastContactAt).getTime() : null, cellClassName: "text-[13px] tabular-nums text-[var(--md-text)]", cell: (account) => relativeDate(account.lastContactAt, t) },
+    { id: "contacts", label: "Contacts", width: 100, minWidth: 88, sortValue: (account) => account.contactCount, cellClassName: "text-[13px] tabular-nums text-[var(--md-ink)]", cell: (account) => account.contactCount },
+    { id: "marketing", label: "Marketing", width: 120, minWidth: 110, sortValue: (account) => account.marketingOptIn ? 1 : 0, cell: (account) => <StatusPill tone={account.marketingOptIn ? "green" : "neutral"}>{t(account.marketingOptIn ? "Opted in" : "Opted out")}</StatusPill> },
+    { id: "open", label: "Open", headerContent: <span className="sr-only">{t("Open")}</span>, width: 52, minWidth: 52, maxWidth: 52, canHide: false, canPin: false, cell: () => <ArrowRight className="size-4 text-[var(--md-subtle)] transition-transform duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:translate-x-0.5 rtl:rotate-180 rtl:group-hover:-translate-x-0.5 motion-reduce:transition-none" strokeWidth={1.4} /> },
+  ], [t])
+
+  function clearAccountFilters() {
+    setQuery("")
+    setMarketingScope("All")
+    setRelationshipFilter("")
+    setOwnerFilter("")
+  }
+
+  function openCreate() {
+    setCreateError(null)
+    setCreateSection("account")
+    setCreateOpen(true)
+  }
+
+  function changeCreateOpen(nextOpen: boolean) {
+    setCreateOpen(nextOpen)
+    if (nextOpen) {
+      setCreateError(null)
+      setCreateSection("account")
+    }
+  }
+
+  async function create() {
     setCreating(true)
     setCreateError(null)
     try {
@@ -68,7 +130,7 @@ export function CrmAccountsPage({ navigate }: { navigate: (path: string) => void
       setReloadToken((value) => value + 1)
       navigate(`/crm/accounts/${account.id}`)
     } catch (error) {
-      setCreateError(error instanceof Error ? error.message : t("The account could not be created. Check the details and try again."))
+      setCreateError(error instanceof Error ? t(error.message) : t("The account could not be created. Check the details and try again."))
     } finally {
       setCreating(false)
     }
@@ -78,17 +140,19 @@ export function CrmAccountsPage({ navigate }: { navigate: (path: string) => void
     setDraft((current) => ({ ...current, [key]: value }))
   }
 
+  const accountSteps: WizardStep[] = [
+    { id: "account", label: "Account details", hint: "Name the organisation and choose how it is represented in CRM.", complete: Boolean(draft.name.trim() && draft.orgTypeId) },
+    { id: "address", label: "Address", hint: "Record the address operators will use for customer work.", complete: Boolean(draft.addressLine1 || draft.townCity || draft.postZipCode || draft.countryCode) },
+    { id: "contact", label: "Primary contact", hint: "Add one useful person now, or leave this step blank.", complete: Boolean(draft.contactFirstName || draft.contactLastName || draft.contactEmail) },
+  ]
+  const countryCodeIsValid = !draft.countryCode || /^[A-Z]{2}$/.test(draft.countryCode)
+
   return (
     <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t("Accounts")} className="md-page md-page-stack-compact">
-      <header className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
+      <header className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
         <div className="min-w-0"><div className="flex flex-wrap items-baseline gap-x-3 gap-y-1"><h1 className="text-[22px] font-medium leading-tight text-[var(--md-ink)]">{t("Accounts")}</h1><p className="text-[11px] font-medium text-[var(--md-subtle)]">{t("Customer management")}</p></div><p className="mt-1 max-w-[900px] text-[12px] leading-5 text-[var(--md-text)]">{t("Customer organisations, relationship health, contacts and the next work that matters.")}</p></div>
         <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="outline" onClick={() => setDexterOpen(true)} className="h-10 rounded-[var(--md-radius-lg)]">
-            <Sparkles className="size-4" strokeWidth={1.4} />{t("Ask Dexter")}
-          </Button>
-          <Button type="button" onClick={() => { setCreateError(null); setCreateOpen(true) }} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] text-[var(--md-accent-ink)] active:scale-[0.96] motion-reduce:transform-none">
-            <Plus className="size-4" strokeWidth={1.5} />{t("New account")}
-          </Button>
+          <DexterActionPill onClick={() => setDexterOpen(true)} label={t("Ask Dexter")} />
         </div>
       </header>
 
@@ -115,61 +179,74 @@ export function CrmAccountsPage({ navigate }: { navigate: (path: string) => void
         ))}
       </div>
 
-      <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-        <div className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-[15px] font-medium text-[var(--md-ink)]">{t("Account directory")}</h2>
-            <p className="mt-1 text-[12px] text-[var(--md-text)]">{t("Open an account to see its contacts, recent emails and latest updates.")}</p>
-          </div>
-          <label className="relative block w-full sm:max-w-[320px]">
-            <Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.4} />
-            <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("Search accounts…")} aria-label={t("Search accounts")} className="h-10 rounded-[var(--md-radius-lg)] bg-white/62 ps-9 text-[16px] sm:text-[14px]" />
-          </label>
-        </div>
+      <DataTable
+        ariaLabel="Account directory"
+        columnsButtonLabel="Manage account columns"
+        storageKey="crm-accounts"
+        columns={accountColumns}
+        rows={state === "ready" ? filtered : []}
+        getRowKey={(account) => account.id}
+        onRowClick={(account) => navigate(`/crm/accounts/${account.id}`)}
+        rowClassName="group hover:bg-[var(--md-hover)]"
+        compactToolbar
+        toolbarLeading={<RegisterViewSwitch options={marketingScopes} value={marketingScope} onChange={setMarketingScope} counts={{ All: accounts.length, "Opted in": marketingOptIns, "Opted out": accounts.length - marketingOptIns }} ariaLabel="Marketing consent filter" compact />}
+        toolbarActions={<RegisterToolbarActions pending={state === "loading" && accounts.length > 0}>
+          <RegisterFacetSelect label="Relationship status" allLabel="All relationships" value={relationshipFilter} options={relationshipOptions} onChange={setRelationshipFilter} className="w-[132px]" />
+          <RegisterFacetSelect label="Owner" allLabel="All owners" value={ownerFilter} options={ownerOptions} onChange={setOwnerFilter} className="w-[126px]" />
+          <RegisterSearchField value={query} onChange={setQuery} onClear={() => setQuery("")} label="Search accounts" placeholder="Search accounts…" className="sm:w-[180px]" />
+        </RegisterToolbarActions>}
+        emptyState={state === "loading"
+          ? <RecordState icon={<LoaderCircle className="size-5 animate-spin" />} title={t("Loading accounts…")} />
+          : state === "error"
+            ? <RecordState icon={<RefreshCw className="size-5" />} title={t("Accounts could not be loaded.")} detail={t("Check your connection and try again.")} action={<Button variant="outline" onClick={() => setReloadToken((value) => value + 1)}>{t("Try again")}</Button>} />
+            : <RecordState icon={<Building2 className="size-5" />} title={accountFiltersActive ? t("No accounts match these filters.") : t("No accounts yet.")} detail={accountFiltersActive ? t("Clear a filter or try another name, location, owner or relationship status.") : t("Create the first account to keep contacts and customer work together.")} action={accountFiltersActive ? <Button variant="outline" onClick={clearAccountFilters}>{t("Clear filters")}</Button> : <Button onClick={openCreate}>{t("New account")}</Button>} />}
+      />
 
-        {state === "loading" ? <RecordState icon={<LoaderCircle className="size-5 animate-spin" />} title={t("Loading accounts…")} /> : null}
-        {state === "error" ? <RecordState icon={<RefreshCw className="size-5" />} title={t("Accounts could not be loaded.")} detail={t("Check your connection and try again.")} action={<Button variant="outline" onClick={() => setReloadToken((value) => value + 1)}>{t("Try again")}</Button>} /> : null}
-        {state === "ready" && !filtered.length ? <RecordState icon={<Building2 className="size-5" />} title={query ? t("No accounts match this search.") : t("No accounts yet.")} detail={query ? t("Try a customer name, location, owner or relationship status.") : t("Create the first account to keep contacts and customer work together.")} action={!query ? <Button onClick={() => setCreateOpen(true)}>{t("New account")}</Button> : undefined} /> : null}
-        {state === "ready" && filtered.length ? (
-          <div className="overflow-x-auto md-scrollbar">
-            <Table className="min-w-[820px]">
-              <TableHeader><TableRow>
-                <TableHead>{t("Account")}</TableHead><TableHead>{t("Relationship")}</TableHead><TableHead>{t("Owner")}</TableHead><TableHead>{t("Last contact")}</TableHead><TableHead>{t("Contacts")}</TableHead><TableHead>{t("Marketing")}</TableHead><TableHead className="w-12"><span className="sr-only">{t("Open")}</span></TableHead>
-              </TableRow></TableHeader>
-              <TableBody>{filtered.map((account) => (
-                <TableRow key={account.id} className="group cursor-pointer focus-within:bg-[var(--md-surface-soft)] hover:bg-[var(--md-surface-soft)]" onClick={() => navigate(`/crm/accounts/${account.id}`)}>
-                  <TableCell><button type="button" className="flex min-h-11 w-full items-center gap-3 text-start focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]" onClick={() => navigate(`/crm/accounts/${account.id}`)}>
-                    <CustomerAvatar initials={account.initials} tone="teal" /><span className="min-w-0"><span className="block truncate text-[14px] font-medium text-[var(--md-ink)]">{account.name}</span><span className="mt-0.5 block truncate text-[12px] text-[var(--md-text)]">{[account.industry, account.location].filter(Boolean).join(" · ") || t("No location recorded")}</span></span>
-                  </button></TableCell>
-                  <TableCell><StatusPill tone={account.healthScore != null && account.healthScore < 50 ? "amber" : "neutral"}>{humanize(account.relationshipStatus || account.status)}</StatusPill></TableCell>
-                  <TableCell className="text-[13px] text-[var(--md-text)]">{account.ownerName || t("Unassigned")}</TableCell>
-                  <TableCell className="text-[13px] tabular-nums text-[var(--md-text)]">{relativeDate(account.lastContactAt, t)}</TableCell>
-                  <TableCell className="text-[13px] tabular-nums text-[var(--md-ink)]">{account.contactCount}</TableCell>
-                  <TableCell><StatusPill tone={account.marketingOptIn ? "green" : "neutral"}>{t(account.marketingOptIn ? "Opted in" : "Opted out")}</StatusPill></TableCell>
-                  <TableCell><ArrowRight className="size-4 text-[var(--md-subtle)] transition-transform duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:translate-x-0.5 rtl:rotate-180 rtl:group-hover:-translate-x-0.5 motion-reduce:transition-none" strokeWidth={1.4} /></TableCell>
-                </TableRow>
-              ))}</TableBody>
-            </Table>
+      <WizardDialog
+        open={createOpen}
+        onOpenChange={changeCreateOpen}
+        title="New account"
+        description="Start with the organisation and one useful contact. You can add commercial detail after saving."
+        steps={accountSteps}
+        activeStepId={createSection}
+        onStepChange={setCreateSection}
+        submitLabel="Create account"
+        onSubmit={() => void create()}
+        saving={creating}
+        submitDisabled={!draft.name.trim() || !draft.orgTypeId || !countryCodeIsValid}
+        bodyMinHeight={300}
+        className="sm:max-w-[760px]"
+      >
+        {createSection === "account" ? (
+          <div className="grid gap-4">
+            <Field label={t("Account name")} required value={draft.name} onChange={(value) => update("name", value)} />
+            <div className="grid gap-1.5 text-start text-[13px] font-medium text-[var(--md-ink)]">
+              <span>{t("Organisation type")} *</span>
+              <Select value={draft.orgTypeId} onValueChange={(value) => update("orgTypeId", value)} disabled={!reference?.organisationTypes.length}>
+                <SelectTrigger aria-label={t("Organisation type")} className="!h-10 w-full rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] px-3 text-[16px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] sm:text-[14px]">
+                  <SelectValue placeholder={t(reference ? "Choose organisation type" : "Loading organisation types")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {reference?.organisationTypes.map((type) => <SelectItem key={type.id} value={type.id}>{type.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         ) : null}
-      </Surface>
-
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-h-[88vh] overflow-y-auto border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[600px]">
-          <DialogHeader className="text-start"><DialogTitle>{t("New account")}</DialogTitle><DialogDescription>{t("Start with the organisation and one useful contact. You can add commercial detail after saving.")}</DialogDescription></DialogHeader>
-          <form className="grid gap-4" onSubmit={create}>
-            <Field label={t("Account name")} required value={draft.name} onChange={(value) => update("name", value)} />
-            <label className="grid gap-1.5 text-start text-[13px] font-medium text-[var(--md-ink)]"><span>{t("Organisation type")} *</span><select required value={draft.orgTypeId} onChange={(event) => update("orgTypeId", event.target.value)} className="h-10 rounded-[var(--md-radius-md)] bg-white/68 px-3 text-[16px] shadow-[var(--md-shadow-line)] outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] sm:text-[14px]">{reference?.organisationTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</select></label>
+        {createSection === "address" ? (
+          <div className="grid gap-4">
             <Field label={t("Address line 1")} value={draft.addressLine1 ?? ""} onChange={(value) => update("addressLine1", value || null)} />
-            <div className="grid gap-4 sm:grid-cols-3"><Field label={t("Town or city")} value={draft.townCity ?? ""} onChange={(value) => update("townCity", value || null)} /><Field label={t("Postcode")} value={draft.postZipCode ?? ""} onChange={(value) => update("postZipCode", value || null)} /><Field label={t("Country code")} value={draft.countryCode ?? ""} onChange={(value) => update("countryCode", value || null)} /></div>
-            <div className="mt-1 border-t border-[var(--md-line)] pt-4"><p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Primary contact (optional)")}</p></div>
+            <div className="grid gap-4 sm:grid-cols-3"><Field label={t("Town or city")} value={draft.townCity ?? ""} onChange={(value) => update("townCity", value || null)} /><Field label={t("Postcode")} value={draft.postZipCode ?? ""} onChange={(value) => update("postZipCode", value || null)} /><Field label={t("Country code")} value={draft.countryCode ?? ""} onChange={(value) => update("countryCode", value.toUpperCase() || null)} hint={t("Two-letter ISO code, e.g. GB")} error={draft.countryCode && !countryCodeIsValid ? t("Enter a two-letter ISO country code, such as GB.") : undefined} maxLength={2} dir="ltr" /></div>
+          </div>
+        ) : null}
+        {createSection === "contact" ? (
+          <div className="grid gap-4">
             <div className="grid gap-4 sm:grid-cols-2"><Field label={t("First name")} value={draft.contactFirstName ?? ""} onChange={(value) => update("contactFirstName", value || null)} /><Field label={t("Last name")} value={draft.contactLastName ?? ""} onChange={(value) => update("contactLastName", value || null)} /></div>
             <Field label={t("Email")} type="email" value={draft.contactEmail ?? ""} onChange={(value) => update("contactEmail", value || null)} />
             {createError ? <p role="alert" className="text-[13px] text-[var(--md-red)]">{createError}</p> : null}
-            <DialogFooter><Button type="button" variant="outline" disabled={creating} onClick={() => setCreateOpen(false)}>{t("Cancel")}</Button><Button type="submit" disabled={creating || !draft.orgTypeId}>{creating ? <LoaderCircle className="size-4 animate-spin" /> : null}{t(creating ? "Creating account…" : "Create account")}</Button></DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+          </div>
+        ) : null}
+      </WizardDialog>
     </DexterDockedPage>
   )
 }
@@ -178,8 +255,9 @@ function RecordState({ icon, title, detail, action }: { icon: ReactNode; title: 
   return <div className="grid min-h-[260px] place-items-center border-t border-[var(--md-line)] px-6 py-10 text-center"><div className="max-w-sm"><span className="mx-auto grid size-10 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] text-[var(--md-accent)]">{icon}</span><p className="mt-4 text-[14px] font-medium text-[var(--md-ink)]">{title}</p>{detail ? <p className="mt-2 text-[13px] leading-5 text-[var(--md-text)]">{detail}</p> : null}{action ? <div className="mt-4">{action}</div> : null}</div></div>
 }
 
-function Field({ label, value, onChange, required, type = "text" }: { label: string; value: string; onChange: (value: string) => void; required?: boolean; type?: string }) {
-  return <label className="grid gap-1.5 text-start text-[13px] font-medium text-[var(--md-ink)]"><span>{label}{required ? " *" : ""}</span><Input dir={type === "email" ? "ltr" : "auto"} type={type} required={required} value={value} onChange={(event) => onChange(event.target.value)} className="h-10 rounded-[var(--md-radius-md)] bg-white/68 text-[16px] shadow-[var(--md-shadow-line)] sm:text-[14px]" /></label>
+function Field({ label, value, onChange, required, type = "text", hint, error, maxLength, dir }: { label: string; value: string; onChange: (value: string) => void; required?: boolean; type?: string; hint?: string; error?: string; maxLength?: number; dir?: "ltr" | "rtl" | "auto" }) {
+  const descriptionId = useId()
+  return <label className="grid gap-1.5 text-start text-[13px] font-medium text-[var(--md-ink)]"><span>{label}{required ? " *" : ""}</span><Input aria-describedby={hint || error ? descriptionId : undefined} aria-invalid={Boolean(error)} dir={dir ?? (type === "email" ? "ltr" : "auto")} type={type} required={required} maxLength={maxLength} value={value} onChange={(event) => onChange(event.target.value)} className="h-10 rounded-[var(--md-radius-md)] bg-white/68 text-[16px] shadow-[var(--md-shadow-line)] sm:text-[14px]" />{error ? <span id={descriptionId} className="text-[12px] font-normal text-[var(--md-red)]">{error}</span> : hint ? <span id={descriptionId} className="text-[12px] font-normal text-[var(--md-text)]">{hint}</span> : null}</label>
 }
 
 function humanize(value: string | null | undefined) { return value ? value.replace(/[_-]+/g, " ").replace(/^./, (letter) => letter.toUpperCase()) : "—" }

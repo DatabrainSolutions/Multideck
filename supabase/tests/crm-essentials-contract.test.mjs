@@ -3,14 +3,21 @@ import { readFileSync } from "node:fs"
 import test from "node:test"
 
 const migration = readFileSync(new URL("../migrations/20260803150000_crm_shawn_essentials.sql", import.meta.url), "utf8")
+const companyDashboard = readFileSync(new URL("../migrations/20260808000440_crm_dashboard_company_deals.sql", import.meta.url), "utf8")
 const dexter = readFileSync(new URL("../migrations/20260803152000_dexter_crm_essentials.sql", import.meta.url), "utf8")
 const followUps = readFileSync(new URL("../migrations/20260803212017_crm_follow_up_opportunities.sql", import.meta.url), "utf8")
 const page = readFileSync(new URL("../../multideck.client/src/pages/crm-page.tsx", import.meta.url), "utf8")
 const forms = readFileSync(new URL("../../multideck.client/src/pages/crm-forms-page.tsx", import.meta.url), "utf8")
 
-test("CRM dashboard is authenticated, user-scoped and has truthful filters and states", () => {
+test("CRM dashboard keeps personal work user-scoped and uses company-visible deals", () => {
   assert.match(migration, /multideck_crm_get_dashboard/)
   assert.match(migration, /CRMLead_OwnerUserID" = v_context\.user_id/)
+  assert.match(companyDashboard, /CRMLead_OwnerUserID" = v_context\.user_id/)
+  assert.match(companyDashboard, /company_deals as/)
+  assert.match(companyDashboard, /pipeline\."Company_ID" = v_context\.company_id/)
+  assert.doesNotMatch(companyDashboard, /CRMOppty_OwnerUserID" = v_context\.user_id/)
+  assert.match(companyDashboard, /revoke all on function public\.multideck_crm_get_dashboard.*public, anon/s)
+  assert.match(companyDashboard, /grant execute on function public\.multideck_crm_get_dashboard.*authenticated/s)
   assert.match(migration, /p_inactivity_days not in \(30, 90, 180\)/)
   assert.match(migration, /last_contact_at is not null\), last_contact_at asc/)
   assert.match(page, /getCrmDashboard/)

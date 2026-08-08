@@ -12,6 +12,8 @@ export const isTenantHostTrusted = import.meta.env.DEV || Boolean(configuredTena
 export const isWorkspaceRouterHost = runningHost === rootHost || runningHost === `www.${rootHost}`
 export const multideckRootHost = rootHost
 export const supabaseFunctionsUrl = supabaseUrl ? `${supabaseUrl.replace(/\/$/, "")}/functions/v1` : ""
+/** Storage REST root. Used where an upload needs real progress, which the client library does not report. */
+export const supabaseStorageUrl = supabaseUrl ? `${supabaseUrl.replace(/\/$/, "")}/storage/v1` : ""
 export const supabasePublicApiKey = supabasePublishableKey
 
 export const supabaseConfigurationError = !hasSupabaseCredentials

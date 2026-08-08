@@ -30,7 +30,7 @@ const staticLeafLabels: Record<string, string> = {
   "/crm/emails": "Email marketing",
   "/crm/leads": "Leads",
   "/crm/lists": "Lists",
-  "/crm/marketing": "Marketing",
+  "/crm/drive": "Drive",
   "/crm/settings": "CRM settings",
   "/customers": "Customers",
   "/paper-tray": "Paper Tray",

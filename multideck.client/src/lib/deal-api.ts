@@ -114,6 +114,41 @@ export async function listDeals(options?: CrmReadOptions) {
   )
 }
 
+export type UpdateDealInput = Partial<{
+  name: string
+  primaryContactId: string | null
+  ownerId: string | null
+  expectedCloseDate: string | null
+  expectedValueAmount: number | null
+  expectedMarginAmount: number | null
+  currencyCode: string | null
+  modeCode: string | null
+  directionCode: string | null
+  originName: string | null
+  destinationName: string | null
+  tradeLane: string | null
+  serviceInterest: string | null
+  customerNeed: string | null
+  valueProposition: string | null
+  nextActionDueAt: string | null
+}>
+
+/**
+ * Writes only the keys given. One inline field can save on its own without the
+ * client having to send — and risk overwriting — every neighbouring value.
+ */
+export async function updateDeal(dealId: string, input: UpdateDealInput) {
+  const deal = await callCrmRpc<ApiDeal>(
+    "multideck_crm_update_deal",
+    { p_deal_id: dealId, p_input: input },
+    "This deal could not be saved.",
+    "Sign in again to manage CRM deals.",
+  )
+  const session = await getSupabaseSession()
+  if (session) invalidateCrmResources(session.user.id, ["deals:"])
+  return deal
+}
+
 export async function moveDealStage(dealId: string, pipelineId: string, pipelineStageId: string) {
   const deal = await callCrmRpc<ApiDeal>(
     "multideck_crm_move_deal_stage",

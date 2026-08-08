@@ -23,6 +23,7 @@ import { customerWarehouseNavigation, homeNavItem, inboxNavItem, sidebarAreas, t
 import { readSettingsSectionFromUrl, settingsNavigationGroups, type SettingsSectionId } from "@/data/settings-navigation"
 import { useLanguage } from "@/i18n/language-provider"
 import { deleteDexterConversation, listDexterConversations, renameDexterConversation, type DexterConversationSummary } from "@/lib/dexter-api"
+import { listDeals } from "@/lib/deal-api"
 import {
   announceDexterConversationsChanged,
   DEXTER_CONVERSATIONS_CHANGED_EVENT,
@@ -1042,17 +1043,43 @@ export function AppSidebar({
   const canManageWarehouseUsers = hasPermission(currentUser, "Warehouse.Users.ManageOwn")
   const canReadDocuments = hasPermission(currentUser, "Documents.Read")
   const canShowDocumentBuilder = import.meta.env.DEV || canReadDocuments
+  const isCrmRoute = route === "/crm" || route.startsWith("/crm/")
+  const [crmDealCount, setCrmDealCount] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (isCustomer || !isCrmRoute) return
+    let active = true
+    listDeals()
+      .then((deals) => { if (active) setCrmDealCount(deals.length) })
+      .catch(() => { if (active) setCrmDealCount(null) })
+    return () => { active = false }
+  }, [isCrmRoute, isCustomer])
+
   const availableAreas = useMemo<SidebarArea[]>(() => {
     if (!isCustomer) {
-      return sidebarAreas.map((area) => area.id === "documents-service"
-        ? { ...area, destinations: area.destinations.filter((destination) => destination.id !== "document-builder" || canShowDocumentBuilder) }
-        : area)
+      return sidebarAreas.map((area) => {
+        if (area.id === "documents-service") {
+          return { ...area, destinations: area.destinations.filter((destination) => destination.id !== "document-builder" || canShowDocumentBuilder) }
+        }
+        if (area.id !== "sales-crm") return area
+        return {
+          ...area,
+          destinations: area.destinations.map((destination) => destination.id === "crm-leads-opportunities"
+            ? {
+                ...destination,
+                children: destination.children?.map((item) => item.route === "/crm/deals"
+                  ? { ...item, value: crmDealCount === null ? undefined : String(crmDealCount) }
+                  : item),
+              }
+            : destination),
+        }
+      })
     }
 
     const destinations = customerWarehouseNavigation.filter((item) =>
       item.route !== "/warehouse/users" || canManageWarehouseUsers)
     return [{ id: "warehouse", label: "Warehouse", icon: Boxes, destinations }]
-  }, [isCustomer, canManageWarehouseUsers, canShowDocumentBuilder])
+  }, [isCustomer, canManageWarehouseUsers, canShowDocumentBuilder, crmDealCount])
   const initialArea = isSettingsRoute
     ? undefined
     : isCustomer

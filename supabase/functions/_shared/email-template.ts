@@ -13,9 +13,11 @@ type BrandedEmailOptions = {
   footer?: string
 }
 
+const appUrl = Deno.env.get("APP_URL")?.trim().replace(/\/+$/, "") || "https://dev.multideck.app"
+
 const defaults = {
-  appUrl: Deno.env.get("APP_URL") ?? "https://dev.multideck.app",
-  logoUrl: Deno.env.get("EMAIL_LOGO_URL") ?? "https://dev.multideck.app/email/multideck-logo.png",
+  appUrl,
+  bannerUrl: Deno.env.get("EMAIL_BANNER_URL")?.trim() || `${appUrl}/email/multideck-email-banner.jpg`,
 }
 
 export function normaliseLocale(value: unknown): EmailLocale {
@@ -70,8 +72,8 @@ export function renderBrandedEmail(options: BrandedEmailOptions) {
         <td align="center" style="padding:40px 20px;">
           <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;">
             <tr>
-              <td style="padding:0 6px 22px;text-align:${align};">
-                <img src="${escapeHtml(defaults.logoUrl)}" width="154" height="33" alt="Multideck" style="display:block;width:154px;height:auto;border:0;">
+              <td style="padding:0 0 16px;text-align:center;">
+                <img src="${escapeHtml(defaults.bannerUrl)}" width="600" height="98" alt="Multideck" style="display:block;width:100%;max-width:600px;height:auto;border:0;border-radius:18px;">
               </td>
             </tr>
             <tr>

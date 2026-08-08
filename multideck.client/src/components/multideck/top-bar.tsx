@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react"
-import { Menu, MoreHorizontal, Plus, Upload, UserRoundPlus } from "lucide-react"
+import { ChevronDown, MapPinOff, Menu, MoreHorizontal, PackagePlus, Plus, Upload, UserRoundPlus } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useLanguage } from "@/i18n/language-provider"
+import { dispatchTopBarAction, topBarActionEvents } from "@/lib/top-bar-action-events"
 import { cn } from "@/lib/utils"
 import { AppBreadcrumbs } from "./app-breadcrumbs"
 import { CommandInput } from "./command-input"
@@ -18,6 +20,78 @@ const topBarPrimaryActionClass =
 
 const topBarIconActionClass =
   "rounded-[var(--md-radius-md)] bg-white/42 text-[var(--md-ink)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-white/70 hover:shadow-[var(--md-shadow-soft)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
+
+const warehouseCreateActions: Partial<Record<string, { label: string; eventName: (typeof topBarActionEvents)[keyof typeof topBarActionEvents] }>> = {
+  "/warehouse/goods-in": { label: "Goods in", eventName: topBarActionEvents.createWarehouseOrder },
+  "/warehouse/goods-out": { label: "Goods out", eventName: topBarActionEvents.createWarehouseOrder },
+  "/warehouse/orders": { label: "New order", eventName: topBarActionEvents.createWarehouseOrder },
+  "/warehouse/facilities": { label: "New facility", eventName: topBarActionEvents.createWarehouseFacility },
+  "/warehouse/items": { label: "New item", eventName: topBarActionEvents.createWarehouseItem },
+  "/warehouse/locations": { label: "New location", eventName: topBarActionEvents.createWarehouseLocation },
+}
+
+type CrmCreateAction = {
+  label: string
+  eventName?: (typeof topBarActionEvents)[keyof typeof topBarActionEvents]
+  path?: string
+}
+
+const crmCreateActions: Partial<Record<string, CrmCreateAction>> = {
+  "/crm/leads": { label: "New lead", eventName: topBarActionEvents.createCrmLead },
+  "/crm/accounts": { label: "New account", eventName: topBarActionEvents.createCrmAccount },
+  "/crm/contacts": { label: "New contact", eventName: topBarActionEvents.createCrmContact },
+  "/crm/contact-cards": { label: "New card", eventName: topBarActionEvents.createCrmContactCard },
+  "/crm/deals": { label: "New deal", path: "/crm/leads" },
+}
+
+function WarehouseTopBarAction({ route, navigate }: { route: string; navigate: (path: string) => void }) {
+  const { t } = useLanguage()
+
+  if (route === "/warehouse/inventory") {
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button aria-label={t("New")} title={t("New")} className={topBarPrimaryActionClass}>
+            <Plus data-icon="inline-start" strokeWidth={1.2} />
+            <span className="hidden sm:inline">{t("New")}</span>
+            <ChevronDown className="size-3 opacity-70" strokeWidth={1.4} aria-hidden="true" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-[248px]">
+          <DropdownMenuItem onSelect={() => dispatchTopBarAction(topBarActionEvents.createWarehouseObject)}>
+            <PackagePlus className="size-3.5" strokeWidth={1.4} aria-hidden="true" />
+            {t("New warehouse object")}
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => dispatchTopBarAction(topBarActionEvents.reportWarehouseLocationEmpty)}>
+            <MapPinOff className="size-3.5" strokeWidth={1.4} aria-hidden="true" />
+            {t("Report a location empty")}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    )
+  }
+
+  const action = warehouseCreateActions[route]
+  if (action) {
+    return (
+      <Button aria-label={t(action.label)} title={t(action.label)} className={topBarPrimaryActionClass} onClick={() => dispatchTopBarAction(action.eventName)}>
+        <Plus data-icon="inline-start" strokeWidth={1.2} />
+        <span className="hidden sm:inline">{t(action.label)}</span>
+      </Button>
+    )
+  }
+
+  if (route === "/warehouse" || route === "/warehouse/calendar") {
+    return (
+      <Button aria-label={t("New order")} title={t("New order")} className={topBarPrimaryActionClass} onClick={() => navigate("/warehouse/orders?create=1")}>
+        <Plus data-icon="inline-start" strokeWidth={1.2} />
+        <span className="hidden sm:inline">{t("New order")}</span>
+      </Button>
+    )
+  }
+
+  return null
+}
 
 export function TopBar({
   route,
@@ -38,8 +112,10 @@ export function TopBar({
   const isRoadRoute = isRoadControl || isRoadBooking || isRoadJob
   const isQuotes = route === "/quotes"
   const isWarehouse = route.startsWith("/warehouse")
+  const isStandaloneExportRegister = route === "/customs/standalone/export"
   const isReports = route === "/reports"
   const isOperationalJobScreen = route === "/" || route.startsWith("/bookings") || route.startsWith("/quotes") || isRoadRoute || isWarehouse
+  const crmCreateAction = crmCreateActions[route]
   const { direction, t } = useLanguage()
   const [currentLeadName, setCurrentLeadName] = useState<string | null>(null)
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
@@ -158,26 +234,13 @@ export function TopBar({
                 Import CSV
               </Button>
               <Button
+                aria-label="New booking"
+                title="New booking"
                 className={topBarPrimaryActionClass}
                 onClick={() => navigate("/bookings/new")}
               >
                 <Plus data-icon="inline-start" strokeWidth={1.2} />
                 <span className="hidden sm:inline">New booking</span>
-              </Button>
-            </>
-          ) : isWarehouse ? (
-            <>
-              <Button
-                className={topBarPrimaryActionClass}
-                onClick={() =>
-                  toast.success("Warehouse movement drafted", {
-                    description: "Choose goods in, goods out, adjustment, or transfer next.",
-                  })
-                }
-              >
-                <Plus data-icon="inline-start" strokeWidth={1.2} />
-                <span className="hidden sm:inline">{t("New pick")}</span>
-                <span className="sm:hidden">New</span>
               </Button>
             </>
           ) : isCustomerList ? (
@@ -209,18 +272,38 @@ export function TopBar({
                 Import
               </Button>
               <Button
+                aria-label={t(crmCreateAction?.label ?? "New CRM record")}
+                title={t(crmCreateAction?.label ?? "New CRM record")}
                 className={topBarPrimaryActionClass}
-                onClick={() =>
-                  toast.success("CRM record draft created", {
-                    description: "Choose lead, contact, deal, or note next.",
-                  })
-                }
+                onClick={() => {
+                  if (crmCreateAction?.eventName) {
+                    dispatchTopBarAction(crmCreateAction.eventName)
+                  } else if (crmCreateAction?.path) {
+                    navigate(crmCreateAction.path)
+                  } else {
+                    toast.success("CRM record draft created", {
+                      description: "Choose lead, contact, deal, or note next.",
+                    })
+                  }
+                }}
               >
                 <Plus data-icon="inline-start" strokeWidth={1.2} />
-                <span className="hidden sm:inline">New CRM record</span>
-                <span className="sm:hidden">New</span>
+                <span className="hidden sm:inline">{t(crmCreateAction?.label ?? "New CRM record")}</span>
+                <span className="sm:hidden">{t(crmCreateAction?.label ?? "New CRM record")}</span>
               </Button>
             </>
+          ) : isQuotes ? (
+            <Button aria-label={t("New quote")} title={t("New quote")} className={topBarPrimaryActionClass} onClick={() => navigate("/quotes/new")}>
+              <Plus data-icon="inline-start" strokeWidth={1.2} />
+              <span className="hidden sm:inline">{t("New quote")}</span>
+            </Button>
+          ) : isWarehouse ? (
+            <WarehouseTopBarAction route={route} navigate={navigate} />
+          ) : isStandaloneExportRegister ? (
+            <Button aria-label={t("New export declaration")} title={t("New export declaration")} className={topBarPrimaryActionClass} onClick={() => navigate("/customs/standalone/export/new")}>
+              <Plus data-icon="inline-start" strokeWidth={1.2} />
+              <span className="hidden sm:inline">{t("New export declaration")}</span>
+            </Button>
           ) : isReports ? (
             <>
               <Button
@@ -246,6 +329,11 @@ export function TopBar({
                 <span className="hidden sm:inline">New report</span>
               </Button>
             </>
+          ) : isRoadControl ? (
+            <Button aria-label={t("New road job")} title={t("New road job")} className={topBarPrimaryActionClass} onClick={() => navigate("/road-control/new")}>
+              <Plus data-icon="inline-start" strokeWidth={1.2} />
+              <span className="hidden sm:inline">{t("New road job")}</span>
+            </Button>
           ) : (
             <>
               {!isOperationalJobScreen ? (
@@ -267,13 +355,6 @@ export function TopBar({
                   </Button>
                 </>
               ) : null}
-              <Button
-                className={topBarPrimaryActionClass}
-                onClick={() => navigate(isRoadRoute ? "/road-control/new" : "/bookings/new")}
-              >
-                <Plus data-icon="inline-start" strokeWidth={1.2} />
-                <span className="hidden sm:inline">New booking</span>
-              </Button>
             </>
           )}
         </>

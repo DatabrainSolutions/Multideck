@@ -93,7 +93,7 @@ export function SegmentedControl<T extends string>({
             <motion.span
               aria-hidden="true"
               layoutId={`${controlId}-active-segment`}
-              className="absolute inset-0 -z-10 rounded-[var(--md-radius-md)] bg-[var(--md-selected-bg)] shadow-[inset_0_0_0_1px_var(--md-accent-a14),0_2px_5px_rgba(11,20,19,0.06)]"
+              className="absolute inset-0 -z-10 rounded-[inherit] bg-[var(--md-selected-bg)] shadow-[inset_0_0_0_1px_var(--md-accent-a14),0_2px_5px_rgba(11,20,19,0.06)]"
               transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.spring)}
             />
           ) : null}

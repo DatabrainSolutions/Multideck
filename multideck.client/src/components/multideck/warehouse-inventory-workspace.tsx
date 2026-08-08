@@ -1,16 +1,27 @@
-import { useEffect, useMemo, useState } from "react"
-import { AlertTriangle, Boxes, Combine, FlaskConical, Loader2, MapPinOff, PackagePlus, RefreshCw, Route, ShieldAlert } from "lucide-react"
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { AlertTriangle, Boxes, Combine, FlaskConical, Loader2, MapPinOff, PackagePlus, RefreshCw, Route, ShieldAlert, type LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { WarehouseInventoryTable } from "@/components/multideck/warehouse-components"
+import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
+import { DotGridLoaderPanel } from "@/components/multideck/dot-grid-loader"
+import {
+  RegisterFacetSelect,
+  RegisterSearchField,
+  RegisterToolbarActions,
+  RegisterViewSwitch,
+} from "@/components/multideck/register-toolbar"
 import { WarehouseFormField, warehouseDialogFooterClass, warehouseDialogHeaderClass } from "@/components/multideck/warehouse-management-components"
+import { RecordDrawer } from "@/components/multideck/side-drawer"
+import { FactCard, FactFigure, FactRow } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
-import { FilterChips } from "@/components/multideck/workflow-components"
+import { SegmentedControl } from "@/components/multideck/workflow-components"
 import { useLanguage } from "@/i18n/language-provider"
+import { cn } from "@/lib/utils"
+import { subscribeTopBarAction, topBarActionEvents } from "@/lib/top-bar-action-events"
 import {
   WarehouseApiError,
   changeWarehouseStockStatus,
@@ -71,104 +82,616 @@ export function WarehouseExceptionSummary({ exception }: { exception: WarehouseI
   return <div className="grid gap-1"><div className="flex items-center gap-2"><p className="text-[13px] font-medium text-[var(--md-ink)]">{t(exception.title)}</p><StatusPill tone={statusTone(exception.statusCode)}>{t(exception.statusCode)}</StatusPill></div><p className="text-[12px] text-[var(--md-text)]">{exception.description ? t(exception.description) : t(exception.typeCode)}</p><p className="text-[11px] text-[var(--md-subtle)]">{exception.expectedLocationCode ? `${t("Expected")}: ${exception.expectedLocationCode}` : t(exception.typeCode)}</p></div>
 }
 
+type InventoryMode = "Stock" | "Objects" | "Movements" | "Exceptions"
+
+/** Every register row is identified the same way, whichever view is showing. */
+type InventoryRow = { id: string }
+
+const inventoryModes = ["Stock", "Objects", "Movements", "Exceptions"] as const
+const emptyFacets: Record<InventoryMode, string> = { Stock: "", Objects: "", Movements: "", Exceptions: "" }
+
+/** The one facet that matters per view, so every mode reads the same way. */
+const facetLabels: Record<InventoryMode, string> = {
+  Stock: "Condition",
+  Objects: "Object type",
+  Movements: "Movement",
+  Exceptions: "Severity",
+}
+
+/** Written out rather than pluralised in code: "All condition" is not English. */
+const facetAllLabels: Record<InventoryMode, string> = {
+  Stock: "All conditions",
+  Objects: "All object types",
+  Movements: "All movements",
+  Exceptions: "All severities",
+}
+
+
+/** Everything a row can be matched on, lowercased once per row rather than per keystroke. */
+function searchIndex(values: (string | number | null | undefined)[]) {
+  return values.filter((value) => value !== null && value !== undefined && value !== "").join(" ").toLowerCase()
+}
+
 export function WarehouseInventoryWorkspace() {
   const { language, t } = useLanguage()
   const number = useMemo(() => new Intl.NumberFormat(language, { maximumFractionDigits: 6 }), [language])
-  const [mode, setMode] = useState("Stock")
+  const dateTime = useMemo(() => new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }), [language])
+  const [mode, setMode] = useState<InventoryMode>("Stock")
   const [facilityId, setFacilityId] = useState("")
+  const [facets, setFacets] = useState(emptyFacets)
   const [search, setSearch] = useState("")
+  const [committedSearch, setCommittedSearch] = useState("")
   const [reference, setReference] = useState<WarehouseOrderReference | null>(null)
   const [huReference, setHuReference] = useState<WarehouseHandlingUnitReference | null>(null)
   const [balances, setBalances] = useState<WarehouseInventoryBalance[]>([])
   const [units, setUnits] = useState<WarehouseHandlingUnit[]>([])
   const [movements, setMovements] = useState<WarehouseInventoryMovement[]>([])
   const [exceptions, setExceptions] = useState<WarehouseInventoryException[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loaded, setLoaded] = useState(false)
+  const [pending, setPending] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedBalance, setSelectedBalance] = useState<WarehouseInventoryBalance | null>(null)
   const [selectedUnit, setSelectedUnit] = useState<WarehouseHandlingUnit | null>(null)
   const [selectedException, setSelectedException] = useState<WarehouseInventoryException | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [emptyOpen, setEmptyOpen] = useState(false)
+  // Responses can land out of order once the operator types quickly. Only the
+  // newest request is allowed to write, so a slow "ab" can never overwrite "abc".
+  const requestId = useRef(0)
 
-  async function refresh() {
-    setLoading(true); setError(null)
+  useEffect(() => {
+    const openCreate = () => setCreateOpen(true)
+    const openEmptyReport = () => setEmptyOpen(true)
+    const stopCreate = subscribeTopBarAction(topBarActionEvents.createWarehouseObject, openCreate)
+    const stopEmptyReport = subscribeTopBarAction(topBarActionEvents.reportWarehouseLocationEmpty, openEmptyReport)
+    return () => {
+      stopCreate()
+      stopEmptyReport()
+    }
+  }, [])
+
+  const refresh = useCallback(async function refresh() {
+    const ticket = ++requestId.current
+    setPending(true)
     try {
-      const [orderRef, objectRef, stock, objects, history, openExceptions] = await Promise.all([
-        reference ?? getWarehouseOrderReference(), huReference ?? getWarehouseHandlingUnitReference(facilityId || undefined),
-        listWarehouseInventory({ facilityId: facilityId || undefined, search: search || undefined }),
-        listWarehouseHandlingUnits({ facilityId: facilityId || undefined, search: search || undefined }),
-        listWarehouseInventoryMovements({ facilityId: facilityId || undefined, search: search || undefined, take: 250 }),
-        listWarehouseInventoryExceptions({ facilityId: facilityId || undefined, search: search || undefined, openOnly: true }),
+      const [stock, objects, history, openExceptions] = await Promise.all([
+        listWarehouseInventory({ facilityId: facilityId || undefined, search: committedSearch || undefined }),
+        listWarehouseHandlingUnits({ facilityId: facilityId || undefined, search: committedSearch || undefined }),
+        listWarehouseInventoryMovements({ facilityId: facilityId || undefined, search: committedSearch || undefined, take: 250 }),
+        listWarehouseInventoryExceptions({ facilityId: facilityId || undefined, search: committedSearch || undefined, openOnly: true }),
       ])
-      setReference(orderRef); setHuReference(objectRef); setBalances(stock); setUnits(objects); setMovements(history); setExceptions(openExceptions)
-    } catch (cause) { setError(message(cause)) } finally { setLoading(false) }
-  }
-  useEffect(() => { const timer = window.setTimeout(() => void refresh(), 220); return () => window.clearTimeout(timer) }, [facilityId, search]) // eslint-disable-line react-hooks/exhaustive-deps
+      if (ticket !== requestId.current) return
+      setBalances(stock); setUnits(objects); setMovements(history); setExceptions(openExceptions); setError(null); setLoaded(true)
+    } catch (cause) {
+      if (ticket !== requestId.current) return
+      setError(message(cause))
+    } finally {
+      if (ticket === requestId.current) setPending(false)
+    }
+  }, [facilityId, committedSearch])
 
-  const balanceColumns = [
-    { key: "item", label: t("Item"), className: "min-w-[210px]", render: (row: WarehouseInventoryBalance) => <div><Code>{row.sku}</Code><p className="mt-1 text-[12px] text-[var(--md-text)]">{row.itemDescription}</p></div> },
-    { key: "object", label: t("Warehouse object"), render: (row: WarehouseInventoryBalance) => row.handlingUnitCode ? <Code>{row.handlingUnitCode}</Code> : <span className="text-[12px] text-[var(--md-subtle)]">{t("Loose")}</span> },
-    { key: "location", label: t("Location"), render: (row: WarehouseInventoryBalance) => <Code>{row.locationCode ?? "—"}</Code> },
-    { key: "lot", label: t("Batch / lot"), render: (row: WarehouseInventoryBalance) => <Code>{row.batchNumber ?? row.lotNumber ?? "—"}</Code> },
-    { key: "status", label: t("Condition"), render: (row: WarehouseInventoryBalance) => <StatusPill tone={statusTone(row.inventoryStatusCode)}>{t(row.inventoryStatusName ?? row.inventoryStatusCode)}</StatusPill> },
-    { key: "onHand", label: t("On hand"), align: "right" as const, render: (row: WarehouseInventoryBalance) => <span dir="ltr" className="tabular-nums">{number.format(row.onHandQuantity)} {row.uomCode}</span> },
-    { key: "available", label: t("Available"), align: "right" as const, render: (row: WarehouseInventoryBalance) => <span dir="ltr" className="font-medium tabular-nums text-[var(--md-accent)]">{number.format(row.availableQuantity)}</span> },
-  ]
-  const unitColumns = [
-    { key: "object", label: t("Warehouse object"), className: "min-w-[240px]", render: (row: WarehouseHandlingUnit) => <WarehouseObjectSummary unit={row} /> },
-    { key: "customer", label: t("Customer"), render: (row: WarehouseHandlingUnit) => row.customerName ?? "—" },
-    { key: "location", label: t("Location"), render: (row: WarehouseHandlingUnit) => <Code>{row.locationCode ?? "—"}</Code> },
-    { key: "contents", label: t("Contents"), render: (row: WarehouseHandlingUnit) => <span className="text-[12px] text-[var(--md-text)]">{row.contents.slice(0, 2).map((line) => `${line.sku} · ${number.format(line.quantity)} ${line.uomCode}`).join(", ") || t("Empty")}</span> },
-    { key: "status", label: t("Status"), align: "right" as const, render: (row: WarehouseHandlingUnit) => <StatusPill tone={statusTone(row.inventoryStatusCode)}>{t(row.inventoryStatusName)}</StatusPill> },
-  ]
-  const movementColumns = [
-    { key: "posted", label: t("Posted"), render: (row: WarehouseInventoryMovement) => new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }).format(new Date(row.createdAt)) },
-    { key: "reference", label: t("Reference"), render: (row: WarehouseInventoryMovement) => <Code>{row.reference ?? "—"}</Code> },
-    { key: "item", label: t("Item"), render: (row: WarehouseInventoryMovement) => <div><Code>{row.sku}</Code><p className="text-[11px] text-[var(--md-subtle)]">{row.handlingUnitCode ?? t("Loose stock")}</p></div> },
-    { key: "movement", label: t("Movement"), render: (row: WarehouseInventoryMovement) => <StatusPill tone={row.typeCode === "receipt" ? "teal" : "blue"}>{t(row.typeName ?? row.typeCode)}</StatusPill> },
-    { key: "route", label: t("Location"), render: (row: WarehouseInventoryMovement) => <span className="text-[12px]"><Code>{row.fromLocationCode ?? "—"}</Code> → <Code>{row.toLocationCode ?? "—"}</Code></span> },
-    { key: "reason", label: t("Reason"), render: (row: WarehouseInventoryMovement) => t(row.reasonCode ?? "—") },
-    { key: "quantity", label: t("Quantity"), align: "right" as const, render: (row: WarehouseInventoryMovement) => <span dir="ltr" className="tabular-nums">{number.format(row.quantity)} {row.uomCode}</span> },
-  ]
-  const exceptionColumns = [
-    { key: "exception", label: t("Exception"), className: "min-w-[320px]", render: (row: WarehouseInventoryException) => <WarehouseExceptionSummary exception={row} /> },
-    { key: "severity", label: t("Severity"), render: (row: WarehouseInventoryException) => <StatusPill tone={row.severityCode === "high" ? "red" : "amber"}>{t(row.severityCode)}</StatusPill> },
-    { key: "raised", label: t("Raised"), render: (row: WarehouseInventoryException) => new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }).format(new Date(row.raisedAt)) },
-    { key: "status", label: t("Status"), align: "right" as const, render: (row: WarehouseInventoryException) => <StatusPill tone={statusTone(row.statusCode)}>{t(row.statusCode)}</StatusPill> },
-  ]
-  const rows = mode === "Stock" ? balances : mode === "Warehouse objects" ? units : mode === "Movements" ? movements : exceptions
+  useEffect(() => { void refresh() }, [refresh])
+
+  // Keep the register current while the operator is working without making them
+  // manage freshness themselves. A hidden tab does not poll; it revalidates when
+  // it becomes active again through the same effect-driven request cycle.
+  useEffect(() => {
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") void refresh()
+    }
+    const interval = window.setInterval(refreshWhenVisible, 30_000)
+    window.addEventListener("visibilitychange", refreshWhenVisible)
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener("visibilitychange", refreshWhenVisible)
+    }
+  }, [refresh])
+
+  // Typing narrows the loaded rows on the same frame; the server is only asked
+  // once the operator stops, and only to widen the set beyond what is in hand.
+  useEffect(() => {
+    if (search === committedSearch) return
+    const timer = window.setTimeout(() => setCommittedSearch(search), 320)
+    return () => window.clearTimeout(timer)
+  }, [search, committedSearch])
+
+  // Reference data does not change with a search term, so it is fetched apart
+  // from the registers: once for the order lookups, and per warehouse for locations.
+  useEffect(() => {
+    let live = true
+    getWarehouseOrderReference().then((value) => { if (live) setReference(value) }).catch(() => undefined)
+    return () => { live = false }
+  }, [])
+
+  useEffect(() => {
+    let live = true
+    getWarehouseHandlingUnitReference(facilityId || undefined).then((value) => { if (live) setHuReference(value) }).catch(() => undefined)
+    return () => { live = false }
+  }, [facilityId])
+
+  const query = search.trim().toLowerCase()
+  const facetValue = facets[mode]
+
+  const filteredBalances = useMemo(() => balances.filter((row) => (
+    (!facetValue || (row.inventoryStatusName ?? row.inventoryStatusCode) === facetValue)
+    && (!query || searchIndex([row.sku, row.itemDescription, row.handlingUnitCode, row.locationCode, row.batchNumber, row.lotNumber, row.customerName, row.inventoryStatusName]).includes(query))
+  )), [balances, facetValue, query])
+
+  const filteredUnits = useMemo(() => units.filter((row) => (
+    (!facetValue || row.typeName === facetValue)
+    && (!query || searchIndex([row.code, row.sscc, row.typeName, row.customerName, row.locationCode, row.inventoryStatusName, ...row.contents.map((line) => line.sku)]).includes(query))
+  )), [units, facetValue, query])
+
+  const filteredMovements = useMemo(() => movements.filter((row) => (
+    (!facetValue || (row.typeName ?? row.typeCode) === facetValue)
+    && (!query || searchIndex([row.sku, row.itemDescription, row.reference, row.handlingUnitCode, row.fromLocationCode, row.toLocationCode, row.reasonCode, row.typeName]).includes(query))
+  )), [movements, facetValue, query])
+
+  const filteredExceptions = useMemo(() => exceptions.filter((row) => (
+    (!facetValue || row.severityCode === facetValue)
+    && (!query || searchIndex([row.title, row.description, row.typeCode, row.statusCode, row.expectedLocationCode, row.actualLocationCode]).includes(query))
+  )), [exceptions, facetValue, query])
+
+  const counts: Record<InventoryMode, number> = {
+    Stock: filteredBalances.length,
+    Objects: filteredUnits.length,
+    Movements: filteredMovements.length,
+    Exceptions: filteredExceptions.length,
+  }
+
+  // Options come from the rows actually in hand, so the menu can never offer a
+  // value that returns nothing.
+  const facetOptions = useMemo(() => {
+    const values = mode === "Stock" ? balances.map((row) => row.inventoryStatusName ?? row.inventoryStatusCode)
+      : mode === "Objects" ? units.map((row) => row.typeName)
+      : mode === "Movements" ? movements.map((row) => row.typeName ?? row.typeCode)
+      : exceptions.map((row) => row.severityCode)
+    return [...new Set(values.filter(Boolean))].sort((first, second) => first.localeCompare(second))
+  }, [mode, balances, units, movements, exceptions])
+
+  // A facet the current rows no longer contain would silently hide everything.
+  useEffect(() => {
+    if (facetValue && !facetOptions.includes(facetValue)) setFacets((current) => ({ ...current, [mode]: "" }))
+  }, [facetValue, facetOptions, mode])
+
+  const balanceColumns = useMemo<DataTableColumn<WarehouseInventoryBalance>[]>(() => [
+    { id: "stock-item", label: "Item", width: 236, minWidth: 180, resizable: true, canHide: false, sortValue: (row) => row.sku, cell: (row) => <div className="min-w-0"><Code>{row.sku}</Code><p className="mt-0.5 truncate text-[11.5px] text-[var(--md-text)]">{row.itemDescription}</p></div> },
+    { id: "stock-object", label: "Warehouse object", width: 152, resizable: true, sortValue: (row) => row.handlingUnitCode, cell: (row) => row.handlingUnitCode ? <Code>{row.handlingUnitCode}</Code> : <span className="text-[12px] text-[var(--md-subtle)]">{t("Loose")}</span> },
+    { id: "stock-location", label: "Location", width: 130, resizable: true, sortValue: (row) => row.locationCode, cell: (row) => <Code>{row.locationCode ?? "—"}</Code> },
+    { id: "stock-lot", label: "Batch / lot", width: 138, resizable: true, sortValue: (row) => row.batchNumber ?? row.lotNumber, cell: (row) => <Code>{row.batchNumber ?? row.lotNumber ?? "—"}</Code> },
+    { id: "stock-customer", label: "Customer", width: 168, resizable: true, sortValue: (row) => row.customerName, cell: (row) => <span className="truncate text-[12px] text-[var(--md-text)]">{row.customerName ?? "—"}</span> },
+    { id: "stock-status", label: "Condition", width: 142, resizable: true, sortValue: (row) => row.inventoryStatusName ?? row.inventoryStatusCode, cell: (row) => <StatusPill tone={statusTone(row.inventoryStatusCode)}>{t(row.inventoryStatusName ?? row.inventoryStatusCode)}</StatusPill> },
+    { id: "stock-onHand", label: "On hand", width: 132, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (row) => row.onHandQuantity, cell: (row) => <span dir="ltr" className="tabular-nums">{number.format(row.onHandQuantity)} {row.uomCode}</span> },
+    { id: "stock-available", label: "Available", width: 124, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (row) => row.availableQuantity, cell: (row) => <span dir="ltr" className="font-medium tabular-nums text-[var(--md-accent)]">{number.format(row.availableQuantity)}</span> },
+  ], [number, t])
+
+  const unitColumns = useMemo<DataTableColumn<WarehouseHandlingUnit>[]>(() => [
+    { id: "object-object", label: "Warehouse object", width: 252, minWidth: 200, resizable: true, canHide: false, sortValue: (row) => row.code, cell: (row) => <WarehouseObjectSummary unit={row} /> },
+    { id: "object-customer", label: "Customer", width: 176, resizable: true, sortValue: (row) => row.customerName, cell: (row) => <span className="truncate text-[12px] text-[var(--md-text)]">{row.customerName ?? "—"}</span> },
+    { id: "object-location", label: "Location", width: 130, resizable: true, sortValue: (row) => row.locationCode, cell: (row) => <Code>{row.locationCode ?? "—"}</Code> },
+    { id: "object-contents", label: "Contents", width: 264, resizable: true, sortValue: (row) => row.contents.length, cell: (row) => <span className="truncate text-[12px] text-[var(--md-text)]">{row.contents.slice(0, 2).map((line) => `${line.sku} · ${number.format(line.quantity)} ${line.uomCode}`).join(", ") || t("Empty")}</span> },
+    { id: "object-weight", label: "Gross weight", width: 138, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (row) => row.grossWeightKg, cell: (row) => <span dir="ltr" className="tabular-nums">{row.grossWeightKg === null ? "—" : `${number.format(row.grossWeightKg)} kg`}</span> },
+    { id: "object-status", label: "Status", width: 142, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (row) => row.inventoryStatusName, cell: (row) => <StatusPill tone={statusTone(row.inventoryStatusCode)}>{t(row.inventoryStatusName)}</StatusPill> },
+  ], [number, t])
+
+  const movementColumns = useMemo<DataTableColumn<WarehouseInventoryMovement>[]>(() => [
+    { id: "movement-posted", label: "Posted", width: 176, minWidth: 150, resizable: true, canHide: false, sortValue: (row) => row.createdAt, cell: (row) => <span className="whitespace-nowrap text-[12px]">{dateTime.format(new Date(row.createdAt))}</span> },
+    { id: "movement-reference", label: "Reference", width: 146, resizable: true, sortValue: (row) => row.reference, cell: (row) => <Code>{row.reference ?? "—"}</Code> },
+    { id: "movement-item", label: "Item", width: 190, resizable: true, sortValue: (row) => row.sku, cell: (row) => <div className="min-w-0"><Code>{row.sku}</Code><p className="truncate text-[11px] text-[var(--md-subtle)]">{row.handlingUnitCode ?? t("Loose stock")}</p></div> },
+    { id: "movement-movement", label: "Movement", width: 152, resizable: true, sortValue: (row) => row.typeName ?? row.typeCode, cell: (row) => <StatusPill tone={row.typeCode === "receipt" ? "teal" : "blue"}>{t(row.typeName ?? row.typeCode)}</StatusPill> },
+    { id: "movement-route", label: "Location", width: 168, resizable: true, cell: (row) => <span className="whitespace-nowrap text-[12px]"><Code>{row.fromLocationCode ?? "—"}</Code> <span aria-hidden="true" className="text-[var(--md-subtle)]">→</span> <Code>{row.toLocationCode ?? "—"}</Code></span> },
+    { id: "movement-reason", label: "Reason", width: 152, resizable: true, sortValue: (row) => row.reasonCode, cell: (row) => <span className="truncate text-[12px] text-[var(--md-text)]">{row.reasonCode ? t(row.reasonCode) : "—"}</span> },
+    { id: "movement-quantity", label: "Quantity", width: 138, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (row) => row.quantity, cell: (row) => <span dir="ltr" className="tabular-nums">{number.format(row.quantity)} {row.uomCode}</span> },
+  ], [dateTime, number, t])
+
+  const exceptionColumns = useMemo<DataTableColumn<WarehouseInventoryException>[]>(() => [
+    { id: "exception-exception", label: "Exception", width: 340, minWidth: 240, resizable: true, canHide: false, sortValue: (row) => row.title, cell: (row) => <WarehouseExceptionSummary exception={row} /> },
+    { id: "exception-severity", label: "Severity", width: 128, resizable: true, sortValue: (row) => row.severityCode, cell: (row) => <StatusPill tone={row.severityCode === "high" ? "red" : "amber"}>{t(row.severityCode)}</StatusPill> },
+    { id: "exception-raised", label: "Raised", width: 176, resizable: true, sortValue: (row) => row.raisedAt, cell: (row) => <span className="whitespace-nowrap text-[12px]">{dateTime.format(new Date(row.raisedAt))}</span> },
+    { id: "exception-expected", label: "Expected location", width: 160, resizable: true, sortValue: (row) => row.expectedLocationCode, cell: (row) => <Code>{row.expectedLocationCode ?? "—"}</Code> },
+    { id: "exception-status", label: "Status", width: 138, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (row) => row.statusCode, cell: (row) => <StatusPill tone={statusTone(row.statusCode)}>{t(row.statusCode)}</StatusPill> },
+  ], [dateTime, t])
+
+  const clearFilters = () => { setSearch(""); setCommittedSearch(""); setFacets(emptyFacets); setFacilityId("") }
+  const hasFilters = Boolean(query || facetValue || facilityId)
+
+  const emptyState = error ? (
+    <div className="mx-auto max-w-[380px]" role="alert">
+      <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Warehouse records are unavailable")}</p>
+      <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{error}</p>
+      <Button type="button" variant="outline" className="mt-3 h-8 rounded-[var(--md-radius-md)] text-[12px]" onClick={() => void refresh()}>
+        <RefreshCw data-icon="inline-start" className="size-3.5" strokeWidth={1.4} />
+        {t("Try again")}
+      </Button>
+    </div>
+  ) : !loaded ? (
+    <DotGridLoaderPanel label="Loading warehouse records" minHeight={0} />
+  ) : hasFilters ? (
+    <div className="mx-auto max-w-[380px]">
+      <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Nothing matches these filters")}</p>
+      <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Widen the search or switch warehouse to see more.")}</p>
+      <Button type="button" variant="outline" className="mt-3 h-8 rounded-[var(--md-radius-md)] text-[12px]" onClick={clearFilters}>{t("Clear filters")}</Button>
+    </div>
+  ) : (
+    <div className="mx-auto max-w-[380px]">
+      <Boxes className="mx-auto size-5 text-[var(--md-accent)]" strokeWidth={1.35} />
+      <p className="mt-2 text-[13px] font-medium text-[var(--md-ink)]">{t(mode === "Exceptions" ? "No open exceptions" : "Nothing here yet")}</p>
+      <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">
+        {t(mode === "Stock" ? "Stock appears here once an inbound order is booked in."
+          : mode === "Objects" ? "Create a pallet, IBC or carton to start tracking it."
+          : mode === "Movements" ? "Every move, status change and sample is logged here."
+          : "Every location count and stock discrepancy is resolved here.")}
+      </p>
+    </div>
+  )
+
+  const toolbarLeading = (
+    <div className="flex min-w-0 items-center gap-2">
+      <RegisterViewSwitch options={inventoryModes} value={mode} onChange={setMode} counts={counts} ariaLabel="Inventory view" compact />
+    </div>
+  )
+
+  const toolbarActions = (
+    <RegisterToolbarActions pending={pending && loaded}>
+      <RegisterFacetSelect
+        label={facetLabels[mode]}
+        allLabel={facetAllLabels[mode]}
+        value={facetValue}
+        options={facetOptions.map((option) => ({ value: option, label: option }))}
+        onChange={(value) => setFacets((current) => ({ ...current, [mode]: value }))}
+        className="w-[120px] sm:w-[120px]"
+      />
+      <RegisterFacetSelect
+        label="Warehouse"
+        allLabel="All warehouses"
+        value={facilityId}
+        options={(reference?.facilities ?? []).map((facility) => ({ value: facility.id, label: facility.name }))}
+        onChange={setFacilityId}
+        className="w-[132px] sm:w-[132px]"
+      />
+      <RegisterSearchField
+        value={search}
+        onChange={setSearch}
+        onClear={() => { setSearch(""); setCommittedSearch("") }}
+        label="Search warehouse records"
+        placeholder="SKU, pallet, batch"
+        className="sm:min-w-[136px] sm:w-[136px]"
+      />
+    </RegisterToolbarActions>
+  )
+
+  // One register that changes view, not four registers. The table is never
+  // remounted on a mode switch, so the selected-view pill travels between
+  // segments and the toolbar the operator is using stays put. Column ids are
+  // namespaced per view instead, which is what keeps one view's saved widths and
+  // sort out of another's.
+  const view = mode === "Stock" ? {
+    columns: balanceColumns as unknown as DataTableColumn<InventoryRow>[],
+    rows: filteredBalances as InventoryRow[],
+    onRowClick: (row: InventoryRow) => setSelectedBalance(row as WarehouseInventoryBalance),
+    selectedRowKey: selectedBalance?.id ?? null,
+  } : mode === "Objects" ? {
+    columns: unitColumns as unknown as DataTableColumn<InventoryRow>[],
+    rows: filteredUnits as InventoryRow[],
+    onRowClick: (row: InventoryRow) => setSelectedUnit(row as WarehouseHandlingUnit),
+    selectedRowKey: selectedUnit?.id ?? null,
+  } : mode === "Movements" ? {
+    columns: movementColumns as unknown as DataTableColumn<InventoryRow>[],
+    rows: filteredMovements as InventoryRow[],
+    onRowClick: undefined,
+    selectedRowKey: null,
+  } : {
+    columns: exceptionColumns as unknown as DataTableColumn<InventoryRow>[],
+    rows: filteredExceptions as InventoryRow[],
+    onRowClick: (row: InventoryRow) => setSelectedException(row as WarehouseInventoryException),
+    selectedRowKey: selectedException?.id ?? null,
+  }
 
   return <div className="grid gap-[var(--md-page-stack-gap)]">
-    <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-center"><div className="min-w-0 2xl:me-auto"><h2 className="text-[15px] font-medium text-[var(--md-ink)]">{t("Inventory control")}</h2><p className="mt-1 text-[13px] text-[var(--md-text)]">{t("Move measured stock, manage pallets, and resolve physical discrepancies with a complete audit trail.")}</p></div><div className="flex flex-wrap gap-2"><Button variant="ghost" onClick={() => setCreateOpen(true)} className="h-10 rounded-[var(--md-radius-lg)] bg-white/48 shadow-[var(--md-shadow-line)]"><PackagePlus className="size-4" />{t("New warehouse object")}</Button><Button variant="ghost" onClick={() => setEmptyOpen(true)} className="h-10 rounded-[var(--md-radius-lg)] bg-white/48 shadow-[var(--md-shadow-line)]"><MapPinOff className="size-4" />{t("Location is empty")}</Button></div></div>
-    <div className="flex flex-wrap items-center gap-2"><FilterChips options={["Stock", "Warehouse objects", "Movements", "Exceptions"]} activeOption={mode} onChange={setMode} /><Select value={facilityId || noneValue} onValueChange={(value) => setFacilityId(value === noneValue ? "" : value)}><SelectTrigger aria-label={t("Warehouse")} className="h-10 min-w-[210px] rounded-[var(--md-radius-lg)] border-0 bg-white/68 shadow-[var(--md-shadow-line)]"><SelectValue placeholder={t("All warehouses")} /></SelectTrigger><SelectContent><SelectItem value={noneValue}>{t("All warehouses")}</SelectItem>{reference?.facilities.map((facility) => <SelectItem key={facility.id} value={facility.id}>{facility.name}</SelectItem>)}</SelectContent></Select><Input dir="auto" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("Search SKU, pallet, batch, location…")} className={`${controlClass} min-w-[260px] sm:!w-80`} /><Button variant="ghost" size="icon" aria-label={t("Refresh inventory")} onClick={() => void refresh()} className="size-10 rounded-[var(--md-radius-lg)] bg-white/48 shadow-[var(--md-shadow-line)]"><RefreshCw className="size-4" /></Button></div>
-    {error ? <div className="rounded-[var(--md-radius-lg)] bg-[rgba(185,28,28,0.07)] px-4 py-3 text-[13px] text-[var(--md-red)]">{error}</div> : loading ? <div className="grid min-h-48 place-items-center"><Loader2 className="size-5 animate-spin text-[var(--md-accent)]" /></div> : rows.length ? <WarehouseInventoryTable rows={rows as never[]} columns={(mode === "Stock" ? balanceColumns : mode === "Warehouse objects" ? unitColumns : mode === "Movements" ? movementColumns : exceptionColumns) as never[]} minWidth={1080} rowLabel={mode} onRowClick={(row: never) => mode === "Stock" ? setSelectedBalance(row as WarehouseInventoryBalance) : mode === "Warehouse objects" ? setSelectedUnit(row as WarehouseHandlingUnit) : mode === "Exceptions" ? setSelectedException(row as WarehouseInventoryException) : undefined} /> : <div className="grid min-h-48 place-items-center rounded-[var(--md-radius-xl)] bg-white/38 text-center shadow-[var(--md-shadow-line)]"><div><Boxes className="mx-auto size-5 text-[var(--md-accent)]" /><p className="mt-3 text-[13px] text-[var(--md-text)]">{t("No warehouse records match this view.")}</p></div></div>}
-    <BalanceActionDialog balance={selectedBalance} open={Boolean(selectedBalance)} onOpenChange={(open) => { if (!open) setSelectedBalance(null) }} reference={huReference} units={units} onChanged={() => void refresh()} />
-    <HandlingUnitDialog unit={selectedUnit} open={Boolean(selectedUnit)} onOpenChange={(open) => { if (!open) setSelectedUnit(null) }} reference={huReference} units={units} onChanged={() => void refresh()} />
-    <ExceptionDialog exception={selectedException} open={Boolean(selectedException)} onOpenChange={(open) => { if (!open) setSelectedException(null) }} reference={huReference} onChanged={() => void refresh()} />
+    <DataTable
+      ariaLabel={`Warehouse ${mode.toLowerCase()}`}
+      columnsButtonLabel="Manage warehouse columns"
+      storageKey="warehouse-inventory"
+      columns={view.columns}
+      rows={view.rows}
+      getRowKey={(row) => row.id}
+      onRowClick={view.onRowClick}
+      selectedRowKey={view.selectedRowKey}
+      rowClassName="hover:bg-[var(--md-hover)]"
+      toolbarLeading={toolbarLeading}
+      toolbarActions={toolbarActions}
+      compactToolbar
+      emptyState={emptyState}
+    />
+    <StockActionPanel balance={selectedBalance} open={Boolean(selectedBalance)} onClose={() => setSelectedBalance(null)} reference={huReference} units={units} onChanged={() => void refresh()} />
+    <WarehouseObjectPanel unit={selectedUnit} open={Boolean(selectedUnit)} onClose={() => setSelectedUnit(null)} reference={huReference} units={units} onChanged={() => void refresh()} />
+    <ExceptionPanel exception={selectedException} open={Boolean(selectedException)} onClose={() => setSelectedException(null)} reference={huReference} onChanged={() => void refresh()} />
     <CreateHandlingUnitDialog open={createOpen} onOpenChange={setCreateOpen} reference={reference} huReference={huReference} fixedFacilityId={facilityId} onChanged={() => void refresh()} />
     <EmptyLocationDialog open={emptyOpen} onOpenChange={setEmptyOpen} reference={reference} huReference={huReference} fixedFacilityId={facilityId} onChanged={() => void refresh()} />
   </div>
 }
 
-function BalanceActionDialog({ balance, open, onOpenChange, reference, units, onChanged }: { balance: WarehouseInventoryBalance | null; open: boolean; onOpenChange: (open: boolean) => void; reference: WarehouseHandlingUnitReference | null; units: WarehouseHandlingUnit[]; onChanged: () => void }) {
-  const { t } = useLanguage(); const [action, setAction] = useState("move"); const [quantity, setQuantity] = useState(""); const [targetLocationId, setTargetLocationId] = useState(""); const [actualSourceLocationId, setActualSourceLocationId] = useState(""); const [targetHuId, setTargetHuId] = useState(""); const [status, setStatus] = useState("quarantine"); const [disposition, setDisposition] = useState<"onsite" | "removed">("removed"); const [reason, setReason] = useState(""); const [notes, setNotes] = useState(""); const [recipient, setRecipient] = useState(""); const [custody, setCustody] = useState(""); const [saving, setSaving] = useState(false)
-  useEffect(() => { if (!balance || !open) return; setAction("move"); setQuantity(String(balance.onHandQuantity)); setTargetLocationId(balance.locationId ?? ""); setActualSourceLocationId(balance.locationId ?? ""); setTargetHuId(balance.handlingUnitId ?? ""); setReason(""); setNotes("") }, [balance, open])
+const stockActions = ["move", "quarantine", "damage", "sample"] as const
+type StockAction = (typeof stockActions)[number]
+const stockActionLabels: Record<StockAction, string> = { move: "Move", quarantine: "Hold", damage: "Damage", sample: "Sample" }
+const stockActionButtons: Record<StockAction, string> = { move: "Move stock", quarantine: "Put on hold", damage: "Record damage", sample: "Take a sample" }
+
+function StockActionPanel({ balance, open, onClose, reference, units, onChanged }: { balance: WarehouseInventoryBalance | null; open: boolean; onClose: () => void; reference: WarehouseHandlingUnitReference | null; units: WarehouseHandlingUnit[]; onChanged: () => void }) {
+  const { language, t } = useLanguage()
+  const number = useMemo(() => new Intl.NumberFormat(language, { maximumFractionDigits: 6 }), [language])
+  const [action, setAction] = useState<StockAction>("move")
+  const [quantity, setQuantity] = useState("")
+  const [targetLocationId, setTargetLocationId] = useState("")
+  const [actualSourceLocationId, setActualSourceLocationId] = useState("")
+  const [targetHuId, setTargetHuId] = useState("")
+  const [status, setStatus] = useState("quarantine")
+  const [disposition, setDisposition] = useState<"onsite" | "removed">("removed")
+  const [reason, setReason] = useState("")
+  const [notes, setNotes] = useState("")
+  const [recipient, setRecipient] = useState("")
+  const [custody, setCustody] = useState("")
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!balance || !open) return
+    setAction("move")
+    setQuantity(String(balance.onHandQuantity))
+    setTargetLocationId(balance.locationId ?? "")
+    setActualSourceLocationId(balance.locationId ?? "")
+    setTargetHuId(balance.handlingUnitId ?? "")
+    setReason("")
+    setNotes("")
+  }, [balance, open])
+
   if (!balance) return null
   const currentBalance = balance
-  const locations = reference?.locations.filter((location) => location.facilityId === balance.facilityId) ?? []; const compatibleUnits = units.filter((unit) => unit.facilityId === balance.facilityId && unit.customerOrgId === balance.customerOrgId && unit.lifecycleStatusCode === "open")
-  async function save() { setSaving(true); try { const amount = Number(quantity); if (action === "move") await moveWarehouseBalance({ facilityId: currentBalance.facilityId, balanceId: currentBalance.id, quantity: amount, targetLocationId, targetHandlingUnitId: targetHuId || null, actualSourceLocationId: actualSourceLocationId || null, reasonCode: reason || "warehouse_move", overrideReason: actualSourceLocationId !== currentBalance.locationId ? notes || reason : null, notes: notes || null }); else if (action === "sample") await recordWarehouseSample({ facilityId: currentBalance.facilityId, balanceId: currentBalance.id, quantity: amount, disposition, reasonCode: reason || "quality_sample", recipient: recipient || null, custodyReference: custody || null, notes: notes || null }); else await changeWarehouseStockStatus({ facilityId: currentBalance.facilityId, balanceId: currentBalance.id, quantity: amount, targetStatusCode: action === "damage" ? "damaged" : status, reasonCode: reason || action, notes: notes || null }); toast.success(t("Inventory updated")); onOpenChange(false); onChanged() } catch (cause) { toast.error(t("Inventory could not be updated"), { description: message(cause) }) } finally { setSaving(false) } }
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="gap-0 overflow-hidden border-0 bg-[var(--md-surface)] p-0 sm:max-w-[620px]"><DialogHeader className={warehouseDialogHeaderClass}><DialogTitle>{t("Stock action")}</DialogTitle><DialogDescription>{balance.sku} · {balance.locationCode ?? t("Unassigned")} · {balance.onHandQuantity} {balance.uomCode}</DialogDescription></DialogHeader><div className="grid gap-4 px-6 py-5"><FilterChips options={["move", "quarantine", "damage", "sample"]} activeOption={action} onChange={setAction} /><WarehouseQuantityUomField label={t("Quantity")} value={quantity} onChange={setQuantity} uomCode={balance.uomCode} max={balance.onHandQuantity} />{action === "move" ? <><WarehouseFormField label={t("Stock physically found at")} required><Select value={actualSourceLocationId} onValueChange={setActualSourceLocationId}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent>{locations.map((location) => <SelectItem key={location.id} value={location.id}>{location.code}</SelectItem>)}</SelectContent></Select></WarehouseFormField><WarehouseFormField label={t("Destination location")} required><Select value={targetLocationId} onValueChange={setTargetLocationId}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent>{locations.filter((location) => location.statusCode === "available").map((location) => <SelectItem key={location.id} value={location.id}>{location.code}</SelectItem>)}</SelectContent></Select></WarehouseFormField><WarehouseFormField label={t("Destination warehouse object")} hint={t("Leave empty for loose stock.")}><Select value={targetHuId || noneValue} onValueChange={(value) => setTargetHuId(value === noneValue ? "" : value)}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent><SelectItem value={noneValue}>{t("Loose stock")}</SelectItem>{compatibleUnits.map((unit) => <SelectItem key={unit.id} value={unit.id}>{unit.code}</SelectItem>)}</SelectContent></Select></WarehouseFormField></> : action === "sample" ? <><WarehouseFormField label={t("Sample disposition")}><Select value={disposition} onValueChange={(value: "onsite" | "removed") => setDisposition(value)}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="onsite">{t("Retained onsite")}</SelectItem><SelectItem value="removed">{t("Removed from warehouse")}</SelectItem></SelectContent></Select></WarehouseFormField><WarehouseFormField label={t("Recipient")}><Input value={recipient} onChange={(event) => setRecipient(event.target.value)} className={controlClass} /></WarehouseFormField><WarehouseFormField label={t("Chain-of-custody reference")}><Input dir="ltr" value={custody} onChange={(event) => setCustody(event.target.value)} className={controlClass} /></WarehouseFormField></> : action === "quarantine" ? <WarehouseFormField label={t("New condition")}><Select value={status} onValueChange={setStatus}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent>{reference?.statuses.filter((entry) => !entry.available).map((entry) => <SelectItem key={entry.code} value={entry.code}>{t(entry.name)}</SelectItem>)}</SelectContent></Select></WarehouseFormField> : null}<WarehouseFormField label={t("Reason")} required><Input value={reason} onChange={(event) => setReason(event.target.value)} className={controlClass} placeholder={t("Enter a controlled reason")} /></WarehouseFormField><WarehouseFormField label={t("Notes and evidence reference")}><Textarea value={notes} onChange={(event) => setNotes(event.target.value)} className="min-h-20 rounded-[var(--md-radius-lg)] border-0 bg-white/68 shadow-[var(--md-shadow-line)]" /></WarehouseFormField></div><DialogFooter className={warehouseDialogFooterClass}><Button variant="ghost" onClick={() => onOpenChange(false)}>{t("Cancel")}</Button><Button disabled={saving || Number(quantity) <= 0 || !reason || (action === "move" && !targetLocationId)} onClick={() => void save()} className="bg-[var(--md-accent)] text-[var(--md-accent-ink)]">{saving ? <Loader2 className="size-4 animate-spin" /> : action === "sample" ? <FlaskConical className="size-4" /> : <Route className="size-4" />}{t("Post action")}</Button></DialogFooter></DialogContent></Dialog>
+  const locations = reference?.locations.filter((location) => location.facilityId === balance.facilityId) ?? []
+  const compatibleUnits = units.filter((unit) => unit.facilityId === balance.facilityId && unit.customerOrgId === balance.customerOrgId && unit.lifecycleStatusCode === "open")
+  const movingFromElsewhere = action === "move" && actualSourceLocationId !== currentBalance.locationId
+
+  async function save() {
+    setSaving(true)
+    try {
+      const amount = Number(quantity)
+      if (action === "move") {
+        await moveWarehouseBalance({ facilityId: currentBalance.facilityId, balanceId: currentBalance.id, quantity: amount, targetLocationId, targetHandlingUnitId: targetHuId || null, actualSourceLocationId: actualSourceLocationId || null, reasonCode: reason || "warehouse_move", overrideReason: actualSourceLocationId !== currentBalance.locationId ? notes || reason : null, notes: notes || null })
+      } else if (action === "sample") {
+        await recordWarehouseSample({ facilityId: currentBalance.facilityId, balanceId: currentBalance.id, quantity: amount, disposition, reasonCode: reason || "quality_sample", recipient: recipient || null, custodyReference: custody || null, notes: notes || null })
+      } else {
+        await changeWarehouseStockStatus({ facilityId: currentBalance.facilityId, balanceId: currentBalance.id, quantity: amount, targetStatusCode: action === "damage" ? "damaged" : status, reasonCode: reason || action, notes: notes || null })
+      }
+      toast.success(t("Stock updated"))
+      onClose()
+      onChanged()
+    } catch (cause) {
+      toast.error(t("Stock could not be updated"), { description: message(cause) })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <RecordDrawer
+      open={open}
+      onClose={onClose}
+      eyebrow={t("Stock")}
+      title={balance.sku}
+      icon={Boxes}
+      summary={(
+        <>
+          <div className="flex items-start justify-between gap-4">
+            <FactFigure value={number.format(balance.availableQuantity)} unit={balance.uomCode} label={`available of ${number.format(balance.onHandQuantity)} on hand`} />
+            <StatusPill tone={statusTone(balance.inventoryStatusCode)}>{t(balance.inventoryStatusName ?? balance.inventoryStatusCode)}</StatusPill>
+          </div>
+          <p className="mt-1.5 text-[12.5px] leading-4 text-[var(--md-text)]" dir="auto">{balance.itemDescription}</p>
+          <dl className="mt-3 shadow-[var(--md-stroke-top)] pt-2.5">
+            <FactRow label="Location" value={balance.locationCode} code />
+            <FactRow label="On object" value={balance.handlingUnitCode ?? t("Loose stock")} code={Boolean(balance.handlingUnitCode)} />
+            <FactRow label="Batch / lot" value={balance.batchNumber ?? balance.lotNumber} code />
+            <FactRow label="Customer" value={balance.customerName} />
+            <FactRow label="Warehouse" value={balance.facilityName} />
+          </dl>
+        </>
+      )}
+      actions={(
+        <Button
+          type="button"
+          disabled={saving || Number(quantity) <= 0 || !reason || (action === "move" && !targetLocationId)}
+          onClick={() => void save()}
+          className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3.5 text-[12.5px] font-medium text-[var(--md-accent-ink)] transition-[background-color,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)] active:scale-[0.97] motion-reduce:transform-none"
+        >
+          {saving ? <Loader2 data-icon="inline-start" className="size-4 animate-spin" strokeWidth={1.6} /> : action === "sample" ? <FlaskConical data-icon="inline-start" className="size-4" strokeWidth={1.4} /> : <Route data-icon="inline-start" className="size-4" strokeWidth={1.4} />}
+          {t(stockActionButtons[action])}
+        </Button>
+      )}
+    >
+      <FactCard>
+      {/* The selected action's pill travels between segments, so switching reads
+          as one control changing rather than four chips lighting up. */}
+      <div className="grid gap-2">
+        <p className="text-[11.5px] font-medium text-[var(--md-text)]">{t("What is happening to this stock?")}</p>
+        <SegmentedControl options={stockActions} value={action} onChange={setAction} ariaLabel={t("Stock action")} className="w-full" renderOption={(option) => t(stockActionLabels[option])} />
+      </div>
+
+      <WarehouseQuantityUomField label={t("Quantity")} value={quantity} onChange={setQuantity} uomCode={balance.uomCode} max={balance.onHandQuantity} />
+
+      {action === "move" ? (
+        <>
+          <WarehouseFormField label={t("Found at")} required hint={movingFromElsewhere ? t("This differs from the recorded location, so the move is logged as an override.") : undefined}>
+            <Select value={actualSourceLocationId} onValueChange={setActualSourceLocationId}>
+              <SelectTrigger className={controlClass}><SelectValue /></SelectTrigger>
+              <SelectContent>{locations.map((location) => <SelectItem key={location.id} value={location.id}>{location.code}</SelectItem>)}</SelectContent>
+            </Select>
+          </WarehouseFormField>
+          <WarehouseFormField label={t("Moving to")} required>
+            <Select value={targetLocationId} onValueChange={setTargetLocationId}>
+              <SelectTrigger className={controlClass}><SelectValue /></SelectTrigger>
+              <SelectContent>{locations.filter((location) => location.statusCode === "available").map((location) => <SelectItem key={location.id} value={location.id}>{location.code}</SelectItem>)}</SelectContent>
+            </Select>
+          </WarehouseFormField>
+          <WarehouseFormField label={t("Onto object")} hint={t("Leave as loose stock if it is not going onto a pallet.")}>
+            <Select value={targetHuId || noneValue} onValueChange={(value) => setTargetHuId(value === noneValue ? "" : value)}>
+              <SelectTrigger className={controlClass}><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value={noneValue}>{t("Loose stock")}</SelectItem>{compatibleUnits.map((unit) => <SelectItem key={unit.id} value={unit.id}>{unit.code}</SelectItem>)}</SelectContent>
+            </Select>
+          </WarehouseFormField>
+        </>
+      ) : action === "sample" ? (
+        <>
+          <WarehouseFormField label={t("Where the sample goes")}>
+            <Select value={disposition} onValueChange={(value: "onsite" | "removed") => setDisposition(value)}>
+              <SelectTrigger className={controlClass}><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="onsite">{t("Stays onsite")}</SelectItem><SelectItem value="removed">{t("Leaves the warehouse")}</SelectItem></SelectContent>
+            </Select>
+          </WarehouseFormField>
+          <WarehouseFormField label={t("Who is taking it")}><Input value={recipient} onChange={(event) => setRecipient(event.target.value)} className={controlClass} /></WarehouseFormField>
+          <WarehouseFormField label={t("Chain-of-custody reference")}><Input dir="ltr" value={custody} onChange={(event) => setCustody(event.target.value)} className={controlClass} /></WarehouseFormField>
+        </>
+      ) : action === "quarantine" ? (
+        <WarehouseFormField label={t("Hold it as")}>
+          <Select value={status} onValueChange={setStatus}>
+            <SelectTrigger className={controlClass}><SelectValue /></SelectTrigger>
+            <SelectContent>{reference?.statuses.filter((entry) => !entry.available).map((entry) => <SelectItem key={entry.code} value={entry.code}>{t(entry.name)}</SelectItem>)}</SelectContent>
+          </Select>
+        </WarehouseFormField>
+      ) : null}
+
+      <WarehouseFormField label={t("Reason")} required hint={t("Recorded against the movement in the audit trail.")}>
+        <Input value={reason} onChange={(event) => setReason(event.target.value)} className={controlClass} placeholder={t("Why is this happening?")} />
+      </WarehouseFormField>
+      <WarehouseFormField label={t("Notes and evidence")}>
+        <Textarea value={notes} onChange={(event) => setNotes(event.target.value)} className="min-h-20 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-soft)] text-[12.5px] shadow-[var(--md-shadow-line)]" />
+      </WarehouseFormField>
+      </FactCard>
+    </RecordDrawer>
+  )
 }
 
-function HandlingUnitDialog({ unit, open, onOpenChange, reference, units, onChanged }: { unit: WarehouseHandlingUnit | null; open: boolean; onOpenChange: (open: boolean) => void; reference: WarehouseHandlingUnitReference | null; units: WarehouseHandlingUnit[]; onChanged: () => void }) {
-  const { t } = useLanguage(); const [mode, setMode] = useState("move"); const [targetLocationId, setTargetLocationId] = useState(""); const [actualSourceLocationId, setActualSourceLocationId] = useState(""); const [sources, setSources] = useState<string[]>([]); const [notes, setNotes] = useState(""); const [saving, setSaving] = useState(false)
-  useEffect(() => { if (!unit || !open) return; setMode("move"); setTargetLocationId(unit.locationId ?? ""); setActualSourceLocationId(unit.locationId ?? ""); setSources([]); setNotes("") }, [unit, open])
+const objectModes = ["move", "consolidate"] as const
+type ObjectMode = (typeof objectModes)[number]
+const objectModeLabels: Record<ObjectMode, string> = { move: "Move it", consolidate: "Consolidate into it" }
+
+function WarehouseObjectPanel({ unit, open, onClose, reference, units, onChanged }: { unit: WarehouseHandlingUnit | null; open: boolean; onClose: () => void; reference: WarehouseHandlingUnitReference | null; units: WarehouseHandlingUnit[]; onChanged: () => void }) {
+  const { language, t } = useLanguage()
+  const number = useMemo(() => new Intl.NumberFormat(language, { maximumFractionDigits: 6 }), [language])
+  const [mode, setMode] = useState<ObjectMode>("move")
+  const [targetLocationId, setTargetLocationId] = useState("")
+  const [actualSourceLocationId, setActualSourceLocationId] = useState("")
+  const [sources, setSources] = useState<string[]>([])
+  const [notes, setNotes] = useState("")
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!unit || !open) return
+    setMode("move")
+    setTargetLocationId(unit.locationId ?? "")
+    setActualSourceLocationId(unit.locationId ?? "")
+    setSources([])
+    setNotes("")
+  }, [unit, open])
+
   if (!unit) return null
   const currentUnit = unit
-  const locations = reference?.locations.filter((location) => location.facilityId === unit.facilityId && location.statusCode === "available") ?? []; const candidates = units.filter((candidate) => candidate.id !== unit.id && candidate.facilityId === unit.facilityId && candidate.customerOrgId === unit.customerOrgId && candidate.lifecycleStatusCode === "open")
-  async function save() { setSaving(true); try { if (mode === "move") await moveWarehouseHandlingUnit({ facilityId: currentUnit.facilityId, handlingUnitId: currentUnit.id, targetLocationId, actualSourceLocationId: actualSourceLocationId || null, reasonCode: "handling_unit_move", overrideReason: actualSourceLocationId !== currentUnit.locationId ? notes : null, notes: notes || null }); else await consolidateWarehouseHandlingUnits({ facilityId: currentUnit.facilityId, targetHandlingUnitId: currentUnit.id, sourceHandlingUnitIds: sources, notes: notes || null }); toast.success(t(mode === "move" ? "Warehouse object moved" : "Pallets consolidated")); onOpenChange(false); onChanged() } catch (cause) { toast.error(t("Warehouse object could not be updated"), { description: message(cause) }) } finally { setSaving(false) } }
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="gap-0 overflow-hidden border-0 bg-[var(--md-surface)] p-0 sm:max-w-[660px]"><DialogHeader className={warehouseDialogHeaderClass}><DialogTitle>{unit.code}</DialogTitle><DialogDescription>{t(unit.typeName)} · {unit.locationCode ?? t("No physical location")}</DialogDescription></DialogHeader><div className="grid max-h-[65vh] gap-4 overflow-y-auto px-6 py-5"><WarehouseObjectSummary unit={unit}/><div className="grid gap-2 rounded-[var(--md-radius-xl)] bg-white/38 p-3 shadow-[var(--md-shadow-line)]">{unit.contents.map((line) => <div key={line.balanceId} className="flex justify-between gap-3 text-[12px]"><span><Code>{line.sku}</Code> · {line.description}</span><span dir="ltr" className="tabular-nums">{line.quantity} {line.uomCode}</span></div>)}</div><FilterChips options={["move", "consolidate"]} activeOption={mode} onChange={setMode}/>{mode === "move" ? <><WarehouseFormField label={t("Object physically found at")}><Select value={actualSourceLocationId} onValueChange={setActualSourceLocationId}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent>{locations.map((location) => <SelectItem key={location.id} value={location.id}>{location.code}</SelectItem>)}</SelectContent></Select></WarehouseFormField><WarehouseFormField label={t("Destination location")}><Select value={targetLocationId} onValueChange={setTargetLocationId}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent>{locations.map((location) => <SelectItem key={location.id} value={location.id}>{location.code}</SelectItem>)}</SelectContent></Select></WarehouseFormField></> : <div className="grid gap-2"><p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Choose source pallets to consume into this target")}</p>{candidates.map((candidate) => <label key={candidate.id} className="flex cursor-pointer items-center gap-3 rounded-[var(--md-radius-lg)] bg-white/45 px-3 py-2 shadow-[var(--md-shadow-line)]"><input type="checkbox" checked={sources.includes(candidate.id)} onChange={(event) => setSources((current) => event.target.checked ? [...current, candidate.id] : current.filter((id) => id !== candidate.id))}/><WarehouseObjectSummary unit={candidate}/></label>)}</div>}<WarehouseFormField label={t("Reason and notes")}><Textarea value={notes} onChange={(event) => setNotes(event.target.value)} className="min-h-20 rounded-[var(--md-radius-lg)] border-0 bg-white/68 shadow-[var(--md-shadow-line)]" /></WarehouseFormField></div><DialogFooter className={warehouseDialogFooterClass}><Button variant="ghost" onClick={() => onOpenChange(false)}>{t("Cancel")}</Button><Button disabled={saving || (mode === "move" ? !targetLocationId : !sources.length)} onClick={() => void save()} className="bg-[var(--md-accent)] text-[var(--md-accent-ink)]">{saving ? <Loader2 className="size-4 animate-spin"/> : <Combine className="size-4"/>}{t(mode === "move" ? "Move object" : "Consolidate pallets")}</Button></DialogFooter></DialogContent></Dialog>
+  const locations = reference?.locations.filter((location) => location.facilityId === unit.facilityId && location.statusCode === "available") ?? []
+  const candidates = units.filter((candidate) => candidate.id !== unit.id && candidate.facilityId === unit.facilityId && candidate.customerOrgId === unit.customerOrgId && candidate.lifecycleStatusCode === "open")
+
+  async function save() {
+    setSaving(true)
+    try {
+      if (mode === "move") {
+        await moveWarehouseHandlingUnit({ facilityId: currentUnit.facilityId, handlingUnitId: currentUnit.id, targetLocationId, actualSourceLocationId: actualSourceLocationId || null, reasonCode: "handling_unit_move", overrideReason: actualSourceLocationId !== currentUnit.locationId ? notes : null, notes: notes || null })
+      } else {
+        await consolidateWarehouseHandlingUnits({ facilityId: currentUnit.facilityId, targetHandlingUnitId: currentUnit.id, sourceHandlingUnitIds: sources, notes: notes || null })
+      }
+      toast.success(t(mode === "move" ? "Object moved" : "Objects consolidated"))
+      onClose()
+      onChanged()
+    } catch (cause) {
+      toast.error(t("Object could not be updated"), { description: message(cause) })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <RecordDrawer
+      open={open}
+      onClose={onClose}
+      eyebrow={t(unit.typeName)}
+      title={unit.code}
+      icon={PackagePlus}
+      summary={(
+        <>
+          <div className="flex items-start justify-between gap-4">
+            <FactFigure value={String(unit.contents.length)} label={unit.contents.length === 1 ? "stock line on this object" : "stock lines on this object"} />
+            <StatusPill tone={statusTone(unit.lifecycleStatusCode)}>{t(unit.lifecycleStatusCode)}</StatusPill>
+          </div>
+          <dl className="mt-3 shadow-[var(--md-stroke-top)] pt-2.5">
+            <FactRow label="Location" value={unit.locationCode ?? t("No physical location")} code={Boolean(unit.locationCode)} />
+            <FactRow label="Customer" value={unit.customerName} />
+            <FactRow label="Condition" value={t(unit.inventoryStatusName)} />
+            <FactRow label="SSCC" value={unit.sscc} code />
+          </dl>
+          {unit.contents.length ? (
+            <div className="mt-3 grid gap-1.5 shadow-[var(--md-stroke-top)] pt-2.5">
+              {unit.contents.map((line) => (
+                <div key={line.balanceId} className="flex items-baseline justify-between gap-3">
+                  <span className="min-w-0 truncate text-[12px]"><Code>{line.sku}</Code> <span className="text-[var(--md-text)]">{line.description}</span></span>
+                  <span dir="ltr" className="shrink-0 text-[12px] font-medium tabular-nums text-[var(--md-ink)]">{number.format(line.quantity)} {line.uomCode}</span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </>
+      )}
+      actions={(
+        <Button
+          type="button"
+          disabled={saving || (mode === "move" ? !targetLocationId : !sources.length)}
+          onClick={() => void save()}
+          className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3.5 text-[12.5px] font-medium text-[var(--md-accent-ink)] transition-[background-color,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)] active:scale-[0.97] motion-reduce:transform-none"
+        >
+          {saving ? <Loader2 data-icon="inline-start" className="size-4 animate-spin" strokeWidth={1.6} /> : <Combine data-icon="inline-start" className="size-4" strokeWidth={1.4} />}
+          {t(mode === "move" ? "Move object" : "Consolidate")}
+        </Button>
+      )}
+    >
+      <FactCard>
+      <SegmentedControl options={objectModes} value={mode} onChange={setMode} ariaLabel={t("Object action")} className="w-full" renderOption={(option) => t(objectModeLabels[option])} />
+
+      {mode === "move" ? (
+        <>
+          <WarehouseFormField label={t("Found at")}>
+            <Select value={actualSourceLocationId} onValueChange={setActualSourceLocationId}>
+              <SelectTrigger className={controlClass}><SelectValue /></SelectTrigger>
+              <SelectContent>{locations.map((location) => <SelectItem key={location.id} value={location.id}>{location.code}</SelectItem>)}</SelectContent>
+            </Select>
+          </WarehouseFormField>
+          <WarehouseFormField label={t("Moving to")} required>
+            <Select value={targetLocationId} onValueChange={setTargetLocationId}>
+              <SelectTrigger className={controlClass}><SelectValue /></SelectTrigger>
+              <SelectContent>{locations.map((location) => <SelectItem key={location.id} value={location.id}>{location.code}</SelectItem>)}</SelectContent>
+            </Select>
+          </WarehouseFormField>
+        </>
+      ) : (
+        <div className="grid gap-2">
+          <p className="text-[11.5px] font-medium text-[var(--md-text)]">{t("Which objects are being emptied into this one?")}</p>
+          {candidates.length ? candidates.map((candidate) => (
+            <label key={candidate.id} className="flex cursor-pointer items-center gap-3 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-3 py-2 shadow-[var(--md-shadow-line)] transition-shadow duration-200 hover:shadow-[var(--md-shadow-soft)]">
+              <input type="checkbox" checked={sources.includes(candidate.id)} onChange={(event) => setSources((current) => event.target.checked ? [...current, candidate.id] : current.filter((id) => id !== candidate.id))} />
+              <WarehouseObjectSummary unit={candidate} />
+            </label>
+          )) : <p className="rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-3 py-2.5 text-[12px] text-[var(--md-text)] shadow-[var(--md-shadow-line)]">{t("This customer has no other open objects in this warehouse.")}</p>}
+        </div>
+      )}
+
+      <WarehouseFormField label={t("Reason and notes")}>
+        <Textarea value={notes} onChange={(event) => setNotes(event.target.value)} className="min-h-20 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-soft)] text-[12.5px] shadow-[var(--md-shadow-line)]" />
+      </WarehouseFormField>
+      </FactCard>
+    </RecordDrawer>
+  )
 }
 
 function CreateHandlingUnitDialog({ open, onOpenChange, reference, huReference, fixedFacilityId, onChanged }: { open: boolean; onOpenChange: (open: boolean) => void; reference: WarehouseOrderReference | null; huReference: WarehouseHandlingUnitReference | null; fixedFacilityId: string; onChanged: () => void }) {
@@ -185,12 +708,114 @@ function EmptyLocationDialog({ open, onOpenChange, reference, huReference, fixed
   return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="gap-0 overflow-hidden border-0 bg-[var(--md-surface)] p-0 sm:max-w-[560px]"><DialogHeader className={warehouseDialogHeaderClass}><DialogTitle>{t("Location is physically empty")}</DialogTitle><DialogDescription>{t("Expected stock will be held as unlocated while a count and investigation are opened. No stock is silently written off.")}</DialogDescription></DialogHeader><div className="grid gap-4 px-6 py-5"><WarehouseFormField label={t("Warehouse")}><Select value={facilityId} onValueChange={(value) => { setFacilityId(value); setLocationId(huReference?.locations.find((location) => location.facilityId === value && location.typeCode !== "investigation")?.id ?? "") }}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent>{reference?.facilities.map((facility) => <SelectItem key={facility.id} value={facility.id}>{facility.name}</SelectItem>)}</SelectContent></Select></WarehouseFormField><WarehouseFormField label={t("Scanned location")}><Select value={locationId} onValueChange={setLocationId}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent>{huReference?.locations.filter((location) => location.facilityId === facilityId && location.typeCode !== "investigation").map((location) => <SelectItem key={location.id} value={location.id}>{location.code}</SelectItem>)}</SelectContent></Select></WarehouseFormField><WarehouseFormField label={t("What was checked?")}><Textarea value={notes} onChange={(event) => setNotes(event.target.value)} className="min-h-20 rounded-[var(--md-radius-lg)] border-0 bg-white/68 shadow-[var(--md-shadow-line)]"/></WarehouseFormField><label className="flex items-start gap-3 rounded-[var(--md-radius-lg)] bg-[rgba(185,28,28,0.06)] p-3 text-[12px] text-[var(--md-text)]"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} className="mt-0.5"/><span>{t("I scanned and physically checked the whole location and confirm it is empty.")}</span></label></div><DialogFooter className={warehouseDialogFooterClass}><Button variant="ghost" onClick={() => onOpenChange(false)}>{t("Cancel")}</Button><Button disabled={saving || !facilityId || !locationId || !confirmed} onClick={() => void save()} className="bg-[var(--md-red)] text-white">{saving ? <Loader2 className="size-4 animate-spin"/> : <MapPinOff className="size-4"/>}{t("Open investigation")}</Button></DialogFooter></DialogContent></Dialog>
 }
 
-function ExceptionDialog({ exception, open, onOpenChange, reference, onChanged }: { exception: WarehouseInventoryException | null; open: boolean; onOpenChange: (open: boolean) => void; reference: WarehouseHandlingUnitReference | null; onChanged: () => void }) {
-  const { t } = useLanguage(); const [resolution, setResolution] = useState<"found" | "data_error" | "request_loss" | "approve_loss">("found"); const [locationId, setLocationId] = useState(""); const [notes, setNotes] = useState(""); const [saving, setSaving] = useState(false)
-  useEffect(() => { if (!exception || !open) return; setResolution(exception.statusCode === "pending_approval" ? "approve_loss" : "found"); setLocationId(exception.actualLocationId ?? exception.expectedLocationId ?? ""); setNotes("") }, [exception, open])
+const resolutionLabels: Record<string, string> = {
+  found: "The stock was found",
+  data_error: "The report was wrong",
+  request_loss: "Ask for a write-off",
+  approve_loss: "Approve the write-off",
+}
+
+function ExceptionPanel({ exception, open, onClose, reference, onChanged }: { exception: WarehouseInventoryException | null; open: boolean; onClose: () => void; reference: WarehouseHandlingUnitReference | null; onChanged: () => void }) {
+  const { language, t } = useLanguage()
+  const dateTime = useMemo(() => new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }), [language])
+  const [resolution, setResolution] = useState<"found" | "data_error" | "request_loss" | "approve_loss">("found")
+  const [locationId, setLocationId] = useState("")
+  const [notes, setNotes] = useState("")
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!exception || !open) return
+    setResolution(exception.statusCode === "pending_approval" ? "approve_loss" : "found")
+    setLocationId(exception.actualLocationId ?? exception.expectedLocationId ?? "")
+    setNotes("")
+  }, [exception, open])
+
   if (!exception) return null
   const currentException = exception
-  async function save() { setSaving(true); try { await resolveWarehouseLocationException({ facilityId: currentException.facilityId, exceptionId: currentException.id, resolution, actualLocationId: resolution === "found" ? locationId : null, notes: notes || null }); toast.success(t(resolution === "request_loss" ? "Loss approval requested" : "Exception updated")); onOpenChange(false); onChanged() } catch (cause) { toast.error(t("Exception could not be updated"), { description: message(cause) }) } finally { setSaving(false) } }
   const options = exception.statusCode === "pending_approval" ? ["approve_loss"] as const : ["found", "data_error", "request_loss"] as const
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="gap-0 overflow-hidden border-0 bg-[var(--md-surface)] p-0 sm:max-w-[600px]"><DialogHeader className={warehouseDialogHeaderClass}><DialogTitle>{t("Resolve warehouse exception")}</DialogTitle><DialogDescription>{exception.title}</DialogDescription></DialogHeader><div className="grid gap-4 px-6 py-5"><WarehouseExceptionSummary exception={exception}/><WarehouseFormField label={t("Resolution")}><Select value={resolution} onValueChange={(value: typeof resolution) => setResolution(value)}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent>{options.map((option) => <SelectItem key={option} value={option}>{t(option === "found" ? "Stock found" : option === "data_error" ? "Reverse incorrect report" : option === "request_loss" ? "Request loss approval" : "Approve confirmed loss")}</SelectItem>)}</SelectContent></Select></WarehouseFormField>{resolution === "found" ? <WarehouseFormField label={t("Actual scanned location")}><Select value={locationId} onValueChange={setLocationId}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent>{reference?.locations.filter((location) => location.facilityId === exception.facilityId && location.statusCode === "available").map((location) => <SelectItem key={location.id} value={location.id}>{location.code}</SelectItem>)}</SelectContent></Select></WarehouseFormField> : null}<WarehouseFormField label={t("Resolution notes")} required><Textarea value={notes} onChange={(event) => setNotes(event.target.value)} className="min-h-20 rounded-[var(--md-radius-lg)] border-0 bg-white/68 shadow-[var(--md-shadow-line)]"/></WarehouseFormField>{resolution.includes("loss") ? <div className="flex gap-3 rounded-[var(--md-radius-lg)] bg-[rgba(185,28,28,0.06)] p-3 text-[12px] text-[var(--md-text)]"><ShieldAlert className="size-4 shrink-0 text-[var(--md-red)]"/><p>{t(resolution === "request_loss" ? "This creates a draft adjustment. A different warehouse user must approve it before stock is written off." : "Approval permanently posts the loss adjustment and preserves the complete investigation trail.")}</p></div> : null}</div><DialogFooter className={warehouseDialogFooterClass}><Button variant="ghost" onClick={() => onOpenChange(false)}>{t("Cancel")}</Button><Button disabled={saving || !notes || (resolution === "found" && !locationId)} onClick={() => void save()} className={resolution.includes("loss") ? "bg-[var(--md-red)] text-white" : "bg-[var(--md-accent)] text-[var(--md-accent-ink)]"}>{saving ? <Loader2 className="size-4 animate-spin"/> : <AlertTriangle className="size-4"/>}{t("Confirm resolution")}</Button></DialogFooter></DialogContent></Dialog>
+  const writeOff = resolution.includes("loss")
+
+  async function save() {
+    setSaving(true)
+    try {
+      await resolveWarehouseLocationException({ facilityId: currentException.facilityId, exceptionId: currentException.id, resolution, actualLocationId: resolution === "found" ? locationId : null, notes: notes || null })
+      toast.success(t(resolution === "request_loss" ? "Write-off sent for approval" : "Exception closed"))
+      onClose()
+      onChanged()
+    } catch (cause) {
+      toast.error(t("Exception could not be updated"), { description: message(cause) })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <RecordDrawer
+      open={open}
+      onClose={onClose}
+      eyebrow={t(exception.typeCode)}
+      title={exception.title}
+      icon={ShieldAlert}
+      summary={(
+        <>
+          <div className="flex items-start justify-between gap-3">
+            <p className="min-w-0 text-[13px] font-medium leading-5 text-[var(--md-ink)]" dir="auto">{t(exception.title)}</p>
+            <StatusPill tone={exception.severityCode === "high" ? "red" : "amber"}>{t(exception.severityCode)}</StatusPill>
+          </div>
+          {exception.description ? <p className="mt-1.5 text-[12.5px] leading-5 text-[var(--md-text)]" dir="auto">{t(exception.description)}</p> : null}
+          <dl className="mt-3 shadow-[var(--md-stroke-top)] pt-2.5">
+            <FactRow label="Status" value={t(exception.statusCode)} />
+            <FactRow label="Expected at" value={exception.expectedLocationCode} code />
+            <FactRow label="Found at" value={exception.actualLocationCode} code />
+            <FactRow label="Raised" value={dateTime.format(new Date(exception.raisedAt))} />
+          </dl>
+        </>
+      )}
+      actions={(
+        <Button
+          type="button"
+          disabled={saving || !notes || (resolution === "found" && !locationId)}
+          onClick={() => void save()}
+          className={cn(
+            "h-9 rounded-[var(--md-radius-md)] px-3.5 text-[12.5px] font-medium transition-[background-color,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.97] motion-reduce:transform-none",
+            writeOff ? "bg-[var(--md-red)] text-white hover:bg-[color-mix(in_srgb,var(--md-red),black_8%)]" : "bg-[var(--md-accent)] text-[var(--md-accent-ink)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]",
+          )}
+        >
+          {saving ? <Loader2 data-icon="inline-start" className="size-4 animate-spin" strokeWidth={1.6} /> : <AlertTriangle data-icon="inline-start" className="size-4" strokeWidth={1.4} />}
+          {t(resolution === "request_loss" ? "Send for approval" : resolution === "approve_loss" ? "Approve write-off" : "Close exception")}
+        </Button>
+      )}
+    >
+      <FactCard>
+      <WarehouseFormField label={t("What happened?")}>
+        <Select value={resolution} onValueChange={(value: typeof resolution) => setResolution(value)}>
+          <SelectTrigger className={controlClass}><SelectValue /></SelectTrigger>
+          <SelectContent>{options.map((option) => <SelectItem key={option} value={option}>{t(resolutionLabels[option])}</SelectItem>)}</SelectContent>
+        </Select>
+      </WarehouseFormField>
+
+      {resolution === "found" ? (
+        <WarehouseFormField label={t("Scanned at")} required>
+          <Select value={locationId} onValueChange={setLocationId}>
+            <SelectTrigger className={controlClass}><SelectValue /></SelectTrigger>
+            <SelectContent>{reference?.locations.filter((location) => location.facilityId === exception.facilityId && location.statusCode === "available").map((location) => <SelectItem key={location.id} value={location.id}>{location.code}</SelectItem>)}</SelectContent>
+          </Select>
+        </WarehouseFormField>
+      ) : null}
+
+      <WarehouseFormField label={t("What did you check?")} required>
+        <Textarea value={notes} onChange={(event) => setNotes(event.target.value)} className="min-h-20 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface-soft)] text-[12.5px] shadow-[var(--md-shadow-line)]" />
+      </WarehouseFormField>
+
+      {writeOff ? (
+        <div className="flex gap-2.5 rounded-[var(--md-radius-md)] bg-[rgba(209,78,78,0.07)] p-3 text-[12px] leading-5 text-[var(--md-text)]">
+          <ShieldAlert className="size-4 shrink-0 text-[var(--md-red)]" strokeWidth={1.4} />
+          <p>{t(resolution === "request_loss"
+            ? "This drafts the adjustment. Another warehouse user has to approve it before any stock leaves the books."
+            : "Approving posts the loss for good. The investigation trail stays attached to it.")}</p>
+        </div>
+      ) : null}
+      </FactCard>
+    </RecordDrawer>
+  )
 }
