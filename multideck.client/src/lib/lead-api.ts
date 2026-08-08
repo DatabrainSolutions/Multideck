@@ -196,6 +196,34 @@ export async function getLead(leadId: string) {
   )
 }
 
+export type UpdateLeadInput = Partial<{
+  companyName: string
+  primaryContactName: string | null
+  primaryContactEmail: string | null
+  countryCode: string | null
+  tradeLane: string | null
+  serviceInterest: string | null
+  valueAmount: number | null
+  valueCurrencyCode: string | null
+  nextFollowUpAt: string | null
+}>
+
+/**
+ * Writes only the keys given, so one inline field saves on its own without the
+ * client having to send — and risk overwriting — every neighbouring value.
+ */
+export async function updateLead(leadId: string, input: UpdateLeadInput) {
+  const lead = await callCrmRpc<ApiLead>(
+    "multideck_crm_update_lead",
+    { p_lead_id: leadId, p_input: input },
+    "This lead could not be saved.",
+    "Sign in again to manage CRM leads.",
+  )
+  const session = await getSupabaseSession()
+  if (session) invalidateCrmResources(session.user.id, ["leads:"])
+  return lead
+}
+
 export async function getCrmDashboard(inactivityDays: 30 | 90 | 180, area?: string | null) {
   return callCrmRpc<CrmDashboardData>(
     "multideck_crm_get_dashboard",

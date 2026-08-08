@@ -84,6 +84,7 @@ import { KpiStrip } from "@/components/multideck/dashboard-kpi-strip"
 import { Pagination } from "@/components/multideck/pagination"
 import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
+import { InlineField, InlineFieldCard } from "@/components/multideck/inline-field"
 import { SideDrawer } from "@/components/multideck/side-drawer"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
@@ -115,6 +116,8 @@ import {
   type CrmFollowUpData,
   type CrmFollowUpOpportunity,
   type CrmTransferUser,
+  updateLead,
+  type UpdateLeadInput,
 } from "@/lib/lead-api"
 import { getPipelineSettings, type ApiPipeline } from "@/lib/pipeline-api"
 import { createProfilePhotoSignedUrls } from "@/lib/profile-photo"
@@ -1801,6 +1804,11 @@ export function CrmLeadDetailPage({
     }
   }
 
+  async function patchLead(change: UpdateLeadInput) {
+    const summary = await updateLead(leadId, change)
+    setLead((current) => current ? { ...current, ...summary } : current)
+  }
+
   async function changeContactMarketingOptIn(contactId: string, optedIn: boolean) {
     try {
       const result = await setMarketingOptIn("contact", contactId, optedIn)
@@ -1929,6 +1937,38 @@ export function CrmLeadDetailPage({
         onMarketingOptInChange={changeLeadMarketingOptIn}
         onContactMarketingOptInChange={changeContactMarketingOptIn}
       />
+
+      {/* The panel above reads the lead. This is where it is changed — the same
+          inline fields the account, contact and deal records use, so one record
+          does not behave differently from the next. */}
+      <div className="grid gap-[var(--md-page-stack-gap)] xl:grid-cols-2">
+        <InlineFieldCard title="The lead">
+          <InlineField label="Company" value={lead.companyName ?? ""} required onSave={(companyName) => patchLead({ companyName })} />
+          <InlineField label="Contact" value={lead.primaryContactName ?? ""} onSave={(primaryContactName) => patchLead({ primaryContactName: primaryContactName || null })} />
+          <InlineField label="Email" kind="email" placeholder="name@example.com" value={lead.primaryContactEmail ?? ""} onSave={(primaryContactEmail) => patchLead({ primaryContactEmail: primaryContactEmail || null })} />
+          <InlineField label="Country" value={lead.countryCode ?? ""} placeholder="GB" hint="Two-letter country code" onSave={(countryCode) => patchLead({ countryCode: countryCode || null })} />
+          <InlineField label="Owner" value={lead.ownerName ?? ""} readOnly />
+          <InlineField label="Status" value={lead.statusName ?? ""} readOnly />
+        </InlineFieldCard>
+
+        <InlineFieldCard title="What they want">
+          <InlineField label="Service" value={lead.serviceInterest ?? ""} onSave={(serviceInterest) => patchLead({ serviceInterest: serviceInterest || null })} />
+          <InlineField label="Trade lane" value={lead.tradeLane ?? ""} onSave={(tradeLane) => patchLead({ tradeLane: tradeLane || null })} />
+          <InlineField
+            label="Estimated value"
+            kind="number"
+            value={lead.valueAmount == null ? "" : String(lead.valueAmount)}
+            onSave={(value) => patchLead({ valueAmount: value === "" ? null : Number(value) })}
+          />
+          <InlineField label="Currency" value={lead.valueCurrencyCode ?? ""} placeholder="GBP" hint="Three-letter currency code" onSave={(valueCurrencyCode) => patchLead({ valueCurrencyCode: valueCurrencyCode || null })} />
+          <InlineField
+            label="Next follow-up"
+            kind="date"
+            value={lead.nextFollowUpAt ? lead.nextFollowUpAt.slice(0, 10) : ""}
+            onSave={(nextFollowUpAt) => patchLead({ nextFollowUpAt: nextFollowUpAt || null })}
+          />
+        </InlineFieldCard>
+      </div>
     </div>
   )
 }
@@ -3341,7 +3381,7 @@ export function CrmEmailEditPage({ navigate, campaignId }: { navigate: (path: st
   )
 }
 
-export function CrmDealsPage({ currentUser }: { currentUser?: AuthUserSummary | null }) {
+export function CrmDealsPage({ currentUser, navigate }: { currentUser?: AuthUserSummary | null; navigate?: (path: string) => void }) {
   const { t } = useLanguage()
   const [selectedDeal, setSelectedDeal] = useState<CrmDeal | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
@@ -3396,12 +3436,14 @@ export function CrmDealsPage({ currentUser }: { currentUser?: AuthUserSummary | 
       .flatMap((stage) => stage.deals)
       .find((deal) => deal.id === requestedDealId)
     if (requestedDeal) {
+      if (navigate) { navigate(`/crm/deals/${encodeURIComponent(requestedDeal.id)}`); return }
       setSelectedDeal(requestedDeal)
       setDetailOpen(true)
     }
-  }, [dealPipelines, loading])
+  }, [dealPipelines, loading, navigate])
 
   function openDealDetail(deal: CrmDeal) {
+    if (navigate) { navigate(`/crm/deals/${encodeURIComponent(deal.id)}`); return }
     setSelectedDeal(deal)
     setDetailOpen(true)
   }
