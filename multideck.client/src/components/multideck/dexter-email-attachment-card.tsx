@@ -3,7 +3,7 @@ import { ChevronUp, Download, Eye, FileText, Loader2, Mail, MessageCircle } from
 import { toast } from "sonner"
 
 import gmailLogo from "@/assets/integrations/gmail.svg"
-import outlookLogo from "@/assets/integrations/outlook.svg"
+import outlookLogo from "@/assets/integrations/outlook.png"
 import { Button } from "@/components/ui/button"
 import { useLanguage } from "@/i18n/language-provider"
 import type { DexterEmailAttachment } from "@/lib/dexter-api"

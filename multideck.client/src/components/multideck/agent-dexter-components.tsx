@@ -659,13 +659,18 @@ export function DexterMentionText({
         aria-label={`${t(mentionTypeLabels[part.type])}: ${part.title}`}
       >
         {part.logo ? <img src={part.logo} alt="" aria-hidden="true" /> : null}
-        @{part.title}
+        {part.title}
       </span>
     ))
 }
 
 function readMentionEditorValue(node: HTMLElement) {
-  return node.innerText.replaceAll("\u00a0", " ").replace(/\n$/, "")
+  const snapshot = node.cloneNode(true) as HTMLElement
+  snapshot.querySelectorAll<HTMLElement>("[data-md-dexter-mention]").forEach((mention) => {
+    const title = mention.dataset.mentionTitle ?? mention.innerText
+    mention.replaceWith(document.createTextNode(`@${title}`))
+  })
+  return snapshot.innerText.replaceAll("\u00a0", " ").replace(/\n$/, "")
 }
 
 function insertPlainTextAtSelection(text: string) {
@@ -878,7 +883,7 @@ export function DexterMentionInput({
               logo.setAttribute("aria-hidden", "true")
               mention.append(logo)
             }
-            mention.append(document.createTextNode(`@${part.item.title}`))
+            mention.append(document.createTextNode(part.item.title))
             fragment.append(mention)
             mentionIndex += 1
           })
@@ -993,7 +998,7 @@ export function DexterMentionInput({
       logo.setAttribute("aria-hidden", "true")
       mention.append(logo)
     }
-    mention.append(document.createTextNode(`@${item.title}`))
+    mention.append(document.createTextNode(item.title))
 
     const spacer = document.createTextNode("\u00a0")
     triggerRange.insertNode(spacer)

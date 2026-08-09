@@ -51,7 +51,7 @@ import {
 import { toast } from "sonner"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import gmailLogo from "@/assets/integrations/gmail.svg"
-import outlookLogo from "@/assets/integrations/outlook.svg"
+import outlookLogo from "@/assets/integrations/outlook.png"
 import sageLogo from "@/assets/integrations/sage.svg"
 import xeroLogo from "@/assets/integrations/xero.svg"
 import { Button } from "@/components/ui/button"
