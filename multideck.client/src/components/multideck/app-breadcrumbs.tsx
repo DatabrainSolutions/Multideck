@@ -14,6 +14,7 @@ type AppBreadcrumb = {
   label: string
   route?: string
   preserveDirection?: boolean
+  localize?: boolean
 }
 
 const staticLeafLabels: Record<string, string> = {
@@ -80,6 +81,25 @@ function referenceLabel(value: string) {
   return decodeURIComponent(value).replaceAll("-", " ").replace(/\b\w/g, (character) => character.toUpperCase())
 }
 
+const opaqueReferencePattern = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{24,})$/i
+
+function friendlyReferenceLabel(value: string, fallback: string) {
+  const decoded = decodeURIComponent(value).trim()
+  return opaqueReferencePattern.test(decoded) ? fallback : referenceLabel(decoded)
+}
+
+function friendlyIdentifierLabel(value: string, fallback: string) {
+  const decoded = decodeURIComponent(value).trim()
+  return opaqueReferencePattern.test(decoded) ? fallback : decoded.toLocaleUpperCase()
+}
+
+function recordBreadcrumb(leafLabel: string | null | undefined, reference: string, fallback: string): AppBreadcrumb {
+  const name = leafLabel?.trim()
+  return name
+    ? { label: name, localize: false }
+    : { label: friendlyReferenceLabel(reference, fallback) }
+}
+
 function baseTrail(label: string): AppBreadcrumb[] {
   return [{ label: "Home", route: "/" }, { label }]
 }
@@ -120,7 +140,7 @@ export function getAppBreadcrumbTrail(route: string, leafLabel?: string | null):
       { label: "CRM", route: "/crm" },
       { label: "Leads", route: "/crm/leads" },
       {
-        label: leafLabel ?? referenceLabel(crmLeadConversionMatch[1]),
+        ...recordBreadcrumb(leafLabel, crmLeadConversionMatch[1], "Lead"),
         route: route.replace(/\/convert$/, ""),
       },
       { label: "Convert to deal" },
@@ -133,7 +153,7 @@ export function getAppBreadcrumbTrail(route: string, leafLabel?: string | null):
       { label: "Home", route: "/" },
       { label: "CRM", route: "/crm" },
       { label: "Leads", route: "/crm/leads" },
-      { label: leafLabel ?? referenceLabel(crmLeadMatch[1]) },
+      recordBreadcrumb(leafLabel, crmLeadMatch[1], "Lead"),
     ]
   }
 
@@ -143,7 +163,7 @@ export function getAppBreadcrumbTrail(route: string, leafLabel?: string | null):
       { label: "Home", route: "/" },
       { label: "CRM", route: "/crm" },
       { label: "Accounts", route: "/crm/accounts" },
-      { label: leafLabel ?? referenceLabel(crmAccountMatch[1]) },
+      recordBreadcrumb(leafLabel, crmAccountMatch[1], "Account"),
     ]
   }
 
@@ -153,7 +173,7 @@ export function getAppBreadcrumbTrail(route: string, leafLabel?: string | null):
       { label: "Home", route: "/" },
       { label: "CRM", route: "/crm" },
       { label: "Contacts", route: "/crm/contacts" },
-      { label: leafLabel ?? referenceLabel(crmContactMatch[1]) },
+      recordBreadcrumb(leafLabel, crmContactMatch[1], "Contact"),
     ]
   }
 
@@ -163,7 +183,7 @@ export function getAppBreadcrumbTrail(route: string, leafLabel?: string | null):
       { label: "Home", route: "/" },
       { label: "CRM", route: "/crm" },
       { label: "Lists", route: "/crm/lists" },
-      { label: leafLabel ?? referenceLabel(crmListMatch[1]) },
+      recordBreadcrumb(leafLabel, crmListMatch[1], "List"),
     ]
   }
 
@@ -173,7 +193,7 @@ export function getAppBreadcrumbTrail(route: string, leafLabel?: string | null):
       { label: "Home", route: "/" },
       { label: "CRM", route: "/crm" },
       { label: "Email marketing", route: "/crm/emails" },
-      { label: leafLabel ?? referenceLabel(crmEmailMatch[1]), route: "/crm/emails" },
+      { ...recordBreadcrumb(leafLabel, crmEmailMatch[1], "Broadcast"), route: "/crm/emails" },
       { label: crmEmailMatch[2] === "stats" ? "Broadcast statistics" : "Broadcast editor" },
     ]
   }
@@ -183,7 +203,7 @@ export function getAppBreadcrumbTrail(route: string, leafLabel?: string | null):
     return [
       { label: "Home", route: "/" },
       { label: "Customers", route: "/customers" },
-      { label: leafLabel ?? referenceLabel(customerMatch[1]) },
+      recordBreadcrumb(leafLabel, customerMatch[1], "Customer"),
     ]
   }
 
@@ -192,7 +212,9 @@ export function getAppBreadcrumbTrail(route: string, leafLabel?: string | null):
     return [
       { label: "Home", route: "/" },
       { label: "Bookings", route: "/bookings" },
-      { label: leafLabel ?? bookingMatch[1].toLocaleUpperCase(), preserveDirection: true },
+      leafLabel?.trim()
+        ? { label: leafLabel.trim(), localize: false }
+        : { label: friendlyIdentifierLabel(bookingMatch[1], "Booking"), preserveDirection: !opaqueReferencePattern.test(bookingMatch[1]) },
     ]
   }
 
@@ -201,7 +223,9 @@ export function getAppBreadcrumbTrail(route: string, leafLabel?: string | null):
     return [
       { label: "Home", route: "/" },
       { label: "Quotes", route: "/quotes" },
-      { label: leafLabel ?? quoteMatch[1].toLocaleUpperCase(), preserveDirection: true },
+      leafLabel?.trim()
+        ? { label: leafLabel.trim(), localize: false }
+        : { label: friendlyIdentifierLabel(quoteMatch[1], "Quote"), preserveDirection: !opaqueReferencePattern.test(quoteMatch[1]) },
     ]
   }
 
@@ -211,7 +235,9 @@ export function getAppBreadcrumbTrail(route: string, leafLabel?: string | null):
       { label: "Home", route: "/" },
       { label: "Bookings", route: "/bookings" },
       { label: "Road control", route: "/road-control" },
-      { label: leafLabel ?? roadJobMatch[1].toLocaleUpperCase(), preserveDirection: true },
+      leafLabel?.trim()
+        ? { label: leafLabel.trim(), localize: false }
+        : { label: friendlyIdentifierLabel(roadJobMatch[1], "Road job"), preserveDirection: !opaqueReferencePattern.test(roadJobMatch[1]) },
     ]
   }
 
@@ -220,7 +246,7 @@ export function getAppBreadcrumbTrail(route: string, leafLabel?: string | null):
     return [
       { label: "Home", route: "/" },
       { label: "Reports", route: "/reports" },
-      { label: leafLabel ?? referenceLabel(reportMatch[1]) },
+      recordBreadcrumb(leafLabel, reportMatch[1], "Report"),
     ]
   }
 
@@ -245,7 +271,11 @@ export function getAppBreadcrumbTrail(route: string, leafLabel?: string | null):
   const staticLabel = staticLeafLabels[route]
   if (staticLabel) return baseTrail(staticLabel)
 
-  return baseTrail(leafLabel ?? referenceLabel(route.split("/").filter(Boolean).at(-1) ?? "Home"))
+  const reference = route.split("/").filter(Boolean).at(-1) ?? "Home"
+  const name = leafLabel?.trim()
+  return name
+    ? [{ label: "Home", route: "/" }, { label: name, localize: false }]
+    : baseTrail(friendlyReferenceLabel(reference, "Details"))
 }
 
 export function AppBreadcrumbs({
@@ -273,6 +303,7 @@ export function AppBreadcrumbs({
       <BreadcrumbList className="flex-nowrap gap-1.5 text-[14px] font-medium text-[var(--md-text)]">
         {trail.map((item, index) => {
           const isCurrent = index === trail.length - 1
+          const label = item.localize === false || item.preserveDirection ? item.label : t(item.label)
 
           return (
             <Fragment key={`${item.route ?? "current"}-${item.label}-${index}`}>
@@ -283,12 +314,12 @@ export function AppBreadcrumbs({
                     dir={item.preserveDirection ? "ltr" : undefined}
                     className="max-w-[220px] truncate font-medium text-[var(--md-ink)]"
                   >
-                    {item.preserveDirection ? item.label : t(item.label)}
+                    {label}
                   </BreadcrumbPage>
                 ) : (
                   <BreadcrumbLink asChild className="truncate text-[var(--md-text)] hover:text-[var(--md-accent)]">
                     <a href={item.route} onClick={(event) => handleNavigate(event, item.route!)}>
-                      {t(item.label)}
+                      {label}
                     </a>
                   </BreadcrumbLink>
                 )}

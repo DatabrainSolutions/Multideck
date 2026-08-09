@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { motion, useReducedMotion } from "motion/react"
 import { toast } from "sonner"
-import { AlertCircle, ArrowLeft, CheckCircle2, ChevronDown, Download, FileSpreadsheet, Loader2, MapPin, Package, Pencil, Plus, RefreshCw, Trash2, Upload, Warehouse } from "lucide-react"
+import { AlertCircle, ArrowLeft, CheckCircle2, ChevronDown, Download, FileSpreadsheet, Loader2, MapPin, Package, Pencil, Plus, RefreshCw, Trash2, Upload, Warehouse } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -19,7 +19,7 @@ import { DataTable, type DataTableColumn } from "@/components/multideck/data-tab
 import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
 import { WizardDialog, WizardSaveNowButton, type WizardStep } from "@/components/multideck/wizard-dialog"
 import { itemDetailPath } from "@/components/multideck/warehouse-item-detail"
-import { RegisterFacetSelect, RegisterSearchField, RegisterToolbarActions, RegisterToolbarDivider, RegisterViewSwitch, registerButtonClass, registerControlClass } from "@/components/multideck/register-toolbar"
+import { RegisterFacetSelect, RegisterSearchField, RegisterViewSwitch, registerButtonClass, registerControlClass } from "@/components/multideck/register-toolbar"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { cn } from "@/lib/utils"
 import { mdMotion, staggerRamp } from "@/lib/motion"
@@ -629,6 +629,7 @@ export function WarehouseFacilitiesView() {
     {
       id: "bonded",
       label: "Bonded",
+      kind: "attribute",
       width: 128,
       resizable: true,
       sortValue: (facility) => Number(facility.isBonded),
@@ -638,6 +639,7 @@ export function WarehouseFacilitiesView() {
     {
       id: "status",
       label: "Status",
+      kind: "status",
       width: 132,
       resizable: true,
       headerClassName: "text-end",
@@ -692,16 +694,12 @@ export function WarehouseFacilitiesView() {
             onRowClick={openEdit}
             rowClassName="hover:bg-[var(--md-hover)]"
             emptyState={emptyState}
-            toolbarLeading={(
+            toolbarTabs={(
               <div className="flex min-w-0 items-center gap-2">
                 <RegisterViewSwitch options={facilityFilters} value={activeFilter} onChange={setActiveFilter} counts={{ [activeFilter]: visibleRows.length }} ariaLabel="Facility status" compact />
               </div>
             )}
-            toolbarActions={(
-              <RegisterToolbarActions pending={false}>
-                <RegisterSearchField value={search} onChange={setSearch} onClear={() => setSearch("")} label="Search facilities" placeholder="Code, name, city" className="sm:min-w-[220px] sm:w-[220px]" />
-              </RegisterToolbarActions>
-            )}
+            toolbarSearch={<RegisterSearchField value={search} onChange={setSearch} onClear={() => setSearch("")} label="Search facilities" placeholder="Code, name, city" className="sm:min-w-[220px] sm:w-[220px]" />}
           />
         </motion.div>
       )}
@@ -1461,6 +1459,7 @@ export function WarehouseItemsView({ canManage = true, navigate }: { canManage?:
     {
       id: "status",
       label: "Status",
+      kind: "status",
       width: 128,
       resizable: true,
       headerClassName: "text-end",
@@ -1484,23 +1483,14 @@ export function WarehouseItemsView({ canManage = true, navigate }: { canManage?:
     </div>
   )
 
-  const toolbarLeading = (
+  const toolbarTabs = (
     <div className="flex min-w-0 items-center gap-2">
       <RegisterViewSwitch options={itemFilters} value={activeFilter} onChange={setActiveFilter} counts={{ [activeFilter]: visibleRows.length }} ariaLabel="Item status" compact />
-      {canManage ? (
-        <>
-          <RegisterToolbarDivider />
-          <button type="button" onClick={() => setImportOpen(true)} disabled={!canCreate} className={cn(registerButtonClass, "disabled:pointer-events-none disabled:opacity-45")}>
-            <Upload className="size-3.5" strokeWidth={1.4} aria-hidden="true" />
-            <span className="hidden sm:inline">{t("Import")}</span>
-          </button>
-        </>
-      ) : null}
     </div>
   )
 
-  const toolbarActions = (
-    <RegisterToolbarActions pending={false}>
+  const toolbarFilters = (
+    <>
       <RegisterFacetSelect
         label="Facility"
         allLabel="All facilities"
@@ -1509,14 +1499,7 @@ export function WarehouseItemsView({ canManage = true, navigate }: { canManage?:
         onChange={setFacilityId}
         className="w-[142px] sm:w-[168px]"
       />
-      <RegisterSearchField
-        value={search}
-        onChange={setSearch}
-        onClear={() => setSearch("")}
-        label="Search items"
-        placeholder="SKU, description, customer"
-      />
-    </RegisterToolbarActions>
+    </>
   )
 
   return (
@@ -1566,8 +1549,10 @@ export function WarehouseItemsView({ canManage = true, navigate }: { canManage?:
             onRowClick={openItem}
             rowClassName="hover:bg-[var(--md-hover)]"
             emptyState={emptyState}
-            toolbarLeading={toolbarLeading}
-            toolbarActions={toolbarActions}
+            toolbarTabs={toolbarTabs}
+            toolbarSearch={<RegisterSearchField value={search} onChange={setSearch} onClear={() => setSearch("")} label="Search items" placeholder="SKU, description, customer" />}
+            toolbarFilters={toolbarFilters}
+            toolbarOptions={canManage ? <button type="button" onClick={() => setImportOpen(true)} disabled={!canCreate} className={cn(registerButtonClass, "disabled:pointer-events-none disabled:opacity-45")}><Upload className="size-3.5" strokeWidth={1.4} aria-hidden="true" /><span className="hidden sm:inline">{t("Import")}</span></button> : null}
           />
         </motion.div>
       )}
@@ -1817,6 +1802,9 @@ function LocationDialog({
       onSubmit={handleSubmit}
       saving={saving}
       bodyMinHeight={358}
+      presentation={isEditing ? "drawer" : "dialog"}
+      layout={isEditing ? "form" : "wizard"}
+      drawerEyebrow="Location details"
       secondaryAction={(
         <>
           {isEditing ? (
@@ -1825,11 +1813,11 @@ function LocationDialog({
               {t("Delete")}
             </Button>
           ) : null}
-          {section !== "capacity" ? <WizardSaveNowButton label={isEditing ? "Save changes" : "Create now"} onSubmit={handleSubmit} saving={saving} /> : null}
+          {!isEditing && section !== "capacity" ? <WizardSaveNowButton label="Create now" onSubmit={handleSubmit} saving={saving} /> : null}
         </>
       )}
     >
-      {section === "location" ? (
+      {isEditing || section === "location" ? (
         <div className="grid content-start gap-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <WarehouseFormField label="Location code" htmlFor="location-code" required error={firstFieldError(errors, "Code")} hint="Unique within the facility, e.g. A01-04-02.">
@@ -1878,9 +1866,9 @@ function LocationDialog({
         </div>
       ) : null}
 
-      {section === "capacity" ? (
+      {isEditing || section === "capacity" ? (
         <div className="grid content-start gap-4">
-          <div className="grid gap-3 rounded-[var(--md-radius-xl)] bg-white/40 p-3 shadow-[var(--md-shadow-line)]">
+          <div className="grid gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] p-3 shadow-[var(--md-shadow-line)]">
             <p className="text-[11.5px] font-medium text-[var(--md-subtle)]">Position</p>
             <div className="grid gap-3 sm:grid-cols-4">
               <WarehouseFormField label="Aisle" htmlFor="location-aisle" error={firstFieldError(errors, "Aisle")}>
@@ -1898,7 +1886,7 @@ function LocationDialog({
             </div>
           </div>
 
-          <div className="grid gap-3 rounded-[var(--md-radius-xl)] bg-white/40 p-3 shadow-[var(--md-shadow-line)]">
+          <div className="grid gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] p-3 shadow-[var(--md-shadow-line)]">
             <p className="text-[11.5px] font-medium text-[var(--md-subtle)]">Capacity and limits</p>
             <div className="grid gap-3 sm:grid-cols-3">
               <WarehouseFormField label="Length (m)" htmlFor="location-length" error={firstFieldError(errors, "LengthM")}>
@@ -2050,6 +2038,7 @@ export function WarehouseLocationsView() {
     {
       id: "type",
       label: "Type",
+      kind: "attribute",
       width: 164,
       minWidth: 132,
       resizable: true,
@@ -2068,6 +2057,7 @@ export function WarehouseLocationsView() {
     {
       id: "status",
       label: "Status",
+      kind: "status",
       width: 132,
       resizable: true,
       headerClassName: "text-end",
@@ -2131,14 +2121,16 @@ export function WarehouseLocationsView() {
             rows={visibleRows}
             getRowKey={(location) => location.id}
             onRowClick={openEdit}
+            selectedRowKey={dialogOpen ? editing?.id ?? null : null}
             rowClassName="hover:bg-[var(--md-hover)]"
             emptyState={emptyState}
-            toolbarLeading={(
+            toolbarTabs={(
               <RegisterViewSwitch options={locationFilters} value={activeFilter} onChange={setActiveFilter} counts={{ [activeFilter]: visibleRows.length }} ariaLabel="Location status" compact />
             )}
-            toolbarActions={(
-              <RegisterToolbarActions pending={false}>
-                <Select value={selectedFacilityId} onValueChange={setSelectedFacilityId}>
+            toolbarSearch={<RegisterSearchField value={search} onChange={setSearch} onClear={() => setSearch("")} label="Search locations" placeholder="Code, zone, position" />}
+            toolbarFilters={(
+              <>
+                <Select value={selectedFacilityId} onValueChange={(value) => { setDialogOpen(false); setEditing(null); setSelectedFacilityId(value) }}>
                   <SelectTrigger aria-label={t("Facility")} className={cn(registerControlClass, "w-[142px] shrink-0 sm:w-[168px]")}>
                     <SelectValue />
                   </SelectTrigger>
@@ -2146,8 +2138,7 @@ export function WarehouseLocationsView() {
                     {facilityOptions.map((facility) => <SelectItem key={facility.id} value={facility.id}>{facility.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
-                <RegisterSearchField value={search} onChange={setSearch} onClear={() => setSearch("")} label="Search locations" placeholder="Code, zone, position" />
-              </RegisterToolbarActions>
+              </>
             )}
           />
         </motion.div>

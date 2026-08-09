@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react"
-import { LoaderCircle, RefreshCw } from "lucide-react"
+import { LoaderCircle, RefreshCw } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import {
   CustomerCardsGrid,

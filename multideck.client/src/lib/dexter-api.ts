@@ -137,6 +137,21 @@ export type DexterModelUsage = {
 export type DexterUsage = {
   periodStart: string
   periodEnd: string
+  planCode: "25" | "50" | "75" | "enterprise"
+  currency: "GBP"
+  includedUsageGbp: number
+  usageGbp: number
+  includedUsageRemainingGbp: number
+  includedUsagePercent: number
+  extraUsageConfigured: boolean
+  billingReady: boolean
+  extraUsageEnabled: boolean
+  extraUsageGbp: number
+  extraUsageLimitGbp: number | null
+  extraUsageRemainingGbp: number | null
+  usageStatus: "unused" | "included" | "near_limit" | "extra_usage" | "paused" | "extra_limit_reached"
+  usageAllowed: boolean
+  /** Legacy action allowance retained while older tenant functions roll forward. */
   includedActionsLimit: number
   actionsUsed: number
   trackedActions: number

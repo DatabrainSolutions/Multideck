@@ -1,6 +1,6 @@
 import { memo } from "react"
 import { motion, useReducedMotion } from "motion/react"
-import { Maximize2 } from "lucide-react"
+import { Maximize2 } from "@/components/icons/hugeicons"
 import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
 import { mdMotion, reduceMotion, staggerRamp } from "@/lib/motion"
@@ -32,7 +32,10 @@ const KpiCell = memo(function KpiCell({
 }) {
   const { t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
-  const accent = toneToVar(kpi.tone)
+  // Neutral metrics still need a legible subject glyph. `--md-subtle` is
+  // appropriate for supporting copy, but becomes too faint once the corner
+  // icon's resting opacity is applied on a dark surface.
+  const accent = kpi.tone === "neutral" ? "var(--md-ink)" : toneToVar(kpi.tone)
   const Icon = kpi.icon
   // A cell that cannot be selected or opened is a readout, not a control, so it
   // renders as plain content: no button semantics, no pointer cursor, and no

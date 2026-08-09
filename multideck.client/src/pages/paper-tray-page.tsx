@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { createPortal } from "react-dom"
-import { ChevronDown, ChevronUp, Columns3, FileImage, FilePlus2, FileText, Layers3, List as ListIcon, Plus, Search, Settings2, StickyNote, Trash2, Upload } from "lucide-react"
+import { ChevronDown, ChevronUp, Columns3, FileImage, FilePlus2, FileText, Layers3, List as ListIcon, Plus, Search, Settings2, StickyNote, Trash2, Upload } from "@/components/icons/hugeicons"
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
 import { toast } from "sonner"
 import { DocumentViewer, PaperTrayStack, type PaperTray, type TrayDocument, type TrayShipmentProgress } from "@/components/multideck/paper-tray"

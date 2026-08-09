@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { AlertTriangle, Boxes, Combine, FlaskConical, Loader2, MapPinOff, PackagePlus, RefreshCw, Route, ShieldAlert, type LucideIcon } from "lucide-react"
+import { AlertTriangle, Boxes, Combine, FlaskConical, Loader2, MapPinOff, PackagePlus, RefreshCw, Route, ShieldAlert, type LucideIcon } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -10,8 +10,8 @@ import { DataTable, type DataTableColumn } from "@/components/multideck/data-tab
 import { DotGridLoaderPanel } from "@/components/multideck/dot-grid-loader"
 import {
   RegisterFacetSelect,
+  RegisterRevalidatingMark,
   RegisterSearchField,
-  RegisterToolbarActions,
   RegisterViewSwitch,
 } from "@/components/multideck/register-toolbar"
 import { WarehouseFormField, warehouseDialogFooterClass, warehouseDialogHeaderClass } from "@/components/multideck/warehouse-management-components"
@@ -260,7 +260,7 @@ export function WarehouseInventoryWorkspace() {
     { id: "stock-location", label: "Location", width: 130, resizable: true, sortValue: (row) => row.locationCode, cell: (row) => <Code>{row.locationCode ?? "—"}</Code> },
     { id: "stock-lot", label: "Batch / lot", width: 138, resizable: true, sortValue: (row) => row.batchNumber ?? row.lotNumber, cell: (row) => <Code>{row.batchNumber ?? row.lotNumber ?? "—"}</Code> },
     { id: "stock-customer", label: "Customer", width: 168, resizable: true, sortValue: (row) => row.customerName, cell: (row) => <span className="truncate text-[12px] text-[var(--md-text)]">{row.customerName ?? "—"}</span> },
-    { id: "stock-status", label: "Condition", width: 142, resizable: true, sortValue: (row) => row.inventoryStatusName ?? row.inventoryStatusCode, cell: (row) => <StatusPill tone={statusTone(row.inventoryStatusCode)}>{t(row.inventoryStatusName ?? row.inventoryStatusCode)}</StatusPill> },
+    { id: "stock-status", label: "Condition", kind: "status", width: 142, resizable: true, sortValue: (row) => row.inventoryStatusName ?? row.inventoryStatusCode, cell: (row) => <StatusPill tone={statusTone(row.inventoryStatusCode)}>{t(row.inventoryStatusName ?? row.inventoryStatusCode)}</StatusPill> },
     { id: "stock-onHand", label: "On hand", width: 132, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (row) => row.onHandQuantity, cell: (row) => <span dir="ltr" className="tabular-nums">{number.format(row.onHandQuantity)} {row.uomCode}</span> },
     { id: "stock-available", label: "Available", width: 124, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (row) => row.availableQuantity, cell: (row) => <span dir="ltr" className="font-medium tabular-nums text-[var(--md-accent)]">{number.format(row.availableQuantity)}</span> },
   ], [number, t])
@@ -271,14 +271,14 @@ export function WarehouseInventoryWorkspace() {
     { id: "object-location", label: "Location", width: 130, resizable: true, sortValue: (row) => row.locationCode, cell: (row) => <Code>{row.locationCode ?? "—"}</Code> },
     { id: "object-contents", label: "Contents", width: 264, resizable: true, sortValue: (row) => row.contents.length, cell: (row) => <span className="truncate text-[12px] text-[var(--md-text)]">{row.contents.slice(0, 2).map((line) => `${line.sku} · ${number.format(line.quantity)} ${line.uomCode}`).join(", ") || t("Empty")}</span> },
     { id: "object-weight", label: "Gross weight", width: 138, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (row) => row.grossWeightKg, cell: (row) => <span dir="ltr" className="tabular-nums">{row.grossWeightKg === null ? "—" : `${number.format(row.grossWeightKg)} kg`}</span> },
-    { id: "object-status", label: "Status", width: 142, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (row) => row.inventoryStatusName, cell: (row) => <StatusPill tone={statusTone(row.inventoryStatusCode)}>{t(row.inventoryStatusName)}</StatusPill> },
+    { id: "object-status", label: "Status", kind: "status", width: 142, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (row) => row.inventoryStatusName, cell: (row) => <StatusPill tone={statusTone(row.inventoryStatusCode)}>{t(row.inventoryStatusName)}</StatusPill> },
   ], [number, t])
 
   const movementColumns = useMemo<DataTableColumn<WarehouseInventoryMovement>[]>(() => [
     { id: "movement-posted", label: "Posted", width: 176, minWidth: 150, resizable: true, canHide: false, sortValue: (row) => row.createdAt, cell: (row) => <span className="whitespace-nowrap text-[12px]">{dateTime.format(new Date(row.createdAt))}</span> },
     { id: "movement-reference", label: "Reference", width: 146, resizable: true, sortValue: (row) => row.reference, cell: (row) => <Code>{row.reference ?? "—"}</Code> },
     { id: "movement-item", label: "Item", width: 190, resizable: true, sortValue: (row) => row.sku, cell: (row) => <div className="min-w-0"><Code>{row.sku}</Code><p className="truncate text-[11px] text-[var(--md-subtle)]">{row.handlingUnitCode ?? t("Loose stock")}</p></div> },
-    { id: "movement-movement", label: "Movement", width: 152, resizable: true, sortValue: (row) => row.typeName ?? row.typeCode, cell: (row) => <StatusPill tone={row.typeCode === "receipt" ? "teal" : "blue"}>{t(row.typeName ?? row.typeCode)}</StatusPill> },
+    { id: "movement-movement", label: "Movement", kind: "attribute", width: 152, resizable: true, sortValue: (row) => row.typeName ?? row.typeCode, cell: (row) => <StatusPill tone={row.typeCode === "receipt" ? "teal" : "blue"}>{t(row.typeName ?? row.typeCode)}</StatusPill> },
     { id: "movement-route", label: "Location", width: 168, resizable: true, cell: (row) => <span className="whitespace-nowrap text-[12px]"><Code>{row.fromLocationCode ?? "—"}</Code> <span aria-hidden="true" className="text-[var(--md-subtle)]">→</span> <Code>{row.toLocationCode ?? "—"}</Code></span> },
     { id: "movement-reason", label: "Reason", width: 152, resizable: true, sortValue: (row) => row.reasonCode, cell: (row) => <span className="truncate text-[12px] text-[var(--md-text)]">{row.reasonCode ? t(row.reasonCode) : "—"}</span> },
     { id: "movement-quantity", label: "Quantity", width: 138, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (row) => row.quantity, cell: (row) => <span dir="ltr" className="tabular-nums">{number.format(row.quantity)} {row.uomCode}</span> },
@@ -286,10 +286,10 @@ export function WarehouseInventoryWorkspace() {
 
   const exceptionColumns = useMemo<DataTableColumn<WarehouseInventoryException>[]>(() => [
     { id: "exception-exception", label: "Exception", width: 340, minWidth: 240, resizable: true, canHide: false, sortValue: (row) => row.title, cell: (row) => <WarehouseExceptionSummary exception={row} /> },
-    { id: "exception-severity", label: "Severity", width: 128, resizable: true, sortValue: (row) => row.severityCode, cell: (row) => <StatusPill tone={row.severityCode === "high" ? "red" : "amber"}>{t(row.severityCode)}</StatusPill> },
+    { id: "exception-severity", label: "Severity", kind: "status", width: 128, resizable: true, sortValue: (row) => row.severityCode, cell: (row) => <StatusPill tone={row.severityCode === "high" ? "red" : "amber"}>{t(row.severityCode)}</StatusPill> },
     { id: "exception-raised", label: "Raised", width: 176, resizable: true, sortValue: (row) => row.raisedAt, cell: (row) => <span className="whitespace-nowrap text-[12px]">{dateTime.format(new Date(row.raisedAt))}</span> },
     { id: "exception-expected", label: "Expected location", width: 160, resizable: true, sortValue: (row) => row.expectedLocationCode, cell: (row) => <Code>{row.expectedLocationCode ?? "—"}</Code> },
-    { id: "exception-status", label: "Status", width: 138, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (row) => row.statusCode, cell: (row) => <StatusPill tone={statusTone(row.statusCode)}>{t(row.statusCode)}</StatusPill> },
+    { id: "exception-status", label: "Status", kind: "status", width: 138, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (row) => row.statusCode, cell: (row) => <StatusPill tone={statusTone(row.statusCode)}>{t(row.statusCode)}</StatusPill> },
   ], [dateTime, t])
 
   const clearFilters = () => { setSearch(""); setCommittedSearch(""); setFacets(emptyFacets); setFacilityId("") }
@@ -325,14 +325,14 @@ export function WarehouseInventoryWorkspace() {
     </div>
   )
 
-  const toolbarLeading = (
+  const toolbarTabs = (
     <div className="flex min-w-0 items-center gap-2">
       <RegisterViewSwitch options={inventoryModes} value={mode} onChange={setMode} counts={counts} ariaLabel="Inventory view" compact />
     </div>
   )
 
-  const toolbarActions = (
-    <RegisterToolbarActions pending={pending && loaded}>
+  const toolbarFilters = (
+    <>
       <RegisterFacetSelect
         label={facetLabels[mode]}
         allLabel={facetAllLabels[mode]}
@@ -349,15 +349,7 @@ export function WarehouseInventoryWorkspace() {
         onChange={setFacilityId}
         className="w-[132px] sm:w-[132px]"
       />
-      <RegisterSearchField
-        value={search}
-        onChange={setSearch}
-        onClear={() => { setSearch(""); setCommittedSearch("") }}
-        label="Search warehouse records"
-        placeholder="SKU, pallet, batch"
-        className="sm:min-w-[136px] sm:w-[136px]"
-      />
-    </RegisterToolbarActions>
+    </>
   )
 
   // One register that changes view, not four registers. The table is never
@@ -398,8 +390,10 @@ export function WarehouseInventoryWorkspace() {
       onRowClick={view.onRowClick}
       selectedRowKey={view.selectedRowKey}
       rowClassName="hover:bg-[var(--md-hover)]"
-      toolbarLeading={toolbarLeading}
-      toolbarActions={toolbarActions}
+      toolbarTabs={toolbarTabs}
+      toolbarSearch={<RegisterSearchField value={search} onChange={setSearch} onClear={() => { setSearch(""); setCommittedSearch("") }} label="Search warehouse records" placeholder="SKU, pallet, batch" className="sm:min-w-[136px] sm:w-[136px]" />}
+      toolbarFilters={toolbarFilters}
+      toolbarOptions={<RegisterRevalidatingMark active={pending && loaded} />}
       compactToolbar
       emptyState={emptyState}
     />

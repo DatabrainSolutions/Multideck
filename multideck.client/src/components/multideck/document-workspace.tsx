@@ -1,14 +1,7 @@
-import { useId, useMemo, useState, type KeyboardEvent } from "react"
-import { FileImage, FileText, Grid2X2, List, X } from "lucide-react"
+import { useId, useMemo, useState } from "react"
+import { FileImage, FileText, Grid2X2, List, X } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import {
   PaperDocumentFace,
   type PaperDocumentAccent,
@@ -323,57 +316,19 @@ function DocumentList({
     return Number.isNaN(date.getTime()) ? value : dateFormatter.format(date)
   }
 
-  function handleRowKeyDown(event: KeyboardEvent<HTMLTableRowElement>, document: DocumentWorkspaceDocument) {
-    if (event.key !== "Enter" && event.key !== " ") return
-    event.preventDefault()
-    onSelect(document)
-  }
+  const columns = useMemo<DataTableColumn<DocumentWorkspaceDocument>[]>(() => [
+    { id: "file", label: "File name", kind: "long-text", width: 210, minWidth: 180, resizable: true, sortValue: (document) => document.fileName, cellTitle: (document) => document.fileName, cell: (document) => <DocumentIdentity document={document} /> },
+    { id: "description", label: "Description", kind: "long-text", width: 210, minWidth: 160, resizable: true, sortValue: (document) => document.description, cellTitle: (document) => t(document.description), cellClassName: "whitespace-normal", cell: (document) => <p className="line-clamp-2 text-[11px] leading-4 text-[var(--md-text)]">{t(document.description)}</p> },
+    { id: "source", label: "Source", kind: "attribute", width: 160, resizable: true, sortValue: (document) => document.relationship.label, cell: (document) => <DocumentSourceLabel document={document} /> },
+    { id: "type", label: "Type", kind: "attribute", width: 110, sortValue: (document) => document.documentType, cell: (document) => <span className="text-[11px] text-[var(--md-text)]">{t(document.documentType)}</span> },
+    { id: "uploaded", label: "Uploaded", kind: "date", width: 118, sortValue: (document) => document.uploadedAt, cell: (document) => <span className="text-[10.5px] tabular-nums text-[var(--md-text)]" data-i18n-skip dir="auto">{formatDate(document.uploadedAt)}</span> },
+    { id: "modified", label: "Modified", kind: "date", width: 118, sortValue: (document) => document.lastModifiedAt, cell: (document) => <span className="text-[10.5px] tabular-nums text-[var(--md-text)]" data-i18n-skip dir="auto">{formatDate(document.lastModifiedAt)}</span> },
+  ], [dateFormatter, t])
 
   return (
     <>
       <div className="hidden md:block">
-        <Table className="min-w-[760px] table-fixed" aria-label={t("Documents") }>
-          <TableHeader className="[&_tr]:border-0">
-            <TableRow className="border-0 bg-[var(--md-surface-soft)] shadow-[var(--md-stroke-bottom)] hover:bg-[var(--md-surface-soft)]">
-              <TableHead className="w-[25%] px-3 text-start text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--md-subtle)]">{t("File name")}</TableHead>
-              <TableHead className="w-[25%] px-3 text-start text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--md-subtle)]">{t("Description")}</TableHead>
-              <TableHead className="w-[18%] px-3 text-start text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--md-subtle)]">{t("Source")}</TableHead>
-              <TableHead className="w-[12%] px-3 text-start text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--md-subtle)]">{t("Type")}</TableHead>
-              <TableHead className="w-[10%] px-3 text-start text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--md-subtle)]">{t("Uploaded")}</TableHead>
-              <TableHead className="w-[10%] px-3 text-start text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--md-subtle)]">{t("Modified")}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {documents.map((document) => {
-              const isSelected = selectedDocumentId === document.id
-
-              return (
-                <TableRow
-                  key={document.id}
-                  role="button"
-                  tabIndex={0}
-                  aria-selected={isSelected}
-                  data-state={isSelected ? "selected" : undefined}
-                  onClick={() => onSelect(document)}
-                  onKeyDown={(event) => handleRowKeyDown(event, document)}
-                  className={cn(
-                    "cursor-pointer border-0 shadow-[var(--md-stroke-bottom)] outline-none transition-[background-color,box-shadow] duration-200 focus-visible:relative focus-visible:z-10 focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]",
-                    isSelected ? "bg-[var(--md-selected-bg)] hover:bg-[var(--md-selected-bg)]" : "hover:bg-[var(--md-hover)]",
-                  )}
-                >
-                  <TableCell className="px-3 py-2.5"><DocumentIdentity document={document} /></TableCell>
-                  <TableCell className="px-3 py-2.5 align-top whitespace-normal">
-                    <p className="line-clamp-2 text-[11px] leading-4 text-[var(--md-text)]">{t(document.description)}</p>
-                  </TableCell>
-                  <TableCell className="px-3 py-2.5 align-top"><DocumentSourceLabel document={document} /></TableCell>
-                  <TableCell className="px-3 py-2.5 align-top text-[11px] text-[var(--md-text)]">{t(document.documentType)}</TableCell>
-                  <TableCell className="px-3 py-2.5 align-top text-[10.5px] text-[var(--md-text)]" data-i18n-skip dir="auto">{formatDate(document.uploadedAt)}</TableCell>
-                  <TableCell className="px-3 py-2.5 align-top text-[10.5px] text-[var(--md-text)]" data-i18n-skip dir="auto">{formatDate(document.lastModifiedAt)}</TableCell>
-                </TableRow>
-              )
-            })}
-          </TableBody>
-        </Table>
+        <DataTable ariaLabel="Documents" columnsButtonLabel="Manage document columns" columns={columns} rows={[...documents]} getRowKey={(document) => document.id} storageKey="document-workspace-list" selectedRowKey={selectedDocumentId} onRowClick={onSelect} rowAriaLabel={(document) => `Open ${document.fileName}`} minimumWidth={760} tableClassName="table-fixed" />
       </div>
 
       <ul className="divide-y divide-[var(--md-line)] md:hidden" aria-label={t("Documents")}>

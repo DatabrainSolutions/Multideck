@@ -39,21 +39,42 @@ export function SectionHeader({
   eyebrow,
   title,
   meta,
+  metaPlacement = "responsive-inline",
   action,
   className,
+  metaClassName,
 }: {
   eyebrow?: string
   title: string
   meta?: string
+  metaPlacement?: "stacked" | "responsive-inline"
   action?: ReactNode
   className?: string
+  metaClassName?: string
 }) {
   return (
     <div className={cn("flex items-start justify-between gap-[var(--md-gap-md)]", className)}>
-      <div className="min-w-0">
+      <div className={cn("min-w-0 flex-1", metaPlacement === "responsive-inline" && "@container/section-header-copy")}>
         {eyebrow ? <p className="mb-1 text-xs font-medium text-[var(--md-subtle)]">{eyebrow}</p> : null}
-        <h2 className="truncate text-[14px] font-medium text-[var(--md-ink)]">{title}</h2>
-        {meta ? <p className="mt-1 text-[12px] text-[var(--md-text)]">{meta}</p> : null}
+        <div
+          className={cn(
+            "min-w-0",
+            metaPlacement === "responsive-inline" && "@min-[520px]/section-header-copy:flex @min-[520px]/section-header-copy:items-baseline @min-[520px]/section-header-copy:justify-between @min-[520px]/section-header-copy:gap-5",
+          )}
+        >
+          <h2 className="truncate text-[14px] font-medium text-[var(--md-ink)]">{title}</h2>
+          {meta ? (
+            <p
+              className={cn(
+                "mt-1 text-[12px] text-[var(--md-text)]",
+                metaPlacement === "responsive-inline" && "min-w-0 @min-[520px]/section-header-copy:mt-0 @min-[520px]/section-header-copy:text-end",
+                metaClassName,
+              )}
+            >
+              {meta}
+            </p>
+          ) : null}
+        </div>
       </div>
       {action ? <div className="shrink-0">{action}</div> : null}
     </div>

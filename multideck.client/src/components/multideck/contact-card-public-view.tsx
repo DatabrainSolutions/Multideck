@@ -1,6 +1,6 @@
 import { useMemo, type CSSProperties, type ReactNode, type RefObject } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { ArrowUpRight, Check, Eye, Globe, LoaderCircle, Mail, Phone, TriangleAlert, UserRoundPlus } from "lucide-react"
+import { ArrowUpRight, Check, Eye, Globe, LoaderCircle, Mail, Phone, TriangleAlert, UserRoundPlus } from "@/components/icons/hugeicons"
 import { CopyableField } from "@/components/multideck/copyable-field"
 import { ContactSocialMark } from "@/components/multideck/contact-social-mark"
 import { useLanguage } from "@/i18n/language-provider"

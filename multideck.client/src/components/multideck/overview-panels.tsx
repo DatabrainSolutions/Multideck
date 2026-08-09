@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties } from "react"
 import { AnimatePresence, LayoutGroup, motion } from "motion/react"
-import { ArrowLeft, ArrowRight, CalendarDays, ChevronDown, Loader2, Mail, Plus, ReceiptText, RefreshCw, Save, ShieldCheck, Ship, Sparkles, TriangleAlert } from "lucide-react"
+import { ArrowLeft, ArrowRight, CalendarDays, ChevronDown, Loader2, Mail, Plus, ReceiptText, RefreshCw, Save, ShieldCheck, Ship, Sparkles, TriangleAlert } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,

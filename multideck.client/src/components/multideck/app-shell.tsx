@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react"
-import { Menu } from "lucide-react"
+import { Menu } from "@/components/icons/hugeicons"
 import type { AuthUserSummary } from "@/lib/auth-user"
 import { useSidebarCollapsed } from "@/lib/sidebar-preferences"
 import { useLanguage } from "@/i18n/language-provider"

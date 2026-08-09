@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { ChevronUp, Download, Eye, FileText, Loader2, Mail, MessageCircle } from "lucide-react"
+import { ChevronUp, Download, Eye, FileText, Loader2, Mail, MessageCircle } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 
 import gmailLogo from "@/assets/integrations/gmail.svg"

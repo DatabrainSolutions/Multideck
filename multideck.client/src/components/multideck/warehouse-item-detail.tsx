@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 import { motion, useReducedMotion } from "motion/react"
-import { ArrowLeft, Pencil } from "lucide-react"
+import { ArrowLeft, Pencil } from "@/components/icons/hugeicons"
 
 import { Button } from "@/components/ui/button"
 import { DotGridLoaderPanel } from "@/components/multideck/dot-grid-loader"

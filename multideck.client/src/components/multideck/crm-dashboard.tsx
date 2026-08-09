@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { ArrowRight, Inbox, MapPin, Moon, Workflow } from "lucide-react"
+import { ArrowRight, Inbox, MapPin, Moon, Workflow } from "@/components/icons/hugeicons"
 import L from "leaflet"
 import { CircleMarker, MapContainer, TileLayer, Tooltip, useMap } from "react-leaflet"
 import "leaflet/dist/leaflet.css"
@@ -708,17 +708,17 @@ export function CrmAreaHeatmap({
                 <CircleMarker
                   key={point.key}
                   center={[point.coordinate[0], point.coordinate[1]]}
-                  radius={8 + Math.sqrt(point.share) * 10}
+                  radius={4 + Math.sqrt(point.share) * 6}
                   pathOptions={{
                     className: "md-crm-area-dot",
                     color: "var(--md-surface)",
                     fillColor: "var(--md-accent)",
-                    fillOpacity: 0.34 + point.share * 0.46,
+                    fillOpacity: 0.5 + point.share * 0.4,
                     opacity: 0.9,
-                    weight: 2,
+                    weight: 1.5,
                   }}
                 >
-                  <Tooltip permanent direction="top" offset={[0, -8]} opacity={1}>
+                  <Tooltip permanent direction="top" offset={[0, -5]} opacity={1}>
                     <span dir="auto">{point.town}</span> · <span dir="ltr">{point.count}</span> {point.count === 1 ? t("lead") : t("leads")}
                   </Tooltip>
                 </CircleMarker>

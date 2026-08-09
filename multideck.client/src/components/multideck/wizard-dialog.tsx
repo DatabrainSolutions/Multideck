@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { ArrowLeft, ArrowRight, Check, Loader2 } from "lucide-react"
+import { ArrowLeft, ArrowRight, Check, Loader2 } from "@/components/icons/hugeicons"
 
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { SideDrawer } from "@/components/multideck/side-drawer"
 import { useLanguage } from "@/i18n/language-provider"
 import { mdMotion } from "@/lib/motion"
 import { cn } from "@/lib/utils"
@@ -44,6 +45,10 @@ export function WizardDialog({
   submitDisabled = false,
   secondaryAction,
   bodyMinHeight = 320,
+  presentation = "dialog",
+  layout = "wizard",
+  drawerEyebrow = "Details",
+  drawerWidth = 560,
   className,
   children,
 }: {
@@ -65,6 +70,12 @@ export function WizardDialog({
    * dialog under the pointer.
    */
   bodyMinHeight?: number
+  /** Use a trailing panel when the record should stay anchored to a visible register row. */
+  presentation?: "dialog" | "drawer"
+  /** Editing an existing record can show every field at once without creation steps. */
+  layout?: "wizard" | "form"
+  drawerEyebrow?: string
+  drawerWidth?: number
   className?: string
   children: ReactNode
 }) {
@@ -72,6 +83,7 @@ export function WizardDialog({
   const shouldReduceMotion = useReducedMotion()
   const activeIndex = Math.max(0, steps.findIndex((step) => step.id === activeStepId))
   const isLastStep = activeIndex === steps.length - 1
+  const isFormLayout = layout === "form"
   // Which way the content travels. Reading it from the last index rather than
   // from the click means the rail, the Back button and a keyboard shortcut all
   // produce the same direction.
@@ -91,18 +103,16 @@ export function WizardDialog({
 
   const travel = shouldReduceMotion ? 0 : 14
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={cn("gap-0 overflow-hidden border-0 bg-[var(--md-surface)] p-0 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[720px]", className)}>
-        <DialogHeader className="gap-1 px-6 pb-4 pt-5 text-start shadow-[var(--md-stroke-bottom)]">
-          <DialogTitle className="text-[16px] font-medium">{t(title)}</DialogTitle>
-          {description ? <DialogDescription className="text-[13px] leading-5 text-[var(--md-text)]">{t(description)}</DialogDescription> : null}
-        </DialogHeader>
-
+  const wizardContent = (
+    <>
+        {presentation === "drawer" && description && !isFormLayout ? (
+          <p className="px-5 pb-1 pt-4 text-[12.5px] leading-5 text-[var(--md-text)]">{t(description)}</p>
+        ) : null}
         {/* The rail answers three questions at once: how many steps there are,
             which one this is, and which are already filled in. */}
-        <nav aria-label={t("Steps")} className="px-6 pb-4 pt-4">
-          <ol className="relative flex items-start justify-between gap-2">
+        {!isFormLayout ? (
+          <nav aria-label={t("Steps")} className={cn("pb-4 pt-4", presentation === "drawer" ? "px-5" : "px-6")}>
+            <ol className="relative flex items-start justify-between gap-2">
             <span aria-hidden="true" className="absolute inset-x-0 top-[11px] h-px bg-[var(--md-line)]" />
             <motion.span
               aria-hidden="true"
@@ -141,47 +151,54 @@ export function WizardDialog({
                 </li>
               )
             })}
-          </ol>
-        </nav>
+            </ol>
+          </nav>
+        ) : null}
 
-        <div className="md-scrollbar overflow-y-auto px-6 pb-5" style={{ minHeight: bodyMinHeight }}>
+        <div className={cn("md-scrollbar min-h-0 flex-1 overflow-y-auto pb-5", presentation === "drawer" ? "px-5" : "px-6", isFormLayout && "pt-4")} style={{ minHeight: presentation === "drawer" ? undefined : bodyMinHeight }}>
           {/* mode="wait" with a short exit: the outgoing step is gone before the
               next arrives, so two sets of fields are never stacked, and rapid
               stepping still feels answered. */}
-          <AnimatePresence mode="wait" initial={false} custom={direction}>
-            <motion.div
-              key={activeStepId}
-              custom={direction}
-              initial={shouldReduceMotion ? false : { opacity: 0, x: direction * travel }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, x: direction * -travel, transition: { ...mdMotion.exit, duration: 0.12 } }}
-              transition={shouldReduceMotion ? { duration: 0 } : mdMotion.enter}
-              className="grid content-start gap-4"
-            >
-              {steps[activeIndex]?.hint ? (
-                <p className="text-[12px] leading-4 text-[var(--md-text)]">{t(steps[activeIndex].hint!)}</p>
-              ) : null}
-              {children}
-            </motion.div>
-          </AnimatePresence>
+          {isFormLayout ? (
+            <div className="grid content-start gap-5">{children}</div>
+          ) : (
+            <AnimatePresence mode="wait" initial={false} custom={direction}>
+              <motion.div
+                key={activeStepId}
+                custom={direction}
+                initial={shouldReduceMotion ? false : { opacity: 0, x: direction * travel }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, x: direction * -travel, transition: { ...mdMotion.exit, duration: 0.12 } }}
+                transition={shouldReduceMotion ? { duration: 0 } : mdMotion.enter}
+                className="grid content-start gap-4"
+              >
+                {steps[activeIndex]?.hint ? (
+                  <p className="text-[12px] leading-4 text-[var(--md-text)]">{t(steps[activeIndex].hint!)}</p>
+                ) : null}
+                {children}
+              </motion.div>
+            </AnimatePresence>
+          )}
         </div>
 
-        <div className="flex flex-row items-center justify-between gap-2 bg-[var(--md-surface-soft)] px-6 py-4 shadow-[var(--md-stroke-top)]">
+        <div className={cn("flex flex-row items-center justify-between gap-2 bg-[var(--md-surface-soft)] py-4 shadow-[var(--md-stroke-top)]", presentation === "drawer" ? "flex-wrap px-4" : "px-6")}>
           <div className="flex items-center gap-2">
             {secondaryAction}
           </div>
           <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={activeIndex === 0}
-              onClick={() => goTo(activeIndex - 1)}
-              className="h-10 rounded-[var(--md-radius-lg)] px-3 text-[13px] font-medium text-[var(--md-text)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] disabled:opacity-40"
-            >
-              <ArrowLeft data-icon="inline-start" className="size-4 rtl:rotate-180" strokeWidth={1.4} />
-              {t("Back")}
-            </Button>
-            {isLastStep ? (
+            {!isFormLayout ? (
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={activeIndex === 0}
+                onClick={() => goTo(activeIndex - 1)}
+                className="h-10 rounded-[var(--md-radius-lg)] px-3 text-[13px] font-medium text-[var(--md-text)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] disabled:opacity-40"
+              >
+                <ArrowLeft data-icon="inline-start" className="size-4 rtl:rotate-180" strokeWidth={1.4} />
+                {t("Back")}
+              </Button>
+            ) : null}
+            {isFormLayout || isLastStep ? (
               <Button
                 type="button"
                 onClick={onSubmit}
@@ -203,6 +220,35 @@ export function WizardDialog({
             )}
           </div>
         </div>
+    </>
+  )
+
+  if (presentation === "drawer") {
+    return (
+      <SideDrawer
+        open={open}
+        onClose={() => onOpenChange(false)}
+        eyebrow={t(drawerEyebrow)}
+        title={t(title)}
+        width={drawerWidth}
+        modal={false}
+        bodyClassName="flex flex-col overflow-hidden"
+      >
+        <div className={cn("flex min-h-0 flex-1 flex-col overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-line)]", className)}>
+          {wizardContent}
+        </div>
+      </SideDrawer>
+    )
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className={cn("gap-0 overflow-hidden border-0 bg-[var(--md-surface)] p-0 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[720px]", className)}>
+        <DialogHeader className="gap-1 px-6 pb-4 pt-5 text-start shadow-[var(--md-stroke-bottom)]">
+          <DialogTitle className="text-[16px] font-medium">{t(title)}</DialogTitle>
+          {description ? <DialogDescription className="text-[13px] leading-5 text-[var(--md-text)]">{t(description)}</DialogDescription> : null}
+        </DialogHeader>
+        {wizardContent}
       </DialogContent>
     </Dialog>
   )

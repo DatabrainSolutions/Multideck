@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { ChevronDown, MapPinOff, Menu, MoreHorizontal, PackagePlus, Plus, Upload, UserRoundPlus } from "lucide-react"
+import { ChevronDown, MapPinOff, Menu, MoreHorizontal, PackagePlus, Plus, Upload, UserRoundPlus } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -117,25 +117,49 @@ export function TopBar({
   const isOperationalJobScreen = route === "/" || route.startsWith("/bookings") || route.startsWith("/quotes") || isRoadRoute || isWarehouse
   const crmCreateAction = crmCreateActions[route]
   const { direction, t } = useLanguage()
-  const [currentLeadName, setCurrentLeadName] = useState<string | null>(null)
+  const [currentRecordName, setCurrentRecordName] = useState<string | null>(null)
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
 
   useEffect(() => {
-    if (!isCrmLeadDetail && !isCrmLeadConversion) {
-      setCurrentLeadName(null)
-      return
+    let active = true
+    setCurrentRecordName(null)
+
+    async function loadRecordName() {
+      const leadMatch = route.match(/^\/crm\/leads\/([^/]+)(?:\/convert)?$/)
+      if (leadMatch) {
+        const { getLead } = await import("@/lib/lead-api")
+        return (await getLead(leadMatch[1])).companyName
+      }
+
+      const accountMatch = route.match(/^\/crm\/accounts\/([^/]+)$/)
+      const customerMatch = route.match(/^\/customers\/([^/]+)$/)
+      if (accountMatch || customerMatch) {
+        const { getCustomer } = await import("@/lib/customer-api")
+        return (await getCustomer((accountMatch ?? customerMatch)![1])).name
+      }
+
+      const contactMatch = route.match(/^\/crm\/contacts\/([^/]+)$/)
+      if (contactMatch) {
+        const { getContact } = await import("@/lib/customer-api")
+        return (await getContact(contactMatch[1])).name
+      }
+
+      return null
     }
 
-    let active = true
-    const leadId = route.split("/")[3]
-    void import("@/data/multideck-data").then(({ customers }) => {
-      if (active) setCurrentLeadName(customers.find((customer) => customer.id === leadId)?.name ?? null)
-    })
+    void loadRecordName()
+      .then((name) => {
+        if (active) setCurrentRecordName(name)
+      })
+      .catch(() => {
+        // The breadcrumb keeps its user-friendly record-type fallback when the
+        // detail request fails; an opaque route identifier is never exposed.
+      })
 
     return () => {
       active = false
     }
-  }, [isCrmLeadConversion, isCrmLeadDetail, route])
+  }, [route])
 
   return (
     <header className="sticky top-0 z-10 -mx-[var(--md-page-pad)] mb-[var(--md-page-stack-gap)] flex min-h-[56px] items-center gap-[var(--md-gap-lg)] bg-[var(--md-topbar-bg)] px-[var(--md-page-pad)] py-[var(--md-gap-sm)] shadow-[var(--md-stroke-bottom)] backdrop-blur-xl">
@@ -172,14 +196,14 @@ export function TopBar({
 
       {isCustomerDetail ? (
         <>
-          <AppBreadcrumbs route={route} navigate={navigate} leafLabel="Marlow Apparel Ltd" className="min-w-0 max-w-[120px] sm:max-w-[180px] md:max-w-none md:min-w-[210px]" />
+          <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentRecordName} className="min-w-0 max-w-[120px] sm:max-w-[180px] md:max-w-none md:min-w-[210px]" />
           <div className="ml-auto flex items-center gap-2">
             <Button
               variant="ghost"
               className={topBarGhostActionClass}
               onClick={() =>
                 toast.success("Share link copied", {
-                  description: "Marlow Apparel's account link is ready to send.",
+                  description: `${currentRecordName ?? "Customer"}'s account link is ready to send.`,
                 })
               }
             >
@@ -192,21 +216,21 @@ export function TopBar({
               className={topBarPrimaryActionClass}
               onClick={() => navigate("/bookings/new")}
             >
-              <span className="hidden sm:inline">New booking for Marlow</span>
+              <span className="hidden sm:inline">{currentRecordName ? `New booking for ${currentRecordName}` : "New booking"}</span>
               <span className="sm:hidden">New booking</span>
             </Button>
           </div>
         </>
       ) : isCrmLeadConversion ? (
-        <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentLeadName} className="min-w-0 md:min-w-[210px]" />
+        <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentRecordName} className="min-w-0 md:min-w-[210px]" />
       ) : isCrmLeadDetail ? (
         <>
-          <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentLeadName} className="min-w-0 max-w-[120px] sm:max-w-[180px] md:max-w-none md:min-w-[210px]" />
+          <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentRecordName} className="min-w-0 max-w-[120px] sm:max-w-[180px] md:max-w-none md:min-w-[210px]" />
           <div className="ml-auto flex items-center gap-2">
             <Button
               variant="ghost"
               className={topBarGhostActionClass}
-              onClick={() => toast.success("Activity logged", { description: `${currentLeadName ?? "Lead"} has a new CRM note.` })}
+              onClick={() => toast.success("Activity logged", { description: `${currentRecordName ?? "Lead"} has a new CRM note.` })}
             >
               Log activity
             </Button>
@@ -223,7 +247,7 @@ export function TopBar({
         </>
       ) : (
         <>
-          <AppBreadcrumbs route={route} navigate={navigate} className="hidden min-w-[210px] md:block" />
+          <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentRecordName} className="hidden min-w-[210px] md:block" />
           <div className="ml-auto min-w-0 flex-1 md:max-w-[560px]">
             <CommandInput placeholder={isBookingList || isRoadRoute ? "Job, reference, customer, route..." : isQuotes ? "Quote, customer, route, reference..." : isWarehouse ? "SKU, bin, order, customer, goods movement..." : isCustomerList ? "Search customers, contacts, or bookings..." : isCrmRoute ? "Search leads, contacts, deals, emails, lists, or marketing..." : isReports ? "Report name, template, customer..." : "Ask Multideck or jump to anything..."} onNavigate={navigate} />
           </div>

@@ -11,7 +11,7 @@ import {
   ShieldCheck,
   Ship,
   type LucideIcon,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 import { motion, useReducedMotion } from "motion/react"
 import { Button } from "@/components/ui/button"
 import { SectionHeader, Surface } from "@/components/multideck/surface"

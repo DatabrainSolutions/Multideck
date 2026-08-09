@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react"
-import { ArrowLeft, Download, Share2 } from "lucide-react"
+import { ArrowLeft, Download, Share2 } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { StatusPill } from "@/components/multideck/status-pill"

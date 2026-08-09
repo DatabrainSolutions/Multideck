@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import {
+  AiBeautify,
   ChevronDown,
   CornerUpLeft,
   CornerUpRight,
@@ -17,7 +18,7 @@ import {
   Sparkles,
   Trash2,
   X,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import { Button } from "@/components/ui/button"
@@ -620,7 +621,8 @@ export function MailComposer({
         {onComposeWithDexter ? (
           <DexterActionPill
             label={dexterLabel}
-            icon={dexterStatus === "drafting" ? Loader2 : Sparkles}
+            icon={dexterStatus === "drafting" ? Loader2 : AiBeautify}
+            iconClassName="size-3"
             disabled={busy || readOnly}
             aria-busy={dexterStatus === "drafting"}
             className={cn(
@@ -808,7 +810,7 @@ export function MailComposer({
           type="button"
           disabled={!canSend || busy || readOnly}
           title={`${t("Send")} · ⌘↵`}
-          className="h-10 min-w-[96px] gap-1.5 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,scale] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-accent-deep)] active:scale-[0.96] disabled:opacity-50 disabled:active:scale-100 motion-reduce:transition-none motion-reduce:active:scale-100"
+          className="h-10 min-w-[90px] gap-1.5 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] px-3 text-[13px] font-medium text-[var(--md-accent-ink)] shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,scale] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-accent-deep)] active:scale-[0.96] disabled:opacity-50 disabled:active:scale-100 motion-reduce:transition-none motion-reduce:active:scale-100"
           onClick={onSend}
         >
           {status === "sending" ? (

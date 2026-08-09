@@ -1096,7 +1096,7 @@
     display: grid;
     place-items: center;
     color: var(--md-kpi-accent, var(--md-accent));
-    opacity: 0.55;
+    opacity: 0.7;
     transition: opacity var(--md-motion);
   }
 
@@ -2623,17 +2623,20 @@
   .md-crm-area-map .leaflet-interactive:hover,
   .md-crm-area-map .leaflet-interactive:focus-visible {
     fill-opacity: 0.92;
-    stroke-width: 3px;
+    stroke-width: 2px;
   }
 
   .md-crm-area-map .leaflet-tooltip {
-    padding: 5px 8px;
+    padding: 4px 7px;
     border: 0;
     border-radius: var(--md-radius-md);
-    background: color-mix(in srgb, var(--md-surface) 92%, transparent);
+    background: color-mix(in srgb, var(--md-surface) 96%, transparent);
     box-shadow: var(--md-shadow-line);
     font-family: inherit;
     font-size: 11px;
+    font-weight: 500;
+    line-height: 16px;
+    white-space: nowrap;
     color: var(--md-ink);
     backdrop-filter: blur(12px);
   }

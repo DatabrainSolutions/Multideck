@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { toast } from "sonner"
-import { ArrowRight, Check, Mail, ReceiptText, RotateCcw, Ship, Sparkles, TriangleAlert, type LucideIcon } from "lucide-react"
+import { ArrowRight, Check, Mail, ReceiptText, RotateCcw, Ship, Sparkles, TriangleAlert, type LucideIcon } from "@/components/icons/hugeicons"
 import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
 import { mdMotion, reduceMotion, staggerRamp } from "@/lib/motion"

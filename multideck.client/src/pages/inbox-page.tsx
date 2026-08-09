@@ -18,7 +18,7 @@ import {
   Star,
   Trash2,
   X,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"

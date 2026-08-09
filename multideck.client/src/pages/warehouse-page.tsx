@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { RefreshCw } from "lucide-react"
+import { RefreshCw } from "@/components/icons/hugeicons"
 import {
   WarehouseDashboard,
   WarehouseCalendarView,
@@ -38,17 +38,17 @@ function localSlotToIso(dateKey: string, timeKey: string) {
 
 const warehouseRouteItems = [...warehouseNavigation, ...customerWarehouseNavigation].flatMap((item) => item.children ?? [item])
 
-const warehouseSectionDescriptions: Record<WarehouseSection, string> = {
-  Dashboard: "Stock, movements, orders and operator planning in one workspace.",
-  Calendar: "Dock bookings, count windows, dispatch cutoffs and stock-take planning.",
-  Inventory: "Current stock, handling units, movements and exceptions across your warehouse.",
-  "Goods in": "Receive inbound stock and keep every delivery moving to its next step.",
-  "Goods out": "Prepare, pick and dispatch outbound orders with a complete audit trail.",
-  Orders: "Track every inbound and outbound warehouse order in one operational queue.",
-  Facilities: "Manage the physical warehouses where customer stock is received and stored.",
-  Locations: "Manage the bins, racks and positions inside each facility.",
-  Items: "Create and manage the customer SKUs stored across your facilities.",
-  Users: "Manage who can access your organisation's warehouse workspace.",
+const warehouseSectionDescriptions: Record<WarehouseSection, string | null> = {
+  Dashboard: null,
+  Calendar: null,
+  Inventory: null,
+  "Goods in": null,
+  "Goods out": null,
+  Orders: null,
+  Facilities: null,
+  Locations: null,
+  Items: null,
+  Users: null,
 }
 
 export function WarehousePage({ route, currentUser, navigate }: { route: string; currentUser?: AuthUserSummary | null; navigate?: (path: string) => void }) {

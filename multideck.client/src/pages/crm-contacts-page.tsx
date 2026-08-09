@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react"
-import { ArrowRight, LoaderCircle, Mail, RefreshCw, Sparkles, UserRoundCheck, UsersRound } from "lucide-react"
+import { ArrowRight, LoaderCircle, Mail, RefreshCw, Sparkles, UserRoundCheck, UsersRound } from "@/components/icons/hugeicons"
 import { ContactCreateDialog } from "@/components/multideck/contact-create-dialog"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
 import { CustomerAvatar } from "@/components/multideck/customer-components"
-import { RegisterFacetSelect, RegisterSearchField, RegisterToolbarActions, RegisterViewSwitch } from "@/components/multideck/register-toolbar"
+import { RegisterFacetSelect, RegisterRevalidatingMark, RegisterSearchField, RegisterViewSwitch } from "@/components/multideck/register-toolbar"
 import { Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { Button } from "@/components/ui/button"
@@ -74,7 +74,7 @@ export function CrmContactsPage({ navigate }: { navigate: (path: string) => void
     { id: "role", label: "Role", width: 170, minWidth: 130, resizable: true, sortValue: (contact) => contact.jobTitle || contact.role, cellClassName: "text-[13px] text-[var(--md-text)]", cell: (contact) => contact.jobTitle || contact.role || t("Not recorded") },
     { id: "preference", label: "Preference", width: 130, minWidth: 110, resizable: true, sortValue: (contact) => contact.preferredChannel, cellClassName: "text-[13px] text-[var(--md-text)]", cell: (contact) => humanize(contact.preferredChannel) || t("Not recorded") },
     { id: "last-contact", label: "Last contact", width: 130, minWidth: 110, resizable: true, sortValue: (contact) => contact.lastContactAt ? new Date(contact.lastContactAt).getTime() : null, cellClassName: "text-[13px] tabular-nums text-[var(--md-text)]", cell: (contact) => relativeDate(contact.lastContactAt, t) },
-    { id: "marketing", label: "Marketing", width: 120, minWidth: 110, sortValue: (contact) => contact.consentMarketing ? 1 : 0, cell: (contact) => <StatusPill tone={contact.consentMarketing ? "green" : "neutral"}>{t(contact.consentMarketing ? "Opted in" : "Opted out")}</StatusPill> },
+    { id: "marketing", label: "Marketing", kind: "status", width: 120, minWidth: 110, sortValue: (contact) => contact.consentMarketing ? 1 : 0, cell: (contact) => <StatusPill tone={contact.consentMarketing ? "green" : "neutral"}>{t(contact.consentMarketing ? "Opted in" : "Opted out")}</StatusPill> },
     { id: "open", label: "Open", headerContent: <span className="sr-only">{t("Open")}</span>, width: 52, minWidth: 52, maxWidth: 52, canHide: false, canPin: false, cell: () => <ArrowRight className="size-4 text-[var(--md-subtle)] transition-transform duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:translate-x-0.5 rtl:rotate-180 rtl:group-hover:-translate-x-0.5 motion-reduce:transition-none" strokeWidth={1.4} /> },
   ], [t])
 
@@ -109,12 +109,13 @@ export function CrmContactsPage({ navigate }: { navigate: (path: string) => void
         onRowClick={(contact) => navigate(`/crm/contacts/${contact.id}`)}
         rowClassName="group hover:bg-[var(--md-hover)]"
         compactToolbar
-        toolbarLeading={<RegisterViewSwitch options={consentScopes} value={consentFilter} onChange={setConsentFilter} counts={{ All: contacts.length, "Opted in": optedIn, "Opted out": optedOut }} ariaLabel="Marketing consent filter" compact />}
-        toolbarActions={<RegisterToolbarActions pending={state === "loading" && contacts.length > 0}>
+        toolbarTabs={<RegisterViewSwitch options={consentScopes} value={consentFilter} onChange={setConsentFilter} counts={{ All: contacts.length, "Opted in": optedIn, "Opted out": optedOut }} ariaLabel="Marketing consent filter" compact />}
+        toolbarSearch={<RegisterSearchField value={query} onChange={setQuery} onClear={() => setQuery("")} label="Search contacts" placeholder="Search contacts…" className="sm:w-[180px]" />}
+        toolbarFilters={<>
           <RegisterFacetSelect label="Account" allLabel="All accounts" value={accountFilter} options={accountOptions} onChange={setAccountFilter} className="w-[140px]" />
           <RegisterFacetSelect label="Preference" allLabel="All channels" value={channelFilter} options={channelOptions} onChange={setChannelFilter} className="w-[122px]" />
-          <RegisterSearchField value={query} onChange={setQuery} onClear={() => setQuery("")} label="Search contacts" placeholder="Search contacts…" className="sm:w-[180px]" />
-        </RegisterToolbarActions>}
+        </>}
+        toolbarOptions={<RegisterRevalidatingMark active={state === "loading" && contacts.length > 0} />}
         emptyState={state === "loading"
           ? <ContactState icon={<LoaderCircle className="size-5 animate-spin" />} title={t("Loading contacts…")} />
           : state === "error"

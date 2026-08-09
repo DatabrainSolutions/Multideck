@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react"
 import type { Provider } from "@supabase/supabase-js"
-import { ArrowRight, Building2, Clock3, KeyRound, Loader2, Mail, Menu, ShieldCheck, TriangleAlert, X } from "lucide-react"
+import { ArrowRight, Building2, Clock3, KeyRound, Loader2, Mail, Menu, ShieldCheck, TriangleAlert, X } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
-import { FileText, Maximize2, Minus, Plus } from "lucide-react"
+import { FileText, Maximize2, Minus, Plus } from "@/components/icons/hugeicons"
 import { useReducedMotion } from "motion/react"
 import { Surface } from "@/components/multideck/surface"
 import { useLanguage } from "@/i18n/language-provider"

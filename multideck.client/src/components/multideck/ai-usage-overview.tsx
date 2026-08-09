@@ -1,11 +1,13 @@
 import { memo, useMemo, useState, type ReactNode } from "react"
 import { motion, useReducedMotion } from "motion/react"
-import { Activity, ChevronRight, Cpu, Info, MessageCircle, WandSparkles, type LucideIcon } from "lucide-react"
+import { Activity, ChevronRight, Cpu, Info, MessageCircle, WandSparkles, type LucideIcon } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
+import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { CountUpValue } from "@/components/multideck/rolling-digits"
 import { DashboardAreaChart } from "@/components/multideck/dashboard-area-chart"
 import { SegmentedControl } from "@/components/multideck/workflow-components"
 import { StatusPill } from "@/components/multideck/status-pill"
+import { SectionHeader } from "@/components/multideck/surface"
 import { useLanguage } from "@/i18n/language-provider"
 import { mdMotion, reduceMotion, staggerRamp } from "@/lib/motion"
 import { cn } from "@/lib/utils"
@@ -37,6 +39,10 @@ function moneyDigits(value: number) {
   if (value === 0) return "0"
   if (Math.abs(value) < 10) return groupNumber(value, 2)
   return groupNumber(Math.round(value))
+}
+
+function gbp(value: number) {
+  return `£${moneyDigits(value)}`
 }
 
 function compactTokens(value: number) {
@@ -175,12 +181,8 @@ function Panel({
 
   return (
     <section className={cn("md-ai-panel flex flex-col overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-soft)]", className)}>
-      <div className="flex items-start justify-between gap-4 px-5 py-4">
-        <div className="min-w-0">
-          <h2 className="text-[14px] font-medium text-[var(--md-ink)]">{t(title)}</h2>
-          {description ? <p className="mt-1 text-[12.5px] leading-5 text-[var(--md-text)]">{t(description)}</p> : null}
-        </div>
-        {action ? <div className="shrink-0">{action}</div> : null}
+      <div className="px-5 py-4">
+        <SectionHeader title={t(title)} meta={description ? t(description) : undefined} action={action} metaClassName="text-[12.5px] leading-5" />
       </div>
       {children}
     </section>
@@ -425,15 +427,19 @@ function AllowanceCard({
 }) {
   const { t, language } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
+  const includedGbp = usage?.includedUsageGbp ?? 350
+  const usedGbp = usage?.usageGbp ?? 0
 
   const allowance = useMemo(
     () => describeDexterAllowance({
-      limit: usage?.includedActionsLimit ?? 10_000,
-      used: usage?.actionsUsed ?? 0,
+      // Work in pence so the existing projection helper retains useful
+      // decimals without changing its integer-safe chart contract.
+      limit: includedGbp * 100,
+      used: usedGbp * 100,
       periodStart: usage?.periodStart,
       periodEnd: usage?.periodEnd,
     }),
-    [usage],
+    [includedGbp, usage?.periodEnd, usage?.periodStart, usedGbp],
   )
 
   const periodEndLabel = allowance.periodEnd
@@ -443,6 +449,27 @@ function AllowanceCard({
   // The projection only paints the part that has not happened yet, so the two
   // segments read as "spent" and "expected" rather than overlapping claims.
   const projectionWidth = Math.max(0, allowance.projectedPercent - allowance.usedPercent)
+  const statusTone: StatusTone = usage?.usageStatus === "paused" || usage?.usageStatus === "extra_limit_reached"
+    ? "red"
+    : usage?.usageStatus === "near_limit"
+      ? "amber"
+      : usage?.usageStatus === "extra_usage"
+        ? "teal"
+        : paceTone[allowance.pace]
+  const statusLabel = usage?.usageStatus === "paused"
+    ? "Allowance used"
+    : usage?.usageStatus === "extra_limit_reached"
+      ? "Extra usage limit reached"
+      : usage?.usageStatus === "extra_usage"
+        ? "Pay as you go active"
+        : paceLabel[allowance.pace]
+  const extraUsageCopy = usage?.extraUsageEnabled
+    ? usage.usageStatus === "extra_usage"
+      ? "Included usage is used. New requests are now charged as extra usage."
+      : "Pay as you go starts automatically after the included allowance."
+    : usage?.extraUsageConfigured && !usage.billingReady
+      ? "Billing setup is incomplete. Dexter pauses when the included allowance is used."
+      : "Not set up. Dexter pauses when the included allowance is used."
 
   return (
     <section
@@ -452,17 +479,17 @@ function AllowanceCard({
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-[15px] font-medium text-[var(--md-ink)]">{t("Included allowance")}</h2>
-            <StatusPill tone={paceTone[allowance.pace]}>{t(paceLabel[allowance.pace])}</StatusPill>
+            <h2 className="text-[15px] font-medium text-[var(--md-ink)]">{t("Monthly AI allowance")}</h2>
+            <StatusPill tone={statusTone}>{t(statusLabel)}</StatusPill>
           </div>
           <p className="mt-1 text-[12.5px] leading-5 text-[var(--md-text)]">
-            {t("Resets")} <span data-i18n-skip>{periodEndLabel}</span> · <span data-i18n-skip>{daysLeft}</span> {t("days left")}
+            {t("Pooled across this workspace")} · {t("Resets")} <span data-i18n-skip>{periodEndLabel}</span> · <span data-i18n-skip>{daysLeft}</span> {t("days left")}
           </p>
         </div>
         <div className="flex items-end gap-4 sm:flex-col sm:items-end">
           <p className="text-[30px] font-medium leading-none tracking-[-0.03em] tabular-nums text-[var(--md-ink)]" dir="ltr" data-i18n-skip>
-            <CountUpValue value={groupNumber(allowance.used)} />
-            <span className="text-[var(--md-subtle)]">/{groupNumber(allowance.limit)}</span>
+            <CountUpValue value={gbp(allowance.used / 100)} />
+            <span className="text-[var(--md-subtle)]">/{gbp(allowance.limit / 100)}</span>
           </p>
           <Button
             type="button"
@@ -478,7 +505,7 @@ function AllowanceCard({
 
       <div
         role="img"
-        aria-label={`${t("Included allowance")}: ${groupNumber(allowance.used)} / ${groupNumber(allowance.limit)}. ${t("Projected")} ${groupNumber(allowance.projectedActions)}.`}
+        aria-label={`${t("Monthly AI allowance")}: ${gbp(allowance.used / 100)} / ${gbp(allowance.limit / 100)}. ${t("Projected")} ${gbp(allowance.projectedActions / 100)}.`}
         data-pace={allowance.pace}
         className="md-ai-allowance-meter relative mt-6 h-[54px] overflow-hidden rounded-[var(--md-radius-lg)]"
       >
@@ -518,28 +545,55 @@ function AllowanceCard({
           <LegendKey className="md-ai-key--projected" label="Projected by period end" />
           <LegendKey className="md-ai-key--pace" label="Even pace for today" />
         </div>
-        {/* The one sentence someone needs when the projection is bad news. */}
+        {/* One sentence explains the consequence, including whether paid
+            continuation is ready, without exposing provider terminology. */}
         {allowance.pace === "over" ? (
-          <p className="text-[var(--md-red)]">
-            <span data-i18n-skip>{groupNumber(allowance.projectedActions - allowance.limit)}</span>{" "}
-            {t("actions over the allowance at this pace")}
+          <p className={usage?.extraUsageEnabled ? "text-[var(--md-text)]" : "text-[var(--md-red)]"}>
+            {usage?.extraUsageEnabled ? (
+              <><span data-i18n-skip>{gbp((allowance.projectedActions - allowance.limit) / 100)}</span>{" "}{t("projected extra usage at this pace")}</>
+            ) : (
+              <>{t("Dexter will pause at")} <span data-i18n-skip>{gbp(includedGbp)}</span> {t("unless extra usage is set up")}</>
+            )}
           </p>
         ) : null}
       </div>
 
       <div className="mt-5 grid gap-4 border-t border-[var(--md-line)] pt-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Figure label="Remaining" value={groupNumber(allowance.remaining)} detail="Included actions left" />
-        <Figure label="Current pace" value={groupNumber(Math.round(allowance.actionsPerDay))} detail="Actions a day" />
+        <Figure label="Remaining" value={gbp(allowance.remaining / 100)} detail="Included usage left" />
+        <Figure label="Current pace" value={gbp(allowance.actionsPerDay / 100)} detail="Usage a day" />
         <Figure
           label="Projected total"
-          value={groupNumber(allowance.projectedActions)}
+          value={gbp(allowance.projectedActions / 100)}
           detail={`${Math.round(allowance.projectedPercent)}% of the allowance`}
         />
         <Figure
           label="Safe daily pace"
-          value={groupNumber(Math.round(allowance.sustainablePerDay))}
+          value={gbp(allowance.sustainablePerDay / 100)}
           detail="Keeps you inside the limit"
         />
+      </div>
+
+      <div className="mt-5 flex flex-col gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-4 shadow-[var(--md-shadow-line)] sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Extra usage")}</p>
+            <StatusPill tone={usage?.extraUsageEnabled ? "teal" : "neutral"}>
+              {t(usage?.extraUsageEnabled ? "Ready" : "Not set up")}
+            </StatusPill>
+          </div>
+          <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t(extraUsageCopy)}</p>
+        </div>
+        <div className="shrink-0 text-start sm:text-end">
+          <p className="text-[11px] text-[var(--md-subtle)]">{t("Extra usage this month")}</p>
+          <p className="mt-0.5 text-[17px] font-medium tabular-nums text-[var(--md-ink)]" dir="ltr" data-i18n-skip>
+            {gbp(usage?.extraUsageGbp ?? 0)}
+          </p>
+          {usage?.extraUsageLimitGbp != null ? (
+            <p className="mt-0.5 text-[11px] text-[var(--md-subtle)]">
+              {t("Monthly limit")} <span dir="ltr" data-i18n-skip>{gbp(usage.extraUsageLimitGbp)}</span>
+            </p>
+          ) : null}
+        </div>
       </div>
     </section>
   )
@@ -848,47 +902,14 @@ export function AiUsageOverview({
 
 function CostTable({ engines, hasCostData }: { engines: EngineRow[]; hasCostData: boolean }) {
   const { t } = useLanguage()
+  const columns = useMemo<DataTableColumn<EngineRow>[]>(() => [
+    { id: "engine", label: "Engine", kind: "long-text", width: 150, cellTitle: (engine) => `${t(engine.engine)} · ${engine.providerModel}`, cell: (engine) => <div className="min-w-0"><p className="truncate text-[13px] font-medium text-[var(--md-ink)]">{t(engine.engine)}</p><p className="mt-0.5 truncate text-[11px] text-[var(--md-subtle)]" data-i18n-skip>{engine.providerModel}</p></div> },
+    { id: "thinking", label: "Thinking mode", kind: "attribute", width: 120, cell: (engine) => <StatusPill kind="attribute" tone="blue">{t(engine.reasoningEffort)}</StatusPill> },
+    { id: "input", label: "Input", kind: "number", width: 100, sortValue: (engine) => engine.inputTokens, cell: (engine) => <span dir="ltr" data-i18n-skip>{hasCostData ? compactTokens(engine.inputTokens) : "—"}</span> },
+    { id: "output", label: "Output", kind: "number", width: 100, sortValue: (engine) => engine.outputTokens, cell: (engine) => <span dir="ltr" data-i18n-skip>{hasCostData ? compactTokens(engine.outputTokens) : "—"}</span> },
+    { id: "rates", label: "Rates per 1M", kind: "number", width: 132, cell: (engine) => { const price = dexterModelPrices[engine.id as keyof typeof dexterModelPrices]; return <span className="text-[11.5px] text-[var(--md-subtle)]" dir="ltr" data-i18n-skip>${price.inputPerMillionUsd.toFixed(2)} / ${price.outputPerMillionUsd.toFixed(2)}</span> } },
+    { id: "cost", label: "Estimated cost", kind: "number", width: 128, sortValue: (engine) => engine.costUsd, cell: (engine) => <span className="font-medium text-[var(--md-ink)]" dir="ltr" data-i18n-skip>{hasCostData ? `USD ${moneyDigits(engine.costUsd)}` : "—"}</span> },
+  ], [hasCostData, t])
 
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[560px] text-start">
-        <thead className="bg-[var(--md-surface-soft)] text-[11px] text-[var(--md-text)]">
-          <tr>
-            <th scope="col" className="px-5 py-2.5 text-start font-medium">{t("Engine")}</th>
-            <th scope="col" className="px-5 py-2.5 text-start font-medium">{t("Thinking mode")}</th>
-            <th scope="col" className="px-5 py-2.5 text-end font-medium">{t("Input")}</th>
-            <th scope="col" className="px-5 py-2.5 text-end font-medium">{t("Output")}</th>
-            <th scope="col" className="px-5 py-2.5 text-end font-medium">{t("Rates per 1M")}</th>
-            <th scope="col" className="px-5 py-2.5 text-end font-medium">{t("Estimated cost")}</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-[var(--md-line)]">
-          {engines.map((engine) => {
-            const price = dexterModelPrices[engine.id as keyof typeof dexterModelPrices]
-            return (
-              <tr key={engine.id} className="md-ai-row">
-                <th scope="row" className="px-5 py-3 text-start text-[13px] font-medium text-[var(--md-ink)]">
-                  {t(engine.engine)}
-                  <span className="mt-0.5 block text-[11px] font-normal text-[var(--md-subtle)]" data-i18n-skip>{engine.providerModel}</span>
-                </th>
-                <td className="px-5 py-3 text-[12px] capitalize text-[var(--md-text)]">{t(engine.reasoningEffort)}</td>
-                <td className="px-5 py-3 text-end text-[13px] tabular-nums text-[var(--md-ink)]" dir="ltr" data-i18n-skip>
-                  {hasCostData ? compactTokens(engine.inputTokens) : "—"}
-                </td>
-                <td className="px-5 py-3 text-end text-[13px] tabular-nums text-[var(--md-ink)]" dir="ltr" data-i18n-skip>
-                  {hasCostData ? compactTokens(engine.outputTokens) : "—"}
-                </td>
-                <td className="px-5 py-3 text-end text-[11.5px] tabular-nums text-[var(--md-subtle)]" dir="ltr" data-i18n-skip>
-                  ${price.inputPerMillionUsd.toFixed(2)} / ${price.outputPerMillionUsd.toFixed(2)}
-                </td>
-                <td className="px-5 py-3 text-end text-[13px] font-medium tabular-nums text-[var(--md-ink)]" dir="ltr" data-i18n-skip>
-                  {hasCostData ? `USD ${moneyDigits(engine.costUsd)}` : "—"}
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-    </div>
-  )
+  return <DataTable ariaLabel="Development cost estimate" columns={columns} rows={engines} getRowKey={(engine) => engine.id} minimumWidth={730} showToolbar={false} showColumnManager={false} className="rounded-none shadow-none" tableClassName="text-[12px]" />
 }

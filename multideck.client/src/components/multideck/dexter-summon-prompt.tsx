@@ -15,7 +15,7 @@ import {
   X,
   Zap,
   type LucideIcon,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { Button } from "@/components/ui/button"
 import { Kbd, KbdGroup } from "@/components/ui/kbd"

@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ClipboardEvent, type FormEvent, type KeyboardEvent, type ReactNode } from "react"
-import type { LucideIcon } from "lucide-react"
+import type { LucideIcon } from "@/components/icons/hugeicons"
 import {
   ArrowRight,
   ArrowLeft,
@@ -23,7 +23,7 @@ import {
   Users,
   X,
   Zap,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
 import { createPortal } from "react-dom"
 import { Button } from "@/components/ui/button"
@@ -1265,6 +1265,7 @@ export function DexterPromptComposer({
   onMentionsChange,
   onUnavailableMention,
   onOpenAttachments,
+  attachmentActionLabel = "Attach context",
   onSelectSpecialist,
   onSelectModel,
   onAccessModeChange,
@@ -1294,6 +1295,7 @@ export function DexterPromptComposer({
   onMentionsChange?: (mentions: DexterMentionItem[]) => void
   onUnavailableMention?: (mention: DexterMentionItem) => void
   onOpenAttachments: () => void
+  attachmentActionLabel?: string
   onSelectSpecialist: (id: DexterSpecialistId) => void
   onSelectModel: (id: DexterModelId) => void
   onAccessModeChange: (mode: DexterAccessMode) => void
@@ -1412,8 +1414,8 @@ export function DexterPromptComposer({
               type="button"
               variant="ghost"
               size="icon"
-              aria-label={t("Attach context")}
-              title={t("Attach context")}
+              aria-label={t(attachmentActionLabel)}
+              title={t(attachmentActionLabel)}
               className="md-composer-chip size-9 shrink-0 rounded-full text-[var(--md-text)] hover:text-[var(--md-ink)]"
               onClick={onOpenAttachments}
             >

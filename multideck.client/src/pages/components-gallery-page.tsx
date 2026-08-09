@@ -1,6 +1,6 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { useTheme } from "next-themes"
-import { ArrowLeft, ArrowRight, Bell, Check, Clipboard, Cloud, Component, Download, Eye, FileText, Folder, Image, KeyRound, Mail, Pencil, Pin, Search, Ship, Sparkles, Trash2, UserRound } from "lucide-react"
+import { AiBrain, ArrowLeft, ArrowRight, Bell, Check, Clipboard, Cloud, Component, Download, Eye, FileText, Folder, Forklift, Home03, Image, KeyRound, Mail, Moon02, Pencil, Pin, Search, Settings2, Ship, Sparkles, Trash2, UserRound } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import toastErrorIcon from "@/assets/toasts/toast-error.png"
 import toastGeneralIcon from "@/assets/toasts/toast-general.png"
@@ -89,8 +89,8 @@ import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
 import { CodeInput, FreightNarrative, SignInPanel, SignedOutPanel, VerifyPanel, WorkspaceRouterPanel } from "@/components/multideck/auth-flow"
 import { AuthIdentityManager, AuthProviderSelector } from "@/components/multideck/auth-provider-selector"
-import { BookingArrivalCard, BookingAskPanel, BookingBoardPreview, BookingExceptionPanel, BookingMetricCard, BookingResolutionChecklist, BookingsTable, YourJobsPanel, bookingViewModes, bookingViewOptions, type BookingSearchCriterion, type BookingViewMode } from "@/components/multideck/booking-components"
-import { BookingSearchBuilder } from "@/components/multideck/booking-search-builder"
+import { BookingArrivalCard, BookingAskPanel, BookingBoardPreview, BookingExceptionPanel, BookingMetricCard, BookingResolutionChecklist, BookingsTable, YourJobsPanel, bookingSearchFieldOptions, bookingViewModes, bookingViewOptions, type BookingViewMode } from "@/components/multideck/booking-components"
+import { AdvancedFilterPopover } from "@/components/multideck/advanced-filter-popover"
 import { DomesticJobStageRail, DomesticRoadJobCard, DomesticRoadKanbanBoard, domesticRoadJobs, roadJobStageStatus, roadJobStages } from "@/components/multideck/domestic-road-components"
 import { WarehouseKanbanBoardPreview, WarehouseOrdersTable, WarehouseProductsTable, WarehouseStockTable } from "@/components/multideck/warehouse-components"
 import { WarehouseFormField } from "@/components/multideck/warehouse-management-components"
@@ -164,7 +164,7 @@ import { Table, TableBody } from "@/components/ui/table"
 import multideckFullLogo from "@/assets/brand/multideck-full-logo.svg"
 import { AIEdgeGlow } from "@/components/multideck/ai-edge-glow"
 import { DashboardCustomisePanel } from "@/components/multideck/dashboard-customise-panel"
-import { MultideckDateRangePicker, type MultideckDateRange } from "@/components/multideck/date-picker"
+import { MultideckDatePicker, MultideckDateRangePicker, MultideckDateTimePicker, type MultideckDateRange } from "@/components/multideck/date-picker"
 import { ThemeToggle } from "@/components/multideck/theme-toggle"
 import { SidebarItemMenu } from "@/components/multideck/sidebar-item-menu"
 import { SidebarArrangeCanvas, type SidebarArrangeItem } from "@/components/multideck/sidebar-arrange"
@@ -180,7 +180,8 @@ import { AuditTimeline } from "@/components/multideck/audit-timeline"
 import { AuditWorkspace, QUOTE_AUDIT_SAMPLE_DATA } from "@/components/multideck/audit-workspace"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { UnifiedQuoteChargesWorkspace, type UnifiedQuoteChargeRow } from "@/components/multideck/unified-quote-charges-workspace"
-import { QuoteSearchBuilder, type QuoteSearchQuery } from "@/components/multideck/quote-search-builder"
+import { quoteMatchesSearch, quoteSearchFieldOptions, type QuoteSearchQuery } from "@/lib/quote-filters"
+import { matchesFilterQuery, type FilterFieldOption, type FilterQuery } from "@/lib/advanced-filters"
 import { MultiSelectMenu } from "@/components/multideck/multi-select-menu"
 import { DocumentViewer, PaperTrayStack } from "@/components/multideck/paper-tray"
 import { DocumentEvidenceViewer } from "@/components/multideck/document-evidence-viewer"
@@ -257,18 +258,45 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
 
 const previewPaperTrays = createInitialPaperTrays()
 
+const previewBookingDateFields = new Set(["date", "departure", "arrival"])
+
+const previewBookingFilterFields: readonly FilterFieldOption[] = bookingSearchFieldOptions.map((option) => (
+  previewBookingDateFields.has(option.value)
+    ? { value: option.value, label: option.label, kind: "date" as const }
+    : { value: option.value, label: option.label, placeholder: option.placeholder }
+))
+
+function previewBookingFilterValue(booking: (typeof bookings)[number], field: string) {
+  const customFields = booking.customFields.flatMap((entry) => [entry.label, entry.value])
+  if (field === "date") return [booking.departureDate, booking.arrivalDate]
+  if (field === "departure") return booking.departureDate
+  if (field === "arrival") return booking.arrivalDate
+  if (field === "invoice") return booking.invoice
+  if (field === "jobRef") return booking.jobRef
+  if (field === "customerRef") return booking.customerRef
+  if (field === "supplierRef") return booking.supplierRef
+  if (field === "destination") return [booking.destination, booking.route]
+  if (field === "origin") return [booking.origin, booking.route]
+  if (field === "vessel") return [booking.vessel, booking.carrier]
+  if (field === "vin") return booking.vin
+  if (field === "customFields") return customFields
+  return [booking.id, booking.customer, booking.route, booking.carrier, booking.container, booking.invoice, booking.jobRef, booking.customerRef, booking.supplierRef, booking.origin, booking.destination, booking.vessel, booking.vin, ...customFields]
+}
+
 type PreviewChargeRow = {
   id: string
   description: string
   supplier: string
+  scope: string
+  status: "Approved" | "Review" | "Blocked"
   cost: number
   sell: number
 }
 
 const previewChargeRows: PreviewChargeRow[] = [
-  { id: "FRT", description: "International freight", supplier: "Bluewave Ocean", cost: 840, sell: 980 },
-  { id: "OCART", description: "Pickup transport", supplier: "Severn Road Logistics", cost: 610, sell: 630 },
-  { id: "DTHC", description: "Destination handling", supplier: "Kobe Gateway Agency", cost: 304, sell: 360 },
+  { id: "FRT", description: "International freight", supplier: "Bluewave Ocean", scope: "Ocean", status: "Approved", cost: 840, sell: 980 },
+  { id: "OCART", description: "Pickup transport", supplier: "Severn Road Logistics", scope: "Road", status: "Review", cost: 610, sell: 630 },
+  { id: "DTHC", description: "Destination handling", supplier: "Kobe Gateway Agency", scope: "Destination", status: "Blocked", cost: 304, sell: 360 },
 ]
 
 const previewUnifiedChargeRowsSeed: UnifiedQuoteChargeRow[] = [
@@ -279,10 +307,12 @@ const previewUnifiedChargeRowsSeed: UnifiedQuoteChargeRow[] = [
 
 const previewChargeColumns: DataTableColumn<PreviewChargeRow>[] = [
   { id: "code", label: "Code", width: 100, cell: (row) => <span dir="ltr">{row.id}</span>, sortValue: (row) => row.id },
-  { id: "description", label: "Description", width: 220, cell: (row) => row.description, sortValue: (row) => row.description },
-  { id: "supplier", label: "Supplier", width: 210, cell: (row) => row.supplier, sortValue: (row) => row.supplier },
-  { id: "cost", label: "Cost", width: 110, cell: (row) => `£${row.cost.toFixed(2)}`, sortValue: (row) => row.cost },
-  { id: "sell", label: "Sell", width: 110, cell: (row) => `£${row.sell.toFixed(2)}`, sortValue: (row) => row.sell },
+  { id: "description", label: "Description", kind: "long-text", width: 220, cell: (row) => row.description, sortValue: (row) => row.description },
+  { id: "supplier", label: "Supplier", kind: "identity", width: 210, cell: (row) => row.supplier, sortValue: (row) => row.supplier },
+  { id: "scope", label: "Scope", kind: "attribute", width: 130, cell: (row) => <StatusPill tone={row.scope === "Ocean" ? "blue" : row.scope === "Road" ? "amber" : "teal"}>{row.scope}</StatusPill> },
+  { id: "status", label: "Status", kind: "status", width: 126, cell: (row) => <StatusPill tone={row.status === "Approved" ? "green" : row.status === "Review" ? "amber" : "red"}>{row.status}</StatusPill> },
+  { id: "cost", label: "Cost", kind: "number", width: 110, cell: (row) => `£${row.cost.toFixed(2)}`, sortValue: (row) => row.cost },
+  { id: "sell", label: "Sell", kind: "number", width: 110, cell: (row) => `£${row.sell.toFixed(2)}`, sortValue: (row) => row.sell },
 ]
 
 /* Stands in for a real preview seed: the same kind of ~1 KB inline image a stored
@@ -995,6 +1025,9 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewPage, setPreviewPage] = useState(1)
   const [previewPageSize, setPreviewPageSize] = useState(20)
   const [previewBookingFilter, setPreviewBookingFilter] = useState<string>(bookingFilters[0])
+  const [previewTableView, setPreviewTableView] = useState<"All" | "Profitable">("All")
+  const [previewTableSearch, setPreviewTableSearch] = useState("")
+  const [previewTableStatus, setPreviewTableStatus] = useState("")
   const [previewBookingView, setPreviewBookingView] = useState<BookingViewMode>("Table")
   const [previewChoiceMode, setPreviewChoiceMode] = useState("OCEAN")
   const [previewInboxThreadId, setPreviewInboxThreadId] = useState("preview-thread-1")
@@ -1065,13 +1098,28 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewRoadFavouriteBookingIds, setPreviewRoadFavouriteBookingIds] = useState<Set<string>>(() => new Set(["MD-22676"]))
   const [previewRoadJobs, setPreviewRoadJobs] = useState(() => [...domesticRoadJobs])
   const [previewDateRange, setPreviewDateRange] = useState<MultideckDateRange>({ start: "2026-05-25", end: "2026-06-04" })
+  const [previewSingleDate, setPreviewSingleDate] = useState<string | null>("2026-06-04")
+  const [previewDateTime, setPreviewDateTime] = useState("2026-06-04T09:30")
   const [previewDateComparisonEnabled, setPreviewDateComparisonEnabled] = useState(false)
   const [previewDateComparisonRange, setPreviewDateComparisonRange] = useState<MultideckDateRange>({ start: "2026-05-14", end: "2026-05-24" })
-  const [previewBookingSearchCriteria, setPreviewBookingSearchCriteria] = useState<BookingSearchCriterion[]>([
-    { id: "preview-booking-search-invoice", field: "invoice", groupId: "preview-search-main", value: "INV-MAR", valueTo: "" },
-    { id: "preview-booking-search-destination", connector: "and", field: "destination", groupId: "preview-search-main", value: "Felixstowe", valueTo: "" },
-    { id: "preview-booking-search-vin", field: "vin", groupConnector: "or", groupId: "preview-search-vin", value: "WVW", valueTo: "" },
-  ])
+  const [previewBookingSearch, setPreviewBookingSearch] = useState<FilterQuery>({
+    match: "any",
+    groups: [
+      {
+        id: "preview-search-main",
+        match: "all",
+        conditions: [
+          { id: "preview-booking-search-invoice", field: "invoice", operator: "contains", value: "INV-MAR" },
+          { id: "preview-booking-search-destination", field: "destination", operator: "contains", value: "Felixstowe" },
+        ],
+      },
+      {
+        id: "preview-search-vin",
+        match: "all",
+        conditions: [{ id: "preview-booking-search-vin", field: "vin", operator: "starts-with", value: "WVW" }],
+      },
+    ],
+  })
   const [previewQuoteSearch, setPreviewQuoteSearch] = useState<QuoteSearchQuery>({
     match: "all",
     groups: [{
@@ -1102,65 +1150,9 @@ function ComponentPreview({ id }: { id: string }) {
   const previewNow = useLiveNow()
   const previewPaperDocument = previewPaperTrays.flatMap((tray) => tray.documents).find((document) => document.id === previewPaperDocumentId) ?? null
   const previewPaperDocumentTrayId = previewPaperTrays.find((tray) => tray.documents.some((document) => document.id === previewPaperDocumentId))?.id ?? null
-  const previewBookingSearchCount = useMemo(() => {
-    function matchesCriterion(booking: (typeof bookings)[number], criterion: BookingSearchCriterion) {
-      const query = criterion.value.trim().toLowerCase()
-      const queryTo = criterion.valueTo?.trim()
-      if (!query && !queryTo) return true
-      if (criterion.field === "date") {
-        return [booking.departureDate, booking.arrivalDate].some((date) => date >= (criterion.value || queryTo || "") && date <= (queryTo || criterion.value || "9999-12-31"))
-      }
-      if (criterion.field === "departure") return booking.departureDate >= (criterion.value || queryTo || "") && booking.departureDate <= (queryTo || criterion.value || "9999-12-31")
-      if (criterion.field === "arrival") return booking.arrivalDate >= (criterion.value || queryTo || "") && booking.arrivalDate <= (queryTo || criterion.value || "9999-12-31")
-
-      const customFields = booking.customFields.flatMap((field) => [field.label, field.value, `${field.label} ${field.value}`])
-      const valuesByField: Record<Exclude<BookingSearchCriterion["field"], "date" | "departure" | "arrival">, string[]> = {
-        any: [booking.id, booking.customer, booking.route, booking.carrier, booking.container, booking.invoice, booking.jobRef, booking.customerRef, booking.supplierRef, booking.origin, booking.destination, booking.vessel, booking.vin, ...customFields],
-        invoice: [booking.invoice],
-        jobRef: [booking.jobRef],
-        customerRef: [booking.customerRef],
-        supplierRef: [booking.supplierRef],
-        destination: [booking.destination, booking.route],
-        origin: [booking.origin, booking.route],
-        vessel: [booking.vessel, booking.carrier],
-        vin: [booking.vin],
-        customFields,
-      }
-
-      return valuesByField[criterion.field].some((value) => value.toLowerCase().includes(query))
-    }
-
-    const groups = previewBookingSearchCriteria.reduce<Array<{ id: string; connector: "and" | "or"; criteria: BookingSearchCriterion[] }>>((currentGroups, criterion, index) => {
-      if (!criterion.value.trim() && !criterion.valueTo?.trim()) return currentGroups
-      const groupId = criterion.groupId ?? "preview-search-main"
-      const existingGroup = currentGroups.find((group) => group.id === groupId)
-      if (existingGroup) {
-        existingGroup.criteria.push(criterion)
-        return currentGroups
-      }
-
-      currentGroups.push({
-        id: groupId,
-        connector: criterion.groupConnector ?? (index === 0 ? "and" : "or"),
-        criteria: [criterion],
-      })
-      return currentGroups
-    }, [])
-
-    return bookings.filter((booking) => {
-      if (!groups.length) return true
-      return groups.reduce<boolean>((searchMatches, group, groupIndex) => {
-        const groupMatches = group.criteria.reduce<boolean>((matches, criterion, criterionIndex) => {
-          const criterionMatches = matchesCriterion(booking, criterion)
-          if (criterionIndex === 0) return criterionMatches
-          return (criterion.connector ?? "and") === "or" ? matches || criterionMatches : matches && criterionMatches
-        }, true)
-
-        if (groupIndex === 0) return groupMatches
-        return group.connector === "or" ? searchMatches || groupMatches : searchMatches && groupMatches
-      }, true)
-    }).length
-  }, [previewBookingSearchCriteria])
+  const countPreviewBookingMatches = useCallback((query: FilterQuery) => (
+    bookings.filter((booking) => matchesFilterQuery(booking, query, previewBookingFilterValue)).length
+  ), [])
   useEffect(() => {
     if (!previewScreenGlow) return undefined
 
@@ -1226,6 +1218,26 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "hugeicons-system" ? (
+        <div className="w-full max-w-[720px] rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          <div className="grid gap-3 sm:grid-cols-5">
+            {[
+              ["Home", Home03],
+              ["Dexter", AiBrain],
+              ["Warehouse", Forklift],
+              ["Appearance", Moon02],
+              ["Settings", Settings2],
+            ].map(([label, Icon]) => (
+              <div key={label as string} className="grid min-h-24 place-items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-3 text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
+                <Icon className="size-6 text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" />
+                <span className="text-[11px] font-medium text-[var(--md-ink)]">{t(label as string)}</span>
+              </div>
+            ))}
+          </div>
+          <p className="mt-4 text-[12px] leading-5 text-[var(--md-text)]">{t("Every glyph inherits current colour, keeps a calm rounded stroke, and can participate in shared hover, pressed, loading, and morphing states.")}</p>
+        </div>
+      ) : null}
+
       {id === "typography" ? (
         <div className="w-full max-w-[720px] rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
           <div className="flex flex-col gap-[var(--md-page-stack-gap)]">
@@ -1266,13 +1278,9 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "status-pill" ? (
-        <div className="flex w-full max-w-[560px] flex-wrap gap-[var(--md-gap-md)] rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
-          <StatusPill tone="green">Cleared</StatusPill>
-          <StatusPill tone="amber">Under review</StatusPill>
-          <StatusPill tone="red">Action req.</StatusPill>
-          <StatusPill tone="blue">AI note</StatusPill>
-          <StatusPill tone="teal">Submitted</StatusPill>
-          <StatusPill tone="neutral">After hours</StatusPill>
+        <div className="grid w-full max-w-[640px] gap-4 rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          <div><p className="mb-2 text-[11px] font-medium text-[var(--md-subtle)]">Workflow statuses</p><div className="flex flex-wrap gap-2"><StatusPill kind="status" tone="green">Cleared</StatusPill><StatusPill kind="status" tone="amber">Under review</StatusPill><StatusPill kind="status" tone="red">Action required</StatusPill><StatusPill kind="status" tone="blue">Submitted</StatusPill></div></div>
+          <div><p className="mb-2 text-[11px] font-medium text-[var(--md-subtle)]">Descriptive attributes</p><div className="flex flex-wrap gap-2"><StatusPill kind="attribute" tone="teal">Ocean</StatusPill><StatusPill kind="attribute" tone="blue">Customer</StatusPill><StatusPill kind="attribute" tone="amber">Express</StatusPill></div></div>
         </div>
       ) : null}
 
@@ -1835,7 +1843,7 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "date-range-picker" ? (
-        <div className="grid w-full max-w-[560px] gap-3 rounded-[var(--md-radius-xl)] bg-white/54 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+        <div className="grid w-full max-w-[620px] gap-4 rounded-[var(--md-radius-xl)] bg-white/54 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
           <div>
             <p className="text-[14px] font-medium text-[var(--md-ink)]">Collection dates</p>
             <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">A paired range that can expand into a side-by-side comparison without losing context.</p>
@@ -1861,6 +1869,16 @@ function ComponentPreview({ id }: { id: string }) {
               ],
             }}
           />
+          <div className="grid gap-3 border-t border-[var(--md-border)] pt-4 sm:grid-cols-2">
+            <div className="grid gap-1.5">
+              <p className="text-[12px] font-medium text-[var(--md-ink)]">Single date</p>
+              <MultideckDatePicker value={previewSingleDate} onChange={setPreviewSingleDate} title="Expiry date" description="Pick the date this stock expires." />
+            </div>
+            <div className="grid gap-1.5">
+              <p className="text-[12px] font-medium text-[var(--md-ink)]">Date and time</p>
+              <MultideckDateTimePicker value={previewDateTime} onChange={setPreviewDateTime} title="Appointment" description="Pick the appointment date and time." />
+            </div>
+          </div>
         </div>
       ) : null}
 
@@ -2100,10 +2118,13 @@ function ComponentPreview({ id }: { id: string }) {
         <div className="w-full max-w-[1120px] overflow-x-auto md-scrollbar">
           <DataTable
             columns={previewChargeColumns}
-            rows={previewChargeRows}
+            rows={previewChargeRows.filter((row) => (previewTableView === "All" || row.sell > row.cost) && (!previewTableStatus || row.status === previewTableStatus) && (!previewTableSearch.trim() || `${row.id} ${row.description} ${row.supplier}`.toLowerCase().includes(previewTableSearch.trim().toLowerCase())))}
             getRowKey={(row) => row.id}
             storageKey="gallery-charge-table"
             ariaLabel="Quote charges preview"
+            toolbarTabs={<RegisterViewSwitch options={["All", "Profitable"] as const} value={previewTableView} onChange={setPreviewTableView} counts={{ All: previewChargeRows.length, Profitable: previewChargeRows.filter((row) => row.sell > row.cost).length }} ariaLabel="Charge view" compact />}
+            toolbarSearch={<RegisterSearchField value={previewTableSearch} onChange={setPreviewTableSearch} onClear={() => setPreviewTableSearch("")} label="Search charges" placeholder="Search charges…" />}
+            toolbarFilters={<RegisterFacetSelect label="Status" allLabel="All statuses" value={previewTableStatus} options={["Approved", "Review", "Blocked"].map((status) => ({ value: status, label: status }))} onChange={setPreviewTableStatus} className="w-[132px]" />}
           />
         </div>
       ) : null}
@@ -2115,10 +2136,16 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "quote-search-builder" ? (
-        <div className="w-full max-w-[1120px]">
-          <QuoteSearchBuilder
+        <div className="flex w-full max-w-[1120px] justify-center rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] p-4">
+          <AdvancedFilterPopover
+            fields={quoteSearchFieldOptions}
             value={previewQuoteSearch}
             onChange={setPreviewQuoteSearch}
+            storageKey="gallery-quote-filters"
+            label="Advanced search"
+            title="Advanced quote search"
+            itemLabel="quotes"
+            align="center"
           />
         </div>
       ) : null}
@@ -2236,12 +2263,18 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "booking-search-builder" ? (
-        <div className="w-full max-w-[1120px]">
-          <BookingSearchBuilder
-            value={previewBookingSearchCriteria}
-            onChange={setPreviewBookingSearchCriteria}
-            resultCount={previewBookingSearchCount}
+        <div className="flex w-full max-w-[1120px] justify-center rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] p-4">
+          <AdvancedFilterPopover
+            fields={previewBookingFilterFields}
+            value={previewBookingSearch}
+            onChange={setPreviewBookingSearch}
+            storageKey="gallery-booking-filters"
+            label="Advanced search"
+            title="Advanced booking search"
+            itemLabel="bookings"
+            countMatches={countPreviewBookingMatches}
             totalCount={bookings.length}
+            align="center"
           />
         </div>
       ) : null}
@@ -2502,7 +2535,8 @@ function ComponentPreview({ id }: { id: string }) {
             selectedMentions={previewDexterMentions}
             onChange={setPreviewDexterPrompt}
             onMentionsChange={setPreviewDexterMentions}
-            onOpenAttachments={() => toast.success("Attachment palette opened")}
+            onOpenAttachments={() => toast.success("File chooser opened")}
+            attachmentActionLabel="Upload files"
             onSelectSpecialist={setPreviewDexterSpecialistId}
             onSelectModel={setPreviewDexterModelId}
             onAccessModeChange={setPreviewDexterAccessMode}

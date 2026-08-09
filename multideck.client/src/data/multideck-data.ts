@@ -10,6 +10,7 @@ import {
   Boxes,
   BriefcaseBusiness,
   CalendarDays,
+  ChartAnalysis,
   ChartArea,
   ChartBar,
   ChartBarStacked,
@@ -58,7 +59,7 @@ import {
   Users,
   Workflow,
   type LucideIcon,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 import type { AuditTimelineEvent } from "@/components/multideck/audit-timeline"
 
 export type StatusTone = "green" | "amber" | "red" | "blue" | "neutral" | "teal"
@@ -2060,6 +2061,22 @@ export const galleryComponents = [
     usageCode: `<Surface className="bg-[var(--md-surface)] text-[var(--md-ink)]">\n  <StatusPill tone="teal">AI prepared</StatusPill>\n  <p className="text-[var(--md-text)]">Use token colours for calm operational hierarchy.</p>\n</Surface>`,
   },
   {
+    id: "hugeicons-system",
+    name: "Hugeicons Icon System",
+    category: "Design System",
+    description: "The shared Hugeicons renderer and semantic icon mapping used by navigation, tables, controls, feedback, and stateful microinteractions.",
+    details: "Choose icons by the operator action or product object they represent. Use the shared adapter for the standard 1.5px stroke, current-colour behaviour, refs, accessibility props, and animated state swaps.",
+    foundOn: [
+      { label: "Home", route: "/" },
+      { label: "Agent Dexter", route: "/agent-dexter" },
+      { label: "Warehouse", route: "/warehouse" },
+      { label: "Settings", route: "/settings" },
+      { label: "Components", route: "/components?component=hugeicons-system" },
+    ],
+    componentCode: `export function createMultideckIcon(icon, displayName) {\n  const Icon = forwardRef(function MultideckHugeicon(\n    { color = "currentColor", size = 24, strokeWidth = 1.5, ...props },\n    ref,\n  ) {\n    return <HugeiconsIcon ref={ref} icon={icon} color={color} size={size} strokeWidth={strokeWidth} {...props} />\n  })\n  Icon.displayName = displayName\n  return Icon\n}`,
+    usageCode: `// Semantic application icons\n<Home03 className="size-4" />\n<AiBrain className="size-4" />\n<Forklift className="size-4" />\n\n// Stateful icon swap\n<MorphingIcon from={Pin} to={PinOff} active={isPinned} className="size-4" />`,
+  },
+  {
     id: "typography",
     name: "Typography",
     category: "Design System",
@@ -2076,18 +2093,18 @@ export const galleryComponents = [
     description: "The base Multideck panel. It gives workflow areas quiet depth without creating heavy card clutter.",
     details: "Use for primary panels, side panels, preview wells, and command areas. Radius and shadow come from tokens.",
     foundOn: [{ label: "Overview", route: "/" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Components", route: "/components" }],
-    componentCode: `export function Surface({ tone = "panel", padding = "md", className, children }) {\n  return (\n    <section className={cn("rounded-[var(--md-radius-lg)]", toneClass[tone], paddingClass[padding], className)}>\n      {children}\n    </section>\n  )\n}\n\nexport function SectionHeader({ eyebrow, title, meta, action, className }) {\n  return (\n    <div className={cn("flex items-start justify-between gap-3", className)}>\n      <div className="min-w-0">\n        {eyebrow ? <p className="mb-1 text-xs font-medium text-[var(--md-subtle)]">{eyebrow}</p> : null}\n        <h2 className="truncate text-[14px] font-medium text-[var(--md-ink)]">{title}</h2>\n        {meta ? <p className="mt-1 text-[12px] text-[var(--md-text)]">{meta}</p> : null}\n      </div>\n      {action ? <div className="shrink-0">{action}</div> : null}\n    </div>\n  )\n}`,
+    componentCode: `export function Surface({ tone = "panel", padding = "md", className, children }) {\n  return (\n    <section className={cn("rounded-[var(--md-radius-lg)]", toneClass[tone], paddingClass[padding], className)}>\n      {children}\n    </section>\n  )\n}\n\nexport function SectionHeader({ eyebrow, title, meta, action, className }) {\n  return (\n    <div className={cn("flex items-start justify-between gap-3", className)}>\n      <div className="@container/section-header-copy min-w-0 flex-1">\n        {eyebrow ? <p className="mb-1 text-xs font-medium text-[var(--md-subtle)]">{eyebrow}</p> : null}\n        <div className="min-w-0 @min-[520px]/section-header-copy:flex @min-[520px]/section-header-copy:items-baseline @min-[520px]/section-header-copy:justify-between @min-[520px]/section-header-copy:gap-5">\n          <h2 className="truncate text-[14px] font-medium text-[var(--md-ink)]">{title}</h2>\n          {meta ? <p className="mt-1 text-[12px] text-[var(--md-text)] @min-[520px]/section-header-copy:mt-0 @min-[520px]/section-header-copy:text-end">{meta}</p> : null}\n        </div>\n      </div>\n      {action ? <div className="shrink-0">{action}</div> : null}\n    </div>\n  )\n}`,
     usageCode: `<Surface tone="panel" padding="md">\n  <SectionHeader title="Live bookings" meta="updated 41s ago" />\n  <BookingRow booking={booking} />\n</Surface>`,
   },
   {
     id: "status-pill",
     name: "Status Pill",
     category: "Feedback",
-    description: "Compact status language for freight workflows, exceptions, and document states.",
-    details: "Use green for good, amber for review, red for action, blue for information, teal for AI or customs flow.",
+    description: "Compact semantic pills for workflow status and descriptive table attributes.",
+    details: "Keep the shell on the table surface with primary theme text and a thin hairline. The small leading dot or icon carries the documented status or category colour.",
     foundOn: [{ label: "Overview", route: "/" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
-    componentCode: `export function StatusPill({ tone = "neutral", children, className }) {\n  return (\n    <Badge\n      variant="secondary"\n      className={cn("h-[21px] rounded-full px-[9px] text-[11.5px] font-medium leading-none", toneClass[tone], className)}\n    >\n      {children}\n    </Badge>\n  )\n}`,
-    usageCode: `<StatusPill tone="amber">Under review</StatusPill>\n<StatusPill tone="red">Action req.</StatusPill>`,
+    componentCode: `export function StatusPill({ tone = "neutral", indicator, children, className }) {\n  return (\n    <Badge className={cn("bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[0_0_0_1px_var(--md-line)]", className)}>\n      {indicator ?? <span className="size-1.5 rounded-full" style={{ backgroundColor: toneToVar(tone) }} />}\n      {children}\n    </Badge>\n  )\n}`,
+    usageCode: `<StatusPill kind="status" tone="amber">Under review</StatusPill>\n<StatusPill kind="attribute" tone="blue">Ocean</StatusPill>`,
   },
   {
     id: "kbd",
@@ -2636,19 +2653,19 @@ export const galleryComponents = [
     category: "Navigation",
     description: "A compact animated popover for page-level view controls and secondary actions.",
     details: "Use when a page header would otherwise collect several view switches or utility actions in one row. Keep always-needed scope tabs outside the menu, and place lower-priority controls like view mode or export inside.",
-    foundOn: [{ label: "Customers", route: "/customers" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components?component=page-settings-menu" }],
+    foundOn: [{ label: "Customers", route: "/customers" }, { label: "Components", route: "/components?component=page-settings-menu" }],
     componentCode: `export function PageSettingsMenu({ viewOptions, value, onViewChange, actions = [] }) {\n  return (\n    <Popover>\n      <PopoverTrigger asChild>\n        <button aria-label="Open page settings">\n          <span aria-hidden>{/* three line menu icon */}</span>\n        </button>\n      </PopoverTrigger>\n      <PopoverContent align="end">\n        <motion.div variants={menuReveal} initial="hidden" animate="show">\n          <p>Page settings</p>\n          <div>\n            <p>View</p>\n            {viewOptions.map((option) => (\n              <motion.button key={option.value} aria-pressed={value === option.value} onClick={() => onViewChange(option.value)}>\n                <option.icon />\n                <span>{option.label ?? option.value}</span>\n                {value === option.value ? <Check /> : null}\n              </motion.button>\n            ))}\n          </div>\n          {actions.map((action) => (\n            <motion.button key={action.id} onClick={action.onSelect}>\n              <action.icon />\n              <span>{action.label}</span>\n            </motion.button>\n          ))}\n        </motion.div>\n      </PopoverContent>\n    </Popover>\n  )\n}`,
-    usageCode: `<SegmentedControl options={customerScopeTabs} value={scope} onChange={setScope} />\n<DexterActionPill onClick={() => navigate("/agent-dexter")} />\n<PageSettingsMenu\n  viewOptions={customerViewOptions}\n  value={viewMode}\n  onViewChange={setViewMode}\n  actions={[{ id: "export-customers", label: "Export CSV", icon: Download, onSelect: exportCustomers }]}\n/>\n\n<PageSettingsMenu\n  viewOptions={bookingViewOptions}\n  value={bookingViewMode}\n  onViewChange={setBookingViewMode}\n/>`,
+    usageCode: `<SegmentedControl options={customerScopeTabs} value={scope} onChange={setScope} />\n<DexterActionPill onClick={() => navigate("/agent-dexter")} />\n<PageSettingsMenu\n  viewOptions={customerViewOptions}\n  value={viewMode}\n  onViewChange={setViewMode}\n  actions={[{ id: "export-customers", label: "Export CSV", icon: Download, onSelect: exportCustomers }]}\n/>`,
   },
   {
     id: "date-range-picker",
-    name: "Date Range Picker",
+    name: "Date Pickers",
     category: "Controls",
-    description: "A branded glass date-range selector with one trigger, paired months, highlighted in-between days, and an optional comparison mode.",
-    details: "Use for date pairs such as cargo ready/requested collection, ETD/ETA, dashboard custom ranges, and booking search ranges. Comparison mode keeps its checkbox and quick ranges inside the popover, then expands into aligned current and comparison calendars.",
-    foundOn: [{ label: "Overview", route: "/" }, { label: "New booking", route: "/bookings/new" }, { label: "Bookings", route: "/bookings" }, { label: "Inbox", route: "/inbox" }, { label: "Email marketing", route: "/crm/emails" }, { label: "Components", route: "/components?component=date-range-picker" }],
-    componentCode: `export function MultideckDateRangePicker({ value, onChange, comparison }) {\n  return (\n    <Popover>\n      <PopoverTrigger asChild>\n        <Button>\n          <CalendarDays />\n          {formatDateRangeLabel(value)}\n        </Button>\n      </PopoverTrigger>\n      <PopoverContent className="backdrop-blur-2xl">\n        {comparison ? <Checkbox checked={comparison.enabled} onCheckedChange={comparison.onEnabledChange}>Compare</Checkbox> : null}\n        {comparison?.enabled ? <ComparisonCalendarPair /> : <CalendarMonthPair />}\n        <Button onClick={() => closePicker()}>Apply dates</Button>\n      </PopoverContent>\n    </Popover>\n  )\n}`,
-    usageCode: `const [collectionDates, setCollectionDates] = useState({ start: "2026-05-25", end: "2026-06-04" })\nconst [comparing, setComparing] = useState(false)\nconst [comparisonDates, setComparisonDates] = useState({ start: "2026-05-14", end: "2026-05-24" })\n\n<MultideckDateRangePicker\n  value={collectionDates}\n  onChange={setCollectionDates}\n  title="Collection dates"\n  comparison={{\n    enabled: comparing,\n    value: comparisonDates,\n    onEnabledChange: setComparing,\n    onChange: setComparisonDates,\n    options: [\n      { id: "previous-period", label: "Previous period", range: { start: "2026-05-14", end: "2026-05-24" } },\n      { id: "custom", label: "Custom", range: null },\n    ],\n  }}\n/>`,
+    description: "The shared branded date controls for a single date, date and time, or a range with optional comparison.",
+    details: "Use these instead of browser-native date inputs. Every variant shares the glass calendar, date formatting, RTL-safe layout, constrained dates, and the rebranded Calendar Days icon; date-time fields add a compact branded time control.",
+    foundOn: [{ label: "Overview", route: "/" }, { label: "New booking", route: "/bookings/new" }, { label: "Bookings", route: "/bookings" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Inbox", route: "/inbox" }, { label: "Components", route: "/components?component=date-range-picker" }],
+    componentCode: `export function MultideckDatePicker({ value, onChange, minDate, maxDate }) {\n  return <MultideckDateRangePicker value={{ start: value, end: value }} onChange={(range) => onChange(range.start)} minDate={minDate} maxDate={maxDate} />\n}\n\nexport function MultideckDateTimePicker({ value, onChange }) {\n  const date = value.slice(0, 10)\n  const time = value.slice(11, 16)\n  return (\n    <div className="grid grid-cols-[minmax(0,1fr)_112px] gap-2">\n      <MultideckDatePicker value={date} onChange={(nextDate) => onChange((nextDate ?? "") + "T" + time)} />\n      <BrandedTimeInput value={time} onChange={(nextTime) => onChange(date + "T" + nextTime)} />\n    </div>\n  )\n}`,
+    usageCode: `const [expiryDate, setExpiryDate] = useState("2026-06-04")\nconst [appointment, setAppointment] = useState("2026-06-04T09:30")\n\n<MultideckDatePicker\n  value={expiryDate}\n  onChange={(date) => setExpiryDate(date ?? "")}\n  title="Expiry date"\n/>\n\n<MultideckDateTimePicker\n  value={appointment}\n  onChange={setAppointment}\n  title="Appointment"\n/>`,
   },
   {
     id: "paper-tray-stack",
@@ -2848,8 +2865,8 @@ export const DotGridLoader = memo(function DotGridLoader({ label, size = "md", d
     id: "register-toolbar",
     name: "Register Toolbar",
     category: "Operations",
-    description: "The view switch, filters and search that live inside a data table's own toolbar.",
-    details: "Every register in the product puts its controls in the table's toolbar instead of stacking a filter bar above it: the view switch and the create action lead, the filters and the search trail. Two levels, deliberately — the switch changes what is fetched, the filters narrow what came back, so the two can never contradict each other. Facet options are built from the rows actually in hand, so a menu can never offer a value that returns nothing, and a trigger takes the accent colour while its filter is on. Search narrows the loaded rows on the same frame and only asks the server once the operator stops typing. Every control is 32px so the row stays one line, and the trailing group carries a minimum width so it drops to its own line as one block rather than wrapping control by control around the leading group.",
+    description: "View tabs on the left and right-aligned search, filters, options, and Columns above a register table.",
+    details: "Every register puts one transparent control row on the page background above the rounded table surface. Only view tabs belong on the left. Search, filters, and secondary options stay on the right, with the icon-only Columns control fixed as the final option at the far logical edge. Facet options are built from the rows actually in hand, so a menu cannot offer a value that returns nothing, and an active trigger takes the accent colour. Search narrows loaded rows immediately and only asks the server once the operator stops typing. Controls share the tabs' corner radius; on narrow screens the right-side controls collapse into Controls while Columns remains the final standalone option.",
     foundOn: [{ label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Facilities", route: "/warehouse/facilities" }, { label: "Items", route: "/warehouse/items" }, { label: "Goods in", route: "/warehouse/goods-in" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Components", route: "/components?component=register-toolbar" }],
     componentCode: `export function RegisterViewSwitch({ options, value, onChange, counts, ariaLabel }) {
   const { t } = useLanguage()
@@ -2876,20 +2893,20 @@ export const DotGridLoader = memo(function DotGridLoader({ label, size = "md", d
   columns={columns}
   rows={filteredRows}
   getRowKey={(row) => row.id}
-  toolbarLeading={(
-    <div className="flex min-w-0 items-center gap-2">
-      <RegisterViewSwitch options={views} value={view} onChange={setView} counts={counts} ariaLabel="Inventory view" />
-      <RegisterToolbarDivider />
-      <NewRecordMenu />
-    </div>
+  toolbarTabs={(
+    <RegisterViewSwitch options={views} value={view} onChange={setView} counts={counts} ariaLabel="Inventory view" />
   )}
-  toolbarActions={(
-    <RegisterToolbarActions pending={pending && loaded}>
+  toolbarSearch={(
+    <RegisterSearchField value={search} onChange={setSearch} onClear={clearSearch} label="Search warehouse records" placeholder="SKU, pallet, batch" />
+  )}
+  toolbarFilters={(
+    <div className="flex items-center gap-1.5">
       <RegisterFacetSelect label="Condition" allLabel="All conditions" value={condition} options={conditionOptions} onChange={setCondition} />
       <RegisterFacetSelect label="Warehouse" allLabel="All warehouses" value={facilityId} options={facilityOptions} onChange={setFacilityId} />
-      <RegisterSearchField value={search} onChange={setSearch} onClear={clearSearch} label="Search warehouse records" placeholder="SKU, pallet, batch" />
-      <RegisterRefreshButton pending={pending} onRefresh={refresh} />
-    </RegisterToolbarActions>
+    </div>
+  )}
+  toolbarOptions={(
+    <RegisterRefreshButton pending={pending} onRefresh={refresh} />
   )}
 />`,
   },
@@ -3254,10 +3271,10 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     id: "data-table",
     name: "Data Table",
     category: "Data",
-    description: "A configurable operational table with pinning, pointer and keyboard reordering, keyboard-accessible resizing, sorting, selection, and visibility controls.",
-    details: "Use for dense operational records where each operator may need a different working view. Saved layouts and sorting are restored per table, and every column-layout action remains available without a pointer.",
+    description: "The canonical Multideck table for registers, compact summaries, editable grids, and operational history.",
+    details: "Declare each column's data kind so numeric alignment, long text, statuses, and attributes stay consistent. The transparent toolbar sits on the page background above the rounded table surface: toggles on the left, then search, filters, options, and Columns on the right. Mobile collapses that right cluster first.",
     foundOn: [{ label: "Quotes", route: "/quotes" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Bookings", route: "/bookings" }, { label: "Facilities", route: "/warehouse/facilities" }, { label: "Locations", route: "/warehouse/locations" }, { label: "Items", route: "/warehouse/items" }, { label: "Components", route: "/components" }],
-    componentCode: `export function DataTable({ columns, rows, getRowKey, storageKey, selectedRowKey, selectedRowKeys, onRowClick }) {\n  return (\n    <Table>\n      <TableHeader>{/* sortable, resizable, draggable columns */}</TableHeader>\n      <TableBody>{/* rows follow the saved live column layout and selection */}</TableBody>\n    </Table>\n  )\n}`,
+    componentCode: `export function DataTable({ columns, rows, toolbarTabs, toolbarSearch, toolbarFilters, toolbarOptions }) {\n  return (\n    <section>\n      <TableToolbar tabs={toolbarTabs} search={toolbarSearch} filters={toolbarFilters} options={toolbarOptions} columnsLast />\n      <TableSurface>\n        <Table>{/* semantic columns, persisted layout, accessible interactions */}</Table>\n      </TableSurface>\n    </section>\n  )\n}`,
     usageCode: `<DataTable\n  ariaLabel="Supplier charges"\n  columns={chargeColumns}\n  rows={charges}\n  getRowKey={(charge) => charge.id}\n  storageKey="quote-charges-in"\n  onRowClick={selectCharge}\n/>`,
   },
   {
@@ -3272,13 +3289,13 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
   },
   {
     id: "quote-search-builder",
-    name: "Quote Search Builder",
+    name: "Quote Filter Panel",
     category: "Operations",
-    description: "An on-demand advanced search surface for quote registers, with nested condition groups and precise field operators.",
-    details: "Reveal from the table toolbar when operators need to combine commercial, route, ownership, timing, and workflow conditions. Groups can match all or any conditions, while the register updates immediately.",
+    description: "The advanced quote filter, opened as a compact panel beside the toolbar button, with condition groups, field operators and saved filters.",
+    details: "Open it from the table toolbar to combine commercial, route, ownership, timing and workflow conditions. Each group matches all or any of its conditions, the footer shows how many quotes the draft would return, and a named filter can be saved and picked again from the panel header.",
     foundOn: [{ label: "Quotes", route: "/quotes" }, { label: "Components", route: "/components?component=quote-search-builder" }],
-    componentCode: `export function QuoteSearchBuilder({ value, onChange }) {\n  return (\n    <section aria-label="Advanced quote search">\n      <MatchControl\n        value={value.match}\n        onChange={(match) => onChange({ ...value, match })}\n        allLabel="All groups"\n        anyLabel="Any group"\n      />\n      {value.groups.map((group) => (\n        <ConditionGroup\n          key={group.id}\n          group={group}\n          fields={quoteSearchFieldOptions}\n          operators={["contains", "is", "is-not", "starts-with", "is-empty", "is-not-empty"]}\n          onChange={updateGroup}\n        />\n      ))}\n    </section>\n  )\n}`,
-    usageCode: `const [advancedOpen, setAdvancedOpen] = useState(false)\nconst [search, setSearch] = useState(createEmptyQuoteSearch)\nconst visibleQuotes = quotes.filter((quote) => quoteMatchesSearch(quote, search))\n\n<button aria-expanded={advancedOpen} onClick={() => setAdvancedOpen((open) => !open)}>\n  Advanced search\n</button>\n{advancedOpen ? <QuoteSearchBuilder value={search} onChange={setSearch} /> : null}`,
+    componentCode: `<AdvancedFilterPopover\n  fields={quoteSearchFieldOptions}\n  value={search}\n  onChange={setSearch}\n  storageKey="quote-register"\n  label="Advanced search"\n  title="Advanced quote search"\n  itemLabel="quotes"\n  countMatches={countDraftMatches}\n  totalCount={quotes.length}\n/>`,
+    usageCode: `const [search, setSearch] = useState(createEmptyQuoteSearch)\nconst visibleQuotes = quotes.filter((quote) => quoteMatchesSearch(quote, search))\n\n<DataTable\n  columns={columns}\n  rows={visibleQuotes}\n  toolbarFilters={<AdvancedFilterPopover fields={quoteSearchFieldOptions} value={search} onChange={setSearch} storageKey="quote-register" />}\n/>`,
   },
   {
     id: "warehouse-table",
@@ -3437,13 +3454,13 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
   },
   {
     id: "booking-search-builder",
-    name: "Booking Search Builder",
+    name: "Booking Filter Panel",
     category: "Operations",
-    description: "An inline booking search builder with grouped AND/OR conditions and immediate result updates.",
-    details: "Reveal it from the booking table toolbar. It keeps the register visible, applies every condition immediately, and matches the Quotes advanced-search behaviour.",
+    description: "The same advanced filter panel as Quotes, with booking fields and date conditions for departure and arrival.",
+    details: "Open it from the booking table toolbar. Date fields switch the operator list to on, before, after and between, and the register only changes once the filter is applied.",
     foundOn: [{ label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components" }],
-    componentCode: `export function BookingSearchBuilder({ value, onChange, resultCount, totalCount }) {\n  return (\n    <section aria-label="Advanced booking search">\n      <header>Filter bookings · {resultCount}/{totalCount} shown</header>\n      {groupCriteria(value).map((group) => (\n        <ConditionGroup key={group.id} group={group} onChange={onChange} />\n      ))}\n      <Button onClick={addGroup}>Add group</Button>\n    </section>\n  )\n}`,
-    usageCode: `{advancedSearchOpen ? (\n  <BookingSearchBuilder\n    value={searchCriteria}\n    onChange={setSearchCriteria}\n    resultCount={visibleBookings.length}\n    totalCount={scopedBookings.length}\n  />\n) : null}`,
+    componentCode: `<AdvancedFilterPopover\n  fields={bookingFilterFields}\n  value={search}\n  onChange={setSearch}\n  storageKey="booking-register"\n  label="Advanced search"\n  title="Advanced booking search"\n  itemLabel="bookings"\n  countMatches={countDraftMatches}\n  totalCount={scopedBookings.length}\n/>`,
+    usageCode: `const [search, setSearch] = useState(createEmptyFilterQuery)\nconst visibleBookings = scopedBookings.filter((booking) => bookingMatchesSearch(booking, search))\n\nfunction bookingMatchesSearch(booking, query) {\n  return matchesFilterQuery(booking, query, bookingFilterValue)\n}`,
   },
   {
     id: "bookings-table",
@@ -3636,10 +3653,10 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     name: "Dexter Prompt Composer",
     category: "Agent Dexter",
     description: "The central command box for Agent Dexter: @ mentions, attached context, slash commands, model and role choices, live context usage, plus explicit approval or full-access control.",
-    details: "Use on the Agent Dexter landing and conversation footer. Operators can type @ to reference workspace context or / to switch between Chat and Watch; Approve remains the safe default and Full access is a deliberately warning-toned state for allowlisted writes.",
+    details: "Use on the Agent Dexter landing and conversation footer. The + button opens the computer file chooser, @ references workspace or email context, and / switches between Chat and Watch; Approve remains the safe default and Full access is a deliberately warning-toned state for allowlisted writes.",
     foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components?component=dexter-prompt-composer" }],
     componentCode: `export function DexterPromptComposer({ value, selectedSpecialistId, selectedModelId, accessMode, contextUsedTokens, contextMaxTokens, attachments, onChange, onOpenAttachments, onSelectSpecialist, onSelectModel, onAccessModeChange, onSend }) {\n  return (\n    <div className="md-composer md-composer-bloom relative overflow-hidden rounded-[26px]">\n      <span aria-hidden className="md-composer-bloom__shader">\n        <SpectralBloomShader shape="composer" />\n      </span>\n      <span aria-hidden className="md-composer-bloom__contrast" />\n      <div className="relative z-[2] flex h-[44px] items-center px-3">\n        <DexterRoleMenu selectedId={selectedSpecialistId} onSelect={onSelectSpecialist} />\n      </div>\n      <div className="relative z-[2] mx-1.5 mb-1.5 rounded-[21px] bg-[var(--md-composer-panel-bg)]">\n        {attachments.map((attachment) => <ContextChip key={attachment.id} attachment={attachment} />)}\n        <textarea\n          value={value}\n          rows={1}\n          onChange={(event) => onChange(event.target.value)}\n          onKeyDown={(event) => {\n            if (event.key === "Enter" && !event.shiftKey) {\n              event.preventDefault()\n              if (value.trim()) onSend()\n            }\n          }}\n        />\n        <button onClick={onOpenAttachments}>Attach</button>\n        <DexterModelMenu selectedId={selectedModelId} onSelect={onSelectModel} />\n        <Context\n          usedTokens={contextUsedTokens}\n          maxTokens={contextMaxTokens}\n          label={t("Conversation context")}\n          description={t("How much of this chat Dexter can keep in mind.")}\n        >\n          <ContextTrigger />\n          <ContextContent><ContextContentHeader /></ContextContent>\n        </Context>\n        <DexterAccessModeToggle mode={accessMode} onChange={onAccessModeChange} />\n        <DexterActionPill icon={ArrowUp} iconOnly disabled={!value.trim()} onClick={onSend} />\n      </div>\n    </div>\n  )\n}`,
-    usageCode: `<DexterPromptComposer\n  value={prompt}\n  selectedSpecialistId={selectedSpecialistId}\n  selectedModelId={selectedModelId}\n  accessMode={accessMode}\n  contextUsedTokens={contextUsedTokens}\n  contextMaxTokens={128_000}\n  attachments={attachedItems}\n  commands={slashCommands}\n  onChange={setPrompt}\n  onOpenAttachments={() => setShowAttachments(true)}\n  onSelectSpecialist={setSelectedSpecialistId}\n  onSelectModel={setSelectedModelId}\n  onAccessModeChange={setAccessMode}\n  onCommand={handleSlashCommand}\n  onSend={startConversation}\n/>`,
+    usageCode: `<DexterPromptComposer\n  value={prompt}\n  selectedSpecialistId={selectedSpecialistId}\n  selectedModelId={selectedModelId}\n  accessMode={accessMode}\n  contextUsedTokens={contextUsedTokens}\n  contextMaxTokens={128_000}\n  attachments={attachedItems}\n  commands={slashCommands}\n  onChange={setPrompt}\n  onOpenAttachments={() => computerFileInputRef.current?.click()}\n  attachmentActionLabel="Upload files"\n  onSelectSpecialist={setSelectedSpecialistId}\n  onSelectModel={setSelectedModelId}\n  onAccessModeChange={setAccessMode}\n  onCommand={handleSlashCommand}\n  onSend={startConversation}\n/>`,
   },
   {
     id: "watch-mode-aurora",
@@ -3778,10 +3795,10 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     id: "side-drawer",
     name: "Side Drawer",
     category: "Operations",
-    description: "The inset slide-in panel used for detail and settings surfaces, with its own backdrop, motion, Escape handling, scroll lock, and focus restore.",
-    details: "Use when a record or a settings surface should open over the current page without losing the operator's place. The panel leans in from the edge it is docked to and blurs out on exit, so opening and closing read as one movement rather than a hard cut. It flips to the opposite edge under right-to-left, collapses to an instant show and hide when the operator prefers reduced motion, locks page scroll while open, and hands focus back to whatever opened it on close. Pass an icon only when the drawer is a settings surface rather than a record.",
-    foundOn: [{ label: "CRM deals", route: "/crm/deals" }, { label: "Components", route: "/components" }],
-    componentCode: `export function SideDrawer({ open, onClose, eyebrow, title, icon: Icon, width = 480, children }) {
+    description: "The inset slide-in panel used for detail and settings surfaces, with modal and register-inspector modes, direction-aware motion, Escape handling, and focus restore.",
+    details: "Use modal mode when a settings task needs exclusive focus. Use non-modal mode when an operator should keep a register visible and switch directly between records, as on Warehouse locations. The panel leans in from its docked edge, flips under right-to-left, and becomes instant when reduced motion is preferred. Pass an icon only when the drawer is a settings surface rather than a record.",
+    foundOn: [{ label: "CRM deals", route: "/crm/deals" }, { label: "Warehouse locations", route: "/warehouse/locations" }, { label: "Components", route: "/components" }],
+    componentCode: `export function SideDrawer({ open, onClose, eyebrow, title, icon: Icon, width = 480, modal = true, children }) {
   const { direction, t } = useLanguage()
   const reduce = Boolean(useReducedMotion())
 
@@ -3789,20 +3806,20 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
   const offset = direction === "rtl" ? -40 : 40
 
   return (
-    <AnimatePresence>
+    <AnimatePresence initial={false}>
       {open ? (
-        <div className="fixed inset-0 z-50 flex justify-end p-3" dir={direction}>
-          <motion.button
+        <div className={cn("fixed inset-0 z-50 flex justify-end p-3", !modal && "pointer-events-none")} dir={direction}>
+          {modal ? <motion.button
             className="absolute inset-0 bg-[rgba(11,20,19,0.14)] backdrop-blur-[6px]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={reduceMotion(reduce, mdMotion.fast)}
             onClick={onClose}
-          />
+          /> : null}
           <motion.aside
-            role="dialog"
-            aria-modal="true"
+            role={modal ? "dialog" : "region"}
+            aria-modal={modal ? "true" : undefined}
             aria-label={title}
             className="relative z-10 flex h-full w-full flex-col rounded-[var(--md-radius-2xl)] bg-[var(--md-bg)] p-3"
             style={{ maxWidth: width }}
@@ -3819,7 +3836,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     </AnimatePresence>
   )
 }`,
-    usageCode: `<SideDrawer\n  open={settingsOpen}\n  onClose={() => setSettingsOpen(false)}\n  eyebrow={t("Deals")}\n  title={t("Pipeline settings")}\n  icon={Settings2}\n  width={980}\n>\n  <CrmSettingsBuilder canEdit={canEdit} />\n</SideDrawer>`,
+    usageCode: `<SideDrawer\n  open={settingsOpen}\n  onClose={() => setSettingsOpen(false)}\n  eyebrow={t("Deals")}\n  title={t("Pipeline settings")}\n  icon={Settings2}\n  width={980}\n>\n  <CrmSettingsBuilder canEdit={canEdit} />\n</SideDrawer>\n\n<SideDrawer\n  open={Boolean(selectedLocation)}\n  onClose={() => setSelectedLocation(null)}\n  eyebrow={t("Location details")}\n  title={t("Edit location")}\n  modal={false}\n>\n  <LocationForm location={selectedLocation} />\n</SideDrawer>`,
   },
   {
     id: "side-panels",
@@ -4046,7 +4063,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     componentCode: `export function CrmLeadQualificationTable({ leads, onOpenLead, ownerPhotoUrls }) {
   return (
     <Table>
-      <TableHeader>{/* lead, primary contact, source, owner, qualification, engagement, follow-up, age, value */}</TableHeader>
+      <TableHeader>{/* lead, primary contact, source, owner, stage, qualification, engagement, follow-up, age, value */}</TableHeader>
       <TableBody>
         {leads.map((lead) => (
           <TableRow key={lead.id} onClick={() => onOpenLead(lead)}>
@@ -4055,6 +4072,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
             <TableCell>{lead.sourceName}</TableCell>
             <TableCell>{lead.ownerName}</TableCell>
             <TableCell><StatusPill>{lead.statusName}</StatusPill></TableCell>
+            <TableCell><StatusPill>{lead.ratingName}</StatusPill></TableCell>
             <TableCell>{lead.lastActivitySubject}</TableCell>
             <TableCell>{lead.nextFollowUpAt}</TableCell>
             <TableCell>{lead.createdAt}</TableCell>
@@ -4227,7 +4245,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     description: "The repeated settings form structure: a quiet panel with labelled rows and aligned controls.",
     details: "Use when a setting needs a label, short explanation, and a control. It keeps settings pages scannable without turning every field into a separate card.",
     foundOn: [{ label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
-    componentCode: `export function SettingsPanel({ title, description, children }) {\n  return (\n    <section className="overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-soft)]">\n      <div className="px-5 py-4">\n        <h3>{title}</h3>\n        <p>{description}</p>\n      </div>\n      <div className="divide-y divide-[rgba(11,20,19,0.07)] shadow-[var(--md-stroke-top)]">{children}</div>\n    </section>\n  )\n}\n\nexport function SettingsFieldRow({ label, description, children }) {\n  return (\n    <div className="grid gap-3 px-5 py-4 md:grid-cols-[minmax(160px,260px)_minmax(0,1fr)]">\n      <div>\n        <p>{label}</p>\n        <p>{description}</p>\n      </div>\n      <div>{children}</div>\n    </div>\n  )\n}`,
+    componentCode: `export function SettingsPanel({ title, description, action, children }) {\n  return (\n    <section className="overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-soft)]">\n      <div className="px-5 py-4">\n        <SectionHeader title={title} meta={description} action={action} metaClassName="text-[13px] leading-5" />\n      </div>\n      <div className="divide-y divide-[rgba(11,20,19,0.07)] shadow-[var(--md-stroke-top)]">{children}</div>\n    </section>\n  )\n}\n\nexport function SettingsFieldRow({ label, description, children }) {\n  return (\n    <div className="grid gap-3 px-5 py-4 md:grid-cols-[minmax(160px,260px)_minmax(0,1fr)]">\n      <div>\n        <p>{label}</p>\n        <p>{description}</p>\n      </div>\n      <div>{children}</div>\n    </div>\n  )\n}`,
     usageCode: `<SettingsPanel title="Working schedule" description="Used for notifications and escalation.">\n  <SettingsFieldRow label="Time zone">\n    <SettingsSelect value={timezone} options={timezones} onChange={setTimezone} />\n  </SettingsFieldRow>\n</SettingsPanel>`,
   },
   {
@@ -4491,6 +4509,7 @@ export const galleryCategories = ["All", "Design System", "Foundation", "Control
 
 export const galleryIcons = {
   colours: Palette,
+  "hugeicons-system": Component,
   typography: Type,
   surface: Gauge,
   "status-pill": BadgeCheck,
@@ -4555,7 +4574,7 @@ export const galleryIcons = {
   "domestic-job-stage-rail": Truck,
   "domestic-road-job-card": Truck,
   "domestic-road-kanban-board": LayoutDashboard,
-  "report-template-card": BarChart3,
+  "report-template-card": ChartAnalysis,
   "generated-report-table": FileText,
   "report-document-page": FileText,
   "report-thumbnail-rail": ListOrdered,

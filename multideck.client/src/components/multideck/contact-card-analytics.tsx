@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react"
 import { Area, CartesianGrid, ComposedChart, Line, XAxis, YAxis } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
-import { Info, QrCode, ShieldCheck, Table2 } from "lucide-react"
+import { Info, QrCode, ShieldCheck, Table2 } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
+import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { SegmentedControl } from "@/components/multideck/workflow-components"
 import { PanelError, PanelMessage, PanelSkeleton } from "@/components/multideck/contact-card-components"
@@ -126,6 +127,12 @@ function Timeline({ card, granularity }: { card: ContactCard; granularity: "hour
   const { t } = useLanguage()
   const [showTable, setShowTable] = useState(false)
   const points = useMemo(() => cardTimeline(card, granularity), [card, granularity])
+  type TimelinePoint = (typeof points)[number]
+  const tableColumns = useMemo<DataTableColumn<TimelinePoint>[]>(() => [
+    { id: "period", label: "Period", kind: "date", width: 180, cell: (point) => <span>{point.label}</span> },
+    { id: "scans", label: "Scans", kind: "number", width: 100, sortValue: (point) => point.scans, cell: (point) => point.scans },
+    { id: "exchanges", label: "Shared details", kind: "number", width: 120, sortValue: (point) => point.exchanges, cell: (point) => point.exchanges },
+  ], [])
 
   // Fewer ticks than points keeps the axis readable at narrow widths.
   const tickInterval = Math.max(0, Math.ceil(points.length / 7) - 1)
@@ -176,27 +183,7 @@ function Timeline({ card, granularity }: { card: ContactCard; granularity: "hour
       </div>
 
       {showTable ? (
-        <div className="mt-3 max-h-[260px] overflow-auto rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] md-scrollbar">
-          <table className="w-full text-[12.5px]">
-            <caption className="sr-only">{t("Scans and shared details over time")}</caption>
-            <thead className="sticky top-0 bg-[var(--md-surface-tint)]">
-              <tr className="text-left text-[var(--md-subtle)]">
-                <th scope="col" className="px-3 py-2 font-medium">{t("Period")}</th>
-                <th scope="col" className="px-3 py-2 text-right font-medium">{t("Scans")}</th>
-                <th scope="col" className="px-3 py-2 text-right font-medium">{t("Shared details")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {points.map((point) => (
-                <tr key={point.iso} className="text-[var(--md-ink)]">
-                  <th scope="row" className="px-3 py-1.5 text-left font-normal">{point.label}</th>
-                  <td className="px-3 py-1.5 text-right tabular-nums">{point.scans}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums">{point.exchanges}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable ariaLabel="Scans and shared details over time" columns={tableColumns} rows={points} getRowKey={(point) => point.iso} minimumWidth={400} showToolbar={false} showColumnManager={false} className="mt-3 max-h-[260px] rounded-[var(--md-radius-md)] shadow-none md-scrollbar" tableClassName="text-[12.5px]" />
       ) : null}
     </div>
   )

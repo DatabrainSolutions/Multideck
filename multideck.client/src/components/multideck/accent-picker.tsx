@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { AnimatePresence, motion, useInView, useReducedMotion } from "motion/react"
-import { Check, LayoutDashboard, Ship, Sparkles } from "lucide-react"
+import { Check, LayoutDashboard, Ship, Sparkles } from "@/components/icons/hugeicons"
 import { useTheme } from "next-themes"
 import { StaticBloomShader } from "@/components/multideck/dexter-action-pill"
 import { useLanguage } from "@/i18n/language-provider"
@@ -39,7 +39,7 @@ type AccentCardProps = {
  *
  * Memoised, with the handlers taking an index so the parent can hold stable
  * callbacks: picking an accent then re-renders the two cards whose selected state
- * changed instead of all ten, leaving eight shader trees untouched.
+ * changed instead of the full grid, leaving the other shader trees untouched.
  */
 const AccentCard = memo(function AccentCard({
   preset,
@@ -191,7 +191,7 @@ export function AccentPicker({ className }: { className?: string }) {
   const gridRef = useRef<HTMLDivElement>(null)
   const buttonRefs = useRef<(HTMLButtonElement | null)[]>([])
 
-  // Ten WebGL contexts is a real cost to leave standing on a settings page the
+  // Fifteen WebGL contexts is a real cost to leave standing on a settings page the
   // operator has scrolled past, so they are mounted only while the grid is near
   // the viewport. The margin gets them up before the grid is actually seen, and
   // each pill keeps a CSS gradient underneath so there is nothing to pop.
@@ -244,7 +244,7 @@ export function AccentPicker({ className }: { className?: string }) {
         event.preventDefault()
         commit(step(-1))
         break
-      // The grid is two rows of five at full width, so vertical arrows jump a row.
+      // The full-width grid is five columns, so vertical arrows jump a row.
       case "ArrowDown":
         event.preventDefault()
         commit(step(columns))

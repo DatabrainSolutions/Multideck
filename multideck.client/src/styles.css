@@ -713,66 +713,6 @@ form:not([novalidate]) :where(input:not([type="hidden"]), textarea, select):user
   text-align: center;
 }
 
-.md-email-status-pill.md-email-status-pill--subscribed {
-  background: color-mix(in srgb, var(--md-comparison-positive) 14%, var(--md-surface));
-  color: var(--md-comparison-positive);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--md-comparison-positive) 18%, transparent);
-}
-
-.md-email-status-pill.md-email-status-pill--unsubscribed {
-  background: color-mix(in srgb, var(--md-red) 12%, var(--md-surface));
-  color: var(--md-red);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--md-red) 16%, transparent);
-}
-
-.md-email-status-pill.md-email-status-pill--bounced {
-  background: color-mix(in srgb, var(--md-subtle) 12%, var(--md-surface));
-  color: var(--md-text);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--md-subtle) 16%, transparent);
-}
-
-.md-email-status-pill.md-email-status-pill--pending {
-  background: color-mix(in srgb, var(--md-amber) 13%, var(--md-surface));
-  color: var(--md-amber-strong);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--md-amber) 17%, transparent);
-}
-
-.md-email-status-pill.md-email-status-pill--replied {
-  background: color-mix(in srgb, var(--md-blue) 13%, var(--md-surface));
-  color: var(--md-blue);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--md-blue) 17%, transparent);
-}
-
-.dark .md-email-status-pill.md-email-status-pill--subscribed {
-  background: color-mix(in srgb, var(--md-comparison-positive) 24%, #03140f);
-  color: var(--md-comparison-positive);
-  box-shadow: none;
-}
-
-.dark .md-email-status-pill.md-email-status-pill--unsubscribed {
-  background: color-mix(in srgb, var(--md-red) 26%, #140407);
-  color: #ff9da5;
-  box-shadow: none;
-}
-
-.dark .md-email-status-pill.md-email-status-pill--bounced {
-  background: color-mix(in srgb, var(--md-subtle) 28%, #151719);
-  color: #c7cfcc;
-  box-shadow: none;
-}
-
-.dark .md-email-status-pill.md-email-status-pill--pending {
-  background: color-mix(in srgb, var(--md-amber) 26%, #1b1003);
-  color: #f4c16c;
-  box-shadow: none;
-}
-
-.dark .md-email-status-pill.md-email-status-pill--replied {
-  background: color-mix(in srgb, var(--md-blue) 30%, #06131c);
-  color: #91c5e3;
-  box-shadow: none;
-}
-
 /* Armed only while an accent change is in flight, then dropped. Leaving it on
    would make the light/dark switch cross-fade its accent over half a second while
    every other colour changed instantly, which reads as a lag rather than a fade. */

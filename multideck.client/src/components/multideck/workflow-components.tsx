@@ -1,5 +1,5 @@
 import { useId, type KeyboardEvent, type ReactNode } from "react"
-import { Check } from "lucide-react"
+import { Check } from "@/components/icons/hugeicons"
 import { motion, useReducedMotion } from "motion/react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"

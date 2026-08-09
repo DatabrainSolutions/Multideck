@@ -1,19 +1,19 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react"
-import { CalendarClock, Search, SlidersHorizontal, Star, TriangleAlert, X } from "lucide-react"
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react"
+import { ArrowDownAZ, ArrowUpAZ, CalendarClock, Search, Star, TriangleAlert, X } from "@/components/icons/hugeicons"
 import {
   BookingBoardPreview,
   BookingListHeader,
   BookingMetricStrip,
-  BookingShapeCell,
+  BookingModePill,
   BookingStatusPill,
+  bookingSearchFieldOptions,
   getBookingDetailPath,
   bookingViewModes,
   type Booking,
-  type BookingSearchCriterion,
   type BookingSearchField,
   type BookingViewMode,
 } from "@/components/multideck/booking-components"
-import { BookingSearchBuilder } from "@/components/multideck/booking-search-builder"
+import { AdvancedFilterPopover } from "@/components/multideck/advanced-filter-popover"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { Pagination } from "@/components/multideck/pagination"
 import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
@@ -25,13 +25,19 @@ import { Progress } from "@/components/ui/progress"
 import { currentOperator, getBookingShape, bookingScopeTabs } from "@/data/multideck-data"
 import { useLanguage } from "@/i18n/language-provider"
 import { getSavedView, saveView } from "@/lib/view-preferences"
+import {
+  createEmptyFilterQuery,
+  matchesFilterQuery,
+  type FilterFieldOption,
+  type FilterQuery,
+} from "@/lib/advanced-filters"
 import { listLiveBookings, type LiveBooking } from "@/lib/application-data-api"
 
 const rowsPerPageOptions = [10, 20, 30, 50]
 const bookingViewStorageKey = "multideck.view.bookings"
 type BookingScope = (typeof bookingScopeTabs)[number]
 type BookingSortDirection = "asc" | "desc"
-const initialSearchCriteria: BookingSearchCriterion[] = [{ id: "booking-search-any", field: "any", value: "", valueTo: "" }]
+const dateSearchFields = new Set<BookingSearchField>(["date", "departure", "arrival"])
 const directionFilters = ["All directions", "Import", "Export", "Domestic", "Cross trade"] as const
 const modeFilters = ["All modes", "OCEAN", "AIR", "ROAD", "FAS", "FSA"] as const
 const shipmentTypeFiltersByMode = {
@@ -130,71 +136,21 @@ function getBookingSearchValues(booking: Booking, field: TextBookingSearchField)
   return valuesByField[field]
 }
 
-function dateInRange(dateValue: string, startValue: string, endValue?: string) {
-  const start = startValue || endValue
-  const end = endValue || startValue
-  if (!start || !end) return true
+const bookingFilterFields: readonly FilterFieldOption[] = bookingSearchFieldOptions.map((option) => (
+  dateSearchFields.has(option.value)
+    ? { value: option.value, label: option.label, kind: "date" as const }
+    : { value: option.value, label: option.label, placeholder: option.placeholder }
+))
 
-  const date = Date.parse(`${dateValue}T00:00:00Z`)
-  const startDate = Date.parse(`${start}T00:00:00Z`)
-  const endDate = Date.parse(`${end}T00:00:00Z`)
-  if (Number.isNaN(date) || Number.isNaN(startDate) || Number.isNaN(endDate)) return false
-
-  return date >= Math.min(startDate, endDate) && date <= Math.max(startDate, endDate)
+function bookingFilterValue(booking: Booking, field: string) {
+  if (field === "date") return [booking.departureDate, booking.arrivalDate]
+  if (field === "departure") return booking.departureDate
+  if (field === "arrival") return booking.arrivalDate
+  return getBookingSearchValues(booking, field as TextBookingSearchField)
 }
 
-function bookingMatchesCriterion(booking: Booking, criterion: BookingSearchCriterion) {
-  const query = normalized(criterion.value)
-  const queryEnd = criterion.valueTo?.trim()
-  if (!query && !queryEnd) return true
-
-  if (criterion.field === "date") {
-    return [booking.departureDate, booking.arrivalDate].some((date) => dateInRange(date, criterion.value, criterion.valueTo))
-  }
-
-  if (criterion.field === "departure") return dateInRange(booking.departureDate, criterion.value, criterion.valueTo)
-  if (criterion.field === "arrival") return dateInRange(booking.arrivalDate, criterion.value, criterion.valueTo)
-
-  return getBookingSearchValues(booking, criterion.field).some((value) => normalized(value).includes(query))
-}
-
-function criterionHasValue(criterion: BookingSearchCriterion) {
-  return Boolean(criterion.value.trim() || criterion.valueTo?.trim())
-}
-
-function bookingMatchesSearch(booking: Booking, criteria: BookingSearchCriterion[]) {
-  const groups = criteria.reduce<Array<{ id: string; connector: "and" | "or"; criteria: BookingSearchCriterion[] }>>((currentGroups, criterion, index) => {
-    if (!criterionHasValue(criterion)) return currentGroups
-
-    const groupId = criterion.groupId ?? "booking-search-main"
-    const existingGroup = currentGroups.find((group) => group.id === groupId)
-
-    if (existingGroup) {
-      existingGroup.criteria.push(criterion)
-      return currentGroups
-    }
-
-    currentGroups.push({
-      id: groupId,
-      connector: criterion.groupConnector ?? (index === 0 ? "and" : "or"),
-      criteria: [criterion],
-    })
-
-    return currentGroups
-  }, [])
-
-  if (!groups.length) return true
-
-  return groups.reduce<boolean>((searchMatches, group, groupIndex) => {
-    const groupMatches = group.criteria.reduce<boolean>((matches, criterion, criterionIndex) => {
-      const criterionMatches = bookingMatchesCriterion(booking, criterion)
-      if (criterionIndex === 0) return criterionMatches
-      return (criterion.connector ?? "and") === "or" ? matches || criterionMatches : matches && criterionMatches
-    }, true)
-
-    if (groupIndex === 0) return groupMatches
-    return group.connector === "or" ? searchMatches || groupMatches : searchMatches && groupMatches
-  }, true)
+function bookingMatchesSearch(booking: Booking, search: FilterQuery) {
+  return matchesFilterQuery(booking, search, bookingFilterValue)
 }
 
 export function BookingsPage({ navigate }: { navigate: (path: string) => void }) {
@@ -206,9 +162,8 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
   const [bookingsError, setBookingsError] = useState<string | null>(null)
   const [favouriteIds, setFavouriteIds] = useState<Set<string>>(() => new Set())
   const [sortDirection, setSortDirection] = useState<BookingSortDirection>("asc")
-  const [searchCriteria, setSearchCriteria] = useState<BookingSearchCriterion[]>(initialSearchCriteria)
+  const [search, setSearch] = useState<FilterQuery>(createEmptyFilterQuery)
   const [quickSearch, setQuickSearch] = useState("")
-  const [advancedSearchOpen, setAdvancedSearchOpen] = useState(false)
   const [page, setPage] = useState(1)
   const [rowsPerPage, setRowsPerPage] = useState(10)
   const [dexterOpen, setDexterOpen] = useState(false)
@@ -240,28 +195,36 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
     )
   }, [bookingRecords, scope])
 
-  const visibleBookings = useMemo(() => {
+  /** The shape pills and quick search apply alongside the advanced filter, so both share one predicate. */
+  const matchesToolbarFilters = useCallback((booking: LiveBooking) => {
     const quickQuery = normalized(quickSearch)
-    return scopedBookings.filter((booking) => {
-      const shape = getBookingShape(booking.id)
-      const matchesShape =
-        (directionFilter === "All directions" || shape.direction === directionFilter) &&
-        (modeFilter === "All modes" || booking.mode === modeFilter) &&
-        (shipmentTypeFilter === "All types" || shape.shipmentType === shipmentTypeFilter)
-      const matchesQuickSearch = !quickQuery || getBookingSearchValues(booking, "any").some((candidate) => normalized(candidate).includes(quickQuery))
-      return matchesShape && matchesQuickSearch && bookingMatchesSearch(booking, searchCriteria)
-    }).sort((a, b) => {
-      const result = a.customer.localeCompare(b.customer, undefined, { sensitivity: "base" }) || a.id.localeCompare(b.id)
-      return sortDirection === "asc" ? result : -result
-    })
-  }, [directionFilter, modeFilter, quickSearch, scopedBookings, searchCriteria, shipmentTypeFilter, sortDirection])
+    const shape = getBookingShape(booking.id)
+    return (directionFilter === "All directions" || shape.direction === directionFilter)
+      && (modeFilter === "All modes" || booking.mode === modeFilter)
+      && (shipmentTypeFilter === "All types" || shape.shipmentType === shipmentTypeFilter)
+      && (!quickQuery || getBookingSearchValues(booking, "any").some((candidate) => normalized(candidate).includes(quickQuery)))
+  }, [directionFilter, modeFilter, quickSearch, shipmentTypeFilter])
+
+  const visibleBookings = useMemo(() => (
+    scopedBookings
+      .filter((booking) => matchesToolbarFilters(booking) && bookingMatchesSearch(booking, search))
+      .sort((a, b) => {
+        const result = a.customer.localeCompare(b.customer, undefined, { sensitivity: "base" }) || a.id.localeCompare(b.id)
+        return sortDirection === "asc" ? result : -result
+      })
+  ), [matchesToolbarFilters, scopedBookings, search, sortDirection])
+
+  const countDraftMatches = useCallback(
+    (draft: FilterQuery) => scopedBookings.filter((booking) => matchesToolbarFilters(booking) && bookingMatchesSearch(booking, draft)).length,
+    [matchesToolbarFilters, scopedBookings],
+  )
 
   const pageCount = Math.max(Math.ceil(visibleBookings.length / rowsPerPage), 1)
   const paginatedBookings = visibleBookings.slice((page - 1) * rowsPerPage, page * rowsPerPage)
 
   useEffect(() => {
     setPage(1)
-  }, [directionFilter, modeFilter, quickSearch, scope, shipmentTypeFilter, viewMode, searchCriteria])
+  }, [directionFilter, modeFilter, quickSearch, scope, shipmentTypeFilter, viewMode, search])
 
   useEffect(() => {
     saveView(bookingViewStorageKey, viewMode)
@@ -291,7 +254,7 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
 
   function clearFilters() {
     setQuickSearch("")
-    setSearchCriteria(initialSearchCriteria)
+    setSearch(createEmptyFilterQuery())
     setDirectionFilter(directionFilters[0])
     setModeFilter(modeFilters[0])
     setShipmentTypeFilter("All types")
@@ -328,6 +291,7 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
     {
       id: "status",
       label: t("Status and exception"),
+      kind: "status",
       width: 220,
       minWidth: 188,
       resizable: true,
@@ -380,21 +344,33 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
     {
       id: "movement",
       label: t("Movement"),
-      width: 300,
-      minWidth: 240,
+      width: 320,
+      minWidth: 272,
       maxWidth: 420,
       resizable: true,
+      cellClassName: "align-top py-3",
       sortValue: (booking) => `${booking.origin} ${booking.destination} ${booking.carrier}`,
-      cell: (booking) => (
-        <div className="min-w-0">
-          <div className="flex min-w-0 items-center gap-2">
-            <BookingShapeCell booking={booking} />
-            <span className="truncate text-[11px] text-[var(--md-subtle)]">{booking.carrier}</span>
+      cell: (booking) => {
+        const shape = getBookingShape(booking.id)
+        const direction = booking.direction || shape.direction
+        const shipmentType = booking.shipmentType || shape.shipmentType
+
+        return (
+          <div className="grid min-w-0 gap-1.5">
+            <div className="flex min-w-0 items-center gap-2">
+              <p className="truncate text-[12px] font-medium text-[var(--md-ink)]">{t(direction)}</p>
+              <BookingModePill mode={booking.mode} />
+            </div>
+            <p className="truncate text-[12px] font-medium text-[var(--md-ink)]" title={booking.route}>{booking.route}</p>
+            <p className="flex min-w-0 items-center gap-1.5 text-[10.5px] text-[var(--md-text)]">
+              <span className="truncate">{t(shipmentType)}</span>
+              <span className="shrink-0 text-[var(--md-subtle)]" aria-hidden="true">·</span>
+              <span className="truncate text-[var(--md-subtle)]" title={booking.carrier}>{booking.carrier || t("Carrier pending")}</span>
+            </p>
+            {booking.vessel ? <p className="truncate text-[10.5px] text-[var(--md-subtle)]" title={booking.vessel}>{booking.vessel}</p> : null}
           </div>
-          <p className="mt-1.5 truncate text-[12px] font-medium text-[var(--md-ink)]" title={booking.route}>{booking.route}</p>
-          {booking.vessel ? <p className="mt-0.5 truncate text-[11px] text-[var(--md-text)]" title={booking.vessel}>{booking.vessel}</p> : null}
-        </div>
-      ),
+        )
+      },
     },
     {
       id: "schedule",
@@ -402,6 +378,7 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
       width: 190,
       minWidth: 170,
       resizable: true,
+      cellClassName: "align-top py-3",
       sortValue: (booking) => booking.arrivalDate,
       cell: (booking) => (
         <div className="grid grid-cols-2 gap-3 tabular-nums" dir="ltr">
@@ -521,20 +498,9 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
         scopeOptions={bookingScopeTabs}
         scope={scope}
         onScopeChange={setScope}
-        sortDirection={sortDirection}
-        onSortDirectionChange={setSortDirection}
       />
       <BookingMetricStrip rows={scopedBookings} />
       {bookingsError ? <div role="alert" className="rounded-[var(--md-radius-lg)] bg-[rgba(209,78,78,0.08)] px-4 py-3 text-[13px] text-[var(--md-red)]">{t("Bookings could not be loaded.")} {bookingsError}</div> : null}
-      {advancedSearchOpen ? (
-        <BookingSearchBuilder
-          value={searchCriteria}
-          onChange={setSearchCriteria}
-          resultCount={visibleBookings.length}
-          totalCount={scopedBookings.length}
-        />
-      ) : null}
-
       {viewMode === "Table" ? (
         <DataTable
           ariaLabel={t("Bookings")}
@@ -545,18 +511,28 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
           storageKey="booking-register-operations-v2"
           rowClassName={() => "hover:bg-[var(--md-hover)]"}
           onRowClick={openBooking}
-          toolbarLeading={(
-            <div aria-label={t("Booking shape")} className="flex max-w-full flex-wrap items-center gap-1.5">
-              <ShapeFilter compact label={t("Direction")} options={directionFilters} value={directionFilter} onChange={setDirectionFilter} />
-              <ShapeFilter compact label={t("Mode")} options={modeFilters} value={modeFilter} onChange={changeMode} />
-              {shipmentTypeFilters.length > 1 ? (
-                <ShapeFilter compact label={t("Type")} options={shipmentTypeFilters} value={shipmentTypeFilter} onChange={setShipmentTypeFilter} />
-              ) : null}
-            </div>
+          toolbarFilters={(
+            <>
+              <div aria-label={t("Booking shape")} className="flex max-w-full flex-wrap items-center gap-1.5">
+                <ShapeFilter compact label={t("Direction")} options={directionFilters} value={directionFilter} onChange={setDirectionFilter} />
+                <ShapeFilter compact label={t("Mode")} options={modeFilters} value={modeFilter} onChange={changeMode} />
+                {shipmentTypeFilters.length > 1 ? <ShapeFilter compact label={t("Type")} options={shipmentTypeFilters} value={shipmentTypeFilter} onChange={setShipmentTypeFilter} /> : null}
+              </div>
+              <AdvancedFilterPopover
+                fields={bookingFilterFields}
+                value={search}
+                onChange={setSearch}
+                storageKey="booking-register"
+                label="Advanced search"
+                title="Advanced booking search"
+                itemLabel="bookings"
+                countMatches={countDraftMatches}
+                totalCount={scopedBookings.length}
+              />
+            </>
           )}
-          toolbarActions={(
-            <div className="flex min-w-0 flex-1 items-center justify-end gap-1.5">
-              <div className="relative min-w-[128px] max-w-[280px] flex-1 sm:min-w-[200px] sm:flex-none">
+          toolbarSearch={(
+            <div className="relative min-w-[128px] max-w-[280px] flex-1 sm:min-w-[200px] sm:flex-none">
                 <Search className="pointer-events-none absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.35} />
                 <Input
                   type="search"
@@ -572,23 +548,20 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
                     <X className="size-3.5" strokeWidth={1.4} />
                   </Button>
                 ) : null}
-              </div>
+            </div>
+          )}
+          toolbarOptions={(
               <Button
                 type="button"
                 variant="ghost"
-                aria-expanded={advancedSearchOpen}
-                className={advancedSearchOpen ? "h-8 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] px-2.5 text-[12px] shadow-[var(--md-shadow-line)]" : "h-8 rounded-[var(--md-radius-md)] px-2.5 text-[12px]"}
-                onClick={() => setAdvancedSearchOpen((current) => !current)}
+                aria-label={t(sortDirection === "asc" ? "Sort bookings Z to A" : "Sort bookings A to Z")}
+                aria-pressed={sortDirection === "desc"}
+                className="h-8 rounded-[var(--md-radius-md)] px-2.5 text-[12px] font-medium text-[var(--md-text)] hover:bg-[var(--md-surface)] hover:text-[var(--md-ink)] active:scale-[0.96]"
+                onClick={() => setSortDirection((current) => current === "asc" ? "desc" : "asc")}
               >
-                <SlidersHorizontal className="size-3.5" strokeWidth={1.4} />
-                <span className="hidden lg:inline">{t("Advanced search")}</span>
-                {searchCriteria.filter(criterionHasValue).length ? (
-                  <span className="grid min-w-4 place-items-center rounded-full bg-[var(--md-accent-a11)] px-1 text-[10px] font-medium text-[var(--md-accent)]" data-i18n-skip>
-                    {searchCriteria.filter(criterionHasValue).length}
-                  </span>
-                ) : null}
+                {sortDirection === "asc" ? <ArrowDownAZ className="size-3.5" strokeWidth={1.45} /> : <ArrowUpAZ className="size-3.5" strokeWidth={1.45} />}
+                <span aria-hidden="true">{sortDirection === "asc" ? "A–Z" : "Z–A"}</span>
               </Button>
-            </div>
           )}
           emptyState={bookingsLoading ? <div className="mx-auto py-8 text-center text-[13px] text-[var(--md-text)]">{t("Loading bookings...")}</div> : (
             <div className="mx-auto grid max-w-sm place-items-center py-3 text-center">
@@ -643,7 +616,7 @@ function ShapeFilter<T extends string>({ label, options, value, onChange, compac
 
   return (
     <div className="min-w-0">
-      <p className={compact ? "mb-0.5 px-0.5 text-[10px] font-medium text-[var(--md-subtle)]" : "mb-1.5 px-0.5 text-[11px] font-medium text-[var(--md-subtle)]"}>{label}</p>
+      {compact ? null : <p className="mb-1.5 px-0.5 text-[11px] font-medium text-[var(--md-subtle)]">{label}</p>}
       <ChoiceControl
         options={options.map((option) => ({ value: option, label: t(option) }))}
         value={value}

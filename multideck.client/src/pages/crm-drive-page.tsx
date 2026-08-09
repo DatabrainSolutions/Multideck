@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react"
 import { AnimatePresence, motion } from "motion/react"
-import { FolderPlus, UploadCloud } from "lucide-react"
+import { FolderPlus, UploadCloud } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"

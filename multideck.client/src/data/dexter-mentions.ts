@@ -8,7 +8,7 @@ import {
   Ship,
   UserRoundSearch,
   type LucideIcon,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 import gmailLogo from "@/assets/integrations/gmail.svg"
 import outlookLogo from "@/assets/integrations/outlook.svg"
 import { bookings, customers } from "@/data/multideck-data"

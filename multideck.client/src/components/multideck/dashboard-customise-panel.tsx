@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type PointerEvent, type ReactNode } from "react"
 import { AnimatePresence, motion } from "motion/react"
-import { Check, CornerDownLeft, Eye, GripVertical, LayoutDashboard, Maximize2, RefreshCcw, SlidersHorizontal, Sparkles, Trash2, X } from "lucide-react"
+import { Check, CornerDownLeft, Eye, GripVertical, LayoutDashboard, Maximize2, RefreshCcw, SlidersHorizontal, Sparkles, Trash2, X } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"

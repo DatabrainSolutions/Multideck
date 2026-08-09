@@ -1,11 +1,11 @@
 import { useEffect, useId, useMemo, useState, type ReactNode } from "react"
-import { ArrowRight, Building2, LoaderCircle, RefreshCw } from "lucide-react"
+import { ArrowRight, Building2, LoaderCircle, RefreshCw } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
 import { CustomerAvatar } from "@/components/multideck/customer-components"
-import { RegisterFacetSelect, RegisterSearchField, RegisterToolbarActions, RegisterViewSwitch } from "@/components/multideck/register-toolbar"
+import { RegisterFacetSelect, RegisterRevalidatingMark, RegisterSearchField, RegisterViewSwitch } from "@/components/multideck/register-toolbar"
 import { Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { WizardDialog, type WizardStep } from "@/components/multideck/wizard-dialog"
@@ -90,11 +90,11 @@ export function CrmAccountsPage({ navigate }: { navigate: (path: string) => void
       sortValue: (account) => account.name,
       cell: (account) => <div className="flex min-h-11 items-center gap-3"><CustomerAvatar initials={account.initials} tone="teal" /><span className="min-w-0"><span className="block truncate text-[14px] font-medium text-[var(--md-ink)]">{account.name}</span><span className="mt-0.5 block truncate text-[12px] text-[var(--md-text)]">{[account.industry, account.location].filter(Boolean).join(" · ") || t("No location recorded")}</span></span></div>,
     },
-    { id: "relationship", label: "Relationship", width: 160, minWidth: 130, resizable: true, sortValue: (account) => account.relationshipStatus || account.status, cell: (account) => <StatusPill tone={account.healthScore != null && account.healthScore < 50 ? "amber" : "neutral"}>{humanize(account.relationshipStatus || account.status)}</StatusPill> },
+    { id: "relationship", label: "Relationship", kind: "status", width: 160, minWidth: 130, resizable: true, sortValue: (account) => account.relationshipStatus || account.status, cell: (account) => <StatusPill tone={account.healthScore != null && account.healthScore < 50 ? "amber" : "neutral"}>{humanize(account.relationshipStatus || account.status)}</StatusPill> },
     { id: "owner", label: "Owner", width: 160, minWidth: 130, resizable: true, sortValue: (account) => account.ownerName, cellClassName: "text-[13px] text-[var(--md-text)]", cell: (account) => account.ownerName || t("Unassigned") },
     { id: "last-contact", label: "Last contact", width: 130, minWidth: 110, resizable: true, sortValue: (account) => account.lastContactAt ? new Date(account.lastContactAt).getTime() : null, cellClassName: "text-[13px] tabular-nums text-[var(--md-text)]", cell: (account) => relativeDate(account.lastContactAt, t) },
     { id: "contacts", label: "Contacts", width: 100, minWidth: 88, sortValue: (account) => account.contactCount, cellClassName: "text-[13px] tabular-nums text-[var(--md-ink)]", cell: (account) => account.contactCount },
-    { id: "marketing", label: "Marketing", width: 120, minWidth: 110, sortValue: (account) => account.marketingOptIn ? 1 : 0, cell: (account) => <StatusPill tone={account.marketingOptIn ? "green" : "neutral"}>{t(account.marketingOptIn ? "Opted in" : "Opted out")}</StatusPill> },
+    { id: "marketing", label: "Marketing", kind: "status", width: 120, minWidth: 110, sortValue: (account) => account.marketingOptIn ? 1 : 0, cell: (account) => <StatusPill tone={account.marketingOptIn ? "green" : "neutral"}>{t(account.marketingOptIn ? "Opted in" : "Opted out")}</StatusPill> },
     { id: "open", label: "Open", headerContent: <span className="sr-only">{t("Open")}</span>, width: 52, minWidth: 52, maxWidth: 52, canHide: false, canPin: false, cell: () => <ArrowRight className="size-4 text-[var(--md-subtle)] transition-transform duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:translate-x-0.5 rtl:rotate-180 rtl:group-hover:-translate-x-0.5 motion-reduce:transition-none" strokeWidth={1.4} /> },
   ], [t])
 
@@ -189,12 +189,13 @@ export function CrmAccountsPage({ navigate }: { navigate: (path: string) => void
         onRowClick={(account) => navigate(`/crm/accounts/${account.id}`)}
         rowClassName="group hover:bg-[var(--md-hover)]"
         compactToolbar
-        toolbarLeading={<RegisterViewSwitch options={marketingScopes} value={marketingScope} onChange={setMarketingScope} counts={{ All: accounts.length, "Opted in": marketingOptIns, "Opted out": accounts.length - marketingOptIns }} ariaLabel="Marketing consent filter" compact />}
-        toolbarActions={<RegisterToolbarActions pending={state === "loading" && accounts.length > 0}>
+        toolbarTabs={<RegisterViewSwitch options={marketingScopes} value={marketingScope} onChange={setMarketingScope} counts={{ All: accounts.length, "Opted in": marketingOptIns, "Opted out": accounts.length - marketingOptIns }} ariaLabel="Marketing consent filter" compact />}
+        toolbarSearch={<RegisterSearchField value={query} onChange={setQuery} onClear={() => setQuery("")} label="Search accounts" placeholder="Search accounts…" className="sm:w-[180px]" />}
+        toolbarFilters={<>
           <RegisterFacetSelect label="Relationship status" allLabel="All relationships" value={relationshipFilter} options={relationshipOptions} onChange={setRelationshipFilter} className="w-[132px]" />
           <RegisterFacetSelect label="Owner" allLabel="All owners" value={ownerFilter} options={ownerOptions} onChange={setOwnerFilter} className="w-[126px]" />
-          <RegisterSearchField value={query} onChange={setQuery} onClear={() => setQuery("")} label="Search accounts" placeholder="Search accounts…" className="sm:w-[180px]" />
-        </RegisterToolbarActions>}
+        </>}
+        toolbarOptions={<RegisterRevalidatingMark active={state === "loading" && accounts.length > 0} />}
         emptyState={state === "loading"
           ? <RecordState icon={<LoaderCircle className="size-5 animate-spin" />} title={t("Loading accounts…")} />
           : state === "error"

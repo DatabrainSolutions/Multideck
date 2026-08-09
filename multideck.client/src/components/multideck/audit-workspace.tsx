@@ -18,9 +18,10 @@ import {
   UserRound,
   X,
   type LucideIcon,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 import { AuditTimeline, type AuditTimelineEvent } from "@/components/multideck/audit-timeline"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
+import { MultideckDateTimePicker } from "@/components/multideck/date-picker"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { SegmentedControl } from "@/components/multideck/workflow-components"
 import { Button } from "@/components/ui/button"
@@ -457,6 +458,7 @@ function DetailedAuditTable({ records }: { records: readonly QuoteAuditRecord[] 
     {
       id: "source",
       label: "Source",
+      kind: "attribute",
       width: 170,
       minWidth: 140,
       maxWidth: 260,
@@ -478,14 +480,7 @@ function DetailedAuditTable({ records }: { records: readonly QuoteAuditRecord[] 
         selectedRowKey={selectedRecordId}
         onRowClick={(record) => setSelectedRecordId(record.id)}
         rowClassName={(record) => record.state === "current" ? "[&_td]:bg-[rgba(221,138,43,0.035)]" : ""}
-        toolbarLeading={(
-          <div className="flex min-w-0 items-center gap-2 px-1">
-            <ListTree className="size-3.5 shrink-0 text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" />
-            <span className="truncate text-[12px] font-medium text-[var(--md-ink)]">{t("Detailed audit log")}</span>
-            <span className="shrink-0 text-[10px] tabular-nums text-[var(--md-subtle)]">{records.length} {t("events")}</span>
-          </div>
-        )}
-        toolbarActions={(
+        toolbarOptions={(
           <span className="hidden truncate text-[10px] text-[var(--md-subtle)] lg:block">
             {t("Select a row to inspect the complete audit event.")}
           </span>
@@ -673,31 +668,35 @@ export function AuditWorkspace({
 
         <div className="mt-4 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-3 shadow-[var(--md-shadow-line)]">
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(170px,1fr)_minmax(170px,1fr)_minmax(150px,0.8fr)_minmax(150px,0.8fr)_auto] xl:items-end">
-            <label className="grid min-w-0 gap-1.5" htmlFor={`${filterId}-from`}>
+            <div className="grid min-w-0 gap-1.5">
               <span className="text-[10.5px] font-medium text-[var(--md-text)]">{t("From date and time")}</span>
-              <Input
-                id={`${filterId}-from`}
-                type="datetime-local"
+              <MultideckDateTimePicker
                 value={filters.from}
                 max={filters.to || undefined}
-                onChange={(event) => setFilters((current) => ({ ...current, from: event.target.value }))}
-                dir="ltr"
-                className="text-[12px]"
+                onChange={(from) => setFilters((current) => ({ ...current, from }))}
+                placeholder="From date"
+                title="From date and time"
+                description="Pick the start of the audit period."
+                defaultTime="00:00"
+                triggerClassName="h-10 text-[12px]"
+                timeClassName="h-10 text-[12px]"
               />
-            </label>
+            </div>
 
-            <label className="grid min-w-0 gap-1.5" htmlFor={`${filterId}-to`}>
+            <div className="grid min-w-0 gap-1.5">
               <span className="text-[10.5px] font-medium text-[var(--md-text)]">{t("To date and time")}</span>
-              <Input
-                id={`${filterId}-to`}
-                type="datetime-local"
+              <MultideckDateTimePicker
                 value={filters.to}
                 min={filters.from || undefined}
-                onChange={(event) => setFilters((current) => ({ ...current, to: event.target.value }))}
-                dir="ltr"
-                className="text-[12px]"
+                onChange={(to) => setFilters((current) => ({ ...current, to }))}
+                placeholder="To date"
+                title="To date and time"
+                description="Pick the end of the audit period."
+                defaultTime="23:59"
+                triggerClassName="h-10 text-[12px]"
+                timeClassName="h-10 text-[12px]"
               />
-            </label>
+            </div>
 
             <div className="grid min-w-0 gap-1.5">
               <label htmlFor={`${filterId}-actor`} className="text-[10.5px] font-medium text-[var(--md-text)]">{t("Actor or sender")}</label>

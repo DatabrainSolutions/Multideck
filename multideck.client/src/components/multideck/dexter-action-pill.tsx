@@ -1,5 +1,5 @@
 import { lazy, memo, Suspense, type ComponentProps, type CSSProperties } from "react"
-import { Sparkles, type LucideIcon } from "lucide-react"
+import { Sparkles, type LucideIcon } from "@/components/icons/hugeicons"
 import "@/dexter-transfer.css"
 import { Button } from "@/components/ui/button"
 import { useLanguage } from "@/i18n/language-provider"
@@ -12,6 +12,7 @@ const SpectralBloomCanvas = lazy(() => import("./spectral-bloom-canvas"))
 
 type DexterActionPillProps = Omit<ComponentProps<typeof Button>, "children"> & {
   icon?: LucideIcon
+  iconClassName?: string
   iconOnly?: boolean
   label?: string
 }
@@ -83,6 +84,7 @@ function SlotLabel({ label, direction }: { label: string; direction: "ltr" | "rt
 
 export function DexterActionPill({
   icon: Icon = Sparkles,
+  iconClassName,
   iconOnly = false,
   label,
   className,
@@ -110,7 +112,7 @@ export function DexterActionPill({
         <SpectralBloomShader />
       </span>
       <span className="md-dexter-pill__contrast" aria-hidden="true" />
-      <Icon className="relative z-10 size-3.5 shrink-0" strokeWidth={1.25} />
+      <Icon className={cn("relative z-10 size-3.5 shrink-0", iconClassName)} strokeWidth={1.25} />
       {iconOnly ? null : <SlotLabel label={resolvedLabel} direction={direction} />}
     </Button>
   )

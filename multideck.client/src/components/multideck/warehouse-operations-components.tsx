@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { motion, useReducedMotion } from "motion/react"
-import { AlertCircle, ArrowDownToLine, ArrowUpFromLine, Boxes, CheckCircle2, Download, FileArchive, FileImage, FileText, Loader2, Mail, Plus, RefreshCw, Trash2, Upload, XCircle } from "lucide-react"
+import { AlertCircle, ArrowDownToLine, ArrowUpFromLine, Boxes, CheckCircle2, Download, FileArchive, FileImage, FileText, Loader2, Mail, Plus, RefreshCw, Trash2, Upload, XCircle } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { WarehouseFormField, warehouseDialogFooterClass, warehouseDialogHeaderClass } from "@/components/multideck/warehouse-management-components"
+import { MultideckDatePicker, MultideckDateTimePicker } from "@/components/multideck/date-picker"
 import { WizardDialog, WizardSaveNowButton, type WizardStep } from "@/components/multideck/wizard-dialog"
 import { WarehouseInventoryTable } from "@/components/multideck/warehouse-components"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
@@ -15,8 +16,8 @@ import { orderDetailPath } from "@/components/multideck/warehouse-order-detail"
 import { DotGridLoader, DotGridLoaderPanel } from "@/components/multideck/dot-grid-loader"
 import {
   RegisterFacetSelect,
+  RegisterRevalidatingMark,
   RegisterSearchField,
-  RegisterToolbarActions,
   RegisterViewSwitch,
 } from "@/components/multideck/register-toolbar"
 import { StatusPill } from "@/components/multideck/status-pill"
@@ -398,8 +399,8 @@ function CreateOrderDialog({ open, onOpenChange, reference, fixedType, allowedTy
             <WarehouseFormField label="Customer" required><Select value={form.customerOrgId} onValueChange={(value) => resetLines(form.facilityId, value)} disabled={isCustomer}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent>{reference?.customers.map((customer) => <SelectItem key={customer.id} value={customer.id}>{customer.name}</SelectItem>)}</SelectContent></Select></WarehouseFormField>
             {!fixedType && allowedTypes.length > 1 ? <WarehouseFormField label="Direction" required><Select value={form.typeCode} onValueChange={(value) => changeType(value as "inbound" | "outbound")}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent>{allowedTypes.includes("inbound") ? <SelectItem value="inbound">Inbound receipt</SelectItem> : null}{allowedTypes.includes("outbound") ? <SelectItem value="outbound">Outbound release</SelectItem> : null}</SelectContent></Select></WarehouseFormField> : <WarehouseFormField label="Direction"><div className={`${controlClass} flex items-center`}>{form.typeCode === "inbound" ? "Inbound receipt" : "Outbound release"}</div></WarehouseFormField>}
             <WarehouseFormField label="Customer reference"><Input value={form.customerReference} onChange={(event) => patchForm({ customerReference: event.target.value })} className={controlClass} dir="ltr" /></WarehouseFormField>
-            <WarehouseFormField label="Requested date"><Input type="date" value={form.requestedDate} onChange={(event) => patchForm({ requestedDate: event.target.value })} className={controlClass} dir="ltr" /></WarehouseFormField>
-            <WarehouseFormField label="Appointment"><Input type="datetime-local" value={form.appointmentStartAt} onChange={(event) => patchForm({ appointmentStartAt: event.target.value })} className={controlClass} dir="ltr" /></WarehouseFormField>
+            <WarehouseFormField label="Requested date"><MultideckDatePicker value={form.requestedDate || null} onChange={(date) => patchForm({ requestedDate: date ?? "" })} placeholder="Select date" title="Requested date" description="Pick the date requested by the customer." triggerClassName={controlClass} /></WarehouseFormField>
+            <WarehouseFormField label="Appointment"><MultideckDateTimePicker value={form.appointmentStartAt} onChange={(appointmentStartAt) => patchForm({ appointmentStartAt })} placeholder="Select date" title="Appointment" description="Pick the appointment date and time." triggerClassName={controlClass} timeClassName={controlClass} /></WarehouseFormField>
           </div>
         </div>
       ) : null}
@@ -439,7 +440,7 @@ function CreateOrderDialog({ open, onOpenChange, reference, fixedType, allowedTy
                 })}</SelectContent></Select></WarehouseFormField> : <div className="md:col-span-4 rounded-[var(--md-radius-lg)] bg-[var(--md-accent-a07)] px-3 py-2 text-[12px] leading-5 text-[var(--md-text)]">{t("Warehouse staff will assign the storage or picking location.")}</div>}
                 <WarehouseFormField label="Customs" className="md:col-span-3"><Select value={line.customsStatusCode} onValueChange={(value) => patchLine(line.key, { customsStatusCode: value })}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent>{reference?.customsStatuses.map((status) => <SelectItem key={status.code} value={status.code}>{status.name}</SelectItem>)}</SelectContent></Select></WarehouseFormField>
                 <WarehouseFormField label={item?.requiresLot ? "Lot / batch (required at receipt)" : "Lot / batch"} className="md:col-span-4"><Input value={line.lotNumber} onChange={(event) => patchLine(line.key, { lotNumber: event.target.value })} className={controlClass} dir="ltr" /></WarehouseFormField>
-                <WarehouseFormField label={item?.requiresExpiry ? "Expiry (required at receipt)" : "Expiry"} className="md:col-span-4"><Input type="date" value={line.expiryDate} onChange={(event) => patchLine(line.key, { expiryDate: event.target.value })} className={controlClass} dir="ltr" /></WarehouseFormField>
+                <WarehouseFormField label={item?.requiresExpiry ? "Expiry (required at receipt)" : "Expiry"} className="md:col-span-4"><MultideckDatePicker value={line.expiryDate || null} onChange={(date) => patchLine(line.key, { expiryDate: date ?? "" })} placeholder="Select date" title="Expiry date" description="Pick the date this stock expires." triggerClassName={controlClass} /></WarehouseFormField>
                 <div className="flex items-end justify-end md:col-span-1"><Button variant="ghost" size="icon" disabled={form.lines.length === 1} onClick={() => removeLine(line.key)} className="size-10 rounded-[var(--md-radius-lg)] text-[var(--md-red)]"><Trash2 className="size-4" /></Button></div>
               </div>
             })}
@@ -590,7 +591,7 @@ export function WarehouseOrdersManagementView({ typeFilter, isCustomer = false, 
     { id: "warehouse", label: "Warehouse", width: 176, resizable: true, sortValue: (order) => order.facilityName, cell: (order) => <div className="min-w-0"><span className="truncate text-[12.5px] text-[var(--md-ink)]">{order.facilityName}</span><p><Code>{order.facilityCode}</Code></p></div> },
     // The direction column only earns its width on the combined queue. Goods in
     // and goods out already say which way the stock is moving in the page title.
-    ...(typeFilter ? [] : [{ id: "direction", label: "Direction", width: 136, resizable: true, sortValue: (order: WarehouseOperationalOrder) => order.typeName ?? order.typeCode, cell: (order: WarehouseOperationalOrder) => <StatusPill tone={order.typeCode === "inbound" ? "teal" : "blue"}>{t(order.typeName ?? order.typeCode)}</StatusPill> }]),
+    ...(typeFilter ? [] : [{ id: "direction", label: "Direction", kind: "attribute" as const, width: 136, resizable: true, sortValue: (order: WarehouseOperationalOrder) => order.typeName ?? order.typeCode, cell: (order: WarehouseOperationalOrder) => <StatusPill tone={order.typeCode === "inbound" ? "teal" : "blue"}>{t(order.typeName ?? order.typeCode)}</StatusPill> }]),
     { id: "lines", label: "Lines", width: 92, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (order) => order.lines.length, cell: (order) => <span dir="ltr" className="tabular-nums">{order.lines.length}</span> },
     { id: "progress", label: typeFilter === "outbound" ? "Dispatched" : "Received", width: 132, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (order) => orderProgress(order) ?? -1, cell: (order) => {
       const value = orderProgress(order)
@@ -598,7 +599,7 @@ export function WarehouseOrdersManagementView({ typeFilter, isCustomer = false, 
     } },
     { id: "requested", label: "Requested", width: 152, resizable: true, sortValue: (order) => order.requestedDate, cell: (order) => <span className="whitespace-nowrap text-[12px] text-[var(--md-text)]">{order.requestedDate ? dateOnly.format(new Date(`${order.requestedDate}T00:00:00`)) : "—"}</span> },
     { id: "appointment", label: "Slot", width: 176, resizable: true, sortValue: (order) => order.appointmentStartAt, cell: (order) => <span className="whitespace-nowrap text-[12px] text-[var(--md-text)]">{order.appointmentStartAt ? dateTime.format(new Date(order.appointmentStartAt)) : "—"}</span> },
-    { id: "status", label: "Status", width: 152, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (order) => order.statusName ?? order.statusCode, cell: (order) => <StatusPill tone={toneForStatus(order.statusCode)}>{t(order.statusName ?? order.statusCode)}</StatusPill> },
+    { id: "status", label: "Status", kind: "status", width: 152, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (order) => order.statusName ?? order.statusCode, cell: (order) => <StatusPill tone={toneForStatus(order.statusCode)}>{t(order.statusName ?? order.statusCode)}</StatusPill> },
   ], [typeFilter, dateOnly, dateTime, percent, t])
 
   const hasFilters = Boolean(query || statusFacet || directionFacet || facilityId)
@@ -645,7 +646,7 @@ export function WarehouseOrdersManagementView({ typeFilter, isCustomer = false, 
       rowClassName="hover:bg-[var(--md-hover)]"
       compactToolbar
       emptyState={emptyState}
-      toolbarLeading={(
+      toolbarTabs={(
         <div className="flex min-w-0 items-center gap-2">
           {/* The switch changes what is fetched; the filters on the right narrow
               what came back. Two levels, so neither can contradict the other. */}
@@ -659,8 +660,9 @@ export function WarehouseOrdersManagementView({ typeFilter, isCustomer = false, 
           />
         </div>
       )}
-      toolbarActions={(
-        <RegisterToolbarActions pending={pending && loaded}>
+      toolbarSearch={<RegisterSearchField value={search} onChange={setSearch} onClear={() => { setSearch(""); setCommittedSearch("") }} label="Search orders" placeholder="Order, customer, SKU" className="sm:min-w-[136px] sm:w-[136px]" />}
+      toolbarFilters={(
+        <>
           {typeFilter ? null : (
             <RegisterFacetSelect
               label="Direction"
@@ -687,16 +689,9 @@ export function WarehouseOrdersManagementView({ typeFilter, isCustomer = false, 
             onChange={setFacilityId}
             className="w-[132px] sm:w-[132px]"
           />
-          <RegisterSearchField
-            value={search}
-            onChange={setSearch}
-            onClear={() => { setSearch(""); setCommittedSearch("") }}
-            label="Search orders"
-            placeholder="Order, customer, SKU"
-            className="sm:min-w-[136px] sm:w-[136px]"
-          />
-        </RegisterToolbarActions>
+        </>
       )}
+      toolbarOptions={<RegisterRevalidatingMark active={pending && loaded} />}
     />
     <CreateOrderDialog open={createOpen} onOpenChange={setCreateOpen} reference={reference} fixedType={createType} allowedTypes={allowedTypes} isCustomer={isCustomer} onSaved={() => void refresh()} />
   </div>

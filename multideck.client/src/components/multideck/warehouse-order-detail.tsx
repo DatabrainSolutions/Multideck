@@ -13,7 +13,7 @@ import {
   Mail,
   Upload,
   XCircle,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { DotGridLoaderPanel } from "@/components/multideck/dot-grid-loader"
+import { MultideckDatePicker } from "@/components/multideck/date-picker"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { Surface } from "@/components/multideck/surface"
 import { WarehouseFormField } from "@/components/multideck/warehouse-management-components"
@@ -667,8 +668,8 @@ export function WarehouseOrderDetailView({
                           </WarehouseFormField>
                           <WarehouseFormField label={t("Lot number")}><Input value={row.lotNumber} onChange={(event) => patchRow(row.orderLineId, { lotNumber: event.target.value })} className={controlClass} dir="ltr" /></WarehouseFormField>
                           <WarehouseFormField label={t("Batch number")}><Input value={row.batchNumber} onChange={(event) => patchRow(row.orderLineId, { batchNumber: event.target.value })} className={controlClass} dir="ltr" /></WarehouseFormField>
-                          <WarehouseFormField label={t("Manufactured")}><Input type="date" value={row.manufactureDate} onChange={(event) => patchRow(row.orderLineId, { manufactureDate: event.target.value })} className={controlClass} dir="ltr" /></WarehouseFormField>
-                          <WarehouseFormField label={t("Expiry")}><Input type="date" value={row.expiryDate} onChange={(event) => patchRow(row.orderLineId, { expiryDate: event.target.value })} className={controlClass} dir="ltr" /></WarehouseFormField>
+                          <WarehouseFormField label={t("Manufactured")}><MultideckDatePicker value={row.manufactureDate || null} onChange={(date) => patchRow(row.orderLineId, { manufactureDate: date ?? "" })} placeholder="Select date" title="Manufactured date" description="Pick the date this stock was manufactured." triggerClassName={controlClass} /></WarehouseFormField>
+                          <WarehouseFormField label={t("Expiry")}><MultideckDatePicker value={row.expiryDate || null} onChange={(date) => patchRow(row.orderLineId, { expiryDate: date ?? "" })} placeholder="Select date" title="Expiry date" description="Pick the date this stock expires." triggerClassName={controlClass} minDate={row.manufactureDate || undefined} /></WarehouseFormField>
                         </div>
                       ) : (
                         <div className="grid gap-3 sm:grid-cols-3">

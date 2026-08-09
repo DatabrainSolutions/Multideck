@@ -28,7 +28,7 @@ import {
   UsersRound,
   X,
   type LucideIcon,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -42,8 +42,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { useLanguage } from "@/i18n/language-provider"
 import type { ApiLead, ApiLeadContact, ApiLeadDetail } from "@/lib/lead-api"
@@ -90,7 +90,7 @@ import { CopyableField } from "./copyable-field"
 import { MarketingOptInControl } from "./marketing-opt-in-control"
 import { CrmPipelineEditor, type CrmPipelineEditorSave, type CrmPipelineEditorSource } from "./crm-pipeline-editor"
 import { SectionHeader, Surface } from "./surface"
-import { StatusPill, toneToVar } from "./status-pill"
+import { StatusPill, attributeToneFor, toneToVar } from "./status-pill"
 
 type CrmMetric = (typeof crmSummaryMetrics)[number]
 export type CrmDeal = {
@@ -801,173 +801,26 @@ function LeadOwner({ lead, photoUrl }: { lead: ApiLead; photoUrl?: string }) {
   )
 }
 
-function LegacyCrmLeadQualificationTable({
-  leads,
-  selectedIds,
-  onToggleLead,
-  onOpenLead,
-  emptyMessage,
-  ownerPhotoUrls = emptyLeadOwnerPhotoUrls,
-}: {
-  leads: readonly ApiLead[]
-  selectedIds: Set<string>
-  onToggleLead: (id: string) => void
-  onOpenLead: (lead: ApiLead) => void
-  emptyMessage: string
-  ownerPhotoUrls?: ReadonlyMap<string, string>
-}) {
-  const { language, t } = useLanguage()
-
-  return (
-    <div className="md-scrollbar overflow-x-auto rounded-[var(--md-radius-xl)] bg-white shadow-[var(--md-shadow-line)] dark:bg-[var(--md-surface)]">
-      <Table className="min-w-[1510px]">
-        <TableHeader>
-          <TableRow className="border-[rgba(11,20,19,0.05)] hover:bg-transparent">
-            <TableHead className="w-12 px-2" />
-            <TableHead className="min-w-[240px] text-[12px] font-medium text-[var(--md-text)]">{t("Lead")}</TableHead>
-            <TableHead className="min-w-[210px] text-[12px] font-medium text-[var(--md-text)]">{t("Primary contact")}</TableHead>
-            <TableHead className="min-w-[150px] text-[12px] font-medium text-[var(--md-text)]">{t("Source")}</TableHead>
-            <TableHead className="min-w-[170px] text-[12px] font-medium text-[var(--md-text)]">{t("Owner")}</TableHead>
-            <TableHead className="min-w-[190px] text-[12px] font-medium text-[var(--md-text)]">{t("Stage and qualification")}</TableHead>
-            <TableHead className="min-w-[220px] text-[12px] font-medium text-[var(--md-text)]">{t("Engagement")}</TableHead>
-            <TableHead className="min-w-[150px] text-[12px] font-medium text-[var(--md-text)]">{t("Next follow-up")}</TableHead>
-            <TableHead className="min-w-[140px] text-[12px] font-medium text-[var(--md-text)]">{t("Created and age")}</TableHead>
-            <TableHead className="min-w-[180px] text-end text-[12px] font-medium text-[var(--md-text)]">{t("Lead value")}</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {leads.length ? leads.map((lead) => {
-            const selected = selectedIds.has(lead.id)
-            const followUpOverdue = lead.nextFollowUpAt !== null && new Date(lead.nextFollowUpAt).getTime() < Date.now()
-            const createdDaysAgo = Math.max(Math.floor((Date.now() - new Date(lead.createdAt).getTime()) / 86_400_000), 0)
-
-            return (
-              <TableRow
-                key={lead.id}
-                data-state={selected ? "selected" : undefined}
-                className={cn(
-                  "min-h-[76px] border-[rgba(11,20,19,0.045)] bg-white hover:bg-[#f8faf9] dark:bg-[var(--md-surface)] dark:hover:bg-[var(--md-surface-soft)]",
-                  selected && "bg-[var(--md-surface-tint)] hover:bg-[var(--md-hover)] dark:bg-[var(--md-surface-tint)]",
-                )}
-              >
-                <TableCell className="w-12 px-2">
-                  <button
-                    type="button"
-                    aria-label={`${t("Select lead")} ${lead.companyName}`}
-                    aria-pressed={selected}
-                    className="grid size-10 place-items-center rounded-[var(--md-radius-md)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a16)]"
-                    onClick={() => onToggleLead(lead.id)}
-                  >
-                    <span className={cn(
-                      "grid size-[18px] place-items-center rounded-[var(--md-radius-sm)] bg-white shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform]",
-                      selected && "bg-[var(--md-accent)] shadow-[0_0_0_3px_var(--md-accent-a12)]",
-                    )}>
-                      <span className={cn("size-1.5 rounded-full bg-white opacity-0", selected && "opacity-100")} />
-                    </span>
-                  </button>
-                </TableCell>
-                <TableCell>
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-3 rounded-[var(--md-radius-md)] text-start focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
-                    aria-label={`${t("Open lead details for")} ${lead.companyName}`}
-                    onClick={() => onOpenLead(lead)}
-                  >
-                    <CustomerAvatar initials={lead.initials} tone="teal" />
-                    <span className="min-w-0">
-                      <span className="block truncate text-[14px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{lead.companyName}</span>
-                      <span className="mt-1 block truncate text-[11px] text-[var(--md-subtle)]" data-i18n-skip dir="auto">
-                        {[lead.countryCode, lead.serviceInterest ?? lead.tradeLane].filter(Boolean).join(" · ") || t("Commercial lead")}
-                      </span>
-                    </span>
-                  </button>
-                </TableCell>
-                <TableCell>
-                  {lead.primaryContactName || lead.primaryContactEmail ? (
-                    <div className="min-w-0">
-                      <p className="truncate text-[13px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{lead.primaryContactName ?? t("Contact not named")}</p>
-                      {lead.primaryContactEmail ? <p className="mt-1 truncate text-[11px] text-[var(--md-subtle)]" data-i18n-skip dir="ltr">{lead.primaryContactEmail}</p> : null}
-                    </div>
-                  ) : <span className="text-[12px] text-[var(--md-subtle)]">{t("No primary contact")}</span>}
-                </TableCell>
-                <TableCell>
-                  <p className="text-[13px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{lead.sourceName}</p>
-                  <p className="mt-1 text-[11px] text-[var(--md-subtle)]" data-i18n-skip dir="ltr">{lead.sourceCode}</p>
-                </TableCell>
-                <TableCell><LeadOwner lead={lead} photoUrl={lead.ownerId ? ownerPhotoUrls.get(lead.ownerId) : undefined} /></TableCell>
-                <TableCell>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <StatusPill tone={leadStatusTone(lead)}>{lead.statusName}</StatusPill>
-                    <StatusPill tone="neutral">{lead.ratingName}</StatusPill>
-                  </div>
-                  <p className="mt-1.5 text-[11px] text-[var(--md-subtle)]">
-                    {lead.qualificationScore !== null
-                      ? <><span data-i18n-skip dir="ltr">{new Intl.NumberFormat(language, { maximumFractionDigits: 0 }).format(lead.qualificationScore)}/100</span> · {lead.qualificationCriteriaMet}/4 {t("criteria met")}</>
-                      : t("No qualification score")}
-                  </p>
-                </TableCell>
-                <TableCell>
-                  {lead.lastActivityAt ? (
-                    <div className="min-w-0">
-                      <p className="truncate text-[13px] font-medium text-[var(--md-ink)]" data-i18n-skip={Boolean(lead.lastActivitySubject)} dir="auto">{lead.lastActivitySubject ?? t("Interaction recorded")}</p>
-                      <p className="mt-1 text-[11px] text-[var(--md-subtle)]" data-i18n-skip dir="auto">{formatLeadRelativeDate(lead.lastActivityAt, language)}</p>
-                    </div>
-                  ) : <span className="text-[12px] text-[var(--md-subtle)]">{t("No activity recorded")}</span>}
-                </TableCell>
-                <TableCell>
-                  {lead.nextFollowUpAt ? (
-                    <div>
-                      <p className={cn("text-[13px] font-medium", followUpOverdue ? "text-[var(--md-danger)]" : "text-[var(--md-ink)]")} data-i18n-skip dir="auto">
-                        {formatLeadRelativeDate(lead.nextFollowUpAt, language)}
-                      </p>
-                      <p className="mt-1 text-[11px] text-[var(--md-subtle)]" data-i18n-skip dir="auto">{formatLeadDate(lead.nextFollowUpAt, language)}</p>
-                    </div>
-                  ) : <span className="text-[12px] text-[var(--md-subtle)]">{t("Not scheduled")}</span>}
-                </TableCell>
-                <TableCell>
-                  <p className="text-[13px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{formatLeadDate(lead.createdAt, language)}</p>
-                  <p className="mt-1 text-[11px] text-[var(--md-subtle)]">
-                    <span data-i18n-skip dir="ltr">{new Intl.NumberFormat(language).format(createdDaysAgo)}</span> {t(createdDaysAgo === 1 ? "day old" : "days old")}
-                  </p>
-                </TableCell>
-                <TableCell className="text-end">
-                  {lead.valueAmount !== null && lead.valueCurrencyCode ? (
-                    <p className="text-[14px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{formatLeadCurrency(lead.valueAmount, lead.valueCurrencyCode, language)}</p>
-                  ) : lead.openOpportunityCount ? (
-                    <p className="text-[13px] font-medium text-[var(--md-ink)]">
-                      <span data-i18n-skip dir="ltr">{lead.openOpportunityCount}</span> {t(lead.openOpportunityCount === 1 ? "open opportunity" : "open opportunities")}
-                    </p>
-                  ) : <span className="text-[12px] text-[var(--md-subtle)]">{t("No value recorded")}</span>}
-                  {lead.valueContext ? <p className="mt-1 max-w-[190px] truncate text-[11px] text-[var(--md-subtle)]" data-i18n-skip dir="auto">{lead.valueContext}</p> : null}
-                </TableCell>
-              </TableRow>
-            )
-          }) : (
-            <TableRow>
-              <TableCell colSpan={10} className="h-36 text-center text-[13px] text-[var(--md-text)]">{emptyMessage}</TableCell>
-            </TableRow>
-          )}
-        </TableBody>
-      </Table>
-    </div>
-  )
-}
 
 export function CrmLeadQualificationTable({
   leads,
   onOpenLead,
   emptyMessage,
   ownerPhotoUrls = emptyLeadOwnerPhotoUrls,
-  toolbarLeading,
-  toolbarActions,
+  toolbarTabs,
+  toolbarSearch,
+  toolbarFilters,
+  toolbarOptions,
   emptyState,
 }: {
   leads: readonly ApiLead[]
   onOpenLead: (lead: ApiLead) => void
   emptyMessage: string
   ownerPhotoUrls?: ReadonlyMap<string, string>
-  toolbarLeading?: ReactNode
-  toolbarActions?: ReactNode
+  toolbarTabs?: ReactNode
+  toolbarSearch?: ReactNode
+  toolbarFilters?: ReactNode
+  toolbarOptions?: ReactNode
   emptyState?: ReactNode
 }) {
   const { language, t } = useLanguage()
@@ -1014,6 +867,7 @@ export function CrmLeadQualificationTable({
     {
       id: "source",
       label: "Source",
+      kind: "attribute",
       width: 150,
       minWidth: 120,
       maxWidth: 260,
@@ -1037,26 +891,26 @@ export function CrmLeadQualificationTable({
       cell: (lead) => <LeadOwner lead={lead} photoUrl={lead.ownerId ? ownerPhotoUrls.get(lead.ownerId) : undefined} />,
     },
     {
-      id: "qualification",
-      label: "Stage and qualification",
-      width: 190,
-      minWidth: 165,
-      maxWidth: 300,
+      id: "stage",
+      label: "Stage",
+      kind: "status",
+      width: 145,
+      minWidth: 125,
+      maxWidth: 220,
       resizable: true,
-      sortValue: (lead) => lead.qualificationScore ?? lead.statusName,
-      cell: (lead) => (
-        <>
-          <div className="flex flex-wrap items-center gap-1.5">
-            <StatusPill tone={leadStatusTone(lead)}>{lead.statusName}</StatusPill>
-            <StatusPill tone="neutral">{lead.ratingName}</StatusPill>
-          </div>
-          <p className="mt-1.5 text-[11px] text-[var(--md-subtle)]">
-            {lead.qualificationScore !== null
-              ? <><span data-i18n-skip dir="ltr">{new Intl.NumberFormat(language, { maximumFractionDigits: 0 }).format(lead.qualificationScore)}/100</span> · {lead.qualificationCriteriaMet}/4 {t("criteria met")}</>
-              : t("No qualification score")}
-          </p>
-        </>
-      ),
+      sortValue: (lead) => lead.statusName,
+      cell: (lead) => <StatusPill tone={leadStatusTone(lead)}>{lead.statusName}</StatusPill>,
+    },
+    {
+      id: "qualification",
+      label: "Qualification",
+      kind: "status",
+      width: 145,
+      minWidth: 125,
+      maxWidth: 220,
+      resizable: true,
+      sortValue: (lead) => lead.ratingName,
+      cell: (lead) => <StatusPill tone="neutral">{lead.ratingName}</StatusPill>,
     },
     {
       id: "engagement",
@@ -1138,16 +992,19 @@ export function CrmLeadQualificationTable({
 
   return (
     <DataTable
+      key="crm-leads-v3"
       ariaLabel="CRM leads"
       columnsButtonLabel="Manage lead columns"
       columns={columns}
       rows={[...leads]}
       getRowKey={(lead) => lead.id}
-      storageKey="crm-leads"
+      storageKey="crm-leads-v3"
       rowClassName="min-h-[76px] bg-white hover:bg-[#f8faf9] dark:bg-[var(--md-surface)] dark:hover:bg-[var(--md-surface-soft)]"
       onRowClick={onOpenLead}
-      toolbarLeading={toolbarLeading}
-      toolbarActions={toolbarActions}
+      toolbarTabs={toolbarTabs}
+      toolbarSearch={toolbarSearch}
+      toolbarFilters={toolbarFilters}
+      toolbarOptions={toolbarOptions}
       emptyState={emptyState ?? <p className="text-[13px] text-[var(--md-text)]">{emptyMessage}</p>}
     />
   )
@@ -1549,7 +1406,7 @@ export function CrmLeadDetailPanel({
       </Surface>
 
       <aside
-        className="relative min-w-0 self-start overflow-hidden rounded-[var(--md-radius-xl)] bg-[#06030a] px-5 py-5 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_0_0_1px_var(--md-accent-veil-ring-a16),0_16px_36px_var(--md-accent-veil-cast-a18)] xl:sticky xl:top-[76px]"
+        className="order-first relative min-w-0 self-start overflow-hidden rounded-[var(--md-radius-xl)] bg-[#06030a] px-5 py-5 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_0_0_1px_var(--md-accent-veil-ring-a16),0_16px_36px_var(--md-accent-veil-cast-a18)] xl:order-none xl:sticky xl:top-[76px]"
         aria-labelledby={`lead-company-${lead.id}`}
       >
         <span aria-hidden="true" className="pointer-events-none absolute inset-0 scale-[1.04]">
@@ -1730,69 +1587,24 @@ export function CrmContactTable({
   selectedEmail?: string
   onSelectContact?: (contact: CrmContact) => void
 }) {
-  return (
-    <div className="md-scrollbar overflow-x-auto rounded-[var(--md-radius-xl)]">
-      <Table className="min-w-[980px]">
-        <TableHeader>
-          <TableRow className="border-[rgba(11,20,19,0.05)] hover:bg-transparent">
-            <TableHead className="pl-0 text-[12px] font-medium text-[var(--md-text)]">Contact</TableHead>
-            <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Lead</TableHead>
-            <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Relationship</TableHead>
-            <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Last touch</TableHead>
-            <TableHead className="text-right text-[12px] font-medium text-[var(--md-text)]">Actions</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {contacts.map((contact) => (
-            <TableRow
-              key={contact.email}
-              className={cn(
-                "h-[74px] cursor-pointer border-[rgba(11,20,19,0.04)] hover:bg-white/35",
-                selectedEmail === contact.email && "bg-white/50",
-              )}
-              onClick={() => onSelectContact?.(contact)}
-            >
-              <TableCell className="min-w-[260px] pl-0">
-                <div className="flex items-center gap-3">
-                  <CustomerAvatar initials={contact.initials} tone={contact.tone} />
-                  <div className="min-w-0">
-                    <p className="truncate text-[14px] font-medium text-[var(--md-ink)]">{contact.name}</p>
-                    <p className="truncate text-[12px] text-[var(--md-text)]">{contact.role}</p>
-                    <p data-i18n-skip dir="ltr" className="truncate text-[12px] text-[var(--md-subtle)]">{contact.email}</p>
-                  </div>
-                </div>
-              </TableCell>
-              <TableCell className="min-w-[210px] text-[13px] font-medium text-[var(--md-ink)]">{contact.account}</TableCell>
-              <TableCell className="min-w-[170px]">
-                <StatusPill tone={contact.primary ? "teal" : "neutral"}>{contact.relationship}</StatusPill>
-              </TableCell>
-              <TableCell className="min-w-[260px] text-[13px] text-[var(--md-text)]">{contact.lastTouch}</TableCell>
-              <TableCell className="text-right">
-                <div className="inline-flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-8 rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] shadow-[var(--md-shadow-line)]"
-                    onClick={(event) => event.stopPropagation()}
-                  >
-                    <Mail data-icon="inline-start" strokeWidth={1.2} />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-8 rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] shadow-[var(--md-shadow-line)]"
-                    onClick={(event) => event.stopPropagation()}
-                  >
-                    <Phone data-icon="inline-start" strokeWidth={1.2} />
-                  </Button>
-                </div>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
-  )
+  const { t } = useLanguage()
+  const columns = useMemo<DataTableColumn<CrmContact>[]>(() => [
+    { id: "contact", label: "Contact", kind: "identity", width: 280, minWidth: 220, resizable: true, sortValue: (contact) => contact.name, cellTitle: (contact) => `${contact.name} · ${contact.email}`, cell: (contact) => <div className="flex min-w-0 items-center gap-3"><CustomerAvatar initials={contact.initials} tone={contact.tone} /><div className="min-w-0"><p className="truncate text-[14px] font-medium text-[var(--md-ink)]">{contact.name}</p><p className="truncate text-[12px] text-[var(--md-text)]">{contact.role}</p><p data-i18n-skip dir="ltr" className="truncate text-[12px] text-[var(--md-subtle)]">{contact.email}</p></div></div> },
+    { id: "account", label: "Lead", kind: "long-text", width: 210, resizable: true, sortValue: (contact) => contact.account, cellTitle: (contact) => contact.account, cell: (contact) => <span className="block truncate text-[13px] font-medium text-[var(--md-ink)]">{contact.account}</span> },
+    { id: "relationship", label: "Relationship", kind: "attribute", width: 170, sortValue: (contact) => contact.relationship, cell: (contact) => <StatusPill kind="attribute" tone={attributeToneFor(contact.relationship)}>{contact.relationship}</StatusPill> },
+    { id: "last-touch", label: "Last touch", kind: "date", width: 260, resizable: true, sortValue: (contact) => contact.lastTouch, cellTitle: (contact) => contact.lastTouch, cell: (contact) => <span className="block truncate text-[13px] text-[var(--md-text)]">{contact.lastTouch}</span> },
+    {
+      id: "actions",
+      label: "Actions",
+      kind: "actions",
+      width: 120,
+      canHide: false,
+      canPin: false,
+      cell: (contact) => <div className="inline-flex items-center justify-end gap-1.5"><Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" aria-label={`${t("Email")} ${contact.name}`} className="size-8 rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] shadow-[var(--md-shadow-line)]" onClick={(event) => event.stopPropagation()}><Mail className="size-3.5" strokeWidth={1.2} /></Button></TooltipTrigger><TooltipContent>{t("Email")}</TooltipContent></Tooltip><DropdownMenu><Tooltip><TooltipTrigger asChild><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label={`${t("More options")} ${contact.name}`} className="size-8 rounded-[var(--md-radius-md)] text-[var(--md-text)] opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100 focus-visible:opacity-100" onClick={(event) => event.stopPropagation()}><MoreHorizontal className="size-3.5" strokeWidth={1.2} /></Button></DropdownMenuTrigger></TooltipTrigger><TooltipContent>{t("More options")}</TooltipContent></Tooltip><DropdownMenuContent align="end"><DropdownMenuItem onSelect={(event) => event.preventDefault()}><Phone className="size-3.5" strokeWidth={1.2} />{t("Call")}</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div>,
+    },
+  ], [t])
+
+  return <DataTable ariaLabel="CRM contacts" columnsButtonLabel="Manage contact columns" columns={columns} rows={[...contacts]} getRowKey={(contact) => contact.email} storageKey="crm-contact-table" selectedRowKey={selectedEmail} onRowClick={onSelectContact} rowClassName="group/row h-[74px]" rowAriaLabel={(contact) => `Open ${contact.name}`} />
 }
 
 export function CrmActivityTimeline({

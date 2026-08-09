@@ -1,6 +1,6 @@
 import { useId, type CSSProperties, type ReactNode } from "react"
-import type { LucideIcon } from "lucide-react"
-import { ArrowLeft, Check, ChevronRight } from "lucide-react"
+import type { LucideIcon } from "@/components/icons/hugeicons"
+import { ArrowLeft, Check, ChevronRight } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -13,6 +13,7 @@ import {
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { ChoiceControl } from "@/components/multideck/workflow-components"
+import { SectionHeader } from "@/components/multideck/surface"
 import { cn } from "@/lib/utils"
 
 export type SettingsTabItem = {
@@ -143,12 +144,8 @@ export function SettingsPanel({
         className,
       )}
     >
-      <div className="flex items-start justify-between gap-4 px-5 py-4">
-        <div className="min-w-0">
-          <h2 className="text-[14px] font-medium text-[var(--md-ink)]">{title}</h2>
-          {description ? <p className="mt-1 text-[13px] leading-5 text-[var(--md-text)]">{description}</p> : null}
-        </div>
-        {action ? <div className="shrink-0">{action}</div> : null}
+      <div className="px-5 py-4">
+        <SectionHeader title={title} meta={description} action={action} metaClassName="text-[13px] leading-5" />
       </div>
       <div className="divide-y divide-[rgba(11,20,19,0.07)] shadow-[var(--md-stroke-top)]">{children}</div>
     </section>

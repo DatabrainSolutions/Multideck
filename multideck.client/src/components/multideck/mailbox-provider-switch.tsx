@@ -1,4 +1,4 @@
-import { AlertTriangle, Inbox, RefreshCw, Users } from "lucide-react"
+import { AlertTriangle, Inbox, RefreshCw, Users } from "@/components/icons/hugeicons"
 import { motion, useReducedMotion } from "motion/react"
 import { Button } from "@/components/ui/button"
 import { SegmentedControl } from "@/components/multideck/workflow-components"

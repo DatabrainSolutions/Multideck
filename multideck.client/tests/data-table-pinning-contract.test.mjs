@@ -14,3 +14,9 @@ test("pinned table surfaces avoid stale backdrop-filter compositor layers", () =
   assert.match(source, /isPinned && \(isSelected \? "bg-\[var\(--md-table-pinned-selected-bg\)\]" : "bg-\[var\(--md-table-pinned-bg\)\]"\)/u)
   assert.equal(source.match(/key=\{`\$\{column\.id\}:\$\{isPinned \? "pinned" : "unpinned"\}`\}/gu)?.length, 2)
 })
+
+test("table pinning defaults empty and persists through the signed-in profile", () => {
+  assert.match(source, /useTablePinnedColumns\(storageKey, columnIds\)/u)
+  assert.doesNotMatch(source, /stored\.pinned/u)
+  assert.doesNotMatch(source, /JSON\.stringify\(\{[^}]*pinned/u)
+})

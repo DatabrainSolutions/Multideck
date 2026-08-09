@@ -1,10 +1,11 @@
 import {
+  AiBrain,
   BadgeCheck,
-  BarChart3,
   Building2,
   Boxes,
   BriefcaseBusiness,
   CalendarDays,
+  ChartAnalysis,
   ChartLine,
   ChartNoAxesCombined,
   ClipboardCheck,
@@ -12,12 +13,13 @@ import {
   Cloud,
   Component,
   FileText,
+  Forklift,
   Funnel,
   Gauge,
   Globe2,
   Grid3X3,
   HardDrive,
-  House,
+  Home03,
   IdCard,
   Inbox,
   KeyRound,
@@ -43,7 +45,7 @@ import {
   Truck,
   Users,
   type LucideIcon,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 
 export type NavItem = {
   label: string
@@ -90,7 +92,7 @@ export const customerWarehouseNavigation: SidebarDestination[] = [
   { id: "warehouse-users", label: "Users", icon: Users, route: "/warehouse/users" },
 ]
 
-export const homeNavItem: NavItem = { label: "Home", icon: House, route: "/" }
+export const homeNavItem: NavItem = { label: "Home", icon: Home03, route: "/" }
 
 /**
  * The operational mail workspace. It sits at the top of the sidebar next to Home
@@ -178,7 +180,7 @@ export const sidebarAreas: SidebarArea[] = [
   {
     id: "warehouse",
     label: "Warehouse",
-    icon: Boxes,
+    icon: Forklift,
     destinations: [...warehouseNavigation],
   },
   {
@@ -221,8 +223,8 @@ export const sidebarAreas: SidebarArea[] = [
     label: "Insights & AI",
     icon: Sparkles,
     destinations: [
-      { id: "reports-exports", label: "Reports & exports", icon: BarChart3, route: "/reports" },
-      { id: "ai-workspace", label: "AI workspace", icon: Sparkles, route: "/agent-dexter" },
+      { id: "reports-exports", label: "Reports & exports", icon: ChartAnalysis, route: "/reports" },
+      { id: "ai-workspace", label: "AI workspace", icon: AiBrain, route: "/agent-dexter" },
       { id: "data-quality-observability", label: "Data quality & observability", icon: Gauge },
     ],
   },
@@ -242,7 +244,7 @@ export const sidebarAreas: SidebarArea[] = [
 
 export const sidebarPrimary: NavItem[] = [
   { label: "Overview", value: "G O", icon: LayoutDashboard, route: "/" },
-  { label: "Warehouse", value: "12", icon: Boxes, route: "/warehouse" },
+  { label: "Warehouse", value: "12", icon: Forklift, route: "/warehouse" },
   { label: "Customers", value: "39", icon: Users, route: "/customers" },
   { label: "CRM", value: "9", icon: BriefcaseBusiness, route: "/crm" },
   { label: "Paper Tray", value: "184", icon: FileText, route: "/paper-tray" },
@@ -253,7 +255,7 @@ export const sidebarSecondary: NavItem[] = [
   { label: "Quotes", icon: ReceiptText, route: "/quotes" },
   { label: "Pre-booking", icon: PackageCheck, route: "/bookings/provisional" },
   { label: "Customs", icon: ClipboardCheck },
-  { label: "Reports", icon: BarChart3, route: "/reports" },
+  { label: "Reports", icon: ChartAnalysis, route: "/reports" },
   { label: "Components", icon: Component, route: "/components" },
   { label: "Navigation lab", icon: Grid3X3, route: "/playground/navigation" },
 ]

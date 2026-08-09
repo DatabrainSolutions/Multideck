@@ -1,6 +1,6 @@
 import { useId, useState } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { Check, type LucideIcon } from "lucide-react"
+import { Check, Settings2, type LucideIcon } from "@/components/icons/hugeicons"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { useLanguage } from "@/i18n/language-provider"
 import { mdMotion, reduceMotion } from "@/lib/motion"
@@ -56,29 +56,17 @@ const itemReveal = {
 
 function PageSettingsTriggerIcon({ open }: { open: boolean }) {
   const shouldReduceMotion = useReducedMotion()
-  const controlTransition = reduceMotion(Boolean(shouldReduceMotion), mdMotion.smooth)
-  const controls = [
-    { y: -5, idleX: -3, openX: 2 },
-    { y: 0, idleX: 4, openX: -4 },
-    { y: 5, idleX: 0, openX: 5 },
-  ]
 
   return (
-    <span className="relative grid size-5 place-items-center" aria-hidden="true">
-      {controls.map((control) => (
-        <span key={`track-${control.y}`} className="absolute h-px w-[18px] rounded-full bg-current opacity-[0.38]" style={{ transform: `translateY(${control.y}px)` }} />
-      ))}
-      {controls.map((control, index) => (
-        <motion.span
-          key={`knob-${control.y}`}
-          className="absolute size-[3px] rounded-full bg-current shadow-[0_0_0_1px_rgba(255,255,255,0.66)] dark:shadow-[0_0_0_1px_rgba(20,24,23,0.76)]"
-          initial={false}
-          animate={shouldReduceMotion ? undefined : { x: open ? control.openX : control.idleX, y: control.y, scale: open && index === 1 ? 1.12 : 1 }}
-          transition={controlTransition}
-          style={{ transform: `translate(${control.idleX}px, ${control.y}px)` }}
-        />
-      ))}
-    </span>
+    <motion.span
+      className="relative grid size-5 place-items-center"
+      aria-hidden="true"
+      initial={false}
+      animate={shouldReduceMotion ? undefined : { rotate: open ? 72 : 0, scale: open ? 1.04 : 1 }}
+      transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.smooth)}
+    >
+      <Settings2 className="size-[18px]" strokeWidth={1.4} />
+    </motion.span>
   )
 }
 

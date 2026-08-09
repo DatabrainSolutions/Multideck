@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent } from "react"
 import { DotLottieReact } from "@lottiefiles/dotlottie-react"
-import { ArrowLeft, Check, CheckCheck, CircleAlert, FileText, Merge, Minus, ShieldCheck, Sparkles, Split, Square } from "lucide-react"
+import { ArrowLeft, Check, CheckCheck, CircleAlert, FileText, Merge, Minus, ShieldCheck, Sparkles, Split, Square } from "@/components/icons/hugeicons"
 import { useReducedMotion } from "motion/react"
 import { useTheme } from "next-themes"
 import { toast } from "sonner"

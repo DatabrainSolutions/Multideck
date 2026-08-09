@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { KanbanSquare, List, SlidersHorizontal } from "lucide-react"
+import { KanbanSquare, List, SlidersHorizontal } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { DexterActionPill } from "@/components/multideck/dexter-action-pill"

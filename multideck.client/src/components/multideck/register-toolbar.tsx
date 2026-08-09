@@ -1,6 +1,6 @@
 import { type ReactNode } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { RefreshCw, Search, X } from "lucide-react"
+import { RefreshCw, Search, X } from "@/components/icons/hugeicons"
 
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -12,15 +12,16 @@ import { cn } from "@/lib/utils"
 
 /**
  * The controls that live inside a `DataTable` toolbar: a view switch and a
- * create action on the leading edge, the filters and the search on the trailing
- * edge. Every register in the product uses these rather than growing its own
- * filter bar above the table, so an operator learns one row of controls once.
+ * view tabs on the leading edge, with search, filters, and utilities on the
+ * trailing edge. Creation remains in the contextual top bar. Every register in
+ * the product uses these rather than growing its own filter bar above the table,
+ * so an operator learns one row of controls once.
  *
  * They are all 32px tall so the toolbar stays one line, and they all sit on the
  * panel surface with the hairline stroke rather than a border.
  */
 
-export const registerControlClass = "h-8 min-w-0 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface)] px-2.5 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] transition-shadow duration-200 hover:shadow-[var(--md-shadow-soft)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] data-[placeholder]:text-[var(--md-subtle)]"
+export const registerControlClass = "h-8 min-w-0 rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-surface)] px-2.5 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] transition-shadow duration-200 hover:shadow-[var(--md-shadow-soft)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] data-[placeholder]:text-[var(--md-subtle)]"
 
 export const registerButtonClass = "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[var(--md-radius-md)] px-2.5 text-[12px] font-medium text-[var(--md-text)] outline-none transition-[background,color,box-shadow,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-surface)] hover:text-[var(--md-ink)] hover:shadow-[var(--md-shadow-line)] focus-visible:bg-[var(--md-surface)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] active:scale-[0.96] motion-reduce:transform-none"
 

@@ -47,7 +47,7 @@ import {
   Webhook,
   Zap,
   type LucideIcon,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import gmailLogo from "@/assets/integrations/gmail.svg"
@@ -57,7 +57,7 @@ import xeroLogo from "@/assets/integrations/xero.svg"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { AccentPicker } from "@/components/multideck/accent-picker"
 import { AiUsageOverview } from "@/components/multideck/ai-usage-overview"
 import { SegmentedControl } from "@/components/multideck/workflow-components"
@@ -3870,6 +3870,14 @@ function AiUsageHistoryScreen({
   const pageCount = Math.max(1, Math.ceil(entries.length / pageSize))
   const visibleUsage = entries.slice((page - 1) * pageSize, page * pageSize)
   const formatTokens = (value: number) => value.toLocaleString("en-GB")
+  type UsageEntry = (typeof entries)[number]
+  const usageColumns = useMemo<DataTableColumn<UsageEntry>[]>(() => [
+    { id: "request", label: "Request", kind: "long-text", width: 420, minWidth: 240, resizable: true, sortValue: (entry) => entry.title, cellTitle: (entry) => entry.title, cellClassName: "whitespace-normal", cell: (entry) => <div className="min-w-0"><p className="line-clamp-2 text-[13px] leading-[1.4] text-[var(--md-ink)]" data-i18n-skip>{entry.title}</p><span className="mt-2 block h-1 w-full max-w-[240px] overflow-hidden rounded-full bg-[var(--md-ai-track)]"><span aria-hidden="true" className="block h-full rounded-full bg-[color-mix(in_srgb,var(--md-accent)_78%,var(--md-blue))]" style={{ width: `${Math.max(2, (entry.totalTokens / heaviest) * 100)}%` }} /></span></div> },
+    { id: "input", label: "Input", kind: "number", width: 120, sortValue: (entry) => entry.inputTokens, cell: (entry) => <span dir="ltr" data-i18n-skip>{formatTokens(entry.inputTokens)}</span> },
+    { id: "output", label: "Output", kind: "number", width: 120, sortValue: (entry) => entry.outputTokens, cell: (entry) => <span dir="ltr" data-i18n-skip>{formatTokens(entry.outputTokens)}</span> },
+    { id: "total", label: "Total tokens", kind: "number", width: 132, sortValue: (entry) => entry.totalTokens, cell: (entry) => <span className="font-medium text-[var(--md-ink)]" dir="ltr" data-i18n-skip>{formatTokens(entry.totalTokens)}</span> },
+    { id: "when", label: "When", kind: "date", width: 180, sortValue: (entry) => entry.createdAt, cell: (entry) => <span className="tabular-nums text-[var(--md-text)]" dir="ltr" data-i18n-skip>{entry.date}</span> },
+  ], [heaviest])
 
   useEffect(() => {
     setPage(1)
@@ -3897,13 +3905,6 @@ function AiUsageHistoryScreen({
               </p>
             </div>
           </div>
-          <SegmentedControl
-            options={["newest", "heaviest"] as const}
-            value={order}
-            onChange={setOrder}
-            ariaLabel={t("Order usage history")}
-            renderOption={(option) => t(option === "newest" ? "Newest first" : "Heaviest first")}
-          />
         </div>
 
         {error ? (
@@ -3916,41 +3917,7 @@ function AiUsageHistoryScreen({
           </div>
         ) : visibleUsage.length > 0 ? (
           <>
-            <div className="hidden md:block">
-              <Table>
-                <TableHeader className="bg-[var(--md-surface-soft)]">
-                  <TableRow className="border-[var(--md-line)] hover:bg-transparent">
-                    <TableHead className="h-11 px-6 text-[12px] font-medium text-[var(--md-text)]">{t("Request")}</TableHead>
-                    <TableHead className="h-11 px-6 text-end text-[12px] font-medium text-[var(--md-text)]">{t("Input")}</TableHead>
-                    <TableHead className="h-11 px-6 text-end text-[12px] font-medium text-[var(--md-text)]">{t("Output")}</TableHead>
-                    <TableHead className="h-11 px-6 text-end text-[12px] font-medium text-[var(--md-text)]">{t("Total tokens")}</TableHead>
-                    <TableHead className="h-11 px-6 text-[12px] font-medium text-[var(--md-text)]">{t("When")}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {visibleUsage.map((entry) => (
-                    <TableRow key={entry.id} className="md-ai-row border-[var(--md-line)] hover:bg-[var(--md-hover)]">
-                      <TableCell className="max-w-[420px] px-6 py-3.5">
-                        <p className="line-clamp-2 text-[13px] leading-[1.4] text-[var(--md-ink)]" title={entry.title} data-i18n-skip>{entry.title}</p>
-                        {/* The share bar turns a column of numbers into a shape you
-                            can scan for the requests worth looking at. */}
-                        <span className="mt-2 block h-1 w-full max-w-[240px] overflow-hidden rounded-full bg-[var(--md-ai-track)]">
-                          <span
-                            aria-hidden="true"
-                            className="block h-full rounded-full bg-[color-mix(in_srgb,var(--md-accent)_78%,var(--md-blue))]"
-                            style={{ width: `${Math.max(2, (entry.totalTokens / heaviest) * 100)}%` }}
-                          />
-                        </span>
-                      </TableCell>
-                      <TableCell className="px-6 text-end text-[13px] tabular-nums text-[var(--md-text)]" dir="ltr" data-i18n-skip>{formatTokens(entry.inputTokens)}</TableCell>
-                      <TableCell className="px-6 text-end text-[13px] tabular-nums text-[var(--md-text)]" dir="ltr" data-i18n-skip>{formatTokens(entry.outputTokens)}</TableCell>
-                      <TableCell className="px-6 text-end text-[13px] font-medium tabular-nums text-[var(--md-ink)]" dir="ltr" data-i18n-skip>{formatTokens(entry.totalTokens)}</TableCell>
-                      <TableCell className="px-6 text-[13px] tabular-nums text-[var(--md-text)]" dir="ltr" data-i18n-skip>{entry.date}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <DataTable ariaLabel="Recent Dexter usage" columnsButtonLabel="Manage usage columns" columns={usageColumns} rows={visibleUsage} getRowKey={(entry) => entry.id} storageKey="dexter-usage-history" toolbarOptions={<SegmentedControl options={["newest", "heaviest"] as const} value={order} onChange={setOrder} ariaLabel={t("Order usage history")} renderOption={(option) => t(option === "newest" ? "Newest first" : "Heaviest first")} />} className="hidden rounded-none shadow-none md:block" />
             <div className="divide-y divide-[var(--md-line)] md:hidden">
               {visibleUsage.map((entry) => (
                 <article key={entry.id} className="md-ai-row px-5 py-4">
@@ -4584,7 +4551,7 @@ function SupportTab() {
               [t("Open tickets"), "1"],
             ]}
           />
-          <section className="rounded-[var(--md-radius-2xl)] bg-[var(--md-ink)] p-5 text-white shadow-[var(--md-shadow-soft)]">
+          <section className="rounded-[var(--md-radius-2xl)] bg-[var(--md-accent-abyss)] p-5 text-white shadow-[var(--md-shadow-soft)]">
             <LifeBuoy className="size-5 text-white/70" strokeWidth={1.3} aria-hidden="true" />
             <p className="mt-5 text-[15px] font-medium">{t("Security incident?")}</p>
             <p className="mt-2 text-pretty text-[12px] leading-5 text-white/65">{t("Mark the ticket as urgent. The subject will be routed with security context included.")}</p>

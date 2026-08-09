@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useState, type CSSProperties } from "react"
 import L, { type LatLngExpression } from "leaflet"
-import { ArrowRight, ChevronLeft, ChevronRight, Maximize2, Route, X } from "lucide-react"
+import { ArrowRight, ChevronLeft, ChevronRight, Maximize2, Route, X } from "@/components/icons/hugeicons"
 import { MapContainer, Marker, Polyline, TileLayer, Tooltip, useMap, ZoomControl } from "react-leaflet"
 import "leaflet/dist/leaflet.css"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"

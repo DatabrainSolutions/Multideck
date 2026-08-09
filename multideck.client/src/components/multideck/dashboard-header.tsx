@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react"
-import { ChevronDown, Plus, Save } from "lucide-react"
+import { ChevronDown, Plus, Save } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,

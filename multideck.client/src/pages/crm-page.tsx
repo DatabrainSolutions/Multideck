@@ -37,7 +37,7 @@ import {
   Wallet,
   Workflow,
   X,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -45,8 +45,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
+import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import {
   getDateKey,
   MultideckDateRangePicker,
@@ -1638,15 +1638,8 @@ export function CrmLeadsPage({ navigate }: { navigate: (path: string) => void })
             onOpenLead={openLeadDetail}
             emptyMessage={leads.length ? t("No leads match this view.") : t("No leads have been recorded yet.")}
             ownerPhotoUrls={ownerPhotoUrls}
-            toolbarLeading={(
-              <div className="flex min-w-0 items-center gap-2 px-1.5">
-                <span className="text-[12px] font-medium text-[var(--md-ink)]">{t("Lead register")}</span>
-                <span className="text-[11px] text-[var(--md-subtle)]" data-i18n-skip dir="ltr">{visibleLeads.length}</span>
-              </div>
-            )}
-            toolbarActions={(
-              <div className="flex min-w-0 flex-1 items-center justify-end gap-1.5">
-                <div className="relative min-w-[128px] max-w-[280px] flex-1 sm:min-w-[200px] sm:flex-none">
+            toolbarSearch={(
+              <div className="relative min-w-[128px] max-w-[280px] flex-1 sm:min-w-[200px] sm:flex-none">
                   <Search className="pointer-events-none absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.35} aria-hidden="true" />
                   <Input
                     type="search"
@@ -1662,7 +1655,9 @@ export function CrmLeadsPage({ navigate }: { navigate: (path: string) => void })
                       <X className="size-3.5" strokeWidth={1.4} />
                     </Button>
                   ) : null}
-                </div>
+              </div>
+            )}
+            toolbarFilters={(
                 <Button
                   type="button"
                   variant="ghost"
@@ -1675,7 +1670,6 @@ export function CrmLeadsPage({ navigate }: { navigate: (path: string) => void })
                   <span className="hidden lg:inline">{t("Advanced filters")}</span>
                   {activeAdvancedFilterCount ? <span className="grid min-w-4 place-items-center rounded-full bg-[var(--md-accent-a11)] px-1 text-[10px] font-medium text-[var(--md-accent)]" data-i18n-skip>{activeAdvancedFilterCount}</span> : null}
                 </Button>
-              </div>
             )}
             emptyState={leads.length ? (
               <div className="mx-auto grid max-w-sm place-items-center py-3 text-center">
@@ -2062,6 +2056,13 @@ export function CrmListsPage({ navigate }: { navigate: (path: string) => void })
 
 export function CrmListDetailPage({ navigate, listId }: { navigate: (path: string) => void; listId: string }) {
   const list = crmEmailLists.find((item) => item.id === listId) ?? crmEmailLists[0]
+  const memberColumns = useMemo<DataTableColumn<(typeof list.members)[number]>[]>(() => [
+    { id: "company", label: "Company", width: 190, minWidth: 150, kind: "identity", cell: (member) => <span className="font-medium text-[var(--md-ink)]">{member[0]}</span> },
+    { id: "contact", label: "Contact", width: 160, minWidth: 128, kind: "identity", cell: (member) => <span className="text-[var(--md-text)]">{member[1]}</span> },
+    { id: "email", label: "Email", width: 230, minWidth: 190, kind: "text", cellTitle: (member) => member[2], cell: (member) => <span data-i18n-skip dir="ltr" className="block truncate text-[var(--md-text)]">{member[2]}</span> },
+    { id: "status", label: "Status", width: 120, minWidth: 104, kind: "status", cell: (member) => <StatusPill kind="status" tone={member[3] === "Dormant" ? "amber" : member[3] === "Lead" || member[3] === "Prospect" ? "blue" : "green"}>{member[3]}</StatusPill> },
+    { id: "lastEngagement", label: "Last engagement", width: 160, minWidth: 132, kind: "date", cell: (member) => <span className="text-[var(--md-text)]">{member[4]}</span> },
+  ], [list.members])
 
   return (
     <div className="md-page md-page-stack">
@@ -2096,32 +2097,9 @@ export function CrmListDetailPage({ navigate, listId }: { navigate: (path: strin
       <div className="md-panel-grid 2xl:grid-cols-[minmax(0,1fr)_360px]">
         <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
           <div className="px-5 py-4">
-            <SectionHeader title="Members" meta="people currently included in this audience" />
+            <SectionHeader title="Members" meta="people currently included in this audience" metaPlacement="responsive-inline" />
           </div>
-          <div className="overflow-x-auto px-5 pb-5">
-            <Table className="min-w-[820px]">
-              <TableHeader>
-                <TableRow className="border-[rgba(11,20,19,0.05)] hover:bg-transparent">
-                  <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Company</TableHead>
-                  <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Contact</TableHead>
-                  <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Email</TableHead>
-                  <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Status</TableHead>
-                  <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Last engagement</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {list.members.map(([company, contact, email, status, lastEngagement]) => (
-                  <TableRow key={`${company}-${email}`} className="h-[64px] border-[rgba(11,20,19,0.04)] hover:bg-white/35">
-                    <TableCell className="text-[13px] font-medium text-[var(--md-ink)]">{company}</TableCell>
-                    <TableCell className="text-[13px] text-[var(--md-text)]">{contact}</TableCell>
-                    <TableCell className="text-[13px] text-[var(--md-text)]" data-i18n-skip dir="ltr">{email}</TableCell>
-                    <TableCell><StatusPill tone={status === "Dormant" ? "amber" : status === "Lead" || status === "Prospect" ? "blue" : "green"}>{status}</StatusPill></TableCell>
-                    <TableCell className="text-[13px] text-[var(--md-text)]">{lastEngagement}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+          <div className="px-5 pb-5"><DataTable ariaLabel="List members" columnsButtonLabel="Manage list member columns" columns={memberColumns} rows={list.members} getRowKey={(member) => `${member[0]}-${member[2]}`} storageKey={`crm-list-members-${list.id}`} minimumWidth={860} className="rounded-[var(--md-radius-lg)]" /></div>
         </Surface>
 
         <div className="md-panel-column">
@@ -2758,75 +2736,23 @@ function RecentBroadcastsPanel({
 }
 
 function BroadcastsView({ navigate }: { navigate: (path: string) => void }) {
+  const columns = useMemo<DataTableColumn<(typeof crmEmailCampaigns)[number]>[]>(() => [
+    { id: "name", label: "Broadcast", width: 220, minWidth: 180, kind: "identity", sortValue: (broadcast) => broadcast.name, cell: (broadcast) => <span className="font-medium text-[var(--md-ink)]">{broadcast.name}</span> },
+    { id: "type", label: "Type", width: 110, minWidth: 92, kind: "attribute", cell: (broadcast) => <StatusPill kind="attribute" tone="blue">{broadcast.type}</StatusPill> },
+    { id: "audience", label: "List", width: 180, minWidth: 150, kind: "attribute", cell: (broadcast) => <span className="text-[var(--md-text)]">{broadcast.audience}</span> },
+    { id: "status", label: "Status", width: 120, minWidth: 104, kind: "status", cell: (broadcast) => <StatusPill kind="status" tone={broadcast.tone}>{broadcast.status}</StatusPill> },
+    { id: "when", label: "Send time", width: 160, minWidth: 132, kind: "date", cell: (broadcast) => <span className="text-[var(--md-text)]">{broadcast.when}</span> },
+    { id: "open", label: "Open", width: 88, minWidth: 74, kind: "number", cell: (broadcast) => <span className="font-medium text-[var(--md-ink)]">{broadcast.open}</span> },
+    { id: "click", label: "CTR", width: 88, minWidth: 74, kind: "number", cell: (broadcast) => <span className="font-medium text-[var(--md-ink)]">{broadcast.click}</span> },
+    { id: "actions", label: "Actions", width: 92, minWidth: 92, kind: "actions", canHide: false, canPin: false, cell: (broadcast) => <div className="flex justify-end gap-1"><Button type="button" variant="ghost" size="sm" className="h-8 rounded-[var(--md-radius-sm)] bg-[var(--md-surface-tint)] px-2 text-[11px]" onClick={(event) => { event.stopPropagation(); navigate(getCrmEmailCampaignPath(broadcast, "stats")) }}><ChartNoAxesCombined className="size-3.5" strokeWidth={1.4} />Stats</Button><Button type="button" variant="ghost" size="icon" aria-label={`Edit ${broadcast.name}`} className="size-8 rounded-[var(--md-radius-sm)] opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100" onClick={(event) => { event.stopPropagation(); navigate(getCrmEmailCampaignPath(broadcast, "edit")) }}><PenLine strokeWidth={1.4} /></Button></div> },
+  ], [navigate])
   return (
     <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
       <div className="flex flex-wrap items-start justify-between gap-3 px-5 py-5">
-        <SectionHeader title="Broadcasts" meta="scheduled, sent, and draft email sends" />
+        <SectionHeader title="Broadcasts" meta="scheduled, sent, and draft email sends" metaPlacement="responsive-inline" className="min-w-0 flex-1" />
         <p className="text-[12px] font-medium text-[var(--md-text)]">Average CTR 16.4% · open rate 50.6%</p>
       </div>
-      <div className="overflow-x-auto px-5 pb-5">
-        <Table className="min-w-[1040px]">
-          <TableHeader>
-            <TableRow className="border-[rgba(11,20,19,0.05)] hover:bg-transparent">
-              <TableHead>Broadcast</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>List</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Send time</TableHead>
-              <TableHead>Open</TableHead>
-              <TableHead>CTR</TableHead>
-              <TableHead className="w-[92px] text-end">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {crmEmailCampaigns.map((broadcast) => (
-              <TableRow
-                key={broadcast.id}
-                className="h-[68px] cursor-pointer border-[rgba(11,20,19,0.04)] hover:bg-[var(--md-surface-tint)]"
-                onClick={() => navigate(getCrmEmailCampaignPath(broadcast, "stats"))}
-              >
-                <TableCell className="font-medium text-[var(--md-ink)]">{broadcast.name}</TableCell>
-                <TableCell className="text-[var(--md-text)]">{broadcast.type}</TableCell>
-                <TableCell className="text-[var(--md-text)]">{broadcast.audience}</TableCell>
-                <TableCell><StatusPill tone={broadcast.tone}>{broadcast.status}</StatusPill></TableCell>
-                <TableCell className="text-[var(--md-text)]">{broadcast.when}</TableCell>
-                <TableCell className="font-medium text-[var(--md-ink)] tabular-nums">{broadcast.open}</TableCell>
-                <TableCell className="font-medium text-[var(--md-ink)] tabular-nums">{broadcast.click}</TableCell>
-                <TableCell>
-                  <div className="flex justify-end gap-1">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`See statistics for ${broadcast.name}`}
-                      className="size-8 rounded-[var(--md-radius-sm)] bg-[var(--md-surface-tint)]"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        navigate(getCrmEmailCampaignPath(broadcast, "stats"))
-                      }}
-                    >
-                      <ChartNoAxesCombined strokeWidth={1.4} />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`Edit ${broadcast.name}`}
-                      className="size-8 rounded-[var(--md-radius-sm)] bg-[var(--md-surface-tint)]"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        navigate(getCrmEmailCampaignPath(broadcast, "edit"))
-                      }}
-                    >
-                      <PenLine strokeWidth={1.4} />
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+      <div className="px-5 pb-5"><DataTable ariaLabel="Broadcasts" columnsButtonLabel="Manage broadcast columns" columns={columns} rows={crmEmailCampaigns} getRowKey={(broadcast) => broadcast.id} storageKey="crm-email-broadcasts" minimumWidth={1080} rowClassName="group h-[68px]" onRowClick={(broadcast) => navigate(getCrmEmailCampaignPath(broadcast, "stats"))} /></div>
     </Surface>
   )
 }
@@ -2958,77 +2884,22 @@ function EmailsView() {
       return matchesQuery && matchesStatus
     })
   }, [query, status])
+  const columns = useMemo<DataTableColumn<(typeof emailMarketingContacts)[number]>[]>(() => [
+    { id: "email", label: "Email", width: 240, minWidth: 190, kind: "identity", sortValue: (contact) => contact.email, cellTitle: (contact) => contact.email, cell: (contact) => <span className="block truncate font-medium text-[var(--md-ink)]" data-i18n-skip dir="ltr"><bdi>{contact.email}</bdi></span> },
+    { id: "name", label: "Contact", width: 160, minWidth: 128, kind: "identity", cell: (contact) => <span className="text-[var(--md-text)]">{contact.name}</span> },
+    { id: "company", label: "Company", width: 180, minWidth: 140, kind: "identity", cell: (contact) => <span className="text-[var(--md-text)]">{contact.company}</span> },
+    { id: "status", label: "Status", width: 128, minWidth: 112, kind: "status", cell: (contact) => <StatusPill kind="status" tone={contactStatusTone(contact.status)} className={`md-email-status-pill md-email-status-pill--${contact.status.toLowerCase()} !h-[26px] !w-[104px] !justify-center !rounded-[var(--md-radius-lg)] !px-2.5 !text-center !text-[12.5px] !font-medium !leading-none`}>{t(contact.status)}</StatusPill> },
+    { id: "source", label: "Source", width: 130, minWidth: 104, kind: "attribute", cell: (contact) => <StatusPill kind="attribute" tone="teal">{contact.source}</StatusPill> },
+    { id: "lists", label: "Lists", width: 180, minWidth: 140, kind: "attribute", cellTitle: (contact) => contact.lists, cell: (contact) => <span className="block truncate text-[var(--md-text)]">{contact.lists}</span> },
+    { id: "lastActivity", label: "Last activity", width: 160, minWidth: 132, kind: "date", cell: (contact) => <span className="text-[var(--md-text)]">{contact.lastActivity}</span> },
+  ], [t])
 
   return (
     <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-      <div className="flex flex-col gap-4 px-5 py-5 lg:flex-row lg:items-end lg:justify-between">
-        <SectionHeader title="Emails" meta={`${emailMarketingContacts.length} contact records with consent and delivery status`} />
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <label className="relative min-w-0 sm:w-[280px]">
-            <span className="sr-only">Search emails</span>
-            <Search className="pointer-events-none absolute inset-inline-start-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.4} />
-            <Input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              className="h-10 bg-[var(--md-field-bg)] ps-10 text-base sm:text-[13px]"
-              placeholder="Search email, contact, company, or list…"
-            />
-          </label>
-          <Select value={status} onValueChange={(value) => setStatus(value as typeof status)}>
-            <SelectTrigger className="h-10 min-w-[168px] bg-[var(--md-field-bg)] text-base sm:text-[13px]">
-              <ListFilter className="size-4" strokeWidth={1.4} />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{t("All statuses")}</SelectItem>
-              <SelectItem value="Subscribed">{t("Subscribed")}</SelectItem>
-              <SelectItem value="Unsubscribed">{t("Unsubscribed")}</SelectItem>
-              <SelectItem value="Bounced">{t("Bounced")}</SelectItem>
-              <SelectItem value="Pending">{t("Pending")}</SelectItem>
-              <SelectItem value="Replied">{t("Replied")}</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+      <div className="px-5 py-5">
+        <SectionHeader title="Emails" meta={`${emailMarketingContacts.length} contact records with consent and delivery status`} metaPlacement="responsive-inline" />
       </div>
-
-      {filteredContacts.length ? (
-        <div className="overflow-x-auto px-5 pb-5">
-          <Table className="min-w-[1080px]">
-            <TableHeader>
-              <TableRow className="border-[rgba(11,20,19,0.05)] hover:bg-transparent">
-                <TableHead>Email</TableHead>
-                <TableHead>Contact</TableHead>
-                <TableHead>Company</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Source</TableHead>
-                <TableHead>Lists</TableHead>
-                <TableHead>Last activity</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredContacts.map((contact) => (
-                <TableRow key={contact.email} className="h-[64px] border-[rgba(11,20,19,0.04)] hover:bg-[var(--md-surface-tint)]">
-                  <TableCell className="font-medium text-[var(--md-ink)]" data-i18n-skip dir="ltr"><bdi>{contact.email}</bdi></TableCell>
-                  <TableCell className="text-[var(--md-text)]">{contact.name}</TableCell>
-                  <TableCell className="text-[var(--md-text)]">{contact.company}</TableCell>
-                  <TableCell>
-                    <StatusPill
-                      tone={contactStatusTone(contact.status)}
-                      className={`md-email-status-pill md-email-status-pill--${contact.status.toLowerCase()} !h-[26px] !w-[104px] !justify-center !rounded-[var(--md-radius-lg)] !px-2.5 !text-center !text-[12.5px] !font-medium !leading-none`}
-                    >
-                      {t(contact.status)}
-                    </StatusPill>
-                  </TableCell>
-                  <TableCell className="text-[var(--md-text)]">{contact.source}</TableCell>
-                  <TableCell className="text-[var(--md-text)]">{contact.lists}</TableCell>
-                  <TableCell className="text-[var(--md-text)]">{contact.lastActivity}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      ) : (
-        <div className="mx-5 mb-5 grid min-h-[220px] place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-6 text-center">
+      <div className="px-5 pb-5"><DataTable ariaLabel="Marketing emails" columnsButtonLabel="Manage email columns" columns={columns} rows={filteredContacts} getRowKey={(contact) => contact.email} storageKey="crm-marketing-emails" minimumWidth={1120} toolbarSearch={<label className="relative min-w-0 sm:w-[280px]"><span className="sr-only">Search emails</span><Search className="pointer-events-none absolute inset-inline-start-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.4} /><Input value={query} onChange={(event) => setQuery(event.target.value)} className="h-8 bg-[var(--md-field-bg)] ps-9 text-base sm:text-[12px]" placeholder="Search email, contact, company, or list…" /></label>} toolbarFilters={<Select value={status} onValueChange={(value) => setStatus(value as typeof status)}><SelectTrigger className="h-8 min-w-[156px] bg-[var(--md-field-bg)] text-base sm:text-[12px]"><ListFilter className="size-3.5" strokeWidth={1.4} /><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{t("All statuses")}</SelectItem><SelectItem value="Subscribed">{t("Subscribed")}</SelectItem><SelectItem value="Unsubscribed">{t("Unsubscribed")}</SelectItem><SelectItem value="Bounced">{t("Bounced")}</SelectItem><SelectItem value="Pending">{t("Pending")}</SelectItem><SelectItem value="Replied">{t("Replied")}</SelectItem></SelectContent></Select>} emptyState={<div className="grid min-h-[180px] place-items-center p-6 text-center">
           <div>
             <Search className="mx-auto size-5 text-[var(--md-subtle)]" strokeWidth={1.4} />
             <h3 className="mt-3 text-[14px] font-medium text-[var(--md-ink)]">No matching emails</h3>
@@ -3045,8 +2916,7 @@ function EmailsView() {
               Clear filters
             </Button>
           </div>
-        </div>
-      )}
+        </div>} /></div>
     </Surface>
   )
 }
@@ -3183,6 +3053,17 @@ export function CrmEmailsPage({ navigate }: { navigate: (path: string) => void }
 
 export function CrmEmailStatsPage({ navigate, campaignId }: { navigate: (path: string) => void; campaignId: string }) {
   const campaign = crmEmailCampaigns.find((item) => item.id === campaignId) ?? crmEmailCampaigns[0]
+  type SignalRow = (typeof campaign.engaged)[number]
+  const engagedColumns = useMemo<DataTableColumn<SignalRow>[]>(() => [
+    { id: "contact", label: "Contact", width: 190, minWidth: 150, kind: "identity", cell: (row) => <span className="font-medium text-[var(--md-ink)]">{row[0]}</span> },
+    { id: "company", label: "Company", width: 180, minWidth: 140, kind: "identity", cell: (row) => <span className="text-[var(--md-text)]">{row[1]}</span> },
+    { id: "signal", label: "Signal", width: 250, minWidth: 190, kind: "attribute", cell: (row) => <StatusPill kind="attribute" tone="green">{row[2]}</StatusPill> },
+  ], [])
+  const unsubscribedColumns = useMemo<DataTableColumn<(typeof campaign.unsubscribed)[number]>[]>(() => [
+    { id: "contact", label: "Contact", width: 190, minWidth: 150, kind: "identity", cell: (row) => <span className="font-medium text-[var(--md-ink)]">{row[0]}</span> },
+    { id: "company", label: "Company", width: 180, minWidth: 140, kind: "identity", cell: (row) => <span className="text-[var(--md-text)]">{row[1]}</span> },
+    { id: "reason", label: "Reason", width: 250, minWidth: 190, kind: "long-text", cellTitle: (row) => row[2], cell: (row) => <span className="block truncate text-[var(--md-text)]">{row[2]}</span> },
+  ], [])
 
   return (
     <div className="md-page md-page-stack">
@@ -3230,58 +3111,16 @@ export function CrmEmailStatsPage({ navigate, campaignId }: { navigate: (path: s
       <div className="grid gap-[var(--md-page-stack-gap)] xl:grid-cols-2">
         <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
           <div className="px-5 py-4">
-            <SectionHeader title="Who's up" meta="contacts showing buying or engagement signals" />
+            <SectionHeader title="Who's up" meta="contacts showing buying or engagement signals" metaPlacement="responsive-inline" />
           </div>
-          <div className="overflow-x-auto px-5 pb-5">
-            <Table className="min-w-[620px]">
-              <TableHeader>
-                <TableRow className="border-[rgba(11,20,19,0.05)] hover:bg-transparent">
-                  <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Contact</TableHead>
-                  <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Company</TableHead>
-                  <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Signal</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {campaign.engaged.map(([name, company, signal]) => (
-                  <TableRow key={`${name}-${signal}`} className="h-[64px] border-[rgba(11,20,19,0.04)] hover:bg-white/35">
-                    <TableCell className="text-[13px] font-medium text-[var(--md-ink)]">{name}</TableCell>
-                    <TableCell className="text-[13px] text-[var(--md-text)]">{company}</TableCell>
-                    <TableCell className="text-[13px] text-[var(--md-text)]">{signal}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+          <div className="px-5 pb-5"><DataTable ariaLabel="Engaged contacts" columnsButtonLabel="Manage engagement columns" columns={engagedColumns} rows={campaign.engaged} getRowKey={(row) => `${row[0]}-${row[2]}`} minimumWidth={620} showToolbar={false} showColumnManager={false} className="rounded-[var(--md-radius-lg)]" /></div>
         </Surface>
 
         <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
           <div className="px-5 py-4">
-            <SectionHeader title="Unsubscribed" meta="contacts removed from future marketing sends" />
+            <SectionHeader title="Unsubscribed" meta="contacts removed from future marketing sends" metaPlacement="responsive-inline" />
           </div>
-          <div className="overflow-x-auto px-5 pb-5">
-            {campaign.unsubscribed.length ? (
-              <Table className="min-w-[620px]">
-                <TableHeader>
-                  <TableRow className="border-[rgba(11,20,19,0.05)] hover:bg-transparent">
-                    <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Contact</TableHead>
-                    <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Company</TableHead>
-                    <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Reason</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {campaign.unsubscribed.map(([name, company, reason]) => (
-                    <TableRow key={`${name}-${reason}`} className="h-[64px] border-[rgba(11,20,19,0.04)] hover:bg-white/35">
-                      <TableCell className="text-[13px] font-medium text-[var(--md-ink)]">{name}</TableCell>
-                      <TableCell className="text-[13px] text-[var(--md-text)]">{company}</TableCell>
-                      <TableCell className="text-[13px] text-[var(--md-text)]">{reason}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            ) : (
-              <p className="rounded-[var(--md-radius-lg)] bg-white/38 p-4 text-[13px] text-[var(--md-text)] shadow-[var(--md-shadow-line)]">No unsubscribes recorded yet.</p>
-            )}
-          </div>
+          <div className="px-5 pb-5"><DataTable ariaLabel="Unsubscribed contacts" columnsButtonLabel="Manage unsubscribe columns" columns={unsubscribedColumns} rows={campaign.unsubscribed} getRowKey={(row) => `${row[0]}-${row[2]}`} minimumWidth={620} showToolbar={false} showColumnManager={false} className="rounded-[var(--md-radius-lg)]" emptyState={<p className="text-[13px] text-[var(--md-text)]">No unsubscribes recorded yet.</p>} /></div>
         </Surface>
       </div>
     </div>

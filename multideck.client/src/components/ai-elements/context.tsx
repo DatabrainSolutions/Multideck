@@ -6,7 +6,7 @@ import {
   useMemo,
   type ComponentProps,
 } from "react"
-import { Info } from "lucide-react"
+import { Info } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
 import {
   Popover,

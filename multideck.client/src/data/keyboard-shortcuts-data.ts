@@ -19,7 +19,7 @@ import {
   Sparkles,
   SquareDashed,
   type LucideIcon,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 import { chord, pointerGesture, sequence, type ShortcutBinding } from "@/lib/keyboard-shortcut-binding"
 
 export type ShortcutGroupId = "dexter" | "navigation" | "search" | "interface" | "create"

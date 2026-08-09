@@ -11,13 +11,13 @@ import {
   Plus,
   Search,
   type LucideIcon,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Popover, PopoverAnchor, PopoverClose, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Progress } from "@/components/ui/progress"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Table, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { KpiStrip } from "@/components/multideck/dashboard-kpi-strip"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
@@ -48,6 +48,11 @@ import {
 type WarehouseTableColumn<T> = {
   key: string
   label: string
+  kind?: DataTableColumn<T>["kind"]
+  width?: number
+  minWidth?: number
+  resizable?: boolean
+  sortValue?: DataTableColumn<T>["sortValue"]
   className?: string
   cellClassName?: string
   align?: "left" | "right" | "center"
@@ -73,20 +78,8 @@ const tableBodyReveal = {
   },
 }
 
-const warehouseTableRowTransition = {
-  hidden: { opacity: 0, y: 6 },
-  show: (index: number) => ({
-    opacity: 1,
-    y: 0,
-    transition: { ...mdMotion.smooth, delay: Math.min(index * 0.012, 0.12) },
-  }),
-  exit: { opacity: 0, y: -4, transition: mdMotion.fast },
-}
-
 // One value for every select-to-detail morph in Warehouse.
 const stockMorphTransition = sharedElementTransition
-const tableHeadClass = "h-9 border-r border-[rgba(90,103,100,0.12)] bg-[rgba(90,103,100,0.06)] px-3 py-2 text-[11.5px] font-medium text-[var(--md-text)] last:border-r-0"
-const tableCellClass = "border-r border-[rgba(90,103,100,0.09)] px-3 py-2 last:border-r-0"
 export type WarehouseKanbanCardData = {
   id: string
   title: string
@@ -365,12 +358,6 @@ function countKanbanCards(columns: readonly WarehouseKanbanColumnSource[] | read
   return columns.reduce((total, column) => total + column.cards.length, 0)
 }
 
-function alignClass(align: WarehouseTableColumn<unknown>["align"]) {
-  if (align === "right") return "text-right"
-  if (align === "center") return "text-center"
-  return "text-left"
-}
-
 function WarehouseCode({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <span data-i18n-skip dir="ltr" className={cn("text-[12px] font-medium tracking-normal text-[var(--md-ink)] tabular-nums", className)}>
@@ -548,12 +535,7 @@ function WarehouseToolbar({
 }) {
   return (
     <div className="flex flex-col gap-[var(--md-gap-md)] lg:flex-row lg:items-center lg:justify-between">
-      {title ? (
-        <div className="min-w-0">
-          <h2 className="text-[15px] font-medium text-[var(--md-ink)]">{title}</h2>
-          {meta ? <p className="mt-1 text-[13px] leading-5 text-[var(--md-text)]">{meta}</p> : null}
-        </div>
-      ) : null}
+      {title ? <SectionHeader title={title} meta={meta} metaPlacement="responsive-inline" className="min-w-0 flex-1" /> : null}
       <div className={cn("flex flex-wrap items-center gap-2", !title && "lg:ms-auto")}>{children}</div>
     </div>
   )
@@ -562,6 +544,7 @@ function WarehouseToolbar({
 export function WarehouseInventoryTable<T extends { id: string }>({
   rows,
   columns,
+  toolbarTitle,
   minWidth = 1060,
   emptyMessage = "Nothing matches this view",
   emptyHint,
@@ -573,6 +556,7 @@ export function WarehouseInventoryTable<T extends { id: string }>({
 }: {
   rows: T[]
   columns: WarehouseTableColumn<T>[]
+  toolbarTitle?: string
   minWidth?: number
   emptyMessage?: string
   /** The one thing to do next. Defaults to clearing a filter. */
@@ -583,9 +567,21 @@ export function WarehouseInventoryTable<T extends { id: string }>({
   renderRowDetail?: (row: T) => ReactNode
   rowDetailLabel?: (row: T) => string
 }) {
-  const shouldReduceMotion = useReducedMotion()
   const { direction, t } = useLanguage()
   const [openRowId, setOpenRowId] = useState<string | null>(null)
+  const dataTableColumns = useMemo<DataTableColumn<T>[]>(() => columns.map((column) => ({
+    id: column.key,
+    label: column.label,
+    kind: column.kind ?? (column.align === "right" ? "number" : "text"),
+    align: column.align === "right" ? "end" : column.align === "center" ? "center" : "start",
+    width: column.width,
+    minWidth: column.minWidth,
+    resizable: column.resizable,
+    sortValue: column.sortValue,
+    headerClassName: column.className,
+    cellClassName: column.cellClassName,
+    cell: column.render,
+  })), [columns])
 
   useEffect(() => {
     if (openRowId && !rows.some((row) => row.id === openRowId)) setOpenRowId(null)
@@ -597,97 +593,31 @@ export function WarehouseInventoryTable<T extends { id: string }>({
     setOpenRowId((current) => current === row.id ? null : row.id)
   }
 
-  function handleRowKeyDown(event: ReactKeyboardEvent<HTMLTableRowElement>, row: T) {
-    if (!onRowClick && !renderRowDetail) return
-    if (event.key !== "Enter" && event.key !== " ") return
-
-    event.preventDefault()
-    activateRow(row)
-  }
-
   return (
-    <div className="overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]">
-      <Table className="text-[12.5px]" style={{ minWidth } as CSSProperties}>
-        <TableHeader>
-          <TableRow className="border-b border-[rgba(90,103,100,0.12)] hover:bg-transparent">
-            {columns.map((column) => (
-              <TableHead key={column.key} className={cn(tableHeadClass, alignClass(column.align), column.className)}>
-                {column.label}
-              </TableHead>
-            ))}
-          </TableRow>
-        </TableHeader>
-        <motion.tbody className="[&_tr:last-child]:border-0">
-          <AnimatePresence initial={false}>
-            {rows.length ? rows.map((row, index) => {
-            const hasRowDetail = Boolean(renderRowDetail)
-            const isInteractiveRow = Boolean(onRowClick || renderRowDetail)
-            const isDetailOpen = openRowId === row.id
-            const rowElement = (
-              <motion.tr
-                layout={shouldReduceMotion ? false : "position"}
-                custom={index}
-                variants={shouldReduceMotion ? undefined : warehouseTableRowTransition}
-                initial={shouldReduceMotion ? false : "hidden"}
-                animate={shouldReduceMotion ? undefined : "show"}
-                exit={shouldReduceMotion ? undefined : "exit"}
-                tabIndex={isInteractiveRow ? 0 : undefined}
-                aria-haspopup={hasRowDetail ? "dialog" : undefined}
-                aria-expanded={hasRowDetail ? isDetailOpen : undefined}
-                // A row that opens a panel needs a name too, not only one that
-                // opens the inline popover: a focusable row announced as its own
-                // cell contents gives a screen-reader user nothing to act on.
-                aria-label={isInteractiveRow ? t(rowDetailLabel?.(row) ?? `Open details for ${row.id}`) : undefined}
-                className={cn(
-                  "h-[52px] border-b border-[rgba(90,103,100,0.09)] bg-[var(--md-surface)] transition-[background,color,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[rgba(90,103,100,0.045)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]",
-                  isInteractiveRow && "cursor-pointer",
-                  isDetailOpen && "bg-[var(--md-accent-a055)]",
-                  rowClassName?.(row),
-                )}
-                onClick={isInteractiveRow ? () => activateRow(row) : undefined}
-                onKeyDown={(event) => handleRowKeyDown(event, row)}
-              >
-                {columns.map((column) => (
-                  <TableCell key={`${row.id}-${column.key}`} className={cn(tableCellClass, alignClass(column.align), column.cellClassName)}>
-                    {column.render(row)}
-                  </TableCell>
-                ))}
-              </motion.tr>
-            )
-
-            return (
-              <Fragment key={row.id}>
-                {renderRowDetail ? (
-                  <Popover open={isDetailOpen} onOpenChange={(open) => setOpenRowId(open ? row.id : null)}>
-                    <PopoverAnchor asChild>{rowElement}</PopoverAnchor>
-                    <PopoverContent
-                      side="bottom"
-                      align={direction === "rtl" ? "end" : "start"}
-                      sideOffset={8}
-                      collisionPadding={16}
-                      className="z-[80] w-[min(92vw,372px)] gap-0 overflow-hidden rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-surface)] p-2 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)]"
-                    >
-                      {renderRowDetail(row)}
-                    </PopoverContent>
-                  </Popover>
-                ) : rowElement}
-                {renderExpandedRow?.(row, columns.length)}
-              </Fragment>
-            )
-            }) : (
-              <TableRow key="warehouse-table-empty" className="h-[160px] border-0 hover:bg-transparent">
-                <TableCell colSpan={columns.length} className="text-center">
-                  <div className="mx-auto max-w-[360px]">
-                    <p className="text-[14px] font-medium text-[var(--md-ink)]">{t(emptyMessage)}</p>
-                    <p className="mt-1 text-[13px] leading-5 text-[var(--md-text)]">{t(emptyHint ?? "Clear a filter or widen the search to see more.")}</p>
-                  </div>
-                </TableCell>
-              </TableRow>
-            )}
-          </AnimatePresence>
-        </motion.tbody>
-      </Table>
-    </div>
+    <DataTable
+      ariaLabel="Warehouse inventory"
+      columnsButtonLabel="Manage warehouse columns"
+      columns={dataTableColumns}
+      rows={rows}
+      getRowKey={(row) => row.id}
+      toolbarTabs={toolbarTitle ? <h2 className="truncate text-[14px] font-medium text-[var(--md-ink)]">{toolbarTitle}</h2> : undefined}
+      minimumWidth={minWidth}
+      rowClassName={(row) => cn("h-[52px]", openRowId === row.id && "bg-[var(--md-accent-a055)]", rowClassName?.(row))}
+      onRowClick={onRowClick || renderRowDetail ? activateRow : undefined}
+      rowAriaLabel={onRowClick || renderRowDetail ? (row) => rowDetailLabel?.(row) ?? `Open details for ${row.id}` : undefined}
+      rowProps={renderRowDetail ? (row) => ({ "aria-haspopup": "dialog", "aria-expanded": openRowId === row.id }) : undefined}
+      wrapRow={renderRowDetail ? (row, rowElement) => (
+        <Popover open={openRowId === row.id} onOpenChange={(open) => setOpenRowId(open ? row.id : null)}>
+          <PopoverAnchor asChild>{rowElement}</PopoverAnchor>
+          <PopoverContent side="bottom" align={direction === "rtl" ? "end" : "start"} sideOffset={8} collisionPadding={16} className="z-[80] w-[min(92vw,372px)] gap-0 overflow-hidden rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-surface)] p-2 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)]">
+            {renderRowDetail(row)}
+          </PopoverContent>
+        </Popover>
+      ) : undefined}
+      renderAfterRow={renderExpandedRow}
+      emptyState={<div className="mx-auto max-w-[360px]"><p className="text-[14px] font-medium text-[var(--md-ink)]">{t(emptyMessage)}</p><p className="mt-1 text-[13px] leading-5 text-[var(--md-text)]">{t(emptyHint ?? "Clear a filter or widen the search to see more.")}</p></div>}
+      tableClassName="text-[12.5px]"
+    />
   )
 }
 
@@ -1178,11 +1108,12 @@ export function WarehouseStockTable({
   )
 }
 
-export function WarehouseOrdersTable({ rows = warehouseOrders }: { rows?: readonly WarehouseOrder[] }) {
+export function WarehouseOrdersTable({ rows = warehouseOrders, toolbarTitle }: { rows?: readonly WarehouseOrder[]; toolbarTitle?: string }) {
   return (
     <WarehouseInventoryTable
       rows={[...rows]}
       columns={orderColumns}
+      toolbarTitle={toolbarTitle}
       minWidth={980}
       emptyHint="Clear a filter or widen the search to see more orders."
       emptyMessage="No orders match this view."
@@ -1288,20 +1219,21 @@ export function WarehousePageHeader({
   /** The active warehouse workspace, shown in the page orientation. */
   title?: string
   /** One concise description of the active workspace. */
-  description?: string
+  description?: string | null
   /** Contextual controls that belong on the same row as the page orientation. */
   children?: ReactNode
 }) {
   const { t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
+  const resolvedDescription = description === null
+    ? null
+    : description ?? (customer ? "Check your stock, manage items, and send inbound or outbound requests to the warehouse team." : "Stock, movements, orders and operator planning in one workspace.")
 
   return (
     <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
       <div className="min-w-0">
         <h1 className="text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">{t(title)}</h1>
-        <p className="mt-0.5 max-w-[680px] text-[13px] leading-5 text-[var(--md-text)]">
-          {t(description ?? (customer ? "Check your stock, manage items, and send inbound or outbound requests to the warehouse team." : "Stock, movements, orders and operator planning in one workspace."))}
-        </p>
+        {resolvedDescription ? <p className="mt-0.5 max-w-[680px] text-[13px] leading-5 text-[var(--md-text)]">{t(resolvedDescription)}</p> : null}
       </div>
       <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-2 md:justify-end">
         {children}
@@ -1334,10 +1266,10 @@ function WarehouseActivityPanel({ rows = warehouseGoodsMovements }: { rows?: rea
 
   return (
     <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-      <div className="grid grid-cols-[minmax(0,1fr)_94px_112px] items-end gap-3 px-5 py-4 shadow-[var(--md-stroke-bottom)]">
-        <SectionHeader title={t("Recent warehouse activity")} meta={t("Latest receiving and dispatch movements posted by the warehouse team.")} />
-        <span className="hidden text-right text-[11px] font-medium text-[var(--md-subtle)] sm:block">{t("When")}</span>
-        <span className="hidden text-right text-[11px] font-medium text-[var(--md-subtle)] sm:block">{t("Status")}</span>
+      <div className="grid grid-cols-1 items-end gap-3 px-5 py-4 shadow-[var(--md-stroke-bottom)] sm:grid-cols-[minmax(0,1fr)_94px_112px]">
+        <SectionHeader title={t("Recent warehouse activity")} />
+        <span className="hidden text-end text-[11px] font-medium text-[var(--md-subtle)] sm:block">{t("When")}</span>
+        <span className="hidden text-end text-[11px] font-medium text-[var(--md-subtle)] sm:block">{t("Status")}</span>
       </div>
       <motion.div
         className="divide-y divide-[rgba(90,103,100,0.09)]"
@@ -1346,18 +1278,18 @@ function WarehouseActivityPanel({ rows = warehouseGoodsMovements }: { rows?: rea
         animate={shouldReduceMotion ? undefined : "show"}
       >
         {rows.slice(0, 5).map((movement) => (
-          <motion.div key={movement.id} variants={shouldReduceMotion ? undefined : rowReveal} className="grid grid-cols-[34px_minmax(0,1fr)_94px_112px] items-center gap-3 px-5 py-3">
-            <span className={cn("grid size-[34px] place-items-center rounded-[var(--md-radius-md)] shadow-[var(--md-shadow-line)]", movement.direction === "In" ? "bg-[var(--md-accent-a10)] text-[var(--md-accent)]" : "bg-[rgba(74,125,156,0.1)] text-[var(--md-blue)]")}>
+          <motion.div key={movement.id} variants={shouldReduceMotion ? undefined : rowReveal} className="grid grid-cols-[34px_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-5 py-3 sm:grid-cols-[34px_minmax(0,1fr)_94px_112px] sm:gap-3">
+            <span className={cn("row-span-2 grid size-[34px] place-items-center rounded-[var(--md-radius-md)] shadow-[var(--md-shadow-line)] sm:row-span-1", movement.direction === "In" ? "bg-[var(--md-accent-a10)] text-[var(--md-accent)]" : "bg-[rgba(74,125,156,0.1)] text-[var(--md-blue)]")}>
               {movement.direction === "In" ? <ArrowDownToLine className="size-4" strokeWidth={1.25} /> : <ArrowUpFromLine className="size-4" strokeWidth={1.25} />}
             </span>
             <div className="min-w-0">
               <p className="truncate text-[13px] font-medium text-[var(--md-ink)]">{movement.product}</p>
               <p className="mt-1 truncate text-[12px] text-[var(--md-text)]">{movement.reference}</p>
             </div>
-            <div className="text-right">
+            <div className="col-start-2 row-start-2 text-start sm:col-start-3 sm:row-start-1 sm:text-end">
               <p className="text-[12px] font-medium text-[var(--md-ink)]">{movement.time}</p>
             </div>
-            <div className="justify-self-end"><StatusPill tone={movement.tone}>{movement.status}</StatusPill></div>
+            <div className="col-start-3 row-span-2 row-start-1 justify-self-end sm:col-start-4 sm:row-span-1"><StatusPill tone={movement.tone}>{movement.status}</StatusPill></div>
           </motion.div>
         ))}
         {!rows.length ? <p className="px-5 py-8 text-center text-[13px] text-[var(--md-subtle)]">{t("No warehouse movements have been posted yet.")}</p> : null}
@@ -1381,11 +1313,7 @@ export function WarehouseDashboard({
     <div className="grid gap-[var(--md-page-stack-gap)]">
       <WarehouseMetricStrip metrics={metrics} />
       <div className="grid gap-[var(--md-page-stack-gap)] 2xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.75fr)]">
-        <div className="grid gap-[var(--md-gap-md)]">
-          <WarehouseToolbar title={t("Open warehouse orders")} meta={t("Live inbound and outbound work that still needs operator action.")}>
-          </WarehouseToolbar>
-          <WarehouseOrdersTable rows={orders.slice(0, 5)} />
-        </div>
+        <WarehouseOrdersTable rows={orders.slice(0, 5)} toolbarTitle={t("Open warehouse orders")} />
         <WarehouseActivityPanel rows={movements} />
       </div>
     </div>
@@ -2306,7 +2234,7 @@ export function WarehouseCalendarView({
     <div className="grid gap-[var(--md-page-stack-gap)]">
       <WarehousePageHeader
         title="Calendar"
-        description="Dock bookings, count windows, dispatch cutoffs and stock-take planning."
+        description={null}
       >
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1">

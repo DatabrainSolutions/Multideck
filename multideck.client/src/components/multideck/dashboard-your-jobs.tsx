@@ -1,6 +1,6 @@
 import { memo, useMemo, type CSSProperties } from "react"
 import { motion, useReducedMotion } from "motion/react"
-import { ArrowRight, Clock3, Star } from "lucide-react"
+import { ArrowRight, Clock3, Star } from "@/components/icons/hugeicons"
 import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
 import { mdMotion, staggerRamp } from "@/lib/motion"

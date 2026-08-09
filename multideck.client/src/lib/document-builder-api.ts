@@ -132,6 +132,16 @@ function requireDocumentClient() {
   return supabase
 }
 
+function isTransientFunctionFetchError(error: unknown) {
+  if (!(error instanceof Error)) return false
+  return error.name === "FunctionsFetchError"
+    || error.message === "Failed to send a request to the Edge Function"
+}
+
+function waitForDocumentWorkspaceRetry() {
+  return new Promise((resolve) => window.setTimeout(resolve, 250))
+}
+
 async function toFunctionError(error: unknown, fallback: string) {
   const context = typeof error === "object" && error && "context" in error
     ? (error as { context?: unknown }).context
@@ -150,10 +160,18 @@ async function toFunctionError(error: unknown, fallback: string) {
 
 export async function getDocumentBuilderWorkspace(): Promise<DocumentBuilderWorkspace> {
   const client = requireDocumentClient()
-  const { data, error } = await client.functions.invoke<DocumentBuilderWorkspace>("document-builder-workspace", {
+  const invokeWorkspace = () => client.functions.invoke<DocumentBuilderWorkspace>("document-builder-workspace", {
     method: "POST",
     body: {},
   })
+
+  let { data, error } = await invokeWorkspace()
+  if (error && isTransientFunctionFetchError(error)) {
+    await waitForDocumentWorkspaceRetry()
+    const retryResult = await invokeWorkspace()
+    data = retryResult.data
+    error = retryResult.error
+  }
 
   if (error) throw await toFunctionError(error, "The document workspace could not be loaded.")
   if (!data) throw new Error("The document workspace returned no data.")

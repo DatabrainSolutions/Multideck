@@ -1,5 +1,5 @@
 import { useId, useMemo, useState, type ReactNode } from "react"
-import { ArrowRight, Check, CircleCheckBig, CircleDollarSign, ClipboardCheck, Clock3, ExternalLink, FileText, MapPin, Network, Package, Plus, Save, Search, SlidersHorizontal, Trash2, Truck, UserRound } from "lucide-react"
+import { ArrowRight, Check, CircleCheckBig, CircleDollarSign, ClipboardCheck, Clock3, ExternalLink, FileText, MapPin, Network, Package, Plus, Save, Search, SlidersHorizontal, Trash2, Truck, UserRound } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { AuditWorkspace, type QuoteAuditRecord } from "@/components/multideck/audit-workspace"
 import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
+import { MultideckDatePicker } from "@/components/multideck/date-picker"
 import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
 import { domesticRoadJobs, type DomesticRoadJob } from "@/components/multideck/domestic-road-components"
 import { DocumentWorkspace, type DocumentWorkspaceDocument } from "@/components/multideck/document-workspace"
@@ -372,6 +373,8 @@ export function DomesticRoadBookingPage({ navigate, roadJobId }: { navigate: (pa
   const [tailLiftRequired, setTailLiftRequired] = useState(false)
   const [collectionOpeningTimes, setCollectionOpeningTimes] = useState("08:00–17:00")
   const [deliveryOpeningTimes, setDeliveryOpeningTimes] = useState("09:00–17:00")
+  const [readyDate, setReadyDate] = useState("2026-07-23")
+  const [requiredDeliveryDate, setRequiredDeliveryDate] = useState("2026-07-24")
   const [haulierBookingInstructions, setHaulierBookingInstructions] = useState("")
   const [specialInstructions, setSpecialInstructions] = useState("")
   const [manualCollectionAddress, setManualCollectionAddress] = useState(roadCustomerAccounts[0].addresses[0].address)
@@ -574,7 +577,7 @@ export function DomesticRoadBookingPage({ navigate, roadJobId }: { navigate: (pa
                 <Textarea className="min-h-[88px] rounded-[var(--md-radius-md)] text-[13px]" value={collectionOverride ? manualCollectionAddress : collectionAddress.address} readOnly={!collectionOverride} onChange={(event) => setManualCollectionAddress(event.target.value)} dir="auto" />
                 {!collectionOverride ? <p className="-mt-1 text-[11px] text-[var(--md-text)]">{collectionAddress.contact}</p> : <p className="-mt-1 text-[11px] text-[var(--md-amber)]">{t("Manual address override — this does not amend the account record.")}</p>}
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label={t("Ready date")}><Input className={inputClass} type="date" defaultValue="2026-07-23" /></Field>
+                  <Field label={t("Ready date")}><MultideckDatePicker value={readyDate} onChange={(date) => setReadyDate(date ?? "")} placeholder="Select date" title="Ready date" description="Pick when the goods will be ready for collection." triggerClassName={inputClass} /></Field>
                   <Field label={t("Collection window")}><Input className={inputClass} defaultValue="08:00–12:00" dir="ltr" /></Field>
                 </div>
               </div>
@@ -584,7 +587,7 @@ export function DomesticRoadBookingPage({ navigate, roadJobId }: { navigate: (pa
                 <Textarea className="min-h-[88px] rounded-[var(--md-radius-md)] text-[13px]" value={deliveryOverride ? manualDeliveryAddress : deliveryAddress.address} readOnly={!deliveryOverride} onChange={(event) => setManualDeliveryAddress(event.target.value)} dir="auto" />
                 {!deliveryOverride ? <p className="-mt-1 text-[11px] text-[var(--md-text)]">{deliveryAddress.contact}</p> : <p className="-mt-1 text-[11px] text-[var(--md-amber)]">{t("Manual address override — this does not amend the account record.")}</p>}
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label={t("Required delivery")}><Input className={inputClass} type="date" defaultValue="2026-07-24" /></Field>
+                  <Field label={t("Required delivery")}><MultideckDatePicker value={requiredDeliveryDate} onChange={(date) => setRequiredDeliveryDate(date ?? "")} placeholder="Select date" title="Required delivery" description="Pick the required delivery date." triggerClassName={inputClass} minDate={readyDate || undefined} /></Field>
                   <Field label={t("Delivery restriction")}><Input className={inputClass} defaultValue={t("Booking required")} dir="auto" /></Field>
                 </div>
               </div>
@@ -687,7 +690,7 @@ export function DomesticRoadBookingPage({ navigate, roadJobId }: { navigate: (pa
                     <Field label={t("Leg role")}><Input className={inputClass} value={leg.role} onChange={(event) => updateLeg(leg.id, "role", event.target.value)} /></Field>
                     <Field label={t("From")}><Input className={inputClass} value={leg.from} onChange={(event) => updateLeg(leg.id, "from", event.target.value)} dir="auto" /></Field>
                     <Field label={t("To")}><Input className={inputClass} value={leg.to} onChange={(event) => updateLeg(leg.id, "to", event.target.value)} dir="auto" /></Field>
-                    <Field label={t("Movement date")}><Input className={inputClass} type="date" value={leg.date} onChange={(event) => updateLeg(leg.id, "date", event.target.value)} /></Field>
+                    <Field label={t("Movement date")}><MultideckDatePicker value={leg.date || null} onChange={(date) => updateLeg(leg.id, "date", date ?? "")} placeholder="Select date" title="Movement date" description="Pick when this movement is planned." triggerClassName={inputClass} /></Field>
                     <Field label={t("Carrier")}><Input className={inputClass} value={leg.carrier} onChange={(event) => updateLeg(leg.id, "carrier", event.target.value)} dir="auto" /></Field>
                   </div>
                   <Button type="button" variant="ghost" size="icon" className="absolute end-3 top-3 size-8 rounded-[var(--md-radius-md)] text-[var(--md-red)] hover:bg-[rgba(192,57,43,0.08)]" aria-label={t("Remove leg")} onClick={() => removeLeg(leg.id)} disabled={legs.length === 1}><Trash2 className="size-3.5" strokeWidth={1.5} /></Button>

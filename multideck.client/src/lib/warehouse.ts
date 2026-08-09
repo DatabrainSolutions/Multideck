@@ -1,4 +1,4 @@
-import { AlarmClock, ArrowDownToLine, ArrowUpFromLine, Boxes, Clock3, PackageCheck, ShieldAlert, type LucideIcon } from "lucide-react"
+import { AlarmClock, ArrowDownToLine, ArrowUpFromLine, Boxes, Clock3, PackageCheck, ShieldAlert, type LucideIcon } from "@/components/icons/hugeicons"
 import type { StatusTone } from "@/data/multideck-data"
 import type {
   WarehouseCalendarCustomer,

@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Archive, ArrowLeft, Bell, Boxes, Check, ChevronDown, ChevronRight, Clock3, FileText, Folder, Inbox, LifeBuoy, LoaderCircle, LogOut, MailWarning, Pencil, Plus, PanelLeftClose, PanelLeftOpen, Pin, Search, Send, Settings, Sparkles, Tags, Trash2, TriangleAlert, Users, X, type LucideIcon } from "lucide-react"
+import { AiBrain, Archive, ArrowLeft, Bell, Boxes, Check, ChevronDown, ChevronRight, Clock3, FileText, Folder, Inbox, LifeBuoy, LoaderCircle, LogOut, MailWarning, MorphingIcon, Pencil, Plus, PanelLeftClose, PanelLeftOpen, Pin, Search, Send, Settings, Sparkles, Tags, Trash2, TriangleAlert, Users, X, type LucideIcon } from "@/components/icons/hugeicons"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -22,7 +22,7 @@ import { mailboxLabelTone } from "@/lib/mailbox-label-colour"
 import { customerWarehouseNavigation, homeNavItem, inboxNavItem, sidebarAreas, type NavItem, type SidebarArea, type SidebarDestination } from "@/data/navigation-data"
 import { readSettingsSectionFromUrl, settingsNavigationGroups, type SettingsSectionId } from "@/data/settings-navigation"
 import { useLanguage } from "@/i18n/language-provider"
-import { deleteDexterConversation, listDexterConversations, renameDexterConversation, type DexterConversationSummary } from "@/lib/dexter-api"
+import { deleteDexterConversation, getDexterUsage, listDexterConversations, renameDexterConversation, type DexterConversationSummary } from "@/lib/dexter-api"
 import { listDeals } from "@/lib/deal-api"
 import {
   announceDexterConversationsChanged,
@@ -427,7 +427,7 @@ export function SidebarNavItem({
           "relative grid size-5 place-items-center text-[var(--md-subtle)] transition-colors duration-150",
           !isActive && "group-hover:text-[var(--md-ink)] group-focus-visible:text-[var(--md-ink)]",
           isActive && "text-[var(--md-selected-text)]",
-          isDexterItem && "z-10 !text-white group-hover:bg-white/10 group-hover:!text-white",
+          isDexterItem && "z-10 !text-white group-hover:!text-white",
         )}
       >
         <span
@@ -1100,6 +1100,7 @@ export function AppSidebar({
   const [accountPhotoUrl, setAccountPhotoUrl] = useState<string | null>(currentUser?.profilePhotoUrl ?? null)
   const [accountCoverPhotoUrl, setAccountCoverPhotoUrl] = useState<string | null>(null)
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
+  const [aiUsagePercent, setAiUsagePercent] = useState<number | null>(null)
   const profileIsActive = false
   const [arrangingScopeId, setArrangingScopeId] = useState<string | null>(null)
   const [dexterConversations, setDexterConversations] = useState<SearchableDexterConversation[]>([])
@@ -1255,6 +1256,27 @@ export function AppSidebar({
   }, [currentUser?.coverPhoto])
 
   useEffect(() => {
+    if (!accountMenuOpen || isCustomer) return
+
+    let active = true
+    getDexterUsage()
+      .then((usage) => {
+        if (!active) return
+        const percent = Number.isFinite(usage.includedUsagePercent)
+          ? usage.includedUsagePercent
+          : usage.includedActionsLimit > 0
+            ? (usage.actionsUsed / usage.includedActionsLimit) * 100
+            : 0
+        setAiUsagePercent(Math.max(0, Math.min(100, percent)))
+      })
+      .catch(() => {
+        if (active) setAiUsagePercent(null)
+      })
+
+    return () => { active = false }
+  }, [accountMenuOpen, isCustomer])
+
+  useEffect(() => {
     const routeArea = isSettingsRoute
       ? undefined
       : isCustomer
@@ -1399,7 +1421,7 @@ export function AppSidebar({
   const dexterSidebarItem = (
     <SidebarSectionItem>
       <SidebarNavItem
-        item={{ label: `Agent ${aiAgentName}`, icon: Sparkles, route: "/agent-dexter" }}
+        item={{ label: `Agent ${aiAgentName}`, icon: AiBrain, route: "/agent-dexter" }}
         isActive={route === "/agent-dexter"}
         onClick={() => navigate("/agent-dexter")}
         accent="dexter"
@@ -1452,7 +1474,7 @@ export function AppSidebar({
             )}
             onClick={() => onCollapsedChange(!collapsed)}
           >
-            {collapsed ? <PanelLeftOpen className="size-3.5" strokeWidth={1.3} /> : <PanelLeftClose className="size-3.5" strokeWidth={1.3} />}
+            <MorphingIcon from={PanelLeftClose} to={PanelLeftOpen} active={collapsed} className="size-3.5" strokeWidth={1.3} />
           </Button>
         ) : null}
       </div>
@@ -2088,6 +2110,7 @@ export function AppSidebar({
               <>
                 <button
                   type="button"
+                  aria-label={aiUsagePercent === null ? t("AI usage") : `${t("AI usage")}: ${Math.round(aiUsagePercent)}%`}
                   className="group/action flex h-10 w-full items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 text-start text-[13px] font-medium text-[var(--md-text)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] motion-reduce:transition-none motion-reduce:active:scale-100"
                   onClick={() => {
                     setAccountMenuOpen(false)
@@ -2096,6 +2119,26 @@ export function AppSidebar({
                 >
                   <Sparkles data-icon="inline-start" className="size-4" strokeWidth={1.4} />
                   <span className="min-w-0 flex-1 truncate">{t("AI usage")}</span>
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 24 24"
+                    className="size-5 shrink-0 text-[var(--md-accent)]"
+                  >
+                    <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.18" />
+                    <circle
+                      cx="12"
+                      cy="12"
+                      r="9"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeDasharray={2 * Math.PI * 9}
+                      strokeDashoffset={(2 * Math.PI * 9) * (1 - (aiUsagePercent ?? 0) / 100)}
+                      className="origin-center -rotate-90 transition-[stroke-dashoffset,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
+                      opacity={aiUsagePercent === null ? 0 : 0.9}
+                    />
+                  </svg>
                 </button>
               </>
             ) : null}

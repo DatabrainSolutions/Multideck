@@ -1,6 +1,6 @@
 import type { ReactNode } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { RefreshCw, Sparkles } from "lucide-react"
+import { RefreshCw, Sparkles } from "@/components/icons/hugeicons"
 import { SpectralBloomShader } from "@/components/multideck/dexter-action-pill"
 import { Button } from "@/components/ui/button"
 import { useLanguage } from "@/i18n/language-provider"

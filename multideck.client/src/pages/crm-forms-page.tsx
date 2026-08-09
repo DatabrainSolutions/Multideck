@@ -1,7 +1,7 @@
-import { useState } from "react"
-import { Bell, FileCheck2, FileText, Link2, LockKeyhole, Send, Signature } from "lucide-react"
+import { useMemo, useState } from "react"
+import { Bell, FileCheck2, FileText, Link2, LockKeyhole, Send, Signature } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { SegmentedControl } from "@/components/multideck/workflow-components"
@@ -19,15 +19,23 @@ export function CrmFormsPage() {
   const [view, setView] = useState("Templates")
   const [selectedName, setSelectedName] = useState(plannedTemplates[0].name)
   const selected = plannedTemplates.find((template) => template.name === selectedName) ?? plannedTemplates[0]
+  type FormRequest = { id: string; recipient: string; template: string; requested: string; status: string; signature: string }
+  const requestColumns = useMemo<DataTableColumn<FormRequest>[]>(() => [
+    { id: "recipient", label: "Recipient", kind: "identity", width: 220, cell: (request) => request.recipient },
+    { id: "template", label: "Template", kind: "attribute", width: 180, cell: (request) => request.template },
+    { id: "requested", label: "Requested", kind: "date", width: 150, cell: (request) => request.requested },
+    { id: "status", label: "Status", kind: "status", width: 130, cell: (request) => <StatusPill kind="status" tone="blue">{request.status}</StatusPill> },
+    { id: "signature", label: "Signature", kind: "status", width: 130, cell: (request) => <StatusPill kind="status" tone="amber">{request.signature}</StatusPill> },
+  ], [])
 
   return (
     <div className="md-page md-page-stack-compact">
-      <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+      <div className="grid min-w-0 gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1"><h1 className="text-[22px] font-medium leading-tight text-[var(--md-ink)]">{t("Forms")}</h1><StatusPill tone="amber">{t("Planned")}</StatusPill></div>
           <p className="mt-1 max-w-[900px] text-[12px] leading-5 text-[var(--md-text)]">{t("Preview the intended form library, data mapping and request workflow. Creation, sending and electronic signatures are not connected yet.")}</p>
         </div>
-        <SegmentedControl options={[t("Templates"), t("Requests")]} value={t(view)} onChange={(value) => setView(value === t("Requests") ? "Requests" : "Templates")} ariaLabel={t("Forms view")} />
+        <SegmentedControl options={[t("Templates"), t("Requests")]} value={t(view)} onChange={(value) => setView(value === t("Requests") ? "Requests" : "Templates")} ariaLabel={t("Forms view")} className="justify-self-start" />
       </div>
 
       <Surface padding="md" className="rounded-[var(--md-radius-xl)]" role="status">
@@ -68,8 +76,8 @@ export function CrmFormsPage() {
         </div>
       ) : (
         <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-          <div className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"><SectionHeader title={t("Form requests")} meta={t("No requests have been created")} /><div className="flex flex-wrap gap-2"><Button disabled variant="outline"><Bell className="size-4" />{t("Send reminder")}</Button><Button disabled><Send className="size-4" />{t("Send form")}</Button></div></div>
-          <div className="overflow-x-auto"><Table><TableHeader><TableRow>{["Recipient", "Template", "Requested", "Status", "Signature"].map((heading) => <TableHead key={heading}>{t(heading)}</TableHead>)}</TableRow></TableHeader><TableBody><TableRow><TableCell colSpan={5} className="h-48 text-center"><div className="mx-auto max-w-md"><span className="mx-auto grid size-10 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] text-[var(--md-subtle)]"><FileText className="size-4" /></span><p className="mt-3 text-[13px] font-medium text-[var(--md-ink)]">{t("No form requests yet")}</p><p className="mt-1 text-[12px] leading-5 text-[var(--md-subtle)]">{t("Requests will appear here with sent, viewed, completed and signature status after Forms is connected.")}</p><Button disabled className="mt-4"><Signature className="size-4" />{t("Create request")}</Button></div></TableCell></TableRow></TableBody></Table></div>
+          <div className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"><SectionHeader title={t("Form requests")} meta={t("No requests have been created")} metaPlacement="responsive-inline" className="min-w-0 flex-1" /><div className="flex flex-wrap gap-2"><Button disabled variant="outline"><Bell className="size-4" />{t("Send reminder")}</Button><Button disabled><Send className="size-4" />{t("Send form")}</Button></div></div>
+          <DataTable ariaLabel="Form requests" columnsButtonLabel="Manage form request columns" columns={requestColumns} rows={[]} getRowKey={(request) => request.id} storageKey="crm-form-requests" className="rounded-none shadow-none" emptyState={<div className="mx-auto max-w-md"><span className="mx-auto grid size-10 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] text-[var(--md-subtle)]"><FileText className="size-4" /></span><p className="mt-3 text-[13px] font-medium text-[var(--md-ink)]">{t("No form requests yet")}</p><p className="mt-1 text-[12px] leading-5 text-[var(--md-subtle)]">{t("Requests will appear here with sent, viewed, completed and signature status after Forms is connected.")}</p><Button disabled className="mt-4"><Signature className="size-4" />{t("Create request")}</Button></div>} />
         </Surface>
       )}
     </div>

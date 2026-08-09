@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  AiBeautify,
   AlertCircle,
   Check,
   Eye,
-  Pencil,
   Scissors,
   SendHorizontal,
   Sparkles,
   Type,
   WandSparkles,
   X,
-} from "lucide-react";
+} from "@/components/icons/hugeicons";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { SpectralBloomShader } from "@/components/multideck/dexter-action-pill";
 import { MailProviderMark } from "@/components/multideck/mailbox-provider-switch";
@@ -906,9 +906,9 @@ export function DexterEmailComposeCard({
                     submitRefinement();
                   }}
                 >
-                  <Pencil
-                    className="ms-1 size-3.5 shrink-0 text-[var(--md-subtle)]"
-                    strokeWidth={1.6}
+                  <AiBeautify
+                    className="ms-1 size-3 shrink-0 text-[var(--md-subtle)]"
+                    strokeWidth={1.4}
                     aria-hidden="true"
                   />
                   <input
@@ -966,7 +966,7 @@ export function DexterEmailComposeCard({
                   aria-label={t("Edit email draft")}
                   title={t("Edit email draft")}
                   onClick={() => void openRefinement(null)}
-                  className="grid size-10 place-items-center rounded-full bg-[var(--md-surface-tint)] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)] transition-[background-color,color,transform] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)] active:scale-95 disabled:opacity-40 disabled:active:scale-100 motion-reduce:transition-none motion-reduce:active:scale-100"
+                  className="grid size-9 place-items-center rounded-full bg-[var(--md-surface-tint)] text-[var(--md-subtle)] shadow-[var(--md-shadow-line)] transition-[background-color,color,transform] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)] active:scale-95 disabled:opacity-40 disabled:active:scale-100 motion-reduce:transition-none motion-reduce:active:scale-100"
                   initial={
                     shouldReduceMotion
                       ? { opacity: 0 }
@@ -980,9 +980,9 @@ export function DexterEmailComposeCard({
                   }
                   transition={{ duration: shouldReduceMotion ? 0 : 0.14 }}
                 >
-                  <Pencil
-                    className="size-4"
-                    strokeWidth={1.6}
+                  <AiBeautify
+                    className="size-3.5"
+                    strokeWidth={1.4}
                     aria-hidden="true"
                   />
                 </motion.button>
@@ -1016,7 +1016,7 @@ export function DexterEmailComposeCard({
           )}
           onClick={() => void handleSend()}
           className={cn(
-            "md-dexter-pill relative h-11 min-w-[112px] shrink-0 overflow-hidden rounded-full px-4 text-[13px] font-medium text-white shadow-[var(--md-shadow-line)] transition-[box-shadow,opacity,scale] duration-150 hover:text-white focus-visible:text-white active:scale-[0.96] disabled:active:scale-100 motion-reduce:transition-none motion-reduce:active:scale-100",
+            "md-dexter-pill relative h-11 min-w-[104px] shrink-0 overflow-hidden rounded-full px-3.5 text-[13px] font-medium text-white shadow-[var(--md-shadow-line)] transition-[box-shadow,opacity,scale] duration-150 hover:text-white focus-visible:text-white active:scale-[0.96] disabled:active:scale-100 motion-reduce:transition-none motion-reduce:active:scale-100",
           )}
         >
           <span className="md-dexter-pill__shader" aria-hidden="true">
@@ -1027,7 +1027,7 @@ export function DexterEmailComposeCard({
             {status === "sent" ? (
               <motion.span
                 key="sent"
-                className="relative z-10 inline-flex items-center gap-2"
+                className="relative z-10 inline-flex items-center gap-1.5"
                 initial={
                   shouldReduceMotion
                     ? { opacity: 0 }
@@ -1037,7 +1037,7 @@ export function DexterEmailComposeCard({
                 transition={{ type: "spring", duration: 0.3, bounce: 0 }}
               >
                 <Check
-                  className="size-4"
+                  className="size-3.5"
                   strokeWidth={1.8}
                   aria-hidden="true"
                 />
@@ -1046,7 +1046,7 @@ export function DexterEmailComposeCard({
             ) : status === "sending" ? (
               <motion.span
                 key="sending"
-                className="relative z-10 inline-flex items-center gap-2"
+                className="relative z-10 inline-flex items-center gap-1.5"
                 animate={
                   shouldReduceMotion
                     ? { opacity: [0.45, 1] }
@@ -1067,7 +1067,7 @@ export function DexterEmailComposeCard({
                 }}
               >
                 <SendHorizontal
-                  className="size-4 rtl:-scale-x-100"
+                  className="size-3.5 rtl:-scale-x-100"
                   strokeWidth={1.7}
                   aria-hidden="true"
                 />
@@ -1076,7 +1076,7 @@ export function DexterEmailComposeCard({
             ) : (
               <motion.span
                 key="ready"
-                className="relative z-10 inline-flex items-center gap-2"
+                className="relative z-10 inline-flex items-center gap-1.5"
                 initial={
                   shouldReduceMotion
                     ? { opacity: 0 }
@@ -1086,7 +1086,7 @@ export function DexterEmailComposeCard({
                 transition={{ duration: 0.18, ease: "easeOut" }}
               >
                 <SendHorizontal
-                  className="size-4 rtl:-scale-x-100"
+                  className="size-3.5 rtl:-scale-x-100"
                   strokeWidth={1.7}
                   aria-hidden="true"
                 />

@@ -9,7 +9,7 @@ import {
   QrCode,
   Trash2,
   TriangleAlert,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -272,6 +272,7 @@ export function ContactCardsPage({ navigate }: { navigate: (path: string) => voi
     {
       id: "status",
       label: t("Status"),
+      kind: "status",
       width: 104,
       sortValue: (card) => card.status,
       cell: (card) => <CardStatusPill status={card.status} />,
@@ -279,6 +280,7 @@ export function ContactCardsPage({ navigate }: { navigate: (path: string) => voi
     {
       id: "source",
       label: t("Lead source"),
+      kind: "attribute",
       minWidth: 170,
       sortValue: (card) => card.leadSource,
       cell: (card) =>

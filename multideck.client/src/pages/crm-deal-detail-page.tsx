@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 import { motion, useReducedMotion } from "motion/react"
-import { ArrowLeft, ArrowRight, Building2, RefreshCw, Trophy } from "lucide-react"
+import { ArrowLeft, ArrowRight, Building2, RefreshCw, Trophy } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 
 import { DotGridLoaderPanel } from "@/components/multideck/dot-grid-loader"

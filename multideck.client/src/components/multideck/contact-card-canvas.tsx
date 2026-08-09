@@ -8,6 +8,7 @@ import {
   Filter,
   GripVertical,
   ListPlus,
+  MorphingIcon,
   Mail,
   Maximize2,
   Minimize2,
@@ -21,7 +22,7 @@ import {
   Workflow,
   Zap,
   type LucideIcon,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -302,7 +303,7 @@ function StepCard({
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="ghost" size="icon" className="size-8 rounded-[var(--md-radius-md)] text-[var(--md-subtle)] hover:text-[var(--md-ink)]" aria-label={step.enabled ? t("Pause this step") : t("Resume this step")} onClick={onToggle}>
-                  {step.enabled ? <CirclePause className="size-3.5" strokeWidth={1.5} /> : <CirclePlay className="size-3.5" strokeWidth={1.5} />}
+                  <MorphingIcon from={CirclePlay} to={CirclePause} active={step.enabled} className="size-3.5" strokeWidth={1.5} />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{step.enabled ? t("Pause this step") : t("Resume this step")}</TooltipContent>

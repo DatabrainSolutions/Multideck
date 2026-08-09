@@ -29,7 +29,7 @@ import {
   Type,
   UploadCloud,
   Video,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 
 import { Button } from "@/components/ui/button"
 import {

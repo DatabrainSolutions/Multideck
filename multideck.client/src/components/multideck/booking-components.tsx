@@ -1,11 +1,9 @@
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react"
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { toast } from "sonner"
 import {
   Activity,
-  ArrowDownAZ,
-  ArrowUpAZ,
   Building2,
   CalendarClock,
   Check,
@@ -13,6 +11,7 @@ import {
   Container,
   Database,
   FileText,
+  Health,
   KanbanSquare,
   MessageCircle,
   PanelRightClose,
@@ -31,7 +30,7 @@ import {
   TriangleAlert,
   WalletCards,
   X,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
 import { MultideckDateRangePicker } from "@/components/multideck/date-picker"
 import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
@@ -39,7 +38,7 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, Di
 import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { cn } from "@/lib/utils"
 import { useKanbanPointerDrag } from "@/lib/kanban-drag"
 import { useLanguage } from "@/i18n/language-provider"
@@ -59,10 +58,9 @@ import {
   type StatusTone,
 } from "@/data/multideck-data"
 import { FilterChips, SegmentedControl, TabsRail } from "./workflow-components"
-import { StatusPill, toneToVar } from "./status-pill"
+import { StatusPill, attributeToneFor, toneToVar } from "./status-pill"
 import { Surface } from "./surface"
 import { AnimatedList } from "./animated-list"
-import { PageSettingsMenu, type PageSettingsViewOption } from "./page-settings-menu"
 import { getLiveBooking, type LiveBooking } from "@/lib/application-data-api"
 import { CopyFeedbackTransition, CopyStatusIcon } from "./copyable-field"
 
@@ -73,7 +71,7 @@ export type BookingViewMode = (typeof bookingViewModes)[number]
 export const bookingViewOptions = [
   { value: "Table", label: "Table", icon: Table2 },
   { value: "Board", label: "Board", icon: KanbanSquare },
-] satisfies readonly PageSettingsViewOption<BookingViewMode>[]
+] as const
 const bookingDetailTabs = ["Overview", "Details", "Documents", "Customs", "Finance", "Audit"] as const
 type BookingDetailTab = (typeof bookingDetailTabs)[number]
 export const bookingSearchFieldOptions = [
@@ -163,11 +161,11 @@ const askStarterMessages = [
 const askSuggestions = ["Explain the hold", "What costs changed?", "Draft shipper email"]
 
 export function BookingStatusPill({ status }: { status: BookingStatus }) {
-  return <StatusPill tone={statusTone[status]}>{status}</StatusPill>
+  return <StatusPill kind="status" tone={statusTone[status]}>{status}</StatusPill>
 }
 
 export function BookingModePill({ mode }: { mode: BookingMode }) {
-  return <StatusPill tone={modeTone[mode]} className="min-w-[88px] justify-center">{mode}</StatusPill>
+  return <StatusPill kind="attribute" tone={modeTone[mode]} className="min-w-[88px] justify-center">{mode}</StatusPill>
 }
 
 export function BookingShapeCell({ booking }: { booking: Booking }) {
@@ -387,7 +385,27 @@ export function BookingViewSwitch({
   value: BookingViewMode
   onChange: (value: BookingViewMode) => void
 }) {
-  return <PageSettingsMenu viewOptions={bookingViewOptions} value={value} onViewChange={onChange} />
+  const { t } = useLanguage()
+
+  return (
+    <SegmentedControl
+      options={bookingViewModes}
+      value={value}
+      onChange={onChange}
+      ariaLabel={t("Booking view")}
+      className="shrink-0 [&_button]:size-8 [&_button]:h-8 [&_button]:px-0"
+      renderOption={(option) => {
+        const view = bookingViewOptions.find((candidate) => candidate.value === option) ?? bookingViewOptions[0]
+        const Icon = view.icon
+        return (
+          <>
+            <Icon className="size-3.5" strokeWidth={1.45} aria-hidden="true" />
+            <span className="sr-only">{t(view.label)}</span>
+          </>
+        )
+      }}
+    />
+  )
 }
 
 export function BookingListHeader<T extends string>({
@@ -397,8 +415,6 @@ export function BookingListHeader<T extends string>({
   scopeOptions,
   scope,
   onScopeChange,
-  sortDirection,
-  onSortDirectionChange,
 }: {
   viewMode: BookingViewMode
   onViewModeChange: (mode: BookingViewMode) => void
@@ -406,8 +422,6 @@ export function BookingListHeader<T extends string>({
   scopeOptions: readonly T[]
   scope: T
   onScopeChange: (scope: T) => void
-  sortDirection: "asc" | "desc"
-  onSortDirectionChange: (direction: "asc" | "desc") => void
 }) {
   const { t } = useLanguage()
 
@@ -419,16 +433,6 @@ export function BookingListHeader<T extends string>({
           <SegmentedControl options={scopeOptions} value={scope} onChange={onScopeChange} ariaLabel={t("Booking scope")} renderOption={(option) => t(option)} />
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <button
-            type="button"
-            aria-label={t(sortDirection === "asc" ? "Sort bookings Z to A" : "Sort bookings A to Z")}
-            aria-pressed={sortDirection === "desc"}
-            className="inline-flex h-10 items-center gap-2 rounded-[var(--md-radius-lg)] bg-white/60 px-3 text-[12px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,color,scale] duration-150 ease-out hover:bg-white hover:text-[var(--md-ink)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(14,125,116,0.18)]"
-            onClick={() => onSortDirectionChange(sortDirection === "asc" ? "desc" : "asc")}
-          >
-            {sortDirection === "asc" ? <ArrowDownAZ className="size-4" strokeWidth={1.5} /> : <ArrowUpAZ className="size-4" strokeWidth={1.5} />}
-            <span aria-hidden="true">{sortDirection === "asc" ? "A–Z" : "Z–A"}</span>
-          </button>
           <DexterActionPill onClick={onSpeakToDexter} />
           <BookingViewSwitch value={viewMode} onChange={onViewModeChange} />
         </div>
@@ -840,84 +844,6 @@ export function BookingFilterBar({
   )
 }
 
-export function BookingRow({
-  booking,
-  favourite,
-  onToggleFavourite,
-  onOpen,
-}: {
-  booking: Booking
-  favourite?: boolean
-  onToggleFavourite: () => void
-  onOpen: () => void
-}) {
-  return (
-    <TableRow
-      className={cn(
-        "h-[78px] cursor-pointer border-[rgba(11,20,19,0.045)] bg-white shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] hover:bg-[#f8faf9]",
-        booking.status === "Exception" && "bg-[var(--md-surface)] hover:bg-[var(--md-hover)]",
-      )}
-      onClick={onOpen}
-    >
-      <TableCell className="w-12">
-        <button
-          type="button"
-          aria-label={`${favourite ? "Remove" : "Add"} ${booking.id} favourite`}
-          aria-pressed={favourite}
-          className={cn(
-            "grid size-8 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-subtle)] transition-[background,color,box-shadow,opacity,transform] hover:bg-white/60 hover:text-[var(--md-amber)]",
-            favourite && "bg-[rgba(221,138,43,0.12)] text-[var(--md-amber)] shadow-[var(--md-shadow-line)]",
-          )}
-          onClick={(event) => {
-            event.stopPropagation()
-            onToggleFavourite()
-          }}
-        >
-          <Star className={cn("size-4", favourite && "fill-current")} strokeWidth={1.35} />
-        </button>
-      </TableCell>
-      <TableCell className="min-w-[130px]">
-        <div className="flex items-center gap-3">
-          <span className="size-2.5 rounded-full" style={{ background: toneToVar(booking.tone), boxShadow: `0 0 0 4px color-mix(in srgb, ${toneToVar(booking.tone)} 12%, transparent)` }} />
-          <p className="text-[14px] font-medium text-[var(--md-ink)]">{booking.id}</p>
-        </div>
-      </TableCell>
-      <TableCell className="min-w-[300px]">
-        <p className="text-[15px] font-medium text-[var(--md-ink)]">{booking.customer}</p>
-        <p className="mt-1 text-[13px] text-[var(--md-text)]">{booking.route}</p>
-      </TableCell>
-      <TableCell className="min-w-[190px]">
-        <p className="text-[14px] font-medium text-[var(--md-ink)]">{booking.carrier}</p>
-        <p className="mt-1 text-[13px] text-[var(--md-text)]">{booking.container}</p>
-      </TableCell>
-      <TableCell className="min-w-[178px]">
-        <BookingShapeCell booking={booking} />
-      </TableCell>
-      <TableCell className="text-right text-[14px] font-medium text-[var(--md-ink)]">{booking.value}</TableCell>
-      <TableCell className="text-right">
-        <p className="text-[14px] font-medium text-[var(--md-ink)]">{booking.eta}</p>
-        <p className="text-[12px] text-[var(--md-text)]">{booking.time}</p>
-      </TableCell>
-      <TableCell>
-        <BookingStatusPill status={booking.status} />
-      </TableCell>
-      <TableCell className="min-w-[150px]">
-        <div className="flex items-center gap-3">
-          <Progress
-            value={booking.progress}
-            className="h-1.5 flex-1 rounded-full bg-[rgba(90,103,100,0.12)] [&>div]:bg-[var(--progress-color)]"
-            style={{ "--progress-color": toneToVar(booking.tone) } as CSSProperties}
-          />
-          <span className="w-8 text-right text-[13px] text-[var(--md-text)]">{booking.progress}%</span>
-        </div>
-      </TableCell>
-      <TableCell>
-        <span className="grid size-8 place-items-center rounded-full bg-[var(--md-accent-a12)] text-[12px] font-medium text-[var(--md-accent)]">{booking.owner}</span>
-      </TableCell>
-    </TableRow>
-  )
-}
-
 export function BookingsTable({
   rows,
   favouriteIds,
@@ -929,47 +855,43 @@ export function BookingsTable({
   onToggleFavourite?: (id: string) => void
   onOpenBooking: (booking: Booking) => void
 }) {
+  const columns = useMemo<DataTableColumn<Booking>[]>(() => [
+    {
+      id: "favourite",
+      label: "Star",
+      kind: "actions",
+      width: 52,
+      canHide: false,
+      canPin: false,
+      cell: (booking) => {
+        const favourite = Boolean(favouriteIds?.has(booking.id))
+        return <button type="button" aria-label={`${favourite ? "Remove" : "Add"} ${booking.id} favourite`} aria-pressed={favourite} className={cn("grid size-8 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-subtle)] outline-none transition-[background,color,box-shadow,transform] hover:bg-[var(--md-surface-soft)] hover:text-[var(--md-amber)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]", favourite && "bg-[color-mix(in_srgb,var(--md-amber)_12%,transparent)] text-[var(--md-amber)] shadow-[var(--md-shadow-line)]")} onClick={(event) => { event.stopPropagation(); onToggleFavourite?.(booking.id) }}><Star className={cn("size-4", favourite && "fill-current")} strokeWidth={1.35} /></button>
+      },
+    },
+    { id: "booking", label: "Booking", kind: "text", width: 136, sortValue: (booking) => booking.id, cell: (booking) => <div className="flex items-center gap-3"><span className="size-2.5 rounded-full" style={{ background: toneToVar(booking.tone), boxShadow: `0 0 0 4px color-mix(in srgb, ${toneToVar(booking.tone)} 12%, transparent)` }} /><p className="text-[14px] font-medium text-[var(--md-ink)]" dir="ltr">{booking.id}</p></div> },
+    { id: "customer", label: "Customer · route", kind: "long-text", width: 300, minWidth: 220, resizable: true, sortValue: (booking) => booking.customer, cellTitle: (booking) => `${booking.customer} · ${booking.route}`, cell: (booking) => <div className="min-w-0"><p className="truncate text-[15px] font-medium text-[var(--md-ink)]">{booking.customer}</p><p className="mt-1 truncate text-[13px] text-[var(--md-text)]">{booking.route}</p></div> },
+    { id: "carrier", label: "Carrier · container", kind: "long-text", width: 200, minWidth: 160, resizable: true, sortValue: (booking) => booking.carrier, cellTitle: (booking) => `${booking.carrier} · ${booking.container}`, cell: (booking) => <div className="min-w-0"><p className="truncate text-[14px] font-medium text-[var(--md-ink)]">{booking.carrier}</p><p className="mt-1 truncate text-[13px] text-[var(--md-text)]">{booking.container}</p></div> },
+    { id: "shape", label: "Direction · mode · type", kind: "attribute", width: 190, resizable: true, sortValue: (booking) => booking.mode, cell: (booking) => <BookingShapeCell booking={booking} /> },
+    { id: "value", label: "Value", kind: "number", width: 120, sortValue: (booking) => Number.parseFloat(booking.value.replace(/[^0-9.-]/g, "")), cell: (booking) => <span className="font-medium text-[var(--md-ink)]">{booking.value}</span> },
+    { id: "eta", label: "ETA", kind: "date", align: "end", width: 124, sortValue: (booking) => booking.eta, cell: (booking) => <div><p className="font-medium tabular-nums text-[var(--md-ink)]">{booking.eta}</p><p className="text-[12px] tabular-nums text-[var(--md-text)]">{booking.time}</p></div> },
+    { id: "status", label: "Status", kind: "status", width: 126, sortValue: (booking) => booking.status, cell: (booking) => <BookingStatusPill status={booking.status} /> },
+    { id: "progress", label: "Progress", kind: "number", width: 160, sortValue: (booking) => booking.progress, cell: (booking) => <div className="flex items-center gap-3"><Progress value={booking.progress} className="h-1.5 flex-1 rounded-full bg-[var(--md-line-strong)] [&>div]:bg-[var(--progress-color)]" style={{ "--progress-color": toneToVar(booking.tone) } as CSSProperties} /><span className="w-9 text-end tabular-nums text-[13px] text-[var(--md-text)]">{booking.progress}%</span></div> },
+    { id: "owner", label: "Owner", kind: "identity", width: 92, sortValue: (booking) => booking.owner, cell: (booking) => <span className="grid size-8 place-items-center rounded-full bg-[var(--md-accent-a12)] text-[12px] font-medium text-[var(--md-accent)]" aria-label={`Owner ${booking.owner}`}>{booking.owner}</span> },
+  ], [favouriteIds, onToggleFavourite])
+
   return (
-    <div className="overflow-hidden rounded-[var(--md-radius-xl)] bg-white shadow-[var(--md-shadow-line)]">
-      <Table className="min-w-[1420px]">
-        <TableHeader>
-          <TableRow className="border-[rgba(11,20,19,0.05)] hover:bg-transparent">
-            <TableHead className="w-12 text-[12px] font-medium text-[var(--md-text)]">Star</TableHead>
-            <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Booking</TableHead>
-            <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Customer · route</TableHead>
-            <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Carrier · container</TableHead>
-            <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Direction · mode · type</TableHead>
-            <TableHead className="text-right text-[12px] font-medium text-[var(--md-text)]">Value</TableHead>
-            <TableHead className="text-right text-[12px] font-medium text-[var(--md-text)]">ETA</TableHead>
-            <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Status</TableHead>
-            <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Progress</TableHead>
-            <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Owner</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.length ? rows.map((booking) => (
-            <BookingRow
-              key={booking.id}
-              booking={booking}
-              favourite={Boolean(favouriteIds?.has(booking.id))}
-              onToggleFavourite={() => onToggleFavourite?.(booking.id)}
-              onOpen={() => onOpenBooking(booking)}
-            />
-          )) : (
-            <TableRow className="h-[180px] border-[rgba(11,20,19,0.04)] hover:bg-transparent">
-              <TableCell colSpan={10} className="text-center">
-                <div className="mx-auto max-w-[360px]">
-                  <p className="text-[14px] font-medium text-[var(--md-ink)]">No bookings match this search</p>
-                  <p className="mt-1 text-[13px] leading-5 text-[var(--md-text)]">
-                    Remove a criterion or switch back to Open to widen the list.
-                  </p>
-                </div>
-              </TableCell>
-            </TableRow>
-          )}
-        </TableBody>
-      </Table>
-    </div>
+    <DataTable
+      ariaLabel="Bookings"
+      columnsButtonLabel="Manage booking columns"
+      columns={columns}
+      rows={rows}
+      getRowKey={(booking) => booking.id}
+      storageKey="booking-gallery-register"
+      onRowClick={onOpenBooking}
+      rowAriaLabel={(booking) => `Open ${booking.id}`}
+      rowClassName="h-[78px]"
+      emptyState={<div className="mx-auto max-w-[360px]"><p className="text-[14px] font-medium text-[var(--md-ink)]">No bookings match this search</p><p className="mt-1 text-[13px] leading-5 text-[var(--md-text)]">Remove a criterion or switch back to Open to widen the list.</p></div>}
+    />
   )
 }
 
@@ -1927,7 +1849,7 @@ function BookingOverviewSignals({ record }: { record: BookingDetailRecord }) {
         <span aria-hidden="true" className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_75%_10%,rgba(87,205,180,0.22),transparent_52%),linear-gradient(145deg,rgba(2,13,11,0.04),rgba(1,9,8,0.36))]" />
         <div className="relative z-10 flex items-center justify-between gap-2">
           <div className="min-w-0">
-            <p className="flex items-center gap-1 text-[11px] font-medium uppercase leading-3 tracking-[0.02em] text-white/68"><Activity className="size-3 text-white/85" strokeWidth={1.5} />{t("Operational health")}</p>
+            <p className="flex items-center gap-1 text-[11px] font-medium uppercase leading-3 tracking-[0.02em] text-white/68"><Health className="size-3 text-white/85" strokeWidth={1.5} />{t("Operational health")}</p>
             <p className="mt-0.5 text-[13px] font-medium text-white">{operationalScore}% · {t(operationalLabel)}</p>
           </div>
           <StatusPill tone={operationalTone} className="border-0 bg-white/12 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.16)]">{t(record.booking.status)}</StatusPill>

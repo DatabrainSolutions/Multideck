@@ -17,13 +17,14 @@ import {
   ShieldCheck,
   Sparkles,
   TriangleAlert,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
   Select,
   SelectContent,
@@ -31,15 +32,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { Surface } from "@/components/multideck/surface"
+import { StatusPill } from "@/components/multideck/status-pill"
 import { useLanguage } from "@/i18n/language-provider"
 import {
   bootstrapDocumentStudioTemplate,
@@ -90,11 +85,11 @@ type CreateDocumentWorkspaceProps = {
   preview: boolean
 }
 
-const statusTone: Record<GeneratedDocumentSummary["status"], string> = {
-  queued: "bg-[rgba(76,106,124,0.1)] text-[var(--md-blue)]",
-  rendering: "bg-[rgba(221,138,43,0.12)] text-[var(--md-amber)]",
-  ready: "bg-[rgba(14,125,116,0.1)] text-[var(--md-accent)]",
-  failed: "bg-[rgba(190,70,60,0.1)] text-[var(--md-red)]",
+const statusTone: Record<GeneratedDocumentSummary["status"], "blue" | "amber" | "green" | "red"> = {
+  queued: "blue",
+  rendering: "amber",
+  ready: "green",
+  failed: "red",
 }
 
 const templatePreviewCache = new Map<string, RenderedPdfPage>()
@@ -1660,6 +1655,15 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
   }
 
   const publishedTemplates = workspace?.templates.filter((template) => template.status === "published") ?? []
+  const generatedDocuments = workspace?.generatedDocuments ?? []
+  const generatedDocumentColumns = useMemo<DataTableColumn<GeneratedDocumentSummary>[]>(() => [
+    { id: "document", label: "Document", kind: "long-text", width: 280, minWidth: 210, resizable: true, sortValue: (document) => document.fileName, cellTitle: (document) => document.fileName, cell: (document) => <div className="min-w-0"><p className="truncate text-[11.5px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{document.fileName}</p><p className="mt-0.5 text-[10px] text-[var(--md-subtle)]"><span>{t(document.templateName)}</span> · <span data-i18n-skip>{formatBytes(document.fileSizeBytes)}</span></p></div> },
+    { id: "job", label: "Job", kind: "text", width: 140, sortValue: (document) => document.targetReference, cell: (document) => <span className="text-[11px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{document.targetReference}</span> },
+    { id: "customer", label: "Customer", kind: "long-text", width: 190, resizable: true, sortValue: (document) => document.customerName ?? "", cellTitle: (document) => document.customerName ?? undefined, cell: (document) => <span className="block truncate text-[11px] text-[var(--md-text)]" data-i18n-skip dir="auto">{document.customerName ?? "—"}</span> },
+    { id: "created", label: "Created", kind: "date", width: 150, sortValue: (document) => document.createdAt, cell: (document) => <span className="tabular-nums text-[10.5px] text-[var(--md-text)]" data-i18n-skip>{dateFormatter.format(new Date(document.createdAt))}</span> },
+    { id: "status", label: "Status", kind: "status", width: 112, sortValue: (document) => document.status, cell: (document) => <StatusPill kind="status" tone={statusTone[document.status]} className="capitalize">{t(document.status)}</StatusPill> },
+    { id: "actions", label: "Actions", kind: "actions", width: 64, canHide: false, canPin: false, cell: (document) => <Tooltip><TooltipTrigger asChild><Button type="button" variant="ghost" size="icon-sm" disabled={document.status !== "ready" || downloadingId === document.id} onClick={(event) => { event.stopPropagation(); void download(document) }} aria-label={t("Download document")} className="opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100 focus-visible:opacity-100">{downloadingId === document.id ? <LoaderCircle className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}</Button></TooltipTrigger><TooltipContent>{t("Download document")}</TooltipContent></Tooltip> },
+  ], [dateFormatter, downloadingId, t])
 
   if (manageOpen && workspace) {
     return (
@@ -1805,75 +1809,7 @@ export function DocumentsPage({ navigate, initialWorkspace, preview = false }: D
           <h2 className="text-[17px] font-medium text-[var(--md-ink)]">{t("Recent documents")}</h2>
           <p className="mt-1 text-[12px] text-[var(--md-text)]">{t("Every file is private and downloaded through a short-lived secure link.")}</p>
         </div>
-        <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-          <div className="overflow-x-auto">
-            <Table className="min-w-[760px]">
-              <TableHeader>
-                <TableRow className="bg-[var(--md-surface-soft)] hover:bg-[var(--md-surface-soft)]">
-                  <TableHead className="text-start">{t("Document")}</TableHead>
-                  <TableHead className="text-start">{t("Job")}</TableHead>
-                  <TableHead className="text-start">{t("Customer")}</TableHead>
-                  <TableHead className="text-start">{t("Created")}</TableHead>
-                  <TableHead className="text-start">{t("Status")}</TableHead>
-                  <TableHead className="w-14"><span className="sr-only">{t("Actions")}</span></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {workspace?.generatedDocuments.map((document) => (
-                  <TableRow
-                    key={document.id}
-                    tabIndex={document.status === "ready" ? 0 : undefined}
-                    aria-label={document.status === "ready" ? `${t("Preview document")}: ${document.fileName}` : undefined}
-                    onClick={() => void openDocumentPreview(document)}
-                    onKeyDown={(event) => {
-                      if (event.target !== event.currentTarget || document.status !== "ready" || (event.key !== "Enter" && event.key !== " ")) return
-                      event.preventDefault()
-                      void openDocumentPreview(document)
-                    }}
-                    className={cn(
-                      "hover:bg-[var(--md-hover)]",
-                      document.status === "ready" && "cursor-pointer outline-none focus-visible:bg-[var(--md-hover)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--md-accent-a14)]",
-                    )}
-                  >
-                    <TableCell>
-                      <div className="min-w-0">
-                        <p className="max-w-[260px] truncate text-[11.5px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{document.fileName}</p>
-                        <p className="mt-0.5 text-[10px] text-[var(--md-subtle)]"><span>{t(document.templateName)}</span> · <span data-i18n-skip>{formatBytes(document.fileSizeBytes)}</span></p>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-[11px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">{document.targetReference}</TableCell>
-                    <TableCell className="text-[11px] text-[var(--md-text)]" data-i18n-skip dir="auto">{document.customerName ?? "—"}</TableCell>
-                    <TableCell className="text-[10.5px] text-[var(--md-text)]" data-i18n-skip>{dateFormatter.format(new Date(document.createdAt))}</TableCell>
-                    <TableCell>
-                      <Badge className={cn("border-0 text-[10px] capitalize shadow-none", statusTone[document.status])}>{t(document.status)}</Badge>
-                    </TableCell>
-                    <TableCell onClick={(event) => event.stopPropagation()}>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        disabled={document.status !== "ready" || downloadingId === document.id}
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          void download(document)
-                        }}
-                        aria-label={t("Download document")}
-                        title={t("Download document")}
-                      >
-                        {downloadingId === document.id ? <LoaderCircle className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {!workspace?.generatedDocuments.length ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="h-28 text-center text-[11px] text-[var(--md-subtle)]">{t("No documents have been generated yet.")}</TableCell>
-                  </TableRow>
-                ) : null}
-              </TableBody>
-            </Table>
-          </div>
-        </Surface>
+        <DataTable ariaLabel="Recent documents" columnsButtonLabel="Manage document columns" columns={generatedDocumentColumns} rows={generatedDocuments} getRowKey={(document) => document.id} storageKey="generated-documents" minimumWidth={760} onRowClick={(document) => void openDocumentPreview(document)} isRowInteractive={(document) => document.status === "ready"} rowAriaLabel={(document) => `Preview document: ${document.fileName}`} rowClassName="group/row" emptyState={<p className="text-[11px] text-[var(--md-subtle)]">{t("No documents have been generated yet.")}</p>} />
       </section>
 
       <Dialog open={Boolean(previewDocument)} onOpenChange={(open) => { if (!open) closeDocumentPreview() }}>

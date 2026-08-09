@@ -1,6 +1,6 @@
 import { memo, useCallback, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react"
 import { motion, useReducedMotion } from "motion/react"
-import { ArrowRight, MoonStar, Sunrise } from "lucide-react"
+import { ArrowRight, MoonStar, Sunrise } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { useLanguage } from "@/i18n/language-provider"

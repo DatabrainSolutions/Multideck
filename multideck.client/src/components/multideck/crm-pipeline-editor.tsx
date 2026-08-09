@@ -44,7 +44,7 @@ import {
   UserRoundCheck,
   Zap,
   type LucideIcon,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import {

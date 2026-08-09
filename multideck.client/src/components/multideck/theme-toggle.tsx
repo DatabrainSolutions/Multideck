@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { motion, useReducedMotion } from "motion/react"
-import { Moon, Sun } from "lucide-react"
+import { Moon02, Sun } from "@/components/icons/hugeicons"
 import { useTheme } from "next-themes"
 import { useLanguage } from "@/i18n/language-provider"
 import { setThemeWithProfileIntent } from "@/lib/theme-preferences"
@@ -71,7 +71,7 @@ export function ThemeToggle({ className, compact = false, showAppearanceLabel = 
             animate={{ opacity: isDark ? 1 : 0, scale: isDark ? 1 : 0.25 }}
             transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
           >
-            <Moon className="size-4" strokeWidth={1.25} />
+            <Moon02 className="size-4" strokeWidth={1.25} />
           </motion.span>
         </motion.span>
       </span>
