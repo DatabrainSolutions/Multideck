@@ -22,12 +22,19 @@ async function sha256(value: string) {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")
 }
 
+function isExplicitPrefetch(request: Request) {
+  return ["purpose", "sec-purpose", "x-purpose", "x-moz"].some((name) => {
+    const value = request.headers.get(name)?.toLowerCase() ?? ""
+    return value.includes("prefetch") || value.includes("prerender") || value.includes("preview")
+  })
+}
+
 Deno.serve(async (request) => {
   const method = request.method.toUpperCase()
   // HEAD probes from gateways and security scanners are not evidence that an
   // email body was rendered. They receive the same invisible response without
   // changing the message's open state.
-  if (method !== "GET") return pixel(method)
+  if (method !== "GET" || isExplicitPrefetch(request)) return pixel(method)
 
   try {
     const token = new URL(request.url).searchParams.get("token")?.trim() ?? ""

@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { toast } from "sonner"
 import { ArrowRight, Check, ReceiptText, RotateCcw, TriangleAlert } from "@/components/icons/hugeicons"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
 import { mdMotion, reduceMotion, staggerRamp } from "@/lib/motion"
@@ -129,14 +130,20 @@ const QueueRow = memo(function QueueRow({
 
       <span className="md-queue-row-actions">
         {onHandOver ? (
-          <DexterActionPill
-            iconOnly
-            label={t("Hand over to Dexter")}
-            title={t("Hand over to Dexter")}
-            className="md-queue-row-button-dexter !size-6 !min-w-6 !rounded-[var(--md-radius-md)] !p-0"
-            iconClassName="!size-3"
-            onClick={onHandOver}
-          />
+          <Tooltip delayDuration={1_000}>
+            <TooltipTrigger asChild>
+              <DexterActionPill
+                iconOnly
+                label={t("Hand over to Dexter")}
+                className="md-queue-row-button-dexter !size-6 !min-w-6 !rounded-[var(--md-radius-md)] !p-0"
+                iconClassName="!size-3"
+                onClick={onHandOver}
+              />
+            </TooltipTrigger>
+            <TooltipContent side="top" sideOffset={6}>
+              {t("Ask Dexter")}
+            </TooltipContent>
+          </Tooltip>
         ) : null}
         <button
           type="button"

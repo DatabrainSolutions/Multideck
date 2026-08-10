@@ -4028,10 +4028,10 @@ const phrases: PhraseDictionary = {
   "Opened (estimated)": { de: "Geöffnet (geschätzt)", fr: "Ouvert (estimation)", ar: "تم الفتح (تقديري)" },
   "Replied": { de: "Beantwortet", fr: "Réponse reçue", ar: "تم الرد" },
   "Failed": { de: "Fehlgeschlagen", fr: "Échec", ar: "فشل" },
-  "A reply was received in this conversation.": {
-    de: "In dieser Unterhaltung ist eine Antwort eingegangen.",
-    fr: "Une réponse a été reçue dans cette conversation.",
-    ar: "تم استلام رد في هذه المحادثة.",
+  "A reply was received to this message.": {
+    de: "Auf diese Nachricht ist eine Antwort eingegangen.",
+    fr: "Une réponse à ce message a été reçue.",
+    ar: "تم استلام رد على هذه الرسالة.",
   },
   "The provider confirmed delivery.": {
     de: "Der Anbieter hat die Zustellung bestätigt.",
@@ -4063,10 +4063,10 @@ const phrases: PhraseDictionary = {
     fr: "Le fournisseur a accepté ce message pour l’envoi.",
     ar: "قبل مزود البريد هذه الرسالة للإرسال.",
   },
-  "Open tracking is approximate. Image blocking can hide opens, while privacy proxies can create an open signal before the person reads the message.": {
-    de: "Öffnungen werden nur näherungsweise erfasst. Das Blockieren von Bildern kann Öffnungen verbergen; Datenschutz-Proxys können bereits ein Öffnungssignal auslösen, bevor die Nachricht gelesen wird.",
-    fr: "Le suivi des ouvertures est approximatif. Le blocage des images peut masquer des ouvertures, tandis que les relais de confidentialité peuvent créer un signal avant que la personne ne lise le message.",
-    ar: "تتبع الفتح تقديري. قد يؤدي حظر الصور إلى إخفاء عمليات الفتح، بينما قد تنشئ خوادم الخصوصية إشارة فتح قبل أن يقرأ الشخص الرسالة.",
+  "Open tracking is approximate. Image blocking can hide opens, while privacy proxies or viewing the sent copy can create a signal without the recipient reading it.": {
+    de: "Öffnungen werden nur näherungsweise erfasst. Das Blockieren von Bildern kann Öffnungen verbergen; Datenschutz-Proxys oder das Anzeigen der gesendeten Kopie können ein Signal auslösen, ohne dass der Empfänger die Nachricht gelesen hat.",
+    fr: "Le suivi des ouvertures est approximatif. Le blocage des images peut masquer des ouvertures, tandis que les relais de confidentialité ou l’affichage de la copie envoyée peuvent créer un signal sans que le destinataire lise le message.",
+    ar: "تتبع الفتح تقديري. قد يؤدي حظر الصور إلى إخفاء عمليات الفتح، بينما قد تنشئ خوادم الخصوصية أو عرض النسخة المرسلة إشارة من دون أن يقرأ المستلم الرسالة.",
   },
   "Open tracking was off for this message.": {
     de: "Die Erfassung von Öffnungen war für diese Nachricht deaktiviert.",

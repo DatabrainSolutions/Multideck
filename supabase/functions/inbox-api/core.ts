@@ -602,16 +602,41 @@ export type DeliveryReportEvidence = {
   statusCode: string | null
 }
 
+/** Some Exchange receipts advertise only multipart/report in Graph metadata;
+ * the exact report type is available only in the raw MIME body. */
+export function deliveryReportNeedsRawMime(headers: Record<string, string>) {
+  const type = cleanString(headers["content-type"], 2_000).toLowerCase()
+  return type.includes("report-type=delivery-status")
+    || type.startsWith("multipart/report")
+    || type.includes("message/delivery-status")
+}
+
+/** Only a person/provider message eligible to represent a recipient response
+ * may advance an outbound email to Replied. Delivery reports and explicit
+ * auto-responses can reference the original Message-ID but are not replies. */
+export function isRecipientReplyMessage(headers: Record<string, string>) {
+  if (deliveryReportNeedsRawMime(headers)) return false
+  const autoSubmitted = cleanString(headers["auto-submitted"], 240).trim().toLowerCase()
+  if (autoSubmitted && autoSubmitted !== "no") return false
+  if (cleanString(headers["x-autoreply"], 240) || cleanString(headers["x-autorespond"], 240)) return false
+  return true
+}
+
 /**
  * Reads only machine-readable RFC delivery-status evidence. Human-readable
  * bounce wording is deliberately ignored because it cannot safely identify an
  * individual outbound message when a conversation contains several sends.
  */
-export function parseDeliveryStatusReport(contentType: unknown, value: unknown): DeliveryReportEvidence | null {
+export function parseDeliveryStatusReport(
+  contentType: unknown,
+  value: unknown,
+  fallbackOriginalMessageId: unknown = null,
+): DeliveryReportEvidence | null {
   const type = cleanString(contentType, 2_000).toLowerCase()
   const payload = cleanString(value, 200_000)
   if (!payload || (!type.includes("report-type=delivery-status") && !/content-type\s*:\s*message\/delivery-status/im.test(payload))) return null
   const originalMessageId = internetMessageIds(payload.match(/^original-message-id\s*:\s*(.+)$/im)?.[1])[0]
+    ?? internetMessageIds(fallbackOriginalMessageId)[0]
   if (!originalMessageId) return null
   const actions = [...payload.matchAll(/^action\s*:\s*([^\r\n]+)$/gim)].map((match) => match[1].trim().toLowerCase())
   const statuses = [...payload.matchAll(/^status\s*:\s*([^\s\r\n]+)/gim)].map((match) => match[1].trim())

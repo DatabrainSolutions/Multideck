@@ -44,6 +44,13 @@ test("Inbox navigation stays warm and conversation intent prefetches detail", ()
   assert.match(inboxPageSource, /Loading the full conversation/)
 })
 
+test("the selected conversation refreshes per-message tracking evidence while visible", () => {
+  assert.match(inboxPageSource, /trackingStatusRefreshIntervalMs = 15_000/)
+  assert.match(inboxPageSource, /fetchThreadDetail\(targetThreadId, true\)/)
+  assert.match(inboxPageSource, /document\.visibilityState === "hidden"/)
+  assert.match(inboxPageSource, /current\?\.id === targetThreadId \? refreshed : current/)
+})
+
 test("provider folders stay mailbox-scoped from workspace bootstrap through thread paging", () => {
   assert.match(source, /folders: readList\(pickField\(record, "folders"\)\)/)
   assert.match(source, /if \(folderId\) params\.set\("folderId", folderId\)/)
@@ -161,7 +168,7 @@ test("mailbox refresh follows provider continuation pages without an unbounded l
   assert.match(inboxPageSource, /activeMailbox\.indexStatus === "ready" \|\| activeMailbox\.indexStatus === "error"/)
   assert.doesNotMatch(inboxPageSource, /activeMailbox\.status !== "connected"\s*\|\| activeMailbox\.indexStatus === "error"/)
   assert.match(inboxPageSource, /activeMailbox\.indexPercent/)
-  assert.match(inboxPageSource, /Indexing your inbox/)
+  assert.match(inboxPageSource, /Indexing the last 12 months/)
 })
 
 test("a successful OAuth return starts the first real mailbox import", () => {

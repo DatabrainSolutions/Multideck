@@ -66,6 +66,7 @@ import {
   createIdempotencyKey,
   getAttachmentBlobUrl,
   isInboxNotFound,
+  latestReplySource,
   listInboxProviders,
   readEmailConnectionResult,
   readInboxThreadDeepLink,
@@ -130,6 +131,7 @@ import { cn } from "@/lib/utils"
 const pageSize = 25
 const threadSelectionLayoutId = "inbox-thread-selection"
 const liveMailboxSyncIntervalMs = 20_000
+const trackingStatusRefreshIntervalMs = 15_000
 const indexContinuationDelayMs = 300
 
 type MobileStage = "threads" | "message"
@@ -876,6 +878,7 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
   const highlightTimerRef = useRef<number | null>(null)
   const connectionResultHandledRef = useRef(false)
   const mailboxSyncInFlightRef = useRef<string | null>(null)
+  const trackingRefreshInFlightRef = useRef<string | null>(null)
   dexterComposerIdentityRef.current = [
     selectedThreadId ?? "none",
     composer.mode,
@@ -1039,6 +1042,23 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
     void loadThreads(null)
   }, [folder, folderId, loadThreads, mailboxId, query, threadCache])
 
+  const refreshSelectedThread = useCallback(async () => {
+    if (!selectedThreadId || trackingRefreshInFlightRef.current) return null
+    const targetThreadId = selectedThreadId
+    trackingRefreshInFlightRef.current = targetThreadId
+    try {
+      const refreshed = await fetchThreadDetail(targetThreadId, true)
+      setThread((current) => current?.id === targetThreadId ? refreshed : current)
+      return refreshed
+    } catch {
+      // Keep the last confirmed detail visible. Provider and account failures
+      // are surfaced by the mailbox sync without making a status poll disruptive.
+      return null
+    } finally {
+      if (trackingRefreshInFlightRef.current === targetThreadId) trackingRefreshInFlightRef.current = null
+    }
+  }, [fetchThreadDetail, selectedThreadId])
+
   const runMailboxSync = useCallback(async (targetMailboxId: string) => {
     if (mailboxSyncInFlightRef.current) return null
     mailboxSyncInFlightRef.current = targetMailboxId
@@ -1049,12 +1069,13 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
       // Keep the current rows mounted while the first page is replaced. New
       // provider mail therefore appears without a full-page loading flash.
       if (sync.synced > 0 && mailboxId === targetMailboxId) await loadThreads(null, true)
+      if (selectedThreadMailboxId === targetMailboxId) await refreshSelectedThread()
       return sync
     } finally {
       mailboxSyncInFlightRef.current = null
       setSyncingMailboxId((current) => current === targetMailboxId ? null : current)
     }
-  }, [loadThreads, mailboxId, refreshAccounts])
+  }, [loadThreads, mailboxId, refreshAccounts, refreshSelectedThread, selectedThreadMailboxId])
 
   // Historical mail continues in bounded batches while the operator is in the
   // Inbox. Once indexed, the same provider cursor becomes a lightweight delta
@@ -1154,6 +1175,39 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
         setThreadState("error")
       })
   }, [fetchThreadDetail, readThreadDetail, selectedThreadId, t])
+
+  // Open pixels update Multideck directly rather than the mailbox provider, so
+  // provider delta sync alone cannot refresh a visible status. Poll only the
+  // selected conversation, pause in the background, and preserve the current
+  // content if a refresh fails.
+  useEffect(() => {
+    if (!selectedThreadId) return
+    let cancelled = false
+    let timerId: number | null = null
+    const schedule = (delay: number) => {
+      if (cancelled) return
+      if (timerId !== null) window.clearTimeout(timerId)
+      timerId = window.setTimeout(() => void run(), delay)
+    }
+    const run = async () => {
+      if (document.visibilityState === "hidden") {
+        schedule(trackingStatusRefreshIntervalMs)
+        return
+      }
+      await refreshSelectedThread()
+      schedule(trackingStatusRefreshIntervalMs)
+    }
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") schedule(250)
+    }
+    document.addEventListener("visibilitychange", onVisibilityChange)
+    schedule(trackingStatusRefreshIntervalMs)
+    return () => {
+      cancelled = true
+      if (timerId !== null) window.clearTimeout(timerId)
+      document.removeEventListener("visibilitychange", onVisibilityChange)
+    }
+  }, [refreshSelectedThread, selectedThreadId])
 
   useEffect(() => {
     if (typeof window === "undefined" || window.location.pathname !== "/inbox") return
@@ -1461,7 +1515,7 @@ export function InboxPage({ navigate: _navigate }: { navigate: (path: string) =>
   /* ----------------------------------------------------------------- composer */
 
   function openComposer(mode: SendMode) {
-    const sourceMessage = mode === "new" ? null : thread?.messages.at(-1) ?? null
+    const sourceMessage = mode === "new" ? null : latestReplySource(thread?.messages ?? [])
     const draftKey = localDraftKey(mailboxId ?? "", mode === "new" ? null : thread?.id ?? null, mode)
     const stored = readLocalDraft(draftKey)
 

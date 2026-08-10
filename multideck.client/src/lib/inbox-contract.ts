@@ -256,6 +256,8 @@ export type InboxMessage = {
    * never hands it to `dangerouslySetInnerHTML`.
    */
   sanitizedHtml: string | null
+  /** False for delivery reports and other automated receipts that must not hijack Reply. */
+  replyEligible: boolean
   attachments: MailAttachment[]
   delivery?: InboxDelivery
 }
@@ -727,6 +729,7 @@ function normalizeMessage(value: unknown, threadId: string): InboxMessage {
     receivedAt: direction === "inbound" ? occurredAt : readOptionalText(pickField(record, "receivedAt")),
     bodyText: readOptionalText(pickField(record, "bodyText", "text")),
     sanitizedHtml: readOptionalText(pickField(record, "sanitizedHtml", "safeBodyHtml", "bodyHtml")),
+    replyEligible: readFlag(pickField(record, "replyEligible"), true),
     attachments: readList(pickField(record, "attachments")).map(normalizeAttachment),
     delivery: direction === "outbound" ? {
       status: deliveryStatus,
@@ -740,6 +743,13 @@ function normalizeMessage(value: unknown, threadId: string): InboxMessage {
       confidence: readText(pickField(rawDelivery, "confidence")) === "estimated" ? "estimated" : readText(pickField(rawDelivery, "confidence")) === "confirmed" ? "confirmed" : "none",
     } : undefined,
   }
+}
+
+export function latestReplySource(messages: InboxMessage[]) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].replyEligible) return messages[index]
+  }
+  return null
 }
 
 export function normalizeThreadDetail(value: unknown, requestedId: string): InboxThreadDetail {

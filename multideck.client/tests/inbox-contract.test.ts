@@ -12,6 +12,7 @@ import {
   dedupeThreads,
   mergeThreadPage,
   isInboxNotFound,
+  latestReplySource,
   normalizeThreadDetail,
   normalizeThreadListItem,
   normalizeThreadPage,
@@ -139,6 +140,18 @@ test("outbound delivery evidence is normalised without adding it to inbound mail
     confidence: "estimated",
   })
   assert.equal(detail.messages[1].delivery, undefined)
+})
+
+test("automated delivery receipts cannot hijack a reply composer", () => {
+  const detail = normalizeThreadDetail({
+    id: "thread-1",
+    messages: [
+      { id: "recipient-message", direction: "inbound", replyEligible: true },
+      { id: "delivery-receipt", direction: "inbound", replyEligible: false },
+    ],
+  }, "thread-1")
+
+  assert.equal(latestReplySource(detail.messages)?.id, "recipient-message")
 })
 
 test("server-issued Inbox citations restore their provider, mailbox and thread", () => {

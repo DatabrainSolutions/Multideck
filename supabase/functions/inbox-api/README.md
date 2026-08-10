@@ -70,3 +70,15 @@ node --test tests/inbox-api-contract.test.mjs
 ```
 
 Run these from `multideck.server`. Live provider verification additionally requires deploying the function and signing in through the real `/inbox` route.
+
+## Deployment coupling
+
+`email-watch-worker` imports `inbox-api/core.ts` and `inbox-api/runtime.ts` at bundle time so its scheduled provider sync uses the same identity, delivery-report, and reply-matching rules as an interactive Inbox refresh. Any change to mailbox sync or tracking in either shared file must deploy and download-verify both functions together:
+
+```sh
+supabase functions deploy inbox-api email-watch-worker --project-ref <tenant-project-ref> --use-api
+supabase functions download inbox-api --project-ref <tenant-project-ref> --use-api
+supabase functions download email-watch-worker --project-ref <tenant-project-ref> --use-api
+```
+
+Preserve their existing authentication boundaries: `inbox-api` verifies the user's JWT, while `email-watch-worker` keeps `verify_jwt = false` and authenticates its tenant-local scheduler secret in the function body. A successful `inbox-api` deployment alone is not evidence that scheduled sync is running the same tracking code.

@@ -23,6 +23,8 @@ import {
   graphMessageNeedsAttachmentFetch,
   inferGraphContentIdFromFileName,
   appendInternetMessageReference,
+  deliveryReportNeedsRawMime,
+  isRecipientReplyMessage,
   parseDeliveryStatusReport,
   replyTargetMessageId,
   mimeInlineAttachmentHeaders,
@@ -222,8 +224,27 @@ Deno.test("recipient replies correlate to one exact outbound message in a busy t
   assertEquals(replyTargetMessageId({ "in-reply-to": "<unknown@example.com>" }, candidates), null)
 })
 
+Deno.test("delivery reports and automatic responses never count as recipient replies", () => {
+  const exchangeReceipt = {
+    "content-type": "multipart/report",
+    "auto-submitted": "auto-replied",
+    "in-reply-to": "<first@example.com>",
+    references: "<first@example.com>",
+  }
+  assert(deliveryReportNeedsRawMime(exchangeReceipt))
+  assert(!isRecipientReplyMessage(exchangeReceipt))
+  assert(!isRecipientReplyMessage({
+    "auto-submitted": "auto-replied",
+    "in-reply-to": "<first@example.com>",
+  }))
+  assert(isRecipientReplyMessage({
+    "in-reply-to": "<first@example.com>",
+    references: "<first@example.com>",
+  }))
+})
+
 Deno.test("delivery reports require exact machine-readable evidence for one message", () => {
-  assertEquals(parseDeliveryStatusReport("multipart/report; report-type=delivery-status", [
+  assertEquals(parseDeliveryStatusReport("multipart/report", [
     "Content-Type: message/delivery-status",
     "Original-Message-ID: <send-2@example.com>",
     "Action: delivered",
@@ -241,6 +262,15 @@ Deno.test("delivery reports require exact machine-readable evidence for one mess
   ].join("\r\n"))?.eventType, "bounced")
   assertEquals(parseDeliveryStatusReport("text/plain", "Delivery failed for your message"), null)
   assertEquals(parseDeliveryStatusReport("multipart/report; report-type=delivery-status", "Action: delivered\r\nStatus: 2.0.0"), null)
+  assertEquals(parseDeliveryStatusReport("multipart/report", [
+    "Content-Type: message/delivery-status",
+    "Action: relayed",
+    "Status: 2.1.5",
+  ].join("\r\n"), "<send-4@example.com>"), {
+    eventType: "delivered",
+    originalMessageId: "<send-4@example.com>",
+    statusCode: "2.1.5",
+  })
 })
 
 Deno.test("a message with no attachments stays a single text/plain part", () => {
