@@ -5,6 +5,7 @@ import {
   ActivityIcon as ActivityIconData,
   AiBeautifyIcon as AiBeautifyIconData,
   AiBrain01Icon as AiBrain01IconData,
+  AiEditingIcon as AiEditingIconData,
   AlarmClockIcon as AlarmClockIconData,
   Alert02Icon as Alert02IconData,
   AlertCircleIcon as AlertCircleIconData,
@@ -323,6 +324,7 @@ export function MorphingIcon({
 
 export const AiBeautify = createMultideckIcon(AiBeautifyIconData, "AiBeautify")
 export const AiBrain = createMultideckIcon(AiBrain01IconData, "AiBrain")
+export const AiEditing = createMultideckIcon(AiEditingIconData, "AiEditing")
 export const FacebookBrand = createMultideckIcon(Facebook02IconData, "FacebookBrand")
 export const Forklift = createMultideckIcon(ForkliftIconData, "Forklift")
 export const Home03 = createMultideckIcon(Home03IconData, "Home03")

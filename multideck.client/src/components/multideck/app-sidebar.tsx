@@ -381,13 +381,11 @@ export function SidebarNavItem({
             <SpectralBloomShader />
           </span>
           <span className="md-dexter-pill__contrast" aria-hidden="true" />
-          {isActive ? (
-            <span
-              data-sidebar-active-surface
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 z-[1] rounded-[var(--md-radius-lg)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.48),0_7px_16px_rgba(42,52,50,0.12)]"
-            />
-          ) : null}
+          <span
+            data-sidebar-active-surface={isActive ? "" : undefined}
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 z-[1] rounded-[var(--md-radius-lg)] opacity-0 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.48),0_0_0_1px_var(--md-accent-deep-a16)] transition-opacity duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none"
+          />
         </>
       ) : isActive ? (
         activeLayoutId ? (

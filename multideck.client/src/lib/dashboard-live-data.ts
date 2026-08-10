@@ -21,6 +21,35 @@ export type DashboardKpi = {
   tone: StatusTone
   series?: number[]
   icon?: LucideIcon
+  /**
+   * Movement across the selected period, derived from the metric's own series.
+   * Left off when there is no earlier reading to compare against — a tile with
+   * one data point must not draw an arrow.
+   */
+  delta?: DashboardDelta
+}
+
+export type DashboardDelta = {
+  direction: "up" | "down" | "flat"
+  /** Already formatted, e.g. "+12%" or "+3". */
+  text: string
+  /** What the movement is measured against, e.g. "vs start of period". */
+  caption: string
+}
+
+/**
+ * Movement from the first reading in the window to the current one. Percent
+ * where there is a non-zero base to divide by, absolute where there is not —
+ * "+3 from 0" is a real statement, "+∞%" is not.
+ */
+function seriesDelta(series: number[] | undefined, caption: string): DashboardDelta | undefined {
+  if (!series || series.length < 2) return undefined
+  const first = series[0]
+  const last = series[series.length - 1]
+  const change = last - first
+  if (change === 0) return { direction: "flat", text: "0%", caption }
+  const text = first === 0 ? `${change > 0 ? "+" : ""}${change}` : `${change > 0 ? "+" : ""}${Math.round((change / first) * 100)}%`
+  return { direction: change > 0 ? "up" : "down", text, caption }
 }
 
 export type DashboardAction = {
@@ -69,10 +98,14 @@ export type DashboardBooking = {
 export type DashboardClockQueue = { openRfqs: number; needAction: number; readyToQuote: number }
 
 const clockLocationTerms: Record<string, string[]> = {
-  LDN: ["London", "Heathrow", "GBLHR", "Felixstowe", "GBFXT", "Bristol", "GBBRS", "Southampton", "GBSOU"],
-  AMS: ["Amsterdam", "Rotterdam", "NLRTM"], IST: ["Istanbul", "TRIST"], DXB: ["Dubai", "AEDXB"],
-  SHA: ["Shanghai", "CNSHA", "Yantian", "CNYTN", "Ningbo", "CNNGB"], SIN: ["Singapore", "SGSIN"],
-  NYC: ["New York", "JFK", "USJFK"], LAX: ["Los Angeles", "Long Beach", "USLAX"],
+  LAX: ["Los Angeles", "Long Beach", "USLAX"], CHI: ["Chicago", "USCHI"],
+  NYC: ["New York", "JFK", "USJFK"], YYZ: ["Toronto", "CATOR"], GRU: ["Sao Paulo", "Santos", "BRSSZ"],
+  LDN: ["London", "Heathrow", "GBLHR", "Felixstowe", "GBFXT", "Bristol", "GBBRS", "Southampton", "GBSOU", "Gateway", "Manchester", "Birmingham"],
+  AMS: ["Amsterdam", "Rotterdam", "NLRTM"], FRA: ["Frankfurt", "DEFRA", "Hamburg", "DEHAM"],
+  IST: ["Istanbul", "TRIST"], DXB: ["Dubai", "AEDXB"], BOM: ["Mumbai", "Nhava Sheva", "INNSA"],
+  SIN: ["Singapore", "SGSIN"], HKG: ["Hong Kong", "HKHKG"],
+  SHA: ["Shanghai", "CNSHA", "Yantian", "CNYTN", "Ningbo", "CNNGB"],
+  TYO: ["Tokyo", "Narita", "JPTYO", "Kobe", "JPUKB"], SYD: ["Sydney", "AUSYD", "Melbourne", "AUMEL"],
 }
 
 export function dashboardClockQueues(bookings: LiveBooking[], quotes: QuoteRegisterRecord[]): Record<string, DashboardClockQueue> {
@@ -165,6 +198,14 @@ function occupancySeries<T>(
   })
 }
 
+function bookingStartsAt(booking: LiveBooking) {
+  return booking.departureAt || booking.departureDate
+}
+
+function bookingEndsAt(booking: LiveBooking) {
+  return booking.arrivalAt || booking.arrivalDate
+}
+
 function trend(series: number[], range: DashboardRange, window: DashboardRangeWindow): DashboardTrendPoint[] {
   const formatter = new Intl.DateTimeFormat(undefined, range === "today" ? { hour: "2-digit" } : { month: "short", day: "numeric" })
   const width = (window.end - window.start) / series.length
@@ -184,8 +225,8 @@ export function buildDashboardLiveData(
     ? { start: window.start, end: nowTimestamp }
     : window
   const rangeBookings = bookings.filter((booking) => booking.progress < 100 && recordOverlapsWindow(
-    booking.departureDate,
-    booking.arrivalDate,
+    bookingStartsAt(booking),
+    bookingEndsAt(booking),
     booking.updatedAt,
     window,
   ))
@@ -199,16 +240,17 @@ export function buildDashboardLiveData(
   const readyQuotes = rangeQuotes.filter((quote) => quote.status === "Ready to send")
   const openQuotes = rangeQuotes.filter((quote) => quote.status !== "Sent" && quote.status !== "Accepted")
 
-  const bookingSeries = occupancySeries(rangeBookings, (booking) => booking.departureDate, (booking) => booking.arrivalDate, (booking) => booking.updatedAt, seriesWindow)
-  const exceptionSeries = occupancySeries(exceptions, (booking) => booking.departureDate, (booking) => booking.arrivalDate, (booking) => booking.updatedAt, seriesWindow)
+  const bookingSeries = occupancySeries(rangeBookings, bookingStartsAt, bookingEndsAt, (booking) => booking.updatedAt, seriesWindow)
+  const exceptionSeries = occupancySeries(exceptions, bookingStartsAt, bookingEndsAt, (booking) => booking.updatedAt, seriesWindow)
   const quoteSeries = occupancySeries(rangeQuotes, (quote) => quote.estimatedDeparture, (quote) => quote.estimatedArrival, (quote) => quote.createdAt, seriesWindow)
   const readyQuoteSeries = occupancySeries(readyQuotes, (quote) => quote.estimatedDeparture, (quote) => quote.estimatedArrival, (quote) => quote.createdAt, seriesWindow)
 
+  const movement = "vs start of period"
   const kpis: DashboardKpi[] = [
-    { label: "Active jobs", value: String(rangeBookings.length), change: `${exceptions.length} need action`, detail: "in selected period", tone: exceptions.length ? "amber" : "green", series: bookingSeries },
-    { label: "Booking exceptions", value: String(exceptions.length), change: `${rangeBookings.length - exceptions.length} on track`, detail: "derived from tracking risk", tone: exceptions.length ? "red" : "green", series: exceptionSeries },
-    { label: "Open quotes", value: String(openQuotes.length), change: `${readyQuotes.length} ready`, detail: "in selected period", tone: readyQuotes.length ? "green" : "blue", series: quoteSeries },
-    { label: "Ready quotes", value: String(readyQuotes.length), change: `${rangeQuotes.length} total`, detail: "ready to issue", tone: readyQuotes.length ? "teal" : "neutral", series: readyQuoteSeries },
+    { label: "Active jobs", value: String(rangeBookings.length), change: `${exceptions.length} need action`, detail: `${exceptions.length} need action`, tone: exceptions.length ? "amber" : "green", series: bookingSeries, delta: seriesDelta(bookingSeries, movement) },
+    { label: "Booking exceptions", value: String(exceptions.length), change: `${rangeBookings.length - exceptions.length} on track`, detail: `${rangeBookings.length - exceptions.length} on track`, tone: exceptions.length ? "red" : "green", series: exceptionSeries, delta: seriesDelta(exceptionSeries, movement) },
+    { label: "Open quotes", value: String(openQuotes.length), change: `${readyQuotes.length} ready`, detail: `${readyQuotes.length} ready to send`, tone: readyQuotes.length ? "green" : "blue", series: quoteSeries, delta: seriesDelta(quoteSeries, movement) },
+    { label: "Ready quotes", value: String(readyQuotes.length), change: `${rangeQuotes.length} total`, detail: `${rangeQuotes.length} quotes in period`, tone: readyQuotes.length ? "teal" : "neutral", series: readyQuoteSeries, delta: seriesDelta(readyQuoteSeries, movement) },
   ]
 
   const actions: DashboardAction[] = [
@@ -225,10 +267,293 @@ export function buildDashboardLiveData(
   }
 }
 
+/**
+ * When a booking next needs a human. Remaining progress is the only forward
+ * signal tracking gives us, so it sets the horizon: a booking at 90% is wanted
+ * within the hour, one at 20% not for four. Kept in one place because the
+ * priority queue and the job list must never disagree about the same booking.
+ */
+function bookingDueAt(booking: LiveBooking) {
+  const due = new Date(booking.updatedAt)
+  due.setHours(due.getHours() + Math.max(1, Math.round((100 - booking.progress) / 20)))
+  return due.getTime()
+}
+
+/**
+ * The operating cutoff the rest of the product already works to — the same
+ * 17:00 the world-clock queues are measured against. A quote that is ready to
+ * send is due by it, so "ready" cannot quietly mean "whenever".
+ */
+export const operatingCutoffHour = 17
+
+function cutoffToday(now: Date) {
+  const cutoff = new Date(now)
+  cutoff.setHours(operatingCutoffHour, 0, 0, 0)
+  return cutoff.getTime()
+}
+
+export type DashboardPriorityKind = "exception" | "quote-send" | "quote-progress"
+export type DashboardPriorityBucket = "overdue" | "soon" | "today" | "later"
+
+/**
+ * One thing the operator has to do, from whichever register it came from. The
+ * dashboard used to carry three lists over the same records — every booking as
+ * "your jobs", the exception subset as "today's actions", and every booking
+ * again as "live bookings" — so the same delay was read three times before it
+ * was worked once. This is the single ranked queue those collapse into.
+ */
+export type DashboardPriorityItem = {
+  id: string
+  kind: DashboardPriorityKind
+  /** Booking or quote reference, shown left-to-right in every language. */
+  reference: string
+  task: string
+  customer: string
+  /** The lane or route the work sits on. */
+  context: string
+  status: string
+  owner: string
+  dueAt: number
+  /** What the deadline actually is, so the row never implies a precision it lacks. */
+  dueKind: "action" | "cutoff" | "departure"
+  tone: StatusTone
+  bookingId?: string
+  quoteReference?: string
+}
+
+export function dashboardPriorityBucket(dueAt: number, now: number): DashboardPriorityBucket {
+  if (dueAt < now) return "overdue"
+  if (dueAt - now <= 2 * 60 * 60 * 1000) return "soon"
+  const endOfDay = new Date(now)
+  endOfDay.setHours(23, 59, 59, 999)
+  return dueAt <= endOfDay.getTime() ? "today" : "later"
+}
+
+/**
+ * Booking exceptions and quote work in one list, ranked by real deadline. Only
+ * records that need a decision are here: a booking running to plan is progress
+ * to watch on the live board, not a task, and putting it in the queue would
+ * bury the three that are actually broken.
+ */
+export function dashboardPriorityQueue(
+  bookings: LiveBooking[],
+  quotes: QuoteRegisterRecord[],
+  now = new Date(),
+): DashboardPriorityItem[] {
+  const cutoff = cutoffToday(now)
+
+  const exceptions: DashboardPriorityItem[] = bookings
+    .filter((booking) => booking.progress < 100 && booking.status !== "On track")
+    .map((booking) => ({
+      id: `booking:${booking.id}`,
+      kind: "exception" as const,
+      reference: booking.id,
+      task: booking.status === "Exception" ? "Resolve tracking exception" : "Review revised delivery plan",
+      customer: booking.customer,
+      context: booking.route,
+      status: booking.status,
+      owner: booking.owner,
+      dueAt: bookingDueAt(booking),
+      dueKind: "action" as const,
+      tone: booking.tone,
+      bookingId: booking.id,
+    }))
+
+  const readyQuotes: DashboardPriorityItem[] = quotes
+    .filter((quote) => quote.status === "Ready to send")
+    .map((quote) => {
+      const departure = localDateBoundary(quote.estimatedDeparture)
+      // Priced and waiting: it goes out by today's cutoff, or before the ship
+      // leaves if that comes first.
+      const dueAt = departure !== null ? Math.min(departure, cutoff) : cutoff
+      return {
+        id: `quote-send:${quote.reference}`,
+        kind: "quote-send" as const,
+        reference: quote.reference,
+        task: "Send priced quote",
+        customer: quote.customer,
+        context: `${quote.origin} → ${quote.destination}`,
+        status: quote.status,
+        owner: quote.salesOwner,
+        dueAt,
+        dueKind: departure !== null && departure < cutoff ? ("departure" as const) : ("cutoff" as const),
+        tone: quote.statusTone,
+        quoteReference: quote.reference,
+      }
+    })
+
+  const openQuotes: DashboardPriorityItem[] = quotes
+    .filter((quote) => quote.status !== "Sent" && quote.status !== "Accepted" && quote.status !== "Ready to send")
+    .map((quote) => {
+      const departure = localDateBoundary(quote.estimatedDeparture)
+      return {
+        id: `quote-progress:${quote.reference}`,
+        kind: "quote-progress" as const,
+        reference: quote.reference,
+        task: `Progress ${quote.workflowStage.toLowerCase()}`,
+        customer: quote.customer,
+        context: `${quote.origin} → ${quote.destination}`,
+        status: quote.status,
+        owner: quote.salesOwner,
+        // No departure yet means no real deadline; the cutoff is the honest
+        // stand-in rather than a date invented for the sort.
+        dueAt: departure ?? cutoff,
+        dueKind: departure !== null ? ("departure" as const) : ("cutoff" as const),
+        tone: quote.priorityTone,
+        quoteReference: quote.reference,
+      }
+    })
+
+  return [...exceptions, ...readyQuotes, ...openQuotes].sort((left, right) => left.dueAt - right.dueAt)
+}
+
+export type DashboardBreakdownSlice = { name: string; value: number; color: string }
+
+const modeColours: Record<string, string> = {
+  Ocean: "var(--md-accent)",
+  Air: "var(--md-blue)",
+  Road: "var(--md-amber)",
+  Multimodal: "var(--md-accent-glow-warm)",
+}
+
+// Canonical jobs store maritime transport as SEA while the application label
+// and older booking adapter use OCEAN. Normalise at the dashboard boundary so
+// both sources contribute to one honest series rather than splitting the mode.
+function dashboardModeCode(mode: string) {
+  return mode.trim().toUpperCase() === "SEA" ? "OCEAN" : mode.trim().toUpperCase()
+}
+
+/**
+ * Live bookings by transport mode. Only modes actually present are returned, so
+ * the ring never carries an empty segment for a service the tenant does not run.
+ */
+export function dashboardModeMix(bookings: LiveBooking[]): DashboardBreakdownSlice[] {
+  const counts = new Map<string, number>()
+  bookings
+    .filter((booking) => booking.progress < 100)
+    .forEach((booking) => {
+      const modeCode = dashboardModeCode(booking.mode)
+      const mode = modeCode === "OCEAN" ? "Ocean" : modeCode === "AIR" ? "Air" : modeCode === "ROAD" ? "Road" : modeCode === "MULTIMODAL" ? "Multimodal" : modeCode
+      counts.set(mode, (counts.get(mode) ?? 0) + 1)
+    })
+
+  return [...counts.entries()]
+    .sort((left, right) => right[1] - left[1])
+    .map(([name, value], index) => ({
+      name,
+      value,
+      color: modeColours[name] ?? (index % 2 === 0 ? "var(--md-amber)" : "var(--md-subtle)"),
+    }))
+}
+
+export type DashboardModeTrend = {
+  labels: string[]
+  series: { key: string; label: string; color: string; values: number[] }[]
+}
+
+/**
+ * Each transport mode's load across the selected window, as one series per mode
+ * on a shared time axis. A single split of today's total says which mode is
+ * biggest; this says *when* each one is booked, which is the question a desk
+ * planning capacity actually asks.
+ */
+export function dashboardModeTrend(
+  range: DashboardRange,
+  bookings: LiveBooking[],
+  customRange?: DashboardCustomDateRange,
+  now = new Date(),
+): DashboardModeTrend {
+  const window = dashboardRangeWindow(range, customRange, now)
+  const nowTimestamp = now.getTime()
+  const seriesWindow =
+    nowTimestamp > window.start && nowTimestamp < window.end ? { start: window.start, end: nowTimestamp } : window
+
+  const live = bookings.filter((booking) => booking.progress < 100)
+  const present = [
+    { key: "Ocean", match: "OCEAN", color: "var(--md-accent)" },
+    { key: "Air", match: "AIR", color: "var(--md-blue)" },
+    { key: "Road", match: "ROAD", color: "var(--md-amber)" },
+    { key: "Multimodal", match: "MULTIMODAL", color: "var(--md-accent-glow-warm)" },
+  ].filter((mode) => live.some((booking) => dashboardModeCode(booking.mode) === mode.match))
+
+  const formatter = new Intl.DateTimeFormat(
+    undefined,
+    range === "today" ? { hour: "2-digit" } : { month: "short", day: "numeric" },
+  )
+  const width = (seriesWindow.end - seriesWindow.start) / 10
+
+  const columns = present.map((mode) => ({
+    mode,
+    values: occupancySeries(
+      live.filter((booking) => dashboardModeCode(booking.mode) === mode.match),
+      bookingStartsAt,
+      bookingEndsAt,
+      (booking) => booking.updatedAt,
+      seriesWindow,
+    ),
+  }))
+
+  return {
+    labels: Array.from({ length: 10 }, (_, index) =>
+      formatter.format(new Date(seriesWindow.start + width * (index + 1))),
+    ),
+    series: columns.map((column) => ({
+      key: column.mode.key,
+      label: column.mode.key,
+      color: column.mode.color,
+      values: column.values,
+    })),
+  }
+}
+
+/**
+ * Live bookings by tracking status. Ordered worst first, because a status split
+ * is read to find the trouble rather than to admire the healthy majority.
+ */
+export function dashboardStatusMix(bookings: LiveBooking[]): DashboardBreakdownSlice[] {
+  const rank: Record<string, number> = { Exception: 0, Delayed: 1, "On track": 2 }
+  const tones: Record<string, string> = {
+    Exception: "var(--md-red)",
+    Delayed: "var(--md-amber)",
+    "On track": "var(--md-green)",
+  }
+
+  const counts = new Map<string, number>()
+  bookings
+    .filter((booking) => booking.progress < 100)
+    .forEach((booking) => counts.set(booking.status, (counts.get(booking.status) ?? 0) + 1))
+
+  return [...counts.entries()]
+    .sort((left, right) => (rank[left[0]] ?? 9) - (rank[right[0]] ?? 9))
+    .map(([name, value]) => ({ name, value, color: tones[name] ?? "var(--md-blue)" }))
+}
+
+/**
+ * Quotes by workflow stage, busiest first. Drawn as ranked bars rather than a
+ * funnel: the stages are where quotes are currently sitting, not a monotonic
+ * drop-off, and a funnel in a side column carries a fixed aspect that leaves
+ * dead space beside a tall neighbour.
+ */
+export function dashboardQuoteStages(quotes: QuoteRegisterRecord[]): DashboardBreakdownSlice[] {
+  const counts = new Map<string, number>()
+  quotes
+    .filter((quote) => quote.status !== "Sent" && quote.status !== "Accepted")
+    .forEach((quote) => {
+      const stage = quote.workflowStage?.trim()
+      if (!stage) return
+      counts.set(stage, (counts.get(stage) ?? 0) + 1)
+    })
+
+  const shades = ["var(--md-accent)", "var(--md-accent-tint)", "var(--md-accent-glow-core)", "var(--md-blue)", "var(--md-subtle)"]
+  return [...counts.entries()]
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, 5)
+    .map(([name, value], index) => ({ name, value, color: shades[index % shades.length] }))
+}
+
 export function dashboardJobs(bookings: LiveBooking[]): DashboardJob[] {
   return bookings.map((booking) => {
-    const dueDate = new Date(booking.updatedAt)
-    dueDate.setHours(dueDate.getHours() + Math.max(1, Math.round((100 - booking.progress) / 20)))
+    const dueDate = new Date(bookingDueAt(booking))
     return {
       id: booking.jobRef,
       bookingId: booking.id,

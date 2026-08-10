@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import type { QuoteRegisterRecord } from "../src/data/quote-register-data.ts"
 import type { LiveBooking } from "../src/lib/application-data-api.ts"
-import { buildDashboardLiveData } from "../src/lib/dashboard-live-data.ts"
+import { buildDashboardLiveData, dashboardModeTrend } from "../src/lib/dashboard-live-data.ts"
 
 function booking(overrides: Partial<LiveBooking>): LiveBooking {
   return {
@@ -30,6 +30,8 @@ function booking(overrides: Partial<LiveBooking>): LiveBooking {
     vessel: "",
     departureDate: "",
     arrivalDate: "",
+    departureAt: "",
+    arrivalAt: "",
     vin: "",
     direction: "Export",
     shipmentType: "General cargo",
@@ -123,4 +125,37 @@ test("Custom ranges use the selected dates and incomplete records fall back to a
   )
 
   assert.equal(snapshot.kpis[0].value, "3")
+})
+
+test("mode trend keeps all four freight modes distinct and shows peaks and drops", () => {
+  const now = new Date(2026, 7, 10, 12, 0, 0)
+  const trend = dashboardModeTrend("today", [
+    booking({ id: "MD-SEA-1", mode: "OCEAN", departureAt: "2026-08-10T00:00:00", arrivalAt: "2026-08-10T04:00:00" }),
+    booking({ id: "MD-SEA-2", mode: "OCEAN", departureAt: "2026-08-10T02:00:00", arrivalAt: "2026-08-10T10:00:00" }),
+    booking({ id: "MD-AIR", mode: "AIR", departureAt: "2026-08-10T01:00:00", arrivalAt: "2026-08-10T05:00:00" }),
+    booking({ id: "MD-ROAD", mode: "ROAD", departureAt: "2026-08-10T05:00:00", arrivalAt: "2026-08-10T08:00:00" }),
+    booking({ id: "MD-MULTI", mode: "MULTIMODAL", departureAt: "2026-08-10T07:00:00", arrivalAt: "2026-08-10T13:00:00" }),
+  ], undefined, now)
+
+  assert.deepEqual(trend.series.map((series) => series.key), ["Ocean", "Air", "Road", "Multimodal"])
+  assert.equal(Math.max(...trend.series[0].values), 2)
+  assert.equal(trend.series[0].values.at(-1), 0)
+  assert.equal(trend.series[3].values.at(-1), 1)
+  assert.notDeepEqual(trend.series[0].values, trend.series[1].values)
+  assert.notDeepEqual(trend.series[1].values, trend.series[2].values)
+})
+
+test("booking KPI and trend series use route timestamps for intraday peaks and drops", () => {
+  const now = new Date(2026, 7, 10, 12, 0, 0)
+  const snapshot = buildDashboardLiveData("today", [
+    booking({ id: "MD-1", departureAt: "2026-08-10T00:00:00", arrivalAt: "2026-08-10T05:00:00" }),
+    booking({ id: "MD-2", departureAt: "2026-08-10T01:00:00", arrivalAt: "2026-08-10T04:00:00", status: "Delayed", tone: "amber" }),
+    booking({ id: "MD-3", departureAt: "2026-08-10T06:00:00", arrivalAt: "2026-08-10T11:00:00" }),
+  ], [], undefined, now)
+
+  assert.equal(Math.max(...(snapshot.kpis[0].series ?? [])), 2)
+  assert.equal(snapshot.kpis[0].series?.at(-1), 0)
+  assert.equal(Math.max(...(snapshot.kpis[1].series ?? [])), 1)
+  assert.equal(snapshot.kpis[1].series?.at(-1), 0)
+  assert.deepEqual(snapshot.trends["Active jobs"].map((point) => point.value), snapshot.kpis[0].series)
 })

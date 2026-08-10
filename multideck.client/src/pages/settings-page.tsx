@@ -23,6 +23,7 @@ import {
   Globe2,
   History,
   ImagePlus,
+  Info,
   KeyRound,
   Laptop,
   LifeBuoy,
@@ -45,6 +46,7 @@ import {
   Users,
   WandSparkles,
   Webhook,
+  X,
   Zap,
   type LucideIcon,
 } from "@/components/icons/hugeicons"
@@ -57,6 +59,8 @@ import xeroLogo from "@/assets/integrations/xero.svg"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { AccentPicker } from "@/components/multideck/accent-picker"
 import { AiUsageOverview } from "@/components/multideck/ai-usage-overview"
@@ -88,6 +92,7 @@ import {
   settingsNavigationGroups,
   type SettingsSectionId,
 } from "@/data/settings-navigation"
+import { homeNavItem, inboxNavItem, sidebarAreas } from "@/data/navigation-data"
 import { languageOptions, getLanguageOption } from "@/i18n/languages"
 import { useLanguage } from "@/i18n/language-provider"
 import {
@@ -1532,13 +1537,116 @@ function SessionsTab() {
           <IconRow icon={KeyRound} title="API key viewed" description="May 24 by Elena Moreno. No secret was copied." />
         </SettingsPanel>
       </div>
+
     </>
+  )
+}
+
+type StartPageOption = { route: string; label: string }
+type StartPageGroup = { label: string; options: StartPageOption[] }
+
+const startPageExtras: Record<string, StartPageOption[]> = {
+  "sales-crm": [
+    { route: "/customers", label: "Customers" },
+    { route: "/crm/lists", label: "Lists" },
+    { route: "/crm/settings", label: "CRM settings" },
+  ],
+  "documents-service": [
+    { route: "/paper-tray", label: "Paper Tray" },
+    { route: "/documents/templates", label: "Templates" },
+  ],
+}
+
+const nonStartPageRoutes = new Set(["/bookings/new"])
+
+function buildStartPageGroups(): StartPageGroup[] {
+  const seenRoutes = new Set<string>()
+  const keepUniquePage = (option: StartPageOption) => {
+    if (seenRoutes.has(option.route) || nonStartPageRoutes.has(option.route)) return false
+    seenRoutes.add(option.route)
+    return true
+  }
+
+  return [
+    {
+      label: "Workspace",
+      options: [
+        { route: homeNavItem.route ?? "/", label: homeNavItem.label },
+        { route: inboxNavItem.route ?? "/inbox", label: inboxNavItem.label },
+        { route: "/agent-dexter", label: "Agent Dexter" },
+      ].filter(keepUniquePage),
+    },
+    ...sidebarAreas.map((area) => ({
+      label: area.label,
+      options: [
+        ...area.destinations.flatMap((destination): StartPageOption[] => [
+          ...(destination.route ? [{ route: destination.route, label: destination.label }] : []),
+          ...(destination.children ?? []).flatMap((child): StartPageOption[] => (
+            child.route ? [{ route: child.route, label: child.label }] : []
+          )),
+        ]),
+        ...(startPageExtras[area.id] ?? []),
+      ].filter(keepUniquePage),
+    })),
+  ].filter((group) => group.options.length > 0)
+}
+
+const startPageGroups = buildStartPageGroups()
+
+const startPageByRoute = new Map(startPageGroups.flatMap((group) => group.options.map((option) => [option.route, option] as const)))
+const legacyStartPageRoutes: Record<string, string> = {
+  Overview: "/",
+  Bookings: "/bookings",
+  Customers: "/customers",
+  "Agent Dexter": "/agent-dexter",
+}
+
+function readStartPageRoute() {
+  const saved = window.localStorage.getItem("multideck.settings.start-page")
+  if (saved && startPageByRoute.has(saved)) return saved
+  return saved ? legacyStartPageRoutes[saved] ?? "/" : "/"
+}
+
+function StartPageSelect({ value, onChange }: { value: string; onChange: (route: string) => void }) {
+  const { t } = useLanguage()
+  const selectedGroup = startPageGroups.find((group) => group.options.some((option) => option.route === value))
+  const selectedOption = startPageByRoute.get(value)
+
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger
+        aria-label={t("Start page")}
+        className="h-10 w-full min-w-0 max-w-[420px] rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-field-bg)] px-3 text-[16px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-field-bg-hover)] sm:text-[13px]"
+      >
+        <SelectValue>
+          <span className="min-w-0 truncate">
+            {selectedGroup ? <>{t(selectedGroup.label)} <span aria-hidden="true" className="text-[var(--md-subtle)]">·</span> </> : null}
+            {t(selectedOption?.label ?? "Home")}
+          </span>
+        </SelectValue>
+      </SelectTrigger>
+      <SelectContent className="max-h-[420px] min-w-[min(360px,calc(100vw-2rem))] border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)]">
+        {startPageGroups.map((group, index) => (
+          <Fragment key={group.label}>
+            {index ? <SelectSeparator /> : null}
+            <SelectGroup>
+              <SelectLabel>{t(group.label)}</SelectLabel>
+              {group.options.map((option) => (
+                <SelectItem key={option.route} value={option.route} className="text-[13px]">
+                  {t(option.label)}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </Fragment>
+        ))}
+      </SelectContent>
+    </Select>
   )
 }
 
 function CustomisationTab() {
   const [density, setDensity] = useState(() => window.localStorage.getItem("multideck.settings.density") ?? "Comfortable")
-  const [startPage, setStartPage] = useState(() => window.localStorage.getItem("multideck.settings.start-page") ?? "Overview")
+  const [startPage, setStartPage] = useState(readStartPageRoute)
   const [keepFilters, setKeepFilters] = useState(() => window.localStorage.getItem("multideck.settings.keep-filters") !== "false")
 
   useEffect(() => {
@@ -1560,9 +1668,9 @@ function CustomisationTab() {
         title="Customisation"
         description="Tune how Multideck reads, feels, and opens without changing the shared workspace for anyone else."
       />
-      {/* Full width rather than inside the two-column grid below: the accent grid
-          wants ten cards across two rows, and squeezing it into a field row would
-          make each preview too small to judge. */}
+      {/* Full width rather than inside the two-column grid below: the horizontal
+          rail keeps every preview large enough to judge without making the page
+          taller as the palette grows. */}
       <SettingsPanel
         className="mt-[var(--md-page-stack-gap)]"
         title="Accent colour"
@@ -1572,117 +1680,50 @@ function CustomisationTab() {
           <AccentPicker />
         </div>
       </SettingsPanel>
-      <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1fr)_minmax(320px,430px)]">
-        <div className="space-y-[var(--md-page-stack-gap)]">
-          <SettingsPanel title="Interface" description="Personal display choices update immediately on this browser.">
-            <SettingsFieldRow label="Appearance" description="Choose light, dark, or the mode used by this device.">
-              <div className="max-w-[320px]">
-                <ThemeToggle className="bg-[var(--md-glass)]" />
-              </div>
-            </SettingsFieldRow>
-            <LanguageSettingField label="App language" />
-            <SettingsFieldRow label="Information density" description="Changes row height and breathing room without hiding data.">
-              <SettingsChoiceGroup
-                options={["Compact", "Comfortable", "Roomy"]}
-                value={density}
-                onChange={setDensity}
-                className="max-w-[420px]"
-              />
-            </SettingsFieldRow>
-            <SettingsFieldRow label="World clocks" description="Choose clear digital times or compact analogue faces.">
-              <ClockDisplaySetting />
-            </SettingsFieldRow>
-          </SettingsPanel>
-
-          <SettingsPanel title="Starting point" description="Open the workspace where your day usually begins.">
-            <SettingsFieldRow label="Start page">
-              <SettingsChoiceGroup
-                options={["Overview", "Bookings", "Customers", "Agent Dexter"]}
-                value={startPage}
-                onChange={setStartPage}
-              />
-            </SettingsFieldRow>
-            <SettingsToggleRow
-              title="Keep filters between visits"
-              description="Return to the same owner, customer, and ETA filters after reload."
-              checked={keepFilters}
-              onCheckedChange={setKeepFilters}
+      <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
+        <SettingsPanel title="Interface" description="Personal display choices update immediately on this browser.">
+          <SettingsFieldRow label="Appearance" description="Choose light, dark, or the mode used by this device.">
+            <div className="max-w-[320px]">
+              <ThemeToggle className="bg-[var(--md-glass)]" />
+            </div>
+          </SettingsFieldRow>
+          <LanguageSettingField label="App language" />
+          <SettingsFieldRow label="Information density" description="Changes row height and breathing room without hiding data.">
+            <SettingsChoiceGroup
+              options={["Compact", "Comfortable", "Roomy"]}
+              value={density}
+              onChange={setDensity}
+              className="max-w-[420px]"
             />
-          </SettingsPanel>
+          </SettingsFieldRow>
+          <SettingsFieldRow label="World clocks" description="Choose clear digital times or compact analogue faces.">
+            <ClockDisplaySetting />
+          </SettingsFieldRow>
+        </SettingsPanel>
 
-          <SettingsPanel title="Freight formats" description="Used in quotes, generated summaries, and operational documents.">
-            <SettingsFieldRow label="Measurement system">
-              <SettingsSelect value="Metric · kg, cbm, km" options={["Metric · kg, cbm, km", "Imperial · lb, cu ft, mi"]} />
-            </SettingsFieldRow>
-            <SettingsFieldRow label="Currency">
-              <SettingsSelect value="EUR · Euro" options={["EUR · Euro", "GBP · British pound", "USD · US dollar"]} />
-            </SettingsFieldRow>
-            <SettingsFieldRow label="Dates">
-              <SettingsSelect value="DD MMM YYYY" options={["DD MMM YYYY", "MMM DD, YYYY", "YYYY-MM-DD"]} />
-            </SettingsFieldRow>
-          </SettingsPanel>
-        </div>
+        <SettingsPanel title="Starting point" description="Open the workspace where your day usually begins.">
+          <SettingsFieldRow label="Start page">
+            <StartPageSelect value={startPage} onChange={setStartPage} />
+          </SettingsFieldRow>
+          <SettingsToggleRow
+            title="Keep filters between visits"
+            description="Return to the same owner, customer, and ETA filters after reload."
+            checked={keepFilters}
+            onCheckedChange={setKeepFilters}
+          />
+        </SettingsPanel>
 
-        <aside className="xl:sticky xl:top-[var(--md-page-pad)] xl:self-start">
-          <section
-            data-density={density.toLowerCase()}
-            className="md-settings-preview relative isolate overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-soft)] sm:p-5"
-          >
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-[12px] font-medium text-[var(--md-ink)]">Live workspace preview</p>
-                <p className="mt-1 text-[11px] text-[var(--md-subtle)]">Updates as you make changes</p>
-              </div>
-              <StatusPill tone="teal">Live</StatusPill>
-            </div>
-            <div className="mt-4 overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-bg)] p-2 shadow-[inset_0_0_0_1px_rgba(11,20,19,0.05)]">
-              <div className="grid min-h-[330px] grid-cols-[76px_minmax(0,1fr)] overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]">
-                <div className="bg-[var(--md-sidebar-bg)] p-2 shadow-[var(--md-stroke-right)]">
-                  <span className="block h-3 w-10 rounded-full bg-[var(--md-ink)] opacity-80" />
-                  <div className="mt-6 space-y-2">
-                    {[1, 2, 3, 4].map((item) => (
-                      <span
-                        key={item}
-                        className={cn(
-                          "block h-7 rounded-[var(--md-radius-sm)]",
-                          item === 1 ? "bg-[var(--md-bg-strong)] shadow-[var(--md-shadow-line)]" : "bg-[var(--md-surface-tint)] opacity-65",
-                        )}
-                      />
-                    ))}
-                  </div>
-                </div>
-                <div className="min-w-0 p-3">
-                  <div className="flex items-center justify-between">
-                    <span className="h-3 w-24 rounded-full bg-[var(--md-ink)] opacity-75" />
-                    <span className="size-6 rounded-[var(--md-radius-sm)] bg-[var(--md-accent)]" />
-                  </div>
-                  <div className="mt-4 grid grid-cols-3 gap-2">
-                    {[62, 44, 78].map((width, index) => (
-                      <div key={width} className="rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] p-2 shadow-[var(--md-shadow-line)]">
-                        <span className="block h-2 rounded-full bg-[var(--md-subtle)] opacity-30" style={{ width: `${width}%` }} />
-                        <span className="mt-3 block h-4 w-10 rounded-full bg-[var(--md-ink)] opacity-80" />
-                        <span className={cn("mt-2 block h-1.5 rounded-full", index === 2 ? "bg-[var(--md-amber)]" : "bg-[var(--md-accent)]")} />
-                      </div>
-                    ))}
-                  </div>
-                  <div className="mt-3 overflow-hidden rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] shadow-[var(--md-shadow-line)]">
-                    {[1, 2, 3, 4].map((row) => (
-                      <div key={row} className="md-settings-preview__row grid grid-cols-[20px_minmax(0,1fr)_36px] items-center gap-2 px-2.5 shadow-[var(--md-stroke-bottom)] last:shadow-none">
-                        <span className="size-4 rounded-full bg-[var(--md-avatar-bg)]" />
-                        <span className="h-2 rounded-full bg-[var(--md-text)] opacity-25" style={{ width: `${74 - row * 7}%` }} />
-                        <span className="h-4 rounded-full bg-[var(--md-accent-a10)]" />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px] text-[var(--md-text)]">
-              <span className="rounded-full bg-[var(--md-surface-soft)] px-2.5 py-1 shadow-[var(--md-shadow-line)]">{density}</span>
-              <span className="rounded-full bg-[var(--md-surface-soft)] px-2.5 py-1 shadow-[var(--md-shadow-line)]">{startPage} start</span>
-            </div>
-          </section>
-        </aside>
+        <SettingsPanel title="Freight formats" description="Used in quotes, generated summaries, and operational documents.">
+          <SettingsFieldRow label="Measurement system">
+            <SettingsSelect value="Metric · kg, cbm, km" options={["Metric · kg, cbm, km", "Imperial · lb, cu ft, mi"]} />
+          </SettingsFieldRow>
+          <SettingsFieldRow label="Currency">
+            <SettingsSelect value="EUR · Euro" options={["EUR · Euro", "GBP · British pound", "USD · US dollar"]} />
+          </SettingsFieldRow>
+          <SettingsFieldRow label="Dates">
+            <SettingsSelect value="DD MMM YYYY" options={["DD MMM YYYY", "MMM DD, YYYY", "YYYY-MM-DD"]} />
+          </SettingsFieldRow>
+        </SettingsPanel>
       </div>
     </>
   )
@@ -3008,15 +3049,9 @@ function PermissionsTab() {
   )
 }
 
-const mailProviderCopy: Record<MailProvider, { label: string; description: string }> = {
-  gmail: {
-    label: "Gmail",
-    description: "Read and reply to operational mail from a Google Workspace account, including Spam and Trash. Google Group messages appear when they are delivered to this account.",
-  },
-  outlook: {
-    label: "Outlook",
-    description: "Read and reply to operational mail from Microsoft 365, including shared and group mailboxes.",
-  },
+const mailProviderCopy: Record<MailProvider, { label: string }> = {
+  gmail: { label: "Gmail" },
+  outlook: { label: "Outlook" },
 }
 
 const mailProviderLogos: Record<MailProvider, string> = {
@@ -3042,6 +3077,7 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [mailboxLoadError, setMailboxLoadError] = useState<string | null>(null)
   const [busyProvider, setBusyProvider] = useState<MailProvider | null>(null)
+  const [disconnectCandidate, setDisconnectCandidate] = useState<InboxConnection | null>(null)
   const [defaultInboxProvider, setDefaultInboxProvider] = useState<MailProvider | null>(null)
   const [defaultInboxProviderLoaded, setDefaultInboxProviderLoaded] = useState(false)
   const [defaultInboxProviderError, setDefaultInboxProviderError] = useState<string | null>(null)
@@ -3268,6 +3304,7 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
     try {
       await disconnectInboxConnection(connection.id)
       await loadConnections()
+      setDisconnectCandidate(null)
       toast.success(`${mailProviderCopy[connection.provider].label} disconnected`)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to disconnect this provider.")
@@ -3310,8 +3347,25 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
       />
       <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
         <SettingsPanel
-          title="Mail"
-          description={t("Mail powers the Inbox workspace. Multideck securely syncs the last 12 months of useful mail, 30 days of Spam and Trash, and current drafts so operators can search, reply and use Dexter; Gmail or Microsoft remains the source mailbox.")}
+          title={(
+            <span className="inline-flex items-center gap-1.5">
+              <span>{t("Mail")}</span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label={t("About mail sync")}
+                    className="grid size-7 place-items-center rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] transition-[background-color,color,scale] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.94] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] motion-reduce:active:scale-100"
+                  >
+                    <Info className="size-3.5" strokeWidth={1.5} aria-hidden="true" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" align="start" sideOffset={6} className="max-w-[360px] text-pretty leading-5">
+                  {t("Mail powers the Inbox workspace. Multideck securely syncs the last 12 months of useful mail, 30 days of Spam and Trash, and current drafts so operators can search, reply and use Dexter; Gmail or Microsoft remains the source mailbox.")}
+                </TooltipContent>
+              </Tooltip>
+            </span>
+          )}
           action={
             <Button
               type="button"
@@ -3408,54 +3462,51 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
                       {t("Connect a provider before choosing it as the default.")}
                     </p>
                   ) : null}
-                  <p
-                    role={defaultInboxProviderError ? "alert" : "status"}
-                    aria-live="polite"
-                    className={cn(
-                      "mt-2 min-h-5 text-[11.5px] leading-5",
-                      defaultInboxProviderError ? "text-[var(--md-red)]" : "text-[var(--md-subtle)]",
-                    )}
-                  >
-                    {defaultInboxProviderError ?? (savingDefaultInboxProvider ? t("Saving preference") : "")}
-                  </p>
+                  {defaultInboxProviderError || savingDefaultInboxProvider ? (
+                    <p
+                      role={defaultInboxProviderError ? "alert" : "status"}
+                      aria-live="polite"
+                      className={cn(
+                        "mt-2 text-[11.5px] leading-5",
+                        defaultInboxProviderError ? "text-[var(--md-red)]" : "text-[var(--md-subtle)]",
+                      )}
+                    >
+                      {defaultInboxProviderError ?? t("Saving preference")}
+                    </p>
+                  ) : null}
                 </div>
               </SettingsFieldRow>
               {(["gmail", "outlook"] as MailProvider[]).map((provider) => {
-              const connection = connections.find((candidate) => candidate.provider === provider) ?? null
-              const copy = mailProviderCopy[provider]
-              const configured = providerAvailability?.find((candidate) => candidate.provider === provider)?.configured === true
-              const needsConnection = !connection || connection.status === "disconnected" || connection.status === "reauthorization_required"
-              const statusKey =
-                !configured ? "Unavailable" :
-                !connection ? "Not connected" :
-                connection.status === "reauthorization_required" ? "Reconnect needed" :
-                connection.status === "syncing" ? "Syncing" :
-                connection.status === "error" ? "Sync problem" :
-                connection.status === "disconnected" ? "Not connected" :
-                "Connected"
-              const description = !configured
-                ? providerAvailabilityError ?? t(`${copy.label} has not been configured for this workspace yet. Ask a Multideck administrator to add the provider credentials.`)
-                : connection?.error?.trim() || t(copy.description)
-              const actionLabel =
-                busyProvider === provider ? t("Working") :
-                needsConnection ? (configured
-                  ? t(connection?.status === "reauthorization_required" ? "Reconnect" : "Connect")
-                  : t("Unavailable")) :
-                t("Disconnect")
+                const connection = connections.find((candidate) => candidate.provider === provider) ?? null
+                const copy = mailProviderCopy[provider]
+                const configured = providerAvailability?.find((candidate) => candidate.provider === provider)?.configured === true
+                const isConnected = connection?.status === "connected" || connection?.status === "syncing"
+                const needsConnection = !connection || !isConnected
+                const statusKey =
+                  !configured ? "Unavailable" :
+                  !connection ? "Not connected" :
+                  connection.status === "reauthorization_required" ? "Reconnect needed" :
+                  connection.status === "syncing" ? "Syncing" :
+                  connection.status === "error" ? "Sync problem" :
+                  connection.status === "disconnected" ? "Not connected" :
+                  "Connected"
+                const problemDescription = !configured
+                  ? providerAvailabilityError ?? t(`${copy.label} has not been configured for this workspace yet. Ask a Multideck administrator to add the provider credentials.`)
+                  : connection?.error?.trim() || undefined
 
-              const sharedMailboxes = provider === "outlook"
-                ? (mailboxes ?? []).filter((mailbox) => mailbox.provider === "outlook" && mailbox.kind !== "personal")
-                : []
-              const groupMailboxes = provider === "gmail"
-                ? (mailboxes ?? []).filter((mailbox) => mailbox.provider === "gmail" && mailbox.kind === "group")
-                : []
+                const sharedMailboxes = provider === "outlook"
+                  ? (mailboxes ?? []).filter((mailbox) => mailbox.provider === "outlook" && mailbox.kind !== "personal")
+                  : []
+                const groupMailboxes = provider === "gmail"
+                  ? (mailboxes ?? []).filter((mailbox) => mailbox.provider === "gmail" && mailbox.kind === "group")
+                  : []
 
-              return (
-                <Fragment key={provider}>
-                  <SettingsIntegrationRow
+                return (
+                  <Fragment key={provider}>
+                    <SettingsIntegrationRow
                     logoSrc={mailProviderLogos[provider]}
                     title={copy.label}
-                    description={description}
+                    description={problemDescription}
                     status={t(statusKey)}
                     statusTone={
                       statusKey === "Connected" ? "connected" :
@@ -3463,21 +3514,47 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
                       statusKey === "Syncing" ? "workspace" :
                       "ready"
                     }
-                    actionLabel={actionLabel}
-                    disabled={busyProvider !== null || (needsConnection && !configured)}
-                    onAction={() => {
-                      if (busyProvider) return
-                      if (needsConnection) {
-                        void connect(provider)
-                        return
-                      }
-                      void disconnect(connection)
-                    }}
-                  />
-                  {provider === "gmail" && connection && !needsConnection ? (
+                    action={(
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            aria-label={t(isConnected ? `Disconnect ${copy.label}` : `Connect ${copy.label}`)}
+                            disabled={busyProvider !== null || (needsConnection && !configured)}
+                            className={cn(
+                              "grid size-9 place-items-center rounded-[var(--md-radius-md)] text-white shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,opacity,scale] duration-200 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a18)] active:scale-[0.94] disabled:cursor-not-allowed disabled:opacity-45 disabled:active:scale-100 motion-reduce:transition-none motion-reduce:active:scale-100",
+                              isConnected
+                                ? "bg-[var(--md-green)] hover:bg-[color-mix(in_srgb,var(--md-green),black_10%)]"
+                                : "bg-[var(--md-red)] hover:bg-[color-mix(in_srgb,var(--md-red),black_10%)]",
+                            )}
+                            onClick={() => {
+                              if (busyProvider) return
+                              if (isConnected && connection) {
+                                setDisconnectCandidate(connection)
+                                return
+                              }
+                              void connect(provider)
+                            }}
+                          >
+                            {busyProvider === provider ? (
+                              <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                            ) : isConnected ? (
+                              <Check className="size-4" strokeWidth={2} aria-hidden="true" />
+                            ) : (
+                              <X className="size-4" strokeWidth={2} aria-hidden="true" />
+                            )}
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="left" sideOffset={6}>
+                          {t(isConnected ? `Disconnect ${copy.label}` : `Connect ${copy.label}`)}
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                    />
+                    {provider === "gmail" && connection && !needsConnection ? (
                     <SettingsFieldRow
                       label={t("Google Group inboxes")}
-                      description={t("Add a Google Group address whose messages are delivered to this Gmail account. Multideck creates a filtered group view across Inbox, Spam and Trash without pretending the group is a separate Google mailbox.")}
+                      description={t("Add a Google Group delivered to this Gmail account. Multideck creates a separate view across Inbox, Spam and Trash; replies still send from your connected Gmail account.")}
                       align="start"
                       labelFor="gmail-group-mailbox-address"
                     >
@@ -3547,7 +3624,7 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
                   {provider === "outlook" && connection && !needsConnection ? (
                     <SettingsFieldRow
                       label={t("Shared Outlook mailboxes")}
-                      description={t("Connect only the shared addresses you are authorised to use. Microsoft may also require Exchange Send As or Send on Behalf permission before Multideck can send from them.")}
+                      description={t("Add shared Outlook addresses you are authorised to use. Sending also requires Microsoft Send As or Send on Behalf permission.")}
                       align="start"
                       labelFor={connection.sharedMailboxAccess ? "outlook-shared-mailbox-address" : undefined}
                     >
@@ -3638,10 +3715,7 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
           )}
         </SettingsPanel>
 
-        <SettingsPanel
-          title={t("Accounting")}
-          description={t("Xero and Sage connections are being prepared for this workspace.")}
-        >
+        <SettingsPanel title={t("Accounting")}>
           <SettingsIntegrationRow
             logoSrc={xeroLogo}
             title="Xero"
@@ -3658,6 +3732,48 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
           />
         </SettingsPanel>
       </div>
+
+      <Dialog
+        open={disconnectCandidate !== null}
+        onOpenChange={(open) => {
+          if (!open && !busyProvider) setDisconnectCandidate(null)
+        }}
+      >
+        <DialogContent className="gap-0 overflow-hidden border-0 bg-[var(--md-surface)] p-0 sm:max-w-[440px]">
+          <DialogHeader className="px-6 pb-4 pt-6 pe-14">
+            <DialogTitle className="text-[16px] font-medium text-[var(--md-ink)]">
+              {disconnectCandidate ? t(`Disconnect ${mailProviderCopy[disconnectCandidate.provider].label}?`) : ""}
+            </DialogTitle>
+            <DialogDescription className="text-[13px] leading-5 text-[var(--md-text)]">
+              {disconnectCandidate ? t(disconnectCandidate.provider === "gmail"
+                ? "Multideck will stop syncing this account and remove it from Inbox and new messages. Your mail stays in Gmail."
+                : "Multideck will stop syncing this account and remove it from Inbox and new messages. Your mail stays in Microsoft 365.") : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="border-t border-[rgba(11,20,19,0.07)] bg-[var(--md-surface-soft)] px-6 py-4">
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={busyProvider !== null}
+              className="h-9 rounded-[var(--md-radius-md)] px-3 text-[13px] font-medium text-[var(--md-text)]"
+              onClick={() => setDisconnectCandidate(null)}
+            >
+              {t("Cancel")}
+            </Button>
+            <Button
+              type="button"
+              disabled={!disconnectCandidate || busyProvider !== null}
+              className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-red)] px-4 text-[13px] font-medium text-white hover:bg-[color-mix(in_srgb,var(--md-red),black_10%)]"
+              onClick={() => {
+                if (disconnectCandidate) void disconnect(disconnectCandidate)
+              }}
+            >
+              {busyProvider ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : null}
+              {disconnectCandidate ? t(`Disconnect ${mailProviderCopy[disconnectCandidate.provider].label}`) : t("Disconnect")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

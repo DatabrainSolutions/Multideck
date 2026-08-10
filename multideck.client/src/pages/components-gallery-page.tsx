@@ -89,6 +89,12 @@ import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
 import { CodeInput, FreightNarrative, SignInPanel, SignedOutPanel, VerifyPanel, WorkspaceRouterPanel } from "@/components/multideck/auth-flow"
 import { AuthIdentityManager, AuthProviderSelector } from "@/components/multideck/auth-provider-selector"
+import { DashboardPriorityQueue } from "@/components/multideck/dashboard-priority-queue"
+import { DashboardPerformancePanel } from "@/components/multideck/dashboard-performance-panel"
+import { KpiStrip } from "@/components/multideck/dashboard-kpi-strip"
+import { DashboardCoveragePanel } from "@/components/multideck/dashboard-coverage-panel"
+import { DashboardBreakdownPanel } from "@/components/multideck/dashboard-breakdown-panel"
+import type { DashboardKpi, DashboardPriorityItem, DashboardTrendPoint } from "@/lib/dashboard-live-data"
 import { BookingArrivalCard, BookingAskPanel, BookingBoardPreview, BookingExceptionPanel, BookingMetricCard, BookingResolutionChecklist, BookingsTable, YourJobsPanel, bookingSearchFieldOptions, bookingViewModes, bookingViewOptions, type BookingViewMode } from "@/components/multideck/booking-components"
 import { AdvancedFilterPopover } from "@/components/multideck/advanced-filter-popover"
 import { DomesticJobStageRail, DomesticRoadJobCard, DomesticRoadKanbanBoard, domesticRoadJobs, roadJobStageStatus, roadJobStages } from "@/components/multideck/domestic-road-components"
@@ -212,7 +218,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Chart components",
     helper: "Graphs, KPI boxes, report visuals",
-    ids: ["metric-card", "line-chart", "area-chart", "bar-chart", "stacked-bar-chart", "donut-chart", "funnel-chart", "heatmap-chart", "radial-goal-chart", "scatter-chart", "mixed-chart"],
+    ids: ["metric-card", "performance-panel", "breakdown-panel", "line-chart", "area-chart", "bar-chart", "stacked-bar-chart", "donut-chart", "funnel-chart", "heatmap-chart", "radial-goal-chart", "scatter-chart", "mixed-chart"],
   },
   {
     label: "Button & control components",
@@ -232,7 +238,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["paper-tray-stack", "document-viewer", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
+    ids: ["paper-tray-stack", "document-viewer", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
   },
   {
     label: "CRM",
@@ -255,6 +261,30 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
     ids: ["settings-rail", "settings-panel-row", "settings-integration-row", "settings-summary-card", "settings-progress-ring", "keyboard-shortcuts-panel"],
   },
 ]
+
+/** Deadlines are stamped relative to load so the buckets always demonstrate. */
+const previewNow = Date.now()
+const previewPriorityItems: DashboardPriorityItem[] = [
+  { id: "p1", kind: "exception", reference: "MD-22479", task: "Resolve tracking exception", customer: "Halo Retail Group", context: "Ningbo → Rotterdam", status: "Exception", owner: "Amelia Rowe", dueAt: previewNow - 78 * 60_000, dueKind: "action", tone: "red", bookingId: "MD-22479" },
+  { id: "p2", kind: "exception", reference: "MD-22466", task: "Review revised delivery plan", customer: "Northwind Foods", context: "Frankfurt → JFK", status: "Delayed", owner: "Amelia Rowe", dueAt: previewNow + 42 * 60_000, dueKind: "action", tone: "amber", bookingId: "MD-22466" },
+  { id: "p3", kind: "quote-send", reference: "Q-1043", task: "Send priced quote", customer: "Marlow Apparel", context: "GBFXT → USLAX", status: "Ready to send", owner: "Amelia Rowe", dueAt: previewNow + 105 * 60_000, dueKind: "cutoff", tone: "green", quoteReference: "Q-1043" },
+  { id: "p4", kind: "quote-progress", reference: "Q-1051", task: "Progress carrier pricing", customer: "Bright Harbour Ltd", context: "SGSIN → NLRTM", status: "In progress", owner: "Tomas Berg", dueAt: previewNow + 5 * 60 * 60_000, dueKind: "cutoff", tone: "blue", quoteReference: "Q-1051" },
+  { id: "p5", kind: "quote-progress", reference: "Q-1058", task: "Progress customer approval", customer: "Aster Components", context: "CNSHA → GBSOU", status: "Awaiting customer", owner: "Tomas Berg", dueAt: previewNow + 3 * 24 * 60 * 60_000, dueKind: "departure", tone: "neutral", quoteReference: "Q-1058" },
+]
+
+const previewPerformanceKpis: DashboardKpi[] = [
+  { label: "Active jobs", value: "24", change: "3 need action", detail: "3 need action", tone: "amber", series: [18, 19, 21, 20, 22, 23, 22, 24, 23, 24], delta: { direction: "up", text: "+33%", caption: "vs start of period" } },
+  { label: "Booking exceptions", value: "3", change: "21 on track", detail: "21 on track", tone: "red", series: [5, 5, 4, 4, 4, 3, 3, 4, 3, 3], delta: { direction: "down", text: "-40%", caption: "vs start of period" } },
+  { label: "Open quotes", value: "11", change: "4 ready", detail: "4 ready to send", tone: "green", series: [9, 10, 10, 12, 11, 11, 12, 11, 11, 11], delta: { direction: "up", text: "+22%", caption: "vs start of period" } },
+  { label: "Ready quotes", value: "4", change: "15 total", detail: "15 quotes in period", tone: "teal", series: [2, 3, 3, 3, 4, 4, 5, 4, 4, 4], delta: { direction: "up", text: "+100%", caption: "vs start of period" } },
+]
+
+const previewPerformanceTrends: Record<string, DashboardTrendPoint[]> = Object.fromEntries(
+  previewPerformanceKpis.map((kpi) => [
+    kpi.label,
+    (kpi.series ?? []).map((value, index) => ({ period: `W${index + 1}`, value })),
+  ]),
+)
 
 const previewPaperTrays = createInitialPaperTrays()
 
@@ -2248,6 +2278,67 @@ function ComponentPreview({ id }: { id: string }) {
           {bookingMetrics.slice(0, 3).map((metric) => (
             <BookingMetricCard key={metric.label} {...metric} />
           ))}
+        </div>
+      ) : null}
+
+      {id === "priority-queue" ? (
+        <div className="md-kpi-scope w-full max-w-[1120px]">
+          <DashboardPriorityQueue
+            items={previewPriorityItems}
+            operatorName="Amelia Rowe"
+            onOpenItem={(item) => toast.success(`${item.reference} opened`)}
+            onHandOverToDexter={(item) => toast.success(`${item.reference} handed over to Dexter`)}
+          />
+        </div>
+      ) : null}
+
+      {id === "performance-panel" ? (
+        <div className="md-kpi-scope w-full max-w-[1120px]">
+          <KpiStrip
+            kpis={previewPerformanceKpis}
+            selectedLabel={previewPerformanceKpis[0].label}
+            spark={false}
+            markerId="gallery-performance-rule"
+            className="mb-[var(--md-gap-lg)]"
+          />
+          <DashboardPerformancePanel
+            kpis={previewPerformanceKpis}
+            trends={previewPerformanceTrends}
+            metricLabel={previewPerformanceKpis[0].label}
+          />
+        </div>
+      ) : null}
+
+      {id === "breakdown-panel" ? (
+        <div className="grid w-full max-w-[720px] gap-[var(--md-gap-lg)] sm:grid-cols-2">
+          <DashboardBreakdownPanel
+            title="Mode mix"
+            subtitle="Live bookings by transport mode"
+            slices={[
+              { label: "Ocean", value: 12, color: "var(--md-accent)" },
+              { label: "Air", value: 6, color: "var(--md-blue)" },
+              { label: "Road", value: 3, color: "var(--md-green)" },
+            ]}
+            variant="segmented"
+            totalLabel="in transit"
+          />
+          <DashboardBreakdownPanel
+            title="Quote pipeline"
+            subtitle="Open quotes by workflow stage"
+            slices={[
+              { label: "Carrier pricing", value: 8, color: "var(--md-accent)" },
+              { label: "Awaiting customer", value: 5, color: "var(--md-accent-tint)" },
+              { label: "Internal review", value: 3, color: "var(--md-accent-glow-core)" },
+              { label: "Drafting", value: 1, color: "var(--md-blue)" },
+            ]}
+            variant="columns"
+          />
+        </div>
+      ) : null}
+
+      {id === "coverage-panel" ? (
+        <div className="w-full max-w-[420px]">
+          <DashboardCoveragePanel onViewQueue={(code) => toast.success(`${code} queue opened`)} />
         </div>
       ) : null}
 

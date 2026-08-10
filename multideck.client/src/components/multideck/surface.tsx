@@ -45,7 +45,7 @@ export function SectionHeader({
   metaClassName,
 }: {
   eyebrow?: string
-  title: string
+  title: ReactNode
   meta?: string
   metaPlacement?: "stacked" | "responsive-inline"
   action?: ReactNode

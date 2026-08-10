@@ -388,3 +388,193 @@ from (
 ) matched
 where thread."CommThread_ID" = matched.thread_id
   and thread."CommThread_CustomerOrgID" is distinct from matched."Org_ID";
+
+-- Dashboard mode-trend fixtures. Their route windows are distributed across the
+-- elapsed day so the Today chart shows real concurrent-load peaks and drops for
+-- Ocean, Air, Road, and Multimodal. Every row stays clearly marked,
+-- tenant-scoped, idempotent, and safe to remove.
+do $$
+declare
+  v_company uuid;
+  v_office uuid;
+  v_owner uuid;
+  v_customers uuid[];
+  v_local_now timestamp := clock_timestamp() at time zone 'Europe/London';
+  v_local_date date := v_local_now::date;
+  v_day_start timestamptz := date_trunc('day', v_local_now) at time zone 'Europe/London';
+  v_elapsed interval := greatest(v_local_now - date_trunc('day', v_local_now), interval '1 minute');
+  v_fixture record;
+  v_job_id uuid;
+  v_route_id uuid;
+  v_customer uuid;
+  v_marker constant text := '[DEMO ONLY] Dashboard mode trend fixture. Safe to remove.';
+begin
+  select company."Company_ID" into v_company
+  from public."cmp_Company" company
+  where company."Company_Name" = 'Development'
+  limit 1;
+
+  select office."Office_ID" into v_office
+  from public."cmp_Offices" office
+  where office."Company_ID" = v_company
+  order by office."Office_ID"
+  limit 1;
+
+  select app_user."User_ID" into v_owner
+  from public."cmp_Users" app_user
+  where app_user."Company_ID" = v_company
+    and app_user."Auth_User_ID" is not null
+  order by app_user."User_ID"
+  limit 1;
+
+  select array_agg(org."Org_id" order by org."Org_AccCode") into v_customers
+  from public."Org_Master" org
+  where org."Org_AccCode" in ('DEMO-DE100001', 'DEMO-DE100002', 'DEMO-DE100003');
+
+  if v_company is null or v_office is null or v_owner is null or coalesce(array_length(v_customers, 1), 0) < 3 then
+    raise exception 'The Development workspace, an authenticated operator, and three demo customers must exist before dashboard trend data is seeded.';
+  end if;
+
+  if exists (
+    select 1
+    from public."Job_Header" job
+    where job."Job_Number" between 991101 and 991124
+      and job."Job_InternalNotes" is distinct from v_marker
+  ) then
+    raise exception 'A non-dashboard-demo job already uses one of the reserved 991101-991124 numbers.';
+  end if;
+
+  for v_fixture in
+    select *
+    from (values
+      (1,  991101, 'sea',        'import',      'CNSHA', 'Shanghai',        'GBFXT', 'Felixstowe',       'in_transit', 0.18::numeric, 0.00::numeric, 0.22::numeric),
+      (2,  991102, 'road',       'domestic',    'GBMAN', 'Manchester',      'GBBHM', 'Birmingham',       'on_track',   0.18::numeric, 0.00::numeric, 0.28::numeric),
+      (3,  991103, 'air',        'import',      'AEDXB', 'Dubai',           'GBLHR', 'London Heathrow',  'delayed',    0.61::numeric, 0.00::numeric, 0.16::numeric),
+      (4,  991104, 'sea',        'export',      'GBSOU', 'Southampton',     'SGSIN', 'Singapore',        'on_track',   0.18::numeric, 0.04::numeric, 0.38::numeric),
+      (5,  991105, 'air',        'export',      'GBLHR', 'London Heathrow', 'USJFK', 'New York JFK',      'in_transit', 0.18::numeric, 0.12::numeric, 0.31::numeric),
+      (6,  991106, 'road',       'export',      'GBFXT', 'Felixstowe',      'NLRTM', 'Rotterdam',        'delayed',    0.61::numeric, 0.06::numeric, 0.34::numeric),
+      (7,  991107, 'sea',        'import',      'NLRTM', 'Rotterdam',       'GBLGP', 'London Gateway',   'exception',  0.86::numeric, 0.18::numeric, 0.54::numeric),
+      (8,  991108, 'road',       'import',      'FRLYS', 'Lyon',            'GBBHM', 'Birmingham',       'in_transit', 0.18::numeric, 0.15::numeric, 0.43::numeric),
+      (9,  991109, 'air',        'import',      'DEFRA', 'Frankfurt',       'GBMAN', 'Manchester',       'on_track',   0.18::numeric, 0.21::numeric, 0.48::numeric),
+      (10, 991110, 'sea',        'export',      'GBFXT', 'Felixstowe',      'DEHAM', 'Hamburg',           'delayed',    0.61::numeric, 0.44::numeric, 0.68::numeric),
+      (11, 991111, 'air',        'export',      'GBMAN', 'Manchester',      'NLAMS', 'Amsterdam',         'exception',  0.86::numeric, 0.42::numeric, 0.62::numeric),
+      (12, 991112, 'road',       'domestic',    'GBBRS', 'Bristol',         'GBLON', 'London',            'on_track',   0.18::numeric, 0.36::numeric, 0.57::numeric),
+      (13, 991113, 'sea',        'import',      'HKHKG', 'Hong Kong',       'GBSOU', 'Southampton',       'on_track',   0.18::numeric, 0.52::numeric, 0.86::numeric),
+      (14, 991114, 'sea',        'export',      'GBLGP', 'London Gateway',  'IEDUB', 'Dublin',            'in_transit', 0.18::numeric, 0.74::numeric, 1.12::numeric),
+      (15, 991115, 'air',        'import',      'FRCDG', 'Paris CDG',       'GBMAN', 'Manchester',       'delayed',    0.61::numeric, 0.56::numeric, 0.79::numeric),
+      (16, 991116, 'air',        'export',      'GBLHR', 'London Heathrow', 'ESMAD', 'Madrid',            'on_track',   0.18::numeric, 0.73::numeric, 1.08::numeric),
+      (17, 991117, 'road',       'export',      'GBBHM', 'Birmingham',      'FRPAR', 'Paris',             'on_track',   0.18::numeric, 0.49::numeric, 0.72::numeric),
+      (18, 991118, 'road',       'import',      'BEBRU', 'Brussels',        'GBLON', 'London',            'in_transit', 0.18::numeric, 0.66::numeric, 0.92::numeric),
+      (19, 991119, 'multimodal', 'cross_trade', 'DEHAM', 'Hamburg',         'GBMAN', 'Manchester',       'on_track',   0.18::numeric, 0.10::numeric, 0.36::numeric),
+      (20, 991120, 'multimodal', 'import',      'ITMIL', 'Milan',           'GBLDS', 'Leeds',             'delayed',    0.61::numeric, 0.24::numeric, 0.51::numeric),
+      (21, 991121, 'multimodal', 'export',      'GBLIV', 'Liverpool',       'PLGDN', 'Gdansk',            'on_track',   0.18::numeric, 0.39::numeric, 0.66::numeric),
+      (22, 991122, 'multimodal', 'import',      'PLWAW', 'Warsaw',          'GBBHM', 'Birmingham',       'exception',  0.86::numeric, 0.51::numeric, 0.77::numeric),
+      (23, 991123, 'multimodal', 'export',      'GBLON', 'London',          'SEGOT', 'Gothenburg',        'in_transit', 0.18::numeric, 0.68::numeric, 0.90::numeric),
+      (24, 991124, 'multimodal', 'cross_trade', 'NLRTM', 'Rotterdam',       'FRLYS', 'Lyon',              'on_track',   0.18::numeric, 0.81::numeric, 1.15::numeric)
+    ) fixture(slot, job_number, mode_code, direction_code, origin_unlocode, origin_name, destination_unlocode, destination_name, tracking_status, risk_score, start_ratio, end_ratio)
+  loop
+    v_customer := v_customers[1 + ((v_fixture.slot - 1) % array_length(v_customers, 1))];
+
+    select job."Job_ID" into v_job_id
+    from public."Job_Header" job
+    where job."Job_Number" = v_fixture.job_number
+      and job."Job_InternalNotes" = v_marker
+    limit 1;
+
+    if v_job_id is null then
+      insert into public."Job_Header" (
+        "Job_Number", "Job_Period", "Job_CreatedDate", "Job_CreatedBy",
+        "Job_Customer", "Job_OfficeID", "Job_OrgOfficeID", "Job_Status",
+        "Job_Direction", "Job_TransportModeSummary",
+        "Job_OriginUNLocode", "Job_OriginNameSnapshot",
+        "Job_DestinationUNLocode", "Job_DestinationNameSnapshot",
+        "Job_RequiredDeliveryDate", "Job_TrackingStatus", "Job_TrackingRiskScore",
+        "Job_CurrentLocationNameSnapshot", "Job_InternalNotes", "Job_UpdatedBy", "Job_UpdatedAt"
+      ) values (
+        v_fixture.job_number, to_char(v_local_date, 'YYYYMM'),
+        (v_day_start + v_elapsed * v_fixture.start_ratio::double precision)::timestamp, v_owner,
+        v_customer, v_office, v_office, 'booked',
+        v_fixture.direction_code, v_fixture.mode_code,
+        v_fixture.origin_unlocode, v_fixture.origin_name,
+        v_fixture.destination_unlocode, v_fixture.destination_name,
+        v_local_date, v_fixture.tracking_status, v_fixture.risk_score,
+        'Planning desk', v_marker, v_owner,
+        v_day_start + v_elapsed * v_fixture.start_ratio::double precision
+      )
+      returning "Job_ID" into v_job_id;
+    else
+      update public."Job_Header" job
+      set "Job_Period" = to_char(v_local_date, 'YYYYMM'),
+          "Job_Customer" = v_customer,
+          "Job_OfficeID" = v_office,
+          "Job_OrgOfficeID" = v_office,
+          "Job_Status" = 'booked',
+          "Job_Direction" = v_fixture.direction_code,
+          "Job_TransportModeSummary" = v_fixture.mode_code,
+          "Job_OriginUNLocode" = v_fixture.origin_unlocode,
+          "Job_OriginNameSnapshot" = v_fixture.origin_name,
+          "Job_DestinationUNLocode" = v_fixture.destination_unlocode,
+          "Job_DestinationNameSnapshot" = v_fixture.destination_name,
+          "Job_RequiredDeliveryDate" = v_local_date,
+          "Job_PredictedDeliveryAt" = null,
+          "Job_TrackingStatus" = v_fixture.tracking_status,
+          "Job_TrackingRiskScore" = v_fixture.risk_score,
+          "Job_CurrentLocationNameSnapshot" = 'Planning desk',
+          "Job_ClosedDate" = null,
+          "Job_IsDeleted" = false,
+          "Job_UpdatedBy" = v_owner,
+          "Job_UpdatedAt" = v_day_start + v_elapsed * v_fixture.start_ratio::double precision
+      where job."Job_ID" = v_job_id;
+    end if;
+
+    v_route_id := null;
+    select route."JobRoute_ID" into v_route_id
+    from public."Job_Routing" route
+    where route."Job_ID" = v_job_id
+    order by route."JobRoute_OrderNo" nulls last, route."JobRoute_ID"
+    limit 1;
+
+    if v_route_id is null then
+      insert into public."Job_Routing" (
+        "Job_ID", "JobRoute_OrderNo", "JobRoute_Status", "JobRoute_ModeCode",
+        "JobRoute_OriginUNLocode", "JobRoute_OriginNameSnapshot",
+        "JobRoute_DestinationUNLocode", "JobRoute_DestinationNameSnapshot",
+        "JobRoute_PlannedDepartureAt", "JobRoute_PlannedArrivalAt",
+        "JobRoute_IsMainCarriage", "JobRoute_RouteJSON", "JobRoute_UpdatedBy"
+      ) values (
+        v_job_id, 1, 'planned', v_fixture.mode_code,
+        v_fixture.origin_unlocode, v_fixture.origin_name,
+        v_fixture.destination_unlocode, v_fixture.destination_name,
+        v_day_start + v_elapsed * v_fixture.start_ratio::double precision,
+        v_day_start + v_elapsed * v_fixture.end_ratio::double precision,
+        true, jsonb_build_object('developmentFixture', true, 'source', 'dashboard_mode_trend'), v_owner
+      )
+      returning "JobRoute_ID" into v_route_id;
+    else
+      update public."Job_Routing" route
+      set "JobRoute_OrderNo" = 1,
+          "JobRoute_Status" = 'planned',
+          "JobRoute_ModeCode" = v_fixture.mode_code,
+          "JobRoute_OriginUNLocode" = v_fixture.origin_unlocode,
+          "JobRoute_OriginNameSnapshot" = v_fixture.origin_name,
+          "JobRoute_DestinationUNLocode" = v_fixture.destination_unlocode,
+          "JobRoute_DestinationNameSnapshot" = v_fixture.destination_name,
+          "JobRoute_PlannedDepartureAt" = v_day_start + v_elapsed * v_fixture.start_ratio::double precision,
+          "JobRoute_PlannedArrivalAt" = v_day_start + v_elapsed * v_fixture.end_ratio::double precision,
+          "JobRoute_IsMainCarriage" = true,
+          "JobRoute_RouteJSON" = jsonb_build_object('developmentFixture', true, 'source', 'dashboard_mode_trend'),
+          "JobRoute_UpdatedAt" = now(),
+          "JobRoute_UpdatedBy" = v_owner
+      where route."JobRoute_ID" = v_route_id;
+    end if;
+
+    -- Demo reseeding must not create operator-facing watch notifications.
+    delete from public."AI_DexterWatchSignals" signal
+    where signal."AIDexterWatchSignal_SourceTable" = 'Job_Header'
+      and signal."AIDexterWatchSignal_SourceID" = v_job_id;
+
+    delete from public."AI_DexterWatchSignals" signal
+    where signal."AIDexterWatchSignal_SourceTable" = 'Job_Routing'
+      and signal."AIDexterWatchSignal_SourceID" = v_route_id;
+  end loop;
+end $$;

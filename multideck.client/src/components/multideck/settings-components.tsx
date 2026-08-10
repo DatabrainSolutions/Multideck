@@ -131,7 +131,7 @@ export function SettingsPanel({
   children,
   className,
 }: {
-  title: string
+  title: ReactNode
   description?: string
   action?: ReactNode
   children: ReactNode
@@ -299,16 +299,18 @@ export function SettingsIntegrationRow({
   status,
   statusTone = "ready",
   actionLabel,
+  action,
   onAction,
   disabled = false,
 }: {
   icon?: LucideIcon
   logoSrc?: string
   title: string
-  description: string
+  description?: string
   status: string
   statusTone?: "connected" | "ready" | "review" | "workspace"
   actionLabel?: string
+  action?: ReactNode
   onAction?: () => void
   disabled?: boolean
 }) {
@@ -335,9 +337,9 @@ export function SettingsIntegrationRow({
             {status}
           </span>
         </div>
-        <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{description}</p>
+        {description ? <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{description}</p> : null}
       </div>
-      {actionLabel ? (
+      {action ?? (actionLabel ? (
         <Button
           type="button"
           variant="ghost"
@@ -347,7 +349,7 @@ export function SettingsIntegrationRow({
         >
           {actionLabel}
         </Button>
-      ) : null}
+      ) : null)}
     </div>
   )
 }

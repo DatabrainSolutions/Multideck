@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  AiBeautify,
+  AiEditing,
   AlertCircle,
   Check,
   Eye,
@@ -906,7 +906,7 @@ export function DexterEmailComposeCard({
                     submitRefinement();
                   }}
                 >
-                  <AiBeautify
+                  <AiEditing
                     className="ms-1 size-3 shrink-0 text-[var(--md-subtle)]"
                     strokeWidth={1.4}
                     aria-hidden="true"
@@ -980,7 +980,7 @@ export function DexterEmailComposeCard({
                   }
                   transition={{ duration: shouldReduceMotion ? 0 : 0.14 }}
                 >
-                  <AiBeautify
+                  <AiEditing
                     className="size-3.5"
                     strokeWidth={1.4}
                     aria-hidden="true"
@@ -1422,7 +1422,7 @@ export function DexterEmailComposeCard({
                       <button
                         type="button"
                         onClick={() => void openRefinement(bodySelection)}
-                        className="inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-[var(--md-radius-md)] px-2.5 text-[12px] font-medium transition-colors hover:bg-[var(--md-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)] motion-reduce:transition-none"
+                        className="inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-[12px] font-medium transition-colors hover:bg-[var(--md-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)] motion-reduce:transition-none"
                       >
                         <Sparkles
                           className="size-3.5"
@@ -1446,7 +1446,7 @@ export function DexterEmailComposeCard({
                             bodySelection,
                           )
                         }
-                        className="grid size-8 place-items-center rounded-[var(--md-radius-md)] transition-colors hover:bg-[var(--md-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)] disabled:opacity-40 motion-reduce:transition-none"
+                        className="grid size-8 place-items-center rounded-full transition-colors hover:bg-[var(--md-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)] disabled:opacity-40 motion-reduce:transition-none"
                       >
                         <Scissors
                           className="size-3.5"
@@ -1465,7 +1465,7 @@ export function DexterEmailComposeCard({
                             bodySelection,
                           )
                         }
-                        className="grid size-8 place-items-center rounded-[var(--md-radius-md)] transition-colors hover:bg-[var(--md-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)] disabled:opacity-40 motion-reduce:transition-none"
+                        className="grid size-8 place-items-center rounded-full transition-colors hover:bg-[var(--md-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)] disabled:opacity-40 motion-reduce:transition-none"
                       >
                         <WandSparkles
                           className="size-3.5"
@@ -1481,7 +1481,7 @@ export function DexterEmailComposeCard({
                         onClick={() =>
                           void openRefinement(bodySelection, "Make this sound ")
                         }
-                        className="grid size-8 place-items-center rounded-[var(--md-radius-md)] transition-colors hover:bg-[var(--md-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)] disabled:opacity-40 motion-reduce:transition-none"
+                        className="grid size-8 place-items-center rounded-full transition-colors hover:bg-[var(--md-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)] disabled:opacity-40 motion-reduce:transition-none"
                       >
                         <Type
                           className="size-3.5"

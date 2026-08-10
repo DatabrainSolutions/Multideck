@@ -2,7 +2,7 @@ import type { StatusTone } from "@/data/multideck-data"
 import type { DomesticRoadJob, RoadJobStageId } from "@/components/multideck/domestic-road-components"
 import { supabase } from "@/lib/supabase"
 
-type BookingMode = "OCEAN" | "AIR" | "ROAD" | "FAS" | "FSA"
+type BookingMode = "OCEAN" | "AIR" | "ROAD" | "MULTIMODAL" | "FAS" | "FSA"
 type BookingStatus = "On track" | "Delayed" | "Exception"
 type BookingDirection = "Import" | "Export" | "Domestic" | "Cross trade"
 
@@ -31,6 +31,8 @@ export type LiveBooking = {
   vessel: string
   departureDate: string
   arrivalDate: string
+  departureAt: string
+  arrivalAt: string
   vin: string
   direction: BookingDirection
   shipmentType: string
@@ -191,6 +193,13 @@ function tone(value: unknown): StatusTone {
   return typeof value === "string" && tones.has(value as StatusTone) ? value as StatusTone : "neutral"
 }
 
+function bookingMode(value: unknown): BookingMode {
+  const normalized = String(value ?? "ROAD").trim().toUpperCase()
+  if (normalized === "SEA") return "OCEAN"
+  if (["OCEAN", "AIR", "ROAD", "MULTIMODAL", "FAS", "FSA"].includes(normalized)) return normalized as BookingMode
+  return "ROAD"
+}
+
 function toLiveBooking(row: Record<string, unknown>): LiveBooking {
   return {
     sourceId: String(row.Job_ID ?? ""),
@@ -199,7 +208,7 @@ function toLiveBooking(row: Record<string, unknown>): LiveBooking {
     route: String(row.Route ?? ""),
     carrier: String(row.Carrier ?? ""),
     container: String(row.Equipment ?? ""),
-    mode: row.Mode as BookingMode,
+    mode: bookingMode(row.Mode),
     value: String(row.Value_Display ?? ""),
     eta: String(row.Eta_Display ?? ""),
     time: String(row.Time_Display ?? ""),
@@ -217,6 +226,8 @@ function toLiveBooking(row: Record<string, unknown>): LiveBooking {
     vessel: String(row.Vessel ?? ""),
     departureDate: String(row.Departure_Date ?? ""),
     arrivalDate: String(row.Arrival_Date ?? ""),
+    departureAt: String(row.Departure_At ?? row.Departure_Date ?? ""),
+    arrivalAt: String(row.Arrival_At ?? row.Arrival_Date ?? ""),
     vin: String(row.Vin ?? ""),
     direction: row.Direction as BookingDirection,
     shipmentType: String(row.Shipment_Type ?? ""),

@@ -23,7 +23,6 @@ import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
 import { useMinuteTick } from "@/lib/clock"
 import {
-  currentOperator,
   dashboardRangeOptions,
   dashboardSnapshots,
   savedDashboardViews,
@@ -87,6 +86,7 @@ export function DashboardHeader({
   onSelectDashboard,
   onCreateDashboard,
   onSaveDashboard,
+  operatorName,
   compact = false,
 }: {
   range: DashboardRange
@@ -98,6 +98,7 @@ export function DashboardHeader({
   onSelectDashboard?: (dashboard: string) => void
   onCreateDashboard?: (dashboard: string) => void
   onSaveDashboard?: () => void
+  operatorName: string
   compact?: boolean
 }) {
   const { t } = useLanguage()
@@ -108,7 +109,7 @@ export function DashboardHeader({
   const snapshot = dashboardSnapshots[range] ?? dashboardSnapshots.today
 
   const greeting = useMemo(() => getGreeting(now.getHours()), [now])
-  const firstName = currentOperator.name.split(" ")[0]
+  const firstName = operatorName.trim().split(/\s+/)[0] ?? ""
 
   function createDashboard() {
     const name = newName.trim()
@@ -123,7 +124,7 @@ export function DashboardHeader({
       <div className="md-dashboard-header-lead">
         <div className="md-dashboard-header-copy">
           <h1 className="md-dashboard-greeting">
-            {t(greeting)}, {firstName}.
+            {t(greeting)}{firstName ? `, ${firstName}` : ""}.
           </h1>
         </div>
       </div>
@@ -134,6 +135,7 @@ export function DashboardHeader({
           value={range}
           onChange={onRangeChange}
           ariaLabel={t("Dashboard date range")}
+          className="h-9 [&>button]:h-7"
           renderOption={(value) => t(dashboardSnapshots[value].label)}
         />
         <CustomRangeTrigger

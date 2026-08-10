@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { AnimatePresence, motion, useInView, useReducedMotion } from "motion/react"
 import { Check, LayoutDashboard, Ship, Sparkles } from "@/components/icons/hugeicons"
 import { useTheme } from "next-themes"
@@ -87,10 +87,10 @@ const AccentCard = memo(function AccentCard({
       tabIndex={focusable ? 0 : -1}
       data-selected={selected || undefined}
       className={cn(
-        "md-accent-card group/card relative block w-full min-w-0 rounded-[var(--md-radius-xl)] p-2 text-start",
+        "md-accent-card group/card relative block w-[160px] shrink-0 snap-start rounded-[var(--md-radius-xl)] p-2 text-start sm:w-[168px]",
         "bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]",
         // Hover changes the shadow only. Nothing moves and nothing rescales, so
-        // sweeping the pointer across the grid cannot make ten shader canvases
+        // sweeping the pointer across the rail cannot make fifteen shader canvases
         // repaint or take compositor layers of their own.
         "transition-[box-shadow] duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
         "hover:shadow-[var(--md-shadow-soft)]",
@@ -185,20 +185,21 @@ const AccentCard = memo(function AccentCard({
 export function AccentPicker({ className }: { className?: string }) {
   const activeId = useAccentPresetId()
   const { resolvedTheme } = useTheme()
-  const { t } = useLanguage()
+  const { t, direction } = useLanguage()
   const reduceMotionEnabled = Boolean(useReducedMotion())
   const [mounted, setMounted] = useState(false)
-  const gridRef = useRef<HTMLDivElement>(null)
+  const railRef = useRef<HTMLDivElement>(null)
   const buttonRefs = useRef<(HTMLButtonElement | null)[]>([])
+  const [scrollCue, setScrollCue] = useState({ start: false, end: false })
 
   // Fifteen WebGL contexts is a real cost to leave standing on a settings page the
   // operator has scrolled past, so they are mounted only while the grid is near
   // the viewport. The margin gets them up before the grid is actually seen, and
   // each pill keeps a CSS gradient underneath so there is nothing to pop.
-  const gridNearby = useInView(gridRef, { margin: "300px" })
+  const railNearby = useInView(railRef, { margin: "300px" })
 
   // `resolvedTheme` is undefined until next-themes has read storage. Rendering the
-  // light ramp meanwhile would make all ten cards flip once on hydration.
+  // light ramp meanwhile would make all fifteen cards flip once on hydration.
   useEffect(() => setMounted(true), [])
   const isDark = mounted && resolvedTheme === "dark"
 
@@ -214,44 +215,80 @@ export function AccentPicker({ className }: { className?: string }) {
     buttonRefs.current[index] = element
   }, [])
 
+  const updateScrollCue = useCallback(() => {
+    const rail = railRef.current
+    const first = buttonRefs.current[0]
+    const last = buttonRefs.current[accentPresets.length - 1]
+    if (!rail || !first || !last) return
+
+    const railRect = rail.getBoundingClientRect()
+    const firstRect = first.getBoundingClientRect()
+    const lastRect = last.getBoundingClientRect()
+    const isRtl = window.getComputedStyle(rail).direction === "rtl"
+    const threshold = 2
+    const next = {
+      start: isRtl ? firstRect.right > railRect.right + threshold : firstRect.left < railRect.left - threshold,
+      end: isRtl ? lastRect.left < railRect.left - threshold : lastRect.right > railRect.right + threshold,
+    }
+
+    setScrollCue((current) => current.start === next.start && current.end === next.end ? current : next)
+  }, [])
+
+  useLayoutEffect(() => {
+    const rail = railRef.current
+    if (!rail) return
+
+    updateScrollCue()
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updateScrollCue)
+    observer?.observe(rail)
+    if (buttonRefs.current[0]) observer?.observe(buttonRefs.current[0])
+    if (buttonRefs.current[accentPresets.length - 1]) observer?.observe(buttonRefs.current[accentPresets.length - 1]!)
+
+    return () => observer?.disconnect()
+  }, [direction, updateScrollCue])
+
   const handleSelect = useCallback((index: number) => {
     writeAccentPresetId(accentPresets[index].id)
   }, [])
 
   const handleFocus = useCallback((index: number) => {
     setFocusIndex(index)
-  }, [])
+    buttonRefs.current[index]?.scrollIntoView({
+      behavior: reduceMotionEnabled ? "auto" : "smooth",
+      block: "nearest",
+      inline: "nearest",
+    })
+  }, [reduceMotionEnabled])
 
   const commit = useCallback((index: number) => {
     setFocusIndex(index)
     buttonRefs.current[index]?.focus()
     // Radio groups commit on arrow, which also lets the accent be scrubbed from
-    // the keyboard as one continuous change rather than ten separate ones.
+    // the keyboard as one continuous change rather than fifteen separate ones.
     writeAccentPresetId(accentPresets[index].id)
   }, [])
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    const columns = 5
     const total = accentPresets.length
     const step = (offset: number) => (focusIndex + offset + total) % total
+    const isRtl = railRef.current ? window.getComputedStyle(railRef.current).direction === "rtl" : false
 
     switch (event.key) {
       case "ArrowRight":
         event.preventDefault()
-        commit(step(1))
+        commit(step(isRtl ? -1 : 1))
         break
       case "ArrowLeft":
         event.preventDefault()
-        commit(step(-1))
+        commit(step(isRtl ? 1 : -1))
         break
-      // The full-width grid is five columns, so vertical arrows jump a row.
       case "ArrowDown":
         event.preventDefault()
-        commit(step(columns))
+        commit(step(1))
         break
       case "ArrowUp":
         event.preventDefault()
-        commit(step(-columns))
+        commit(step(-1))
         break
       case "Home":
         event.preventDefault()
@@ -267,28 +304,45 @@ export function AccentPicker({ className }: { className?: string }) {
   }
 
   return (
-    <div
-      ref={gridRef}
-      role="radiogroup"
-      aria-label={t("Accent colour")}
-      className={cn("grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5", className)}
-      onKeyDown={handleKeyDown}
-    >
-      {accentPresets.map((preset, index) => (
-        <AccentCard
-          key={preset.id}
-          preset={preset}
-          index={index}
-          selected={preset.id === activeId}
-          focusable={index === focusIndex}
-          isDark={isDark}
-          reduceMotionEnabled={reduceMotionEnabled}
-          showBloom={gridNearby}
-          registerRef={registerRef}
-          onSelect={handleSelect}
-          onFocus={handleFocus}
-        />
-      ))}
+    <div className={cn("relative min-w-0", className)}>
+      <div
+        ref={railRef}
+        role="radiogroup"
+        aria-label={t("Accent colour")}
+        aria-orientation="horizontal"
+        className="flex min-w-0 snap-x snap-proximity gap-2 overflow-x-auto overflow-y-hidden px-0.5 py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        onKeyDown={handleKeyDown}
+        onScroll={updateScrollCue}
+      >
+        {accentPresets.map((preset, index) => (
+          <AccentCard
+            key={preset.id}
+            preset={preset}
+            index={index}
+            selected={preset.id === activeId}
+            focusable={index === focusIndex}
+            isDark={isDark}
+            reduceMotionEnabled={reduceMotionEnabled}
+            showBloom={railNearby}
+            registerRef={registerRef}
+            onSelect={handleSelect}
+            onFocus={handleFocus}
+          />
+        ))}
+      </div>
+
+      <div
+        aria-hidden="true"
+        data-scroll-cue="start"
+        className="pointer-events-none absolute inset-y-0 start-0 z-10 w-16 bg-gradient-to-r from-[var(--md-surface)] to-transparent opacity-0 backdrop-blur-[3px] [mask-image:linear-gradient(to_right,#000_0%,rgba(0,0,0,0.72)_28%,rgba(0,0,0,0.2)_70%,transparent_100%)] [-webkit-mask-image:linear-gradient(to_right,#000_0%,rgba(0,0,0,0.72)_28%,rgba(0,0,0,0.2)_70%,transparent_100%)] transition-opacity duration-150 rtl:bg-gradient-to-l rtl:[mask-image:linear-gradient(to_left,#000_0%,rgba(0,0,0,0.72)_28%,rgba(0,0,0,0.2)_70%,transparent_100%)] rtl:[-webkit-mask-image:linear-gradient(to_left,#000_0%,rgba(0,0,0,0.72)_28%,rgba(0,0,0,0.2)_70%,transparent_100%)] motion-reduce:transition-none sm:w-20"
+        style={{ opacity: scrollCue.start ? 1 : 0 }}
+      />
+      <div
+        aria-hidden="true"
+        data-scroll-cue="end"
+        className="pointer-events-none absolute inset-y-0 end-0 z-10 w-16 bg-gradient-to-l from-[var(--md-surface)] to-transparent opacity-0 backdrop-blur-[3px] [mask-image:linear-gradient(to_left,#000_0%,rgba(0,0,0,0.72)_28%,rgba(0,0,0,0.2)_70%,transparent_100%)] [-webkit-mask-image:linear-gradient(to_left,#000_0%,rgba(0,0,0,0.72)_28%,rgba(0,0,0,0.2)_70%,transparent_100%)] transition-opacity duration-150 rtl:bg-gradient-to-r rtl:[mask-image:linear-gradient(to_right,#000_0%,rgba(0,0,0,0.72)_28%,rgba(0,0,0,0.2)_70%,transparent_100%)] rtl:[-webkit-mask-image:linear-gradient(to_right,#000_0%,rgba(0,0,0,0.72)_28%,rgba(0,0,0,0.2)_70%,transparent_100%)] motion-reduce:transition-none sm:w-20"
+        style={{ opacity: scrollCue.end ? 1 : 0 }}
+      />
     </div>
   )
 }

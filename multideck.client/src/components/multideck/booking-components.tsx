@@ -126,6 +126,7 @@ const modeTone: Record<BookingMode, StatusTone> = {
   OCEAN: "blue",
   AIR: "green",
   ROAD: "amber",
+  MULTIMODAL: "teal",
   FAS: "teal",
   FSA: "blue",
 }

@@ -1,9 +1,10 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ClipboardEvent, type FormEvent, type KeyboardEvent, type ReactNode } from "react"
+import { SentIcon as SendHorizontalIcon } from "@hugeicons/core-free-icons"
+import { HugeiconsIcon } from "@hugeicons/react"
 import type { LucideIcon } from "@/components/icons/hugeicons"
 import {
   ArrowRight,
   ArrowLeft,
-  ArrowUp,
   BarChart3,
   Boxes,
   Check,
@@ -1459,7 +1460,14 @@ export function DexterPromptComposer({
               </span>
               <DexterActionPill
                 type="button"
-                icon={ArrowUp}
+                iconElement={
+                  <HugeiconsIcon
+                    aria-hidden="true"
+                    className="relative z-10 size-3.5 shrink-0"
+                    icon={SendHorizontalIcon}
+                    strokeWidth={1.25}
+                  />
+                }
                 iconOnly
                 label={`${t("Send prompt")} (${sendShortcutModifier} + Enter)`}
                 aria-keyshortcuts="Meta+Enter Control+Enter"

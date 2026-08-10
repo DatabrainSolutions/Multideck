@@ -108,6 +108,7 @@ import {
   rememberOpenDexterConversation,
   shouldReuseDexterConversation,
   takeDexterConversationHandoff,
+  takeDexterTaskHandoff,
   type DexterConversationsChangedDetail,
 } from "@/lib/dexter-navigation"
 import { listCustomers } from "@/lib/customer-api"
@@ -1642,6 +1643,16 @@ export function AgentDexterPage({
   })
   const attachedItems = useAttachedItems(selectedAttachmentIds)
   const generatedDocumentHandoffRef = useRef(false)
+  const taskHandoffRef = useRef(false)
+
+  useEffect(() => {
+    if (taskHandoffRef.current) return
+    taskHandoffRef.current = true
+    const prompt = takeDexterTaskHandoff()
+    if (!prompt) return
+    setDexterMode("chat")
+    setComposerValue(prompt)
+  }, [])
 
   useEffect(() => {
     if (generatedDocumentHandoffRef.current) return

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { toast } from "sonner"
+import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
 import { mdMotion, staggerRamp } from "@/lib/motion"
 import { Surface } from "@/components/multideck/surface"
@@ -8,10 +9,11 @@ import { StatusPill } from "@/components/multideck/status-pill"
 import { getDefaultDateRange } from "@/components/multideck/date-picker"
 import { DashboardCustomisePanel, type DashboardCustomiseMode } from "@/components/multideck/dashboard-customise-panel"
 import { DashboardHeader } from "@/components/multideck/dashboard-header"
-import { ClockRail } from "@/components/multideck/dashboard-clock-rail"
-import { YourJobsPanel } from "@/components/multideck/dashboard-your-jobs"
-import { TodayActionList } from "@/components/multideck/dashboard-action-list"
-import { DashboardTrendPanel } from "@/components/multideck/dashboard-trend-panel"
+import { DashboardCoveragePanel } from "@/components/multideck/dashboard-coverage-panel"
+import { DashboardBreakdownPanel } from "@/components/multideck/dashboard-breakdown-panel"
+import { DashboardModeChart } from "@/components/multideck/dashboard-mode-chart"
+import { DashboardPriorityQueue } from "@/components/multideck/dashboard-priority-queue"
+import { DashboardPerformancePanel } from "@/components/multideck/dashboard-performance-panel"
 import { KpiStrip } from "@/components/multideck/dashboard-kpi-strip"
 import { LiveBookingsBoard } from "@/components/multideck/dashboard-live-bookings"
 import { getBookingDetailPath } from "@/components/multideck/booking-components"
@@ -19,17 +21,28 @@ import {
   type DashboardCustomRange,
 } from "@/data/multideck-data"
 import { getCurrentOperatorName, listLiveBookings, type LiveBooking } from "@/lib/application-data-api"
+import { rememberDexterTaskHandoff } from "@/lib/dexter-navigation"
 import { listSalesQuotes } from "@/lib/quote-api"
 import type { QuoteRegisterRecord } from "@/data/quote-register-data"
-import { buildDashboardLiveData, dashboardBookings, dashboardClockQueues, dashboardJobs, type DashboardRange } from "@/lib/dashboard-live-data"
+import {
+  buildDashboardLiveData,
+  dashboardBookings,
+  dashboardClockQueues,
+  dashboardModeTrend,
+  dashboardPriorityQueue,
+  dashboardQuoteStages,
+  dashboardStatusMix,
+  type DashboardPriorityItem,
+  type DashboardRange,
+} from "@/lib/dashboard-live-data"
 
 type DashboardDrilldownId = string
 function makeDashboardDrilldownId(kind: "metric" | "brief", label: string) { return `${kind}:${label}` }
 
 /**
- * The dashboard arrives as one settling group rather than a dozen independent
- * fades. `staggerRamp` front-loads the first bands and lets the later ones catch
- * up, so the whole page composes in well under half a second.
+ * The page arrives as one settling group rather than a dozen independent fades.
+ * `staggerRamp` front-loads the first bands and lets the later ones catch up, so
+ * the whole screen composes in well under half a second.
  */
 function Band({
   index,
@@ -76,6 +89,7 @@ function LiveDashboardDrilldown({ id, snapshot, bookings, quotes, onBack }: { id
 }
 
 export function OverviewPage({ navigate }: { navigate: (path: string) => void }) {
+  const { t } = useLanguage()
   const shouldReduceMotion = Boolean(useReducedMotion())
   const [range, setRange] = useState<DashboardRange>("today")
   const [customRange, setCustomRange] = useState<DashboardCustomRange>(getDefaultDateRange)
@@ -83,13 +97,12 @@ export function OverviewPage({ navigate }: { navigate: (path: string) => void })
   const [activeDrilldown, setActiveDrilldown] = useState<DashboardDrilldownId | null>(null)
   const [customiseOpen, setCustomiseOpen] = useState(false)
   const [customiseMode, setCustomiseMode] = useState<DashboardCustomiseMode>("ai")
-  const [favouriteIds, setFavouriteIds] = useState<Set<string>>(new Set())
   const [dashboardViews, setDashboardViews] = useState<string[]>(["Operations"])
   const [selectedDashboard, setSelectedDashboard] = useState("Operations")
   const [focusMetric, setFocusMetric] = useState<string | null>(null)
   const [bookings, setBookings] = useState<LiveBooking[]>([])
   const [quotes, setQuotes] = useState<QuoteRegisterRecord[]>([])
-  const [operatorName, setOperatorName] = useState("Signed-in operator")
+  const [operatorName, setOperatorName] = useState("")
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading")
 
   useEffect(() => {
@@ -99,7 +112,6 @@ export function OverviewPage({ navigate }: { navigate: (path: string) => void })
         if (cancelled) return
         setBookings(bookingRows)
         setQuotes(quoteRows)
-        setFavouriteIds(new Set(bookingRows.filter((booking) => booking.isFavourite).map((booking) => booking.id)))
         setOperatorName(name)
         setLoadState("ready")
       })
@@ -111,27 +123,21 @@ export function OverviewPage({ navigate }: { navigate: (path: string) => void })
     () => buildDashboardLiveData(range, bookings, quotes, customRange),
     [bookings, customRange, quotes, range],
   )
-  const liveJobs = useMemo(() => dashboardJobs(bookings), [bookings])
+  const priorityItems = useMemo(() => dashboardPriorityQueue(bookings, quotes), [bookings, quotes])
   const liveBookingRows = useMemo(() => dashboardBookings(bookings), [bookings])
   const clockQueues = useMemo(() => dashboardClockQueues(bookings, quotes), [bookings, quotes])
+  const modeTrend = useMemo(() => dashboardModeTrend(range, bookings, customRange), [bookings, customRange, range])
+  const statusMix = useMemo(() => dashboardStatusMix(bookings), [bookings])
+  const quoteStages = useMemo(() => dashboardQuoteStages(quotes), [quotes])
   /**
-   * The KPI strip and the trend panel share one selection. Falling back to the
-   * first metric of the current range means switching ranges never leaves the
-   * chart pointing at a metric that range does not have.
+   * The metric strip and the chart it controls share one selection. Falling back
+   * to the first metric of the current range means switching ranges never leaves
+   * the chart pointing at a metric that range does not have.
    */
   const activeMetric = useMemo(() => {
     if (focusMetric && snapshot.kpis.some((kpi) => kpi.label === focusMetric)) return focusMetric
     return snapshot.kpis[0].label
   }, [focusMetric, snapshot])
-
-  const toggleFavourite = useCallback((id: string) => {
-    setFavouriteIds((current) => {
-      const next = new Set(current)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }, [])
 
   const openDrilldown = useCallback((id: DashboardDrilldownId) => {
     setSelectedTimezone(null)
@@ -147,6 +153,29 @@ export function OverviewPage({ navigate }: { navigate: (path: string) => void })
     setActiveDrilldown(null)
     setSelectedTimezone(null)
   }, [])
+
+  /** A queue row opens the record it is about, not a summary of it. */
+  const openPriorityItem = useCallback(
+    (item: DashboardPriorityItem) => {
+      if (item.bookingId) navigate(getBookingDetailPath(item.bookingId))
+      else if (item.quoteReference) navigate(`/quotes/${item.quoteReference.toLowerCase()}`)
+    },
+    [navigate],
+  )
+
+  const handOverPriorityItem = useCallback(
+    (item: DashboardPriorityItem) => {
+      const prompt = t("Take over this dashboard task: {task} ({reference}) for {customer}, {context}. Current status: {status}. Review the record and help me complete the next action.")
+        .replace("{task}", t(item.task))
+        .replace("{reference}", item.reference)
+        .replace("{customer}", item.customer)
+        .replace("{context}", item.context)
+        .replace("{status}", t(item.status))
+      rememberDexterTaskHandoff(prompt)
+      navigate("/agent-dexter")
+    },
+    [navigate, t],
+  )
 
   function createDashboard(name: string) {
     setDashboardViews((current) => (current.includes(name) ? current : [...current, name]))
@@ -178,6 +207,7 @@ export function OverviewPage({ navigate }: { navigate: (path: string) => void })
           onCustomRangeChange={setCustomRange}
           dashboardViews={dashboardViews}
           selectedDashboard={selectedDashboard}
+          operatorName={operatorName}
           onSelectDashboard={setSelectedDashboard}
           onCreateDashboard={createDashboard}
           onSaveDashboard={saveDashboard}
@@ -189,10 +219,6 @@ export function OverviewPage({ navigate }: { navigate: (path: string) => void })
             {loadState === "loading" ? "Loading live workspace data…" : "Live workspace data could not be loaded. Refresh to try again."}
           </div>
         ) : null}
-
-        <Band index={0} shouldReduceMotion={shouldReduceMotion} className="md-dashboard-band">
-          <ClockRail queues={clockQueues} onViewQueue={selectTimezone} />
-        </Band>
 
         <AnimatePresence mode="wait" initial={false}>
           {focusView === "timezone" && selectedTimezone ? (
@@ -212,6 +238,7 @@ export function OverviewPage({ navigate }: { navigate: (path: string) => void })
           ) : focusView === "drilldown" && activeDrilldown ? (
             <motion.div
               key={`drilldown-${activeDrilldown}`}
+              className="md-dashboard-band"
               initial={shouldReduceMotion ? false : { opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={shouldReduceMotion ? undefined : { opacity: 0, y: -8 }}
@@ -227,40 +254,68 @@ export function OverviewPage({ navigate }: { navigate: (path: string) => void })
               exit={shouldReduceMotion ? undefined : { opacity: 0, y: -8 }}
               transition={shouldReduceMotion ? { duration: 0 } : mdMotion.enter}
             >
-              {/* Four numbers in one strip. The band this replaces spent a third
-                  of the screen restating a single metric. */}
+              {/* The working row. The queue leads, but it no longer runs the
+                  full width alone — coverage sits beside it, so the first band
+                  answers "what is waiting" and "who is awake" together. */}
+              <Band index={0} shouldReduceMotion={shouldReduceMotion} className="md-dashboard-band md-dash-row md-dash-row-work">
+                <DashboardPriorityQueue
+                  items={priorityItems}
+                  operatorName={operatorName}
+                  onOpenItem={openPriorityItem}
+                  onHandOverToDexter={handOverPriorityItem}
+                />
+                <DashboardCoveragePanel queues={clockQueues} onViewQueue={selectTimezone} />
+              </Band>
+
+              {/* How the period is going. Four comparable figures, each with the
+                  movement its own series shows and the shape behind it. Picking
+                  one retargets the chart below. */}
               <Band index={1} shouldReduceMotion={shouldReduceMotion} className="md-dashboard-band">
                 <KpiStrip
                   kpis={snapshot.kpis}
                   selectedLabel={activeMetric}
                   onSelect={setFocusMetric}
                   onOpenDrilldown={openDrilldown}
+                  sparkKind="area"
+                  markerId="md-dashboard-metric-rule"
                 />
               </Band>
 
-              {/* What to do next, beside the trend for whichever metric is
-                  selected above — the pair the operator actually works from. */}
-              <Band index={2} shouldReduceMotion={shouldReduceMotion} className="md-dashboard-band md-dashboard-primary">
-                <TodayActionList
-                  items={snapshot.actions}
-                  briefLead={snapshot.briefLead}
-                  onOpenItem={(label) => openDrilldown(makeDashboardDrilldownId("brief", label))}
-                />
-                <DashboardTrendPanel kpis={snapshot.kpis} trends={snapshot.trends} metricLabel={activeMetric} />
-              </Band>
+              {/* The reading column and the reference column. The trend chart
+                  and the table it explains sit together on the left; the three
+                  supporting breakdowns stack on the right, so no panel is left
+                  alone against a full-width neighbour. */}
+              <Band index={2} shouldReduceMotion={shouldReduceMotion} className="md-dashboard-band md-dash-row md-dash-row-analysis">
+                <div className="md-dash-stack">
+                  <DashboardPerformancePanel kpis={snapshot.kpis} trends={snapshot.trends} metricLabel={activeMetric} />
+                  <LiveBookingsBoard
+                    bookings={liveBookingRows}
+                    onOpenBooking={(booking) => navigate(getBookingDetailPath(booking.id))}
+                    className="md-dashboard-deferred"
+                  />
+                </div>
 
-              <Band index={3} shouldReduceMotion={shouldReduceMotion} className="md-dashboard-band">
-                <YourJobsPanel
-                  jobs={liveJobs}
-                  operatorName={operatorName}
-                  favouriteIds={favouriteIds}
-                  onToggleFavourite={toggleFavourite}
-                  onOpenJob={(job) => navigate(getBookingDetailPath(job.bookingId))}
-                />
-              </Band>
-
-              <Band index={4} shouldReduceMotion={shouldReduceMotion} className="md-dashboard-band md-dashboard-deferred">
-                <LiveBookingsBoard bookings={liveBookingRows} onOpenBooking={(booking) => navigate(getBookingDetailPath(booking.id))} />
+                <div className="md-dash-stack">
+                  <DashboardModeChart
+                    title={t("Mode over time")}
+                    subtitle={t("Live bookings by transport mode")}
+                    series={modeTrend.series}
+                    labels={modeTrend.labels}
+                  />
+                  <DashboardBreakdownPanel
+                    title={t("Tracking status")}
+                    subtitle={t("Where live bookings stand right now")}
+                    slices={statusMix.map((slice) => ({ label: t(slice.name), value: slice.value, color: slice.color }))}
+                    variant="ranked"
+                  />
+                  <DashboardBreakdownPanel
+                    title={t("Quote pipeline")}
+                    subtitle={t("Open quotes by workflow stage")}
+                    slices={quoteStages.map((slice) => ({ label: slice.name, value: slice.value, color: slice.color }))}
+                    variant="columns"
+                    emptyLabel={t("No quotes are open in this period.")}
+                  />
+                </div>
               </Band>
             </motion.div>
           )}

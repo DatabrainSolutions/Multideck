@@ -250,15 +250,28 @@ export const dashboardSnapshots: Record<DashboardRange, {
   },
 }
 
+/**
+ * The operating regions coverage is measured across, ordered west to east so the
+ * working-window bands step across the day in reading order instead of
+ * criss-crossing the track.
+ */
 export const cityQueues = [
+  { code: "LAX", country: "US", city: "Los Angeles", timeZone: "America/Los_Angeles" },
+  { code: "CHI", country: "US", city: "Chicago", timeZone: "America/Chicago" },
+  { code: "NYC", country: "US", city: "New York", timeZone: "America/New_York" },
+  { code: "YYZ", country: "CA", city: "Toronto", timeZone: "America/Toronto" },
+  { code: "GRU", country: "BR", city: "Sao Paulo", timeZone: "America/Sao_Paulo" },
   { code: "LDN", country: "UK", city: "London", timeZone: "Europe/London" },
   { code: "AMS", country: "NL", city: "Amsterdam", timeZone: "Europe/Amsterdam" },
+  { code: "FRA", country: "DE", city: "Frankfurt", timeZone: "Europe/Berlin" },
   { code: "IST", country: "TR", city: "Istanbul", timeZone: "Europe/Istanbul" },
   { code: "DXB", country: "AE", city: "Dubai", timeZone: "Asia/Dubai" },
-  { code: "SHA", country: "CN", city: "Shanghai", timeZone: "Asia/Shanghai" },
+  { code: "BOM", country: "IN", city: "Mumbai", timeZone: "Asia/Kolkata" },
   { code: "SIN", country: "SG", city: "Singapore", timeZone: "Asia/Singapore" },
-  { code: "NYC", country: "US", city: "New York", timeZone: "America/New_York" },
-  { code: "LAX", country: "US", city: "Los Angeles", timeZone: "America/Los_Angeles" },
+  { code: "HKG", country: "HK", city: "Hong Kong", timeZone: "Asia/Hong_Kong" },
+  { code: "SHA", country: "CN", city: "Shanghai", timeZone: "Asia/Shanghai" },
+  { code: "TYO", country: "JP", city: "Tokyo", timeZone: "Asia/Tokyo" },
+  { code: "SYD", country: "AU", city: "Sydney", timeZone: "Australia/Sydney" },
 ]
 
 export type TimezoneWorkItem = {
@@ -827,7 +840,7 @@ export const warehouseCalendarEvents: WarehouseCalendarEvent[] = [
 ]
 
 export type BookingStatus = "On track" | "Delayed" | "Exception"
-export type BookingMode = "OCEAN" | "AIR" | "ROAD" | "FAS" | "FSA"
+export type BookingMode = "OCEAN" | "AIR" | "ROAD" | "MULTIMODAL" | "FAS" | "FSA"
 export type BookingDirection = "Import" | "Export" | "Domestic" | "Cross trade"
 export type BookingShipmentType = "FCL" | "LCL" | "Breakbulk" | "RoRo" | "Dry bulk" | "Liquid bulk" | "Project cargo" | "General cargo" | "ULD" | "Air consolidation" | "Back-to-back" | "Express / courier" | "Charter" | "FTL" | "LTL" | "Groupage" | "Pallet network" | "Dedicated vehicle" | "Parcel / express" | "Multiple"
 
@@ -3431,6 +3444,46 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     foundOn: [{ label: "Overview", route: "/" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components" }],
     componentCode: `export function YourJobsPanel({ favouriteIds, onToggleFavourite, onOpenJobDrilldown }) {\n  return (\n    <Surface padding="none">\n      <header>\n        <h2>Your jobs</h2>\n        <StatusPill tone="teal">5 active</StatusPill>\n      </header>\n      <AnimatedList\n        items={operatorJobs}\n        maxHeight="none"\n        itemClassName="bg-[color-mix(in_srgb,var(--md-green)_17%,white)]"\n        renderItem={(job) => (\n          <button onClick={() => onOpenJobDrilldown(job.id)}>\n            <span>{job.task}</span>\n            <span>{job.customer}</span>\n            <button onClick={() => onToggleFavourite(job.bookingId)}>Star</button>\n          </button>\n        )}\n      />\n    </Surface>\n  )\n}`,
     usageCode: `<YourJobsPanel\n  favouriteIds={favouriteIds}\n  onToggleFavourite={toggleFavourite}\n  onOpenJobDrilldown={openDashboardDrilldown}\n  animated\n/>`,
+  },
+  {
+    id: "priority-queue",
+    name: "Priority Queue",
+    category: "Operations",
+    description: "Everything waiting on an operator, from any register, in one list ranked by real deadline and grouped by how much time is left.",
+    details: "Use as the lead panel of a work surface. It replaces the pattern of running separate 'my tasks', 'exceptions' and 'record list' panels over the same records: each row carries the reference, the ask, the customer and lane, and the deadline it is actually measured against. The leading rule is the only urgency device on a row \u2014 do not add per-row gauges beside it. Keep the compact row actions visible; the shader icon hands the task to Dexter for review, clearing strikes and collapses with an undo toast, and the arrow opens the source record.",
+    foundOn: [{ label: "Overview", route: "/" }, { label: "Components", route: "/components?component=priority-queue" }],
+    componentCode: `export function DashboardPriorityQueue({ items, operatorName, onOpenItem, onHandOverToDexter }) {\n  const groups = groupByBucket(items)\n\n  return (\n    <Surface padding="none" className="md-queue-panel">\n      <div className="md-queue-panel-head">\n        <h2 className="md-panel-title">Needs you now</h2>\n        <SegmentedControl options={["mine", "all"]} value={scope} onChange={setScope} />\n      </div>\n      <div className="md-queue-panel-body">\n        {groups.map((group) => (\n          <div key={group.bucket} className="md-queue-group" data-bucket={group.bucket}>\n            <p className="md-queue-group-label">{group.label}<span>{group.items.length}</span></p>\n            {group.items.map((item) => (\n              <QueueRow\n                key={item.id}\n                item={item}\n                onOpen={() => onOpenItem(item)}\n                onHandOver={() => onHandOverToDexter(item)}\n              />\n            ))}\n          </div>\n        ))}\n      </div>\n    </Surface>\n  )\n}`,
+    usageCode: `const items = dashboardPriorityQueue(bookings, quotes)\n\n<DashboardPriorityQueue\n  items={items}\n  operatorName={operatorName}\n  onOpenItem={(item) =>\n    navigate(item.bookingId ? getBookingDetailPath(item.bookingId) : \`/quotes/\${item.quoteReference}\`)\n  }\n  onHandOverToDexter={(item) => {\n    rememberDexterTaskHandoff(buildTaskPrompt(item))\n    navigate("/agent-dexter")\n  }}\n/>`,
+  },
+  {
+    id: "performance-panel",
+    name: "Performance Panel",
+    category: "Data",
+    description: "One large trend plot with a head that names the metric being drawn, driven by the KPI row above it.",
+    details: "Use where a screen needs a single dominant chart rather than several small ones. Pair it with a `KpiStrip` that has `spark` off and a `markerId` set: the strip becomes the chart's control and the travelling rule under the selected card is the only thing that has to say so. Two drawings of one series \u2014 a sparkline in the tile and the same curve full size \u2014 is one drawing too many.",
+    foundOn: [{ label: "Overview", route: "/" }, { label: "Components", route: "/components?component=performance-panel" }],
+    componentCode: `export function DashboardPerformancePanel({ kpis, trends, metricLabel }) {\n  const metric = kpis.find((item) => item.label === metricLabel) ?? kpis[0]\n  const points = (trends[metric.label] ?? []).map((point) => ({ label: point.period, value: point.value, target: point.target }))\n\n  return (\n    <Surface padding="none" className="md-performance-panel">\n      <div className="md-performance-head">\n        <div>\n          <p className="md-panel-eyebrow">Trend</p>\n          <h2 className="md-performance-title">{metric.label}</h2>\n          <p className="md-panel-meta">{metric.detail}</p>\n        </div>\n        <div className="md-performance-legend">\n          <span><span className="md-performance-swatch" />{metric.label}</span>\n        </div>\n      </div>\n      <div className="md-performance-canvas">\n        <DashboardAreaChart points={points} tone={metric.tone} height={268} />\n      </div>\n    </Surface>\n  )\n}`,
+    usageCode: `<KpiStrip\n  kpis={snapshot.kpis}\n  selectedLabel={activeMetric}\n  onSelect={setFocusMetric}\n  spark={false}\n  markerId="md-dashboard-metric-rule"\n/>\n<DashboardPerformancePanel\n  kpis={snapshot.kpis}\n  trends={snapshot.trends}\n  metricLabel={activeMetric}\n/>`,
+  },
+  {
+    id: "breakdown-panel",
+    name: "Breakdown Panel",
+    category: "Data",
+    description: "A split of a total drawn as bars \u2014 segmented, ranked horizontally, or compared as upright columns.",
+    details: "Use for a categorical split in a side column. Prefer this over a ring or a funnel there: both carry a fixed aspect ratio, so beside a tall table they stretch and leave a band of empty surface under the drawing, and comparing lengths on a shared baseline is easier than comparing arc angles. Use `segmented` when the categories are parts of one quantity, `ranked` when the order is the point, and `columns` for a compact stage-by-stage comparison. Ranked and column bars scale against the largest category, not the total, so a long tail still has visible length.",
+    foundOn: [{ label: "Overview", route: "/" }, { label: "Components", route: "/components?component=breakdown-panel" }],
+    componentCode: `export function DashboardBreakdownPanel({ title, subtitle, slices, variant = "ranked" }) {\n  const peak = slices.reduce((highest, slice) => Math.max(highest, slice.value), 0)\n\n  return (\n    <Surface padding="none" className="md-breakdown-panel">\n      <div className="md-breakdown-head">\n        <h2 className="md-panel-title">{title}</h2>\n        <p className="md-panel-meta">{subtitle}</p>\n      </div>\n      <div className="md-breakdown-body">\n        {variant === "columns" ? (\n          <ul className="md-breakdown-columns">\n            {slices.map((slice) => (\n              <li key={slice.label}>\n                <span className="md-breakdown-column-value">{slice.value}</span>\n                <span className="md-breakdown-column-plot">\n                  <motion.span className="md-breakdown-column-bar" style={{ height: String((slice.value / peak) * 100) + "%", background: slice.color }} />\n                </span>\n                <span className="md-breakdown-column-label">{slice.label}</span>\n              </li>\n            ))}\n          </ul>\n        ) : (\n          <ul className="md-breakdown-rows">\n            {slices.map((slice) => (\n              <li key={slice.label}>\n                <span className="md-breakdown-row-head">{slice.label}<span>{slice.value}</span></span>\n                <span className="md-breakdown-track"><motion.span className="md-breakdown-fill" animate={{ scaleX: slice.value / peak }} /></span>\n              </li>\n            ))}\n          </ul>\n        )}\n      </div>\n    </Surface>\n  )\n}`,
+    usageCode: `<DashboardBreakdownPanel\n  title="Mode mix"\n  subtitle="Live bookings by transport mode"\n  slices={dashboardModeMix(bookings).map((slice) => ({ label: slice.name, value: slice.value, color: slice.color }))}\n  variant="segmented"\n  totalLabel="in transit"\n/>\n\n<DashboardBreakdownPanel\n  title="Quote pipeline"\n  subtitle="Open quotes by workflow stage"\n  slices={dashboardQuoteStages(quotes).map((slice) => ({ label: slice.name, value: slice.value, color: slice.color }))}\n  variant="columns"\n/>`,
+  },
+  {
+    id: "coverage-panel",
+    name: "Coverage Panel",
+    category: "Operations",
+    description: "Every operating region's working window drawn on one shared 24-hour track in the viewer's own time, with a single now line across all of them.",
+    details: "Use where a team works across time zones and the real question is overlap, not the clock: how long until Shanghai closes, and who is awake to pick something up. A filled band is working, amber is closing within the hour, and a faint band is clocked off but still shows the shape of that region's day. A row only carries a count when work is actually waiting on a human. Selecting a row opens that region's queue.",
+    foundOn: [{ label: "Overview", route: "/" }, { label: "Components", route: "/components?component=coverage-panel" }],
+    componentCode: `export function DashboardCoveragePanel({ queues, onViewQueue }) {\n  const rows = cityQueues.map((city) => {\n    const shift = (getTimeZoneOffsetMinutes(now, city.timeZone) - localOffset) / 60\n    return { code: city.code, openAt: 8 - shift, closeAt: 17 - shift, waiting: queues[city.code]?.needAction ?? 0 }\n  })\n\n  return (\n    <Surface padding="none" className="md-coverage-panel">\n      <div className="md-coverage-plot">\n        <span className="md-coverage-nowline" style={{ insetInlineStart: \`\${nowRatio * 100}%\` }} />\n        {rows.map((row) => (\n          <button key={row.code} className="md-coverage-row" onClick={() => onViewQueue(row.code)}>\n            <span className="md-coverage-row-code">{row.code}</span>\n            <span className="md-coverage-track">\n              <span className="md-coverage-band" style={{ insetInlineStart: \`\${(row.openAt / 24) * 100}%\`, width: \`\${((row.closeAt - row.openAt) / 24) * 100}%\` }} />\n            </span>\n          </button>\n        ))}\n      </div>\n    </Surface>\n  )\n}`,
+    usageCode: `<DashboardCoveragePanel queues={clockQueues} onViewQueue={selectTimezone} />`,
   },
   {
     id: "lane-mix-panel",

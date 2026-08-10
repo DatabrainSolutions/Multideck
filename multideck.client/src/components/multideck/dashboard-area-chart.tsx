@@ -13,7 +13,7 @@ import {
 import { animate, motion, useMotionValue, useReducedMotion } from "motion/react"
 import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
-import { mdMotion } from "@/lib/motion"
+import { mdMotion, staggerRamp } from "@/lib/motion"
 import {
   buildSmoothPath,
   closeAreaPath,
@@ -36,7 +36,7 @@ const gridCount = 4
  * Tracks the element's content width. The chart works in real pixels rather
  * than a scaled viewBox so stroke weights and type stay exact at every size.
  */
-function useElementWidth<T extends HTMLElement>() {
+export function useElementWidth<T extends HTMLElement>() {
   const ref = useRef<T>(null)
   const [width, setWidth] = useState(0)
 
@@ -314,6 +314,10 @@ export function DashboardAreaChart({
               const y = box.padTop + plotHeight - (index / gridCount) * plotHeight
               return (
                 <g key={index}>
+                  {/* Dashed rather than solid: the grid is a reading aid, and
+                      a broken rule stays behind the series instead of cutting
+                      across it. The baseline stays solid so the plot still
+                      sits on something. */}
                   <line
                     x1={box.padStart}
                     x2={box.width - box.padEnd}
@@ -321,7 +325,8 @@ export function DashboardAreaChart({
                     y2={y}
                     stroke="var(--md-chart-grid)"
                     strokeWidth={1}
-                    shapeRendering="crispEdges"
+                    strokeDasharray={index === 0 ? undefined : "2 5"}
+                    shapeRendering={index === 0 ? "crispEdges" : undefined}
                   />
                   <text
                     x={box.padStart - 8}
@@ -375,11 +380,17 @@ export function DashboardAreaChart({
             {points.map((point, index) =>
               index % labelStride === 0 || index === total - 1 ? (
                 <text
-                  key={point.label}
+                  key={`${point.label}-${index}`}
                   x={projectX(index, total, box)}
                   y={box.height - 8}
                   textAnchor="middle"
-                  className={cn("md-area-chart-axis", activeIndex === index && "md-area-chart-axis-active")}
+                  className={cn(
+                    "md-area-chart-axis",
+                    // The period the figure above is reporting. Emphasised so
+                    // the curve's right-hand end reads as "now" at a glance.
+                    index === total - 1 && "md-area-chart-axis-current",
+                    activeIndex === index && "md-area-chart-axis-active",
+                  )}
                 >
                   {point.label}
                 </text>
@@ -538,5 +549,49 @@ export const MiniAreaChart = memo(function MiniAreaChart({
       />
       {cap ? <circle cx={cap[0]} cy={cap[1]} r={2.2} fill={color} stroke="var(--md-surface)" strokeWidth={1.5} /> : null}
     </svg>
+  )
+})
+
+/**
+ * A period as discrete ticks rather than a curve. Where a card sits above a
+ * full-size plot of the same figures, a second smooth line reads as the same
+ * drawing twice; a tick strip reads as the shape, leaving the detail to the
+ * chart. Each tick is scaled from the baseline, so the whole strip is one
+ * transform per bar and no path maths.
+ */
+export const MiniBarChart = memo(function MiniBarChart({
+  values,
+  tone,
+  height = 30,
+  animated = true,
+}: {
+  values: number[]
+  tone: StatusTone
+  height?: number
+  animated?: boolean
+}) {
+  const color = toneToVar(tone)
+  const peak = Math.max(...values, 1)
+
+  return (
+    <span className="md-mini-bars" style={{ height }} aria-hidden="true">
+      {values.map((value, index) => (
+        <motion.span
+          // Keyed by slot, deliberately: a bar is period N of the window, not a
+          // record. Changing range animates each bar's height inside a stable
+          // element rather than tearing the strip down and rebuilding it.
+          key={`period-${index}`}
+          className="md-mini-bar"
+          style={{ background: color }}
+          initial={animated ? { scaleY: 0.06 } : false}
+          animate={{ scaleY: Math.max(value / peak, 0.06) }}
+          transition={
+            animated
+              ? { ...mdMotion.panel, delay: staggerRamp(index, 0.012) }
+              : { duration: 0 }
+          }
+        />
+      ))}
+    </span>
   )
 })

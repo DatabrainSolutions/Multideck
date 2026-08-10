@@ -36,6 +36,9 @@ test("the tenant baseline contains the preference column, functions and grants",
 test("Integrations persists the choice and both mail surfaces consume it", () => {
   assert.match(preferenceClient, /get_current_user_default_inbox_provider/)
   assert.match(preferenceClient, /set_current_user_default_inbox_provider/)
+  assert.match(preferenceClient, /isPreferenceSchemaUnavailable/)
+  assert.match(preferenceClient, /multideck\.inbox\.default-provider/)
+  assert.match(preferenceClient, /window\.location\.host.*data\.user\.id/)
   assert.match(settingsPage, /Default mail provider/)
   assert.match(settingsPage, /role="radiogroup"/)
   assert.match(settingsPage, /role="radio"/)

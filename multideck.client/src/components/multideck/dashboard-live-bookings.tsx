@@ -1,13 +1,12 @@
-import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState } from "react"
+import { lazy, memo, Suspense, useEffect, useRef, useState } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { ArrowRight, PackageCheck, Plane, Ship } from "@/components/icons/hugeicons"
+import { ArrowRight } from "@/components/icons/hugeicons"
 import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
 import { mdMotion, reduceMotion, staggerRamp } from "@/lib/motion"
-import type { StatusTone } from "@/data/multideck-data"
 import type { DashboardBooking } from "@/lib/dashboard-live-data"
 import { Surface } from "./surface"
-import { StatusPill, toneToVar } from "./status-pill"
+import { toneToVar } from "./status-pill"
 import { SegmentedControl } from "./workflow-components"
 
 const InteractiveBookingMap = lazy(() =>
@@ -163,17 +162,7 @@ export function LiveBookingsBoard({
   const { t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
   const [view, setView] = useState<BoardView>("list")
-  const [modeFilter, setModeFilter] = useState<string | null>(null)
-  const bookingModes = useMemo(() => [
-    { label: "Ocean", count: liveBookings.filter((booking) => booking.mode === "Ocean").length, icon: Ship, tone: "teal" as StatusTone },
-    { label: "Air", count: liveBookings.filter((booking) => booking.mode === "Air").length, icon: Plane, tone: "blue" as StatusTone },
-    { label: "Road", count: liveBookings.filter((booking) => booking.mode === "Road").length, icon: PackageCheck, tone: "green" as StatusTone },
-  ].filter((mode) => mode.count > 0), [liveBookings])
-
-  const bookings = useMemo(
-    () => (modeFilter ? liveBookings.filter((booking) => booking.mode === modeFilter) : liveBookings),
-    [liveBookings, modeFilter],
-  )
+  const bookings = liveBookings
   const exceptions = liveBookings.filter((booking) => booking.tone === "red" || booking.tone === "amber").length
 
   return (
@@ -200,28 +189,6 @@ export function LiveBookingsBoard({
         </div>
 
         <div className="md-live-board-controls">
-          <div className="md-live-mode-filters">
-            {bookingModes.map((mode) => {
-              const Icon = mode.icon
-              const active = modeFilter === mode.label
-              return (
-                <button
-                  key={mode.label}
-                  type="button"
-                  aria-pressed={active}
-                  className="md-live-mode-chip"
-                  onClick={() => setModeFilter(active ? null : mode.label)}
-                >
-                  <StatusPill tone={active ? (mode.tone as StatusTone) : "neutral"}>
-                    <span className="inline-flex items-center gap-1">
-                      <Icon className="size-3" strokeWidth={1.2} />
-                      {t(mode.label)} {mode.count}
-                    </span>
-                  </StatusPill>
-                </button>
-              )
-            })}
-          </div>
           <SegmentedControl
             options={boardViews}
             value={view}
@@ -248,7 +215,7 @@ export function LiveBookingsBoard({
                 <LiveBookingRow key={booking.id} booking={booking} index={index} onOpen={onOpenBooking} />
               ))}
               {bookings.length === 0 ? (
-                <p className="md-live-board-empty">{t("No bookings match this mode.")}</p>
+                <p className="md-live-board-empty">{t("No live bookings are available.")}</p>
               ) : null}
             </motion.div>
           ) : (

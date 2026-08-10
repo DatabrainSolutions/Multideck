@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import {
-  AiBeautify,
+  AiEditing,
   ChevronDown,
   CornerUpLeft,
   CornerUpRight,
@@ -621,7 +621,7 @@ export function MailComposer({
         {onComposeWithDexter ? (
           <DexterActionPill
             label={dexterLabel}
-            icon={dexterStatus === "drafting" ? Loader2 : AiBeautify}
+            icon={dexterStatus === "drafting" ? Loader2 : AiEditing}
             iconClassName="size-3"
             disabled={busy || readOnly}
             aria-busy={dexterStatus === "drafting"}

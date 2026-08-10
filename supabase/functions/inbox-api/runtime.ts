@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
 import {
   InboxHttpError,
+  appendInternetMessageReference,
   base64Encode,
   base64UrlDecode,
   buildMimeMessage,
@@ -22,12 +23,14 @@ import {
   normalizeAddresses,
   normalizeEmail,
   normalizeSubject,
+  parseDeliveryStatusReport,
   parseAddressHeader,
   providerCode,
   providerErrorStatus,
   publicProvider,
   readOutboundAttachments,
   repairMojibake,
+  replyTargetMessageId,
   resolveResponseRecipients,
   safeFileName,
   safeMimeType,
@@ -37,6 +40,7 @@ import {
   type MailAddress,
   type MailProvider,
   type OutboundAttachment,
+  type DeliveryReportEvidence,
 } from "./core.ts"
 
 type Db = SupabaseClient
@@ -52,7 +56,7 @@ type ProviderMessage = {
   subject: string; preview: string; bodyText: string | null; bodyHtml: string | null; occurredAt: string; isDraft: boolean;
   from: MailAddress[]; to: MailAddress[]; cc: MailAddress[]; bcc: MailAddress[];
   attachments: Array<{ providerAttachmentId: string; fileName: string; mimeType: string | null; sizeBytes: number | null; isInline: boolean; contentId: string | null }>;
-  headers: Record<string, string>; folders: string[]; isSpam: boolean
+  headers: Record<string, string>; folders: string[]; isSpam: boolean; deliveryReport: DeliveryReportEvidence | null
 }
 type ProviderIndexBatch = {
   /** True while walking the provider's historical snapshot rather than a delta cursor. */
@@ -553,10 +557,18 @@ async function providerJson(url: string, token: string, init: RequestInit = {}) 
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), 15_000)
   try {
+    const headers = new Headers(init.headers)
+    headers.set("Accept", "application/json")
+    headers.set("Authorization", `Bearer ${token}`)
+    if (new URL(url).hostname === "graph.microsoft.com") {
+      const existingPrefer = headers.get("Prefer")
+      const immutableId = 'IdType="ImmutableId"'
+      headers.set("Prefer", existingPrefer ? `${existingPrefer}, ${immutableId}` : immutableId)
+    }
     const response = await fetch(url, {
       ...init,
       signal: controller.signal,
-      headers: { Accept: "application/json", Authorization: `Bearer ${token}`, ...(init.headers ?? {}) },
+      headers,
     })
     if (!response.ok) {
       // Graph's HTTP status alone is too broad to distinguish a bad query
@@ -609,6 +621,14 @@ async function outlookMimeInlineAttachmentHeaders(owner: string, messageId: stri
   if (!response.ok) throw providerErrorStatus(response)
   const bytes = await readLimitedProviderBody(response, 8 * 1024 * 1024)
   return mimeInlineAttachmentHeaders(new TextDecoder().decode(bytes))
+}
+
+async function outlookRawMessage(owner: string, messageId: string, token: string) {
+  const response = await fetch(`https://graph.microsoft.com/v1.0/${owner}/messages/${encodeURIComponent(messageId)}/$value`, {
+    headers: { Authorization: `Bearer ${token}`, Prefer: 'IdType="ImmutableId"' },
+  })
+  if (!response.ok) throw providerErrorStatus(response)
+  return new TextDecoder().decode(await readLimitedProviderBody(response, 2 * 1024 * 1024))
 }
 
 function nullableProviderCount(value: unknown) {
@@ -810,6 +830,7 @@ async function refreshFolderCatalogue(admin: Db, mailbox: Row, connection: Row, 
 function gmailBodies(payload: Row) {
   let text: string | null = null
   let html: string | null = null
+  const deliveryStatus: string[] = []
   const attachments: ProviderMessage["attachments"] = []
   const visit = (part: Row) => {
     const mime = cleanString(part.mimeType, 200)
@@ -818,6 +839,7 @@ function gmailBodies(payload: Row) {
       const decoded = new TextDecoder().decode(base64UrlDecode(body.data))
       if (mime === "text/plain" && text === null) text = decoded
       if (mime === "text/html" && html === null) html = decoded
+      if (mime === "message/delivery-status") deliveryStatus.push(decoded)
     }
     if (body.attachmentId) {
       const headers = headerMap(part.headers)
@@ -831,7 +853,7 @@ function gmailBodies(payload: Row) {
     if (Array.isArray(part.parts)) for (const child of part.parts) if (isObject(child)) visit(child)
   }
   visit(payload)
-  return { text, html, attachments }
+  return { text, html, attachments, deliveryStatus }
 }
 
 function parseGmailMessage(row: Row): ProviderMessage {
@@ -847,6 +869,7 @@ function parseGmailMessage(row: Row): ProviderMessage {
     bodyText: bodies.text ?? (bodies.html ? stripHtml(bodies.html) : null), bodyHtml: bodies.html, occurredAt: new Date(Number(row.internalDate) || Date.now()).toISOString(),
     isDraft: labels.includes("DRAFT"), from: parseAddressHeader(headers.from), to: parseAddressHeader(headers.to), cc: parseAddressHeader(headers.cc), bcc: parseAddressHeader(headers.bcc),
     attachments: bodies.attachments, headers, folders: labels.map((label) => label.toLowerCase()), isSpam: labels.includes("SPAM"),
+    deliveryReport: parseDeliveryStatusReport(headers["content-type"], bodies.deliveryStatus.join("\r\n")),
   }
 }
 
@@ -1202,9 +1225,21 @@ function graphAddresses(rows: unknown): MailAddress[] {
   return Array.isArray(rows) ? normalizeAddresses(rows.flatMap((row) => graphAddress(row))) : []
 }
 
-async function parseGraphMessage(row: Row, owner: string, token: string): Promise<ProviderMessage> {
+async function parseGraphMessage(row: Row, owner: string, token: string, readTransportEvidence = false): Promise<ProviderMessage> {
   const body = isObject(row.body) ? row.body : {}
-  const headers = headerMap(row.internetMessageHeaders)
+  let headers = headerMap(row.internetMessageHeaders)
+  if (readTransportEvidence && row.id) {
+    try {
+      const detail = await providerJson(
+        `https://graph.microsoft.com/v1.0/${owner}/messages/${encodeURIComponent(row.id)}?$select=${encodeURIComponent("internetMessageHeaders")}`,
+        token,
+      )
+      headers = { ...headers, ...headerMap(detail.internetMessageHeaders) }
+    } catch {
+      // Transport headers improve exact reply and receipt correlation, but a
+      // provider that withholds them must not make the message disappear.
+    }
+  }
   const bodyContent = typeof body.content === "string" ? body.content : ""
   const html = cleanString(body.contentType, 40).toLowerCase() === "html" ? bodyContent : null
   const referenced = new Set(emailHtmlContentIds(html))
@@ -1238,12 +1273,21 @@ async function parseGraphMessage(row: Row, owner: string, token: string): Promis
     })
   }
   const text = html ? stripHtml(html) : bodyContent || null
+  let deliveryReport = parseDeliveryStatusReport(headers["content-type"], "")
+  if (readTransportEvidence && headers["content-type"]?.toLowerCase().includes("report-type=delivery-status") && row.id) {
+    try {
+      deliveryReport = parseDeliveryStatusReport(headers["content-type"], await outlookRawMessage(owner, cleanString(row.id, 1_000), token))
+    } catch {
+      // Keep the receipt visible as mail, but do not invent delivery evidence
+      // when its machine-readable MIME report cannot be read.
+    }
+  }
   return {
     providerMessageId: cleanString(row.id, 1000), providerThreadId: cleanString(row.conversationId ?? row.id, 1000), providerConversationId: cleanString(row.conversationId, 1000) || null,
     internetMessageId: cleanString(row.internetMessageId, 500) || null, subject: repairMojibake(cleanString(row.subject, 500) || "(No subject)"), preview: cleanString(decodeHtmlEntities(row.bodyPreview), 1000),
     bodyText: text, bodyHtml: html, occurredAt: new Date(row.receivedDateTime ?? row.sentDateTime ?? Date.now()).toISOString(), isDraft: row.isDraft === true,
     from: graphAddress(row.from), to: graphAddresses(row.toRecipients), cc: graphAddresses(row.ccRecipients), bcc: graphAddresses(row.bccRecipients),
-    attachments, headers, folders: ["inbox"], isSpam: false,
+    attachments, headers, folders: ["inbox"], isSpam: false, deliveryReport,
   }
 }
 
@@ -1306,7 +1350,8 @@ async function syncOutlook(admin: Db, mailbox: Row, token: string, options: Sync
       providerRows.filter((row) => !knownIds.has(cleanString(row.id, 240))),
       8,
       async (row) => {
-        const parsed = await parseGraphMessage(row, owner, token)
+        const senderIsMailbox = graphAddress(row.from).some((address) => address.address === mailbox.CommMailbox_NormalizedAddress)
+        const parsed = await parseGraphMessage(row, owner, token, !senderIsMailbox)
         parsed.folders = ["inbox"]
         return parsed
       },
@@ -1390,7 +1435,9 @@ async function syncOutlook(admin: Db, mailbox: Row, token: string, options: Sync
     }
     if (state.phase === "list") processed += providerValues.filter((row) => !row["@removed"]).length
     const fetched = await mapWithConcurrency(providerRows, 8, async (row) => {
-      const parsed = await parseGraphMessage(row, owner, token)
+      const senderIsMailbox = graphAddress(row.from).some((address) => address.address === mailbox.CommMailbox_NormalizedAddress)
+      const readTransportEvidence = !senderIsMailbox && (options.liveOnly === true || state.phase === "delta")
+      const parsed = await parseGraphMessage(row, owner, token, readTransportEvidence)
       parsed.folders = [providerFolderId]
       parsed.isSpam = role === "junkemail"
       return parsed
@@ -1464,23 +1511,44 @@ async function persistSync(admin: Db, actor: Actor, mailbox: Row, connection: Ro
     }), "Expired or provider-removed email could not be reconciled.")
   }
   const providerIds = messages.map((message) => cleanString(message.providerMessageId, 240))
-  const known = providerIds.length ? await result<Row[]>(admin.from("Comm_Messages").select("CommMessage_ID,CommMessage_ProviderMessageID").eq("CommMessage_MailboxID", mailbox.CommMailbox_ID).in("CommMessage_ProviderMessageID", providerIds)) ?? [] : []
-  const knownIds = new Set(known.map((row) => row.CommMessage_ProviderMessageID))
-  const knownMessageIds = new Map(known.map((row) => [row.CommMessage_ProviderMessageID, row.CommMessage_ID]))
+  const internetMessageIds = [...new Set(messages.map((message) => cleanString(message.internetMessageId, 500)).filter(Boolean))]
+  const knownByProvider = providerIds.length ? await result<Row[]>(admin.from("Comm_Messages")
+    .select("CommMessage_ID,CommMessage_ProviderMessageID,CommMessage_InternetMessageID,CommMessage_IsInbound,CommMessage_ReplyToMessageID,CommMessage_ThreadID")
+    .eq("CommMessage_MailboxID", mailbox.CommMailbox_ID)
+    .in("CommMessage_ProviderMessageID", providerIds)) ?? [] : []
+  const knownByInternet = internetMessageIds.length ? await result<Row[]>(admin.from("Comm_Messages")
+    .select("CommMessage_ID,CommMessage_ProviderMessageID,CommMessage_InternetMessageID,CommMessage_IsInbound,CommMessage_ReplyToMessageID,CommMessage_ThreadID")
+    .eq("CommMessage_MailboxID", mailbox.CommMailbox_ID)
+    .in("CommMessage_InternetMessageID", internetMessageIds)) ?? [] : []
+  const knownMessageIds = new Map(knownByProvider.map((row) => [row.CommMessage_ProviderMessageID, row.CommMessage_ID]))
+  const knownMessageIdsByInternet = new Map(knownByInternet.map((row) => [row.CommMessage_InternetMessageID, row.CommMessage_ID]))
+  const existingMessageIdFor = (incoming: ProviderMessage) => (
+    knownMessageIds.get(cleanString(incoming.providerMessageId, 240))
+    ?? knownMessageIdsByInternet.get(cleanString(incoming.internetMessageId, 500))
+    ?? null
+  )
+  const matchedProviderIds = new Set(messages.flatMap((incoming) => existingMessageIdFor(incoming) ? [cleanString(incoming.providerMessageId, 240)] : []))
   // Folder membership can change without a new provider message. Keep existing
   // rows current so moving a message to Spam/Trash/Sent is reflected locally.
+  // The exact RFC Message-ID fallback reconciles a locally sent Graph draft to
+  // its immutable provider identity without inserting another sent copy.
   for (const incoming of messages) {
     const providerMessageId = cleanString(incoming.providerMessageId, 240)
-    const existingMessageId = knownMessageIds.get(providerMessageId)
+    const existingMessageId = existingMessageIdFor(incoming)
     if (!existingMessageId) continue
     await persistFolders(admin, mailbox.CommMailbox_ID, existingMessageId, incoming.folders)
-    await result(admin.from("Comm_Messages").update({
+    const identityPatch: Row = {
       CommMessage_IsSpam: incoming.isSpam,
       CommMessage_IsDraft: incoming.isDraft,
       CommMessage_UpdatedAt: new Date().toISOString(),
-    }).eq("CommMessage_ID", existingMessageId))
+    }
+    if (providerMessageId) identityPatch.CommMessage_ProviderMessageID = providerMessageId
+    if (incoming.providerThreadId) identityPatch.CommMessage_ProviderThreadID = cleanString(incoming.providerThreadId, 240)
+    if (incoming.providerConversationId) identityPatch.CommMessage_ProviderConversationID = cleanString(incoming.providerConversationId, 240)
+    if (incoming.internetMessageId) identityPatch.CommMessage_InternetMessageID = cleanString(incoming.internetMessageId, 500)
+    await result(admin.from("Comm_Messages").update(identityPatch).eq("CommMessage_ID", existingMessageId))
   }
-  for (const incoming of messages.filter((message) => !knownIds.has(cleanString(message.providerMessageId, 240))).sort((a, b) => a.occurredAt.localeCompare(b.occurredAt))) {
+  for (const incoming of messages.filter((message) => !matchedProviderIds.has(cleanString(message.providerMessageId, 240))).sort((a, b) => a.occurredAt.localeCompare(b.occurredAt))) {
     const providerThreadId = cleanString(incoming.providerThreadId, 240)
     const existing = await result<Row>(admin.from("Comm_Messages").select("CommMessage_ThreadID").eq("CommMessage_MailboxID", mailbox.CommMailbox_ID).eq("CommMessage_ProviderThreadID", providerThreadId).limit(1).maybeSingle())
     const threadId = existing?.CommMessage_ThreadID ?? crypto.randomUUID()
@@ -1497,13 +1565,36 @@ async function persistSync(admin: Db, actor: Actor, mailbox: Row, connection: Ro
       }))
     }
     const senderIsMailbox = incoming.from.some((address) => address.address === mailbox.CommMailbox_NormalizedAddress)
+    const deliveryTarget = incoming.deliveryReport
+      ? await result<Row>(admin.from("Comm_Messages")
+        .select("CommMessage_ID")
+        .eq("CommMessage_MailboxID", mailbox.CommMailbox_ID)
+        .eq("CommMessage_InternetMessageID", incoming.deliveryReport.originalMessageId)
+        .eq("CommMessage_IsInbound", false)
+        .maybeSingle())
+      : null
+    const replyCandidates = !senderIsMailbox && !incoming.deliveryReport
+      ? await result<Row[]>(admin.from("Comm_Messages")
+        .select("CommMessage_ID,CommMessage_InternetMessageID")
+        .eq("CommMessage_ThreadID", threadId)
+        .eq("CommMessage_MailboxID", mailbox.CommMailbox_ID)
+        .eq("CommMessage_IsInbound", false)
+        .eq("CommMessage_IsDeleted", false)) ?? []
+      : []
+    const replyToMessageId = replyTargetMessageId(
+      incoming.headers,
+      replyCandidates.map((candidate) => ({
+        id: candidate.CommMessage_ID,
+        internetMessageId: cleanString(candidate.CommMessage_InternetMessageID, 500) || null,
+      })),
+    )
     const messageId = crypto.randomUUID()
     const safeHtml = incoming.bodyHtml ? sanitizeEmailHtml(incoming.bodyHtml) : null
     const storedBodyText = safeHtml
       ? cleanString(incoming.bodyText, HTML_DUPLICATE_TEXT_LIMIT) || null
       : incoming.bodyText
     await result(admin.from("Comm_Messages").insert({
-      CommMessage_ID: messageId, CommMessage_ThreadID: threadId, CommMessage_MailboxID: mailbox.CommMailbox_ID,
+      CommMessage_ID: messageId, CommMessage_ThreadID: threadId, CommMessage_ReplyToMessageID: replyToMessageId, CommMessage_MailboxID: mailbox.CommMailbox_ID,
       CommMessage_ChannelCode: "email", CommMessage_DirectionCode: senderIsMailbox ? "outbound" : "inbound",
       CommMessage_StatusCode: incoming.isDraft ? "draft" : senderIsMailbox ? "sent" : "received", CommMessage_SourceTypeCode: "provider_sync",
       CommMessage_ContentFormatCode: safeHtml ? "html" : "plain_text", CommMessage_PriorityCode: "normal",
@@ -1536,6 +1627,44 @@ async function persistSync(admin: Db, actor: Actor, mailbox: Row, connection: Ro
       p_message_id: messageId,
       p_body_text: cleanString(incoming.bodyText, DEXTER_SEARCH_BODY_LIMIT),
     }), "Dexter email search could not index this message.")
+    if (replyToMessageId) {
+      const sendRequest = await result<Row>(admin.from("Comm_SendRequests")
+        .select("CommSend_ID")
+        .eq("CommSend_MessageID", replyToMessageId)
+        .order("CommSend_CreatedAt", { ascending: false })
+        .limit(1)
+        .maybeSingle())
+      await recordDeliveryEvent(
+        admin,
+        replyToMessageId,
+        sendRequest?.CommSend_ID ?? null,
+        "replied",
+        `reply:${await sha256Hex(`${incoming.providerMessageId}:${replyToMessageId}`)}`,
+        { source: "provider_sync", inboundMessageId: messageId, eventAt: incoming.occurredAt, confidence: "confirmed" },
+      )
+    }
+    if (deliveryTarget?.CommMessage_ID && incoming.deliveryReport) {
+      const sendRequest = await result<Row>(admin.from("Comm_SendRequests")
+        .select("CommSend_ID")
+        .eq("CommSend_MessageID", deliveryTarget.CommMessage_ID)
+        .order("CommSend_CreatedAt", { ascending: false })
+        .limit(1)
+        .maybeSingle())
+      await recordDeliveryEvent(
+        admin,
+        deliveryTarget.CommMessage_ID,
+        sendRequest?.CommSend_ID ?? null,
+        incoming.deliveryReport.eventType,
+        `${incoming.deliveryReport.eventType}:${await sha256Hex(`${incoming.providerMessageId}:${deliveryTarget.CommMessage_ID}`)}`,
+        {
+          source: "provider_delivery_report",
+          providerMessageId: incoming.providerMessageId,
+          statusCode: incoming.deliveryReport.statusCode,
+          eventAt: incoming.occurredAt,
+          confidence: "confirmed",
+        },
+      )
+    }
     await result(admin.from("Comm_Threads").update({
       CommThread_Subject: cleanString(incoming.subject, 500), CommThread_LastMessageID: messageId, CommThread_LastMessageAt: incoming.occurredAt,
       CommThread_UpdatedAt: now, CommThread_UpdatedBy: actor.userId,
@@ -2381,12 +2510,29 @@ export async function getThread(admin: Db, actor: Actor, threadId: string) {
   const readAt = state?.CommRead_ReadAt ? Date.parse(cleanString(state.CommRead_ReadAt, 80)) : 0
   const addresses = (messageId: string, type: string) => recipients.filter((row) => row.CommRecipient_MessageID === messageId && row.CommRecipient_RecipientTypeCode === type).map((row) => ({ address: row.CommRecipient_Address, displayName: row.CommRecipient_DisplayNameSnapshot }))
   await hydrateOutlookInlineContentIds(admin, actor, messages, attachments)
+  const outboundReplyCandidates = messages.filter((message) => !message.CommMessage_IsInbound).map((message) => ({
+    id: message.CommMessage_ID,
+    internetMessageId: cleanString(message.CommMessage_InternetMessageID, 500) || null,
+  }))
+  const inferredReplyTargetByInbound = new Map<string, string>()
+  for (const message of messages.filter((candidate) => candidate.CommMessage_IsInbound && !candidate.CommMessage_ReplyToMessageID)) {
+    let headers: Record<string, string> = {}
+    try {
+      const parsed = JSON.parse(message.CommMessage_HeaderJSON ?? "{}")
+      if (isObject(parsed)) headers = Object.fromEntries(Object.entries(parsed).map(([name, value]) => [name.toLowerCase(), cleanString(value, 8_000)]))
+    } catch { /* Invalid legacy header metadata cannot become reply evidence. */ }
+    const target = replyTargetMessageId(headers, outboundReplyCandidates)
+    if (target) inferredReplyTargetByInbound.set(message.CommMessage_ID, target)
+  }
   const delivery = (row: Row) => {
     const events = deliveryEvents.filter((event) => event.CommDelivery_MessageID === row.CommMessage_ID)
     const eventAt = (type: string) => events.find((event) => event.CommDelivery_EventTypeCode === type)?.CommDelivery_EventAt ?? null
     const tracking = trackingTokens.find((token) => token.CommTrack_MessageID === row.CommMessage_ID)
-    const replyMessage = messages.find((candidate) => candidate.CommMessage_IsInbound && Date.parse(occurred(candidate)) > Date.parse(occurred(row)))
-    const repliedAt = replyMessage?.CommMessage_ReceivedAt ?? null
+    const replyMessage = messages.find((candidate) => candidate.CommMessage_IsInbound && (
+      candidate.CommMessage_ReplyToMessageID === row.CommMessage_ID
+      || inferredReplyTargetByInbound.get(candidate.CommMessage_ID) === row.CommMessage_ID
+    ))
+    const repliedAt = eventAt("replied") ?? replyMessage?.CommMessage_ReceivedAt ?? null
     const bouncedAt = eventAt("bounced")
     const failedAt = eventAt("failed")
     const openedAt = tracking?.CommTrack_FirstOpenedAt ?? eventAt("opened")
@@ -2648,12 +2794,30 @@ async function graphAttachFiles(owner: string, token: string, messageId: string,
   }
 }
 
-async function providerSend(provider: MailProvider, token: string, mailbox: Row, resolved: Awaited<ReturnType<typeof resolveRecipients>>, subject: string, bodyText: string, bodyHtml: string | null, attachments: OutboundAttachment[] = []) {
+async function providerSend(
+  provider: MailProvider,
+  token: string,
+  mailbox: Row,
+  resolved: Awaited<ReturnType<typeof resolveRecipients>>,
+  subject: string,
+  bodyText: string,
+  bodyHtml: string | null,
+  internetMessageId: string,
+  trackingEnabled: boolean,
+  attachments: OutboundAttachment[] = [],
+) {
   const from = { address: mailbox.CommMailbox_Address, displayName: mailbox.CommMailbox_DisplayName }
   if (provider === "gmail") {
     let headers: Row = {}
     if (resolved.source) { try { headers = JSON.parse(resolved.source.CommMessage_HeaderJSON ?? "{}") } catch { headers = {} } }
-    const mime = { from, to: resolved.to, cc: resolved.cc, bcc: resolved.bcc, subject, bodyText, bodyHtml, inReplyTo: resolved.source?.CommMessage_InternetMessageID, references: headers.references ?? headers.References, attachments }
+    const sourceInternetMessageId = resolved.source?.CommMessage_InternetMessageID
+    const mime = {
+      from, to: resolved.to, cc: resolved.cc, bcc: resolved.bcc, subject, bodyText, bodyHtml,
+      messageId: internetMessageId,
+      inReplyTo: sourceInternetMessageId,
+      references: appendInternetMessageReference(headers.references ?? headers.References, sourceInternetMessageId),
+      attachments,
+    }
     const threadId = resolved.command.startsWith("reply") && resolved.source?.CommMessage_ProviderThreadID ? resolved.source.CommMessage_ProviderThreadID : null
     let response: Response
     if (attachments.length) {
@@ -2674,39 +2838,52 @@ async function providerSend(provider: MailProvider, token: string, mailbox: Row,
     }
     if (!response.ok) throw providerErrorStatus(response)
     const sent = await response.json()
-    return { providerMessageId: sent.id, providerThreadId: sent.threadId, internetMessageId: null }
+    return { providerMessageId: sent.id, providerThreadId: sent.threadId, internetMessageId }
   }
   const owner = mailbox.CommMailbox_TypeCode === "shared" ? `users/${encodeURIComponent(mailbox.CommMailbox_Address)}` : "me"
   const recipients = (items: MailAddress[]) => items.map((item) => ({ emailAddress: { address: item.address, name: item.displayName } }))
-  const message = { subject, body: { contentType: bodyHtml ? "HTML" : "Text", content: bodyHtml ?? bodyText }, toRecipients: recipients(resolved.to), ccRecipients: recipients(resolved.cc), bccRecipients: recipients(resolved.bcc) }
-  if (resolved.command === "new") {
-    if (!attachments.length) {
-      const response = await fetch(`https://graph.microsoft.com/v1.0/${owner}/sendMail`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ message, saveToSentItems: true }) })
-      if (!response.ok) throw providerErrorStatus(response)
-      return { providerMessageId: `pending:${crypto.randomUUID()}`, providerThreadId: null, internetMessageId: null }
-    }
-    // `sendMail` carries the whole message in one request, which files outgrow.
-    // A draft takes them one at a time and is then sent as it stands.
-    const create = await fetch(`https://graph.microsoft.com/v1.0/${owner}/messages`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(message) })
-    if (!create.ok) throw providerErrorStatus(create)
-    const created = await create.json()
-    await graphAttachFiles(owner, token, created.id, attachments)
-    const send = await fetch(`https://graph.microsoft.com/v1.0/${owner}/messages/${encodeURIComponent(created.id)}/send`, { method: "POST", headers: { Authorization: `Bearer ${token}` } })
+  const message = {
+    subject,
+    internetMessageId,
+    isDeliveryReceiptRequested: trackingEnabled,
+    body: { contentType: bodyHtml ? "HTML" : "Text", content: bodyHtml ?? bodyText },
+    toRecipients: recipients(resolved.to),
+    ccRecipients: recipients(resolved.cc),
+    bccRecipients: recipients(resolved.bcc),
+  }
+  const graphHeaders = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Prefer: 'IdType="ImmutableId"' }
+  const sendDraft = async (draft: Row) => {
+    const draftId = cleanString(draft.id, 1_000)
+    if (!draftId) throw new InboxHttpError(502, "The mail provider did not return a stable message identifier.", "provider_identity_missing")
+    if (attachments.length) await graphAttachFiles(owner, token, draftId, attachments)
+    const send = await fetch(`https://graph.microsoft.com/v1.0/${owner}/messages/${encodeURIComponent(draftId)}/send`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, Prefer: 'IdType="ImmutableId"' },
+    })
     if (!send.ok) throw providerErrorStatus(send)
-    return { providerMessageId: `pending:${crypto.randomUUID()}`, providerThreadId: null, internetMessageId: null }
+    return {
+      providerMessageId: draftId,
+      providerThreadId: cleanString(draft.conversationId, 1_000) || null,
+      internetMessageId,
+    }
+  }
+  if (resolved.command === "new") {
+    // Creating a draft first gives Multideck the immutable provider ID before
+    // Exchange moves it to Sent Items. This prevents the provider sync from
+    // inserting a second copy of the same outbound email.
+    const create = await fetch(`https://graph.microsoft.com/v1.0/${owner}/messages`, { method: "POST", headers: graphHeaders, body: JSON.stringify(message) })
+    if (!create.ok) throw providerErrorStatus(create)
+    return await sendDraft(await create.json())
   }
   const sourceId = resolved.source?.CommMessage_ProviderMessageID
   if (!sourceId) throw new InboxHttpError(409, "The provider no longer has the source message needed for this response.", "source_missing_at_provider")
   const action = resolved.command === "reply" ? "createReply" : resolved.command === "reply_all" ? "createReplyAll" : "createForward"
-  const create = await fetch(`https://graph.microsoft.com/v1.0/${owner}/messages/${encodeURIComponent(sourceId)}/${action}`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: "{}" })
+  const create = await fetch(`https://graph.microsoft.com/v1.0/${owner}/messages/${encodeURIComponent(sourceId)}/${action}`, { method: "POST", headers: graphHeaders, body: "{}" })
   if (!create.ok) throw providerErrorStatus(create)
   const draft = await create.json()
-  const patch = await fetch(`https://graph.microsoft.com/v1.0/${owner}/messages/${encodeURIComponent(draft.id)}`, { method: "PATCH", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(message) })
+  const patch = await fetch(`https://graph.microsoft.com/v1.0/${owner}/messages/${encodeURIComponent(draft.id)}`, { method: "PATCH", headers: graphHeaders, body: JSON.stringify(message) })
   if (!patch.ok) throw providerErrorStatus(patch)
-  if (attachments.length) await graphAttachFiles(owner, token, draft.id, attachments)
-  const send = await fetch(`https://graph.microsoft.com/v1.0/${owner}/messages/${encodeURIComponent(draft.id)}/send`, { method: "POST", headers: { Authorization: `Bearer ${token}` } })
-  if (!send.ok) throw providerErrorStatus(send)
-  return { providerMessageId: `pending:${crypto.randomUUID()}`, providerThreadId: resolved.source?.CommMessage_ProviderThreadID ?? null, internetMessageId: null }
+  return await sendDraft({ ...draft, conversationId: draft.conversationId ?? resolved.source?.CommMessage_ProviderConversationID })
 }
 
 function escapeTrackedHtml(value: string) {
@@ -2723,8 +2900,8 @@ function opaqueTrackingToken() {
 async function recordDeliveryEvent(
   admin: Db,
   messageId: string,
-  sendId: string,
-  eventType: "sent" | "failed",
+  sendId: string | null,
+  eventType: "sent" | "delivered" | "opened" | "replied" | "bounced" | "failed",
   providerEventId: string | null,
   payload: Row,
 ) {
@@ -2773,6 +2950,7 @@ export async function sendMail(admin: Db, actor: Actor, body: Row, suppliedKey: 
   // service-role persistence derive it only from the checked source message.
   const threadId = resolved.source?.CommMessage_ThreadID ?? await newThread(admin, actor, subject, mailbox)
   const messageId = crypto.randomUUID(); const sendId = crypto.randomUUID(); const now = new Date().toISOString()
+  const internetMessageId = `<${messageId}@messages.multideck.app>`
   const trackingToken = trackOpens ? opaqueTrackingToken() : null
   const trackingTokenHash = trackingToken ? await sha256Hex(trackingToken) : null
   const trackingAudienceHash = trackingToken
@@ -2787,8 +2965,8 @@ export async function sendMail(admin: Db, actor: Actor, body: Row, suppliedKey: 
     CommMessage_ContentFormatCode: bodyHtml ? "html" : "plain_text", CommMessage_PriorityCode: "normal", CommMessage_SensitivityCode: mailbox.CommMailbox_DefaultSensitivityCode ?? "internal",
     CommMessage_ProviderThreadID: resolved.command.startsWith("reply") ? resolved.source?.CommMessage_ProviderThreadID : null,
     CommMessage_ProviderConversationID: resolved.command.startsWith("reply") ? resolved.source?.CommMessage_ProviderConversationID : null,
-    CommMessage_IdempotencyKey: idempotencyKey, CommMessage_Subject: subject, CommMessage_BodyPreview: bodyText.slice(0, 1000),
-    CommMessage_BodyText: bodyText, CommMessage_BodyHTML: bodyHtml, CommMessage_BodyJSON: "{}", CommMessage_HeaderJSON: JSON.stringify({ command: resolved.command, sourceProviderMessageId: resolved.source?.CommMessage_ProviderMessageID, openTrackingEnabled: trackOpens }),
+    CommMessage_InternetMessageID: internetMessageId, CommMessage_IdempotencyKey: idempotencyKey, CommMessage_Subject: subject, CommMessage_BodyPreview: bodyText.slice(0, 1000),
+    CommMessage_BodyText: bodyText, CommMessage_BodyHTML: bodyHtml, CommMessage_BodyJSON: "{}", CommMessage_HeaderJSON: JSON.stringify({ command: resolved.command, sourceProviderMessageId: resolved.source?.CommMessage_ProviderMessageID, messageId: internetMessageId, openTrackingEnabled: trackOpens }),
     CommMessage_MessageDate: now, CommMessage_HasAttachments: attachments.length > 0, CommMessage_IsInbound: false, CommMessage_IsInternal: false,
     CommMessage_IsDraft: false, CommMessage_IsSpam: false, CommMessage_IsBodyRedacted: false, CommMessage_IsTrainingAllowed: false,
     CommMessage_CreatedAt: now, CommMessage_CreatedBy: actor.userId, CommMessage_UpdatedAt: now, CommMessage_UpdatedBy: actor.userId, CommMessage_IsDeleted: false,
@@ -2824,7 +3002,18 @@ export async function sendMail(admin: Db, actor: Actor, body: Row, suppliedKey: 
   }
   const creds = await credential(admin, connection)
   try {
-    const sent = await providerSend(publicProvider(connection.CommConn_ProviderTypeCode), creds.accessToken, mailbox, resolved, subject, bodyText, bodyHtml, attachments)
+    const sent = await providerSend(
+      publicProvider(connection.CommConn_ProviderTypeCode),
+      creds.accessToken,
+      mailbox,
+      resolved,
+      subject,
+      bodyText,
+      bodyHtml,
+      internetMessageId,
+      trackOpens,
+      attachments,
+    )
     const completed = new Date().toISOString()
     await result(admin.from("Comm_Messages").update({ CommMessage_StatusCode: "sent", CommMessage_ProviderMessageID: sent.providerMessageId, CommMessage_ProviderThreadID: sent.providerThreadId, CommMessage_InternetMessageID: sent.internetMessageId, CommMessage_SentAt: completed, CommMessage_UpdatedAt: completed }).eq("CommMessage_ID", messageId))
     await result(admin.from("Comm_SendRequests").update({ CommSend_StatusCode: "sent", CommSend_UpdatedAt: completed }).eq("CommSend_ID", sendId))

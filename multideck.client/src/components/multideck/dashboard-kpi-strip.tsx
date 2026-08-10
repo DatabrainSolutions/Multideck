@@ -5,7 +5,7 @@ import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
 import { mdMotion, reduceMotion, staggerRamp } from "@/lib/motion"
 import type { DashboardKpi } from "@/lib/dashboard-live-data"
-import { MiniAreaChart } from "./dashboard-area-chart"
+import { MiniAreaChart, MiniBarChart } from "./dashboard-area-chart"
 import { CountUpValue } from "./rolling-digits"
 import { StatusPill, toneToVar } from "./status-pill"
 import { makeDashboardDrilldownId } from "./overview-panels"
@@ -20,6 +20,9 @@ const KpiCell = memo(function KpiCell({
   index,
   selected,
   compact,
+  spark,
+  sparkKind,
+  markerId,
   onSelect,
   onOpen,
 }: {
@@ -27,6 +30,10 @@ const KpiCell = memo(function KpiCell({
   index: number
   selected: boolean
   compact: boolean
+  spark: boolean
+  sparkKind: "area" | "bars"
+  /** Set to travel one shared rule between cells instead of scaling one per cell. */
+  markerId?: string
   onSelect?: () => void
   onOpen?: () => void
 }) {
@@ -57,20 +64,57 @@ const KpiCell = memo(function KpiCell({
         <span className="md-kpi-cell-label">{kpi.label}</span>
         <span className="md-kpi-cell-figure">
           <CountUpValue value={kpi.value} className="md-kpi-cell-value" />
-          {kpi.change ? <StatusPill tone={kpi.tone}>{kpi.change}</StatusPill> : null}
-          {/* The compact row has no room for the supporting line, so it is kept
-              for assistive technology rather than dropped from the product. */}
-          <span className={compact ? "sr-only" : "md-kpi-cell-detail"}>{kpi.detail}</span>
+          {/* Which way the metric moved, as its own chip beside the figure.
+              Drawn only from a real earlier reading — a tile with nothing to
+              compare against shows the figure alone rather than an arrow that
+              means nothing. */}
+          {kpi.delta && !compact ? (
+            <span className="md-kpi-cell-delta" data-direction={kpi.delta.direction}>
+              <span aria-hidden="true" className="md-kpi-cell-delta-arrow">
+                {kpi.delta.direction === "up" ? "↗" : kpi.delta.direction === "down" ? "↘" : "→"}
+              </span>
+              {kpi.delta.text}
+            </span>
+          ) : kpi.change ? (
+            // A strip whose data carries no movement keeps its contextual
+            // count, so surfaces without history are unchanged by the arrow.
+            <StatusPill tone={kpi.tone}>{kpi.change}</StatusPill>
+          ) : null}
+          {/* The compact row has no room for the supporting lines, so they are
+              kept for assistive technology rather than dropped from the
+              product. */}
+          <span className={compact ? "sr-only" : "md-kpi-cell-detail"}>
+            {kpi.detail}
+            {kpi.delta ? <span className="md-kpi-cell-detail-caption"> · {t(kpi.delta.caption)}</span> : null}
+          </span>
         </span>
       </span>
-      {kpi.series?.length ? (
+      {spark && kpi.series?.length ? (
         <span className="md-kpi-cell-spark">
-          <MiniAreaChart values={kpi.series} tone={kpi.tone} width={76} height={38} animated={!shouldReduceMotion} />
+          {sparkKind === "bars" ? (
+            <MiniBarChart values={kpi.series} tone={kpi.tone} height={34} animated={!shouldReduceMotion} />
+          ) : (
+            <MiniAreaChart values={kpi.series} tone={kpi.tone} width={76} height={38} animated={!shouldReduceMotion} />
+          )}
         </span>
       ) : null}
       {/* A rule rather than a ring: it marks the selected metric without adding
-          another box to the row. */}
-      <span className="md-kpi-cell-marker" aria-hidden="true" />
+          another box to the row. Given a `markerId` it becomes one rule that
+          travels between cells, so changing metric reads as a single object
+          moving rather than two independent fades — and it can be retargeted
+          mid-flight without snapping. */}
+      {markerId ? (
+        selected ? (
+          <motion.span
+            layoutId={markerId}
+            className="md-kpi-cell-marker md-kpi-cell-marker-travelling"
+            aria-hidden="true"
+            transition={shouldReduceMotion ? { duration: 0 } : mdMotion.spring}
+          />
+        ) : null
+      ) : (
+        <span className="md-kpi-cell-marker" aria-hidden="true" />
+      )}
     </>
   )
 
@@ -118,6 +162,9 @@ export function KpiStrip({
   onOpenDrilldown,
   columns = 4,
   density = "comfortable",
+  spark = true,
+  sparkKind = "area",
+  markerId,
   className,
 }: {
   kpis: DashboardKpi[]
@@ -132,6 +179,22 @@ export function KpiStrip({
    * the subject of the screen.
    */
   density?: "comfortable" | "compact"
+  /**
+   * Turn the per-cell sparkline off when a full chart of the same series is
+   * already on screen. Two drawings of one series is one drawing too many.
+   */
+  spark?: boolean
+  /**
+   * `bars` draws the period as discrete ticks instead of a curve. Use it where
+   * the cards sit above a full-size plot: a second smooth line reads as the
+   * same drawing twice, where a tick strip reads as the shape.
+   */
+  sparkKind?: "area" | "bars"
+  /**
+   * Opt into a single selection rule that travels between cells. Pass an id
+   * unique to this strip: two strips sharing one id would fight over the rule.
+   */
+  markerId?: string
   className?: string
 }) {
   const compact = density === "compact"
@@ -146,6 +209,9 @@ export function KpiStrip({
           kpi={kpi}
           index={index}
           compact={compact}
+          spark={spark}
+          sparkKind={sparkKind}
+          markerId={markerId}
           selected={selectedLabel === kpi.label}
           onSelect={onSelect ? () => onSelect(kpi.label) : undefined}
           onOpen={onOpenDrilldown ? () => onOpenDrilldown(makeDashboardDrilldownId("metric", kpi.label)) : undefined}
