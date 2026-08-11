@@ -8,6 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { RegisterFacetSelect, RegisterSearchField, RegisterViewSwitch } from "@/components/multideck/register-toolbar"
@@ -892,30 +893,30 @@ function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, on
   }
 
   const inputClass = "h-7 rounded-[var(--md-radius-xs)] border-transparent bg-[var(--md-surface-tint)] px-1.5 text-[10px] shadow-none focus-visible:border-[var(--md-accent)] focus-visible:ring-1 focus-visible:ring-[var(--md-accent)]"
-  const itemColumns = useMemo<DataTableColumn<ExportDeclarationItem>[]>(() => [
+  const itemColumns = useMemo<DataTableColumn<ExportDeclarationItem>[]>(() => ([
     {
       id: "line",
       label: "Line",
-      width: 64,
-      minWidth: 64,
+      width: 84,
+      minWidth: 84,
       canHide: false,
       canPin: false,
       cell: (item) => {
         const index = items.findIndex((candidate) => candidate.id === item.id)
         const missing = mandatoryItemGaps(item, declarationDirection)
         const expanded = item.id === expandedItemId
-        return <button type="button" data-item-disclosure aria-expanded={expanded} aria-controls={`item-details-${item.id}`} aria-label={`${t(expanded ? "Collapse item details" : "Expand item details")} ${index + 1}`} onClick={(event) => { event.stopPropagation(); toggleItem(item.id) }} className="group/disclosure flex min-h-9 w-full items-center gap-1.5 rounded-[var(--md-radius-sm)] px-1 text-start outline-none transition-colors duration-150 hover:bg-[var(--md-surface)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] focus-visible:ring-offset-1 active:bg-[var(--md-hover)]">
+        return <button type="button" data-item-disclosure aria-expanded={expanded} aria-controls={`item-details-${item.id}`} aria-label={`${t(expanded ? "Collapse item details" : "Expand item details")} ${index + 1}`} onClick={(event) => { event.stopPropagation(); toggleItem(item.id) }} className="group/disclosure flex min-h-9 w-full min-w-0 items-center gap-1.5 overflow-hidden rounded-[var(--md-radius-sm)] px-1 text-start outline-none transition-colors duration-150 hover:bg-[var(--md-surface)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] focus-visible:ring-offset-1 active:bg-[var(--md-hover)]">
           <ChevronDown className={cn("size-3.5 shrink-0 text-[var(--md-subtle)] transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none", expanded && "rotate-180")} aria-hidden="true" />
           <span className="min-w-0">
             <strong className="block text-[11px] font-semibold text-[var(--md-ink)]">{index + 1}</strong>
-            <span className={cn("mt-0.5 block text-[8px] font-medium", missing.length ? "text-[var(--md-amber)]" : "text-[var(--md-green)]")}>{missing.length ? `${missing.length} ${t("required")}` : t("Complete")}</span>
+            <span className={cn("mt-0.5 block whitespace-nowrap text-[8px] font-medium", missing.length ? "text-[var(--md-amber)]" : "text-[var(--md-green)]")}>{missing.length ? `${missing.length} ${t("required")}` : t("Complete")}</span>
           </span>
         </button>
       },
     },
     {
-      id: "commodityCode", label: t("Commodity code"), width: 120, minWidth: 120, kind: "text", canPin: false,
-      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item, declarationDirection); return <Input aria-label={`${t("Commodity code")} ${index + 1}`} className={cn(inputClass, validatedItemField(issues, missing, "commodityCode") && "ring-1 ring-[var(--md-red)]")} value={item.commodityCode} onChange={(event) => updateRow(item.id, "commodityCode", event.target.value.replace(/\D/g, "").slice(0, 10))} /> },
+      id: "commodityCode", label: t("Commodity code"), width: 144, minWidth: 132, kind: "text", canPin: false,
+      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item, declarationDirection); return <div className="relative"><Input aria-label={`${t("Commodity code")} ${index + 1}`} className={cn(inputClass, "pe-8", validatedItemField(issues, missing, "commodityCode") && "ring-1 ring-[var(--md-red)]")} value={item.commodityCode} onChange={(event) => updateRow(item.id, "commodityCode", event.target.value.replace(/\D/g, "").slice(0, 10))} /><CommoditySmartSearch item={item} direction={declarationDirection} update={(field, value) => updateRow(item.id, field, value)} triggerClassName="absolute end-0 top-0" t={t} /></div> },
     },
     {
       id: "description", label: t("Description of goods"), width: 200, minWidth: 200, kind: "long-text", canPin: false,
@@ -970,7 +971,22 @@ function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, on
       id: "actions", label: t("Actions"), width: 54, minWidth: 54, kind: "actions", canHide: false, canPin: false,
       cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); return <button type="button" aria-label={`${t("Remove")} ${t("Item")} ${index + 1}`} disabled={items.length === 1} onClick={(event) => { event.stopPropagation(); onRemove(item.id) }} className="grid size-8 place-items-center rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] hover:bg-[var(--md-surface)] hover:text-[var(--md-red)] disabled:opacity-30"><Trash2 className="size-3.5" /></button> },
     },
-  ], [additionalProcedureCodes, countries, currencies, declarationDirection, expandedItemId, issues, items, packageKinds, procedureCodes, t, updateRow])
+  ] satisfies DataTableColumn<ExportDeclarationItem>[]).map((column: DataTableColumn<ExportDeclarationItem>) => {
+    const resizable = column.id !== "line" && column.id !== "actions"
+    const minimumResizableWidth = column.id === "description"
+      ? 140
+      : column.id === "price" || column.id === "previousDocumentReference"
+        ? 120
+        : 80
+
+    return {
+      ...column,
+      resizable,
+      minWidth: resizable ? Math.min(column.minWidth ?? minimumResizableWidth, minimumResizableWidth) : column.minWidth,
+      headerClassName: cn(column.headerClassName, "border-e border-[var(--md-line)] last:border-e-0"),
+      cellClassName: cn(column.cellClassName, "border-e border-[var(--md-line)] last:border-e-0"),
+    }
+  }), [additionalProcedureCodes, countries, currencies, declarationDirection, expandedItemId, issues, items, packageKinds, procedureCodes, t, updateRow])
 
   return <div className="min-w-0 space-y-4">
     <Surface padding="none" className="w-full min-w-0 max-w-full overflow-hidden rounded-[var(--md-radius-xl)]">
@@ -987,6 +1003,7 @@ function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, on
           columns={itemColumns}
           rows={items}
           getRowKey={(item) => item.id}
+          storageKey="customs-mandatory-goods-lines"
           selectedRowKey={activeItemId}
           minimumWidth={1780}
           showToolbar={false}
@@ -1036,7 +1053,7 @@ function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, on
                           transition={reduceMotion(shouldReduceMotion, expanded ? mdMotion.panel : mdMotion.exit)}
                           className="overflow-hidden"
                         >
-                          <div className="sticky start-0 w-[100cqw] p-3">
+                          <div className="w-full min-w-[1780px] p-3">
                             <ItemDetailsEditor
                               item={item}
                               itemNumber={index + 1}
@@ -1068,41 +1085,118 @@ function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, on
   </div>
 }
 
-function CommodityAssistant({ item, direction, update, onClose, t }: {
+function CommoditySmartSearch({ item, direction, update, triggerClassName, triggerVariant = "search", t }: {
   item: ExportDeclarationItem
   direction: DeclarationKind
   update: <K extends keyof ExportDeclarationItem>(field: K, value: ExportDeclarationItem[K]) => void
-  onClose: () => void
+  triggerClassName?: string
+  triggerVariant?: "search" | "certificates"
   t: (text: string) => string
 }) {
   const searchInput = useRef<HTMLInputElement>(null)
+  const liveRequestId = useRef(0)
+  const shouldReduceMotion = useReducedMotion() ?? false
+  const countryOptions = useReferenceOptions("country", t, "Select country")
+  const [open, setOpen] = useState(false)
   const [query, setQuery] = useState(item.description.trim() || item.commodityCode)
+  const [importCountry, setImportCountry] = useState("GB")
+  const [searchDirection, setSearchDirection] = useState<DeclarationKind>(direction)
+  const [taxAndDuty, setTaxAndDuty] = useState(true)
+  const [dispatchedCountry, setDispatchedCountry] = useState(item.nonPreferentialOrigin || item.destinationCountry)
   const [suggestions, setSuggestions] = useState<ICustomsCommoditySuggestion[]>([])
+  const [suggestionsLoadedFor, setSuggestionsLoadedFor] = useState("")
   const [selectedSuggestion, setSelectedSuggestion] = useState<ICustomsCommoditySuggestion | null>(null)
   const [detail, setDetail] = useState<ICustomsCommodityDetail | null>(null)
   const [selectedCertificates, setSelectedCertificates] = useState<Record<string, boolean>>({})
   const [certificateReferences, setCertificateReferences] = useState<Record<string, string>>({})
-  const [busy, setBusy] = useState<"search" | "details" | null>(null)
+  const [certificatesOpen, setCertificatesOpen] = useState(false)
+  const [suggestionsBusy, setSuggestionsBusy] = useState(false)
+  const [detailsBusy, setDetailsBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const dialogId = `commodity-smart-search-${item.id}-${triggerVariant}`
 
   useEffect(() => {
-    searchInput.current?.focus()
-  }, [])
+    const resolvedQuery = query.trim()
+    const requestId = ++liveRequestId.current
+    if (!open || resolvedQuery.length < 2 || /^\d{10}$/.test(resolvedQuery)) {
+      setSuggestionsBusy(false)
+      if (resolvedQuery.length < 2 || /^\d{10}$/.test(resolvedQuery)) {
+        setSuggestions([])
+        setSuggestionsLoadedFor("")
+      }
+      return
+    }
 
-  async function loadDetails(suggestion: ICustomsCommoditySuggestion) {
+    const timer = window.setTimeout(() => {
+      setSuggestionsBusy(true)
+      setError(null)
+      searchICustomsCommodities(resolvedQuery, importCountry)
+        .then((response) => {
+          if (requestId !== liveRequestId.current) return
+          setSuggestions(response.suggestions)
+          setSuggestionsLoadedFor(resolvedQuery)
+        })
+        .catch((caught: unknown) => {
+          if (requestId !== liveRequestId.current) return
+          setSuggestions([])
+          setSuggestionsLoadedFor(resolvedQuery)
+          setError(caught instanceof Error ? caught.message : t("Commodity search could not be completed."))
+        })
+        .finally(() => {
+          if (requestId === liveRequestId.current) setSuggestionsBusy(false)
+        })
+    }, 320)
+
+    return () => window.clearTimeout(timer)
+  }, [importCountry, open, query, t])
+
+  function resetSelection() {
+    setSelectedSuggestion(null)
+    setDetail(null)
+    setSelectedCertificates({})
+    setCertificateReferences({})
+    setCertificatesOpen(false)
+  }
+
+  function resetSearchResults() {
+    liveRequestId.current += 1
+    setSuggestions([])
+    setSuggestionsLoadedFor("")
+    setSuggestionsBusy(false)
+    resetSelection()
+    setError(null)
+  }
+
+  function handleOpenChange(nextOpen: boolean) {
+    setOpen(nextOpen)
+    if (!nextOpen) return
+    const queryOnOpen = triggerVariant === "certificates" ? item.commodityCode : item.description.trim() || item.commodityCode
+    setQuery(queryOnOpen)
+    setImportCountry("GB")
+    setSearchDirection(direction)
+    setTaxAndDuty(true)
+    setDispatchedCountry(item.nonPreferentialOrigin || item.destinationCountry)
+    resetSearchResults()
+    if (triggerVariant === "certificates" && /^\d{10}$/.test(item.commodityCode)) {
+      void loadDetails({ code: item.commodityCode, description: item.description.trim(), confidence: null }, true, direction)
+    }
+  }
+
+  async function loadDetails(suggestion: ICustomsCommoditySuggestion, revealCertificates = false, detailDirection = searchDirection) {
     setSelectedSuggestion(suggestion)
     setDetail(null)
     setSelectedCertificates({})
     setCertificateReferences({})
+    setCertificatesOpen(revealCertificates)
     setError(null)
-    setBusy("details")
+    setDetailsBusy(true)
     try {
-      const response = await getICustomsCommodityDetails(suggestion.code, direction)
+      const response = await getICustomsCommodityDetails(suggestion.code, detailDirection)
       setDetail(response.detail)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : t("Commodity details could not be loaded."))
     } finally {
-      setBusy(null)
+      setDetailsBusy(false)
     }
   }
 
@@ -1113,24 +1207,24 @@ function CommodityAssistant({ item, direction, update, onClose, t }: {
       return
     }
     setError(null)
-    setSuggestions([])
-    setSelectedSuggestion(null)
-    setDetail(null)
-    setSelectedCertificates({})
-    setCertificateReferences({})
+    resetSelection()
     if (/^\d{10}$/.test(resolvedQuery)) {
       await loadDetails({ code: resolvedQuery, description: item.description.trim(), confidence: null })
       return
     }
-    setBusy("search")
+    const requestId = ++liveRequestId.current
+    setSuggestionsBusy(true)
     try {
-      const response = await searchICustomsCommodities(resolvedQuery)
+      const response = await searchICustomsCommodities(resolvedQuery, importCountry)
+      if (requestId !== liveRequestId.current) return
       setSuggestions(response.suggestions)
+      setSuggestionsLoadedFor(resolvedQuery)
       if (!response.suggestions.length) setError(t("No matching commodity codes were returned."))
     } catch (caught) {
+      if (requestId !== liveRequestId.current) return
       setError(caught instanceof Error ? caught.message : t("Commodity search could not be completed."))
     } finally {
-      setBusy(null)
+      if (requestId === liveRequestId.current) setSuggestionsBusy(false)
     }
   }
 
@@ -1202,100 +1296,160 @@ function CommodityAssistant({ item, direction, update, onClose, t }: {
     if (additionalDocuments.length !== item.additionalDocuments.length) {
       update("additionalDocuments", additionalDocuments)
     }
-    toast.success(t("Commodity selection applied"))
-    onClose()
+    toast.success(t(triggerVariant === "certificates" ? "Certificates applied" : "Commodity selection applied"))
+    setOpen(false)
   }
 
   const selectedCertificateCount = Object.values(selectedCertificates).filter(Boolean).length
   const formattedCode = (code: string) => code.replace(/(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/, "$1 $2 $3 $4 $5")
 
-  return <section id={`commodity-assistant-${item.id}`} aria-label={t("Commodity assistant")} className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-3 shadow-[var(--md-shadow-line)]">
-    <div className="flex flex-wrap items-start justify-between gap-3">
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="flex size-7 shrink-0 items-center justify-center rounded-[var(--md-radius-sm)] bg-[color-mix(in_srgb,var(--md-accent)_9%,var(--md-surface-soft))] text-[var(--md-accent)]"><Sparkles className="size-3.5" aria-hidden="true" /></span>
-          <div>
-            <h4 className="text-[12px] font-semibold text-[var(--md-ink)]">{t("Commodity assistant")}</h4>
-            <p className="text-[10px] text-[var(--md-subtle)]">{t(direction === "import" ? "UK CDS import tariff and certificates" : "UK CDS export tariff and certificates")}</p>
+  const resolvedQuery = query.trim()
+  const hasCurrentEmptyResult = suggestionsLoadedFor === resolvedQuery && resolvedQuery.length >= 2 && !suggestionsBusy && suggestions.length === 0 && !selectedSuggestion
+  const showSuggestionPanel = !selectedSuggestion && resolvedQuery.length >= 2 && (suggestionsBusy || suggestions.length > 0 || hasCurrentEmptyResult)
+
+  function renderCertificateList() {
+    if (!detail) return null
+    return <div className="rounded-[var(--md-radius-md)] bg-[var(--md-surface)] p-3 shadow-[var(--md-shadow-line)]">
+      <div className="flex items-baseline justify-between gap-3">
+        <h4 className="text-[12px] font-medium text-[var(--md-ink)]">{t("Certificates and waivers")}</h4>
+        <span className="text-[10px] text-[var(--md-subtle)]">{selectedCertificateCount} {t("selected")}</span>
+      </div>
+      <p className="mt-1 max-w-[65ch] text-pretty text-[11px] leading-[1.5] text-[var(--md-subtle)]">{t("Select only the documents or legal declarations that genuinely apply to these goods.")}</p>
+      {detail.certificates.length ? <div className="mt-3 max-h-[420px] space-y-2 overflow-y-auto pe-1">
+        {detail.certificates.map((certificate) => {
+          const checked = Boolean(selectedCertificates[certificate.code])
+          const certificateId = `certificate-${triggerVariant}-${item.id}-${certificate.code}`
+          return <div key={certificate.code} className={cn("rounded-[var(--md-radius-sm)] bg-[var(--md-surface-soft)] p-3", checked && "shadow-[inset_0_0_0_1px_var(--md-accent)]") }>
+            <div className="flex items-start gap-2.5">
+              <Checkbox id={certificateId} checked={checked} onCheckedChange={(value) => toggleCertificate(certificate, value === true)} aria-label={`${certificate.code} ${certificate.description}`} />
+              <label htmlFor={certificateId} className="min-w-0 flex-1 cursor-pointer">
+                <span className="block text-[12px] font-medium text-[var(--md-ink)]">{certificate.code}</span>
+                <span className="mt-0.5 block text-[11px] leading-[1.5] text-[var(--md-text)]">{certificate.description}</span>
+              </label>
+            </div>
+            {certificate.guidance ? <details className="ms-6 mt-2 text-[11px] text-[var(--md-subtle)]"><summary className="cursor-pointer font-medium text-[var(--md-accent)]">{t("View CDS guidance")}</summary><p className="mt-1 whitespace-pre-line leading-[1.5]">{certificate.guidance}</p></details> : null}
+            {checked && certificate.referenceRequired ? <div className="ms-6 mt-2.5"><label htmlFor={`${certificateId}-reference`} className="mb-1.5 block text-[11px] font-medium text-[var(--md-text)]">{t("Document reference")}</label><Input id={`${certificateId}-reference`} value={certificateReferences[certificate.code] ?? ""} onChange={(event) => setCertificateReferences((current) => ({ ...current, [certificate.code]: event.target.value.slice(0, 70) }))} className="h-9 rounded-[var(--md-radius-sm)] bg-[var(--md-surface-soft)] text-base sm:text-[13px]" /></div> : null}
           </div>
-        </div>
-      </div>
-      <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-[10px]" onClick={onClose}>{t("Close")}</Button>
+        })}
+      </div> : <p className="mt-3 text-[11px] text-[var(--md-subtle)]">{t("No declaration-specific certificates were returned for this code.")}</p>}
     </div>
+  }
 
-    <div className="mt-3">
-      <label htmlFor={`commodity-search-${item.id}`} className="mb-1 block text-[10.5px] font-medium text-[var(--md-text)]">{t("Search by goods description or 10-digit code")}</label>
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <Input ref={searchInput} id={`commodity-search-${item.id}`} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void runSearch() } }} placeholder={t("e.g. hardback books or 4901100000")} className="h-8 flex-1 rounded-[var(--md-radius-sm)] bg-[var(--md-surface-soft)] text-[11px]" />
-        <Button type="button" size="sm" className="h-8 gap-1.5 px-3 text-[10.5px]" disabled={busy !== null} onClick={() => void runSearch()}>{busy === "search" ? <RefreshCw className="size-3.5 animate-spin" aria-hidden="true" /> : <Search className="size-3.5" aria-hidden="true" />}{t(busy === "search" ? "Searching" : "Search tariff")}</Button>
-      </div>
-      <p className="mt-1.5 text-[9.5px] leading-4 text-[var(--md-subtle)]">{t("Multideck uses the declaration direction automatically. Review a result before applying it to this goods line.")}</p>
-    </div>
+  return <>
+    {triggerVariant === "certificates" ? <Button type="button" variant="outline" size="sm" disabled={!/^\d{10}$/.test(item.commodityCode)} aria-haspopup="dialog" aria-controls={dialogId} onClick={() => handleOpenChange(true)} className={cn("h-8 gap-1.5 px-2.5 text-[11px]", triggerClassName)}>
+      <FileCheck2 className="size-3.5" aria-hidden="true" />
+      {t("Certificates list")}
+    </Button> : <button type="button" aria-label={t("Smart commodity search")} aria-haspopup="dialog" aria-controls={dialogId} onClick={(event) => { event.stopPropagation(); handleOpenChange(true) }} className={cn("grid size-7 place-items-center rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] outline-none transition-[background-color,color,transform] duration-150 hover:bg-[var(--md-accent-a10)] hover:text-[var(--md-accent)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] active:scale-[0.96]", open && "bg-[var(--md-accent-a10)] text-[var(--md-accent)]", triggerClassName)}>
+      <Sparkles className="size-3.5" aria-hidden="true" />
+    </button>}
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent id={dialogId} className={cn("flex max-h-[min(calc(100dvh-32px),780px)] flex-col gap-0 overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-0", triggerVariant === "certificates" ? "sm:max-w-[680px]" : "sm:max-w-[760px]")} onOpenAutoFocus={(event) => { if (triggerVariant === "search") { event.preventDefault(); searchInput.current?.focus() } }}>
+        <DialogHeader className="shrink-0 px-5 pb-0 pt-5 pe-14">
+          <DialogTitle className="text-balance text-[22px] font-medium leading-[1.15] text-[var(--md-ink)]">{triggerVariant === "certificates" ? <>{t("Certificates for commodity")} <span className="whitespace-nowrap tabular-nums" dir="ltr">{formattedCode(item.commodityCode)}</span></> : t("Search for a commodity")}</DialogTitle>
+          <DialogDescription className="max-w-[65ch] text-pretty text-[12px] leading-[1.5] text-[var(--md-subtle)]">{triggerVariant === "certificates" ? item.description || t("Review the documents and legal declarations returned for this commodity code.") : t("Choose an import country and enter a product name or 10-digit commodity code.")}</DialogDescription>
+        </DialogHeader>
 
-    {error ? <p role="alert" className="mt-3 rounded-[var(--md-radius-sm)] bg-[color-mix(in_srgb,var(--md-red)_8%,transparent)] px-2.5 py-2 text-[10px] leading-4 text-[var(--md-red)]">{error}</p> : null}
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
+          {triggerVariant === "search" ? <>
+          <div className="grid gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-3 md:grid-cols-[minmax(220px,1fr)_minmax(180px,auto)_minmax(150px,auto)]">
+            <div className="min-w-0">
+              <span className="mb-1.5 block text-[12px] font-medium text-[var(--md-text)]">{t("Import country")}</span>
+              <Select value={importCountry} onValueChange={(value) => { setImportCountry(value); resetSearchResults() }}>
+                <SelectTrigger aria-label={t("Import country")} className="h-10 w-full border-0 bg-[var(--md-field-bg)] text-base shadow-[var(--md-shadow-line)] sm:text-[13px]"><SelectValue placeholder={t("Select country")} /></SelectTrigger>
+                <SelectContent>{countryOptions.filter(([value]) => value).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
 
-    {suggestions.length || selectedSuggestion ? <div className={cn("mt-3 grid gap-3", suggestions.length > 0 && "lg:grid-cols-[minmax(220px,0.8fr)_minmax(0,1.2fr)]")}>
-      {suggestions.length ? <div>
-        <p className="mb-1.5 text-[10px] font-semibold text-[var(--md-ink)]">{t("Suggested commodities")}</p>
-        <div className="max-h-[270px] space-y-1 overflow-y-auto pe-1">
-          {suggestions.map((suggestion) => {
-            const selected = selectedSuggestion?.code === suggestion.code
-            return <button key={suggestion.code} type="button" aria-pressed={selected} onClick={() => void loadDetails(suggestion)} className={cn("w-full rounded-[var(--md-radius-sm)] px-2.5 py-2 text-start outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-[var(--md-accent)]", selected ? "bg-[color-mix(in_srgb,var(--md-accent)_9%,var(--md-surface-soft))]" : "bg-[var(--md-surface-soft)] hover:bg-[var(--md-hover)]") }>
-              <span className="block text-[10.5px] font-semibold tabular-nums text-[var(--md-ink)]">{formattedCode(suggestion.code)}</span>
-              <span className="mt-0.5 line-clamp-2 block text-[9.5px] leading-4 text-[var(--md-text)]">{suggestion.description}</span>
-            </button>
-          })}
-        </div>
-      </div> : null}
-
-      <div aria-live="polite">
-        {busy === "details" ? <div className="flex min-h-28 items-center justify-center gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] text-[10px] text-[var(--md-subtle)]"><RefreshCw className="size-3.5 animate-spin" aria-hidden="true" />{t("Loading tariff details")}</div> : null}
-        {detail && selectedSuggestion ? <div className="rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] p-3 shadow-[var(--md-shadow-line)]">
-          <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
-              <p className="text-[11px] font-semibold tabular-nums text-[var(--md-ink)]">{formattedCode(detail.code)}</p>
-              <p className="mt-0.5 text-[9.5px] leading-4 text-[var(--md-text)]">{detail.description || selectedSuggestion.description}</p>
+              <span className="mb-2 block text-[12px] font-medium text-[var(--md-text)]">{t("Import / export")}</span>
+              <div className="flex h-10 items-center gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-3 shadow-[var(--md-shadow-line)]">
+                <span className={cn("text-[12px] transition-colors duration-150", searchDirection === "import" ? "font-medium text-[var(--md-ink)]" : "text-[var(--md-subtle)]")}>{t("Import")}</span>
+                <Switch aria-label={t("Import / export")} checked={searchDirection === "export"} onCheckedChange={(checked) => { setSearchDirection(checked ? "export" : "import"); resetSelection() }} />
+                <span className={cn("text-[12px] transition-colors duration-150", searchDirection === "export" ? "font-medium text-[var(--md-ink)]" : "text-[var(--md-subtle)]")}>{t("Export")}</span>
+              </div>
             </div>
-            <StatusPill tone={detail.declarable ? "green" : "red"} className="h-5 px-2 text-[9px]">{t(detail.declarable ? "Declarable" : "Not declarable")}</StatusPill>
+            <div>
+              <span className="mb-2 block text-[12px] font-medium text-[var(--md-text)]">{t("Tax & duty")}</span>
+              <div className="flex h-10 items-center justify-between gap-3 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-3 shadow-[var(--md-shadow-line)]">
+                <span className="whitespace-nowrap text-[12px] text-[var(--md-text)]">{t("Show rates")}</span>
+                <Switch aria-label={t("Tax & duty")} checked={taxAndDuty} onCheckedChange={setTaxAndDuty} />
+              </div>
+            </div>
+
+            <AnimatePresence initial={false}>
+              {taxAndDuty ? <motion.div key="dispatched-country" initial={shouldReduceMotion ? false : { opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: -4 }} transition={reduceMotion(shouldReduceMotion, mdMotion.exit)} className="min-w-0 md:col-span-3">
+                <span className="mb-1.5 block text-[12px] font-medium text-[var(--md-text)]">{t("Dispatched country")}</span>
+                <Select value={dispatchedCountry || undefined} onValueChange={setDispatchedCountry}>
+                  <SelectTrigger aria-label={t("Dispatched country")} className="h-10 w-full border-0 bg-[var(--md-field-bg)] text-base shadow-[var(--md-shadow-line)] sm:text-[13px]"><SelectValue placeholder={t("Select country")} /></SelectTrigger>
+                  <SelectContent>{countryOptions.filter(([value]) => value).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
+                </Select>
+              </motion.div> : null}
+            </AnimatePresence>
           </div>
 
-          {direction === "import" ? <div className="mt-2 flex flex-wrap gap-1.5">
-            {detail.dutyRate ? <span className="rounded-[var(--md-radius-xs)] bg-[var(--md-surface)] px-2 py-1 text-[9px] text-[var(--md-text)]"><strong className="font-semibold text-[var(--md-ink)]">{t("Third-country duty")}</strong> · {detail.dutyRate}</span> : null}
-            {detail.vatOptions.map((option) => <span key={option.code} className="rounded-[var(--md-radius-xs)] bg-[var(--md-surface)] px-2 py-1 text-[9px] text-[var(--md-text)]"><strong className="font-semibold text-[var(--md-ink)]">{option.code}</strong> · {option.label}</span>)}
-          </div> : null}
-
-          <div className="mt-3 border-t border-[var(--md-line)] pt-2.5">
-            <div className="flex items-baseline justify-between gap-2">
-              <p className="text-[10px] font-semibold text-[var(--md-ink)]">{t("Certificates and waivers")}</p>
-              <span className="text-[9px] text-[var(--md-subtle)]">{selectedCertificateCount} {t("selected")}</span>
+          <div className="mt-4">
+            <label htmlFor={`commodity-search-${item.id}`} className="mb-1.5 block text-[12px] font-medium text-[var(--md-text)]">{t("Commodity code or description")}</label>
+            <div className="relative">
+              <Input ref={searchInput} id={`commodity-search-${item.id}`} value={query} onChange={(event) => { setQuery(event.target.value); setSuggestions([]); setSuggestionsLoadedFor(""); resetSelection(); setError(null) }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void runSearch() } }} placeholder={t("e.g. hardback books or 4901100000")} autoComplete="off" aria-autocomplete="list" aria-controls={`commodity-suggestions-${item.id}`} aria-expanded={showSuggestionPanel} className={cn("h-11 rounded-[var(--md-radius-md)] border-0 bg-[var(--md-field-bg)] pe-12 text-base shadow-[var(--md-shadow-line)] sm:text-[14px]", showSuggestionPanel && "rounded-b-none")} />
+              <button type="button" aria-label={t("Search commodities")} disabled={detailsBusy} onClick={() => void runSearch()} className="absolute end-1 top-1 grid size-9 place-items-center rounded-[var(--md-radius-sm)] bg-[var(--md-accent)] text-white outline-none transition-[background-color,opacity,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--md-accent)_88%,black)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] focus-visible:ring-offset-2 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-60">
+                {suggestionsBusy ? <RefreshCw className="size-4 animate-spin" aria-hidden="true" /> : <Search className="size-4" aria-hidden="true" />}
+              </button>
             </div>
-            <p className="mt-0.5 text-[9px] leading-4 text-[var(--md-subtle)]">{t("Select only the documents or legal declarations that genuinely apply to these goods.")}</p>
-            {detail.certificates.length ? <div className="mt-2 max-h-[310px] space-y-1.5 overflow-y-auto pe-1">
-              {detail.certificates.map((certificate) => {
-                const checked = Boolean(selectedCertificates[certificate.code])
-                return <div key={certificate.code} className={cn("rounded-[var(--md-radius-sm)] bg-[var(--md-surface)] p-2.5", checked && "shadow-[inset_0_0_0_1px_var(--md-accent)]") }>
-                  <div className="flex items-start gap-2">
-                    <Checkbox id={`certificate-${item.id}-${certificate.code}`} checked={checked} onCheckedChange={(value) => toggleCertificate(certificate, value === true)} aria-label={`${certificate.code} ${certificate.description}`} />
-                    <label htmlFor={`certificate-${item.id}-${certificate.code}`} className="min-w-0 flex-1 cursor-pointer">
-                      <span className="block text-[10px] font-semibold text-[var(--md-ink)]">{certificate.code}</span>
-                      <span className="mt-0.5 block text-[9px] leading-4 text-[var(--md-text)]">{certificate.description}</span>
-                    </label>
-                  </div>
-                  {certificate.guidance ? <details className="ms-6 mt-1.5 text-[9px] text-[var(--md-subtle)]"><summary className="cursor-pointer font-medium text-[var(--md-accent)]">{t("View CDS guidance")}</summary><p className="mt-1 whitespace-pre-line leading-4">{certificate.guidance}</p></details> : null}
-                  {checked && certificate.referenceRequired ? <div className="ms-6 mt-2"><label htmlFor={`certificate-reference-${item.id}-${certificate.code}`} className="mb-1 block text-[9px] font-medium text-[var(--md-text)]">{t("Document reference")}</label><Input id={`certificate-reference-${item.id}-${certificate.code}`} value={certificateReferences[certificate.code] ?? ""} onChange={(event) => setCertificateReferences((current) => ({ ...current, [certificate.code]: event.target.value.slice(0, 70) }))} className="h-7 rounded-[var(--md-radius-xs)] bg-[var(--md-surface-soft)] text-[10px]" /></div> : null}
+            <AnimatePresence initial={false}>
+              {showSuggestionPanel ? <motion.div id={`commodity-suggestions-${item.id}`} role="listbox" aria-label={t("Commodity search results")} initial={shouldReduceMotion ? false : { opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={reduceMotion(shouldReduceMotion, mdMotion.exit)} className="max-h-[300px] overflow-y-auto border-b border-[var(--md-line)] bg-transparent">
+                {suggestionsBusy && !suggestions.length ? <div className="flex min-h-20 items-center justify-start gap-2 border-t border-[var(--md-line)] px-4 py-4 text-[12px] text-[var(--md-subtle)]"><RefreshCw className="size-3.5 animate-spin" aria-hidden="true" />{t("Searching")}</div> : null}
+                {suggestions.map((suggestion, index) => <motion.button key={`${suggestionsLoadedFor}-${suggestion.code}`} type="button" role="option" aria-selected="false" initial={shouldReduceMotion ? false : { opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} transition={reduceMotion(shouldReduceMotion, { ...mdMotion.exit, delay: Math.min(index, 6) * 0.025 })} onClick={() => void loadDetails(suggestion)} className="w-full border-t border-[var(--md-line)] px-4 py-3 text-start outline-none transition-[background-color,transform] duration-150 hover:bg-[var(--md-hover)] focus-visible:bg-[var(--md-hover)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--md-accent)] active:scale-[0.99]">
+                  <span className="block text-[13px] font-medium tabular-nums text-[var(--md-ink)]" dir="ltr">{formattedCode(suggestion.code)}</span>
+                  <span className="mt-0.5 line-clamp-2 block text-[12px] leading-[1.5] text-[var(--md-text)]">{suggestion.description}</span>
+                </motion.button>)}
+                {hasCurrentEmptyResult ? <div className="border-t border-[var(--md-line)] px-4 py-4 text-start"><p className="text-[12px] font-medium text-[var(--md-ink)]">{t("No matching commodity codes were returned.")}</p><p className="mt-1 text-[11px] leading-[1.5] text-[var(--md-subtle)]">{t("Try a more specific product description or an exact 10-digit code.")}</p></div> : null}
+              </motion.div> : null}
+            </AnimatePresence>
+          </div>
+          </> : null}
+
+          {error ? <p role="alert" className="mt-3 rounded-[var(--md-radius-md)] bg-[color-mix(in_srgb,var(--md-red)_8%,transparent)] px-3 py-2.5 text-[12px] leading-[1.5] text-[var(--md-red)]">{error}</p> : null}
+
+          {detailsBusy ? <div className="mt-4 flex min-h-24 items-center justify-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] text-[12px] text-[var(--md-subtle)]"><RefreshCw className="size-3.5 animate-spin" aria-hidden="true" />{t("Loading tariff details")}</div> : null}
+
+          <AnimatePresence initial={false}>
+            {detail && selectedSuggestion ? <motion.section key={`commodity-detail-${detail.code}`} initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: -4 }} transition={reduceMotion(shouldReduceMotion, mdMotion.panel)} className={cn(triggerVariant === "certificates" ? "mt-0" : "mt-4 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-3")}>
+              {triggerVariant === "certificates" ? renderCertificateList() : <>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[13px] font-medium tabular-nums text-[var(--md-ink)]" dir="ltr">{formattedCode(detail.code)}</p>
+                  <p className="mt-1 max-w-[65ch] text-pretty text-[12px] leading-[1.5] text-[var(--md-text)]">{detail.description || selectedSuggestion.description}</p>
                 </div>
-              })}
-            </div> : <p className="mt-2 text-[9.5px] text-[var(--md-subtle)]">{t("No declaration-specific certificates were returned for this code.")}</p>}
-          </div>
+                <StatusPill tone={detail.declarable ? "green" : "red"} className="h-6 px-2.5 text-[10px]">{t(detail.declarable ? "Declarable" : "Not declarable")}</StatusPill>
+              </div>
 
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--md-line)] pt-2.5">
-            <p className="text-[9px] text-[var(--md-subtle)]">{t("Source: iCustoms UK Online Tariff")}</p>
-            <Button type="button" size="sm" className="h-7 px-3 text-[10px]" disabled={!detail.declarable} onClick={applySelection}>{t("Apply to goods line")}</Button>
-          </div>
-        </div> : null}
-      </div>
-    </div> : null}
-  </section>
+              {taxAndDuty && searchDirection === "import" ? <div className="mt-3 flex flex-wrap gap-2">
+                {detail.dutyRate ? <span className="rounded-[var(--md-radius-sm)] bg-[var(--md-surface)] px-2.5 py-1.5 text-[11px] text-[var(--md-text)]"><strong className="font-medium text-[var(--md-ink)]">{t("Third-country duty")}</strong> · {detail.dutyRate}</span> : null}
+                {detail.vatOptions.map((option) => <span key={option.code} className="rounded-[var(--md-radius-sm)] bg-[var(--md-surface)] px-2.5 py-1.5 text-[11px] text-[var(--md-text)]"><strong className="font-medium text-[var(--md-ink)]">{option.code}</strong> · {option.label}</span>)}
+              </div> : null}
+
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                <p className="text-[10.5px] text-[var(--md-subtle)]">{t("Source: iCustoms UK Online Tariff")}</p>
+                <Button type="button" variant="outline" size="sm" className="h-8 px-3 text-[11px]" onClick={() => setCertificatesOpen((current) => !current)} aria-expanded={certificatesOpen}>{t("Certificates list")}{selectedCertificateCount ? <span className="tabular-nums">({selectedCertificateCount})</span> : null}</Button>
+              </div>
+
+              <AnimatePresence initial={false}>
+                {certificatesOpen ? <motion.div key="certificates" initial={shouldReduceMotion ? false : { opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: -4 }} transition={reduceMotion(shouldReduceMotion, mdMotion.exit)} className="mt-4">
+                  {renderCertificateList()}
+                </motion.div> : null}
+              </AnimatePresence>
+              </>}
+            </motion.section> : null}
+          </AnimatePresence>
+        </div>
+
+        <DialogFooter className="shrink-0 border-t border-[var(--md-line)] bg-[var(--md-surface-soft)] px-5 pb-4 pt-3 sm:justify-between">
+          <DialogClose asChild><Button type="button" variant="ghost">{t("Cancel")}</Button></DialogClose>
+          <Button type="button" disabled={!detail?.declarable || detailsBusy} onClick={applySelection}>{t(triggerVariant === "certificates" ? "Save certificates" : "Save commodity")}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  </>
 }
 
 function ItemDetailsEditor({ item, itemNumber, onDuplicate, onRemove, canRemove, update, showDataElements, showOptional, issues, highlightedField, t }: {
@@ -1312,7 +1466,6 @@ function ItemDetailsEditor({ item, itemNumber, onDuplicate, onRemove, canRemove,
   t: (text: string) => string
 }) {
   const declarationDirection = useContext(CustomsDirectionContext)
-  const [commodityAssistantOpen, setCommodityAssistantOpen] = useState(false)
   const packageKindFields = useReferenceOptions("package_kind", t, "Select package")
   const countryFields = useReferenceOptions("country", t, "Select country")
   const optionalCountries = useReferenceOptions("country", t, "Not specified")
@@ -1323,19 +1476,16 @@ function ItemDetailsEditor({ item, itemNumber, onDuplicate, onRemove, canRemove,
   const previousDocumentTypes = useReferenceOptions("previous_document_type", t, "Select document type")
 
   return <div className="space-y-3" aria-label={`${t("Item details")} ${itemNumber}`}>
-    {commodityAssistantOpen ? <CommodityAssistant item={item} direction={declarationDirection} update={update} onClose={() => setCommodityAssistantOpen(false)} t={t} /> : null}
     <div className={cn("grid items-start gap-3", declarationDirection === "import" ? "xl:grid-cols-2" : "xl:grid-cols-[minmax(260px,0.95fr)_minmax(260px,0.88fr)_minmax(300px,1.05fr)]")}>
       <div className="space-y-3">
         <ItemDetailGroup title={t("Commodity")}>
           <FieldGrid className="grid-cols-1 sm:grid-cols-1 md:grid-cols-1 xl:grid-cols-1 2xl:grid-cols-1">
-          <TextField label={t("Commodity code")} dataElement="6/14" customsBox="33" required showDataElements={showDataElements} value={item.commodityCode} onChange={(value) => update("commodityCode", value.replace(/\D/g, "").slice(0, 10))} invalid={issues.has("commodityCode")} fieldKey="commodityCode" highlighted={highlightedField === "commodityCode"} />
+          <div className="relative"><TextField label={t("Commodity code")} dataElement="6/14" customsBox="33" required showDataElements={showDataElements} value={item.commodityCode} onChange={(value) => update("commodityCode", value.replace(/\D/g, "").slice(0, 10))} invalid={issues.has("commodityCode")} fieldKey="commodityCode" highlighted={highlightedField === "commodityCode"} inputClassName="pe-10" /><CommoditySmartSearch item={item} direction={declarationDirection} update={update} triggerClassName="absolute bottom-1 end-1" t={t} /></div>
           {declarationDirection === "export" ? <TextField label={t("UN dangerous goods code")} dataElement="6/12" customsBox="31" showDataElements={showDataElements} value={item.dangerousGoodsCode} onChange={(value) => update("dangerousGoodsCode", value)} /> : null}
           <TextAreaField label={t("Description of goods")} dataElement="6/8" customsBox="31" required showDataElements={showDataElements} value={item.description} onChange={(value) => update("description", value)} invalid={issues.has("description")} fieldKey="description" highlighted={highlightedField === "description"} />
+          <div className="flex justify-start"><CommoditySmartSearch item={item} direction={declarationDirection} update={update} triggerVariant="certificates" t={t} /></div>
           {showOptional ? <TextField label={t("CUS code")} dataElement="6/13" customsBox="31" showDataElements={showDataElements} value={item.cusCode} onChange={(value) => update("cusCode", value)} /> : null}
           </FieldGrid>
-          <div className="mt-2 flex justify-end">
-            <Button type="button" variant="outline" size="sm" className="h-7 gap-1.5 px-2.5 text-[10px]" aria-expanded={commodityAssistantOpen} aria-controls={`commodity-assistant-${item.id}`} onClick={() => setCommodityAssistantOpen((current) => !current)}><Search className="size-3.5" aria-hidden="true" />{t(commodityAssistantOpen ? "Hide commodity assistant" : "Find commodity code")}</Button>
-          </div>
           {showOptional ? <div className="mt-3 space-y-3">
             <RepeatableCustomsFields title={t("TARIC additional codes")} addLabel={t("Add TARIC code")} onAdd={() => update("additionalTaricCodes", [...item.additionalTaricCodes, { id: repeatableCustomsEntryId("taric"), code: "" }])}>
               <TextField label={t("TARIC additional code")} dataElement="6/16" customsBox="33" showDataElements={showDataElements} value={item.taricCode} onChange={(value) => update("taricCode", value)} />
@@ -1498,7 +1648,7 @@ function PartyReferenceCustomsFields({ title, fieldLabel, addLabel, removeLabel,
 function ItemTableSelect({ label, value, onChange, options, invalid }: { label: string; value: string; onChange: (value: string) => void; options: ReadonlyArray<readonly [string, string]>; invalid?: boolean }) {
   const referenceState = useContext(CustomsReferenceDataContext)
   return <Select value={value || undefined} onValueChange={onChange} disabled={referenceState.loading || Boolean(referenceState.error) || !options.length}>
-    <SelectTrigger aria-label={label} aria-invalid={invalid || undefined} className={cn("h-7 rounded-[var(--md-radius-xs)] border-transparent bg-[var(--md-surface-tint)] px-1.5 text-[10px] shadow-none focus:ring-1 focus:ring-[var(--md-accent)]", invalid && "ring-1 ring-[var(--md-red)]")}><SelectValue placeholder="—" /></SelectTrigger>
+    <SelectTrigger aria-label={label} aria-invalid={invalid || undefined} className={cn("h-7 w-full min-w-0 overflow-hidden rounded-[var(--md-radius-xs)] border-transparent bg-[var(--md-surface-tint)] px-1.5 text-[10px] shadow-none focus:ring-1 focus:ring-[var(--md-accent)] [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:truncate", invalid && "ring-1 ring-[var(--md-red)]")}><SelectValue placeholder="—" /></SelectTrigger>
     <SelectContent>{options.map(([optionValue, optionLabel]) => <SelectItem key={optionValue} value={optionValue}>{optionLabel}</SelectItem>)}</SelectContent>
   </Select>
 }
@@ -1884,9 +2034,9 @@ function FieldShell({ label, dataElement, customsBox, required, showDataElements
   return <label data-field-invalid={invalid || undefined} className={cn("min-w-0", compact && "grid grid-cols-[minmax(76px,0.42fr)_minmax(0,0.58fr)] items-center gap-1.5", className)}><span className={cn("flex items-center gap-1.5 font-medium text-[var(--md-text)]", compact ? "min-h-0 text-[10.5px] leading-[1.15]" : "mb-1.5 min-h-5 text-[11px]")}><span className={cn(compact ? "line-clamp-2" : "truncate")}>{label}</span>{required ? <span className="text-[var(--md-red)]">*</span> : null}{showAnnotations ? <span className={cn("flex shrink-0 items-center gap-1", !compact && "ms-auto")}>{showDataElements && dataElement ? <span className={cn("rounded-[var(--md-radius-sm)] bg-[color-mix(in_srgb,var(--md-blue)_8%,transparent)] font-medium tabular-nums text-[var(--md-blue)]", compact ? "px-1 py-0.5 text-[8.5px]" : "px-1.5 py-0.5 text-[10px]")} dir="ltr">DE {dataElement}</span> : null}{showCustomsBoxNumbers && customsBox ? <span className={cn("rounded-[var(--md-radius-sm)] bg-[var(--md-accent-a10)] font-medium tabular-nums text-[var(--md-accent)]", compact ? "px-1 py-0.5 text-[8.5px]" : "px-1.5 py-0.5 text-[10px]")} dir="ltr">{`Box ${customsBox}`}</span> : null}</span> : null}</span><span data-customs-field={fieldKey} className={cn("block rounded-[var(--md-radius-md)] transition-[box-shadow] duration-300", highlighted && "ring-2 ring-[var(--md-accent)] shadow-[0_0_20px_var(--md-accent)]")}>{children}</span></label>
 }
 
-function TextField({ label, value, onChange, dataElement, customsBox, required, showDataElements, invalid, highlighted, fieldKey, placeholder, suffix, maxLength, inputType = "text" }: { label: string; value: string; onChange: (value: string) => void; dataElement?: string; customsBox?: string; required?: boolean; showDataElements: boolean; invalid?: boolean; highlighted?: boolean; fieldKey?: string; placeholder?: string; suffix?: string; maxLength?: number; inputType?: "text" | "date" }) {
+function TextField({ label, value, onChange, dataElement, customsBox, required, showDataElements, invalid, highlighted, fieldKey, placeholder, suffix, maxLength, inputType = "text", inputClassName }: { label: string; value: string; onChange: (value: string) => void; dataElement?: string; customsBox?: string; required?: boolean; showDataElements: boolean; invalid?: boolean; highlighted?: boolean; fieldKey?: string; placeholder?: string; suffix?: string; maxLength?: number; inputType?: "text" | "date"; inputClassName?: string }) {
   const compact = useContext(CompactCustomsFormContext)
-  return <FieldShell label={label} dataElement={dataElement} customsBox={customsBox} required={required} showDataElements={showDataElements} invalid={invalid} highlighted={highlighted} fieldKey={fieldKey}><div className="relative"><Input type={inputType} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} maxLength={maxLength} aria-invalid={invalid || undefined} dir="ltr" className={cn("border-0 bg-[var(--md-field-bg)] shadow-[var(--md-shadow-line)]", compact ? "h-8 px-2 text-[11px]" : "h-9 text-[13px]", suffix && "pe-10")} />{suffix ? <span className="pointer-events-none absolute end-3 top-1/2 -translate-y-1/2 text-[10px] text-[var(--md-subtle)]">{suffix}</span> : null}</div></FieldShell>
+  return <FieldShell label={label} dataElement={dataElement} customsBox={customsBox} required={required} showDataElements={showDataElements} invalid={invalid} highlighted={highlighted} fieldKey={fieldKey}><div className="relative"><Input type={inputType} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} maxLength={maxLength} aria-invalid={invalid || undefined} dir="ltr" className={cn("border-0 bg-[var(--md-field-bg)] shadow-[var(--md-shadow-line)]", compact ? "h-8 px-2 text-[11px]" : "h-9 text-[13px]", suffix && "pe-10", inputClassName)} />{suffix ? <span className="pointer-events-none absolute end-3 top-1/2 -translate-y-1/2 text-[10px] text-[var(--md-subtle)]">{suffix}</span> : null}</div></FieldShell>
 }
 
 function TextAreaField({ label, value, onChange, dataElement, customsBox, required, showDataElements, invalid, highlighted, fieldKey, className }: { label: string; value: string; onChange: (value: string) => void; dataElement?: string; customsBox?: string; required?: boolean; showDataElements: boolean; invalid?: boolean; highlighted?: boolean; fieldKey?: string; className?: string }) {

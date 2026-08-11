@@ -1199,19 +1199,18 @@ function safeHeaders(headers: Headers) {
 }
 
 async function responseBody(response: Response) {
-  const text = (await response.text()).slice(0, 100_000);
+  const text = await response.text();
   if (!text) return {};
-  if (
-    response.headers.get("content-type")?.includes("json") ||
-    /^[\[{]/.test(text.trim())
-  ) {
-    try {
-      return JSON.parse(text);
-    } catch {
-      return { raw: text };
+  if (text.length > 2_000_000) return { raw: text.slice(0, 100_000) };
+  try {
+    const parsed = JSON.parse(text);
+    if (typeof parsed === "string" && /^[\[{]/.test(parsed.trim())) {
+      return JSON.parse(parsed);
     }
+    return parsed;
+  } catch {
+    return { raw: text };
   }
-  return { raw: text };
 }
 
 function providerMessage(body: unknown, fallback: string) {

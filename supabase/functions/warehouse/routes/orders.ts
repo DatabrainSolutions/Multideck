@@ -227,8 +227,8 @@ export async function handleOrders(request, path, url, admin, actor) {
       ].some((v)=>String(v ?? "").toLowerCase().includes(term))));
     return await mapOrders(admin, rows, context);
   }
-  const input = request.method === "POST" && request.headers.get("content-type")?.includes("application/json") ? bodyObject(await request.json()) : {};
-  const action = !orderId ? "create" : path[2] === "receive" ? "receive" : path[2] === "dispatch" ? "dispatch" : path[2] === "cancel" ? "cancel" : path[2] === "reschedule" ? "reschedule" : null;
+  const input = ["POST", "PUT"].includes(request.method) && request.headers.get("content-type")?.includes("application/json") ? bodyObject(await request.json()) : {};
+  const action = request.method === "PUT" && orderId && path.length === 2 ? "update" : !orderId ? "create" : path[2] === "receive" ? "receive" : path[2] === "dispatch" ? "dispatch" : path[2] === "cancel" ? "cancel" : path[2] === "reschedule" ? "reschedule" : null;
   if (!action) throw new HttpError(404, "Warehouse endpoint not found.");
   if (!actor.companyId) {
     if (action === "create") {
@@ -245,6 +245,12 @@ export async function handleOrders(request, path, url, admin, actor) {
     ...actor.organisationIds
   ];
   const { data, error } = action === "receive" ? await admin.rpc("warehouse_edge_receive_mutation", {
+    p_order_id: orderId,
+    p_payload: input,
+    p_actor_user_id: actor.userId,
+    p_allowed_facility_ids: context.facilityIds,
+    p_allowed_organisation_ids: allowedOrganisationIds
+  }) : action === "update" ? await admin.rpc("warehouse_edge_update_order_mutation", {
     p_order_id: orderId,
     p_payload: input,
     p_actor_user_id: actor.userId,

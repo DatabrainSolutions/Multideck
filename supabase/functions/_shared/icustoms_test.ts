@@ -586,6 +586,87 @@ Deno.test("ICustomsClient uses the observed commodity search and tariff endpoint
   );
 });
 
+Deno.test("ICustomsClient decodes the tariff service's JSON string response", async () => {
+  let call = 0;
+  const payload = {
+    data: {
+      attributes: {
+        goods_nomenclature_item_id: "4901100000",
+        description: "In single sheets, whether or not folded",
+        declarable: true,
+      },
+    },
+  };
+  const transport = ((_url: string | URL | Request, _init?: RequestInit) => {
+    call += 1;
+    if (call === 1) {
+      return Promise.resolve(new Response(JSON.stringify({ token: "sandbox-token" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }));
+    }
+    return Promise.resolve(new Response(JSON.stringify(JSON.stringify(payload)), {
+      status: 200,
+      headers: { "content-type": "text/plain" },
+    }));
+  }) as typeof fetch;
+  const client = new ICustomsClient({
+    baseUrl: "https://ihub-tdr.customscloud.co",
+    environment: "sandbox",
+    apiKey: "test-key",
+    apiSecret: "test-secret",
+  }, transport);
+
+  const response = await client.tariffDetails("4901100000");
+  const detail = iCustomsCommodityDetail(response.body, "import");
+
+  assert(detail.code === "4901100000", "Expected the double-encoded provider payload to be decoded.");
+  assert(detail.description === "In single sheets, whether or not folded", "Expected decoded tariff attributes.");
+});
+
+Deno.test("ICustomsClient parses tariff records larger than the former preview limit", async () => {
+  let call = 0;
+  const payload = {
+    data: {
+      attributes: {
+        goods_nomenclature_item_id: "4901100000",
+        description: "In single sheets, whether or not folded",
+        declarable: true,
+      },
+    },
+    included: Array.from({ length: 1_200 }, (_, index) => ({
+      id: `measure-${index}`,
+      type: "measure",
+      attributes: { description: "Tariff measure detail".repeat(5) },
+    })),
+  };
+  const transport = ((_url: string | URL | Request, _init?: RequestInit) => {
+    call += 1;
+    if (call === 1) {
+      return Promise.resolve(new Response(JSON.stringify({ token: "sandbox-token" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }));
+    }
+    return Promise.resolve(new Response(JSON.stringify(payload), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+  }) as typeof fetch;
+  const client = new ICustomsClient({
+    baseUrl: "https://ihub-tdr.customscloud.co",
+    environment: "sandbox",
+    apiKey: "test-key",
+    apiSecret: "test-secret",
+  }, transport);
+
+  const response = await client.tariffDetails("4901100000");
+  const detail = iCustomsCommodityDetail(response.body, "import");
+
+  assert(JSON.stringify(payload).length > 100_000, "Expected a realistic large tariff fixture.");
+  assert(detail.code === "4901100000", "Expected the full tariff response to be parsed before applying the safety cap.");
+});
+
 Deno.test("ICustomsClient re-authenticates once after a 401", async () => {
   let call = 0;
   const transport = ((_url: string | URL | Request, _init?: RequestInit) => {

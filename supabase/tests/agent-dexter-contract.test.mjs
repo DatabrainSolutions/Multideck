@@ -64,6 +64,9 @@ const customsDeclarationsMigration = read(
 const operationalWritesMigration = read(
   "supabase/migrations/20260810180703_dexter_operational_create_edit_parity.sql",
 )
+const fullWarehouseCapabilitiesMigration = read(
+  "supabase/migrations/20260811145223_dexter_full_warehouse_capabilities.sql",
+)
 const customsImportExportFilingMigration = read(
   "supabase/migrations/20260811093000_dexter_customs_import_export_filing.sql",
 )
@@ -112,7 +115,7 @@ const notificationEmailFunction = read(
 )
 
 test("Dexter redirects off-topic requests without narrowing useful freight work", () => {
-  assert.match(edgeFunction, /PROMPT_VERSION = "freight-coworker-2026-08-10-operational-writes"/)
+  assert.match(edgeFunction, /PROMPT_VERSION = "freight-coworker-2026-08-11-warehouse-capabilities"/)
   assert.match(edgeFunction, /# Scope boundary/)
   assert.match(edgeFunction, /Dexter is for freight forwarding and the work required to operate a freight-forwarding business/)
   assert.match(edgeFunction, /Examples include sports fixtures, recipes and cooking, entertainment, celebrity news, general trivia/)
@@ -256,7 +259,7 @@ test("Dexter creates and edits connected warehouse, booking and Customs records 
   assert.match(operationalWritesMigration, /"recordType","code","name","description","isActive"/)
 
   assert.match(edgeFunction, /const WAREHOUSE_EDGE_ACTIONS = new Set/)
-  assert.match(edgeFunction, /warehouseActionFetch\(authorization, actionCode, args\)/)
+  assert.match(edgeFunction, /warehouseActionFetch\(authorization, actionCode, args, executionKey\)/)
   assert.match(edgeFunction, /body = \{ \.\.\.current, \.\.\.body \}/)
   assert.match(edgeFunction, /multideck_dexter_record_external_action/)
   assert.equal(edgeFunction.match(/executeWorkspaceAction\(/g)?.length, 4)
@@ -266,6 +269,33 @@ test("Dexter creates and edits connected warehouse, booking and Customs records 
   assert.match(edgeFunction, /customsDraftPayload\(actionCode, args\)/)
   assert.match(dexterClient, /id\?: string/)
   assert.match(dexterPage, /\{ id: action\.id, action: action\.action, arguments: action\.arguments \}/)
+})
+
+test("Dexter has complete approval-safe warehouse operations and read-only calendar access", () => {
+  assert.match(fullWarehouseCapabilitiesMigration, /multideck_dexter_domain_warehouse_calendar/)
+  assert.match(fullWarehouseCapabilitiesMigration, /multideck_dexter_domain_warehouse_orders/)
+  assert.match(fullWarehouseCapabilitiesMigration, /'orderLineId', line\."WMSOrderLine_ID"/)
+  assert.match(fullWarehouseCapabilitiesMigration, /'receipts', coalesce/)
+  assert.match(fullWarehouseCapabilitiesMigration, /'dispatches', coalesce/)
+  assert.match(fullWarehouseCapabilitiesMigration, /'readOnly', true/)
+  assert.doesNotMatch(fullWarehouseCapabilitiesMigration, /AIDexterAction_DomainCode[^\n]*warehouse_calendar/)
+  assert.match(fullWarehouseCapabilitiesMigration, /warehouse_edge_update_order_mutation/)
+  assert.match(fullWarehouseCapabilitiesMigration, /multideck_dexter_action_receive_warehouse_order/)
+  assert.match(fullWarehouseCapabilitiesMigration, /multideck_dexter_action_dispatch_warehouse_order/)
+  assert.match(fullWarehouseCapabilitiesMigration, /multideck_dexter_action_cancel_warehouse_order/)
+  assert.match(fullWarehouseCapabilitiesMigration, /multideck_dexter_action_move_warehouse_inventory/)
+  assert.match(fullWarehouseCapabilitiesMigration, /multideck_dexter_action_move_warehouse_handling_unit/)
+  assert.match(fullWarehouseCapabilitiesMigration, /multideck_dexter_action_consolidate_warehouse_handling_units/)
+  assert.match(fullWarehouseCapabilitiesMigration, /multideck_dexter_action_change_warehouse_inventory_status/)
+  assert.match(fullWarehouseCapabilitiesMigration, /multideck_dexter_action_record_warehouse_sample/)
+  assert.match(fullWarehouseCapabilitiesMigration, /multideck_dexter_action_resolve_warehouse_location_exception/)
+  assert.match(edgeFunction, /path: `\/orders\/\$\{encodeURIComponent\(targetId\)\}\/receive`/)
+  assert.match(edgeFunction, /path: `\/orders\/\$\{encodeURIComponent\(targetId\)\}\/dispatch`/)
+  assert.match(edgeFunction, /path: "\/inventory\/actions\/move_balance"/)
+  assert.match(edgeFunction, /path: "\/inventory\/actions\/change_status"/)
+  assert.match(edgeFunction, /The warehouse_calendar domain is read-only/)
+  assert.match(edgeFunction, /never claim to create, edit or delete a calendar block directly/)
+  assert.match(edgeFunction, /warehouse_orders for exact inbound and outbound order lines/)
 })
 
 test("the schema baseline preserves Dexter's scoped data and action contracts", () => {

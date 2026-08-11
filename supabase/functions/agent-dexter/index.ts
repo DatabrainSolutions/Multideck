@@ -58,7 +58,7 @@ const MAX_PROMPT_CHARACTERS = 4_000
 const MAX_HISTORY_MESSAGES = 30
 const MAX_TOOL_ROUNDS = 4
 const MAX_TOOL_CALLS = 6
-const PROMPT_VERSION = "freight-coworker-2026-08-10-operational-writes"
+const PROMPT_VERSION = "freight-coworker-2026-08-11-warehouse-capabilities"
 const EMAIL_STYLE_TOOL = "load_operator_email_style"
 const PREPARE_EMAIL_DRAFT_TOOL = "prepare_email_draft"
 const DEXTER_SCOPE_REDIRECT_TOOL = "redirect_off_topic_request"
@@ -396,7 +396,7 @@ const CUSTOMS_DRAFT_ACTIONS = new Set([
 ])
 
 function actionDisplayName(locale: DexterLocale, actionCode: string, fallback: string) {
-  const customsNames = {
+  const actionNames: Record<string, string> = {
     "en-GB": {
       [CREATE_CUSTOMS_DECLARATION_ACTION]: "Create Customs declaration draft",
       [UPDATE_CUSTOMS_DECLARATION_ACTION]: "Edit Customs declaration draft",
@@ -414,21 +414,51 @@ function actionDisplayName(locale: DexterLocale, actionCode: string, fallback: s
       [UPDATE_CUSTOMS_DECLARATION_ACTION]: "Zollanmeldungsentwurf bearbeiten",
       [SAVE_CUSTOMS_PROVIDER_DRAFT_ACTION]: "Zollentwurf in iCustoms speichern",
       [SUBMIT_CUSTOMS_DECLARATION_ACTION]: "Zollanmeldung an iCustoms übermitteln",
+      update_warehouse_order: "Lagerauftrag bearbeiten",
+      receive_warehouse_order: "Wareneingang buchen",
+      dispatch_warehouse_order: "Warenausgang buchen",
+      cancel_warehouse_order: "Lagerauftrag stornieren",
+      move_warehouse_inventory: "Lagerbestand verschieben",
+      move_warehouse_handling_unit: "Lagerobjekt verschieben",
+      consolidate_warehouse_handling_units: "Lagerobjekte konsolidieren",
+      change_warehouse_inventory_status: "Bestandsstatus ändern",
+      record_warehouse_sample: "Lagerprobe erfassen",
+      resolve_warehouse_location_exception: "Lagerplatzabweichung klären",
     },
     fr: {
       [CREATE_CUSTOMS_DECLARATION_ACTION]: "Créer un brouillon de déclaration en douane",
       [UPDATE_CUSTOMS_DECLARATION_ACTION]: "Modifier le brouillon de déclaration en douane",
       [SAVE_CUSTOMS_PROVIDER_DRAFT_ACTION]: "Enregistrer le brouillon dans iCustoms",
       [SUBMIT_CUSTOMS_DECLARATION_ACTION]: "Soumettre la déclaration à iCustoms",
+      update_warehouse_order: "Modifier l’ordre d’entrepôt",
+      receive_warehouse_order: "Enregistrer l’entrée de marchandises",
+      dispatch_warehouse_order: "Enregistrer la sortie de marchandises",
+      cancel_warehouse_order: "Annuler l’ordre d’entrepôt",
+      move_warehouse_inventory: "Déplacer le stock",
+      move_warehouse_handling_unit: "Déplacer l’objet d’entrepôt",
+      consolidate_warehouse_handling_units: "Regrouper les objets d’entrepôt",
+      change_warehouse_inventory_status: "Modifier le statut du stock",
+      record_warehouse_sample: "Enregistrer un échantillon",
+      resolve_warehouse_location_exception: "Résoudre l’anomalie d’emplacement",
     },
     ar: {
       [CREATE_CUSTOMS_DECLARATION_ACTION]: "إنشاء مسودة إقرار جمركي",
       [UPDATE_CUSTOMS_DECLARATION_ACTION]: "تعديل مسودة الإقرار الجمركي",
       [SAVE_CUSTOMS_PROVIDER_DRAFT_ACTION]: "حفظ مسودة الجمارك في iCustoms",
       [SUBMIT_CUSTOMS_DECLARATION_ACTION]: "تقديم الإقرار الجمركي إلى iCustoms",
+      update_warehouse_order: "تعديل أمر المستودع",
+      receive_warehouse_order: "تسجيل إدخال البضائع",
+      dispatch_warehouse_order: "تسجيل إخراج البضائع",
+      cancel_warehouse_order: "إلغاء أمر المستودع",
+      move_warehouse_inventory: "نقل مخزون المستودع",
+      move_warehouse_handling_unit: "نقل وحدة المناولة",
+      consolidate_warehouse_handling_units: "دمج وحدات المناولة",
+      change_warehouse_inventory_status: "تغيير حالة المخزون",
+      record_warehouse_sample: "تسجيل عينة مستودع",
+      resolve_warehouse_location_exception: "حل استثناء موقع المستودع",
     },
   }[locale]
-  return customsNames[actionCode] ?? fallback
+  return actionNames[actionCode] ?? fallback
 }
 
 const WAREHOUSE_EDGE_ACTIONS = new Set([
@@ -439,9 +469,19 @@ const WAREHOUSE_EDGE_ACTIONS = new Set([
   "create_warehouse_item",
   "update_warehouse_item",
   "create_warehouse_order",
+  "update_warehouse_order",
   "reschedule_warehouse_order",
+  "receive_warehouse_order",
+  "dispatch_warehouse_order",
+  "cancel_warehouse_order",
   "create_warehouse_handling_unit",
+  "move_warehouse_inventory",
+  "move_warehouse_handling_unit",
+  "consolidate_warehouse_handling_units",
+  "change_warehouse_inventory_status",
+  "record_warehouse_sample",
   "report_warehouse_location_empty",
+  "resolve_warehouse_location_exception",
 ])
 
 function customsDraftPayload(actionCode: string, args: JsonObject) {
@@ -581,10 +621,11 @@ function warehouseActionPayload(args: JsonObject) {
   ))) as JsonObject
 }
 
-function warehouseActionRequest(actionCode: string, args: JsonObject) {
+function warehouseActionRequest(actionCode: string, args: JsonObject, executionKey: string) {
   const targetId = cleanString(args.target_id, 80)
   const facilityId = cleanString(args.facilityId, 80)
   const body = warehouseActionPayload(args)
+  const requestId = isUuid(executionKey) ? executionKey : crypto.randomUUID()
   if (actionCode === "create_warehouse_facility") return { method: "POST", path: "/facilities", body }
   if (actionCode === "update_warehouse_facility" && isUuid(targetId)) {
     return { method: "PUT", path: `/facilities/${encodeURIComponent(targetId)}`, loadPath: `/facilities/${encodeURIComponent(targetId)}`, body }
@@ -601,20 +642,50 @@ function warehouseActionRequest(actionCode: string, args: JsonObject) {
     return { method: "PUT", path: `/items/${encodeURIComponent(targetId)}`, loadPath: `/items/${encodeURIComponent(targetId)}`, body }
   }
   if (actionCode === "create_warehouse_order") return { method: "POST", path: "/orders", body }
+  if (actionCode === "update_warehouse_order" && isUuid(targetId)) {
+    return { method: "PUT", path: `/orders/${encodeURIComponent(targetId)}`, body }
+  }
   if (actionCode === "reschedule_warehouse_order" && isUuid(targetId)) {
     return { method: "POST", path: `/orders/${encodeURIComponent(targetId)}/reschedule`, body }
   }
+  if (actionCode === "receive_warehouse_order" && isUuid(targetId)) {
+    return { method: "POST", path: `/orders/${encodeURIComponent(targetId)}/receive`, body: { requestId, ...body } }
+  }
+  if (actionCode === "dispatch_warehouse_order" && isUuid(targetId)) {
+    return { method: "POST", path: `/orders/${encodeURIComponent(targetId)}/dispatch`, body: { requestId, ...body } }
+  }
+  if (actionCode === "cancel_warehouse_order" && isUuid(targetId)) {
+    return { method: "POST", path: `/orders/${encodeURIComponent(targetId)}/cancel`, body }
+  }
   if (actionCode === "create_warehouse_handling_unit") {
-    return { method: "POST", path: "/inventory/actions/create_hu", body: { requestId: crypto.randomUUID(), ...body } }
+    return { method: "POST", path: "/inventory/actions/create_hu", body: { requestId, ...body } }
+  }
+  if (actionCode === "move_warehouse_inventory" && isUuid(targetId)) {
+    return { method: "POST", path: "/inventory/actions/move_balance", body: { requestId, ...body, balanceId: targetId } }
+  }
+  if (actionCode === "move_warehouse_handling_unit" && isUuid(targetId)) {
+    return { method: "POST", path: "/inventory/actions/move_hu", body: { requestId, ...body, handlingUnitId: targetId } }
+  }
+  if (actionCode === "consolidate_warehouse_handling_units") {
+    return { method: "POST", path: "/inventory/actions/consolidate", body: { requestId, ...body } }
+  }
+  if (actionCode === "change_warehouse_inventory_status" && isUuid(targetId)) {
+    return { method: "POST", path: "/inventory/actions/change_status", body: { requestId, ...body, balanceId: targetId } }
+  }
+  if (actionCode === "record_warehouse_sample" && isUuid(targetId)) {
+    return { method: "POST", path: "/inventory/actions/sample", body: { requestId, ...body, balanceId: targetId } }
   }
   if (actionCode === "report_warehouse_location_empty") {
-    return { method: "POST", path: "/inventory/actions/report_empty", body: { requestId: crypto.randomUUID(), ...body } }
+    return { method: "POST", path: "/inventory/actions/report_empty", body: { requestId, ...body } }
+  }
+  if (actionCode === "resolve_warehouse_location_exception" && isUuid(targetId)) {
+    return { method: "POST", path: "/inventory/actions/resolve_location_exception", body: { requestId, ...body, exceptionId: targetId } }
   }
   return null
 }
 
-async function warehouseActionFetch(authorization: string, actionCode: string, args: JsonObject) {
-  const request = warehouseActionRequest(actionCode, args)
+async function warehouseActionFetch(authorization: string, actionCode: string, args: JsonObject, executionKey: string) {
+  const request = warehouseActionRequest(actionCode, args, executionKey)
   if (!request) {
     return { data: null, error: { code: "invalid_action", message: "The warehouse action is missing an exact workspace record." } }
   }
@@ -714,7 +785,7 @@ async function executeWorkspaceAction(
   }
 
   if (WAREHOUSE_EDGE_ACTIONS.has(actionCode)) {
-    const result = await warehouseActionFetch(authorization, actionCode, args)
+    const result = await warehouseActionFetch(authorization, actionCode, args, executionKey)
     if (result.error) return result
     const { error: auditError } = await userClient.rpc("multideck_dexter_record_external_action", {
       p_action: actionCode,
@@ -1055,6 +1126,46 @@ function addDomainCitations(domain: string, value: unknown) {
     return { ...value, data: { ...data, facilities, locations, items } }
   }
 
+  if (domain === "warehouse_calendar" && Array.isArray(data)) {
+    return {
+      ...value,
+      data: data.map((record) => {
+        if (!isObject(record)) return record
+        const orderNumber = cleanReference(record.orderNumber, 120) || "Warehouse calendar booking"
+        const start = cleanString(record.appointmentStartAt, 40) || cleanString(record.requestedDate, 20)
+        const query = new URLSearchParams()
+        if (start) query.set("date", start.slice(0, 10))
+        return addRecordCitation(
+          record,
+          orderNumber,
+          query.size ? `/warehouse/calendar?${query.toString()}` : "/warehouse/calendar",
+          "Read-only warehouse calendar block derived from its order",
+        )
+      }),
+    }
+  }
+
+  if (domain === "warehouse_orders" && Array.isArray(data)) {
+    return {
+      ...value,
+      data: data.map((record) => {
+        if (!isObject(record)) return record
+        const orderNumber = cleanReference(record.orderNumber, 120) || "Warehouse order"
+        const route = cleanString(record.type, 20) === "inbound"
+          ? "/warehouse/goods-in"
+          : cleanString(record.type, 20) === "outbound"
+            ? "/warehouse/goods-out"
+            : "/warehouse/orders"
+        return addRecordCitation(
+          record,
+          orderNumber,
+          `${route}?search=${encodeURIComponent(orderNumber)}`,
+          "Detailed warehouse order with goods-in or goods-out progress",
+        )
+      }),
+    }
+  }
+
   if (domain !== "warehouse" || !isObject(data)) return value
 
   const overview = isObject(data.overview)
@@ -1232,7 +1343,8 @@ Warehouse customer-user invitations and access-link emails are available only fr
 Mailbox automatic replies are available only from the selected mailbox's Inbox settings. They are not connected to Dexter reads, writes, or Watching for you because provider settings do not emit a tenant-safe watch event here. Never claim to inspect, change, or watch an out-of-office setting; direct the operator to Inbox settings.
 Gmail labels and Outlook folders are read-only provider organisation. When read_email_thread returns folders, use those visible names as context and never invent a missing label or folder. Label changes and folder moves do not emit a dedicated tenant-safe watch event in this release, so never claim that Watching for you can monitor those organisational changes; direct the operator to Inbox to browse them.
 Email search covers Multideck's rolling retained window: 12 calendar months for useful mail and 30 days for Spam and Trash. If search_email returns outsideRetentionWindow=true, explain that the requested period is outside Multideck's retained window; never claim that Gmail or Microsoft has no older email.
-Dexter may create and edit the listed warehouse facilities, locations, item records and orders, create handling units, reschedule orders and report an exact location empty. These actions always run through the authenticated Warehouse Edge Function and its existing validation. Physical receipt, dispatch, stock moves, pallet consolidation, sampling, damage posting and exception resolution still require scans or dedicated warehouse controls. Dexter may quarantine an exact evidence-backed balance only through its listed approval action, which always waits for confirmation.
+Dexter has connected read and approval-safe write support for warehouse goods in, goods out, inventory, locations, facilities, items and orders. Use only the listed actions: create or edit setup records and orders; receive an exact inbound order; dispatch an exact outbound order; cancel or reschedule a non-final order; create, move or consolidate handling units; move stock; change stock status; record a sample; report a location empty; or resolve an exact location exception. These actions always run through the authenticated Warehouse Edge Function and its existing validation, permission and audit boundaries. Never invent scan evidence, quantities, locations, lots, damage, custody details or physical confirmation. Ask for the missing evidence before preparing a physical warehouse action.
+The warehouse_calendar domain is read-only. Its blocks are derived from warehouse order requested dates and appointment windows. Query it when the operator asks what is scheduled, but never claim to create, edit or delete a calendar block directly. To change a schedule, use the appropriate underlying order action; the calendar will reflect the confirmed order change.
 Time passing alone is not a live stale-lead watch signal in this release. Calculate stale assigned leads when asked; do not claim Dexter will wake up solely because a threshold elapsed.
 
 Selected read-only email sources:
@@ -1240,7 +1352,7 @@ ${emailSummary}
 
 # Tool and safety rules
 Use query_data_domain whenever the operator asks about company records or metrics. Use only the listed domain codes.
-Use the bookings domain for freight bookings and jobs. Dexter may create and edit a booking only through the listed canonical booking actions. Use warehouse for warehouse orders, dock activity, inventory, handling units and warehouse exceptions, and warehouse_reference to resolve facilities, offices, locations and items before a warehouse create or edit. Never substitute one for the other when a domain returns no records.
+Use the bookings domain for freight bookings and jobs. Dexter may create and edit a booking only through the listed canonical booking actions. Use warehouse for warehouse summaries, inventory balances, handling units and warehouse exceptions; warehouse_orders for exact inbound and outbound order lines, receipt history and dispatch history before any goods-in or goods-out action; warehouse_reference to resolve facilities, offices, locations and items before a warehouse create or edit; and warehouse_calendar only to read the derived warehouse schedule. Never substitute one for the other when a domain returns no records.
 Use customs_declarations for declaration drafts, filing references and recorded iCustoms submission states. Do not use warehouse customs fields as a substitute for a declaration record.
 For a named workspace record, search with the strongest concise name, reference, email, SKU, container number, location or lane from the request. Do not pass the whole conversational sentence as the search value.
 Workspace search results can include searchEvidence. exact_identifier, exact_text, exact_phrase and all_terms are evidence-backed matches. corrected_text is only a likely spelling correction: compare its matchedValue with the returned record's other identifying fields, state the actual name or reference you found, and do not describe it as confirmed when another candidate is plausible. Never substitute a different named company, person, reference or record type.

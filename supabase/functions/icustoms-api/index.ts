@@ -32,6 +32,48 @@ type Json = Record<string, unknown>;
 type Actor = { User_ID: string; Company_ID: string; User_FullName?: string };
 
 const SANDBOX_CONNECTION_ID = "c96a43a9-866a-4d27-ace1-5a6b82085dcb";
+const COMMODITY_CACHE_TTL_MS = 15 * 60 * 1000;
+const COMMODITY_CACHE_LIMIT = 100;
+
+let providerClient: ICustomsClient | null = null;
+const commoditySearchCache = new Map<string, {
+  expiresAt: number;
+  value: ReturnType<typeof iCustomsCommoditySuggestions>;
+}>();
+const commodityDetailCache = new Map<string, {
+  expiresAt: number;
+  value: ReturnType<typeof iCustomsCommodityDetail>;
+}>();
+
+function connectedICustomsClient() {
+  providerClient ??= new ICustomsClient(readICustomsConfig());
+  return providerClient;
+}
+
+function cachedCommodityValue<T>(
+  cache: Map<string, { expiresAt: number; value: T }>,
+  key: string,
+) {
+  const cached = cache.get(key);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    cache.delete(key);
+    return null;
+  }
+  return cached.value;
+}
+
+function cacheCommodityValue<T>(
+  cache: Map<string, { expiresAt: number; value: T }>,
+  key: string,
+  value: T,
+) {
+  if (cache.size >= COMMODITY_CACHE_LIMIT) {
+    const oldestKey = cache.keys().next().value;
+    if (typeof oldestKey === "string") cache.delete(oldestKey);
+  }
+  cache.set(key, { expiresAt: Date.now() + COMMODITY_CACHE_TTL_MS, value });
+}
 
 function text(value: unknown, maximum = 240) {
   return typeof value === "string" ? value.trim().slice(0, maximum) : "";
@@ -404,7 +446,7 @@ async function providerDraft(
     text(declaration.CUST_DeclarationKind, 40),
   );
   try {
-    const client = new ICustomsClient(readICustomsConfig());
+    const client = connectedICustomsClient();
     const response = await client.saveDraft(correlationId || null, xml);
     const resolvedCorrelationId = correlationId ||
       providerCorrelationId(response.body);
@@ -514,7 +556,7 @@ async function submitDeclaration(
   }).eq("ICUSS_id", latest.ICUSS_id).select("*").single();
   if (prepareError) throw new HttpError(500, prepareError.message);
   try {
-    const response = await new ICustomsClient(readICustomsConfig()).submit(
+    const response = await connectedICustomsClient().submit(
       correlationId,
     );
     const saved = await saveProviderSuccess(
@@ -563,7 +605,7 @@ async function refreshDeclaration(
       "This declaration does not have a customs test draft yet.",
     );
   }
-  const response = await new ICustomsClient(readICustomsConfig()).notifications(
+  const response = await connectedICustomsClient().notifications(
     correlationId,
   );
   const status = inferICustomsStatus(
@@ -613,10 +655,26 @@ async function searchCommodities(input: Json) {
       "Enter at least two characters or a 10-digit commodity code.",
     );
   }
-  const response = await new ICustomsClient(readICustomsConfig())
-    .searchCommodities(query, "UK");
+  const country = text(input.country, 2).toUpperCase() || "GB";
+  if (!/^[A-Z]{2}$/.test(country)) {
+    throw new HttpError(400, "Choose a valid import country.");
+  }
+  const cacheKey = `${country}:${query.toLocaleLowerCase("en-GB")}`;
+  const cached = cachedCommodityValue(commoditySearchCache, cacheKey);
+  if (cached) {
+    return {
+      suggestions: cached,
+      source: "iCustoms UK commodity classification",
+    };
+  }
+  const response = await connectedICustomsClient().searchCommodities(
+    query,
+    country,
+  );
+  const suggestions = iCustomsCommoditySuggestions(response.body);
+  cacheCommodityValue(commoditySearchCache, cacheKey, suggestions);
   return {
-    suggestions: iCustomsCommoditySuggestions(response.body),
+    suggestions,
     source: "iCustoms UK commodity classification",
   };
 }
@@ -634,15 +692,24 @@ async function commodityDetails(input: Json) {
   if (!direction) {
     throw new HttpError(400, "Choose whether this is an import or export.");
   }
-  const response = await new ICustomsClient(readICustomsConfig())
-    .tariffDetails(commodityCode);
-  const detail = iCustomsCommodityDetail(response.body, direction);
+  const cacheKey = `${direction}:${commodityCode}`;
+  let detail = cachedCommodityValue(commodityDetailCache, cacheKey);
+  const detailWasCached = Boolean(detail);
+  if (!detail) {
+    const response = await connectedICustomsClient().tariffDetails(
+      commodityCode,
+    );
+    detail = iCustomsCommodityDetail(response.body, direction);
+  }
   if (!/^\d{10}$/.test(detail.code)) {
     throw new ICustomsProviderError(
       502,
       "The customs service did not return a valid commodity record.",
       "icustoms_commodity_invalid",
     );
+  }
+  if (!detailWasCached) {
+    cacheCommodityValue(commodityDetailCache, cacheKey, detail);
   }
   return {
     detail,
