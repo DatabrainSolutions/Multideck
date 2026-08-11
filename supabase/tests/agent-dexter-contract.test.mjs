@@ -55,6 +55,9 @@ const emailAttachmentSearchMigration = read(
 const guardedDomainSearchMigration = read(
   "supabase/migrations/20260803170000_dexter_guarded_domain_search.sql",
 )
+const freightBookingsMigration = read(
+  "supabase/migrations/20260808174358_dexter_freight_bookings_parity.sql",
+)
 const emailConversationContextMigration = read(
   "supabase/migrations/20260803101500_dexter_email_conversation_provider_context.sql",
 )
@@ -97,9 +100,44 @@ const notificationEmailFunction = read(
   "supabase/functions/send-notification-email/index.ts",
 )
 
+test("Dexter redirects off-topic requests without narrowing useful freight work", () => {
+  assert.match(edgeFunction, /PROMPT_VERSION = "freight-coworker-2026-08-09-scope-boundary"/)
+  assert.match(edgeFunction, /# Scope boundary/)
+  assert.match(edgeFunction, /Dexter is for freight forwarding and the work required to operate a freight-forwarding business/)
+  assert.match(edgeFunction, /Examples include sports fixtures, recipes and cooking, entertainment, celebrity news, general trivia/)
+  assert.match(edgeFunction, /If a request could reasonably support freight work but the connection is unclear, ask one short question/)
+  assert.match(edgeFunction, /Do not become obstructive\. Normal greetings and brief conversation are allowed/)
+  assert.match(edgeFunction, /Arithmetic, translation, writing, document analysis, business support, and software help are allowed when they directly support freight operations or Multideck work/)
+  assert.match(edgeFunction, /const DEXTER_SCOPE_REDIRECT_TOOL = "redirect_off_topic_request"/)
+  assert.match(edgeFunction, /import \{ isClearlyOffTopicPrompt \} from "\.\/scope-guard\.ts"/)
+  assert.match(edgeFunction, /Redirect a clearly off-topic request without answering it/)
+  assert.match(edgeFunction, /const tools = \[\.\.\.scopeBoundaryTools\(\), \.\.\.readTools, \.\.\.emailTools, \.\.\.writingTools, \.\.\.actionTools\]/)
+  assert.equal(edgeFunction.match(/call\.name === DEXTER_SCOPE_REDIRECT_TOOL/g)?.length, 2)
+  assert.ok(edgeFunction.indexOf("if (isClearlyOffTopicPrompt(prompt))") > edgeFunction.indexOf("body.actionDecision === \"approve\""))
+  assert.ok(edgeFunction.indexOf("if (isClearlyOffTopicPrompt(prompt))") < edgeFunction.indexOf("multideck_dexter_check_usage_allowance"))
+  assert.match(edgeFunction, /type: "complete", conversation/)
+  assert.match(edgeFunction, /If it connects to a freight task, tell me the context and I’ll help/)
+  assert.match(edgeFunction, /Watching for you is limited to freight forwarding, freight-business operations, and supported Multideck records/)
+  assert.match(edgeFunction, /For sports, recipes, entertainment, general trivia, personal lifestyle requests, or any other clearly unrelated request, choose status=unsupported/)
+})
+
 test("Dexter clearly leaves warehouse customer access-link delivery to the audited product flow", () => {
   assert.match(edgeFunction, /Warehouse customer-user invitations and access-link emails are available only from the customer's Warehouse customer access panel/)
   assert.match(edgeFunction, /They are not connected to Dexter writes or Watching for you/)
+})
+
+test("Dexter keeps freight bookings separate from warehouse activity", () => {
+  assert.match(freightBookingsMigration, /multideck_dexter_domain_bookings/)
+  assert.match(freightBookingsMigration, /office\."Company_ID" = p_company_id/)
+  assert.match(freightBookingsMigration, /'bookingReference', 'MD-' \|\| job\."Job_Number"/)
+  assert.match(freightBookingsMigration, /'bookings',[\s\S]*'Freight bookings'/)
+  assert.match(freightBookingsMigration, /TR_Job_Header_dexter_booking_watch/)
+  assert.match(freightBookingsMigration, /'bookings',[\s\S]*tg_table_name,[\s\S]*new\."Job_ID"/)
+  assert.match(edgeFunction, /Use the bookings domain for freight bookings and jobs\./)
+  assert.match(edgeFunction, /booking: "bookings"/)
+  assert.match(edgeFunction, /domain === "bookings"/)
+  assert.match(edgeFunction, /`\/bookings\/\$\{encodeURIComponent\(bookingReference\.toLowerCase\(\)\)\}`/)
+  assert.doesNotMatch(edgeFunction, /booking: "warehouse"/)
 })
 
 test("Dexter and Watching for you fail closed for provider automatic-reply settings", () => {

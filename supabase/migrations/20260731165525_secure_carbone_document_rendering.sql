@@ -489,7 +489,7 @@ begin
         'version', template."DOCBT_CurrentVersionNo",
         'languageCode', template."DOCBT_LanguageCode",
         'updatedAt', template."DOCBT_UpdatedAt",
-        'updatedBy', concat_ws(' ', updater."User_FirstName", updater."User_LastName")
+        'updatedBy', concat_ws(' ', updater."User_Firstname", updater."User_Lastname")
       ) order by template."DOCBT_Name")
       from public."DOCB_DocumentTemplates" template
       left join public."cmp_Users" updater on updater."User_ID" = template."DOCBT_UpdatedBy"
@@ -531,7 +531,7 @@ begin
             else 'failed'
           end,
           'createdAt', generated."DOCBGD_CreatedAt",
-          'createdBy', concat_ws(' ', creator."User_FirstName", creator."User_LastName"),
+          'createdBy', concat_ws(' ', creator."User_Firstname", creator."User_Lastname"),
           'failureReason', render."DOCBRJ_ErrorMessage"
         ) as document_row,
         generated."DOCBGD_CreatedAt" as "createdAt"

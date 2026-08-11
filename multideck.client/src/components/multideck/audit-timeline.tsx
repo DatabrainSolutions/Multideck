@@ -11,7 +11,7 @@ import {
   ShieldCheck,
   Ship,
   type LucideIcon,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 import { motion, useReducedMotion } from "motion/react"
 import { Button } from "@/components/ui/button"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
@@ -91,7 +91,7 @@ export function AuditTimeline({
   return (
     <Surface padding="none" className={cn("overflow-hidden rounded-[var(--md-radius-xl)]", className)}>
       <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
-        <SectionHeader title={title} meta={description} />
+        <SectionHeader className="min-w-0 flex-1" title={title} meta={description} />
         <span className="inline-flex h-7 shrink-0 items-center gap-1.5 self-start rounded-[var(--md-radius-md)] bg-[var(--md-accent-a09)] px-2.5 text-[10.5px] font-medium text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">
           <Clock3 className="size-3" strokeWidth={1.4} />
           {events.length} {t("events")}

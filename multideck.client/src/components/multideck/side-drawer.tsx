@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ReactNode } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { X, type LucideIcon } from "lucide-react"
+import { X, type LucideIcon } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
 import { useLanguage } from "@/i18n/language-provider"
 import { mdMotion, reduceMotion } from "@/lib/motion"
@@ -44,6 +44,7 @@ export function SideDrawer({
   title,
   icon: Icon,
   width = 480,
+  modal = true,
   headerActions,
   bodyClassName,
   children,
@@ -54,6 +55,8 @@ export function SideDrawer({
   title: string
   icon?: LucideIcon
   width?: number
+  /** Non-modal drawers keep the register behind them interactive for rapid record switching. */
+  modal?: boolean
   headerActions?: ReactNode
   bodyClassName?: string
   children: ReactNode
@@ -76,9 +79,9 @@ export function SideDrawer({
   }, [onClose, open])
 
   useEffect(() => {
-    if (!open) return undefined
+    if (!open || !modal) return undefined
     return lockPageScroll()
-  }, [open])
+  }, [modal, open])
 
   // Send focus into the panel on open and hand it back to the trigger on close, so keyboard
   // and screen-reader users are not dropped at the top of the page behind the drawer.
@@ -98,26 +101,28 @@ export function SideDrawer({
   const offset = direction === "rtl" ? -40 : 40
 
   return (
-    <AnimatePresence>
+    <AnimatePresence initial={false}>
       {open ? (
-        <div className="fixed inset-0 z-50 flex justify-end p-3 sm:p-[var(--md-page-stack-gap)]" dir={direction}>
-          <motion.button
-            type="button"
-            aria-label={`${t("Close")} ${title}`}
-            className="absolute inset-0 cursor-default bg-[rgba(11,20,19,0.14)] backdrop-blur-[6px]"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={reduceMotion(reduce, mdMotion.fast)}
-            onClick={onClose}
-          />
+        <div className={cn("fixed inset-0 z-50 flex justify-end p-3 sm:p-[var(--md-page-stack-gap)]", !modal && "pointer-events-none")} dir={direction}>
+          {modal ? (
+            <motion.button
+              type="button"
+              aria-label={`${t("Close")} ${title}`}
+              className="absolute inset-0 cursor-default bg-[rgba(11,20,19,0.14)] backdrop-blur-[6px]"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={reduceMotion(reduce, mdMotion.fast)}
+              onClick={onClose}
+            />
+          ) : null}
           <motion.aside
             ref={panelRef}
-            role="dialog"
-            aria-modal="true"
+            role={modal ? "dialog" : "region"}
+            aria-modal={modal ? "true" : undefined}
             aria-label={title}
             tabIndex={-1}
-            className="relative z-10 flex h-full w-full flex-col overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-bg)] p-3 shadow-[var(--md-shadow-lift)] focus:outline-none"
+            className="pointer-events-auto relative z-10 flex h-full w-full flex-col overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-bg)] p-3 shadow-[var(--md-shadow-lift)] focus:outline-none"
             style={{ maxWidth: width }}
             initial={{ x: offset, opacity: 0, filter: "blur(8px)" }}
             animate={{ x: 0, opacity: 1, filter: "blur(0px)" }}
@@ -155,5 +160,56 @@ export function SideDrawer({
         </div>
       ) : null}
     </AnimatePresence>
+  )
+}
+
+/**
+ * A record opened into a drawer rather than a page or a centred dialog. Use it
+ * where the record is short enough to read in one panel: the register stays
+ * visible behind it, so the row that was picked and the next one are both still
+ * on screen while the operator works.
+ *
+ * The layout is fixed on purpose — the record's own facts first, then whatever
+ * the caller adds, then an action bar that sticks to the bottom of the scroll
+ * area so a long form never hides the button that commits it.
+ */
+export function RecordDrawer({
+  open,
+  onClose,
+  eyebrow,
+  title,
+  icon,
+  width = 560,
+  summary,
+  children,
+  actions,
+  closeLabel = "Close",
+}: {
+  open: boolean
+  onClose: () => void
+  eyebrow: string
+  title: string
+  icon?: LucideIcon
+  width?: number
+  /** The record's own facts, before anything asks the operator a question. */
+  summary: ReactNode
+  children?: ReactNode
+  /** The primary action. The dismiss control is supplied for you. */
+  actions?: ReactNode
+  closeLabel?: string
+}) {
+  const { t } = useLanguage()
+
+  return (
+    <SideDrawer open={open} onClose={onClose} eyebrow={eyebrow} title={title} icon={icon} width={width} bodyClassName="px-0">
+      <div className="grid gap-3 pb-1">
+        <div className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-3.5 shadow-[var(--md-shadow-line)]">{summary}</div>
+        {children}
+      </div>
+      <div className="sticky bottom-0 mt-3 flex items-center justify-end gap-2 rounded-[var(--md-radius-xl)] bg-[color-mix(in_srgb,var(--md-surface)_92%,transparent)] p-2 shadow-[var(--md-shadow-line)] backdrop-blur-xl">
+        <Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-md)] text-[12.5px]" onClick={onClose}>{t(closeLabel)}</Button>
+        {actions}
+      </div>
+    </SideDrawer>
   )
 }

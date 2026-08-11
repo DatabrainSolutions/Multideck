@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react"
-import { ArrowUp, Check, Sparkles, X } from "lucide-react"
+import { ArrowUp, Check, Sparkles, X } from "@/components/icons/hugeicons"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { Button } from "@/components/ui/button"
 import {

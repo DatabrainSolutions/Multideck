@@ -71,6 +71,14 @@ export type ApiLeadActivity = {
 }
 
 export type ApiLeadDetail = ApiLead & {
+  address?: {
+    line1?: string
+    line2?: string
+    townCity?: string
+    countyState?: string
+    postZipCode?: string
+    countryCode?: string
+  } | null
   company: ApiLeadCompany
   contacts: ApiLeadContact[]
   activities: ApiLeadActivity[]
@@ -188,6 +196,34 @@ export async function getLead(leadId: string) {
   )
 }
 
+export type UpdateLeadInput = Partial<{
+  companyName: string
+  primaryContactName: string | null
+  primaryContactEmail: string | null
+  countryCode: string | null
+  tradeLane: string | null
+  serviceInterest: string | null
+  valueAmount: number | null
+  valueCurrencyCode: string | null
+  nextFollowUpAt: string | null
+}>
+
+/**
+ * Writes only the keys given, so one inline field saves on its own without the
+ * client having to send — and risk overwriting — every neighbouring value.
+ */
+export async function updateLead(leadId: string, input: UpdateLeadInput) {
+  const lead = await callCrmRpc<ApiLead>(
+    "multideck_crm_update_lead",
+    { p_lead_id: leadId, p_input: input },
+    "This lead could not be saved.",
+    "Sign in again to manage CRM leads.",
+  )
+  const session = await getSupabaseSession()
+  if (session) invalidateCrmResources(session.user.id, ["leads:"])
+  return lead
+}
+
 export async function getCrmDashboard(inactivityDays: 30 | 90 | 180, area?: string | null) {
   return callCrmRpc<CrmDashboardData>(
     "multideck_crm_get_dashboard",
@@ -211,6 +247,14 @@ export async function createFollowUpLead(input: {
   personName?: string | null
   companyName?: string | null
   threadId?: string | null
+  address?: {
+    line1?: string | null
+    line2?: string | null
+    townCity?: string | null
+    countyState?: string | null
+    postZipCode?: string | null
+    countryCode?: string | null
+  } | null
 }) {
   const lead = await callCrmRpc<ApiLead>(
     "multideck_crm_create_follow_up_lead",
@@ -219,6 +263,7 @@ export async function createFollowUpLead(input: {
       p_person_name: input.personName || null,
       p_company_name: input.companyName || null,
       p_thread_id: input.threadId || null,
+      p_address: input.address || {},
     },
     "This lead could not be created.",
     "Sign in again to create this lead.",

@@ -17,7 +17,7 @@ import {
   Table2,
   TrendingUp,
   X,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -29,7 +29,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { cn } from "@/lib/utils"
 import type { GeneratedReport, GeneratedReportStatus, ReportTemplate } from "@/data/multideck-data"
 import { StatusPill, toneToVar } from "./status-pill"
@@ -185,8 +186,7 @@ export function NewReportTemplateCard({ onCreate, className }: { onCreate?: () =
 }
 
 function ReportStatusPill({ status }: { status: GeneratedReportStatus }) {
-  const label = status === "Generating" ? "• Generating" : status
-  return <StatusPill tone={reportStatusTone[status]} className={cn(status === "Generating" && "gap-1 bg-[rgba(74,125,156,0.1)]")}>{label}</StatusPill>
+  return <StatusPill kind="status" tone={reportStatusTone[status]}>{status}</StatusPill>
 }
 
 export function GeneratedReportsTable({
@@ -200,65 +200,27 @@ export function GeneratedReportsTable({
   onDownload?: (report: GeneratedReport) => void
   className?: string
 }) {
-  return (
-    <Surface padding="none" className={cn("overflow-hidden rounded-[var(--md-radius-xl)]", className)}>
-      <Table className="min-w-[980px]">
-        <TableHeader>
-          <TableRow className="border-[rgba(11,20,19,0.07)] hover:bg-transparent">
-            <TableHead className="h-12 px-[var(--md-gap-xl)] text-[13px] font-medium text-[var(--md-text)]">Report</TableHead>
-            <TableHead className="h-12 px-[var(--md-gap-xl)] text-[13px] font-medium text-[var(--md-text)]">Scope</TableHead>
-            <TableHead className="h-12 px-[var(--md-gap-xl)] text-[13px] font-medium text-[var(--md-text)]">Period</TableHead>
-            <TableHead className="h-12 px-[var(--md-gap-xl)] text-[13px] font-medium text-[var(--md-text)]">Created</TableHead>
-            <TableHead className="h-12 px-[var(--md-gap-xl)] text-[13px] font-medium text-[var(--md-text)]">Status</TableHead>
-            <TableHead className="h-12 px-[var(--md-gap-xl)] text-right text-[13px] font-medium text-[var(--md-text)]">Actions</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {reports.map((report) => {
-            const isReady = report.status === "Ready"
-            return (
-              <TableRow key={report.id} className="h-[82px] border-[rgba(11,20,19,0.06)] hover:bg-[rgba(255,255,255,0.36)]">
-                <TableCell className="px-[var(--md-gap-xl)]">
-                  <p className="text-[15px] font-medium leading-5 text-[var(--md-ink)]">{report.title}</p>
-                  <p className="mt-1 text-[13px] text-[var(--md-text)]">{report.subtitle}</p>
-                </TableCell>
-                <TableCell className="px-[var(--md-gap-xl)] text-[14px] text-[var(--md-text)]">{report.scope}</TableCell>
-                <TableCell className="px-[var(--md-gap-xl)] text-[14px] font-medium text-[var(--md-ink)]">{report.period}</TableCell>
-                <TableCell className="px-[var(--md-gap-xl)] text-[14px] text-[var(--md-text)]">{report.created}</TableCell>
-                <TableCell className="px-[var(--md-gap-xl)]">
-                  <ReportStatusPill status={report.status} />
-                </TableCell>
-                <TableCell className="px-[var(--md-gap-xl)]">
-                  <div className="flex justify-end gap-2">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      className="h-9 rounded-[var(--md-radius-md)] bg-white/35 px-3 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/65 disabled:text-[var(--md-subtle)]"
-                      disabled={!isReady}
-                      onClick={() => onView?.(report)}
-                    >
-                      <Eye data-icon="inline-start" strokeWidth={1.2} />
-                      View
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      className="h-9 rounded-[var(--md-radius-md)] bg-white/35 px-3 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/65 disabled:text-[var(--md-subtle)]"
-                      disabled={!isReady}
-                      onClick={() => onDownload?.(report)}
-                    >
-                      <Download data-icon="inline-start" strokeWidth={1.2} />
-                      PDF
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            )
-          })}
-        </TableBody>
-      </Table>
-    </Surface>
-  )
+  const columns = useMemo<DataTableColumn<GeneratedReport>[]>(() => [
+    { id: "report", label: "Report", kind: "long-text", width: 300, minWidth: 220, resizable: true, sortValue: (report) => report.title, cellTitle: (report) => `${report.title} · ${report.subtitle}`, cell: (report) => <div className="min-w-0"><p className="truncate text-[15px] font-medium leading-5 text-[var(--md-ink)]">{report.title}</p><p className="mt-1 truncate text-[13px] text-[var(--md-text)]">{report.subtitle}</p></div> },
+    { id: "scope", label: "Scope", kind: "attribute", width: 150, sortValue: (report) => report.scope, cell: (report) => <StatusPill kind="attribute" tone="blue">{report.scope}</StatusPill> },
+    { id: "period", label: "Period", kind: "date", width: 160, sortValue: (report) => report.period, cell: (report) => <span className="font-medium text-[var(--md-ink)]">{report.period}</span> },
+    { id: "created", label: "Created", kind: "date", width: 140, sortValue: (report) => report.created, cell: (report) => <span className="tabular-nums text-[var(--md-text)]">{report.created}</span> },
+    { id: "status", label: "Status", kind: "status", width: 130, sortValue: (report) => report.status, cell: (report) => <ReportStatusPill status={report.status} /> },
+    {
+      id: "actions",
+      label: "Actions",
+      kind: "actions",
+      width: 156,
+      canHide: false,
+      canPin: false,
+      cell: (report) => {
+        const isReady = report.status === "Ready"
+        return <div className="flex justify-end gap-1.5"><Button type="button" variant="ghost" className="h-8 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-3 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-hover)] disabled:text-[var(--md-subtle)]" disabled={!isReady} onClick={() => onView?.(report)}><Eye data-icon="inline-start" strokeWidth={1.2} />View</Button><Tooltip><TooltipTrigger asChild><Button type="button" variant="ghost" size="icon" aria-label="Download PDF" className="size-8 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] text-[var(--md-text)] opacity-0 shadow-[var(--md-shadow-line)] transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100 focus-visible:opacity-100" disabled={!isReady} onClick={() => onDownload?.(report)}><Download className="size-3.5" strokeWidth={1.2} /></Button></TooltipTrigger><TooltipContent>Download PDF</TooltipContent></Tooltip></div>
+      },
+    },
+  ], [onDownload, onView])
+
+  return <DataTable ariaLabel="Generated reports" columnsButtonLabel="Manage report columns" columns={columns} rows={reports} getRowKey={(report) => report.id} storageKey="generated-reports" rowClassName="group/row h-[82px]" className={className} />
 }
 
 export function reportStatusStyle(status: GeneratedReportStatus): CSSProperties {

@@ -1,4 +1,0 @@
-User-agent: *
-Allow: /
-
-Sitemap: https://multideck.io/sitemap.xml

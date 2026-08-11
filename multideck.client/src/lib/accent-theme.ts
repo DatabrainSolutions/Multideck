@@ -4,9 +4,9 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { supabase } from "@/lib/supabase"
 
 /**
- * The product reads its green from one place. Every accent surface in the app —
+ * The product reads its accent from one place. Every accent surface in the app —
  * solid fills, alpha washes, focus rings, selected rows, the brand shadows and
- * the Dexter shader ramps — derives from the eight base colours emitted here, so
+ * the Dexter shader ramps — derives from the base colours emitted here, so
  * swapping the accent is a single stylesheet write rather than a sweep through
  * hundreds of declarations.
  *
@@ -128,6 +128,11 @@ export type AccentPresetId =
   | "rose"
   | "ember"
   | "graphite"
+  | "lime"
+  | "gold"
+  | "coral"
+  | "cobalt"
+  | "fuchsia"
 
 export type AccentPreset = {
   id: AccentPresetId
@@ -142,21 +147,26 @@ export type AccentPreset = {
 /**
  * Each preset is a hand-checked pair rather than one colour dimmed for dark mode:
  * a light accent readable on `#f3f4f4` would disappear on `#1b1e20`, and the dark
- * accent inverts which ink it can carry. Both members sit at a fixed Oklab
- * lightness for their mode (0.492 light, 0.801 dark), so switching preset never
- * changes how heavy the interface feels.
+ * accent inverts which ink it can carry. Most presets share a consistent Oklab
+ * lightness for their mode. Ocean and Plum deliberately vary that weight in both
+ * modes so they stay distinct from Cobalt and Fuchsia without sacrificing contrast.
  */
 export const accentPresets: AccentPreset[] = [
   { id: "teal", label: "Multideck teal", hint: "The original", light: "#0a7068", dark: "#69d4c2" },
   { id: "meadow", label: "Meadow", hint: "Warm green", light: "#30713d", dark: "#89d394" },
   { id: "sky", label: "Sky", hint: "Bright cyan", light: "#006d80", dark: "#55d1ec" },
-  { id: "ocean", label: "Ocean", hint: "Deep blue", light: "#1b669b", dark: "#81c5ff" },
+  { id: "ocean", label: "Ocean", hint: "Slate blue", light: "#27495d", dark: "#b9e1f3" },
   { id: "indigo", label: "Indigo", hint: "Cool blue", light: "#4e5a9f", dark: "#aabaff" },
   { id: "violet", label: "Violet", hint: "Soft purple", light: "#705090", dark: "#d0abf9" },
-  { id: "plum", label: "Plum", hint: "Rich magenta", light: "#874773", dark: "#f0a1d5" },
+  { id: "plum", label: "Plum", hint: "Muted berry", light: "#5b3048", dark: "#f1d2df" },
   { id: "rose", label: "Rose", hint: "Muted red", light: "#93454a", dark: "#ff9fa2" },
   { id: "ember", label: "Ember", hint: "Burnt orange", light: "#8d4e1c", dark: "#f7aa74" },
   { id: "graphite", label: "Graphite", hint: "Near neutral", light: "#566465", dark: "#b1c2c3" },
+  { id: "lime", label: "Electric lime", hint: "Sharp chartreuse", light: "#516c00", dark: "#a8ce5b" },
+  { id: "gold", label: "Gold", hint: "Warm metallic", light: "#7b5b00", dark: "#e7b643" },
+  { id: "coral", label: "Vivid coral", hint: "Bright red orange", light: "#a83212", dark: "#ffa28b" },
+  { id: "cobalt", label: "Cobalt", hint: "Electric royal blue", light: "#2d56c5", dark: "#9fbdff" },
+  { id: "fuchsia", label: "Fuchsia", hint: "High energy pink", light: "#90368b", dark: "#ed9fe6" },
 ]
 
 export const defaultAccentPresetId: AccentPresetId = "teal"

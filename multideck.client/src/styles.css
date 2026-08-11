@@ -59,6 +59,104 @@
   }
 }
 
+/* ------------------------------------------------------ form validation */
+
+@keyframes md-field-invalid-nudge-a {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  28% {
+    translate: -3px 0;
+  }
+  56% {
+    translate: 2px 0;
+  }
+  78% {
+    translate: -1px 0;
+  }
+}
+
+@keyframes md-field-invalid-nudge-b {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  28% {
+    translate: -3px 0;
+  }
+  56% {
+    translate: 2px 0;
+  }
+  78% {
+    translate: -1px 0;
+  }
+}
+
+:where(
+  [data-slot="input"],
+  [data-slot="textarea"],
+  [data-slot="select-trigger"],
+  [data-slot="checkbox"],
+  [data-slot="switch"],
+  input:not([type="hidden"]),
+  textarea,
+  select
+)[aria-invalid="true"],
+form:not([novalidate]) :where(input:not([type="hidden"]), textarea, select):user-invalid,
+[data-field-invalid="true"] :where(
+  [data-slot="input"],
+  [data-slot="textarea"],
+  [data-slot="select-trigger"],
+  [data-slot="checkbox"],
+  [data-slot="switch"]
+) {
+  border-color: var(--md-red);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--md-red) 74%, transparent),
+    0 0 0 3px color-mix(in srgb, var(--md-red) 13%, transparent);
+}
+
+:where(
+  [data-slot="input"],
+  [data-slot="textarea"],
+  [data-slot="select-trigger"],
+  input:not([type="hidden"]),
+  textarea,
+  select
+)[aria-invalid="true"],
+form:not([novalidate]) :where(input:not([type="hidden"]), textarea, select):user-invalid,
+[data-field-invalid="true"] :where(
+  [data-slot="input"],
+  [data-slot="textarea"],
+  [data-slot="select-trigger"]
+) {
+  background-color: color-mix(in srgb, var(--md-red) 4%, var(--md-field-bg));
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-invalid-feedback="a"],
+  [data-field-invalid="true"] [data-slot][data-invalid-feedback="a"] {
+    animation: md-field-invalid-nudge-a 180ms ease-out;
+  }
+
+  [data-invalid-feedback="b"],
+  [data-field-invalid="true"] [data-slot][data-invalid-feedback="b"] {
+    animation: md-field-invalid-nudge-b 180ms ease-out;
+  }
+
+  form:not([novalidate]) :where(input:not([type="hidden"]), textarea, select):user-invalid:not([data-invalid-feedback]),
+  [data-field-invalid="true"] :where(
+    [data-slot="input"],
+    [data-slot="textarea"],
+    [data-slot="select-trigger"],
+    [data-slot="checkbox"],
+    [data-slot="switch"]
+  ):not([data-invalid-feedback]) {
+    animation: md-field-invalid-nudge-a 180ms ease-out;
+  }
+}
+
 @theme inline {
   /* The colour emoji families are named last on purpose: a subject line or a
      message preview that contains 🎉 must render it in colour rather than
@@ -218,6 +316,8 @@
   --md-surface: #ffffff;
   --md-surface-soft: #f7f9f8;
   --md-surface-tint: #eef1f0;
+  --md-table-pinned-bg: color-mix(in srgb, var(--md-accent) 7%, var(--md-surface));
+  --md-table-pinned-selected-bg: color-mix(in srgb, var(--md-accent) 14%, var(--md-surface));
   --md-field-bg: #e5e9e7;
   --md-field-bg-hover: #dfe5e2;
   --md-selected-bg: #c8dcd6;
@@ -373,6 +473,8 @@
   --md-surface: #1b1e20;
   --md-surface-soft: #222527;
   --md-surface-tint: #292d30;
+  --md-table-pinned-bg: color-mix(in srgb, var(--md-accent-deep) 52%, var(--md-surface));
+  --md-table-pinned-selected-bg: color-mix(in srgb, var(--md-accent-deep) 68%, var(--md-surface));
   --md-field-bg: #303538;
   --md-field-bg-hover: #373d40;
   --md-selected-bg: #263b37;
@@ -609,66 +711,6 @@
 .md-email-status-pill {
   justify-content: center;
   text-align: center;
-}
-
-.md-email-status-pill.md-email-status-pill--subscribed {
-  background: color-mix(in srgb, var(--md-comparison-positive) 14%, var(--md-surface));
-  color: var(--md-comparison-positive);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--md-comparison-positive) 18%, transparent);
-}
-
-.md-email-status-pill.md-email-status-pill--unsubscribed {
-  background: color-mix(in srgb, var(--md-red) 12%, var(--md-surface));
-  color: var(--md-red);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--md-red) 16%, transparent);
-}
-
-.md-email-status-pill.md-email-status-pill--bounced {
-  background: color-mix(in srgb, var(--md-subtle) 12%, var(--md-surface));
-  color: var(--md-text);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--md-subtle) 16%, transparent);
-}
-
-.md-email-status-pill.md-email-status-pill--pending {
-  background: color-mix(in srgb, var(--md-amber) 13%, var(--md-surface));
-  color: var(--md-amber-strong);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--md-amber) 17%, transparent);
-}
-
-.md-email-status-pill.md-email-status-pill--replied {
-  background: color-mix(in srgb, var(--md-blue) 13%, var(--md-surface));
-  color: var(--md-blue);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--md-blue) 17%, transparent);
-}
-
-.dark .md-email-status-pill.md-email-status-pill--subscribed {
-  background: color-mix(in srgb, var(--md-comparison-positive) 24%, #03140f);
-  color: var(--md-comparison-positive);
-  box-shadow: none;
-}
-
-.dark .md-email-status-pill.md-email-status-pill--unsubscribed {
-  background: color-mix(in srgb, var(--md-red) 26%, #140407);
-  color: #ff9da5;
-  box-shadow: none;
-}
-
-.dark .md-email-status-pill.md-email-status-pill--bounced {
-  background: color-mix(in srgb, var(--md-subtle) 28%, #151719);
-  color: #c7cfcc;
-  box-shadow: none;
-}
-
-.dark .md-email-status-pill.md-email-status-pill--pending {
-  background: color-mix(in srgb, var(--md-amber) 26%, #1b1003);
-  color: #f4c16c;
-  box-shadow: none;
-}
-
-.dark .md-email-status-pill.md-email-status-pill--replied {
-  background: color-mix(in srgb, var(--md-blue) 30%, #06131c);
-  color: #91c5e3;
-  box-shadow: none;
 }
 
 /* Armed only while an accent change is in flight, then dropped. Leaving it on
@@ -986,6 +1028,16 @@ button {
   animation: md-sidebar-menu-out 110ms cubic-bezier(0.55, 0, 1, 0.45) both;
 }
 
+.md-account-sheet[data-state="open"] {
+  animation: md-account-sheet-in 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  transform-origin: bottom center;
+}
+
+.md-account-sheet[data-state="closed"] {
+  animation: md-account-sheet-out 190ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: bottom center;
+}
+
 .md-sidebar-menu[data-state="open"] .md-sidebar-menu-item {
   animation: md-sidebar-menu-item-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
@@ -1004,22 +1056,6 @@ button {
 
 .md-sidebar-menu-item__icon {
   transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-/* Light mode needs the same clear group boundary as the dark sidebar, but with
-   the tenant accent instead of a neutral outline. This pseudo-element leaves
-   the existing dark treatment entirely unchanged. */
-:root:not(.dark) .md-sidebar-expanded-options {
-  position: relative;
-}
-
-:root:not(.dark) .md-sidebar-expanded-options::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-accent) 34%, transparent);
-  pointer-events: none;
 }
 
 /* ── Sidebar row affordance arrows ───────────────────────────────────────────
@@ -2072,6 +2108,53 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
   }
 }
 
+@keyframes md-account-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes md-account-sheet-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.992);
+  }
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 180ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  mix-blend-mode: normal;
+}
+
+::view-transition-old(root) {
+  animation-name: md-theme-frame-out;
+}
+
+::view-transition-new(root) {
+  animation-name: md-theme-frame-in;
+}
+
+@keyframes md-theme-frame-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes md-theme-frame-in {
+  from { opacity: 0.72; }
+  to { opacity: 1; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -2089,10 +2172,16 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
   .md-dropdown-content,
   .md-dropdown-option,
   .md-sidebar-menu,
-  .md-sidebar-menu-item {
+  .md-sidebar-menu-item,
+  .md-account-sheet {
     animation: none !important;
     filter: none !important;
     transform: none !important;
+  }
+
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none !important;
   }
 }
 
@@ -2831,11 +2920,7 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
   .md-sidebar-dexter-item {
     isolation: isolate;
     background: var(--md-accent) !important;
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.22),
-      inset 0 0 0 1px rgba(255, 255, 255, 0.12),
-      0 0 0 1px var(--md-accent-deep-a10),
-      0 7px 18px var(--md-accent-deep-a15);
+    box-shadow: 0 7px 18px var(--md-accent-deep-a15);
     transition:
       box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1),
       color 180ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -2843,12 +2928,7 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
 
   .md-sidebar-dexter-item:hover,
   .md-sidebar-dexter-item:focus-visible {
-    background: var(--md-accent) !important;
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.26),
-      inset 0 0 0 1px rgba(255, 255, 255, 0.18),
-      0 0 0 1px var(--md-accent-deep-a14),
-      0 10px 22px var(--md-accent-deep-a20);
+    background: color-mix(in srgb, var(--md-accent) 88%, var(--md-hover)) !important;
   }
 
   .md-dexter-pill:hover,
@@ -5260,5 +5340,790 @@ html.md-summon-picking {
   .md-inbox-summarise .md-dexter-pill__slot-glyph {
     transition-duration: 0.01ms !important;
     transition-delay: 0ms !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Settings → AI usage
+   The tab answers two questions: what did Dexter give back, and what is left.
+   The hero is deliberately dark in both themes — it carries a photographic
+   field image, and committing to one ink colour is what keeps the figures on
+   top legible without a heavier scrim.
+   -------------------------------------------------------------------------- */
+
+.md-ai-usage {
+  --md-ai-track: color-mix(in srgb, var(--md-text) 10%, transparent);
+  --md-ai-track-strong: color-mix(in srgb, var(--md-text) 14%, transparent);
+  --md-ai-hero-ink: #f2f7f2;
+  --md-ai-hero-text: rgba(233, 243, 234, 0.74);
+  --md-ai-hero-line: rgba(233, 243, 234, 0.16);
+  --md-ai-hero-track: rgba(233, 243, 234, 0.16);
+  --md-ai-hero-value: #9eecdd;
+  --md-ai-hero-cost: #f2c94c;
+  --md-ai-field-ink: #f2f7f2;
+  --md-ai-field-text: rgba(233, 243, 234, 0.74);
+  /* The chart is borrowed from the dashboard, which scopes its neutrals to
+     `.md-dashboard`; re-declare them here so the gridlines survive the move. */
+  --md-chart-grid: color-mix(in srgb, var(--md-text) 14%, transparent);
+  --md-dashboard-ring: 0 0 0 2px var(--md-accent-a20);
+}
+
+.md-ai-hero {
+  background:
+    linear-gradient(104deg, var(--md-accent-abyss) 0%, var(--md-accent-deep) 62%, color-mix(in srgb, var(--md-accent-glow-core) 32%, var(--md-accent-abyss)) 100%);
+  box-shadow: var(--md-premium-stroke), 0 18px 40px rgba(6, 36, 32, 0.22);
+}
+
+.md-ai-hero__image,
+.md-ai-field-header__image {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* The field is used for its movement, not its hue. Blending it as luminosity
+     over the accent-derived base means the streaks survive while the colour
+     follows whichever accent the workspace has chosen — so the hero never
+     fights a plum or indigo theme. */
+  mix-blend-mode: luminosity;
+  opacity: 0.78;
+  filter: contrast(1.12);
+  pointer-events: none;
+  user-select: none;
+}
+
+.md-ai-hero__scrim {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  /* Heaviest under the headline, lightest on the far side, so the figures keep
+     a solid ground while the image stays visible where nothing sits on it. */
+  background:
+    linear-gradient(
+      100deg,
+      color-mix(in srgb, var(--md-accent-abyss) 84%, transparent) 0%,
+      color-mix(in srgb, var(--md-accent-abyss) 46%, transparent) 44%,
+      color-mix(in srgb, var(--md-accent-abyss) 22%, transparent) 100%
+    ),
+    radial-gradient(120% 140% at 88% 6%, color-mix(in srgb, var(--md-accent-lift-strong) 14%, transparent), transparent 60%);
+  pointer-events: none;
+}
+
+/* A single slow pass of light while usage refreshes. It is opacity-and-transform
+   only, it never reflows the figures underneath, and it stops entirely when the
+   user has asked for less motion. */
+.md-ai-hero__sheen {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 42%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.07), transparent);
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .md-ai-hero__sheen {
+    animation: md-ai-sheen 2.4s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+  }
+}
+
+@keyframes md-ai-sheen {
+  from {
+    transform: translate3d(-100%, 0, 0);
+  }
+
+  to {
+    transform: translate3d(340%, 0, 0);
+  }
+}
+
+.md-ai-glass {
+  background: rgba(11, 34, 30, 0.42);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  box-shadow:
+    inset 0 0 0 1px rgba(233, 243, 234, 0.14),
+    0 12px 30px rgba(3, 20, 17, 0.28);
+}
+
+.md-ai-hero-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: rgba(233, 243, 234, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(233, 243, 234, 0.14);
+  color: var(--md-ai-hero-ink);
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.md-ai-hero-chip--bright {
+  background: color-mix(in srgb, var(--md-accent-lift-strong) 20%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-accent-lift-strong) 34%, transparent);
+  color: var(--md-accent-lift-strong);
+}
+
+.md-ai-hero-chip__label {
+  color: var(--md-ai-hero-text);
+  font-size: 11.5px;
+  font-weight: 400;
+}
+
+/* The scenario control sits on glass, so it borrows dark-surface tokens rather
+   than the page's light ones. */
+.md-ai-scenario {
+  --md-selected-bg: rgba(233, 243, 234, 0.16);
+  --md-selected-text: var(--md-ai-hero-ink);
+  background: rgba(4, 24, 21, 0.4);
+  box-shadow: inset 0 0 0 1px rgba(233, 243, 234, 0.12);
+}
+
+.md-ai-scenario > button {
+  flex: 1 1 0;
+  color: var(--md-ai-hero-text);
+}
+
+.md-ai-scenario > button:hover {
+  color: var(--md-ai-hero-ink);
+}
+
+.md-ai-workings-toggle {
+  border-radius: var(--md-radius-sm);
+  transition: color var(--md-motion);
+}
+
+.md-ai-workings-toggle:hover {
+  color: var(--md-ai-hero-ink);
+}
+
+.md-ai-workings-toggle:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--md-accent-lift-strong) 60%, transparent);
+  outline-offset: 3px;
+}
+
+/* Height that animates without ever interpolating to `auto`. */
+.md-ai-workings {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-ai-workings[data-open] {
+  grid-template-rows: 1fr;
+}
+
+.md-ai-field-header {
+  background: linear-gradient(96deg, var(--md-accent-abyss) 0%, var(--md-accent-deep) 100%);
+  min-height: 96px;
+}
+
+.md-ai-field-header__scrim {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(
+    96deg,
+    color-mix(in srgb, var(--md-accent-abyss) 90%, transparent) 8%,
+    color-mix(in srgb, var(--md-accent-abyss) 46%, transparent) 100%
+  );
+  pointer-events: none;
+}
+
+.md-ai-field-figure {
+  display: inline-flex;
+  align-items: baseline;
+  padding: 6px 12px;
+  border-radius: var(--md-radius-md);
+  background: rgba(233, 243, 234, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(233, 243, 234, 0.14);
+  color: var(--md-ai-field-ink);
+  font-size: 15px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Allowance meter -------------------------------------------------------- */
+
+.md-ai-allowance-meter {
+  background: var(--md-surface-soft);
+  box-shadow: inset 0 0 0 1px var(--md-line-strong);
+}
+
+.md-ai-allowance-meter__weave {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle, color-mix(in srgb, var(--md-text) 22%, transparent) 1px, transparent 1.2px);
+  background-size: 12px 12px;
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.md-ai-allowance-meter__fill {
+  border-radius: var(--md-radius-lg);
+  background: linear-gradient(100deg, var(--md-accent), color-mix(in srgb, var(--md-accent) 62%, var(--md-blue)));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+.md-ai-allowance-meter__projection {
+  border-start-end-radius: var(--md-radius-lg);
+  border-end-end-radius: var(--md-radius-lg);
+  background:
+    repeating-linear-gradient(
+      118deg,
+      color-mix(in srgb, var(--md-accent) 46%, transparent) 0 5px,
+      transparent 5px 10px
+    ),
+    color-mix(in srgb, var(--md-accent) 9%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-accent) 26%, transparent);
+}
+
+/* Small months and fresh periods leave a fill only a few pixels wide. A floor
+   keeps "some usage" visually distinct from "none at all". */
+.md-ai-allowance-meter__fill {
+  min-width: 8px;
+}
+
+.md-ai-allowance-meter__pace {
+  width: 2px;
+  margin-inline-start: -1px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--md-ink) 52%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--md-surface) 70%, transparent);
+}
+
+.md-ai-key {
+  width: 12px;
+  height: 8px;
+  border-radius: 3px;
+  flex: none;
+}
+
+.md-ai-key--used {
+  background: linear-gradient(100deg, var(--md-accent), color-mix(in srgb, var(--md-accent) 62%, var(--md-blue)));
+}
+
+.md-ai-key--projected {
+  background: repeating-linear-gradient(
+    118deg,
+    color-mix(in srgb, var(--md-accent) 42%, transparent) 0 3px,
+    transparent 3px 6px
+  );
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-accent) 26%, transparent);
+}
+
+.md-ai-key--pace {
+  width: 2px;
+  height: 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--md-ink) 52%, transparent);
+}
+
+/* Panels and rows -------------------------------------------------------- */
+
+.md-ai-panel {
+  transition: box-shadow var(--md-motion);
+}
+
+.md-ai-tile {
+  transition:
+    transform var(--md-motion),
+    box-shadow var(--md-motion);
+}
+
+.md-ai-tile:hover {
+  transform: translate3d(0, -2px, 0);
+  box-shadow: var(--md-premium-stroke), 0 16px 32px rgba(42, 52, 50, 0.11);
+}
+
+.md-ai-tile__icon {
+  transition: transform var(--md-motion);
+}
+
+.md-ai-tile:hover .md-ai-tile__icon {
+  transform: scale(1.05);
+}
+
+.md-ai-row {
+  transition: background-color var(--md-motion);
+}
+
+.md-ai-row:hover {
+  background: var(--md-hover);
+}
+
+.md-ai-ghost-button {
+  transition:
+    background-color var(--md-motion),
+    color var(--md-motion),
+    transform 140ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-ai-ghost-button:active {
+  transform: scale(0.97);
+}
+
+.md-ai-chart {
+  container-type: inline-size;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-ai-hero__sheen {
+    animation: none;
+  }
+
+  .md-ai-workings,
+  .md-ai-panel,
+  .md-ai-tile,
+  .md-ai-tile__icon,
+  .md-ai-row,
+  .md-ai-ghost-button {
+    transition-duration: 0.01ms;
+  }
+
+  .md-ai-tile:hover {
+    transform: none;
+  }
+}
+
+/* An amber projection reads as a warning without recolouring what has already
+   been spent — the used segment stays the accent it always was. */
+.md-ai-allowance-meter[data-pace="watch"] .md-ai-allowance-meter__projection {
+  background:
+    repeating-linear-gradient(
+      118deg,
+      color-mix(in srgb, var(--md-amber) 48%, transparent) 0 5px,
+      transparent 5px 10px
+    ),
+    color-mix(in srgb, var(--md-amber) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-amber) 28%, transparent);
+}
+
+.md-ai-allowance-meter[data-pace="over"] .md-ai-allowance-meter__projection {
+  background:
+    repeating-linear-gradient(
+      118deg,
+      color-mix(in srgb, var(--md-red) 48%, transparent) 0 5px,
+      transparent 5px 10px
+    ),
+    color-mix(in srgb, var(--md-red) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-red) 28%, transparent);
+}
+
+/* The panel is narrower than the dashboard the chart was built for, so the last
+   axis label would clip against the svg edge. The panel's own padding gives it
+   room once the svg stops cropping. */
+.md-ai-chart svg {
+  overflow: visible;
+}
+
+/* ------------------------------------------------------------------------ Drive
+   The company's private file workspace. Two tile shapes share one visual system:
+   a folder carries an operator-chosen colour, a file carries its own picture.
+
+   Folder colour reuses the ten accent presets, so a folder can never land on a
+   tone the product has not already checked for contrast in both themes. Both
+   members of the pair are written onto the element and CSS picks the one for the
+   current theme — that keeps the choice out of JavaScript, and means switching
+   theme cannot flash the wrong colour for a frame. */
+.md-drive-tone {
+  --md-drive-ink: var(--md-drive-ink-light);
+  --md-drive-wash: 7%;
+  --md-drive-wash-strong: 13%;
+  --md-drive-sheet: 15%;
+  --md-drive-edge: 14%;
+}
+
+:root.dark .md-drive-tone {
+  --md-drive-ink: var(--md-drive-ink-dark);
+  --md-drive-wash: 9%;
+  --md-drive-wash-strong: 15%;
+  --md-drive-sheet: 19%;
+  --md-drive-edge: 20%;
+}
+
+.md-drive-grid {
+  display: grid;
+  gap: var(--md-gap-md);
+  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
+}
+
+/* --------------------------------------------------------------- folder tile */
+
+/* Two thin sheets sit behind the top edge, so the tile reads as something that
+   holds files rather than as another card. On hover they fan a couple of pixels
+   further out — the cheapest possible hint that there is something inside. */
+.md-drive-folder {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding-top: 6px;
+  text-align: start;
+  border-radius: var(--md-radius-xl);
+  outline: none;
+}
+
+.md-drive-folder__sheet {
+  position: absolute;
+  height: 14px;
+  border-start-start-radius: var(--md-radius-md);
+  border-start-end-radius: var(--md-radius-md);
+  transition: transform 340ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+
+.md-drive-folder__sheet--back {
+  inset-inline: 18px;
+  top: 0;
+  background: color-mix(in srgb, var(--md-drive-ink) calc(var(--md-drive-sheet) * 0.5), var(--md-surface));
+}
+
+.md-drive-folder__sheet--front {
+  inset-inline: 10px;
+  top: 3px;
+  background: color-mix(in srgb, var(--md-drive-ink) var(--md-drive-sheet), var(--md-surface));
+}
+
+.md-drive-folder__body {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: var(--md-radius-xl);
+  background: color-mix(in srgb, var(--md-drive-ink) var(--md-drive-wash), var(--md-surface));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--md-drive-ink) var(--md-drive-edge), transparent),
+    0 1px 2px rgba(11, 20, 19, 0.04);
+  transition:
+    transform 260ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 260ms cubic-bezier(0.16, 1, 0.3, 1),
+    background-color 200ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+.md-drive-folder:hover .md-drive-folder__body,
+.md-drive-folder:focus-visible .md-drive-folder__body {
+  background: color-mix(in srgb, var(--md-drive-ink) var(--md-drive-wash-strong), var(--md-surface));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--md-drive-ink) calc(var(--md-drive-edge) + 8%), transparent),
+    0 12px 26px color-mix(in srgb, var(--md-drive-ink) 14%, transparent);
+  transform: translate3d(0, -3px, 0);
+}
+
+.md-drive-folder:hover .md-drive-folder__sheet--back,
+.md-drive-folder:focus-visible .md-drive-folder__sheet--back {
+  transform: translate3d(0, -3px, 0);
+}
+
+.md-drive-folder:hover .md-drive-folder__sheet--front,
+.md-drive-folder:focus-visible .md-drive-folder__sheet--front {
+  transform: translate3d(0, -1.5px, 0);
+}
+
+.md-drive-folder:focus-visible .md-drive-folder__body {
+  outline: 2px solid color-mix(in srgb, var(--md-drive-ink) 62%, transparent);
+  outline-offset: 2px;
+}
+
+/* Presses are short and shallow: it should feel like the tile took the click, not
+   like it bounced. */
+.md-drive-folder[data-pressed="true"] .md-drive-folder__body {
+  transform: translate3d(0, -1px, 0) scale(0.985);
+  transition-duration: 110ms;
+}
+
+.md-drive-folder__icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--md-radius-md);
+  color: var(--md-drive-ink);
+  background: color-mix(in srgb, var(--md-drive-ink) 13%, var(--md-surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-drive-ink) 16%, transparent);
+  transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1), background-color 200ms;
+}
+
+.md-drive-folder:hover .md-drive-folder__icon {
+  transform: scale(1.06);
+  background: color-mix(in srgb, var(--md-drive-ink) 19%, var(--md-surface));
+}
+
+/* ----------------------------------------------------------------- file tile */
+
+.md-drive-file {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  /* 4px against the tile's 14px radius puts the thumbnail on exactly 10px, so the
+     corners stay concentric instead of drifting apart. */
+  padding: 4px 4px 6px;
+  text-align: start;
+  border-radius: var(--md-radius-xl);
+  background: var(--md-surface);
+  box-shadow: var(--md-premium-stroke);
+  outline: none;
+  transition:
+    transform 260ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 260ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+
+.md-drive-file:hover,
+.md-drive-file:focus-visible {
+  transform: translate3d(0, -3px, 0);
+  box-shadow: var(--md-premium-stroke), 0 14px 30px rgba(42, 52, 50, 0.11);
+}
+
+.md-drive-file:focus-visible {
+  outline: 2px solid var(--md-accent);
+  outline-offset: 2px;
+}
+
+.md-drive-file[data-pressed="true"] {
+  transform: translate3d(0, -1px, 0) scale(0.985);
+  transition-duration: 110ms;
+}
+
+.md-drive-thumb {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--md-radius-lg);
+  background: var(--md-surface-tint);
+  /* Its own paint layer, so a hovered thumbnail's zoom cannot invalidate the
+     whole grid. */
+  contain: paint;
+}
+
+.md-drive-thumb__layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 560ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+
+/* The seed is the ~1 KB preview carried on the row itself. It paints on the first
+   frame, blurred and slightly overscaled so its low resolution reads as depth of
+   field rather than as a broken image, and it stays underneath the real
+   thumbnail for good — there is nothing to remove, so nothing can flicker. */
+.md-drive-thumb__seed {
+  filter: blur(9px) saturate(1.06);
+  transform: scale(1.1);
+}
+
+.md-drive-thumb__image {
+  opacity: 0;
+  transition:
+    opacity 400ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 560ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.md-drive-thumb__image[data-loaded="true"] {
+  opacity: 1;
+}
+
+.md-drive-file:hover .md-drive-thumb__image[data-loaded="true"],
+.md-drive-file:hover .md-drive-thumb__seed:only-child {
+  transform: scale(1.04);
+}
+
+/* Vector art and page renders are artwork on a sheet, not photography: cropping
+   them to fill the box would cut the logo in half. */
+.md-drive-thumb[data-fit="contain"] .md-drive-thumb__image {
+  object-fit: contain;
+  padding: 10px;
+}
+
+.md-drive-thumb[data-fit="contain"] {
+  background: color-mix(in srgb, var(--md-ink) 4%, var(--md-surface-soft));
+}
+
+.md-drive-thumb__glyph {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: color-mix(in srgb, var(--md-ink) 34%, transparent);
+  transition: transform 380ms cubic-bezier(0.16, 1, 0.3, 1), color 200ms;
+}
+
+.md-drive-file:hover .md-drive-thumb__glyph {
+  transform: scale(1.05);
+  color: color-mix(in srgb, var(--md-ink) 48%, transparent);
+}
+
+/* A pending tile starts with no picture at all — the preview is still being
+   rendered from the file. When the seed does land it eases in rather than
+   appearing, which is the one place in the grid where an image arrives into a box
+   that is already on screen. */
+.md-drive-thumb[data-pending="true"] .md-drive-thumb__seed {
+  animation: md-drive-seed-in 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes md-drive-seed-in {
+  from {
+    opacity: 0;
+    transform: scale(1.16);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+/* A pending upload keeps the same box the finished file will occupy, so nothing
+   moves when it lands. The sweep is the only thing that says "still working". */
+.md-drive-thumb[data-pending="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    color-mix(in srgb, var(--md-surface) 62%, transparent) 50%,
+    transparent 80%
+  );
+  animation: md-drive-sweep 1400ms cubic-bezier(0.5, 0.02, 0.5, 0.98) infinite;
+}
+
+@keyframes md-drive-sweep {
+  from {
+    transform: translate3d(-120%, 0, 0);
+  }
+  to {
+    transform: translate3d(120%, 0, 0);
+  }
+}
+
+.md-drive-progress-track {
+  stroke: color-mix(in srgb, var(--md-ink) 12%, transparent);
+}
+
+.md-drive-progress-value {
+  stroke: var(--md-accent);
+  /* Progress arrives in jumps from the network; easing the arc between them is
+     what makes it read as a continuous transfer. */
+  transition: stroke-dashoffset 320ms cubic-bezier(0.33, 0.8, 0.35, 1);
+}
+
+/* ------------------------------------------------------------------ dropzone */
+
+.md-drive-dropzone {
+  position: relative;
+  border-radius: var(--md-radius-2xl);
+  transition:
+    background-color 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.md-drive-dropzone[data-dragging="true"] {
+  background: color-mix(in srgb, var(--md-accent) 5%, transparent);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--md-accent) 34%, transparent);
+}
+
+.md-drive-drop-hint {
+  animation: md-drive-drop-hint-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes md-drive-drop-hint-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+/* ------------------------------------------------------------- colour swatch */
+
+.md-drive-swatch {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--md-drive-ink);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-ink) 10%, transparent);
+  transition: transform 220ms cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+.md-drive-swatch:hover {
+  transform: scale(1.12);
+}
+
+.md-drive-swatch[aria-checked="true"] {
+  transform: scale(1.06);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--md-ink) 10%, transparent),
+    0 0 0 2px var(--md-surface),
+    0 0 0 4px color-mix(in srgb, var(--md-drive-ink) 70%, transparent);
+}
+
+.md-drive-icon-choice {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--md-radius-lg);
+  color: var(--md-text);
+  transition:
+    background-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 220ms cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+.md-drive-icon-choice:hover {
+  background: var(--md-hover);
+  color: var(--md-ink);
+}
+
+.md-drive-icon-choice[aria-checked="true"] {
+  color: var(--md-drive-ink);
+  background: color-mix(in srgb, var(--md-drive-ink) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-drive-ink) 26%, transparent);
+  transform: scale(1.04);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-drive-folder__sheet,
+  .md-drive-folder__body,
+  .md-drive-folder__icon,
+  .md-drive-file,
+  .md-drive-thumb__layer,
+  .md-drive-thumb__glyph,
+  .md-drive-swatch,
+  .md-drive-icon-choice,
+  .md-drive-dropzone,
+  .md-drive-progress-value {
+    transition-duration: 0.01ms;
+  }
+
+  .md-drive-folder:hover .md-drive-folder__body,
+  .md-drive-folder:hover .md-drive-folder__sheet--back,
+  .md-drive-folder:hover .md-drive-folder__sheet--front,
+  .md-drive-folder:hover .md-drive-folder__icon,
+  .md-drive-file:hover,
+  .md-drive-file:hover .md-drive-thumb__image[data-loaded="true"],
+  .md-drive-file:hover .md-drive-thumb__glyph {
+    transform: none;
+  }
+
+  .md-drive-thumb[data-pending="true"]::after,
+  .md-drive-thumb[data-pending="true"] .md-drive-thumb__seed,
+  .md-drive-drop-hint {
+    animation: none;
   }
 }

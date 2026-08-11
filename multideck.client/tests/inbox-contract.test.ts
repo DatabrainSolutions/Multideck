@@ -12,6 +12,7 @@ import {
   dedupeThreads,
   mergeThreadPage,
   isInboxNotFound,
+  latestReplySource,
   normalizeThreadDetail,
   normalizeThreadListItem,
   normalizeThreadPage,
@@ -22,6 +23,8 @@ import {
   readEmailConnectionResult,
   readInboxThreadDeepLink,
   parseAddressInput,
+  resolveDefaultInboxProvider,
+  resolveDefaultOutboundMailbox,
   resolveMailboxForProvider,
   resolveSelectionForMailbox,
   threadCacheKey,
@@ -137,6 +140,18 @@ test("outbound delivery evidence is normalised without adding it to inbound mail
     confidence: "estimated",
   })
   assert.equal(detail.messages[1].delivery, undefined)
+})
+
+test("automated delivery receipts cannot hijack a reply composer", () => {
+  const detail = normalizeThreadDetail({
+    id: "thread-1",
+    messages: [
+      { id: "recipient-message", direction: "inbound", replyEligible: true },
+      { id: "delivery-receipt", direction: "inbound", replyEligible: false },
+    ],
+  }, "thread-1")
+
+  assert.equal(latestReplySource(detail.messages)?.id, "recipient-message")
 })
 
 test("server-issued Inbox citations restore their provider, mailbox and thread", () => {
@@ -363,6 +378,32 @@ test("switching back to a provider returns to the mailbox that was open there", 
 
 test("a provider with no mailbox resolves to nothing rather than another provider's", () => {
   assert.equal(resolveMailboxForProvider([mailbox("gmail-personal")], "outlook", null), null)
+})
+
+test("the saved provider opens first while an explicit Inbox link still wins", () => {
+  const mailboxes = [
+    mailbox("gmail-personal", { isDefault: true }),
+    mailbox("outlook-personal", { provider: "outlook" }),
+  ]
+
+  assert.equal(resolveDefaultInboxProvider(mailboxes, "outlook"), "outlook")
+  assert.equal(resolveDefaultInboxProvider(mailboxes, "outlook", "gmail"), "gmail")
+})
+
+test("a stale provider preference falls back to an accessible mailbox", () => {
+  const mailboxes = [mailbox("gmail-personal", { isDefault: true })]
+  assert.equal(resolveDefaultInboxProvider(mailboxes, "outlook"), "gmail")
+})
+
+test("new composers prefer a send-capable mailbox from the saved provider", () => {
+  const mailboxes = [
+    mailbox("gmail-personal", { isDefault: true }),
+    mailbox("outlook-read-only", { provider: "outlook", outboundEnabled: false }),
+    mailbox("outlook-personal", { provider: "outlook" }),
+  ]
+
+  assert.equal(resolveDefaultOutboundMailbox(mailboxes, "outlook")?.id, "outlook-personal")
+  assert.equal(resolveDefaultOutboundMailbox(mailboxes, "outlook", "gmail-personal")?.id, "gmail-personal")
 })
 
 test("a selection survives a switch back to its own mailbox", () => {

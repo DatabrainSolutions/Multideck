@@ -17,6 +17,7 @@ import {
   loadInboxWorkspace,
   mergeThreadPage,
   prefetchThreadInlineAttachmentBlobUrls,
+  resolveDefaultInboxProvider,
   resolveMailboxForProvider,
   threadCacheKey,
   type InboxConnection,
@@ -29,6 +30,10 @@ import {
   type ThreadPage,
   type ThreadQuery,
 } from "@/lib/inbox-api"
+import {
+  inboxProviderPreferenceChangedEvent,
+  loadDefaultInboxProvider,
+} from "@/lib/inbox-provider-preference"
 
 export type InboxNavigationView = "all" | "shared" | "sent" | "drafts" | "archive" | "spam" | "trash"
 export type InboxAccountLoadState = "loading" | "ready" | "error"
@@ -132,6 +137,7 @@ export function InboxWorkspaceProvider({ children, cacheScope }: { children: Rea
   const [folders, setFolders] = useState<MailboxFolder[]>([])
   const [accountState, setAccountState] = useState<InboxAccountLoadState>("loading")
   const [accountError, setAccountError] = useState<string | null>(null)
+  const [defaultProvider, setDefaultProvider] = useState<MailProvider | null>(null)
   const [provider, setProvider] = useState<MailProvider | null>(initial.provider)
   const [mailboxId, setMailboxId] = useState<string | null>(initial.mailboxId)
   const [folderId, setFolderId] = useState<string | null>(initial.folderId)
@@ -151,10 +157,17 @@ export function InboxWorkspaceProvider({ children, cacheScope }: { children: Rea
     setAccountState("loading")
     setAccountError(null)
     try {
-      const workspace = await loadInboxWorkspace()
+      const [workspace, savedDefaultProvider] = await Promise.all([
+        loadInboxWorkspace(),
+        loadDefaultInboxProvider().catch((error: unknown) => {
+          console.warn("Your default inbox provider could not be loaded from your profile.", error)
+          return null
+        }),
+      ])
       setConnections(workspace.connections)
       setMailboxes(workspace.mailboxes)
       setFolders(workspace.folders)
+      setDefaultProvider(savedDefaultProvider)
       setAccountState("ready")
       return workspace.mailboxes
     } catch (error) {
@@ -168,6 +181,7 @@ export function InboxWorkspaceProvider({ children, cacheScope }: { children: Rea
     setConnections([])
     setMailboxes([])
     setFolders([])
+    setDefaultProvider(null)
     setThreadCache({})
     threadCacheRef.current = {}
     threadDetailsRef.current.clear()
@@ -180,6 +194,16 @@ export function InboxWorkspaceProvider({ children, cacheScope }: { children: Rea
     }
     void refreshAccounts()
   }, [cacheScope, refreshAccounts])
+
+  useEffect(() => {
+    function rememberDefaultProvider(event: Event) {
+      const nextProvider = (event as CustomEvent<MailProvider>).detail
+      if (nextProvider === "gmail" || nextProvider === "outlook") setDefaultProvider(nextProvider)
+    }
+
+    window.addEventListener(inboxProviderPreferenceChangedEvent, rememberDefaultProvider)
+    return () => window.removeEventListener(inboxProviderPreferenceChangedEvent, rememberDefaultProvider)
+  }, [])
 
   const fetchThreadPage = useCallback(async (request: ThreadQuery, append = false, force = false) => {
     const key = threadCacheKey(request.mailboxId, request.folder ?? "inbox", request.query ?? "", request.folderId)
@@ -242,11 +266,8 @@ export function InboxWorkspaceProvider({ children, cacheScope }: { children: Rea
   // or stale mailbox ids fail closed to a mailbox the signed-in user can access.
   useEffect(() => {
     if (accountState !== "ready" || mailboxes.length === 0) return
-    const availableProviders = (["gmail", "outlook"] as MailProvider[])
-      .filter((candidate) => mailboxes.some((mailbox) => mailbox.provider === candidate))
-    const nextProvider = provider && availableProviders.includes(provider)
-      ? provider
-      : mailboxes.find((mailbox) => mailbox.isDefault)?.provider ?? availableProviders[0]
+    const requestedProvider = readInitialSelection().provider
+    const nextProvider = resolveDefaultInboxProvider(mailboxes, defaultProvider, requestedProvider)
     if (!nextProvider) return
 
     let nextView = view
@@ -262,7 +283,7 @@ export function InboxWorkspaceProvider({ children, cacheScope }: { children: Rea
     const nextFolderId = folders.some((folder) => folder.id === folderId && folder.mailboxId === nextMailbox?.id) ? folderId : null
     setFolderId(nextFolderId)
     writeSelection(nextProvider, nextMailbox?.id ?? null, nextView, nextFolderId)
-  }, [accountState, folderId, folders, mailboxId, mailboxes, provider, view])
+  }, [accountState, defaultProvider, folderId, folders, mailboxId, mailboxes, provider, view])
 
   // Warm the first visible page as soon as the account bootstrap resolves.
   // This runs behind the rest of the app and is shared with InboxPage, so an

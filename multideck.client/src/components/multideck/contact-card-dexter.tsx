@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { ArrowRight, Check, Filter, LoaderCircle, Sparkles, TriangleAlert } from "lucide-react"
+import { ArrowRight, Check, Filter, LoaderCircle, Sparkles, TriangleAlert } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { SideDrawer } from "@/components/multideck/side-drawer"

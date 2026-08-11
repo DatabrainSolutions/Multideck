@@ -7153,6 +7153,19 @@ $$;
 ALTER FUNCTION "public"."get_current_user_cover_photo"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."get_current_user_default_inbox_provider"() RETURNS TABLE("provider" "text")
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+  select workspace_user."User_DefaultInboxProviderCode"
+  from public."cmp_Users" as workspace_user
+  where workspace_user."Auth_User_ID" = (select auth.uid());
+$$;
+
+
+ALTER FUNCTION "public"."get_current_user_default_inbox_provider"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."get_current_user_language_preference"() RETURNS TABLE("locale" "text")
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO ''
@@ -7198,6 +7211,19 @@ $$;
 
 
 ALTER FUNCTION "public"."get_current_user_sidebar_preferences"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."get_current_user_table_preferences"() RETURNS TABLE("preferences" "jsonb")
+    LANGUAGE "sql" STABLE SECURITY INVOKER
+    SET "search_path" TO ''
+    AS $$
+  select coalesce(workspace_user."User_TablePinnedColumns", '{}'::jsonb)
+  from public."cmp_Users" as workspace_user
+  where workspace_user."Auth_User_ID" = (select auth.uid());
+$$;
+
+
+ALTER FUNCTION "public"."get_current_user_table_preferences"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."get_current_user_theme_preference"() RETURNS TABLE("theme_mode" "text")
@@ -11052,7 +11078,8 @@ begin
 
   if p_accent_preset is null or p_accent_preset not in (
     'teal', 'meadow', 'sky', 'ocean', 'indigo',
-    'violet', 'plum', 'rose', 'ember', 'graphite'
+    'violet', 'plum', 'rose', 'ember', 'graphite',
+    'lime', 'gold', 'coral', 'cobalt', 'fuchsia'
   ) then
     raise exception 'The accent colour is invalid.' using errcode = '22023';
   end if;
@@ -11148,6 +11175,37 @@ $_$;
 
 
 ALTER FUNCTION "public"."set_current_user_cover_photo"("p_bucket" "text", "p_path" "text", "p_mime_type" "text", "p_size_bytes" bigint) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."set_current_user_default_inbox_provider"("p_provider" "text") RETURNS TABLE("provider" "text")
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+declare
+  v_auth_user_id uuid := auth.uid();
+begin
+  if v_auth_user_id is null then
+    raise exception 'Authentication is required.';
+  end if;
+
+  if p_provider is null or p_provider not in ('gmail', 'outlook') then
+    raise exception 'The inbox provider is invalid.' using errcode = '22023';
+  end if;
+
+  update public."cmp_Users"
+  set "User_DefaultInboxProviderCode" = p_provider
+  where "Auth_User_ID" = v_auth_user_id;
+
+  if not found then
+    raise exception 'The signed-in account is not linked to a Multideck user profile.';
+  end if;
+
+  return query select p_provider;
+end
+$$;
+
+
+ALTER FUNCTION "public"."set_current_user_default_inbox_provider"("p_provider" "text") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."set_current_user_language_preference"("p_locale" "text") RETURNS TABLE("locale" "text")
@@ -11291,6 +11349,38 @@ $$;
 
 
 ALTER FUNCTION "public"."set_current_user_sidebar_preferences"("p_collapsed" boolean, "p_layout" "jsonb") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."set_current_user_table_preferences"("p_preferences" "jsonb") RETURNS TABLE("preferences" "jsonb")
+    LANGUAGE "plpgsql" SECURITY INVOKER
+    SET "search_path" TO ''
+    AS $$
+declare
+  v_auth_user_id uuid := auth.uid();
+  v_preferences jsonb := coalesce(p_preferences, '{}'::jsonb);
+begin
+  if v_auth_user_id is null then
+    raise exception 'Authentication is required.';
+  end if;
+
+  if not private.is_valid_table_pinned_columns(v_preferences) then
+    raise exception 'The table preferences are invalid.' using errcode = '22023';
+  end if;
+
+  update public."cmp_Users"
+  set "User_TablePinnedColumns" = case when v_preferences = '{}'::jsonb then null else v_preferences end
+  where "Auth_User_ID" = v_auth_user_id;
+
+  if not found then
+    raise exception 'The signed-in account is not linked to a Multideck user profile.';
+  end if;
+
+  return query select v_preferences;
+end
+$$;
+
+
+ALTER FUNCTION "public"."set_current_user_table_preferences"("p_preferences" "jsonb") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."set_current_user_theme_preference"("p_theme_mode" "text") RETURNS TABLE("theme_mode" "text")
@@ -11463,6 +11553,14 @@ begin
     if exists(select 1 from public."WMS_OrderLines" where "WMSOrderLine_OrderID"=p_order_id and ("WMSOrderLine_ReceivedQuantity">0 or "WMSOrderLine_DispatchedQuantity">0)) then raise exception 'WMS409: An order with posted stock movements cannot be cancelled.'; end if;
     update public."WMS_OrderLines" set "WMSOrderLine_StatusCode"='cancelled' where "WMSOrderLine_OrderID"=p_order_id;
     update public."WMS_Orders" set "WMSOrder_StatusCode"='cancelled',"WMSOrder_UpdatedAt"=v_now,"WMSOrder_UpdatedBy"=p_actor_user_id where "WMSOrder_ID"=p_order_id;
+    return p_order_id;
+  end if;
+
+  if p_action = 'reschedule' then
+    if nullif(p_payload->>'appointmentStartAt','') is null or nullif(p_payload->>'appointmentEndAt','') is null then raise exception 'WMS400: A slot needs both a start and an end.'; end if;
+    if (p_payload->>'appointmentEndAt')::timestamptz <= (p_payload->>'appointmentStartAt')::timestamptz then raise exception 'WMS400: A slot has to end after it starts.'; end if;
+    update public."WMS_Orders" set "WMSOrder_AppointmentStartAt"=(p_payload->>'appointmentStartAt')::timestamptz,"WMSOrder_AppointmentEndAt"=(p_payload->>'appointmentEndAt')::timestamptz,"WMSOrder_UpdatedAt"=v_now,"WMSOrder_UpdatedBy"=p_actor_user_id where "WMSOrder_ID"=p_order_id;
+    update public."WMS_InboundAdvices" set "WMSAdvice_ExpectedArrivalAt"=(p_payload->>'appointmentStartAt')::timestamptz where "WMSAdvice_OrderID"=p_order_id;
     return p_order_id;
   end if;
 
@@ -13476,6 +13574,7 @@ CREATE TABLE IF NOT EXISTS "public"."cmp_Users" (
     "User_ProfilePhotoUpdatedAt" timestamp with time zone,
     "User_SidebarCollapsed" boolean,
     "User_SidebarLayout" "jsonb",
+    "User_TablePinnedColumns" "jsonb",
     "User_CoverPhotoBucket" character varying(63),
     "User_CoverPhotoMimeType" character varying(100),
     "User_CoverPhotoPath" character varying(255),
@@ -13485,16 +13584,25 @@ CREATE TABLE IF NOT EXISTS "public"."cmp_Users" (
     "User_Locale" "text",
     "User_AccentPreset" "text",
     "User_ThemeMode" "text",
-    CONSTRAINT "CK_cmp_Users_AccentPreset" CHECK ((("User_AccentPreset" IS NULL) OR ("User_AccentPreset" = ANY (ARRAY['teal'::"text", 'meadow'::"text", 'sky'::"text", 'ocean'::"text", 'indigo'::"text", 'violet'::"text", 'plum'::"text", 'rose'::"text", 'ember'::"text", 'graphite'::"text"])))),
+    "User_DefaultInboxProviderCode" "text",
+    CONSTRAINT "CK_cmp_Users_AccentPreset" CHECK ((("User_AccentPreset" IS NULL) OR ("User_AccentPreset" = ANY (ARRAY['teal'::"text", 'meadow'::"text", 'sky'::"text", 'ocean'::"text", 'indigo'::"text", 'violet'::"text", 'plum'::"text", 'rose'::"text", 'ember'::"text", 'graphite'::"text", 'lime'::"text", 'gold'::"text", 'coral'::"text", 'cobalt'::"text", 'fuchsia'::"text"])))),
     CONSTRAINT "CK_cmp_Users_CoverPhoto" CHECK (((("User_CoverPhotoBucket" IS NULL) AND ("User_CoverPhotoPath" IS NULL) AND ("User_CoverPhotoMimeType" IS NULL) AND ("User_CoverPhotoSizeBytes" IS NULL) AND ("User_CoverPhotoUpdatedAt" IS NULL)) OR ((("User_CoverPhotoBucket")::"text" = 'profile-photos'::"text") AND ("User_CoverPhotoPath" IS NOT NULL) AND (("User_CoverPhotoMimeType")::"text" = ANY ((ARRAY['image/jpeg'::character varying, 'image/png'::character varying, 'image/webp'::character varying])::"text"[])) AND (("User_CoverPhotoSizeBytes" >= 1) AND ("User_CoverPhotoSizeBytes" <= 5242880)) AND ("User_CoverPhotoUpdatedAt" IS NOT NULL)))),
+    CONSTRAINT "CK_cmp_Users_DefaultInboxProvider" CHECK ((("User_DefaultInboxProviderCode" IS NULL) OR ("User_DefaultInboxProviderCode" = ANY (ARRAY['gmail'::"text", 'outlook'::"text"])))),
     CONSTRAINT "CK_cmp_Users_Locale" CHECK ((("User_Locale" IS NULL) OR ("User_Locale" = ANY (ARRAY['en-GB'::"text", 'en-US'::"text", 'de'::"text", 'fr'::"text", 'ar'::"text"])))),
     CONSTRAINT "CK_cmp_Users_ProfilePhoto" CHECK (((("User_ProfilePhotoBucket" IS NULL) AND ("User_ProfilePhotoPath" IS NULL) AND ("User_ProfilePhotoMimeType" IS NULL) AND ("User_ProfilePhotoSizeBytes" IS NULL) AND ("User_ProfilePhotoUpdatedAt" IS NULL)) OR ((("User_ProfilePhotoBucket")::"text" = 'profile-photos'::"text") AND ("User_ProfilePhotoPath" IS NOT NULL) AND (("User_ProfilePhotoMimeType")::"text" = ANY ((ARRAY['image/jpeg'::character varying, 'image/png'::character varying, 'image/webp'::character varying])::"text"[])) AND (("User_ProfilePhotoSizeBytes" >= 1) AND ("User_ProfilePhotoSizeBytes" <= 5242880)) AND ("User_ProfilePhotoUpdatedAt" IS NOT NULL)))),
     CONSTRAINT "CK_cmp_Users_SidebarLayout" CHECK ("private"."is_valid_sidebar_layout"("User_SidebarLayout")),
+    CONSTRAINT "CK_cmp_Users_TablePinnedColumns" CHECK ("private"."is_valid_table_pinned_columns"("User_TablePinnedColumns")),
     CONSTRAINT "CK_cmp_Users_ThemeMode" CHECK ((("User_ThemeMode" IS NULL) OR ("User_ThemeMode" = ANY (ARRAY['light'::"text", 'dark'::"text"]))))
 );
 
 
 ALTER TABLE "public"."cmp_Users" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."cmp_Users"."User_DefaultInboxProviderCode" IS 'Private operator preference for the initial Inbox and email-composer provider. It does not emit Watching for you events and does not grant provider or mailbox access.';
+
+
+COMMENT ON COLUMN "public"."cmp_Users"."User_TablePinnedColumns" IS 'Private per-operator table pin choices. UI-only preferences do not emit Watching for you events and are not exposed as Dexter actions.';
 
 
 CREATE OR REPLACE VIEW "public"."Audit_AccessEventSummary" AS
@@ -71485,6 +71593,9 @@ CREATE POLICY "Users can read their notifications" ON "public"."Comm_Notificatio
 CREATE POLICY "Users can read their own company user row" ON "public"."cmp_Users" FOR SELECT TO "authenticated" USING (("Auth_User_ID" = ( SELECT "auth"."uid"() AS "uid")));
 
 
+CREATE POLICY "Users can update their own table pin preferences" ON "public"."cmp_Users" FOR UPDATE TO "authenticated" USING (("Auth_User_ID" = ( SELECT "auth"."uid"() AS "uid"))) WITH CHECK (("Auth_User_ID" = ( SELECT "auth"."uid"() AS "uid")));
+
+
 
 CREATE POLICY "Users can update items on their Customs declarations" ON "public"."Customs_Items" FOR UPDATE TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."Customs_Declarations" "declaration"
@@ -73759,6 +73870,12 @@ GRANT ALL ON FUNCTION "public"."get_current_user_cover_photo"() TO "service_role
 
 
 
+REVOKE ALL ON FUNCTION "public"."get_current_user_default_inbox_provider"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."get_current_user_default_inbox_provider"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."get_current_user_default_inbox_provider"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."get_current_user_language_preference"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."get_current_user_language_preference"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."get_current_user_language_preference"() TO "service_role";
@@ -73774,6 +73891,12 @@ GRANT ALL ON FUNCTION "public"."get_current_user_profile_photo"() TO "service_ro
 REVOKE ALL ON FUNCTION "public"."get_current_user_sidebar_preferences"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."get_current_user_sidebar_preferences"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."get_current_user_sidebar_preferences"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."get_current_user_table_preferences"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."get_current_user_table_preferences"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."get_current_user_table_preferences"() TO "service_role";
 
 
 
@@ -74038,6 +74161,12 @@ GRANT ALL ON FUNCTION "public"."set_current_user_cover_photo"("p_bucket" "text",
 
 
 
+REVOKE ALL ON FUNCTION "public"."set_current_user_default_inbox_provider"("p_provider" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."set_current_user_default_inbox_provider"("p_provider" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."set_current_user_default_inbox_provider"("p_provider" "text") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."set_current_user_language_preference"("p_locale" "text") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."set_current_user_language_preference"("p_locale" "text") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."set_current_user_language_preference"("p_locale" "text") TO "service_role";
@@ -74053,6 +74182,12 @@ GRANT ALL ON FUNCTION "public"."set_current_user_profile_photo"("p_bucket" "text
 REVOKE ALL ON FUNCTION "public"."set_current_user_sidebar_preferences"("p_collapsed" boolean, "p_layout" "jsonb") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."set_current_user_sidebar_preferences"("p_collapsed" boolean, "p_layout" "jsonb") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."set_current_user_sidebar_preferences"("p_collapsed" boolean, "p_layout" "jsonb") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."set_current_user_table_preferences"("p_preferences" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."set_current_user_table_preferences"("p_preferences" "jsonb") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."set_current_user_table_preferences"("p_preferences" "jsonb") TO "service_role";
 
 
 
@@ -74532,8 +74667,9 @@ GRANT ALL ON TABLE "public"."Audit_AccessEvents" TO "service_role";
 
 
 
-GRANT ALL ON TABLE "public"."cmp_Users" TO "anon";
-GRANT ALL ON TABLE "public"."cmp_Users" TO "authenticated";
+GRANT SELECT, INSERT, DELETE, TRUNCATE, REFERENCES, TRIGGER ON TABLE "public"."cmp_Users" TO "anon";
+GRANT SELECT, INSERT, DELETE, TRUNCATE, REFERENCES, TRIGGER ON TABLE "public"."cmp_Users" TO "authenticated";
+GRANT UPDATE("User_TablePinnedColumns") ON TABLE "public"."cmp_Users" TO "authenticated";
 GRANT ALL ON TABLE "public"."cmp_Users" TO "service_role";
 
 

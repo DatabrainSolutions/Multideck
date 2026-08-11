@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { TriangleAlert } from "lucide-react"
+import { TriangleAlert } from "@/components/icons/hugeicons"
 import {
   EMPTY_PUBLIC_FORM,
   PublicCardExchange,

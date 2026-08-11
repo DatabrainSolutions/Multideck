@@ -113,6 +113,16 @@ Current Multideck components:
 - `MetricCard`: overview KPI component.
 - `DocumentExtractionProgress`: the waiting state for staged document work. The operator's own page sits under a reading sweep, the bar keeps moving through a slow stage without claiming to be finished, and the stage list ticks off what is already done.
 - `DocumentEvidenceViewer`: a document beside the data taken from it, with a page-fraction box over the place each value was read. Interpolated boxes, such as one row of a transcribed table, are drawn with a dashed edge.
+- `KpiStrip`: the shared metric row for every dashboard. Label, figure, and supporting line are required; `change`, `series`, `icon` and `delta` are optional, so a surface with no comparable previous period leaves the movement off rather than inventing one. `columns` switches between the four-up operations row and the six-up CRM row. `spark={false}` drops the per-cell sparkline for a surface that already draws the same series full size, and `markerId` turns the selection rule into one element that travels between cards.
+- `DashboardPriorityQueue`: the operations dashboard's lead panel. Work from every register in one list, ranked by real deadline and grouped by time remaining. Each row carries the reference, the ask, the customer and lane, and says which kind of deadline it is measured against, so a departure date is never mistaken for an appointment.
+- `DashboardPerformancePanel`: one large trend plot with a head that names the metric drawn. Pair with a `KpiStrip` that supplies the selection.
+- `DashboardCoveragePanel`: team coverage as a shape. One shared 24-hour track, a band per region in the viewer's local time, one "now" line. A row carries a count only when work is waiting on a human, and selecting a row opens that region's queue.
+- Report-builder chart cards are for wide report surfaces, not dashboard side columns. `VisualizationShell` collapses its header to one word per line once the column narrows. A dashboard chart should be built from the shared projection helpers in `lib/area-chart` so it is a sibling of the trend plot — same grid, same axis type, same theming.
+- Mode is shown over time, not as a single split. One series per transport mode on a shared axis answers *when* each mode is booked, which is the capacity question; a ring of today's totals only answers which is biggest.
+- `DashboardModeChart`: several series on one time axis in the dashboard's chart idiom. One shared scale across every series, so two modes of different volume cannot both fill the panel and look identical.
+- `DashboardBreakdownPanel`: a split of a total as bars. `segmented` puts the whole quantity on one bar for parts of a single total; `ranked` gives each category its own bar, scaled against the largest rather than the total so a long tail still has visible length.
+- `MiniBarChart`: a period as discrete ticks rather than a curve. Use it on cards that sit above a full-size plot — a second smooth line reads as the same drawing twice, where a tick strip reads as the shape and leaves the detail to the chart.
+- `CrmOpportunityValue`, `CrmFollowUpQueue`, `CrmQuietLeads`, `CrmAreaHeatmap`, `CrmActivityFeed`: the CRM dashboard panels. One panel shell, one row shape, and one arrival cadence shared with the operations overview.
 - `LineChartCard`, `AreaChartCard`, `BarChartCard`, `StackedBarChartCard`, `DonutChartCard`, `FunnelChartCard`, `HeatmapChartCard`, `RadialGoalChartCard`, `ScatterChartCard`, and `MixedChartCard`: reusable report-ready visualization components.
 - `ReportVisualizationBlock`: report-builder adapter for chart variants such as single bars, comparison bars, pie charts with or without keys, and variable-step funnels.
 - `CommandInput`: search and jump entry point. Shows the live `search.focus` binding and claims it while it is on screen.
@@ -120,6 +130,10 @@ Current Multideck components:
 - `KeyboardShortcutsPanel`: the editable shortcut list — grouped rows, inline recorder, conflict warnings, per-row reset. Used by the Keyboard shortcuts settings section and by the ⌘/ overlay.
 - `AppShortcuts`: the one place every shell-level shortcut is bound, so the settings list and the real behaviour cannot drift apart. Also draws the sequence hint while a two-key run is half typed.
 - `DexterSummon` / `DexterSummonPrompt`: the summon gesture. Hold the platform modifier and double-click anything, or press ⌘D / Ctrl+D, and Dexter traces that element with a shader ring and opens a stripped prompt box against it, carrying that element's context. With nothing named, the screen dims lightly and the same ring becomes an area picker.
+- `DriveFolderTile` / `DriveFileTile`: the two tiles Drive is built from. A folder carries the operator's colour and icon, with two thin sheets behind its top edge so it reads as something that holds files. A file is its own picture: the ~1 KB preview seed on the row paints on the first frame and the stored thumbnail cross-fades over it, so a folder never opens as a grid of empty boxes.
+- `ContextMenu`: the right-click menu. Shares the dropdown's surface, rows, and motion, so a menu opened by pointer reads the same as one opened from a trigger.
+- `DotGridLoader`: the product's one waiting state — twenty-five cells lit as a travelling square spiral. Every wait uses it, from a route still downloading to a register still fetching rows, so a wait always looks like the same object rather than a different feature loading. It animates only opacity and transform and reserves its own box, so it can sit inside the space the loaded content will occupy without moving anything around it.
+- `RegisterToolbar` (`RegisterViewSwitch`, `RegisterFacetSelect`, `RegisterSearchField`, `RegisterRefreshButton`, `RegisterToolbarActions`): the controls that live inside a `DataTable` toolbar. The view switch and the create action lead; the filters and the search trail. Two levels, deliberately — the switch changes what is fetched, the filters narrow what came back — so they cannot contradict each other.
 - `SegmentedControl`: spring-animated mutually-exclusive mode switch for two to four short choices.
 - `ChoiceControl`: adaptive exclusive-choice control. Use a switch for a boolean, the segmented pill for two to four choices, and a dropdown for five or more.
 - `Checkbox`: independent multi-select control for rows, permissions, overrides, and checklist choices.
@@ -163,10 +177,27 @@ Overview:
 - The sidebar is the primary anchor.
 - The top bar is for search and fast action.
 - The hero should be short and useful.
-- Metrics should be compact, comparable, and not oversized.
+- The screen opens on the work, not on decoration. `DashboardPriorityQueue` leads: booking exceptions and quote actions in one list ranked by the deadline that actually applies to each, grouped into overdue, the next two hours, later today, and this week. The screen must not run three lists over the same records — an earlier build showed every booking as "your jobs", the exception subset as "today's actions", and every booking again as "live bookings", so one delay was read three times before it was worked once.
+- One urgency device per row. The leading rule on a queue row carries priority; rows do not also get countdown rings, and panels do not get gauges to restate a count that is already printed.
+- Metrics are four comparable cards with room to read: the figure leads, the movement sits beside it as a tinted directional chip drawn from the metric's own series, and the supporting line says what the figure is made of and what the movement is measured against. A card with no earlier reading shows no arrow.
+- One chart, large. `DashboardPerformancePanel` draws whichever metric is selected above, and the KPI strip is its control — pass `spark={false}` and a `markerId` so a single rule travels to the selected card. Never draw one series twice, once as a sparkline in a tile and again full size below it.
 - Live bookings should use the real interactive map component, not a decorative route illustration.
 - Operational lists should scan vertically.
+- Every band is a row of two. No single object owns the full width on its own. The queue pairs with coverage; below the metric row the page splits into a reading column (the trend chart with the live board directly under it, because the table is what the chart is about) and a reference column (mode over time, tracking status, quote pipeline stacked). Below 1000px the columns stack in the same reading order.
+- Deadline, status and ETA are columns, not content. Sizing them to their text makes every row a different shape and leaves the right-hand side of a panel ragged, so nothing can be scanned down. Give them fixed widths and drop the least important one at narrow breakpoints instead.
+- Panels take their own height. Only the working row stretches, because the queue and coverage are both lists and matching them reads as one shelf. Stretching a short panel to match a tall neighbour is what put a band of empty surface under the side cards; where a column genuinely needs to fill, stack two panels in it rather than growing one.
+- No rings or funnels in a side column. Both hold a fixed aspect ratio, so beside a tall table they stretch and leave dead space under the drawing. Use `DashboardBreakdownPanel` — bars have no aspect to hold, and comparing lengths on a shared baseline beats comparing arc angles.
+- Coverage is `DashboardCoveragePanel`: every region's 08:00–17:00 window drawn on one shared 24-hour track in the viewer's own time, with a single "now" line across all of them. It answers overlap — how long until Shanghai closes, who is awake to pick this up — which is the question a freight desk actually has. It must not become a row of clock faces again, and it must not animate per city.
+- The page keeps one live indicator, on live bookings. Continuous ambient motion anywhere else is decoration.
 - AI content should feel assistive and specific.
+
+CRM dashboard:
+
+- Lead with the graph. Open opportunity value is a segmented arc, and leads by area is a treemap heat map — not two more tables.
+- The arc is a value breakdown, not progress towards a target. The CRM snapshot carries no quota, so nothing on this screen may imply one.
+- Panels on this screen use a hairline stroke and no elevation shadow. It is one dense plane of numbers; eight floating cards read as clutter rather than depth.
+- Every panel is the same shell and every list uses the same row, so a queue entry, a quiet lead and a logged activity scan at one rhythm.
+- Filtering the follow-up queue must not resize the panel around it. Reserve the unfiltered height.
 
 Customers:
 
@@ -183,6 +214,25 @@ Component gallery:
 - Right: on-page anchors and compact component contract notes.
 - Every component should show why it exists, how to use it, and a code snippet.
 - Visualization components should show meaningful variants in the preview, not only the default state. Bar charts should show single-series and comparison variants, pie charts should show legend and no-legend states, and funnels should show different step counts.
+
+Drive:
+
+- Drive is the company's own file workspace, not a summary screen. The panel is the folders and files and nothing else — no storage dashboard, no activity sidebar, no owner column.
+- Folders come before files, each in its own auto-filling grid, so the two tile heights never fight over a shared row.
+- Folder colour is one of the ten accent presets rather than a free colour picker, so a folder can only land on a tone already checked for contrast in both themes. Both members of the pair go onto the element and CSS picks one, so switching theme cannot flash the wrong colour.
+- Every thumbnail paints in two passes over one box, and the low-resolution pass is never removed. There is no state in which a tile has nothing in it, so there is nothing that can flicker.
+- A file still uploading holds the exact box its finished tile will occupy, keyed the same, so the grid does not move when the upload lands.
+- Renaming happens in place, in the tile, with the field inheriting the label's own box.
+- Folder navigation is real history: opening a folder pushes a URL, and browser back walks out of it.
+
+Warehouse:
+
+- The header band is the shared `KpiStrip` at compact density and seven across: half the height of a dashboard tile, label and figure on one line, and the supporting sentence carried for assistive technology rather than printed. Every figure answers a different question — the row must never spend two tiles restating one number.
+- Screens that give their header row to the work show the first three figures as chips beside the page actions instead, and a chip with a route is a shortcut to the screen that answers it.
+- A warehouse order is a record with its own address (`/warehouse/orders/<number>`), not a dialog. An operator receiving a delivery is reading a docket, counting pallets and typing quantities at once; that needs the whole window, a link a supervisor can be sent, and a back button to the register it came from. The register to return to is carried in `?from=`, so it survives a reload.
+- Its layout leads with the progress rail: the fill is the quantity actually posted and the nodes are the milestones that quantity has crossed, so a part-received order reads as part-received rather than as a status word. Every order line is on screen at once — paging through them hides how much of the delivery is still untouched.
+- Stock, objects and exceptions are short records, so they open a right-hand `SideDrawer` rather than a page or a centred dialog. The register stays visible behind the panel, and the commit button sticks to the bottom of the scroll area so a long form never hides it.
+- The action a panel is posting is chosen with a segmented control, not chips: one indicator travelling between segments reads as one control changing its mind.
 
 Report builder:
 
@@ -210,8 +260,12 @@ Controls should be real:
 Canonical register behaviour:
 
 - Primary registers use `DataTable` for search, sorting, column visibility, resizing, pinning, ordering, and saved layouts.
-- Advanced filters open inline above the register and update results immediately; do not move this work into a modal with a separate Apply step.
-- Quotes and Bookings are the reference implementations for this shared register behaviour.
+- Search, filters and the warehouse or scope dropdown belong in the table's own toolbar, not in a filter bar stacked above it. A register should not spend a third of the screen before its first row.
+- The toolbar wraps by group, never by control: the leading group keeps the view switch and the create action, and the trailing group drops to its own line as one block once the row runs out of room.
+- Facet options come from the rows in hand, so a menu can never offer a value that returns nothing. A trigger takes the accent colour while its filter is on.
+- Typing narrows what is already loaded on the same frame; the server is asked once the operator stops. Only the newest response is allowed to write, so a slow earlier request cannot replace newer rows.
+- Revalidation never blanks a table. Rows stay on screen and the toolbar shows the small dot-grid mark; the full loader only appears when there is nothing to show yet.
+- Quotes, Warehouse inventory and Warehouse orders are the reference implementations for this shared register behaviour.
 
 Dropdowns should feel anchored, compact, and unambiguous:
 

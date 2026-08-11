@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react"
-import { Download, FileText, LoaderCircle, Mail, Plus, RefreshCw, ShieldCheck, Trash2 } from "lucide-react"
+import { useEffect, useState, type ReactNode } from "react"
+import { Download, FileText, Health, LoaderCircle, Mail, Plus, RefreshCw, ShieldCheck, Trash2 } from "@/components/icons/hugeicons"
 import { CustomerAvatar } from "@/components/multideck/customer-components"
 import { MarketingOptInControl } from "@/components/multideck/marketing-opt-in-control"
 import { MultiSelectMenu } from "@/components/multideck/multi-select-menu"
@@ -104,7 +104,7 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
         <Metric label={t("Contacts")} value={String(customer.contacts.length)} />
         <Metric label={t("Active shipments")} value={String(customer.activeShipments.length)} />
         <Metric label={t("Open exceptions")} value={String(customer.activeShipments.reduce((total, shipment) => total + shipment.openExceptionCount, 0))} />
-        <Metric label={t("Account health")} value={customer.healthScore == null ? "—" : `${Math.round(customer.healthScore)}%`} />
+        <Metric label={t("Account health")} value={customer.healthScore == null ? "—" : `${Math.round(customer.healthScore)}%`} icon={<Health className="size-3.5" strokeWidth={1.4} aria-hidden="true" />} />
       </div>
 
       {customer.summary ? <Surface className="rounded-[var(--md-radius-xl)]" padding="lg"><h2 className="text-[15px] font-medium text-[var(--md-ink)]">{t("Account summary")}</h2><p className="mt-3 text-[14px] leading-6 text-[var(--md-text)]">{customer.summary}</p></Surface> : null}
@@ -285,7 +285,7 @@ export function CustomerWarehouseAccess({
   </>
 }
 
-function Metric({ label, value }: { label: string; value: string }) { return <Surface className="rounded-[var(--md-radius-xl)]" padding="md"><p className="text-[13px] text-[var(--md-text)]">{label}</p><p className="mt-4 text-[28px] font-medium text-[var(--md-ink)]">{value}</p></Surface> }
+function Metric({ label, value, icon }: { label: string; value: string; icon?: ReactNode }) { return <Surface className="rounded-[var(--md-radius-xl)]" padding="md"><p className="flex items-center gap-1.5 text-[13px] text-[var(--md-text)]">{icon}{label}</p><p className="mt-4 text-[28px] font-medium text-[var(--md-ink)]">{value}</p></Surface> }
 function PanelTitle({ title, meta }: { title: string; meta?: string }) { return <div className="flex items-center justify-between gap-3 px-5 py-4"><h2 className="text-[15px] font-medium text-[var(--md-ink)]">{title}</h2>{meta ? <span className="text-[13px] text-[var(--md-text)]">{meta}</span> : null}</div> }
 function EmptyRow({ text }: { text: string }) { return <p className="border-t border-[rgba(11,20,19,0.06)] px-5 py-5 text-[13px] text-[var(--md-text)]">{text}</p> }
 function CustomerLoadState({ message, onRetry }: { message: string; onRetry: () => void }) { const { t } = useLanguage(); return <Surface className="grid min-h-[220px] place-items-center rounded-[var(--md-radius-xl)]" padding="lg"><div className="text-center"><p className="text-[15px] font-medium text-[var(--md-ink)]">{t("Customer data is unavailable")}</p><p className="mt-2 text-[13px] text-[var(--md-text)]">{message}</p><Button variant="outline" className="mt-4" onClick={onRetry}><RefreshCw className="size-4" />{t("Try again")}</Button></div></Surface> }

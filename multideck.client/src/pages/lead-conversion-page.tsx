@@ -9,13 +9,14 @@ import {
   LoaderCircle,
   Route,
   Sparkles,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { CustomerAvatar } from "@/components/multideck/customer-components"
+import { MultideckDatePicker, MultideckDateTimePicker } from "@/components/multideck/date-picker"
 import { Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { useLanguage } from "@/i18n/language-provider"
@@ -430,7 +431,7 @@ export function LeadConversionPage({
             {activeStep === 1 ? (
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label={t("Expected close date")} required>
-                  <Input type="date" min={toDateInput(new Date())} value={data.expectedCloseDate} onChange={(event) => update("expectedCloseDate", event.target.value)} className={inputClass} dir="ltr" />
+                  <MultideckDatePicker value={data.expectedCloseDate || null} onChange={(date) => update("expectedCloseDate", date ?? "")} placeholder="Select date" title="Expected close date" description="Pick the date this deal is expected to close." minDate={toDateInput(new Date())} triggerClassName={inputClass} />
                 </Field>
                 <Field label={t("Win probability")} required hint={t("Used to calculate weighted pipeline value.")}>
                   <div className="relative">
@@ -496,7 +497,7 @@ export function LeadConversionPage({
                   <Textarea value={data.valueProposition} onChange={(event) => update("valueProposition", event.target.value)} className="min-h-[70px] rounded-[var(--md-radius-lg)] bg-white/70 shadow-[var(--md-shadow-line)]" />
                 </Field>
                 <Field label={t("Next action")} required className="sm:col-span-2" hint={t("The first concrete action after the deal is created.")}>
-                  <Input type="datetime-local" value={data.nextActionDueAt} onChange={(event) => update("nextActionDueAt", event.target.value)} className={inputClass} dir="ltr" />
+                  <MultideckDateTimePicker value={data.nextActionDueAt} onChange={(nextActionDueAt) => update("nextActionDueAt", nextActionDueAt)} placeholder="Select date" title="Next action" description="Pick when the next action is due." triggerClassName={inputClass} timeClassName={inputClass} />
                 </Field>
               </div>
             ) : null}

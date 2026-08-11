@@ -198,6 +198,18 @@ Prefer subtle:
 
 Avoid loud motion, bouncy effects, excessive animation, or anything that makes the product feel less serious.
 
+## Contextual Top-Bar Action Rule
+
+The top-right primary action must always reflect the page or workflow the operator is currently using.
+
+- Use the active product noun and outcome: `New booking` in Bookings, `New quote` in Quotes, `New account` in CRM Accounts, `New contact` in CRM Contacts, `Goods in` in Goods in, `Goods out` in Goods out, and equivalent route-specific wording elsewhere.
+- Never use `New booking` as a generic fallback outside a booking context. If a page has no honest, useful primary action, omit the button.
+- Reuse the page's real creation dialog, wizard, validation and permission boundary. The top bar may navigate to that flow or signal the mounted page to open it; it must not duplicate a second implementation or show placeholder success.
+- When a page has several closely related primary actions, use one contextual top-bar dropdown in the established style. Inventory, for example, exposes `New warehouse object` and `Report a location empty` from that menu.
+- Once a creation action exists in the top bar, do not duplicate it inside the page or table toolbar. Keep table toolbars focused on view switches, import tools, search, filters and columns. A purposeful empty-state action may remain when it helps a first-time user recover from having no records.
+- Do not repeat the action on a creation wizard or record screen when that screen already owns the relevant controls.
+- Whenever a new route is added, define its top-bar action, localise its visible label, verify its mobile treatment, and test that activating it reaches the real workflow.
+
 ## Supabase, Tenant, and Authentication Architecture
 
 Multideck uses physical tenant isolation. It is not a conventional multi-tenant application with every company stored in one shared database.

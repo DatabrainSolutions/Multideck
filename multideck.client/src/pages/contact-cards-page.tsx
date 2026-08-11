@@ -9,8 +9,7 @@ import {
   QrCode,
   Trash2,
   TriangleAlert,
-  UserRoundPlus,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -18,9 +17,9 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
-import { SideDrawer } from "@/components/multideck/side-drawer"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
+import { WizardDialog, type WizardStep } from "@/components/multideck/wizard-dialog"
 import { TabsRail } from "@/components/multideck/workflow-components"
 import { CopyableField } from "@/components/multideck/copyable-field"
 import {
@@ -39,6 +38,7 @@ import { CardAnalyticsPanel } from "@/components/multideck/contact-card-analytic
 import { CardDesignPanel, ContactCardSocialLinksEditor } from "@/components/multideck/contact-card-design"
 import { useLanguage } from "@/i18n/language-provider"
 import { mdMotion, reduceMotion } from "@/lib/motion"
+import { subscribeTopBarAction, topBarActionEvents } from "@/lib/top-bar-action-events"
 import {
   cardPublicPath,
   cardTotals,
@@ -86,7 +86,11 @@ function Field({ label, hint, optional, children }: { label: string; hint?: stri
   )
 }
 
-function CreateCardDrawer({
+type CreateCardStep = "person" | "contact" | "source"
+
+const contactCardInputClass = "h-10 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] text-[16px] shadow-[var(--md-shadow-line)] sm:text-[14px]"
+
+function CreateCardWizard({
   open,
   onClose,
   onCreated,
@@ -98,21 +102,35 @@ function CreateCardDrawer({
   const { t } = useLanguage()
   const [form, setForm] = useState({ fullName: "", role: "", company: "Multideck", email: "", phone: "", context: "", leadSource: "" })
   const [touched, setTouched] = useState(false)
+  const [activeStep, setActiveStep] = useState<CreateCardStep>("person")
 
   useEffect(() => {
     if (!open) {
       setForm({ fullName: "", role: "", company: "Multideck", email: "", phone: "", context: "", leadSource: "" })
       setTouched(false)
+      setActiveStep("person")
     }
   }, [open])
 
+  const emailIsValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())
   const nameError = touched && !form.fullName.trim() ? t("Add the name shown on the card.") : null
-  const emailError = touched && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) ? t("Add a valid email address.") : null
-  const valid = !nameError && !emailError && form.fullName.trim() && form.email.trim()
+  const emailError = touched && !emailIsValid ? t("Add a valid email address.") : null
+  const steps: WizardStep[] = [
+    { id: "person", label: "Person", hint: "Add the details shown on the card.", complete: Boolean(form.fullName.trim()) },
+    { id: "contact", label: "Contact details", hint: "Add the channels people can use after scanning.", complete: emailIsValid },
+    { id: "source", label: "Lead context", hint: "Help operators recognise the card and trace the leads it creates." },
+  ]
 
   function submit() {
     setTouched(true)
-    if (!form.fullName.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) return
+    if (!form.fullName.trim()) {
+      setActiveStep("person")
+      return
+    }
+    if (!emailIsValid) {
+      setActiveStep("contact")
+      return
+    }
 
     const card = createCard({
       label: form.fullName.trim(),
@@ -129,83 +147,79 @@ function CreateCardDrawer({
   }
 
   return (
-    <SideDrawer open={open} onClose={onClose} eyebrow={t("New card")} title={t("Create a QR contact card")} icon={UserRoundPlus} width={480}>
-      <form
-        className="space-y-[var(--md-gap-lg)] p-1"
-        onSubmit={(event) => {
-          event.preventDefault()
-          submit()
-        }}
-      >
-        <p className="text-[13px] leading-5 text-[var(--md-text)]">
-          {t("A card represents one person. Everything else — the public page, the lead source and any automation — can be set up afterwards.")}
-        </p>
-
-        <Field label={t("Name on the card")}>
-          <Input
-            className="h-9 text-[13px]"
-            value={form.fullName}
-            aria-invalid={Boolean(nameError)}
-            autoComplete="name"
-            onChange={(event) => setForm({ ...form, fullName: event.target.value })}
-          />
-          {nameError ? <span className="mt-1.5 block text-[12px] text-[var(--md-red)]">{nameError}</span> : null}
-        </Field>
-
-        <Field label={t("Job title")} optional>
-          <Input className="h-9 text-[13px]" value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })} />
-        </Field>
-
-        <Field label={t("Company")}>
-          <Input className="h-9 text-[13px]" value={form.company} onChange={(event) => setForm({ ...form, company: event.target.value })} />
-        </Field>
-
-        <Field label={t("Email")}>
-          <Input
-            className="h-9 text-[13px]"
-            type="email"
-            dir="ltr"
-            value={form.email}
-            aria-invalid={Boolean(emailError)}
-            autoComplete="email"
-            onChange={(event) => setForm({ ...form, email: event.target.value })}
-          />
-          {emailError ? <span className="mt-1.5 block text-[12px] text-[var(--md-red)]">{emailError}</span> : null}
-        </Field>
-
-        <Field label={t("Phone")} optional>
-          <Input className="h-9 text-[13px]" type="tel" dir="ltr" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
-        </Field>
-
-        <div className="h-px bg-[rgba(11,20,19,0.08)]" />
-
-        <Field label={t("Where it will be used")} optional hint={t("Shown in the register so you can tell similar cards apart.")}>
-          <Input className="h-9 text-[13px]" placeholder={t("UCN Sri Lanka")} value={form.context} onChange={(event) => setForm({ ...form, context: event.target.value })} />
-        </Field>
-
-        <Field label={t("Lead source")} optional hint={t("Stamped on every lead this card creates. You can set this later.")}>
-          <Input
-            className="h-9 text-[13px]"
-            placeholder={t("Event – UCN Sri Lanka")}
-            value={form.leadSource}
-            onChange={(event) => setForm({ ...form, leadSource: event.target.value })}
-          />
-        </Field>
-
-        <div className="flex justify-end gap-2 pt-1">
-          <Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-md)] text-[13px]" onClick={onClose}>
-            {t("Cancel")}
-          </Button>
-          <Button
-            type="submit"
-            className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] text-[13px] text-[var(--md-accent-ink)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]"
-            aria-disabled={!valid}
-          >
-            {t("Create card")}
-          </Button>
+    <WizardDialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) onClose()
+      }}
+      title="Create a QR contact card"
+      description="A card represents one person. Everything else — the public page, the lead source and any automation — can be set up afterwards."
+      steps={steps}
+      activeStepId={activeStep}
+      onStepChange={(stepId) => setActiveStep(stepId as CreateCardStep)}
+      submitLabel="Create card"
+      onSubmit={submit}
+      bodyMinHeight={300}
+    >
+      {activeStep === "person" ? (
+        <div className="grid gap-4">
+          <Field label={t("Name on the card")}>
+            <Input
+              className={contactCardInputClass}
+              value={form.fullName}
+              aria-invalid={Boolean(nameError)}
+              autoComplete="name"
+              autoFocus
+              onChange={(event) => setForm({ ...form, fullName: event.target.value })}
+            />
+            {nameError ? <span role="alert" className="mt-1.5 block text-[12px] text-[var(--md-red)]">{nameError}</span> : null}
+          </Field>
+          <Field label={t("Job title")} optional>
+            <Input className={contactCardInputClass} value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })} />
+          </Field>
+          <Field label={t("Company")}>
+            <Input className={contactCardInputClass} value={form.company} onChange={(event) => setForm({ ...form, company: event.target.value })} />
+          </Field>
         </div>
-      </form>
-    </SideDrawer>
+      ) : null}
+
+      {activeStep === "contact" ? (
+        <div className="grid gap-4">
+          <Field label={t("Email")}>
+            <Input
+              className={contactCardInputClass}
+              type="email"
+              dir="ltr"
+              value={form.email}
+              aria-invalid={Boolean(emailError)}
+              autoComplete="email"
+              autoFocus
+              onChange={(event) => setForm({ ...form, email: event.target.value })}
+            />
+            {emailError ? <span role="alert" className="mt-1.5 block text-[12px] text-[var(--md-red)]">{emailError}</span> : null}
+          </Field>
+          <Field label={t("Phone")} optional>
+            <Input className={contactCardInputClass} type="tel" dir="ltr" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
+          </Field>
+        </div>
+      ) : null}
+
+      {activeStep === "source" ? (
+        <div className="grid gap-4">
+          <Field label={t("Where it will be used")} optional hint={t("Shown in the register so you can tell similar cards apart.")}>
+            <Input className={contactCardInputClass} placeholder={t("UCN Sri Lanka")} value={form.context} onChange={(event) => setForm({ ...form, context: event.target.value })} />
+          </Field>
+          <Field label={t("Lead source")} optional hint={t("Stamped on every lead this card creates. You can set this later.")}>
+            <Input
+              className={contactCardInputClass}
+              placeholder={t("Event – UCN Sri Lanka")}
+              value={form.leadSource}
+              onChange={(event) => setForm({ ...form, leadSource: event.target.value })}
+            />
+          </Field>
+        </div>
+      ) : null}
+    </WizardDialog>
   )
 }
 
@@ -217,6 +231,8 @@ export function ContactCardsPage({ navigate }: { navigate: (path: string) => voi
   const { t } = useLanguage()
   const { cards, status, error } = useSortedCards()
   const [createOpen, setCreateOpen] = useState(false)
+
+  useEffect(() => subscribeTopBarAction(topBarActionEvents.createCrmContactCard, () => setCreateOpen(true)), [])
 
   const summary = useMemo(() => {
     const totals = cards.map(cardTotals)
@@ -240,7 +256,6 @@ export function ContactCardsPage({ navigate }: { navigate: (path: string) => voi
       id: "card",
       label: t("Card"),
       minWidth: 240,
-      defaultPinned: true,
       sortValue: (card) => card.label,
       cell: (card) => (
         <div className="flex min-w-0 items-center gap-3">
@@ -257,6 +272,7 @@ export function ContactCardsPage({ navigate }: { navigate: (path: string) => voi
     {
       id: "status",
       label: t("Status"),
+      kind: "status",
       width: 104,
       sortValue: (card) => card.status,
       cell: (card) => <CardStatusPill status={card.status} />,
@@ -264,6 +280,7 @@ export function ContactCardsPage({ navigate }: { navigate: (path: string) => voi
     {
       id: "source",
       label: t("Lead source"),
+      kind: "attribute",
       minWidth: 170,
       sortValue: (card) => card.leadSource,
       cell: (card) =>
@@ -320,23 +337,13 @@ export function ContactCardsPage({ navigate }: { navigate: (path: string) => voi
 
   return (
     <div className="md-page md-page-stack">
-      <div className="flex flex-col gap-[var(--md-gap-lg)] xl:flex-row xl:items-end xl:justify-between">
+      <div>
         <div className="min-w-0">
           <p className="text-[12px] font-medium uppercase tracking-normal text-[var(--md-subtle)]">{t("CRM")}</p>
           <h1 className="mt-2 text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">{t("Contact cards")}</h1>
           <p className="mt-2 max-w-[68ch] text-[13px] leading-5 text-[var(--md-text)]">
             {t("A shareable QR card for each person. Someone scans it, shares their details, and gets your contact details back — the lead lands in the CRM with the card's source.")}
           </p>
-        </div>
-
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <Button
-            className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]"
-            onClick={() => setCreateOpen(true)}
-          >
-            <Plus data-icon="inline-start" strokeWidth={1.2} />
-            {t("New card")}
-          </Button>
         </div>
       </div>
 
@@ -389,7 +396,7 @@ export function ContactCardsPage({ navigate }: { navigate: (path: string) => voi
         )}
       </Surface>
 
-      <CreateCardDrawer
+      <CreateCardWizard
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         onCreated={(card) => {

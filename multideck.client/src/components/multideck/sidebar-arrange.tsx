@@ -12,7 +12,7 @@ import {
   type MotionValue,
   type ValueAnimationTransition,
 } from "motion/react"
-import { GripVertical, Pin, RotateCcw, type LucideIcon } from "lucide-react"
+import { GripVertical, Pin, RotateCcw, type LucideIcon } from "@/components/icons/hugeicons"
 import { cn } from "@/lib/utils"
 import { useLanguage } from "@/i18n/language-provider"
 

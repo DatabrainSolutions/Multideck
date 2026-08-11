@@ -22,6 +22,11 @@ import {
   emailHtmlContentIds,
   graphMessageNeedsAttachmentFetch,
   inferGraphContentIdFromFileName,
+  appendInternetMessageReference,
+  deliveryReportNeedsRawMime,
+  isRecipientReplyMessage,
+  parseDeliveryStatusReport,
+  replyTargetMessageId,
   mimeInlineAttachmentHeaders,
 } from "./core.ts"
 
@@ -190,6 +195,82 @@ Deno.test("RFC2822 subjects encode non-ASCII text as UTF-8 encoded words", () =>
   const decoded = new TextDecoder().decode(Uint8Array.from(binary, (character) => character.charCodeAt(0)))
   assertMatch(decoded, /Subject: =\?UTF-8\?B\?.+\?=/)
   assert(!decoded.includes("Subject: Live test — complete"))
+})
+
+Deno.test("outbound MIME preserves a stable per-message identity and complete reply references", () => {
+  const messageId = "<send-2@messages.multideck.app>"
+  const references = appendInternetMessageReference("<send-0@example.com>", "<send-1@example.com>")
+  const mime = buildMimeMessage({
+    from: { address: "me@example.com", displayName: "Me" },
+    to: [{ address: "you@example.com", displayName: null }], cc: [], bcc: [],
+    subject: "Re: Update", bodyText: "Latest update", messageId,
+    inReplyTo: "<send-1@example.com>", references,
+  })
+  assertMatch(mime, /Message-ID: <send-2@messages\.multideck\.app>/)
+  assertMatch(mime, /In-Reply-To: <send-1@example\.com>/)
+  assertMatch(mime, /References: <send-0@example\.com> <send-1@example\.com>/)
+})
+
+Deno.test("recipient replies correlate to one exact outbound message in a busy thread", () => {
+  const candidates = [
+    { id: "local-1", internetMessageId: "<send-1@example.com>" },
+    { id: "local-2", internetMessageId: "<send-2@example.com>" },
+  ]
+  assertEquals(replyTargetMessageId({
+    "in-reply-to": "<send-2@example.com>",
+    references: "<send-1@example.com> <send-2@example.com>",
+  }, candidates), "local-2")
+  assertEquals(replyTargetMessageId({ references: "<send-1@example.com> <unknown@example.com>" }, candidates), "local-1")
+  assertEquals(replyTargetMessageId({ "in-reply-to": "<unknown@example.com>" }, candidates), null)
+})
+
+Deno.test("delivery reports and automatic responses never count as recipient replies", () => {
+  const exchangeReceipt = {
+    "content-type": "multipart/report",
+    "auto-submitted": "auto-replied",
+    "in-reply-to": "<first@example.com>",
+    references: "<first@example.com>",
+  }
+  assert(deliveryReportNeedsRawMime(exchangeReceipt))
+  assert(!isRecipientReplyMessage(exchangeReceipt))
+  assert(!isRecipientReplyMessage({
+    "auto-submitted": "auto-replied",
+    "in-reply-to": "<first@example.com>",
+  }))
+  assert(isRecipientReplyMessage({
+    "in-reply-to": "<first@example.com>",
+    references: "<first@example.com>",
+  }))
+})
+
+Deno.test("delivery reports require exact machine-readable evidence for one message", () => {
+  assertEquals(parseDeliveryStatusReport("multipart/report", [
+    "Content-Type: message/delivery-status",
+    "Original-Message-ID: <send-2@example.com>",
+    "Action: delivered",
+    "Status: 2.0.0",
+  ].join("\r\n")), {
+    eventType: "delivered",
+    originalMessageId: "<send-2@example.com>",
+    statusCode: "2.0.0",
+  })
+  assertEquals(parseDeliveryStatusReport("multipart/report; report-type=delivery-status", [
+    "Content-Type: message/delivery-status",
+    "Original-Message-ID: <send-3@example.com>",
+    "Action: failed",
+    "Status: 5.1.1",
+  ].join("\r\n"))?.eventType, "bounced")
+  assertEquals(parseDeliveryStatusReport("text/plain", "Delivery failed for your message"), null)
+  assertEquals(parseDeliveryStatusReport("multipart/report; report-type=delivery-status", "Action: delivered\r\nStatus: 2.0.0"), null)
+  assertEquals(parseDeliveryStatusReport("multipart/report", [
+    "Content-Type: message/delivery-status",
+    "Action: relayed",
+    "Status: 2.1.5",
+  ].join("\r\n"), "<send-4@example.com>"), {
+    eventType: "delivered",
+    originalMessageId: "<send-4@example.com>",
+    statusCode: "2.1.5",
+  })
 })
 
 Deno.test("a message with no attachments stays a single text/plain part", () => {

@@ -25,9 +25,11 @@ const portalAccessLinkAuditMigration = await readFile(new URL("migrations/202608
 const portalRoleReactivationMigration = await readFile(new URL("migrations/20260804120000_fix_warehouse_portal_role_reactivation.sql", root), "utf8")
 const inventoryHandlingMigration = await readFile(new URL("migrations/20260804160000_warehouse_inventory_handling_units.sql", root), "utf8")
 const inventoryDexterMigration = await readFile(new URL("migrations/20260804161000_warehouse_inventory_dexter_parity.sql", root), "utf8")
+const rescheduleMigration = await readFile(new URL("migrations/20260808090000_warehouse_order_reschedule.sql", root), "utf8")
 const baseline = await readFile(new URL("baseline/public-schema.sql", root), "utf8")
 const clientSource = await readFile(new URL("../multideck.client/src/lib/warehouse.ts", root), "utf8")
 const orderSource = await readFile(new URL("functions/warehouse/routes/orders.ts", root), "utf8")
+const httpSource = await readFile(new URL("functions/warehouse/shared/http.ts", root), "utf8")
 const portalSource = await readFile(new URL("functions/warehouse/routes/portal-users.ts", root), "utf8")
 
 test("warehouse client uses the tenant Supabase Edge Function as its only backend", () => {
@@ -53,6 +55,15 @@ test("stock-changing order operations use a service-role-only database transacti
   assert.match(migration, /create or replace function public\.warehouse_edge_order_mutation/)
   assert.match(migration, /revoke all on function public\.warehouse_edge_order_mutation[\s\S]*from public, anon, authenticated/)
   assert.match(migration, /grant execute on function public\.warehouse_edge_order_mutation[\s\S]*to service_role/)
+})
+
+test("calendar rescheduling accepts every Postgres UUID shape and persists through the secured order mutation", () => {
+  assert.match(orderSource, /path\[2\] === "reschedule"/)
+  assert.match(rescheduleMigration, /if p_action = 'reschedule'/)
+  assert.match(baseline, /if p_action = 'reschedule'/)
+  assert.match(httpSource, /\[0-9a-f\]\{4\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{4\}/)
+  assert.doesNotMatch(httpSource, /\[1-5\]\[0-9a-f\]\{3\}/)
+  assert.doesNotMatch(httpSource, /\[89ab\]\[0-9a-f\]\{3\}/)
 })
 
 test("all new inventory changes enter through the Warehouse Edge Function and service-only atomic procedures", () => {

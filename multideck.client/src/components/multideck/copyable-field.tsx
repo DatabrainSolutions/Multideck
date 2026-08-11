@@ -11,7 +11,7 @@ import {
   type ReactNode,
 } from "react"
 import { motion, useReducedMotion } from "motion/react"
-import { Check, Copy } from "lucide-react"
+import { Check, Copy } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"

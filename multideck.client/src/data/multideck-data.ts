@@ -1,4 +1,7 @@
 import {
+  AlarmClock,
+  ArrowDownToLine,
+  ArrowUpFromLine,
   ArrowUpDown,
   BadgeCheck,
   BarChart3,
@@ -7,6 +10,7 @@ import {
   Boxes,
   BriefcaseBusiness,
   CalendarDays,
+  ChartAnalysis,
   ChartArea,
   ChartBar,
   ChartBarStacked,
@@ -44,6 +48,7 @@ import {
   Search,
   ScanText,
   Settings2,
+  ShieldAlert,
   ShieldCheck,
   Ship,
   SlidersHorizontal,
@@ -54,7 +59,7 @@ import {
   Users,
   Workflow,
   type LucideIcon,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 import type { AuditTimelineEvent } from "@/components/multideck/audit-timeline"
 
 export type StatusTone = "green" | "amber" | "red" | "blue" | "neutral" | "teal"
@@ -245,15 +250,28 @@ export const dashboardSnapshots: Record<DashboardRange, {
   },
 }
 
+/**
+ * The operating regions coverage is measured across, ordered west to east so the
+ * working-window bands step across the day in reading order instead of
+ * criss-crossing the track.
+ */
 export const cityQueues = [
+  { code: "LAX", country: "US", city: "Los Angeles", timeZone: "America/Los_Angeles" },
+  { code: "CHI", country: "US", city: "Chicago", timeZone: "America/Chicago" },
+  { code: "NYC", country: "US", city: "New York", timeZone: "America/New_York" },
+  { code: "YYZ", country: "CA", city: "Toronto", timeZone: "America/Toronto" },
+  { code: "GRU", country: "BR", city: "Sao Paulo", timeZone: "America/Sao_Paulo" },
   { code: "LDN", country: "UK", city: "London", timeZone: "Europe/London" },
   { code: "AMS", country: "NL", city: "Amsterdam", timeZone: "Europe/Amsterdam" },
+  { code: "FRA", country: "DE", city: "Frankfurt", timeZone: "Europe/Berlin" },
   { code: "IST", country: "TR", city: "Istanbul", timeZone: "Europe/Istanbul" },
   { code: "DXB", country: "AE", city: "Dubai", timeZone: "Asia/Dubai" },
-  { code: "SHA", country: "CN", city: "Shanghai", timeZone: "Asia/Shanghai" },
+  { code: "BOM", country: "IN", city: "Mumbai", timeZone: "Asia/Kolkata" },
   { code: "SIN", country: "SG", city: "Singapore", timeZone: "Asia/Singapore" },
-  { code: "NYC", country: "US", city: "New York", timeZone: "America/New_York" },
-  { code: "LAX", country: "US", city: "Los Angeles", timeZone: "America/Los_Angeles" },
+  { code: "HKG", country: "HK", city: "Hong Kong", timeZone: "Asia/Hong_Kong" },
+  { code: "SHA", country: "CN", city: "Shanghai", timeZone: "Asia/Shanghai" },
+  { code: "TYO", country: "JP", city: "Tokyo", timeZone: "Asia/Tokyo" },
+  { code: "SYD", country: "AU", city: "Sydney", timeZone: "Australia/Sydney" },
 ]
 
 export type TimezoneWorkItem = {
@@ -462,11 +480,19 @@ export const warehouseProductFilters = ["All · 128", "Low stock · 8", "Inbound
 export const warehouseOrderFilters = ["All orders · 6", "Inbound · 2", "Outbound · 3", "Hold · 1"] as const
 export const warehouseStockFilters = ["All stock · 642", "Low stock · 8", "Allocated · 184", "Quarantine · 3"] as const
 
+/**
+ * The warehouse header band. Seven figures, each answering a different question —
+ * the live set in `lib/warehouse.ts` uses the same labels, so the mock and the
+ * real dashboard read as one screen.
+ */
 export const warehouseMetrics = [
-  { label: "Inventory value", value: "GBP 1.42M", detail: "Across Felixstowe DC and Southampton overflow.", tone: "teal" as StatusTone, icon: Boxes },
-  { label: "Orders due today", value: "46", detail: "14 pick waves, 9 dispatches, 7 receiving slots.", tone: "amber" as StatusTone, icon: Clock3 },
-  { label: "Stock accuracy", value: "98.4%", detail: "Last cycle count variance was down 0.7%.", tone: "green" as StatusTone, icon: PackageCheck },
-  { label: "Capacity used", value: "76%", detail: "Aisle B is the tightest zone after inbound apparel.", tone: "blue" as StatusTone, icon: Gauge },
+  { label: "Ready to receive", value: "12", detail: "Inbound orders with lines still to book in.", tone: "amber" as StatusTone, icon: ArrowDownToLine },
+  { label: "Ready to dispatch", value: "9", detail: "Outbound orders with lines still to pick and load.", tone: "blue" as StatusTone, icon: ArrowUpFromLine },
+  { label: "Stock holds", value: "3", detail: "Stock lines held in quarantine, damage or investigation.", tone: "red" as StatusTone, icon: ShieldAlert },
+  { label: "Past due", value: "2", detail: "Open orders whose expected day has already passed.", tone: "red" as StatusTone, icon: AlarmClock },
+  { label: "Booked today", value: "46", detail: "Orders expected on the dock today.", tone: "teal" as StatusTone, icon: Clock3 },
+  { label: "SKUs on hand", value: "128", detail: "Distinct items with physical stock in the warehouse.", tone: "neutral" as StatusTone, icon: Boxes },
+  { label: "Available SKUs", value: "114", detail: "Distinct items free to allocate to an order.", tone: "green" as StatusTone, icon: PackageCheck },
 ]
 
 export const warehouseProducts = [
@@ -786,34 +812,35 @@ export type WarehouseCalendarEvent = {
   endTime: string
   title: string
   type: string
+  direction: "inbound" | "outbound"
   customerId: WarehouseCalendarCustomerId
   tone: StatusTone
 }
 
 export const warehouseCalendarEvents: WarehouseCalendarEvent[] = [
-  { id: "wh-cal-0602-atlas", date: "2026-06-02", time: "08:20", endTime: "09:40", title: "Desk pod container unload", type: "Goods in", customerId: "atlas", tone: "blue" },
-  { id: "wh-cal-0604-mediterranean", date: "2026-06-04", time: "11:10", endTime: "12:00", title: "Herb cartons QC sample", type: "Stock check", customerId: "mediterranean", tone: "green" },
-  { id: "wh-cal-0605-bauhaus", date: "2026-06-05", time: "14:30", endTime: "15:20", title: "Lamp pallet dock audit", type: "Goods in", customerId: "bauhaus", tone: "teal" },
-  { id: "wh-cal-0609-marlow", date: "2026-06-09", time: "09:45", endTime: "11:00", title: "Retail labels print run", type: "Goods out", customerId: "marlow", tone: "amber" },
-  { id: "wh-cal-0611-black-forest", date: "2026-06-11", time: "18:30", endTime: "19:10", title: "Chilled dispatch handoff", type: "Dispatch", customerId: "black-forest", tone: "green" },
-  { id: "wh-cal-0616-northwind", date: "2026-06-16", time: "10:15", endTime: "11:15", title: "Router quarantine review", type: "Hold", customerId: "northwind", tone: "red" },
-  { id: "wh-cal-0618-pacific", date: "2026-06-18", time: "13:20", endTime: "14:10", title: "Milano road pallet transfer", type: "Dispatch", customerId: "pacific", tone: "blue" },
-  { id: "wh-cal-0619-internal", date: "2026-06-19", time: "16:00", endTime: "17:00", title: "Aisle A reserve sweep", type: "Capacity", customerId: "internal", tone: "neutral" },
-  { id: "wh-cal-0622-mediterranean", date: "2026-06-22", time: "09:15", endTime: "10:45", title: "Mediterranean herbs receiving", type: "Goods in", customerId: "mediterranean", tone: "teal" },
-  { id: "wh-cal-0623-atlas", date: "2026-06-23", time: "08:00", endTime: "09:30", title: "Atlas furniture preload", type: "Dispatch", customerId: "atlas", tone: "blue" },
-  { id: "wh-cal-0623-bauhaus", date: "2026-06-23", time: "11:30", endTime: "12:30", title: "Bauhaus dock slot", type: "Goods in", customerId: "bauhaus", tone: "teal" },
-  { id: "wh-cal-0624-internal", date: "2026-06-24", time: "10:00", endTime: "11:30", title: "Aisle B cycle count", type: "Stock check", customerId: "internal", tone: "green" },
-  { id: "wh-cal-0624-marlow", date: "2026-06-24", time: "10:30", endTime: "11:15", title: "Marlow urgent relabel", type: "Goods out", customerId: "marlow", tone: "amber" },
-  { id: "wh-cal-0624-bauhaus", date: "2026-06-24", time: "10:45", endTime: "11:45", title: "Bauhaus lamp QA", type: "Stock check", customerId: "bauhaus", tone: "teal" },
-  { id: "wh-cal-0625-marlow-pick", date: "2026-06-25", time: "13:30", endTime: "15:00", title: "Marlow pick wave", type: "Goods out", customerId: "marlow", tone: "amber" },
-  { id: "wh-cal-0625-northwind", date: "2026-06-25", time: "16:00", endTime: "17:00", title: "Router licence review", type: "Hold", customerId: "northwind", tone: "red" },
-  { id: "wh-cal-0626-mediterranean", date: "2026-06-26", time: "09:00", endTime: "10:00", title: "Food ambient variance close", type: "Stock check", customerId: "mediterranean", tone: "green" },
-  { id: "wh-cal-0627-internal", date: "2026-06-27", time: "10:30", endTime: "11:30", title: "Overflow warehouse sweep", type: "Capacity", customerId: "internal", tone: "neutral" },
-  { id: "wh-cal-0628-internal", date: "2026-06-28", time: "12:00", endTime: "12:30", title: "Quiet day monitor", type: "OOH", customerId: "internal", tone: "neutral" },
+  { id: "wh-cal-0602-atlas", date: "2026-06-02", time: "08:20", endTime: "09:40", title: "Desk pod container unload", type: "Goods in", direction: "inbound", customerId: "atlas", tone: "blue" },
+  { id: "wh-cal-0604-mediterranean", date: "2026-06-04", time: "11:10", endTime: "12:00", title: "Herb cartons QC sample", type: "Stock check", direction: "outbound", customerId: "mediterranean", tone: "green" },
+  { id: "wh-cal-0605-bauhaus", date: "2026-06-05", time: "14:30", endTime: "15:20", title: "Lamp pallet dock audit", type: "Goods in", direction: "inbound", customerId: "bauhaus", tone: "teal" },
+  { id: "wh-cal-0609-marlow", date: "2026-06-09", time: "09:45", endTime: "11:00", title: "Retail labels print run", type: "Goods out", direction: "outbound", customerId: "marlow", tone: "amber" },
+  { id: "wh-cal-0611-black-forest", date: "2026-06-11", time: "18:30", endTime: "19:10", title: "Chilled dispatch handoff", type: "Dispatch", direction: "outbound", customerId: "black-forest", tone: "green" },
+  { id: "wh-cal-0616-northwind", date: "2026-06-16", time: "10:15", endTime: "11:15", title: "Router quarantine review", type: "Hold", direction: "outbound", customerId: "northwind", tone: "red" },
+  { id: "wh-cal-0618-pacific", date: "2026-06-18", time: "13:20", endTime: "14:10", title: "Milano road pallet transfer", type: "Dispatch", direction: "outbound", customerId: "pacific", tone: "blue" },
+  { id: "wh-cal-0619-internal", date: "2026-06-19", time: "16:00", endTime: "17:00", title: "Aisle A reserve sweep", type: "Capacity", direction: "outbound", customerId: "internal", tone: "neutral" },
+  { id: "wh-cal-0622-mediterranean", date: "2026-06-22", time: "09:15", endTime: "10:45", title: "Mediterranean herbs receiving", type: "Goods in", direction: "inbound", customerId: "mediterranean", tone: "teal" },
+  { id: "wh-cal-0623-atlas", date: "2026-06-23", time: "08:00", endTime: "09:30", title: "Atlas furniture preload", type: "Dispatch", direction: "outbound", customerId: "atlas", tone: "blue" },
+  { id: "wh-cal-0623-bauhaus", date: "2026-06-23", time: "11:30", endTime: "12:30", title: "Bauhaus dock slot", type: "Goods in", direction: "inbound", customerId: "bauhaus", tone: "teal" },
+  { id: "wh-cal-0624-internal", date: "2026-06-24", time: "10:00", endTime: "11:30", title: "Aisle B cycle count", type: "Stock check", direction: "outbound", customerId: "internal", tone: "green" },
+  { id: "wh-cal-0624-marlow", date: "2026-06-24", time: "10:30", endTime: "11:15", title: "Marlow urgent relabel", type: "Goods out", direction: "outbound", customerId: "marlow", tone: "amber" },
+  { id: "wh-cal-0624-bauhaus", date: "2026-06-24", time: "10:45", endTime: "11:45", title: "Bauhaus lamp QA", type: "Stock check", direction: "outbound", customerId: "bauhaus", tone: "teal" },
+  { id: "wh-cal-0625-marlow-pick", date: "2026-06-25", time: "13:30", endTime: "15:00", title: "Marlow pick wave", type: "Goods out", direction: "outbound", customerId: "marlow", tone: "amber" },
+  { id: "wh-cal-0625-northwind", date: "2026-06-25", time: "16:00", endTime: "17:00", title: "Router licence review", type: "Hold", direction: "outbound", customerId: "northwind", tone: "red" },
+  { id: "wh-cal-0626-mediterranean", date: "2026-06-26", time: "09:00", endTime: "10:00", title: "Food ambient variance close", type: "Stock check", direction: "outbound", customerId: "mediterranean", tone: "green" },
+  { id: "wh-cal-0627-internal", date: "2026-06-27", time: "10:30", endTime: "11:30", title: "Overflow warehouse sweep", type: "Capacity", direction: "outbound", customerId: "internal", tone: "neutral" },
+  { id: "wh-cal-0628-internal", date: "2026-06-28", time: "12:00", endTime: "12:30", title: "Quiet day monitor", type: "OOH", direction: "outbound", customerId: "internal", tone: "neutral" },
 ]
 
 export type BookingStatus = "On track" | "Delayed" | "Exception"
-export type BookingMode = "OCEAN" | "AIR" | "ROAD" | "FAS" | "FSA"
+export type BookingMode = "OCEAN" | "AIR" | "ROAD" | "MULTIMODAL" | "FAS" | "FSA"
 export type BookingDirection = "Import" | "Export" | "Domestic" | "Cross trade"
 export type BookingShipmentType = "FCL" | "LCL" | "Breakbulk" | "RoRo" | "Dry bulk" | "Liquid bulk" | "Project cargo" | "General cargo" | "ULD" | "Air consolidation" | "Back-to-back" | "Express / courier" | "Charter" | "FTL" | "LTL" | "Groupage" | "Pallet network" | "Dedicated vehicle" | "Parcel / express" | "Multiple"
 
@@ -849,7 +876,7 @@ export const currentOperator = {
   initials: "EM",
 }
 
-export const bookingScopeTabs = ["My Jobs", "All Jobs", "Starred Jobs"] as const
+export const bookingScopeTabs = ["My Jobs", "All Jobs", "Staged Jobs"] as const
 export const customerScopeTabs = ["All customers", "My customers"] as const
 export const initialFavouriteBookingIds = ["MD-22481", "MD-22455", "MD-22414"] as const
 
@@ -916,7 +943,7 @@ export const bookingMetrics = [
   { label: "In transit", value: "23", tone: "teal" as StatusTone },
   { label: "At destination", value: "6", tone: "blue" as StatusTone },
   { label: "Exceptions", value: "2", tone: "red" as StatusTone },
-  { label: "Delivered · 7d", value: "48", tone: "green" as StatusTone },
+  { label: "Delivered", value: "48", tone: "green" as StatusTone },
 ]
 
 export const bookingMilestones = [
@@ -2047,6 +2074,22 @@ export const galleryComponents = [
     usageCode: `<Surface className="bg-[var(--md-surface)] text-[var(--md-ink)]">\n  <StatusPill tone="teal">AI prepared</StatusPill>\n  <p className="text-[var(--md-text)]">Use token colours for calm operational hierarchy.</p>\n</Surface>`,
   },
   {
+    id: "hugeicons-system",
+    name: "Hugeicons Icon System",
+    category: "Design System",
+    description: "The shared Hugeicons renderer and semantic icon mapping used by navigation, tables, controls, feedback, and stateful microinteractions.",
+    details: "Choose icons by the operator action or product object they represent. Use the shared adapter for the standard 1.5px stroke, current-colour behaviour, refs, accessibility props, and animated state swaps.",
+    foundOn: [
+      { label: "Home", route: "/" },
+      { label: "Agent Dexter", route: "/agent-dexter" },
+      { label: "Warehouse", route: "/warehouse" },
+      { label: "Settings", route: "/settings" },
+      { label: "Components", route: "/components?component=hugeicons-system" },
+    ],
+    componentCode: `export function createMultideckIcon(icon, displayName) {\n  const Icon = forwardRef(function MultideckHugeicon(\n    { color = "currentColor", size = 24, strokeWidth = 1.5, ...props },\n    ref,\n  ) {\n    return <HugeiconsIcon ref={ref} icon={icon} color={color} size={size} strokeWidth={strokeWidth} {...props} />\n  })\n  Icon.displayName = displayName\n  return Icon\n}`,
+    usageCode: `// Semantic application icons\n<Home03 className="size-4" />\n<AiBrain className="size-4" />\n<Forklift className="size-4" />\n\n// Stateful icon swap\n<MorphingIcon from={Pin} to={PinOff} active={isPinned} className="size-4" />`,
+  },
+  {
     id: "typography",
     name: "Typography",
     category: "Design System",
@@ -2063,18 +2106,18 @@ export const galleryComponents = [
     description: "The base Multideck panel. It gives workflow areas quiet depth without creating heavy card clutter.",
     details: "Use for primary panels, side panels, preview wells, and command areas. Radius and shadow come from tokens.",
     foundOn: [{ label: "Overview", route: "/" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Components", route: "/components" }],
-    componentCode: `export function Surface({ tone = "panel", padding = "md", className, children }) {\n  return (\n    <section className={cn("rounded-[var(--md-radius-lg)]", toneClass[tone], paddingClass[padding], className)}>\n      {children}\n    </section>\n  )\n}\n\nexport function SectionHeader({ eyebrow, title, meta, action, className }) {\n  return (\n    <div className={cn("flex items-start justify-between gap-3", className)}>\n      <div className="min-w-0">\n        {eyebrow ? <p className="mb-1 text-xs font-medium text-[var(--md-subtle)]">{eyebrow}</p> : null}\n        <h2 className="truncate text-[14px] font-medium text-[var(--md-ink)]">{title}</h2>\n        {meta ? <p className="mt-1 text-[12px] text-[var(--md-text)]">{meta}</p> : null}\n      </div>\n      {action ? <div className="shrink-0">{action}</div> : null}\n    </div>\n  )\n}`,
+    componentCode: `export function Surface({ tone = "panel", padding = "md", className, children }) {\n  return (\n    <section className={cn("rounded-[var(--md-radius-lg)]", toneClass[tone], paddingClass[padding], className)}>\n      {children}\n    </section>\n  )\n}\n\nexport function SectionHeader({ eyebrow, title, meta, action, className }) {\n  return (\n    <div className={cn("flex items-start justify-between gap-3", className)}>\n      <div className="@container/section-header-copy min-w-0 flex-1">\n        {eyebrow ? <p className="mb-1 text-xs font-medium text-[var(--md-subtle)]">{eyebrow}</p> : null}\n        <div className="min-w-0 @min-[520px]/section-header-copy:flex @min-[520px]/section-header-copy:items-baseline @min-[520px]/section-header-copy:justify-between @min-[520px]/section-header-copy:gap-5">\n          <h2 className="truncate text-[14px] font-medium text-[var(--md-ink)]">{title}</h2>\n          {meta ? <p className="mt-1 text-[12px] text-[var(--md-text)] @min-[520px]/section-header-copy:mt-0 @min-[520px]/section-header-copy:text-end">{meta}</p> : null}\n        </div>\n      </div>\n      {action ? <div className="shrink-0">{action}</div> : null}\n    </div>\n  )\n}`,
     usageCode: `<Surface tone="panel" padding="md">\n  <SectionHeader title="Live bookings" meta="updated 41s ago" />\n  <BookingRow booking={booking} />\n</Surface>`,
   },
   {
     id: "status-pill",
     name: "Status Pill",
     category: "Feedback",
-    description: "Compact status language for freight workflows, exceptions, and document states.",
-    details: "Use green for good, amber for review, red for action, blue for information, teal for AI or customs flow.",
+    description: "Compact semantic pills for workflow status and descriptive table attributes.",
+    details: "Keep the shell on the table surface with primary theme text and a thin hairline. The small leading dot or icon carries the documented status or category colour.",
     foundOn: [{ label: "Overview", route: "/" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
-    componentCode: `export function StatusPill({ tone = "neutral", children, className }) {\n  return (\n    <Badge\n      variant="secondary"\n      className={cn("h-[21px] rounded-full px-[9px] text-[11.5px] font-medium leading-none", toneClass[tone], className)}\n    >\n      {children}\n    </Badge>\n  )\n}`,
-    usageCode: `<StatusPill tone="amber">Under review</StatusPill>\n<StatusPill tone="red">Action req.</StatusPill>`,
+    componentCode: `export function StatusPill({ tone = "neutral", indicator, children, className }) {\n  return (\n    <Badge className={cn("bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[0_0_0_1px_var(--md-line)]", className)}>\n      {indicator ?? <span className="size-1.5 rounded-full" style={{ backgroundColor: toneToVar(tone) }} />}\n      {children}\n    </Badge>\n  )\n}`,
+    usageCode: `<StatusPill kind="status" tone="amber">Under review</StatusPill>\n<StatusPill kind="attribute" tone="blue">Ocean</StatusPill>`,
   },
   {
     id: "kbd",
@@ -2521,10 +2564,10 @@ export const galleryComponents = [
     id: "theme-toggle",
     name: "Theme Toggle",
     category: "Navigation",
-    description: "The sidebar appearance control for switching between light and dark mode without leaving the workspace.",
-    details: "Use in persistent navigation surfaces where the user's preference should feel immediate and calm. Keep it token-led so every page inherits the same mode.",
+    description: "The sidebar appearance switch for moving between light and dark mode without leaving the workspace.",
+    details: "Use in persistent navigation surfaces where the user's preference should feel immediate and calm. The thumb travels with the selected mode while persistent sun and moon layers cross-fade without remounting or filter flicker. Reduced-motion users receive the same clear state without spatial movement.",
     foundOn: [{ label: "Overview sidebar", route: "/" }, { label: "Components", route: "/components" }],
-    componentCode: `export function ThemeToggle() {\n  const { resolvedTheme, setTheme } = useTheme()\n  const { t } = useLanguage()\n  const isDark = resolvedTheme === "dark"\n  const label = t(isDark ? "Switch to light mode" : "Switch to dark mode")\n\n  return (\n    <button\n      type="button"\n      aria-label={label}\n      onClick={() => setTheme(isDark ? "light" : "dark")}\n    >\n      <span>\n        <span>{t("Appearance")}</span>\n        <span>{t(isDark ? "Dark mode" : "Light mode")}</span>\n      </span>\n      <motion.span key={isDark ? "moon" : "sun"}>\n        {isDark ? <Moon /> : <Sun />}\n      </motion.span>\n    </button>\n  )\n}`,
+    componentCode: `export function ThemeToggle({ compact = false, showAppearanceLabel = true }) {\n  const { resolvedTheme, setTheme } = useTheme()\n  const { direction, t } = useLanguage()\n  const shouldReduceMotion = useReducedMotion()\n  const isDark = resolvedTheme === "dark"\n\n  return (\n    <button\n      type="button"\n      role="switch"\n      aria-checked={isDark}\n      aria-label={t(isDark ? "Switch to light mode" : "Switch to dark mode")}\n      onClick={() => setTheme(isDark ? "light" : "dark")}\n    >\n      {compact ? null : (\n        <span>\n          {showAppearanceLabel ? <span>{t("Appearance")}</span> : null}\n          <span>{t(isDark ? "Dark mode" : "Light mode")}</span>\n        </span>\n      )}\n      <span className="relative h-[30px] w-12 rounded-full">\n        <motion.span\n          animate={{ x: compact ? 0 : isDark ? (direction === "rtl" ? -18 : 18) : 0 }}\n          transition={shouldReduceMotion ? { duration: 0 } : { type: "spring", duration: 0.3, bounce: 0 }}\n        >\n          <motion.span initial={false} animate={{ opacity: isDark ? 0 : 1, scale: isDark ? 0.25 : 1 }}><Sun /></motion.span>\n          <motion.span initial={false} animate={{ opacity: isDark ? 1 : 0, scale: isDark ? 1 : 0.25 }}><Moon /></motion.span>\n        </motion.span>\n      </span>\n    </button>\n  )\n}`,
     usageCode: `<ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} storageKey="multideck.theme">\n  <AppShell>\n    <ThemeToggle />\n  </AppShell>\n</ThemeProvider>`,
   },
   {
@@ -2623,19 +2666,19 @@ export const galleryComponents = [
     category: "Navigation",
     description: "A compact animated popover for page-level view controls and secondary actions.",
     details: "Use when a page header would otherwise collect several view switches or utility actions in one row. Keep always-needed scope tabs outside the menu, and place lower-priority controls like view mode or export inside.",
-    foundOn: [{ label: "Customers", route: "/customers" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components?component=page-settings-menu" }],
+    foundOn: [{ label: "Customers", route: "/customers" }, { label: "Components", route: "/components?component=page-settings-menu" }],
     componentCode: `export function PageSettingsMenu({ viewOptions, value, onViewChange, actions = [] }) {\n  return (\n    <Popover>\n      <PopoverTrigger asChild>\n        <button aria-label="Open page settings">\n          <span aria-hidden>{/* three line menu icon */}</span>\n        </button>\n      </PopoverTrigger>\n      <PopoverContent align="end">\n        <motion.div variants={menuReveal} initial="hidden" animate="show">\n          <p>Page settings</p>\n          <div>\n            <p>View</p>\n            {viewOptions.map((option) => (\n              <motion.button key={option.value} aria-pressed={value === option.value} onClick={() => onViewChange(option.value)}>\n                <option.icon />\n                <span>{option.label ?? option.value}</span>\n                {value === option.value ? <Check /> : null}\n              </motion.button>\n            ))}\n          </div>\n          {actions.map((action) => (\n            <motion.button key={action.id} onClick={action.onSelect}>\n              <action.icon />\n              <span>{action.label}</span>\n            </motion.button>\n          ))}\n        </motion.div>\n      </PopoverContent>\n    </Popover>\n  )\n}`,
-    usageCode: `<SegmentedControl options={customerScopeTabs} value={scope} onChange={setScope} />\n<DexterActionPill onClick={() => navigate("/agent-dexter")} />\n<PageSettingsMenu\n  viewOptions={customerViewOptions}\n  value={viewMode}\n  onViewChange={setViewMode}\n  actions={[{ id: "export-customers", label: "Export CSV", icon: Download, onSelect: exportCustomers }]}\n/>\n\n<PageSettingsMenu\n  viewOptions={bookingViewOptions}\n  value={bookingViewMode}\n  onViewChange={setBookingViewMode}\n/>`,
+    usageCode: `<SegmentedControl options={customerScopeTabs} value={scope} onChange={setScope} />\n<DexterActionPill onClick={() => navigate("/agent-dexter")} />\n<PageSettingsMenu\n  viewOptions={customerViewOptions}\n  value={viewMode}\n  onViewChange={setViewMode}\n  actions={[{ id: "export-customers", label: "Export CSV", icon: Download, onSelect: exportCustomers }]}\n/>`,
   },
   {
     id: "date-range-picker",
-    name: "Date Range Picker",
+    name: "Date Pickers",
     category: "Controls",
-    description: "A branded glass date-range selector with one trigger, paired months, highlighted in-between days, and an optional comparison mode.",
-    details: "Use for date pairs such as cargo ready/requested collection, ETD/ETA, dashboard custom ranges, and booking search ranges. Comparison mode keeps its checkbox and quick ranges inside the popover, then expands into aligned current and comparison calendars.",
-    foundOn: [{ label: "Overview", route: "/" }, { label: "New booking", route: "/bookings/new" }, { label: "Bookings", route: "/bookings" }, { label: "Inbox", route: "/inbox" }, { label: "Email marketing", route: "/crm/emails" }, { label: "Components", route: "/components?component=date-range-picker" }],
-    componentCode: `export function MultideckDateRangePicker({ value, onChange, comparison }) {\n  return (\n    <Popover>\n      <PopoverTrigger asChild>\n        <Button>\n          <CalendarDays />\n          {formatDateRangeLabel(value)}\n        </Button>\n      </PopoverTrigger>\n      <PopoverContent className="backdrop-blur-2xl">\n        {comparison ? <Checkbox checked={comparison.enabled} onCheckedChange={comparison.onEnabledChange}>Compare</Checkbox> : null}\n        {comparison?.enabled ? <ComparisonCalendarPair /> : <CalendarMonthPair />}\n        <Button onClick={() => closePicker()}>Apply dates</Button>\n      </PopoverContent>\n    </Popover>\n  )\n}`,
-    usageCode: `const [collectionDates, setCollectionDates] = useState({ start: "2026-05-25", end: "2026-06-04" })\nconst [comparing, setComparing] = useState(false)\nconst [comparisonDates, setComparisonDates] = useState({ start: "2026-05-14", end: "2026-05-24" })\n\n<MultideckDateRangePicker\n  value={collectionDates}\n  onChange={setCollectionDates}\n  title="Collection dates"\n  comparison={{\n    enabled: comparing,\n    value: comparisonDates,\n    onEnabledChange: setComparing,\n    onChange: setComparisonDates,\n    options: [\n      { id: "previous-period", label: "Previous period", range: { start: "2026-05-14", end: "2026-05-24" } },\n      { id: "custom", label: "Custom", range: null },\n    ],\n  }}\n/>`,
+    description: "The shared branded date controls for a single date, date and time, or a range with optional comparison.",
+    details: "Use these instead of browser-native date inputs. Every variant shares the glass calendar, date formatting, RTL-safe layout, constrained dates, and the rebranded Calendar Days icon; date-time fields add a compact branded time control.",
+    foundOn: [{ label: "Overview", route: "/" }, { label: "New booking", route: "/bookings/new" }, { label: "Bookings", route: "/bookings" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Inbox", route: "/inbox" }, { label: "Components", route: "/components?component=date-range-picker" }],
+    componentCode: `export function MultideckDatePicker({ value, onChange, minDate, maxDate }) {\n  return <MultideckDateRangePicker value={{ start: value, end: value }} onChange={(range) => onChange(range.start)} minDate={minDate} maxDate={maxDate} />\n}\n\nexport function MultideckDateTimePicker({ value, onChange }) {\n  const date = value.slice(0, 10)\n  const time = value.slice(11, 16)\n  return (\n    <div className="grid grid-cols-[minmax(0,1fr)_112px] gap-2">\n      <MultideckDatePicker value={date} onChange={(nextDate) => onChange((nextDate ?? "") + "T" + time)} />\n      <BrandedTimeInput value={time} onChange={(nextTime) => onChange(date + "T" + nextTime)} />\n    </div>\n  )\n}`,
+    usageCode: `const [expiryDate, setExpiryDate] = useState("2026-06-04")\nconst [appointment, setAppointment] = useState("2026-06-04T09:30")\n\n<MultideckDatePicker\n  value={expiryDate}\n  onChange={(date) => setExpiryDate(date ?? "")}\n  title="Expiry date"\n/>\n\n<MultideckDateTimePicker\n  value={appointment}\n  onChange={setAppointment}\n  title="Appointment"\n/>`,
   },
   {
     id: "paper-tray-stack",
@@ -2790,6 +2833,132 @@ export const galleryComponents = [
     foundOn: [{ label: "Quote audit", route: "/quotes/Q-19158" }, { label: "Components", route: "/components?component=audit-workspace" }],
     componentCode: `export function AuditWorkspace({ records, defaultView = "summary" }) {\n  const [view, setView] = useState(defaultView)\n  const [filters, setFilters] = useState(emptyFilters)\n  const visibleRecords = filterAuditRecords(records, filters)\n\n  return (\n    <div>\n      <SegmentedControl options={["summary", "detailed"]} value={view} onChange={setView} />\n      <AuditFilters value={filters} onChange={setFilters} />\n      {view === "summary"\n        ? <AuditTimeline events={toSummaryEvents(visibleRecords)} />\n        : <DetailedAuditTable records={visibleRecords} onSelectRecord={openAuditInspector} />}\n    </div>\n  )\n}`,
     usageCode: `<AuditWorkspace\n  records={QUOTE_AUDIT_SAMPLE_DATA}\n  defaultView="summary"\n/>`,
+  },
+  {
+    id: "dot-grid-loader",
+    name: "Dot Grid Loader",
+    category: "Feedback",
+    description: "The product's one waiting state: twenty-five cells lit as a travelling square spiral.",
+    details: "Use it for every wait long enough to need a mark — a route still downloading, a register still fetching rows, a panel still resolving a document list. One object across the whole product means a wait never looks like a different feature loading. It animates only opacity and transform, so it can sit inside the box the loaded content will occupy without moving anything around it, and it reserves its own size so rows arriving cannot shift the page. `size=\"sm\"` fits a 32px toolbar; `decorative` drops the status role where the surrounding block already announces the wait in words. Reduced-motion mode holds the centre cell lit instead of cycling.",
+    foundOn: [{ label: "Every route", route: "/" }, { label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Components", route: "/components?component=dot-grid-loader" }],
+    componentCode: `const spiralOrder = [
+  0, 1, 2, 3, 4,
+  15, 16, 17, 18, 5,
+  14, 23, 24, 19, 6,
+  13, 22, 21, 20, 7,
+  12, 11, 10, 9, 8,
+]
+
+export const DotGridLoader = memo(function DotGridLoader({ label, size = "md", decorative = false }) {
+  const { t } = useLanguage()
+  const announced = label ? t(label) : undefined
+
+  return (
+    <div role={decorative ? undefined : "status"} aria-live={decorative ? undefined : "polite"} className="flex flex-col items-center gap-3.5">
+      <div className="grid grid-cols-5 gap-[3px] text-[var(--md-accent)]" aria-hidden="true">
+        {spiralOrder.map((order) => (
+          <span key={order} className={cn("md-thinking-dot block rounded-full bg-current", dotSize[size])} style={{ animationDelay: \`\${order * 48 - 576}ms\` }} />
+        ))}
+      </div>
+      {announced ? <p className="text-[13px] font-medium text-[var(--md-text)]">{announced}</p> : null}
+    </div>
+  )
+})`,
+    usageCode: `// A route still downloading
+<DotGridLoader label="Loading…" />
+
+// A register still fetching rows: the toolbar and the column
+// header stay put, and only the table body carries the wait.
+<DataTable rows={rows} emptyState={<DotGridLoaderPanel label="Loading warehouse records" minHeight={0} />} />
+
+// Beside a block that already says "Loading facilities" in words
+<StateBlock icon={<DotGridLoader decorative />} title="Loading facilities" detail="" />`,
+  },
+  {
+    id: "register-toolbar",
+    name: "Register Toolbar",
+    category: "Operations",
+    description: "View tabs on the left and right-aligned search, filters, options, and Columns above a register table.",
+    details: "Every register puts one transparent control row on the page background above the rounded table surface. Only view tabs belong on the left. Search, filters, and secondary options stay on the right, with the icon-only Columns control fixed as the final option at the far logical edge. Facet options are built from the rows actually in hand, so a menu cannot offer a value that returns nothing, and an active trigger takes the accent colour. Search narrows loaded rows immediately and only asks the server once the operator stops typing. Controls share the tabs' corner radius; on narrow screens the right-side controls collapse into Controls while Columns remains the final standalone option.",
+    foundOn: [{ label: "Warehouse inventory", route: "/warehouse/inventory" }, { label: "Facilities", route: "/warehouse/facilities" }, { label: "Items", route: "/warehouse/items" }, { label: "Goods in", route: "/warehouse/goods-in" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Components", route: "/components?component=register-toolbar" }],
+    componentCode: `export function RegisterViewSwitch({ options, value, onChange, counts, ariaLabel }) {
+  const { t } = useLanguage()
+
+  return (
+    <SegmentedControl
+      options={options}
+      value={value}
+      onChange={onChange}
+      ariaLabel={ariaLabel}
+      className="p-[3px]"
+      renderOption={(option) => (
+        <>
+          <span>{t(option)}</span>
+          {counts?.[option] === undefined ? null : (
+            <span data-i18n-skip dir="ltr" className="text-[10.5px] tabular-nums">{counts[option]}</span>
+          )}
+        </>
+      )}
+    />
+  )
+}`,
+    usageCode: `<DataTable
+  columns={columns}
+  rows={filteredRows}
+  getRowKey={(row) => row.id}
+  toolbarTabs={(
+    <RegisterViewSwitch options={views} value={view} onChange={setView} counts={counts} ariaLabel="Inventory view" />
+  )}
+  toolbarSearch={(
+    <RegisterSearchField value={search} onChange={setSearch} onClear={clearSearch} label="Search warehouse records" placeholder="SKU, pallet, batch" />
+  )}
+  toolbarFilters={(
+    <div className="flex items-center gap-1.5">
+      <RegisterFacetSelect label="Condition" allLabel="All conditions" value={condition} options={conditionOptions} onChange={setCondition} />
+      <RegisterFacetSelect label="Warehouse" allLabel="All warehouses" value={facilityId} options={facilityOptions} onChange={setFacilityId} />
+    </div>
+  )}
+  toolbarOptions={(
+    <RegisterRefreshButton pending={pending} onRefresh={refresh} />
+  )}
+/>`,
+  },
+  {
+    id: "context-menu",
+    name: "Context Menu",
+    category: "Navigation",
+    description: "The right-click menu for an item that has actions of its own.",
+    details: "Use where an item can be acted on directly — a Drive folder or file, a row, a card — rather than adding a row of buttons to every tile. It shares the dropdown's surface, option rows, and motion, so a menu opened by pointer reads the same as one opened from a trigger: a 220ms blur-and-scale entry with the options following in a short cascade. Destructive items take the `destructive` variant. Reduced-motion mode drops the animation.",
+    foundOn: [{ label: "Drive", route: "/crm/drive" }, { label: "Components", route: "/components?component=context-menu" }],
+    componentCode: `export function ContextMenuContent({ className, collisionPadding = 12, ...props }) {
+  return (
+    <ContextMenuPrimitive.Portal>
+      <ContextMenuPrimitive.Content
+        collisionPadding={collisionPadding}
+        className={cn("md-dropdown-content premium-stroke z-50 min-w-44 rounded-[var(--md-radius-xl)] p-1 shadow-[var(--md-shadow-lift)] backdrop-blur-xl", className)}
+        {...props}
+      />
+    </ContextMenuPrimitive.Portal>
+  )
+}`,
+    usageCode: `<ContextMenu>
+  <ContextMenuTrigger asChild>{tile}</ContextMenuTrigger>
+  <ContextMenuContent>
+    <ContextMenuItem onSelect={() => onOpen(file)}>
+      <Eye strokeWidth={1.3} />
+      Preview
+    </ContextMenuItem>
+    <ContextMenuItem onSelect={() => onStartRename(file)}>
+      <Pencil strokeWidth={1.3} />
+      Rename
+    </ContextMenuItem>
+    <ContextMenuSeparator />
+    <ContextMenuItem variant="destructive" onSelect={() => onDelete(file)}>
+      <Trash2 strokeWidth={1.3} />
+      Delete
+    </ContextMenuItem>
+  </ContextMenuContent>
+</ContextMenu>`,
   },
   {
     id: "multi-select-menu",
@@ -3077,7 +3246,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "Navigation",
     description: "A compact mode switch with one spring-animated selection pill for two to four exclusive choices.",
     details: "Use for short mutually exclusive view modes. The selected pill preserves spatial continuity, respects reduced motion, and stays visually identical across settings, dashboards, registers, and workflows.",
-    foundOn: [{ label: "Paper Tray", route: "/paper-tray" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Inbox", route: "/inbox" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Paper Tray", route: "/paper-tray" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Inbox", route: "/inbox" }, { label: "Standalone declarations", route: "/customs/standalone/export/new" }, { label: "Components", route: "/components" }],
     componentCode: `export function SegmentedControl({ options, value, onChange }) {\n  const controlId = useId()\n  const shouldReduceMotion = useReducedMotion()\n\n  return (\n    <div role="group" className="relative isolate inline-flex rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-1">\n      {options.map((option) => (\n        <button key={option} aria-pressed={value === option} onClick={() => onChange(option)}>\n          {value === option ? (\n            <motion.span layoutId={controlId + "-active"} transition={reduceMotion(shouldReduceMotion, mdMotion.spring)} />\n          ) : null}\n          {option}\n        </button>\n      ))}\n    </div>\n  )\n}`,
     usageCode: `<SegmentedControl\n  options={["Table", "Board"]}\n  value={viewMode}\n  onChange={setViewMode}\n/>`,
   },
@@ -3115,10 +3284,10 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     id: "data-table",
     name: "Data Table",
     category: "Data",
-    description: "A configurable operational table with pinning, pointer and keyboard reordering, keyboard-accessible resizing, sorting, selection, and visibility controls.",
-    details: "Use for dense operational records where each operator may need a different working view. Saved layouts and sorting are restored per table, and every column-layout action remains available without a pointer.",
-    foundOn: [{ label: "Quotes", route: "/quotes" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components" }],
-    componentCode: `export function DataTable({ columns, rows, getRowKey, storageKey, selectedRowKey, selectedRowKeys, onRowClick }) {\n  return (\n    <Table>\n      <TableHeader>{/* sortable, resizable, draggable columns */}</TableHeader>\n      <TableBody>{/* rows follow the saved live column layout and selection */}</TableBody>\n    </Table>\n  )\n}`,
+    description: "The canonical Multideck table for registers, compact summaries, editable grids, and operational history.",
+    details: "Declare each column's data kind so numeric alignment, long text, statuses, and attributes stay consistent. The transparent toolbar sits on the page background above the rounded table surface: toggles on the left, then search, filters, options, and Columns on the right. Mobile collapses that right cluster first.",
+    foundOn: [{ label: "Quotes", route: "/quotes" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Bookings", route: "/bookings" }, { label: "Facilities", route: "/warehouse/facilities" }, { label: "Locations", route: "/warehouse/locations" }, { label: "Items", route: "/warehouse/items" }, { label: "Components", route: "/components" }],
+    componentCode: `export function DataTable({ columns, rows, toolbarTabs, toolbarSearch, toolbarFilters, toolbarOptions }) {\n  return (\n    <section>\n      <TableToolbar tabs={toolbarTabs} search={toolbarSearch} filters={toolbarFilters} options={toolbarOptions} columnsLast />\n      <TableSurface>\n        <Table>{/* semantic columns, persisted layout, accessible interactions */}</Table>\n      </TableSurface>\n    </section>\n  )\n}`,
     usageCode: `<DataTable\n  ariaLabel="Supplier charges"\n  columns={chargeColumns}\n  rows={charges}\n  getRowKey={(charge) => charge.id}\n  storageKey="quote-charges-in"\n  onRowClick={selectCharge}\n/>`,
   },
   {
@@ -3133,13 +3302,13 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
   },
   {
     id: "quote-search-builder",
-    name: "Quote Search Builder",
+    name: "Quote Filter Panel",
     category: "Operations",
-    description: "An on-demand advanced search surface for quote registers, with nested condition groups and precise field operators.",
-    details: "Reveal from the table toolbar when operators need to combine commercial, route, ownership, timing, and workflow conditions. Groups can match all or any conditions, while the register updates immediately.",
+    description: "The advanced quote filter, opened as a compact panel beside the toolbar button, with condition groups, field operators and saved filters.",
+    details: "Open it from the table toolbar to combine commercial, route, ownership, timing and workflow conditions. Each group matches all or any of its conditions, the footer shows how many quotes the draft would return, and a named filter can be saved and picked again from the panel header.",
     foundOn: [{ label: "Quotes", route: "/quotes" }, { label: "Components", route: "/components?component=quote-search-builder" }],
-    componentCode: `export function QuoteSearchBuilder({ value, onChange }) {\n  return (\n    <section aria-label="Advanced quote search">\n      <MatchControl\n        value={value.match}\n        onChange={(match) => onChange({ ...value, match })}\n        allLabel="All groups"\n        anyLabel="Any group"\n      />\n      {value.groups.map((group) => (\n        <ConditionGroup\n          key={group.id}\n          group={group}\n          fields={quoteSearchFieldOptions}\n          operators={["contains", "is", "is-not", "starts-with", "is-empty", "is-not-empty"]}\n          onChange={updateGroup}\n        />\n      ))}\n    </section>\n  )\n}`,
-    usageCode: `const [advancedOpen, setAdvancedOpen] = useState(false)\nconst [search, setSearch] = useState(createEmptyQuoteSearch)\nconst visibleQuotes = quotes.filter((quote) => quoteMatchesSearch(quote, search))\n\n<button aria-expanded={advancedOpen} onClick={() => setAdvancedOpen((open) => !open)}>\n  Advanced search\n</button>\n{advancedOpen ? <QuoteSearchBuilder value={search} onChange={setSearch} /> : null}`,
+    componentCode: `<AdvancedFilterPopover\n  fields={quoteSearchFieldOptions}\n  value={search}\n  onChange={setSearch}\n  storageKey="quote-register"\n  label="Advanced search"\n  title="Advanced quote search"\n  itemLabel="quotes"\n  countMatches={countDraftMatches}\n  totalCount={quotes.length}\n/>`,
+    usageCode: `const [search, setSearch] = useState(createEmptyQuoteSearch)\nconst visibleQuotes = quotes.filter((quote) => quoteMatchesSearch(quote, search))\n\n<DataTable\n  columns={columns}\n  rows={visibleQuotes}\n  toolbarFilters={<AdvancedFilterPopover fields={quoteSearchFieldOptions} value={search} onChange={setSearch} storageKey="quote-register" />}\n/>`,
   },
   {
     id: "warehouse-table",
@@ -3252,7 +3421,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "Navigation",
     description: "A reusable horizontal tab rail for switching sections inside one record or workflow.",
     details: "Use when the user should stay in context while moving between overview, contacts, bookings, documents, activity, or notes.",
-    foundOn: [{ label: "Customer detail", route: "/customers/marlow-apparel" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "Warehouse", route: "/warehouse" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Customer detail", route: "/customers/marlow-apparel" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "Warehouse", route: "/warehouse" }, { label: "Standalone declarations", route: "/customs/standalone/export/new" }, { label: "Components", route: "/components" }],
     componentCode: `export function TabsRail({ tabs, activeTab, onChange }) {\n  return (\n    <div className="flex gap-6 overflow-x-auto border-b border-[rgba(11,20,19,0.08)]">\n      {tabs.map((tab) => (\n        <button key={tab.label} onClick={() => onChange(tab.label)}>\n          {tab.label}\n          {tab.value ? <span>{tab.value}</span> : null}\n        </button>\n      ))}\n    </div>\n  )\n}`,
     usageCode: `<TabsRail\n  tabs={tabs}\n  activeTab={activeTab}\n  onChange={setActiveTab}\n/>`,
   },
@@ -3277,6 +3446,46 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     usageCode: `<YourJobsPanel\n  favouriteIds={favouriteIds}\n  onToggleFavourite={toggleFavourite}\n  onOpenJobDrilldown={openDashboardDrilldown}\n  animated\n/>`,
   },
   {
+    id: "priority-queue",
+    name: "Priority Queue",
+    category: "Operations",
+    description: "Everything waiting on an operator, from any register, in one list ranked by real deadline and grouped by how much time is left.",
+    details: "Use as the lead panel of a work surface. It replaces the pattern of running separate 'my tasks', 'exceptions' and 'record list' panels over the same records: each row carries the reference, the ask, the customer and lane, and the deadline it is actually measured against. The leading rule is the only urgency device on a row \u2014 do not add per-row gauges beside it. Keep the compact row actions visible; the shader icon hands the task to Dexter for review, clearing strikes and collapses with an undo toast, and the arrow opens the source record.",
+    foundOn: [{ label: "Overview", route: "/" }, { label: "Components", route: "/components?component=priority-queue" }],
+    componentCode: `export function DashboardPriorityQueue({ items, operatorName, onOpenItem, onHandOverToDexter }) {\n  const groups = groupByBucket(items)\n\n  return (\n    <Surface padding="none" className="md-queue-panel">\n      <div className="md-queue-panel-head">\n        <h2 className="md-panel-title">Needs you now</h2>\n        <SegmentedControl options={["mine", "all"]} value={scope} onChange={setScope} />\n      </div>\n      <div className="md-queue-panel-body">\n        {groups.map((group) => (\n          <div key={group.bucket} className="md-queue-group" data-bucket={group.bucket}>\n            <p className="md-queue-group-label">{group.label}<span>{group.items.length}</span></p>\n            {group.items.map((item) => (\n              <QueueRow\n                key={item.id}\n                item={item}\n                onOpen={() => onOpenItem(item)}\n                onHandOver={() => onHandOverToDexter(item)}\n              />\n            ))}\n          </div>\n        ))}\n      </div>\n    </Surface>\n  )\n}`,
+    usageCode: `const items = dashboardPriorityQueue(bookings, quotes)\n\n<DashboardPriorityQueue\n  items={items}\n  operatorName={operatorName}\n  onOpenItem={(item) =>\n    navigate(item.bookingId ? getBookingDetailPath(item.bookingId) : \`/quotes/\${item.quoteReference}\`)\n  }\n  onHandOverToDexter={(item) => {\n    rememberDexterTaskHandoff(buildTaskPrompt(item))\n    navigate("/agent-dexter")\n  }}\n/>`,
+  },
+  {
+    id: "performance-panel",
+    name: "Performance Panel",
+    category: "Data",
+    description: "One large trend plot with a head that names the metric being drawn, driven by the KPI row above it.",
+    details: "Use where a screen needs a single dominant chart rather than several small ones. Pair it with a `KpiStrip` that has `spark` off and a `markerId` set: the strip becomes the chart's control and the travelling rule under the selected card is the only thing that has to say so. Two drawings of one series \u2014 a sparkline in the tile and the same curve full size \u2014 is one drawing too many.",
+    foundOn: [{ label: "Overview", route: "/" }, { label: "Components", route: "/components?component=performance-panel" }],
+    componentCode: `export function DashboardPerformancePanel({ kpis, trends, metricLabel }) {\n  const metric = kpis.find((item) => item.label === metricLabel) ?? kpis[0]\n  const points = (trends[metric.label] ?? []).map((point) => ({ label: point.period, value: point.value, target: point.target }))\n\n  return (\n    <Surface padding="none" className="md-performance-panel">\n      <div className="md-performance-head">\n        <div>\n          <p className="md-panel-eyebrow">Trend</p>\n          <h2 className="md-performance-title">{metric.label}</h2>\n          <p className="md-panel-meta">{metric.detail}</p>\n        </div>\n        <div className="md-performance-legend">\n          <span><span className="md-performance-swatch" />{metric.label}</span>\n        </div>\n      </div>\n      <div className="md-performance-canvas">\n        <DashboardAreaChart points={points} tone={metric.tone} height={268} />\n      </div>\n    </Surface>\n  )\n}`,
+    usageCode: `<KpiStrip\n  kpis={snapshot.kpis}\n  selectedLabel={activeMetric}\n  onSelect={setFocusMetric}\n  spark={false}\n  markerId="md-dashboard-metric-rule"\n/>\n<DashboardPerformancePanel\n  kpis={snapshot.kpis}\n  trends={snapshot.trends}\n  metricLabel={activeMetric}\n/>`,
+  },
+  {
+    id: "breakdown-panel",
+    name: "Breakdown Panel",
+    category: "Data",
+    description: "A split of a total drawn as bars \u2014 segmented, ranked horizontally, or compared as upright columns.",
+    details: "Use for a categorical split in a side column. Prefer this over a ring or a funnel there: both carry a fixed aspect ratio, so beside a tall table they stretch and leave a band of empty surface under the drawing, and comparing lengths on a shared baseline is easier than comparing arc angles. Use `segmented` when the categories are parts of one quantity, `ranked` when the order is the point, and `columns` for a compact stage-by-stage comparison. Ranked and column bars scale against the largest category, not the total, so a long tail still has visible length.",
+    foundOn: [{ label: "Overview", route: "/" }, { label: "Components", route: "/components?component=breakdown-panel" }],
+    componentCode: `export function DashboardBreakdownPanel({ title, subtitle, slices, variant = "ranked" }) {\n  const peak = slices.reduce((highest, slice) => Math.max(highest, slice.value), 0)\n\n  return (\n    <Surface padding="none" className="md-breakdown-panel">\n      <div className="md-breakdown-head">\n        <h2 className="md-panel-title">{title}</h2>\n        <p className="md-panel-meta">{subtitle}</p>\n      </div>\n      <div className="md-breakdown-body">\n        {variant === "columns" ? (\n          <ul className="md-breakdown-columns">\n            {slices.map((slice) => (\n              <li key={slice.label}>\n                <span className="md-breakdown-column-value">{slice.value}</span>\n                <span className="md-breakdown-column-plot">\n                  <motion.span className="md-breakdown-column-bar" style={{ height: String((slice.value / peak) * 100) + "%", background: slice.color }} />\n                </span>\n                <span className="md-breakdown-column-label">{slice.label}</span>\n              </li>\n            ))}\n          </ul>\n        ) : (\n          <ul className="md-breakdown-rows">\n            {slices.map((slice) => (\n              <li key={slice.label}>\n                <span className="md-breakdown-row-head">{slice.label}<span>{slice.value}</span></span>\n                <span className="md-breakdown-track"><motion.span className="md-breakdown-fill" animate={{ scaleX: slice.value / peak }} /></span>\n              </li>\n            ))}\n          </ul>\n        )}\n      </div>\n    </Surface>\n  )\n}`,
+    usageCode: `<DashboardBreakdownPanel\n  title="Mode mix"\n  subtitle="Live bookings by transport mode"\n  slices={dashboardModeMix(bookings).map((slice) => ({ label: slice.name, value: slice.value, color: slice.color }))}\n  variant="segmented"\n  totalLabel="in transit"\n/>\n\n<DashboardBreakdownPanel\n  title="Quote pipeline"\n  subtitle="Open quotes by workflow stage"\n  slices={dashboardQuoteStages(quotes).map((slice) => ({ label: slice.name, value: slice.value, color: slice.color }))}\n  variant="columns"\n/>`,
+  },
+  {
+    id: "coverage-panel",
+    name: "Coverage Panel",
+    category: "Operations",
+    description: "Every operating region's working window drawn on one shared 24-hour track in the viewer's own time, with a single now line across all of them.",
+    details: "Use where a team works across time zones and the real question is overlap, not the clock: how long until Shanghai closes, and who is awake to pick something up. A filled band is working, amber is closing within the hour, and a faint band is clocked off but still shows the shape of that region's day. A row only carries a count when work is actually waiting on a human. Selecting a row opens that region's queue.",
+    foundOn: [{ label: "Overview", route: "/" }, { label: "Components", route: "/components?component=coverage-panel" }],
+    componentCode: `export function DashboardCoveragePanel({ queues, onViewQueue }) {\n  const rows = cityQueues.map((city) => {\n    const shift = (getTimeZoneOffsetMinutes(now, city.timeZone) - localOffset) / 60\n    return { code: city.code, openAt: 8 - shift, closeAt: 17 - shift, waiting: queues[city.code]?.needAction ?? 0 }\n  })\n\n  return (\n    <Surface padding="none" className="md-coverage-panel">\n      <div className="md-coverage-plot">\n        <span className="md-coverage-nowline" style={{ insetInlineStart: \`\${nowRatio * 100}%\` }} />\n        {rows.map((row) => (\n          <button key={row.code} className="md-coverage-row" onClick={() => onViewQueue(row.code)}>\n            <span className="md-coverage-row-code">{row.code}</span>\n            <span className="md-coverage-track">\n              <span className="md-coverage-band" style={{ insetInlineStart: \`\${(row.openAt / 24) * 100}%\`, width: \`\${((row.closeAt - row.openAt) / 24) * 100}%\` }} />\n            </span>\n          </button>\n        ))}\n      </div>\n    </Surface>\n  )\n}`,
+    usageCode: `<DashboardCoveragePanel queues={clockQueues} onViewQueue={selectTimezone} />`,
+  },
+  {
     id: "lane-mix-panel",
     name: "Lane Mix Panel",
     category: "Data",
@@ -3293,24 +3502,24 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     description: "A single compact KPI tile for booking list headers, designed for quick count scanning.",
     details: "Use one per metric in booking-heavy views. Keep the card to a short label and one number so the row stays calm and scannable.",
     foundOn: [{ label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components" }],
-    componentCode: `export function BookingMetricCard({ label, value, tone }) {\n  return (\n    <Surface padding="md" className="min-h-[92px] rounded-[var(--md-radius-xl)]">\n      <p className="text-[13px] font-medium text-[var(--md-text)]">{label}</p>\n      <strong\n        className={cn("mt-2 block text-[30px] font-medium leading-none", tone === "neutral" && "text-[var(--md-ink)]")}\n        style={{ color: tone === "neutral" ? undefined : toneToVar(tone) }}\n      >\n        {value}\n      </strong>\n    </Surface>\n  )\n}`,
+    componentCode: `export function BookingMetricCard({ label, value, tone }) {\n  return (\n    <Surface padding="none" className="flex min-h-[52px] items-center justify-between gap-3 rounded-[var(--md-radius-xl)] px-4 py-2.5">\n      <p className="text-[12px] font-medium text-[var(--md-text)]">{label}</p>\n      <strong\n        className={cn("block text-[22px] font-medium leading-none", tone === "neutral" && "text-[var(--md-ink)]")}\n        style={{ color: tone === "neutral" ? undefined : toneToVar(tone) }}\n      >\n        {value}\n      </strong>\n    </Surface>\n  )\n}`,
     usageCode: `<BookingMetricCard\n  label="In transit"\n  value="23"\n  tone="teal"\n/>`,
   },
   {
     id: "booking-search-builder",
-    name: "Booking Search Builder",
+    name: "Booking Filter Panel",
     category: "Operations",
-    description: "An inline booking search builder with grouped AND/OR conditions and immediate result updates.",
-    details: "Reveal it from the booking table toolbar. It keeps the register visible, applies every condition immediately, and matches the Quotes advanced-search behaviour.",
+    description: "The same advanced filter panel as Quotes, with booking fields and date conditions for departure and arrival.",
+    details: "Open it from the booking table toolbar. Date fields switch the operator list to on, before, after and between, and the register only changes once the filter is applied.",
     foundOn: [{ label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components" }],
-    componentCode: `export function BookingSearchBuilder({ value, onChange, resultCount, totalCount }) {\n  return (\n    <section aria-label="Advanced booking search">\n      <header>Filter bookings · {resultCount}/{totalCount} shown</header>\n      {groupCriteria(value).map((group) => (\n        <ConditionGroup key={group.id} group={group} onChange={onChange} />\n      ))}\n      <Button onClick={addGroup}>Add group</Button>\n    </section>\n  )\n}`,
-    usageCode: `{advancedSearchOpen ? (\n  <BookingSearchBuilder\n    value={searchCriteria}\n    onChange={setSearchCriteria}\n    resultCount={visibleBookings.length}\n    totalCount={scopedBookings.length}\n  />\n) : null}`,
+    componentCode: `<AdvancedFilterPopover\n  fields={bookingFilterFields}\n  value={search}\n  onChange={setSearch}\n  storageKey="booking-register"\n  label="Advanced search"\n  title="Advanced booking search"\n  itemLabel="bookings"\n  countMatches={countDraftMatches}\n  totalCount={scopedBookings.length}\n/>`,
+    usageCode: `const [search, setSearch] = useState(createEmptyFilterQuery)\nconst visibleBookings = scopedBookings.filter((booking) => bookingMatchesSearch(booking, search))\n\nfunction bookingMatchesSearch(booking, query) {\n  return matchesFilterQuery(booking, query, bookingFilterValue)\n}`,
   },
   {
     id: "bookings-table",
     name: "Booking Register",
     category: "Data",
-    description: "The booking configuration of the common Data Table, with search, sorting, columns, resizing, pinning, selection, and favourites.",
+    description: "The booking configuration of the common Data Table, with search, sorting, columns, resizing, pinning, and favourites.",
     details: "Use for the primary booking register. It intentionally shares the Quotes table engine and persists each operator's column layout.",
     foundOn: [{ label: "Bookings", route: "/bookings" }, { label: "Components", route: "/components" }],
     componentCode: `export function BookingRegister({ rows, columns, onOpenBooking }) {\n  return (\n    <DataTable\n      columns={columns}\n      rows={rows}\n      getRowKey={(booking) => booking.id}\n      storageKey="booking-register"\n      onRowClick={onOpenBooking}\n    />\n  )\n}`,
@@ -3497,10 +3706,10 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     name: "Dexter Prompt Composer",
     category: "Agent Dexter",
     description: "The central command box for Agent Dexter: @ mentions, attached context, slash commands, model and role choices, live context usage, plus explicit approval or full-access control.",
-    details: "Use on the Agent Dexter landing and conversation footer. Operators can type @ to reference workspace context or / to switch between Chat and Watch; Approve remains the safe default and Full access is a deliberately warning-toned state for allowlisted writes.",
+    details: "Use on the Agent Dexter landing and conversation footer. The + button opens the computer file chooser, @ references workspace or email context, and / switches between Chat and Watch; Approve remains the safe default and Full access is a deliberately warning-toned state for allowlisted writes.",
     foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components?component=dexter-prompt-composer" }],
     componentCode: `export function DexterPromptComposer({ value, selectedSpecialistId, selectedModelId, accessMode, contextUsedTokens, contextMaxTokens, attachments, onChange, onOpenAttachments, onSelectSpecialist, onSelectModel, onAccessModeChange, onSend }) {\n  return (\n    <div className="md-composer md-composer-bloom relative overflow-hidden rounded-[26px]">\n      <span aria-hidden className="md-composer-bloom__shader">\n        <SpectralBloomShader shape="composer" />\n      </span>\n      <span aria-hidden className="md-composer-bloom__contrast" />\n      <div className="relative z-[2] flex h-[44px] items-center px-3">\n        <DexterRoleMenu selectedId={selectedSpecialistId} onSelect={onSelectSpecialist} />\n      </div>\n      <div className="relative z-[2] mx-1.5 mb-1.5 rounded-[21px] bg-[var(--md-composer-panel-bg)]">\n        {attachments.map((attachment) => <ContextChip key={attachment.id} attachment={attachment} />)}\n        <textarea\n          value={value}\n          rows={1}\n          onChange={(event) => onChange(event.target.value)}\n          onKeyDown={(event) => {\n            if (event.key === "Enter" && !event.shiftKey) {\n              event.preventDefault()\n              if (value.trim()) onSend()\n            }\n          }}\n        />\n        <button onClick={onOpenAttachments}>Attach</button>\n        <DexterModelMenu selectedId={selectedModelId} onSelect={onSelectModel} />\n        <Context\n          usedTokens={contextUsedTokens}\n          maxTokens={contextMaxTokens}\n          label={t("Conversation context")}\n          description={t("How much of this chat Dexter can keep in mind.")}\n        >\n          <ContextTrigger />\n          <ContextContent><ContextContentHeader /></ContextContent>\n        </Context>\n        <DexterAccessModeToggle mode={accessMode} onChange={onAccessModeChange} />\n        <DexterActionPill icon={ArrowUp} iconOnly disabled={!value.trim()} onClick={onSend} />\n      </div>\n    </div>\n  )\n}`,
-    usageCode: `<DexterPromptComposer\n  value={prompt}\n  selectedSpecialistId={selectedSpecialistId}\n  selectedModelId={selectedModelId}\n  accessMode={accessMode}\n  contextUsedTokens={contextUsedTokens}\n  contextMaxTokens={128_000}\n  attachments={attachedItems}\n  commands={slashCommands}\n  onChange={setPrompt}\n  onOpenAttachments={() => setShowAttachments(true)}\n  onSelectSpecialist={setSelectedSpecialistId}\n  onSelectModel={setSelectedModelId}\n  onAccessModeChange={setAccessMode}\n  onCommand={handleSlashCommand}\n  onSend={startConversation}\n/>`,
+    usageCode: `<DexterPromptComposer\n  value={prompt}\n  selectedSpecialistId={selectedSpecialistId}\n  selectedModelId={selectedModelId}\n  accessMode={accessMode}\n  contextUsedTokens={contextUsedTokens}\n  contextMaxTokens={128_000}\n  attachments={attachedItems}\n  commands={slashCommands}\n  onChange={setPrompt}\n  onOpenAttachments={() => computerFileInputRef.current?.click()}\n  attachmentActionLabel="Upload files"\n  onSelectSpecialist={setSelectedSpecialistId}\n  onSelectModel={setSelectedModelId}\n  onAccessModeChange={setAccessMode}\n  onCommand={handleSlashCommand}\n  onSend={startConversation}\n/>`,
   },
   {
     id: "watch-mode-aurora",
@@ -3639,10 +3848,10 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     id: "side-drawer",
     name: "Side Drawer",
     category: "Operations",
-    description: "The inset slide-in panel used for detail and settings surfaces, with its own backdrop, motion, Escape handling, scroll lock, and focus restore.",
-    details: "Use when a record or a settings surface should open over the current page without losing the operator's place. The panel leans in from the edge it is docked to and blurs out on exit, so opening and closing read as one movement rather than a hard cut. It flips to the opposite edge under right-to-left, collapses to an instant show and hide when the operator prefers reduced motion, locks page scroll while open, and hands focus back to whatever opened it on close. Pass an icon only when the drawer is a settings surface rather than a record.",
-    foundOn: [{ label: "CRM deals", route: "/crm/deals" }, { label: "Components", route: "/components" }],
-    componentCode: `export function SideDrawer({ open, onClose, eyebrow, title, icon: Icon, width = 480, children }) {
+    description: "The inset slide-in panel used for detail and settings surfaces, with modal and register-inspector modes, direction-aware motion, Escape handling, and focus restore.",
+    details: "Use modal mode when a settings task needs exclusive focus. Use non-modal mode when an operator should keep a register visible and switch directly between records, as on Warehouse locations. The panel leans in from its docked edge, flips under right-to-left, and becomes instant when reduced motion is preferred. Pass an icon only when the drawer is a settings surface rather than a record.",
+    foundOn: [{ label: "CRM deals", route: "/crm/deals" }, { label: "Warehouse locations", route: "/warehouse/locations" }, { label: "Components", route: "/components" }],
+    componentCode: `export function SideDrawer({ open, onClose, eyebrow, title, icon: Icon, width = 480, modal = true, children }) {
   const { direction, t } = useLanguage()
   const reduce = Boolean(useReducedMotion())
 
@@ -3650,20 +3859,20 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
   const offset = direction === "rtl" ? -40 : 40
 
   return (
-    <AnimatePresence>
+    <AnimatePresence initial={false}>
       {open ? (
-        <div className="fixed inset-0 z-50 flex justify-end p-3" dir={direction}>
-          <motion.button
+        <div className={cn("fixed inset-0 z-50 flex justify-end p-3", !modal && "pointer-events-none")} dir={direction}>
+          {modal ? <motion.button
             className="absolute inset-0 bg-[rgba(11,20,19,0.14)] backdrop-blur-[6px]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={reduceMotion(reduce, mdMotion.fast)}
             onClick={onClose}
-          />
+          /> : null}
           <motion.aside
-            role="dialog"
-            aria-modal="true"
+            role={modal ? "dialog" : "region"}
+            aria-modal={modal ? "true" : undefined}
             aria-label={title}
             className="relative z-10 flex h-full w-full flex-col rounded-[var(--md-radius-2xl)] bg-[var(--md-bg)] p-3"
             style={{ maxWidth: width }}
@@ -3680,7 +3889,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     </AnimatePresence>
   )
 }`,
-    usageCode: `<SideDrawer\n  open={settingsOpen}\n  onClose={() => setSettingsOpen(false)}\n  eyebrow={t("Deals")}\n  title={t("Pipeline settings")}\n  icon={Settings2}\n  width={980}\n>\n  <CrmSettingsBuilder canEdit={canEdit} />\n</SideDrawer>`,
+    usageCode: `<SideDrawer\n  open={settingsOpen}\n  onClose={() => setSettingsOpen(false)}\n  eyebrow={t("Deals")}\n  title={t("Pipeline settings")}\n  icon={Settings2}\n  width={980}\n>\n  <CrmSettingsBuilder canEdit={canEdit} />\n</SideDrawer>\n\n<SideDrawer\n  open={Boolean(selectedLocation)}\n  onClose={() => setSelectedLocation(null)}\n  eyebrow={t("Location details")}\n  title={t("Edit location")}\n  modal={false}\n>\n  <LocationForm location={selectedLocation} />\n</SideDrawer>`,
   },
   {
     id: "side-panels",
@@ -3763,24 +3972,88 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     usageCode: `<CrmPipelineBoard\n  selectedDealId={detailOpen ? selectedDeal.id : undefined}\n  onSelectDeal={(deal) => {\n    setSelectedDeal(deal)\n    setDetailOpen(true)\n  }}\n  onPipelineChange={(pipeline) => {\n    setSelectedDeal(firstDeal(pipeline))\n    setDetailOpen(false)\n  }}\n  onOpenSettings={() => setSettingsOpen(true)}\n/>\n<DealDetailDrawer deal={selectedDeal} open={detailOpen} />\n<PipelineSettingsDrawer open={settingsOpen} />`,
   },
   {
-    id: "crm-asset-folder-card",
-    name: "CRM Asset Folder Card",
+    id: "drive-folder-tile",
+    name: "Drive Folder Tile",
     category: "CRM",
-    description: "A green drive-style folder tile for marketing assets, brand files, templates, and customer collateral.",
-    details: "Use on the Marketing drive root when CRM or marketing needs storage hierarchy before individual files. Clicking a folder should navigate into a folder-detail view; do not reveal files underneath the root folder grid.",
-    foundOn: [{ label: "CRM marketing", route: "/crm/marketing" }, { label: "Components", route: "/components" }],
-    componentCode: `export function CrmAssetFolderCard({ folder, selected, onSelect }) {\n  const Icon = folder.icon ?? Folder\n\n  return (\n    <button aria-pressed={selected} onClick={() => onSelect?.(folder)}>\n      <span><Icon /></span>\n      <StatusPill tone="green">{folder.itemCount} items</StatusPill>\n      <h3>{folder.name}</h3>\n      <p>{folder.description}</p>\n      <footer>{folder.updated} - {folder.size}</footer>\n    </button>\n  )\n}`,
-    usageCode: `<div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">\n  {marketingFolders.map((folder) => (\n    <CrmAssetFolderCard\n      key={folder.id}\n      folder={folder}\n      selected={false}\n      onSelect={(nextFolder) => setOpenedFolderId(nextFolder.id)}\n    />\n  ))}\n</div>`,
+    description: "A folder in Drive, carrying the colour and icon the operator chose for it.",
+    details: "Use in the Drive grid. Two thin sheets sit behind the top edge so the tile reads as something that holds files rather than as another card, and they fan out a little further on hover. Colour comes from the ten accent presets, so a folder can only land on a tone already checked for contrast in both themes. The meta line counts the whole subtree, not just the immediate children. Right-click opens open, rename, colour and icon, and delete.",
+    foundOn: [{ label: "Drive", route: "/crm/drive" }, { label: "Components", route: "/components?component=drive-folder-tile" }],
+    componentCode: `export function DriveFolderTile({ folder, stats, renaming, onOpen, onRename, onCustomise, onDelete }) {
+  const Icon = folderIconGlyphs[folder.icon]
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div role="button" tabIndex={0} className="md-drive-folder md-drive-tone" style={driveToneStyle(folder.colour)} onClick={() => onOpen(folder)}>
+          <span className="md-drive-folder__sheet md-drive-folder__sheet--back" />
+          <span className="md-drive-folder__sheet md-drive-folder__sheet--front" />
+          <div className="md-drive-folder__body">
+            <span className="md-drive-folder__icon"><Icon /></span>
+            <DriveInlineName value={folder.name} editing={renaming} onCommit={(next) => onRename(folder, next)} />
+            <span>{folderMeta(stats)}</span>
+          </div>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>…</ContextMenuContent>
+    </ContextMenu>
+  )
+}`,
+    usageCode: `<div className="md-drive-grid">
+  {childFolders.map((folder) => (
+    <DriveGridItem key={folder.id} revealDelay={entryDelay(index)}>
+      <DriveFolderTile
+        folder={folder}
+        stats={stats?.get(folder.id)}
+        renaming={renamingId === folder.id}
+        onOpen={openFolder}
+        onRename={renameFolder}
+        onStartRename={(target) => setRenamingId(target.id)}
+        onCancelRename={() => setRenamingId(null)}
+        onCustomise={startCustomiseFolder}
+        onDelete={(target) => setRemoval({ kind: "folder", folder: target })}
+      />
+    </DriveGridItem>
+  ))}
+</div>`,
   },
   {
-    id: "crm-asset-row",
-    name: "CRM Asset Row",
+    id: "drive-file-tile",
+    name: "Drive File Tile",
     category: "CRM",
-    description: "A compact file row for assets shown after the operator has opened a marketing drive folder.",
-    details: "Use inside a dedicated folder-detail view below a breadcrumb/back control. Do not use asset rows directly under the root folder grid.",
-    foundOn: [{ label: "CRM marketing", route: "/crm/marketing" }, { label: "Components", route: "/components" }],
-    componentCode: `export function CrmAssetRow({ asset, onOpen }) {\n  const Icon = asset.icon ?? FileText\n\n  return (\n    <button onClick={() => onOpen?.(asset)}>\n      <Icon />\n      <span data-i18n-skip dir="ltr">{asset.name}</span>\n      <span>{asset.usage}</span>\n      <span data-i18n-skip dir="ltr">{asset.type}</span>\n      <span data-i18n-skip dir="ltr">{asset.size}</span>\n      <span>{asset.updated}</span>\n    </button>\n  )\n}`,
-    usageCode: `<Button onClick={() => setOpenedFolderId(null)}>\n  <ArrowLeft />\n  Marketing drive\n</Button>\n\n<div className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-3">\n  {folderAssets.map((asset) => (\n    <CrmAssetRow\n      key={asset.id}\n      asset={asset}\n      onOpen={(selectedAsset) => openAsset(selectedAsset)}\n    />\n  ))}\n</div>`,
+    description: "A stored file shown as its own picture, with an inline preview that paints on the first frame.",
+    details: "Use in the Drive grid. The thumbnail arrives in two passes over one box: the ~1 KB preview seed carried on the file row paints immediately, blurred, and the stored WebP thumbnail cross-fades over it once decoded. The seed is never removed, so the box is never empty and nothing can flicker. Files with no renderable preview show their type glyph instead. Set `pending` while a file is still uploading to hold the same box with a progress ring, so nothing moves when the upload lands.",
+    foundOn: [{ label: "Drive", route: "/crm/drive" }, { label: "Components", route: "/components?component=drive-file-tile" }],
+    componentCode: `export function DriveFileTile({ file, thumbnailUrl, pending, progress, renaming, onOpen, onRename, onDownload, onDelete }) {
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div role="button" tabIndex={0} className="md-drive-file" onClick={() => onOpen(file)}>
+          <span className="md-drive-thumb" data-fit={thumbnailFit(driveKindOf(file))}>
+            {file.previewSeed ? <img src={file.previewSeed} className="md-drive-thumb__layer md-drive-thumb__seed" /> : null}
+            {thumbnailUrl ? <img src={thumbnailUrl} data-loaded={loaded} className="md-drive-thumb__layer md-drive-thumb__image" onLoad={() => setLoaded(true)} /> : null}
+            {pending ? <DriveProgressRing value={progress} /> : null}
+          </span>
+          <DriveInlineName value={file.name} editing={renaming} onCommit={(next) => onRename(file, next)} />
+          <span>{driveFileTypeLabel(file)} · {formatDriveBytes(file.sizeBytes)}</span>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>…</ContextMenuContent>
+    </ContextMenu>
+  )
+}`,
+    usageCode: `<DriveFileTile
+  file={file}
+  thumbnailUrl={file.thumbnailPath ? thumbnailUrls[file.thumbnailPath] : null}
+  pending={Boolean(upload)}
+  progress={upload?.progress}
+  renaming={renamingId === file.id}
+  onOpen={openPreview}
+  onRename={renameFile}
+  onStartRename={(target) => setRenamingId(target.id)}
+  onCancelRename={() => setRenamingId(null)}
+  onDownload={download}
+  onDelete={(target) => setRemoval({ kind: "file", file: target })}
+/>`,
   },
   {
     id: "contact-create-dialog",
@@ -3843,7 +4116,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     componentCode: `export function CrmLeadQualificationTable({ leads, onOpenLead, ownerPhotoUrls }) {
   return (
     <Table>
-      <TableHeader>{/* lead, primary contact, source, owner, qualification, engagement, follow-up, age, value */}</TableHeader>
+      <TableHeader>{/* lead, primary contact, source, owner, stage, qualification, engagement, follow-up, age, value */}</TableHeader>
       <TableBody>
         {leads.map((lead) => (
           <TableRow key={lead.id} onClick={() => onOpenLead(lead)}>
@@ -3852,6 +4125,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
             <TableCell>{lead.sourceName}</TableCell>
             <TableCell>{lead.ownerName}</TableCell>
             <TableCell><StatusPill>{lead.statusName}</StatusPill></TableCell>
+            <TableCell><StatusPill>{lead.ratingName}</StatusPill></TableCell>
             <TableCell>{lead.lastActivitySubject}</TableCell>
             <TableCell>{lead.nextFollowUpAt}</TableCell>
             <TableCell>{lead.createdAt}</TableCell>
@@ -4024,7 +4298,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     description: "The repeated settings form structure: a quiet panel with labelled rows and aligned controls.",
     details: "Use when a setting needs a label, short explanation, and a control. It keeps settings pages scannable without turning every field into a separate card.",
     foundOn: [{ label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
-    componentCode: `export function SettingsPanel({ title, description, children }) {\n  return (\n    <section className="overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-soft)]">\n      <div className="px-5 py-4">\n        <h3>{title}</h3>\n        <p>{description}</p>\n      </div>\n      <div className="divide-y divide-[rgba(11,20,19,0.07)] shadow-[var(--md-stroke-top)]">{children}</div>\n    </section>\n  )\n}\n\nexport function SettingsFieldRow({ label, description, children }) {\n  return (\n    <div className="grid gap-3 px-5 py-4 md:grid-cols-[minmax(160px,260px)_minmax(0,1fr)]">\n      <div>\n        <p>{label}</p>\n        <p>{description}</p>\n      </div>\n      <div>{children}</div>\n    </div>\n  )\n}`,
+    componentCode: `export function SettingsPanel({ title, description, action, children }) {\n  return (\n    <section className="overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-soft)]">\n      <div className="px-5 py-4">\n        <SectionHeader title={title} meta={description} action={action} metaClassName="text-[13px] leading-5" />\n      </div>\n      <div className="divide-y divide-[rgba(11,20,19,0.07)] shadow-[var(--md-stroke-top)]">{children}</div>\n    </section>\n  )\n}\n\nexport function SettingsFieldRow({ label, description, children }) {\n  return (\n    <div className="grid gap-3 px-5 py-4 md:grid-cols-[minmax(160px,260px)_minmax(0,1fr)]">\n      <div>\n        <p>{label}</p>\n        <p>{description}</p>\n      </div>\n      <div>{children}</div>\n    </div>\n  )\n}`,
     usageCode: `<SettingsPanel title="Working schedule" description="Used for notifications and escalation.">\n  <SettingsFieldRow label="Time zone">\n    <SettingsSelect value={timezone} options={timezones} onChange={setTimezone} />\n  </SettingsFieldRow>\n</SettingsPanel>`,
   },
   {
@@ -4288,6 +4562,7 @@ export const galleryCategories = ["All", "Design System", "Foundation", "Control
 
 export const galleryIcons = {
   colours: Palette,
+  "hugeicons-system": Component,
   typography: Type,
   surface: Gauge,
   "status-pill": BadgeCheck,
@@ -4352,7 +4627,7 @@ export const galleryIcons = {
   "domestic-job-stage-rail": Truck,
   "domestic-road-job-card": Truck,
   "domestic-road-kanban-board": LayoutDashboard,
-  "report-template-card": BarChart3,
+  "report-template-card": ChartAnalysis,
   "generated-report-table": FileText,
   "report-document-page": FileText,
   "report-thumbnail-rail": ListOrdered,

@@ -12,8 +12,12 @@ const threadPageMigration = await readFile(new URL("../migrations/20260803166000
 const automaticReplyAuditMigration = await readFile(new URL("../migrations/20260804130000_inbox_automatic_reply_audit.sql", import.meta.url), "utf8")
 const providerFolderMigration = await readFile(new URL("../migrations/20260804203000_inbox_provider_folder_catalog.sql", import.meta.url), "utf8")
 const retentionMigration = await readFile(new URL("../migrations/20260805100000_inbox_twelve_month_retention.sql", import.meta.url), "utf8")
+const trackingIntegrityMigration = await readFile(new URL("../migrations/20260810075358_inbox_email_tracking_event_integrity.sql", import.meta.url), "utf8")
+const automaticReceiptGuardMigration = await readFile(new URL("../migrations/20260810093500_inbox_automated_receipt_reply_guard.sql", import.meta.url), "utf8")
 const dexterEmailContext = await readFile(new URL("../functions/agent-dexter/email-context.ts", import.meta.url), "utf8")
 const dexterRuntime = await readFile(new URL("../functions/agent-dexter/index.ts", import.meta.url), "utf8")
+const emailWatchWorker = await readFile(new URL("../functions/email-watch-worker/index.ts", import.meta.url), "utf8")
+const inboxReadme = await readFile(new URL("../functions/inbox-api/README.md", import.meta.url), "utf8")
 
 test("authenticated Edge boundary is registered", () => {
   assert.match(config, /\[functions\.inbox-api\]\s+verify_jwt\s*=\s*true/)
@@ -110,6 +114,50 @@ test("real Gmail and Microsoft folder sync is implemented", () => {
   assert.match(runtime, /CommMailFolder_RoleCode/)
   assert.match(runtime, /CommThread_SourceTypeCode: "provider_sync"/)
   assert.match(runtime, /CommMessage_SourceTypeCode: "provider_sync"/)
+})
+
+test("expired Outlook cursors reset only the affected folder and retry once", () => {
+  const outlookSync = runtime.slice(runtime.indexOf("async function syncOutlook"), runtime.indexOf("async function persistFolders"))
+  assert.match(outlookSync, /error\.providerStatus !== 410/)
+  assert.match(outlookSync, /!current\?\.next/)
+  assert.match(outlookSync, /state = \{ phase: state\.phase === "list" \? "list" : "delta_init" \}/)
+  assert.match(outlookSync, /providerCursorReset = true/)
+  assert.match(outlookSync, /reset: !validRetentionCursor \|\| providerCursorReset/)
+  assert.doesNotMatch(outlookSync, /providerStatus !== 410[\s\S]{0,200}while/)
+})
+
+test("sent, delivery, open and reply evidence stays attached to one provider message", () => {
+  const providerJson = runtime.slice(runtime.indexOf("async function providerJson"), runtime.indexOf("function gmailBodies"))
+  assert.match(providerJson, /new URL\(url\)\.hostname === "graph\.microsoft\.com"/)
+  assert.match(providerJson, /headers\.set\("Prefer", existingPrefer \? `\$\{existingPrefer\}, \$\{immutableId\}` : immutableId\)/)
+  assert.match(providerJson, /IdType="ImmutableId"/)
+  assert.doesNotMatch(runtime, /providerMessageId: `pending:/)
+  assert.match(runtime, /CommMessage_InternetMessageID: internetMessageId/)
+  assert.match(runtime, /knownMessageIdsByInternet/)
+  assert.match(runtime, /knownRowsById/)
+  assert.match(runtime, /replyTargetMessageId/)
+  assert.match(runtime, /candidate\.CommMessage_ReplyToMessageID === row\.CommMessage_ID/)
+  assert.doesNotMatch(runtime, /CommMessage_IsInbound && Date\.parse\(occurred\(candidate\)\) > Date\.parse\(occurred\(row\)\)/)
+  assert.match(runtime, /parseDeliveryStatusReport/)
+  assert.match(runtime, /deliveryReportNeedsRawMime\(headers\)/)
+  assert.match(runtime, /isRecipientReplyMessage\(incoming\.headers\)/)
+  assert.match(runtime, /if \(!isRecipientReplyMessage\(headers\)\) continue[\s\S]*replyTargetMessageId\(headers, outboundReplyCandidates\)/)
+  assert.match(runtime, /replyEligible: !row\.CommMessage_IsInbound \|\| isRecipientReplyMessage\(storedHeaders\(row\)\)/)
+  assert.match(automaticReceiptGuardMigration, /CommDelivery_EventTypeCode" = 'replied'/)
+  assert.match(automaticReceiptGuardMigration, /CommDelivery_PayloadJSON" ->> 'inboundMessageId'/)
+  assert.match(automaticReceiptGuardMigration, /CommMessage_ReplyToMessageID" = null/)
+  assert.match(trackingIntegrityMigration, /CommDelivery_ConnectionID/)
+  assert.match(trackingIntegrityMigration, /security definer/)
+})
+
+test("interactive and scheduled mailbox sync deploy from the same tracking runtime", () => {
+  assert.match(emailWatchWorker, /from "\.\.\/inbox-api\/core\.ts"/)
+  assert.match(emailWatchWorker, /from "\.\.\/inbox-api\/runtime\.ts"/)
+  assert.match(emailWatchWorker, /syncMailbox\(admin, actor, mailboxId, \{ liveOnly \}\)/)
+  assert.match(inboxReadme, /deploy inbox-api email-watch-worker/)
+  assert.match(inboxReadme, /download-verify both functions together/)
+  assert.match(config, /\[functions\.inbox-api\]\s+verify_jwt\s*=\s*true/)
+  assert.match(config, /\[functions\.email-watch-worker\]\s+verify_jwt\s*=\s*false/)
 })
 
 test("provider labels and nested folders remain access-checked and provider identifiers stay server-side", () => {

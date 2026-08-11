@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react"
 import type { Provider } from "@supabase/supabase-js"
-import { ArrowRight, Building2, Clock3, KeyRound, Loader2, Mail, Menu, ShieldCheck, TriangleAlert, X } from "lucide-react"
+import { ArrowRight, Building2, Clock3, KeyRound, Loader2, Mail, Menu, ShieldCheck, TriangleAlert, X } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -24,6 +24,15 @@ type AuthCopy = {
   title: string
   body: string
   footnote: string
+}
+
+type AuthFieldErrors = {
+  email?: string
+  password?: string
+  credentials?: string
+  newPassword?: string
+  confirmation?: string
+  code?: string
 }
 
 const authCopyByStep: Record<AuthFlowStep, AuthCopy> = {
@@ -111,6 +120,23 @@ function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
 }
 
+function focusAuthControl(id: string) {
+  window.requestAnimationFrame(() => {
+    document.getElementById(id)?.focus()
+  })
+}
+
+function getAuthErrorCode(error: unknown) {
+  return typeof error === "object" && error && "code" in error ? String(error.code) : ""
+}
+
+function isInvalidCredentialsError(error: unknown) {
+  const code = getAuthErrorCode(error)
+  const message = error instanceof Error ? error.message.toLowerCase() : ""
+
+  return code === "invalid_credentials" || message.includes("invalid login credentials")
+}
+
 function BrandLockup({ inverted = false, centered = false }: { inverted?: boolean; centered?: boolean }) {
   return (
     <div data-auth-brand className={cn("flex items-center gap-3", centered && "justify-center")}>
@@ -132,16 +158,17 @@ function AuthWebsiteHeader({
   onMenuToggle: () => void
 }) {
   const { t } = useLanguage()
+  const websiteUrl = (import.meta.env.VITE_MULTIDECK_WEBSITE_URL || "https://www.multideck.co.uk").replace(/\/$/, "")
   const navLinks = [
-    { label: t("Features"), href: "/features" },
-    { label: t("About"), href: "/about" },
-    { label: t("Contact"), href: "/contact" },
+    { label: t("Website"), href: websiteUrl },
+    { label: t("About"), href: `${websiteUrl}/our-story` },
   ]
+  const enquiryUrl = `${websiteUrl}/#register-interest`
 
   return (
     <header className="relative z-50 h-[68px] bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[0_1px_0_rgba(11,20,19,0.06)] [--md-accent:#0a7068] [--md-accent-a16:rgba(10,112,104,0.16)] [--md-accent-a20:rgba(10,112,104,0.2)] [--md-accent-hover:#095e57] [--md-accent-ink:#fff] [--md-ink:#0b1413] [--md-surface:#fff] [--md-surface-soft:#f7f6f2] [--md-text:#4d5956]">
       <div className="mx-auto flex h-full w-full max-w-[1320px] items-center px-[clamp(20px,4.4vw,64px)]">
-        <a href="/" aria-label={t("Multideck — home")} className="flex min-h-11 items-center gap-2.5 rounded-[var(--md-radius-lg)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a16)]">
+        <a href={websiteUrl} aria-label={t("Multideck — home")} className="flex min-h-11 items-center gap-2.5 rounded-[var(--md-radius-lg)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a16)]">
           <img src={multideckLogoMark} alt="" className="h-[19px] w-[26px] object-contain" />
           <span className="text-[18px] font-medium leading-none">Multideck</span>
         </a>
@@ -155,7 +182,7 @@ function AuthWebsiteHeader({
           <a href="/auth" aria-current="page" className="flex min-h-11 items-center rounded-[var(--md-radius-lg)] px-3 text-[14px] font-medium text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a16)]">
             {t("Log in")}
           </a>
-          <a href="/contact#enquire" className="ms-1 flex min-h-10 items-center rounded-[var(--md-radius-xl)] bg-[var(--md-accent)] px-5 text-[14px] font-medium text-[var(--md-accent-ink)] shadow-[var(--md-shadow-soft)] transition-colors hover:bg-[var(--md-accent-hover)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a20)]">
+          <a href={enquiryUrl} className="ms-1 flex min-h-10 items-center rounded-[var(--md-radius-xl)] bg-[var(--md-accent)] px-5 text-[14px] font-medium text-[var(--md-accent-ink)] shadow-[var(--md-shadow-soft)] transition-colors hover:bg-[var(--md-accent-hover)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a20)]">
             {t("Enquire")}
           </a>
         </nav>
@@ -183,7 +210,7 @@ function AuthWebsiteHeader({
             <a href="/auth" aria-current="page" className="flex min-h-11 items-center rounded-[var(--md-radius-lg)] px-3 text-[14px] font-medium text-[var(--md-ink)]">
               {t("Log in")}
             </a>
-            <a href="/contact#enquire" className="mt-2 flex min-h-11 items-center justify-center rounded-[var(--md-radius-xl)] bg-[var(--md-accent)] px-5 text-[14px] font-medium text-[var(--md-accent-ink)]">
+            <a href={enquiryUrl} className="mt-2 flex min-h-11 items-center justify-center rounded-[var(--md-radius-xl)] bg-[var(--md-accent)] px-5 text-[14px] font-medium text-[var(--md-accent-ink)]">
               {t("Enquire")}
             </a>
           </div>
@@ -307,6 +334,17 @@ function AuthAlert({ tone, children }: { tone: "error" | "info" | "success"; chi
   )
 }
 
+function AuthFieldError({ id, children }: { id: string; children?: string | null }) {
+  if (!children) return null
+
+  return (
+    <p id={id} className="mt-2 flex items-start gap-1.5 text-[12px] leading-5 text-[var(--md-red)]">
+      <TriangleAlert className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.6} aria-hidden="true" />
+      <span>{children}</span>
+    </p>
+  )
+}
+
 function AuthField({
   label,
   value,
@@ -315,6 +353,7 @@ function AuthField({
   disabled = false,
   isSubmitting = false,
   submitLabel = "Continue",
+  error,
 }: {
   label: string
   value: string
@@ -323,9 +362,11 @@ function AuthField({
   disabled?: boolean
   isSubmitting?: boolean
   submitLabel?: string
+  error?: string | null
 }) {
   return (
     <form
+      noValidate
       className="mt-[var(--md-page-section-gap)]"
       onSubmit={(event) => {
         event.preventDefault()
@@ -345,11 +386,15 @@ function AuthField({
         dir="ltr"
         disabled={disabled || isSubmitting}
         inputMode="email"
+        required
+        aria-invalid={Boolean(error)}
+        aria-describedby={error ? "auth-email-error" : undefined}
         placeholder="john.doe@multideck.app"
         spellCheck={false}
         type="email"
         className="mt-3 h-[64px] rounded-[14px] border-0 bg-white px-5 text-[21px] text-[var(--md-ink)] shadow-[inset_0_0_0_1px_var(--md-accent-a42),0_0_0_4px_var(--md-accent-a16)] focus-visible:ring-0 disabled:bg-white/72"
       />
+      <AuthFieldError id="auth-email-error">{error}</AuthFieldError>
       <Button type="submit" disabled={disabled || isSubmitting} className="mt-[var(--md-page-stack-gap)] h-[64px] w-full rounded-[14px] bg-[var(--md-accent)] text-[18px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]">
         {isSubmitting ? <Loader2 data-icon="inline-start" className="me-2 size-5 animate-spin" strokeWidth={1.5} /> : null}
         {submitLabel}
@@ -368,6 +413,7 @@ function PasswordSignInForm({
   onForgotPassword,
   disabled = false,
   isSubmitting = false,
+  fieldErrors = {},
 }: {
   email: string
   password: string
@@ -377,9 +423,16 @@ function PasswordSignInForm({
   onForgotPassword?: () => void
   disabled?: boolean
   isSubmitting?: boolean
+  fieldErrors?: AuthFieldErrors
 }) {
+  const emailError = fieldErrors.email ?? fieldErrors.credentials
+  const passwordError = fieldErrors.password ?? fieldErrors.credentials
+  const emailErrorId = fieldErrors.credentials ? "auth-credentials-error" : "auth-password-email-error"
+  const passwordErrorId = fieldErrors.credentials ? "auth-credentials-error" : "auth-password-error"
+
   return (
     <form
+      noValidate
       className="mt-5"
       onSubmit={(event) => {
         event.preventDefault()
@@ -399,11 +452,15 @@ function PasswordSignInForm({
         dir="ltr"
         disabled={disabled || isSubmitting}
         inputMode="email"
+        required
+        aria-invalid={Boolean(emailError)}
+        aria-describedby={emailError ? emailErrorId : undefined}
         placeholder="john.doe@multideck.app"
         spellCheck={false}
         type="email"
         className="mt-2 h-12 rounded-[var(--md-radius-xl)] border-0 bg-white px-4 text-[14px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] disabled:bg-white/72"
       />
+      {fieldErrors.email ? <AuthFieldError id="auth-password-email-error">{fieldErrors.email}</AuthFieldError> : null}
 
       <div className="mt-4 flex items-center justify-between gap-4">
         <label className="text-[13px] font-medium text-[var(--md-ink)]" htmlFor="auth-password">
@@ -426,9 +483,15 @@ function PasswordSignInForm({
         data-i18n-skip
         dir="ltr"
         disabled={disabled || isSubmitting}
+        required
+        aria-invalid={Boolean(passwordError)}
+        aria-describedby={passwordError ? passwordErrorId : undefined}
+        invalidFeedbackMotion={!fieldErrors.credentials}
         type="password"
         className="mt-2 h-12 rounded-[var(--md-radius-xl)] border-0 bg-white px-4 text-[14px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] disabled:bg-white/72"
       />
+      {fieldErrors.password ? <AuthFieldError id="auth-password-error">{fieldErrors.password}</AuthFieldError> : null}
+      {fieldErrors.credentials ? <AuthFieldError id="auth-credentials-error">{fieldErrors.credentials}</AuthFieldError> : null}
 
       <Button type="submit" disabled={disabled || isSubmitting} className="mt-5 h-12 w-full rounded-[var(--md-radius-xl)] bg-[var(--md-accent)] text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]">
         {isSubmitting ? <Loader2 data-icon="inline-start" className="me-2 size-4 animate-spin" strokeWidth={1.5} /> : null}
@@ -458,6 +521,7 @@ export function WorkspaceRouterPanel({
 
     if (!isValidWorkspaceSlug(workspaceSlug)) {
       setWorkspaceError("Enter the workspace name supplied by your Multideck administrator.")
+      focusAuthControl("multideck-workspace")
       return
     }
 
@@ -522,6 +586,7 @@ export function WorkspaceRouterPanel({
       ) : null}
 
       <form
+        noValidate
         className={hasAvailableWorkspaces ? undefined : "mt-7"}
         onSubmit={(event) => {
           event.preventDefault()
@@ -539,6 +604,9 @@ export function WorkspaceRouterPanel({
             autoCorrect="off"
             spellCheck={false}
             placeholder="dev"
+            required
+            aria-invalid={Boolean(workspaceError)}
+            aria-describedby={workspaceError ? "multideck-workspace-error" : undefined}
             data-i18n-skip
             dir="ltr"
             className="h-12 rounded-[calc(var(--md-radius-xl)-4px)] border-0 bg-transparent pe-[152px] ps-3 text-[14px] font-medium text-[var(--md-ink)] shadow-none focus-visible:ring-0"
@@ -552,7 +620,7 @@ export function WorkspaceRouterPanel({
           </span>
         </div>
 
-        <AuthAlert tone="error">{workspaceError}</AuthAlert>
+        <AuthFieldError id="multideck-workspace-error">{workspaceError}</AuthFieldError>
 
         <Button
           type="submit"
@@ -583,6 +651,7 @@ function SignInPanel({
   busyProvider = null,
   message,
   error,
+  fieldErrors = {},
 }: {
   email: string
   password?: string
@@ -596,6 +665,7 @@ function SignInPanel({
   busyProvider?: AuthProviderId | null
   message?: string | null
   error?: string | null
+  fieldErrors?: AuthFieldErrors
 }) {
   return (
     <div className="w-full max-w-[520px]">
@@ -630,6 +700,7 @@ function SignInPanel({
         onForgotPassword={onForgotPassword}
         disabled={disabled || Boolean(busyProvider)}
         isSubmitting={isSubmitting}
+        fieldErrors={fieldErrors}
       />
 
       <p className="mt-6 text-[12px] leading-5 text-[var(--md-text)]">
@@ -647,6 +718,7 @@ function ForgotPasswordPanel({
   isSubmitting,
   message,
   error,
+  fieldError,
 }: {
   email: string
   onEmailChange: (value: string) => void
@@ -655,6 +727,7 @@ function ForgotPasswordPanel({
   isSubmitting: boolean
   message?: string | null
   error?: string | null
+  fieldError?: string
 }) {
   return (
     <div className="w-full max-w-[520px]">
@@ -671,6 +744,7 @@ function ForgotPasswordPanel({
       <AuthAlert tone="info">{message}</AuthAlert>
 
       <form
+        noValidate
         className="mt-7"
         onSubmit={(event) => {
           event.preventDefault()
@@ -688,11 +762,15 @@ function ForgotPasswordPanel({
           dir="ltr"
           disabled={isSubmitting}
           inputMode="email"
+          required
+          aria-invalid={Boolean(fieldError)}
+          aria-describedby={fieldError ? "recovery-email-error" : undefined}
           placeholder="john.doe@multideck.app"
           spellCheck={false}
           type="email"
           className="mt-2 h-12 rounded-[var(--md-radius-xl)] border-0 bg-white px-4 text-[14px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
         />
+        <AuthFieldError id="recovery-email-error">{fieldError}</AuthFieldError>
         <Button type="submit" disabled={isSubmitting} className="mt-5 h-12 w-full rounded-[var(--md-radius-xl)] bg-[var(--md-accent)] text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]">
           {isSubmitting ? <Loader2 data-icon="inline-start" className="me-2 size-4 animate-spin" strokeWidth={1.5} /> : null}
           {isSubmitting ? "Sending recovery link" : "Send recovery link"}
@@ -714,6 +792,7 @@ function ResetPasswordPanel({
   isSubmitting,
   message,
   error,
+  fieldErrors = {},
 }: {
   password: string
   confirmation: string
@@ -723,6 +802,7 @@ function ResetPasswordPanel({
   isSubmitting: boolean
   message?: string | null
   error?: string | null
+  fieldErrors?: AuthFieldErrors
 }) {
   return (
     <div className="w-full max-w-[520px]">
@@ -739,6 +819,7 @@ function ResetPasswordPanel({
       <AuthAlert tone="info">{message}</AuthAlert>
 
       <form
+        noValidate
         className="mt-7"
         onSubmit={(event) => {
           event.preventDefault()
@@ -754,9 +835,14 @@ function ResetPasswordPanel({
           data-i18n-skip
           dir="ltr"
           disabled={isSubmitting}
+          required
+          minLength={12}
+          aria-invalid={Boolean(fieldErrors.newPassword)}
+          aria-describedby={fieldErrors.newPassword ? "new-password-error" : undefined}
           type="password"
           className="mt-2 h-12 rounded-[var(--md-radius-xl)] border-0 bg-white px-4 text-[14px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
         />
+        <AuthFieldError id="new-password-error">{fieldErrors.newPassword}</AuthFieldError>
         <label className="mt-4 block text-[13px] font-medium text-[var(--md-ink)]" htmlFor="confirm-password">Confirm new password</label>
         <Input
           id="confirm-password"
@@ -766,9 +852,14 @@ function ResetPasswordPanel({
           data-i18n-skip
           dir="ltr"
           disabled={isSubmitting}
+          required
+          minLength={12}
+          aria-invalid={Boolean(fieldErrors.confirmation)}
+          aria-describedby={fieldErrors.confirmation ? "confirm-password-error" : undefined}
           type="password"
           className="mt-2 h-12 rounded-[var(--md-radius-xl)] border-0 bg-white px-4 text-[14px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
         />
+        <AuthFieldError id="confirm-password-error">{fieldErrors.confirmation}</AuthFieldError>
         <Button type="submit" disabled={isSubmitting} className="mt-5 h-12 w-full rounded-[var(--md-radius-xl)] bg-[var(--md-accent)] text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]">
           {isSubmitting ? <Loader2 data-icon="inline-start" className="me-2 size-4 animate-spin" strokeWidth={1.5} /> : null}
           {isSubmitting ? "Updating password" : "Update password"}
@@ -783,11 +874,13 @@ function CodeInput({
   onCodeChange,
   onComplete,
   disabled = false,
+  error,
 }: {
   code: string
   onCodeChange: (value: string) => void
   onComplete: (code: string) => void | Promise<void>
   disabled?: boolean
+  error?: string
 }) {
   const digits = code.padEnd(6, " ").slice(0, 6).split("")
 
@@ -812,27 +905,33 @@ function CodeInput({
   }
 
   return (
-    <div className="mt-[var(--md-page-section-gap)] flex gap-[var(--md-gap-lg)]" dir="ltr">
-      {digits.map((digit, index) => (
-        <Input
-          // eslint-disable-next-line react/no-array-index-key
-          key={index}
-          aria-label={`Code digit ${index + 1}`}
-          value={digit === " " ? "" : digit}
-          disabled={disabled}
-          inputMode="numeric"
-          maxLength={1}
-          onChange={(event) => updateDigit(index, event.target.value)}
-          onPaste={(event) => {
-            event.preventDefault()
-            pasteCode(event.clipboardData.getData("text"))
-          }}
-          className={cn(
-            "size-[74px] rounded-[14px] border-0 bg-white p-0 text-center text-[34px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-0 disabled:bg-white/72",
-            index === Math.min(code.length, 5) && "shadow-[inset_0_0_0_1px_var(--md-accent-a48),0_0_0_4px_var(--md-accent-a14)]",
-          )}
-        />
-      ))}
+    <div className="mt-[var(--md-page-section-gap)]" dir="ltr">
+      <div className="flex gap-[var(--md-gap-lg)]" role="group" aria-describedby={error ? "auth-code-error" : undefined}>
+        {digits.map((digit, index) => (
+          <Input
+            // eslint-disable-next-line react/no-array-index-key
+            key={index}
+            id={index === 0 ? "auth-code-1" : undefined}
+            aria-label={`Code digit ${index + 1}`}
+            aria-invalid={Boolean(error)}
+            invalidFeedbackMotion={index === 0}
+            value={digit === " " ? "" : digit}
+            disabled={disabled}
+            inputMode="numeric"
+            maxLength={1}
+            onChange={(event) => updateDigit(index, event.target.value)}
+            onPaste={(event) => {
+              event.preventDefault()
+              pasteCode(event.clipboardData.getData("text"))
+            }}
+            className={cn(
+              "size-[74px] rounded-[14px] border-0 bg-white p-0 text-center text-[34px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] focus-visible:ring-0 disabled:bg-white/72",
+              index === Math.min(code.length, 5) && "shadow-[inset_0_0_0_1px_var(--md-accent-a48),0_0_0_4px_var(--md-accent-a14)]",
+            )}
+          />
+        ))}
+      </div>
+      <AuthFieldError id="auth-code-error">{error}</AuthFieldError>
     </div>
   )
 }
@@ -848,6 +947,7 @@ function VerifyPanel({
   isSubmitting = false,
   message,
   error,
+  fieldError,
 }: {
   email: string
   code: string
@@ -859,6 +959,7 @@ function VerifyPanel({
   isSubmitting?: boolean
   message?: string | null
   error?: string | null
+  fieldError?: string
 }) {
   return (
     <div className="w-full max-w-[600px]">
@@ -871,7 +972,7 @@ function VerifyPanel({
         We sent a code to <span className="font-medium text-[var(--md-ink)]" dir="ltr" data-i18n-skip>{email}</span>
       </p>
 
-      <CodeInput code={code} onCodeChange={onCodeChange} onComplete={onComplete} disabled={disabled || isSubmitting} />
+      <CodeInput code={code} onCodeChange={onCodeChange} onComplete={onComplete} disabled={disabled || isSubmitting} error={fieldError} />
 
       <AuthAlert tone="error">{error}</AuthAlert>
       <AuthAlert tone="info">{message}</AuthAlert>
@@ -940,6 +1041,7 @@ export function AuthFlow({
   const [busyProvider, setBusyProvider] = useState<AuthProviderId | null>(null)
   const [message, setMessage] = useState<string | null>(!galleryMode && !isSupabaseConfigured ? supabaseConfigurationError : null)
   const [error, setError] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<AuthFieldErrors>({})
   const [websiteMenuOpen, setWebsiteMenuOpen] = useState(false)
 
   const goToApp = useCallback(() => {
@@ -963,6 +1065,25 @@ export function AuthFlow({
   function clearFeedback() {
     setError(null)
     setMessage(null)
+    setFieldErrors({})
+  }
+
+  function clearFieldFeedback(...fields: (keyof AuthFieldErrors)[]) {
+    setFieldErrors((current) => {
+      if (!fields.some((field) => current[field])) return current
+
+      const next = { ...current }
+      fields.forEach((field) => delete next[field])
+      return next
+    })
+    setError(null)
+  }
+
+  function showFieldError(field: keyof AuthFieldErrors, detail: string, controlId: string) {
+    setError(null)
+    setMessage(null)
+    setFieldErrors({ [field]: detail })
+    focusAuthControl(controlId)
   }
 
   async function sendMagicLink() {
@@ -970,7 +1091,8 @@ export function AuthFlow({
     const normalizedEmail = email.trim().toLowerCase()
 
     if (!isValidEmail(normalizedEmail)) {
-      setError("Enter your work email to continue.")
+      setStep("signin")
+      showFieldError("email", "Enter a valid work email.", "auth-password-email")
       return
     }
 
@@ -1010,12 +1132,12 @@ export function AuthFlow({
     const normalizedEmail = email.trim().toLowerCase()
 
     if (!isValidEmail(normalizedEmail)) {
-      setError("Enter your work email to continue.")
+      showFieldError("email", "Enter a valid work email.", "auth-password-email")
       return
     }
 
     if (!password.trim()) {
-      setError("Enter your password to continue.")
+      showFieldError("password", "Enter your password to continue.", "auth-password")
       return
     }
 
@@ -1039,8 +1161,15 @@ export function AuthFlow({
       completeSignedInSession()
     } catch (passwordError) {
       console.error(passwordError)
-      setError("Unable to sign you in with that email and password. Check your details and try again.")
-      setMessage("Password is enabled for users who already have a Supabase password.")
+      if (isInvalidCredentialsError(passwordError)) {
+        showFieldError(
+          "credentials",
+          "Email or password is incorrect. Check both and try again.",
+          "auth-password-email",
+        )
+      } else {
+        setError("Unable to sign you in right now. Check your connection and try again.")
+      }
       setIsSubmitting(false)
     }
   }
@@ -1050,7 +1179,7 @@ export function AuthFlow({
     const normalizedEmail = email.trim().toLowerCase()
 
     if (!isValidEmail(normalizedEmail)) {
-      setError("Enter your work email to continue.")
+      showFieldError("email", "Enter a valid work email.", "recovery-email")
       return
     }
     if (!supabase) {
@@ -1080,11 +1209,11 @@ export function AuthFlow({
     clearFeedback()
 
     if (password.length < 12) {
-      setError("Use at least 12 characters for your new password.")
+      showFieldError("newPassword", "Use at least 12 characters for your new password.", "new-password")
       return
     }
     if (password !== passwordConfirmation) {
-      setError("The two passwords do not match.")
+      showFieldError("confirmation", "The two passwords do not match.", "confirm-password")
       return
     }
     if (!supabase) {
@@ -1143,7 +1272,7 @@ export function AuthFlow({
       if (oauthError) throw oauthError
     } catch (providerError) {
       console.error(providerError)
-      const providerCode = typeof providerError === "object" && providerError && "code" in providerError ? String(providerError.code) : ""
+      const providerCode = getAuthErrorCode(providerError)
       setError(
         providerCode === "passkey_disabled"
           ? "Passkey sign-in is not enabled for this workspace yet."
@@ -1163,12 +1292,12 @@ export function AuthFlow({
 
     if (!isValidEmail(normalizedEmail)) {
       setStep("signin")
-      setError("Enter your work email to continue.")
+      showFieldError("email", "Enter a valid work email.", "auth-password-email")
       return
     }
 
     if (normalizedCode.length !== 6) {
-      setError("Enter the six-digit code from your email.")
+      showFieldError("code", "Enter the six-digit code from your email.", "auth-code-1")
       return
     }
 
@@ -1192,7 +1321,7 @@ export function AuthFlow({
       completeSignedInSession()
     } catch (verifyError) {
       console.error(verifyError)
-      setError("That code was not accepted. Request a new code or try again.")
+      showFieldError("code", "That code was not accepted. Request a new code or try again.", "auth-code-1")
       setIsSubmitting(false)
     }
   }
@@ -1218,8 +1347,14 @@ export function AuthFlow({
         <SignInPanel
           email={email}
           password={password}
-          onEmailChange={setEmail}
-          onPasswordChange={setPassword}
+          onEmailChange={(value) => {
+            setEmail(value)
+            clearFieldFeedback("email", "credentials")
+          }}
+          onPasswordChange={(value) => {
+            setPassword(value)
+            clearFieldFeedback("password", "credentials")
+          }}
           onPasswordSignIn={signInWithPassword}
           onForgotPassword={() => {
             clearFeedback()
@@ -1230,42 +1365,58 @@ export function AuthFlow({
           busyProvider={busyProvider}
           message={message}
           error={error}
+          fieldErrors={fieldErrors}
         />
       ) : null}
       {step === "verify" ? (
         <VerifyPanel
           email={email || "john.doe@multideck.app"}
           code={code}
-          onCodeChange={setCode}
+          onCodeChange={(value) => {
+            setCode(value)
+            clearFieldFeedback("code")
+          }}
           onBack={() => goToSignIn(false)}
           onComplete={verifyCode}
           onResend={sendMagicLink}
           isSubmitting={isSubmitting}
           message={message}
           error={error}
+          fieldError={fieldErrors.code}
         />
       ) : null}
       {step === "forgot-password" ? (
         <ForgotPasswordPanel
           email={email}
-          onEmailChange={setEmail}
+          onEmailChange={(value) => {
+            setEmail(value)
+            clearFieldFeedback("email")
+          }}
           onSubmit={sendPasswordRecovery}
           onBack={() => goToSignIn(false)}
           isSubmitting={isSubmitting}
           message={message}
           error={error}
+          fieldError={fieldErrors.email}
         />
       ) : null}
       {step === "reset-password" ? (
         <ResetPasswordPanel
           password={password}
           confirmation={passwordConfirmation}
-          onPasswordChange={setPassword}
-          onConfirmationChange={setPasswordConfirmation}
+          onPasswordChange={(value) => {
+            setPassword(value)
+            clearFieldFeedback("newPassword")
+          }}
+          onConfirmationChange={(value) => {
+            setPasswordConfirmation(value)
+            clearFieldFeedback("confirmation")
+          }}
           onSubmit={updatePassword}
           isSubmitting={isSubmitting}
           message={message}
           error={error}
+          fieldErrors={fieldErrors}
         />
       ) : null}
       {step === "signed-out" ? <SignedOutPanel onSignBackIn={() => goToSignIn(false)} onSwitchAccount={() => goToSignIn(true)} /> : null}

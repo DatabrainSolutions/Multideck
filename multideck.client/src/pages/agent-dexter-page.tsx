@@ -28,7 +28,7 @@ import {
   RefreshCw,
   Sparkles,
   type LucideIcon,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
@@ -94,6 +94,7 @@ import {
   type DexterWatch,
 } from "@/lib/dexter-api"
 import { supabase } from "@/lib/supabase"
+import { takeGeneratedDocumentForDexter } from "@/lib/generated-document-handoff"
 import {
   conversationBranchFor,
   responseGroupsFor,
@@ -107,6 +108,7 @@ import {
   rememberOpenDexterConversation,
   shouldReuseDexterConversation,
   takeDexterConversationHandoff,
+  takeDexterTaskHandoff,
   type DexterConversationsChangedDetail,
 } from "@/lib/dexter-navigation"
 import { listCustomers } from "@/lib/customer-api"
@@ -1626,6 +1628,7 @@ export function AgentDexterPage({
   const [showJumpToLatest, setShowJumpToLatest] = useState(false)
   const streamRef = useRef<HTMLDivElement>(null)
   const composerRef = useRef<HTMLDivElement>(null)
+  const computerFileInputRef = useRef<HTMLInputElement>(null)
   const stickToBottomRef = useRef(false)
   const pendingScrollToLatestRef = useRef(false)
   const isScrollingToLatestRef = useRef(false)
@@ -1639,6 +1642,33 @@ export function AgentDexterPage({
     version: 0,
   })
   const attachedItems = useAttachedItems(selectedAttachmentIds)
+  const generatedDocumentHandoffRef = useRef(false)
+  const taskHandoffRef = useRef(false)
+
+  useEffect(() => {
+    if (taskHandoffRef.current) return
+    taskHandoffRef.current = true
+    const prompt = takeDexterTaskHandoff()
+    if (!prompt) return
+    setDexterMode("chat")
+    setComposerValue(prompt)
+  }, [])
+
+  useEffect(() => {
+    if (generatedDocumentHandoffRef.current) return
+    generatedDocumentHandoffRef.current = true
+    const handoff = takeGeneratedDocumentForDexter()
+    if (!handoff) return
+    const cleanUrl = new URL(window.location.href)
+    cleanUrl.searchParams.delete("generated-document")
+    window.history.replaceState(window.history.state, "", `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`)
+    setComposerValue(t("Help me with this generated document for job {jobNumber}.").replace("{jobNumber}", handoff.jobNumber))
+    setIsUploadingDocument(true)
+    void uploadDexterDocument(new File([handoff.blob], handoff.fileName, { type: handoff.mimeType }))
+      .then((document) => setComposerUploadedDocuments([document]))
+      .catch((handoffError) => setUploadError(handoffError instanceof Error ? handoffError.message : t("Dexter could not upload that document.")))
+      .finally(() => setIsUploadingDocument(false))
+  }, [t])
   const watchMentionItems = useMemo(() => mentionItems.filter((mention) => {
     if (mention.type === "email") return true
     if (!(["booking", "lead", "deal", "quote"] as const).includes(mention.type as "booking" | "lead" | "deal" | "quote")) return false
@@ -2074,6 +2104,16 @@ export function AgentDexterPage({
       setUploadError(failed.reason instanceof Error ? failed.reason.message : t("Dexter could not upload that document."))
     }
     setIsUploadingDocument(false)
+  }
+
+  function handleComposerAttachmentAction() {
+    if (dexterMode === "chat") {
+      setShowAttachments(false)
+      setUploadError(null)
+      computerFileInputRef.current?.click()
+      return
+    }
+    setShowAttachments((value) => !value)
   }
 
   function handleComposerChange(value: string) {
@@ -2701,6 +2741,19 @@ export function AgentDexterPage({
 
   return (
     <LayoutGroup>
+      <input
+        ref={computerFileInputRef}
+        type="file"
+        multiple
+        accept=".pdf,.txt,.csv,.docx,.xlsx,.pptx,.png,.jpg,.jpeg,.webp"
+        className="sr-only"
+        tabIndex={-1}
+        onChange={(event) => {
+          const files = Array.from(event.currentTarget.files ?? [])
+          event.currentTarget.value = ""
+          if (files.length) void handleDocumentUpload(files)
+        }}
+      />
       <AnimatePresence initial={false}>
         {hasFocusOverlay ? (
           <motion.div
@@ -2787,7 +2840,8 @@ export function AgentDexterPage({
                   onUnavailableMention={(mention) => {
                     if (mention.unavailableRoute) navigate(mention.unavailableRoute)
                   }}
-                  onOpenAttachments={() => setShowAttachments((value) => !value)}
+                  onOpenAttachments={handleComposerAttachmentAction}
+                  attachmentActionLabel={dexterMode === "chat" ? "Upload files" : "Attach context"}
                   onSelectSpecialist={setSelectedSpecialistId}
                   onSelectModel={setSelectedModelId}
                   onAccessModeChange={setAccessMode}
@@ -3052,7 +3106,8 @@ export function AgentDexterPage({
                         onUnavailableMention={(mention) => {
                           if (mention.unavailableRoute) navigate(mention.unavailableRoute)
                         }}
-                        onOpenAttachments={() => setShowAttachments((value) => !value)}
+                        onOpenAttachments={handleComposerAttachmentAction}
+                        attachmentActionLabel={dexterMode === "chat" ? "Upload files" : "Attach context"}
                         onSelectSpecialist={setSelectedSpecialistId}
                         onSelectModel={setSelectedModelId}
                         onAccessModeChange={setAccessMode}

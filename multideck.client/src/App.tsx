@@ -1,4 +1,4 @@
-import { Component, lazy, startTransition, Suspense, useCallback, useEffect, useState, type CSSProperties, type ErrorInfo, type ReactNode } from "react"
+import { Component, lazy, startTransition, Suspense, useCallback, useEffect, useRef, useState, type ErrorInfo, type ReactNode } from "react"
 import type { Session } from "@supabase/supabase-js"
 import { MotionConfig } from "motion/react"
 import { ThemeProvider } from "next-themes"
@@ -10,6 +10,7 @@ import { AppShortcuts } from "@/components/multideck/app-shortcuts"
 // for the first second after a page load is worse than no shortcut, and the summon
 // only pays for its shader once it is actually opened.
 import { DexterSummon } from "@/components/multideck/dexter-summon"
+import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
 import { LanguageProvider, useLanguage } from "@/i18n/language-provider"
 import { mdMotion } from "@/lib/motion"
 import { rememberAuthReturnPath, takeAuthReturnPath } from "@/lib/auth-routing"
@@ -59,12 +60,13 @@ const CrmActivityPage = lazy(() => import("@/pages/crm-page").then((module) => (
 const CrmContactsPage = lazy(() => import("@/pages/crm-contacts-page").then((module) => ({ default: module.CrmContactsPage })))
 const CrmContactDetailPage = lazy(() => import("@/pages/crm-contact-detail-page").then((module) => ({ default: module.CrmContactDetailPage })))
 const CrmDealsPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmDealsPage })))
+const CrmDealDetailPage = lazy(() => import("@/pages/crm-deal-detail-page").then((module) => ({ default: module.CrmDealDetailPage })))
 const CrmEmailsPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmEmailsPage })))
 const CrmEmailStatsPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmEmailStatsPage })))
 const CrmEmailEditPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmEmailEditPage })))
 const CrmListsPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmListsPage })))
 const CrmListDetailPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmListDetailPage })))
-const CrmMarketingPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmMarketingPage })))
+const CrmDrivePage = lazy(() => import("@/pages/crm-drive-page").then((module) => ({ default: module.CrmDrivePage })))
 const CrmSettingsPage = lazy(() => import("@/pages/crm-page").then((module) => ({ default: module.CrmSettingsPage })))
 const CrmFormsPage = lazy(() => import("@/pages/crm-forms-page").then((module) => ({ default: module.CrmFormsPage })))
 const ContactCardsPage = lazy(() => import("@/pages/contact-cards-page").then((module) => ({ default: module.ContactCardsPage })))
@@ -110,11 +112,12 @@ const validRoutes = new Set([
   "/crm/forms",
   "/crm/leads",
   "/crm/lists",
-  "/crm/marketing",
+  "/crm/drive",
   "/crm/settings",
   "/customers",
   "/inbox",
   "/documents",
+  "/documents/templates",
   "/customs/standalone/export",
   "/customs/standalone/export/new",
   "/customs/standalone/import",
@@ -152,12 +155,27 @@ function isQuoteDetailRoute(path: string) {
   return /^\/quotes\/[^/]+$/.test(path)
 }
 
+/** A warehouse order has its own address, so the router has to recognise it. */
+function isWarehouseOrderDetailRoute(path: string) {
+  return /^\/warehouse\/orders\/[^/]+$/.test(path)
+}
+
+/** So does a warehouse item. */
+function isWarehouseItemDetailRoute(path: string) {
+  return /^\/warehouse\/items\/[^/]+$/.test(path)
+}
+
 function isRoadJobDetailRoute(path: string) {
   return /^\/road-control\/[^/]+$/.test(path) && path !== "/road-control/new"
 }
 
 function isCustomsDeclarationEditRoute(path: string) {
   return /^\/customs\/standalone\/export\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(path)
+}
+
+/** The Marketing drive became Drive; old links still have to land somewhere real. */
+function getLegacyCrmRoute(path: string) {
+  return path === "/crm/marketing" ? "/crm/drive" : null
 }
 
 function getLegacyBookingRoute(path: string) {
@@ -172,6 +190,11 @@ function isCrmLeadDetailRoute(path: string) {
 
 function isCrmAccountDetailRoute(path: string) {
   return /^\/crm\/accounts\/[^/]+$/.test(path)
+}
+
+/** A deal has its own address, so the router has to recognise it. */
+function isCrmDealDetailRoute(path: string) {
+  return /^\/crm\/deals\/[^/]+$/.test(path)
 }
 
 function isCrmContactDetailRoute(path: string) {
@@ -211,14 +234,19 @@ function getRoute() {
   if (window.location.pathname === "/app" || window.location.pathname === "/app/") return "/"
   const legacyBookingRoute = getLegacyBookingRoute(window.location.pathname)
   if (legacyBookingRoute) return legacyBookingRoute
+  const legacyCrmRoute = getLegacyCrmRoute(window.location.pathname)
+  if (legacyCrmRoute) return legacyCrmRoute
   if (window.location.pathname.startsWith("/reports/rpt-")) return window.location.pathname
   if (isBookingDetailRoute(window.location.pathname)) return window.location.pathname
   if (isRoadJobDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCustomsDeclarationEditRoute(window.location.pathname)) return window.location.pathname
   if (isQuoteDetailRoute(window.location.pathname)) return window.location.pathname
+  if (isWarehouseOrderDetailRoute(window.location.pathname)) return window.location.pathname
+  if (isWarehouseItemDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCustomerDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCrmAccountDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCrmContactDetailRoute(window.location.pathname)) return window.location.pathname
+  if (isCrmDealDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCrmLeadConversionRoute(window.location.pathname)) return window.location.pathname
   if (isCrmLeadDetailRoute(window.location.pathname)) return window.location.pathname
   if (isContactCardDetailRoute(window.location.pathname)) return window.location.pathname
@@ -231,40 +259,19 @@ function getRoute() {
 
 function canCustomerOpenRoute(user: AuthUserSummary, path: string) {
   if (["/warehouse/inventory", "/warehouse/orders", "/warehouse/items"].includes(path)) return true
+  // A customer who can see a register can open one of its records.
+  if (isWarehouseOrderDetailRoute(path) || isWarehouseItemDetailRoute(path)) return true
   return path === "/warehouse/users" && user.permissions.includes("Warehouse.Users.ManageOwn")
 }
 
-const thinkingDotOrder = [
-  0, 1, 2, 3, 4,
-  15, 16, 17, 18, 5,
-  14, 23, 24, 19, 6,
-  13, 22, 21, 20, 7,
-  12, 11, 10, 9, 8,
-]
-
 function RouteFallback({ fullScreen = false }: { fullScreen?: boolean }) {
-  const { t } = useLanguage()
-
   return (
     <div
-      role="status"
-      aria-live="polite"
       className={fullScreen
         ? "grid min-h-screen place-items-center bg-[var(--md-bg)] text-[var(--md-ink)]"
         : "grid min-h-[calc(100dvh-104px)] place-items-center bg-[var(--md-bg)] text-[var(--md-ink)]"}
     >
-      <div className="flex flex-col items-center gap-4">
-        <div className="grid grid-cols-5 gap-[3px] text-[var(--md-accent)]" aria-hidden="true">
-          {thinkingDotOrder.map((order) => (
-            <span
-              key={order}
-              className="md-thinking-dot block size-1 rounded-full bg-current"
-              style={{ animationDelay: `${order * 48 - 576}ms` } as CSSProperties}
-            />
-          ))}
-        </div>
-        <p className="text-[14px] font-medium text-[var(--md-text)]">{t("Loading…")}</p>
-      </div>
+      <DotGridLoader label="Loading…" />
     </div>
   )
 }
@@ -326,6 +333,7 @@ export default function App() {
   const [authStatus, setAuthStatus] = useState<AuthStatus>(isSupabaseConfigured ? "checking" : "unauthenticated")
   const [currentUser, setCurrentUser] = useState<AuthUserSummary | null>(null)
   const [profileMediaUrls, setProfileMediaUrls] = useState<ProfileMediaUrls>(emptyProfileMediaUrls)
+  const hasResolvedAuthenticatedSessionRef = useRef(false)
   const isLocalNavigationLab = import.meta.env.DEV
     && (route === "/playground/navigation" || route === "/settings")
   const isPasswordRecoveryRoute = route === "/auth" && new URLSearchParams(window.location.search).get("mode") === "reset-password"
@@ -336,13 +344,22 @@ export default function App() {
   useEffect(() => {
     if (authStatus !== "authenticated" || currentUser?.actorType === "customer") return
 
-    const timeoutId = window.setTimeout(() => {
+    const crmTimeoutId = window.setTimeout(() => {
       void import("@/lib/crm-prefetch")
         .then(({ prefetchCrmCollections }) => prefetchCrmCollections())
         .catch(() => undefined)
     }, 250)
 
-    return () => window.clearTimeout(timeoutId)
+    const warehouseTimeoutId = window.setTimeout(() => {
+      void import("@/lib/warehouse-prefetch")
+        .then(({ prefetchWarehouseCollections }) => prefetchWarehouseCollections())
+        .catch(() => undefined)
+    }, 500)
+
+    return () => {
+      window.clearTimeout(crmTimeoutId)
+      window.clearTimeout(warehouseTimeoutId)
+    }
   }, [authStatus, currentUser?.actorType])
   const handleProfilePhotoChange = useCallback((profilePhoto: UserProfilePhoto | null, profilePhotoUrl: string | null) => {
     setCurrentUser((user) => user ? { ...user, profilePhoto, profilePhotoUrl } : user)
@@ -410,17 +427,23 @@ export default function App() {
     let cancelled = false
 
     let sessionRequest = 0
+    let activeAccessToken: string | null = null
     const applySession = (session: Session | null) => {
       if (cancelled) return
-      const requestId = ++sessionRequest
 
       if (!session?.user) {
+        activeAccessToken = null
+        hasResolvedAuthenticatedSessionRef.current = false
         setCurrentUser(null)
         setAuthStatus("unauthenticated")
         return
       }
 
-      setAuthStatus("checking")
+      if (activeAccessToken === session.access_token) return
+      activeAccessToken = session.access_token
+      const requestId = ++sessionRequest
+
+      if (!hasResolvedAuthenticatedSessionRef.current) setAuthStatus("checking")
       getApiAuthSession(session.access_token)
         .then((apiSession) => apiSession.profile)
         .catch((error) => {
@@ -431,6 +454,7 @@ export default function App() {
           if (cancelled || requestId !== sessionRequest) return
           const nextUser = summarizeAuthUser(session.user, apiProfile)
 
+          hasResolvedAuthenticatedSessionRef.current = true
           setCurrentUser(nextUser)
           setAuthStatus("authenticated")
         })
@@ -487,7 +511,7 @@ export default function App() {
 
     if (authStatus === "unauthenticated" && route !== "/auth" && !isLocalNavigationLab) {
       rememberAuthReturnPath()
-      window.location.replace(import.meta.env.DEV ? "/auth" : "/")
+      window.location.replace("/auth")
       return
     }
 
@@ -503,6 +527,14 @@ export default function App() {
     window.history.replaceState({}, "", currentUser.landingPath)
     startTransition(() => setRoute(getRoute()))
   }, [authStatus, currentUser, route])
+
+  // A bookmark on the old path is rewritten in place, so the address bar stops
+  // showing a name the product no longer uses.
+  useEffect(() => {
+    if (getLegacyCrmRoute(window.location.pathname)) {
+      window.history.replaceState(window.history.state, "", route)
+    }
+  }, [route])
 
   function navigate(path: string) {
     if (currentUser?.actorType === "customer" && !canCustomerOpenRoute(currentUser, path)) {
@@ -538,10 +570,6 @@ export default function App() {
               <Suspense fallback={<RouteFallback fullScreen />}>
                 <AuthFlowPage navigate={navigate} />
               </Suspense>
-            ) : isBookingDetailRoute(route) ? (
-              <Suspense fallback={<RouteFallback fullScreen />}>
-                <BookingDetailPage navigate={navigate} bookingId={route.split("/").at(-1) ?? "md-22455"} />
-              </Suspense>
             ) : route.startsWith("/reports/rpt-") ? (
               <Suspense fallback={<RouteFallback fullScreen />}>
                 <ReportViewerPage navigate={navigate} reportId={route.split("/").at(-1) ?? "rpt-marlow-may-review"} />
@@ -572,19 +600,20 @@ export default function App() {
                   {route === "/crm/activity" ? <CrmActivityPage navigate={navigate} /> : null}
                   {route === "/crm/contacts" ? <CrmContactsPage navigate={navigate} /> : null}
                   {isCrmContactDetailRoute(route) ? <CrmContactDetailPage contactId={route.split("/").at(-1) ?? ""} navigate={navigate} /> : null}
-                  {route === "/crm/deals" ? <CrmDealsPage currentUser={currentUser} /> : null}
+                  {route === "/crm/deals" ? <CrmDealsPage currentUser={currentUser} navigate={navigate} /> : null}
+                  {isCrmDealDetailRoute(route) ? <CrmDealDetailPage key={route} dealId={route.split("/").at(-1) ?? ""} navigate={navigate} /> : null}
                   {route === "/crm/emails" ? <CrmEmailsPage navigate={navigate} /> : null}
                   {route === "/crm/forms" ? <CrmFormsPage /> : null}
                   {isCrmEmailStatsRoute(route) ? <CrmEmailStatsPage navigate={navigate} campaignId={route.split("/").at(-2) ?? ""} /> : null}
                   {isCrmEmailEditRoute(route) ? <CrmEmailEditPage navigate={navigate} campaignId={route.split("/").at(-2) ?? ""} /> : null}
                   {route === "/crm/lists" ? <CrmListsPage navigate={navigate} /> : null}
                   {isCrmListDetailRoute(route) ? <CrmListDetailPage navigate={navigate} listId={route.split("/").at(-1) ?? ""} /> : null}
-                  {route === "/crm/marketing" ? <CrmMarketingPage /> : null}
+                  {route === "/crm/drive" ? <CrmDrivePage /> : null}
                   {route === "/crm/settings" ? <CrmSettingsPage currentUser={currentUser} /> : null}
                   {route === "/customers" ? <CustomersPage navigate={navigate} /> : null}
                   {isCustomerDetailRoute(route) ? <CustomerDetailPage customerId={route.split("/").at(-1) ?? ""} /> : null}
                   {route === "/inbox" ? <InboxPage navigate={navigate} /> : null}
-                  {route === "/documents" ? <DocumentsPage navigate={navigate} /> : null}
+                  {route === "/documents" || route === "/documents/templates" ? <DocumentsPage navigate={navigate} /> : null}
                   {route.startsWith("/customs/") ? <CustomsDeclarationsPage route={route} navigate={navigate} /> : null}
                   {route === "/paper-tray" ? <PaperTrayPage /> : null}
                   {route === "/playground/navigation" ? <NavigationLabPage /> : null}
@@ -600,8 +629,9 @@ export default function App() {
                       onCoverPhotoChange={handleCoverPhotoChange}
                     />
                   ) : null}
-                  {route.startsWith("/warehouse") ? <WarehousePage route={route} currentUser={currentUser} /> : null}
+                  {route.startsWith("/warehouse") ? <WarehousePage route={route} currentUser={currentUser} navigate={navigate} /> : null}
                   {route === "/bookings" ? <BookingsPage navigate={navigate} /> : null}
+                  {isBookingDetailRoute(route) ? <BookingDetailPage navigate={navigate} bookingId={route.split("/").at(-1) ?? "md-22455"} /> : null}
                   {route === "/road-control" ? <RoadControlPage navigate={navigate} /> : null}
                   {route === "/road-control/new" ? <DomesticRoadBookingPage navigate={navigate} /> : null}
                   {isRoadJobDetailRoute(route) ? <DomesticRoadBookingPage key={route} navigate={navigate} roadJobId={route.split("/").at(-1) ?? ""} /> : null}

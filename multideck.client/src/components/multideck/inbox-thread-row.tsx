@@ -1,4 +1,4 @@
-import { Paperclip, Star } from "lucide-react"
+import { Paperclip, Star } from "@/components/icons/hugeicons"
 import { motion, useReducedMotion } from "motion/react"
 import { useLanguage } from "@/i18n/language-provider"
 import { mdMotion, reduceMotion } from "@/lib/motion"

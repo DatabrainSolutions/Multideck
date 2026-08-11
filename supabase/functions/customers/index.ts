@@ -19,6 +19,12 @@ function objectValue(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
 }
 
+function countryCode(value: unknown) {
+  const code = normalize(value)?.toUpperCase() ?? null
+  if (code && !/^[A-Z]{2}$/.test(code)) throw new HttpError(400, "Enter a two-letter ISO country code, such as GB.")
+  return code
+}
+
 function contactName(contact: Row) {
   return [contact.OrgContact_FirstName, contact.OrgContact_LastName].filter(Boolean).join(" ").trim()
 }
@@ -375,6 +381,8 @@ async function updateAccount(admin: any, current: Row, id: string, payload: Row)
   if (!org) throw new HttpError(404, "Account not found.")
   const name = normalize(payload.name)
   if (!name) throw new HttpError(400, "Enter an account name.")
+  const address = objectValue(payload.address)
+  const addressCountryCode = countryCode(address.countryCode)
   const now = new Date().toISOString()
   const { error: orgError } = await admin.from("Org_Master").update({ Org_Name: name, Org_CRMRelationshipStatusCode: normalize(payload.relationshipStatus), Org_CRMUpdatedAt: now }).eq("Org_id", id)
   if (orgError) throw new HttpError(500, orgError.message)
@@ -401,7 +409,6 @@ async function updateAccount(admin: any, current: Row, id: string, payload: Row)
   const { data: profile, error: profileError } = await admin.from("CRM_AccountProfiles").upsert(profileRow, { onConflict: "CRMAccount_OrgID" }).select("CRMAccount_ID").single()
   if (profileError) throw new HttpError(500, profileError.message)
 
-  const address = objectValue(payload.address)
   const { data: existingAddress } = await admin.from("Org_Addresses").select("OrgAdd_ID").eq("Org_ID", id).limit(1).maybeSingle()
   const addressRow = {
     Org_ID: id,
@@ -410,7 +417,7 @@ async function updateAccount(admin: any, current: Row, id: string, payload: Row)
     OrgAdd_TownCity: normalize(address.townCity),
     OrgAdd_CountyState: normalize(address.countyState),
     OrgAdd_PostZipCode: normalize(address.postZipCode),
-    OrgAdd_Country: normalize(address.countryCode)?.toUpperCase(),
+    OrgAdd_Country: addressCountryCode,
     OrgAdd_MainEmail: normalize(address.mainEmail)?.toLowerCase(),
     OrgAdd_MainPhone: normalize(address.mainPhone),
   }
@@ -572,6 +579,7 @@ Deno.serve(async (request) => {
       const payload = await body<Row>(request)
       const name = normalize(payload.name)
       if (!name) throw new HttpError(400, "Enter an account name.")
+      const addressCountryCode = countryCode(payload.countryCode)
       const { data: existing } = await admin.from("Org_Master").select("Org_id").ilike("Org_Name", name).maybeSingle()
       if (existing) throw new HttpError(409, `An account named '${name}' already exists.`)
       const { data: type } = await admin.from("Org_Types").select("OrgType_ID").eq("OrgType_ID", payload.orgTypeId).maybeSingle()
@@ -602,8 +610,8 @@ Deno.serve(async (request) => {
         CRMAccount_OwnerUserID: current.User_ID, CRMAccount_CreatedBy: current.User_ID, CRMAccount_UpdatedBy: current.User_ID,
       })
       if (profileInsert.error) throw new HttpError(500, profileInsert.error.message)
-      if (normalize(payload.addressLine1) || normalize(payload.townCity) || normalize(payload.countryCode)) {
-        const addressInsert = await admin.from("Org_Addresses").insert({ OrgAdd_ID: crypto.randomUUID(), Org_ID: id, OrgAdd_Line1: normalize(payload.addressLine1), OrgAdd_TownCity: normalize(payload.townCity), OrgAdd_PostZipCode: normalize(payload.postZipCode), OrgAdd_Country: normalize(payload.countryCode)?.toUpperCase() })
+      if (normalize(payload.addressLine1) || normalize(payload.townCity) || addressCountryCode) {
+        const addressInsert = await admin.from("Org_Addresses").insert({ OrgAdd_ID: crypto.randomUUID(), Org_ID: id, OrgAdd_Line1: normalize(payload.addressLine1), OrgAdd_TownCity: normalize(payload.townCity), OrgAdd_PostZipCode: normalize(payload.postZipCode), OrgAdd_Country: addressCountryCode })
         if (addressInsert.error) throw new HttpError(500, addressInsert.error.message)
       }
       if (normalize(payload.contactFirstName) || normalize(payload.contactLastName) || normalize(payload.contactEmail)) {

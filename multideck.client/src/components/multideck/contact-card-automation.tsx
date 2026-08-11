@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { ChevronDown, ChevronUp, CircleCheck, CirclePause, CirclePlay, Filter, LoaderCircle, Mail, RotateCcw, TestTube2, TriangleAlert, Workflow, X, Zap } from "lucide-react"
+import { ChevronDown, ChevronUp, CircleCheck, CirclePause, CirclePlay, Filter, Health, LoaderCircle, Mail, MorphingIcon, RotateCcw, TestTube2, TriangleAlert, Workflow, X } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import {
@@ -762,7 +762,7 @@ export function AutomationRunHistory({ runs, onRerun }: { runs: AutomationRun[];
                 <span className="text-[12.5px] text-[var(--md-text)] tabular-nums">{new Date(run.startedAt).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}<span className="ms-2 text-[var(--md-subtle)]">{run.trigger}</span></span>
                 <span className="text-[12px] text-[var(--md-subtle)] tabular-nums">{run.durationMs < 1000 ? `${run.durationMs}ms` : `${(run.durationMs / 1000).toFixed(1)}s`}</span>
                 <span className="text-[12px] text-[var(--md-subtle)] tabular-nums">{run.recordsAffected}</span>
-                <span className="grid size-8 place-items-center text-[var(--md-subtle)]">{open ? <ChevronUp className="size-4" strokeWidth={1.5} /> : <ChevronDown className="size-4" strokeWidth={1.5} />}</span>
+                <span className="grid size-8 place-items-center text-[var(--md-subtle)]"><MorphingIcon from={ChevronDown} to={ChevronUp} active={open} className="size-4" strokeWidth={1.5} /></span>
               </button>
 
               {open ? (
@@ -902,7 +902,7 @@ export function CardAutomationPanel({ card }: { card: ContactCard }) {
       {/* Health first: at an event, the fastest action must be to stop it. */}
       <StatusBand
         tone={health.tone === "amber" ? "warning" : health.tone === "green" ? "positive" : "neutral"}
-        icon={health.tone === "amber" ? TriangleAlert : Zap}
+        icon={Health}
         title={`${t("Automation")} · ${t(health.label)}`}
         detail={
           <>
@@ -1069,7 +1069,7 @@ export function AutomationSummaryBand({ card, onOpen }: { card: ContactCard; onO
   return (
     <StatusBand
       tone={health.tone === "amber" ? "warning" : "neutral"}
-      icon={health.tone === "amber" ? TriangleAlert : Zap}
+      icon={Health}
       title={`${t("Automation")} · ${t(health.label)}`}
       detail={
         <>

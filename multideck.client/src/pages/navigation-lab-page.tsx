@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react"
-import { Archive, BarChart3, BellRing, Boxes, BriefcaseBusiness, Building2, ChartLine, ChevronDown, ClipboardCheck, Database, FileSpreadsheet, FileText, Landmark, MapPinned, PackageCheck, ReceiptText, Route, Search, Settings2, Ship, Star, Users, Workflow } from "lucide-react"
+import { Archive, BarChart3, BellRing, Boxes, BriefcaseBusiness, Building2, ChartAnalysis, ChartLine, ChevronDown, ClipboardCheck, Database, FileSpreadsheet, FileText, Landmark, MapPinned, PackageCheck, ReceiptText, Route, Search, Settings2, Ship, Star, Users, Workflow } from "@/components/icons/hugeicons"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -63,7 +63,7 @@ const menuGroups: MenuGroup[] = [
     { label: "Stock counts", detail: "Cycle counts, variances and approvals", icon: FileSpreadsheet, roles: ["Operations", "Admin"] },
   ] },
   { label: "Insights", detail: "Reporting, data and continuous improvement", icon: Database, items: [
-    { label: "Reports", detail: "Recurring operational and commercial reports", icon: BarChart3, roles: ["Operations", "Commercial", "Finance", "Admin"] },
+    { label: "Reports", detail: "Recurring operational and commercial reports", icon: ChartAnalysis, roles: ["Operations", "Commercial", "Finance", "Admin"] },
     { label: "Report builder", detail: "Create reusable views with governed data", icon: FileSpreadsheet, roles: ["Operations", "Commercial", "Finance", "Admin"] },
     { label: "Dashboards", detail: "Team scorecards and executive views", icon: ChartLine, roles: ["Operations", "Commercial", "Finance", "Admin"] },
     { label: "Data quality", detail: "Completeness, validation and correction queues", icon: Database, roles: ["Operations", "Commercial", "Finance", "Admin"] },

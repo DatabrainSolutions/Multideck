@@ -256,6 +256,8 @@ export type InboxMessage = {
    * never hands it to `dangerouslySetInnerHTML`.
    */
   sanitizedHtml: string | null
+  /** False for delivery reports and other automated receipts that must not hijack Reply. */
+  replyEligible: boolean
   attachments: MailAttachment[]
   delivery?: InboxDelivery
 }
@@ -727,6 +729,7 @@ function normalizeMessage(value: unknown, threadId: string): InboxMessage {
     receivedAt: direction === "inbound" ? occurredAt : readOptionalText(pickField(record, "receivedAt")),
     bodyText: readOptionalText(pickField(record, "bodyText", "text")),
     sanitizedHtml: readOptionalText(pickField(record, "sanitizedHtml", "safeBodyHtml", "bodyHtml")),
+    replyEligible: readFlag(pickField(record, "replyEligible"), true),
     attachments: readList(pickField(record, "attachments")).map(normalizeAttachment),
     delivery: direction === "outbound" ? {
       status: deliveryStatus,
@@ -740,6 +743,13 @@ function normalizeMessage(value: unknown, threadId: string): InboxMessage {
       confidence: readText(pickField(rawDelivery, "confidence")) === "estimated" ? "estimated" : readText(pickField(rawDelivery, "confidence")) === "confirmed" ? "confirmed" : "none",
     } : undefined,
   }
+}
+
+export function latestReplySource(messages: InboxMessage[]) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].replyEligible) return messages[index]
+  }
+  return null
 }
 
 export function normalizeThreadDetail(value: unknown, requestedId: string): InboxThreadDetail {
@@ -1076,4 +1086,42 @@ export function resolveMailboxForProvider(
   return candidates.find((mailbox) => mailbox.isDefault && mailbox.kind === "personal")
     ?? candidates.find((mailbox) => mailbox.kind === "personal")
     ?? candidates[0]
+}
+
+/**
+ * Resolves the provider used when a mail surface opens without an explicit
+ * provider. A saved operator preference wins, but never over a provider named
+ * by a deep link and never when that provider has no accessible mailbox.
+ */
+export function resolveDefaultInboxProvider(
+  mailboxes: Mailbox[],
+  preferredProvider: MailProvider | null,
+  requestedProvider: MailProvider | null = null,
+): MailProvider | null {
+  const availableProviders = (["gmail", "outlook"] as MailProvider[])
+    .filter((provider) => mailboxes.some((mailbox) => mailbox.provider === provider))
+
+  if (requestedProvider && availableProviders.includes(requestedProvider)) return requestedProvider
+  if (preferredProvider && availableProviders.includes(preferredProvider)) return preferredProvider
+
+  return mailboxes.find((mailbox) => mailbox.isDefault)?.provider
+    ?? availableProviders[0]
+    ?? null
+}
+
+/** The first send-capable mailbox for a new composer, scoped to its preferred provider. */
+export function resolveDefaultOutboundMailbox(
+  mailboxes: Mailbox[],
+  preferredProvider: MailProvider | null,
+  currentMailboxId: string | null = null,
+): Mailbox | null {
+  const capable = mailboxes.filter((mailbox) =>
+    mailbox.outboundEnabled
+    && (mailbox.status === "connected" || mailbox.status === "syncing"))
+  const current = capable.find((mailbox) => mailbox.id === currentMailboxId)
+  if (current) return current
+
+  const provider = resolveDefaultInboxProvider(capable, preferredProvider)
+  if (!provider) return null
+  return resolveMailboxForProvider(capable, provider, null)
 }

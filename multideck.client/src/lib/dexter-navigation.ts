@@ -13,6 +13,7 @@ export function announceDexterConversationsChanged(detail: DexterConversationsCh
 }
 
 const conversationHandoffKey = "multideck.dexterConversationHandoff"
+const taskHandoffKey = "multideck.dexterTaskHandoff"
 const conversationQueryKey = "conversation"
 const conversationIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -78,6 +79,35 @@ export function takeDexterConversationHandoff() {
     const id = window.sessionStorage.getItem(conversationHandoffKey)
     if (id) window.sessionStorage.removeItem(conversationHandoffKey)
     return id
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Pass a reviewed piece of work into Dexter without sending it automatically.
+ * The destination consumes this once and places it in the composer so the
+ * operator can amend or approve the request before Dexter acts.
+ */
+export function rememberDexterTaskHandoff(prompt: string) {
+  if (typeof window === "undefined") return
+  const value = prompt.trim()
+  if (!value) return
+
+  try {
+    window.sessionStorage.setItem(taskHandoffKey, value)
+  } catch {
+    // Dexter still opens; it simply starts with an empty composer.
+  }
+}
+
+export function takeDexterTaskHandoff() {
+  if (typeof window === "undefined") return null
+
+  try {
+    const prompt = window.sessionStorage.getItem(taskHandoffKey)?.trim() ?? ""
+    if (prompt) window.sessionStorage.removeItem(taskHandoffKey)
+    return prompt || null
   } catch {
     return null
   }

@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useState } from "react"
-import { KanbanSquare, List, SlidersHorizontal } from "lucide-react"
+import { KanbanSquare, List, SlidersHorizontal } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
-import { DomesticJobStageRail, DomesticRoadJobCard, DomesticRoadKanbanBoard, domesticRoadJobs, roadJobStageStatus, roadJobStages, type RoadJobStageId } from "@/components/multideck/domestic-road-components"
+import { DomesticJobStageRail, DomesticRoadJobCard, DomesticRoadKanbanBoard, roadJobStageStatus, roadJobStages, type DomesticRoadJob, type RoadJobStageId } from "@/components/multideck/domestic-road-components"
 import { PageSettingsMenu, type PageSettingsViewOption } from "@/components/multideck/page-settings-menu"
 import { Surface } from "@/components/multideck/surface"
 import { SegmentedControl } from "@/components/multideck/workflow-components"
 import { useLanguage } from "@/i18n/language-provider"
 import { getSavedView, saveView } from "@/lib/view-preferences"
+import { listLiveRoadJobs } from "@/lib/application-data-api"
 
 const roadScopeOptions = ["My Jobs", "All Jobs", "Starred Jobs"] as const
 type RoadScope = (typeof roadScopeOptions)[number]
@@ -26,9 +27,19 @@ export function RoadControlPage({ navigate }: { navigate: (path: string) => void
   const [activeStage, setActiveStage] = useState<RoadJobStageId>("ready")
   const [scope, setScope] = useState<RoadScope>("All Jobs")
   const [viewMode, setViewMode] = useState<RoadViewMode>(() => getSavedView(roadViewStorageKey, roadViewModes, roadViewModes[0]))
-  const [roadJobs, setRoadJobs] = useState(() => [...domesticRoadJobs])
+  const [roadJobs, setRoadJobs] = useState<DomesticRoadJob[]>([])
+  const [roadJobsLoading, setRoadJobsLoading] = useState(true)
+  const [roadJobsError, setRoadJobsError] = useState<string | null>(null)
   const [favouriteIds, setFavouriteIds] = useState<Set<string>>(() => new Set())
   const [dexterOpen, setDexterOpen] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    void listLiveRoadJobs().then((records) => { if (!cancelled) setRoadJobs(records) }).catch((error) => {
+      if (!cancelled) setRoadJobsError(error instanceof Error ? error.message : "Road jobs could not be loaded.")
+    }).finally(() => { if (!cancelled) setRoadJobsLoading(false) })
+    return () => { cancelled = true }
+  }, [])
 
   const stages = useMemo(() => roadJobStages.map((item) => ({
     ...item,
@@ -57,7 +68,7 @@ export function RoadControlPage({ navigate }: { navigate: (path: string) => void
     })
   }
 
-  function moveRoadJob(jobId: string, stage: RoadJobStageId, orderedJobs?: typeof domesticRoadJobs) {
+  function moveRoadJob(jobId: string, stage: RoadJobStageId, orderedJobs?: DomesticRoadJob[]) {
     setRoadJobs((current) => {
       if (!orderedJobs) {
         return current.map((job) => job.id === jobId && job.stage !== stage ? { ...job, stage, ...roadJobStageStatus[stage] } : job)
@@ -78,9 +89,12 @@ export function RoadControlPage({ navigate }: { navigate: (path: string) => void
         <PageSettingsMenu title={t("Road control settings")} viewLabel={t("View")} viewOptions={roadViewOptions} value={viewMode} onViewChange={setViewMode} />
       </header>
 
-      {viewMode === "List" ? <DomesticJobStageRail stages={stages} activeStage={activeStage} onStageChange={setActiveStage} /> : null}
+      {roadJobsLoading ? <Surface className="rounded-[var(--md-radius-xl)] py-8 text-center"><p className="text-[13px] text-[var(--md-text)]">{t("Loading road jobs...")}</p></Surface> : null}
+      {roadJobsError ? <Surface role="alert" className="rounded-[var(--md-radius-xl)] py-6 text-center"><p className="text-[13px] text-[var(--md-red)]">{t("Road jobs could not be loaded.")} {roadJobsError}</p></Surface> : null}
 
-      {viewMode === "List" && activeStage === "intake" ? (
+      {!roadJobsLoading && !roadJobsError && viewMode === "List" ? <DomesticJobStageRail stages={stages} activeStage={activeStage} onStageChange={setActiveStage} /> : null}
+
+      {!roadJobsLoading && !roadJobsError && viewMode === "List" && activeStage === "intake" ? (
         <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
           <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -92,7 +106,7 @@ export function RoadControlPage({ navigate }: { navigate: (path: string) => void
         </Surface>
       ) : null}
 
-      {viewMode === "List" ? <section className="min-w-0">
+      {!roadJobsLoading && !roadJobsError ? (viewMode === "List" ? <section className="min-w-0">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
             <h2 className="text-[15px] font-medium text-[var(--md-ink)]">{t(stage.label)}</h2>
@@ -109,7 +123,7 @@ export function RoadControlPage({ navigate }: { navigate: (path: string) => void
             </Surface>
           ) : null}
         </div>
-      </section> : <DomesticRoadKanbanBoard jobs={scopedJobs} favouriteIds={favouriteIds} onMoveJob={moveRoadJob} onToggleFavourite={(job) => toggleFavourite(job.bookingId)} onOpenBooking={(job) => navigate(`/road-control/${job.id.toLowerCase()}`)} />}
+      </section> : <DomesticRoadKanbanBoard jobs={scopedJobs} favouriteIds={favouriteIds} onMoveJob={moveRoadJob} onToggleFavourite={(job) => toggleFavourite(job.bookingId)} onOpenBooking={(job) => navigate(`/road-control/${job.id.toLowerCase()}`)} />) : null}
     </DexterDockedPage>
   )
 }

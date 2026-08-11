@@ -1,5 +1,5 @@
 import { useId } from "react"
-import { Check, LoaderCircle, Minus, Pencil, Plus, X } from "lucide-react"
+import { Check, LoaderCircle, Minus, Pencil, Plus, X } from "@/components/icons/hugeicons"
 import { motion, useReducedMotion } from "motion/react"
 
 import { Button } from "@/components/ui/button"

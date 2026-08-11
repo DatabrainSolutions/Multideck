@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { LoaderCircle } from "lucide-react"
+import { LoaderCircle } from "@/components/icons/hugeicons"
 import { Switch } from "@/components/ui/switch"
 import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"

@@ -1,6 +1,6 @@
 import { useTheme } from "next-themes"
 import { Toaster as Sonner, type ToasterProps } from "sonner"
-import { Loader2Icon } from "lucide-react"
+import { Loader2Icon } from "@/components/icons/hugeicons"
 import toastErrorIcon from "@/assets/toasts/toast-error.png"
 import toastGeneralIcon from "@/assets/toasts/toast-general.png"
 import toastSuccessIcon from "@/assets/toasts/toast-success.png"

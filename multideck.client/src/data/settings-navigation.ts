@@ -1,4 +1,5 @@
 import {
+  AiBrain,
   Bell,
   BookOpen,
   Cloud,
@@ -7,13 +8,12 @@ import {
   LifeBuoy,
   Megaphone,
   Palette,
-  PenLine,
   ShieldCheck,
   Sparkles,
   UserRound,
   UsersRound,
   type LucideIcon,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 
 export type SettingsSectionId =
   | "profile"
@@ -52,7 +52,7 @@ export const settingsNavigationGroups: SettingsNavigationGroup[] = [
       { id: "notifications", label: "Notifications", description: "Alerts, digests and delivery", icon: Bell },
       { id: "customisation", label: "Customisation", description: "Language, theme and density", icon: Palette },
       { id: "shortcuts", label: "Keyboard shortcuts", description: "Summon Dexter and jump anywhere", icon: Command },
-      { id: "dexter", label: "Dexter", description: "Personal email writing style", icon: PenLine },
+      { id: "dexter", label: "Dexter", description: "Personal email writing style", icon: AiBrain },
     ],
   },
   {

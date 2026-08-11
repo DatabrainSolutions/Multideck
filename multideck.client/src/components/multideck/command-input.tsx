@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { FileText, Search, Ship } from "lucide-react"
+import { FileText, Search, Ship } from "@/components/icons/hugeicons"
 import { Input } from "@/components/ui/input"
 import { ShortcutKeys } from "@/components/multideck/keyboard-shortcut-keys"
 import { useLanguage } from "@/i18n/language-provider"

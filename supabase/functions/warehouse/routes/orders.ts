@@ -228,7 +228,7 @@ export async function handleOrders(request, path, url, admin, actor) {
     return await mapOrders(admin, rows, context);
   }
   const input = request.method === "POST" && request.headers.get("content-type")?.includes("application/json") ? bodyObject(await request.json()) : {};
-  const action = !orderId ? "create" : path[2] === "receive" ? "receive" : path[2] === "dispatch" ? "dispatch" : path[2] === "cancel" ? "cancel" : null;
+  const action = !orderId ? "create" : path[2] === "receive" ? "receive" : path[2] === "dispatch" ? "dispatch" : path[2] === "cancel" ? "cancel" : path[2] === "reschedule" ? "reschedule" : null;
   if (!action) throw new HttpError(404, "Warehouse endpoint not found.");
   if (!actor.companyId) {
     if (action === "create") {

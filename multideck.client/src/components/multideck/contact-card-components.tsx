@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { Check, Download, ExternalLink, LoaderCircle, RefreshCw, TriangleAlert, type LucideIcon } from "lucide-react"
+import { Check, Download, ExternalLink, LoaderCircle, RefreshCw, TriangleAlert, type LucideIcon } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"

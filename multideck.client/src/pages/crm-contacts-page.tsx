@@ -1,22 +1,28 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react"
-import { ArrowRight, LoaderCircle, Mail, Plus, RefreshCw, Search, Sparkles, UserRoundCheck, UsersRound } from "lucide-react"
+import { ArrowRight, LoaderCircle, Mail, RefreshCw, Sparkles, UserRoundCheck, UsersRound } from "@/components/icons/hugeicons"
 import { ContactCreateDialog } from "@/components/multideck/contact-create-dialog"
+import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
 import { CustomerAvatar } from "@/components/multideck/customer-components"
+import { RegisterFacetSelect, RegisterRevalidatingMark, RegisterSearchField, RegisterViewSwitch } from "@/components/multideck/register-toolbar"
 import { Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useLanguage } from "@/i18n/language-provider"
 import { listContacts, listCustomers, type ApiContact, type ApiCustomer } from "@/lib/customer-api"
+import { subscribeTopBarAction, topBarActionEvents } from "@/lib/top-bar-action-events"
+
+const consentScopes = ["All", "Opted in", "Opted out"] as const
+type ConsentScope = typeof consentScopes[number]
 
 export function CrmContactsPage({ navigate }: { navigate: (path: string) => void }) {
   const { t } = useLanguage()
   const [contacts, setContacts] = useState<ApiContact[]>([])
   const [accounts, setAccounts] = useState<ApiCustomer[]>([])
   const [query, setQuery] = useState("")
-  const [consentFilter, setConsentFilter] = useState<"all" | "opted-in" | "opted-out">("all")
+  const [consentFilter, setConsentFilter] = useState<ConsentScope>("All")
+  const [accountFilter, setAccountFilter] = useState("")
+  const [channelFilter, setChannelFilter] = useState("")
   const [state, setState] = useState<"loading" | "ready" | "error">("loading")
   const [reloadToken, setReloadToken] = useState(0)
   const [dexterOpen, setDexterOpen] = useState(false)
@@ -39,24 +45,51 @@ export function CrmContactsPage({ navigate }: { navigate: (path: string) => void
     return () => { active = false }
   }, [reloadToken])
 
+  useEffect(() => subscribeTopBarAction(topBarActionEvents.createCrmContact, () => setCreateOpen(true)), [])
+
   const filtered = useMemo(() => {
     const term = query.trim().toLowerCase()
     return contacts.filter((contact) => {
-      if (consentFilter === "opted-in" && !contact.consentMarketing) return false
-      if (consentFilter === "opted-out" && contact.consentMarketing) return false
+      if (consentFilter === "Opted in" && !contact.consentMarketing) return false
+      if (consentFilter === "Opted out" && contact.consentMarketing) return false
+      if (accountFilter && contact.accountId !== accountFilter) return false
+      if (channelFilter && contact.preferredChannel !== channelFilter) return false
       return !term || [contact.name, contact.email, contact.phone, contact.accountName, contact.role, contact.jobTitle, contact.department].some((value) => value?.toLowerCase().includes(term))
     })
-  }, [consentFilter, contacts, query])
+  }, [accountFilter, channelFilter, consentFilter, contacts, query])
 
   const optedIn = contacts.filter((contact) => contact.consentMarketing).length
   const optedOut = contacts.length - optedIn
   const recentlyContacted = contacts.filter((contact) => contact.lastContactAt && Date.now() - new Date(contact.lastContactAt).getTime() < 30 * 86_400_000).length
+  const contactFiltersActive = Boolean(query || accountFilter || channelFilter || consentFilter !== "All")
+  const channelOptions = useMemo(() => [...new Set(contacts.map((contact) => contact.preferredChannel).filter((value): value is string => Boolean(value)))].sort().map((value) => ({ value, label: humanize(value) })), [contacts])
+  const accountOptions = useMemo(() => accounts.map((account) => ({ value: account.id, label: account.name })).sort((left, right) => left.label.localeCompare(right.label)), [accounts])
+  const contactColumns = useMemo<DataTableColumn<ApiContact>[]>(() => [
+    {
+      id: "contact", label: "Contact", width: 330, minWidth: 250, maxWidth: 460, canHide: false, resizable: true,
+      sortValue: (contact) => contact.name,
+      cell: (contact) => <div className="flex min-h-11 items-center gap-3"><CustomerAvatar initials={contact.initials} tone="blue" /><span className="min-w-0"><span className="block truncate text-[14px] font-medium text-[var(--md-ink)]">{contact.name}</span><span dir="ltr" className="mt-0.5 block truncate text-start text-[12px] text-[var(--md-text)]">{contact.email || t("No email recorded")}</span></span></div>,
+    },
+    { id: "account", label: "Account", width: 190, minWidth: 150, resizable: true, sortValue: (contact) => contact.accountName, cellClassName: "text-[13px] font-medium text-[var(--md-ink)]", cell: (contact) => contact.accountName },
+    { id: "role", label: "Role", width: 170, minWidth: 130, resizable: true, sortValue: (contact) => contact.jobTitle || contact.role, cellClassName: "text-[13px] text-[var(--md-text)]", cell: (contact) => contact.jobTitle || contact.role || t("Not recorded") },
+    { id: "preference", label: "Preference", width: 130, minWidth: 110, resizable: true, sortValue: (contact) => contact.preferredChannel, cellClassName: "text-[13px] text-[var(--md-text)]", cell: (contact) => humanize(contact.preferredChannel) || t("Not recorded") },
+    { id: "last-contact", label: "Last contact", width: 130, minWidth: 110, resizable: true, sortValue: (contact) => contact.lastContactAt ? new Date(contact.lastContactAt).getTime() : null, cellClassName: "text-[13px] tabular-nums text-[var(--md-text)]", cell: (contact) => relativeDate(contact.lastContactAt, t) },
+    { id: "marketing", label: "Marketing", kind: "status", width: 120, minWidth: 110, sortValue: (contact) => contact.consentMarketing ? 1 : 0, cell: (contact) => <StatusPill tone={contact.consentMarketing ? "green" : "neutral"}>{t(contact.consentMarketing ? "Opted in" : "Opted out")}</StatusPill> },
+    { id: "open", label: "Open", headerContent: <span className="sr-only">{t("Open")}</span>, width: 52, minWidth: 52, maxWidth: 52, canHide: false, canPin: false, cell: () => <ArrowRight className="size-4 text-[var(--md-subtle)] transition-transform duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:translate-x-0.5 rtl:rotate-180 rtl:group-hover:-translate-x-0.5 motion-reduce:transition-none" strokeWidth={1.4} /> },
+  ], [t])
+
+  function clearContactFilters() {
+    setQuery("")
+    setConsentFilter("All")
+    setAccountFilter("")
+    setChannelFilter("")
+  }
 
   return (
     <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t("Contacts")} className="md-page md-page-stack-compact">
       <header className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
         <div className="min-w-0"><div className="flex flex-wrap items-baseline gap-x-3 gap-y-1"><h1 className="text-[22px] font-medium leading-tight text-[var(--md-ink)]">{t("Contacts")}</h1><p className="text-[11px] font-medium text-[var(--md-subtle)]">{t("Customer management")}</p></div><p className="mt-1 max-w-[900px] text-[12px] leading-5 text-[var(--md-text)]">{t("The people behind each account, with communication preferences, consent and recent relationship context.")}</p></div>
-        <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setDexterOpen(true)} className="h-10 rounded-[var(--md-radius-lg)]"><Sparkles className="size-4" strokeWidth={1.4} />{t("Ask Dexter")}</Button><Button onClick={() => setCreateOpen(true)} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] text-[var(--md-accent-ink)] active:scale-[0.96] motion-reduce:transform-none"><Plus className="size-4" strokeWidth={1.5} />{t("New contact")}</Button></div>
+        <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setDexterOpen(true)} className="h-10 rounded-[var(--md-radius-lg)]"><Sparkles className="size-4" strokeWidth={1.4} />{t("Ask Dexter")}</Button></div>
       </header>
 
       <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
@@ -66,25 +99,29 @@ export function CrmContactsPage({ navigate }: { navigate: (path: string) => void
         <ContactStat icon={Mail} label={t("Marketing opted out")} value={optedOut} />
       </div>
 
-      <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-        <div className="flex flex-col gap-3 px-4 py-4 xl:flex-row xl:items-center xl:justify-between">
-          <div><h2 className="text-[15px] font-medium text-[var(--md-ink)]">{t("Contact directory")}</h2><p className="mt-1 text-[12px] text-[var(--md-text)]">{t("Open a contact for emails, activity, notes and communication controls.")}</p></div>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <div className="flex rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-1 shadow-[var(--md-shadow-line)]" aria-label={t("Marketing consent filter")}>
-              {(["all", "opted-in", "opted-out"] as const).map((filter) => <button key={filter} type="button" aria-pressed={consentFilter === filter} onClick={() => setConsentFilter(filter)} className={`min-h-8 rounded-[calc(var(--md-radius-lg)-4px)] px-3 text-[12px] font-medium transition-[background-color,color,box-shadow] duration-150 ${consentFilter === filter ? "bg-white/82 text-[var(--md-ink)] shadow-[var(--md-shadow-line)]" : "text-[var(--md-text)] hover:text-[var(--md-ink)]"}`}>{t(filter === "all" ? "All" : filter === "opted-in" ? "Opted in" : "Opted out")}</button>)}
-            </div>
-            <label className="relative block w-full sm:w-[300px]"><Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.4} /><Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("Search contacts…")} aria-label={t("Search contacts")} className="h-10 rounded-[var(--md-radius-lg)] bg-white/62 ps-9 text-[16px] sm:text-[14px]" /></label>
-          </div>
-        </div>
-
-        {state === "loading" ? <ContactState icon={<LoaderCircle className="size-5 animate-spin" />} title={t("Loading contacts…")} /> : null}
-        {state === "error" ? <ContactState icon={<RefreshCw className="size-5" />} title={t("Contacts could not be loaded.")} detail={t("Check your connection and try again.")} action={<Button variant="outline" onClick={() => setReloadToken((value) => value + 1)}>{t("Try again")}</Button>} /> : null}
-        {state === "ready" && !filtered.length ? <ContactState icon={<UsersRound className="size-5" />} title={query || consentFilter !== "all" ? t("No contacts match these filters.") : t("No contacts yet.")} detail={query || consentFilter !== "all" ? t("Clear a filter or try another name, account or email.") : t("Add the first contact to start a relationship history.")} action={!query && consentFilter === "all" ? <Button onClick={() => setCreateOpen(true)}>{t("New contact")}</Button> : undefined} /> : null}
-        {state === "ready" && filtered.length ? <div className="overflow-x-auto md-scrollbar"><Table className="min-w-[860px]"><TableHeader><TableRow><TableHead>{t("Contact")}</TableHead><TableHead>{t("Account")}</TableHead><TableHead>{t("Role")}</TableHead><TableHead>{t("Preference")}</TableHead><TableHead>{t("Last contact")}</TableHead><TableHead>{t("Marketing")}</TableHead><TableHead className="w-12"><span className="sr-only">{t("Open")}</span></TableHead></TableRow></TableHeader><TableBody>{filtered.map((contact) => <TableRow key={contact.id} className="group cursor-pointer focus-within:bg-[var(--md-surface-soft)] hover:bg-[var(--md-surface-soft)]" onClick={() => navigate(`/crm/contacts/${contact.id}`)}>
-          <TableCell><button type="button" className="flex min-h-11 w-full items-center gap-3 text-start focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]" onClick={() => navigate(`/crm/contacts/${contact.id}`)}><CustomerAvatar initials={contact.initials} tone="blue" /><span className="min-w-0"><span className="block truncate text-[14px] font-medium text-[var(--md-ink)]">{contact.name}</span><span dir="ltr" className="mt-0.5 block truncate text-start text-[12px] text-[var(--md-text)]">{contact.email || t("No email recorded")}</span></span></button></TableCell>
-          <TableCell className="text-[13px] font-medium text-[var(--md-ink)]">{contact.accountName}</TableCell><TableCell className="text-[13px] text-[var(--md-text)]">{contact.jobTitle || contact.role || t("Not recorded")}</TableCell><TableCell className="text-[13px] text-[var(--md-text)]">{humanize(contact.preferredChannel) || t("Not recorded")}</TableCell><TableCell className="text-[13px] tabular-nums text-[var(--md-text)]">{relativeDate(contact.lastContactAt, t)}</TableCell><TableCell><StatusPill tone={contact.consentMarketing ? "green" : "neutral"}>{t(contact.consentMarketing ? "Opted in" : "Opted out")}</StatusPill></TableCell><TableCell><ArrowRight className="size-4 text-[var(--md-subtle)] transition-transform duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:translate-x-0.5 rtl:rotate-180 rtl:group-hover:-translate-x-0.5 motion-reduce:transition-none" strokeWidth={1.4} /></TableCell>
-        </TableRow>)}</TableBody></Table></div> : null}
-      </Surface>
+      <DataTable
+        ariaLabel="Contact directory"
+        columnsButtonLabel="Manage contact columns"
+        storageKey="crm-contacts"
+        columns={contactColumns}
+        rows={state === "ready" ? filtered : []}
+        getRowKey={(contact) => contact.id}
+        onRowClick={(contact) => navigate(`/crm/contacts/${contact.id}`)}
+        rowClassName="group hover:bg-[var(--md-hover)]"
+        compactToolbar
+        toolbarTabs={<RegisterViewSwitch options={consentScopes} value={consentFilter} onChange={setConsentFilter} counts={{ All: contacts.length, "Opted in": optedIn, "Opted out": optedOut }} ariaLabel="Marketing consent filter" compact />}
+        toolbarSearch={<RegisterSearchField value={query} onChange={setQuery} onClear={() => setQuery("")} label="Search contacts" placeholder="Search contacts…" className="sm:w-[180px]" />}
+        toolbarFilters={<>
+          <RegisterFacetSelect label="Account" allLabel="All accounts" value={accountFilter} options={accountOptions} onChange={setAccountFilter} className="w-[140px]" />
+          <RegisterFacetSelect label="Preference" allLabel="All channels" value={channelFilter} options={channelOptions} onChange={setChannelFilter} className="w-[122px]" />
+        </>}
+        toolbarOptions={<RegisterRevalidatingMark active={state === "loading" && contacts.length > 0} />}
+        emptyState={state === "loading"
+          ? <ContactState icon={<LoaderCircle className="size-5 animate-spin" />} title={t("Loading contacts…")} />
+          : state === "error"
+            ? <ContactState icon={<RefreshCw className="size-5" />} title={t("Contacts could not be loaded.")} detail={t("Check your connection and try again.")} action={<Button variant="outline" onClick={() => setReloadToken((value) => value + 1)}>{t("Try again")}</Button>} />
+            : <ContactState icon={<UsersRound className="size-5" />} title={contactFiltersActive ? t("No contacts match these filters.") : t("No contacts yet.")} detail={contactFiltersActive ? t("Clear a filter or try another name, account or email.") : t("Add the first contact to start a relationship history.")} action={contactFiltersActive ? <Button variant="outline" onClick={clearContactFilters}>{t("Clear filters")}</Button> : <Button onClick={() => setCreateOpen(true)}>{t("New contact")}</Button>} />}
+      />
 
       <ContactCreateDialog open={createOpen} onOpenChange={setCreateOpen} accounts={accounts} onCreated={(contact) => { setReloadToken((value) => value + 1); navigate(`/crm/contacts/${contact.id}`) }} />
     </DexterDockedPage>

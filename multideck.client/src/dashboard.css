@@ -3,7 +3,10 @@
 
 @layer md-dashboard {
   .md-dashboard {
-    --md-dashboard-band-gap: var(--md-page-stack-gap-compact);
+    /* The references this screen was rebuilt against all breathe: panels are
+       separated clearly rather than packed. Density still matters inside a
+       list, but not between the objects of the page. */
+    --md-dashboard-band-gap: var(--md-page-stack-gap);
     --md-chart-grid: rgba(90, 103, 100, 0.14);
     --md-dashboard-ring: 0 0 0 2px var(--md-accent-a20);
     /* Neutral fills and rules, themed once here so nothing below hard-codes a
@@ -113,10 +116,10 @@
     margin-bottom: 2px;
   }
 
-  @container md-dash (min-width: 1210px) {
+  @container md-dash (min-width: 900px) {
     .md-dashboard-header {
       flex-direction: row;
-      align-items: flex-start;
+      align-items: center;
       justify-content: space-between;
       gap: var(--md-gap-lg);
     }
@@ -176,11 +179,10 @@
     gap: var(--md-gap-sm);
   }
 
-  @container md-dash (min-width: 1210px) {
+  @container md-dash (min-width: 900px) {
     .md-dashboard-header-actions {
       flex-shrink: 0;
       justify-content: flex-end;
-      padding-top: 4px;
     }
   }
 
@@ -365,557 +367,6 @@
     background: var(--md-amber);
   }
 
-  /* ── Clock rail ──────────────────────────────────────────────────────── */
-
-  .md-clock-rail {
-    min-width: 0;
-  }
-
-  .md-clock-rail-head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--md-gap-sm);
-    padding-inline: 2px;
-    padding-bottom: 7px;
-  }
-
-  .md-clock-rail-title {
-    font-size: 11.5px;
-    font-weight: 500;
-    letter-spacing: 0.02em;
-    color: var(--md-subtle);
-  }
-
-  .md-clock-rail-meta,
-  .md-clock-rail-count {
-    display: inline-flex;
-    align-items: center;
-    height: 18px;
-    padding-inline: 7px;
-    border-radius: 999px;
-    background: var(--md-icon-well);
-    font-size: 10.5px;
-    font-weight: 500;
-    font-variant-numeric: tabular-nums;
-    color: var(--md-text);
-  }
-
-  .md-clock-rail-legend {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 12px;
-    font-size: 10.5px;
-    font-weight: 500;
-    color: var(--md-subtle);
-  }
-
-  /* One tight row of cities. It only scrolls when the viewport genuinely cannot
-     fit them, and the mask hints at the overflow instead of a hard cut. */
-  .md-clock-rail-track {
-    display: grid;
-    grid-auto-flow: column;
-    grid-auto-columns: minmax(112px, 1fr);
-    gap: 6px;
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
-    scroll-snap-type: x proximity;
-    /*
-     * The chips lift on hover and draw an outer focus ring. Keep that paint
-     * inside the scrolling viewport so neither state is sliced off, then
-     * cancel the extra box height with margins to preserve dashboard density.
-     */
-    margin: -6px -4px -9px;
-    padding: 6px 4px 12px;
-    contain: layout paint;
-  }
-
-  @media (max-width: 1080px) {
-    .md-clock-rail-track {
-      grid-auto-columns: 118px;
-      mask-image: linear-gradient(to right, transparent 0, #000 14px, #000 calc(100% - 18px), transparent 100%);
-    }
-  }
-
-  .md-clock-chip {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    width: 100%;
-    min-width: 0;
-    padding: 7px 9px 8px;
-    border-radius: var(--md-radius-lg);
-    background: var(--md-glass);
-    box-shadow: var(--md-shadow-line), inset 0 0 0 1px var(--md-accent-a11);
-    scroll-snap-align: start;
-    text-align: start;
-    outline: none;
-    transition:
-      background var(--md-motion),
-      box-shadow var(--md-motion);
-  }
-
-  .md-clock-chip:hover {
-    background: var(--md-glass-strong);
-    box-shadow: var(--md-shadow-soft), inset 0 0 0 1px var(--md-accent-a18);
-  }
-
-  .md-clock-chip:focus-visible {
-    box-shadow: var(--md-shadow-soft), var(--md-dashboard-ring);
-  }
-
-  .md-clock-chip[data-tone="amber"] {
-    background: rgba(221, 138, 43, 0.08);
-    box-shadow: var(--md-shadow-line), inset 0 0 0 1px rgba(221, 138, 43, 0.26);
-  }
-
-  .md-clock-chip[data-tone="amber"]:hover {
-    background: rgba(221, 138, 43, 0.13);
-  }
-
-  /* Clocked-off cities recede: flatter surface, quieter type, no tinted ring.
-     Scanning the rail should surface the offices that can still act. */
-  .md-clock-chip[data-tone="neutral"] {
-    background: var(--md-icon-well);
-    box-shadow: var(--md-shadow-line), inset 0 0 0 1px var(--md-dashboard-hush);
-  }
-
-  .md-clock-chip[data-tone="neutral"] .md-clock-chip-time {
-    color: var(--md-ink-soft);
-    opacity: 0.72;
-  }
-
-  .md-clock-chip[data-tone="neutral"]:hover {
-    background: var(--md-dashboard-hush-hover);
-  }
-
-  .md-clock-chip-top,
-  .md-clock-chip-foot {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 6px;
-    min-width: 0;
-  }
-
-  .md-clock-chip-code {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 10.5px;
-    font-weight: 600;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    color: var(--md-text);
-  }
-
-  .md-clock-chip-you {
-    display: inline-flex;
-    align-items: center;
-    height: 13px;
-    padding-inline: 4px;
-    border-radius: 3px;
-    background: var(--md-accent-a14);
-    font-size: 8.5px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    color: var(--md-accent);
-  }
-
-  .md-clock-chip-main {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    min-width: 0;
-  }
-
-  .md-clock-chip-time {
-    font-size: 19px;
-    font-weight: 500;
-    letter-spacing: -0.01em;
-    color: var(--md-ink);
-    transition: color var(--md-motion);
-  }
-
-  .md-clock-chip-city {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 10.5px;
-    line-height: 1.2;
-    color: var(--md-subtle);
-  }
-
-  .md-clock-chip-delta {
-    flex-shrink: 0;
-    font-size: 9.5px;
-    font-weight: 500;
-    color: var(--md-subtle);
-  }
-
-  .md-clock-chip[data-tone="green"] .md-clock-chip-delta {
-    color: var(--md-accent);
-  }
-
-  .md-clock-chip[data-tone="amber"] .md-clock-chip-delta {
-    color: var(--md-amber-strong);
-  }
-
-  /* How far through 08:00-17:00 the city is. A two-pixel rule carries the whole
-     idea without adding another number to read. */
-  .md-clock-chip-track {
-    position: relative;
-    display: block;
-    height: 2px;
-    margin-top: 2px;
-    border-radius: 999px;
-    background: var(--md-dashboard-track);
-    overflow: hidden;
-  }
-
-  .md-clock-chip-fill {
-    display: block;
-    height: 100%;
-    border-radius: 999px;
-    transform-origin: left center;
-    will-change: transform;
-  }
-
-  [dir="rtl"] .md-clock-chip-fill {
-    transform-origin: right center;
-  }
-
-  .md-clock-face {
-    position: relative;
-    display: block;
-    border-radius: 999px;
-    background: var(--md-glass-strong);
-    box-shadow: var(--md-shadow-line), inset 0 0 0 1px var(--md-accent-a12);
-  }
-
-  .md-clock-face-ooh {
-    background: var(--md-icon-well);
-    box-shadow: var(--md-shadow-line), inset 0 0 0 1px var(--md-dashboard-hush);
-  }
-
-  .md-clock-hand {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    display: block;
-    width: 1.6px;
-    border-radius: 999px;
-    transform-origin: 50% 100%;
-    translate: -50% -100%;
-    will-change: rotate;
-  }
-
-  .md-clock-hand-hour {
-    width: 2px;
-    background: var(--md-ink);
-  }
-
-  .md-clock-pin {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    width: 4px;
-    height: 4px;
-    border-radius: 999px;
-    translate: -50% -50%;
-  }
-
-  .md-clock-popover-band {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-    padding: 9px 10px 10px;
-    border-radius: var(--md-radius-md);
-    background: var(--md-surface-soft);
-    box-shadow: var(--md-shadow-line);
-  }
-
-  .md-clock-popover-band-label {
-    font-size: 10.5px;
-    font-weight: 500;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-    color: var(--md-subtle);
-  }
-
-  .md-clock-popover-track {
-    height: 4px;
-    margin-top: 0;
-  }
-
-  .md-clock-popover-band-scale {
-    display: flex;
-    justify-content: space-between;
-    font-size: 9.5px;
-    font-variant-numeric: tabular-nums;
-    color: var(--md-subtle);
-  }
-
-  .md-clock-popover-metric {
-    padding: 7px 6px;
-    border-radius: var(--md-radius-md);
-    background: var(--md-surface-soft);
-    box-shadow: var(--md-shadow-line);
-    text-align: center;
-  }
-
-  .md-clock-popover-action {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    width: 100%;
-    height: 32px;
-    padding-inline: 12px;
-    border-radius: var(--md-radius-md);
-    background: var(--md-glass);
-    box-shadow: var(--md-shadow-line);
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--md-ink);
-  }
-
-  .md-clock-popover-action:hover {
-    background: var(--md-glass-strong);
-  }
-
-  /* ── Your jobs ───────────────────────────────────────────────────────── */
-
-  .md-jobs-panel {
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    border-radius: var(--md-radius-xl);
-    contain: layout paint;
-  }
-
-  .md-jobs-panel-head {
-    display: flex;
-    flex-shrink: 0;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--md-gap-md);
-    padding: 11px 14px 10px;
-  }
-
-  /* The job mix used to be a card of its own. Inline beside the count it costs
-     forty pixels instead of a hundred and thirty. */
-  .md-jobs-mix {
-    display: flex;
-    flex-shrink: 0;
-    align-items: center;
-    gap: 10px;
-  }
-
-  .md-jobs-mix-legend {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 10px;
-  }
-
-  .md-jobs-mix-legend li {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    white-space: nowrap;
-    font-size: 11px;
-    color: var(--md-subtle);
-  }
-
-  .md-jobs-mix-swatch {
-    width: 6px;
-    height: 6px;
-    border-radius: 999px;
-  }
-
-  .md-jobs-mix-value {
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-    color: var(--md-ink);
-  }
-
-  .md-jobs-panel-body {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    min-height: 0;
-    max-height: 292px;
-    overflow-y: auto;
-    overscroll-behavior-y: contain;
-    padding: 0 11px 12px;
-  }
-
-  .md-job-row {
-    position: relative;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 30px;
-    align-items: center;
-    border-radius: var(--md-radius-lg);
-    background: var(--md-glass);
-    box-shadow: var(--md-shadow-line);
-    transition: background var(--md-motion), box-shadow var(--md-motion);
-  }
-
-  .md-job-row:hover {
-    background: var(--md-glass-strong);
-    box-shadow: var(--md-shadow-soft);
-  }
-
-  .md-job-row-open {
-    display: grid;
-    grid-template-columns: 22px minmax(0, 1fr) auto auto 13px;
-    align-items: center;
-    gap: 10px;
-    min-width: 0;
-    padding: 8px 4px 8px 11px;
-    text-align: start;
-    outline: none;
-  }
-
-  @container md-dash (min-width: 820px) {
-    .md-job-row-open {
-      grid-template-columns: 22px 132px minmax(0, 1fr) 132px 104px 13px;
-    }
-  }
-
-  .md-job-row-open:focus-visible {
-    border-radius: var(--md-radius-lg);
-    box-shadow: var(--md-dashboard-ring);
-  }
-
-  .md-job-row-ring-dot {
-    display: block;
-    width: 4px;
-    height: 4px;
-    border-radius: 999px;
-  }
-
-  .md-job-row-ident,
-  .md-job-row-task-cell {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    min-width: 0;
-  }
-
-  .md-job-row-ident {
-    display: none;
-  }
-
-  @container md-dash (min-width: 820px) {
-    .md-job-row-ident {
-      display: flex;
-    }
-  }
-
-  .md-job-row-ref {
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.045em;
-    color: var(--md-ink);
-  }
-
-  .md-job-row-route,
-  .md-job-row-customer {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 10.5px;
-    color: var(--md-subtle);
-  }
-
-  .md-job-row-task {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 12.5px;
-    font-weight: 500;
-    color: var(--md-ink);
-  }
-
-  .md-job-row-due {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    font-size: 11px;
-    font-weight: 500;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-    color: var(--md-text);
-  }
-
-  .md-job-row-countdown {
-    color: var(--md-subtle);
-  }
-
-  .md-job-row-due-soon,
-  .md-job-row-due-soon .md-job-row-countdown {
-    color: var(--md-amber-strong);
-  }
-
-  .md-job-row-due-overdue,
-  .md-job-row-due-overdue .md-job-row-countdown {
-    color: var(--md-red);
-  }
-
-  .md-job-row-status {
-    justify-self: start;
-  }
-
-  .md-job-row-arrow {
-    width: 13px;
-    height: 13px;
-    color: var(--md-subtle);
-    opacity: 0;
-    translate: -4px 0;
-    transition: opacity var(--md-motion), translate var(--md-motion);
-  }
-
-  [dir="rtl"] .md-job-row-arrow {
-    rotate: 180deg;
-    translate: 4px 0;
-  }
-
-  .md-job-row:hover .md-job-row-arrow {
-    opacity: 1;
-    translate: 0 0;
-  }
-
-  .md-job-row-star {
-    display: grid;
-    place-items: center;
-    width: 24px;
-    height: 24px;
-    margin-inline-end: 5px;
-    border-radius: var(--md-radius-md);
-    color: var(--md-subtle);
-    outline: none;
-    transition: background var(--md-motion), color var(--md-motion);
-  }
-
-  .md-job-row-star:hover {
-    background: rgba(221, 138, 43, 0.13);
-    color: var(--md-amber);
-  }
-
-  .md-job-row-star-on {
-    color: var(--md-amber);
-  }
-
-  .md-job-row-star:focus-visible {
-    box-shadow: 0 0 0 2px rgba(221, 138, 43, 0.28);
-  }
-
   /* ── KPI strip ───────────────────────────────────────────────────────── */
 
   /* Four metrics in a single row. Each cell carries the label, the figure, what
@@ -938,6 +389,116 @@
     }
   }
 
+  /* Six metrics need a middle step of three, otherwise the row goes from two
+     columns straight to six and the figures collapse mid-range. */
+  @container md-dash (min-width: 560px) {
+    .md-kpi-strip[data-columns="6"] {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  @container md-dash (min-width: 1120px) {
+    .md-kpi-strip[data-columns="6"] {
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+    }
+  }
+
+  /* Seven is prime, so there is no clean halfway split. Two, then four, then the
+     full row: four-plus-three reads as one band, where three-plus-three-plus-one
+     leaves an orphan. The middle step comes early because a compact cell only
+     needs about 150px — holding two columns to 780px would stack the band four
+     rows deep on a laptop. */
+  @container md-dash (min-width: 460px) {
+    .md-kpi-strip[data-columns="7"] {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @container md-dash (min-width: 620px) {
+    .md-kpi-strip[data-columns="7"] {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+  }
+
+  @container md-dash (min-width: 1120px) {
+    .md-kpi-strip[data-columns="7"] {
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+    }
+  }
+
+  /* A strip used outside the two dashboard shells still needs the container the
+     column queries above resolve against. */
+  .md-kpi-scope {
+    container: md-dash / inline-size;
+  }
+
+  /* ── Compact KPI band ────────────────────────────────────────────────────
+     Half the height of the standard cell: label and figure share one line, the
+     glyph moves inline, and the supporting sentence is carried in the markup for
+     assistive technology instead of on screen. Use it where the metrics are a
+     header band above the real work. */
+  .md-kpi-strip[data-density="compact"] {
+    gap: var(--md-gap-xs);
+  }
+
+  .md-kpi-strip[data-density="compact"] .md-kpi-cell-button {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    height: 54px;
+    padding: 0 12px;
+    border-radius: var(--md-radius-lg);
+    box-shadow: var(--md-shadow-line);
+  }
+
+  .md-kpi-strip[data-density="compact"] .md-kpi-cell-button:hover {
+    box-shadow: var(--md-shadow-line);
+  }
+
+  .md-kpi-strip[data-density="compact"] .md-kpi-cell-icon {
+    position: static;
+    flex-shrink: 0;
+    opacity: 0.9;
+  }
+
+  .md-kpi-strip[data-density="compact"] .md-kpi-cell-copy {
+    flex: 1 1 auto;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .md-kpi-strip[data-density="compact"] .md-kpi-cell-button[data-has-icon="true"] .md-kpi-cell-label {
+    padding-inline-end: 0;
+  }
+
+  /* Sentence case at 11.5px rather than tracked-out caps: at seven across, an
+     uppercase "Ready to dispatch" runs out of room before the figure does. */
+  .md-kpi-strip[data-density="compact"] .md-kpi-cell-label {
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--md-text);
+  }
+
+  .md-kpi-strip[data-density="compact"] .md-kpi-cell-figure {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    column-gap: 6px;
+  }
+
+  .md-kpi-strip[data-density="compact"] .md-kpi-cell-value {
+    font-size: 19px;
+    letter-spacing: -0.01em;
+  }
+
+  .md-kpi-strip[data-density="compact"] .md-kpi-cell-marker {
+    inset-inline: 10px;
+  }
+
   .md-kpi-cell {
     position: relative;
     min-width: 0;
@@ -950,10 +511,10 @@
     align-items: center;
     gap: 8px;
     width: 100%;
-    height: 84px;
+    height: 112px;
     min-width: 0;
-    padding: 8px 12px 9px;
-    border-radius: var(--md-radius-xl);
+    padding: 14px 16px 15px;
+    border-radius: var(--md-radius-2xl);
     background: var(--md-surface);
     box-shadow: var(--md-shadow-soft);
     text-align: start;
@@ -966,8 +527,37 @@
     box-shadow: var(--md-shadow-lift);
   }
 
+  /* The fallback lets the strip keep its focus ring on screens that are not one
+     of the two dashboards, which is where the token is declared. */
   .md-kpi-cell-button:focus-visible {
-    box-shadow: var(--md-shadow-soft), var(--md-dashboard-ring);
+    box-shadow: var(--md-shadow-soft), var(--md-dashboard-ring, 0 0 0 2px var(--md-accent-a20));
+  }
+
+  /* A readout rather than a control: no pointer, no lift, no focus ring. */
+  .md-kpi-cell-button[data-static="true"] {
+    cursor: default;
+  }
+
+  /* The metric's subject, parked in the corner. No container: a tinted tile
+     here would read as a second object competing with the figure. */
+  .md-kpi-cell-icon {
+    position: absolute;
+    inset-block-start: 10px;
+    inset-inline-end: 11px;
+    display: grid;
+    place-items: center;
+    color: var(--md-kpi-accent, var(--md-accent));
+    opacity: 0.7;
+    transition: opacity var(--md-motion);
+  }
+
+  .md-kpi-cell-button:hover .md-kpi-cell-icon {
+    opacity: 1;
+  }
+
+  /* Keep the figure clear of the corner glyph. */
+  .md-kpi-cell-button[data-has-icon="true"] .md-kpi-cell-label {
+    padding-inline-end: 22px;
   }
 
   .md-kpi-cell-copy {
@@ -983,24 +573,58 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 10.5px;
-    font-weight: 600;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    color: var(--md-subtle);
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--md-text);
   }
 
   .md-kpi-cell-figure {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
     align-items: center;
-    column-gap: 7px;
-    row-gap: 1px;
+    column-gap: 9px;
+    row-gap: 5px;
     min-width: 0;
   }
 
+  /* The movement chip. Tinted rather than outlined, and the arrow carries the
+     direction so the colour is never the only signal. */
+  .md-kpi-cell-delta {
+    display: inline-flex;
+    align-items: center;
+    justify-self: start;
+    gap: 2px;
+    height: 18px;
+    padding-inline: 5px;
+    border-radius: 999px;
+    background: var(--md-dashboard-hush);
+    font-size: 10.5px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    color: var(--md-text);
+    white-space: nowrap;
+  }
+
+  .md-kpi-cell-delta-arrow {
+    font-size: 10px;
+    line-height: 1;
+  }
+
+  .md-kpi-cell-delta[data-direction="up"] {
+    background: color-mix(in srgb, var(--md-comparison-positive) 13%, transparent);
+    color: var(--md-comparison-positive);
+  }
+
+  .md-kpi-cell-delta[data-direction="down"] {
+    background: color-mix(in srgb, var(--md-comparison-negative) 13%, transparent);
+    color: var(--md-comparison-negative);
+  }
+
   .md-kpi-cell-value {
-    font-size: 25px;
+    font-size: 34px;
     font-weight: 500;
     line-height: 1;
     letter-spacing: -0.02em;
@@ -1014,8 +638,12 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 11px;
-    line-height: 14px;
+    font-size: 11.5px;
+    line-height: 15px;
+    color: var(--md-text);
+  }
+
+  .md-kpi-cell-detail-caption {
     color: var(--md-subtle);
   }
 
@@ -1083,417 +711,1469 @@
     box-shadow: var(--md-shadow-line), var(--md-dashboard-ring);
   }
 
-  /* ── Action list ─────────────────────────────────────────────────────── */
+  /* ── Dashboard grid ──────────────────────────────────────────────────────
+     Every band is a row of two, so no single object owns the full width on its
+     own. Below the wide breakpoint the rows stack, which is the same reading
+     order top to bottom. */
 
-  .md-action-list {
+  .md-dash-row {
+    display: grid;
+    gap: var(--md-dashboard-band-gap);
+    grid-template-columns: minmax(0, 1fr);
+    /* Panels take their own height. Stretching a short panel to match a tall
+       neighbour is what put a band of empty surface under the side cards; where
+       a column genuinely needs to fill, it stacks two panels instead. */
+    align-items: start;
+  }
+
+  @container md-dash (min-width: 1000px) {
+    /* The queue needs width for reference, task, customer, lane and deadline;
+       coverage needs only enough for a 24-hour track. */
+    .md-dash-row-work {
+      grid-template-columns: minmax(0, 1.9fr) minmax(300px, 1fr);
+    }
+
+    /* The chart and the table it explains need the room; the three supporting
+       breakdowns need only enough for a label and a bar. */
+    .md-dash-row-analysis {
+      grid-template-columns: minmax(0, 2.15fr) minmax(300px, 1fr);
+    }
+  }
+
+  .md-dash-row > * {
+    min-height: 0;
+    min-width: 0;
+  }
+
+  /* The working row is the exception: the queue and coverage are both lists, so
+     matching their heights reads as one shelf rather than two ragged cards. The
+     row sets the height and each body flexes inside it — otherwise whichever
+     list is shorter hits its own cap first and leaves a band of empty surface
+     under it. */
+  @container md-dash (min-width: 1000px) {
+    .md-dash-row-work {
+      align-items: stretch;
+      height: 468px;
+    }
+
+    .md-dash-row-work > * {
+      height: 100%;
+    }
+
+    .md-queue-panel-body,
+    .md-coverage-rows {
+      max-height: none;
+    }
+  }
+
+  /* Two short panels filling a side column beside a tall neighbour. */
+  .md-dash-stack {
+    display: grid;
+    gap: var(--md-dashboard-band-gap);
+    align-content: start;
+    min-width: 0;
+  }
+
+  /* ── Breakdown panel ─────────────────────────────────────────────────────
+     A split of a total drawn as bars. Nothing here holds an aspect ratio, so
+     the panel is exactly as tall as its categories and never leaves dead space
+     beside a table. */
+
+  .md-breakdown-panel {
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    border-radius: var(--md-radius-xl);
-    contain: layout paint;
+    border-radius: var(--md-radius-2xl);
+    box-shadow: var(--md-shadow-soft);
   }
 
-  .md-action-list-head {
-    display: flex;
-    flex-shrink: 0;
-    align-items: center;
-    gap: 9px;
-    padding: 12px 14px 11px;
+  .md-breakdown-head {
+    padding: 14px 16px 0;
   }
 
-  .md-action-list-badge {
-    display: grid;
-    place-items: center;
-    flex-shrink: 0;
-    width: 26px;
-    height: 26px;
-    border-radius: 999px;
-    background: var(--md-accent);
-    color: #fff;
+  .md-breakdown-body {
+    padding: 12px 16px 16px;
   }
 
-  .md-action-list-reset {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    flex-shrink: 0;
-    height: 24px;
-    padding-inline: 8px;
-    border-radius: var(--md-radius-md);
-    background: var(--md-glass);
-    box-shadow: var(--md-shadow-line);
-    font-size: 11px;
-    font-weight: 500;
-    color: var(--md-text);
-    transition: background var(--md-motion), color var(--md-motion);
-  }
-
-  .md-action-list-reset:hover {
-    background: var(--md-glass-strong);
-    color: var(--md-ink);
-  }
-
-  .md-action-list-body {
-    min-height: 0;
-    flex: 1;
-    overflow-y: auto;
-    padding: 10px 11px 12px;
-  }
-
-  .md-action-list-lead {
-    padding-inline: 3px;
-    padding-bottom: 8px;
-    font-size: 11.5px;
+  .md-breakdown-empty {
+    padding: 18px 16px 20px;
+    font-size: 12px;
     line-height: 1.5;
-    color: var(--md-text);
-  }
-
-  .md-action-list-empty {
-    padding: 22px 4px;
-    text-align: center;
-    font-size: 12.5px;
     color: var(--md-subtle);
   }
 
-  /* The list is a route through the day: nodes on a spine that fills as items
-     are cleared. The spine sits behind the rows and shows through the gaps. */
-  .md-action-timeline {
-    position: relative;
+  /* ── Segmented: one bar carrying the whole total ─────────────────────── */
+
+  .md-breakdown-total {
     display: flex;
-    flex-direction: column;
-    gap: 8px;
+    align-items: baseline;
+    gap: 7px;
+    margin-bottom: 9px;
   }
 
-  .md-action-timeline-spine {
-    position: absolute;
-    inset-block: 21px;
-    inset-inline-start: 22px;
-    width: 2px;
+  .md-breakdown-total-value {
+    font-size: 27px;
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-ink);
+  }
+
+  .md-breakdown-total-label {
+    font-size: 11.5px;
+    color: var(--md-text);
+  }
+
+  .md-breakdown-stack {
+    display: flex;
+    gap: 2px;
+    height: 10px;
+    margin-bottom: 12px;
+  }
+
+  .md-breakdown-stack-segment {
+    display: block;
+    flex-basis: 0;
+    min-width: 3px;
+    border-radius: 999px;
+    transform-origin: center;
+  }
+
+  .md-breakdown-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .md-breakdown-legend li {
+    display: grid;
+    grid-template-columns: 8px minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+  }
+
+  .md-breakdown-swatch {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+  }
+
+  .md-breakdown-legend-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--md-text);
+  }
+
+  .md-breakdown-legend-value {
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-ink);
+  }
+
+  .md-breakdown-legend-share {
+    min-width: 30px;
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-subtle);
+  }
+
+  /* ── Ranked: a bar per category on a shared scale ────────────────────── */
+
+  .md-breakdown-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+  }
+
+  .md-breakdown-row-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 5px;
+  }
+
+  .md-breakdown-row-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    color: var(--md-text);
+  }
+
+  .md-breakdown-row-value {
+    font-size: 12.5px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-ink);
+  }
+
+  .md-breakdown-row-share {
+    min-width: 30px;
+    text-align: end;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-subtle);
+  }
+
+  .md-breakdown-track {
+    display: block;
+    height: 6px;
     border-radius: 999px;
     background: var(--md-dashboard-track);
     overflow: hidden;
   }
 
-  .md-action-timeline-spine-fill {
+  .md-breakdown-fill {
     display: block;
-    width: 100%;
     height: 100%;
     border-radius: 999px;
-    background: var(--md-accent);
-    transform-origin: top center;
-    will-change: transform;
+    transform-origin: left center;
   }
 
-  .md-action-row {
+  [dir="rtl"] .md-breakdown-fill {
+    transform-origin: right center;
+  }
+
+  /* ── Columns: one upright bar per category ───────────────────────────── */
+
+  .md-breakdown-body-columns {
+    padding-block-start: 9px;
+  }
+
+  .md-breakdown-columns {
+    display: grid;
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
+    align-items: stretch;
+    gap: 10px;
+    min-height: 118px;
+  }
+
+  .md-breakdown-columns li {
+    display: grid;
+    grid-template-rows: 16px minmax(58px, 1fr) auto;
+    gap: 5px;
+    min-width: 0;
+  }
+
+  .md-breakdown-column-value {
+    justify-self: center;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 16px;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-ink);
+  }
+
+  .md-breakdown-column-plot {
+    position: relative;
+    display: flex;
+    min-height: 58px;
+    align-items: flex-end;
+    justify-content: center;
+    box-shadow: inset 0 -1px 0 var(--md-line);
+  }
+
+  .md-breakdown-column-plot::before {
+    position: absolute;
+    inset-inline: 0;
+    inset-block-start: 50%;
+    border-block-start: 1px dashed var(--md-line);
+    content: "";
+    opacity: 0.72;
+  }
+
+  .md-breakdown-column-bar {
     position: relative;
     z-index: 1;
-    display: grid;
-    grid-template-columns: 26px minmax(0, 1fr) auto;
-    align-items: start;
-    gap: 10px;
-    padding: 8px 10px 9px;
-    border-radius: var(--md-radius-lg);
-    background: var(--md-glass);
-    box-shadow: var(--md-shadow-line);
-    transition:
-      background var(--md-motion),
-      box-shadow var(--md-motion),
-      opacity var(--md-motion);
+    display: block;
+    width: min(36px, 58%);
+    min-height: 3px;
+    border-radius: var(--md-radius-sm) var(--md-radius-sm) 2px 2px;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-ink) 5%, transparent);
+    transform-origin: center bottom;
   }
 
-  .md-action-row:hover {
-    background: var(--md-glass-strong);
-    box-shadow: var(--md-shadow-soft);
+  .md-breakdown-column-label {
+    overflow-wrap: anywhere;
+    text-align: center;
+    font-size: 11px;
+    line-height: 1.25;
+    color: var(--md-text);
   }
 
-  .md-action-row[data-striking="true"] {
-    opacity: 0.52;
+  /* ── Coverage panel ──────────────────────────────────────────────────────
+     Every region's working window on one shared 24-hour track in the viewer's
+     own time, with a single "now" line across all of them. The rail this
+     replaced gave each city a ticking analogue face, a progress track and a
+     pulsing dot — eight animations to answer one question. */
+
+  .md-coverage-panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: var(--md-radius-2xl);
+    box-shadow: var(--md-shadow-lift);
   }
 
-  .md-action-row-node {
-    display: grid;
-    place-items: center;
-    width: 26px;
-    height: 26px;
-    margin-top: 1px;
+  .md-coverage-panel-head {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--md-gap-md);
+    padding: 12px 16px 11px;
+    box-shadow: var(--md-stroke-bottom);
+  }
+
+  .md-coverage-now-badge {
+    flex-shrink: 0;
+    padding: 3px 8px;
     border-radius: 999px;
-    background: color-mix(in srgb, var(--md-action-accent, var(--md-accent)) 13%, var(--md-surface));
-    color: var(--md-action-accent, var(--md-accent));
-    box-shadow: 0 0 0 3px var(--md-surface);
-    transition: box-shadow var(--md-motion), scale var(--md-motion);
+    background: var(--md-dashboard-hush);
+    font-size: 11.5px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-ink);
   }
 
-  .md-action-row:hover .md-action-row-node {
-    scale: 1.06;
-    box-shadow:
-      0 0 0 3px var(--md-surface),
-      0 0 0 5px color-mix(in srgb, var(--md-action-accent, var(--md-accent)) 18%, transparent);
+  .md-coverage-plot {
+    /* The track column starts after the fixed code cell and ends before the
+       time and count cells. The "now" line and the axis are measured against
+       that same span, so all three are derived from one pair of values rather
+       than three hand-matched numbers that can drift apart. */
+    --md-coverage-track-start: 38px;
+    --md-coverage-track-end: 66px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    padding: 8px 16px 4px;
   }
 
-  .md-action-row-open {
+  /* With sixteen regions the list can outgrow the queue beside it, so the rows
+     scroll and the hour axis stays anchored under them. */
+  .md-coverage-rows {
+    flex: 1;
+    min-height: 0;
+    max-height: 348px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  /* One line for the viewer's own moment, drawn across every row rather than
+     repeated per city. The rail gives the line a box the width of the tracks,
+     so its percentage lands on the same scale the bands are drawn on. */
+  .md-coverage-nowrail {
+    position: absolute;
+    inset-block: 8px 26px;
+    inset-inline: var(--md-coverage-track-start) var(--md-coverage-track-end);
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .md-coverage-nowline {
+    position: absolute;
+    inset-block: 0;
+    width: 1px;
+    background: var(--md-accent);
+    opacity: 0.55;
+  }
+
+  .md-coverage-nowline::before {
+    content: "";
+    position: absolute;
+    inset-block-start: -3px;
+    inset-inline-start: -2px;
+    width: 5px;
+    height: 5px;
+    border-radius: 999px;
+    background: var(--md-accent);
+  }
+
+  .md-coverage-row {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr) 40px 18px;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+    height: 26px;
+    padding-inline: 0;
+    border-radius: var(--md-radius-sm);
+    text-align: start;
+    outline: none;
+    transition: background var(--md-motion);
+  }
+
+  .md-coverage-row:hover {
+    background: var(--md-dashboard-hush);
+  }
+
+  .md-coverage-row:focus-visible {
+    box-shadow: var(--md-dashboard-ring);
+  }
+
+  .md-coverage-row-code {
+    font-size: 11.5px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-text);
+  }
+
+  .md-coverage-row[data-online="true"] .md-coverage-row-code {
+    color: var(--md-ink);
+  }
+
+  .md-coverage-track {
+    position: relative;
+    display: block;
+    height: 9px;
+    border-radius: 999px;
+    background: var(--md-dashboard-track);
+    overflow: hidden;
+  }
+
+  /* The window itself. Clocked-off regions keep their band so the shape of the
+     day still reads; it just loses its fill. */
+  .md-coverage-band {
+    position: absolute;
+    inset-block: 0;
+    border-radius: 999px;
+    background: var(--md-subtle);
+    opacity: 0.3;
+    transform-origin: left center;
+  }
+
+  [dir="rtl"] .md-coverage-band {
+    transform-origin: right center;
+  }
+
+  .md-coverage-row[data-online="true"] .md-coverage-band {
+    background: var(--md-accent);
+    opacity: 0.85;
+  }
+
+  .md-coverage-row[data-closing="true"] .md-coverage-band {
+    background: var(--md-amber);
+    opacity: 0.9;
+  }
+
+  .md-coverage-row-time {
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    text-align: end;
+    color: var(--md-subtle);
+  }
+
+  .md-coverage-row[data-online="true"] .md-coverage-row-time {
+    color: var(--md-text);
+  }
+
+  .md-coverage-row-count {
+    display: inline-grid;
+    place-items: center;
+    min-width: 16px;
+    height: 16px;
+    padding-inline: 3px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--md-amber) 18%, transparent);
+    font-size: 10px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-amber-strong);
+  }
+
+  /* Holds the count column open so a region gaining work does not shuffle the
+     track width of every row above it. */
+  .md-coverage-row-count-spacer {
+    display: block;
+    width: 16px;
+    height: 16px;
+  }
+
+  .md-coverage-axis {
+    position: relative;
+    display: block;
+    height: 14px;
+    margin-inline-start: var(--md-coverage-track-start);
+    margin-inline-end: var(--md-coverage-track-end);
+    margin-top: 4px;
+  }
+
+  .md-coverage-axis > span {
+    position: absolute;
+    translate: -50% 0;
+    font-size: 9.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-subtle);
+  }
+
+  [dir="rtl"] .md-coverage-axis > span {
+    translate: 50% 0;
+  }
+
+  .md-coverage-foot {
+    flex-shrink: 0;
+    padding: 6px 16px 12px;
+    font-size: 10.5px;
+    line-height: 1.4;
+    color: var(--md-subtle);
+  }
+
+  /* ── Mini bar spark ──────────────────────────────────────────────────────
+     A period as discrete ticks. Each bar is one transform, so a four-card row
+     costs forty scale animations and no path maths. */
+
+  .md-mini-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    width: 76px;
+  }
+
+  .md-mini-bar {
+    flex: 1;
+    height: 100%;
+    min-width: 2px;
+    border-radius: 999px;
+    transform-origin: bottom center;
+    opacity: 0.5;
+  }
+
+  .md-kpi-cell-button:hover .md-mini-bar,
+  .md-kpi-cell[data-selected="true"] .md-mini-bar {
+    opacity: 0.95;
+  }
+
+  /* ── Priority queue ──────────────────────────────────────────────────────
+     The dashboard's lead panel. Everything waiting on the operator, from any
+     register, in one list ranked by real deadline. The leading rule is the only
+     urgency device on a row: the screen this replaced gave every row its own
+     countdown ring and every panel its own gauge, so five small drawings
+     competed before a single word had been read. */
+
+  .md-queue-panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: var(--md-radius-xl);
+    box-shadow: var(--md-shadow-lift);
+  }
+
+  .md-queue-panel-head {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: var(--md-gap-md);
+    padding: 12px 14px 11px;
+    box-shadow: var(--md-stroke-bottom);
+  }
+
+  .md-queue-panel-controls {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: var(--md-gap-sm);
+  }
+
+  .md-queue-panel-reset {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 26px;
+    padding-inline: 9px;
+    border-radius: var(--md-radius-md);
+    background: var(--md-dashboard-hush);
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--md-text);
+    transition: background var(--md-motion), color var(--md-motion);
+  }
+
+  .md-queue-panel-reset:hover {
+    background: var(--md-dashboard-hush-hover);
+    color: var(--md-ink);
+  }
+
+  .md-queue-panel-body {
+    min-height: 0;
+    flex: 1;
+    /* Only used in the stacked layout; on a wide screen the row sets the
+       height and this body flexes to fill it. */
+    max-height: 392px;
+    overflow-y: auto;
+    padding: 0 0 8px;
+    overscroll-behavior: contain;
+  }
+
+  .md-queue-panel-empty {
+    padding: 28px 16px 32px;
+    max-width: 46ch;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--md-subtle);
+  }
+
+  /* ── Queue groups ────────────────────────────────────────────────────── */
+
+  .md-queue-group + .md-queue-group {
+    margin-top: 6px;
+  }
+
+  /* The label stays put while its own rows scroll under it, so a long queue
+     never leaves the operator looking at rows with no bucket. */
+  .md-queue-group-label {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 4px 16px 3px;
+    background: var(--md-surface);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--md-subtle);
+  }
+
+  .md-queue-group-count {
+    display: inline-grid;
+    place-items: center;
+    min-width: 16px;
+    height: 15px;
+    padding-inline: 4px;
+    border-radius: 999px;
+    background: var(--md-dashboard-hush);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-text);
+  }
+
+  .md-queue-group[data-bucket="overdue"] .md-queue-group-label {
+    color: var(--md-red);
+  }
+
+  .md-queue-group[data-bucket="overdue"] .md-queue-group-count {
+    background: color-mix(in srgb, var(--md-red) 14%, transparent);
+    color: var(--md-red);
+  }
+
+  /* ── Queue row ───────────────────────────────────────────────────────── */
+
+  .md-queue-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-height: 52px;
+    padding-inline-end: 10px;
+    transition: background var(--md-motion);
+  }
+
+  .md-queue-row:hover {
+    background: var(--md-dashboard-hush);
+  }
+
+  /* The one urgency device on the row. */
+  .md-queue-row-rule {
+    position: absolute;
+    inset-block: 8px;
+    inset-inline-start: 0;
+    width: 2px;
+    border-radius: 0 999px 999px 0;
+    background: var(--md-queue-tone, var(--md-subtle));
+    opacity: 0.45;
+    transition: opacity var(--md-motion);
+  }
+
+  [dir="rtl"] .md-queue-row-rule {
+    border-radius: 999px 0 0 999px;
+  }
+
+  .md-queue-row:hover .md-queue-row-rule,
+  .md-queue-row[data-overdue="true"] .md-queue-row-rule {
+    opacity: 1;
+  }
+
+  .md-queue-row[data-tone="red"] { --md-queue-tone: var(--md-red); }
+  .md-queue-row[data-tone="amber"] { --md-queue-tone: var(--md-amber); }
+  .md-queue-row[data-tone="green"] { --md-queue-tone: var(--md-green); }
+  .md-queue-row[data-tone="blue"] { --md-queue-tone: var(--md-blue); }
+  .md-queue-row[data-tone="teal"] { --md-queue-tone: var(--md-accent); }
+
+  .md-queue-row-open {
+    display: grid;
+    flex: 1;
+    /* Fixed deadline and status columns. Sizing them to content made every row
+       a different shape: a row reading "Departs Aug 5" pushed its status pill
+       far left of one reading "17:12", so the right-hand side of the panel was
+       ragged and neither column could be scanned down. */
+    grid-template-columns: 22px minmax(0, 1fr) 104px 132px;
+    align-items: center;
+    gap: 10px;
     min-width: 0;
+    padding: 7px 10px 7px 14px;
     text-align: start;
     outline: none;
   }
 
-  .md-action-row-open:focus-visible .md-action-row-title {
+  [dir="rtl"] .md-queue-row-open {
+    padding-inline: 14px 10px;
+  }
+
+  .md-queue-row-open:focus-visible .md-queue-row-task {
     text-decoration: underline;
     text-underline-offset: 3px;
   }
 
-  .md-action-row-line {
+  .md-queue-row-glyph {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--md-queue-tone, var(--md-subtle)) 12%, transparent);
+    color: var(--md-queue-tone, var(--md-subtle));
+  }
+
+  .md-queue-row-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .md-queue-row-line {
     display: flex;
     align-items: baseline;
     gap: 8px;
     min-width: 0;
   }
 
-  .md-action-row-title-wrap {
+  .md-queue-row-task-wrap {
     position: relative;
-    display: inline-block;
     min-width: 0;
   }
 
-  .md-action-row-title {
+  .md-queue-row-task {
     display: block;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 12.5px;
+    font-size: 13px;
     font-weight: 500;
+    line-height: 1.3;
     color: var(--md-ink);
   }
 
-  .md-action-row-strike {
+  .md-queue-row-strike {
     position: absolute;
-    inset-inline-start: 0;
-    top: 50%;
-    display: block;
-    width: 100%;
+    inset-block-start: 50%;
+    inset-inline: 0;
     height: 1px;
     background: var(--md-ink);
-    will-change: transform;
+    scale: 0 1;
+    pointer-events: none;
   }
 
-  .md-action-row-detail {
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    overflow: hidden;
-    margin-top: 2px;
+  .md-queue-row-ref {
+    flex-shrink: 0;
     font-size: 11.5px;
-    line-height: 1.4;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-subtle);
+  }
+
+  .md-queue-row-context {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    min-width: 0;
+    font-size: 11.5px;
+    line-height: 1.35;
     color: var(--md-text);
   }
 
-  .md-action-row-source {
+  .md-queue-row-customer {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .md-queue-row-lane {
     flex-shrink: 0;
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
     color: var(--md-subtle);
   }
 
-  .md-action-row-tail {
+  .md-queue-row-lane::before {
+    content: "·";
+    margin-inline-end: 7px;
+  }
+
+  .md-queue-row-due {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    flex-shrink: 0;
+    gap: 1px;
+    text-align: end;
+  }
+
+  .md-queue-row-due-value {
+    font-size: 12px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.3;
+    color: var(--md-ink-soft);
+  }
+
+  .md-queue-row-due-gap {
+    font-size: 10.5px;
+    line-height: 1.3;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-subtle);
+  }
+
+  .md-queue-row[data-overdue="true"] .md-queue-row-due-value,
+  .md-queue-row[data-overdue="true"] .md-queue-row-due-gap {
+    color: var(--md-red);
+  }
+
+  /* Left-aligned inside its own fixed column, so the pills start on one line
+     down the panel regardless of how long each status word is. */
+  .md-queue-row-status {
+    justify-self: start;
+  }
+
+  @container md-dash (max-width: 900px) {
+    .md-queue-row-open {
+      grid-template-columns: 22px minmax(0, 1fr) 104px;
+    }
+
+    .md-queue-row-status {
+      display: none;
+    }
+  }
+
+  @container md-dash (max-width: 700px) {
+    .md-queue-row-lane {
+      display: none;
+    }
+  }
+
+  /* ── Row actions ─────────────────────────────────────────────────────── */
+
+  .md-queue-row-actions {
     display: flex;
     flex-shrink: 0;
     align-items: center;
-  }
-
-  .md-action-row-value {
-    padding: 3px 7px;
-    border-radius: var(--md-radius-sm);
-    background: var(--md-glass-strong);
-    box-shadow: var(--md-shadow-line);
-    font-size: 10.5px;
-    font-weight: 500;
-    line-height: 1.2;
-    color: var(--md-action-accent, var(--md-accent));
-    transition: opacity var(--md-motion);
-  }
-
-  .md-action-row:hover .md-action-row-value,
-  .md-action-row:focus-within .md-action-row-value {
-    opacity: 0;
-  }
-
-  .md-action-row-actions {
-    position: absolute;
-    inset-block-start: 8px;
-    inset-inline-end: 9px;
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    opacity: 0;
-    translate: 5px 0;
-    transition: opacity var(--md-motion), translate var(--md-motion);
-  }
-
-  [dir="rtl"] .md-action-row-actions {
-    translate: -5px 0;
-  }
-
-  .md-action-row:hover .md-action-row-actions,
-  .md-action-row:focus-within .md-action-row-actions {
+    gap: 2px;
     opacity: 1;
-    translate: 0 0;
   }
 
-  .md-action-row-button {
+  /* Queue actions stay visible: these are work controls, not decorative row
+     affordances, and hiding them delayed scanning before every click. */
+
+  .md-queue-row-button {
     display: grid;
     place-items: center;
     width: 26px;
     height: 26px;
     border-radius: var(--md-radius-md);
-    background: var(--md-surface);
-    color: var(--md-subtle);
-    box-shadow: var(--md-shadow-line);
+    background: var(--md-dashboard-hush);
+    color: var(--md-text);
     outline: none;
-    transition: background var(--md-motion), color var(--md-motion), transform var(--md-motion-fast);
+    transition: background var(--md-motion), color var(--md-motion);
   }
 
-  .md-action-row-button:hover {
+  .md-queue-row-button:hover {
+    background: var(--md-dashboard-hush-hover);
     color: var(--md-ink);
   }
 
-  .md-action-row-button:active {
-    transform: scale(0.92);
-  }
-
-  .md-action-row-button-done:hover {
-    background: var(--md-accent-a12);
-    color: var(--md-accent);
-  }
-
-  .md-action-row-button:focus-visible {
+  .md-queue-row-button:focus-visible {
     opacity: 1;
-    box-shadow: var(--md-shadow-line), var(--md-dashboard-ring);
+    box-shadow: var(--md-dashboard-ring);
   }
 
-  /* ── Trend panel ─────────────────────────────────────────────────────── */
+  .md-queue-row-button-done:hover {
+    background: color-mix(in srgb, var(--md-green) 16%, transparent);
+    color: var(--md-green);
+  }
 
-  .md-trend-panel {
+  .md-queue-row-button-dexter {
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+      0 3px 8px var(--md-accent-deep-a18);
+  }
+
+  .md-queue-row-button-dexter:hover,
+  .md-queue-row-button-dexter:focus-visible {
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.26),
+      0 4px 10px var(--md-accent-deep-a24);
+    transform: none;
+  }
+  /* ── Performance panel ───────────────────────────────────────────────────
+     One large plot with a head that names what is drawn. The metric row above
+     is its control; the travelling rule under the selected card is the only
+     thing that has to say so. */
+
+  .md-performance-panel {
+    overflow: hidden;
+    border-radius: var(--md-radius-2xl);
+    box-shadow: var(--md-shadow-soft);
+  }
+
+  .md-performance-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--md-gap-lg);
+    padding: 16px 20px 4px;
+  }
+
+  .md-performance-title {
+    margin-top: 5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 19px;
+    font-weight: 500;
+    line-height: 1.2;
+    letter-spacing: -0.012em;
+    color: var(--md-ink);
+  }
+
+  .md-performance-legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 14px;
+    flex-shrink: 0;
+    padding-top: 3px;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--md-text);
+  }
+
+  .md-performance-legend > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .md-performance-swatch {
+    width: 11px;
+    height: 2.5px;
+    flex-shrink: 0;
+    border-radius: 999px;
+    background: var(--md-performance-accent, var(--md-accent));
+  }
+
+  .md-performance-swatch-dashed {
+    background: repeating-linear-gradient(
+      to right,
+      var(--md-blue) 0 3px,
+      transparent 3px 6px
+    );
+  }
+
+  .md-performance-canvas {
+    padding: 4px 12px 14px;
+  }
+
+  /* ── Priority queue ──────────────────────────────────────────────────────
+     The dashboard's lead panel. Everything waiting on the operator, from any
+     register, in one list ranked by real deadline. The leading rule is the only
+     urgency device on a row: the screen this replaced gave every row its own
+     countdown ring and every panel its own gauge, so five small drawings
+     competed before a single word had been read. */
+
+  .md-queue-panel {
     display: flex;
     flex-direction: column;
     overflow: hidden;
     border-radius: var(--md-radius-xl);
-    contain: layout paint;
+    box-shadow: var(--md-shadow-lift);
   }
 
-  .md-trend-panel-head {
+  .md-queue-panel-head {
     display: flex;
     flex-shrink: 0;
-    align-items: flex-start;
-    justify-content: space-between;
+    align-items: center;
     gap: var(--md-gap-md);
-    padding: 11px 14px 0;
+    padding: 12px 14px 11px;
+    box-shadow: var(--md-stroke-bottom);
   }
 
-  .md-trend-panel-title {
-    margin-top: 3px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 14.5px;
+  .md-queue-panel-controls {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: var(--md-gap-sm);
+  }
+
+  .md-queue-panel-reset {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 26px;
+    padding-inline: 9px;
+    border-radius: var(--md-radius-md);
+    background: var(--md-dashboard-hush);
+    font-size: 11.5px;
     font-weight: 500;
-    line-height: 1.2;
+    color: var(--md-text);
+    transition: background var(--md-motion), color var(--md-motion);
+  }
+
+  .md-queue-panel-reset:hover {
+    background: var(--md-dashboard-hush-hover);
     color: var(--md-ink);
   }
 
-  /* Where it stands, its high point, and which way the last period moved —
-     three readings the curve alone does not give quickly. */
-  .md-trend-facts {
+  .md-queue-panel-body {
+    min-height: 0;
+    flex: 1;
+    /* Roughly six rows before the panel scrolls: enough that the urgent group
+       and the start of the next are both on screen without the page giving its
+       whole height to one list. */
+    max-height: 420px;
+    overflow-y: auto;
+    padding: 0 0 8px;
+    overscroll-behavior: contain;
+  }
+
+  .md-queue-panel-empty {
+    padding: 28px 16px 32px;
+    max-width: 46ch;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--md-subtle);
+  }
+
+  /* ── Queue groups ────────────────────────────────────────────────────── */
+
+  .md-queue-group + .md-queue-group {
+    margin-top: 6px;
+  }
+
+  /* The label stays put while its own rows scroll under it, so a long queue
+     never leaves the operator looking at rows with no bucket. */
+  .md-queue-group-label {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: 2;
     display: flex;
-    flex-wrap: wrap;
-    align-items: flex-end;
-    gap: 18px;
-    padding: 10px 14px 0;
-  }
-
-  .md-trend-facts > div {
-    min-width: 0;
-  }
-
-  .md-trend-facts dt {
-    font-size: 9.5px;
+    align-items: center;
+    gap: 7px;
+    padding: 4px 16px 3px;
+    background: var(--md-surface);
+    font-size: 10px;
     font-weight: 600;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.07em;
     text-transform: uppercase;
     color: var(--md-subtle);
   }
 
-  .md-trend-facts dd {
-    margin-top: 3px;
-    font-size: 17px;
-    font-weight: 500;
-    line-height: 1;
-    letter-spacing: -0.015em;
+  .md-queue-group-count {
+    display: inline-grid;
+    place-items: center;
+    min-width: 16px;
+    height: 15px;
+    padding-inline: 4px;
+    border-radius: 999px;
+    background: var(--md-dashboard-hush);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0;
     font-variant-numeric: tabular-nums;
-    color: var(--md-ink);
+    color: var(--md-text);
   }
 
-  .md-trend-facts dd[data-direction="up"] {
-    color: var(--md-accent);
-  }
-
-  .md-trend-facts dd[data-direction="down"] {
+  .md-queue-group[data-bucket="overdue"] .md-queue-group-label {
     color: var(--md-red);
   }
 
-  .md-trend-facts-legend {
+  .md-queue-group[data-bucket="overdue"] .md-queue-group-count {
+    background: color-mix(in srgb, var(--md-red) 14%, transparent);
+    color: var(--md-red);
+  }
+
+  /* ── Queue row ───────────────────────────────────────────────────────── */
+
+  .md-queue-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-height: 52px;
+    padding-inline-end: 10px;
+    transition: background var(--md-motion);
+  }
+
+  .md-queue-row:hover {
+    background: var(--md-dashboard-hush);
+  }
+
+  /* The one urgency device on the row. */
+  .md-queue-row-rule {
+    position: absolute;
+    inset-block: 8px;
+    inset-inline-start: 0;
+    width: 2px;
+    border-radius: 0 999px 999px 0;
+    background: var(--md-queue-tone, var(--md-subtle));
+    opacity: 0.45;
+    transition: opacity var(--md-motion);
+  }
+
+  [dir="rtl"] .md-queue-row-rule {
+    border-radius: 999px 0 0 999px;
+  }
+
+  .md-queue-row:hover .md-queue-row-rule,
+  .md-queue-row[data-overdue="true"] .md-queue-row-rule {
+    opacity: 1;
+  }
+
+  .md-queue-row[data-tone="red"] { --md-queue-tone: var(--md-red); }
+  .md-queue-row[data-tone="amber"] { --md-queue-tone: var(--md-amber); }
+  .md-queue-row[data-tone="green"] { --md-queue-tone: var(--md-green); }
+  .md-queue-row[data-tone="blue"] { --md-queue-tone: var(--md-blue); }
+  .md-queue-row[data-tone="teal"] { --md-queue-tone: var(--md-accent); }
+
+  .md-queue-row-open {
+    display: grid;
+    flex: 1;
+    grid-template-columns: 22px minmax(0, 1fr) 104px 132px;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    padding: 7px 10px 7px 14px;
+    text-align: start;
+    outline: none;
+  }
+
+  [dir="rtl"] .md-queue-row-open {
+    padding-inline: 14px 10px;
+  }
+
+  .md-queue-row-open:focus-visible .md-queue-row-task {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  .md-queue-row-glyph {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--md-queue-tone, var(--md-subtle)) 12%, transparent);
+    color: var(--md-queue-tone, var(--md-subtle));
+  }
+
+  .md-queue-row-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .md-queue-row-line {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .md-queue-row-task-wrap {
+    position: relative;
+    min-width: 0;
+  }
+
+  .md-queue-row-task {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.3;
+    color: var(--md-ink);
+  }
+
+  .md-queue-row-strike {
+    position: absolute;
+    inset-block-start: 50%;
+    inset-inline: 0;
+    height: 1px;
+    background: var(--md-ink);
+    scale: 0 1;
+    pointer-events: none;
+  }
+
+  .md-queue-row-ref {
+    flex-shrink: 0;
+    font-size: 11.5px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-subtle);
+  }
+
+  .md-queue-row-context {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    min-width: 0;
+    font-size: 11.5px;
+    line-height: 1.35;
+    color: var(--md-text);
+  }
+
+  .md-queue-row-customer {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .md-queue-row-lane {
+    flex-shrink: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--md-subtle);
+  }
+
+  .md-queue-row-lane::before {
+    content: "·";
+    margin-inline-end: 7px;
+  }
+
+  .md-queue-row-due {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    flex-shrink: 0;
+    gap: 1px;
+    text-align: end;
+  }
+
+  .md-queue-row-due-value {
+    font-size: 12px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.3;
+    color: var(--md-ink-soft);
+  }
+
+  .md-queue-row-due-gap {
+    font-size: 10.5px;
+    line-height: 1.3;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-subtle);
+  }
+
+  .md-queue-row[data-overdue="true"] .md-queue-row-due-value,
+  .md-queue-row[data-overdue="true"] .md-queue-row-due-gap {
+    color: var(--md-red);
+  }
+
+  .md-queue-row-status {
+    flex-shrink: 0;
+    justify-self: start;
+  }
+
+  @container md-dash (max-width: 760px) {
+    .md-queue-row-status,
+    .md-queue-row-lane {
+      display: none;
+    }
+  }
+
+  /* ── Row actions ─────────────────────────────────────────────────────── */
+
+  .md-queue-row-actions {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 2px;
+    opacity: 1;
+  }
+
+  /* Queue actions stay visible: these are work controls, not decorative row
+     affordances, and hiding them delayed scanning before every click. */
+
+  .md-queue-row-button {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border-radius: var(--md-radius-md);
+    background: var(--md-dashboard-hush);
+    color: var(--md-text);
+    outline: none;
+    transition: background var(--md-motion), color var(--md-motion);
+  }
+
+  .md-queue-row-button:hover {
+    background: var(--md-dashboard-hush-hover);
+    color: var(--md-ink);
+  }
+
+  .md-queue-row-button-dexter {
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+      0 3px 8px var(--md-accent-deep-a18);
+  }
+
+  .md-queue-row-button-dexter:hover,
+  .md-queue-row-button-dexter:focus-visible {
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.26),
+      0 4px 10px var(--md-accent-deep-a24);
+    transform: none;
+  }
+
+  .md-queue-row-button:focus-visible {
+    opacity: 1;
+    box-shadow: var(--md-dashboard-ring);
+  }
+
+  .md-queue-row-button-done:hover {
+    background: color-mix(in srgb, var(--md-green) 16%, transparent);
+    color: var(--md-green);
+  }
+  /* ── Performance panel ───────────────────────────────────────────────────
+     The four figures and the chart they describe as one object. The metric
+     strip is the chart's control, so the panel has one head, not two. */
+
+  .md-performance-panel {
+    overflow: hidden;
+    border-radius: var(--md-radius-xl);
+    box-shadow: var(--md-shadow-lift);
+  }
+
+  /* Inside the panel the cells are tabs, not free-floating tiles: they lose
+     their own surface and shadow and are separated by hairlines instead. */
+  .md-performance-metrics {
+    gap: 0;
+    box-shadow: var(--md-stroke-bottom);
+  }
+
+  .md-performance-metrics .md-kpi-cell-button {
+    height: 78px;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    transition: background var(--md-motion);
+  }
+
+  .md-performance-metrics .md-kpi-cell-button:hover {
+    background: var(--md-dashboard-hush);
+    box-shadow: none;
+  }
+
+  .md-performance-metrics .md-kpi-cell-button:focus-visible {
+    box-shadow: var(--md-dashboard-ring);
+  }
+
+  .md-performance-metrics .md-kpi-cell + .md-kpi-cell .md-kpi-cell-button {
+    box-shadow: inset 1px 0 0 var(--md-line);
+  }
+
+  .md-performance-metrics .md-kpi-cell + .md-kpi-cell .md-kpi-cell-button:focus-visible {
+    box-shadow: inset 1px 0 0 var(--md-line), var(--md-dashboard-ring);
+  }
+
+  /* Below the widest breakpoint the cells wrap, and a left hairline on a cell
+     that has just started a new row would draw a stray mark. */
+  @container md-dash (max-width: 929px) {
+    .md-performance-metrics .md-kpi-cell + .md-kpi-cell .md-kpi-cell-button {
+      box-shadow: none;
+    }
+  }
+
+  .md-performance-metrics .md-kpi-cell[data-selected="true"] .md-kpi-cell-value {
+    color: var(--md-ink);
+  }
+
+  .md-performance-metrics .md-kpi-cell:not([data-selected="true"]) .md-kpi-cell-value {
+    color: var(--md-ink-soft);
+  }
+
+  /* One rule for the whole strip, travelling to whichever metric the chart is
+     drawing. It sits above the panel's bottom hairline. */
+  .md-kpi-cell-marker-travelling {
+    inset-inline: 16px;
+    height: 2.5px;
+    z-index: 1;
+    scale: 1 1;
+    transition: none;
+  }
+
+  .md-performance-chart {
+    padding: 12px 8px 8px;
+  }
+
+  .md-performance-chart-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--md-gap-md);
+    padding-inline: 8px;
+    padding-bottom: 4px;
+  }
+
+  .md-performance-legend {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 10px;
-    margin-inline-start: auto;
-    padding-bottom: 2px;
+    gap: 12px;
+    min-width: 0;
     font-size: 10.5px;
     font-weight: 500;
     color: var(--md-subtle);
   }
 
-  .md-trend-facts-legend > span {
+  .md-performance-legend > span {
     display: inline-flex;
     align-items: center;
     gap: 5px;
+    min-width: 0;
   }
 
-  .md-trend-panel-canvas {
-    min-height: 0;
-    flex: 1;
-    padding: 2px 6px 6px;
+  .md-performance-swatch {
+    width: 10px;
+    height: 2px;
+    flex-shrink: 0;
+    border-radius: 999px;
+    background: var(--md-performance-accent, var(--md-accent));
+  }
+
+  .md-performance-swatch-dashed {
+    background: repeating-linear-gradient(
+      to right,
+      var(--md-subtle) 0 3px,
+      transparent 3px 6px
+    );
   }
 
   /* ── Chart chrome ────────────────────────────────────────────────────── */
-
-  .md-trend-legend {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 10.5px;
-    font-weight: 500;
-    color: var(--md-subtle);
-  }
-
-  .md-trend-legend > span {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-  }
-
-  .md-trend-legend-swatch {
-    display: inline-block;
-    width: 10px;
-    height: 2px;
-    border-radius: 999px;
-    background: var(--md-accent);
-  }
-
-  .md-trend-legend-swatch-dashed {
-    background: repeating-linear-gradient(to right, var(--md-blue) 0 3px, transparent 3px 6px);
-  }
 
   .md-flush-spark {
     width: 100%;
@@ -1512,6 +2192,11 @@
     font-weight: 500;
     font-variant-numeric: tabular-nums;
     transition: fill var(--md-motion);
+  }
+
+  .md-area-chart-axis-current {
+    fill: var(--md-ink);
+    font-weight: 600;
   }
 
   .md-area-chart-axis-active {
@@ -1596,40 +2281,6 @@
     gap: var(--md-gap-sm);
   }
 
-  .md-live-mode-filters {
-    display: none;
-    flex-wrap: wrap;
-    gap: 5px;
-  }
-
-  @container live-board (min-width: 640px) {
-    .md-live-mode-filters {
-      display: flex;
-    }
-  }
-
-  .md-live-mode-chip {
-    border-radius: 999px;
-    outline: none;
-    transition: transform var(--md-motion-fast), opacity var(--md-motion);
-  }
-
-  .md-live-mode-chip:hover {
-    transform: translateY(-1px);
-  }
-
-  .md-live-mode-chip:active {
-    transform: scale(0.96);
-  }
-
-  .md-live-mode-chip[aria-pressed="false"] {
-    opacity: 0.78;
-  }
-
-  .md-live-mode-chip:focus-visible {
-    box-shadow: var(--md-dashboard-ring);
-  }
-
   .md-live-pulse {
     position: relative;
     display: grid;
@@ -1659,6 +2310,9 @@
     flex-direction: column;
     gap: 6px;
     height: 100%;
+    /* Capped so a long book does not leave the panel beside it stranded at the
+       top of a very tall row. The list scrolls; the row stays a shelf. */
+    max-height: 436px;
     overflow-y: auto;
     overscroll-behavior-y: contain;
     padding: 0 11px 12px;
@@ -1693,8 +2347,10 @@
   }
 
   @container live-board (min-width: 680px) {
+    /* The tail is a fixed column rather than `auto`, so ETA and the chevron sit
+       on one line down the table instead of drifting with the date's width. */
     .md-live-row {
-      grid-template-columns: 92px minmax(0, 1.5fr) minmax(0, 1fr) auto;
+      grid-template-columns: 92px minmax(0, 1.5fr) minmax(0, 1fr) 136px;
     }
   }
 
@@ -1802,10 +2458,13 @@
     display: flex;
     flex-shrink: 0;
     align-items: center;
+    justify-content: flex-end;
     gap: 9px;
   }
 
   .md-live-row-eta {
+    flex: 1;
+    min-width: 0;
     text-align: end;
   }
 
@@ -1878,6 +2537,840 @@
     font-weight: 500;
     color: var(--md-text);
   }
+
+  /* ═══ CRM dashboard ═══════════════════════════════════════════════════════
+     The sales side of the same cockpit. It reuses the dashboard's tokens, KPI
+     strip and arrival cadence, so moving between /crm and the operations
+     overview does not feel like moving between two products.
+
+     Panels here are separated by a hairline stroke rather than an elevation
+     shadow: this screen is a single dense plane of numbers, and eight floating
+     cards on one page reads as clutter rather than depth. */
+
+  .md-crm-dashboard {
+    container: md-dash / inline-size;
+  }
+
+  .md-crm-dashboard .md-kpi-cell-button,
+  .md-crm-dashboard .md-kpi-cell-button:hover {
+    box-shadow: var(--md-shadow-line);
+  }
+
+  .md-crm-dashboard .md-kpi-cell-button {
+    transition: background-color var(--md-motion);
+  }
+
+  .md-crm-dashboard .md-kpi-cell-button:hover {
+    background: var(--md-surface-soft);
+  }
+
+  .md-crm-dashboard .md-kpi-cell-button:focus-visible {
+    box-shadow: var(--md-shadow-line), var(--md-dashboard-ring);
+  }
+
+  /* Two bands of panels. The lead band gives the queue the wider half; the
+     support band splits evenly. */
+  .md-crm-lead,
+  .md-crm-trio {
+    display: grid;
+    gap: var(--md-page-stack-gap-compact);
+    align-items: stretch;
+  }
+
+  @container md-dash (min-width: 860px) {
+    .md-crm-lead {
+      grid-template-columns: minmax(300px, 0.82fr) minmax(0, 1.18fr);
+    }
+
+    .md-crm-trio {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @container md-dash (min-width: 1180px) {
+    .md-crm-trio {
+      grid-template-columns: minmax(0, 1.24fr) minmax(0, 0.88fr) minmax(0, 0.88fr);
+    }
+  }
+
+  /* ── Panel shell ─────────────────────────────────────────────────────── */
+
+  .md-crm-panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+    padding: 0;
+    border-radius: var(--md-radius-xl);
+    background: var(--md-surface);
+    box-shadow: var(--md-shadow-line);
+  }
+
+  .md-crm-panel-head {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--md-gap-md);
+    padding: 12px 12px 8px 14px;
+  }
+
+  .md-crm-panel-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: -0.005em;
+    color: var(--md-ink);
+  }
+
+  .md-crm-panel-link {
+    flex-shrink: 0;
+    height: 24px;
+    padding-inline: 8px;
+    border-radius: var(--md-radius-md);
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--md-subtle);
+    transition-property: color, background-color, scale;
+    transition-duration: 160ms;
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .md-crm-panel-link:hover {
+    color: var(--md-ink);
+  }
+
+  .md-crm-panel-link:active {
+    scale: 0.96;
+  }
+
+  .md-crm-panel-link-arrow {
+    translate: 0 0;
+    transition: translate var(--md-motion-fast);
+  }
+
+  .md-crm-panel-link:hover .md-crm-panel-link-arrow {
+    translate: 2px 0;
+  }
+
+  [dir="rtl"] .md-crm-panel-link-arrow {
+    scale: -1 1;
+  }
+
+  /* ── Opportunity value gauge ─────────────────────────────────────────── */
+
+  .md-crm-gauge {
+    position: relative;
+    display: grid;
+    flex: 1;
+    place-items: center;
+    padding: 4px 14px 8px;
+  }
+
+  .md-crm-gauge-svg {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    overflow: visible;
+  }
+
+  /* One CSS one-shot per tick. Forty-six spring instances would be forty-six
+     JavaScript animations a frame; this is none, and the arc still lights up in
+     sequence. `backwards` holds the first frame through the delay so no tick is
+     ever painted at full opacity before its turn. */
+  .md-crm-gauge-tick {
+    opacity: 1;
+    animation: md-crm-tick-in 280ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+    transition: opacity var(--md-motion-fast);
+  }
+
+  .md-crm-gauge-tick[data-dimmed="true"] {
+    opacity: 0.3;
+  }
+
+  .md-crm-gauge-centre {
+    position: absolute;
+    inset-block-start: 42%;
+    display: grid;
+    justify-items: center;
+    gap: 3px;
+    pointer-events: none;
+  }
+
+  .md-crm-gauge-value {
+    font-size: 30px;
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: -0.025em;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-ink);
+  }
+
+  .md-crm-gauge-caption {
+    font-size: 11px;
+    color: var(--md-subtle);
+  }
+
+  .md-crm-legend {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 1px;
+    padding: 2px 10px 10px;
+  }
+
+  .md-crm-legend-row {
+    display: grid;
+    grid-template-columns: 7px minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 9px;
+    padding: 5px 8px;
+    border-radius: var(--md-radius-lg);
+    text-align: start;
+    outline: none;
+    transition-property: background-color, opacity;
+    transition-duration: 160ms;
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .md-crm-legend-row:hover {
+    background: var(--md-dashboard-hush);
+  }
+
+  .md-crm-legend-row:focus-visible {
+    box-shadow: var(--md-dashboard-ring);
+  }
+
+  .md-crm-legend-row[data-dimmed="true"] {
+    opacity: 0.45;
+  }
+
+  .md-crm-legend-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+  }
+
+  .md-crm-legend-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    color: var(--md-text);
+  }
+
+  .md-crm-legend-count,
+  .md-crm-legend-value {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .md-crm-legend-count {
+    font-size: 11px;
+    color: var(--md-subtle);
+  }
+
+  .md-crm-legend-value {
+    min-width: 54px;
+    font-size: 12px;
+    font-weight: 500;
+    text-align: end;
+    color: var(--md-ink);
+  }
+
+  /* ── The shared row ──────────────────────────────────────────────────── */
+
+  /* Panel radius 14 less the list's 4px inset gives the row 10 — concentric,
+     so the row never looks pinched inside its panel. */
+  .md-crm-list {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 2px;
+    padding: 0 4px 8px;
+    /* The rows own their layer work. Containing layout and paint stops a filter
+       change inside one panel from asking the whole page to re-lay-out. */
+    contain: layout paint;
+  }
+
+  /* Three fixed rails — glyph, body, and a right-hand block of a set width — so
+     pills, values and ages line up down the panel instead of stopping wherever
+     each row's text happens to end. Ragged right edges are most of what makes a
+     list of records look thrown together. */
+  .md-crm-row {
+    position: relative;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    padding: 9px 12px;
+    border-radius: var(--md-radius-lg);
+    transition: background-color var(--md-motion-fast);
+  }
+
+  .md-crm-row[data-metered="true"] {
+    grid-template-columns: auto minmax(0, 1fr) 84px auto;
+  }
+
+  .md-crm-row[data-status-column="true"] {
+    grid-template-columns: 28px minmax(0, 1fr) 104px 70px;
+    min-height: 44px;
+    gap: 10px;
+    padding: 5px 10px;
+  }
+
+  .md-crm-row[data-openable="true"] {
+    cursor: pointer;
+  }
+
+  .md-crm-row:hover {
+    background: var(--md-dashboard-hush);
+  }
+
+  .md-crm-row:focus-visible {
+    outline: none;
+    box-shadow: var(--md-dashboard-ring);
+  }
+
+  .md-crm-row-glyph {
+    display: flex;
+    flex-shrink: 0;
+  }
+
+  /* A ringed disc rather than a tinted square. The ring is where the record's
+     tone lives now, which lets the row itself stay completely uncoloured until
+     the pointer is on it. */
+  .md-crm-avatar {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--md-row-accent, var(--md-accent)) 11%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-row-accent, var(--md-accent)) 24%, transparent);
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    color: var(--md-row-accent, var(--md-accent));
+    transition: box-shadow var(--md-motion-fast);
+  }
+
+  .md-crm-row:hover .md-crm-avatar {
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-row-accent, var(--md-accent)) 44%, transparent);
+  }
+
+  .md-crm-row-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .md-crm-row-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 17px;
+    letter-spacing: -0.006em;
+    color: var(--md-ink);
+  }
+
+  .md-crm-row-title-aside {
+    font-weight: 400;
+    color: var(--md-subtle);
+  }
+
+  .md-crm-row-sub {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11.5px;
+    line-height: 16px;
+    color: var(--md-subtle);
+  }
+
+  .md-crm-meter {
+    display: block;
+    width: 100%;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--md-dashboard-track);
+    overflow: hidden;
+  }
+
+  .md-crm-meter-fill {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--md-row-accent, var(--md-accent)) 55%, transparent),
+      var(--md-row-accent, var(--md-accent))
+    );
+    transform-origin: left center;
+  }
+
+  [dir="rtl"] .md-crm-meter-fill {
+    transform-origin: right center;
+    background: linear-gradient(
+      270deg,
+      color-mix(in srgb, var(--md-row-accent, var(--md-accent)) 55%, transparent),
+      var(--md-row-accent, var(--md-accent))
+    );
+  }
+
+  .md-crm-row-side {
+    display: flex;
+    flex-shrink: 0;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 4px;
+    min-width: 88px;
+    text-align: end;
+  }
+
+  .md-crm-row-status {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: flex-start;
+  }
+
+  .md-crm-row[data-status-column="true"] .md-crm-row-side {
+    min-width: 0;
+  }
+
+  .md-crm-row[data-status-column="true"] .md-crm-avatar {
+    width: 28px;
+    height: 28px;
+  }
+
+  .md-crm-row-value {
+    font-size: 12.5px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-ink);
+  }
+
+  .md-crm-row-age {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    white-space: nowrap;
+    font-size: 10.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-subtle);
+  }
+
+  /* The arrow is the row's only travelling part: hidden at rest, it steps out
+     from behind the age on hover so the row reads as a door, not a label. */
+  .md-crm-row-arrow {
+    opacity: 0;
+    translate: -4px 0;
+    transition-property: opacity, translate;
+    transition-duration: 160ms;
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .md-crm-row[data-openable="true"]:hover .md-crm-row-arrow,
+  .md-crm-row[data-openable="true"]:focus-visible .md-crm-row-arrow {
+    opacity: 1;
+    translate: 0 0;
+  }
+
+  [dir="rtl"] .md-crm-row-arrow {
+    scale: -1 1;
+  }
+
+  /* ── Queue filters ───────────────────────────────────────────────────── */
+
+  .md-crm-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    padding: 0 14px 9px;
+  }
+
+  .md-crm-queue-columns {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr) 104px 70px;
+    gap: 10px;
+    padding: 0 14px 3px;
+  }
+
+  .md-crm-queue-status-label {
+    grid-column: 3;
+    font-size: 10px;
+    font-weight: 500;
+    line-height: 14px;
+    color: var(--md-subtle);
+  }
+
+  @media (max-width: 600px) {
+    .md-crm-row[data-status-column="true"],
+    .md-crm-queue-columns {
+      grid-template-columns: 28px minmax(0, 1fr) 92px 70px;
+      gap: 6px;
+    }
+
+    .md-crm-row[data-status-column="true"] {
+      padding-inline: 6px;
+    }
+
+    .md-crm-queue-columns {
+      padding-inline: 10px;
+    }
+
+    .md-crm-row-status .inline-flex {
+      max-width: 100%;
+      padding-inline: 7px;
+    }
+  }
+
+  .md-crm-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+
+  .md-crm-chip {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 24px;
+    padding-inline: 9px;
+    border-radius: var(--md-radius-lg);
+    background: var(--md-dashboard-hush);
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--md-text);
+    outline: none;
+    transition-property: background-color, color, scale;
+    transition-duration: 160ms;
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .md-crm-chip:hover {
+    background: var(--md-dashboard-hush-hover);
+    color: var(--md-ink);
+  }
+
+  .md-crm-chip:active {
+    scale: 0.96;
+  }
+
+  .md-crm-chip:focus-visible {
+    box-shadow: var(--md-dashboard-ring);
+  }
+
+  .md-crm-chip[aria-pressed="true"] {
+    color: var(--md-ink);
+  }
+
+  .md-crm-chip-indicator {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    border-radius: var(--md-radius-lg);
+    background: color-mix(in srgb, var(--md-chip-accent, var(--md-accent)) 14%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-chip-accent, var(--md-accent)) 28%, transparent);
+  }
+
+  .md-crm-chip-label,
+  .md-crm-chip-count {
+    position: relative;
+    z-index: 1;
+  }
+
+  .md-crm-chip-count {
+    font-variant-numeric: tabular-nums;
+    color: var(--md-subtle);
+  }
+
+  .md-crm-chip[aria-pressed="true"] .md-crm-chip-count {
+    color: var(--md-chip-accent, var(--md-accent));
+  }
+
+  /* ── Leads by area: geographic heat map ─────────────────────────────── */
+
+  .md-crm-heat {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 9px;
+    padding: 0 14px 12px;
+  }
+
+  /* The plot is laid out in percentages against its own box, so the map
+     reflows with the panel and never needs measuring. */
+  .md-crm-heat-plot {
+    position: relative;
+    flex: 1;
+    min-height: 220px;
+    overflow: hidden;
+    border-radius: var(--md-radius-lg);
+    background: var(--md-bg-strong);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-ink) 7%, transparent);
+  }
+
+  .md-crm-area-map {
+    z-index: 0;
+    background: var(--md-bg-strong);
+  }
+
+  .md-crm-area-map .leaflet-tile-pane {
+    filter: saturate(0.28) contrast(0.9) brightness(1.03);
+  }
+
+  .dark .md-crm-area-map .leaflet-tile-pane {
+    filter: invert(0.88) hue-rotate(160deg) saturate(0.22) brightness(0.54) contrast(1.15);
+  }
+
+  .md-crm-area-map .leaflet-interactive {
+    transition-property: fill-opacity, stroke-width;
+    transition-duration: 160ms;
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .md-crm-area-map .leaflet-interactive:hover,
+  .md-crm-area-map .leaflet-interactive:focus-visible {
+    fill-opacity: 0.92;
+    stroke-width: 2px;
+  }
+
+  .md-crm-area-map .leaflet-tooltip {
+    padding: 4px 7px;
+    border: 0;
+    border-radius: var(--md-radius-md);
+    background: color-mix(in srgb, var(--md-surface) 96%, transparent);
+    box-shadow: var(--md-shadow-line);
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 16px;
+    white-space: nowrap;
+    color: var(--md-ink);
+    backdrop-filter: blur(12px);
+  }
+
+  .md-crm-area-map .leaflet-tooltip-top::before {
+    border-top-color: color-mix(in srgb, var(--md-surface) 92%, transparent);
+  }
+
+  .md-crm-area-map .leaflet-control-attribution {
+    padding: 2px 4px;
+    background: color-mix(in srgb, var(--md-surface) 78%, transparent);
+    font-size: 8px;
+    line-height: 11px;
+    color: var(--md-subtle);
+    backdrop-filter: blur(8px);
+  }
+
+  .md-crm-area-map .leaflet-control-attribution a {
+    color: var(--md-text);
+  }
+
+  [dir="rtl"] .md-crm-area-map {
+    direction: ltr;
+  }
+
+  .md-crm-heat-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 11px;
+    color: var(--md-subtle);
+  }
+
+  .md-crm-heat-foot-value {
+    font-variant-numeric: tabular-nums;
+    color: var(--md-text);
+  }
+
+  /* ── Activity feed ───────────────────────────────────────────────────── */
+
+  .md-crm-feed {
+    position: relative;
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    padding: 0 14px 12px;
+  }
+
+  .md-crm-feed-spine {
+    position: absolute;
+    inset-block: 18px 26px;
+    inset-inline-start: 18px;
+    width: 1.5px;
+    border-radius: 999px;
+    background: var(--md-dashboard-track);
+  }
+
+  /* The timestamp sits on its own rail rather than under the subject: one
+     column of times reads as a timeline, a time under every line reads as a
+     paragraph. */
+  .md-crm-feed-row {
+    position: relative;
+    display: grid;
+    grid-template-columns: 9px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    padding: 7px 8px 7px 0;
+    border-radius: var(--md-radius-lg);
+  }
+
+  .md-crm-feed-node {
+    position: relative;
+    z-index: 1;
+    width: 9px;
+    height: 9px;
+    border-radius: 999px;
+    background: var(--md-surface);
+    box-shadow: inset 0 0 0 2px var(--md-accent);
+    transition: box-shadow var(--md-motion-fast);
+  }
+
+  .md-crm-feed-row:hover .md-crm-feed-node {
+    box-shadow: inset 0 0 0 4.5px var(--md-accent);
+  }
+
+  .md-crm-feed-subject {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 17px;
+    color: var(--md-ink);
+  }
+
+  .md-crm-feed-when {
+    white-space: nowrap;
+    font-size: 10.5px;
+    line-height: 15px;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-subtle);
+  }
+
+  /* ── Empty states ────────────────────────────────────────────────────── */
+
+  .md-crm-empty {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 26px 18px 30px;
+    text-align: center;
+  }
+
+  .md-crm-empty-glyph {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    margin-bottom: 5px;
+    border-radius: var(--md-radius-lg);
+    background: var(--md-dashboard-hush);
+    color: var(--md-subtle);
+  }
+
+  .md-crm-empty-title {
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--md-ink);
+  }
+
+  .md-crm-empty-body {
+    max-width: 320px;
+    font-size: 11px;
+    line-height: 16px;
+    color: var(--md-subtle);
+  }
+
+  /* ── Loading skeleton ────────────────────────────────────────────────── */
+
+  .md-crm-skeleton {
+    display: flex;
+    flex-direction: column;
+    gap: var(--md-page-stack-gap-compact);
+  }
+
+  .md-crm-skeleton-kpis {
+    display: grid;
+    gap: var(--md-gap-sm);
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  @container md-dash (min-width: 560px) {
+    .md-crm-skeleton-kpis {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  @container md-dash (min-width: 1120px) {
+    .md-crm-skeleton-kpis {
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+    }
+  }
+
+  /* Sized to the real panels, so the swap to loaded content changes opacity
+     only — no reflow, no scroll jump. */
+  .md-crm-skeleton-block {
+    display: block;
+    border-radius: var(--md-radius-xl);
+    background: var(--md-surface);
+    box-shadow: var(--md-shadow-line);
+    animation: md-crm-skeleton-breathe 1600ms cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  }
+
+  .md-crm-skeleton-kpi {
+    height: 84px;
+  }
+
+  .md-crm-skeleton-panel-lg {
+    height: 336px;
+  }
+
+  .md-crm-skeleton-panel {
+    height: 262px;
+  }
+
+  .md-crm-skeleton-still .md-crm-skeleton-block {
+    animation: none;
+    opacity: 0.72;
+  }
+}
+
+@keyframes md-crm-tick-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes md-crm-skeleton-breathe {
+  0%,
+  100% {
+    opacity: 0.58;
+  }
+
+  50% {
+    opacity: 0.92;
+  }
 }
 
 /* Nothing on this page should animate for operators who asked for stillness.
@@ -1885,18 +3378,116 @@
 @media (prefers-reduced-motion: reduce) {
   .md-dashboard *,
   .md-dashboard *::before,
-  .md-dashboard *::after {
+  .md-dashboard *::after,
+  .md-crm-dashboard *,
+  .md-crm-dashboard *::before,
+  .md-crm-dashboard *::after,
+  .md-kpi-scope *,
+  .md-kpi-scope *::before,
+  .md-kpi-scope *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
 
   .md-dashboard-back:hover,
-  .md-job-row-arrow,
   .md-kpi-cell-marker,
-  .md-action-row-actions,
-  .md-live-row:hover .md-live-row-arrow {
+  .md-queue-row-rule,
+  .md-queue-row-actions,
+  .md-live-row:hover .md-live-row-arrow,
+  .md-crm-row[data-openable="true"]:hover .md-crm-row-arrow,
+  .md-crm-panel-link:hover .md-crm-panel-link-arrow,
+  .md-crm-chip:active,
+  .md-crm-panel-link:active {
     translate: 0 0;
+    scale: 1 1;
     transform: none;
+  }
+
+  /* The arrow and the reason edge still respond to hover — only their travel
+     is removed, so the row keeps its static cue. */
+  .md-crm-row[data-openable="true"]:hover .md-crm-row-arrow,
+  .md-crm-row[data-openable="true"]:focus-visible .md-crm-row-arrow {
+    opacity: 1;
+  }
+}
+
+@layer md-dashboard {
+  /* ── Mode chart ──────────────────────────────────────────────────────────
+     Several series on one axis, in the dashboard's own chart idiom so it reads
+     as a sibling of the trend plot rather than a report card dropped into a
+     side column. */
+
+  .md-mode-chart {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: var(--md-radius-2xl);
+    box-shadow: var(--md-shadow-soft);
+  }
+
+  .md-mode-chart-head {
+    padding: 14px 16px 0;
+  }
+
+  .md-mode-chart-canvas {
+    position: relative;
+    min-width: 0;
+    padding: 6px 8px 0;
+  }
+
+  .md-mode-chart-tooltip-card {
+    min-width: 148px;
+  }
+
+  .md-mode-chart-tooltip-values {
+    display: grid;
+    gap: 3px;
+    margin-top: 6px;
+  }
+
+  .md-mode-chart-tooltip-values li {
+    display: grid;
+    grid-template-columns: 9px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--md-text);
+  }
+
+  .md-mode-chart-tooltip-values strong {
+    font-size: 12px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-ink);
+  }
+
+  .md-mode-chart-tooltip-swatch {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+  }
+
+  .md-mode-chart-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    padding: 2px 16px 14px;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--md-text);
+  }
+
+  .md-mode-chart-legend li {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .md-mode-chart-swatch {
+    width: 10px;
+    height: 2.5px;
+    flex-shrink: 0;
+    border-radius: 999px;
   }
 }

@@ -1,9 +1,10 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ClipboardEvent, type FormEvent, type KeyboardEvent, type ReactNode } from "react"
-import type { LucideIcon } from "lucide-react"
+import { SentIcon as SendHorizontalIcon } from "@hugeicons/core-free-icons"
+import { HugeiconsIcon } from "@hugeicons/react"
+import type { LucideIcon } from "@/components/icons/hugeicons"
 import {
   ArrowRight,
   ArrowLeft,
-  ArrowUp,
   BarChart3,
   Boxes,
   Check,
@@ -23,7 +24,7 @@ import {
   Users,
   X,
   Zap,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
 import { createPortal } from "react-dom"
 import { Button } from "@/components/ui/button"
@@ -659,13 +660,18 @@ export function DexterMentionText({
         aria-label={`${t(mentionTypeLabels[part.type])}: ${part.title}`}
       >
         {part.logo ? <img src={part.logo} alt="" aria-hidden="true" /> : null}
-        @{part.title}
+        {part.title}
       </span>
     ))
 }
 
 function readMentionEditorValue(node: HTMLElement) {
-  return node.innerText.replaceAll("\u00a0", " ").replace(/\n$/, "")
+  const snapshot = node.cloneNode(true) as HTMLElement
+  snapshot.querySelectorAll<HTMLElement>("[data-md-dexter-mention]").forEach((mention) => {
+    const title = mention.dataset.mentionTitle ?? mention.innerText
+    mention.replaceWith(document.createTextNode(`@${title}`))
+  })
+  return snapshot.innerText.replaceAll("\u00a0", " ").replace(/\n$/, "")
 }
 
 function insertPlainTextAtSelection(text: string) {
@@ -878,7 +884,7 @@ export function DexterMentionInput({
               logo.setAttribute("aria-hidden", "true")
               mention.append(logo)
             }
-            mention.append(document.createTextNode(`@${part.item.title}`))
+            mention.append(document.createTextNode(part.item.title))
             fragment.append(mention)
             mentionIndex += 1
           })
@@ -993,7 +999,7 @@ export function DexterMentionInput({
       logo.setAttribute("aria-hidden", "true")
       mention.append(logo)
     }
-    mention.append(document.createTextNode(`@${item.title}`))
+    mention.append(document.createTextNode(item.title))
 
     const spacer = document.createTextNode("\u00a0")
     triggerRange.insertNode(spacer)
@@ -1265,6 +1271,7 @@ export function DexterPromptComposer({
   onMentionsChange,
   onUnavailableMention,
   onOpenAttachments,
+  attachmentActionLabel = "Attach context",
   onSelectSpecialist,
   onSelectModel,
   onAccessModeChange,
@@ -1294,6 +1301,7 @@ export function DexterPromptComposer({
   onMentionsChange?: (mentions: DexterMentionItem[]) => void
   onUnavailableMention?: (mention: DexterMentionItem) => void
   onOpenAttachments: () => void
+  attachmentActionLabel?: string
   onSelectSpecialist: (id: DexterSpecialistId) => void
   onSelectModel: (id: DexterModelId) => void
   onAccessModeChange: (mode: DexterAccessMode) => void
@@ -1412,8 +1420,8 @@ export function DexterPromptComposer({
               type="button"
               variant="ghost"
               size="icon"
-              aria-label={t("Attach context")}
-              title={t("Attach context")}
+              aria-label={t(attachmentActionLabel)}
+              title={t(attachmentActionLabel)}
               className="md-composer-chip size-9 shrink-0 rounded-full text-[var(--md-text)] hover:text-[var(--md-ink)]"
               onClick={onOpenAttachments}
             >
@@ -1452,7 +1460,14 @@ export function DexterPromptComposer({
               </span>
               <DexterActionPill
                 type="button"
-                icon={ArrowUp}
+                iconElement={
+                  <HugeiconsIcon
+                    aria-hidden="true"
+                    className="relative z-10 size-3.5 shrink-0"
+                    icon={SendHorizontalIcon}
+                    strokeWidth={1.25}
+                  />
+                }
                 iconOnly
                 label={`${t("Send prompt")} (${sendShortcutModifier} + Enter)`}
                 aria-keyshortcuts="Meta+Enter Control+Enter"

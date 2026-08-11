@@ -22,7 +22,7 @@ import {
   Trash2,
   Upload,
   X,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { Button } from "@/components/ui/button"
 import {

@@ -6,7 +6,7 @@ import {
   Eye,
   Reply,
   type LucideIcon,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 import {
   Popover,
   PopoverContent,
@@ -49,7 +49,7 @@ function presentationFor(
       return {
         icon: Reply,
         label: t("Replied"),
-        detail: t("A reply was received in this conversation."),
+        detail: t("A reply was received to this message."),
         tone: "positive",
       }
     case "failed":
@@ -131,6 +131,7 @@ export function EmailDeliveryStatus({
         <button
           type="button"
           aria-label={presentation.label}
+          aria-live="polite"
           className={cn(
             "inline-flex min-h-7 shrink-0 items-center gap-1 rounded-full px-2 text-[10.5px] font-medium outline-none transition-[background-color,color,box-shadow,scale] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:brightness-[0.98] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a20)] active:scale-[0.96] motion-reduce:transition-none motion-reduce:active:scale-100",
             toneClass[presentation.tone],
@@ -174,7 +175,7 @@ export function EmailDeliveryStatus({
 
         {delivery.openTrackingEnabled ? (
           <p className="text-[10.5px] leading-[1.5] text-[var(--md-subtle)]">
-            {t("Open tracking is approximate. Image blocking can hide opens, while privacy proxies can create an open signal before the person reads the message.")}
+            {t("Open tracking is approximate. Image blocking can hide opens, while privacy proxies or viewing the sent copy can create a signal without the recipient reading it.")}
           </p>
         ) : (
           <p className="text-[10.5px] leading-[1.5] text-[var(--md-subtle)]">

@@ -1,12 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { motion, useReducedMotion } from "motion/react"
 import { toast } from "sonner"
-import { AlertCircle, CheckCircle2, ChevronDown, Download, FileSpreadsheet, LayoutGrid, Loader2, MapPin, Package, Plus, RefreshCw, Search, Trash2, Upload, Warehouse } from "lucide-react"
+import { AlertCircle, ArrowLeft, CheckCircle2, ChevronDown, Download, FileSpreadsheet, Loader2, MapPin, Package, Pencil, Plus, RefreshCw, Trash2, Upload, Warehouse } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   Dialog,
@@ -16,11 +15,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { WarehouseInventoryTable } from "@/components/multideck/warehouse-components"
+import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
+import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
+import { WizardDialog, WizardSaveNowButton, type WizardStep } from "@/components/multideck/wizard-dialog"
+import { itemDetailPath } from "@/components/multideck/warehouse-item-detail"
+import { RegisterFacetSelect, RegisterSearchField, RegisterViewSwitch, registerButtonClass, registerControlClass } from "@/components/multideck/register-toolbar"
 import { StatusPill } from "@/components/multideck/status-pill"
-import { FilterChips } from "@/components/multideck/workflow-components"
 import { cn } from "@/lib/utils"
-import { mdMotion } from "@/lib/motion"
+import { mdMotion, staggerRamp } from "@/lib/motion"
+import { subscribeTopBarAction, topBarActionEvents } from "@/lib/top-bar-action-events"
 import { useLanguage } from "@/i18n/language-provider"
 import {
   WarehouseApiError,
@@ -91,7 +94,10 @@ export function WarehouseFormField({
   children: ReactNode
 }) {
   return (
-    <div className={cn("grid min-w-0 self-start content-start gap-1.5", className)}>
+    <div
+      className={cn("grid min-w-0 self-start content-start gap-1.5", className)}
+      data-field-invalid={Boolean(error) || undefined}
+    >
       <label htmlFor={htmlFor} className="flex items-center gap-1 text-[12px] font-medium text-[var(--md-ink)]">
         {label}
         {required ? <span className="text-[var(--md-red)]" aria-hidden="true">*</span> : null}
@@ -131,50 +137,6 @@ function WarehouseSwitchField({
   )
 }
 
-function ManagementToolbar({
-  title,
-  meta,
-  children,
-}: {
-  title: string
-  meta?: string
-  children?: ReactNode
-}) {
-  return (
-    <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-center">
-      <div className="min-w-0 2xl:me-auto">
-        <h2 className="text-[15px] font-medium text-[var(--md-ink)]">{title}</h2>
-        {meta ? <p className="mt-1 text-[13px] leading-5 text-[var(--md-text)] 2xl:whitespace-nowrap">{meta}</p> : null}
-      </div>
-      <div className="flex min-w-0 flex-wrap items-center gap-2 2xl:flex-nowrap">{children}</div>
-    </div>
-  )
-}
-
-function ManagementSearch({
-  value,
-  onChange,
-  placeholder,
-}: {
-  value: string
-  onChange: (value: string) => void
-  placeholder: string
-}) {
-  return (
-    <div className="relative min-w-[220px] flex-1 sm:w-80 sm:max-w-[320px] sm:flex-none">
-      <Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.25} />
-      <Input
-        dir="auto"
-        aria-label={placeholder}
-        placeholder={placeholder}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-10 rounded-[var(--md-radius-lg)] border-0 bg-white/68 pe-3 ps-9 text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] placeholder:text-[var(--md-subtle)] focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
-      />
-    </div>
-  )
-}
-
 function CodeText({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <span data-i18n-skip dir="ltr" className={cn("text-[12px] font-medium tracking-normal text-[var(--md-ink)] tabular-nums", className)}>
@@ -183,14 +145,52 @@ function CodeText({ children, className }: { children: ReactNode; className?: st
   )
 }
 
+/** The app shell owns vertical scrolling, so list/detail views restore that
+ * ancestor rather than the window when returning to a long register. */
+function verticalScrollRegion(element: HTMLElement | null) {
+  let current = element?.parentElement ?? null
+  while (current) {
+    const overflowY = window.getComputedStyle(current).overflowY
+    if (overflowY === "auto" || overflowY === "scroll") return current
+    current = current.parentElement
+  }
+  return null
+}
+
+const warehouseItemsReturnKey = "multideck:warehouse:items:return"
+
+function readWarehouseItemsReturnState() {
+  try {
+    const value = window.sessionStorage.getItem(warehouseItemsReturnKey)
+    if (!value) return null
+    const parsed = JSON.parse(value) as { itemId?: unknown; scrollTop?: unknown }
+    if (typeof parsed.itemId !== "string" || typeof parsed.scrollTop !== "number") return null
+    return { itemId: parsed.itemId, scrollTop: parsed.scrollTop }
+  } catch {
+    return null
+  }
+}
+
+function writeWarehouseItemsReturnState(state: { itemId: string; scrollTop: number } | null) {
+  try {
+    if (state) window.sessionStorage.setItem(warehouseItemsReturnKey, JSON.stringify(state))
+    else window.sessionStorage.removeItem(warehouseItemsReturnKey)
+  } catch {
+    // The route still works when browser storage is unavailable; only the
+    // convenience of returning to the same register position is skipped.
+  }
+}
+
 function StateBlock({ icon, title, detail, action }: { icon: ReactNode; title: string; detail: string; action?: ReactNode }) {
+  const { t } = useLanguage()
+
   return (
     <div className="grid place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] px-6 py-14 text-center shadow-[var(--md-shadow-line)]">
       <span className="mb-3 grid size-11 place-items-center rounded-[var(--md-radius-lg)] bg-white/58 text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">
         {icon}
       </span>
-      <p className="text-[14px] font-medium text-[var(--md-ink)]">{title}</p>
-      <p className="mt-1 max-w-[380px] text-[13px] leading-5 text-[var(--md-text)]">{detail}</p>
+      <p className="text-[14px] font-medium text-[var(--md-ink)]">{t(title)}</p>
+      {detail ? <p className="mt-1 max-w-[380px] text-[13px] leading-5 text-[var(--md-text)]">{t(detail)}</p> : null}
       {action ? <div className="mt-4">{action}</div> : null}
     </div>
   )
@@ -326,6 +326,7 @@ function FacilityDialog({
   onSaved: () => void
   onDeleted: () => void
 }) {
+  const { t } = useLanguage()
   const isEditing = Boolean(facility)
   const [form, setForm] = useState<FacilityFormState>(() => emptyFacilityForm(reference))
   const [errors, setErrors] = useState<Record<string, string[]>>({})
@@ -343,6 +344,12 @@ function FacilityDialog({
   function update<K extends keyof FacilityFormState>(key: K, value: FacilityFormState[K]) {
     setForm((current) => ({ ...current, [key]: value }))
   }
+
+  const facilitySteps: WizardStep[] = [
+    { id: "details", label: "Facility details", hint: "What this warehouse is called and how it is classified.", complete: Boolean(form.code.trim() && form.name.trim()) },
+    { id: "address", label: "Address", hint: "Where the warehouse physically is. Every field here is optional.", complete: Boolean(form.address1.trim() || form.townCity.trim()) },
+    { id: "settings", label: "Settings", hint: "How stock stored here is treated." },
+  ]
 
   async function handleSubmit() {
     setSaving(true)
@@ -387,22 +394,34 @@ function FacilityDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="gap-0 overflow-hidden border-0 bg-[var(--md-surface)] p-0 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[680px]">
-        <DialogHeader className={warehouseDialogHeaderClass}>
-          <DialogTitle className="text-[16px] font-medium">{isEditing ? "Edit facility" : "New facility"}</DialogTitle>
-          <DialogDescription className="text-[13px] text-[var(--md-text)]">
-            Facilities are the physical warehouse locations where customer stock is received and stored.
-          </DialogDescription>
-        </DialogHeader>
-
-        <Tabs value={section} onValueChange={setSection} className="h-[402px] gap-0">
-          <TabsList variant="line" className="mx-6 mt-3 h-10 w-auto justify-start rounded-none bg-transparent p-0">
-            <TabsTrigger value="details" className="h-10 flex-none px-3 text-[13px]">Facility details</TabsTrigger>
-            <TabsTrigger value="address" className="h-10 flex-none px-3 text-[13px]">Address</TabsTrigger>
-            <TabsTrigger value="settings" className="h-10 flex-none px-3 text-[13px]">Settings</TabsTrigger>
-          </TabsList>
-          <TabsContent value="details" className="grid min-h-0 content-start gap-4 px-6 py-5">
+    <WizardDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={isEditing ? "Edit facility" : "New facility"}
+      description="A facility is a physical warehouse where customer stock is received and stored."
+      steps={facilitySteps}
+      activeStepId={section}
+      onStepChange={setSection}
+      submitLabel={isEditing ? "Save changes" : "Create facility"}
+      onSubmit={handleSubmit}
+      saving={saving}
+      bodyMinHeight={318}
+      secondaryAction={(
+        <>
+          {isEditing ? (
+            <Button type="button" variant="ghost" onClick={handleDelete} disabled={deleting || saving} className="h-10 rounded-[var(--md-radius-lg)] px-3 text-[13px] font-medium text-[var(--md-red)] hover:bg-[rgba(209,78,78,0.08)]">
+              {deleting ? <Loader2 data-icon="inline-start" className="size-4 animate-spin" /> : <Trash2 data-icon="inline-start" className="size-4" strokeWidth={1.4} />}
+              {t("Delete")}
+            </Button>
+          ) : null}
+          {/* An operator who only came to fix the code should not have to walk to
+              the last step to save it. */}
+          {section !== "settings" ? <WizardSaveNowButton label={isEditing ? "Save changes" : "Create now"} onSubmit={handleSubmit} saving={saving} /> : null}
+        </>
+      )}
+    >
+      {section === "details" ? (
+        <div className="grid content-start gap-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <WarehouseFormField label="Facility code" htmlFor="facility-code" required error={firstFieldError(errors, "Code")} hint="A short unique code, e.g. FXT-DC1.">
               <Input id="facility-code" dir="ltr" value={form.code} onChange={(event) => update("code", event.target.value)} className={fieldControlClass} placeholder="FXT-DC1" />
@@ -452,8 +471,11 @@ function FacilityDialog({
             </WarehouseFormField>
           </div>
 
-          </TabsContent>
-          <TabsContent value="address" className="grid min-h-0 content-start gap-4 px-6 py-5">
+        </div>
+      ) : null}
+
+      {section === "address" ? (
+        <div className="grid content-start gap-4">
           <WarehouseFormField label="Address line 1" htmlFor="facility-address1" error={firstFieldError(errors, "Address1")}>
             <Input id="facility-address1" value={form.address1} onChange={(event) => update("address1", event.target.value)} className={fieldControlClass} />
           </WarehouseFormField>
@@ -482,40 +504,25 @@ function FacilityDialog({
             </WarehouseFormField>
           </div>
 
-          </TabsContent>
-          <TabsContent value="settings" className="min-h-0 px-6 py-5">
+        </div>
+      ) : null}
+
+      {section === "settings" ? (
+        <div className="grid content-start gap-4">
           <div className="grid gap-2.5 sm:grid-cols-2">
             <WarehouseSwitchField label="Bonded facility" hint="Customs-controlled, duty-suspended storage." checked={form.isBonded} onCheckedChange={(checked) => update("isBonded", checked)} />
             {isEditing ? (
               <WarehouseSwitchField label="Active" hint="Inactive facilities stay on record but are hidden by default." checked={form.isActive} onCheckedChange={(checked) => update("isActive", checked)} />
             ) : null}
           </div>
-          </TabsContent>
-        </Tabs>
-
-        <DialogFooter className={cn(warehouseDialogFooterClass, "flex-row items-center justify-between gap-2 sm:justify-between")}>
-          {isEditing ? (
-            <Button type="button" variant="ghost" onClick={handleDelete} disabled={deleting || saving} className="h-10 rounded-[var(--md-radius-lg)] px-3 text-[13px] font-medium text-[var(--md-red)] hover:bg-[rgba(209,78,78,0.08)]">
-              {deleting ? <Loader2 data-icon="inline-start" className="size-4 animate-spin" /> : <Trash2 data-icon="inline-start" className="size-4" strokeWidth={1.4} />}
-              Delete
-            </Button>
-          ) : <span />}
-          <div className="flex items-center gap-2">
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} className="h-10 rounded-[var(--md-radius-lg)] bg-white/48 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/74">
-              Cancel
-            </Button>
-            <Button type="button" onClick={handleSubmit} disabled={saving} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] shadow-[0_10px_22px_var(--md-accent-a14)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]">
-              {saving ? <Loader2 data-icon="inline-start" className="size-4 animate-spin" /> : null}
-              {isEditing ? "Save changes" : "Create facility"}
-            </Button>
-          </div>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </div>
+      ) : null}
+    </WizardDialog>
   )
 }
 
 export function WarehouseFacilitiesView() {
+  const { t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
   const [reference, setReference] = useState<WarehouseFacilityReference | null>(null)
   const [facilities, setFacilities] = useState<WarehouseFacility[] | null>(null)
@@ -568,23 +575,34 @@ export function WarehouseFacilitiesView() {
     setDialogOpen(true)
   }
 
+  useEffect(() => {
+    return subscribeTopBarAction(topBarActionEvents.createWarehouseFacility, openCreate)
+  }, [])
+
   function openEdit(facility: WarehouseFacility) {
     setEditing(facility)
     setDialogOpen(true)
   }
 
-  const columns = [
+  const columns = useMemo<DataTableColumn<WarehouseFacility>[]>(() => [
     {
-      key: "code",
+      id: "code",
       label: "Code",
-      className: "min-w-[140px]",
-      render: (facility: WarehouseFacility) => <CodeText>{facility.code}</CodeText>,
+      width: 140,
+      minWidth: 116,
+      resizable: true,
+      canHide: false,
+      sortValue: (facility) => facility.code,
+      cell: (facility) => <CodeText>{facility.code}</CodeText>,
     },
     {
-      key: "facility",
+      id: "facility",
       label: "Facility",
-      className: "min-w-[240px]",
-      render: (facility: WarehouseFacility) => (
+      width: 280,
+      minWidth: 200,
+      resizable: true,
+      sortValue: (facility) => facility.name,
+      cell: (facility) => (
         <div className="min-w-0">
           <p className="truncate text-[14px] font-medium text-[var(--md-ink)]">{facility.name}</p>
           <p className="mt-1 truncate text-[12px] text-[var(--md-text)]">{facility.typeName ?? facility.typeCode}</p>
@@ -592,10 +610,13 @@ export function WarehouseFacilitiesView() {
       ),
     },
     {
-      key: "location",
+      id: "location",
       label: "Location",
-      className: "min-w-[200px]",
-      render: (facility: WarehouseFacility) => {
+      width: 232,
+      minWidth: 164,
+      resizable: true,
+      sortValue: (facility) => [facility.townCity, facility.countryCode].filter(Boolean).join(", "),
+      cell: (facility) => {
         const parts = [facility.townCity, facility.countryCode].filter(Boolean).join(", ")
         return parts ? (
           <span className="inline-flex items-center gap-1.5 text-[13px] text-[var(--md-ink)]">
@@ -606,71 +627,79 @@ export function WarehouseFacilitiesView() {
       },
     },
     {
-      key: "bonded",
+      id: "bonded",
       label: "Bonded",
-      render: (facility: WarehouseFacility) =>
+      kind: "attribute",
+      width: 128,
+      resizable: true,
+      sortValue: (facility) => Number(facility.isBonded),
+      cell: (facility) =>
         facility.isBonded ? <StatusPill tone="teal">Bonded</StatusPill> : <span className="text-[12px] text-[var(--md-subtle)]">Standard</span>,
     },
     {
-      key: "status",
+      id: "status",
       label: "Status",
-      align: "right" as const,
-      render: (facility: WarehouseFacility) =>
+      kind: "status",
+      width: 132,
+      resizable: true,
+      headerClassName: "text-end",
+      cellClassName: "text-end",
+      sortValue: (facility) => Number(facility.isActive),
+      cell: (facility) =>
         facility.isActive ? <StatusPill tone="green">Active</StatusPill> : <StatusPill tone="neutral">Inactive</StatusPill>,
     },
-  ]
+  ], [])
+
+  const emptyState = activeFilter === "All" || search.trim() ? (
+    <div className="mx-auto max-w-[360px]">
+      <p className="text-[13px] font-medium text-[var(--md-ink)]">No facilities match this view</p>
+      <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">Clear a filter or widen the search to see more facilities.</p>
+    </div>
+  ) : (
+    <div className="mx-auto max-w-[360px]">
+      <p className="text-[13px] font-medium text-[var(--md-ink)]">No facilities yet</p>
+      <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">Create your first warehouse location to start storing customer stock.</p>
+    </div>
+  )
 
   return (
     <div className="grid gap-[var(--md-page-stack-gap)]">
-      <ManagementToolbar title="Facilities" meta="Create and manage the warehouse locations where customer stock is stored.">
-        <FilterChips className="shrink-0 flex-nowrap" options={facilityFilters} activeOption={activeFilter} onChange={setActiveFilter} />
-        <ManagementSearch value={search} onChange={setSearch} placeholder="Search code, name, city..." />
-        <Button onClick={openCreate} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] shadow-[0_10px_22px_var(--md-accent-a14)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]">
-          <Plus data-icon="inline-start" className="size-4" strokeWidth={1.4} />
-          New facility
-        </Button>
-      </ManagementToolbar>
-
       {loadError ? (
         <StateBlock
           icon={<AlertCircle className="size-5" strokeWidth={1.4} />}
-          title="Facilities could not be loaded"
+          title="Facilities are unavailable"
           detail={loadError}
           action={
             <Button onClick={() => void refresh()} variant="ghost" className="h-9 rounded-[var(--md-radius-lg)] bg-white/48 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/74">
               <RefreshCw data-icon="inline-start" className="size-4" strokeWidth={1.4} />
-              Retry
+              {t("Try again")}
             </Button>
           }
         />
       ) : facilities === null ? (
-        <StateBlock icon={<Loader2 className="size-5 animate-spin" strokeWidth={1.4} />} title="Loading facilities" detail="Fetching your warehouse locations." />
-      ) : facilities.length === 0 && !search.trim() ? (
-        <StateBlock
-          icon={<Warehouse className="size-5" strokeWidth={1.4} />}
-          title="No facilities yet"
-          detail="Create your first warehouse location to start storing customer stock."
-          action={
-            <Button onClick={openCreate} className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] shadow-[0_10px_22px_var(--md-accent-a14)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]">
-              <Plus data-icon="inline-start" className="size-4" strokeWidth={1.4} />
-              New facility
-            </Button>
-          }
-        />
+        <StateBlock icon={<DotGridLoader decorative />} title="Loading facilities" detail="" />
       ) : (
         <motion.div
           initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={shouldReduceMotion ? { duration: 0 } : mdMotion.smooth}
         >
-          <WarehouseInventoryTable
+          <DataTable
+            ariaLabel="Warehouse facilities"
+            columnsButtonLabel="Manage facility columns"
+            storageKey="warehouse-facilities"
             rows={visibleRows}
             columns={columns}
-            minWidth={880}
-            rowLabel="facilities"
-            emptyMessage="No facilities match this search."
+            getRowKey={(facility) => facility.id}
             onRowClick={openEdit}
-            rowDetailLabel={(facility) => `Edit facility ${facility.name}`}
+            rowClassName="hover:bg-[var(--md-hover)]"
+            emptyState={emptyState}
+            toolbarTabs={(
+              <div className="flex min-w-0 items-center gap-2">
+                <RegisterViewSwitch options={facilityFilters} value={activeFilter} onChange={setActiveFilter} counts={{ [activeFilter]: visibleRows.length }} ariaLabel="Facility status" compact />
+              </div>
+            )}
+            toolbarSearch={<RegisterSearchField value={search} onChange={setSearch} onClear={() => setSearch("")} label="Search facilities" placeholder="Code, name, city" className="sm:min-w-[220px] sm:w-[220px]" />}
           />
         </motion.div>
       )}
@@ -898,25 +927,41 @@ function ItemDialog({
 
   const customerName = reference?.customers.find((customer) => customer.id === form.customerOrgId)?.name ?? item?.customerOrgName ?? ""
 
+  const itemSteps: WizardStep[] = [
+    { id: "identity", label: "The item", hint: "Who it belongs to, what it is called, and how customs sees it.", complete: Boolean(form.sku.trim() && form.description.trim() && form.customerOrgId) },
+    { id: "quantity", label: "Units", hint: "The unit it is counted in, and any larger units it arrives or ships in.", complete: Boolean(form.baseUomCode.trim()) },
+    { id: "dimensions", label: "Size and weight", hint: "Used for capacity and load planning. All optional." },
+    { id: "handling", label: "Handling", hint: "Anything the warehouse has to do differently for this SKU." },
+  ]
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="gap-0 overflow-hidden border-0 bg-[var(--md-surface)] p-0 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[760px]">
-        <DialogHeader className={warehouseDialogHeaderClass}>
-          <DialogTitle className="text-[16px] font-medium">{isEditing ? "Edit item" : "New item"}</DialogTitle>
-          <DialogDescription className="text-[13px] text-[var(--md-text)]">
-            Items are the SKUs stored for a customer in one of your facilities.
-          </DialogDescription>
-        </DialogHeader>
-
-        <Tabs value={section} onValueChange={setSection} className="h-[600px] gap-0">
-          <TabsList variant="line" className="mx-6 mt-3 h-10 w-auto justify-start rounded-none bg-transparent p-0">
-            <TabsTrigger value="identity" className="h-10 flex-none px-3 text-[13px]">Item details</TabsTrigger>
-            <TabsTrigger value="dimensions" className="h-10 flex-none px-3 text-[13px]">Dimensions &amp; storage</TabsTrigger>
-            <TabsTrigger value="quantity" className="h-10 flex-none px-3 text-[13px]">{t("Quantity & packaging")}</TabsTrigger>
-            <TabsTrigger value="handling" className="h-10 flex-none px-3 text-[13px]">Handling rules</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="identity" className="grid min-h-0 content-start gap-4 px-6 py-5">
+    <WizardDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={isEditing ? "Edit item" : "New item"}
+      description="An item is a SKU stored for a customer in one of your facilities."
+      steps={itemSteps}
+      activeStepId={section}
+      onStepChange={setSection}
+      submitLabel={isEditing ? "Save changes" : "Create item"}
+      onSubmit={handleSubmit}
+      saving={saving}
+      bodyMinHeight={392}
+      className="sm:max-w-[760px]"
+      secondaryAction={(
+        <>
+          {isEditing ? (
+            <Button type="button" variant="ghost" onClick={handleDelete} disabled={deleting || saving} className="h-10 rounded-[var(--md-radius-lg)] px-3 text-[13px] font-medium text-[var(--md-red)] hover:bg-[rgba(209,78,78,0.08)]">
+              {deleting ? <Loader2 data-icon="inline-start" className="size-4 animate-spin" /> : <Trash2 data-icon="inline-start" className="size-4" strokeWidth={1.4} />}
+              {t("Delete")}
+            </Button>
+          ) : null}
+          {section !== "handling" ? <WizardSaveNowButton label={isEditing ? "Save changes" : "Create now"} onSubmit={handleSubmit} saving={saving} /> : null}
+        </>
+      )}
+    >
+      {section === "identity" ? (
+        <div className="grid content-start gap-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <WarehouseFormField label="Customer" required error={firstFieldError(errors, "CustomerOrgId")}>
               {isEditing ? (
@@ -970,9 +1015,11 @@ function ItemDialog({
             </WarehouseFormField>
           </div>
 
-          </TabsContent>
+        </div>
+      ) : null}
 
-          <TabsContent value="dimensions" className="min-h-0 px-6 py-5">
+      {section === "dimensions" ? (
+        <div className="grid content-start gap-4">
           <div className="grid gap-3 rounded-[var(--md-radius-xl)] bg-white/40 p-3 shadow-[var(--md-shadow-line)]">
             <p className="text-[11.5px] font-medium text-[var(--md-subtle)]">Dimensions & weight</p>
             <div className="grid gap-3 sm:grid-cols-3">
@@ -1004,9 +1051,11 @@ function ItemDialog({
             </div>
           </div>
 
-          </TabsContent>
+        </div>
+      ) : null}
 
-          <TabsContent value="quantity" className="min-h-0 overflow-y-auto px-6 py-5">
+      {section === "quantity" ? (
+        <div className="grid content-start gap-4">
             <div className="grid gap-4">
               <div className="grid gap-4 sm:grid-cols-3">
                 <WarehouseFormField label={t("Tracking basis")} required>
@@ -1048,9 +1097,11 @@ function ItemDialog({
                 {!form.uoms.length ? <p className="py-4 text-center text-[12px] text-[var(--md-subtle)]">{t("No fixed packaging conversions added.")}</p> : null}
               </div>
             </div>
-          </TabsContent>
+        </div>
+      ) : null}
 
-          <TabsContent value="handling" className="min-h-0 px-6 py-5">
+      {section === "handling" ? (
+        <div className="grid content-start gap-4">
           <div className="grid gap-2.5 sm:grid-cols-2">
             <WarehouseSwitchField label="Dangerous goods" checked={form.isDangerousGoods} onCheckedChange={(checked) => update("isDangerousGoods", checked)} />
             <WarehouseSwitchField label="Excise goods" checked={form.isExciseGoods} onCheckedChange={(checked) => update("isExciseGoods", checked)} />
@@ -1063,28 +1114,9 @@ function ItemDialog({
               <WarehouseSwitchField label="Active" hint="Inactive items stay on record but are hidden by default." checked={form.isActive} onCheckedChange={(checked) => update("isActive", checked)} />
             ) : null}
           </div>
-          </TabsContent>
-        </Tabs>
-
-        <DialogFooter className={cn(warehouseDialogFooterClass, "flex-row items-center justify-between gap-2 sm:justify-between")}>
-          {isEditing ? (
-            <Button type="button" variant="ghost" onClick={handleDelete} disabled={deleting || saving} className="h-10 rounded-[var(--md-radius-lg)] px-3 text-[13px] font-medium text-[var(--md-red)] hover:bg-[rgba(209,78,78,0.08)]">
-              {deleting ? <Loader2 data-icon="inline-start" className="size-4 animate-spin" /> : <Trash2 data-icon="inline-start" className="size-4" strokeWidth={1.4} />}
-              Delete
-            </Button>
-          ) : <span />}
-          <div className="flex items-center gap-2">
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} className="h-10 rounded-[var(--md-radius-lg)] bg-white/48 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/74">
-              Cancel
-            </Button>
-            <Button type="button" onClick={handleSubmit} disabled={saving} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] shadow-[0_10px_22px_var(--md-accent-a14)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]">
-              {saving ? <Loader2 data-icon="inline-start" className="size-4 animate-spin" /> : null}
-              {isEditing ? "Save changes" : "Create item"}
-            </Button>
-          </div>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </div>
+      ) : null}
+    </WizardDialog>
   )
 }
 
@@ -1259,20 +1291,20 @@ function ImportItemsDialog({
   )
 }
 
-export function WarehouseItemsView({ canManage = true }: { canManage?: boolean }) {
+export function WarehouseItemsView({ canManage = true, navigate }: { canManage?: boolean; navigate?: (path: string) => void }) {
   const shouldReduceMotion = useReducedMotion()
   const { language, t } = useLanguage()
+  const viewRef = useRef<HTMLDivElement>(null)
   const numberFormat = useMemo(() => new Intl.NumberFormat(language, { maximumFractionDigits: 3 }), [language])
   const [reference, setReference] = useState<WarehouseItemReference | null>(null)
   const [items, setItems] = useState<WarehouseItem[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [search, setSearch] = useState("")
   const [facilityId, setFacilityId] = useState("")
-  const [activeFilter, setActiveFilter] = useState<string>(itemFilters[0])
+  const [activeFilter, setActiveFilter] = useState<(typeof itemFilters)[number]>(itemFilters[0])
   const [dialogOpen, setDialogOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const [editing, setEditing] = useState<WarehouseItem | null>(null)
-
   async function refresh() {
     setLoadError(null)
     try {
@@ -1306,115 +1338,186 @@ export function WarehouseItemsView({ canManage = true }: { canManage?: boolean }
 
   const visibleRows = items ?? []
 
+  useLayoutEffect(() => {
+    if (!items || loadError) return
+
+    const returnState = readWarehouseItemsReturnState()
+    if (!returnState) return
+    if (!items.some((item) => item.id === returnState.itemId)) {
+      writeWarehouseItemsReturnState(null)
+      return
+    }
+    const scrollRegion = verticalScrollRegion(viewRef.current)
+    if (!scrollRegion) return
+
+    scrollRegion.scrollTop = returnState.scrollTop
+    const frame = window.requestAnimationFrame(() => {
+      scrollRegion.scrollTop = returnState.scrollTop
+      const selector = `[data-warehouse-item-id="${CSS.escape(returnState.itemId)}"]`
+      const row = viewRef.current?.querySelector(selector)?.closest("tr") as HTMLElement | null
+      row?.focus({ preventScroll: true })
+      writeWarehouseItemsReturnState(null)
+    })
+
+    return () => window.cancelAnimationFrame(frame)
+  }, [items, loadError])
+
   function openCreate() {
     setEditing(null)
     setDialogOpen(true)
   }
+
+  const canCreate = Boolean(reference && reference.customers.length && reference.facilities.length)
+
+  useEffect(() => {
+    const openFromTopBar = () => {
+      if (canManage && canCreate) openCreate()
+    }
+    return subscribeTopBarAction(topBarActionEvents.createWarehouseItem, openFromTopBar)
+  }, [canCreate, canManage])
 
   function openEdit(item: WarehouseItem) {
     setEditing(item)
     setDialogOpen(true)
   }
 
-  const canCreate = Boolean(reference && reference.customers.length && reference.facilities.length)
+  function openItem(item: WarehouseItem) {
+    writeWarehouseItemsReturnState({
+      itemId: item.id,
+      scrollTop: verticalScrollRegion(viewRef.current)?.scrollTop ?? 0,
+    })
+    navigate?.(`${itemDetailPath(item)}?from=${encodeURIComponent("/warehouse/items")}`)
+  }
 
-  const columns = [
+  const columns = useMemo<DataTableColumn<WarehouseItem>[]>(() => [
     {
-      key: "sku",
+      id: "sku",
       label: "SKU",
-      className: "min-w-[140px]",
-      render: (item: WarehouseItem) => <CodeText>{item.sku}</CodeText>,
+      width: 160,
+      minWidth: 132,
+      resizable: true,
+      canHide: false,
+      sortValue: (item) => item.sku,
+      cell: (item) => (
+        <span data-warehouse-item-id={item.id}><CodeText>{item.sku}</CodeText></span>
+      ),
     },
     {
-      key: "item",
+      id: "item",
       label: "Item",
-      className: "min-w-[260px]",
-      render: (item: WarehouseItem) => (
+      width: 300,
+      minWidth: 220,
+      resizable: true,
+      sortValue: (item) => item.description,
+      cell: (item) => (
         <div className="min-w-0">
-          <p className="truncate text-[14px] font-medium text-[var(--md-ink)]">{item.description}</p>
+          <p className="truncate text-[14px] font-medium text-[var(--md-ink)]" dir="auto">{item.description}</p>
           <p className="mt-1 truncate text-[12px] text-[var(--md-text)]">{item.customerOrgName ?? "—"}</p>
         </div>
       ),
     },
     {
-      key: "facility",
+      id: "facility",
       label: "Facility",
-      className: "min-w-[180px]",
-      render: (item: WarehouseItem) => <span className="text-[13px] text-[var(--md-ink)]">{item.facilityName ?? "—"}</span>,
+      width: 190,
+      minWidth: 150,
+      resizable: true,
+      sortValue: (item) => item.facilityName,
+      cell: (item) => <span className="text-[13px] text-[var(--md-ink)]">{item.facilityName ?? "—"}</span>,
     },
     {
-      key: "hs",
+      id: "hs",
       label: "HS code",
-      render: (item: WarehouseItem) => item.hsCode ? <CodeText className="text-[var(--md-text)]">{item.hsCode}</CodeText> : <span className="text-[12px] text-[var(--md-subtle)]">—</span>,
+      width: 136,
+      minWidth: 112,
+      resizable: true,
+      sortValue: (item) => item.hsCode,
+      cell: (item) => item.hsCode ? <CodeText className="text-[var(--md-text)]">{item.hsCode}</CodeText> : <span className="text-[12px] text-[var(--md-subtle)]">—</span>,
     },
     {
-      key: "uom",
+      id: "uom",
       label: "UOM",
-      align: "center" as const,
-      render: (item: WarehouseItem) => <CodeText className="text-[var(--md-text)]">{item.baseUomCode}</CodeText>,
+      width: 96,
+      resizable: true,
+      headerClassName: "text-center",
+      cellClassName: "text-center",
+      sortValue: (item) => item.baseUomCode,
+      cell: (item) => <CodeText className="text-[var(--md-text)]">{item.baseUomCode}</CodeText>,
     },
     {
-      key: "gross",
+      id: "gross",
       label: "Gross kg",
-      align: "right" as const,
-      render: (item: WarehouseItem) => (
+      width: 120,
+      resizable: true,
+      headerClassName: "text-end",
+      cellClassName: "text-end",
+      sortValue: (item) => item.grossWeightKg,
+      cell: (item) => (
         <span className="tabular-nums text-[var(--md-ink)]">{item.grossWeightKg === null ? "—" : numberFormat.format(item.grossWeightKg)}</span>
       ),
     },
     {
-      key: "status",
+      id: "status",
       label: "Status",
-      align: "right" as const,
-      render: (item: WarehouseItem) => item.isActive ? <StatusPill tone="green">Active</StatusPill> : <StatusPill tone="neutral">Inactive</StatusPill>,
+      kind: "status",
+      width: 128,
+      resizable: true,
+      headerClassName: "text-end",
+      cellClassName: "text-end",
+      sortValue: (item) => Number(item.isActive),
+      cell: (item) => (
+        <StatusPill tone={item.isActive ? "green" : "neutral"}>{t(item.isActive ? "Active" : "Inactive")}</StatusPill>
+      ),
     },
-  ]
+  ], [numberFormat, t])
+
+  const emptyState = activeFilter === "All" || search.trim() || facilityId ? (
+    <div className="mx-auto max-w-[360px]">
+      <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("No items match this view")}</p>
+      <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Clear a filter or widen the search to see more items.")}</p>
+    </div>
+  ) : (
+    <div className="mx-auto max-w-[360px]">
+      <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("No items yet")}</p>
+      <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t(canCreate ? "Add your first item to store customer stock in a facility." : "Create a facility first, then add the items stored inside it.")}</p>
+    </div>
+  )
+
+  const toolbarTabs = (
+    <div className="flex min-w-0 items-center gap-2">
+      <RegisterViewSwitch options={itemFilters} value={activeFilter} onChange={setActiveFilter} counts={{ [activeFilter]: visibleRows.length }} ariaLabel="Item status" compact />
+    </div>
+  )
+
+  const toolbarFilters = (
+    <>
+      <RegisterFacetSelect
+        label="Facility"
+        allLabel="All facilities"
+        value={facilityId}
+        options={(reference?.facilities ?? []).map((facility) => ({ value: facility.id, label: facility.name }))}
+        onChange={setFacilityId}
+        className="w-[142px] sm:w-[168px]"
+      />
+    </>
+  )
 
   return (
-    <div className="grid gap-[var(--md-page-stack-gap)]">
-      <ManagementToolbar title="Items" meta="Create and manage the customer SKUs stored across your facilities.">
-        <FilterChips className="shrink-0 flex-nowrap" options={itemFilters} activeOption={activeFilter} onChange={setActiveFilter} />
-        <Select value={facilityId || "__all__"} onValueChange={(value) => setFacilityId(value === "__all__" ? "" : value)}>
-          <SelectTrigger aria-label="Facility" className="h-10 min-w-[190px] rounded-[var(--md-radius-lg)] border-0 bg-white/68 px-3 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)]">
-            <SelectValue placeholder="All facilities" />
-          </SelectTrigger>
-          <SelectContent className="border-0 bg-[var(--md-surface)] shadow-[var(--md-shadow-lift)]">
-            <SelectItem value="__all__">All facilities</SelectItem>
-            {reference?.facilities.map((facility) => <SelectItem key={facility.id} value={facility.id}>{facility.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <ManagementSearch value={search} onChange={setSearch} placeholder="Search SKU, description, customer..." />
-        {canManage ? <Button
-          type="button"
-          variant="ghost"
-          aria-label={t("Import stock")}
-          title={t("Import stock")}
-          onClick={() => setImportOpen(true)}
-          disabled={!canCreate}
-          className="h-10 rounded-[var(--md-radius-lg)] bg-white/48 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/74 disabled:opacity-50"
-        >
-          <Upload data-icon="inline-start" className="size-4" strokeWidth={1.4} />
-          {t("Import stock")}
-        </Button> : null}
-        {canManage ? <Button onClick={openCreate} disabled={!canCreate} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] shadow-[0_10px_22px_var(--md-accent-a14)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)] disabled:opacity-50">
-          <Plus data-icon="inline-start" className="size-4" strokeWidth={1.4} />
-          New item
-        </Button> : null}
-      </ManagementToolbar>
-
+    <div ref={viewRef} className="grid min-w-0 gap-[var(--md-page-stack-gap)]">
       {loadError ? (
         <StateBlock
           icon={<AlertCircle className="size-5" strokeWidth={1.4} />}
-          title="Items could not be loaded"
+          title="Items are unavailable"
           detail={loadError}
           action={
             <Button onClick={() => void refresh()} variant="ghost" className="h-9 rounded-[var(--md-radius-lg)] bg-white/48 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/74">
               <RefreshCw data-icon="inline-start" className="size-4" strokeWidth={1.4} />
-              Retry
+              {t("Try again")}
             </Button>
           }
         />
       ) : items === null ? (
-        <StateBlock icon={<Loader2 className="size-5 animate-spin" strokeWidth={1.4} />} title="Loading items" detail="Fetching the stock items in your facilities." />
+        <StateBlock icon={<DotGridLoader decorative />} title="Loading items" detail="" />
       ) : items.length === 0 && !search.trim() && !facilityId ? (
         <StateBlock
           icon={<Package className="size-5" strokeWidth={1.4} />}
@@ -1429,18 +1532,27 @@ export function WarehouseItemsView({ canManage = true }: { canManage?: boolean }
         />
       ) : (
         <motion.div
+          className="min-w-0"
           initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={shouldReduceMotion ? { duration: 0 } : mdMotion.smooth}
         >
-          <WarehouseInventoryTable
-            rows={visibleRows}
+          <DataTable
+            ariaLabel="Warehouse items"
+            columnsButtonLabel="Manage item columns"
+            storageKey="warehouse-items"
             columns={columns}
-            minWidth={1020}
-            rowLabel="items"
-            emptyMessage="No items match this search."
-            onRowClick={canManage ? openEdit : undefined}
-            rowDetailLabel={canManage ? (item) => `Edit item ${item.sku}` : undefined}
+            rows={visibleRows}
+            getRowKey={(item) => item.id}
+            // Keep the operator's exact place in the register while the item's
+            // own route is open, then restore that row when they come back.
+            onRowClick={openItem}
+            rowClassName="hover:bg-[var(--md-hover)]"
+            emptyState={emptyState}
+            toolbarTabs={toolbarTabs}
+            toolbarSearch={<RegisterSearchField value={search} onChange={setSearch} onClear={() => setSearch("")} label="Search items" placeholder="SKU, description, customer" />}
+            toolbarFilters={toolbarFilters}
+            toolbarOptions={canManage ? <button type="button" onClick={() => setImportOpen(true)} disabled={!canCreate} className={cn(registerButtonClass, "disabled:pointer-events-none disabled:opacity-45")}><Upload className="size-3.5" strokeWidth={1.4} aria-hidden="true" /><span className="hidden sm:inline">{t("Import")}</span></button> : null}
           />
         </motion.div>
       )}
@@ -1590,6 +1702,7 @@ function LocationDialog({
   onDeleted: () => void
 }) {
   const shouldReduceMotion = useReducedMotion()
+  const { t } = useLanguage()
   const isEditing = Boolean(location)
   const [form, setForm] = useState<LocationFormState>(() => emptyLocationForm(reference))
   const [errors, setErrors] = useState<Record<string, string[]>>({})
@@ -1628,6 +1741,11 @@ function LocationDialog({
   function update<K extends keyof LocationFormState>(key: K, value: LocationFormState[K]) {
     setForm((current) => ({ ...current, [key]: value }))
   }
+
+  const locationSteps: WizardStep[] = [
+    { id: "location", label: "Where it is", hint: "The code operators will scan, and where it sits in the facility.", complete: Boolean(form.code.trim()) },
+    { id: "capacity", label: "What it can hold", hint: "Size limits and the kinds of stock allowed here. All optional." },
+  ]
 
   async function handleSubmit() {
     setSaving(true)
@@ -1672,21 +1790,35 @@ function LocationDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="gap-0 overflow-hidden border-0 bg-[var(--md-surface)] p-0 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[680px]">
-        <DialogHeader className={warehouseDialogHeaderClass}>
-          <DialogTitle className="text-[16px] font-medium">{isEditing ? "Edit location" : "Create location"}</DialogTitle>
-          <DialogDescription className="text-[13px] text-[var(--md-text)]">
-            Add the bin, rack, or position where stock is stored inside this facility.
-          </DialogDescription>
-        </DialogHeader>
-
-        <Tabs value={section} onValueChange={setSection} className="h-[512px] gap-0">
-          <TabsList variant="line" className="mx-6 mt-3 h-10 w-auto justify-start rounded-none bg-transparent p-0">
-            <TabsTrigger value="location" className="h-10 flex-none px-3 text-[13px]">Location details</TabsTrigger>
-            <TabsTrigger value="capacity" className="h-10 flex-none px-3 text-[13px]">Capacity &amp; rules</TabsTrigger>
-          </TabsList>
-          <TabsContent value="location" className="grid min-h-0 content-start gap-4 px-6 py-5">
+    <WizardDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={isEditing ? "Edit location" : "New location"}
+      description="A location is the bin, rack or position stock physically sits in."
+      steps={locationSteps}
+      activeStepId={section}
+      onStepChange={setSection}
+      submitLabel={isEditing ? "Save changes" : "Create location"}
+      onSubmit={handleSubmit}
+      saving={saving}
+      bodyMinHeight={358}
+      presentation={isEditing ? "drawer" : "dialog"}
+      layout={isEditing ? "form" : "wizard"}
+      drawerEyebrow="Location details"
+      secondaryAction={(
+        <>
+          {isEditing ? (
+            <Button type="button" variant="ghost" onClick={handleDelete} disabled={deleting || saving} className="h-10 rounded-[var(--md-radius-lg)] px-3 text-[13px] font-medium text-[var(--md-red)] hover:bg-[rgba(209,78,78,0.08)]">
+              {deleting ? <Loader2 data-icon="inline-start" className="size-4 animate-spin" /> : <Trash2 data-icon="inline-start" className="size-4" strokeWidth={1.4} />}
+              {t("Delete")}
+            </Button>
+          ) : null}
+          {!isEditing && section !== "capacity" ? <WizardSaveNowButton label="Create now" onSubmit={handleSubmit} saving={saving} /> : null}
+        </>
+      )}
+    >
+      {isEditing || section === "location" ? (
+        <div className="grid content-start gap-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <WarehouseFormField label="Location code" htmlFor="location-code" required error={firstFieldError(errors, "Code")} hint="Unique within the facility, e.g. A01-04-02.">
               <Input id="location-code" dir="ltr" value={form.code} onChange={(event) => update("code", event.target.value)} className={fieldControlClass} placeholder="A01-04-02" />
@@ -1731,17 +1863,12 @@ function LocationDialog({
             <Input id="location-barcode" dir="ltr" value={form.barcode} onChange={(event) => update("barcode", event.target.value)} className={fieldControlClass} />
           </WarehouseFormField>
 
-          </TabsContent>
-          <TabsContent value="capacity" className="relative min-h-0 overflow-hidden">
-          <div
-            ref={capacityScrollRef}
-            onScroll={(event) => {
-              const viewport = event.currentTarget
-              setCapacityHasMore(viewport.scrollTop + viewport.clientHeight < viewport.scrollHeight - 8)
-            }}
-            className="grid h-full content-start gap-4 overflow-y-auto px-6 pb-14 pt-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          >
-          <div className="grid gap-3 rounded-[var(--md-radius-xl)] bg-white/40 p-3 shadow-[var(--md-shadow-line)]">
+        </div>
+      ) : null}
+
+      {isEditing || section === "capacity" ? (
+        <div className="grid content-start gap-4">
+          <div className="grid gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] p-3 shadow-[var(--md-shadow-line)]">
             <p className="text-[11.5px] font-medium text-[var(--md-subtle)]">Position</p>
             <div className="grid gap-3 sm:grid-cols-4">
               <WarehouseFormField label="Aisle" htmlFor="location-aisle" error={firstFieldError(errors, "Aisle")}>
@@ -1759,7 +1886,7 @@ function LocationDialog({
             </div>
           </div>
 
-          <div className="grid gap-3 rounded-[var(--md-radius-xl)] bg-white/40 p-3 shadow-[var(--md-shadow-line)]">
+          <div className="grid gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] p-3 shadow-[var(--md-shadow-line)]">
             <p className="text-[11.5px] font-medium text-[var(--md-subtle)]">Capacity and limits</p>
             <div className="grid gap-3 sm:grid-cols-3">
               <WarehouseFormField label="Length (m)" htmlFor="location-length" error={firstFieldError(errors, "LengthM")}>
@@ -1795,44 +1922,14 @@ function LocationDialog({
               <WarehouseSwitchField label="Active" hint="Inactive locations stay on record but are hidden by default." checked={form.isActive} onCheckedChange={(checked) => update("isActive", checked)} />
             ) : null}
           </div>
-          </div>
-          <motion.div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-x-0 bottom-0 flex h-14 items-end justify-center bg-gradient-to-b from-transparent to-[var(--md-surface)] pb-2"
-            initial={false}
-            animate={{ opacity: capacityHasMore ? 1 : 0, y: capacityHasMore && !shouldReduceMotion ? [0, 3, 0] : 0 }}
-            transition={{ opacity: { duration: 0.18 }, y: { duration: 1.35, ease: "easeInOut", repeat: capacityHasMore && !shouldReduceMotion ? Infinity : 0 } }}
-          >
-            <span className="grid size-7 place-items-center rounded-full bg-[var(--md-surface)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">
-              <ChevronDown className="size-4" strokeWidth={1.5} />
-            </span>
-          </motion.div>
-          </TabsContent>
-        </Tabs>
-
-        <DialogFooter className={cn(warehouseDialogFooterClass, "flex-row items-center justify-between gap-2 sm:justify-between")}>
-          {isEditing ? (
-            <Button type="button" variant="ghost" onClick={handleDelete} disabled={deleting || saving} className="h-10 rounded-[var(--md-radius-lg)] px-3 text-[13px] font-medium text-[var(--md-red)] hover:bg-[rgba(209,78,78,0.08)]">
-              {deleting ? <Loader2 data-icon="inline-start" className="size-4 animate-spin" /> : <Trash2 data-icon="inline-start" className="size-4" strokeWidth={1.4} />}
-              Delete location
-            </Button>
-          ) : <span />}
-          <div className="flex items-center gap-2">
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} className="h-10 rounded-[var(--md-radius-lg)] bg-white/48 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/74">
-              Cancel
-            </Button>
-            <Button type="button" onClick={handleSubmit} disabled={saving} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] shadow-[0_10px_22px_var(--md-accent-a14)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]">
-              {saving ? <Loader2 data-icon="inline-start" className="size-4 animate-spin" /> : null}
-              {isEditing ? "Save changes" : "Create location"}
-            </Button>
-          </div>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </div>
+      ) : null}
+    </WizardDialog>
   )
 }
 
 export function WarehouseLocationsView() {
+  const { t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
   const [facilities, setFacilities] = useState<WarehouseFacility[] | null>(null)
   const [selectedFacilityId, setSelectedFacilityId] = useState<string>("")
@@ -1840,7 +1937,7 @@ export function WarehouseLocationsView() {
   const [locations, setLocations] = useState<WarehouseLocation[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [search, setSearch] = useState("")
-  const [activeFilter, setActiveFilter] = useState<string>(locationFilters[0])
+  const [activeFilter, setActiveFilter] = useState<(typeof locationFilters)[number]>(locationFilters[0])
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<WarehouseLocation | null>(null)
 
@@ -1905,73 +2002,90 @@ export function WarehouseLocationsView() {
     setDialogOpen(true)
   }
 
+  useEffect(() => {
+    const openFromTopBar = () => {
+      if (selectedFacilityId) openCreate()
+    }
+    return subscribeTopBarAction(topBarActionEvents.createWarehouseLocation, openFromTopBar)
+  }, [selectedFacilityId])
+
   function openEdit(location: WarehouseLocation) {
     setEditing(location)
     setDialogOpen(true)
   }
 
-  const columns = [
+  const columns = useMemo<DataTableColumn<WarehouseLocation>[]>(() => [
     {
-      key: "code",
+      id: "code",
       label: "Code",
-      className: "min-w-[150px]",
-      render: (location: WarehouseLocation) => <CodeText>{location.code}</CodeText>,
+      width: 160,
+      minWidth: 132,
+      resizable: true,
+      canHide: false,
+      sortValue: (location) => location.code,
+      cell: (location) => <CodeText>{location.code}</CodeText>,
     },
     {
-      key: "zone",
+      id: "zone",
       label: "Zone",
-      className: "min-w-[150px]",
-      render: (location: WarehouseLocation) =>
-        location.zoneName ? <StatusPill tone="teal">{location.zoneName}</StatusPill> : <span className="text-[12px] text-[var(--md-subtle)]">No zone</span>,
+      width: 210,
+      minWidth: 156,
+      resizable: true,
+      sortValue: (location) => location.zoneName,
+      cell: (location) =>
+        location.zoneName ? <StatusPill tone="teal">{location.zoneName}</StatusPill> : <span className="text-[12px] text-[var(--md-subtle)]">{t("No zone")}</span>,
     },
     {
-      key: "type",
+      id: "type",
       label: "Type",
-      render: (location: WarehouseLocation) => <span className="text-[13px] text-[var(--md-ink)]">{location.typeName ?? location.typeCode}</span>,
+      kind: "attribute",
+      width: 164,
+      minWidth: 132,
+      resizable: true,
+      sortValue: (location) => location.typeName ?? location.typeCode,
+      cell: (location) => <span className="text-[13px] text-[var(--md-ink)]">{location.typeName ?? location.typeCode}</span>,
     },
     {
-      key: "position",
+      id: "position",
       label: "Position",
-      className: "min-w-[160px]",
-      render: (location: WarehouseLocation) => <span className="text-[13px] text-[var(--md-text)]">{locationPosition(location)}</span>,
+      width: 220,
+      minWidth: 160,
+      resizable: true,
+      sortValue: (location) => locationPosition(location),
+      cell: (location) => <span className="text-[13px] text-[var(--md-text)]">{locationPosition(location)}</span>,
     },
     {
-      key: "status",
+      id: "status",
       label: "Status",
-      align: "right" as const,
-      render: (location: WarehouseLocation) =>
-        location.isActive ? <StatusPill tone="green">{location.statusName ?? "Active"}</StatusPill> : <StatusPill tone="neutral">Inactive</StatusPill>,
+      kind: "status",
+      width: 132,
+      resizable: true,
+      headerClassName: "text-end",
+      cellClassName: "text-end",
+      sortValue: (location) => Number(location.isActive),
+      cell: (location) =>
+        location.isActive ? <StatusPill tone="green">{location.statusName ?? t("Active")}</StatusPill> : <StatusPill tone="neutral">{t("Inactive")}</StatusPill>,
     },
-  ]
+  ], [t])
 
   const facilityOptions = facilities ?? []
   const hasFacilities = facilityOptions.length > 0
+  const emptyState = activeFilter === "All" || search.trim() ? (
+    <div className="mx-auto max-w-[360px]">
+      <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("No locations match this view")}</p>
+      <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Clear a filter or widen the search to see more locations.")}</p>
+    </div>
+  ) : (
+    <div className="mx-auto max-w-[360px]">
+      <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("No locations yet")}</p>
+      <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Add the first bin, rack, or position for this facility.")}</p>
+    </div>
+  )
 
   return (
     <div className="grid gap-[var(--md-page-stack-gap)]">
-      <ManagementToolbar title="Locations" meta="Create and manage the bins, racks, and positions inside a facility.">
-        {hasFacilities ? (
-          <>
-            <FilterChips className="shrink-0 flex-nowrap" options={locationFilters} activeOption={activeFilter} onChange={setActiveFilter} />
-            <Select value={selectedFacilityId} onValueChange={setSelectedFacilityId}>
-              <SelectTrigger aria-label="Facility" className="h-10 min-w-[200px] rounded-[var(--md-radius-lg)] border-0 bg-white/68 px-3 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/80"><SelectValue /></SelectTrigger>
-              <SelectContent className="border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)]">
-                {facilityOptions.map((facility) => (
-                  <SelectItem key={facility.id} value={facility.id} className="text-[13px]">{facility.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <ManagementSearch value={search} onChange={setSearch} placeholder="Search code, zone, position..." />
-            <Button onClick={openCreate} className="h-10 self-end rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] shadow-[0_10px_22px_var(--md-accent-a14)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]">
-              <Plus data-icon="inline-start" className="size-4" strokeWidth={1.4} />
-              New location
-            </Button>
-          </>
-        ) : null}
-      </ManagementToolbar>
-
       {facilities === null ? (
-        <StateBlock icon={<Loader2 className="size-5 animate-spin" strokeWidth={1.4} />} title="Loading locations" detail="Fetching your facilities." />
+        <StateBlock icon={<DotGridLoader decorative />} title="Loading locations" detail="" />
       ) : !hasFacilities ? (
         <StateBlock
           icon={<Warehouse className="size-5" strokeWidth={1.4} />}
@@ -1981,43 +2095,51 @@ export function WarehouseLocationsView() {
       ) : loadError ? (
         <StateBlock
           icon={<AlertCircle className="size-5" strokeWidth={1.4} />}
-          title="Locations could not be loaded"
+          title="Locations are unavailable"
           detail={loadError}
           action={
             <Button onClick={() => void refresh()} variant="ghost" className="h-9 rounded-[var(--md-radius-lg)] bg-white/48 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/74">
               <RefreshCw data-icon="inline-start" className="size-4" strokeWidth={1.4} />
-              Retry
+              {t("Try again")}
             </Button>
           }
         />
       ) : locations === null ? (
-        <StateBlock icon={<Loader2 className="size-5 animate-spin" strokeWidth={1.4} />} title="Loading locations" detail="Fetching the locations in this facility." />
-      ) : locations.length === 0 && !search.trim() ? (
-        <StateBlock
-          icon={<LayoutGrid className="size-5" strokeWidth={1.4} />}
-          title="No locations yet"
-          detail="Add the first bin, rack, or position for this facility."
-          action={
-            <Button onClick={openCreate} className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] px-4 text-[13px] font-medium text-[var(--md-accent-ink)] shadow-[0_10px_22px_var(--md-accent-a14)] hover:bg-[color-mix(in_srgb,var(--md-accent),black_8%)]">
-              <Plus data-icon="inline-start" className="size-4" strokeWidth={1.4} />
-              New location
-            </Button>
-          }
-        />
+        <StateBlock icon={<DotGridLoader decorative />} title="Loading locations" detail="" />
       ) : (
         <motion.div
+          className="min-w-0"
           initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={shouldReduceMotion ? { duration: 0 } : mdMotion.smooth}
         >
-          <WarehouseInventoryTable
-            rows={visibleRows}
+          <DataTable
+            ariaLabel="Warehouse locations"
+            columnsButtonLabel="Manage location columns"
+            storageKey="warehouse-locations"
             columns={columns}
-            minWidth={880}
-            rowLabel="locations"
-            emptyMessage="No locations match this search."
+            rows={visibleRows}
+            getRowKey={(location) => location.id}
             onRowClick={openEdit}
-            rowDetailLabel={(location) => `Edit location ${location.code}`}
+            selectedRowKey={dialogOpen ? editing?.id ?? null : null}
+            rowClassName="hover:bg-[var(--md-hover)]"
+            emptyState={emptyState}
+            toolbarTabs={(
+              <RegisterViewSwitch options={locationFilters} value={activeFilter} onChange={setActiveFilter} counts={{ [activeFilter]: visibleRows.length }} ariaLabel="Location status" compact />
+            )}
+            toolbarSearch={<RegisterSearchField value={search} onChange={setSearch} onClear={() => setSearch("")} label="Search locations" placeholder="Code, zone, position" />}
+            toolbarFilters={(
+              <>
+                <Select value={selectedFacilityId} onValueChange={(value) => { setDialogOpen(false); setEditing(null); setSelectedFacilityId(value) }}>
+                  <SelectTrigger aria-label={t("Facility")} className={cn(registerControlClass, "w-[142px] shrink-0 sm:w-[168px]")}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {facilityOptions.map((facility) => <SelectItem key={facility.id} value={facility.id}>{facility.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </>
+            )}
           />
         </motion.div>
       )}

@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react"
 import { createPortal } from "react-dom"
-import { ArrowUpRight, MapPin, Star, Truck } from "lucide-react"
+import { ArrowUpRight, MapPin, Star, Truck } from "@/components/icons/hugeicons"
 import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
 import type { StatusTone } from "@/data/multideck-data"
 import { cn } from "@/lib/utils"

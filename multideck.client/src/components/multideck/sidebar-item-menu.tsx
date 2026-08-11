@@ -1,6 +1,6 @@
 import type { ReactNode } from "react"
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui"
-import { ArrowUpDown, Pin, PinOff } from "lucide-react"
+import { ArrowUpDown, Pin, PinOff } from "@/components/icons/hugeicons"
 import { cn } from "@/lib/utils"
 import { useLanguage } from "@/i18n/language-provider"
 

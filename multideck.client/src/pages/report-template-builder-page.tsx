@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { ArrowLeft, Eye, Save } from "lucide-react"
+import { ArrowLeft, Eye, Save } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { StatusPill } from "@/components/multideck/status-pill"

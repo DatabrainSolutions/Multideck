@@ -190,7 +190,7 @@ function chartHeight(compact?: boolean) {
 
 function ChartCanvas({ compact, children }: { compact?: boolean; children: ReactNode }) {
   return (
-    <div className={cn("md-chart-canvas min-w-0 overflow-hidden rounded-[var(--md-radius-lg)] bg-white/54 p-3 shadow-[var(--md-shadow-line)]", compact && "rounded-[var(--md-radius-md)] p-2")}>
+    <div className={cn("md-chart-canvas min-w-0 overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-3 shadow-[var(--md-shadow-line)]", compact && "rounded-[var(--md-radius-md)] p-2")}>
       {children}
     </div>
   )
@@ -528,7 +528,7 @@ export function FunnelChartCard({
       {showSummary ? (
         <div className={cn("md-chart-summary-grid mt-3 grid gap-2", compact ? "grid-cols-2" : "grid-cols-4")}>
           {data.map((item) => (
-            <div key={item.stage} className="rounded-[var(--md-radius-md)] bg-white/48 px-3 py-2 shadow-[var(--md-shadow-line)]">
+            <div key={item.stage} className="rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-3 py-2 shadow-[var(--md-shadow-line)]">
               <p className="truncate text-[11px] font-medium text-[var(--md-text)]">{item.stage}</p>
               <p className="mt-1 text-[16px] font-medium text-[var(--md-ink)]">{item.value}</p>
             </div>
@@ -556,7 +556,7 @@ export function HeatmapChartCard({
 
   return (
     <VisualizationShell title={title} subtitle={subtitle} compact={compact} className={className}>
-      <div className={cn("md-chart-heatmap overflow-x-auto rounded-[var(--md-radius-lg)] bg-white/54 p-3 shadow-[var(--md-shadow-line)] md-scrollbar", compact && "rounded-[var(--md-radius-md)] p-2")}>
+      <div className={cn("md-chart-heatmap overflow-x-auto rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-3 shadow-[var(--md-shadow-line)] md-scrollbar", compact && "rounded-[var(--md-radius-md)] p-2")}>
         <div className="grid min-w-[460px] gap-2" style={{ gridTemplateColumns: `88px repeat(${columns.length}, minmax(0, 1fr))` }}>
           <span />
           {columns.map((column) => (

@@ -3,7 +3,9 @@
 
 Status: implementation skeleton complete; deployment and the first Carbone template are still required.
 
-Primary first release: `JOB_CONFIRMATION` for an exact `Job_Header` UUID, rendered as PDF or DOCX.
+Primary first release: `JOB_CONFIRMATION` selected by the operator-facing `Job_Header.Job_Number`, rendered as PDF or DOCX through `https://docserver.multideck.app`. The secure database API resolves that number to the internal job UUID after company, office, and permission checks.
+
+Multideck owns template choice, data access, permissions, information selection, audit and delivery. Carbone is deliberately limited to one role: receive an approved snapshot, render the selected template, and return the generated file. Carbone must not query Supabase or receive Supabase credentials.
 
 ## 1. Purpose and non-negotiable boundary
 
@@ -23,16 +25,16 @@ Authenticated MultiDeck UI
   -> five-minute signed download URL
 ```
 
-The browser receives only workspace summaries and short-lived download URLs. It never receives the Carbone credential, Supabase secret key, storage path, SQL capability, or immutable source-data snapshot.
+Outside the Studio flow, the browser receives only workspace summaries and short-lived download URLs. When an operator deliberately opens Studio for an authorised job, the browser receives only that job's selected, server-built snapshot and the published DOCX template needed for editing. It never receives the Carbone credential, Supabase secret key, storage path, SQL capability, or data from another job.
 
 ## 2. What is already in the skeleton
 
 | Area | Implementation |
 |---|---|
-| UI | `multideck.client/src/pages/documents-page.tsx` provides the document centre, published-template cards, a guided create dialog, recent documents, error states, and fresh secure downloads. |
-| Browser API | `multideck.client/src/lib/document-builder-api.ts` is the typed client for the three Edge Functions. |
+| UI | `multideck.client/src/pages/documents-page.tsx` provides the document centre, published-template cards, a guided create workspace with embedded Carbone Studio, recent documents, error states, and fresh secure downloads. |
+| Browser API | `multideck.client/src/lib/document-builder-api.ts` is the typed client for the four Edge Functions. |
 | Localisation | Document-centre text is translated into English, German, French, and Arabic; the Arabic view is covered by an RTL test. |
-| Edge gateway | `document-builder-workspace`, `render-document`, and `document-download` authenticate the Supabase user before using the service client. |
+| Edge gateway | `document-builder-workspace`, `document-studio`, `render-document`, and `document-download` authenticate the Supabase user before using the service client. |
 | Shared security | `_shared/document-functions.ts` centralises JWT validation, service-key handling, UUID validation, safe errors, CORS, file-size limits, and signed-link lifetime. |
 | Database API | The `document_api` schema contains service-role-only, security-definer functions for authorisation, dataset assembly, completion, failure, workspace listing, and download authorisation. |
 | Audit | `DOCB_RenderJobs.DOCBRJ_InputSnapshotJSON` stores the exact JSON sent for rendering, together with the template version, actor, reason, timestamps, and correlation ID. |
@@ -62,6 +64,23 @@ The database then fails closed unless all applicable checks pass:
 
 No browser storage policy is created. Storage access is granted only to the Edge Functions after the database authorises the exact record.
 
+### Embedded Studio boundary
+
+The Create Document workspace uses the self-hosted Carbone Studio `5.9.0` web component in `embedded` mode. The authenticated `document-studio` Edge Function retrieves the pinned component from the protected Carbone host, so Carbone credentials remain server-side. The product presents two authoring panes: Carbone's JSON editor and a Multideck-owned live PDF preview. The generic Carbone template-management surface is not exposed.
+
+- `document_api.prepare_studio_job_session` repeats company, office, job, template-scope and permission checks without creating a render job.
+- The Edge Function downloads only the resolved published template from Carbone and returns it with the selected authorised job snapshot.
+- The authorised job snapshot is the initial JSON. Operators may change that JSON as disposable preview data; the Edge Function accepts only a JSON object up to 1 MiB and uses it only for the current preview.
+- Preview rendering uses `POST /render/template?download=true`; the PDF is returned directly and kept only in browser memory. There is no reusable Carbone render ID.
+- Operators edit the Word source locally through download and upload actions. The browser keeps an authenticated-user-scoped IndexedDB draft so the template bytes survive refresh and back navigation; the job is always re-authorised before the draft reopens.
+- Users with `Documents.Manage` may save the current template through the gateway. Carbone v5 versioning returns a stable 64-bit template ID and a SHA-256 version ID. Multideck records the stable ID and keeps changed files as draft template versions; publish, deploy and delete remain separate actions and are not proxied from Document Builder.
+- Final creation uses the current Studio DOCX but rebuilds the data again through `prepare_job_render`; the template SHA-256 and byte size are added to the render audit before generation.
+- Carbone and Supabase secrets remain server-side.
+
+The Studio version can be changed with the server-side `CARBONE_STUDIO_VERSION` secret. It must be a pinned semantic version compatible with the installed Carbone backend.
+
+**Dexter exception:** binary template editing and provider-version creation remain an operator-only Document Builder workflow. They require a locally reviewed DOCX and `Documents.Manage`, so Dexter must not offer or claim a template-save action. No Watching event is emitted for a draft save; a future reviewed publish lifecycle is the appropriate event boundary.
+
 ### Template resolution
 
 Templates may be global or scoped to an office, legal entity, brand, and/or customer. The most specific matching template wins, using this priority:
@@ -90,14 +109,16 @@ If two published templates with the same code have the same winning specificity,
 
 1. The UI calls `document-builder-workspace` with the caller's normal Supabase session.
 2. The workspace function returns only published templates visible to the user's offices, the latest 50 authorised documents, and permission flags.
-3. The user chooses a template, enters an exact job UUID, and chooses PDF or DOCX.
-4. `render-document` validates the request shape. The browser cannot submit a table name, field list, storage path, template ID, or SQL.
-5. `document_api.prepare_job_render` checks identity, permission, company, office, job, customer, template scope, version, and output format.
-6. The same transaction assembles the fixed dataset and inserts a `rendering` row in `DOCB_RenderJobs`, including the immutable `DOCBRJ_InputSnapshotJSON`.
-7. The function calls `POST {CARBONE_URL}/render/{published-version-reference}?download=true` with the dataset, requested conversion, language, and safe report name.
-8. After validating the returned bytes, the function uploads to private Storage.
-9. `document_api.complete_job_render` inserts `DOCB_GeneratedDocuments` and `DOC_StoredObjects` and changes the job to `completed` in one database transaction.
-10. The function returns a five-minute download link. Future downloads go through `document-download` and repeat authorisation before creating a fresh link.
+3. The user chooses a template. Its data module is assigned from the template scope (the FIATA template uses Jobs), then the user enters the operator-facing job number and opens the builder.
+4. `document-studio` authorises the job and resolved published template, then loads the selected job JSON into the Carbone data editor and renders the PDF in the adjacent Multideck preview.
+5. The user can download the DOCX, edit it locally, upload it to refresh the preview, and save it as a provider-backed template version if they have `Documents.Manage`.
+6. `render-document` validates the request shape. The browser cannot submit a table name, storage path, template ID, SQL or replacement job data. It may submit only the edited DOCX template.
+7. `document_api.prepare_job_render` checks identity, permission, company, office, job, customer, template scope, version, and output format.
+8. The same transaction assembles the fixed dataset and inserts a `rendering` row in `DOCB_RenderJobs`, including the immutable `DOCBRJ_InputSnapshotJSON`.
+9. The function calls `POST {CARBONE_URL}/render/template?download=true` for a Studio-customised DOCX, or the published version endpoint for the unchanged fallback.
+10. After validating the returned bytes, the function uploads to private Storage.
+11. `document_api.complete_job_render` inserts `DOCB_GeneratedDocuments` and `DOC_StoredObjects` and changes the job to `completed` in one database transaction.
+12. The function returns a five-minute download link. Future downloads go through `document-download` and repeat authorisation before creating a fresh link.
 
 If steps 6-8 fail, the render job is marked `failed` with a sanitised operational message and any partially uploaded object is removed. Carbone response bodies and credentials are never returned to the browser.
 
@@ -219,9 +240,23 @@ Do not place any Carbone or Supabase secret in a browser `.env` variable. In par
 4. Test long customer names, a multi-line address, no shipper address, no routing, multiple cargo lines, multiple route legs, large weights, and RTL text.
 5. Upload the template to Carbone once. Retain the returned template ID.
 6. After every production template change, retain the new immutable Carbone version ID. Published MultiDeck versions should use `versionId`; use the mutable template ID only during controlled development.
-7. Keep the editable source in the agreed version-controlled or backed-up document library. Carbone IDs are references, not the source-of-truth design files.
+7. Keep the editable source in the tenant's private `multideck-template-sources` bucket, catalogued against its Multideck template version and backed by the reviewed provisioning package. Carbone IDs are rendering references, not the source-of-truth design files.
 
 Carbone's HTTP flow and tag syntax are documented at <https://carbone.io/documentation/developer/http-api/introduction.html>.
+
+### Selectable document information
+
+The first release exposes six server-controlled information sections: `job`, `customer`, `shipper`, `consignee`, `cargo`, and `routing`. `job` is always required. The client sends only these stable section codes; it never sends column names, SQL, JSON paths, or arbitrary data instructions.
+
+Before rendering, `document_api.apply_job_render_content_selection` validates the selection, removes unselected sections from the audited snapshot, and adds explicit booleans under `d.selection`. Carbone templates can use those booleans to remove optional layout blocks. For example:
+
+```text
+{d.selection.customer:ifEQ(false):drop(table)}
+{d.selection.cargo:ifEQ(false):drop(table)}
+{d.selection.routing:ifEQ(false):drop(table)}
+```
+
+Place each `:drop(table)`, `:drop(row)`, or `:drop(p)` tag inside the corresponding optional Carbone layout element. The exact drop target depends on how the Word template is structured. This keeps layout decisions in the approved template while Multideck remains authoritative for which data is sent.
 
 ### C. Register the data source and template
 
@@ -273,6 +308,7 @@ Create a local, ignored secrets file for deployment. Do not commit it.
 ```dotenv
 CARBONE_URL=https://docserver.multideck.app
 CARBONE_API_VERSION=5
+CARBONE_STUDIO_VERSION=5.9.0
 CARBONE_TIMEOUT_MS=90000
 MULTIDECK_ENVIRONMENT=production
 DOCUMENT_ALLOWED_ORIGINS=https://YOUR-MULTIDECK-ORIGIN
@@ -285,6 +321,27 @@ CARBONE_AUTH_HEADER=Basic REPLACE_WITH_ENCODED_CREDENTIAL
 
 Supabase automatically provides the project URL and server keys used by the shared function helper. The helper supports the current `SB_PUBLISHABLE_KEY`/`SB_SECRET_KEY` names and the legacy project key names during migration.
 
+#### AWS Carbone prerequisite
+
+The AWS Marketplace AMI must have Studio enabled before Multideck can use the embedded component. For the Parameter Store model documented by Carbone's AWS guide, verify these case-sensitive parameters and restart the EC2 instance after any change:
+
+```text
+CARBONE_EE_studio=true
+CARBONE_EE_studioUser=USERNAME:PASSWORD
+```
+
+On current Carbone v5 installations the equivalent names are `CARBONE_STUDIO=true` and `CARBONE_STUDIO_USER=USERNAME:PASSWORD`; the `CARBONE_EE_*` names remain the legacy AWS AMI form. Do not add either value to the frontend. The Supabase `CARBONE_USERNAME` and `CARBONE_PASSWORD` secrets must contain the credentials accepted by `https://docserver.multideck.app`, which may be enforced by Carbone itself or the Nginx reverse proxy.
+
+Ask the AWS owner to verify, without sending the password in chat:
+
+- the running Carbone version is v5 and is compatible with the pinned Studio component;
+- `GET /template/{published-version-id}` and `POST /render/template?download=true` work through the HTTPS hostname;
+- the EC2 security group does not expose port 4000 broadly when Nginx or a load balancer is the public entry point;
+- CloudWatch contains the `carbone-ee` logs and no request body or credential logging is enabled;
+- template and render storage is shared through S3 before adding more than one Carbone instance.
+
+The local implementation does not change AWS configuration. It consumes the existing HTTPS service only after the Supabase secrets and migrations are deployed.
+
 ### E. Deploy in order
 
 Run from `multideck.server/Backend`. The production project reference is `aqtwypsuijxlnvtxpuxe`; verify the selected Supabase organisation and project before every write command.
@@ -295,11 +352,14 @@ npx.cmd supabase@2.82.0 db push --dry-run
 npx.cmd supabase@2.82.0 db push
 npx.cmd supabase@2.82.0 secrets set --env-file .env.document-production --project-ref aqtwypsuijxlnvtxpuxe
 npx.cmd supabase@2.82.0 functions deploy document-builder-workspace --project-ref aqtwypsuijxlnvtxpuxe --use-api
+npx.cmd supabase@2.82.0 functions deploy document-studio --project-ref aqtwypsuijxlnvtxpuxe --use-api
 npx.cmd supabase@2.82.0 functions deploy render-document --project-ref aqtwypsuijxlnvtxpuxe --use-api
 npx.cmd supabase@2.82.0 functions deploy document-download --project-ref aqtwypsuijxlnvtxpuxe --use-api
 ```
 
 The migration creates the service-only `document_api` schema, registers the Carbone engine, and creates/locks down the private bucket. It does not insert Lee's template IDs.
+
+In Supabase **Integrations → Data API → Settings**, include `document_api` in **Exposed schemas**. This lets the authenticated Edge Functions reach the RPCs through PostgREST. Keep schema usage and function execution revoked from `anon` and `authenticated`; only `service_role` receives execute permission.
 
 The Supabase migration registers `Documents.Read`, `Documents.Generate`, and `Documents.Manage` and assigns them to the standard App roles. The matching .NET definitions remain for transitional tooling and parity checks; production authorisation does not depend on restarting the .NET server. Confirm custom roles explicitly because they do not inherit new permissions.
 
@@ -312,11 +372,19 @@ The live-project advisor baseline on 31 July 2026 already contained a large numb
 - `RLS Enabled No Policy` information notices on existing `DOCB_*` tables and `DOC_StoredObjects`. That is consistent with this release's deliberate service-only gateway, but direct grants and policies must be reassessed before any future browser template editor is enabled. See the [Supabase RLS/no-policy remediation note](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy).
 - errors on pre-existing `DOCB_*Summary` security-definer views. This pipeline does not call those views. They remain a separate database-hardening item and must not be used as a shortcut for the operational UI. See the [Supabase security-definer-view remediation note](https://supabase.com/docs/guides/database/database-linter?lint=0010_security_definer_view).
 
-Because the migration has only been transactionally compiled with rollback and has not been deployed, rerun both security and performance advisors after staging deployment and compare them with this baseline. Do not claim the Carbone release created or resolved the inherited project-wide findings without a before/after comparison.
+The document migrations and four Edge Functions were deployed to the MultiDeck project on 4 August 2026. Security and performance advisors must still be compared with the inherited baseline; do not claim the Carbone release created or resolved unrelated project-wide findings without a before/after comparison.
 
 ## 7. API reference
 
-All three functions require `Authorization: Bearer <the user's Supabase access token>` and use `POST`.
+All four functions require `Authorization: Bearer <the user's Supabase access token>` and use `POST`.
+
+### `document-studio`
+
+`action: "open"` accepts the template code, operator-facing job number and selected content sections. It returns the authorised DOCX, resolved module metadata and render options required by the embedded Studio.
+
+`action: "preview"` accepts the current DOCX and an optional JSON object used only as disposable preview data. It re-authorises the selected job and returns a PDF without exposing provider credentials.
+
+`action: "save"` is restricted to `Documents.Manage`. It uploads the DOCX with Carbone v5 versioning, returns the stable Carbone template ID and version ID, and records the result in Multideck. A changed file is stored as a draft; this action does not publish, deploy or delete a template.
 
 ### `document-builder-workspace`
 
@@ -345,7 +413,7 @@ Request:
 {
   "templateCode": "JOB_CONFIRMATION",
   "targetType": "Job_Header",
-  "targetId": "00000000-0000-0000-0000-000000000000",
+  "jobNumber": "JE12345",
   "outputFormat": "pdf",
   "reason": "Generated from the MultiDeck document workspace"
 }
@@ -452,7 +520,7 @@ For support, begin with the `renderJobId`. Inspect the render status, sanitised 
 
 The Job Confirmation release is complete only when:
 
-- the migration, server permission sync, three functions, secrets, and operational route are deployed to staging and production through the normal reviewed process;
+- the migrations, server permission sync, four functions, secrets, and operational route are deployed to staging and production through the normal reviewed process;
 - Lee has supplied the backed-up source template and pinned Carbone version ID;
 - the data-source, template, and version records are present and unambiguous;
 - all functional, negative-security, audit, layout, and RTL checks above pass;

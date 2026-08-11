@@ -47,6 +47,18 @@ test("account summary matches the six-tile leads summary pattern", () => {
   }
 })
 
+test("account and contact directories use the configurable register table and in-table controls", () => {
+  for (const source of [accountsPage, contactsPage]) {
+    assert.match(source, /<DataTable/)
+    assert.match(source, /<RegisterViewSwitch/)
+    assert.match(source, /<RegisterFacetSelect/)
+    assert.match(source, /<RegisterSearchField/)
+    assert.doesNotMatch(source, /<TableHeader>|<TableBody>/)
+  }
+  assert.match(accountsPage, /storageKey="crm-accounts"/)
+  assert.match(contactsPage, /storageKey="crm-contacts"/)
+})
+
 test("contact fields edit inline and consent changes require evidence", () => {
   assert.match(contactDetail, /id="contact-detail-form"/)
   assert.match(contactDetail, /<form id="contact-detail-form"[\s\S]*?<Button type="submit"/)
@@ -73,6 +85,16 @@ test("account editing uses existing CRM reference data and preserves the current
   assert.match(customers, /CRM_CustomerEngagementPreferences/)
   assert.match(accountDetail, /CustomerWarehouseAccess customerId=\{account\.id\}/)
   assert.match(accountDetail, /min-h-14/)
+})
+
+test("account country codes are validated before any customer write", () => {
+  assert.match(customers, /function countryCode\(value: unknown\)/)
+  assert.match(customers, /\^\[A-Z\]\{2\}\$/)
+  const createRoute = customers.slice(customers.indexOf('if (request.method === "POST" && !parts.length)'), customers.indexOf('if (request.method === "POST" && parts.length === 2'))
+  assert.ok(createRoute.indexOf("const addressCountryCode = countryCode(payload.countryCode)") < createRoute.indexOf('admin.from("Org_Master").insert'))
+  assert.match(customerApi, /countryCode: countryCode\(input\.countryCode\)/)
+  assert.match(accountsPage, /maxLength=\{2\}/)
+  assert.match(accountsPage, /Two-letter ISO code, e\.g\. GB/)
 })
 
 test("Dexter read and watch parity remains allowlisted, permissioned and event driven", () => {

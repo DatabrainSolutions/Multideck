@@ -8,9 +8,9 @@ import {
   Ship,
   UserRoundSearch,
   type LucideIcon,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 import gmailLogo from "@/assets/integrations/gmail.svg"
-import outlookLogo from "@/assets/integrations/outlook.svg"
+import outlookLogo from "@/assets/integrations/outlook.png"
 import { bookings, customers } from "@/data/multideck-data"
 import { quoteRegisterRecords } from "@/data/quote-register-data"
 import { sidebarAreas, sidebarPrimary, sidebarSecondary, type NavItem } from "@/data/navigation-data"

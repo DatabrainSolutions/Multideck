@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { ArrowLeft, ArrowRight, CalendarDays, X } from "lucide-react"
+import { ArrowLeft, ArrowRight, CalendarDays, Clock, X } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { useLanguage } from "@/i18n/language-provider"
 import type { LanguageCode } from "@/i18n/languages"
@@ -116,6 +117,8 @@ function CalendarMonth({
   locale,
   onSelectDate,
   onPreviewDate,
+  minDate,
+  maxDate,
 }: {
   month: Date
   range: MultideckDateRange
@@ -123,6 +126,8 @@ function CalendarMonth({
   locale: string
   onSelectDate: (dateKey: string) => void
   onPreviewDate: (dateKey: string | null) => void
+  minDate?: string
+  maxDate?: string
 }) {
   const monthStart = startOfMonth(month)
   const monthLabel = new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }).format(monthStart)
@@ -154,12 +159,15 @@ function CalendarMonth({
           const isEnd = range.end === dateKey
           const isInPreview = isDateInsideRange(dateKey, previewRange)
           const isToday = todayKey === dateKey
+          const isDisabled = Boolean((minDate && dateKey < minDate) || (maxDate && dateKey > maxDate))
 
           return (
             <button
               key={dateKey}
               type="button"
               dir="ltr"
+              disabled={isDisabled}
+              aria-disabled={isDisabled || undefined}
               aria-pressed={isStart || isEnd || isInPreview}
               aria-label={new Intl.DateTimeFormat(locale, { dateStyle: "full" }).format(date)}
               className={cn(
@@ -167,6 +175,7 @@ function CalendarMonth({
                 isToday && "shadow-[inset_0_0_0_1px_var(--md-accent-a22)]",
                 isInPreview && "bg-[var(--md-accent-a10)] text-[var(--md-ink)]",
                 (isStart || isEnd) && "scale-[1.03] bg-[var(--md-accent)] text-[var(--md-accent-ink)] shadow-[0_0_0_3px_var(--md-accent-a14),var(--md-shadow-line)] hover:bg-[var(--md-accent)] hover:text-[var(--md-accent-ink)]",
+                isDisabled && "cursor-not-allowed opacity-30 hover:bg-transparent hover:text-[var(--md-text)]",
               )}
               onMouseEnter={() => onPreviewDate(dateKey)}
               onFocus={() => onPreviewDate(dateKey)}
@@ -200,6 +209,9 @@ export function MultideckDateRangePicker({
   className,
   triggerClassName,
   popoverClassName,
+  minDate,
+  maxDate,
+  singleDate = false,
   onOpenChange,
 }: {
   value: MultideckDateRange
@@ -220,6 +232,9 @@ export function MultideckDateRangePicker({
   className?: string
   triggerClassName?: string
   popoverClassName?: string
+  minDate?: string
+  maxDate?: string
+  singleDate?: boolean
   onOpenChange?: (open: boolean) => void
 }) {
   const { language, t } = useLanguage()
@@ -282,6 +297,12 @@ export function MultideckDateRangePicker({
   }
 
   function selectDate(dateKey: string) {
+    if (singleDate) {
+      onChange({ start: dateKey, end: dateKey })
+      setHoveredDate(null)
+      return
+    }
+
     if (!resolvedRange.start || resolvedRange.end) {
       onChange({ start: dateKey, end: null })
       return
@@ -313,6 +334,14 @@ export function MultideckDateRangePicker({
   }
 
   function resetRange() {
+    if (singleDate) {
+      const today = getDateKey(new Date())
+      const resetDate = minDate && today < minDate ? minDate : maxDate && today > maxDate ? maxDate : today
+      onChange({ start: resetDate, end: resetDate })
+      setVisibleMonth(startOfMonth(parseDateKey(resetDate) ?? new Date()))
+      return
+    }
+
     const nextRange = getDefaultDateRange()
     onChange(nextRange)
     setVisibleMonth(startOfMonth(parseDateKey(nextRange.start) ?? new Date()))
@@ -366,7 +395,7 @@ export function MultideckDateRangePicker({
         collisionPadding={10}
         className={cn(
           "md-scrollbar z-[500] max-h-[min(88vh,var(--radix-popover-content-available-height),760px)] overflow-y-auto overscroll-contain rounded-[var(--md-radius-xl)] border-0 bg-[rgba(248,251,250,0.82)] p-3 text-[var(--md-ink)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.58),var(--md-shadow-lift)] backdrop-blur-[26px] backdrop-saturate-[145%] transition-[width,background-color,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] dark:bg-[rgba(14,20,20,0.78)] dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.09),0_18px_60px_rgba(0,0,0,0.42)]",
-          comparison?.enabled ? "w-[min(96vw,820px)]" : "w-[min(92vw,590px)]",
+          comparison?.enabled ? "w-[min(96vw,820px)]" : singleDate ? "w-[min(92vw,330px)]" : "w-[min(92vw,590px)]",
           className,
           popoverClassName,
         )}
@@ -462,6 +491,8 @@ export function MultideckDateRangePicker({
                 locale={locale}
                 onSelectDate={selectDate}
                 onPreviewDate={(dateKey) => setHoveredDate(waitingForEndDate ? dateKey : null)}
+                minDate={minDate}
+                maxDate={maxDate}
               />
             </section>
 
@@ -490,12 +521,14 @@ export function MultideckDateRangePicker({
                 locale={locale}
                 onSelectDate={selectComparisonDate}
                 onPreviewDate={(dateKey) => setComparisonHoveredDate(comparisonWaitingForEndDate ? dateKey : null)}
+                minDate={minDate}
+                maxDate={maxDate}
               />
             </section>
           </motion.div>
         ) : (
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            {[visibleMonth, addMonths(visibleMonth, 1)].map((month) => (
+          <div className={cn("mt-4 grid gap-3", !singleDate && "sm:grid-cols-2")}>
+            {(singleDate ? [visibleMonth] : [visibleMonth, addMonths(visibleMonth, 1)]).map((month) => (
               <CalendarMonth
                 key={getDateKey(month)}
                 month={month}
@@ -504,6 +537,8 @@ export function MultideckDateRangePicker({
                 locale={locale}
                 onSelectDate={selectDate}
                 onPreviewDate={(dateKey) => setHoveredDate(waitingForEndDate ? dateKey : null)}
+                minDate={minDate}
+                maxDate={maxDate}
               />
             ))}
           </div>
@@ -516,9 +551,9 @@ export function MultideckDateRangePicker({
               <span className="ms-2 inline-block" dir={hasAnyDate ? "ltr" : undefined}>
                 {rangeLabel}
               </span>
-              <span className="mt-1 block text-[11px] text-[var(--md-subtle)]" dir="ltr">
+              {!singleDate ? <span className="mt-1 block text-[11px] text-[var(--md-subtle)]" dir="ltr">
                 {t(startLabel)}: {formatDateLabel(resolvedRange.start, locale) || "-"} · {t(endLabel)}: {formatDateLabel(resolvedRange.end, locale) || "-"}
-              </span>
+              </span> : null}
             </div>
             {comparison?.enabled ? (
               <div>
@@ -542,7 +577,7 @@ export function MultideckDateRangePicker({
               disabled={!resolvedRange.start || Boolean(comparison?.enabled && !resolvedComparisonRange.start)}
               onClick={() => setOpen(false)}
             >
-              {t(hasCompleteRange && (!comparison?.enabled || comparisonHasCompleteRange) ? "Apply dates" : "Apply start")}
+              {t(singleDate ? "Apply date" : hasCompleteRange && (!comparison?.enabled || comparisonHasCompleteRange) ? "Apply dates" : "Apply start")}
             </Button>
           </div>
         </div>
@@ -561,6 +596,10 @@ export function MultideckDatePicker({
   disabled,
   missing,
   className,
+  triggerClassName,
+  popoverClassName,
+  minDate,
+  maxDate,
 }: {
   value: string | null
   onChange: (date: string | null) => void
@@ -571,6 +610,10 @@ export function MultideckDatePicker({
   disabled?: boolean
   missing?: boolean
   className?: string
+  triggerClassName?: string
+  popoverClassName?: string
+  minDate?: string
+  maxDate?: string
 }) {
   return (
     <MultideckDateRangePicker
@@ -586,6 +629,97 @@ export function MultideckDatePicker({
       disabled={disabled}
       missing={missing}
       className={className}
+      triggerClassName={triggerClassName}
+      popoverClassName={popoverClassName}
+      minDate={minDate}
+      maxDate={maxDate}
+      singleDate
     />
+  )
+}
+
+export function MultideckDateTimePicker({
+  value,
+  onChange,
+  placeholder = "Select date",
+  title = "Select date and time",
+  description = "Pick a date, then set the time.",
+  timeLabel = "Time",
+  defaultTime = "09:00",
+  min,
+  max,
+  disabled,
+  missing,
+  className,
+  triggerClassName,
+  timeClassName,
+}: {
+  value: string
+  onChange: (value: string) => void
+  placeholder?: string
+  title?: string
+  description?: string
+  timeLabel?: string
+  defaultTime?: string
+  min?: string
+  max?: string
+  disabled?: boolean
+  missing?: boolean
+  className?: string
+  triggerClassName?: string
+  timeClassName?: string
+}) {
+  const { t } = useLanguage()
+  const selectedDate = value.slice(0, 10)
+  const selectedTime = value.slice(11, 16)
+  const [pendingTime, setPendingTime] = useState(selectedTime || defaultTime)
+
+  useEffect(() => {
+    if (selectedTime) setPendingTime(selectedTime)
+  }, [selectedTime])
+
+  const minDate = min?.slice(0, 10)
+  const maxDate = max?.slice(0, 10)
+  const timeMin = selectedDate && minDate === selectedDate ? min?.slice(11, 16) : undefined
+  const timeMax = selectedDate && maxDate === selectedDate ? max?.slice(11, 16) : undefined
+
+  return (
+    <div className={cn("grid min-w-0 grid-cols-[minmax(0,1fr)_112px] gap-2", className)}>
+      <MultideckDatePicker
+        value={selectedDate || null}
+        onChange={(date) => onChange(date ? `${date}T${pendingTime || defaultTime}` : "")}
+        placeholder={placeholder}
+        title={title}
+        description={description}
+        disabled={disabled}
+        missing={missing}
+        triggerClassName={triggerClassName}
+        minDate={minDate}
+        maxDate={maxDate}
+      />
+      <label className="relative min-w-0">
+        <span className="sr-only">{t(timeLabel)}</span>
+        <Clock aria-hidden="true" className="pointer-events-none absolute start-3 top-1/2 z-10 size-4 -translate-y-1/2 text-[var(--md-accent)]" strokeWidth={1.25} />
+        <Input
+          type="time"
+          value={pendingTime}
+          min={timeMin}
+          max={timeMax}
+          disabled={disabled}
+          aria-invalid={missing || undefined}
+          aria-label={t(timeLabel)}
+          dir="ltr"
+          className={cn(
+            "h-11 rounded-[var(--md-radius-lg)] bg-[var(--md-field-bg)] ps-9 pe-2 text-[13px] tabular-nums shadow-[var(--md-shadow-line)] [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none",
+            timeClassName,
+          )}
+          onChange={(event) => {
+            const nextTime = event.target.value
+            setPendingTime(nextTime)
+            if (selectedDate) onChange(`${selectedDate}T${nextTime}`)
+          }}
+        />
+      </label>
+    </div>
   )
 }

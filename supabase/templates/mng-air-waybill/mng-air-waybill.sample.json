@@ -1,0 +1,78 @@
+{
+  "meta": {
+    "schemaVersion": 1,
+    "templateCode": "MNG_AWB",
+    "templateVersion": 1,
+    "languageCode": "en"
+  },
+  "selection": {
+    "job": true,
+    "customer": true,
+    "shipper": true,
+    "consignee": true,
+    "cargo": true,
+    "routing": true
+  },
+  "job": {
+    "number": 891936,
+    "period": "2026",
+    "direction": "export",
+    "transportMode": "air",
+    "legalEntityName": "Jenkar Shipping Ltd",
+    "origin": { "unlocode": "GBLHR", "name": "London Heathrow" },
+    "destination": { "unlocode": "TRIST", "name": "Istanbul Airport" }
+  },
+  "shipper": {
+    "name": "Avtrade Global",
+    "address": {
+      "line1": "Global Headquarters",
+      "line2": "Sayers Common",
+      "city": "Hassocks",
+      "countyOrState": "West Sussex",
+      "postalCode": "BN6 9QJ",
+      "countryCode": "GB"
+    }
+  },
+  "consignee": {
+    "name": "Mytechnic Aircraft MRO Services",
+    "address": {
+      "line1": "Sabiha Gokcen International Airport",
+      "line2": "Pendik",
+      "city": "Istanbul",
+      "postalCode": "34906",
+      "countryCode": "TR"
+    }
+  },
+  "cargo": [
+    {
+      "lineNumber": 1,
+      "commodity": "Actuator - trimmable horizontal stabilizer",
+      "description": "One actuator, trimmable horizontal stabilizer (THSA)",
+      "packageType": "CTN",
+      "packageQuantity": 1,
+      "grossWeight": 150,
+      "netWeight": 150,
+      "weightUnit": "KGM",
+      "volume": 0.01171,
+      "volumeUnit": "MTQ",
+      "marksAndNumbers": "Dimensions 1 @ 171 x 55 x 69 cm",
+      "hsCode": "8803",
+      "countryOfOrigin": "GB",
+      "isHazardous": false
+    }
+  ],
+  "routing": [
+    {
+      "sequence": 1,
+      "mode": "AIR",
+      "origin": { "unlocode": "GBLHR", "name": "London Heathrow", "terminal": "T4" },
+      "destination": { "unlocode": "TRIST", "name": "Istanbul Airport", "terminal": "" },
+      "plannedDepartureAt": "2026-08-24T09:00:00Z",
+      "flightNumber": "MB724",
+      "carrierBookingReference": "GB/RA/00060-13",
+      "masterTransportReference": "716-44980843",
+      "houseTransportReference": "SHEAXJ045060",
+      "isMainCarriage": true
+    }
+  ]
+}

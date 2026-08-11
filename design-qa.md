@@ -48,6 +48,189 @@ final result: passed
 
 # Design QA
 
+Feature: Permanent priority-queue actions and Dexter handoff
+
+Source visual truth:
+- `browser:Selected browser region` on `http://localhost:3000/app`.
+- User annotation: `make these icons visible all time not only on hover and add a hadn over to dexter button make it small and maybe just as an icon with dexter shader on`.
+- Selected source region: `83.1 x 388.1` CSS px in the action rail at the right edge of the Needs you now queue, dark theme.
+
+Implementation evidence:
+- Local URL: `http://localhost:3000/app`.
+- Screenshot: `/Users/harryphillips/.codex/visualizations/2026/08/09/019fe6d2-c3b1-7200-acc8-dad8822e49fe/priority-queue-dexter-handoff-final.jpg`.
+- Implementation viewport and screenshot: `1272 x 863` CSS px and `1272 x 863` image pixels.
+- State: authenticated local dashboard, dark theme, Today range, queue at rest with no row hovered.
+
+Full-view comparison evidence:
+- The Needs you now queue keeps the existing task, due-date, status, and action columns; only the annotated action rail changes.
+- Coverage moves below the queue at the narrower implementation viewport through the dashboard's existing responsive layout; the queue itself remains aligned and free of horizontal overflow.
+- Every visible queue row now presents the same three-action sequence at rest: Dexter handoff, complete, and open.
+
+Focused region comparison evidence:
+- Each row action group measures `80px` wide and remains at `opacity: 1` before hover.
+- The Dexter shader action is `24 x 24px`; the existing complete and open actions remain `26 x 26px`, with `2px` gaps.
+- Seven visible task rows show seven Dexter shader icons, seven complete icons, and seven open icons without clipping the status column.
+- Document width and viewport width both measure `1272px`, so the permanent rail introduces no horizontal overflow.
+
+Required fidelity surfaces:
+- Fonts and typography: the queue's existing Multideck system typography is unchanged.
+- Spacing and layout rhythm: the compact action rail stays inside the annotated `83px` allowance and preserves row alignment.
+- Colours and visual tokens: existing neutral action surfaces remain unchanged; the added handoff uses the real Dexter shader and a restrained surface shadow.
+- Image quality and assets: no duplicate graphic asset was introduced; the existing live Dexter shader component is reused.
+- Copy and content: the queue copy is unchanged. `Hand over to Dexter` and the generated task prompt are supplied through the app language layer in English, German, French, and Arabic.
+
+Comparison history:
+- Pass 1 finding: complete and open actions were hidden until hover, leaving the rail visually empty and undiscoverable; no direct Dexter handoff existed.
+- Fix: kept the existing actions visible at rest, inserted a smaller icon-only Dexter shader action, and passed the selected task into Dexter's composer through a one-shot session handoff.
+- Pass 2 evidence: the final screenshot shows all actions at rest, and activating the first Dexter control opened `/agent-dexter` with the correct Q-19157 task context prefilled.
+
+Responsive, accessibility, and interaction checks:
+- All three icon-only actions retain accessible labels; the Dexter action also exposes a native title and visible focus treatment.
+- Handoff is approval-safe: it opens Dexter and prefills the composer but does not send the message automatically.
+- The prompt includes task, reference, customer, route context, and current status so Dexter receives useful operating context.
+- The permanent rail remains visible without pointer hover and does not depend on colour alone for meaning.
+- The existing open-arrow RTL treatment is preserved; the Dexter and complete symbols are direction-neutral.
+- A fresh local dashboard tab reported no console errors after load.
+- `npx tsc -b --pretty false`, `npm run build`, `node --test --experimental-strip-types tests/dexter-navigation.test.ts`, and `git diff --check` pass. The production build reports only the existing large-chunk advisory.
+
+Component and scope check:
+- The existing Priority Queue and Dexter Action Pill components are composed; no duplicate queue or shader component was created.
+- The Priority Queue components-gallery preview, usage example, source example, and quick links document the new handoff callback.
+- No backend, authentication, tenant, provider, migration, or deployment behaviour changed.
+
+Findings:
+- No actionable P0/P1/P2 findings remain.
+- No P3 visual finding is being carried.
+
+final result: passed
+
+---
+
+# Design QA
+
+Feature: Agent Dexter sidebar hover-only stroke
+
+Source visual truth:
+- `browser:Selected browser region` on `http://localhost:3000/app`.
+- User annotation: `make this only have stroke on hover`.
+- Source screenshot: `1512 x 863` image pixels; selected sidebar region `265.9 x 63.2` CSS px, dark theme.
+
+Implementation evidence:
+- Local URL: `http://localhost:3000/app`.
+- Resting screenshot: `/Users/harryphillips/.codex/visualizations/2026/08/09/019fe6d2-c3b1-7200-acc8-dad8822e49fe/dexter-sidebar-rest-no-stroke.jpg`.
+- Hover screenshot: `/Users/harryphillips/.codex/visualizations/2026/08/09/019fe6d2-c3b1-7200-acc8-dad8822e49fe/dexter-sidebar-hover-stroke.jpg`.
+- Browser viewport and implementation images: `1272 x 863` CSS px and `1272 x 863` image pixels; browser device pixel ratio `2` with screenshots normalized to CSS-pixel dimensions.
+- State: authenticated local dashboard, Agent Dexter row at rest and under pointer hover, dark and light themes.
+
+Full-view comparison evidence:
+- The app keeps the existing fixed `264px` navigation rail, page content, navigation order, Dexter bloom, label, and icon unchanged.
+- The source and implementation viewport widths differ, so full-dashboard content is not used for pixel-level comparison. The sidebar has the same fixed width and vertical placement in both captures, making the annotated region directly comparable.
+- At rest, the explicit inset and outer one-pixel strokes are absent; the moving bloom and its soft depth shadow remain.
+- On hover, a single inset highlight and accent outline appear without changing the row's fill, text, icon, position, or dimensions.
+
+Focused region comparison evidence:
+- The Agent Dexter button measures `232 x 40` CSS px at rest and `232 x 40` CSS px on hover, so the stroke introduces no layout shift.
+- Computed state at rest: `:hover = false`, hover-surface opacity `0`, transparent button border, and only the existing soft `0 7px 18px` depth shadow.
+- Computed state on hover: `:hover = true`, hover-surface opacity `1`, with the visible stroke supplied by an inset white highlight plus the existing accent-deep token.
+- The same `0 -> 1` hover-surface opacity change was confirmed in light mode. Dark mode was restored for handoff.
+
+Required fidelity surfaces:
+- Fonts and typography: unchanged; the existing system typeface, 14px medium label, and white Dexter foreground remain intact.
+- Spacing and layout rhythm: unchanged; the row retains its 40px height, 232px width, padding, gap, and nested radius relationship.
+- Colours and visual tokens: the bloom and accent tokens are unchanged; the hover outline uses `--md-accent-deep-a16` with a restrained white inset highlight.
+- Image quality and assets: no image or icon asset was changed; the existing shader canvas and product icon remain the source of the Dexter treatment.
+- Copy and content: `Agent Dexter` and all neighbouring navigation labels remain unchanged and localisable.
+
+Comparison history:
+- Pass 1 finding: the annotated resting row carried permanent inset and outer one-pixel strokes, making the special Dexter treatment read as permanently outlined.
+- Fix: removed the permanent strokes from the Dexter item shadow and moved the stroke to a transparent overlay that appears only for hover and keyboard focus-visible states.
+- Pass 2 evidence: the resting and hover screenshots show the same row geometry with the explicit outline absent at rest and present under hover.
+
+Responsive, accessibility, and interaction checks:
+- Hover was exercised with a real pointer move; moving the pointer away returned the overlay opacity to `0` after the 150ms transition.
+- Keyboard users retain the same stroke through `:focus-visible`, alongside the existing accessible focus ring; pointer clicks do not leave a focus-visible outline behind.
+- Reduced-motion users receive the same state change without the opacity transition.
+- The treatment uses no directional offsets, so RTL layout remains unaffected.
+- A fresh local dashboard tab reported no console errors after load.
+- `npm run build` and `git diff --check` pass. The production build reports only the existing large-chunk advisory.
+
+Component and scope check:
+- The existing `SidebarNavItem` is reused; no new reusable component or visible copy was introduced, so no components-gallery or localisation entry is required.
+- Only the Dexter accent treatment changed. Home, Inbox, area navigation, dashboard content, routing, authentication, tenant, provider, backend, and deployment behaviour are unchanged.
+
+Findings:
+- No actionable P0/P1/P2 findings remain.
+- No P3 visual finding is being carried.
+
+final result: passed
+
+---
+
+# Design QA
+
+Feature: Home dashboard alignment and compact metric refinement
+
+Source visual truth:
+- Browser annotations on `http://localhost:3000/app` are the exact requirements: align the queue columns, remove the transport-mode filter chips, replace KPI bars with mini area graphs, make the KPI delta chips hug their content, and separate the mode colours.
+- `/var/folders/lb/stflsq1d6llcfy2t4f_q0ny40000gn/T/codex-clipboard-8fa69ec8-1464-4fc6-9fd5-e1beb0f913e5.png`
+- `/var/folders/lb/stflsq1d6llcfy2t4f_q0ny40000gn/T/codex-clipboard-ebacd6bd-e1be-4f2c-b16d-afa1628275b0.png`
+- `/var/folders/lb/stflsq1d6llcfy2t4f_q0ny40000gn/T/codex-clipboard-3819fd25-b5b6-4ae9-808f-8430b54d50ec.png`
+- `/var/folders/lb/stflsq1d6llcfy2t4f_q0ny40000gn/T/codex-clipboard-d9d1f4a6-aa0e-4660-98c8-79035f251482.png`
+- `/var/folders/lb/stflsq1d6llcfy2t4f_q0ny40000gn/T/codex-clipboard-17f5804a-34ca-4482-ac86-4c39539d739c.png`
+- `/var/folders/lb/stflsq1d6llcfy2t4f_q0ny40000gn/T/codex-clipboard-bc7c2f34-5a71-4906-86a3-d753bc318b64.png`
+
+Implementation evidence:
+- Local URL: `http://localhost:3000/app`.
+- Full desktop screenshot: `/Users/harryphillips/.codex/visualizations/2026/08/09/019fe6d2-c3b1-7200-acc8-dad8822e49fe/dashboard-refinement-full.jpg` (`1512 x 1234`).
+- Focused KPI screenshot: `/Users/harryphillips/.codex/visualizations/2026/08/09/019fe6d2-c3b1-7200-acc8-dad8822e49fe/dashboard-refinement-focused.jpg` (`1280 x 720`).
+- Live-bookings screenshot: `/Users/harryphillips/.codex/visualizations/2026/08/09/019fe6d2-c3b1-7200-acc8-dad8822e49fe/dashboard-refinement-mode-bookings.jpg` (`1280 x 720`).
+- State: authenticated local dashboard, English (UK), left-to-right, light theme, Today range, Active jobs selected, List view selected.
+
+Required fidelity surfaces:
+- Fonts and typography: existing Multideck system typography is retained; the change chip is reduced to a compact 10.5px treatment without shrinking dashboard body copy.
+- Spacing and layout: queue deadline and status cells use shared fixed tracks. Browser measurement across all seven rows returned `0px` deadline-right spread and `0px` status-left spread.
+- KPI composition: all four summaries render area sparklines and no bar sparklines. The delta chips measure `18px` high and `36.5px` wide for the current `0%` values, so they hug content instead of filling the row.
+- Colour: Air uses the dashboard blue token and Road uses the amber token; the plotted series, fills, and legend swatches inherit those distinct colours consistently.
+- Image quality and assets: no raster product assets were introduced. The supplied images are layout and density references only.
+- Copy: the removed filters do not leave orphan labels. The empty live-bookings sentence was made localisable in English, German, French, and Arabic.
+
+Full-view comparison evidence:
+- The two most relevant source references and the implementation were inspected together in one comparison pass. The references favour compact metric summaries, content-width state labels, quiet micro-graphs, and clear series separation.
+- The implementation adopts those principles while keeping Multideck's operational queue, coverage, freight terminology, and existing information architecture rather than cloning an unrelated finance or AI dashboard.
+- The final desktop view shows one consistent queue deadline column, one consistent status column, four restrained KPI summaries, a full trend chart, a separate mode chart, and the live-bookings List/Map control without the redundant Air/Road chips.
+
+Focused region comparison evidence:
+- KPI micro-graphs now use the same compact area-chart language as the references. The current Today series are flat because the source values are unchanged, not because the charts failed to render.
+- The live-bookings header keeps only the view control, reducing competing filters and preserving row scan width.
+- The mode chart uses blue for Air and amber for Road. The two lines overlap for the current equal series, but the legend and any diverging values remain visually distinct.
+
+Comparison history:
+- Pass 1 finding: a later duplicate dashboard CSS block overrode the queue's fixed columns with content-sized columns, so deadlines and statuses drifted row by row. KPI delta chips stretched, the KPI summaries used vertical bars, live bookings repeated mode filters, and Air/Road occupied neighbouring accent-family colours.
+- Fix: corrected the effective queue grid, content-sized the delta chips, switched the existing KPI strip to its area-sparkline variant, removed the redundant mode-filter state and controls, and moved Road to the semantic amber token.
+- Pass 2 evidence: the full and focused screenshots plus computed layout checks confirm all five annotations are resolved.
+
+Interaction and responsive checks:
+- Booking exceptions can be selected and exposes `aria-pressed=true`; Active jobs was restored for handoff.
+- Map can be selected and exposes `aria-checked=true`; List was restored for handoff.
+- At `390 x 844`, document width and scroll width both measured `390px`, the KPI strip collapsed to one `358px` column, and the live-bookings controls remained within their `330px` container.
+- Arabic was selected through Settings and verified in RTL: the queue deadline and status columns remained aligned, the four area sparklines remained present, and the removed mode filters did not return. English (UK) and LTR were restored.
+- A fresh local dashboard tab reported no console errors after load.
+- `npx tsc -b --pretty false`, `npm run build`, and `git diff --check` pass. The production build reports only the existing large-chunk advisory.
+
+Component and scope check:
+- Existing `KpiStrip`, `DashboardModeChart`, and `LiveBookingsBoard` components were refined; no new reusable component was created, so no components-gallery entry is required.
+- No backend, authentication, tenant, provider, migration, or deployment behaviour changed.
+
+Findings:
+- No actionable P0/P1/P2 findings remain.
+- No P3 visual finding is being carried: flat micro-graphs accurately reflect the flat Today data and will show shape when the underlying series moves.
+
+final result: passed
+
+---
+
+# Design QA
+
 Feature: Quote Overview compact five-stage progress rail
 
 Source visual truth:
@@ -188,5 +371,65 @@ Focused region comparison:
 Findings:
 - No actionable P0/P1/P2 findings remain.
 - P3 follow-up: long live customer or carrier names will continue to truncate inside the compact fields, consistent with the source layout.
+
+final result: passed
+
+---
+
+# Design QA
+
+Feature: Quote pipeline vertical bar chart
+
+Source visual truth:
+- `browser:Selected browser region` on `http://localhost:3000/app`.
+- User annotation: `show this as bar chart`.
+- Selected source region: `374.8 x 202.4` CSS px in the dashboard's right analysis column, dark theme.
+
+Implementation evidence:
+- Local URL: `http://localhost:3000/app`.
+- Screenshot: `/Users/harryphillips/.codex/visualizations/2026/08/09/019fe6d2-c3b1-7200-acc8-dad8822e49fe/quote-pipeline-bar-chart-final.jpg`.
+- Screenshot and viewport: `1512 x 863` CSS px and `1512 x 863` image pixels.
+- State: authenticated local dashboard, dark theme, Today range, List view, Quote pipeline visible beside Live bookings.
+
+Full-view comparison evidence:
+- The annotated panel remains in the same right-column position, retains its title and workflow-stage subtitle, and keeps the same compact footprint beside Live bookings.
+- Only the requested encoding changed: three horizontal ranked progress rows became three upright bars on a shared baseline.
+- The neighbouring Tracking status panel remains a ranked horizontal breakdown, preserving a useful visual distinction between current state and pipeline-stage comparison.
+
+Focused region comparison evidence:
+- The final Quote pipeline panel measures `370.8 x 192.0` CSS px, within the annotated region's `374.8 x 202.4` footprint.
+- All three columns measure `106.3px` wide; each bar is `36px` wide and `78.3px` high for the current equal values.
+- Supplier pricing, Commercial review, and Ready to issue each fit on one line with no clipping or overflow at the annotated desktop width.
+- Values sit above the bars, stage names sit below, and the midpoint guide plus shared baseline makes the comparison read as a chart rather than three progress controls.
+
+Required fidelity surfaces:
+- Fonts and typography: existing Multideck system typography is retained; values use compact tabular figures and stage labels use the existing 11px supporting-text scale.
+- Spacing and layout rhythm: the chart uses three equal tracks, 10px gaps, 36px maximum bar width, and the existing panel padding/radius/shadow tokens.
+- Colours and visual tokens: every column uses the workflow slice's existing colour token and remains legible in both light and dark themes.
+- Image quality and assets: no image, icon, or generated asset is needed for this data visualisation.
+- Copy and content: the existing title, subtitle, stage labels, values, and empty-state copy are unchanged.
+
+Comparison history:
+- Pass 1 finding: the annotated implementation displayed each workflow stage as a horizontal progress row, which did not meet the requested bar-chart presentation.
+- Fix: added a reusable `columns` variant to `DashboardBreakdownPanel`, applied it to Quote pipeline, and updated the components gallery preview, usage example, and source example.
+- Pass 2 evidence: the final screenshot shows an upright three-column chart in the original panel footprint with no surrounding layout changes.
+
+Responsive, accessibility, and interaction checks:
+- At `390 x 844`, the chart panel measures `358 x 192px`; the document and scroll widths both measure `390px`, so no horizontal overflow is introduced.
+- Mobile labels each receive `102px` and remain on one line without clipping.
+- Each semantic list item exposes its stage, value, and share to assistive technology; the decorative plot is hidden from the accessibility tree.
+- Reduced-motion users receive the final bar height without the scale-in transition.
+- Switching through the real theme control confirmed the chart in light and dark mode; dark mode was retained for handoff.
+- A fresh local dashboard tab reported no console errors after load.
+- `npx tsc -b --pretty false`, `npm run build`, and `git diff --check` pass. The production build reports only the existing large-chunk advisory.
+
+Component and scope check:
+- The existing Breakdown Panel component is reused and extended; its `/components` preview and metadata now document the column-chart variant.
+- The component's existing empty state remains ahead of all visual variants, so no-quote behaviour is unchanged.
+- No backend, authentication, tenant, provider, migration, or deployment behaviour changed.
+
+Findings:
+- No actionable P0/P1/P2 findings remain.
+- No P3 visual finding is being carried.
 
 final result: passed

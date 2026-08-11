@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
-import { Check, FileText, LoaderCircle, X } from "lucide-react"
+import { Check, FileText, LoaderCircle, X } from "@/components/icons/hugeicons"
 import { motion, useReducedMotion } from "motion/react"
 import { Button } from "@/components/ui/button"
 import { Surface } from "@/components/multideck/surface"

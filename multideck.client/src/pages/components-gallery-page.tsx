@@ -1,6 +1,6 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { useTheme } from "next-themes"
-import { ArrowLeft, ArrowRight, Bell, Check, Clipboard, Cloud, Component, Download, FileText, Folder, Image, KeyRound, Mail, Pin, Search, Ship, Sparkles, UserRound } from "lucide-react"
+import { AiBrain, ArrowLeft, ArrowRight, Bell, Check, Clipboard, Cloud, Component, Download, Eye, FileText, Folder, Forklift, Home03, Image, KeyRound, Mail, Moon02, Pencil, Pin, Search, Settings2, Ship, Sparkles, Trash2, UserRound } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import toastErrorIcon from "@/assets/toasts/toast-error.png"
 import toastGeneralIcon from "@/assets/toasts/toast-general.png"
@@ -18,12 +18,31 @@ import {
   ReasoningTrigger,
 } from "@/components/ai-elements/reasoning"
 import { Checkbox } from "@/components/ui/checkbox"
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu"
+import { DotGridLoader } from "@/components/multideck/dot-grid-loader"
+import {
+  RegisterFacetSelect,
+  RegisterRefreshButton,
+  RegisterSearchField,
+  RegisterToolbarActions,
+  RegisterToolbarDivider,
+  RegisterViewSwitch,
+  registerButtonClass,
+} from "@/components/multideck/register-toolbar"
 import { Input } from "@/components/ui/input"
 import { Kbd, KbdGroup } from "@/components/ui/kbd"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
+import { DriveFileTile, DriveFolderTile } from "@/components/multideck/drive-components"
 import { accentShiftDurationMs, useAccentPresetId } from "@/lib/accent-theme"
+import type { DriveFile, DriveFolder, DriveFolderStats } from "@/lib/drive-api"
 import { cn } from "@/lib/utils"
 import type { ApiLead, ApiLeadDetail } from "@/lib/lead-api"
 import { activityItems, cityQueues, crmAccountSignals, crmActivities, crmContacts, crmLeadFieldSettings, crmPipelineSettings, crmPipelineStages, crmSummaryMetrics, customerFilters, customerScopeTabs, customers, customsQueue, galleryComponents, galleryIcons, generatedReports, initialFavouriteBookingIds, liveBookings, marlowContacts, marlowMetrics, metricCards, quoteAuditEvents, reportTemplates, bookingFilters, bookingMetrics, bookings, warehouseOrders, warehouseProducts, warehouseStockRows } from "@/data/multideck-data"
@@ -51,7 +70,7 @@ import {
   LaneMixPanel,
   PrimaryContactsPanel,
 } from "@/components/multideck/customer-components"
-import { CrmActivityTimeline, CrmAssetFolderCard, CrmAssetRow, CrmContactTable, CrmForecastPanel, CrmLeadDetailPanel, CrmLeadQualificationTable, CrmLeadSignalList, CrmMetricsGrid, CrmPipelineBoard, CrmPriorityActionsPanel, CrmRevenueMixPanel, CrmSalesCommandCenter, CrmSalesFunnelPanel, CrmSettingsBuilder } from "@/components/multideck/crm-components"
+import { CrmActivityTimeline, CrmContactTable, CrmForecastPanel, CrmLeadDetailPanel, CrmLeadQualificationTable, CrmLeadSignalList, CrmMetricsGrid, CrmPipelineBoard, CrmPriorityActionsPanel, CrmRevenueMixPanel, CrmSalesCommandCenter, CrmSalesFunnelPanel, CrmSettingsBuilder } from "@/components/multideck/crm-components"
 import { CopyableField } from "@/components/multideck/copyable-field"
 import { ContactCardLayoutPicker, ContactCardSocialLinksEditor } from "@/components/multideck/contact-card-design"
 import { ContactCreateDialog } from "@/components/multideck/contact-create-dialog"
@@ -70,8 +89,14 @@ import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
 import { CodeInput, FreightNarrative, SignInPanel, SignedOutPanel, VerifyPanel, WorkspaceRouterPanel } from "@/components/multideck/auth-flow"
 import { AuthIdentityManager, AuthProviderSelector } from "@/components/multideck/auth-provider-selector"
-import { BookingArrivalCard, BookingAskPanel, BookingBoardPreview, BookingExceptionPanel, BookingMetricCard, BookingResolutionChecklist, BookingsTable, YourJobsPanel, bookingViewModes, bookingViewOptions, type BookingSearchCriterion, type BookingViewMode } from "@/components/multideck/booking-components"
-import { BookingSearchBuilder } from "@/components/multideck/booking-search-builder"
+import { DashboardPriorityQueue } from "@/components/multideck/dashboard-priority-queue"
+import { DashboardPerformancePanel } from "@/components/multideck/dashboard-performance-panel"
+import { KpiStrip } from "@/components/multideck/dashboard-kpi-strip"
+import { DashboardCoveragePanel } from "@/components/multideck/dashboard-coverage-panel"
+import { DashboardBreakdownPanel } from "@/components/multideck/dashboard-breakdown-panel"
+import type { DashboardKpi, DashboardPriorityItem, DashboardTrendPoint } from "@/lib/dashboard-live-data"
+import { BookingArrivalCard, BookingAskPanel, BookingBoardPreview, BookingExceptionPanel, BookingMetricCard, BookingResolutionChecklist, BookingsTable, YourJobsPanel, bookingSearchFieldOptions, bookingViewModes, bookingViewOptions, type BookingViewMode } from "@/components/multideck/booking-components"
+import { AdvancedFilterPopover } from "@/components/multideck/advanced-filter-popover"
 import { DomesticJobStageRail, DomesticRoadJobCard, DomesticRoadKanbanBoard, domesticRoadJobs, roadJobStageStatus, roadJobStages } from "@/components/multideck/domestic-road-components"
 import { WarehouseKanbanBoardPreview, WarehouseOrdersTable, WarehouseProductsTable, WarehouseStockTable } from "@/components/multideck/warehouse-components"
 import { WarehouseFormField } from "@/components/multideck/warehouse-management-components"
@@ -145,7 +170,7 @@ import { Table, TableBody } from "@/components/ui/table"
 import multideckFullLogo from "@/assets/brand/multideck-full-logo.svg"
 import { AIEdgeGlow } from "@/components/multideck/ai-edge-glow"
 import { DashboardCustomisePanel } from "@/components/multideck/dashboard-customise-panel"
-import { MultideckDateRangePicker, type MultideckDateRange } from "@/components/multideck/date-picker"
+import { MultideckDatePicker, MultideckDateRangePicker, MultideckDateTimePicker, type MultideckDateRange } from "@/components/multideck/date-picker"
 import { ThemeToggle } from "@/components/multideck/theme-toggle"
 import { SidebarItemMenu } from "@/components/multideck/sidebar-item-menu"
 import { SidebarArrangeCanvas, type SidebarArrangeItem } from "@/components/multideck/sidebar-arrange"
@@ -161,7 +186,8 @@ import { AuditTimeline } from "@/components/multideck/audit-timeline"
 import { AuditWorkspace, QUOTE_AUDIT_SAMPLE_DATA } from "@/components/multideck/audit-workspace"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { UnifiedQuoteChargesWorkspace, type UnifiedQuoteChargeRow } from "@/components/multideck/unified-quote-charges-workspace"
-import { QuoteSearchBuilder, type QuoteSearchQuery } from "@/components/multideck/quote-search-builder"
+import { quoteMatchesSearch, quoteSearchFieldOptions, type QuoteSearchQuery } from "@/lib/quote-filters"
+import { matchesFilterQuery, type FilterFieldOption, type FilterQuery } from "@/lib/advanced-filters"
 import { MultiSelectMenu } from "@/components/multideck/multi-select-menu"
 import { DocumentViewer, PaperTrayStack } from "@/components/multideck/paper-tray"
 import { DocumentEvidenceViewer } from "@/components/multideck/document-evidence-viewer"
@@ -192,12 +218,12 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Chart components",
     helper: "Graphs, KPI boxes, report visuals",
-    ids: ["metric-card", "line-chart", "area-chart", "bar-chart", "stacked-bar-chart", "donut-chart", "funnel-chart", "heatmap-chart", "radial-goal-chart", "scatter-chart", "mixed-chart"],
+    ids: ["metric-card", "performance-panel", "breakdown-panel", "line-chart", "area-chart", "bar-chart", "stacked-bar-chart", "donut-chart", "funnel-chart", "heatmap-chart", "radial-goal-chart", "scatter-chart", "mixed-chart"],
   },
   {
     label: "Button & control components",
     helper: "Navigation and input controls",
-    ids: ["command", "app-breadcrumbs", "sidebar", "sidebar-item-menu", "sidebar-arrange-canvas", "theme-toggle", "page-settings-menu", "date-range-picker", "segmented-control", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "pagination", "kbd", "shortcut-keys", "settings-controls", "settings-option-card"],
+    ids: ["command", "app-breadcrumbs", "sidebar", "sidebar-item-menu", "sidebar-arrange-canvas", "theme-toggle", "page-settings-menu", "date-range-picker", "segmented-control", "choice-control", "checkbox", "filter-chips", "tabs", "multi-select-menu", "context-menu", "register-toolbar", "pagination", "kbd", "shortcut-keys", "settings-controls", "settings-option-card"],
   },
   {
     label: "Auth components",
@@ -212,12 +238,12 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["paper-tray-stack", "document-viewer", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
+    ids: ["paper-tray-stack", "document-viewer", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
   },
   {
     label: "CRM",
-    helper: "Leads, contacts, deals, activity, marketing, settings",
-    ids: ["crm-sales-command-center", "crm-metrics-grid", "crm-sales-funnel-panel", "crm-revenue-mix-panel", "crm-forecast-panel", "crm-priority-actions-panel", "crm-pipeline-board", "crm-pipeline-editor", "crm-asset-folder-card", "crm-asset-row", "crm-lead-qualification-table", "copyable-field", "crm-lead-detail-panel", "contact-create-dialog", "crm-contact-table", "crm-activity-timeline", "crm-lead-signals", "crm-settings-builder"],
+    helper: "Leads, contacts, deals, activity, Drive, settings",
+    ids: ["crm-sales-command-center", "crm-metrics-grid", "crm-sales-funnel-panel", "crm-revenue-mix-panel", "crm-forecast-panel", "crm-priority-actions-panel", "crm-pipeline-board", "crm-pipeline-editor", "drive-folder-tile", "drive-file-tile", "crm-lead-qualification-table", "copyable-field", "crm-lead-detail-panel", "contact-create-dialog", "crm-contact-table", "crm-activity-timeline", "crm-lead-signals", "crm-settings-builder"],
   },
   {
     label: "Agent Dexter",
@@ -236,20 +262,71 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   },
 ]
 
+/** Deadlines are stamped relative to load so the buckets always demonstrate. */
+const previewNow = Date.now()
+const previewPriorityItems: DashboardPriorityItem[] = [
+  { id: "p1", kind: "exception", reference: "MD-22479", task: "Resolve tracking exception", customer: "Halo Retail Group", context: "Ningbo → Rotterdam", status: "Exception", owner: "Amelia Rowe", dueAt: previewNow - 78 * 60_000, dueKind: "action", tone: "red", bookingId: "MD-22479" },
+  { id: "p2", kind: "exception", reference: "MD-22466", task: "Review revised delivery plan", customer: "Northwind Foods", context: "Frankfurt → JFK", status: "Delayed", owner: "Amelia Rowe", dueAt: previewNow + 42 * 60_000, dueKind: "action", tone: "amber", bookingId: "MD-22466" },
+  { id: "p3", kind: "quote-send", reference: "Q-1043", task: "Send priced quote", customer: "Marlow Apparel", context: "GBFXT → USLAX", status: "Ready to send", owner: "Amelia Rowe", dueAt: previewNow + 105 * 60_000, dueKind: "cutoff", tone: "green", quoteReference: "Q-1043" },
+  { id: "p4", kind: "quote-progress", reference: "Q-1051", task: "Progress carrier pricing", customer: "Bright Harbour Ltd", context: "SGSIN → NLRTM", status: "In progress", owner: "Tomas Berg", dueAt: previewNow + 5 * 60 * 60_000, dueKind: "cutoff", tone: "blue", quoteReference: "Q-1051" },
+  { id: "p5", kind: "quote-progress", reference: "Q-1058", task: "Progress customer approval", customer: "Aster Components", context: "CNSHA → GBSOU", status: "Awaiting customer", owner: "Tomas Berg", dueAt: previewNow + 3 * 24 * 60 * 60_000, dueKind: "departure", tone: "neutral", quoteReference: "Q-1058" },
+]
+
+const previewPerformanceKpis: DashboardKpi[] = [
+  { label: "Active jobs", value: "24", change: "3 need action", detail: "3 need action", tone: "amber", series: [18, 19, 21, 20, 22, 23, 22, 24, 23, 24], delta: { direction: "up", text: "+33%", caption: "vs start of period" } },
+  { label: "Booking exceptions", value: "3", change: "21 on track", detail: "21 on track", tone: "red", series: [5, 5, 4, 4, 4, 3, 3, 4, 3, 3], delta: { direction: "down", text: "-40%", caption: "vs start of period" } },
+  { label: "Open quotes", value: "11", change: "4 ready", detail: "4 ready to send", tone: "green", series: [9, 10, 10, 12, 11, 11, 12, 11, 11, 11], delta: { direction: "up", text: "+22%", caption: "vs start of period" } },
+  { label: "Ready quotes", value: "4", change: "15 total", detail: "15 quotes in period", tone: "teal", series: [2, 3, 3, 3, 4, 4, 5, 4, 4, 4], delta: { direction: "up", text: "+100%", caption: "vs start of period" } },
+]
+
+const previewPerformanceTrends: Record<string, DashboardTrendPoint[]> = Object.fromEntries(
+  previewPerformanceKpis.map((kpi) => [
+    kpi.label,
+    (kpi.series ?? []).map((value, index) => ({ period: `W${index + 1}`, value })),
+  ]),
+)
+
 const previewPaperTrays = createInitialPaperTrays()
+
+const previewBookingDateFields = new Set(["date", "departure", "arrival"])
+
+const previewBookingFilterFields: readonly FilterFieldOption[] = bookingSearchFieldOptions.map((option) => (
+  previewBookingDateFields.has(option.value)
+    ? { value: option.value, label: option.label, kind: "date" as const }
+    : { value: option.value, label: option.label, placeholder: option.placeholder }
+))
+
+function previewBookingFilterValue(booking: (typeof bookings)[number], field: string) {
+  const customFields = booking.customFields.flatMap((entry) => [entry.label, entry.value])
+  if (field === "date") return [booking.departureDate, booking.arrivalDate]
+  if (field === "departure") return booking.departureDate
+  if (field === "arrival") return booking.arrivalDate
+  if (field === "invoice") return booking.invoice
+  if (field === "jobRef") return booking.jobRef
+  if (field === "customerRef") return booking.customerRef
+  if (field === "supplierRef") return booking.supplierRef
+  if (field === "destination") return [booking.destination, booking.route]
+  if (field === "origin") return [booking.origin, booking.route]
+  if (field === "vessel") return [booking.vessel, booking.carrier]
+  if (field === "vin") return booking.vin
+  if (field === "customFields") return customFields
+  return [booking.id, booking.customer, booking.route, booking.carrier, booking.container, booking.invoice, booking.jobRef, booking.customerRef, booking.supplierRef, booking.origin, booking.destination, booking.vessel, booking.vin, ...customFields]
+}
 
 type PreviewChargeRow = {
   id: string
   description: string
   supplier: string
+  scope: string
+  status: "Approved" | "Review" | "Blocked"
   cost: number
   sell: number
 }
 
 const previewChargeRows: PreviewChargeRow[] = [
-  { id: "FRT", description: "International freight", supplier: "Bluewave Ocean", cost: 840, sell: 980 },
-  { id: "OCART", description: "Pickup transport", supplier: "Severn Road Logistics", cost: 610, sell: 630 },
-  { id: "DTHC", description: "Destination handling", supplier: "Kobe Gateway Agency", cost: 304, sell: 360 },
+  { id: "FRT", description: "International freight", supplier: "Bluewave Ocean", scope: "Ocean", status: "Approved", cost: 840, sell: 980 },
+  { id: "OCART", description: "Pickup transport", supplier: "Severn Road Logistics", scope: "Road", status: "Review", cost: 610, sell: 630 },
+  { id: "DTHC", description: "Destination handling", supplier: "Kobe Gateway Agency", scope: "Destination", status: "Blocked", cost: 304, sell: 360 },
 ]
 
 const previewUnifiedChargeRowsSeed: UnifiedQuoteChargeRow[] = [
@@ -259,85 +336,94 @@ const previewUnifiedChargeRowsSeed: UnifiedQuoteChargeRow[] = [
 ]
 
 const previewChargeColumns: DataTableColumn<PreviewChargeRow>[] = [
-  { id: "code", label: "Code", width: 100, defaultPinned: true, cell: (row) => <span dir="ltr">{row.id}</span>, sortValue: (row) => row.id },
-  { id: "description", label: "Description", width: 220, cell: (row) => row.description, sortValue: (row) => row.description },
-  { id: "supplier", label: "Supplier", width: 210, cell: (row) => row.supplier, sortValue: (row) => row.supplier },
-  { id: "cost", label: "Cost", width: 110, cell: (row) => `£${row.cost.toFixed(2)}`, sortValue: (row) => row.cost },
-  { id: "sell", label: "Sell", width: 110, cell: (row) => `£${row.sell.toFixed(2)}`, sortValue: (row) => row.sell },
+  { id: "code", label: "Code", width: 100, cell: (row) => <span dir="ltr">{row.id}</span>, sortValue: (row) => row.id },
+  { id: "description", label: "Description", kind: "long-text", width: 220, cell: (row) => row.description, sortValue: (row) => row.description },
+  { id: "supplier", label: "Supplier", kind: "identity", width: 210, cell: (row) => row.supplier, sortValue: (row) => row.supplier },
+  { id: "scope", label: "Scope", kind: "attribute", width: 130, cell: (row) => <StatusPill tone={row.scope === "Ocean" ? "blue" : row.scope === "Road" ? "amber" : "teal"}>{row.scope}</StatusPill> },
+  { id: "status", label: "Status", kind: "status", width: 126, cell: (row) => <StatusPill tone={row.status === "Approved" ? "green" : row.status === "Review" ? "amber" : "red"}>{row.status}</StatusPill> },
+  { id: "cost", label: "Cost", kind: "number", width: 110, cell: (row) => `£${row.cost.toFixed(2)}`, sortValue: (row) => row.cost },
+  { id: "sell", label: "Sell", kind: "number", width: 110, cell: (row) => `£${row.sell.toFixed(2)}`, sortValue: (row) => row.sell },
 ]
 
-const previewMarketingFolders = [
-  {
-    id: "brand-logos",
-    name: "Brand logos",
-    description: "Primary marks, partner lockups, favicon exports, and approved logo variations.",
-    itemCount: 9,
-    size: "48 MB",
-    updated: "Updated today",
-    owner: "Elena",
-    tone: "green" as const,
-    icon: Folder,
-  },
-  {
-    id: "graphics",
-    name: "Graphics",
-    description: "Lane visuals, customer education graphics, hero images, and social-ready artwork.",
-    itemCount: 14,
-    size: "312 MB",
-    updated: "Updated Tue",
-    owner: "Will",
-    tone: "green" as const,
-    icon: Image,
-  },
-  {
-    id: "sales-collateral",
-    name: "Sales collateral",
-    description: "One-pagers, trade-lane explainers, customer report inserts, and proposal assets.",
-    itemCount: 11,
-    size: "186 MB",
-    updated: "Updated Jun 7",
-    owner: "Mina",
-    tone: "green" as const,
-    icon: FileText,
-  },
+/* Stands in for a real preview seed: the same kind of ~1 KB inline image a stored
+   file carries, so the tile can demonstrate its instant first paint offline. Two
+   flat rects rather than a gradient, because a gradient needs a fragment reference
+   and a data URI is the wrong place to be escaping one. */
+function previewSeed(base: string, accent: string) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 6"><rect width="8" height="6" fill="${base}"/><rect x="3" y="2" width="6" height="5" fill="${accent}" opacity="0.7"/></svg>`
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`
+}
+
+const previewDriveTimestamp = "2026-08-05T09:12:00.000Z"
+
+const previewDriveFolders: DriveFolder[] = [
+  { id: "preview-brand", parentId: null, name: "Brand", colour: "teal", icon: "palette", createdAt: previewDriveTimestamp, updatedAt: previewDriveTimestamp },
+  { id: "preview-graphics", parentId: null, name: "Graphics", colour: "violet", icon: "image", createdAt: previewDriveTimestamp, updatedAt: previewDriveTimestamp },
+  { id: "preview-decks", parentId: null, name: "Customer decks", colour: "ember", icon: "presentation", createdAt: previewDriveTimestamp, updatedAt: previewDriveTimestamp },
 ]
 
-const previewMarketingAssets = [
+const previewDriveFolderStats = new Map<string, DriveFolderStats>([
+  ["preview-brand", { folderCount: 2, fileCount: 9, byteTotal: 48 * 1024 * 1024, lastActivityAt: previewDriveTimestamp }],
+  ["preview-graphics", { folderCount: 0, fileCount: 14, byteTotal: 312 * 1024 * 1024, lastActivityAt: previewDriveTimestamp }],
+  ["preview-decks", { folderCount: 0, fileCount: 0, byteTotal: 0, lastActivityAt: null }],
+])
+
+const previewDriveFiles: DriveFile[] = [
   {
-    id: "md-primary-logo-svg",
-    folderId: "brand-logos",
+    id: "preview-logo",
+    folderId: "preview-brand",
     name: "multideck-primary-logo.svg",
-    type: "SVG",
-    size: "124 KB",
-    updated: "Today",
-    owner: "Elena",
-    usage: "Approved primary logo for light surfaces",
-    tone: "green" as const,
-    icon: FileText,
+    mimeType: "image/svg+xml",
+    sizeBytes: 126_976,
+    storagePath: "preview/files/logo.svg",
+    thumbnailPath: null,
+    previewSeed: previewSeed("#e6efed", "#bcd6d1"),
+    previewWidth: 1200,
+    previewHeight: 400,
+    createdAt: previewDriveTimestamp,
+    updatedAt: previewDriveTimestamp,
   },
   {
-    id: "peak-season-hero",
-    folderId: "graphics",
+    id: "preview-hero",
+    folderId: "preview-graphics",
     name: "peak-season-capacity-hero.png",
-    type: "PNG",
-    size: "18.6 MB",
-    updated: "Tue",
-    owner: "Will",
-    usage: "Hero graphic for peak-season advisory",
-    tone: "green" as const,
-    icon: Image,
+    mimeType: "image/png",
+    sizeBytes: 19_508_428,
+    storagePath: "preview/files/hero.png",
+    thumbnailPath: null,
+    previewSeed: previewSeed("#2f5f7d", "#9dc0d4"),
+    previewWidth: 2400,
+    previewHeight: 1350,
+    createdAt: previewDriveTimestamp,
+    updatedAt: previewDriveTimestamp,
   },
   {
-    id: "monthly-rates-html",
-    folderId: "email-templates",
-    name: "monthly-rates-newsletter.html",
-    type: "HTML",
-    size: "86 KB",
-    updated: "Jun 10",
-    owner: "Jamie",
-    usage: "Reusable rates newsletter shell",
-    tone: "green" as const,
-    icon: Mail,
+    id: "preview-review",
+    folderId: "preview-decks",
+    name: "quarterly-review.pdf",
+    mimeType: "application/pdf",
+    sizeBytes: 3_251_200,
+    storagePath: "preview/files/review.pdf",
+    thumbnailPath: null,
+    previewSeed: previewSeed("#f6f6f4", "#dedbd2"),
+    previewWidth: 1240,
+    previewHeight: 1754,
+    createdAt: previewDriveTimestamp,
+    updatedAt: previewDriveTimestamp,
+  },
+  {
+    id: "preview-tariff",
+    folderId: "preview-decks",
+    name: "2026-tariff-schedule.xlsx",
+    mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    sizeBytes: 88_064,
+    storagePath: "preview/files/tariff.xlsx",
+    thumbnailPath: null,
+    previewSeed: null,
+    previewWidth: null,
+    previewHeight: null,
+    createdAt: previewDriveTimestamp,
+    updatedAt: previewDriveTimestamp,
   },
 ]
 
@@ -936,6 +1022,8 @@ const previewAutomationRuns: AutomationRun[] = [
   },
 ]
 
+const galleryRegisterViews = ["Stock", "Objects", "Movements", "Exceptions"] as const
+
 const previewWarehouseObject: WarehouseHandlingUnit = {
   id: "gallery-pallet", facilityId: "gallery-facility", parentHandlingUnitId: null,
   typeCode: "pallet", typeName: "Pallet", code: "PLT-000184", sscc: null,
@@ -967,6 +1055,9 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewPage, setPreviewPage] = useState(1)
   const [previewPageSize, setPreviewPageSize] = useState(20)
   const [previewBookingFilter, setPreviewBookingFilter] = useState<string>(bookingFilters[0])
+  const [previewTableView, setPreviewTableView] = useState<"All" | "Profitable">("All")
+  const [previewTableSearch, setPreviewTableSearch] = useState("")
+  const [previewTableStatus, setPreviewTableStatus] = useState("")
   const [previewBookingView, setPreviewBookingView] = useState<BookingViewMode>("Table")
   const [previewChoiceMode, setPreviewChoiceMode] = useState("OCEAN")
   const [previewInboxThreadId, setPreviewInboxThreadId] = useState("preview-thread-1")
@@ -991,6 +1082,10 @@ function ComponentPreview({ id }: { id: string }) {
   })
   const [previewCheckbox, setPreviewCheckbox] = useState(true)
   const [previewWarehouseQuantity, setPreviewWarehouseQuantity] = useState("12.5")
+  const [galleryRegisterView, setGalleryRegisterView] = useState<(typeof galleryRegisterViews)[number]>("Stock")
+  const [galleryRegisterCondition, setGalleryRegisterCondition] = useState("")
+  const [galleryRegisterSearch, setGalleryRegisterSearch] = useState("")
+  const [galleryRegisterPending, setGalleryRegisterPending] = useState(false)
   const [previewContactLayout, setPreviewContactLayout] = useState<CardLayout>("editorial")
   const [previewMarketingOptIn, setPreviewMarketingOptIn] = useState(true)
   const [previewSocialLinks, setPreviewSocialLinks] = useState<CardSocialLink[]>([
@@ -1029,18 +1124,32 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewWidgetQuery, setPreviewWidgetQuery] = useState("")
   const [previewWidgetId, setPreviewWidgetId] = useState(reportWidgets[0].id)
   const [previewDataEditorOpen, setPreviewDataEditorOpen] = useState(false)
-  const [previewBookingSelectedIds, setPreviewBookingSelectedIds] = useState<Set<string>>(new Set(["MD-22455"]))
   const [previewFavouriteBookingIds, setPreviewFavouriteBookingIds] = useState<Set<string>>(() => new Set(initialFavouriteBookingIds))
   const [previewRoadFavouriteBookingIds, setPreviewRoadFavouriteBookingIds] = useState<Set<string>>(() => new Set(["MD-22676"]))
   const [previewRoadJobs, setPreviewRoadJobs] = useState(() => [...domesticRoadJobs])
   const [previewDateRange, setPreviewDateRange] = useState<MultideckDateRange>({ start: "2026-05-25", end: "2026-06-04" })
+  const [previewSingleDate, setPreviewSingleDate] = useState<string | null>("2026-06-04")
+  const [previewDateTime, setPreviewDateTime] = useState("2026-06-04T09:30")
   const [previewDateComparisonEnabled, setPreviewDateComparisonEnabled] = useState(false)
   const [previewDateComparisonRange, setPreviewDateComparisonRange] = useState<MultideckDateRange>({ start: "2026-05-14", end: "2026-05-24" })
-  const [previewBookingSearchCriteria, setPreviewBookingSearchCriteria] = useState<BookingSearchCriterion[]>([
-    { id: "preview-booking-search-invoice", field: "invoice", groupId: "preview-search-main", value: "INV-MAR", valueTo: "" },
-    { id: "preview-booking-search-destination", connector: "and", field: "destination", groupId: "preview-search-main", value: "Felixstowe", valueTo: "" },
-    { id: "preview-booking-search-vin", field: "vin", groupConnector: "or", groupId: "preview-search-vin", value: "WVW", valueTo: "" },
-  ])
+  const [previewBookingSearch, setPreviewBookingSearch] = useState<FilterQuery>({
+    match: "any",
+    groups: [
+      {
+        id: "preview-search-main",
+        match: "all",
+        conditions: [
+          { id: "preview-booking-search-invoice", field: "invoice", operator: "contains", value: "INV-MAR" },
+          { id: "preview-booking-search-destination", field: "destination", operator: "contains", value: "Felixstowe" },
+        ],
+      },
+      {
+        id: "preview-search-vin",
+        match: "all",
+        conditions: [{ id: "preview-booking-search-vin", field: "vin", operator: "starts-with", value: "WVW" }],
+      },
+    ],
+  })
   const [previewQuoteSearch, setPreviewQuoteSearch] = useState<QuoteSearchQuery>({
     match: "all",
     groups: [{
@@ -1064,72 +1173,16 @@ function ComponentPreview({ id }: { id: string }) {
   const [previewCrmLeadId, setPreviewCrmLeadId] = useState(previewCrmLeads[0].id)
   const [previewCrmContactEmail, setPreviewCrmContactEmail] = useState(crmContacts[0].email)
   const [previewContactCreateOpen, setPreviewContactCreateOpen] = useState(false)
-  const [previewMarketingFolderId, setPreviewMarketingFolderId] = useState(previewMarketingFolders[0].id)
+  const [previewDriveRenamingId, setPreviewDriveRenamingId] = useState<string | null>(null)
   const [previewPaperDocumentId, setPreviewPaperDocumentId] = useState<string | null>(null)
   const [previewTransportModes, setPreviewTransportModes] = useState(["Sea FCL", "Road"])
   const [previewUnifiedChargeRows, setPreviewUnifiedChargeRows] = useState<UnifiedQuoteChargeRow[]>(previewUnifiedChargeRowsSeed)
   const previewNow = useLiveNow()
   const previewPaperDocument = previewPaperTrays.flatMap((tray) => tray.documents).find((document) => document.id === previewPaperDocumentId) ?? null
   const previewPaperDocumentTrayId = previewPaperTrays.find((tray) => tray.documents.some((document) => document.id === previewPaperDocumentId))?.id ?? null
-  const previewBookingSearchCount = useMemo(() => {
-    function matchesCriterion(booking: (typeof bookings)[number], criterion: BookingSearchCriterion) {
-      const query = criterion.value.trim().toLowerCase()
-      const queryTo = criterion.valueTo?.trim()
-      if (!query && !queryTo) return true
-      if (criterion.field === "date") {
-        return [booking.departureDate, booking.arrivalDate].some((date) => date >= (criterion.value || queryTo || "") && date <= (queryTo || criterion.value || "9999-12-31"))
-      }
-      if (criterion.field === "departure") return booking.departureDate >= (criterion.value || queryTo || "") && booking.departureDate <= (queryTo || criterion.value || "9999-12-31")
-      if (criterion.field === "arrival") return booking.arrivalDate >= (criterion.value || queryTo || "") && booking.arrivalDate <= (queryTo || criterion.value || "9999-12-31")
-
-      const customFields = booking.customFields.flatMap((field) => [field.label, field.value, `${field.label} ${field.value}`])
-      const valuesByField: Record<Exclude<BookingSearchCriterion["field"], "date" | "departure" | "arrival">, string[]> = {
-        any: [booking.id, booking.customer, booking.route, booking.carrier, booking.container, booking.invoice, booking.jobRef, booking.customerRef, booking.supplierRef, booking.origin, booking.destination, booking.vessel, booking.vin, ...customFields],
-        invoice: [booking.invoice],
-        jobRef: [booking.jobRef],
-        customerRef: [booking.customerRef],
-        supplierRef: [booking.supplierRef],
-        destination: [booking.destination, booking.route],
-        origin: [booking.origin, booking.route],
-        vessel: [booking.vessel, booking.carrier],
-        vin: [booking.vin],
-        customFields,
-      }
-
-      return valuesByField[criterion.field].some((value) => value.toLowerCase().includes(query))
-    }
-
-    const groups = previewBookingSearchCriteria.reduce<Array<{ id: string; connector: "and" | "or"; criteria: BookingSearchCriterion[] }>>((currentGroups, criterion, index) => {
-      if (!criterion.value.trim() && !criterion.valueTo?.trim()) return currentGroups
-      const groupId = criterion.groupId ?? "preview-search-main"
-      const existingGroup = currentGroups.find((group) => group.id === groupId)
-      if (existingGroup) {
-        existingGroup.criteria.push(criterion)
-        return currentGroups
-      }
-
-      currentGroups.push({
-        id: groupId,
-        connector: criterion.groupConnector ?? (index === 0 ? "and" : "or"),
-        criteria: [criterion],
-      })
-      return currentGroups
-    }, [])
-
-    return bookings.filter((booking) => {
-      if (!groups.length) return true
-      return groups.reduce<boolean>((searchMatches, group, groupIndex) => {
-        const groupMatches = group.criteria.reduce<boolean>((matches, criterion, criterionIndex) => {
-          const criterionMatches = matchesCriterion(booking, criterion)
-          if (criterionIndex === 0) return criterionMatches
-          return (criterion.connector ?? "and") === "or" ? matches || criterionMatches : matches && criterionMatches
-        }, true)
-
-        if (groupIndex === 0) return groupMatches
-        return group.connector === "or" ? searchMatches || groupMatches : searchMatches && groupMatches
-      }, true)
-    }).length
-  }, [previewBookingSearchCriteria])
+  const countPreviewBookingMatches = useCallback((query: FilterQuery) => (
+    bookings.filter((booking) => matchesFilterQuery(booking, query, previewBookingFilterValue)).length
+  ), [])
   useEffect(() => {
     if (!previewScreenGlow) return undefined
 
@@ -1139,15 +1192,6 @@ function ComponentPreview({ id }: { id: string }) {
 
   function togglePreviewCustomer(id: string) {
     setPreviewSelectedIds((current) => {
-      const next = new Set(current)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
-  function togglePreviewBooking(id: string) {
-    setPreviewBookingSelectedIds((current) => {
       const next = new Set(current)
       if (next.has(id)) next.delete(id)
       else next.add(id)
@@ -1204,6 +1248,26 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "hugeicons-system" ? (
+        <div className="w-full max-w-[720px] rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          <div className="grid gap-3 sm:grid-cols-5">
+            {[
+              ["Home", Home03],
+              ["Dexter", AiBrain],
+              ["Warehouse", Forklift],
+              ["Appearance", Moon02],
+              ["Settings", Settings2],
+            ].map(([label, Icon]) => (
+              <div key={label as string} className="grid min-h-24 place-items-center gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-3 text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
+                <Icon className="size-6 text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" />
+                <span className="text-[11px] font-medium text-[var(--md-ink)]">{t(label as string)}</span>
+              </div>
+            ))}
+          </div>
+          <p className="mt-4 text-[12px] leading-5 text-[var(--md-text)]">{t("Every glyph inherits current colour, keeps a calm rounded stroke, and can participate in shared hover, pressed, loading, and morphing states.")}</p>
+        </div>
+      ) : null}
+
       {id === "typography" ? (
         <div className="w-full max-w-[720px] rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
           <div className="flex flex-col gap-[var(--md-page-stack-gap)]">
@@ -1244,13 +1308,9 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "status-pill" ? (
-        <div className="flex w-full max-w-[560px] flex-wrap gap-[var(--md-gap-md)] rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
-          <StatusPill tone="green">Cleared</StatusPill>
-          <StatusPill tone="amber">Under review</StatusPill>
-          <StatusPill tone="red">Action req.</StatusPill>
-          <StatusPill tone="blue">AI note</StatusPill>
-          <StatusPill tone="teal">Submitted</StatusPill>
-          <StatusPill tone="neutral">After hours</StatusPill>
+        <div className="grid w-full max-w-[640px] gap-4 rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+          <div><p className="mb-2 text-[11px] font-medium text-[var(--md-subtle)]">Workflow statuses</p><div className="flex flex-wrap gap-2"><StatusPill kind="status" tone="green">Cleared</StatusPill><StatusPill kind="status" tone="amber">Under review</StatusPill><StatusPill kind="status" tone="red">Action required</StatusPill><StatusPill kind="status" tone="blue">Submitted</StatusPill></div></div>
+          <div><p className="mb-2 text-[11px] font-medium text-[var(--md-subtle)]">Descriptive attributes</p><div className="flex flex-wrap gap-2"><StatusPill kind="attribute" tone="teal">Ocean</StatusPill><StatusPill kind="attribute" tone="blue">Customer</StatusPill><StatusPill kind="attribute" tone="amber">Express</StatusPill></div></div>
         </div>
       ) : null}
 
@@ -1813,7 +1873,7 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "date-range-picker" ? (
-        <div className="grid w-full max-w-[560px] gap-3 rounded-[var(--md-radius-xl)] bg-white/54 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
+        <div className="grid w-full max-w-[620px] gap-4 rounded-[var(--md-radius-xl)] bg-white/54 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
           <div>
             <p className="text-[14px] font-medium text-[var(--md-ink)]">Collection dates</p>
             <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">A paired range that can expand into a side-by-side comparison without losing context.</p>
@@ -1839,6 +1899,16 @@ function ComponentPreview({ id }: { id: string }) {
               ],
             }}
           />
+          <div className="grid gap-3 border-t border-[var(--md-border)] pt-4 sm:grid-cols-2">
+            <div className="grid gap-1.5">
+              <p className="text-[12px] font-medium text-[var(--md-ink)]">Single date</p>
+              <MultideckDatePicker value={previewSingleDate} onChange={setPreviewSingleDate} title="Expiry date" description="Pick the date this stock expires." />
+            </div>
+            <div className="grid gap-1.5">
+              <p className="text-[12px] font-medium text-[var(--md-ink)]">Date and time</p>
+              <MultideckDateTimePicker value={previewDateTime} onChange={setPreviewDateTime} title="Appointment" description="Pick the appointment date and time." />
+            </div>
+          </div>
         </div>
       ) : null}
 
@@ -2078,10 +2148,13 @@ function ComponentPreview({ id }: { id: string }) {
         <div className="w-full max-w-[1120px] overflow-x-auto md-scrollbar">
           <DataTable
             columns={previewChargeColumns}
-            rows={previewChargeRows}
+            rows={previewChargeRows.filter((row) => (previewTableView === "All" || row.sell > row.cost) && (!previewTableStatus || row.status === previewTableStatus) && (!previewTableSearch.trim() || `${row.id} ${row.description} ${row.supplier}`.toLowerCase().includes(previewTableSearch.trim().toLowerCase())))}
             getRowKey={(row) => row.id}
             storageKey="gallery-charge-table"
             ariaLabel="Quote charges preview"
+            toolbarTabs={<RegisterViewSwitch options={["All", "Profitable"] as const} value={previewTableView} onChange={setPreviewTableView} counts={{ All: previewChargeRows.length, Profitable: previewChargeRows.filter((row) => row.sell > row.cost).length }} ariaLabel="Charge view" compact />}
+            toolbarSearch={<RegisterSearchField value={previewTableSearch} onChange={setPreviewTableSearch} onClear={() => setPreviewTableSearch("")} label="Search charges" placeholder="Search charges…" />}
+            toolbarFilters={<RegisterFacetSelect label="Status" allLabel="All statuses" value={previewTableStatus} options={["Approved", "Review", "Blocked"].map((status) => ({ value: status, label: status }))} onChange={setPreviewTableStatus} className="w-[132px]" />}
           />
         </div>
       ) : null}
@@ -2093,10 +2166,16 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "quote-search-builder" ? (
-        <div className="w-full max-w-[1120px]">
-          <QuoteSearchBuilder
+        <div className="flex w-full max-w-[1120px] justify-center rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] p-4">
+          <AdvancedFilterPopover
+            fields={quoteSearchFieldOptions}
             value={previewQuoteSearch}
             onChange={setPreviewQuoteSearch}
+            storageKey="gallery-quote-filters"
+            label="Advanced search"
+            title="Advanced quote search"
+            itemLabel="quotes"
+            align="center"
           />
         </div>
       ) : null}
@@ -2202,6 +2281,67 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {id === "priority-queue" ? (
+        <div className="md-kpi-scope w-full max-w-[1120px]">
+          <DashboardPriorityQueue
+            items={previewPriorityItems}
+            operatorName="Amelia Rowe"
+            onOpenItem={(item) => toast.success(`${item.reference} opened`)}
+            onHandOverToDexter={(item) => toast.success(`${item.reference} handed over to Dexter`)}
+          />
+        </div>
+      ) : null}
+
+      {id === "performance-panel" ? (
+        <div className="md-kpi-scope w-full max-w-[1120px]">
+          <KpiStrip
+            kpis={previewPerformanceKpis}
+            selectedLabel={previewPerformanceKpis[0].label}
+            spark={false}
+            markerId="gallery-performance-rule"
+            className="mb-[var(--md-gap-lg)]"
+          />
+          <DashboardPerformancePanel
+            kpis={previewPerformanceKpis}
+            trends={previewPerformanceTrends}
+            metricLabel={previewPerformanceKpis[0].label}
+          />
+        </div>
+      ) : null}
+
+      {id === "breakdown-panel" ? (
+        <div className="grid w-full max-w-[720px] gap-[var(--md-gap-lg)] sm:grid-cols-2">
+          <DashboardBreakdownPanel
+            title="Mode mix"
+            subtitle="Live bookings by transport mode"
+            slices={[
+              { label: "Ocean", value: 12, color: "var(--md-accent)" },
+              { label: "Air", value: 6, color: "var(--md-blue)" },
+              { label: "Road", value: 3, color: "var(--md-green)" },
+            ]}
+            variant="segmented"
+            totalLabel="in transit"
+          />
+          <DashboardBreakdownPanel
+            title="Quote pipeline"
+            subtitle="Open quotes by workflow stage"
+            slices={[
+              { label: "Carrier pricing", value: 8, color: "var(--md-accent)" },
+              { label: "Awaiting customer", value: 5, color: "var(--md-accent-tint)" },
+              { label: "Internal review", value: 3, color: "var(--md-accent-glow-core)" },
+              { label: "Drafting", value: 1, color: "var(--md-blue)" },
+            ]}
+            variant="columns"
+          />
+        </div>
+      ) : null}
+
+      {id === "coverage-panel" ? (
+        <div className="w-full max-w-[420px]">
+          <DashboardCoveragePanel onViewQueue={(code) => toast.success(`${code} queue opened`)} />
+        </div>
+      ) : null}
+
       {id === "your-jobs-panel" ? (
         <div className="w-full max-w-[1120px]">
           <YourJobsPanel
@@ -2214,12 +2354,18 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "booking-search-builder" ? (
-        <div className="w-full max-w-[1120px]">
-          <BookingSearchBuilder
-            value={previewBookingSearchCriteria}
-            onChange={setPreviewBookingSearchCriteria}
-            resultCount={previewBookingSearchCount}
+        <div className="flex w-full max-w-[1120px] justify-center rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] p-4">
+          <AdvancedFilterPopover
+            fields={previewBookingFilterFields}
+            value={previewBookingSearch}
+            onChange={setPreviewBookingSearch}
+            storageKey="gallery-booking-filters"
+            label="Advanced search"
+            title="Advanced booking search"
+            itemLabel="bookings"
+            countMatches={countPreviewBookingMatches}
             totalCount={bookings.length}
+            align="center"
           />
         </div>
       ) : null}
@@ -2228,9 +2374,7 @@ function ComponentPreview({ id }: { id: string }) {
         <div className="w-full max-w-[1120px] overflow-x-auto md-scrollbar">
           <BookingsTable
             rows={bookings.slice(0, 4)}
-            selectedIds={previewBookingSelectedIds}
             favouriteIds={previewFavouriteBookingIds}
-            onToggleBooking={togglePreviewBooking}
             onToggleFavourite={togglePreviewFavouriteBooking}
             onOpenBooking={(booking) => toast.success(`${booking.id} opened`)}
           />
@@ -2482,7 +2626,8 @@ function ComponentPreview({ id }: { id: string }) {
             selectedMentions={previewDexterMentions}
             onChange={setPreviewDexterPrompt}
             onMentionsChange={setPreviewDexterMentions}
-            onOpenAttachments={() => toast.success("Attachment palette opened")}
+            onOpenAttachments={() => toast.success("File chooser opened")}
+            attachmentActionLabel="Upload files"
             onSelectSpecialist={setPreviewDexterSpecialistId}
             onSelectModel={setPreviewDexterModelId}
             onAccessModeChange={setPreviewDexterAccessMode}
@@ -2776,31 +2921,141 @@ function ComponentPreview({ id }: { id: string }) {
         </div>
       ) : null}
 
-      {id === "crm-asset-folder-card" ? (
-        <div className="grid w-full max-w-[980px] gap-3 md:grid-cols-3">
-          {previewMarketingFolders.map((folder) => (
-            <CrmAssetFolderCard
+      {id === "drive-folder-tile" ? (
+        <div className="md-drive-grid w-full max-w-[760px]">
+          {previewDriveFolders.map((folder) => (
+            <DriveFolderTile
               key={folder.id}
               folder={folder}
-              selected={folder.id === previewMarketingFolderId}
-              onSelect={(nextFolder) => setPreviewMarketingFolderId(nextFolder.id)}
+              stats={previewDriveFolderStats.get(folder.id)}
+              renaming={previewDriveRenamingId === folder.id}
+              onOpen={(target) => toast.success(`${target.name} opened`)}
+              onRename={(target, name) => {
+                setPreviewDriveRenamingId(null)
+                toast.success(`${target.name} renamed to ${name}`)
+              }}
+              onStartRename={(target) => setPreviewDriveRenamingId(target.id)}
+              onCancelRename={() => setPreviewDriveRenamingId(null)}
+              onCustomise={(target) => toast.success(`${target.name} appearance opened`)}
+              onDelete={(target) => toast.success(`${target.name} delete confirmed`)}
             />
           ))}
         </div>
       ) : null}
 
-      {id === "crm-asset-row" ? (
-        <div className="w-full max-w-[920px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-3 shadow-[var(--md-shadow-line)]">
-          <div className="grid gap-1 rounded-[var(--md-radius-lg)] bg-white/62 p-1 shadow-[var(--md-shadow-line)]">
-            {previewMarketingAssets.map((asset) => (
-              <CrmAssetRow
-                key={asset.id}
-                asset={asset}
-                onOpen={(selectedAsset) => toast.success(`${selectedAsset.name} opened`)}
-              />
-            ))}
+      {id === "drive-file-tile" ? (
+        <div className="md-drive-grid w-full max-w-[760px]">
+          {previewDriveFiles.map((file, index) => (
+            <DriveFileTile
+              key={file.id}
+              file={file}
+              thumbnailUrl={null}
+              pending={index === previewDriveFiles.length - 1}
+              progress={0.42}
+              renaming={previewDriveRenamingId === file.id}
+              onOpen={(target) => toast.success(`${target.name} opened`)}
+              onRename={(target, name) => {
+                setPreviewDriveRenamingId(null)
+                toast.success(`${target.name} renamed to ${name}`)
+              }}
+              onStartRename={(target) => setPreviewDriveRenamingId(target.id)}
+              onCancelRename={() => setPreviewDriveRenamingId(null)}
+              onDownload={(target) => toast.success(`${target.name} downloaded`)}
+              onDelete={(target) => toast.success(`${target.name} delete confirmed`)}
+            />
+          ))}
+        </div>
+      ) : null}
+
+      {id === "dot-grid-loader" ? (
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid min-h-[132px] place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] shadow-[var(--md-shadow-line)]">
+            <DotGridLoader label="Loading…" />
+          </div>
+          <div className="grid min-h-[132px] place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] shadow-[var(--md-shadow-line)]">
+            <DotGridLoader />
+          </div>
+          <div className="grid min-h-[132px] place-items-center gap-2 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] p-3 shadow-[var(--md-shadow-line)]">
+            <div className="flex h-8 items-center gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] px-2.5 shadow-[var(--md-shadow-line)]">
+              <DotGridLoader size="sm" />
+              <span className="text-[12px] text-[var(--md-text)]">Toolbar size</span>
+            </div>
           </div>
         </div>
+      ) : null}
+
+      {id === "register-toolbar" ? (
+        <div className="overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]">
+          <div className="flex min-h-10 flex-wrap items-center justify-between gap-x-2 gap-y-1.5 bg-[color-mix(in_srgb,var(--md-surface)_92%,transparent)] px-2 py-1 shadow-[inset_0_-1px_0_rgba(11,20,19,0.05)]">
+            <div className="flex min-w-0 items-center gap-2">
+              <RegisterViewSwitch
+                options={galleryRegisterViews}
+                value={galleryRegisterView}
+                onChange={setGalleryRegisterView}
+                counts={{ Stock: 33, Objects: 32, Movements: 71, Exceptions: 13 }}
+                ariaLabel="Inventory view"
+              />
+              <RegisterToolbarDivider />
+              <button type="button" className={registerButtonClass}>New</button>
+            </div>
+            <div className="ms-auto flex min-w-[min(100%,560px)] flex-1 flex-wrap items-center justify-end gap-1.5">
+              <RegisterToolbarActions pending={galleryRegisterPending}>
+                <RegisterFacetSelect
+                  label="Condition"
+                  allLabel="All conditions"
+                  value={galleryRegisterCondition}
+                  options={[{ value: "available", label: "Available" }, { value: "quarantine", label: "Quarantine" }]}
+                  onChange={setGalleryRegisterCondition}
+                  className="w-[132px] sm:w-[150px]"
+                />
+                <RegisterSearchField
+                  value={galleryRegisterSearch}
+                  onChange={setGalleryRegisterSearch}
+                  onClear={() => setGalleryRegisterSearch("")}
+                  label="Search warehouse records"
+                  placeholder="SKU, pallet, batch"
+                />
+                <RegisterRefreshButton pending={galleryRegisterPending} onRefresh={() => setGalleryRegisterPending((current) => !current)} />
+              </RegisterToolbarActions>
+            </div>
+          </div>
+          <p className="px-3 py-6 text-center text-[12px] text-[var(--md-text)]">
+            The table body goes here. Press refresh to see the revalidation mark appear beside the filters.
+          </p>
+        </div>
+      ) : null}
+
+      {id === "context-menu" ? (
+        <ContextMenu>
+          <ContextMenuTrigger asChild>
+            <div
+              role="button"
+              tabIndex={0}
+              className="grid h-[132px] w-full max-w-[420px] place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] text-[13px] text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background-color] duration-160 hover:bg-[var(--md-surface-tint)]"
+            >
+              Right-click anywhere in here
+            </div>
+          </ContextMenuTrigger>
+          <ContextMenuContent>
+            <ContextMenuItem onSelect={() => toast.success("Preview opened")}>
+              <Eye strokeWidth={1.3} />
+              Preview
+            </ContextMenuItem>
+            <ContextMenuItem onSelect={() => toast.success("Rename started")}>
+              <Pencil strokeWidth={1.3} />
+              Rename
+            </ContextMenuItem>
+            <ContextMenuItem onSelect={() => toast.success("Download started")}>
+              <Download strokeWidth={1.3} />
+              Download
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+            <ContextMenuItem variant="destructive" onSelect={() => toast.success("Delete confirmed")}>
+              <Trash2 strokeWidth={1.3} />
+              Delete
+            </ContextMenuItem>
+          </ContextMenuContent>
+        </ContextMenu>
       ) : null}
 
       {id === "crm-contact-table" ? (

@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Archive, ArrowLeft, Bell, Boxes, Check, ChevronDown, ChevronRight, Clock3, CreditCard, FileText, Folder, Inbox, LifeBuoy, LoaderCircle, LogOut, MailWarning, Pencil, Plus, PanelLeftClose, PanelLeftOpen, Pin, Search, Send, Settings, Sparkles, Tags, Trash2, TriangleAlert, Users, X, type LucideIcon } from "lucide-react"
+import { AiBrain, Archive, ArrowLeft, Bell, Boxes, Check, ChevronDown, ChevronRight, Clock3, FileText, Folder, Inbox, LifeBuoy, LoaderCircle, LogOut, MailWarning, MorphingIcon, Pencil, Plus, PanelLeftClose, PanelLeftOpen, Pin, Search, Send, Settings, Sparkles, Tags, Trash2, TriangleAlert, Users, X, type LucideIcon } from "@/components/icons/hugeicons"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -22,7 +22,8 @@ import { mailboxLabelTone } from "@/lib/mailbox-label-colour"
 import { customerWarehouseNavigation, homeNavItem, inboxNavItem, sidebarAreas, type NavItem, type SidebarArea, type SidebarDestination } from "@/data/navigation-data"
 import { readSettingsSectionFromUrl, settingsNavigationGroups, type SettingsSectionId } from "@/data/settings-navigation"
 import { useLanguage } from "@/i18n/language-provider"
-import { deleteDexterConversation, listDexterConversations, renameDexterConversation, type DexterConversationSummary } from "@/lib/dexter-api"
+import { deleteDexterConversation, getDexterUsage, listDexterConversations, renameDexterConversation, type DexterConversationSummary } from "@/lib/dexter-api"
+import { listDeals } from "@/lib/deal-api"
 import {
   announceDexterConversationsChanged,
   DEXTER_CONVERSATIONS_CHANGED_EVENT,
@@ -169,7 +170,7 @@ function NotificationBell() {
           type="button"
           aria-label={t("Open notifications")}
           title={t("Open notifications")}
-          className="group relative grid size-10 shrink-0 place-items-center overflow-hidden rounded-full bg-[var(--md-glass)] text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] hover:shadow-[var(--md-shadow-soft)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] data-[state=open]:bg-[var(--md-bg-strong)] data-[state=open]:text-[var(--md-accent)]"
+          className="group relative grid size-9 shrink-0 place-items-center overflow-hidden rounded-full bg-[var(--md-glass)] text-[var(--md-text)] shadow-[var(--md-shadow-line)] transition-[background,color,box-shadow,opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.01] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] hover:shadow-[var(--md-shadow-soft)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] data-[state=open]:bg-[var(--md-bg-strong)] data-[state=open]:text-[var(--md-accent)]"
         >
           <motion.span
             aria-hidden="true"
@@ -180,10 +181,10 @@ function NotificationBell() {
             transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
             className="relative"
           >
-            <Bell className="size-4" strokeWidth={1.3} />
+            <Bell className="size-3.5" strokeWidth={1.3} />
           </motion.span>
           {unreadCount > 0 ? <motion.span
-            className="absolute end-2.5 top-2.5 size-1.5 rounded-full bg-[var(--md-amber)] shadow-[0_0_0_2px_var(--md-glass)]"
+            className="absolute end-2 top-2 size-1.5 rounded-full bg-[var(--md-amber)] shadow-[0_0_0_2px_var(--md-glass)]"
             animate={shouldReduceMotion ? undefined : { scale: [1, 1.35, 1] }}
             transition={{ duration: 0.54, delay: 0.32, ease: [0.22, 1, 0.36, 1] }}
           /> : null}
@@ -354,7 +355,7 @@ export function SidebarNavItem({
       title={t(item.label)}
       className={cn(
         buttonVariants({ variant: "ghost", size: "sm" }),
-        "group relative h-10 w-full justify-start gap-2 overflow-hidden rounded-[var(--md-radius-md)] px-2.5 text-[14px] font-medium text-[var(--md-text)] transition-[color,opacity,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+        "group relative h-10 w-full justify-start gap-2 overflow-hidden rounded-[var(--md-radius-lg)] px-2.5 text-[14px] font-medium text-[var(--md-text)] transition-[color,opacity,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
         nested && "h-9 text-[13px]",
         "bg-transparent hover:bg-transparent hover:text-[var(--md-ink)] aria-expanded:bg-transparent dark:hover:bg-transparent focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]",
         isDexterItem && "md-sidebar-dexter-item !text-white hover:!text-white focus-visible:!text-white",
@@ -362,12 +363,11 @@ export function SidebarNavItem({
         isActive && "text-[var(--md-selected-text)]",
         accent === "dexter" && isActive && "!text-white",
         isDisabled && "cursor-default opacity-55 hover:text-[var(--md-text)]",
-        !isDisabled && !collapsed && !isDexterItem && "hover:scale-[1.004] active:scale-[0.986] motion-reduce:hover:scale-100 motion-reduce:active:scale-100",
         className,
       )}
       style={{
         transitionDuration: "150ms",
-        transitionProperty: "color, opacity, scale, box-shadow",
+        transitionProperty: "color, opacity",
         transitionTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1)",
       }}
       disabled={isDisabled}
@@ -381,13 +381,11 @@ export function SidebarNavItem({
             <SpectralBloomShader />
           </span>
           <span className="md-dexter-pill__contrast" aria-hidden="true" />
-          {isActive ? (
-            <span
-              data-sidebar-active-surface
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 z-[1] rounded-[var(--md-radius-md)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.48),0_7px_16px_rgba(42,52,50,0.12)]"
-            />
-          ) : null}
+          <span
+            data-sidebar-active-surface={isActive ? "" : undefined}
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 z-[1] rounded-[var(--md-radius-lg)] opacity-0 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.48),0_0_0_1px_var(--md-accent-deep-a16)] transition-opacity duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none"
+          />
         </>
       ) : isActive ? (
         activeLayoutId ? (
@@ -395,43 +393,44 @@ export function SidebarNavItem({
             layoutId={activeLayoutId}
             data-sidebar-active-surface
             aria-hidden="true"
-            className="pointer-events-none absolute inset-0 rounded-[var(--md-radius-md)] bg-[var(--md-bg-strong)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.68),0_8px_18px_rgba(42,52,50,0.08)]"
+            className={cn(
+              "pointer-events-none absolute inset-0 rounded-[var(--md-radius-lg)] bg-[var(--md-bg-strong)]",
+              nested ? "shadow-[inset_0_0_0_1px_var(--md-hairline)]" : "shadow-[inset_0_0_0_1px_rgba(255,255,255,0.68),0_8px_18px_rgba(42,52,50,0.08)]",
+            )}
             transition={mdMotion.fast}
           />
         ) : (
           <span
             data-sidebar-active-surface
             aria-hidden="true"
-            className="pointer-events-none absolute inset-0 rounded-[var(--md-radius-md)] bg-[var(--md-bg-strong)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.68),0_8px_18px_rgba(42,52,50,0.08)]"
+            className={cn(
+              "pointer-events-none absolute inset-0 rounded-[var(--md-radius-lg)] bg-[var(--md-bg-strong)]",
+              nested ? "shadow-[inset_0_0_0_1px_var(--md-hairline)]" : "shadow-[inset_0_0_0_1px_rgba(255,255,255,0.68),0_8px_18px_rgba(42,52,50,0.08)]",
+            )}
           />
         )
       ) : !isDisabled ? (
         <span
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 scale-[0.985] rounded-[var(--md-radius-md)] bg-[var(--md-hover)] opacity-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_1px_2px_rgba(11,20,19,0.035)] transition-[opacity,transform] duration-100 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-100 group-hover:opacity-100 group-focus-visible:scale-100 group-focus-visible:opacity-100 motion-reduce:transition-none"
+          className="pointer-events-none absolute inset-0 rounded-[var(--md-radius-lg)] bg-[var(--md-hover)] opacity-0 transition-opacity duration-100 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none"
           style={{
             transitionDuration: "100ms",
-            transitionProperty: "opacity, scale",
+            transitionProperty: "opacity",
             transitionTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1)",
           }}
         />
       ) : null}
       <span
         className={cn(
-          "relative grid size-5 place-items-center text-[var(--md-subtle)] transition-[background,color] duration-200",
-          !isActive && "rounded-[var(--md-radius-sm)] group-hover:bg-[var(--md-icon-well)] group-hover:text-[var(--md-ink)]",
+          "relative grid size-5 place-items-center text-[var(--md-subtle)] transition-colors duration-150",
+          !isActive && "group-hover:text-[var(--md-ink)] group-focus-visible:text-[var(--md-ink)]",
           isActive && "text-[var(--md-selected-text)]",
-          isDexterItem && "z-10 !text-white group-hover:bg-white/10 group-hover:!text-white",
+          isDexterItem && "z-10 !text-white group-hover:!text-white",
         )}
       >
         <span
           aria-hidden="true"
-          className="grid size-full place-items-center transition-transform duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.04] group-active:scale-[0.94] motion-reduce:transition-none motion-reduce:group-hover:scale-100 motion-reduce:group-active:scale-100"
-          style={{
-            transitionDuration: "150ms",
-            transitionProperty: "translate, scale",
-            transitionTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1)",
-          }}
+          className="grid size-full place-items-center"
         >
           <Icon data-icon={collapsed ? undefined : "inline-start"} strokeWidth={1.2} />
         </span>
@@ -1041,17 +1040,44 @@ export function AppSidebar({
   const isInboxRoute = route === "/inbox"
   const canManageWarehouseUsers = hasPermission(currentUser, "Warehouse.Users.ManageOwn")
   const canReadDocuments = hasPermission(currentUser, "Documents.Read")
+  const canShowDocumentBuilder = import.meta.env.DEV || canReadDocuments
+  const isCrmRoute = route === "/crm" || route.startsWith("/crm/")
+  const [crmDealCount, setCrmDealCount] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (isCustomer || !isCrmRoute) return
+    let active = true
+    listDeals()
+      .then((deals) => { if (active) setCrmDealCount(deals.length) })
+      .catch(() => { if (active) setCrmDealCount(null) })
+    return () => { active = false }
+  }, [isCrmRoute, isCustomer])
+
   const availableAreas = useMemo<SidebarArea[]>(() => {
     if (!isCustomer) {
-      return sidebarAreas.map((area) => area.id === "documents-service"
-        ? { ...area, destinations: area.destinations.filter((destination) => destination.id !== "document-builder" || canReadDocuments) }
-        : area)
+      return sidebarAreas.map((area) => {
+        if (area.id === "documents-service") {
+          return { ...area, destinations: area.destinations.filter((destination) => destination.id !== "document-builder" || canShowDocumentBuilder) }
+        }
+        if (area.id !== "sales-crm") return area
+        return {
+          ...area,
+          destinations: area.destinations.map((destination) => destination.id === "crm-leads-opportunities"
+            ? {
+                ...destination,
+                children: destination.children?.map((item) => item.route === "/crm/deals"
+                  ? { ...item, value: crmDealCount === null ? undefined : String(crmDealCount) }
+                  : item),
+              }
+            : destination),
+        }
+      })
     }
 
     const destinations = customerWarehouseNavigation.filter((item) =>
       item.route !== "/warehouse/users" || canManageWarehouseUsers)
     return [{ id: "warehouse", label: "Warehouse", icon: Boxes, destinations }]
-  }, [isCustomer, canManageWarehouseUsers, canReadDocuments])
+  }, [isCustomer, canManageWarehouseUsers, canShowDocumentBuilder, crmDealCount])
   const initialArea = isSettingsRoute
     ? undefined
     : isCustomer
@@ -1070,7 +1096,9 @@ export function AppSidebar({
   const accountDetail = currentUser?.name && currentUser.email ? currentUser.email : t("Signed in")
   const accountInitials = currentUser?.initials ?? "MD"
   const [accountPhotoUrl, setAccountPhotoUrl] = useState<string | null>(currentUser?.profilePhotoUrl ?? null)
+  const [accountCoverPhotoUrl, setAccountCoverPhotoUrl] = useState<string | null>(null)
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
+  const [aiUsagePercent, setAiUsagePercent] = useState<number | null>(null)
   const profileIsActive = false
   const [arrangingScopeId, setArrangingScopeId] = useState<string | null>(null)
   const [dexterConversations, setDexterConversations] = useState<SearchableDexterConversation[]>([])
@@ -1205,6 +1233,48 @@ export function AppSidebar({
   }, [currentUser?.profilePhoto, currentUser?.profilePhotoUrl])
 
   useEffect(() => {
+    const coverPhoto = currentUser?.coverPhoto
+    if (!coverPhoto) {
+      setAccountCoverPhotoUrl(null)
+      return
+    }
+
+    setAccountCoverPhotoUrl(null)
+    let cancelled = false
+    createProfilePhotoSignedUrl(coverPhoto).then((signedUrl) => {
+      if (!cancelled) setAccountCoverPhotoUrl(signedUrl)
+    }).catch((error) => {
+      console.error("The sidebar cover photo could not be loaded.", error)
+      if (!cancelled) setAccountCoverPhotoUrl(null)
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [currentUser?.coverPhoto])
+
+  useEffect(() => {
+    if (!accountMenuOpen || isCustomer) return
+
+    let active = true
+    getDexterUsage()
+      .then((usage) => {
+        if (!active) return
+        const percent = Number.isFinite(usage.includedUsagePercent)
+          ? usage.includedUsagePercent
+          : usage.includedActionsLimit > 0
+            ? (usage.actionsUsed / usage.includedActionsLimit) * 100
+            : 0
+        setAiUsagePercent(Math.max(0, Math.min(100, percent)))
+      })
+      .catch(() => {
+        if (active) setAiUsagePercent(null)
+      })
+
+    return () => { active = false }
+  }, [accountMenuOpen, isCustomer])
+
+  useEffect(() => {
     const routeArea = isSettingsRoute
       ? undefined
       : isCustomer
@@ -1221,7 +1291,7 @@ export function AppSidebar({
       requiredIds.forEach((id) => next.add(id))
       return next
     })
-  }, [route, isCustomer, isSettingsRoute, canManageWarehouseUsers, canReadDocuments]) // availableAreas is intentionally derived from the account type and permissions.
+  }, [route, isCustomer, isSettingsRoute, canManageWarehouseUsers, canShowDocumentBuilder]) // availableAreas is intentionally derived from the account type, environment and permissions.
 
   useEffect(() => {
     if (!isSettingsRoute) return
@@ -1349,7 +1419,7 @@ export function AppSidebar({
   const dexterSidebarItem = (
     <SidebarSectionItem>
       <SidebarNavItem
-        item={{ label: `Agent ${aiAgentName}`, icon: Sparkles, route: "/agent-dexter" }}
+        item={{ label: `Agent ${aiAgentName}`, icon: AiBrain, route: "/agent-dexter" }}
         isActive={route === "/agent-dexter"}
         onClick={() => navigate("/agent-dexter")}
         accent="dexter"
@@ -1397,12 +1467,12 @@ export function AppSidebar({
             aria-label={t(collapsed ? "Expand sidebar" : "Collapse sidebar")}
             title={t(collapsed ? "Expand sidebar" : "Collapse sidebar")}
             className={cn(
-              "size-10 rounded-[var(--md-radius-md)] bg-[var(--md-glass)] text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]",
-              !collapsed && "ms-1 size-9",
+              "size-9 rounded-full bg-[var(--md-glass)] text-[var(--md-text)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]",
+              !collapsed && "ms-1",
             )}
             onClick={() => onCollapsedChange(!collapsed)}
           >
-            {collapsed ? <PanelLeftOpen className="size-4" strokeWidth={1.3} /> : <PanelLeftClose className="size-4" strokeWidth={1.3} />}
+            <MorphingIcon from={PanelLeftClose} to={PanelLeftOpen} active={collapsed} className="size-3.5" strokeWidth={1.3} />
           </Button>
         ) : null}
       </div>
@@ -1830,7 +1900,7 @@ export function AppSidebar({
                             exit={shouldReduceMotion ? undefined : { height: 0, opacity: 0 }}
                             transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.fast)}
                           >
-                            <div className="md-sidebar-expanded-options flex flex-col gap-1 rounded-[var(--md-radius-lg)] bg-[rgba(255,255,255,0.3)] p-1 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.48),0_1px_0_rgba(11,20,19,0.03)] dark:bg-[rgba(255,255,255,0.03)]">
+                            <div className="md-sidebar-expanded-options flex flex-col gap-1 rounded-[var(--md-radius-xl)] bg-[var(--md-bg-strong)] p-1 dark:bg-[var(--md-surface-soft)]">
                               <AnimatePresence initial={false}>
                                 {destination.children?.map((child) => {
                                   const childId = nestedDestinationId(destination.id, child)
@@ -1979,25 +2049,53 @@ export function AppSidebar({
             </button>
           </PopoverTrigger>
           <PopoverContent
-            side={direction === "rtl" ? "left" : "right"}
-            align="end"
-            alignOffset={-4}
-            sideOffset={12}
-            collisionPadding={18}
-            className="w-[248px] overflow-hidden rounded-[var(--md-radius-xl)] border-0 bg-[var(--md-surface)] p-2 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)]"
+            side="top"
+            align="start"
+            sideOffset={-48}
+            collisionPadding={8}
+            className="md-account-sheet w-[232px] max-w-[calc(100vw-32px)] gap-0 overflow-hidden rounded-[var(--md-radius-2xl)] border-0 bg-[var(--md-surface)] p-0 text-[var(--md-ink)] shadow-[0_22px_60px_rgba(11,20,19,0.20),inset_0_0_0_1px_rgba(255,255,255,0.72)]"
           >
-            <div className="px-2 pb-2 pt-1">
-              <p className="truncate text-[13px] font-medium text-[var(--md-ink)]" dir="auto" data-i18n-skip>{accountName}</p>
-              <p className="mt-0.5 truncate text-[12px] text-[var(--md-text)]" dir={currentUser?.email ? "ltr" : "auto"} data-i18n-skip={currentUser?.email ? true : undefined}>{accountDetail}</p>
+            <div className="relative h-[112px] overflow-hidden bg-[color-mix(in_srgb,var(--md-accent)_11%,var(--md-surface-soft))]">
+              {accountCoverPhotoUrl ? (
+                <img src={accountCoverPhotoUrl} alt="" className="size-full object-cover" decoding="async" />
+              ) : (
+                <div
+                  aria-hidden="true"
+                  className="absolute inset-0 opacity-70"
+                  style={{
+                    backgroundImage: "radial-gradient(circle at 20% 16%, color-mix(in srgb, var(--md-accent) 28%, transparent), transparent 34%), radial-gradient(circle at 82% 82%, color-mix(in srgb, var(--md-accent) 16%, transparent), transparent 38%)",
+                  }}
+                />
+              )}
+              <div aria-hidden="true" className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(0,0,0,0.04)_0%,rgba(0,0,0,0.08)_44%,color-mix(in_srgb,var(--md-surface)_96%,transparent)_100%)]" />
+              <button
+                type="button"
+                aria-label={t("Close menu")}
+                className="absolute end-3 top-3 grid size-8 place-items-center rounded-full bg-black/20 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18),0_4px_12px_rgba(0,0,0,0.12)] transition-[background-color,box-shadow,transform] duration-150 hover:bg-black/32 active:scale-[0.96] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-white/40 motion-reduce:transition-none motion-reduce:active:scale-100"
+                onClick={() => setAccountMenuOpen(false)}
+              >
+                <X className="size-3.5" strokeWidth={1.5} aria-hidden="true" />
+              </button>
             </div>
-            <Separator className="my-1 bg-[var(--md-line-strong)]" />
-            <div onClick={() => setAccountMenuOpen(false)}>
-              <ThemeToggle className="h-11 rounded-[var(--md-radius-md)] shadow-none" />
+
+            <div className="relative -mt-8 px-3 pb-2">
+              <Avatar className="size-16 rounded-full bg-[var(--md-surface)] p-[3px] shadow-[0_9px_26px_rgba(11,20,19,0.18)] outline outline-1 outline-black/10 dark:outline-white/10">
+                {accountPhotoUrl ? <AvatarImage src={accountPhotoUrl} alt="" className="rounded-full object-cover" /> : null}
+                <AvatarFallback className="rounded-full bg-[var(--md-accent)] text-[18px] font-medium text-[var(--md-accent-ink)]" data-i18n-skip>
+                  {accountInitials}
+                </AvatarFallback>
+              </Avatar>
+              <div className="mt-2 min-w-0 px-1">
+                <p className="truncate text-[14px] font-medium leading-[1.35] tracking-[-0.01em] text-[var(--md-ink)]" dir="auto" data-i18n-skip>{accountName}</p>
+                <p className="mt-0.5 truncate text-[12px] leading-[1.45] text-[var(--md-text)]" dir={currentUser?.email ? "ltr" : "auto"} data-i18n-skip={currentUser?.email ? true : undefined}>{accountDetail}</p>
+              </div>
             </div>
-            <Separator className="my-1 bg-[var(--md-line-strong)]" />
+
+            <Separator className="mx-3 bg-[var(--md-line-strong)]" />
+            <div className="p-2">
             {!isCustomer ? <button
               type="button"
-              className="flex h-9 w-full items-center gap-2 rounded-[var(--md-radius-md)] px-2 text-left text-[13px] font-medium text-[var(--md-text)] transition-[background,color,opacity,transform] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
+              className="group/action flex h-10 w-full items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 text-start text-[13px] font-medium text-[var(--md-text)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] motion-reduce:transition-none motion-reduce:active:scale-100"
               onClick={() => {
                 setAccountMenuOpen(false)
                 openSettingsSection("profile")
@@ -2010,7 +2108,8 @@ export function AppSidebar({
               <>
                 <button
                   type="button"
-                  className="flex h-9 w-full items-center gap-2 rounded-[var(--md-radius-md)] px-2 text-left text-[13px] font-medium text-[var(--md-text)] transition-[background,color,opacity,transform] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
+                  aria-label={aiUsagePercent === null ? t("AI usage") : `${t("AI usage")}: ${Math.round(aiUsagePercent)}%`}
+                  className="group/action flex h-10 w-full items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 text-start text-[13px] font-medium text-[var(--md-text)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] motion-reduce:transition-none motion-reduce:active:scale-100"
                   onClick={() => {
                     setAccountMenuOpen(false)
                     openSettingsSection("ai-usage")
@@ -2018,23 +2117,32 @@ export function AppSidebar({
                 >
                   <Sparkles data-icon="inline-start" className="size-4" strokeWidth={1.4} />
                   <span className="min-w-0 flex-1 truncate">{t("AI usage")}</span>
-                </button>
-                <button
-                  type="button"
-                  className="flex h-9 w-full items-center gap-2 rounded-[var(--md-radius-md)] px-2 text-left text-[13px] font-medium text-[var(--md-text)] transition-[background,color,opacity,transform] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
-                  onClick={() => {
-                    setAccountMenuOpen(false)
-                    openSettingsSection("billing")
-                  }}
-                >
-                  <CreditCard data-icon="inline-start" className="size-4" strokeWidth={1.4} />
-                  <span className="min-w-0 flex-1 truncate">{t("Payment & billing")}</span>
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 24 24"
+                    className="size-5 shrink-0 text-[var(--md-accent)]"
+                  >
+                    <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.18" />
+                    <circle
+                      cx="12"
+                      cy="12"
+                      r="9"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeDasharray={2 * Math.PI * 9}
+                      strokeDashoffset={(2 * Math.PI * 9) * (1 - (aiUsagePercent ?? 0) / 100)}
+                      className="origin-center -rotate-90 transition-[stroke-dashoffset,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
+                      opacity={aiUsagePercent === null ? 0 : 0.9}
+                    />
+                  </svg>
                 </button>
               </>
             ) : null}
             <button
               type="button"
-              className="flex h-9 w-full items-center gap-2 rounded-[var(--md-radius-md)] px-2 text-left text-[13px] font-medium text-[var(--md-text)] transition-[background,color,opacity,transform] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
+              className="group/action flex h-10 w-full items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 text-start text-[13px] font-medium text-[var(--md-text)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] motion-reduce:transition-none motion-reduce:active:scale-100"
               onClick={() => {
                 setAccountMenuOpen(false)
                 openSettingsSection("support")
@@ -2044,9 +2152,11 @@ export function AppSidebar({
               <span className="min-w-0 flex-1 truncate">{t("Support")}</span>
             </button>
             <Separator className="my-1 bg-[var(--md-line-strong)]" />
+            <ThemeToggle showAppearanceLabel={false} className="h-11 rounded-[var(--md-radius-lg)] px-2.5 shadow-none" />
+            <Separator className="my-1 bg-[var(--md-line-strong)]" />
             <button
               type="button"
-              className="flex h-9 w-full items-center gap-2 rounded-[var(--md-radius-md)] px-2 text-left text-[13px] font-medium text-[var(--md-red)] transition-[background,color,opacity,transform] hover:bg-[rgba(209,78,78,0.08)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(209,78,78,0.14)]"
+              className="flex h-10 w-full items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2.5 text-start text-[13px] font-medium text-[var(--md-red)] transition-[background-color,color,transform] duration-150 hover:bg-[rgba(209,78,78,0.08)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(209,78,78,0.14)] motion-reduce:transition-none motion-reduce:active:scale-100"
               onClick={() => {
                 setAccountMenuOpen(false)
                 void supabase?.auth.signOut()
@@ -2055,6 +2165,7 @@ export function AppSidebar({
               <LogOut data-icon="inline-start" className="size-4" strokeWidth={1.4} />
               <span className="min-w-0 flex-1 truncate">{t("Sign out")}</span>
             </button>
+            </div>
           </PopoverContent>
         </Popover>
       </div>

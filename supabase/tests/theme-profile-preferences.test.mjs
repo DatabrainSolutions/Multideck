@@ -18,6 +18,9 @@ const accentTheme = read("multideck.client/src/lib/accent-theme.ts")
 const accentMigration = read(
   "supabase/migrations/20260730222311_user_accent_preference.sql",
 )
+const expandedAccentMigration = read(
+  "supabase/migrations/20260808234605_expand_accent_presets.sql",
+)
 const app = read("multideck.client/src/App.tsx")
 const themeToggle = read("multideck.client/src/components/multideck/theme-toggle.tsx")
 const appShortcuts = read("multideck.client/src/components/multideck/app-shortcuts.tsx")
@@ -60,4 +63,9 @@ test("accent colours use the same Supabase-only profile boundary", () => {
   assert.match(accentMigration, /"User_AccentPreset" in \(/)
   assert.match(accentMigration, /where "Auth_User_ID" = v_auth_user_id/)
   assert.match(accentMigration, /grant execute on function public\.set_current_user_accent_preference\(text\) to authenticated/)
+  assert.match(accentTheme, /\| "lime"[\s\S]*?\| "gold"[\s\S]*?\| "coral"[\s\S]*?\| "cobalt"[\s\S]*?\| "fuchsia"/)
+  assert.match(expandedAccentMigration, /drop constraint if exists "CK_cmp_Users_AccentPreset"/)
+  assert.match(expandedAccentMigration, /'lime', 'gold', 'coral', 'cobalt', 'fuchsia'/)
+  assert.match(expandedAccentMigration, /where "Auth_User_ID" = v_auth_user_id/)
+  assert.match(expandedAccentMigration, /revoke all on function public\.set_current_user_accent_preference\(text\) from public, anon/)
 })

@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react"
+import { AnimatePresence, motion } from "motion/react"
 import {
+  AlarmClock,
   ArrowRightLeft,
   ArrowDownRight,
   ArrowLeft,
   ArrowRight,
   ArrowUpRight,
+  Briefcase,
   Building2,
   ChartNoAxesCombined,
   CirclePause,
@@ -16,10 +19,12 @@ import {
   ListFilter,
   LoaderCircle,
   MailCheck,
+  MapPin,
   MousePointerClick,
   PenLine,
   Plus,
   RefreshCw,
+  Reply,
   RotateCcw,
   Search,
   Send,
@@ -29,9 +34,10 @@ import {
   UploadCloud,
   UserRound,
   Users,
+  Wallet,
   Workflow,
   X,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -39,8 +45,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
+import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import {
   getDateKey,
   MultideckDateRangePicker,
@@ -50,8 +56,6 @@ import {
 } from "@/components/multideck/date-picker"
 import {
   CrmActivityTimeline,
-  CrmAssetFolderCard,
-  CrmAssetRow,
   CrmDealDetailPanel,
   CrmForecastPanel,
   CrmLeadDetailPanel,
@@ -66,12 +70,21 @@ import {
   CrmSettingsBuilder,
   type CrmDeal,
   type CrmPipelineBoardData,
-  type CrmAssetFile,
-  type CrmAssetFolder,
 } from "@/components/multideck/crm-components"
+import {
+  CrmActivityFeed,
+  CrmAreaHeatmap,
+  CrmBand,
+  CrmDashboardSkeleton,
+  CrmFollowUpQueue,
+  CrmOpportunityValue,
+  CrmQuietLeads,
+} from "@/components/multideck/crm-dashboard"
+import { KpiStrip } from "@/components/multideck/dashboard-kpi-strip"
 import { Pagination } from "@/components/multideck/pagination"
 import { DexterActionPill } from "@/components/multideck/dexter-action-pill"
 import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
+import { InlineField, InlineFieldCard } from "@/components/multideck/inline-field"
 import { SideDrawer } from "@/components/multideck/side-drawer"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
@@ -83,6 +96,8 @@ import {
   type StatusTone,
 } from "@/data/multideck-data"
 import { useLanguage } from "@/i18n/language-provider"
+import type { DashboardKpi } from "@/lib/dashboard-live-data"
+import { mdMotion } from "@/lib/motion"
 import { hasPermission, type AuthUserSummary } from "@/lib/auth-user"
 import { getApiTeamUsers } from "@/lib/api"
 import { createCustomer, createCustomerContact, getCustomerReference, listCustomers, type ApiCustomer } from "@/lib/customer-api"
@@ -101,11 +116,14 @@ import {
   type CrmFollowUpData,
   type CrmFollowUpOpportunity,
   type CrmTransferUser,
+  updateLead,
+  type UpdateLeadInput,
 } from "@/lib/lead-api"
 import { getPipelineSettings, type ApiPipeline } from "@/lib/pipeline-api"
 import { createProfilePhotoSignedUrls } from "@/lib/profile-photo"
 import { setMarketingOptIn } from "@/lib/marketing-consent-api"
 import { getSupabaseSession } from "@/lib/supabase"
+import { subscribeTopBarAction, topBarActionEvents } from "@/lib/top-bar-action-events"
 
 const rowsPerPageOptions = [10, 20, 30, 50]
 type CrmPipeline = CrmPipelineBoardData
@@ -333,216 +351,6 @@ const crmEmailLists = [
     ],
   },
 ]
-
-const crmMarketingFolders: CrmAssetFolder[] = [
-  {
-    id: "brand-logos",
-    name: "Brand logos",
-    description: "Primary marks, partner lockups, favicon exports, and approved logo variations.",
-    itemCount: 9,
-    size: "48 MB",
-    updated: "Updated today",
-    owner: "Elena",
-    tone: "teal" as StatusTone,
-    icon: Folder,
-  },
-  {
-    id: "graphics",
-    name: "Graphics",
-    description: "Lane visuals, customer education graphics, hero images, and social-ready artwork.",
-    itemCount: 14,
-    size: "312 MB",
-    updated: "Updated Tue",
-    owner: "Will",
-    tone: "green" as StatusTone,
-    icon: Image,
-  },
-  {
-    id: "email-templates",
-    name: "Email templates",
-    description: "Reusable HTML blocks, header images, advisory layouts, and footer snippets.",
-    itemCount: 6,
-    size: "22 MB",
-    updated: "Updated Jun 10",
-    tone: "amber" as StatusTone,
-    owner: "Jamie",
-    icon: LayoutTemplate,
-  },
-  {
-    id: "sales-collateral",
-    name: "Sales collateral",
-    description: "One-pagers, trade-lane explainers, customer report inserts, and proposal assets.",
-    itemCount: 11,
-    size: "186 MB",
-    updated: "Updated Jun 7",
-    tone: "blue" as StatusTone,
-    owner: "Mina",
-    icon: FileText,
-  },
-]
-
-const crmMarketingAssetCount = crmMarketingFolders.reduce((total, folder) => total + folder.itemCount, 0)
-
-const crmMarketingAssets: CrmAssetFile[] = [
-  {
-    id: "md-primary-logo-svg",
-    folderId: "brand-logos",
-    name: "multideck-primary-logo.svg",
-    type: "SVG",
-    size: "124 KB",
-    updated: "Today",
-    owner: "Elena",
-    usage: "Approved primary logo for light surfaces",
-    tone: "green" as StatusTone,
-    icon: FileText,
-  },
-  {
-    id: "md-full-lockup-png",
-    folderId: "brand-logos",
-    name: "multideck-full-lockup-dark.png",
-    type: "PNG",
-    size: "1.8 MB",
-    updated: "Today",
-    owner: "Elena",
-    usage: "Dark-background lockup for decks and webinars",
-    tone: "green" as StatusTone,
-    icon: Image,
-  },
-  {
-    id: "partner-badge-set",
-    folderId: "brand-logos",
-    name: "partner-badge-set.zip",
-    type: "ZIP",
-    size: "9.4 MB",
-    updated: "Jun 11",
-    owner: "Will",
-    usage: "Approved partner badges for customer announcements",
-    tone: "blue" as StatusTone,
-    icon: Folder,
-  },
-  {
-    id: "peak-season-hero",
-    folderId: "graphics",
-    name: "peak-season-capacity-hero.png",
-    type: "PNG",
-    size: "18.6 MB",
-    updated: "Tue",
-    owner: "Will",
-    usage: "Hero graphic for peak-season advisory",
-    tone: "green" as StatusTone,
-    icon: Image,
-  },
-  {
-    id: "customs-checklist-graphic",
-    folderId: "graphics",
-    name: "customs-checklist-carousel.fig",
-    type: "FIG",
-    size: "42 MB",
-    updated: "Mon",
-    owner: "Mina",
-    usage: "Editable carousel graphics for customs education",
-    tone: "amber" as StatusTone,
-    icon: Image,
-  },
-  {
-    id: "air-freight-map",
-    folderId: "graphics",
-    name: "air-freight-response-map.jpg",
-    type: "JPG",
-    size: "7.2 MB",
-    updated: "Jun 6",
-    owner: "Jamie",
-    usage: "Map visual for delayed ocean quote follow-up",
-    tone: "blue" as StatusTone,
-    icon: Image,
-  },
-  {
-    id: "monthly-rates-html",
-    folderId: "email-templates",
-    name: "monthly-rates-newsletter.html",
-    type: "HTML",
-    size: "86 KB",
-    updated: "Jun 10",
-    owner: "Jamie",
-    usage: "Reusable rates newsletter shell",
-    tone: "green" as StatusTone,
-    icon: LayoutTemplate,
-  },
-  {
-    id: "service-advisory-template",
-    folderId: "email-templates",
-    name: "service-advisory-single-cta.html",
-    type: "HTML",
-    size: "64 KB",
-    updated: "Jun 8",
-    owner: "Elena",
-    usage: "Urgent service update with one clear action",
-    tone: "amber" as StatusTone,
-    icon: LayoutTemplate,
-  },
-  {
-    id: "customer-reactivation-copy",
-    folderId: "email-templates",
-    name: "customer-reactivation-copy.docx",
-    type: "DOCX",
-    size: "210 KB",
-    updated: "Jun 5",
-    owner: "Will",
-    usage: "Copy blocks for dormant account follow-up",
-    tone: "green" as StatusTone,
-    icon: FileText,
-  },
-  {
-    id: "eu-apparel-one-pager",
-    folderId: "sales-collateral",
-    name: "eu-apparel-lane-one-pager.pdf",
-    type: "PDF",
-    size: "4.8 MB",
-    updated: "Jun 7",
-    owner: "Mina",
-    usage: "One-pager for apparel importers",
-    tone: "blue" as StatusTone,
-    icon: FileText,
-  },
-  {
-    id: "customs-readiness-pack",
-    folderId: "sales-collateral",
-    name: "customs-readiness-pack.pdf",
-    type: "PDF",
-    size: "6.1 MB",
-    updated: "Jun 6",
-    owner: "Elena",
-    usage: "Document checklist pack for onboarding",
-    tone: "amber" as StatusTone,
-    icon: FileText,
-  },
-  {
-    id: "qbr-insert",
-    folderId: "sales-collateral",
-    name: "qbr-report-insert.key",
-    type: "KEY",
-    size: "26 MB",
-    updated: "Jun 4",
-    owner: "Jamie",
-    usage: "Reusable QBR insert for customer reports",
-    tone: "green" as StatusTone,
-    icon: LayoutTemplate,
-  },
-]
-
-const crmMarketingStorageStats = [
-  ["Storage used", "568 MB"],
-  ["Shared folders", "4"],
-  ["Recently updated", "7 assets"],
-  ["Owners", "4 people"],
-]
-
-const crmMarketingActivity = [
-  ["Today 10:18", "Elena added the dark logo lockup"],
-  ["Tue 15:42", "Will refreshed peak-season graphics"],
-  ["Jun 10", "Jamie updated the newsletter template"],
-]
-
 const crmEmailTemplates = [
   {
     name: "Monthly rates newsletter",
@@ -1038,11 +846,13 @@ function FollowUpCreateMenu({ opportunity, onChoose }: { opportunity: CrmFollowU
 function FollowUpRecordDialog({
   opportunity,
   kind,
+  open = false,
   onClose,
   onCreated,
 }: {
   opportunity: CrmFollowUpOpportunity | null
   kind: FollowUpCreateKind | null
+  open?: boolean
   onClose: () => void
   onCreated: () => void
 }) {
@@ -1050,6 +860,12 @@ function FollowUpRecordDialog({
   const [personName, setPersonName] = useState("")
   const [companyName, setCompanyName] = useState("")
   const [email, setEmail] = useState("")
+  const [addressLine1, setAddressLine1] = useState("")
+  const [addressLine2, setAddressLine2] = useState("")
+  const [townCity, setTownCity] = useState("")
+  const [countyState, setCountyState] = useState("")
+  const [postZipCode, setPostZipCode] = useState("")
+  const [countryCode, setCountryCode] = useState("")
   const [accountId, setAccountId] = useState("")
   const [accounts, setAccounts] = useState<ApiCustomer[]>([])
   const [accountState, setAccountState] = useState<"idle" | "loading" | "ready" | "error">("idle")
@@ -1057,10 +873,16 @@ function FollowUpRecordDialog({
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!opportunity || !kind) return
-    setPersonName(opportunity.personName || "")
-    setCompanyName(opportunity.companyName || companyNameFromEmail(opportunity.email || ""))
-    setEmail(opportunity.email || "")
+    if (!kind || (!opportunity && !open)) return
+    setPersonName(opportunity?.personName || "")
+    setCompanyName(opportunity?.companyName || companyNameFromEmail(opportunity?.email || ""))
+    setEmail(opportunity?.email || "")
+    setAddressLine1("")
+    setAddressLine2("")
+    setTownCity("")
+    setCountyState("")
+    setPostZipCode("")
+    setCountryCode("")
     setAccountId("")
     setError(null)
     if (kind !== "contact") {
@@ -1080,16 +902,29 @@ function FollowUpRecordDialog({
         setAccountState("error")
       })
     return () => { active = false }
-  }, [kind, opportunity])
+  }, [kind, open, opportunity])
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!opportunity || !kind) return
+    if (!kind || (!opportunity && !open)) return
     setSubmitting(true)
     setError(null)
     try {
       if (kind === "lead") {
-        await createFollowUpLead({ email, personName, companyName, threadId: opportunity.threadId })
+        await createFollowUpLead({
+          email,
+          personName,
+          companyName,
+          threadId: opportunity?.threadId,
+          address: {
+            line1: addressLine1 || null,
+            line2: addressLine2 || null,
+            townCity: townCity || null,
+            countyState: countyState || null,
+            postZipCode: postZipCode || null,
+            countryCode: countryCode || null,
+          },
+        })
       } else if (kind === "contact") {
         if (!accountId) throw new Error(t("Choose the account this contact belongs to."))
         const name = personNameParts(personName)
@@ -1121,13 +956,13 @@ function FollowUpRecordDialog({
     }
   }
 
-  const title = kind === "lead" ? t("Create lead") : kind === "contact" ? t("Create contact") : t("Create account")
+  const title = kind === "lead" ? t(opportunity ? "Create lead" : "New lead") : kind === "contact" ? t("Create contact") : t("Create account")
   return (
-    <Dialog open={Boolean(opportunity && kind)} onOpenChange={(open) => { if (!open) onClose() }}>
-      <DialogContent className="border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[520px]">
+    <Dialog open={Boolean(kind && (opportunity || open))} onOpenChange={(nextOpen) => { if (!nextOpen) onClose() }}>
+      <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[520px]">
         <DialogHeader className="text-start">
           <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{t("Review the details found in the email before adding them to CRM.")}</DialogDescription>
+          <DialogDescription>{t(opportunity ? "Review the details found in the email before adding them to CRM." : "New sales opportunity")}</DialogDescription>
         </DialogHeader>
         <form className="grid gap-4" onSubmit={submit}>
           {kind !== "contact" ? (
@@ -1153,10 +988,51 @@ function FollowUpRecordDialog({
             {t("Email")}
             <Input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} className="h-10" dir="ltr" />
           </label>
+          {kind === "lead" ? (
+            <div className="grid gap-3 border-t border-[var(--md-line)] pt-4">
+              <span className="text-[12px] font-medium text-[var(--md-text)]">{t("Address")}</span>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
+                  {t("Address line 1")}
+                  <Input value={addressLine1} onChange={(event) => setAddressLine1(event.target.value)} className="h-10" dir="auto" />
+                </label>
+                <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
+                  {t("Address line 2")}
+                  <Input value={addressLine2} onChange={(event) => setAddressLine2(event.target.value)} className="h-10" dir="auto" />
+                </label>
+                <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
+                  {t("Town or city")}
+                  <Input value={townCity} onChange={(event) => setTownCity(event.target.value)} className="h-10" dir="auto" />
+                </label>
+                <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
+                  {t("County / State")}
+                  <Input value={countyState} onChange={(event) => setCountyState(event.target.value)} className="h-10" dir="auto" />
+                </label>
+                <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
+                  {t("Postcode")}
+                  <Input value={postZipCode} onChange={(event) => setPostZipCode(event.target.value)} className="h-10" dir="ltr" />
+                </label>
+                <label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]">
+                  {t("Country code")}
+                  <Input
+                    value={countryCode}
+                    onChange={(event) => setCountryCode(event.target.value.toUpperCase())}
+                    className="h-10"
+                    dir="ltr"
+                    maxLength={2}
+                    aria-invalid={Boolean(countryCode && !/^[A-Z]{2}$/.test(countryCode))}
+                  />
+                  {countryCode && !/^[A-Z]{2}$/.test(countryCode) ? (
+                    <span className="text-[11px] text-[var(--md-red)]">{t("Enter a two-letter ISO country code, such as GB.")}</span>
+                  ) : null}
+                </label>
+              </div>
+            </div>
+          ) : null}
           {error ? <p role="alert" className="rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red)_9%,transparent)] px-3 py-2 text-[12px] text-[var(--md-red)]" dir="auto">{t(error)}</p> : null}
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={onClose}>{t("Cancel")}</Button>
-            <Button type="submit" disabled={submitting || !email.trim() || !personName.trim() || (kind === "contact" && !accountId) || (kind !== "contact" && !companyName.trim())}>
+            <Button type="submit" disabled={submitting || !email.trim() || !personName.trim() || (kind === "lead" && Boolean(countryCode) && !/^[A-Z]{2}$/.test(countryCode)) || (kind === "contact" && !accountId) || (kind !== "contact" && !companyName.trim())}>
               {submitting ? <LoaderCircle className="size-4 animate-spin" /> : null}
               {submitting ? t("Creating…") : title}
             </Button>
@@ -1185,6 +1061,9 @@ function DealDetailDrawer({
   )
 }
 
+/** How long an open lead can sit without contact before it counts as quiet. */
+const crmInactivityDays = 90
+
 export function CrmOverviewPage() {
   const { language, t } = useLanguage()
   const [dexterOpen, setDexterOpen] = useState(false)
@@ -1201,7 +1080,7 @@ export function CrmOverviewPage() {
     setState("loading")
     setError(null)
     Promise.all([
-      getCrmDashboard(90),
+      getCrmDashboard(crmInactivityDays),
       getCrmFollowUpOpportunities(),
     ])
       .then(([result, followUps]) => {
@@ -1242,105 +1121,131 @@ export function CrmOverviewPage() {
     maximumFractionDigits: 1,
   }), [data?.summary.currencyCode, language])
   const dateTime = useMemo(() => new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }), [language])
+  const shortDate = useMemo(() => new Intl.DateTimeFormat(language, { day: "numeric", month: "short" }), [language])
+  const formatDateTime = useCallback((value: string) => dateTime.format(new Date(value)), [dateTime])
+  const formatShortDate = useCallback((value: string) => shortDate.format(new Date(value)), [shortDate])
+  const formatMoney = useCallback(
+    (value: number, currency: string) =>
+      new Intl.NumberFormat(language, { style: "currency", currency: currency || "GBP", notation: "compact", maximumFractionDigits: 1 }).format(value),
+    [language],
+  )
+
+  /**
+   * Six numbers, each with a real destination. There is no previous period in
+   * the CRM snapshot, so no cell claims a delta it cannot evidence — the
+   * supporting line carries a second real fact instead.
+   */
+  const kpis = useMemo<DashboardKpi[]>(() => {
+    if (!data) return []
+    const queueTotal = followUpData?.summary.total ?? 0
+    const notInCrm = followUpData?.summary.notInCrm ?? 0
+    const largestArea = data.areas.reduce<{ label: string; count: number } | null>(
+      (best, area) => (!best || area.count > best.count ? { label: area.label.split(" · ")[0], count: area.count } : best),
+      null,
+    )
+    return [
+      { label: t("Open leads"), value: String(data.summary.openLeads), detail: data.summary.staleLeads ? `${data.summary.staleLeads} ${t("gone quiet")}` : t("all recently touched"), tone: "teal", icon: Users },
+      { label: t("Needs follow-up"), value: String(queueTotal), detail: notInCrm ? `${notInCrm} ${t("not in CRM yet")}` : t("all already on record"), tone: "amber", icon: AlarmClock },
+      { label: t("Replies due"), value: String(followUpData?.summary.repliesDue ?? 0), detail: t("people waiting on you"), tone: "red", icon: Reply },
+      { label: t("Open deals"), value: String(data.summary.openDeals), detail: `${data.pipeline.length} ${data.pipeline.length === 1 ? t("stage in play") : t("stages in play")}`, tone: "blue", icon: Briefcase },
+      { label: t("Pipeline value"), value: money.format(data.summary.pipelineValue), detail: t("open and unweighted"), tone: "green", icon: Wallet },
+      { label: t("Areas"), value: String(data.areas.length), detail: largestArea ? `${t("most in")} ${largestArea.label}` : t("no address on file"), tone: "neutral", icon: MapPin },
+    ]
+  }, [data, followUpData, money, t])
+
+  const openKpi = useCallback((label: string) => {
+    if (label === t("Open deals") || label === t("Pipeline value")) window.location.href = "/crm/deals"
+    else if (label === t("Areas")) window.location.href = "/crm/accounts"
+    else if (label === t("Open leads")) window.location.href = "/crm/leads"
+  }, [t])
+
+  const openFollowUp = useCallback((opportunity: CrmFollowUpOpportunity) => {
+    if (opportunity.recordType === "lead" && opportunity.recordId) window.location.href = `/crm/leads/${opportunity.recordId}`
+    else if (opportunity.threadId && opportunity.mailboxId) window.location.href = `/inbox?mailbox=${encodeURIComponent(opportunity.mailboxId)}&thread=${encodeURIComponent(opportunity.threadId)}`
+  }, [])
+
+  const renderCreate = useCallback((opportunity: CrmFollowUpOpportunity) => (
+    <FollowUpCreateMenu opportunity={opportunity} onChoose={(kind) => { setCreateOpportunity(opportunity); setCreateKind(kind) }} />
+  ), [])
+
+  const openLead = useCallback((leadId: string) => { window.location.href = `/crm/leads/${leadId}` }, [])
 
   return (
-    <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t("CRM dashboard")} className="md-page md-page-stack-compact">
+    <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t("CRM dashboard")} className="md-page md-page-stack-compact md-dashboard md-crm-dashboard">
       <CrmPageHeader
         title={t("CRM dashboard")}
-        summary={<>{t("Your assigned leads, deals, follow-ups and recent sales activity in one consistent view.")}</>}
+        summary={<>{t("Your assigned leads and follow-ups, with the company deal pipeline in one consistent view.")}</>}
         onSpeakToDexter={() => setDexterOpen(true)}
         action={<Button className="h-10 rounded-[var(--md-radius-lg)]" onClick={() => { window.location.href = "/crm/deals" }}>{t("Open deals")}</Button>}
       />
 
-      {state === "loading" ? (
-        <Surface padding="lg" className="grid min-h-[320px] place-items-center rounded-[var(--md-radius-xl)]" role="status">
-          <div className="text-center"><LoaderCircle className="mx-auto size-6 animate-spin text-[var(--md-accent)]" /><p className="mt-3 text-[13px] text-[var(--md-text)]">{t("Loading your CRM dashboard…")}</p></div>
-        </Surface>
-      ) : null}
-
-      {state === "error" ? (
-        <Surface padding="lg" className="rounded-[var(--md-radius-xl)]" role="alert">
-          <SectionHeader title={t("The CRM dashboard could not be loaded.")} meta={error ?? undefined} />
-          <Button variant="outline" className="mt-4" onClick={() => setReloadKey((key) => key + 1)}><RefreshCw className="size-4" />{t("Retry")}</Button>
-        </Surface>
-      ) : null}
-
-      {state === "ready" && data ? (
-        <>
-          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
-            {[
-              [t("Open leads"), data.summary.openLeads], [t("Needs follow-up"), followUpData?.summary.total ?? 0],
-              [t("Replies due"), followUpData?.summary.repliesDue ?? 0], [t("Open deals"), data.summary.openDeals],
-              [t("Pipeline value"), money.format(data.summary.pipelineValue)], [t("Areas"), data.areas.length],
-            ].map(([label, value]) => (
-              <Surface key={String(label)} padding="md" className="rounded-[var(--md-radius-xl)]">
-                <p className="text-[11px] font-medium text-[var(--md-subtle)]">{label}</p>
-                <p className="mt-2 text-[22px] font-medium tabular-nums text-[var(--md-ink)]" data-i18n-skip>{value}</p>
-              </Surface>
-            ))}
-          </div>
-
-          <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-            <div className="flex flex-col gap-2 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-              <SectionHeader title={t("Who needs following up")} meta={followUpData ? t("Prioritised from live email and CRM activity") : undefined} />
-              {followUpData?.generatedAt ? <p className="text-[11px] text-[var(--md-subtle)]">{t("Checked")} {dateTime.format(new Date(followUpData.generatedAt))}</p> : null}
-            </div>
-            {followUpData?.items.length ? (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader><TableRow>
-                    {["Person or account", "Why now", "Latest conversation", "Last activity", "CRM", "Action"].map((label) => <TableHead key={label} className="whitespace-nowrap">{t(label)}</TableHead>)}
-                  </TableRow></TableHeader>
-                  <TableBody>
-                    {followUpData.items.map((opportunity) => {
-                      const reason = opportunity.reasonCode === "reply_due" ? t("Reply waiting")
-                        : opportunity.reasonCode === "first_follow_up" ? t("3 days without a reply")
-                          : opportunity.reasonCode === "second_follow_up" ? t("5 days since the last follow-up")
-                            : opportunity.reasonCode === "never_contacted" ? t("Never contacted") : t("Scheduled follow-up due")
-                      const openRecord = () => {
-                        if (opportunity.recordType === "lead" && opportunity.recordId) window.location.href = `/crm/leads/${opportunity.recordId}`
-                        else if (opportunity.threadId && opportunity.mailboxId) window.location.href = `/inbox?mailbox=${encodeURIComponent(opportunity.mailboxId)}&thread=${encodeURIComponent(opportunity.threadId)}`
-                      }
-                      return (
-                      <TableRow key={opportunity.id} className={opportunity.recordId || opportunity.threadId ? "cursor-pointer" : undefined} onClick={openRecord}>
-                        <TableCell className="min-w-[210px]">
-                          <p className="font-medium text-[var(--md-ink)]" dir="auto">{opportunity.personName || opportunity.companyName || opportunity.email || t("Unknown sender")}</p>
-                          <p className="mt-0.5 text-[11px] text-[var(--md-subtle)]" dir="auto">{opportunity.companyName && opportunity.companyName !== opportunity.personName ? opportunity.companyName : opportunity.email}</p>
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap"><StatusPill tone={opportunity.reasonCode === "reply_due" ? "red" : opportunity.reasonCode === "second_follow_up" ? "amber" : "blue"}>{reason}</StatusPill><p className="mt-1 text-[10.5px] text-[var(--md-subtle)]">{opportunity.daysWaiting === 0 ? t("Today") : `${opportunity.daysWaiting} ${t("days")}`}</p></TableCell>
-                        <TableCell className="max-w-[380px]"><p className="line-clamp-1 font-medium text-[var(--md-ink)]" dir="auto">{opportunity.subject}</p><p className="mt-1 line-clamp-2 text-[11px] text-[var(--md-subtle)]" dir="auto">{opportunity.context || t("No message preview available")}</p></TableCell>
-                        <TableCell className="whitespace-nowrap">{dateTime.format(new Date(opportunity.lastActivityAt))}</TableCell>
-                        <TableCell><StatusPill tone={opportunity.canCreate ? "amber" : "green"}>{opportunity.canCreate ? t("Not in CRM") : t(opportunity.recordType === "lead" ? "Lead" : opportunity.recordType === "contact" ? "Contact" : "Account")}</StatusPill></TableCell>
-                        <TableCell onClick={(event) => event.stopPropagation()}>{opportunity.canCreate ? <FollowUpCreateMenu opportunity={opportunity} onChoose={(kind) => { setCreateOpportunity(opportunity); setCreateKind(kind) }} /> : <Button type="button" variant="ghost" size="sm" className="h-8 rounded-[var(--md-radius-lg)] px-2.5 text-[12px]" onClick={openRecord}>{t(opportunity.threadId ? "Open conversation" : "Open record")}<ArrowRight className="size-3.5" /></Button>}</TableCell>
-                      </TableRow>
-                    )})}
-                  </TableBody>
-                </Table>
-              </div>
-            ) : (
-              <div className="px-5 py-12 text-center">
-                <p className="text-[14px] font-medium text-[var(--md-ink)]">{t("No follow-up opportunities right now.")}</p>
-                <p className="mt-2 text-[12px] text-[var(--md-subtle)]">{t("Human replies, overdue sent email, and due CRM activity will appear here automatically.")}</p>
-              </div>
-            )}
-          </Surface>
-
-          <div className="grid gap-[var(--md-page-stack-gap-compact)] xl:grid-cols-2">
-            <Surface padding="lg" className="rounded-[var(--md-radius-xl)]">
-              <SectionHeader title={t("Pipeline by stage")} meta={t("Your assigned open deals")} />
-              <div className="mt-4 grid gap-2">
-                {data.pipeline.length ? data.pipeline.map((stage) => <div key={stage.stageId} className="grid grid-cols-[1fr_auto_auto] items-center gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] px-3 py-3"><div><p className="text-[13px] font-medium text-[var(--md-ink)]" dir="auto">{stage.stage}</p><p className="text-[11px] text-[var(--md-subtle)]" dir="auto">{stage.pipeline}</p></div><span className="text-[12px] tabular-nums">{stage.count}</span><span className="text-[12px] font-medium tabular-nums">{new Intl.NumberFormat(language, { style: "currency", currency: stage.currencyCode || data.summary.currencyCode || "GBP", notation: "compact" }).format(stage.value)}</span></div>) : <p className="py-8 text-center text-[12px] text-[var(--md-subtle)]">{t("No assigned open deals yet.")}</p>}
-              </div>
+      {/* The skeleton reserves the loaded page's geometry, so arriving data
+          changes opacity rather than pushing the page around. */}
+      <AnimatePresence mode="wait" initial={false}>
+        {state === "loading" ? (
+          <motion.div key="loading" exit={{ opacity: 0 }} transition={mdMotion.exit}>
+            <CrmDashboardSkeleton />
+          </motion.div>
+        ) : state === "error" ? (
+          <motion.div key="error" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={mdMotion.enter}>
+            <Surface padding="lg" className="rounded-[var(--md-radius-xl)]" role="alert">
+              <SectionHeader title={t("The CRM dashboard could not be loaded.")} meta={error ?? undefined} />
+              <Button variant="outline" className="mt-4" onClick={() => setReloadKey((key) => key + 1)}><RefreshCw className="size-4" />{t("Retry")}</Button>
             </Surface>
-            <Surface padding="lg" className="rounded-[var(--md-radius-xl)]">
-              <SectionHeader title={t("Recent activity")} meta={t("Your CRM work")} />
-              <div className="mt-4 grid gap-3">
-                {data.activity.length ? data.activity.map((item) => <div key={item.id} className="grid grid-cols-[auto_1fr] gap-3"><span className="mt-1.5 size-2 rounded-full bg-[var(--md-accent)]" /><div><p className="text-[13px] font-medium text-[var(--md-ink)]" dir="auto">{item.subject}</p>{item.summary ? <p className="mt-1 line-clamp-2 text-[12px] text-[var(--md-text)]" dir="auto">{item.summary}</p> : null}<p className="mt-1 text-[11px] text-[var(--md-subtle)]">{dateTime.format(new Date(item.at))}</p></div></div>) : <p className="py-8 text-center text-[12px] text-[var(--md-subtle)]">{t("No assigned CRM activity yet.")}</p>}
-              </div>
-            </Surface>
-          </div>
-        </>
-      ) : null}
+          </motion.div>
+        ) : data ? (
+          <motion.div
+            key="ready"
+            className="flex flex-col gap-[var(--md-page-stack-gap-compact)]"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={mdMotion.enter}
+          >
+            <CrmBand index={0}>
+              <KpiStrip kpis={kpis} columns={6} onSelect={openKpi} />
+            </CrmBand>
+
+            {/* What the pipeline is worth, beside the work that is waiting —
+                the pair a salesperson actually operates from. */}
+            <CrmBand index={1} className="md-crm-lead">
+              <CrmOpportunityValue
+                stages={data.pipeline}
+                totalValue={data.summary.pipelineValue}
+                totalDeals={data.summary.openDeals}
+                currencyCode={data.summary.currencyCode || "GBP"}
+                formatValue={formatMoney}
+                onOpen={() => { window.location.href = "/crm/deals" }}
+              />
+              <CrmFollowUpQueue
+                data={followUpData}
+                onOpen={openFollowUp}
+                renderCreate={renderCreate}
+                onViewAll={() => { window.location.href = "/inbox" }}
+              />
+            </CrmBand>
+
+            {/* Money quietly at risk, where the leads are, and what has just
+                happened — the three supporting reads. */}
+            <CrmBand index={2} className="md-crm-trio">
+              <CrmQuietLeads
+                leads={data.followUps}
+                inactivityDays={crmInactivityDays}
+                formatValue={formatMoney}
+                formatDate={formatShortDate}
+                onOpenLead={openLead}
+                onViewAll={() => { window.location.href = "/crm/leads" }}
+              />
+              <CrmAreaHeatmap areas={data.areas} onOpen={() => { window.location.href = "/crm/accounts" }} />
+              <CrmActivityFeed
+                activity={data.activity}
+                formatDateTime={formatDateTime}
+                onOpen={() => { window.location.href = "/crm/activity" }}
+              />
+            </CrmBand>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
       <FollowUpRecordDialog
         opportunity={createOpportunity}
         kind={createKind}
@@ -1391,12 +1296,15 @@ export function CrmLeadsPage({ navigate }: { navigate: (path: string) => void })
   const [followUpFilter, setFollowUpFilter] = useState("all")
   const [valueFilter, setValueFilter] = useState("all")
   const [dexterOpen, setDexterOpen] = useState(false)
+  const [createLeadOpen, setCreateLeadOpen] = useState(false)
   const [leads, setLeads] = useState<Lead[]>([])
   const [ownerPhotoUrls, setOwnerPhotoUrls] = useState<Map<string, string>>(new Map())
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading")
   const [loadError, setLoadError] = useState<string | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
   const { language, t } = useLanguage()
+
+  useEffect(() => subscribeTopBarAction(topBarActionEvents.createCrmLead, () => setCreateLeadOpen(true)), [])
 
   useEffect(() => {
     let isMounted = true
@@ -1730,15 +1638,8 @@ export function CrmLeadsPage({ navigate }: { navigate: (path: string) => void })
             onOpenLead={openLeadDetail}
             emptyMessage={leads.length ? t("No leads match this view.") : t("No leads have been recorded yet.")}
             ownerPhotoUrls={ownerPhotoUrls}
-            toolbarLeading={(
-              <div className="flex min-w-0 items-center gap-2 px-1.5">
-                <span className="text-[12px] font-medium text-[var(--md-ink)]">{t("Lead register")}</span>
-                <span className="text-[11px] text-[var(--md-subtle)]" data-i18n-skip dir="ltr">{visibleLeads.length}</span>
-              </div>
-            )}
-            toolbarActions={(
-              <div className="flex min-w-0 flex-1 items-center justify-end gap-1.5">
-                <div className="relative min-w-[128px] max-w-[280px] flex-1 sm:min-w-[200px] sm:flex-none">
+            toolbarSearch={(
+              <div className="relative min-w-[128px] max-w-[280px] flex-1 sm:min-w-[200px] sm:flex-none">
                   <Search className="pointer-events-none absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.35} aria-hidden="true" />
                   <Input
                     type="search"
@@ -1754,7 +1655,9 @@ export function CrmLeadsPage({ navigate }: { navigate: (path: string) => void })
                       <X className="size-3.5" strokeWidth={1.4} />
                     </Button>
                   ) : null}
-                </div>
+              </div>
+            )}
+            toolbarFilters={(
                 <Button
                   type="button"
                   variant="ghost"
@@ -1767,7 +1670,6 @@ export function CrmLeadsPage({ navigate }: { navigate: (path: string) => void })
                   <span className="hidden lg:inline">{t("Advanced filters")}</span>
                   {activeAdvancedFilterCount ? <span className="grid min-w-4 place-items-center rounded-full bg-[var(--md-accent-a11)] px-1 text-[10px] font-medium text-[var(--md-accent)]" data-i18n-skip>{activeAdvancedFilterCount}</span> : null}
                 </Button>
-              </div>
             )}
             emptyState={leads.length ? (
               <div className="mx-auto grid max-w-sm place-items-center py-3 text-center">
@@ -1798,6 +1700,13 @@ export function CrmLeadsPage({ navigate }: { navigate: (path: string) => void })
           />
         </>
       ) : null}
+      <FollowUpRecordDialog
+        opportunity={null}
+        kind="lead"
+        open={createLeadOpen}
+        onClose={() => setCreateLeadOpen(false)}
+        onCreated={() => setReloadToken((token) => token + 1)}
+      />
     </DexterDockedPage>
   )
 }
@@ -1887,6 +1796,11 @@ export function CrmLeadDetailPage({
       toast.error(cause instanceof Error ? cause.message : t("Marketing consent could not be updated."))
       throw cause
     }
+  }
+
+  async function patchLead(change: UpdateLeadInput) {
+    const summary = await updateLead(leadId, change)
+    setLead((current) => current ? { ...current, ...summary } : current)
   }
 
   async function changeContactMarketingOptIn(contactId: string, optedIn: boolean) {
@@ -2017,6 +1931,38 @@ export function CrmLeadDetailPage({
         onMarketingOptInChange={changeLeadMarketingOptIn}
         onContactMarketingOptInChange={changeContactMarketingOptIn}
       />
+
+      {/* The panel above reads the lead. This is where it is changed — the same
+          inline fields the account, contact and deal records use, so one record
+          does not behave differently from the next. */}
+      <div className="grid gap-[var(--md-page-stack-gap)] xl:grid-cols-2">
+        <InlineFieldCard title="The lead" directEdit>
+          <InlineField label="Company" value={lead.companyName ?? ""} required onSave={(companyName) => patchLead({ companyName })} />
+          <InlineField label="Contact" value={lead.primaryContactName ?? ""} onSave={(primaryContactName) => patchLead({ primaryContactName: primaryContactName || null })} />
+          <InlineField label="Email" kind="email" placeholder="name@example.com" value={lead.primaryContactEmail ?? ""} onSave={(primaryContactEmail) => patchLead({ primaryContactEmail: primaryContactEmail || null })} />
+          <InlineField label="Country" value={lead.countryCode ?? ""} placeholder="GB" hint="Two-letter country code" onSave={(countryCode) => patchLead({ countryCode: countryCode || null })} />
+          <InlineField label="Owner" value={lead.ownerName ?? ""} readOnly />
+          <InlineField label="Status" value={lead.statusName ?? ""} readOnly />
+        </InlineFieldCard>
+
+        <InlineFieldCard title="What they want" directEdit>
+          <InlineField label="Service" value={lead.serviceInterest ?? ""} onSave={(serviceInterest) => patchLead({ serviceInterest: serviceInterest || null })} />
+          <InlineField label="Trade lane" value={lead.tradeLane ?? ""} onSave={(tradeLane) => patchLead({ tradeLane: tradeLane || null })} />
+          <InlineField
+            label="Estimated value"
+            kind="number"
+            value={lead.valueAmount == null ? "" : String(lead.valueAmount)}
+            onSave={(value) => patchLead({ valueAmount: value === "" ? null : Number(value) })}
+          />
+          <InlineField label="Currency" value={lead.valueCurrencyCode ?? ""} placeholder="GBP" hint="Three-letter currency code" onSave={(valueCurrencyCode) => patchLead({ valueCurrencyCode: valueCurrencyCode || null })} />
+          <InlineField
+            label="Next follow-up"
+            kind="date"
+            value={lead.nextFollowUpAt ? lead.nextFollowUpAt.slice(0, 10) : ""}
+            onSave={(nextFollowUpAt) => patchLead({ nextFollowUpAt: nextFollowUpAt || null })}
+          />
+        </InlineFieldCard>
+      </div>
     </div>
   )
 }
@@ -2110,6 +2056,13 @@ export function CrmListsPage({ navigate }: { navigate: (path: string) => void })
 
 export function CrmListDetailPage({ navigate, listId }: { navigate: (path: string) => void; listId: string }) {
   const list = crmEmailLists.find((item) => item.id === listId) ?? crmEmailLists[0]
+  const memberColumns = useMemo<DataTableColumn<(typeof list.members)[number]>[]>(() => [
+    { id: "company", label: "Company", width: 190, minWidth: 150, kind: "identity", cell: (member) => <span className="font-medium text-[var(--md-ink)]">{member[0]}</span> },
+    { id: "contact", label: "Contact", width: 160, minWidth: 128, kind: "identity", cell: (member) => <span className="text-[var(--md-text)]">{member[1]}</span> },
+    { id: "email", label: "Email", width: 230, minWidth: 190, kind: "text", cellTitle: (member) => member[2], cell: (member) => <span data-i18n-skip dir="ltr" className="block truncate text-[var(--md-text)]">{member[2]}</span> },
+    { id: "status", label: "Status", width: 120, minWidth: 104, kind: "status", cell: (member) => <StatusPill kind="status" tone={member[3] === "Dormant" ? "amber" : member[3] === "Lead" || member[3] === "Prospect" ? "blue" : "green"}>{member[3]}</StatusPill> },
+    { id: "lastEngagement", label: "Last engagement", width: 160, minWidth: 132, kind: "date", cell: (member) => <span className="text-[var(--md-text)]">{member[4]}</span> },
+  ], [list.members])
 
   return (
     <div className="md-page md-page-stack">
@@ -2144,32 +2097,9 @@ export function CrmListDetailPage({ navigate, listId }: { navigate: (path: strin
       <div className="md-panel-grid 2xl:grid-cols-[minmax(0,1fr)_360px]">
         <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
           <div className="px-5 py-4">
-            <SectionHeader title="Members" meta="people currently included in this audience" />
+            <SectionHeader title="Members" meta="people currently included in this audience" metaPlacement="responsive-inline" />
           </div>
-          <div className="overflow-x-auto px-5 pb-5">
-            <Table className="min-w-[820px]">
-              <TableHeader>
-                <TableRow className="border-[rgba(11,20,19,0.05)] hover:bg-transparent">
-                  <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Company</TableHead>
-                  <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Contact</TableHead>
-                  <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Email</TableHead>
-                  <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Status</TableHead>
-                  <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Last engagement</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {list.members.map(([company, contact, email, status, lastEngagement]) => (
-                  <TableRow key={`${company}-${email}`} className="h-[64px] border-[rgba(11,20,19,0.04)] hover:bg-white/35">
-                    <TableCell className="text-[13px] font-medium text-[var(--md-ink)]">{company}</TableCell>
-                    <TableCell className="text-[13px] text-[var(--md-text)]">{contact}</TableCell>
-                    <TableCell className="text-[13px] text-[var(--md-text)]" data-i18n-skip dir="ltr">{email}</TableCell>
-                    <TableCell><StatusPill tone={status === "Dormant" ? "amber" : status === "Lead" || status === "Prospect" ? "blue" : "green"}>{status}</StatusPill></TableCell>
-                    <TableCell className="text-[13px] text-[var(--md-text)]">{lastEngagement}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+          <div className="px-5 pb-5"><DataTable ariaLabel="List members" columnsButtonLabel="Manage list member columns" columns={memberColumns} rows={list.members} getRowKey={(member) => `${member[0]}-${member[2]}`} storageKey={`crm-list-members-${list.id}`} minimumWidth={860} className="rounded-[var(--md-radius-lg)]" /></div>
         </Surface>
 
         <div className="md-panel-column">
@@ -2806,75 +2736,23 @@ function RecentBroadcastsPanel({
 }
 
 function BroadcastsView({ navigate }: { navigate: (path: string) => void }) {
+  const columns = useMemo<DataTableColumn<(typeof crmEmailCampaigns)[number]>[]>(() => [
+    { id: "name", label: "Broadcast", width: 220, minWidth: 180, kind: "identity", sortValue: (broadcast) => broadcast.name, cell: (broadcast) => <span className="font-medium text-[var(--md-ink)]">{broadcast.name}</span> },
+    { id: "type", label: "Type", width: 110, minWidth: 92, kind: "attribute", cell: (broadcast) => <StatusPill kind="attribute" tone="blue">{broadcast.type}</StatusPill> },
+    { id: "audience", label: "List", width: 180, minWidth: 150, kind: "attribute", cell: (broadcast) => <span className="text-[var(--md-text)]">{broadcast.audience}</span> },
+    { id: "status", label: "Status", width: 120, minWidth: 104, kind: "status", cell: (broadcast) => <StatusPill kind="status" tone={broadcast.tone}>{broadcast.status}</StatusPill> },
+    { id: "when", label: "Send time", width: 160, minWidth: 132, kind: "date", cell: (broadcast) => <span className="text-[var(--md-text)]">{broadcast.when}</span> },
+    { id: "open", label: "Open", width: 88, minWidth: 74, kind: "number", cell: (broadcast) => <span className="font-medium text-[var(--md-ink)]">{broadcast.open}</span> },
+    { id: "click", label: "CTR", width: 88, minWidth: 74, kind: "number", cell: (broadcast) => <span className="font-medium text-[var(--md-ink)]">{broadcast.click}</span> },
+    { id: "actions", label: "Actions", width: 92, minWidth: 92, kind: "actions", canHide: false, canPin: false, cell: (broadcast) => <div className="flex justify-end gap-1"><Button type="button" variant="ghost" size="sm" className="h-8 rounded-[var(--md-radius-sm)] bg-[var(--md-surface-tint)] px-2 text-[11px]" onClick={(event) => { event.stopPropagation(); navigate(getCrmEmailCampaignPath(broadcast, "stats")) }}><ChartNoAxesCombined className="size-3.5" strokeWidth={1.4} />Stats</Button><Button type="button" variant="ghost" size="icon" aria-label={`Edit ${broadcast.name}`} className="size-8 rounded-[var(--md-radius-sm)] opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100" onClick={(event) => { event.stopPropagation(); navigate(getCrmEmailCampaignPath(broadcast, "edit")) }}><PenLine strokeWidth={1.4} /></Button></div> },
+  ], [navigate])
   return (
     <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
       <div className="flex flex-wrap items-start justify-between gap-3 px-5 py-5">
-        <SectionHeader title="Broadcasts" meta="scheduled, sent, and draft email sends" />
+        <SectionHeader title="Broadcasts" meta="scheduled, sent, and draft email sends" metaPlacement="responsive-inline" className="min-w-0 flex-1" />
         <p className="text-[12px] font-medium text-[var(--md-text)]">Average CTR 16.4% · open rate 50.6%</p>
       </div>
-      <div className="overflow-x-auto px-5 pb-5">
-        <Table className="min-w-[1040px]">
-          <TableHeader>
-            <TableRow className="border-[rgba(11,20,19,0.05)] hover:bg-transparent">
-              <TableHead>Broadcast</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>List</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Send time</TableHead>
-              <TableHead>Open</TableHead>
-              <TableHead>CTR</TableHead>
-              <TableHead className="w-[92px] text-end">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {crmEmailCampaigns.map((broadcast) => (
-              <TableRow
-                key={broadcast.id}
-                className="h-[68px] cursor-pointer border-[rgba(11,20,19,0.04)] hover:bg-[var(--md-surface-tint)]"
-                onClick={() => navigate(getCrmEmailCampaignPath(broadcast, "stats"))}
-              >
-                <TableCell className="font-medium text-[var(--md-ink)]">{broadcast.name}</TableCell>
-                <TableCell className="text-[var(--md-text)]">{broadcast.type}</TableCell>
-                <TableCell className="text-[var(--md-text)]">{broadcast.audience}</TableCell>
-                <TableCell><StatusPill tone={broadcast.tone}>{broadcast.status}</StatusPill></TableCell>
-                <TableCell className="text-[var(--md-text)]">{broadcast.when}</TableCell>
-                <TableCell className="font-medium text-[var(--md-ink)] tabular-nums">{broadcast.open}</TableCell>
-                <TableCell className="font-medium text-[var(--md-ink)] tabular-nums">{broadcast.click}</TableCell>
-                <TableCell>
-                  <div className="flex justify-end gap-1">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`See statistics for ${broadcast.name}`}
-                      className="size-8 rounded-[var(--md-radius-sm)] bg-[var(--md-surface-tint)]"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        navigate(getCrmEmailCampaignPath(broadcast, "stats"))
-                      }}
-                    >
-                      <ChartNoAxesCombined strokeWidth={1.4} />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`Edit ${broadcast.name}`}
-                      className="size-8 rounded-[var(--md-radius-sm)] bg-[var(--md-surface-tint)]"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        navigate(getCrmEmailCampaignPath(broadcast, "edit"))
-                      }}
-                    >
-                      <PenLine strokeWidth={1.4} />
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+      <div className="px-5 pb-5"><DataTable ariaLabel="Broadcasts" columnsButtonLabel="Manage broadcast columns" columns={columns} rows={crmEmailCampaigns} getRowKey={(broadcast) => broadcast.id} storageKey="crm-email-broadcasts" minimumWidth={1080} rowClassName="group h-[68px]" onRowClick={(broadcast) => navigate(getCrmEmailCampaignPath(broadcast, "stats"))} /></div>
     </Surface>
   )
 }
@@ -3006,77 +2884,22 @@ function EmailsView() {
       return matchesQuery && matchesStatus
     })
   }, [query, status])
+  const columns = useMemo<DataTableColumn<(typeof emailMarketingContacts)[number]>[]>(() => [
+    { id: "email", label: "Email", width: 240, minWidth: 190, kind: "identity", sortValue: (contact) => contact.email, cellTitle: (contact) => contact.email, cell: (contact) => <span className="block truncate font-medium text-[var(--md-ink)]" data-i18n-skip dir="ltr"><bdi>{contact.email}</bdi></span> },
+    { id: "name", label: "Contact", width: 160, minWidth: 128, kind: "identity", cell: (contact) => <span className="text-[var(--md-text)]">{contact.name}</span> },
+    { id: "company", label: "Company", width: 180, minWidth: 140, kind: "identity", cell: (contact) => <span className="text-[var(--md-text)]">{contact.company}</span> },
+    { id: "status", label: "Status", width: 128, minWidth: 112, kind: "status", cell: (contact) => <StatusPill kind="status" tone={contactStatusTone(contact.status)} className={`md-email-status-pill md-email-status-pill--${contact.status.toLowerCase()} !h-[26px] !w-[104px] !justify-center !rounded-[var(--md-radius-lg)] !px-2.5 !text-center !text-[12.5px] !font-medium !leading-none`}>{t(contact.status)}</StatusPill> },
+    { id: "source", label: "Source", width: 130, minWidth: 104, kind: "attribute", cell: (contact) => <StatusPill kind="attribute" tone="teal">{contact.source}</StatusPill> },
+    { id: "lists", label: "Lists", width: 180, minWidth: 140, kind: "attribute", cellTitle: (contact) => contact.lists, cell: (contact) => <span className="block truncate text-[var(--md-text)]">{contact.lists}</span> },
+    { id: "lastActivity", label: "Last activity", width: 160, minWidth: 132, kind: "date", cell: (contact) => <span className="text-[var(--md-text)]">{contact.lastActivity}</span> },
+  ], [t])
 
   return (
     <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-      <div className="flex flex-col gap-4 px-5 py-5 lg:flex-row lg:items-end lg:justify-between">
-        <SectionHeader title="Emails" meta={`${emailMarketingContacts.length} contact records with consent and delivery status`} />
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <label className="relative min-w-0 sm:w-[280px]">
-            <span className="sr-only">Search emails</span>
-            <Search className="pointer-events-none absolute inset-inline-start-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.4} />
-            <Input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              className="h-10 bg-[var(--md-field-bg)] ps-10 text-base sm:text-[13px]"
-              placeholder="Search email, contact, company, or list…"
-            />
-          </label>
-          <Select value={status} onValueChange={(value) => setStatus(value as typeof status)}>
-            <SelectTrigger className="h-10 min-w-[168px] bg-[var(--md-field-bg)] text-base sm:text-[13px]">
-              <ListFilter className="size-4" strokeWidth={1.4} />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{t("All statuses")}</SelectItem>
-              <SelectItem value="Subscribed">{t("Subscribed")}</SelectItem>
-              <SelectItem value="Unsubscribed">{t("Unsubscribed")}</SelectItem>
-              <SelectItem value="Bounced">{t("Bounced")}</SelectItem>
-              <SelectItem value="Pending">{t("Pending")}</SelectItem>
-              <SelectItem value="Replied">{t("Replied")}</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+      <div className="px-5 py-5">
+        <SectionHeader title="Emails" meta={`${emailMarketingContacts.length} contact records with consent and delivery status`} metaPlacement="responsive-inline" />
       </div>
-
-      {filteredContacts.length ? (
-        <div className="overflow-x-auto px-5 pb-5">
-          <Table className="min-w-[1080px]">
-            <TableHeader>
-              <TableRow className="border-[rgba(11,20,19,0.05)] hover:bg-transparent">
-                <TableHead>Email</TableHead>
-                <TableHead>Contact</TableHead>
-                <TableHead>Company</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Source</TableHead>
-                <TableHead>Lists</TableHead>
-                <TableHead>Last activity</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredContacts.map((contact) => (
-                <TableRow key={contact.email} className="h-[64px] border-[rgba(11,20,19,0.04)] hover:bg-[var(--md-surface-tint)]">
-                  <TableCell className="font-medium text-[var(--md-ink)]" data-i18n-skip dir="ltr"><bdi>{contact.email}</bdi></TableCell>
-                  <TableCell className="text-[var(--md-text)]">{contact.name}</TableCell>
-                  <TableCell className="text-[var(--md-text)]">{contact.company}</TableCell>
-                  <TableCell>
-                    <StatusPill
-                      tone={contactStatusTone(contact.status)}
-                      className={`md-email-status-pill md-email-status-pill--${contact.status.toLowerCase()} !h-[26px] !w-[104px] !justify-center !rounded-[var(--md-radius-lg)] !px-2.5 !text-center !text-[12.5px] !font-medium !leading-none`}
-                    >
-                      {t(contact.status)}
-                    </StatusPill>
-                  </TableCell>
-                  <TableCell className="text-[var(--md-text)]">{contact.source}</TableCell>
-                  <TableCell className="text-[var(--md-text)]">{contact.lists}</TableCell>
-                  <TableCell className="text-[var(--md-text)]">{contact.lastActivity}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      ) : (
-        <div className="mx-5 mb-5 grid min-h-[220px] place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-6 text-center">
+      <div className="px-5 pb-5"><DataTable ariaLabel="Marketing emails" columnsButtonLabel="Manage email columns" columns={columns} rows={filteredContacts} getRowKey={(contact) => contact.email} storageKey="crm-marketing-emails" minimumWidth={1120} toolbarSearch={<label className="relative min-w-0 sm:w-[280px]"><span className="sr-only">Search emails</span><Search className="pointer-events-none absolute inset-inline-start-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.4} /><Input value={query} onChange={(event) => setQuery(event.target.value)} className="h-8 bg-[var(--md-field-bg)] ps-9 text-base sm:text-[12px]" placeholder="Search email, contact, company, or list…" /></label>} toolbarFilters={<Select value={status} onValueChange={(value) => setStatus(value as typeof status)}><SelectTrigger className="h-8 min-w-[156px] bg-[var(--md-field-bg)] text-base sm:text-[12px]"><ListFilter className="size-3.5" strokeWidth={1.4} /><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{t("All statuses")}</SelectItem><SelectItem value="Subscribed">{t("Subscribed")}</SelectItem><SelectItem value="Unsubscribed">{t("Unsubscribed")}</SelectItem><SelectItem value="Bounced">{t("Bounced")}</SelectItem><SelectItem value="Pending">{t("Pending")}</SelectItem><SelectItem value="Replied">{t("Replied")}</SelectItem></SelectContent></Select>} emptyState={<div className="grid min-h-[180px] place-items-center p-6 text-center">
           <div>
             <Search className="mx-auto size-5 text-[var(--md-subtle)]" strokeWidth={1.4} />
             <h3 className="mt-3 text-[14px] font-medium text-[var(--md-ink)]">No matching emails</h3>
@@ -3093,8 +2916,7 @@ function EmailsView() {
               Clear filters
             </Button>
           </div>
-        </div>
-      )}
+        </div>} /></div>
     </Surface>
   )
 }
@@ -3231,6 +3053,17 @@ export function CrmEmailsPage({ navigate }: { navigate: (path: string) => void }
 
 export function CrmEmailStatsPage({ navigate, campaignId }: { navigate: (path: string) => void; campaignId: string }) {
   const campaign = crmEmailCampaigns.find((item) => item.id === campaignId) ?? crmEmailCampaigns[0]
+  type SignalRow = (typeof campaign.engaged)[number]
+  const engagedColumns = useMemo<DataTableColumn<SignalRow>[]>(() => [
+    { id: "contact", label: "Contact", width: 190, minWidth: 150, kind: "identity", cell: (row) => <span className="font-medium text-[var(--md-ink)]">{row[0]}</span> },
+    { id: "company", label: "Company", width: 180, minWidth: 140, kind: "identity", cell: (row) => <span className="text-[var(--md-text)]">{row[1]}</span> },
+    { id: "signal", label: "Signal", width: 250, minWidth: 190, kind: "attribute", cell: (row) => <StatusPill kind="attribute" tone="green">{row[2]}</StatusPill> },
+  ], [])
+  const unsubscribedColumns = useMemo<DataTableColumn<(typeof campaign.unsubscribed)[number]>[]>(() => [
+    { id: "contact", label: "Contact", width: 190, minWidth: 150, kind: "identity", cell: (row) => <span className="font-medium text-[var(--md-ink)]">{row[0]}</span> },
+    { id: "company", label: "Company", width: 180, minWidth: 140, kind: "identity", cell: (row) => <span className="text-[var(--md-text)]">{row[1]}</span> },
+    { id: "reason", label: "Reason", width: 250, minWidth: 190, kind: "long-text", cellTitle: (row) => row[2], cell: (row) => <span className="block truncate text-[var(--md-text)]">{row[2]}</span> },
+  ], [])
 
   return (
     <div className="md-page md-page-stack">
@@ -3278,58 +3111,16 @@ export function CrmEmailStatsPage({ navigate, campaignId }: { navigate: (path: s
       <div className="grid gap-[var(--md-page-stack-gap)] xl:grid-cols-2">
         <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
           <div className="px-5 py-4">
-            <SectionHeader title="Who's up" meta="contacts showing buying or engagement signals" />
+            <SectionHeader title="Who's up" meta="contacts showing buying or engagement signals" metaPlacement="responsive-inline" />
           </div>
-          <div className="overflow-x-auto px-5 pb-5">
-            <Table className="min-w-[620px]">
-              <TableHeader>
-                <TableRow className="border-[rgba(11,20,19,0.05)] hover:bg-transparent">
-                  <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Contact</TableHead>
-                  <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Company</TableHead>
-                  <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Signal</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {campaign.engaged.map(([name, company, signal]) => (
-                  <TableRow key={`${name}-${signal}`} className="h-[64px] border-[rgba(11,20,19,0.04)] hover:bg-white/35">
-                    <TableCell className="text-[13px] font-medium text-[var(--md-ink)]">{name}</TableCell>
-                    <TableCell className="text-[13px] text-[var(--md-text)]">{company}</TableCell>
-                    <TableCell className="text-[13px] text-[var(--md-text)]">{signal}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+          <div className="px-5 pb-5"><DataTable ariaLabel="Engaged contacts" columnsButtonLabel="Manage engagement columns" columns={engagedColumns} rows={campaign.engaged} getRowKey={(row) => `${row[0]}-${row[2]}`} minimumWidth={620} showToolbar={false} showColumnManager={false} className="rounded-[var(--md-radius-lg)]" /></div>
         </Surface>
 
         <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
           <div className="px-5 py-4">
-            <SectionHeader title="Unsubscribed" meta="contacts removed from future marketing sends" />
+            <SectionHeader title="Unsubscribed" meta="contacts removed from future marketing sends" metaPlacement="responsive-inline" />
           </div>
-          <div className="overflow-x-auto px-5 pb-5">
-            {campaign.unsubscribed.length ? (
-              <Table className="min-w-[620px]">
-                <TableHeader>
-                  <TableRow className="border-[rgba(11,20,19,0.05)] hover:bg-transparent">
-                    <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Contact</TableHead>
-                    <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Company</TableHead>
-                    <TableHead className="text-[12px] font-medium text-[var(--md-text)]">Reason</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {campaign.unsubscribed.map(([name, company, reason]) => (
-                    <TableRow key={`${name}-${reason}`} className="h-[64px] border-[rgba(11,20,19,0.04)] hover:bg-white/35">
-                      <TableCell className="text-[13px] font-medium text-[var(--md-ink)]">{name}</TableCell>
-                      <TableCell className="text-[13px] text-[var(--md-text)]">{company}</TableCell>
-                      <TableCell className="text-[13px] text-[var(--md-text)]">{reason}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            ) : (
-              <p className="rounded-[var(--md-radius-lg)] bg-white/38 p-4 text-[13px] text-[var(--md-text)] shadow-[var(--md-shadow-line)]">No unsubscribes recorded yet.</p>
-            )}
-          </div>
+          <div className="px-5 pb-5"><DataTable ariaLabel="Unsubscribed contacts" columnsButtonLabel="Manage unsubscribe columns" columns={unsubscribedColumns} rows={campaign.unsubscribed} getRowKey={(row) => `${row[0]}-${row[2]}`} minimumWidth={620} showToolbar={false} showColumnManager={false} className="rounded-[var(--md-radius-lg)]" emptyState={<p className="text-[13px] text-[var(--md-text)]">No unsubscribes recorded yet.</p>} /></div>
         </Surface>
       </div>
     </div>
@@ -3429,150 +3220,7 @@ export function CrmEmailEditPage({ navigate, campaignId }: { navigate: (path: st
   )
 }
 
-export function CrmMarketingPage() {
-  const [openedFolderId, setOpenedFolderId] = useState<string | null>(null)
-  const openedFolder = openedFolderId ? crmMarketingFolders.find((folder) => folder.id === openedFolderId) ?? null : null
-  const openedFolderAssets = openedFolder ? crmMarketingAssets.filter((asset) => asset.folderId === openedFolder.id) : []
-
-  return (
-    <div className="md-page md-page-stack">
-      <CrmPageHeader
-        title="Marketing"
-        summary={
-          <>
-            A shared drive for brand logos, graphics, templates, and collateral used across emails, reports, and customer follow-up.
-          </>
-        }
-        meta={`${crmMarketingFolders.length} folders · ${crmMarketingAssetCount} assets · connected to email templates and CRM`}
-        action={
-          <>
-            <Button
-              variant="ghost"
-              className="h-10 rounded-[var(--md-radius-lg)] bg-white/55 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/78"
-              onClick={() => toast.success("Asset upload opened")}
-            >
-              <UploadCloud data-icon="inline-start" strokeWidth={1.2} />
-              Upload asset
-            </Button>
-            <PrimaryActionButton onClick={() => toast.success("Folder draft created")}>New folder</PrimaryActionButton>
-          </>
-        }
-      />
-
-      <div className="md-panel-grid 2xl:grid-cols-[minmax(0,1fr)_360px]">
-        <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-          {!openedFolder ? (
-            <>
-              <div className="px-5 py-4">
-                <SectionHeader title="Folders" meta="logos, graphics, templates, and collateral" />
-              </div>
-              <div className="grid gap-3 px-5 pb-5 md:grid-cols-2 xl:grid-cols-4">
-                {crmMarketingFolders.map((folder) => (
-                  <CrmAssetFolderCard
-                    key={folder.id}
-                    folder={folder}
-                    selected={false}
-                    onSelect={(nextFolder) => setOpenedFolderId(nextFolder.id)}
-                  />
-                ))}
-              </div>
-            </>
-          ) : (
-            <div className="px-5 py-4">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div className="min-w-0">
-                  <div className="mb-4 flex flex-wrap items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/80"
-                      onClick={() => setOpenedFolderId(null)}
-                    >
-                      <ArrowLeft data-icon="inline-start" strokeWidth={1.2} />
-                      Marketing drive
-                    </Button>
-                    <span className="text-[12px] font-medium text-[var(--md-subtle)]">/</span>
-                    <span className="text-[13px] font-medium text-[var(--md-ink)]">{openedFolder.name}</span>
-                  </div>
-                  <SectionHeader
-                    title={openedFolder.name}
-                    meta={`${openedFolder.itemCount} stored assets · ${openedFolder.owner} owns this folder · ${openedFolder.updated}`}
-                  />
-                </div>
-                <Button
-                  variant="ghost"
-                  className="h-10 rounded-[var(--md-radius-lg)] bg-white/55 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/78"
-                  onClick={() => toast.success(`Upload opened for ${openedFolder.name}`)}
-                >
-                  <UploadCloud data-icon="inline-start" strokeWidth={1.2} />
-                  Upload asset
-                </Button>
-              </div>
-
-              <div className="mt-5 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-3 shadow-[var(--md-shadow-line)]">
-                <div className="hidden grid-cols-[minmax(0,1fr)_96px_108px_120px] gap-3 px-3 pb-2 text-[11px] font-medium uppercase tracking-normal text-[var(--md-subtle)] sm:grid">
-                  <span>Name</span>
-                  <span>Type</span>
-                  <span>Size</span>
-                  <span className="text-right">Updated</span>
-                </div>
-                <div className="grid gap-1 rounded-[var(--md-radius-lg)] bg-white/62 p-1 shadow-[var(--md-shadow-line)]">
-                  {openedFolderAssets.map((asset) => (
-                    <CrmAssetRow
-                      key={asset.id}
-                      asset={asset}
-                      onOpen={(selectedAsset) => toast.success(`${selectedAsset.name} opened`)}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-        </Surface>
-
-        <Surface padding="lg" className="rounded-[var(--md-radius-xl)]">
-          <SectionHeader title="Drive summary" meta="library health" />
-          <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-gap-md)]">
-            {crmMarketingStorageStats.map(([label, value]) => (
-              <div key={label} className="grid grid-cols-[1fr_auto] gap-4 shadow-[inset_0_1px_0_rgba(11,20,19,0.06)] py-3 first:shadow-none">
-                <span className="text-[13px] font-medium text-[var(--md-ink)]">{label}</span>
-                <span className="max-w-[170px] text-right text-[12px] leading-5 text-[var(--md-text)]" data-i18n-skip={label === "Storage used" ? true : undefined} dir={label === "Storage used" ? "ltr" : undefined}>{value}</span>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-6 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-4 shadow-[var(--md-shadow-line)]">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-[13px] font-medium text-[var(--md-ink)]">Recent activity</p>
-                <p className="mt-1 text-[12px] text-[var(--md-text)]">Latest asset changes</p>
-              </div>
-              <StatusPill tone="green">Synced</StatusPill>
-            </div>
-            <div className="mt-4 grid gap-3">
-              {crmMarketingActivity.map(([time, activity]) => (
-                <div key={activity} className="grid grid-cols-[72px_1fr] gap-3 text-[12px]">
-                  <span className="text-[var(--md-subtle)]">{time}</span>
-                  <span className="leading-5 text-[var(--md-text)]">{activity}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="mt-4 rounded-[var(--md-radius-lg)] bg-white/50 p-4 shadow-[var(--md-shadow-line)]">
-            <p className="text-[13px] font-medium text-[var(--md-ink)]">Connected surfaces</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {["Emails", "Reports", "CRM lists", "Customer decks"].map((surface) => (
-                <StatusPill key={surface} tone="neutral">{surface}</StatusPill>
-              ))}
-            </div>
-          </div>
-        </Surface>
-      </div>
-    </div>
-  )
-}
-
-export function CrmDealsPage({ currentUser }: { currentUser?: AuthUserSummary | null }) {
+export function CrmDealsPage({ currentUser, navigate }: { currentUser?: AuthUserSummary | null; navigate?: (path: string) => void }) {
   const { t } = useLanguage()
   const [selectedDeal, setSelectedDeal] = useState<CrmDeal | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
@@ -3627,12 +3275,14 @@ export function CrmDealsPage({ currentUser }: { currentUser?: AuthUserSummary | 
       .flatMap((stage) => stage.deals)
       .find((deal) => deal.id === requestedDealId)
     if (requestedDeal) {
+      if (navigate) { navigate(`/crm/deals/${encodeURIComponent(requestedDeal.id)}`); return }
       setSelectedDeal(requestedDeal)
       setDetailOpen(true)
     }
-  }, [dealPipelines, loading])
+  }, [dealPipelines, loading, navigate])
 
   function openDealDetail(deal: CrmDeal) {
+    if (navigate) { navigate(`/crm/deals/${encodeURIComponent(deal.id)}`); return }
     setSelectedDeal(deal)
     setDetailOpen(true)
   }
@@ -3705,10 +3355,7 @@ export function CrmDealsPage({ currentUser }: { currentUser?: AuthUserSummary | 
             title: t("Deals"),
             instruction: t("Drag cards between stages"),
             actions: (
-              <>
-                <DexterActionPill onClick={() => setDexterOpen(true)} />
-                <PrimaryActionButton onClick={() => toast.success(t("Deal draft created"))}>{t("New deal")}</PrimaryActionButton>
-              </>
+              <DexterActionPill onClick={() => setDexterOpen(true)} />
             ),
           }}
           selectedDealId={detailOpen && selectedDeal ? selectedDeal.id : undefined}

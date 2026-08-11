@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { ArrowDown, ArrowUp, Check, ImageUp, Info, QrCode, Trash2, TriangleAlert } from "lucide-react"
+import { ArrowDown, ArrowUp, Check, ImageUp, Info, QrCode, Trash2, TriangleAlert } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"

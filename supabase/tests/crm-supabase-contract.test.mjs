@@ -55,3 +55,14 @@ test("the Supabase functions fail closed and settings writes retain permission c
   assert.match(settingsMigration, /revoke all on function public\.multideck_crm_mutate_pipeline_settings.*public, anon/s)
   assert.match(settingsMigration, /grant execute on function public\.multideck_crm_mutate_pipeline_settings.*authenticated/s)
 })
+
+test("Drive subfolders validate the parent without recursively invoking folder RLS", () => {
+  const driveMigration = read(
+    "supabase/migrations/20260807150000_fix_crm_drive_subfolder_rls.sql",
+  )
+
+  assert.match(driveMigration, /create or replace function public\.crm_drive_parent_belongs_to_current_company/)
+  assert.match(driveMigration, /security definer/)
+  assert.match(driveMigration, /parent\."Company_ID" = public\.app_current_company_id\(\)/)
+  assert.match(driveMigration, /public\.crm_drive_parent_belongs_to_current_company\("DriveFolder_ParentID"\)/)
+})

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
 import type { Provider } from "@supabase/supabase-js"
-import { Check, KeyRound, Loader2, MailCheck } from "lucide-react"
+import { Check, KeyRound, Loader2, MailCheck } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import appleLogo from "@/assets/auth/apple.svg"

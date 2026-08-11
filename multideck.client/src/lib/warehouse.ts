@@ -1,4 +1,4 @@
-import { ArrowDownToLine, ArrowUpFromLine, Boxes, Clock3, PackageCheck, ShieldAlert, type LucideIcon } from "lucide-react"
+import { AlarmClock, ArrowDownToLine, ArrowUpFromLine, Boxes, Clock3, PackageCheck, ShieldAlert, type LucideIcon } from "@/components/icons/hugeicons"
 import type { StatusTone } from "@/data/multideck-data"
 import type {
   WarehouseCalendarCustomer,
@@ -8,12 +8,22 @@ import type {
   WarehouseOrder,
 } from "@/components/multideck/warehouse-components"
 import { getSupabaseSession, supabaseFunctionsUrl, supabasePublicApiKey } from "@/lib/supabase"
+import { invalidateWarehouseResources, readCachedWarehouseResource } from "@/lib/warehouse-read-cache"
 
 export type WarehouseHeaderAction = {
   label: string
   value: string
   icon: LucideIcon
   tone: StatusTone
+  /** Where the chip takes the operator. Undefined leaves it a plain readout. */
+  route?: string
+}
+
+/** The screen that answers each header figure, so a chip is a shortcut rather than a label. */
+const warehouseMetricRoutes: Record<string, string | undefined> = {
+  "Ready to receive": "/warehouse/goods-in",
+  "Ready to dispatch": "/warehouse/goods-out",
+  "Stock holds": "/warehouse/inventory",
 }
 
 export type WarehouseWorkspaceData = {
@@ -189,37 +199,50 @@ async function requestWarehouse<T>(path: string, method: string, body?: unknown)
     throw new WarehouseApiError("Sign in again to manage the warehouse.")
   }
 
-  const headers = new Headers({
-    Authorization: `Bearer ${session.access_token}`,
-    apikey: supabasePublicApiKey,
-  })
-  if (body !== undefined) headers.set("Content-Type", "application/json")
+  const scope = warehouseReadScope(session.user.id)
+  const load = async () => {
+    const headers = new Headers({
+      Authorization: `Bearer ${session.access_token}`,
+      apikey: supabasePublicApiKey,
+    })
+    if (body !== undefined) headers.set("Content-Type", "application/json")
 
-  const response = await fetch(warehouseEdgeUrl(path), {
-    method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-  })
+    const response = await fetch(warehouseEdgeUrl(path), {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
 
-  if (!response.ok) {
-    const fallback = `${response.status} ${response.statusText}`.trim()
-    try {
-      const problem = await response.json()
-      const fieldErrors = (problem.errors ?? {}) as Record<string, string[]>
-      throw new WarehouseApiError(problem.detail || problem.title || problem.message || fallback, fieldErrors)
-    } catch (error) {
-      if (error instanceof WarehouseApiError) throw error
-      throw new WarehouseApiError(fallback)
+    if (!response.ok) {
+      const fallback = `${response.status} ${response.statusText}`.trim()
+      try {
+        const problem = await response.json()
+        const fieldErrors = (problem.errors ?? {}) as Record<string, string[]>
+        throw new WarehouseApiError(problem.detail || problem.title || problem.message || fallback, fieldErrors)
+      } catch (error) {
+        if (error instanceof WarehouseApiError) throw error
+        throw new WarehouseApiError(fallback)
+      }
     }
+
+    if (response.status === 204) return undefined as T
+    return response.json() as Promise<T>
   }
 
-  if (response.status === 204) return undefined as T
-  return response.json() as Promise<T>
+  if (method === "GET") return readCachedWarehouseResource(scope, path, load)
+
+  const result = await load()
+  invalidateWarehouseResources(scope)
+  return result
 }
 
 function warehouseEdgeUrl(functionPath: string) {
   if (!supabaseFunctionsUrl) throw new WarehouseApiError("Warehouse services are not configured for this workspace.")
   return `${supabaseFunctionsUrl}/warehouse${functionPath || "/"}`
+}
+
+function warehouseReadScope(userId: string) {
+  return `${supabaseFunctionsUrl}:${userId}`
 }
 
 function toQuery(params: Record<string, string | boolean | undefined>) {
@@ -339,7 +362,9 @@ export async function importWarehouseItems(input: { customerOrgId: string; facil
     }
   }
 
-  return response.json() as Promise<ImportItemsResult>
+  const result = await response.json() as ImportItemsResult
+  invalidateWarehouseResources(warehouseReadScope(session.user.id))
+  return result
 }
 
 export type WarehouseLocation = {
@@ -785,6 +810,15 @@ export function dispatchOperationalWarehouseOrder(orderId: string, input: Dispat
   return requestWarehouse<WarehouseOperationalOrder>(`/orders/${orderId}/dispatch`, "POST", input)
 }
 
+/**
+ * Moves an order's booked slot. Only the appointment window changes — the date the
+ * customer originally asked for is left alone, because the warehouse moving a slot
+ * must not rewrite the request it was booked against.
+ */
+export function rescheduleOperationalWarehouseOrder(orderId: string, input: { appointmentStartAt: string; appointmentEndAt: string }) {
+  return requestWarehouse<WarehouseOperationalOrder>(`/orders/${orderId}/reschedule`, "POST", input)
+}
+
 export function cancelOperationalWarehouseOrder(orderId: string) {
   return requestWarehouse<WarehouseOperationalOrder>(`/orders/${orderId}/cancel`, "POST")
 }
@@ -827,7 +861,9 @@ export async function uploadWarehouseOrderDocument(orderId: string, file: File, 
       throw new WarehouseApiError(fallback)
     }
   }
-  return response.json() as Promise<WarehouseOrderDocument>
+  const result = await response.json() as WarehouseOrderDocument
+  invalidateWarehouseResources(warehouseReadScope(session.user.id))
+  return result
 }
 
 export async function downloadWarehouseOrderDocument(orderId: string, orderDocument: WarehouseOrderDocument) {
@@ -1008,6 +1044,7 @@ function calendarData(orders: WarehouseOperationalOrder[]): WarehouseWorkspaceDa
       endTime: timeKey(end),
       title: order.customerReference ?? order.orderNumber,
       type: order.typeName ?? titleCaseCode(order.typeCode),
+      direction: order.typeCode,
       customerId: order.customerOrgId,
       tone: warehouseOrderTone(order),
       reference: order.orderNumber,
@@ -1018,6 +1055,12 @@ function calendarData(orders: WarehouseOperationalOrder[]): WarehouseWorkspaceDa
   return { customers, events }
 }
 
+/** The day an order is expected, whether it was booked into a slot or only dated. */
+function orderExpectedDate(order: WarehouseOperationalOrder) {
+  const value = order.appointmentStartAt ?? order.requestedDate
+  return value ? parseWarehouseDate(value) : null
+}
+
 export async function getWarehouseWorkspaceData(locale = "en-GB"): Promise<WarehouseWorkspaceData> {
   const { orders, metrics: snapshotMetrics, movements } = await getWarehouseDashboardSnapshot()
 
@@ -1026,21 +1069,46 @@ export async function getWarehouseWorkspaceData(locale = "en-GB"): Promise<Wareh
   const outboundOrders = openOrders.filter((order) => order.typeCode === "outbound")
   const number = new Intl.NumberFormat(locale, { maximumFractionDigits: 2 })
 
+  const today = new Date()
+  const todayKey = dateKey(today)
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  const bookedToday = openOrders.filter((order) => {
+    const expected = orderExpectedDate(order)
+    return expected ? dateKey(expected) === todayKey : false
+  })
+  // An order whose expected day has already passed and is still open. This is the
+  // one figure on the band an operator is meant to act on before anything else.
+  const pastDue = openOrders.filter((order) => {
+    const expected = orderExpectedDate(order)
+    return expected ? expected < startOfToday : false
+  })
+
+  // Seven distinct figures, deliberately: the earlier row repeated the inbound and
+  // outbound order counts under two names each, which spent two tiles restating a
+  // number the operator had already read.
   const metrics: WarehouseMetric[] = [
-    { label: "SKUs on hand", value: number.format(snapshotMetrics.onHandSkus), detail: "Distinct items with physical stock in the warehouse.", tone: "teal", icon: Boxes },
-    { label: "Available SKUs", value: number.format(snapshotMetrics.availableSkus), detail: "Distinct items currently available for allocation.", tone: "green", icon: PackageCheck },
-    { label: "Open inbound", value: number.format(inboundOrders.length), detail: "Inbound orders with lines still to receive.", tone: "amber", icon: ArrowDownToLine },
-    { label: "Open outbound", value: number.format(outboundOrders.length), detail: "Outbound orders with lines still to dispatch.", tone: "blue", icon: ArrowUpFromLine },
+    { label: "Ready to receive", value: number.format(inboundOrders.length), detail: "Inbound orders with lines still to book in.", tone: inboundOrders.length ? "amber" : "neutral", icon: ArrowDownToLine },
+    { label: "Ready to dispatch", value: number.format(outboundOrders.length), detail: "Outbound orders with lines still to pick and load.", tone: outboundOrders.length ? "blue" : "neutral", icon: ArrowUpFromLine },
+    { label: "Stock holds", value: number.format(snapshotMetrics.heldBalances), detail: "Stock lines held in quarantine, damage or investigation.", tone: snapshotMetrics.heldBalances ? "red" : "teal", icon: ShieldAlert },
+    { label: "Past due", value: number.format(pastDue.length), detail: "Open orders whose expected day has already passed.", tone: pastDue.length ? "red" : "green", icon: AlarmClock },
+    { label: "Booked today", value: number.format(bookedToday.length), detail: "Orders expected on the dock today.", tone: "teal", icon: Clock3 },
+    { label: "SKUs on hand", value: number.format(snapshotMetrics.onHandSkus), detail: "Distinct items with physical stock in the warehouse.", tone: "neutral", icon: Boxes },
+    { label: "Available SKUs", value: number.format(snapshotMetrics.availableSkus), detail: "Distinct items free to allocate to an order.", tone: "green", icon: PackageCheck },
   ]
 
   return {
     dashboard: {
       metrics,
-      headerActions: [
-        { label: "Ready to receive", value: number.format(inboundOrders.length), icon: Clock3, tone: inboundOrders.length ? "amber" : "neutral" },
-        { label: "Ready to dispatch", value: number.format(outboundOrders.length), icon: PackageCheck, tone: outboundOrders.length ? "green" : "neutral" },
-        { label: "Stock holds", value: number.format(snapshotMetrics.heldBalances), icon: ShieldAlert, tone: snapshotMetrics.heldBalances ? "red" : "teal" },
-      ],
+      // The first three of the band, repeated as chips for the screens that have
+      // no room for the full row. One source, so a chip and a tile can never
+      // disagree about the same figure.
+      headerActions: metrics.slice(0, 3).map((metric) => ({
+        label: metric.label,
+        value: metric.value,
+        icon: metric.icon,
+        tone: metric.tone,
+        route: warehouseMetricRoutes[metric.label],
+      })),
       orders: openOrders
         .sort((first, second) => (first.appointmentStartAt ?? first.requestedDate ?? "9999").localeCompare(second.appointmentStartAt ?? second.requestedDate ?? "9999"))
         .map((order) => dashboardOrder(order, locale)),

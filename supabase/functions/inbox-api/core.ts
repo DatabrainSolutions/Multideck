@@ -562,9 +562,97 @@ export function encodeHeaderValue(value: unknown, maximum = 500) {
   return `=?UTF-8?B?${btoa(binary)}?=`
 }
 
+export function internetMessageIds(value: unknown) {
+  const input = cleanString(value, 8_000)
+  if (!input) return []
+  const bracketed = input.match(/<[^<>\s]+>/g) ?? []
+  const candidates = bracketed.length ? bracketed : [input]
+  return [...new Set(candidates.map((candidate) => candidate.trim().toLowerCase()).filter(Boolean))]
+}
+
+export function appendInternetMessageReference(references: unknown, messageId: unknown) {
+  const existing = internetMessageIds(references)
+  const source = internetMessageIds(messageId)[0]
+  return [...new Set([...existing, ...(source ? [source] : [])])].join(" ") || null
+}
+
+export function replyTargetMessageId(
+  headers: Record<string, string>,
+  candidates: Array<{ id: string; internetMessageId: string | null }>,
+) {
+  const candidateByInternetId = new Map(candidates.flatMap((candidate) => (
+    internetMessageIds(candidate.internetMessageId).map((internetId) => [internetId, candidate.id] as const)
+  )))
+  const direct = internetMessageIds(headers["in-reply-to"])
+  for (const internetId of direct) {
+    const candidate = candidateByInternetId.get(internetId)
+    if (candidate) return candidate
+  }
+  const references = internetMessageIds(headers.references).reverse()
+  for (const internetId of references) {
+    const candidate = candidateByInternetId.get(internetId)
+    if (candidate) return candidate
+  }
+  return null
+}
+
+export type DeliveryReportEvidence = {
+  eventType: "delivered" | "bounced"
+  originalMessageId: string
+  statusCode: string | null
+}
+
+/** Some Exchange receipts advertise only multipart/report in Graph metadata;
+ * the exact report type is available only in the raw MIME body. */
+export function deliveryReportNeedsRawMime(headers: Record<string, string>) {
+  const type = cleanString(headers["content-type"], 2_000).toLowerCase()
+  return type.includes("report-type=delivery-status")
+    || type.startsWith("multipart/report")
+    || type.includes("message/delivery-status")
+}
+
+/** Only a person/provider message eligible to represent a recipient response
+ * may advance an outbound email to Replied. Delivery reports and explicit
+ * auto-responses can reference the original Message-ID but are not replies. */
+export function isRecipientReplyMessage(headers: Record<string, string>) {
+  if (deliveryReportNeedsRawMime(headers)) return false
+  const autoSubmitted = cleanString(headers["auto-submitted"], 240).trim().toLowerCase()
+  if (autoSubmitted && autoSubmitted !== "no") return false
+  if (cleanString(headers["x-autoreply"], 240) || cleanString(headers["x-autorespond"], 240)) return false
+  return true
+}
+
+/**
+ * Reads only machine-readable RFC delivery-status evidence. Human-readable
+ * bounce wording is deliberately ignored because it cannot safely identify an
+ * individual outbound message when a conversation contains several sends.
+ */
+export function parseDeliveryStatusReport(
+  contentType: unknown,
+  value: unknown,
+  fallbackOriginalMessageId: unknown = null,
+): DeliveryReportEvidence | null {
+  const type = cleanString(contentType, 2_000).toLowerCase()
+  const payload = cleanString(value, 200_000)
+  if (!payload || (!type.includes("report-type=delivery-status") && !/content-type\s*:\s*message\/delivery-status/im.test(payload))) return null
+  const originalMessageId = internetMessageIds(payload.match(/^original-message-id\s*:\s*(.+)$/im)?.[1])[0]
+    ?? internetMessageIds(fallbackOriginalMessageId)[0]
+  if (!originalMessageId) return null
+  const actions = [...payload.matchAll(/^action\s*:\s*([^\r\n]+)$/gim)].map((match) => match[1].trim().toLowerCase())
+  const statuses = [...payload.matchAll(/^status\s*:\s*([^\s\r\n]+)/gim)].map((match) => match[1].trim())
+  const statusCode = statuses.at(-1) ?? null
+  if (actions.includes("failed") || statuses.some((status) => status.startsWith("5."))) {
+    return { eventType: "bounced", originalMessageId, statusCode }
+  }
+  if (actions.includes("delivered") || statuses.some((status) => status.startsWith("2."))) {
+    return { eventType: "delivered", originalMessageId, statusCode }
+  }
+  return null
+}
+
 export type MimeMessage = {
   from: MailAddress; to: MailAddress[]; cc: MailAddress[]; bcc: MailAddress[]; subject: string; bodyText: string;
-  bodyHtml?: string | null; inReplyTo?: string | null; references?: string | null; attachments?: OutboundAttachment[]
+  bodyHtml?: string | null; messageId?: string | null; inReplyTo?: string | null; references?: string | null; attachments?: OutboundAttachment[]
 }
 
 /**
@@ -591,6 +679,7 @@ export function buildMimeMessage(input: MimeMessage) {
     ...(input.cc.length ? [`Cc: ${input.cc.map(format).join(", ")}`] : []),
     ...(input.bcc.length ? [`Bcc: ${input.bcc.map(format).join(", ")}`] : []),
     `Subject: ${encodeHeaderValue(input.subject)}`,
+    ...(input.messageId ? [`Message-ID: ${escapeHeader(input.messageId)}`] : []),
     "MIME-Version: 1.0",
     ...(input.inReplyTo ? [`In-Reply-To: ${escapeHeader(input.inReplyTo)}`] : []),
     ...(input.references ? [`References: ${escapeHeader(input.references, 2_000)}`] : []),

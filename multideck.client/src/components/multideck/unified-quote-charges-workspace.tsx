@@ -14,7 +14,7 @@ import {
   Plus,
   Search,
   Trash2,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
@@ -750,7 +750,6 @@ export function UnifiedQuoteChargesWorkspace({
       width: 104,
       minWidth: 88,
       maxWidth: 160,
-      defaultPinned: true,
       canHide: false,
       resizable: true,
       sortValue: (row) => row.code,
@@ -772,7 +771,6 @@ export function UnifiedQuoteChargesWorkspace({
       width: 230,
       minWidth: 170,
       maxWidth: 420,
-      defaultPinned: true,
       resizable: true,
       sortValue: (row) => row.description,
       cell: (row) => (
@@ -962,13 +960,7 @@ export function UnifiedQuoteChargesWorkspace({
         storageKey={storageKey}
         selectedRowKey={activeSelectedRowId}
         onRowClick={(row) => selectRow(row.id)}
-        toolbarLeading={(
-          <div className="flex min-w-0 items-center gap-2 px-1">
-            <span className="truncate text-[12px] font-medium text-[var(--md-ink)]">{t("Quote charges")}</span>
-            <span className="shrink-0 text-[10px] tabular-nums text-[var(--md-subtle)]">{rows.length} {t(rows.length === 1 ? "line" : "lines")}</span>
-          </div>
-        )}
-        toolbarActions={(
+        toolbarOptions={(
           <div className="flex min-w-0 items-center justify-end gap-1.5">
             <div
               title={t("Exchange-rate source and freshness")}

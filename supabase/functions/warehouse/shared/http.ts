@@ -49,9 +49,15 @@ export function required(value, message, field, max) {
   });
   return result;
 }
+// Postgres `uuid` accepts any 32 hex digits in 8-4-4-4-12 shape; it does not
+// enforce the RFC-4122 version and variant nibbles. Requiring them here rejected
+// ids the database had already issued — seeded and imported records in particular —
+// so every per-record route (receive, dispatch, cancel, documents, reschedule)
+// answered "Choose a valid order." for a record that plainly exists. The pattern
+// still admits only hex and dashes, so it is exactly as safe as before.
 export function uuid(value, name) {
   const result = clean(value, 80);
-  if (!result || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(result)) throw new HttpError(400, `Choose a valid ${name}.`);
+  if (!result || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(result)) throw new HttpError(400, `Choose a valid ${name}.`);
   return result;
 }
 export function numberOrNull(value) {

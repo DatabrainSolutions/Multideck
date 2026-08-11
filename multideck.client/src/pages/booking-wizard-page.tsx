@@ -15,9 +15,10 @@ import {
   RotateCcw,
   Ship,
   Sparkles,
+  TriangleAlert,
   Trash2,
   X,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -29,6 +30,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Switch } from "@/components/ui/switch"
 import { MultideckDateRangePicker } from "@/components/multideck/date-picker"
+import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { bookings } from "@/data/multideck-data"
@@ -782,7 +784,12 @@ function FieldShell({
   const Shell = asDiv ? motion.div : motion.label
 
   return (
-    <Shell variants={fieldMotion} className="grid min-w-0 content-start gap-1.5" data-field-label={label}>
+    <Shell
+      variants={fieldMotion}
+      className="grid min-w-0 content-start gap-1.5"
+      data-field-label={label}
+      data-field-invalid={missing || undefined}
+    >
       <span className="flex min-h-[18px] items-center justify-between gap-3">
         <span className="text-[13px] font-medium text-[var(--md-ink)]">
           {label}
@@ -791,7 +798,14 @@ function FieldShell({
         {action ? <span className="flex items-center gap-1.5">{action}</span> : null}
       </span>
       {children}
-      {helper ? <span className="text-[12px] leading-5 text-[var(--md-text)]">{helper}</span> : null}
+      {missing ? (
+        <span className="flex items-start gap-1.5 text-[12px] leading-5 text-[var(--md-red)]">
+          <TriangleAlert className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.6} aria-hidden="true" />
+          This field is required.
+        </span>
+      ) : helper ? (
+        <span className="text-[12px] leading-5 text-[var(--md-text)]">{helper}</span>
+      ) : null}
     </Shell>
   )
 }
@@ -2251,6 +2265,30 @@ function StepContent({
     })
   }, [activeStep, data.collectionAddress, data.deliveryAddress, data.mode, data.requestedCollectionDate, data.requestedDeliveryDate, data.transportLegs.length, transportDraft.fromName, transportDraft.toName])
 
+  const cargoColumns = useMemo<DataTableColumn<CargoLine>[]>(() => [
+    { id: "commodity", label: "Commodity", width: 230, minWidth: 180, kind: "long-text", cellTitle: (line) => line.commodity, cell: (line) => <span className="block truncate font-medium" title={line.commodity}>{line.commodity}</span> },
+    { id: "outer", label: "Outer", width: 126, minWidth: 108, kind: "attribute", cell: (line) => <span>{line.outerPackages} {line.outerPackageType}</span> },
+    { id: "inner", label: "Inner", width: 220, minWidth: 180, kind: "attribute", cell: (line) => <span>{line.innerPackages ? `${line.innerPackages} ${line.innerPackageType} per ${perOuterPackageLabel(line.outerPackageType)}` : "—"}</span> },
+    { id: "grossWeight", label: "Gross kg", width: 100, minWidth: 88, kind: "number", cell: (line) => line.grossWeight || "—" },
+    { id: "netWeight", label: "Net kg", width: 100, minWidth: 88, kind: "number", cell: (line) => line.netWeight || "—" },
+    { id: "volume", label: "CBM", width: 90, minWidth: 78, kind: "number", cell: (line) => line.volume || "—" },
+    { id: "dimensions", label: "Dimensions", width: 180, minWidth: 140, kind: "long-text", cellTitle: (line) => formatCargoDimensions(line), cell: (line) => <span className="block truncate text-[var(--md-text)]">{formatCargoDimensions(line) || "—"}</span> },
+    { id: "actions", label: "Actions", width: 52, minWidth: 52, kind: "actions", canHide: false, canPin: false, cell: (line) => <button type="button" aria-label={`Remove cargo line ${line.commodity}`} className="grid size-8 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-red)] transition-colors hover:bg-[rgba(192,57,43,0.08)]" onClick={() => removeCargoLine(line.id)}><Trash2 className="size-4" strokeWidth={1.6} /></button> },
+  ], [data.cargoLines])
+
+  const transportColumns = useMemo<DataTableColumn<TransportLeg>[]>(() => [
+    { id: "leg", label: "Leg", width: 110, minWidth: 96, kind: "attribute", cell: (leg) => <span className="font-medium">{data.transportLegs.findIndex((candidate) => candidate.id === leg.id) + 1}. {leg.mode}</span> },
+    { id: "type", label: "Type", width: 120, minWidth: 96, kind: "attribute", cell: (leg) => leg.legType || "—" },
+    { id: "from", label: "From", width: 170, minWidth: 140, kind: "identity", cell: (leg) => <span><strong className="font-medium">{leg.fromCode || "—"}</strong><span className="block text-[12px] text-[var(--md-text)]">{leg.fromName}{leg.fromCountry ? `, ${leg.fromCountry}` : ""}</span></span> },
+    { id: "to", label: "To", width: 170, minWidth: 140, kind: "identity", cell: (leg) => <span><strong className="font-medium">{leg.toCode || "—"}</strong><span className="block text-[12px] text-[var(--md-text)]">{leg.toName}{leg.toCountry ? `, ${leg.toCountry}` : ""}</span></span> },
+    { id: "carrier", label: "Carrier / line", width: 140, minWidth: 112, kind: "text", cell: (leg) => leg.carrier || "—" },
+    { id: "reference", label: "Reference", width: 130, minWidth: 104, kind: "text", cell: (leg) => leg.reference || "—" },
+    { id: "etd", label: "ETD", width: 108, minWidth: 96, kind: "date", cell: (leg) => leg.etd || "—" },
+    { id: "eta", label: "ETA", width: 108, minWidth: 96, kind: "date", cell: (leg) => leg.eta || "—" },
+    { id: "notes", label: "Notes", width: 220, minWidth: 160, kind: "long-text", cellTitle: (leg) => leg.notes || undefined, cell: (leg) => <span className="line-clamp-2 whitespace-normal">{leg.notes || "—"}</span> },
+    { id: "actions", label: "Actions", width: 52, minWidth: 52, kind: "actions", canHide: false, canPin: false, cell: (leg) => { const index = data.transportLegs.findIndex((candidate) => candidate.id === leg.id); return <button type="button" aria-label={`Remove route leg ${index + 1}`} className="grid size-8 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-red)] transition-colors hover:bg-[rgba(192,57,43,0.08)]" onClick={() => removeTransportLeg(leg.id)}><Trash2 className="size-4" strokeWidth={1.6} /></button> } },
+  ], [data.transportLegs])
+
   if (activeStep === 0) {
     const hasSourceMiniStep = data.source === "quote" || data.source === "existing"
     const sourceComplete = data.source === "quote" ? Boolean(data.quoteNumber.trim()) : data.source === "existing" ? Boolean(data.templateBookingId) : true
@@ -2740,46 +2778,7 @@ function StepContent({
               ) : null}
             </div>
 
-            <div className="overflow-x-auto md-scrollbar">
-              <table className="w-full min-w-[860px] border-t border-[rgba(11,20,19,0.06)] text-left">
-                <thead className="bg-white/42">
-                  <tr className="text-[11px] font-medium text-[var(--md-text)]">
-                    <th className="px-4 py-2">Commodity</th>
-                    <th className="px-3 py-2">Outer</th>
-                    <th className="px-3 py-2">Inner</th>
-                    <th className="px-3 py-2 text-right">Gross kg</th>
-                    <th className="px-3 py-2 text-right">Net kg</th>
-                    <th className="px-3 py-2 text-right">CBM</th>
-                    <th className="px-3 py-2">Dimensions</th>
-                    <th className="w-12 px-3 py-2" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.cargoLines.length ? data.cargoLines.map((line) => (
-                    <tr key={line.id} className="border-t border-[rgba(11,20,19,0.05)] text-[13px] text-[var(--md-ink)]">
-                      <td className="max-w-[230px] truncate px-4 py-3 font-medium" title={line.commodity}>{line.commodity}</td>
-                      <td className="px-3 py-3">{line.outerPackages} {line.outerPackageType}</td>
-                      <td className="px-3 py-3">{line.innerPackages ? `${line.innerPackages} ${line.innerPackageType} per ${perOuterPackageLabel(line.outerPackageType)}` : "-"}</td>
-                      <td className="px-3 py-3 text-right tabular-nums">{line.grossWeight || "-"}</td>
-                      <td className="px-3 py-3 text-right tabular-nums">{line.netWeight || "-"}</td>
-                      <td className="px-3 py-3 text-right tabular-nums">{line.volume || "-"}</td>
-                      <td className="max-w-[180px] truncate px-3 py-3 text-[var(--md-text)]" title={formatCargoDimensions(line)}>{formatCargoDimensions(line) || "-"}</td>
-                      <td className="px-3 py-2">
-                        <button type="button" aria-label={`Remove cargo line ${line.commodity}`} className="grid size-8 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-red)] transition-colors hover:bg-[rgba(192,57,43,0.08)]" onClick={() => removeCargoLine(line.id)}>
-                          <Trash2 className="size-4" strokeWidth={1.6} />
-                        </button>
-                      </td>
-                    </tr>
-                  )) : (
-                    <tr>
-                      <td colSpan={8} className="px-4 py-10 text-center text-[13px] text-[var(--md-text)]">
-                        No cargo lines added yet.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+            <DataTable ariaLabel="Cargo lines" columns={cargoColumns} rows={data.cargoLines} getRowKey={(line) => line.id} minimumWidth={1100} showToolbar={false} showColumnManager={false} className="rounded-none shadow-none" emptyState={<p className="text-[13px] text-[var(--md-text)]">No cargo lines added yet.</p>} />
           </motion.section>
 
           <FieldGroup className="items-start lg:grid-cols-[minmax(260px,360px)_minmax(0,1fr)]">
@@ -2923,48 +2922,7 @@ function StepContent({
                 </Button>
               ) : null}
             </div>
-            <div className="overflow-x-auto md-scrollbar">
-              <table className="w-full min-w-[1080px] border-t border-[rgba(11,20,19,0.06)] text-left">
-                <thead className="bg-white/42">
-                  <tr className="text-[11px] font-medium text-[var(--md-text)]">
-                    <th className="px-4 py-2">Leg</th>
-                    <th className="px-3 py-2">Type</th>
-                    <th className="px-3 py-2">From</th>
-                    <th className="px-3 py-2">To</th>
-                    <th className="px-3 py-2">Carrier / line</th>
-                    <th className="px-3 py-2">Reference</th>
-                    <th className="px-3 py-2">ETD</th>
-                    <th className="px-3 py-2">ETA</th>
-                    <th className="px-3 py-2">Notes</th>
-                    <th className="w-12 px-3 py-2" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.transportLegs.length ? data.transportLegs.map((leg, index) => (
-                    <tr key={leg.id} className="border-t border-[rgba(11,20,19,0.05)] text-[13px] text-[var(--md-ink)]">
-                      <td className="px-4 py-3 font-medium">{index + 1}. {leg.mode}</td>
-                      <td className="px-3 py-3">{leg.legType || "-"}</td>
-                      <td className="px-3 py-3"><span className="font-medium">{leg.fromCode || "-"}</span><span className="block text-[12px] text-[var(--md-text)]">{leg.fromName}{leg.fromCountry ? `, ${leg.fromCountry}` : ""}</span></td>
-                      <td className="px-3 py-3"><span className="font-medium">{leg.toCode || "-"}</span><span className="block text-[12px] text-[var(--md-text)]">{leg.toName}{leg.toCountry ? `, ${leg.toCountry}` : ""}</span></td>
-                      <td className="px-3 py-3">{leg.carrier || "-"}</td>
-                      <td className="px-3 py-3">{leg.reference || "-"}</td>
-                      <td className="px-3 py-3">{leg.etd || "-"}</td>
-                      <td className="px-3 py-3">{leg.eta || "-"}</td>
-                      <td className="max-w-[220px] px-3 py-3"><span className="line-clamp-2">{leg.notes || "-"}</span></td>
-                      <td className="px-3 py-2">
-                        <button type="button" aria-label={`Remove route leg ${index + 1}`} className="grid size-8 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-red)] transition-colors hover:bg-[rgba(192,57,43,0.08)]" onClick={() => removeTransportLeg(leg.id)}>
-                          <Trash2 className="size-4" strokeWidth={1.6} />
-                        </button>
-                      </td>
-                    </tr>
-                  )) : (
-                    <tr>
-                      <td colSpan={10} className="px-4 py-10 text-center text-[13px] text-[var(--md-text)]">No route legs added yet.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+            <DataTable ariaLabel="Route legs" columns={transportColumns} rows={data.transportLegs} getRowKey={(leg) => leg.id} minimumWidth={1220} showToolbar={false} showColumnManager={false} className="rounded-none shadow-none" emptyState={<p className="text-[13px] text-[var(--md-text)]">No route legs added yet.</p>} />
           </motion.section>
         </div>
       </StepShell>
@@ -3358,6 +3316,7 @@ export function BookingWizardPage({ navigate }: { navigate: (path: string) => vo
             : []
 
         if (sourceMissing.length) {
+          setFocusFieldLabel(sourceMissing[0])
           toast.warning("Select the source first", {
             description: sourceMissing.join(", "),
           })
@@ -3369,6 +3328,7 @@ export function BookingWizardPage({ navigate }: { navigate: (path: string) => vo
       }
 
       if (missingCurrent.length) {
+        setFocusFieldLabel(missingCurrent[0])
         toast.warning("Complete required fields first", {
           description: missingCurrent.slice(0, 3).join(", "),
         })

@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
-import { ArrowLeft, CheckCircle2, CircleAlert, Copy, ExternalLink, FileCheck2, Link2, Plus, Sparkles, Trash2 } from "lucide-react"
+import { ArrowLeft, CheckCircle2, ChevronDown, CircleAlert, Copy, ExternalLink, FileCheck2, Link2, Plus, Sparkles, Trash2 } from "@/components/icons/hugeicons"
+import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -7,8 +8,11 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
+import { RegisterFacetSelect, RegisterSearchField, RegisterViewSwitch } from "@/components/multideck/register-toolbar"
 import { Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
+import { SegmentedControl, TabsRail } from "@/components/multideck/workflow-components"
 import { CustomsInvoiceImportWorkspace } from "@/pages/customs-invoice-import-workspace"
 import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
@@ -23,13 +27,18 @@ import {
 import { createEmptyCustomsReferenceData, useCustomsReferenceData, type CustomsCatalogCode, type CustomsReferenceData } from "@/lib/customs-reference-data"
 import { listStandaloneExportDrafts, loadStandaloneExportDraft, saveStandaloneExportDraft, type CustomsDraftSummary } from "@/lib/customs-drafts-api"
 import { hasCustomsInvoiceImportRecovery, moveCustomsInvoiceImportRecovery } from "@/lib/customs-invoice-import-recovery"
+import { mdMotion, reduceMotion } from "@/lib/motion"
 
 type DeclarationKind = "export" | "import"
 type EditorTab = "declaration" | "parties" | "transport" | "documents" | "items" | "review"
-type ItemTab = "commodity" | "packaging" | "values" | "documents" | "parties"
+type EditorViewMode = "tabs" | "form"
+type FormTab = "general" | "items"
+
+const editorTabOrder: readonly EditorTab[] = ["declaration", "parties", "transport", "documents", "items", "review"]
 
 const CustomsBoxVisibilityContext = createContext(false)
 const CustomsReferenceDataContext = createContext<{ data: CustomsReferenceData; loading: boolean; error: string | null }>({ data: createEmptyCustomsReferenceData(), loading: true, error: null })
+const CompactCustomsFormContext = createContext(false)
 
 export function CustomsDeclarationsPage({
   route,
@@ -62,6 +71,9 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, t }: {
   const [drafts, setDrafts] = useState<CustomsDraftSummary[]>([])
   const [loading, setLoading] = useState(!jobRelated && kind === "export")
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [search, setSearch] = useState("")
+  const [statusFilter, setStatusFilter] = useState("")
+  const [destinationFilter, setDestinationFilter] = useState("")
 
   useEffect(() => {
     if (jobRelated || kind !== "export") return
@@ -82,6 +94,86 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, t }: {
     return () => { cancelled = true }
   }, [jobRelated, kind])
 
+  const columns = useMemo<DataTableColumn<CustomsDraftSummary>[]>(() => [
+    {
+      id: "reference",
+      label: "Reference",
+      width: 250,
+      minWidth: 180,
+      resizable: true,
+      sortValue: (draft) => draft.reference,
+      cell: (draft) => <strong className="block text-[12px] font-medium tabular-nums text-[var(--md-ink)]" dir="ltr">{draft.reference}</strong>,
+    },
+    {
+      id: "status",
+      label: "Status",
+      kind: "status",
+      width: 120,
+      minWidth: 104,
+      resizable: true,
+      sortValue: (draft) => draft.status,
+      cell: (draft) => <StatusPill>{t(titleCase(draft.status))}</StatusPill>,
+    },
+    {
+      id: "traderReference",
+      label: "Trader reference",
+      width: 190,
+      minWidth: 140,
+      resizable: true,
+      sortValue: (draft) => draft.traderReference,
+      cell: (draft) => <span className="text-[12px] text-[var(--md-text)]">{draft.traderReference || t("Not set")}</span>,
+    },
+    {
+      id: "items",
+      label: "Items",
+      width: 100,
+      minWidth: 84,
+      resizable: true,
+      sortValue: (draft) => draft.itemCount,
+      cell: (draft) => <span className="text-[12px] tabular-nums text-[var(--md-text)]" dir="ltr">{draft.itemCount}</span>,
+    },
+    {
+      id: "destination",
+      label: "Destination",
+      width: 140,
+      minWidth: 112,
+      resizable: true,
+      sortValue: (draft) => draft.destinationCountry,
+      cell: (draft) => <span className="text-[12px] text-[var(--md-text)]">{draft.destinationCountry || t("Not set")}</span>,
+    },
+    {
+      id: "value",
+      label: "Value",
+      width: 150,
+      minWidth: 112,
+      resizable: true,
+      sortValue: (draft) => draft.amount,
+      cell: (draft) => <span className="text-[12px] tabular-nums text-[var(--md-text)]" dir="ltr">{formatDraftAmount(draft.amount, draft.currency)}</span>,
+    },
+    {
+      id: "lastSaved",
+      label: "Last saved",
+      width: 190,
+      minWidth: 150,
+      resizable: true,
+      sortValue: (draft) => new Date(draft.updatedAt).getTime(),
+      cell: (draft) => <span className="text-[11px] text-[var(--md-subtle)]">{new Date(draft.updatedAt).toLocaleString()}</span>,
+    },
+  ], [t])
+
+  const statuses = useMemo(() => [...new Set(drafts.map((draft) => draft.status).filter(Boolean))].sort(), [drafts])
+  const destinations = useMemo(() => [...new Set(drafts.map((draft) => draft.destinationCountry).filter((value): value is string => Boolean(value)))].sort(), [drafts])
+  const filteredDrafts = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase()
+    return drafts.filter((draft) => {
+      if (statusFilter && draft.status !== statusFilter) return false
+      if (destinationFilter && draft.destinationCountry !== destinationFilter) return false
+      if (!query) return true
+      return [draft.reference, draft.traderReference, draft.status, draft.destinationCountry, draft.currency, draft.amount]
+        .some((value) => String(value ?? "").toLocaleLowerCase().includes(query))
+    })
+  }, [destinationFilter, drafts, search, statusFilter])
+
   return (
     <div className="space-y-5">
       <header className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
@@ -96,46 +188,62 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, t }: {
               : "Create and manage declarations that are not linked to a Multideck job.")}
           </p>
         </div>
-        <div className="grid grid-cols-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-1 shadow-[var(--md-shadow-line)]">
-          <KindButton active={kind === "export"} onClick={() => navigate(`${base}/export`)}>{t("Export")}</KindButton>
-          <KindButton active={kind === "import"} onClick={() => navigate(`${base}/import`)}>{t("Import")}</KindButton>
+        <div className="self-start xl:self-auto">
+          <RegisterViewSwitch
+            options={["Export", "Import"] as const}
+            value={kind === "export" ? "Export" : "Import"}
+            onChange={(nextKind) => navigate(`${base}/${nextKind.toLocaleLowerCase()}`)}
+            ariaLabel={t("Declaration direction")}
+          />
         </div>
       </header>
 
-      <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-        <div className="flex flex-col gap-3 border-b border-[var(--md-line)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <span>
-            <h2 className="text-[15px] font-medium text-[var(--md-ink)]">{t(`${kind === "export" ? "Export" : "Import"} declarations`)}</h2>
-            <p className="mt-1 text-[12px] text-[var(--md-subtle)]">
-              {t(jobRelated ? "Select a job before starting the declaration." : "Drafts and submitted declarations will appear here.")}
-            </p>
-          </span>
-          <Button
-            type="button"
-            disabled={kind === "import" || jobRelated}
-            onClick={() => navigate("/customs/standalone/export/new")}
-          >
-            <Plus className="size-4" />
-            {t(`New ${kind} declaration`)}
-          </Button>
-        </div>
-        {loading ? <div className="grid min-h-[240px] place-items-center px-6 py-12 text-center text-[13px] text-[var(--md-text)]">{t("Loading saved declarations")}</div> : null}
-        {loadError ? <div className="grid min-h-[240px] place-items-center px-6 py-12 text-center"><div className="max-w-[520px]"><CircleAlert className="mx-auto size-6 text-[var(--md-red)]" /><h3 className="mt-3 text-[15px] font-medium text-[var(--md-ink)]">{t("Saved declarations unavailable")}</h3><p className="mt-2 text-[12px] text-[var(--md-text)]">{t("Refresh the page to try loading the declaration register again.")}</p></div></div> : null}
-        {!loading && !loadError && drafts.length ? <div className="divide-y divide-[var(--md-line)]">
-          <div className="hidden grid-cols-[1.3fr_1fr_90px_90px_120px_120px] gap-4 bg-[var(--md-surface-tint)] px-5 py-2 text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--md-subtle)] md:grid">
-            <span>{t("Reference")}</span><span>{t("Trader reference")}</span><span>{t("Items")}</span><span>{t("Destination")}</span><span>{t("Value")}</span><span>{t("Last saved")}</span>
+      <DataTable
+        ariaLabel={t("Declaration register")}
+        columnsButtonLabel={t("Manage declaration columns")}
+        columns={columns}
+        rows={loading || loadError ? [] : filteredDrafts}
+        getRowKey={(draft) => draft.id}
+        storageKey={`customs-${jobRelated ? "job-related" : "standalone"}-${kind}-register`}
+        rowClassName="hover:bg-[var(--md-hover)]"
+        onRowClick={!jobRelated && kind === "export" ? (draft) => navigate(`/customs/standalone/export/${draft.id}`) : undefined}
+        toolbarSearch={<RegisterSearchField value={search} onChange={setSearch} onClear={() => setSearch("")} label="Search declarations" placeholder="Search declarations" />}
+        toolbarFilters={(
+          <>
+            <RegisterFacetSelect
+              label="Status"
+              allLabel="All statuses"
+              value={statusFilter}
+              options={statuses.map((status) => ({ value: status, label: titleCase(status) }))}
+              onChange={setStatusFilter}
+              className="w-[132px]"
+            />
+            <RegisterFacetSelect
+              label="Destination"
+              allLabel="All destinations"
+              value={destinationFilter}
+              options={destinations.map((destination) => ({ value: destination, label: destination }))}
+              onChange={setDestinationFilter}
+              className="w-[148px]"
+            />
+          </>
+        )}
+        compactToolbar
+        emptyState={loading ? (
+          <div className="mx-auto py-8 text-center text-[13px] text-[var(--md-text)]">{t("Loading saved declarations")}</div>
+        ) : loadError ? (
+          <div role="alert" className="mx-auto max-w-[520px] py-8 text-center">
+            <CircleAlert className="mx-auto size-6 text-[var(--md-red)]" />
+            <h3 className="mt-3 text-[15px] font-medium text-[var(--md-ink)]">{t("Saved declarations unavailable")}</h3>
+            <p className="mt-2 text-[12px] text-[var(--md-text)]">{t("Refresh the page to try loading the declaration register again.")}</p>
           </div>
-          {drafts.map((savedDraft) => <button key={savedDraft.id} type="button" onClick={() => navigate(`/customs/standalone/export/${savedDraft.id}`)} className="grid w-full gap-2 px-5 py-4 text-start hover:bg-[var(--md-hover)] md:grid-cols-[1.3fr_1fr_90px_90px_120px_120px] md:items-center md:gap-4">
-            <span><strong className="block text-[12px] font-medium tabular-nums text-[var(--md-ink)]" dir="ltr">{savedDraft.reference}</strong><StatusPill className="mt-1">{t(savedDraft.status === "draft" ? "Draft" : savedDraft.status)}</StatusPill></span>
-            <span className="text-[12px] text-[var(--md-text)]">{savedDraft.traderReference || t("Not set")}</span>
-            <span className="text-[12px] text-[var(--md-text)]">{savedDraft.itemCount}</span>
-            <span className="text-[12px] text-[var(--md-text)]">{savedDraft.destinationCountry || t("Not set")}</span>
-            <span className="text-[12px] text-[var(--md-text)]">{formatDraftAmount(savedDraft.amount, savedDraft.currency)}</span>
-            <span className="text-[11px] text-[var(--md-subtle)]">{new Date(savedDraft.updatedAt).toLocaleString()}</span>
-          </button>)}
-        </div> : null}
-        {!loading && !loadError && !drafts.length ? <div className="grid min-h-[300px] place-items-center px-6 py-12 text-center">
-          <div className="max-w-[440px]">
+        ) : drafts.length && !filteredDrafts.length ? (
+          <div className="mx-auto max-w-[440px] py-8 text-center">
+            <h3 className="text-[15px] font-medium text-[var(--md-ink)]">{t("No declarations match these filters")}</h3>
+            <p className="mt-2 text-[12px] text-[var(--md-text)]">{t("Change or clear a filter to see more declarations.")}</p>
+          </div>
+        ) : (
+          <div className="mx-auto grid max-w-[440px] place-items-center py-8 text-center">
             <div className="mx-auto grid size-11 place-items-center rounded-full bg-[var(--md-accent-a10)] text-[var(--md-accent)]">
               <FileCheck2 className="size-5" strokeWidth={1.4} />
             </div>
@@ -148,10 +256,14 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, t }: {
                 : "We will enable this after the standalone export workflow is agreed and connected.")}
             </p>
           </div>
-        </div> : null}
-      </Surface>
+        )}
+      />
     </div>
   )
+}
+
+function titleCase(value: string) {
+  return value.replace(/[_-]+/g, " ").replace(/\b\w/g, (character) => character.toLocaleUpperCase())
 }
 
 function formatDraftAmount(amount: number | null, currency: string | null) {
@@ -165,11 +277,14 @@ function formatDraftAmount(amount: number | null, currency: string | null) {
 }
 
 function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: string) => void; declarationId?: string }) {
-  const { t } = useLanguage()
+  const { t, direction } = useLanguage()
+  const shouldReduceMotion = Boolean(useReducedMotion())
   const referenceData = useCustomsReferenceData("export")
   const [draft, setDraft] = useState<StandaloneExportDraft>(createStandaloneExportDraft)
   const [tab, setTab] = useState<EditorTab>("declaration")
-  const [itemTab, setItemTab] = useState<ItemTab>("commodity")
+  const [tabDirection, setTabDirection] = useState(1)
+  const [viewMode, setViewMode] = useState<EditorViewMode>("tabs")
+  const [formTab, setFormTab] = useState<FormTab>("general")
   const [activeItemId, setActiveItemId] = useState(draft.items[0].id)
   const [showDataElements, setShowDataElements] = useState(true)
   const [showCustomsBoxNumbers, setShowCustomsBoxNumbers] = useState(false)
@@ -182,10 +297,17 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
   const [draftLoadError, setDraftLoadError] = useState<string | null>(null)
   const [savingDraft, setSavingDraft] = useState(false)
   const completion = useMemo(() => declarationCompletion(draft), [draft])
+  const spatialTabDirection = direction === "rtl" ? -tabDirection : tabDirection
   const activeItem = draft.items.find((item) => item.id === activeItemId) ?? draft.items[0]
   const issueFields = useMemo(() => new Set(validated ? completion.issues.map((issue) => issue.field) : []), [completion.issues, validated])
   const activeItemIssueFields = useMemo(() => new Set(validated ? completion.issues.filter((issue) => issue.itemId === activeItemId).map((issue) => issue.field) : []), [activeItemId, completion.issues, validated])
   const fallbackUrl = import.meta.env.VITE_ICUSTOMS_APP_URL || "https://app-tdr.customscloud.co/cds/export"
+
+  function selectTab(nextTab: EditorTab) {
+    if (nextTab === tab) return
+    setTabDirection(editorTabOrder.indexOf(nextTab) > editorTabOrder.indexOf(tab) ? 1 : -1)
+    setTab(nextTab)
+  }
 
   useEffect(() => {
     setInvoiceImportOpen(hasCustomsInvoiceImportRecovery(invoiceImportRecoveryKey))
@@ -220,7 +342,7 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
       target?.querySelector<HTMLElement>("input, textarea, button")?.focus({ preventScroll: true })
     }, 80)
     return () => window.clearTimeout(timer)
-  }, [activeItemId, focusTarget, itemTab, tab])
+  }, [activeItemId, focusTarget, formTab, tab, viewMode])
 
   function update<K extends keyof StandaloneExportDraft>(field: K, value: StandaloneExportDraft[K]) {
     setDraft((current) => ({ ...current, [field]: value }))
@@ -241,10 +363,14 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
     setValidated(true)
     const first = completion.issues[0]
     if (first) {
-      setTab(first.scope === "item" ? "items" : generalTabForField(first.field))
+      if (viewMode === "form") {
+        setFormTab(first.scope === "item" ? "items" : "general")
+      } else {
+        selectTab(first.scope === "item" ? "items" : generalTabForField(first.field))
+      }
       toast.warning(t("Declaration needs attention"), { description: `${completion.issues.length} ${t("checks remain")}` })
     } else {
-      setTab("review")
+      if (viewMode === "tabs") selectTab("review")
       toast.success(t("Current form checks passed"))
     }
   }
@@ -270,10 +396,9 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
     setValidated(true)
     if (issue.scope === "item") {
       if (issue.itemId) setActiveItemId(issue.itemId)
-      setItemTab(itemTabForField(issue.field))
-      setTab("items")
+      selectTab("items")
     } else {
-      setTab(generalTabForField(issue.field))
+      selectTab(generalTabForField(issue.field))
     }
     setFocusTarget({ field: issue.field, nonce: Date.now() })
   }
@@ -282,8 +407,8 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
     const item = createExportDeclarationItem(draft.items.length + 1)
     setDraft((current) => ({ ...current, items: [...current.items, item] }))
     setActiveItemId(item.id)
-    setTab("items")
-    setItemTab("commodity")
+    if (viewMode === "form") setFormTab("items")
+    else selectTab("items")
   }
 
   function duplicateItem(itemId = activeItem.id) {
@@ -305,19 +430,19 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
     const importedItems = items.map((item, index) => ({ ...item, id: `invoice-${importKey}-${index + 1}` }))
     setDraft((current) => ({ ...current, items: mode === "append" ? [...current.items, ...importedItems] : importedItems }))
     setActiveItemId(importedItems[0].id)
-    setItemTab("commodity")
-    setTab("items")
+    if (viewMode === "form") setFormTab("items")
+    else selectTab("items")
     setInvoiceImportOpen(false)
     toast.success(t("Invoice lines added"), { description: `${sourceLineCount} ${t("source lines became")} ${importedItems.length} ${t("declaration lines")}` })
   }
 
-  const editorTabs: Array<{ id: EditorTab; label: string; meta: string }> = [
-    { id: "declaration", label: t("Declaration"), meta: t("Identity & totals") },
-    { id: "parties", label: t("Parties"), meta: t("People & EORIs") },
-    { id: "transport", label: t("Transport"), meta: t("Movement & location") },
-    { id: "documents", label: t("Documents & offices"), meta: t("References & control") },
-    { id: "items", label: `${t("Items")} (${draft.items.length})`, meta: t("Goods lines") },
-    { id: "review", label: t("Review"), meta: `${completion.percent}% ${t("complete")}` },
+  const editorTabs: Array<{ id: EditorTab; label: string }> = [
+    { id: "declaration", label: t("Declaration") },
+    { id: "parties", label: t("Parties") },
+    { id: "transport", label: t("Transport") },
+    { id: "documents", label: t("Documents & offices") },
+    { id: "items", label: `${t("Items")} (${draft.items.length})` },
+    { id: "review", label: t("Review") },
   ]
 
   if (loadingDraft) {
@@ -342,15 +467,24 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
             <StatusPill tone="teal">{t("Standalone export")}</StatusPill>
             <StatusPill>{t("Draft")}</StatusPill>
           </div>
-          <p className="mt-1 text-[13px] text-[var(--md-text)]">{t("Complete one focused section at a time. Move between sections whenever you need.")}</p>
+          <p className="mt-1 text-[13px] text-[var(--md-text)]">{t(viewMode === "tabs" ? "Complete one focused section at a time. Move between sections whenever you need." : "Scan and complete the declaration in one compact form, with goods lines kept in Items.")}</p>
         </div>
       </header>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <Toggle checked={showDataElements} onChange={setShowDataElements}>{t("Data Elements")}</Toggle>
-          <Toggle checked={showCustomsBoxNumbers} onChange={setShowCustomsBoxNumbers}>{t("Customs box numbers")}</Toggle>
-          <Toggle checked={showOptional} onChange={setShowOptional}>{t("Optional fields")}</Toggle>
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
+          <SegmentedControl
+            options={["tabs", "form"] as const}
+            value={viewMode}
+            onChange={setViewMode}
+            ariaLabel={t("Declaration view")}
+            renderOption={(option) => t(option === "tabs" ? "Tab view" : "Form view")}
+          />
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <Toggle checked={showDataElements} onChange={setShowDataElements}>{t("Data Elements")}</Toggle>
+            <Toggle checked={showCustomsBoxNumbers} onChange={setShowCustomsBoxNumbers}>{t("Customs box numbers")}</Toggle>
+            <Toggle checked={showOptional} onChange={setShowOptional}>{t("Optional fields")}</Toggle>
+          </div>
         </div>
         <div className="flex shrink-0 items-center gap-2 sm:justify-end">
           <Button type="button" variant="outline" size="sm" className="h-9" disabled={savingDraft} onClick={() => void saveDraft()}>{t(savingDraft ? "Saving draft" : "Save draft")}</Button>
@@ -359,26 +493,70 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
         </div>
       </div>
 
-      <nav className="max-w-full overflow-x-auto rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)]" aria-label={t("Declaration sections")}>
+      {viewMode === "tabs" ? <nav className="max-w-full overflow-x-auto rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)]" aria-label={t("Declaration sections")}>
         <div className="grid min-w-[840px] grid-cols-6 gap-1">
           {editorTabs.map((entry, index) => (
-            <button key={entry.id} type="button" onClick={() => setTab(entry.id)} aria-current={tab === entry.id ? "step" : undefined} className={cn("flex min-h-[52px] items-center gap-2 rounded-[var(--md-radius-lg)] px-3 text-start", tab === entry.id ? "bg-[var(--md-selected-bg)] text-[var(--md-selected-text)]" : "text-[var(--md-text)] hover:bg-[var(--md-hover)]")}>
-              <span className={cn("grid size-6 shrink-0 place-items-center rounded-full text-[11px] font-medium", tab === entry.id ? "bg-[var(--md-accent)] text-white" : "bg-[var(--md-surface-tint)]")}>{index + 1}</span>
-              <span className="min-w-0"><strong className="block truncate text-[12px] font-medium">{entry.label}</strong><span className="block truncate text-[10px] opacity-70">{entry.meta}</span></span>
+            <button
+              key={entry.id}
+              type="button"
+              onClick={() => selectTab(entry.id)}
+              aria-current={tab === entry.id ? "step" : undefined}
+              data-customs-tab={entry.id}
+              className={cn(
+                "relative isolate flex min-h-10 items-center gap-1.5 overflow-hidden rounded-[var(--md-radius-lg)] px-2.5 text-start transition-[color,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a28)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--md-surface)] motion-reduce:active:scale-100 motion-reduce:transition-none",
+                tab === entry.id ? "text-[var(--md-selected-text)]" : "text-[var(--md-text)] hover:bg-[var(--md-hover)]",
+              )}
+            >
+              {tab === entry.id ? <motion.span
+                aria-hidden="true"
+                data-customs-active-tab
+                layoutId="customs-export-active-tab"
+                className="absolute inset-0 -z-10 rounded-[var(--md-radius-lg)] bg-[var(--md-selected-bg)]"
+                transition={reduceMotion(shouldReduceMotion, mdMotion.spring)}
+              /> : null}
+              <span className={cn("relative z-10 grid size-5 shrink-0 place-items-center rounded-full text-[10px] font-medium transition-[background-color,color] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]", tab === entry.id ? "bg-[var(--md-accent)] text-white" : "bg-[var(--md-surface-tint)]")}>{index + 1}</span>
+              <strong className="relative z-10 min-w-0 truncate text-[12px] font-medium leading-5">{entry.label}</strong>
             </button>
           ))}
         </div>
-      </nav>
+      </nav> : <TabsRail
+        tabs={[
+          { label: t("General") },
+          { label: t("Items"), value: String(draft.items.length) },
+        ]}
+        activeTab={formTab === "general" ? t("General") : t("Items")}
+        onChange={(nextTab) => setFormTab(nextTab === t("Items") ? "items" : "general")}
+        className="px-1"
+      />}
 
       {referenceData.loading ? <Surface padding="sm" className="rounded-[var(--md-radius-lg)]"><p className="text-[11px] text-[var(--md-text)]">{t("Loading Customs reference data")}</p></Surface> : null}
       {referenceData.error ? <Surface padding="sm" className="rounded-[var(--md-radius-lg)]"><div className="flex items-center gap-2 text-[11px] text-[var(--md-red)]"><CircleAlert className="size-4 shrink-0" /><span><strong>{t("Customs reference data unavailable")}</strong> {t("Selection fields remain locked until the database catalogue is available.")}</span></div></Surface> : null}
 
-      {tab === "declaration" ? <DeclarationSection draft={draft} update={update} showDataElements={showDataElements} issues={issueFields} highlightedField={focusTarget?.field} t={t} /> : null}
-      {tab === "parties" ? <PartiesSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} highlightedField={focusTarget?.field} t={t} /> : null}
-      {tab === "transport" ? <TransportSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} highlightedField={focusTarget?.field} t={t} /> : null}
-      {tab === "documents" ? <DocumentsSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} highlightedField={focusTarget?.field} t={t} /> : null}
-      {tab === "items" ? <ItemsSection items={draft.items} activeItem={activeItem} activeItemId={activeItemId} onSelectItem={setActiveItemId} onAdd={addItem} onOpenInvoiceImport={() => setInvoiceImportOpen(true)} onDuplicate={duplicateItem} onRemove={removeItem} itemTab={itemTab} onItemTabChange={setItemTab} update={updateItem} updateRow={updateItemById} showDataElements={showDataElements} showOptional={showOptional} issues={activeItemIssueFields} validated={validated} highlightedField={focusTarget?.field} t={t} /> : null}
-      {tab === "review" ? <ReviewSection draft={draft} completion={completion} fallbackUrl={fallbackUrl} onValidate={validate} onFixIssue={fixIssue} t={t} /> : null}
+      {viewMode === "form" && formTab === "general" ? <GeneralFormView draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} highlightedField={focusTarget?.field} t={t} /> : null}
+      {viewMode === "form" && formTab === "items" ? <ItemsSection items={draft.items} activeItem={activeItem} activeItemId={activeItemId} onSelectItem={setActiveItemId} onAdd={addItem} onOpenInvoiceImport={() => setInvoiceImportOpen(true)} onDuplicate={duplicateItem} onRemove={removeItem} update={updateItem} updateRow={updateItemById} showDataElements={showDataElements} showOptional={showOptional} issues={activeItemIssueFields} validated={validated} highlightedField={focusTarget?.field} t={t} /> : null}
+      {viewMode === "tabs" ? <AnimatePresence initial={false} mode="popLayout" custom={spatialTabDirection}>
+        <motion.div
+          key={tab}
+          custom={spatialTabDirection}
+          data-customs-tab-panel={tab}
+          variants={{
+            initial: (direction: number) => ({ opacity: shouldReduceMotion ? 1 : 0, x: shouldReduceMotion ? 0 : direction * 6 }),
+            active: { opacity: 1, x: 0, transition: reduceMotion(shouldReduceMotion, mdMotion.fast) },
+            exit: (direction: number) => ({ opacity: shouldReduceMotion ? 1 : 0, x: shouldReduceMotion ? 0 : direction * -4, transition: reduceMotion(shouldReduceMotion, mdMotion.exit) }),
+          }}
+          initial="initial"
+          animate="active"
+          exit="exit"
+          className="min-w-0"
+        >
+          {tab === "declaration" ? <DeclarationSection draft={draft} update={update} showDataElements={showDataElements} issues={issueFields} highlightedField={focusTarget?.field} t={t} /> : null}
+          {tab === "parties" ? <PartiesSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} highlightedField={focusTarget?.field} t={t} /> : null}
+          {tab === "transport" ? <TransportSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} highlightedField={focusTarget?.field} t={t} /> : null}
+          {tab === "documents" ? <DocumentsSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} highlightedField={focusTarget?.field} t={t} /> : null}
+          {tab === "items" ? <ItemsSection items={draft.items} activeItem={activeItem} activeItemId={activeItemId} onSelectItem={setActiveItemId} onAdd={addItem} onOpenInvoiceImport={() => setInvoiceImportOpen(true)} onDuplicate={duplicateItem} onRemove={removeItem} update={updateItem} updateRow={updateItemById} showDataElements={showDataElements} showOptional={showOptional} issues={activeItemIssueFields} validated={validated} highlightedField={focusTarget?.field} t={t} /> : null}
+          {tab === "review" ? <ReviewSection draft={draft} completion={completion} fallbackUrl={fallbackUrl} onValidate={validate} onFixIssue={fixIssue} t={t} /> : null}
+        </motion.div>
+      </AnimatePresence> : null}
     </div>
     {invoiceImportOpen ? <CustomsInvoiceImportWorkspace key={invoiceImportRecoveryKey} recoveryKey={invoiceImportRecoveryKey} onClose={() => setInvoiceImportOpen(false)} onApply={applyInvoiceItems} existingItemCount={draft.items.length} /> : null}
     </CustomsBoxVisibilityContext.Provider>
@@ -404,6 +582,17 @@ type SectionProps = {
   issues: Set<string>
   highlightedField?: string
   t: (text: string) => string
+}
+
+function GeneralFormView(props: SectionProps & { showOptional: boolean }) {
+  return <CompactCustomsFormContext.Provider value>
+    <div className="grid gap-[var(--md-page-stack-gap-compact)]">
+      <DeclarationSection {...props} />
+      <PartiesSection {...props} />
+      <TransportSection {...props} />
+      <DocumentsSection {...props} />
+    </div>
+  </CompactCustomsFormContext.Provider>
 }
 
 function DeclarationSection({ draft, update, showDataElements, issues, highlightedField, t }: SectionProps) {
@@ -482,97 +671,192 @@ function DocumentsSection({ draft, update, showDataElements, showOptional, issue
   </SectionFrame>
 }
 
-function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, onOpenInvoiceImport, onDuplicate, onRemove, itemTab, onItemTabChange, update, updateRow, showDataElements, showOptional, issues, validated, highlightedField, t }: { items: ExportDeclarationItem[]; activeItem: ExportDeclarationItem; activeItemId: string; onSelectItem: (id: string) => void; onAdd: () => void; onOpenInvoiceImport: () => void; onDuplicate: (itemId?: string) => void; onRemove: (itemId?: string) => void; itemTab: ItemTab; onItemTabChange: (tab: ItemTab) => void; update: <K extends keyof ExportDeclarationItem>(field: K, value: ExportDeclarationItem[K]) => void; updateRow: <K extends keyof ExportDeclarationItem>(itemId: string, field: K, value: ExportDeclarationItem[K]) => void; showDataElements: boolean; showOptional: boolean; issues: Set<string>; validated: boolean; highlightedField?: string; t: (text: string) => string }) {
+function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, onOpenInvoiceImport, onDuplicate, onRemove, update, updateRow, showDataElements, showOptional, issues, validated, highlightedField, t }: { items: ExportDeclarationItem[]; activeItem: ExportDeclarationItem; activeItemId: string; onSelectItem: (id: string) => void; onAdd: () => void; onOpenInvoiceImport: () => void; onDuplicate: (itemId?: string) => void; onRemove: (itemId?: string) => void; update: <K extends keyof ExportDeclarationItem>(field: K, value: ExportDeclarationItem[K]) => void; updateRow: <K extends keyof ExportDeclarationItem>(itemId: string, field: K, value: ExportDeclarationItem[K]) => void; showDataElements: boolean; showOptional: boolean; issues: Set<string>; validated: boolean; highlightedField?: string; t: (text: string) => string }) {
   const { direction } = useLanguage()
-  const tabs: Array<[ItemTab, string]> = [["commodity", "Commodity"], ["packaging", "Packaging & procedure"], ["values", "Weights & values"], ["documents", "Documents"], ["parties", "Parties & transport"]]
+  const shouldReduceMotion = Boolean(useReducedMotion())
+  const [expandedItemId, setExpandedItemId] = useState<string | null>(activeItemId)
   const packageKinds = useReferenceOptions("package_kind", t)
-  const packageKindFields = useReferenceOptions("package_kind", t, "Select package")
   const countries = useReferenceOptions("country", t)
-  const countryFields = useReferenceOptions("country", t, "Select country")
-  const optionalCountries = useReferenceOptions("country", t, "Not specified")
   const procedureCodes = useReferenceOptions("procedure_code", t)
-  const procedureCodeFields = useReferenceOptions("procedure_code", t, "Select procedure")
   const additionalProcedureCodes = useReferenceOptions("additional_procedure_code", t)
-  const additionalProcedureCodeFields = useReferenceOptions("additional_procedure_code", t, "Select procedure")
   const currencies = useReferenceOptions("currency", t)
-  const currencyFields = useReferenceOptions("currency", t, "Select currency")
-  const previousDocumentTypes = useReferenceOptions("previous_document_type", t, "Select document type")
+
+  useEffect(() => {
+    setExpandedItemId(activeItemId)
+  }, [activeItemId])
+
+  const toggleItem = (itemId: string) => {
+    if (itemId !== activeItemId) onSelectItem(itemId)
+    setExpandedItemId((current) => current === itemId ? null : itemId)
+  }
+
+  const inputClass = "h-7 rounded-[var(--md-radius-xs)] border-transparent bg-[var(--md-surface-tint)] px-1.5 text-[10px] shadow-none focus-visible:border-[var(--md-accent)] focus-visible:ring-1 focus-visible:ring-[var(--md-accent)]"
+  const itemColumns = useMemo<DataTableColumn<ExportDeclarationItem>[]>(() => [
+    {
+      id: "line",
+      label: "Line",
+      width: 64,
+      minWidth: 64,
+      canHide: false,
+      canPin: false,
+      cell: (item) => {
+        const index = items.findIndex((candidate) => candidate.id === item.id)
+        const missing = mandatoryItemGaps(item)
+        const expanded = item.id === expandedItemId
+        return <button type="button" data-item-disclosure aria-expanded={expanded} aria-controls={`item-details-${item.id}`} aria-label={`${t(expanded ? "Collapse item details" : "Expand item details")} ${index + 1}`} onClick={(event) => { event.stopPropagation(); toggleItem(item.id) }} className="group/disclosure flex min-h-9 w-full items-center gap-1.5 rounded-[var(--md-radius-sm)] px-1 text-start outline-none transition-colors duration-150 hover:bg-[var(--md-surface)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] focus-visible:ring-offset-1 active:bg-[var(--md-hover)]">
+          <ChevronDown className={cn("size-3.5 shrink-0 text-[var(--md-subtle)] transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none", expanded && "rotate-180")} aria-hidden="true" />
+          <span className="min-w-0">
+            <strong className="block text-[11px] font-semibold text-[var(--md-ink)]">{index + 1}</strong>
+            <span className={cn("mt-0.5 block text-[8px] font-medium", missing.length ? "text-[var(--md-amber)]" : "text-[var(--md-green)]")}>{missing.length ? `${missing.length} ${t("required")}` : t("Complete")}</span>
+          </span>
+        </button>
+      },
+    },
+    {
+      id: "commodityCode", label: "Commodity code", width: 120, minWidth: 120, kind: "text", canPin: false,
+      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item); return <Input aria-label={`${t("Commodity code")} ${index + 1}`} className={cn(inputClass, validatedItemField(issues, missing, "commodityCode") && "ring-1 ring-[var(--md-red)]")} value={item.commodityCode} onChange={(event) => updateRow(item.id, "commodityCode", event.target.value.replace(/\D/g, "").slice(0, 10))} /> },
+    },
+    {
+      id: "description", label: "Description of goods", width: 200, minWidth: 200, kind: "long-text", canPin: false,
+      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item); return <Input aria-label={`${t("Description of goods")} ${index + 1}`} className={cn(inputClass, validatedItemField(issues, missing, "description") && "ring-1 ring-[var(--md-red)]")} value={item.description} onChange={(event) => updateRow(item.id, "description", event.target.value)} /> },
+    },
+    {
+      id: "packageKind", label: "Package kind", width: 96, minWidth: 96, kind: "attribute", canPin: false,
+      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item); return <ItemTableSelect label={`${t("Package kind")} ${index + 1}`} value={item.packageKind} onChange={(value) => updateRow(item.id, "packageKind", value)} options={packageKinds} invalid={validatedItemField(issues, missing, "packageKind")} /> },
+    },
+    {
+      id: "packageMarks", label: "Package marks", width: 130, minWidth: 130, kind: "text", canPin: false,
+      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item); return <Input aria-label={`${t("Package marks")} ${index + 1}`} className={cn(inputClass, validatedItemField(issues, missing, "packageMarks") && "ring-1 ring-[var(--md-red)]")} value={item.packageMarks} onChange={(event) => updateRow(item.id, "packageMarks", event.target.value)} /> },
+    },
+    {
+      id: "packageCount", label: "Package count", width: 82, minWidth: 82, kind: "number", canPin: false,
+      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item); return <Input aria-label={`${t("Package count")} ${index + 1}`} inputMode="numeric" className={cn(inputClass, validatedItemField(issues, missing, "packageCount") && "ring-1 ring-[var(--md-red)]")} value={item.packageCount} onChange={(event) => updateRow(item.id, "packageCount", event.target.value)} /> },
+    },
+    {
+      id: "origin", label: "Non-preferential origin", width: 112, minWidth: 112, kind: "attribute", canPin: false,
+      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item); return <ItemTableSelect label={`${t("Non-preferential origin")} ${index + 1}`} value={item.nonPreferentialOrigin} onChange={(value) => updateRow(item.id, "nonPreferentialOrigin", value)} options={countries} invalid={validatedItemField(issues, missing, "nonPreferentialOrigin")} /> },
+    },
+    {
+      id: "procedureCode", label: "Procedure code", width: 102, minWidth: 102, kind: "attribute", canPin: false,
+      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item); return <ItemTableSelect label={`${t("Procedure code")} ${index + 1}`} value={item.procedureCode} onChange={(value) => updateRow(item.id, "procedureCode", value)} options={procedureCodes} invalid={validatedItemField(issues, missing, "procedureCode")} /> },
+    },
+    {
+      id: "additionalProcedureCode", label: "Additional procedure code", width: 118, minWidth: 118, kind: "attribute", canPin: false,
+      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item); return <ItemTableSelect label={`${t("Additional procedure code")} ${index + 1}`} value={item.additionalProcedureCode} onChange={(value) => updateRow(item.id, "additionalProcedureCode", value)} options={additionalProcedureCodes} invalid={validatedItemField(issues, missing, "additionalProcedureCode")} /> },
+    },
+    ...(["grossMass", "netMass"] as const).map((field) => ({
+      id: field,
+      label: field === "grossMass" ? "Gross mass" : "Net mass",
+      width: 88,
+      minWidth: 88,
+      kind: "number" as const,
+      canPin: false,
+      cell: (item: ExportDeclarationItem) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item); return <Input aria-label={`${t(field === "grossMass" ? "Gross mass" : "Net mass")} ${index + 1}`} inputMode="decimal" className={cn(inputClass, validatedItemField(issues, missing, field) && "ring-1 ring-[var(--md-red)]")} value={item[field]} onChange={(event) => updateRow(item.id, field, event.target.value)} /> },
+    })),
+    {
+      id: "price", label: "Price / currency", width: 155, minWidth: 155, kind: "number", canPin: false,
+      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item); return <div className="grid grid-cols-[1fr_72px] gap-1"><Input aria-label={`${t("Item price")} ${index + 1}`} inputMode="decimal" className={cn(inputClass, validatedItemField(issues, missing, "itemPrice") && "ring-1 ring-[var(--md-red)]")} value={item.itemPrice} onChange={(event) => updateRow(item.id, "itemPrice", event.target.value)} /><ItemTableSelect label={`${t("Currency code")} ${index + 1}`} value={item.currency} onChange={(value) => updateRow(item.id, "currency", value)} options={currencies} /></div> },
+    },
+    {
+      id: "statisticalValue", label: "Statistical value", width: 105, minWidth: 105, kind: "number", canPin: false,
+      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item); return <Input aria-label={`${t("Statistical value")} ${index + 1}`} inputMode="decimal" className={cn(inputClass, validatedItemField(issues, missing, "statisticalValue") && "ring-1 ring-[var(--md-red)]")} value={item.statisticalValue} onChange={(event) => updateRow(item.id, "statisticalValue", event.target.value)} /> },
+    },
+    {
+      id: "previousDocumentReference", label: "Previous document reference", width: 150, minWidth: 150, kind: "text", canPin: false,
+      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item); return <Input aria-label={`${t("Previous document reference")} ${index + 1}`} className={cn(inputClass, validatedItemField(issues, missing, "previousDocumentReference") && "ring-1 ring-[var(--md-red)]")} value={item.previousDocumentReference} onChange={(event) => updateRow(item.id, "previousDocumentReference", event.target.value)} /> },
+    },
+    {
+      id: "actions", label: "Actions", width: 54, minWidth: 54, kind: "actions", canHide: false, canPin: false,
+      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); return <button type="button" aria-label={`${t("Remove")} ${t("Item")} ${index + 1}`} disabled={items.length === 1} onClick={(event) => { event.stopPropagation(); onRemove(item.id) }} className="grid size-8 place-items-center rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] hover:bg-[var(--md-surface)] hover:text-[var(--md-red)] disabled:opacity-30"><Trash2 className="size-3.5" /></button> },
+    },
+  ], [additionalProcedureCodes, countries, currencies, expandedItemId, issues, items, packageKinds, procedureCodes, t, updateRow])
+
   return <div className="min-w-0 space-y-4">
     <Surface padding="none" className="w-full min-w-0 max-w-full overflow-hidden rounded-[var(--md-radius-xl)]">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--md-line)] px-4 py-3">
         <span>
           <h2 className="text-[14px] font-medium text-[var(--md-ink)]">{t("Mandatory goods-line fields")}</h2>
-          <p className="mt-0.5 text-[11px] text-[var(--md-subtle)]">{t("Add rows and enter the essentials here. Select any row to expand its full details below.")}</p>
+          <p className="mt-0.5 text-[11px] text-[var(--md-subtle)]">{t("Add rows and enter the essentials here. Expand a line to edit all of its details in place.")}</p>
         </span>
         <div className="flex flex-wrap items-center gap-2"><Button type="button" variant="outline" size="sm" onClick={onOpenInvoiceImport}><Sparkles className="size-3.5" />{t("Import invoice")}</Button><Button type="button" size="sm" onClick={onAdd}><Plus className="size-3.5" />{t("Add item")}</Button></div>
       </header>
-      <div className="w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain" data-testid="mandatory-goods-line-scroll">
-        <table className="w-full min-w-[1780px] table-fixed border-collapse text-start" aria-label={t("Mandatory goods-line fields")}>
-          <thead className="bg-[var(--md-surface-soft)] text-[9px] font-medium uppercase tracking-[0.035em] text-[var(--md-subtle)]">
-            <tr>
-              <ItemTableHeading className="sticky start-0 z-10 w-[64px] bg-[var(--md-surface-soft)]">{t("Line")}</ItemTableHeading>
-              <ItemTableHeading className="w-[120px]">{t("Commodity code")}</ItemTableHeading>
-              <ItemTableHeading className="w-[200px]">{t("Description of goods")}</ItemTableHeading>
-              <ItemTableHeading className="w-[96px]">{t("Package kind")}</ItemTableHeading>
-              <ItemTableHeading className="w-[130px]">{t("Package marks")}</ItemTableHeading>
-              <ItemTableHeading className="w-[82px]">{t("Package count")}</ItemTableHeading>
-              <ItemTableHeading className="w-[112px]">{t("Non-preferential origin")}</ItemTableHeading>
-              <ItemTableHeading className="w-[102px]">{t("Procedure code")}</ItemTableHeading>
-              <ItemTableHeading className="w-[118px]">{t("Additional procedure code")}</ItemTableHeading>
-              <ItemTableHeading className="w-[88px]">{t("Gross mass")}</ItemTableHeading>
-              <ItemTableHeading className="w-[88px]">{t("Net mass")}</ItemTableHeading>
-              <ItemTableHeading className="w-[155px]">{t("Price / currency")}</ItemTableHeading>
-              <ItemTableHeading className="w-[105px]">{t("Statistical value")}</ItemTableHeading>
-              <ItemTableHeading className="w-[150px]">{t("Previous document reference")}</ItemTableHeading>
-              <ItemTableHeading className="w-[54px]"><span className="sr-only">{t("Actions")}</span></ItemTableHeading>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[var(--md-line)]">
-            {items.map((item, index) => {
-              const missing = mandatoryItemGaps(item)
-              const selected = item.id === activeItemId
-              const inputClass = "h-7 rounded-[var(--md-radius-xs)] border-transparent bg-[var(--md-surface-tint)] px-1.5 text-[10px] shadow-none focus-visible:border-[var(--md-accent)] focus-visible:ring-1 focus-visible:ring-[var(--md-accent)]"
-              return <ContextMenuPrimitive.Root key={item.id} dir={direction}>
-                <ContextMenuPrimitive.Trigger asChild>
-                <tr onClick={() => onSelectItem(item.id)} onFocus={() => onSelectItem(item.id)} onContextMenu={() => onSelectItem(item.id)} aria-selected={selected} className={cn("group cursor-pointer bg-[var(--md-surface)] transition-colors hover:bg-[var(--md-hover)]", selected && "bg-[var(--md-selected-bg)] hover:bg-[var(--md-selected-bg)]")}>
-                <td className={cn("sticky start-0 z-[5] border-e border-[var(--md-line)] px-2 py-1", selected ? "bg-[var(--md-selected-bg)]" : "bg-[var(--md-surface)] group-hover:bg-[var(--md-hover)]")}>
-                  <strong className="block text-[11px] font-semibold text-[var(--md-ink)]">{index + 1}</strong>
-                  <span className={cn("mt-0.5 block text-[8px] font-medium", missing.length ? "text-[var(--md-amber)]" : "text-[var(--md-green)]")}>{missing.length ? `${missing.length} ${t("required")}` : t("Complete")}</span>
-                </td>
-                <ItemTableCell><Input aria-label={`${t("Commodity code")} ${index + 1}`} className={cn(inputClass, validatedItemField(issues, missing, "commodityCode") && "ring-1 ring-[var(--md-red)]")} value={item.commodityCode} onChange={(event) => updateRow(item.id, "commodityCode", event.target.value.replace(/\D/g, "").slice(0, 10))} /></ItemTableCell>
-                <ItemTableCell><Input aria-label={`${t("Description of goods")} ${index + 1}`} className={cn(inputClass, validatedItemField(issues, missing, "description") && "ring-1 ring-[var(--md-red)]")} value={item.description} onChange={(event) => updateRow(item.id, "description", event.target.value)} /></ItemTableCell>
-                <ItemTableCell><ItemTableSelect label={`${t("Package kind")} ${index + 1}`} value={item.packageKind} onChange={(value) => updateRow(item.id, "packageKind", value)} options={packageKinds} invalid={validatedItemField(issues, missing, "packageKind")} /></ItemTableCell>
-                <ItemTableCell><Input aria-label={`${t("Package marks")} ${index + 1}`} className={cn(inputClass, validatedItemField(issues, missing, "packageMarks") && "ring-1 ring-[var(--md-red)]")} value={item.packageMarks} onChange={(event) => updateRow(item.id, "packageMarks", event.target.value)} /></ItemTableCell>
-                <ItemTableCell><Input aria-label={`${t("Package count")} ${index + 1}`} inputMode="numeric" className={cn(inputClass, validatedItemField(issues, missing, "packageCount") && "ring-1 ring-[var(--md-red)]")} value={item.packageCount} onChange={(event) => updateRow(item.id, "packageCount", event.target.value)} /></ItemTableCell>
-                <ItemTableCell><ItemTableSelect label={`${t("Non-preferential origin")} ${index + 1}`} value={item.nonPreferentialOrigin} onChange={(value) => updateRow(item.id, "nonPreferentialOrigin", value)} options={countries} invalid={validatedItemField(issues, missing, "nonPreferentialOrigin")} /></ItemTableCell>
-                <ItemTableCell><ItemTableSelect label={`${t("Procedure code")} ${index + 1}`} value={item.procedureCode} onChange={(value) => updateRow(item.id, "procedureCode", value)} options={procedureCodes} invalid={validatedItemField(issues, missing, "procedureCode")} /></ItemTableCell>
-                <ItemTableCell><ItemTableSelect label={`${t("Additional procedure code")} ${index + 1}`} value={item.additionalProcedureCode} onChange={(value) => updateRow(item.id, "additionalProcedureCode", value)} options={additionalProcedureCodes} invalid={validatedItemField(issues, missing, "additionalProcedureCode")} /></ItemTableCell>
-                <ItemTableCell><Input aria-label={`${t("Gross mass")} ${index + 1}`} inputMode="decimal" className={cn(inputClass, validatedItemField(issues, missing, "grossMass") && "ring-1 ring-[var(--md-red)]")} value={item.grossMass} onChange={(event) => updateRow(item.id, "grossMass", event.target.value)} /></ItemTableCell>
-                <ItemTableCell><Input aria-label={`${t("Net mass")} ${index + 1}`} inputMode="decimal" className={cn(inputClass, validatedItemField(issues, missing, "netMass") && "ring-1 ring-[var(--md-red)]")} value={item.netMass} onChange={(event) => updateRow(item.id, "netMass", event.target.value)} /></ItemTableCell>
-                <ItemTableCell><div className="grid grid-cols-[1fr_72px] gap-1"><Input aria-label={`${t("Item price")} ${index + 1}`} inputMode="decimal" className={cn(inputClass, validatedItemField(issues, missing, "itemPrice") && "ring-1 ring-[var(--md-red)]")} value={item.itemPrice} onChange={(event) => updateRow(item.id, "itemPrice", event.target.value)} /><ItemTableSelect label={`${t("Currency code")} ${index + 1}`} value={item.currency} onChange={(value) => updateRow(item.id, "currency", value)} options={currencies} /></div></ItemTableCell>
-                <ItemTableCell><Input aria-label={`${t("Statistical value")} ${index + 1}`} inputMode="decimal" className={cn(inputClass, validatedItemField(issues, missing, "statisticalValue") && "ring-1 ring-[var(--md-red)]")} value={item.statisticalValue} onChange={(event) => updateRow(item.id, "statisticalValue", event.target.value)} /></ItemTableCell>
-                <ItemTableCell><Input aria-label={`${t("Previous document reference")} ${index + 1}`} className={cn(inputClass, validatedItemField(issues, missing, "previousDocumentReference") && "ring-1 ring-[var(--md-red)]")} value={item.previousDocumentReference} onChange={(event) => updateRow(item.id, "previousDocumentReference", event.target.value)} /></ItemTableCell>
-                <ItemTableCell><button type="button" aria-label={`${t("Remove")} ${t("Item")} ${index + 1}`} disabled={items.length === 1} onClick={(event) => { event.stopPropagation(); onRemove(item.id) }} className="grid size-8 place-items-center rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] hover:bg-[var(--md-surface)] hover:text-[var(--md-red)] disabled:opacity-30"><Trash2 className="size-3.5" /></button></ItemTableCell>
-                </tr>
-                </ContextMenuPrimitive.Trigger>
-                <ContextMenuPrimitive.Portal>
-                  <ContextMenuPrimitive.Content collisionPadding={14} className="md-sidebar-menu premium-stroke z-50 origin-(--radix-context-menu-content-transform-origin) rounded-[var(--md-radius-xl)] bg-[color-mix(in_srgb,var(--md-surface)_96%,transparent)] p-1 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] backdrop-blur-xl">
-                    <ContextMenuPrimitive.Item className="md-sidebar-menu-item group/menu flex h-9 cursor-default select-none items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2 text-[13px] font-medium text-[var(--md-text)] outline-none transition-[background,color] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] data-[highlighted]:bg-[var(--md-hover)] data-[highlighted]:text-[var(--md-ink)]" onSelect={() => onDuplicate(item.id)}>
-                      <span className="md-sidebar-menu-item__icon grid size-5 shrink-0 place-items-center text-[var(--md-subtle)] transition-colors duration-150 group-data-[highlighted]/menu:text-[var(--md-accent)]"><Copy className="size-4" strokeWidth={1.3} /></span>
-                      <span className="min-w-0 flex-1 truncate text-start">{t("Duplicate")}</span>
-                      <span className="shrink-0 text-[11px] font-normal text-[var(--md-subtle)]">{t("Create a copy")}</span>
-                    </ContextMenuPrimitive.Item>
-                    <ContextMenuPrimitive.Item disabled={items.length === 1} className="md-sidebar-menu-item group/menu flex h-9 cursor-default select-none items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2 text-[13px] font-medium text-[var(--md-text)] outline-none transition-[background,color] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] data-[disabled]:opacity-40 data-[highlighted]:bg-[color-mix(in_srgb,var(--md-red)_9%,transparent)] data-[highlighted]:text-[var(--md-red)]" onSelect={() => onRemove(item.id)}>
-                      <span className="md-sidebar-menu-item__icon grid size-5 shrink-0 place-items-center text-[var(--md-subtle)] transition-colors duration-150 group-data-[highlighted]/menu:text-[var(--md-red)]"><Trash2 className="size-4" strokeWidth={1.3} /></span>
-                      <span className="min-w-0 flex-1 truncate text-start">{t("Delete")}</span>
-                      <span className="shrink-0 text-[11px] font-normal text-[var(--md-subtle)]">{t(items.length === 1 ? "Keep one line" : "Remove line")}</span>
-                    </ContextMenuPrimitive.Item>
-                  </ContextMenuPrimitive.Content>
-                </ContextMenuPrimitive.Portal>
-              </ContextMenuPrimitive.Root>
-            })}
-          </tbody>
-        </table>
+      <div className="w-full min-w-0 max-w-full [container-type:inline-size]" data-testid="mandatory-goods-line-scroll">
+        <DataTable
+          ariaLabel="Mandatory goods-line fields"
+          columns={itemColumns}
+          rows={items}
+          getRowKey={(item) => item.id}
+          selectedRowKey={activeItemId}
+          minimumWidth={1780}
+          showToolbar={false}
+          showColumnManager={false}
+          className="rounded-none shadow-none"
+          tableClassName="table-fixed text-start"
+          rowProps={(item) => ({
+            onClick: (event) => { if (!(event.target as HTMLElement).closest("input, button, [role='combobox']")) toggleItem(item.id) },
+            onFocus: (event) => { if (!(event.target as HTMLElement).closest("[data-item-disclosure]")) onSelectItem(item.id) },
+            onContextMenu: () => onSelectItem(item.id),
+          })}
+          wrapRow={(item, row) => <ContextMenuPrimitive.Root dir={direction}>
+            <ContextMenuPrimitive.Trigger asChild>{row}</ContextMenuPrimitive.Trigger>
+            <ContextMenuPrimitive.Portal>
+              <ContextMenuPrimitive.Content collisionPadding={14} className="md-sidebar-menu premium-stroke z-50 origin-(--radix-context-menu-content-transform-origin) rounded-[var(--md-radius-xl)] bg-[color-mix(in_srgb,var(--md-surface)_96%,transparent)] p-1 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] backdrop-blur-xl">
+                <ContextMenuPrimitive.Item className="md-sidebar-menu-item group/menu flex h-9 cursor-default select-none items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2 text-[13px] font-medium text-[var(--md-text)] outline-none transition-[background,color] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] data-[highlighted]:bg-[var(--md-hover)] data-[highlighted]:text-[var(--md-ink)]" onSelect={() => onDuplicate(item.id)}>
+                  <span className="md-sidebar-menu-item__icon grid size-5 shrink-0 place-items-center text-[var(--md-subtle)] transition-colors duration-150 group-data-[highlighted]/menu:text-[var(--md-accent)]"><Copy className="size-4" strokeWidth={1.3} /></span>
+                  <span className="min-w-0 flex-1 truncate text-start">{t("Duplicate")}</span>
+                  <span className="shrink-0 text-[11px] font-normal text-[var(--md-subtle)]">{t("Create a copy")}</span>
+                </ContextMenuPrimitive.Item>
+                <ContextMenuPrimitive.Item disabled={items.length === 1} className="md-sidebar-menu-item group/menu flex h-9 cursor-default select-none items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2 text-[13px] font-medium text-[var(--md-text)] outline-none transition-[background,color] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] data-[disabled]:opacity-40 data-[highlighted]:bg-[color-mix(in_srgb,var(--md-red)_9%,transparent)] data-[highlighted]:text-[var(--md-red)]" onSelect={() => onRemove(item.id)}>
+                  <span className="md-sidebar-menu-item__icon grid size-5 shrink-0 place-items-center text-[var(--md-subtle)] transition-colors duration-150 group-data-[highlighted]/menu:text-[var(--md-red)]"><Trash2 className="size-4" strokeWidth={1.3} /></span>
+                  <span className="min-w-0 flex-1 truncate text-start">{t("Delete")}</span>
+                  <span className="shrink-0 text-[11px] font-normal text-[var(--md-subtle)]">{t(items.length === 1 ? "Keep one line" : "Remove line")}</span>
+                </ContextMenuPrimitive.Item>
+              </ContextMenuPrimitive.Content>
+            </ContextMenuPrimitive.Portal>
+          </ContextMenuPrimitive.Root>}
+          renderAfterRow={(item, visibleColumnCount) => {
+            const index = items.findIndex((candidate) => candidate.id === item.id)
+            const expanded = item.id === expandedItemId
+            return <AnimatePresence initial={false}>
+              {expanded ? (
+                    <motion.tr
+                      key={`${item.id}-details`}
+                      initial={shouldReduceMotion ? false : { opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={reduceMotion(shouldReduceMotion, mdMotion.exit)}
+                    >
+                      <td colSpan={visibleColumnCount} className="bg-[var(--md-surface-soft)] p-0 align-top">
+                        <motion.div
+                          id={`item-details-${item.id}`}
+                          initial={shouldReduceMotion ? false : { height: 0 }}
+                          animate={{ height: "auto" }}
+                          exit={{ height: 0 }}
+                          transition={reduceMotion(shouldReduceMotion, expanded ? mdMotion.panel : mdMotion.exit)}
+                          className="overflow-hidden"
+                        >
+                          <div className="sticky start-0 w-[100cqw] p-3">
+                            <ItemDetailsEditor
+                              item={item}
+                              itemNumber={index + 1}
+                              onDuplicate={() => onDuplicate(item.id)}
+                              onRemove={() => onRemove(item.id)}
+                              canRemove={items.length > 1}
+                              update={update}
+                              showDataElements={showDataElements}
+                              showOptional={showOptional}
+                              issues={issues}
+                              highlightedField={highlightedField}
+                              t={t}
+                            />
+                          </div>
+                        </motion.div>
+                      </td>
+                    </motion.tr>
+                  ) : null}
+            </AnimatePresence>
+          }}
+        />
       </div>
       <footer className="flex items-center justify-between gap-3 border-t border-[var(--md-line)] bg-[var(--md-surface-soft)] px-4 py-2 text-[10px] text-[var(--md-subtle)]">
         <span>{items.length} {items.length === 1 ? t("goods line") : t("goods lines")}</span>
@@ -580,59 +864,103 @@ function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, on
       </footer>
     </Surface>
 
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-wrap items-center gap-2"><StatusPill tone="teal">{t("Editing item")} {items.findIndex((item) => item.id === activeItemId) + 1}</StatusPill><div className="flex flex-wrap gap-1 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)]">{tabs.map(([id, label]) => <button key={id} type="button" onClick={() => onItemTabChange(id)} className={cn("rounded-[var(--md-radius-md)] px-3 py-2 text-[11px] font-medium", itemTab === id ? "bg-[var(--md-selected-bg)] text-[var(--md-selected-text)]" : "text-[var(--md-text)] hover:bg-[var(--md-hover)]")}>{t(label)}</button>)}</div></div>
-        <div className="flex gap-2"><Button type="button" variant="outline" size="sm" onClick={() => onDuplicate()} className="group/duplicate transition-[transform,background,color,box-shadow] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:-translate-y-px hover:shadow-[var(--md-shadow-soft)] active:translate-y-0 active:scale-[0.96] motion-reduce:transform-none motion-reduce:transition-none"><span className="relative size-3.5" aria-hidden="true"><Copy className="absolute inset-0 size-3.5 opacity-0 transition-[transform,opacity] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover/duplicate:-translate-x-[2px] group-hover/duplicate:translate-y-[2px] group-hover/duplicate:opacity-30 group-active/duplicate:scale-[0.92] motion-reduce:transform-none motion-reduce:transition-none" /><Copy className="absolute inset-0 size-3.5 transition-transform duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover/duplicate:translate-x-[1px] group-hover/duplicate:-translate-y-[1px] group-active/duplicate:scale-[0.92] motion-reduce:transform-none motion-reduce:transition-none" /></span>{t("Duplicate")}</Button><Button type="button" variant="ghost" size="sm" disabled={items.length === 1} onClick={() => onRemove()}><Trash2 className="size-3.5" />{t("Remove")}</Button></div>
+  </div>
+}
+
+function ItemDetailsEditor({ item, itemNumber, onDuplicate, onRemove, canRemove, update, showDataElements, showOptional, issues, highlightedField, t }: {
+  item: ExportDeclarationItem
+  itemNumber: number
+  onDuplicate: () => void
+  onRemove: () => void
+  canRemove: boolean
+  update: <K extends keyof ExportDeclarationItem>(field: K, value: ExportDeclarationItem[K]) => void
+  showDataElements: boolean
+  showOptional: boolean
+  issues: Set<string>
+  highlightedField?: string
+  t: (text: string) => string
+}) {
+  const packageKindFields = useReferenceOptions("package_kind", t, "Select package")
+  const countryFields = useReferenceOptions("country", t, "Select country")
+  const optionalCountries = useReferenceOptions("country", t, "Not specified")
+  const procedureCodeFields = useReferenceOptions("procedure_code", t, "Select procedure")
+  const additionalProcedureCodeFields = useReferenceOptions("additional_procedure_code", t, "Select procedure")
+  const currencyFields = useReferenceOptions("currency", t, "Select currency")
+  const previousDocumentTypes = useReferenceOptions("previous_document_type", t, "Select document type")
+
+  return <div className="space-y-3" aria-label={`${t("Item details")} ${itemNumber}`}>
+    <div className="grid items-start gap-3 xl:grid-cols-[minmax(260px,0.95fr)_minmax(260px,0.88fr)_minmax(300px,1.05fr)]">
+      <div className="space-y-3">
+        <ItemDetailGroup title={t("Commodity")}>
+          <FieldGrid className="grid-cols-1 sm:grid-cols-1 md:grid-cols-1 xl:grid-cols-1 2xl:grid-cols-1">
+          <TextField label={t("Commodity code")} dataElement="6/14" customsBox="33" required showDataElements={showDataElements} value={item.commodityCode} onChange={(value) => update("commodityCode", value.replace(/\D/g, "").slice(0, 10))} invalid={issues.has("commodityCode")} fieldKey="commodityCode" highlighted={highlightedField === "commodityCode"} />
+          <TextField label={t("UN dangerous goods code")} dataElement="6/12" customsBox="31" showDataElements={showDataElements} value={item.dangerousGoodsCode} onChange={(value) => update("dangerousGoodsCode", value)} />
+          <TextAreaField label={t("Description of goods")} dataElement="6/8" customsBox="31" required showDataElements={showDataElements} value={item.description} onChange={(value) => update("description", value)} invalid={issues.has("description")} fieldKey="description" highlighted={highlightedField === "description"} />
+          {showOptional ? <><TextField label={t("TARIC additional code")} dataElement="6/16" customsBox="33" showDataElements={showDataElements} value={item.taricCode} onChange={(value) => update("taricCode", value)} /><TextField label={t("National additional code")} dataElement="6/17" customsBox="33" showDataElements={showDataElements} value={item.nationalCode} onChange={(value) => update("nationalCode", value)} /><TextField label={t("CUS code")} dataElement="6/13" customsBox="31" showDataElements={showDataElements} value={item.cusCode} onChange={(value) => update("cusCode", value)} /></> : null}
+          </FieldGrid>
+        </ItemDetailGroup>
+
+        <ItemDetailGroup title={t("Packaging & procedure")}>
+          <FieldGrid className="grid-cols-1 sm:grid-cols-2 md:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-2">
+          <SelectField label={t("Package kind")} dataElement="6/9" customsBox="31" required showDataElements={showDataElements} value={item.packageKind} onChange={(value) => update("packageKind", value)} invalid={issues.has("packageKind")} fieldKey="packageKind" highlighted={highlightedField === "packageKind"} options={packageKindFields} />
+          <TextField label={t("Package marks")} dataElement="6/11" customsBox="31" required showDataElements={showDataElements} value={item.packageMarks} onChange={(value) => update("packageMarks", value)} invalid={issues.has("packageMarks")} fieldKey="packageMarks" highlighted={highlightedField === "packageMarks"} />
+          <TextField label={t("Package count")} dataElement="6/10" customsBox="31" required showDataElements={showDataElements} value={item.packageCount} onChange={(value) => update("packageCount", value)} invalid={issues.has("packageCount")} fieldKey="packageCount" highlighted={highlightedField === "packageCount"} />
+          <SelectField label={t("Non-preferential origin")} dataElement="5/15" customsBox="34" required showDataElements={showDataElements} value={item.nonPreferentialOrigin} onChange={(value) => update("nonPreferentialOrigin", value)} invalid={issues.has("nonPreferentialOrigin")} fieldKey="nonPreferentialOrigin" highlighted={highlightedField === "nonPreferentialOrigin"} options={countryFields} />
+          <SelectField label={t("Procedure code")} dataElement="1/10" customsBox="37" required showDataElements={showDataElements} value={item.procedureCode} onChange={(value) => update("procedureCode", value)} invalid={issues.has("procedureCode")} fieldKey="procedureCode" highlighted={highlightedField === "procedureCode"} options={procedureCodeFields} />
+          <SelectField label={t("Additional procedure code")} dataElement="1/11" customsBox="37" required showDataElements={showDataElements} value={item.additionalProcedureCode} onChange={(value) => update("additionalProcedureCode", value)} invalid={issues.has("additionalProcedureCode")} fieldKey="additionalProcedureCode" highlighted={highlightedField === "additionalProcedureCode"} options={additionalProcedureCodeFields} />
+          </FieldGrid>
+        </ItemDetailGroup>
       </div>
-      <SectionFrame title={t(tabs.find(([id]) => id === itemTab)?.[1] ?? "Item details")} description={t("Only fields for this item section are shown.")}>
-        <FieldGrid>
-          {itemTab === "commodity" ? <>
-            <TextField label={t("Commodity code")} dataElement="6/14" customsBox="33" required showDataElements={showDataElements} value={activeItem.commodityCode} onChange={(value) => update("commodityCode", value.replace(/\D/g, "").slice(0, 10))} invalid={issues.has("commodityCode")} fieldKey="commodityCode" highlighted={highlightedField === "commodityCode"} />
-            <TextAreaField label={t("Description of goods")} dataElement="6/8" customsBox="31" required showDataElements={showDataElements} value={activeItem.description} onChange={(value) => update("description", value)} invalid={issues.has("description")} fieldKey="description" highlighted={highlightedField === "description"} className="md:col-span-2" />
-            <TextField label={t("UN dangerous goods code")} dataElement="6/12" customsBox="31" showDataElements={showDataElements} value={activeItem.dangerousGoodsCode} onChange={(value) => update("dangerousGoodsCode", value)} />
-            {showOptional ? <><TextField label={t("TARIC additional code")} dataElement="6/16" customsBox="33" showDataElements={showDataElements} value={activeItem.taricCode} onChange={(value) => update("taricCode", value)} /><TextField label={t("National additional code")} dataElement="6/17" customsBox="33" showDataElements={showDataElements} value={activeItem.nationalCode} onChange={(value) => update("nationalCode", value)} /><TextField label={t("CUS code")} dataElement="6/13" customsBox="31" showDataElements={showDataElements} value={activeItem.cusCode} onChange={(value) => update("cusCode", value)} /></> : null}
-          </> : null}
-          {itemTab === "packaging" ? <>
-            <SelectField label={t("Package kind")} dataElement="6/9" customsBox="31" required showDataElements={showDataElements} value={activeItem.packageKind} onChange={(value) => update("packageKind", value)} invalid={issues.has("packageKind")} fieldKey="packageKind" highlighted={highlightedField === "packageKind"} options={packageKindFields} />
-            <TextField label={t("Package marks")} dataElement="6/11" customsBox="31" required showDataElements={showDataElements} value={activeItem.packageMarks} onChange={(value) => update("packageMarks", value)} invalid={issues.has("packageMarks")} fieldKey="packageMarks" highlighted={highlightedField === "packageMarks"} />
-            <TextField label={t("Package count")} dataElement="6/10" customsBox="31" required showDataElements={showDataElements} value={activeItem.packageCount} onChange={(value) => update("packageCount", value)} invalid={issues.has("packageCount")} fieldKey="packageCount" highlighted={highlightedField === "packageCount"} />
-            <SelectField label={t("Non-preferential origin")} dataElement="5/15" customsBox="34" required showDataElements={showDataElements} value={activeItem.nonPreferentialOrigin} onChange={(value) => update("nonPreferentialOrigin", value)} invalid={issues.has("nonPreferentialOrigin")} fieldKey="nonPreferentialOrigin" highlighted={highlightedField === "nonPreferentialOrigin"} options={countryFields} />
-            <SelectField label={t("Procedure code")} dataElement="1/10" customsBox="37" required showDataElements={showDataElements} value={activeItem.procedureCode} onChange={(value) => update("procedureCode", value)} invalid={issues.has("procedureCode")} fieldKey="procedureCode" highlighted={highlightedField === "procedureCode"} options={procedureCodeFields} />
-            <SelectField label={t("Additional procedure code")} dataElement="1/11" customsBox="37" required showDataElements={showDataElements} value={activeItem.additionalProcedureCode} onChange={(value) => update("additionalProcedureCode", value)} invalid={issues.has("additionalProcedureCode")} fieldKey="additionalProcedureCode" highlighted={highlightedField === "additionalProcedureCode"} options={additionalProcedureCodeFields} />
-          </> : null}
-          {itemTab === "values" ? <>
-            <TextField label={t("Tariff quantity")} dataElement="6/2" customsBox="41" showDataElements={showDataElements} value={activeItem.tariffQuantity} onChange={(value) => update("tariffQuantity", value)} />
-            <TextField label={t("Gross mass")} dataElement="6/5" customsBox="35" required showDataElements={showDataElements} value={activeItem.grossMass} onChange={(value) => update("grossMass", value)} invalid={issues.has("grossMass")} fieldKey="grossMass" highlighted={highlightedField === "grossMass"} suffix="kg" />
-            <TextField label={t("Net mass")} dataElement="6/1" customsBox="38" required showDataElements={showDataElements} value={activeItem.netMass} onChange={(value) => update("netMass", value)} invalid={issues.has("netMass")} fieldKey="netMass" highlighted={highlightedField === "netMass"} suffix="kg" />
-            <TextField label={t("Item price")} dataElement="4/14" customsBox="42" required showDataElements={showDataElements} value={activeItem.itemPrice} onChange={(value) => update("itemPrice", value)} invalid={issues.has("itemPrice")} fieldKey="itemPrice" highlighted={highlightedField === "itemPrice"} />
-            <SelectField label={t("Currency code")} dataElement="4/10" customsBox="22" required showDataElements={showDataElements} value={activeItem.currency} onChange={(value) => update("currency", value)} options={currencyFields} />
-            <TextField label={t("Statistical value")} dataElement="8/6" customsBox="46" required showDataElements={showDataElements} value={activeItem.statisticalValue} onChange={(value) => update("statisticalValue", value)} invalid={issues.has("statisticalValue")} fieldKey="statisticalValue" highlighted={highlightedField === "statisticalValue"} />
-          </> : null}
-          {itemTab === "documents" ? <>
-            <SelectField label={t("Previous document type")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={activeItem.previousDocumentType} onChange={(value) => update("previousDocumentType", value)} options={previousDocumentTypes} />
-            <TextField label={t("Previous document reference")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={activeItem.previousDocumentReference} onChange={(value) => update("previousDocumentReference", value)} invalid={issues.has("previousDocumentReference")} fieldKey="previousDocumentReference" highlighted={highlightedField === "previousDocumentReference"} />
-            {showOptional ? <><TextField label={t("Additional document category")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={activeItem.additionalDocumentCategory} onChange={(value) => update("additionalDocumentCategory", value)} /><TextField label={t("Additional document ID")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={activeItem.additionalDocumentId} onChange={(value) => update("additionalDocumentId", value)} /><TextField label={t("Additional document name")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={activeItem.additionalDocumentName} onChange={(value) => update("additionalDocumentName", value)} /><TextField label={t("LPCO exemption code")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={activeItem.lpcoExemptionCode} onChange={(value) => update("lpcoExemptionCode", value)} /></> : null}
-          </> : null}
-          {itemTab === "parties" ? <><TextField label={t("Consignor")} dataElement="3/7" customsBox="2" showDataElements={showDataElements} value={activeItem.consignor} onChange={(value) => update("consignor", value)} /><TextField label={t("Consignee")} dataElement="3/9" customsBox="8" showDataElements={showDataElements} value={activeItem.consignee} onChange={(value) => update("consignee", value)} /><SelectField label={t("Destination country")} dataElement="5/8" customsBox="17" showDataElements={showDataElements} value={activeItem.destinationCountry} onChange={(value) => update("destinationCountry", value)} options={optionalCountries} /><TextField label={t("Reference number or UCR")} dataElement="2/4" customsBox="44" showDataElements={showDataElements} value={activeItem.ucr} onChange={(value) => update("ucr", value)} /><TextField label={t("Container identification number")} dataElement="7/10" customsBox="31" showDataElements={showDataElements} value={activeItem.containerId} onChange={(value) => update("containerId", value)} /></> : null}
+
+      <div className="space-y-3">
+        <ItemDetailGroup title={t("Documents")}>
+          <FieldGrid className="grid-cols-1 sm:grid-cols-1 md:grid-cols-1 xl:grid-cols-1 2xl:grid-cols-1">
+            <SelectField label={t("Previous document type")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={item.previousDocumentType} onChange={(value) => update("previousDocumentType", value)} options={previousDocumentTypes} />
+            <TextField label={t("Previous document reference")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={item.previousDocumentReference} onChange={(value) => update("previousDocumentReference", value)} invalid={issues.has("previousDocumentReference")} fieldKey="previousDocumentReference" highlighted={highlightedField === "previousDocumentReference"} />
+            {showOptional ? <><TextField label={t("Additional document category")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={item.additionalDocumentCategory} onChange={(value) => update("additionalDocumentCategory", value)} /><TextField label={t("Additional document ID")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={item.additionalDocumentId} onChange={(value) => update("additionalDocumentId", value)} /><TextField label={t("Additional document name")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={item.additionalDocumentName} onChange={(value) => update("additionalDocumentName", value)} /><TextField label={t("LPCO exemption code")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={item.lpcoExemptionCode} onChange={(value) => update("lpcoExemptionCode", value)} /></> : null}
+          </FieldGrid>
+        </ItemDetailGroup>
+
+        <ItemDetailGroup title={t("Weights & values")}>
+          <FieldGrid className="grid-cols-1 sm:grid-cols-2 md:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-2">
+          <TextField label={t("Tariff quantity")} dataElement="6/2" customsBox="41" showDataElements={showDataElements} value={item.tariffQuantity} onChange={(value) => update("tariffQuantity", value)} />
+          <TextField label={t("Gross mass")} dataElement="6/5" customsBox="35" required showDataElements={showDataElements} value={item.grossMass} onChange={(value) => update("grossMass", value)} invalid={issues.has("grossMass")} fieldKey="grossMass" highlighted={highlightedField === "grossMass"} suffix="kg" />
+          <TextField label={t("Net mass")} dataElement="6/1" customsBox="38" required showDataElements={showDataElements} value={item.netMass} onChange={(value) => update("netMass", value)} invalid={issues.has("netMass")} fieldKey="netMass" highlighted={highlightedField === "netMass"} suffix="kg" />
+          <TextField label={t("Item price")} dataElement="4/14" customsBox="42" required showDataElements={showDataElements} value={item.itemPrice} onChange={(value) => update("itemPrice", value)} invalid={issues.has("itemPrice")} fieldKey="itemPrice" highlighted={highlightedField === "itemPrice"} />
+          <SelectField label={t("Currency code")} dataElement="4/10" customsBox="22" required showDataElements={showDataElements} value={item.currency} onChange={(value) => update("currency", value)} options={currencyFields} />
+          <TextField label={t("Statistical value")} dataElement="8/6" customsBox="46" required showDataElements={showDataElements} value={item.statisticalValue} onChange={(value) => update("statisticalValue", value)} invalid={issues.has("statisticalValue")} fieldKey="statisticalValue" highlighted={highlightedField === "statisticalValue"} />
+          </FieldGrid>
+        </ItemDetailGroup>
+      </div>
+
+      <ItemDetailGroup title={t("Parties & transport")}>
+        <FieldGrid className="grid-cols-1 sm:grid-cols-1 md:grid-cols-1 xl:grid-cols-1 2xl:grid-cols-1">
+          <TextField label={t("Consignor")} dataElement="3/7" customsBox="2" showDataElements={showDataElements} value={item.consignor} onChange={(value) => update("consignor", value)} />
+          <TextField label={t("Consignee")} dataElement="3/9" customsBox="8" showDataElements={showDataElements} value={item.consignee} onChange={(value) => update("consignee", value)} />
+          <SelectField label={t("Destination country")} dataElement="5/8" customsBox="17" showDataElements={showDataElements} value={item.destinationCountry} onChange={(value) => update("destinationCountry", value)} options={optionalCountries} />
+          <TextField label={t("Reference number or UCR")} dataElement="2/4" customsBox="44" showDataElements={showDataElements} value={item.ucr} onChange={(value) => update("ucr", value)} />
+          <TextField label={t("Container identification number")} dataElement="7/10" customsBox="31" showDataElements={showDataElements} value={item.containerId} onChange={(value) => update("containerId", value)} />
         </FieldGrid>
-      </SectionFrame>
+      </ItemDetailGroup>
+    </div>
+    <div className="flex flex-wrap justify-end gap-2 border-t border-[var(--md-line)] pt-3">
+      <Button type="button" variant="outline" size="sm" onClick={onDuplicate} className="group/duplicate transition-[transform,background,color,box-shadow] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:-translate-y-px hover:shadow-[var(--md-shadow-soft)] active:translate-y-0 active:scale-[0.96] motion-reduce:transform-none motion-reduce:transition-none"><span className="relative size-3.5" aria-hidden="true"><Copy className="absolute inset-0 size-3.5 opacity-0 transition-[transform,opacity] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover/duplicate:-translate-x-[2px] group-hover/duplicate:translate-y-[2px] group-hover/duplicate:opacity-30 motion-reduce:transform-none motion-reduce:transition-none" /><Copy className="absolute inset-0 size-3.5 transition-transform duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover/duplicate:translate-x-[1px] group-hover/duplicate:-translate-y-[1px] motion-reduce:transform-none motion-reduce:transition-none" /></span>{t("Duplicate")}</Button>
+      <Button type="button" variant="ghost" size="sm" disabled={!canRemove} onClick={onRemove}><Trash2 className="size-3.5" />{t("Remove")}</Button>
     </div>
   </div>
 }
 
-function ItemTableHeading({ children, className }: { children: ReactNode; className?: string }) {
-  return <th scope="col" className={cn("border-e border-[var(--md-line)] px-2 py-2 text-start leading-3", className)}>{children}</th>
-}
-
-function ItemTableCell({ children }: { children: ReactNode }) {
-  return <td className="border-e border-[var(--md-line)] p-1 align-middle">{children}</td>
+function ItemDetailGroup({ title, children }: { title: string; children: ReactNode }) {
+  return <section aria-label={title} className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)]">
+    <h3 className="mb-3 text-[14px] font-medium text-[var(--md-ink)]">{title}</h3>
+    {children}
+  </section>
 }
 
 function ItemTableSelect({ label, value, onChange, options, invalid }: { label: string; value: string; onChange: (value: string) => void; options: ReadonlyArray<readonly [string, string]>; invalid?: boolean }) {
   const referenceState = useContext(CustomsReferenceDataContext)
   return <Select value={value || undefined} onValueChange={onChange} disabled={referenceState.loading || Boolean(referenceState.error) || !options.length}>
-    <SelectTrigger aria-label={label} className={cn("h-7 rounded-[var(--md-radius-xs)] border-transparent bg-[var(--md-surface-tint)] px-1.5 text-[10px] shadow-none focus:ring-1 focus:ring-[var(--md-accent)]", invalid && "ring-1 ring-[var(--md-red)]")}><SelectValue placeholder="—" /></SelectTrigger>
+    <SelectTrigger aria-label={label} aria-invalid={invalid || undefined} className={cn("h-7 rounded-[var(--md-radius-xs)] border-transparent bg-[var(--md-surface-tint)] px-1.5 text-[10px] shadow-none focus:ring-1 focus:ring-[var(--md-accent)]", invalid && "ring-1 ring-[var(--md-red)]")}><SelectValue placeholder="—" /></SelectTrigger>
     <SelectContent>{options.map(([optionValue, optionLabel]) => <SelectItem key={optionValue} value={optionValue}>{optionLabel}</SelectItem>)}</SelectContent>
   </Select>
 }
@@ -665,7 +993,7 @@ function ReviewSection({ draft, completion, fallbackUrl, onValidate, onFixIssue,
   return <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
     <Surface padding="lg" className="rounded-[var(--md-radius-xl)]">
       <div className="flex items-center justify-between gap-4"><span><p className="text-[12px] font-medium text-[var(--md-accent)]">{t("Declaration readiness")}</p><h2 className="mt-1 text-[22px] font-medium text-[var(--md-ink)]">{completion.percent}% {t("complete")}</h2><p className="mt-1 text-[12px] text-[var(--md-text)]">{completion.completeChecks}/{completion.totalChecks} {t("configured checks complete")}</p></span><div className="relative grid size-24 place-items-center rounded-full" style={{ background: `conic-gradient(var(--md-accent) ${completion.percent}%, var(--md-line) 0)` }}><div className="grid size-[78px] place-items-center rounded-full bg-[var(--md-surface)] text-[17px] font-medium">{completion.percent}%</div></div></div>
-      {completion.issues.length ? <div className="mt-5 divide-y divide-[var(--md-line)] border-t border-[var(--md-line)]">{completion.issues.slice(0, 14).map((issue) => <div key={issue.id} className="flex min-h-11 items-center gap-3 py-2"><CircleAlert className="size-4 shrink-0 text-[var(--md-amber)]" /><span className="min-w-0 flex-1 text-[12px] text-[var(--md-text)]">{issue.itemNumber ? `${t("Item")} ${issue.itemNumber}: ` : ""}{t(issue.message)}</span><Button type="button" variant="outline" size="sm" className="min-w-[48px] rounded-[var(--md-radius-md)]" onClick={() => onFixIssue(issue)}>{t("Fix")}</Button></div>)}</div> : <div className="mt-5 flex gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-accent-a10)] p-4"><CheckCircle2 className="size-5 text-[var(--md-green)]" /><span className="text-[13px] text-[var(--md-text)]"><strong className="block text-[var(--md-ink)]">{t("Current form checks passed")}</strong>{t("Ready for secure server integration checks.")}</span></div>}
+      {completion.issues.length ? <div className="mt-5 divide-y divide-[var(--md-line)] border-t border-[var(--md-line)]">{completion.issues.slice(0, 14).map((issue) => <div key={issue.id} className="flex min-h-11 items-center gap-3 py-2"><CircleAlert className="size-4 shrink-0 text-[var(--md-red)]" /><span className="min-w-0 flex-1 text-[12px] text-[var(--md-text)]">{issue.itemNumber ? `${t("Item")} ${issue.itemNumber}: ` : ""}{t(issue.message)}</span><Button type="button" variant="outline" size="sm" className="min-w-[48px] rounded-[var(--md-radius-md)]" onClick={() => onFixIssue(issue)}>{t("Fix")}</Button></div>)}</div> : <div className="mt-5 flex gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-accent-a10)] p-4"><CheckCircle2 className="size-5 text-[var(--md-green)]" /><span className="text-[13px] text-[var(--md-text)]"><strong className="block text-[var(--md-ink)]">{t("Current form checks passed")}</strong>{t("Ready for secure server integration checks.")}</span></div>}
     </Surface>
     <div className="space-y-4">
       <Surface padding="lg" className="rounded-[var(--md-radius-xl)]"><h2 className="text-[14px] font-medium text-[var(--md-ink)]">{t("Declaration summary")}</h2><dl className="mt-4 divide-y divide-[var(--md-line)] border-t border-[var(--md-line)]"><Summary label={t("Reference")} value={draft.multideckReference} /><Summary label={t("Category")} value={draft.declarationCategory} /><Summary label={t("Type")} value={draft.declarationType} /><Summary label={t("Items")} value={String(draft.items.length)} /><Summary label={t("Destination")} value={draft.destinationCountry || t("Not set")} /></dl></Surface>
@@ -681,47 +1009,41 @@ function generalTabForField(field: string): EditorTab {
   return "declaration"
 }
 
-function itemTabForField(field: string): ItemTab {
-  if (["commodityCode", "description", "dangerousGoodsCode", "taricCode", "nationalCode", "cusCode"].includes(field)) return "commodity"
-  if (["packageKind", "packageMarks", "packageCount", "nonPreferentialOrigin", "procedureCode", "additionalProcedureCode"].includes(field)) return "packaging"
-  if (["tariffQuantity", "grossMass", "netMass", "itemPrice", "currency", "statisticalValue"].includes(field)) return "values"
-  if (["previousDocumentType", "previousDocumentReference", "additionalDocumentCategory", "additionalDocumentId", "additionalDocumentName", "lpcoExemptionCode"].includes(field)) return "documents"
-  return "parties"
-}
-
-function KindButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
-  return <button type="button" onClick={onClick} className={cn("min-w-[112px] rounded-[var(--md-radius-md)] px-4 py-2 text-[12px] font-medium", active ? "bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-line)]" : "text-[var(--md-text)]")}>{children}</button>
-}
-
 function Toggle({ checked, onChange, children }: { checked: boolean; onChange: (checked: boolean) => void; children: ReactNode }) {
   return <label className="flex h-9 items-center gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] px-3 text-[12px] text-[var(--md-text)] shadow-[var(--md-shadow-line)]"><Checkbox checked={checked} onCheckedChange={(value) => onChange(value === true)} />{children}</label>
 }
 
 function SectionFrame({ title, description, children }: { title: string; description: string; children: ReactNode }) {
-  return <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]"><header className="border-b border-[var(--md-line)] px-5 py-4"><h2 className="text-[15px] font-medium text-[var(--md-ink)]">{title}</h2><p className="mt-1 text-[12px] text-[var(--md-subtle)]">{description}</p></header><div className="bg-[var(--md-surface-soft)] p-5">{children}</div></Surface>
+  const compact = useContext(CompactCustomsFormContext)
+  return <Surface padding="none" className={cn("overflow-hidden", compact ? "rounded-[var(--md-radius-lg)]" : "rounded-[var(--md-radius-xl)]")}><header className={cn("border-b border-[var(--md-line)]", compact ? "px-3 py-2.5" : "px-5 py-3")}><div className={cn(!compact && "flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-6")}><h2 className={cn("shrink-0 font-medium text-[var(--md-ink)]", compact ? "text-[13px]" : "text-[15px]")}>{title}</h2><p className={cn("text-[var(--md-subtle)]", compact ? "mt-0.5 text-[10.5px] leading-4" : "text-[12px] leading-5 sm:max-w-[65%] sm:text-end")}>{description}</p></div></header><div className={cn("bg-[var(--md-surface-soft)]", compact ? "p-3" : "p-5")}>{children}</div></Surface>
 }
 
-function FieldGrid({ children }: { children: ReactNode }) {
-  return <div className="grid gap-x-3 gap-y-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">{children}</div>
+function FieldGrid({ children, className }: { children: ReactNode; className?: string }) {
+  const compact = useContext(CompactCustomsFormContext)
+  return <div className={cn("grid", compact ? "gap-1.5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4" : "gap-x-3 gap-y-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4", className)}>{children}</div>
 }
 
 function FieldShell({ label, dataElement, customsBox, required, showDataElements, invalid, highlighted, fieldKey, className, children }: { label: string; dataElement?: string; customsBox?: string; required?: boolean; showDataElements: boolean; invalid?: boolean; highlighted?: boolean; fieldKey?: string; className?: string; children: ReactNode }) {
   const showCustomsBoxNumbers = useContext(CustomsBoxVisibilityContext)
+  const compact = useContext(CompactCustomsFormContext)
   const showAnnotations = (showDataElements && dataElement) || (showCustomsBoxNumbers && customsBox)
-  return <label className={cn("min-w-0", className)}><span className="mb-1.5 flex min-h-5 items-center gap-1.5 text-[11px] font-medium text-[var(--md-text)]"><span className="truncate">{label}</span>{required ? <span className="text-[var(--md-red)]">*</span> : null}{showAnnotations ? <span className="ms-auto flex shrink-0 items-center gap-1">{showDataElements && dataElement ? <span className="rounded-[var(--md-radius-sm)] bg-[color-mix(in_srgb,var(--md-blue)_8%,transparent)] px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-[var(--md-blue)]" dir="ltr">DE {dataElement}</span> : null}{showCustomsBoxNumbers && customsBox ? <span className="rounded-[var(--md-radius-sm)] bg-[var(--md-accent-a10)] px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-[var(--md-accent)]" dir="ltr">{`Box ${customsBox}`}</span> : null}</span> : null}</span><span data-customs-field={fieldKey} className={cn("block rounded-[var(--md-radius-md)] transition-[box-shadow] duration-300", invalid && "ring-2 ring-[color-mix(in_srgb,var(--md-red)_22%,transparent)]", highlighted && "ring-2 ring-[var(--md-accent)] shadow-[0_0_20px_var(--md-accent)]")}>{children}</span></label>
+  return <label data-field-invalid={invalid || undefined} className={cn("min-w-0", compact && "grid grid-cols-[minmax(76px,0.42fr)_minmax(0,0.58fr)] items-center gap-1.5", className)}><span className={cn("flex items-center gap-1.5 font-medium text-[var(--md-text)]", compact ? "min-h-0 text-[10.5px] leading-[1.15]" : "mb-1.5 min-h-5 text-[11px]")}><span className={cn(compact ? "line-clamp-2" : "truncate")}>{label}</span>{required ? <span className="text-[var(--md-red)]">*</span> : null}{showAnnotations ? <span className={cn("flex shrink-0 items-center gap-1", !compact && "ms-auto")}>{showDataElements && dataElement ? <span className={cn("rounded-[var(--md-radius-sm)] bg-[color-mix(in_srgb,var(--md-blue)_8%,transparent)] font-medium tabular-nums text-[var(--md-blue)]", compact ? "px-1 py-0.5 text-[8.5px]" : "px-1.5 py-0.5 text-[10px]")} dir="ltr">DE {dataElement}</span> : null}{showCustomsBoxNumbers && customsBox ? <span className={cn("rounded-[var(--md-radius-sm)] bg-[var(--md-accent-a10)] font-medium tabular-nums text-[var(--md-accent)]", compact ? "px-1 py-0.5 text-[8.5px]" : "px-1.5 py-0.5 text-[10px]")} dir="ltr">{`Box ${customsBox}`}</span> : null}</span> : null}</span><span data-customs-field={fieldKey} className={cn("block rounded-[var(--md-radius-md)] transition-[box-shadow] duration-300", invalid && "ring-2 ring-[color-mix(in_srgb,var(--md-red)_22%,transparent)]", highlighted && "ring-2 ring-[var(--md-accent)] shadow-[0_0_20px_var(--md-accent)]")}>{children}</span></label>
 }
 
 function TextField({ label, value, onChange, dataElement, customsBox, required, showDataElements, invalid, highlighted, fieldKey, placeholder, suffix }: { label: string; value: string; onChange: (value: string) => void; dataElement?: string; customsBox?: string; required?: boolean; showDataElements: boolean; invalid?: boolean; highlighted?: boolean; fieldKey?: string; placeholder?: string; suffix?: string }) {
-  return <FieldShell label={label} dataElement={dataElement} customsBox={customsBox} required={required} showDataElements={showDataElements} invalid={invalid} highlighted={highlighted} fieldKey={fieldKey}><div className="relative"><Input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} aria-invalid={invalid || undefined} dir="ltr" className={cn("h-9 border-0 bg-[var(--md-field-bg)] text-[13px] shadow-[var(--md-shadow-line)]", suffix && "pe-10")} />{suffix ? <span className="pointer-events-none absolute end-3 top-1/2 -translate-y-1/2 text-[10px] text-[var(--md-subtle)]">{suffix}</span> : null}</div></FieldShell>
+  const compact = useContext(CompactCustomsFormContext)
+  return <FieldShell label={label} dataElement={dataElement} customsBox={customsBox} required={required} showDataElements={showDataElements} invalid={invalid} highlighted={highlighted} fieldKey={fieldKey}><div className="relative"><Input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} aria-invalid={invalid || undefined} dir="ltr" className={cn("border-0 bg-[var(--md-field-bg)] shadow-[var(--md-shadow-line)]", compact ? "h-8 px-2 text-[11px]" : "h-9 text-[13px]", suffix && "pe-10")} />{suffix ? <span className="pointer-events-none absolute end-3 top-1/2 -translate-y-1/2 text-[10px] text-[var(--md-subtle)]">{suffix}</span> : null}</div></FieldShell>
 }
 
 function TextAreaField({ label, value, onChange, dataElement, customsBox, required, showDataElements, invalid, highlighted, fieldKey, className }: { label: string; value: string; onChange: (value: string) => void; dataElement?: string; customsBox?: string; required?: boolean; showDataElements: boolean; invalid?: boolean; highlighted?: boolean; fieldKey?: string; className?: string }) {
-  return <FieldShell label={label} dataElement={dataElement} customsBox={customsBox} required={required} showDataElements={showDataElements} invalid={invalid} highlighted={highlighted} fieldKey={fieldKey} className={className}><Textarea value={value} onChange={(event) => onChange(event.target.value)} aria-invalid={invalid || undefined} className="min-h-9 border-0 bg-[var(--md-field-bg)] text-[13px] shadow-[var(--md-shadow-line)]" /></FieldShell>
+  const compact = useContext(CompactCustomsFormContext)
+  return <FieldShell label={label} dataElement={dataElement} customsBox={customsBox} required={required} showDataElements={showDataElements} invalid={invalid} highlighted={highlighted} fieldKey={fieldKey} className={className}><Textarea value={value} onChange={(event) => onChange(event.target.value)} aria-invalid={invalid || undefined} className={cn("border-0 bg-[var(--md-field-bg)] shadow-[var(--md-shadow-line)]", compact ? "min-h-8 px-2 py-1.5 text-[11px]" : "min-h-9 text-[13px]")} /></FieldShell>
 }
 
 function SelectField({ label, value, onChange, options, dataElement, customsBox, required, showDataElements, invalid, highlighted, fieldKey }: { label: string; value: string; onChange: (value: string) => void; options: ReadonlyArray<readonly [string, string]>; dataElement?: string; customsBox?: string; required?: boolean; showDataElements: boolean; invalid?: boolean; highlighted?: boolean; fieldKey?: string }) {
   const referenceState = useContext(CustomsReferenceDataContext)
-  return <FieldShell label={label} dataElement={dataElement} customsBox={customsBox} required={required} showDataElements={showDataElements} invalid={invalid} highlighted={highlighted} fieldKey={fieldKey}><Select value={value || undefined} onValueChange={onChange} disabled={referenceState.loading || Boolean(referenceState.error) || options.length <= 1}><SelectTrigger className="h-9 w-full border-0 bg-[var(--md-field-bg)] text-[13px] shadow-[var(--md-shadow-line)]"><SelectValue placeholder={options[0]?.[1]} /></SelectTrigger><SelectContent>{options.filter(([optionValue]) => optionValue).map(([optionValue, optionLabel]) => <SelectItem key={optionValue} value={optionValue}>{optionLabel}</SelectItem>)}</SelectContent></Select></FieldShell>
+  const compact = useContext(CompactCustomsFormContext)
+  return <FieldShell label={label} dataElement={dataElement} customsBox={customsBox} required={required} showDataElements={showDataElements} invalid={invalid} highlighted={highlighted} fieldKey={fieldKey}><Select value={value || undefined} onValueChange={onChange} disabled={referenceState.loading || Boolean(referenceState.error) || options.length <= 1}><SelectTrigger aria-invalid={invalid || undefined} className={cn("w-full border-0 bg-[var(--md-field-bg)] shadow-[var(--md-shadow-line)]", compact ? "h-8 px-2 text-[11px]" : "h-9 text-[13px]")}><SelectValue placeholder={options[0]?.[1]} /></SelectTrigger><SelectContent>{options.filter(([optionValue]) => optionValue).map(([optionValue, optionLabel]) => <SelectItem key={optionValue} value={optionValue}>{optionLabel}</SelectItem>)}</SelectContent></Select></FieldShell>
 }
 
 function Summary({ label, value }: { label: string; value: string }) {

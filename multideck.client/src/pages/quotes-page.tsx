@@ -27,14 +27,13 @@ import {
   Send,
   Trash2,
   TriangleAlert,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
@@ -343,6 +342,47 @@ const quoteQueue: QuoteRecord[] = [
     currency: "GBP",
   },
 ]
+
+const newQuoteDraft: QuoteRecord = {
+  ...quoteQueue[0],
+  id: "NEW",
+  status: "Draft",
+  statusTone: "neutral",
+  localRef: "",
+  source: "Manual",
+  workflowStatus: "Draft",
+  holdReason: "None",
+  customerPO: "",
+  shipperReference: "",
+  agentReference: "",
+  carrierReference: "",
+  docsStatus: "Draft",
+  workflow: "Intake",
+  revisionReason: "",
+  createdAt: "Now",
+  customer: "",
+  clientCode: "",
+  customerAddress: "",
+  customerContact: "",
+  customerEmail: "",
+  shipperCode: "",
+  shipperName: "",
+  shipperAddress: "",
+  shipperContact: "",
+  collectionAddress: "",
+  consigneeCode: "",
+  consigneeName: "",
+  consigneeAddress: "",
+  deliveryAddress: "",
+  route: "",
+  origin: "",
+  destination: "",
+  via: "",
+  margin: "0.00%",
+  profit: 0,
+  cost: 0,
+  revenue: 0,
+}
 
 const salesRepresentativeOptions = systemPeople
   .filter((person) => person.roles.includes("sales"))
@@ -934,6 +974,16 @@ function RecentQuotesSummary({ quote }: { quote: QuoteRecord }) {
   const scopeDetail = scope === "customer"
     ? quote.customer
     : quote.destination || "JPUKB - Kobe"
+  const columns = useMemo<DataTableColumn<(typeof recentQuotes)[number]>[]>(() => [
+    { id: "date", label: "Date", width: 76, minWidth: 68, kind: "date", cell: (row) => <span data-i18n-skip dir="ltr" className="font-medium text-[var(--md-subtle)]">{row.date}</span> },
+    { id: "lane", label: "Origin → destination", width: 116, minWidth: 106, kind: "identity", cellTitle: (row) => row.lane, cell: (row) => <span data-i18n-skip dir="ltr" className="block truncate font-medium text-[var(--md-ink)]">{row.lane}</span> },
+    { id: "mode", label: "Mode", width: 68, minWidth: 62, kind: "attribute", cell: (row) => <StatusPill kind="attribute" tone="blue" className="h-4 px-1.5 text-[9px]">{t(row.mode)}</StatusPill> },
+    { id: "revenue", label: "Revenue", width: 78, minWidth: 72, kind: "number", cell: (row) => <span data-i18n-skip dir="ltr">{money(row.revenue)}</span> },
+    { id: "cost", label: "Cost", width: 72, minWidth: 68, kind: "number", cell: (row) => <span data-i18n-skip dir="ltr" className="text-[var(--md-text)]">{money(row.cost)}</span> },
+    { id: "profit", label: "Profit", width: 74, minWidth: 68, kind: "number", cell: (row) => <span data-i18n-skip dir="ltr" className="font-medium text-[var(--md-ink)]">{money(row.profit)}</span> },
+    { id: "margin", label: "Profit %", width: 66, minWidth: 62, kind: "number", cell: (row) => <span data-i18n-skip dir="ltr">{row.margin}</span> },
+    { id: "status", label: "Status", width: 84, minWidth: 76, kind: "status", cell: (row) => <StatusPill kind="status" tone={row.tone} className="h-4 px-1.5 text-[9px]">{t(row.status)}</StatusPill> },
+  ], [t])
 
   return (
     <Surface padding="none" className="h-full min-w-0 overflow-hidden rounded-[var(--md-radius-xl)] bg-white dark:bg-[var(--md-surface)]">
@@ -959,29 +1009,7 @@ function RecentQuotesSummary({ quote }: { quote: QuoteRecord }) {
           ))}
         </div>
       </div>
-      <Table className="h-[calc(100%-2.5rem)] bg-white dark:bg-[var(--md-surface)]">
-        <TableHeader>
-          <TableRow className="bg-[var(--md-surface-tint)] hover:bg-[var(--md-surface-tint)]">
-            {["Date", "Origin -> Dest", "Mode", "Revenue", "Cost", "Profit", "Profit %", "Status"].map((heading) => (
-              <TableHead key={heading} className="h-5 px-1 text-[9px] font-medium text-[var(--md-text)]">{t(heading)}</TableHead>
-            ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {scopedQuotes.map((recentQuote) => (
-            <TableRow key={`${scope}-${recentQuote.date}-${recentQuote.lane}-${recentQuote.mode}`} className="bg-white hover:bg-[var(--md-hover)] dark:bg-[var(--md-surface)]">
-              <TableCell data-i18n-skip dir="ltr" className="px-1 py-0.5 text-[9.5px] font-medium text-[var(--md-subtle)]">{recentQuote.date}</TableCell>
-              <TableCell data-i18n-skip dir="ltr" className="min-w-[106px] px-1 py-0.5 text-[9.5px] font-medium text-[var(--md-ink)]">{recentQuote.lane}</TableCell>
-              <TableCell className="px-1 py-0.5 text-[9.5px] text-[var(--md-text)]">{t(recentQuote.mode)}</TableCell>
-              <TableCell data-i18n-skip dir="ltr" className="px-1 py-0.5 text-right text-[9.5px] tabular-nums text-[var(--md-ink)]">{money(recentQuote.revenue)}</TableCell>
-              <TableCell data-i18n-skip dir="ltr" className="px-1 py-0.5 text-right text-[9.5px] tabular-nums text-[var(--md-text)]">{money(recentQuote.cost)}</TableCell>
-              <TableCell data-i18n-skip dir="ltr" className="px-1 py-0.5 text-right text-[9.5px] font-medium tabular-nums text-[var(--md-ink)]">{money(recentQuote.profit)}</TableCell>
-              <TableCell data-i18n-skip dir="ltr" className="px-1 py-0.5 text-right text-[9.5px] tabular-nums text-[var(--md-text)]">{recentQuote.margin}</TableCell>
-              <TableCell className="px-1 py-0.5 text-right"><StatusPill tone={recentQuote.tone} className="h-4 px-1.5 text-[9px]">{t(recentQuote.status)}</StatusPill></TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+      <DataTable ariaLabel="Recent quotes" columns={columns} rows={scopedQuotes} getRowKey={(row) => `${scope}-${row.date}-${row.lane}-${row.mode}`} minimumWidth={630} showToolbar={false} showColumnManager={false} className="h-[calc(100%-2.5rem)] rounded-none bg-white shadow-none dark:bg-[var(--md-surface)]" tableClassName="text-[9.5px]" />
     </Surface>
   )
 }
@@ -1141,7 +1169,8 @@ function ChargeSidePanel({
   onChargeChange,
   onAddCharge,
   onRemoveCharge,
-  toolbarLeading,
+  toolbarTabs,
+  toolbarOptions,
 }: {
   charges: QuoteCharge[]
   side: ChargePanelSide
@@ -1150,7 +1179,8 @@ function ChargeSidePanel({
   onChargeChange: (index: number, field: QuoteChargeEditableField, value: string) => void
   onAddCharge: () => void
   onRemoveCharge: (index: number) => void
-  toolbarLeading?: ReactNode
+  toolbarTabs?: ReactNode
+  toolbarOptions?: ReactNode
 }) {
   const { t } = useLanguage()
   const isIncoming = side === "in"
@@ -1179,7 +1209,6 @@ function ChargeSidePanel({
       width: 112,
       minWidth: 96,
       maxWidth: 180,
-      defaultPinned: true,
       resizable: true,
       sortValue: (row) => row.code,
       cell: (row) => editable ? (
@@ -1206,7 +1235,6 @@ function ChargeSidePanel({
       width: 240,
       minWidth: 180,
       maxWidth: 420,
-      defaultPinned: true,
       resizable: true,
       sortValue: (row) => row.description,
       cell: (row) => <EditableChargeCell value={row.description} editable={editable} onChange={(value) => onChargeChange(row.id, "description", value)} />,
@@ -1303,7 +1331,8 @@ function ChargeSidePanel({
       <DataTable
         ariaLabel={title}
         columnsButtonLabel={`Manage ${title} columns`}
-        toolbarLeading={toolbarLeading}
+        toolbarTabs={toolbarTabs}
+        toolbarOptions={toolbarOptions}
         columns={columns}
         rows={rows}
         getRowKey={(row) => String(row.id)}
@@ -1359,7 +1388,7 @@ function QuoteChargesPanel({
     setSplitRatio((current) => Math.max(30, Math.min(70, current + logicalDelta)))
   }
 
-  const chargeViewControls = (
+  const chargeViewTabs = (
     <>
       <Tabs value={chargeView} onValueChange={(value) => setChargeView(value as "split" | "tabs")}>
         <TabsList className="h-8 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-0.5 shadow-[var(--md-shadow-line)]">
@@ -1367,23 +1396,27 @@ function QuoteChargesPanel({
           <TabsTrigger value="tabs" className="h-7 rounded-[var(--md-radius-md)] px-2.5 text-[11px] data-[state=active]:bg-[var(--md-surface)] data-[state=active]:shadow-[var(--md-shadow-line)]">{t("Tabbed")}</TabsTrigger>
         </TabsList>
       </Tabs>
-      {chargeView === "split" ? <Tooltip>
-        <TooltipTrigger asChild>
-          <Button type="button" variant="ghost" onClick={() => setIsSplitFullscreen(true)} className="size-8 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] p-0 text-[var(--md-accent-ink)] shadow-[var(--md-shadow-line)] hover:opacity-90" aria-label={t("Expand charge workspace")}>
-            <Maximize2 className="size-3.5" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>{t("Expand charge workspace")}</TooltipContent>
-      </Tooltip> : (
+      {chargeView === "tabs" ? (
         <Tabs value={activeChargeSide} onValueChange={(value) => setActiveChargeSide(value as ChargePanelSide)}>
           <TabsList className="h-8 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-0.5 shadow-[var(--md-shadow-line)]">
             <TabsTrigger value="in" className="h-7 rounded-[var(--md-radius-md)] px-2.5 text-[11px] data-[state=active]:bg-[var(--md-surface)] data-[state=active]:shadow-[var(--md-shadow-line)]">{t("Supplier")}</TabsTrigger>
             <TabsTrigger value="out" className="h-7 rounded-[var(--md-radius-md)] px-2.5 text-[11px] data-[state=active]:bg-[var(--md-surface)] data-[state=active]:shadow-[var(--md-shadow-line)]">{t("Customer")}</TabsTrigger>
           </TabsList>
         </Tabs>
-      )}
+      ) : null}
     </>
   )
+
+  const chargeViewOptions = chargeView === "split" ? (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button type="button" variant="ghost" onClick={() => setIsSplitFullscreen(true)} className="size-8 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] p-0 text-[var(--md-accent-ink)] shadow-[var(--md-shadow-line)] hover:opacity-90" aria-label={t("Expand charge workspace")}>
+          <Maximize2 className="size-3.5" />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{t("Expand charge workspace")}</TooltipContent>
+    </Tooltip>
+  ) : null
 
   const splitChargeWorkspace = (
     <div className={cn("md-charge-split-workspace min-w-0", isSplitFullscreen && "md-charge-split-workspace--fullscreen")}>
@@ -1392,7 +1425,7 @@ function QuoteChargesPanel({
         className={cn("md-charge-split-workspace__panes", isSplitResizing && "md-charge-split-workspace__panes--resizing")}
         style={{ "--md-charge-split-position": `${splitRatio}%` } as CSSProperties}
       >
-        <ChargeSidePanel charges={charges} side="in" customer={customer} editable={editable} onChargeChange={onChargeChange} onAddCharge={onAddCharge} onRemoveCharge={onRemoveCharge} toolbarLeading={chargeViewControls} />
+        <ChargeSidePanel charges={charges} side="in" customer={customer} editable={editable} onChargeChange={onChargeChange} onAddCharge={onAddCharge} onRemoveCharge={onRemoveCharge} toolbarTabs={chargeViewTabs} toolbarOptions={chargeViewOptions} />
         <button
           type="button"
           className="md-charge-split-workspace__divider"
@@ -1445,8 +1478,8 @@ function QuoteChargesPanel({
         isSplitFullscreen ? null : splitChargeWorkspace
       ) : (
         <Tabs value={activeChargeSide} onValueChange={(value) => setActiveChargeSide(value as ChargePanelSide)} className="min-w-0">
-          <TabsContent value="in" className="mt-0 min-w-0"><ChargeSidePanel charges={charges} side="in" customer={customer} editable={editable} onChargeChange={onChargeChange} onAddCharge={onAddCharge} onRemoveCharge={onRemoveCharge} toolbarLeading={chargeViewControls} /></TabsContent>
-          <TabsContent value="out" className="mt-0 min-w-0"><ChargeSidePanel charges={charges} side="out" customer={customer} editable={editable} onChargeChange={onChargeChange} onAddCharge={onAddCharge} onRemoveCharge={onRemoveCharge} toolbarLeading={chargeViewControls} /></TabsContent>
+          <TabsContent value="in" className="mt-0 min-w-0"><ChargeSidePanel charges={charges} side="in" customer={customer} editable={editable} onChargeChange={onChargeChange} onAddCharge={onAddCharge} onRemoveCharge={onRemoveCharge} toolbarTabs={chargeViewTabs} toolbarOptions={chargeViewOptions} /></TabsContent>
+          <TabsContent value="out" className="mt-0 min-w-0"><ChargeSidePanel charges={charges} side="out" customer={customer} editable={editable} onChargeChange={onChargeChange} onAddCharge={onAddCharge} onRemoveCharge={onRemoveCharge} toolbarTabs={chargeViewTabs} toolbarOptions={chargeViewOptions} /></TabsContent>
         </Tabs>
       )}
 
@@ -2808,6 +2841,12 @@ function QuoteWorkspaceContext({
   const { t } = useLanguage()
   const [selectedJobRoe, setSelectedJobRoe] = useState<JobRoe["currency"] | null>(null)
   const jobRoes = quote.jobRoes ?? []
+  const jobRoeColumns = useMemo<DataTableColumn<JobRoe>[]>(() => [
+    { id: "currency", label: "CCY", width: 72, minWidth: 58, kind: "attribute", canHide: false, cell: (roe) => <span data-i18n-skip dir="ltr" className="font-medium tabular-nums text-[var(--md-ink)]">{roe.currency}</span> },
+    { id: "baseRate", label: "Base", width: 108, minWidth: 90, kind: "number", cell: (roe) => <EditableChargeCell value={roe.baseRate} editable={editable} numeric className="h-5 px-1 text-[9px]" onChange={(value) => onJobRoeBaseChange(roe.currency, value)} /> },
+    { id: "costRate", label: "Cost", width: 108, minWidth: 90, kind: "number", cell: (roe) => <EditableChargeCell value={roe.costRate} editable={editable} numeric className="h-5 px-1 text-[9px]" onChange={(value) => onJobRoeChange(roe.currency, "costRate", value)} /> },
+    { id: "revenueRate", label: "Revenue", width: 112, minWidth: 92, kind: "number", cell: (roe) => <EditableChargeCell value={roe.revenueRate} editable={editable} numeric className="h-5 px-1 text-[9px]" onChange={(value) => onJobRoeChange(roe.currency, "revenueRate", value)} /> },
+  ], [editable, onJobRoeBaseChange, onJobRoeChange])
 
   if (activeTab === "charges") {
     return (
@@ -2823,29 +2862,7 @@ function QuoteWorkspaceContext({
           </div>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto md-scrollbar">
-        <Table aria-label={t("Job ROE")} className="table-fixed text-[9px]">
-          <TableHeader>
-            <TableRow className="border-[rgba(11,20,19,0.05)] bg-white hover:bg-white">
-              <TableHead className="h-3.5 w-[18%] px-1.5 text-[8px] text-[var(--md-text)]">{t("CCY")}</TableHead>
-              <TableHead className="h-3.5 w-[27%] px-1.5 text-[8px] text-[var(--md-text)]">{t("Base")}</TableHead>
-              <TableHead className="h-3.5 w-[27%] px-1.5 text-[8px] text-[var(--md-text)]">{t("Cost")}</TableHead>
-              <TableHead className="h-3.5 w-[28%] px-1.5 text-[8px] text-[var(--md-text)]">{t("Revenue")}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {jobRoes.map((roe) => {
-              const selected = selectedJobRoe === roe.currency
-              return (
-                <TableRow key={roe.currency} data-state={selected ? "selected" : undefined} aria-selected={selected || undefined} onClick={() => setSelectedJobRoe(roe.currency)} className="cursor-pointer border-[rgba(11,20,19,0.045)] data-[state=selected]:bg-[color-mix(in_srgb,var(--md-accent)_8%,white)]">
-                  <TableCell data-i18n-skip dir="ltr" className="h-5 px-1.5 py-0 font-medium tabular-nums text-[var(--md-ink)]">{roe.currency}</TableCell>
-                  <TableCell className="h-5 px-1 py-0"><EditableChargeCell value={roe.baseRate} editable={editable} numeric className="h-5 px-1 text-[9px]" onChange={(value) => onJobRoeBaseChange(roe.currency, value)} /></TableCell>
-                  <TableCell className="h-5 px-1 py-0"><EditableChargeCell value={roe.costRate} editable={editable} numeric className="h-5 px-1 text-[9px]" onChange={(value) => onJobRoeChange(roe.currency, "costRate", value)} /></TableCell>
-                  <TableCell className="h-5 px-1 py-0"><EditableChargeCell value={roe.revenueRate} editable={editable} numeric className="h-5 px-1 text-[9px]" onChange={(value) => onJobRoeChange(roe.currency, "revenueRate", value)} /></TableCell>
-                </TableRow>
-              )
-            })}
-          </TableBody>
-        </Table>
+          <DataTable ariaLabel="Job ROE" columns={jobRoeColumns} rows={jobRoes} getRowKey={(roe) => roe.currency} selectedRowKey={selectedJobRoe} onRowClick={(roe) => setSelectedJobRoe(roe.currency)} minimumWidth={400} showToolbar={false} showColumnManager={false} className="rounded-none shadow-none" tableClassName="table-fixed text-[9px]" />
         </div>
       </Surface>
     )
@@ -2924,6 +2941,7 @@ function quoteRecordFromRegister(quote: QuoteRegisterRecord): QuoteRecord {
 
 function getInitialQuoteRecord(quoteId?: string) {
   const normalizedId = quoteId?.toUpperCase()
+  if (normalizedId === "NEW") return newQuoteDraft
   if (!normalizedId || normalizedId === "3") return quoteQueue[0]
   const workspaceQuote = quoteQueue.find((quote) => quote.id.toUpperCase() === normalizedId)
   if (workspaceQuote) return workspaceQuote

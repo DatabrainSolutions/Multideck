@@ -23,6 +23,7 @@ import {
   Globe2,
   History,
   ImagePlus,
+  Info,
   KeyRound,
   Laptop,
   LifeBuoy,
@@ -45,20 +46,25 @@ import {
   Users,
   WandSparkles,
   Webhook,
+  X,
   Zap,
   type LucideIcon,
-} from "lucide-react"
+} from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import gmailLogo from "@/assets/integrations/gmail.svg"
-import outlookLogo from "@/assets/integrations/outlook.svg"
+import outlookLogo from "@/assets/integrations/outlook.png"
 import sageLogo from "@/assets/integrations/sage.svg"
 import xeroLogo from "@/assets/integrations/xero.svg"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { AccentPicker } from "@/components/multideck/accent-picker"
+import { AiUsageOverview } from "@/components/multideck/ai-usage-overview"
+import { SegmentedControl } from "@/components/multideck/workflow-components"
 import { AuthIdentityManager } from "@/components/multideck/auth-provider-selector"
 import { SpectralBloomShader } from "@/components/multideck/dexter-action-pill"
 import { ShortcutKeys } from "@/components/multideck/keyboard-shortcut-keys"
@@ -86,6 +92,7 @@ import {
   settingsNavigationGroups,
   type SettingsSectionId,
 } from "@/data/settings-navigation"
+import { homeNavItem, inboxNavItem, sidebarAreas } from "@/data/navigation-data"
 import { languageOptions, getLanguageOption } from "@/i18n/languages"
 import { useLanguage } from "@/i18n/language-provider"
 import {
@@ -131,12 +138,17 @@ import {
   listInboxProviders,
   listMailboxes,
   readEmailConnectionResult,
+  resolveDefaultInboxProvider,
   syncMailbox,
   type InboxConnection,
   type InboxProviderAvailability,
   type MailProvider,
   type Mailbox,
 } from "@/lib/inbox-api"
+import {
+  loadDefaultInboxProvider,
+  saveDefaultInboxProvider,
+} from "@/lib/inbox-provider-preference"
 import { useShortcutBinding } from "@/lib/keyboard-shortcuts"
 import { DEXTER_CONVERSATIONS_CHANGED_EVENT } from "@/lib/dexter-navigation"
 import { clockDisplayLabelFromMode, clockDisplayLabels, clockDisplayModeFromLabel, readClockDisplayMode, useAiAgentName, writeClockDisplayMode } from "@/lib/user-preferences"
@@ -1525,13 +1537,116 @@ function SessionsTab() {
           <IconRow icon={KeyRound} title="API key viewed" description="May 24 by Elena Moreno. No secret was copied." />
         </SettingsPanel>
       </div>
+
     </>
+  )
+}
+
+type StartPageOption = { route: string; label: string }
+type StartPageGroup = { label: string; options: StartPageOption[] }
+
+const startPageExtras: Record<string, StartPageOption[]> = {
+  "sales-crm": [
+    { route: "/customers", label: "Customers" },
+    { route: "/crm/lists", label: "Lists" },
+    { route: "/crm/settings", label: "CRM settings" },
+  ],
+  "documents-service": [
+    { route: "/paper-tray", label: "Paper Tray" },
+    { route: "/documents/templates", label: "Templates" },
+  ],
+}
+
+const nonStartPageRoutes = new Set(["/bookings/new"])
+
+function buildStartPageGroups(): StartPageGroup[] {
+  const seenRoutes = new Set<string>()
+  const keepUniquePage = (option: StartPageOption) => {
+    if (seenRoutes.has(option.route) || nonStartPageRoutes.has(option.route)) return false
+    seenRoutes.add(option.route)
+    return true
+  }
+
+  return [
+    {
+      label: "Workspace",
+      options: [
+        { route: homeNavItem.route ?? "/", label: homeNavItem.label },
+        { route: inboxNavItem.route ?? "/inbox", label: inboxNavItem.label },
+        { route: "/agent-dexter", label: "Agent Dexter" },
+      ].filter(keepUniquePage),
+    },
+    ...sidebarAreas.map((area) => ({
+      label: area.label,
+      options: [
+        ...area.destinations.flatMap((destination): StartPageOption[] => [
+          ...(destination.route ? [{ route: destination.route, label: destination.label }] : []),
+          ...(destination.children ?? []).flatMap((child): StartPageOption[] => (
+            child.route ? [{ route: child.route, label: child.label }] : []
+          )),
+        ]),
+        ...(startPageExtras[area.id] ?? []),
+      ].filter(keepUniquePage),
+    })),
+  ].filter((group) => group.options.length > 0)
+}
+
+const startPageGroups = buildStartPageGroups()
+
+const startPageByRoute = new Map(startPageGroups.flatMap((group) => group.options.map((option) => [option.route, option] as const)))
+const legacyStartPageRoutes: Record<string, string> = {
+  Overview: "/",
+  Bookings: "/bookings",
+  Customers: "/customers",
+  "Agent Dexter": "/agent-dexter",
+}
+
+function readStartPageRoute() {
+  const saved = window.localStorage.getItem("multideck.settings.start-page")
+  if (saved && startPageByRoute.has(saved)) return saved
+  return saved ? legacyStartPageRoutes[saved] ?? "/" : "/"
+}
+
+function StartPageSelect({ value, onChange }: { value: string; onChange: (route: string) => void }) {
+  const { t } = useLanguage()
+  const selectedGroup = startPageGroups.find((group) => group.options.some((option) => option.route === value))
+  const selectedOption = startPageByRoute.get(value)
+
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger
+        aria-label={t("Start page")}
+        className="h-10 w-full min-w-0 max-w-[420px] rounded-[var(--md-radius-lg)] border-0 bg-[var(--md-field-bg)] px-3 text-[16px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-field-bg-hover)] sm:text-[13px]"
+      >
+        <SelectValue>
+          <span className="min-w-0 truncate">
+            {selectedGroup ? <>{t(selectedGroup.label)} <span aria-hidden="true" className="text-[var(--md-subtle)]">·</span> </> : null}
+            {t(selectedOption?.label ?? "Home")}
+          </span>
+        </SelectValue>
+      </SelectTrigger>
+      <SelectContent className="max-h-[420px] min-w-[min(360px,calc(100vw-2rem))] border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)]">
+        {startPageGroups.map((group, index) => (
+          <Fragment key={group.label}>
+            {index ? <SelectSeparator /> : null}
+            <SelectGroup>
+              <SelectLabel>{t(group.label)}</SelectLabel>
+              {group.options.map((option) => (
+                <SelectItem key={option.route} value={option.route} className="text-[13px]">
+                  {t(option.label)}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </Fragment>
+        ))}
+      </SelectContent>
+    </Select>
   )
 }
 
 function CustomisationTab() {
   const [density, setDensity] = useState(() => window.localStorage.getItem("multideck.settings.density") ?? "Comfortable")
-  const [startPage, setStartPage] = useState(() => window.localStorage.getItem("multideck.settings.start-page") ?? "Overview")
+  const [startPage, setStartPage] = useState(readStartPageRoute)
   const [keepFilters, setKeepFilters] = useState(() => window.localStorage.getItem("multideck.settings.keep-filters") !== "false")
 
   useEffect(() => {
@@ -1553,9 +1668,9 @@ function CustomisationTab() {
         title="Customisation"
         description="Tune how Multideck reads, feels, and opens without changing the shared workspace for anyone else."
       />
-      {/* Full width rather than inside the two-column grid below: the accent grid
-          wants ten cards across two rows, and squeezing it into a field row would
-          make each preview too small to judge. */}
+      {/* Full width rather than inside the two-column grid below: the horizontal
+          rail keeps every preview large enough to judge without making the page
+          taller as the palette grows. */}
       <SettingsPanel
         className="mt-[var(--md-page-stack-gap)]"
         title="Accent colour"
@@ -1565,117 +1680,50 @@ function CustomisationTab() {
           <AccentPicker />
         </div>
       </SettingsPanel>
-      <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1fr)_minmax(320px,430px)]">
-        <div className="space-y-[var(--md-page-stack-gap)]">
-          <SettingsPanel title="Interface" description="Personal display choices update immediately on this browser.">
-            <SettingsFieldRow label="Appearance" description="Choose light, dark, or the mode used by this device.">
-              <div className="max-w-[320px]">
-                <ThemeToggle className="bg-[var(--md-glass)]" />
-              </div>
-            </SettingsFieldRow>
-            <LanguageSettingField label="App language" />
-            <SettingsFieldRow label="Information density" description="Changes row height and breathing room without hiding data.">
-              <SettingsChoiceGroup
-                options={["Compact", "Comfortable", "Roomy"]}
-                value={density}
-                onChange={setDensity}
-                className="max-w-[420px]"
-              />
-            </SettingsFieldRow>
-            <SettingsFieldRow label="World clocks" description="Choose clear digital times or compact analogue faces.">
-              <ClockDisplaySetting />
-            </SettingsFieldRow>
-          </SettingsPanel>
-
-          <SettingsPanel title="Starting point" description="Open the workspace where your day usually begins.">
-            <SettingsFieldRow label="Start page">
-              <SettingsChoiceGroup
-                options={["Overview", "Bookings", "Customers", "Agent Dexter"]}
-                value={startPage}
-                onChange={setStartPage}
-              />
-            </SettingsFieldRow>
-            <SettingsToggleRow
-              title="Keep filters between visits"
-              description="Return to the same owner, customer, and ETA filters after reload."
-              checked={keepFilters}
-              onCheckedChange={setKeepFilters}
+      <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
+        <SettingsPanel title="Interface" description="Personal display choices update immediately on this browser.">
+          <SettingsFieldRow label="Appearance" description="Choose light, dark, or the mode used by this device.">
+            <div className="max-w-[320px]">
+              <ThemeToggle className="bg-[var(--md-glass)]" />
+            </div>
+          </SettingsFieldRow>
+          <LanguageSettingField label="App language" />
+          <SettingsFieldRow label="Information density" description="Changes row height and breathing room without hiding data.">
+            <SettingsChoiceGroup
+              options={["Compact", "Comfortable", "Roomy"]}
+              value={density}
+              onChange={setDensity}
+              className="max-w-[420px]"
             />
-          </SettingsPanel>
+          </SettingsFieldRow>
+          <SettingsFieldRow label="World clocks" description="Choose clear digital times or compact analogue faces.">
+            <ClockDisplaySetting />
+          </SettingsFieldRow>
+        </SettingsPanel>
 
-          <SettingsPanel title="Freight formats" description="Used in quotes, generated summaries, and operational documents.">
-            <SettingsFieldRow label="Measurement system">
-              <SettingsSelect value="Metric · kg, cbm, km" options={["Metric · kg, cbm, km", "Imperial · lb, cu ft, mi"]} />
-            </SettingsFieldRow>
-            <SettingsFieldRow label="Currency">
-              <SettingsSelect value="EUR · Euro" options={["EUR · Euro", "GBP · British pound", "USD · US dollar"]} />
-            </SettingsFieldRow>
-            <SettingsFieldRow label="Dates">
-              <SettingsSelect value="DD MMM YYYY" options={["DD MMM YYYY", "MMM DD, YYYY", "YYYY-MM-DD"]} />
-            </SettingsFieldRow>
-          </SettingsPanel>
-        </div>
+        <SettingsPanel title="Starting point" description="Open the workspace where your day usually begins.">
+          <SettingsFieldRow label="Start page">
+            <StartPageSelect value={startPage} onChange={setStartPage} />
+          </SettingsFieldRow>
+          <SettingsToggleRow
+            title="Keep filters between visits"
+            description="Return to the same owner, customer, and ETA filters after reload."
+            checked={keepFilters}
+            onCheckedChange={setKeepFilters}
+          />
+        </SettingsPanel>
 
-        <aside className="xl:sticky xl:top-[var(--md-page-pad)] xl:self-start">
-          <section
-            data-density={density.toLowerCase()}
-            className="md-settings-preview relative isolate overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-soft)] sm:p-5"
-          >
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-[12px] font-medium text-[var(--md-ink)]">Live workspace preview</p>
-                <p className="mt-1 text-[11px] text-[var(--md-subtle)]">Updates as you make changes</p>
-              </div>
-              <StatusPill tone="teal">Live</StatusPill>
-            </div>
-            <div className="mt-4 overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-bg)] p-2 shadow-[inset_0_0_0_1px_rgba(11,20,19,0.05)]">
-              <div className="grid min-h-[330px] grid-cols-[76px_minmax(0,1fr)] overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]">
-                <div className="bg-[var(--md-sidebar-bg)] p-2 shadow-[var(--md-stroke-right)]">
-                  <span className="block h-3 w-10 rounded-full bg-[var(--md-ink)] opacity-80" />
-                  <div className="mt-6 space-y-2">
-                    {[1, 2, 3, 4].map((item) => (
-                      <span
-                        key={item}
-                        className={cn(
-                          "block h-7 rounded-[var(--md-radius-sm)]",
-                          item === 1 ? "bg-[var(--md-bg-strong)] shadow-[var(--md-shadow-line)]" : "bg-[var(--md-surface-tint)] opacity-65",
-                        )}
-                      />
-                    ))}
-                  </div>
-                </div>
-                <div className="min-w-0 p-3">
-                  <div className="flex items-center justify-between">
-                    <span className="h-3 w-24 rounded-full bg-[var(--md-ink)] opacity-75" />
-                    <span className="size-6 rounded-[var(--md-radius-sm)] bg-[var(--md-accent)]" />
-                  </div>
-                  <div className="mt-4 grid grid-cols-3 gap-2">
-                    {[62, 44, 78].map((width, index) => (
-                      <div key={width} className="rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] p-2 shadow-[var(--md-shadow-line)]">
-                        <span className="block h-2 rounded-full bg-[var(--md-subtle)] opacity-30" style={{ width: `${width}%` }} />
-                        <span className="mt-3 block h-4 w-10 rounded-full bg-[var(--md-ink)] opacity-80" />
-                        <span className={cn("mt-2 block h-1.5 rounded-full", index === 2 ? "bg-[var(--md-amber)]" : "bg-[var(--md-accent)]")} />
-                      </div>
-                    ))}
-                  </div>
-                  <div className="mt-3 overflow-hidden rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] shadow-[var(--md-shadow-line)]">
-                    {[1, 2, 3, 4].map((row) => (
-                      <div key={row} className="md-settings-preview__row grid grid-cols-[20px_minmax(0,1fr)_36px] items-center gap-2 px-2.5 shadow-[var(--md-stroke-bottom)] last:shadow-none">
-                        <span className="size-4 rounded-full bg-[var(--md-avatar-bg)]" />
-                        <span className="h-2 rounded-full bg-[var(--md-text)] opacity-25" style={{ width: `${74 - row * 7}%` }} />
-                        <span className="h-4 rounded-full bg-[var(--md-accent-a10)]" />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px] text-[var(--md-text)]">
-              <span className="rounded-full bg-[var(--md-surface-soft)] px-2.5 py-1 shadow-[var(--md-shadow-line)]">{density}</span>
-              <span className="rounded-full bg-[var(--md-surface-soft)] px-2.5 py-1 shadow-[var(--md-shadow-line)]">{startPage} start</span>
-            </div>
-          </section>
-        </aside>
+        <SettingsPanel title="Freight formats" description="Used in quotes, generated summaries, and operational documents.">
+          <SettingsFieldRow label="Measurement system">
+            <SettingsSelect value="Metric · kg, cbm, km" options={["Metric · kg, cbm, km", "Imperial · lb, cu ft, mi"]} />
+          </SettingsFieldRow>
+          <SettingsFieldRow label="Currency">
+            <SettingsSelect value="EUR · Euro" options={["EUR · Euro", "GBP · British pound", "USD · US dollar"]} />
+          </SettingsFieldRow>
+          <SettingsFieldRow label="Dates">
+            <SettingsSelect value="DD MMM YYYY" options={["DD MMM YYYY", "MMM DD, YYYY", "YYYY-MM-DD"]} />
+          </SettingsFieldRow>
+        </SettingsPanel>
       </div>
     </>
   )
@@ -3001,15 +3049,9 @@ function PermissionsTab() {
   )
 }
 
-const mailProviderCopy: Record<MailProvider, { label: string; description: string }> = {
-  gmail: {
-    label: "Gmail",
-    description: "Read and reply to operational mail from a Google Workspace account, including Spam and Trash. Google Group messages appear when they are delivered to this account.",
-  },
-  outlook: {
-    label: "Outlook",
-    description: "Read and reply to operational mail from Microsoft 365, including shared and group mailboxes.",
-  },
+const mailProviderCopy: Record<MailProvider, { label: string }> = {
+  gmail: { label: "Gmail" },
+  outlook: { label: "Outlook" },
 }
 
 const mailProviderLogos: Record<MailProvider, string> = {
@@ -3035,6 +3077,11 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [mailboxLoadError, setMailboxLoadError] = useState<string | null>(null)
   const [busyProvider, setBusyProvider] = useState<MailProvider | null>(null)
+  const [disconnectCandidate, setDisconnectCandidate] = useState<InboxConnection | null>(null)
+  const [defaultInboxProvider, setDefaultInboxProvider] = useState<MailProvider | null>(null)
+  const [defaultInboxProviderLoaded, setDefaultInboxProviderLoaded] = useState(false)
+  const [defaultInboxProviderError, setDefaultInboxProviderError] = useState<string | null>(null)
+  const [savingDefaultInboxProvider, setSavingDefaultInboxProvider] = useState<MailProvider | null>(null)
   const [groupMailboxAddress, setGroupMailboxAddress] = useState("")
   const [groupMailboxError, setGroupMailboxError] = useState<string | null>(null)
   const [sharedMailboxAddress, setSharedMailboxAddress] = useState("")
@@ -3043,15 +3090,30 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
   const [writingProfilePromptBusy, setWritingProfilePromptBusy] = useState(false)
   const [writingProfilePromptKey, setWritingProfilePromptKey] = useState<string | null>(null)
   const [writingProfilePromptDismissed, setWritingProfilePromptDismissed] = useState(true)
+  const connectedMailProviders = useMemo(() => (["gmail", "outlook"] as MailProvider[]).filter((provider) => {
+    const connection = connections?.find((candidate) => candidate.provider === provider)
+    return Boolean(
+      connection
+      && (connection.status === "connected" || connection.status === "syncing")
+      && mailboxes?.some((mailbox) => mailbox.provider === provider),
+    )
+  }), [connections, mailboxes])
+  const effectiveDefaultInboxProvider = resolveDefaultInboxProvider(
+    mailboxes ?? [],
+    defaultInboxProvider,
+  ) ?? connectedMailProviders[0] ?? null
 
   const loadConnections = useCallback(async () => {
     setLoadError(null)
     setMailboxLoadError(null)
     setProviderAvailabilityError(null)
-    const [connectionsResult, availabilityResult, mailboxesResult] = await Promise.allSettled([
+    setDefaultInboxProviderError(null)
+    setDefaultInboxProviderLoaded(false)
+    const [connectionsResult, availabilityResult, mailboxesResult, preferenceResult] = await Promise.allSettled([
       listInboxConnections(),
       listInboxProviders(),
       listMailboxes(),
+      loadDefaultInboxProvider(),
     ])
 
     if (connectionsResult.status === "fulfilled") {
@@ -3074,6 +3136,14 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
       setMailboxes([])
       setMailboxLoadError(t("Existing shared mailboxes could not be loaded. Try again."))
     }
+
+    if (preferenceResult.status === "fulfilled") {
+      setDefaultInboxProvider(preferenceResult.value)
+    } else {
+      setDefaultInboxProvider(null)
+      setDefaultInboxProviderError(t("Your saved default mail provider could not be loaded. You can choose it again below."))
+    }
+    setDefaultInboxProviderLoaded(true)
   }, [t])
 
   useEffect(() => {
@@ -3234,11 +3304,37 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
     try {
       await disconnectInboxConnection(connection.id)
       await loadConnections()
+      setDisconnectCandidate(null)
       toast.success(`${mailProviderCopy[connection.provider].label} disconnected`)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to disconnect this provider.")
     } finally {
       setBusyProvider(null)
+    }
+  }
+
+  async function chooseDefaultInboxProvider(provider: MailProvider) {
+    if (!connectedMailProviders.includes(provider) || savingDefaultInboxProvider) return
+    const previous = defaultInboxProvider
+    setDefaultInboxProvider(provider)
+    setDefaultInboxProviderError(null)
+    setSavingDefaultInboxProvider(provider)
+    try {
+      await saveDefaultInboxProvider(provider)
+      toast.success(t("Default mail provider updated"), {
+        description: t(provider === "gmail"
+          ? "Inbox and new email composers will now start with Gmail."
+          : "Inbox and new email composers will now start with Outlook."),
+      })
+    } catch (error) {
+      setDefaultInboxProvider(previous)
+      const message = error instanceof Error && error.message.trim()
+        ? error.message
+        : t("Your default mail provider could not be saved. Try again.")
+      setDefaultInboxProviderError(message)
+      toast.error(message)
+    } finally {
+      setSavingDefaultInboxProvider(null)
     }
   }
 
@@ -3251,8 +3347,25 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
       />
       <div className="mt-[var(--md-page-stack-gap)] space-y-[var(--md-page-stack-gap)]">
         <SettingsPanel
-          title="Mail"
-          description={t("Mail powers the Inbox workspace. Multideck securely syncs the last 12 months of useful mail, 30 days of Spam and Trash, and current drafts so operators can search, reply and use Dexter; Gmail or Microsoft remains the source mailbox.")}
+          title={(
+            <span className="inline-flex items-center gap-1.5">
+              <span>{t("Mail")}</span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label={t("About mail sync")}
+                    className="grid size-7 place-items-center rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] transition-[background-color,color,scale] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.94] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] motion-reduce:active:scale-100"
+                  >
+                    <Info className="size-3.5" strokeWidth={1.5} aria-hidden="true" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" align="start" sideOffset={6} className="max-w-[360px] text-pretty leading-5">
+                  {t("Mail powers the Inbox workspace. Multideck securely syncs the last 12 months of useful mail, 30 days of Spam and Trash, and current drafts so operators can search, reply and use Dexter; Gmail or Microsoft remains the source mailbox.")}
+                </TooltipContent>
+              </Tooltip>
+            </span>
+          )}
           action={
             <Button
               type="button"
@@ -3301,42 +3414,99 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
               <p className="text-[12px] text-[var(--md-text)]">Checking your mail connections...</p>
             </div>
           ) : (
-            (["gmail", "outlook"] as MailProvider[]).map((provider) => {
-              const connection = connections.find((candidate) => candidate.provider === provider) ?? null
-              const copy = mailProviderCopy[provider]
-              const configured = providerAvailability?.find((candidate) => candidate.provider === provider)?.configured === true
-              const needsConnection = !connection || connection.status === "disconnected" || connection.status === "reauthorization_required"
-              const statusKey =
-                !configured ? "Unavailable" :
-                !connection ? "Not connected" :
-                connection.status === "reauthorization_required" ? "Reconnect needed" :
-                connection.status === "syncing" ? "Syncing" :
-                connection.status === "error" ? "Sync problem" :
-                connection.status === "disconnected" ? "Not connected" :
-                "Connected"
-              const description = !configured
-                ? providerAvailabilityError ?? t(`${copy.label} has not been configured for this workspace yet. Ask a Multideck administrator to add the provider credentials.`)
-                : connection?.error?.trim() || t(copy.description)
-              const actionLabel =
-                busyProvider === provider ? t("Working") :
-                needsConnection ? (configured
-                  ? t(connection?.status === "reauthorization_required" ? "Reconnect" : "Connect")
-                  : t("Unavailable")) :
-                t("Disconnect")
+            <>
+              <SettingsFieldRow
+                label={t("Default mail provider")}
+                description={t("Choose which connected provider opens first in Inbox and is preselected for new email composers. You can still switch provider at any time.")}
+                align="start"
+              >
+                <div>
+                  <div
+                    role="radiogroup"
+                    aria-label={t("Default mail provider")}
+                    aria-busy={savingDefaultInboxProvider !== null}
+                    className="inline-flex max-w-full rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-1 shadow-[var(--md-shadow-line)]"
+                  >
+                    {(["gmail", "outlook"] as MailProvider[]).map((provider) => {
+                      const selected = effectiveDefaultInboxProvider === provider
+                      const connected = connectedMailProviders.includes(provider)
+                      return (
+                        <button
+                          key={provider}
+                          type="button"
+                          role="radio"
+                          aria-checked={selected}
+                          disabled={!connected || !defaultInboxProviderLoaded || savingDefaultInboxProvider !== null}
+                          className={cn(
+                            "inline-flex min-h-10 min-w-[112px] items-center justify-center gap-2 rounded-[var(--md-radius-md)] px-3 text-[13px] font-medium outline-none transition-[background-color,box-shadow,color,opacity,scale] duration-200 focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a24)] active:scale-[0.97] disabled:cursor-not-allowed disabled:active:scale-100 motion-reduce:transition-none motion-reduce:active:scale-100",
+                            selected
+                              ? "bg-[var(--md-selected-bg)] text-[var(--md-selected-text)] shadow-[inset_0_0_0_1px_var(--md-accent-a14),0_2px_5px_rgba(11,20,19,0.06)]"
+                              : "text-[var(--md-text)] hover:text-[var(--md-ink)]",
+                            !connected && "opacity-45",
+                          )}
+                          onClick={() => void chooseDefaultInboxProvider(provider)}
+                        >
+                          <img src={mailProviderLogos[provider]} alt="" aria-hidden="true" className="size-4 object-contain" />
+                          <span>{mailProviderCopy[provider].label}</span>
+                          {savingDefaultInboxProvider === provider ? (
+                            <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                          ) : selected ? (
+                            <Check className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
+                          ) : null}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  {connectedMailProviders.length < 2 ? (
+                    <p className="mt-2 text-[11.5px] leading-5 text-[var(--md-subtle)]">
+                      {t("Connect a provider before choosing it as the default.")}
+                    </p>
+                  ) : null}
+                  {defaultInboxProviderError || savingDefaultInboxProvider ? (
+                    <p
+                      role={defaultInboxProviderError ? "alert" : "status"}
+                      aria-live="polite"
+                      className={cn(
+                        "mt-2 text-[11.5px] leading-5",
+                        defaultInboxProviderError ? "text-[var(--md-red)]" : "text-[var(--md-subtle)]",
+                      )}
+                    >
+                      {defaultInboxProviderError ?? t("Saving preference")}
+                    </p>
+                  ) : null}
+                </div>
+              </SettingsFieldRow>
+              {(["gmail", "outlook"] as MailProvider[]).map((provider) => {
+                const connection = connections.find((candidate) => candidate.provider === provider) ?? null
+                const copy = mailProviderCopy[provider]
+                const configured = providerAvailability?.find((candidate) => candidate.provider === provider)?.configured === true
+                const isConnected = connection?.status === "connected" || connection?.status === "syncing"
+                const needsConnection = !connection || !isConnected
+                const statusKey =
+                  !configured ? "Unavailable" :
+                  !connection ? "Not connected" :
+                  connection.status === "reauthorization_required" ? "Reconnect needed" :
+                  connection.status === "syncing" ? "Syncing" :
+                  connection.status === "error" ? "Sync problem" :
+                  connection.status === "disconnected" ? "Not connected" :
+                  "Connected"
+                const problemDescription = !configured
+                  ? providerAvailabilityError ?? t(`${copy.label} has not been configured for this workspace yet. Ask a Multideck administrator to add the provider credentials.`)
+                  : connection?.error?.trim() || undefined
 
-              const sharedMailboxes = provider === "outlook"
-                ? (mailboxes ?? []).filter((mailbox) => mailbox.provider === "outlook" && mailbox.kind !== "personal")
-                : []
-              const groupMailboxes = provider === "gmail"
-                ? (mailboxes ?? []).filter((mailbox) => mailbox.provider === "gmail" && mailbox.kind === "group")
-                : []
+                const sharedMailboxes = provider === "outlook"
+                  ? (mailboxes ?? []).filter((mailbox) => mailbox.provider === "outlook" && mailbox.kind !== "personal")
+                  : []
+                const groupMailboxes = provider === "gmail"
+                  ? (mailboxes ?? []).filter((mailbox) => mailbox.provider === "gmail" && mailbox.kind === "group")
+                  : []
 
-              return (
-                <Fragment key={provider}>
-                  <SettingsIntegrationRow
+                return (
+                  <Fragment key={provider}>
+                    <SettingsIntegrationRow
                     logoSrc={mailProviderLogos[provider]}
                     title={copy.label}
-                    description={description}
+                    description={problemDescription}
                     status={t(statusKey)}
                     statusTone={
                       statusKey === "Connected" ? "connected" :
@@ -3344,21 +3514,47 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
                       statusKey === "Syncing" ? "workspace" :
                       "ready"
                     }
-                    actionLabel={actionLabel}
-                    disabled={busyProvider !== null || (needsConnection && !configured)}
-                    onAction={() => {
-                      if (busyProvider) return
-                      if (needsConnection) {
-                        void connect(provider)
-                        return
-                      }
-                      void disconnect(connection)
-                    }}
-                  />
-                  {provider === "gmail" && connection && !needsConnection ? (
+                    action={(
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            aria-label={t(isConnected ? `Disconnect ${copy.label}` : `Connect ${copy.label}`)}
+                            disabled={busyProvider !== null || (needsConnection && !configured)}
+                            className={cn(
+                              "grid size-9 place-items-center rounded-[var(--md-radius-md)] text-white shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,opacity,scale] duration-200 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a18)] active:scale-[0.94] disabled:cursor-not-allowed disabled:opacity-45 disabled:active:scale-100 motion-reduce:transition-none motion-reduce:active:scale-100",
+                              isConnected
+                                ? "bg-[var(--md-green)] hover:bg-[color-mix(in_srgb,var(--md-green),black_10%)]"
+                                : "bg-[var(--md-red)] hover:bg-[color-mix(in_srgb,var(--md-red),black_10%)]",
+                            )}
+                            onClick={() => {
+                              if (busyProvider) return
+                              if (isConnected && connection) {
+                                setDisconnectCandidate(connection)
+                                return
+                              }
+                              void connect(provider)
+                            }}
+                          >
+                            {busyProvider === provider ? (
+                              <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                            ) : isConnected ? (
+                              <Check className="size-4" strokeWidth={2} aria-hidden="true" />
+                            ) : (
+                              <X className="size-4" strokeWidth={2} aria-hidden="true" />
+                            )}
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="left" sideOffset={6}>
+                          {t(isConnected ? `Disconnect ${copy.label}` : `Connect ${copy.label}`)}
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                    />
+                    {provider === "gmail" && connection && !needsConnection ? (
                     <SettingsFieldRow
                       label={t("Google Group inboxes")}
-                      description={t("Add a Google Group address whose messages are delivered to this Gmail account. Multideck creates a filtered group view across Inbox, Spam and Trash without pretending the group is a separate Google mailbox.")}
+                      description={t("Add a Google Group delivered to this Gmail account. Multideck creates a separate view across Inbox, Spam and Trash; replies still send from your connected Gmail account.")}
                       align="start"
                       labelFor="gmail-group-mailbox-address"
                     >
@@ -3428,7 +3624,7 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
                   {provider === "outlook" && connection && !needsConnection ? (
                     <SettingsFieldRow
                       label={t("Shared Outlook mailboxes")}
-                      description={t("Connect only the shared addresses you are authorised to use. Microsoft may also require Exchange Send As or Send on Behalf permission before Multideck can send from them.")}
+                      description={t("Add shared Outlook addresses you are authorised to use. Sending also requires Microsoft Send As or Send on Behalf permission.")}
                       align="start"
                       labelFor={connection.sharedMailboxAccess ? "outlook-shared-mailbox-address" : undefined}
                     >
@@ -3514,14 +3710,12 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
                   ) : null}
                 </Fragment>
               )
-            })
+              })}
+            </>
           )}
         </SettingsPanel>
 
-        <SettingsPanel
-          title={t("Accounting")}
-          description={t("Xero and Sage connections are being prepared for this workspace.")}
-        >
+        <SettingsPanel title={t("Accounting")}>
           <SettingsIntegrationRow
             logoSrc={xeroLogo}
             title="Xero"
@@ -3538,6 +3732,48 @@ function IntegrationsTab({ navigate }: { navigate: (path: string) => void }) {
           />
         </SettingsPanel>
       </div>
+
+      <Dialog
+        open={disconnectCandidate !== null}
+        onOpenChange={(open) => {
+          if (!open && !busyProvider) setDisconnectCandidate(null)
+        }}
+      >
+        <DialogContent className="gap-0 overflow-hidden border-0 bg-[var(--md-surface)] p-0 sm:max-w-[440px]">
+          <DialogHeader className="px-6 pb-4 pt-6 pe-14">
+            <DialogTitle className="text-[16px] font-medium text-[var(--md-ink)]">
+              {disconnectCandidate ? t(`Disconnect ${mailProviderCopy[disconnectCandidate.provider].label}?`) : ""}
+            </DialogTitle>
+            <DialogDescription className="text-[13px] leading-5 text-[var(--md-text)]">
+              {disconnectCandidate ? t(disconnectCandidate.provider === "gmail"
+                ? "Multideck will stop syncing this account and remove it from Inbox and new messages. Your mail stays in Gmail."
+                : "Multideck will stop syncing this account and remove it from Inbox and new messages. Your mail stays in Microsoft 365.") : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="border-t border-[rgba(11,20,19,0.07)] bg-[var(--md-surface-soft)] px-6 py-4">
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={busyProvider !== null}
+              className="h-9 rounded-[var(--md-radius-md)] px-3 text-[13px] font-medium text-[var(--md-text)]"
+              onClick={() => setDisconnectCandidate(null)}
+            >
+              {t("Cancel")}
+            </Button>
+            <Button
+              type="button"
+              disabled={!disconnectCandidate || busyProvider !== null}
+              className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-red)] px-4 text-[13px] font-medium text-white hover:bg-[color-mix(in_srgb,var(--md-red),black_10%)]"
+              onClick={() => {
+                if (disconnectCandidate) void disconnect(disconnectCandidate)
+              }}
+            >
+              {busyProvider ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : null}
+              {disconnectCandidate ? t(`Disconnect ${mailProviderCopy[disconnectCandidate.provider].label}`) : t("Disconnect")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
@@ -3677,11 +3913,7 @@ function BillingTab() {
   )
 }
 
-const aiUsageCategories = [
-  { id: "dexter", label: "Agent Dexter", share: 100, color: "var(--md-ai-cyan)" },
-]
-
-function AiUsageOverview({
+function AiUsageOverviewScreen({
   usage,
   isLoading,
   error,
@@ -3694,307 +3926,21 @@ function AiUsageOverview({
   onRetry: () => void
   onViewHistory: () => void
 }) {
-  const { language, t } = useLanguage()
-  const totalUsage = usage?.includedActionsLimit ?? 10_000
-  const usedUsage = usage?.actionsUsed ?? 0
-  const remainingUsage = Math.max(0, totalUsage - usedUsage)
-  const usedPercent = Math.min(100, Math.round((usedUsage / Math.max(1, totalUsage)) * 100))
-  const taskTrend = usage?.trend.map((point) => ({
-    label: new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" }).format(new Date(`${point.weekStart}T00:00:00`)),
-    value: point.actions,
-    tokens: point.tokens,
-  })) ?? Array.from({ length: 6 }, (_, index) => ({ label: `W${index + 1}`, value: 0, tokens: 0 }))
-  const maxTaskValue = Math.max(1, ...taskTrend.map((point) => point.value))
-  const latestWeek = taskTrend.at(-1)?.value ?? 0
-  const daysRemaining = Math.max(0, Math.ceil((new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1).getTime() - Date.now()) / 86_400_000))
-  const trackedPercent = Math.min(100, Math.round(((usage?.trackedActions ?? 0) / Math.max(1, usedUsage)) * 100))
-  const totalTokens = usage?.totalTokens ?? 0
-  const inputPercent = totalTokens > 0 ? Math.round(((usage?.inputTokens ?? 0) / totalTokens) * 100) : 0
-  const outputPercent = totalTokens > 0 ? Math.max(0, 100 - inputPercent) : 0
-  const metrics: Array<[LucideIcon, string, string, string]> = [
-    [Activity, "Dexter actions", usedUsage.toLocaleString(), "Completed this month"],
-    [MessageCircle, "Conversations", (usage?.conversationCount ?? 0).toLocaleString(), "Used this month"],
-    [Cpu, "Input tokens", (usage?.inputTokens ?? 0).toLocaleString(), "Workspace context Dexter reviewed"],
-    [WandSparkles, "Output tokens", (usage?.outputTokens ?? 0).toLocaleString(), "Responses Dexter generated"],
-  ]
-  const modelUsage = (["fast", "smart", "worker"] as const).map((model) => {
-    const recorded = usage?.modelBreakdown?.find((entry) => entry.model === model)
-    const price = dexterModelPrices[model]
-    const providerModel = recorded?.providerModel ?? price.providerModel
-    const reasoningEffort = recorded?.reasoningEffort ?? (model === "smart" ? "high" : "medium")
-    const inputTokens = recorded?.inputTokens ?? 0
-    const outputTokens = recorded?.outputTokens ?? 0
-    const cost = estimateDexterModelCost({ model, providerModel, reasoningEffort, inputTokens, outputTokens, totalTokens: inputTokens + outputTokens })
-    return { model, providerModel, reasoningEffort, inputTokens, outputTokens, cost }
-  })
-  const hasModelBreakdown = Array.isArray(usage?.modelBreakdown)
-  const estimatedCostUsd = modelUsage.reduce((total, entry) => total + entry.cost.totalUsd, 0)
-  const formatUsd = (value: number) => new Intl.NumberFormat(language, {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: value > 0 && value < 0.01 ? 4 : 2,
-    maximumFractionDigits: value > 0 && value < 0.01 ? 4 : 2,
-  }).format(value)
-
   return (
     <>
       <SettingsPageHeader
         eyebrow="Workspace / AI usage"
         title="AI usage"
-        description="See Dexter's current workspace usage, token volume, and recent activity."
+        description="What Dexter gave back this month, what it cost, and how much of the included allowance is left."
         actions={compactAction("Export usage", () => toast.success("AI usage export prepared"))}
       />
-
-      {error ? (
-        <div role="alert" className="mt-[var(--md-page-stack-gap)] flex flex-col gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)] sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Dexter usage is temporarily unavailable")}</p>
-            <p className="mt-1 text-[12px] text-[var(--md-text)]">{t(error)}</p>
-          </div>
-          <Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] px-4 text-[13px] font-medium" onClick={onRetry}>
-            {t("Try again")}
-          </Button>
-        </div>
-      ) : null}
-
-      <section
-        aria-busy={isLoading}
-        className="md-settings-ai-stage relative isolate mt-[var(--md-page-stack-gap)] overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-soft)] sm:p-6"
-      >
-        <span className="md-settings-ai-stage__grid" aria-hidden="true" />
-        <div className="relative grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)] lg:items-center">
-          <div>
-            <SettingsProgressRing
-              value={usedPercent}
-              label={t("Monthly Dexter usage")}
-              detail={`${usedUsage.toLocaleString()} / ${totalUsage.toLocaleString()} ${t("actions")}`}
-              tone="accent"
-            />
-            <div className="mt-5 flex flex-wrap gap-2">
-              <StatusPill tone={error ? "amber" : isLoading ? "neutral" : "teal"}>
-                {t(error ? "Unavailable" : isLoading ? "Refreshing" : "Live usage")}
-              </StatusPill>
-              <span className="rounded-full bg-[var(--md-surface-soft)] px-2.5 py-1 text-[11px] text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
-                <span className="tabular-nums" data-i18n-skip>{daysRemaining}</span> {t("days left")}
-              </span>
-            </div>
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-end justify-between gap-4">
-              <div>
-                <p className="text-[12px] text-[var(--md-text)]">{t("Dexter actions this month")}</p>
-                <p className="mt-1 text-[28px] font-medium tracking-[-0.03em] tabular-nums text-[var(--md-ink)]" data-i18n-skip>{usedUsage.toLocaleString()}</p>
-              </div>
-              <p className="text-end text-[12px] font-medium text-[var(--md-green)]">
-                <span className="tabular-nums" data-i18n-skip>{(usage?.totalTokens ?? 0).toLocaleString()}</span> {t("tokens processed")}
-              </p>
-            </div>
-            <div className="mt-4 flex h-[128px] items-end gap-2" role="img" aria-label={t("Dexter action volume over the last six weeks")}>
-              {taskTrend.map((point, index) => (
-                <div key={`${point.label}-${index}`} className="flex h-full min-w-0 flex-1 items-end">
-                  <motion.span
-                    className="block w-full min-h-1 rounded-t-[var(--md-radius-md)] bg-[linear-gradient(180deg,var(--md-accent),color-mix(in_srgb,var(--md-accent)_65%,var(--md-blue)))]"
-                    title={`${point.label}: ${point.value.toLocaleString()} ${t("actions")}, ${point.tokens.toLocaleString()} ${t("tokens")}`}
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: `${Math.max(4, (point.value / maxTaskValue) * 100)}%`, opacity: 1 }}
-                    transition={{ ...mdMotion.morph, delay: index * 0.04 }}
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section
-        aria-labelledby="workspace-usage-title"
-        className="mt-[var(--md-page-stack-gap)] overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-soft)] sm:p-6"
-      >
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h2 id="workspace-usage-title" className="text-[16px] font-medium text-[var(--md-ink)]">{t("Usage")}</h2>
-            <p className="mt-1 text-[13px] text-[var(--md-text)]">{t("Included AI actions used this month")}</p>
-          </div>
-          <div className="flex flex-col gap-3 sm:items-end">
-            <div className="sm:text-end">
-              <p className="text-[28px] font-medium tracking-[-0.03em] tabular-nums text-[var(--md-ink)]" dir="ltr" data-i18n-skip>
-                {usedUsage.toLocaleString()}<span className="text-[var(--md-subtle)]">/{totalUsage.toLocaleString()}</span>
-              </p>
-              <p className="mt-1 text-[12px] text-[var(--md-text)]">{t("Metered Dexter activity for this month")}</p>
-            </div>
-            <Button
-              type="button"
-              variant="ghost"
-              className="h-8 w-fit rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] px-3 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-[var(--md-hover)]"
-              onClick={onViewHistory}
-            >
-              {t("View usage history")}
-              <ChevronRight className="size-3.5 rtl:rotate-180" strokeWidth={1.4} aria-hidden="true" />
-            </Button>
-          </div>
-        </div>
-
-        <div
-          role="img"
-          aria-label={`${t("Usage")}: ${usedUsage.toLocaleString()} / ${totalUsage.toLocaleString()}`}
-          className="relative mt-6 h-[42px] overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-1.5 shadow-[inset_0_0_0_1px_rgba(11,20,19,0.05)] sm:h-[46px]"
-        >
-          <span
-            aria-hidden="true"
-            className="absolute inset-0 opacity-45"
-            style={{ backgroundImage: "radial-gradient(circle, color-mix(in srgb, var(--md-text) 24%, transparent) 1px, transparent 1.2px)", backgroundSize: "12px 12px" }}
-          />
-          <div className="relative flex h-full items-stretch gap-1">
-            {aiUsageCategories.map((category, index) => (
-              <motion.span
-                key={category.id}
-                aria-hidden="true"
-                className="block min-w-[5px] rounded-[calc(var(--md-radius-lg)-6px)] shadow-[inset_0_1px_0_rgba(255,255,255,0.34)]"
-                style={{ backgroundColor: category.color }}
-                initial={{ width: 0, opacity: 0 }}
-                animate={{ width: `${(usedPercent * category.share) / 100}%`, opacity: 1 }}
-                transition={{ ...mdMotion.morph, delay: index * 0.04 }}
-              />
-            ))}
-          </div>
-        </div>
-
-        <div className="mt-5 flex flex-wrap gap-x-7 gap-y-3">
-          {aiUsageCategories.map((category) => (
-            <div key={category.id} className="flex items-center gap-2">
-              <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: category.color }} aria-hidden="true" />
-              <span className="text-[13px] font-medium text-[var(--md-ink)]">{t(category.label)}</span>
-              <span className="text-[13px] tabular-nums text-[var(--md-text)]" data-i18n-skip>{category.share}%</span>
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-6 flex flex-col gap-2 text-[13px] text-[var(--md-text)] sm:flex-row sm:items-center sm:justify-between">
-          <p><span className="tabular-nums" data-i18n-skip>{remainingUsage.toLocaleString()}</span> {t("included actions remaining")}</p>
-          <p><span className="tabular-nums" data-i18n-skip>{usedPercent}%</span> {t("of monthly usage used")}</p>
-        </div>
-      </section>
-
-      <div className="mt-[var(--md-page-stack-gap)] grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {metrics.map(([Icon, label, value, detail]) => (
-          <section key={label} className="group rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-soft)]">
-            <div className="flex items-start justify-between gap-3">
-              <span className="grid size-9 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)] transition-transform duration-200 group-hover:scale-[1.04] motion-reduce:transition-none motion-reduce:group-hover:scale-100">
-                <Icon className="size-4" strokeWidth={1.35} aria-hidden="true" />
-              </span>
-              <span className="text-end text-[11px] text-[var(--md-subtle)]">{t(label)}</span>
-            </div>
-            <p className="mt-5 text-[21px] font-medium tracking-[-0.025em] tabular-nums text-[var(--md-ink)]" data-i18n-skip>{value}</p>
-            <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t(detail)}</p>
-          </section>
-        ))}
-      </div>
-
-      <div className="mt-[var(--md-page-stack-gap)] grid gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
-        <SettingsPanel title="Dexter actions over time" description="Completed Dexter responses across the last six weeks.">
-          <div className="px-5 pb-5 pt-2">
-            <div className="flex h-[164px] items-end gap-3 border-b border-[var(--md-line-strong)]">
-              {taskTrend.map((point, index) => (
-                <div key={point.label} className="flex h-full min-w-0 flex-1 flex-col justify-end gap-2">
-                  <motion.span
-                    className="block min-h-2 rounded-t-[var(--md-radius-md)] bg-[linear-gradient(180deg,var(--md-accent),color-mix(in_srgb,var(--md-accent)_64%,var(--md-blue)))]"
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: `${Math.max(12, (point.value / maxTaskValue) * 100)}%`, opacity: 1 }}
-                    transition={{ ...mdMotion.morph, delay: index * 0.04 }}
-                  />
-                  <span className="pb-2 text-center text-[11px] text-[var(--md-subtle)]">{point.label}</span>
-                </div>
-              ))}
-            </div>
-            <div className="mt-4 flex items-end justify-between gap-4">
-              <div>
-                <p className="text-[12px] text-[var(--md-text)]">Latest week</p>
-                <p className="mt-1 text-[18px] font-medium text-[var(--md-ink)]">
-                  <span className="tabular-nums" data-i18n-skip>{latestWeek.toLocaleString()}</span> {t("actions")}
-                </p>
-              </div>
-              <StatusPill tone="teal">Live</StatusPill>
-            </div>
-          </div>
-        </SettingsPanel>
-
-        <SettingsPanel title="Token usage" description="How Dexter's metered context and responses make up this month's usage.">
-          {[
-            ["Input tokens", `${inputPercent}%`, inputPercent],
-            ["Output tokens", `${outputPercent}%`, outputPercent],
-            ["Actions with token data", `${trackedPercent}%`, trackedPercent],
-          ].map(([label, value, percentage]) => (
-            <div key={label as string} className="px-5 py-4">
-              <div className="flex items-center justify-between gap-4">
-                <p className="text-[13px] font-medium text-[var(--md-ink)]">{t(label as string)}</p>
-                <p className="text-[13px] font-medium tabular-nums text-[var(--md-ink)]" data-i18n-skip>{value as string}</p>
-              </div>
-              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--md-surface-tint)]">
-                <motion.span
-                  className="block h-full rounded-full bg-[var(--md-accent)]"
-                  initial={{ width: 0 }}
-                  animate={{ width: `${percentage}%` }}
-                  transition={mdMotion.morph}
-                />
-              </div>
-            </div>
-          ))}
-          <div className="grid grid-cols-3 gap-2 bg-[var(--md-surface-soft)] px-5 py-4">
-            {[
-              ["Total tokens", (usage?.totalTokens ?? 0).toLocaleString()],
-              ["Average per action", Math.round((usage?.totalTokens ?? 0) / Math.max(1, usedUsage)).toLocaleString()],
-              ["Conversations", (usage?.conversationCount ?? 0).toLocaleString()],
-            ].map(([label, value]) => (
-              <div key={label} className="min-w-0">
-                <p className="text-[15px] font-medium tabular-nums text-[var(--md-ink)]" data-i18n-skip>{value}</p>
-                <p className="mt-0.5 text-[11px] leading-4 text-[var(--md-text)]">{t(label)}</p>
-              </div>
-            ))}
-          </div>
-        </SettingsPanel>
-      </div>
-
-      <SettingsPanel title="Development cost estimate" description="Internal estimate from this month's recorded API tokens. It is not an invoice.">
-        <div className="flex flex-col gap-4 px-5 pb-4 pt-5 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Estimated API cost")}</p>
-            <p className="mt-1 text-[28px] font-medium tracking-[-0.03em] tabular-nums text-[var(--md-ink)]" data-i18n-skip>{hasModelBreakdown ? formatUsd(estimatedCostUsd) : "—"}</p>
-          </div>
-          <p className="max-w-[480px] text-[12px] leading-5 text-[var(--md-text)]">
-            {hasModelBreakdown
-              ? t("Uses each recorded model and thinking mode. Thinking mode changes token use, while the model's token rate remains the same. Prompt caching, tool calls, batch or priority processing, taxes, and other provider fees are excluded.")
-              : t("Model-level token data will appear after the usage reporting migration is applied.")}
-          </p>
-        </div>
-        <div className="overflow-x-auto border-t border-[var(--md-line)]">
-          <table className="w-full min-w-[680px] text-start">
-            <thead className="bg-[var(--md-surface-soft)] text-[11px] text-[var(--md-text)]">
-              <tr>
-                {["Engine", "Model", "Thinking mode", "Input tokens", "Output tokens", "Rates per 1M", "Estimated cost"].map((label) => (
-                  <th key={label} scope="col" className="px-5 py-3 text-start font-medium">{t(label)}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[var(--md-line)]">
-              {modelUsage.map(({ model, providerModel, reasoningEffort, inputTokens, outputTokens, cost }) => {
-                const price = dexterModelPrices[model]
-                const engine = model === "smart" ? "Balanced" : model === "fast" ? "Fast" : "Worker"
-                return (
-                  <tr key={model}>
-                    <th scope="row" className="px-5 py-4 text-[13px] font-medium text-[var(--md-ink)]">{t(engine)}</th>
-                    <td className="px-5 py-4 text-[12px] text-[var(--md-text)]" data-i18n-skip>{providerModel}</td>
-                    <td className="px-5 py-4 text-[12px] capitalize text-[var(--md-text)]">{t(reasoningEffort)}</td>
-                    <td className="px-5 py-4 text-[13px] tabular-nums text-[var(--md-ink)]" data-i18n-skip>{hasModelBreakdown ? inputTokens.toLocaleString() : "—"}</td>
-                    <td className="px-5 py-4 text-[13px] tabular-nums text-[var(--md-ink)]" data-i18n-skip>{hasModelBreakdown ? outputTokens.toLocaleString() : "—"}</td>
-                    <td className="px-5 py-4 text-[12px] tabular-nums text-[var(--md-text)]" data-i18n-skip>${price.inputPerMillionUsd.toFixed(2)} in · ${price.outputPerMillionUsd.toFixed(2)} out</td>
-                    <td className="px-5 py-4 text-[13px] font-medium tabular-nums text-[var(--md-ink)]" data-i18n-skip>{hasModelBreakdown ? formatUsd(cost.totalUsd) : "—"}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      </SettingsPanel>
+      <AiUsageOverview
+        usage={usage}
+        isLoading={isLoading}
+        error={error}
+        onRetry={onRetry}
+        onViewHistory={onViewHistory}
+      />
     </>
   )
 }
@@ -4012,53 +3958,56 @@ function AiUsageHistoryScreen({
   onRetry: () => void
   onBack: () => void
 }) {
-  const { t } = useLanguage()
-  const [featureFilter, setFeatureFilter] = useState("all")
-  const [actionFilter, setActionFilter] = useState("all")
+  const { t, language } = useLanguage()
+  const [order, setOrder] = useState<"newest" | "heaviest">("newest")
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(6)
-  const aiUsageHistory = (usage?.recentEntries ?? []).map((entry: DexterUsageEntry) => ({
-    id: entry.id,
-    units: entry.totalTokens,
-    feature: "Agent Dexter",
-    detail: entry.title,
-    featureId: "dexter",
-    action: "Spent",
-    cost: "Included",
-    date: new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(entry.createdAt)),
-    inputTokens: entry.inputTokens,
-    outputTokens: entry.outputTokens,
-  }))
-  const featureOptions = ["all", ...aiUsageCategories.map((category) => category.id)]
-  const featureLabels = Object.fromEntries([
-    ["all", t("All features")],
-    ...aiUsageCategories.map((category) => [category.id, t(category.label)]),
-  ])
-  const actionOptions = ["all", "spent"]
-  const actionLabels = {
-    all: t("All actions"),
-    spent: t("Spent"),
-  }
-  const filteredUsage = aiUsageHistory.filter((entry) => (
-    (featureFilter === "all" || entry.featureId === featureFilter)
-    && (actionFilter === "all" || entry.action.toLowerCase() === actionFilter)
-  ))
-  const pageCount = Math.max(1, Math.ceil(filteredUsage.length / pageSize))
-  const visibleUsage = filteredUsage.slice((page - 1) * pageSize, page * pageSize)
+  const [pageSize, setPageSize] = useState(10)
+
+  const entries = useMemo(() => {
+    const recorded = usage?.recentEntries ?? []
+    const sorted = [...recorded].sort((first, second) => (
+      order === "heaviest"
+        ? second.totalTokens - first.totalTokens
+        : new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime()
+    ))
+    return sorted.map((entry: DexterUsageEntry) => ({
+      id: entry.id,
+      title: entry.title,
+      inputTokens: entry.inputTokens,
+      outputTokens: entry.outputTokens,
+      totalTokens: entry.totalTokens,
+      createdAt: entry.createdAt,
+      date: new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }).format(new Date(entry.createdAt)),
+    }))
+  }, [usage, order, language])
+
+  const listedTokens = entries.reduce((total, entry) => total + entry.totalTokens, 0)
+  const heaviest = Math.max(1, ...entries.map((entry) => entry.totalTokens))
+  const pageCount = Math.max(1, Math.ceil(entries.length / pageSize))
+  const visibleUsage = entries.slice((page - 1) * pageSize, page * pageSize)
+  const formatTokens = (value: number) => value.toLocaleString("en-GB")
+  type UsageEntry = (typeof entries)[number]
+  const usageColumns = useMemo<DataTableColumn<UsageEntry>[]>(() => [
+    { id: "request", label: "Request", kind: "long-text", width: 420, minWidth: 240, resizable: true, sortValue: (entry) => entry.title, cellTitle: (entry) => entry.title, cellClassName: "whitespace-normal", cell: (entry) => <div className="min-w-0"><p className="line-clamp-2 text-[13px] leading-[1.4] text-[var(--md-ink)]" data-i18n-skip>{entry.title}</p><span className="mt-2 block h-1 w-full max-w-[240px] overflow-hidden rounded-full bg-[var(--md-ai-track)]"><span aria-hidden="true" className="block h-full rounded-full bg-[color-mix(in_srgb,var(--md-accent)_78%,var(--md-blue))]" style={{ width: `${Math.max(2, (entry.totalTokens / heaviest) * 100)}%` }} /></span></div> },
+    { id: "input", label: "Input", kind: "number", width: 120, sortValue: (entry) => entry.inputTokens, cell: (entry) => <span dir="ltr" data-i18n-skip>{formatTokens(entry.inputTokens)}</span> },
+    { id: "output", label: "Output", kind: "number", width: 120, sortValue: (entry) => entry.outputTokens, cell: (entry) => <span dir="ltr" data-i18n-skip>{formatTokens(entry.outputTokens)}</span> },
+    { id: "total", label: "Total tokens", kind: "number", width: 132, sortValue: (entry) => entry.totalTokens, cell: (entry) => <span className="font-medium text-[var(--md-ink)]" dir="ltr" data-i18n-skip>{formatTokens(entry.totalTokens)}</span> },
+    { id: "when", label: "When", kind: "date", width: 180, sortValue: (entry) => entry.createdAt, cell: (entry) => <span className="tabular-nums text-[var(--md-text)]" dir="ltr" data-i18n-skip>{entry.date}</span> },
+  ], [heaviest])
 
   useEffect(() => {
     setPage(1)
-  }, [featureFilter, actionFilter, pageSize])
+  }, [order, pageSize])
 
   return (
     <>
       <SettingsPageHeader
         eyebrow="Workspace / AI usage / History"
         title="Usage history"
-        description="Review the latest metered Dexter responses for this workspace."
-        actions={compactAction("Back to AI overview", onBack)}
+        description="Every Dexter response recorded this month, with the tokens each one used."
+        actions={compactAction("Back to AI usage", onBack)}
       />
-      <section className="mt-[var(--md-page-stack-gap)] overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-soft)]">
+      <section className="md-ai-usage md-ai-panel mt-[var(--md-page-stack-gap)] overflow-hidden rounded-[var(--md-radius-2xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-soft)]">
         <div className="flex flex-col gap-4 px-5 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
             <span className="grid size-9 shrink-0 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">
@@ -4066,26 +4015,11 @@ function AiUsageHistoryScreen({
             </span>
             <div>
               <h2 className="text-[16px] font-medium text-[var(--md-ink)]">{t("Recent Dexter usage")}</h2>
-              <p className="mt-0.5 text-[12px] text-[var(--md-text)]">{t("Filter this month's metered activity by feature or action")}</p>
+              <p className="mt-0.5 text-[12px] text-[var(--md-text)]">
+                <span className="tabular-nums" data-i18n-skip>{entries.length}</span> {t("requests")} ·{" "}
+                <span className="tabular-nums" data-i18n-skip>{formatTokens(listedTokens)}</span> {t("tokens listed")}
+              </p>
             </div>
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2">
-            <SettingsSelect
-              value={featureFilter}
-              options={featureOptions}
-              optionLabels={featureLabels}
-              ariaLabel={t("Filter by feature")}
-              className="min-w-0 sm:min-w-[180px]"
-              onChange={setFeatureFilter}
-            />
-            <SettingsSelect
-              value={actionFilter}
-              options={actionOptions}
-              optionLabels={actionLabels}
-              ariaLabel={t("Filter by action")}
-              className="min-w-0 sm:min-w-[156px]"
-              onChange={setActionFilter}
-            />
           </div>
         </div>
 
@@ -4099,52 +4033,24 @@ function AiUsageHistoryScreen({
           </div>
         ) : visibleUsage.length > 0 ? (
           <>
-            <div className="hidden md:block">
-              <Table>
-                <TableHeader className="bg-[var(--md-surface-soft)]">
-                  <TableRow className="border-[rgba(11,20,19,0.05)] hover:bg-transparent">
-                    <TableHead className="h-11 px-6 text-[12px] font-medium text-[var(--md-text)]">{t("Usage")}</TableHead>
-                    <TableHead className="h-11 px-6 text-[12px] font-medium text-[var(--md-text)]">{t("Feature")}</TableHead>
-                    <TableHead className="h-11 px-6 text-[12px] font-medium text-[var(--md-text)]">{t("Action")}</TableHead>
-                    <TableHead className="h-11 px-6 text-[12px] font-medium text-[var(--md-text)]">{t("Spend")}</TableHead>
-                    <TableHead className="h-11 px-6 text-[12px] font-medium text-[var(--md-text)]">{t("Date")}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {visibleUsage.map((entry) => (
-                    <TableRow key={entry.id} className="h-[72px] border-[rgba(11,20,19,0.055)] hover:bg-[var(--md-hover)]">
-                      <TableCell className="px-6 text-[14px] font-medium text-[var(--md-ink)]">
-                        <span className="tabular-nums" data-i18n-skip>{entry.units.toLocaleString()}</span> {t("tokens")}
-                      </TableCell>
-                      <TableCell className="max-w-[360px] px-6">
-                        <p className="truncate text-[13px] font-medium text-[var(--md-ink)]">{t(entry.feature)}</p>
-                        <p className="mt-0.5 truncate text-[12px] text-[var(--md-text)]" data-i18n-skip>{entry.detail}</p>
-                      </TableCell>
-                      <TableCell className="px-6">
-                        <StatusPill tone="neutral">{t(entry.action)}</StatusPill>
-                      </TableCell>
-                      <TableCell className="px-6 text-[13px] font-medium text-[var(--md-ink)]">{t(entry.cost)}</TableCell>
-                      <TableCell className="px-6 text-[13px] tabular-nums text-[var(--md-ink)]" dir="ltr" data-i18n-skip>{entry.date}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-            <div className="divide-y divide-[rgba(11,20,19,0.055)] md:hidden">
+            <DataTable ariaLabel="Recent Dexter usage" columnsButtonLabel="Manage usage columns" columns={usageColumns} rows={visibleUsage} getRowKey={(entry) => entry.id} storageKey="dexter-usage-history" toolbarOptions={<SegmentedControl options={["newest", "heaviest"] as const} value={order} onChange={setOrder} ariaLabel={t("Order usage history")} renderOption={(option) => t(option === "newest" ? "Newest first" : "Heaviest first")} />} className="hidden rounded-none shadow-none md:block" />
+            <div className="divide-y divide-[var(--md-line)] md:hidden">
               {visibleUsage.map((entry) => (
-                <article key={entry.id} className="px-5 py-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-[13px] font-medium text-[var(--md-ink)]">{t(entry.feature)}</p>
-                      <p className="mt-0.5 text-[12px] leading-5 text-[var(--md-text)]" data-i18n-skip>{entry.detail}</p>
-                    </div>
-                    <StatusPill tone="neutral">{t(entry.action)}</StatusPill>
+                <article key={entry.id} className="md-ai-row px-5 py-4">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <p className="line-clamp-2 text-[13px] leading-[1.4] text-[var(--md-ink)]" data-i18n-skip>{entry.title}</p>
+                    <p className="shrink-0 text-[13px] font-medium tabular-nums text-[var(--md-ink)]" dir="ltr" data-i18n-skip>{formatTokens(entry.totalTokens)}</p>
                   </div>
-                  <div className="mt-3 grid grid-cols-2 gap-3 text-[12px]">
-                    <p className="font-medium text-[var(--md-ink)]"><span className="tabular-nums" data-i18n-skip>{entry.units.toLocaleString()}</span> {t("tokens")}</p>
-                    <p className="text-end font-medium text-[var(--md-ink)]">{t(entry.cost)}</p>
-                    <p className="col-span-2 text-[var(--md-text)]" dir="ltr" data-i18n-skip>{entry.date}</p>
-                  </div>
+                  <span className="mt-2 block h-1 w-full overflow-hidden rounded-full bg-[var(--md-ai-track)]">
+                    <span
+                      aria-hidden="true"
+                      className="block h-full rounded-full bg-[color-mix(in_srgb,var(--md-accent)_78%,var(--md-blue))]"
+                      style={{ width: `${Math.max(2, (entry.totalTokens / heaviest) * 100)}%` }}
+                    />
+                  </span>
+                  <p className="mt-2 text-[11.5px] text-[var(--md-text)]" dir="ltr" data-i18n-skip>
+                    {formatTokens(entry.inputTokens)} in · {formatTokens(entry.outputTokens)} out · {entry.date}
+                  </p>
                 </article>
               ))}
             </div>
@@ -4162,12 +4068,12 @@ function AiUsageHistoryScreen({
           <Pagination
             page={Math.min(page, pageCount)}
             pageCount={pageCount}
-            totalItems={filteredUsage.length}
+            totalItems={entries.length}
             pageSize={pageSize}
-            pageSizeOptions={[6, 10, 14]}
+            pageSizeOptions={[10, 20, 50]}
             onPageChange={setPage}
             onPageSizeChange={setPageSize}
-            itemLabel="usage entries"
+            itemLabel="requests"
             className="bg-[var(--md-surface-soft)]"
           />
         </div>
@@ -4242,7 +4148,7 @@ function AiUsageTab() {
         />
       )
     : (
-        <AiUsageOverview
+        <AiUsageOverviewScreen
           usage={usage}
           isLoading={isLoading}
           error={error}
@@ -4761,7 +4667,7 @@ function SupportTab() {
               [t("Open tickets"), "1"],
             ]}
           />
-          <section className="rounded-[var(--md-radius-2xl)] bg-[var(--md-ink)] p-5 text-white shadow-[var(--md-shadow-soft)]">
+          <section className="rounded-[var(--md-radius-2xl)] bg-[var(--md-accent-abyss)] p-5 text-white shadow-[var(--md-shadow-soft)]">
             <LifeBuoy className="size-5 text-white/70" strokeWidth={1.3} aria-hidden="true" />
             <p className="mt-5 text-[15px] font-medium">{t("Security incident?")}</p>
             <p className="mt-2 text-pretty text-[12px] leading-5 text-white/65">{t("Mark the ticket as urgent. The subject will be routed with security context included.")}</p>

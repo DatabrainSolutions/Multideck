@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { createPortal } from "react-dom"
-import { ChevronDown, ChevronUp, Columns3, FileImage, FilePlus2, FileText, Layers3, List as ListIcon, Plus, Search, Settings2, StickyNote, Trash2, Upload } from "lucide-react"
+import { ChevronDown, ChevronUp, Columns3, FileImage, FilePlus2, FileText, Layers3, List as ListIcon, Plus, Search, Settings2, StickyNote, Trash2, Upload } from "@/components/icons/hugeicons"
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
 import { toast } from "sonner"
 import { DocumentViewer, PaperTrayStack, type PaperTray, type TrayDocument, type TrayShipmentProgress } from "@/components/multideck/paper-tray"
@@ -10,9 +10,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { createInitialPaperTrays } from "@/data/paper-tray-data"
-import { bookings } from "@/data/multideck-data"
 import { useLanguage } from "@/i18n/language-provider"
+import { listLiveBookings, listLivePaperTrayItems, type LiveBooking } from "@/lib/application-data-api"
 import { mdMotion, reduceMotion } from "@/lib/motion"
 import { useKanbanPointerDrag } from "@/lib/kanban-drag"
 
@@ -29,9 +28,7 @@ const paperTrayColorOptions = [
   { value: "#7d667f", label: "Plum" },
 ] as const
 
-const bookingById = new Map(bookings.map((booking) => [booking.id, booking]))
-
-function getDocumentShipment(item: TrayDocument): TrayShipmentProgress | null {
+function getDocumentShipment(item: TrayDocument, bookingById: Map<string, LiveBooking>): TrayShipmentProgress | null {
   if (!item.bookingId) return null
   const booking = bookingById.get(item.bookingId)
   if (!booking) return null
@@ -625,7 +622,13 @@ export function PaperTrayPage() {
   const shouldReduceMotion = useReducedMotion()
   const globalUploadRef = useRef<HTMLInputElement>(null)
   const uploadedUrlsRef = useRef(new Set<string>())
-  const [trays, setTrays] = useState<PaperTray[]>(createInitialPaperTrays)
+  const [trays, setTrays] = useState<PaperTray[]>([
+    { id: "incoming", name: "Incoming", color: "#0e7d74", documents: [] },
+    { id: "in-review", name: "In review", color: "#b77934", documents: [] },
+    { id: "ready", name: "Ready", color: "#5f7f68", documents: [] },
+  ])
+  const [liveBookings, setLiveBookings] = useState<LiveBooking[]>([])
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading")
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null)
   const [selectedTrayId, setSelectedTrayId] = useState<string | null>(null)
   const [mobileTrayId, setMobileTrayId] = useState("incoming")
@@ -646,6 +649,43 @@ export function PaperTrayPage() {
     () => trays.flatMap((tray) => tray.documents).find((item) => item.id === noteDocumentId) ?? null,
     [noteDocumentId, trays],
   )
+  const bookingById = useMemo(() => new Map(liveBookings.map((booking) => [booking.id, booking])), [liveBookings])
+
+  useEffect(() => {
+    let cancelled = false
+    Promise.all([listLivePaperTrayItems(), listLiveBookings()])
+      .then(([items, bookings]) => {
+        if (cancelled) return
+        const documents: TrayDocument[] = items.map((item) => ({
+          id: item.id,
+          name: item.fileName,
+          kind: item.mimeType.startsWith("image/") ? "image" : "pdf",
+          mimeType: item.mimeType,
+          sizeLabel: formatFileSize(item.fileSizeBytes),
+          addedAt: new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(item.receivedAt)),
+          customer: item.customer ?? undefined,
+          reference: item.bookingReference ?? item.documentType,
+          note: item.reviewNote ?? undefined,
+          bookingId: item.bookingReference ?? undefined,
+          url: item.url ?? undefined,
+          accent: item.tone === "amber" ? "amber" : "teal",
+        }))
+        setTrays((current) => current.map((tray) => ({
+          ...tray,
+          documents: tray.id === "in-review"
+            ? documents.filter((_, index) => items[index]?.status === "quarantined")
+            : tray.id === "ready"
+              ? documents.filter((_, index) => items[index]?.status !== "quarantined")
+              : [],
+        })))
+        setLiveBookings(bookings)
+        setLoadState("ready")
+      })
+      .catch(() => {
+        if (!cancelled) setLoadState("error")
+      })
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => {
     const urls = uploadedUrlsRef.current
@@ -733,15 +773,14 @@ export function PaperTrayPage() {
   }
 
   function downloadDocument(item: TrayDocument) {
-    const isTemporary = !item.url
-    const url = item.url ?? URL.createObjectURL(new Blob([
-      `${item.name}\n${item.reference ?? ""}\n${item.customer ?? ""}\n\nMultideck paper tray demo document.`,
-    ], { type: "text/plain" }))
+    if (!item.url) {
+      toast.error(t("Document unavailable"), { description: t("The stored file could not be opened. Try again shortly.") })
+      return
+    }
     const anchor = window.document.createElement("a")
-    anchor.href = url
-    anchor.download = item.url ? item.name : item.name.replace(/\.pdf$/i, ".txt")
+    anchor.href = item.url
+    anchor.download = item.name
     anchor.click()
-    if (isTemporary) window.setTimeout(() => URL.revokeObjectURL(url), 0)
     toast.success(t("Download started"), { description: item.name })
   }
 
@@ -811,7 +850,7 @@ export function PaperTrayPage() {
               {t("Sort, inspect, and move working documents across clear shelves.")}
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-[var(--md-subtle)]">
-              <span>{trays.length} {t("trays")}</span><span aria-hidden="true">·</span><span>{documentCount} {t("documents")}</span><span aria-hidden="true">·</span><span>{t("Session only")}</span>
+              <span>{trays.length} {t("trays")}</span><span aria-hidden="true">·</span><span>{documentCount} {t("documents")}</span><span aria-hidden="true">·</span><span>{t(loadState === "loading" ? "Loading workspace" : loadState === "error" ? "Unable to load documents" : "Supabase workspace")}</span>
             </div>
           </div>
 
@@ -888,7 +927,7 @@ export function PaperTrayPage() {
                     onSelectDocument={openDocument}
                     onFilesAdded={addFiles}
                     onMoveDocument={moveDocument}
-                    getShipmentForDocument={getDocumentShipment}
+                    getShipmentForDocument={(item) => getDocumentShipment(item, bookingById)}
                   />
                   <div className="md-paper-tray-page__stage-footer">
                     <span><strong>{t("Incoming")}</strong> {t("is the default destination for desktop uploads.")}</span>

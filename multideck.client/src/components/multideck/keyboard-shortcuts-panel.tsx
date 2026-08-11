@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { MousePointerClick, RotateCcw, Search, TriangleAlert, X } from "lucide-react"
+import { MousePointerClick, RotateCcw, Search, TriangleAlert, X } from "@/components/icons/hugeicons"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
