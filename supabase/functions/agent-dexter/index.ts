@@ -346,6 +346,7 @@ function rpcErrorMessage(error: unknown, fallback: string) {
 
 const ATTACH_EMAIL_DOCUMENT_ACTION = "attach_email_document_to_customer"
 const QUARANTINE_INVENTORY_ACTION = "quarantine_inventory"
+const CREATE_PURCHASE_ORDER_ACTION = "create_purchase_order"
 
 async function executeApprovedAction(
   userClient: DexterSupabaseClient,
@@ -353,6 +354,70 @@ async function executeApprovedAction(
   actionCode: string,
   args: JsonObject,
 ) {
+  if (actionCode === CREATE_PURCHASE_ORDER_ACTION) {
+    const facilityId = cleanString(args.facility_id, 80)
+    const customerOrgId = cleanString(args.customer_org_id, 80)
+    const number = cleanString(args.number, 120)
+    const supplierName = cleanString(args.supplier_name, 240)
+    const currencyCode = cleanString(args.currency_code, 3).toUpperCase()
+    const sourceLines = Array.isArray(args.lines) ? args.lines : []
+    if (!isUuid(facilityId) || !isUuid(customerOrgId) || !number || !supplierName || !/^[A-Z]{3}$/.test(currencyCode) || sourceLines.length === 0) {
+      return { data: null, error: { code: "invalid_action", message: "The approved warehouse, stock owner, purchase order header or lines are invalid." } }
+    }
+    const lines = sourceLines.flatMap((value) => {
+      if (!isObject(value)) return []
+      const itemId = cleanString(value.item_id, 80)
+      const description = cleanString(value.description, 800)
+      const quantity = Number(value.quantity)
+      const unitPrice = Number(value.unit_price)
+      const taxRate = Number(value.tax_rate)
+      if ((itemId && !isUuid(itemId)) || !description || !Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(unitPrice) || unitPrice < 0 || !Number.isFinite(taxRate) || taxRate < 0) return []
+      return [{
+        itemId: itemId || null,
+        sku: cleanString(value.sku, 120) || "",
+        supplierItemCode: null,
+        description,
+        quantity,
+        uomCode: cleanString(value.uom_code, 20).toUpperCase() || "EA",
+        unitPrice,
+        taxRate,
+        requestedDeliveryDate: null,
+      }]
+    })
+    if (lines.length !== sourceLines.length) return { data: null, error: { code: "invalid_action", message: "One or more approved purchase order lines are invalid." } }
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")?.trim() ?? ""
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")?.trim() ?? ""
+    try {
+      const response = await fetch(`${supabaseUrl}/functions/v1/warehouse/purchase-orders`, {
+        method: "POST",
+        headers: { Authorization: authorization, apikey: anonKey, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          facilityId,
+          customerOrgId,
+          supplierOrgId: isUuid(cleanString(args.supplier_org_id, 80)) ? cleanString(args.supplier_org_id, 80) : null,
+          number,
+          supplierName,
+          buyerReference: null,
+          supplierReference: null,
+          issueDate: cleanString(args.issue_date, 10) || null,
+          expectedDeliveryDate: cleanString(args.expected_delivery_date, 10) || null,
+          currencyCode,
+          deliveryTerms: null,
+          paymentTerms: null,
+          deliveryAddress: null,
+          notes: cleanString(args.notes, 1_000) || null,
+          lines,
+        }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      return response.ok
+        ? { data: payload, error: null }
+        : { data: null, error: { code: `warehouse_${response.status}`, message: cleanString(payload?.detail, 300) || "The approved purchase order could not be created." } }
+    } catch {
+      return { data: null, error: { code: "warehouse_unavailable", message: "The Warehouse Edge Function could not be reached. Nothing was changed." } }
+    }
+  }
+
   if (actionCode === QUARANTINE_INVENTORY_ACTION) {
     const balanceId = cleanString(args.target_id, 80)
     const facilityId = cleanString(args.facility_id, 80)
@@ -632,6 +697,20 @@ function addDomainCitations(domain: string, value: unknown) {
     }
   }
 
+  if (domain === "purchase_orders" && Array.isArray(data)) {
+    return {
+      ...value,
+      data: data.map((record) => {
+        if (!isObject(record)) return record
+        const recordId = cleanString(record.recordId, 80)
+        const number = cleanReference(record.purchaseOrderNumber, 120) || "Purchase order"
+        const query = new URLSearchParams({ search: number })
+        if (recordId) query.set("record", recordId)
+        return addRecordCitation(record, number, `/warehouse/purchase-orders?${query.toString()}`, "Warehouse purchase order record")
+      }),
+    }
+  }
+
   if (domain !== "warehouse" || !isObject(data)) return value
 
   const overview = isObject(data.overview)
@@ -805,6 +884,7 @@ Mailbox automatic replies are available only from the selected mailbox's Inbox s
 Gmail labels and Outlook folders are read-only provider organisation. When read_email_thread returns folders, use those visible names as context and never invent a missing label or folder. Label changes and folder moves do not emit a dedicated tenant-safe watch event in this release, so never claim that Watching for you can monitor those organisational changes; direct the operator to Inbox to browse them.
 Email search covers Multideck's rolling retained window: 12 calendar months for useful mail and 30 days for Spam and Trash. If search_email returns outsideRetentionWindow=true, explain that the requested period is outside Multideck's retained window; never claim that Gmail or Microsoft has no older email.
 Warehouse stock moves, pallet consolidation, sampling, damage posting and empty-location resolution require physical scans or dedicated warehouse controls. Dexter may inspect and watch those records, but must direct the operator to Warehouse for those actions. Dexter may quarantine an exact evidence-backed balance only through its listed approval action, which always waits for confirmation and is completed by the Warehouse Edge Function.
+Purchase orders are available through the purchase_orders data domain. Dexter may inspect their header, supplier, dates, totals, matched lines and linked goods-in order. A draft purchase order may be proposed only through create_purchase_order, must show the complete header and every line, always waits for explicit approval, and is completed by the Warehouse Edge Function. Document extraction itself stays in the Purchase Orders screen so the operator can review the source PDF; Dexter must not claim that it extracted a purchase order document.
 Time passing alone is not a live stale-lead watch signal in this release. Calculate stale assigned leads when asked; do not claim Dexter will wake up solely because a threshold elapsed.
 
 Selected read-only email sources:
@@ -1482,7 +1562,7 @@ async function runStreamedAgent(
         const action = actions.find((candidate) => candidate.code === call.name)
         if (!action) {
           toolOutput = { error: "That write action is not available in this workspace." }
-        } else if (accessMode === "approve" || action.code === ATTACH_EMAIL_DOCUMENT_ACTION || action.code === QUARANTINE_INVENTORY_ACTION) {
+        } else if (accessMode === "approve" || action.code === ATTACH_EMAIL_DOCUMENT_ACTION || action.code === QUARANTINE_INVENTORY_ACTION || action.code === CREATE_PURCHASE_ORDER_ACTION) {
           const currentRecord = currentRecordsById.get(cleanString(args.target_id, 80))
           const reason = preparedActionDescription(
             action.code,
@@ -2805,7 +2885,7 @@ Deno.serve(async (request) => {
         const action = actions.find((candidate) => candidate.code === call.name)
         if (!action) {
           toolOutput = { error: "That write action is not available in this workspace." }
-        } else if (accessMode === "approve" || action.code === ATTACH_EMAIL_DOCUMENT_ACTION || action.code === QUARANTINE_INVENTORY_ACTION) {
+        } else if (accessMode === "approve" || action.code === ATTACH_EMAIL_DOCUMENT_ACTION || action.code === QUARANTINE_INVENTORY_ACTION || action.code === CREATE_PURCHASE_ORDER_ACTION) {
           const currentRecord = currentRecordsById.get(cleanString(args.target_id, 80))
           const reason = preparedActionDescription(
             action.code,

@@ -3354,6 +3354,33 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
 />`,
   },
   {
+    id: "purchase-order-line-editor",
+    name: "Purchase Order Line Editor",
+    category: "Operations",
+    description: "A structured line editor for entered or document-extracted purchase-order goods, with item matching, quantities, UOM, price, tax and delivery date.",
+    details: "Use when an operator creates or reviews a purchase order. Extracted supplier text stays editable and visibly unmatched until the operator links each line to the correct warehouse item; issuing remains blocked while any line is unmatched.",
+    foundOn: [{ label: "Warehouse purchase orders", route: "/warehouse/purchase-orders" }, { label: "Components", route: "/components?component=purchase-order-line-editor" }],
+    componentCode: `export function PurchaseOrderLineEditor({ lines, reference, facilityId, customerOrgId, disabled, onChange }) {
+  const items = reference.items.filter((item) => item.facilityId === facilityId && item.customerOrgId === customerOrgId)
+  return lines.map((line, index) => (
+    <PurchaseOrderLine
+      key={line.id ?? index}
+      line={line}
+      items={items}
+      disabled={disabled}
+      onChange={(changes) => onChange(lines.map((item, lineIndex) => lineIndex === index ? { ...item, ...changes } : item))}
+    />
+  ))
+}`,
+    usageCode: `<PurchaseOrderLineEditor
+  lines={form.lines}
+  reference={reference}
+  facilityId={form.facilityId}
+  customerOrgId={form.customerOrgId}
+  onChange={(lines) => setForm((current) => ({ ...current, lines }))}
+/>`,
+  },
+  {
     id: "warehouse-object-summary",
     name: "Warehouse Object Summary",
     category: "Operations",
@@ -4611,6 +4638,7 @@ export const galleryIcons = {
   "data-table": Users,
   "warehouse-table": Boxes,
   "warehouse-quantity-uom-field": Boxes,
+  "purchase-order-line-editor": ReceiptText,
   "warehouse-object-summary": Boxes,
   "warehouse-exception-summary": Boxes,
   "warehouse-kanban-board": LayoutDashboard,

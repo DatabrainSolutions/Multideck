@@ -60,6 +60,9 @@ Deno.serve(async (request)=>{
     } else if (path[0] === "handling-units") {
       const { handleHandlingUnits } = await import("./routes/handling-units.ts");
       result = await handleHandlingUnits(path, url, admin, actor);
+    } else if (path[0] === "purchase-orders") {
+      const { handlePurchaseOrders } = await import("./routes/purchase-orders.ts");
+      result = await handlePurchaseOrders(request, path, url, admin, actor);
     } else if (path[0] === "orders" && path[2] === "documents") {
       const { handleDocuments } = await import("./routes/documents.ts");
       result = await handleDocuments(request, path, admin, actor);

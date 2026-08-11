@@ -1,5 +1,6 @@
 import type { LanguageCode } from "./languages"
 import { customsDeclarationPhrases } from "./customs-declaration-phrases"
+import { purchaseOrderPhrases } from "./purchase-order-phrases"
 
 type WordDictionary = Record<string, string>
 type PhraseDictionary = Record<string, Partial<Record<LanguageCode, string>>>
@@ -629,6 +630,7 @@ const phrases: PhraseDictionary = {
   ...documentBuilderPhrases,
   ...bookingWorkspacePhrases,
   ...customsDeclarationPhrases,
+  ...purchaseOrderPhrases,
   ...crmAccountContactPhrases,
   ...dexterWritingProfilePhrases,
   ...drivePhrases,

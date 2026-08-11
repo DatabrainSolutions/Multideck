@@ -14,6 +14,7 @@ const edgeFiles = [
   "functions/warehouse/routes/items.ts",
   "functions/warehouse/routes/locations.ts",
   "functions/warehouse/routes/orders.ts",
+  "functions/warehouse/routes/purchase-orders.ts",
   "functions/warehouse/routes/portal-users.ts",
   "functions/warehouse/shared/authentication.ts",
 ]
@@ -26,6 +27,7 @@ const portalRoleReactivationMigration = await readFile(new URL("migrations/20260
 const inventoryHandlingMigration = await readFile(new URL("migrations/20260804160000_warehouse_inventory_handling_units.sql", root), "utf8")
 const inventoryDexterMigration = await readFile(new URL("migrations/20260804161000_warehouse_inventory_dexter_parity.sql", root), "utf8")
 const rescheduleMigration = await readFile(new URL("migrations/20260808090000_warehouse_order_reschedule.sql", root), "utf8")
+const purchaseOrderMigration = await readFile(new URL("migrations/20260805100000_warehouse_purchase_orders.sql", root), "utf8")
 const baseline = await readFile(new URL("baseline/public-schema.sql", root), "utf8")
 const clientSource = await readFile(new URL("../multideck.client/src/lib/warehouse.ts", root), "utf8")
 const orderSource = await readFile(new URL("functions/warehouse/routes/orders.ts", root), "utf8")
@@ -36,13 +38,13 @@ test("warehouse client uses the tenant Supabase Edge Function as its only backen
   assert.match(clientSource, /supabaseFunctionsUrl.*warehouse/s)
   assert.doesNotMatch(clientSource, /apiFetch\(/)
   assert.doesNotMatch(clientSource, /\/api\/v1\/warehouse/)
-  for (const route of ["/facilities", "/items", "/inventory", "/handling-units", "/orders", "/portal"]) {
+  for (const route of ["/facilities", "/items", "/inventory", "/handling-units", "/orders", "/purchase-orders", "/portal"]) {
     assert.match(clientSource, new RegExp(`Warehouse[^\\n]*|${route.replace("/", "\\/")}`))
   }
 })
 
 test("warehouse Edge Function covers every former controller area", () => {
-  for (const area of ["facilities", "locations", "items", "inventory", "orders", "documents", "portal"]) {
+  for (const area of ["facilities", "locations", "items", "inventory", "orders", "purchaseOrders", "documents", "portal"]) {
     assert.match(edgeSource, new RegExp(`handle${area[0].toUpperCase()}${area.slice(1)}`))
   }
   for (const operation of ["reference", "import", "movements", "receive", "dispatch", "cancel", "review", "download", "invitations"]) {
@@ -110,6 +112,30 @@ test("Dexter can read and watch quantity-aware stock while physical writes stay 
   assert.match(inventoryDexterMigration, /TR_WMS_HandlingUnitEvents_dexter_watch/)
   assert.match(inventoryDexterMigration, /quarantine_inventory/)
   assert.match(inventoryDexterMigration, /must be completed through the Warehouse Edge Function/)
+})
+
+test("purchase orders save header and lines atomically and can create real inbound work", () => {
+  for (const table of ["WMS_PurchaseOrders", "WMS_PurchaseOrderLines", "WMS_PurchaseOrderEvents"]) {
+    assert.match(purchaseOrderMigration, new RegExp(table))
+    assert.match(baseline, new RegExp(table))
+  }
+  assert.match(edgeSource, /rpc\("warehouse_edge_purchase_order_mutation"/)
+  assert.match(purchaseOrderMigration, /create or replace function public\.warehouse_edge_purchase_order_mutation/)
+  assert.match(purchaseOrderMigration, /revoke all on function public\.warehouse_edge_purchase_order_mutation[\s\S]*from public,anon,authenticated/)
+  assert.match(purchaseOrderMigration, /grant execute on function public\.warehouse_edge_purchase_order_mutation[\s\S]*to service_role/)
+  assert.match(purchaseOrderMigration, /Match every line to a warehouse item before issuing/i)
+  assert.match(purchaseOrderMigration, /'create_inbound'/)
+  assert.match(purchaseOrderMigration, /purchaseOrderLineId/)
+  assert.doesNotMatch(clientSource, /\.from\(["']WMS_Purchase/)
+})
+
+test("purchase orders have Dexter read, approval-safe write and event-driven watch parity", () => {
+  assert.match(purchaseOrderMigration, /multideck_dexter_domain_purchase_orders/)
+  assert.match(purchaseOrderMigration, /create_purchase_order/)
+  assert.match(purchaseOrderMigration, /must be completed through the Warehouse Edge Function/)
+  assert.match(purchaseOrderMigration, /TR_WMS_PurchaseOrders_dexter_watch/)
+  assert.match(purchaseOrderMigration, /AI_DexterWatchSignals/)
+  assert.doesNotMatch(purchaseOrderMigration, /cron|http|llm/i)
 })
 
 test("warehouse runtime targets the current WMS schema", () => {

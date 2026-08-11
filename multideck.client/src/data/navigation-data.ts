@@ -73,6 +73,7 @@ export const warehouseNavigation: SidebarDestination[] = [
   { id: "warehouse-goods-in", label: "Goods in", icon: PackagePlus, route: "/warehouse/goods-in" },
   { id: "warehouse-goods-out", label: "Goods out", icon: PackageMinus, route: "/warehouse/goods-out" },
   { id: "warehouse-orders", label: "Orders", icon: ClipboardCheck, route: "/warehouse/orders" },
+  { id: "warehouse-purchase-orders", label: "Purchase orders", icon: ReceiptText, route: "/warehouse/purchase-orders" },
   {
     id: "warehouse-setup",
     label: "Setup",

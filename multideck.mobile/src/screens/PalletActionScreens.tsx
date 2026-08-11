@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { StyleSheet, Text } from "react-native"
 import { Field } from "@/components/FormControls"
-import { DataCard, ErrorState, LoadingState, ScanField, SuccessState, WarehouseButton, WarehouseScreen } from "@/components/WarehouseUI"
+import { DataCard, ErrorState, LoadingState, ScanField, SuccessState, WarehouseButton, WarehouseScreen, WarningState } from "@/components/WarehouseUI"
 import { colors, spacing, type } from "@/theme/tokens"
-import type { WarehouseHandlingUnit, WarehouseHandlingUnitReference, WarehouseMobileApi } from "@/warehouse/api"
+import type { WarehouseFacility, WarehouseHandlingUnit, WarehouseHandlingUnitReference, WarehouseMobileApi } from "@/warehouse/api"
 import { wt } from "@/warehouse/i18n"
 
 function exactUnit(units: WarehouseHandlingUnit[], code: string) {
@@ -11,7 +11,7 @@ function exactUnit(units: WarehouseHandlingUnit[], code: string) {
   return units.find((unit) => unit.code.toLowerCase() === value || unit.sscc?.toLowerCase() === value)
 }
 
-export function PalletMoveScreen({ api, onBack }: { api: WarehouseMobileApi; onBack: () => void }) {
+export function PalletMoveScreen({ api, facility, onBack }: { api: WarehouseMobileApi; facility: WarehouseFacility; onBack: () => void }) {
   const [units, setUnits] = useState<WarehouseHandlingUnit[]>([])
   const [reference, setReference] = useState<WarehouseHandlingUnitReference | null>(null)
   const [palletCode, setPalletCode] = useState("")
@@ -25,7 +25,14 @@ export function PalletMoveScreen({ api, onBack }: { api: WarehouseMobileApi; onB
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
-  useEffect(() => { void Promise.all([api.listHandlingUnits(), api.getHandlingUnitReference()]).then(([nextUnits, nextReference]) => { setUnits(nextUnits); setReference(nextReference) }).catch((loadError) => setError(loadError instanceof Error ? loadError.message : wt("serviceError"))).finally(() => setLoading(false)) }, [api])
+  const load = useCallback(async () => {
+    setLoading(true); setError(null)
+    try {
+      const [nextUnits, nextReference] = await Promise.all([api.listHandlingUnits({ facilityId: facility.id }), api.getHandlingUnitReference(facility.id)])
+      setUnits(nextUnits); setReference(nextReference)
+    } catch (loadError) { setError(loadError instanceof Error ? loadError.message : wt("serviceError")) } finally { setLoading(false) }
+  }, [api, facility.id])
+  useEffect(() => { void load() }, [load])
 
   const pallet = useMemo(() => exactUnit(units, palletCode), [units, palletCode])
   const source = useMemo(() => reference?.locations.find((location) => location.code.toLowerCase() === sourceCode.trim().toLowerCase()), [reference, sourceCode])
@@ -44,13 +51,13 @@ export function PalletMoveScreen({ api, onBack }: { api: WarehouseMobileApi; onB
     if (!pallet || !source || !destination || (mismatch && !reason.trim())) return
     setBusy(true); setError(null)
     try {
-      await api.moveHandlingUnit({ facilityId: pallet.facilityId, handlingUnitId: pallet.id, targetLocationId: destination.id, actualSourceLocationId: source.id, overrideReason: mismatch ? reason.trim() : null, notes: notes.trim() || null })
+      await api.moveHandlingUnit({ facilityId: facility.id, handlingUnitId: pallet.id, targetLocationId: destination.id, actualSourceLocationId: source.id, overrideReason: mismatch ? reason.trim() : null, notes: notes.trim() || null })
       setSuccess(wt("moveComplete")); setReviewed(false)
     } catch (actionError) { setError(actionError instanceof Error ? actionError.message : wt("serviceError")) } finally { setBusy(false) }
   }
 
   return <WarehouseScreen title={wt("moveOverride")} subtitle={wt("moveOverrideDetail")} onBack={onBack}>
-    {loading ? <LoadingState /> : <>
+    {loading ? <LoadingState /> : error ? <ErrorState message={error} onRetry={() => void load()} /> : <>
       <ScanField value={palletCode} onChangeText={(value) => { setPalletCode(value); setReviewed(false) }} placeholder={wt("palletCode")} autoFocus />
       <ScanField value={sourceCode} onChangeText={(value) => { setSourceCode(value); setReviewed(false) }} placeholder={wt("scannedSource")} />
       <ScanField value={destinationCode} onChangeText={(value) => { setDestinationCode(value); setReviewed(false) }} placeholder={wt("destination")} />
@@ -58,16 +65,16 @@ export function PalletMoveScreen({ api, onBack }: { api: WarehouseMobileApi; onB
         <DataCard title={pallet?.code || "—"} meta={`${pallet?.locationCode || "—"} → ${destination?.code || "—"}`} status={pallet?.lifecycleStatusCode}>
           <Text style={styles.detail}>{pallet?.customerName || "—"} · {pallet?.contents.length || 0} {wt("contents").toLowerCase()}</Text>
         </DataCard>
-        {mismatch ? <><ErrorState message={wt("overrideRequired")} /><Field label={wt("overrideReason")} value={reason} onChangeText={setReason} /></> : null}
+        {mismatch ? <><WarningState message={wt("overrideRequired")} /><Field label={wt("overrideReason")} value={reason} onChangeText={setReason} /></> : null}
         <Field label={wt("investigationNotes")} value={notes} onChangeText={setNotes} />
         <WarehouseButton label={wt("confirmMove")} disabled={mismatch && !reason.trim()} busy={busy} onPress={() => void move()} />
       </>}
-      {error ? <ErrorState message={error} /> : null}{success ? <SuccessState message={success} /> : null}
+      {error ? <WarningState message={error} /> : null}{success ? <SuccessState message={success} /> : null}
     </>}
   </WarehouseScreen>
 }
 
-export function ConsolidationScreen({ api, onBack }: { api: WarehouseMobileApi; onBack: () => void }) {
+export function ConsolidationScreen({ api, facility, onBack }: { api: WarehouseMobileApi; facility: WarehouseFacility; onBack: () => void }) {
   const [units, setUnits] = useState<WarehouseHandlingUnit[]>([])
   const [targetCode, setTargetCode] = useState("")
   const [sourceCodes, setSourceCodes] = useState("")
@@ -77,7 +84,11 @@ export function ConsolidationScreen({ api, onBack }: { api: WarehouseMobileApi; 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
-  useEffect(() => { void api.listHandlingUnits().then(setUnits).catch((loadError) => setError(loadError instanceof Error ? loadError.message : wt("serviceError"))).finally(() => setLoading(false)) }, [api])
+  const load = useCallback(async () => {
+    setLoading(true); setError(null)
+    try { setUnits(await api.listHandlingUnits({ facilityId: facility.id })) } catch (loadError) { setError(loadError instanceof Error ? loadError.message : wt("serviceError")) } finally { setLoading(false) }
+  }, [api, facility.id])
+  useEffect(() => { void load() }, [load])
   const target = useMemo(() => exactUnit(units, targetCode), [units, targetCode])
   const sourceValues = sourceCodes.split(/[\n,]+/).map((value) => value.trim()).filter(Boolean)
   const sources = sourceValues.map((code) => exactUnit(units, code)).filter((unit): unit is WarehouseHandlingUnit => Boolean(unit))
@@ -95,23 +106,23 @@ export function ConsolidationScreen({ api, onBack }: { api: WarehouseMobileApi; 
     if (!target || !sources.length) return
     setBusy(true); setError(null)
     try {
-      await api.consolidateHandlingUnits({ facilityId: target.facilityId, targetHandlingUnitId: target.id, sourceHandlingUnitIds: sources.map((source) => source.id), notes: notes.trim() || null })
+      await api.consolidateHandlingUnits({ facilityId: facility.id, targetHandlingUnitId: target.id, sourceHandlingUnitIds: sources.map((source) => source.id), notes: notes.trim() || null })
       setSuccess(wt("consolidationComplete")); setReviewed(false)
     } catch (actionError) { setError(actionError instanceof Error ? actionError.message : wt("serviceError")) } finally { setBusy(false) }
   }
 
   return <WarehouseScreen title={wt("consolidation")} subtitle={wt("consolidationDetail")} onBack={onBack}>
-    {loading ? <LoadingState /> : <>
+    {loading ? <LoadingState /> : error ? <ErrorState message={error} onRetry={() => void load()} /> : <>
       <ScanField value={targetCode} onChangeText={(value) => { setTargetCode(value); setReviewed(false) }} placeholder={wt("targetPallet")} autoFocus />
       <ScanField value={sourceCodes} onChangeText={(value) => { setSourceCodes(value); setReviewed(false) }} placeholder={wt("sourcePalletsHint")} multiline />
       {!reviewed ? <WarehouseButton label={wt("reviewConsolidation")} onPress={review} /> : <>
-        <ErrorState message={wt("consolidationWarning")} />
+        <WarningState message={wt("consolidationWarning")} />
         <DataCard title={target?.code || "—"} meta={`${wt("targetPallet")} · ${target?.locationCode || "—"}`} status={target?.lifecycleStatusCode} />
         {sources.map((source) => <DataCard key={source.id} title={source.code} meta={`${wt("sourcePallets")} · ${source.locationCode || "—"}`} status={source.lifecycleStatusCode} />)}
         <Field label={wt("investigationNotes")} value={notes} onChangeText={setNotes} />
         <WarehouseButton label={wt("confirmConsolidation")} tone="danger" busy={busy} onPress={() => void consolidate()} />
       </>}
-      {error ? <ErrorState message={error} /> : null}{success ? <SuccessState message={success} /> : null}
+      {error ? <WarningState message={error} /> : null}{success ? <SuccessState message={success} /> : null}
     </>}
   </WarehouseScreen>
 }

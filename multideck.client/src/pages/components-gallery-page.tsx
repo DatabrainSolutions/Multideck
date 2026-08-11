@@ -101,6 +101,8 @@ import { DomesticJobStageRail, DomesticRoadJobCard, DomesticRoadKanbanBoard, dom
 import { WarehouseKanbanBoardPreview, WarehouseOrdersTable, WarehouseProductsTable, WarehouseStockTable } from "@/components/multideck/warehouse-components"
 import { WarehouseFormField } from "@/components/multideck/warehouse-management-components"
 import { WarehouseExceptionSummary, WarehouseObjectSummary, WarehouseQuantityUomField } from "@/components/multideck/warehouse-inventory-workspace"
+import { PurchaseOrderLineEditor } from "@/components/multideck/warehouse-purchase-orders-workspace"
+import type { WarehousePurchaseOrderLine, WarehousePurchaseOrderReference } from "@/lib/warehouse"
 import type { WarehouseHandlingUnit, WarehouseInventoryException } from "@/lib/warehouse"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
@@ -238,7 +240,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["paper-tray-stack", "document-viewer", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
+    ids: ["paper-tray-stack", "document-viewer", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
   },
   {
     label: "CRM",
@@ -1047,6 +1049,16 @@ const previewWarehouseException: WarehouseInventoryException = {
   movementGroupId: "gallery-movement", raisedAt: "2026-08-04T10:15:00Z", resolvedAt: null, metadata: {},
 }
 
+const previewPurchaseOrderReference: WarehousePurchaseOrderReference = {
+  facilities: [{ id: "gallery-facility", code: "FXT-DC1", name: "Felixstowe DC" }],
+  organisations: [{ id: "gallery-customer", name: "Marlow Apparel Ltd" }],
+  currencies: ["GBP", "EUR", "USD"],
+  items: [
+    { id: "gallery-item-rsj", customerOrgId: "gallery-customer", facilityId: "gallery-facility", sku: "MAR-RSJ-118", description: "Rain shell jacket", uomCode: "EA", quantityBasisCode: "count", allowsFractionalQuantity: false },
+    { id: "gallery-item-act", customerOrgId: "gallery-customer", facilityId: "gallery-facility", sku: "MAR-ACT-044", description: "Thermal activewear carton", uomCode: "CTN", quantityBasisCode: "count", allowsFractionalQuantity: false },
+  ],
+}
+
 function ComponentPreview({ id }: { id: string }) {
   const { language, t } = useLanguage()
   const [previewSidebarPinnedIds, setPreviewSidebarPinnedIds] = useState<string[]>([])
@@ -1086,6 +1098,9 @@ function ComponentPreview({ id }: { id: string }) {
   const [galleryRegisterCondition, setGalleryRegisterCondition] = useState("")
   const [galleryRegisterSearch, setGalleryRegisterSearch] = useState("")
   const [galleryRegisterPending, setGalleryRegisterPending] = useState(false)
+  const [previewPurchaseOrderLines, setPreviewPurchaseOrderLines] = useState<WarehousePurchaseOrderLine[]>([
+    { itemId: "gallery-item-rsj", sku: "MAR-RSJ-118", supplierItemCode: "YH-1440", description: "Rain shell jacket · navy · mixed sizes", quantity: 780, uomCode: "EA", unitPrice: 18.4, taxRate: 0, requestedDeliveryDate: "2026-08-18" },
+  ])
   const [previewContactLayout, setPreviewContactLayout] = useState<CardLayout>("editorial")
   const [previewMarketingOptIn, setPreviewMarketingOptIn] = useState(true)
   const [previewSocialLinks, setPreviewSocialLinks] = useState<CardSocialLink[]>([
@@ -2211,6 +2226,18 @@ function ComponentPreview({ id }: { id: string }) {
       {id === "warehouse-quantity-uom-field" ? (
         <div className="w-full max-w-[420px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
           <WarehouseQuantityUomField label="Quantity to sample" value={previewWarehouseQuantity} onChange={setPreviewWarehouseQuantity} uomCode="KG" max={387.5} />
+        </div>
+      ) : null}
+
+      {id === "purchase-order-line-editor" ? (
+        <div className="w-full max-w-[980px] rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-line)]">
+          <PurchaseOrderLineEditor
+            lines={previewPurchaseOrderLines}
+            reference={previewPurchaseOrderReference}
+            facilityId="gallery-facility"
+            customerOrgId="gallery-customer"
+            onChange={setPreviewPurchaseOrderLines}
+          />
         </div>
       ) : null}
 

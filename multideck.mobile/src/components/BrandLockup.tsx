@@ -1,16 +1,24 @@
 import { StyleSheet, Text, View } from "react-native"
 import { colors } from "@/theme/tokens"
 
+export function BrandMark({ inverted = false }: { inverted?: boolean }) {
+  const ink = inverted ? colors.surface : colors.ink
+
+  return (
+    <View style={styles.mark} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+      <View style={[styles.deck, styles.deckBack, { backgroundColor: ink }]} />
+      <View style={[styles.deck, styles.deckMiddle, { backgroundColor: ink }]} />
+      <View style={[styles.deck, styles.deckFront]} />
+    </View>
+  )
+}
+
 export function BrandLockup({ inverted = false }: { inverted?: boolean }) {
   const ink = inverted ? colors.surface : colors.ink
 
   return (
     <View style={styles.lockup} accessibilityLabel="Multideck">
-      <View style={styles.mark} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-        <View style={[styles.deck, styles.deckBack, { backgroundColor: ink }]} />
-        <View style={[styles.deck, styles.deckMiddle, { backgroundColor: ink }]} />
-        <View style={[styles.deck, styles.deckFront]} />
-      </View>
+      <BrandMark inverted={inverted} />
       <Text style={[styles.wordmark, { color: ink }]}>multideck</Text>
     </View>
   )

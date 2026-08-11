@@ -12,6 +12,7 @@ import { WarehouseOrderDetailView, orderDetailPath, warehouseOrderDetailNumber }
 import { WarehouseItemDetailView, warehouseItemDetailSku } from "@/components/multideck/warehouse-item-detail"
 import { WarehouseInventoryWorkspace } from "@/components/multideck/warehouse-inventory-workspace"
 import { DotGridLoaderPanel } from "@/components/multideck/dot-grid-loader"
+import { WarehousePurchaseOrdersWorkspace } from "@/components/multideck/warehouse-purchase-orders-workspace"
 import { Surface } from "@/components/multideck/surface"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -23,7 +24,7 @@ import { getWarehouseWorkspaceData, rescheduleOperationalWarehouseOrder, type Wa
 import { toast } from "sonner"
 import { CustomerWarehouseAccess } from "@/pages/customer-detail-page"
 
-type WarehouseSection = "Dashboard" | "Facilities" | "Locations" | "Items" | "Inventory" | "Goods in" | "Goods out" | "Orders" | "Calendar" | "Users"
+type WarehouseSection = "Dashboard" | "Facilities" | "Locations" | "Items" | "Inventory" | "Goods in" | "Goods out" | "Orders" | "Purchase orders" | "Calendar" | "Users"
 
 /**
  * The grid works in local wall-clock minutes; the order stores an instant. The slot
@@ -48,6 +49,7 @@ const warehouseSectionDescriptions: Record<WarehouseSection, string | null> = {
   Facilities: null,
   Locations: null,
   Items: null,
+  "Purchase orders": null,
   Users: null,
 }
 
@@ -228,6 +230,7 @@ export function WarehousePage({ route, currentUser, navigate }: { route: string;
           {activeSection === "Goods in" ? <WarehouseOrdersManagementView typeFilter="inbound" registerRoute="/warehouse/goods-in" navigate={navigate} /> : null}
           {activeSection === "Goods out" ? <WarehouseOrdersManagementView typeFilter="outbound" registerRoute="/warehouse/goods-out" navigate={navigate} /> : null}
           {activeSection === "Orders" ? <WarehouseOrdersManagementView isCustomer={isCustomer} canCreateInbound={canCreateInbound} canCreateOutbound={canCreateOutbound} registerRoute="/warehouse/orders" navigate={navigate} /> : null}
+          {activeSection === "Purchase orders" && !isCustomer ? <WarehousePurchaseOrdersWorkspace /> : null}
           {activeSection === "Users" && canManageUsers ? <WarehouseOrganisationUsersView currentUser={currentUser} /> : null}
           {activeSection === "Calendar" ? dashboardOrCalendarState ?? (
             <WarehouseCalendarView

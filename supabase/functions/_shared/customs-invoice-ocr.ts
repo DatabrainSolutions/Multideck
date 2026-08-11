@@ -55,6 +55,62 @@ export const commercialInvoiceAnnotationFormat = {
   },
 } as const
 
+export const purchaseOrderAnnotationFormat = {
+  type: "json_schema",
+  json_schema: {
+    name: "purchase_order",
+    strict: true,
+    schema: {
+      type: "object",
+      additionalProperties: false,
+      required: [
+        "purchase_order_number", "supplier_name", "supplier_reference", "buyer_reference",
+        "issue_date", "expected_delivery_date", "currency", "delivery_terms",
+        "payment_terms", "delivery_address", "notes", "lines",
+      ],
+      properties: {
+        purchase_order_number: nullableString(),
+        supplier_name: nullableString(),
+        supplier_reference: nullableString(),
+        buyer_reference: nullableString(),
+        issue_date: nullableString(),
+        expected_delivery_date: nullableString(),
+        currency: nullableString(),
+        delivery_terms: nullableString(),
+        payment_terms: nullableString(),
+        delivery_address: nullableString(),
+        notes: nullableString(),
+        lines: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: [
+              "line_number", "page_number", "sku", "supplier_item_code", "description",
+              "quantity", "uom_code", "unit_price", "line_total", "tax_rate",
+              "currency", "requested_delivery_date",
+            ],
+            properties: {
+              line_number: nullableNumber(),
+              page_number: nullableNumber(),
+              sku: nullableString(),
+              supplier_item_code: nullableString(),
+              description: { type: "string" },
+              quantity: nullableNumber(),
+              uom_code: nullableString(),
+              unit_price: nullableNumber(),
+              line_total: nullableNumber(),
+              tax_rate: nullableNumber(),
+              currency: nullableString(),
+              requested_delivery_date: nullableString(),
+            },
+          },
+        },
+      },
+    },
+  },
+} as const
+
 export type ExtractedCommercialInvoiceLine = {
   id: string
   invoiceLine: number
@@ -76,6 +132,34 @@ export type ExtractedCommercialInvoiceLine = {
 export type CommercialInvoiceExtraction = {
   invoiceNumber: string
   lines: ExtractedCommercialInvoiceLine[]
+}
+
+export type PurchaseOrderExtraction = {
+  number: string
+  supplierName: string
+  supplierReference: string
+  buyerReference: string
+  issueDate: string
+  expectedDeliveryDate: string
+  currencyCode: string
+  deliveryTerms: string
+  paymentTerms: string
+  deliveryAddress: string
+  notes: string
+  lines: Array<{
+    id: string
+    lineNumber: number
+    page: number
+    sku: string
+    supplierItemCode: string
+    description: string
+    quantity: number
+    uomCode: string
+    unitPrice: number
+    taxRate: number
+    currencyCode: string
+    requestedDeliveryDate: string
+  }>
 }
 
 /** A bounding box expressed as page fractions so the browser can overlay it at any zoom. */
@@ -223,6 +307,50 @@ export function normalizeCommercialInvoiceAnnotation(
   }
 }
 
+export function normalizePurchaseOrderAnnotation(annotation: unknown): PurchaseOrderExtraction {
+  const parsed = typeof annotation === "string" ? parseAnnotation(annotation) : annotation
+  const record = asRecord(parsed)
+  const documentCurrency = currencyCode(record.currency)
+  const sourceLines = Array.isArray(record.lines) ? record.lines : []
+  const lines = sourceLines.flatMap((source, index) => {
+    const line = asRecord(source)
+    const description = cleanText(line.description, 800)
+    if (!description) return []
+    const quantity = positiveNumber(line.quantity) ?? 0
+    const explicitUnitPrice = nonNegativeNumber(line.unit_price)
+    const lineTotal = nonNegativeNumber(line.line_total)
+    const unitPrice = explicitUnitPrice ?? (lineTotal === null || quantity === 0 ? 0 : lineTotal / quantity)
+    return [{
+      id: `po-ocr-line-${index + 1}`,
+      lineNumber: Math.max(1, Math.round(positiveNumber(line.line_number) || index + 1)),
+      page: Math.max(1, Math.round(positiveNumber(line.page_number) || 1)),
+      sku: cleanText(line.sku, 120),
+      supplierItemCode: cleanText(line.supplier_item_code, 120),
+      description,
+      quantity: round(quantity, 6),
+      uomCode: cleanText(line.uom_code, 20).toUpperCase() || "EA",
+      unitPrice: round(unitPrice, 6),
+      taxRate: round(nonNegativeNumber(line.tax_rate) ?? 0, 4),
+      currencyCode: currencyCode(line.currency) || documentCurrency,
+      requestedDeliveryDate: isoDate(line.requested_delivery_date),
+    }]
+  })
+  return {
+    number: cleanText(record.purchase_order_number, 120),
+    supplierName: cleanText(record.supplier_name, 240),
+    supplierReference: cleanText(record.supplier_reference, 160),
+    buyerReference: cleanText(record.buyer_reference, 160),
+    issueDate: isoDate(record.issue_date),
+    expectedDeliveryDate: isoDate(record.expected_delivery_date),
+    currencyCode: documentCurrency,
+    deliveryTerms: cleanText(record.delivery_terms, 180),
+    paymentTerms: cleanText(record.payment_terms, 180),
+    deliveryAddress: cleanText(record.delivery_address, 1_000),
+    notes: cleanText(record.notes, 1_000),
+    lines,
+  }
+}
+
 function nullableString() {
   return { anyOf: [{ type: "string" }, { type: "null" }] } as const
 }
@@ -259,6 +387,11 @@ function currencyCode(value: unknown) {
 function countryCode(value: unknown) {
   const country = cleanText(value, 2).toUpperCase()
   return /^[A-Z]{2}$/.test(country) ? country : ""
+}
+
+function isoDate(value: unknown) {
+  const date = cleanText(value, 10)
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : ""
 }
 
 function finiteNumber(value: unknown) {

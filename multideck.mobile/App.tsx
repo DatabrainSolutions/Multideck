@@ -8,6 +8,7 @@ import type { Session, SupabaseClient } from "@supabase/supabase-js"
 import { WorkspaceScreen } from "@/screens/WorkspaceScreen"
 import { SignInScreen } from "@/screens/SignInScreen"
 import { WarehouseHomeScreen } from "@/screens/WarehouseHomeScreen"
+import { WarehouseSelectScreen } from "@/screens/WarehouseSelectScreen"
 import { ExceptionsScreen, HoldingFeesScreen, PalletsScreen, StockEnquiryScreen, StockItemsScreen } from "@/screens/WarehouseBrowseScreens"
 import { LocationCheckScreen } from "@/screens/LocationCheckScreen"
 import { ConsolidationScreen, PalletMoveScreen } from "@/screens/PalletActionScreens"
@@ -16,10 +17,13 @@ import { createWorkspaceClient, registerAuthAutoRefresh, releaseWorkspaceClient 
 import { discoverWorkspace, forgetWorkspace, loadWorkspace, saveWorkspace, type WorkspaceConfiguration } from "@/auth/workspace"
 import { colors, spacing, type } from "@/theme/tokens"
 import { createWarehouseMobileApi } from "@/warehouse/api"
+import type { WarehouseFacility } from "@/warehouse/api"
+import { WarehouseShellProvider } from "@/components/WarehouseShell"
 
 export type RootStackParams = {
   Workspace: undefined
   SignIn: undefined
+  WarehouseSelect: undefined
   Home: undefined
   LocationCheck: undefined
   StockEnquiry: undefined
@@ -37,6 +41,7 @@ export default function App() {
   const [workspace, setWorkspace] = useState<WorkspaceConfiguration | null>(null)
   const [client, setClient] = useState<SupabaseClient | null>(null)
   const [session, setSession] = useState<Session | null>(null)
+  const [facility, setFacility] = useState<WarehouseFacility | null>(null)
   const [ready, setReady] = useState(false)
 
   useEffect(() => registerAuthAutoRefresh(), [])
@@ -90,6 +95,7 @@ export default function App() {
     setWorkspace(configuration)
     setClient(nextClient)
     setSession(data.session)
+    setFacility(null)
   }, [])
 
   const changeWorkspace = useCallback(async () => {
@@ -98,9 +104,11 @@ export default function App() {
     setSession(null)
     setClient(null)
     setWorkspace(null)
+    setFacility(null)
   }, [])
 
   const signOut = useCallback(async () => {
+    setFacility(null)
     if (client) await client.auth.signOut()
   }, [client])
 
@@ -132,8 +140,16 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <StatusBar style="dark" />
-      <NavigationContainer theme={navigationTheme}>
-        <Stack.Navigator screenOptions={{ animation: "fade", headerShown: false }}>
+      <WarehouseShellProvider
+        email={session?.user.email ?? ""}
+        facility={facility}
+        workspaceName={workspace?.workspace.name ?? ""}
+        onChangeWarehouse={() => setFacility(null)}
+        onChangeWorkspace={changeWorkspace}
+        onSignOut={signOut}
+      >
+        <NavigationContainer theme={navigationTheme}>
+          <Stack.Navigator screenOptions={{ animation: "fade", headerShown: false }}>
           {!workspace || !client ? (
             <Stack.Screen name="Workspace">
               {() => <WorkspaceScreen onWorkspaceSelected={selectWorkspace} />}
@@ -142,23 +158,28 @@ export default function App() {
             <Stack.Screen name="SignIn">
               {() => <SignInScreen client={client} workspace={workspace} onChangeWorkspace={changeWorkspace} />}
             </Stack.Screen>
-          ) : warehouseApi ? (
+          ) : warehouseApi && !facility ? (
+            <Stack.Screen name="WarehouseSelect">
+              {() => <WarehouseSelectScreen api={warehouseApi} onSelect={setFacility} />}
+            </Stack.Screen>
+          ) : warehouseApi && facility ? (
             <Stack.Group>
               <Stack.Screen name="Home">
-                {({ navigation }) => <WarehouseHomeScreen session={session} workspaceName={workspace.workspace.name} onOpen={(route) => navigation.navigate(route)} onSignOut={signOut} onChangeWorkspace={changeWorkspace} />}
+                {({ navigation }) => <WarehouseHomeScreen onOpen={(route) => navigation.navigate(route)} />}
               </Stack.Screen>
-              <Stack.Screen name="LocationCheck">{({ navigation }) => <LocationCheckScreen api={warehouseApi} onBack={() => navigation.goBack()} />}</Stack.Screen>
-              <Stack.Screen name="StockEnquiry">{({ navigation }) => <StockEnquiryScreen api={warehouseApi} onBack={() => navigation.goBack()} />}</Stack.Screen>
-              <Stack.Screen name="StockItems">{({ navigation }) => <StockItemsScreen api={warehouseApi} onBack={() => navigation.goBack()} />}</Stack.Screen>
-              <Stack.Screen name="Pallets">{({ navigation }) => <PalletsScreen api={warehouseApi} onBack={() => navigation.goBack()} />}</Stack.Screen>
-              <Stack.Screen name="PalletMove">{({ navigation }) => <PalletMoveScreen api={warehouseApi} onBack={() => navigation.goBack()} />}</Stack.Screen>
-              <Stack.Screen name="Consolidation">{({ navigation }) => <ConsolidationScreen api={warehouseApi} onBack={() => navigation.goBack()} />}</Stack.Screen>
-              <Stack.Screen name="Exceptions">{({ navigation }) => <ExceptionsScreen api={warehouseApi} onBack={() => navigation.goBack()} />}</Stack.Screen>
+              <Stack.Screen name="LocationCheck">{({ navigation }) => <LocationCheckScreen api={warehouseApi} facility={facility} onBack={() => navigation.goBack()} />}</Stack.Screen>
+              <Stack.Screen name="StockEnquiry">{({ navigation }) => <StockEnquiryScreen api={warehouseApi} facility={facility} onBack={() => navigation.goBack()} />}</Stack.Screen>
+              <Stack.Screen name="StockItems">{({ navigation }) => <StockItemsScreen api={warehouseApi} facility={facility} onBack={() => navigation.goBack()} />}</Stack.Screen>
+              <Stack.Screen name="Pallets">{({ navigation }) => <PalletsScreen api={warehouseApi} facility={facility} onBack={() => navigation.goBack()} />}</Stack.Screen>
+              <Stack.Screen name="PalletMove">{({ navigation }) => <PalletMoveScreen api={warehouseApi} facility={facility} onBack={() => navigation.goBack()} />}</Stack.Screen>
+              <Stack.Screen name="Consolidation">{({ navigation }) => <ConsolidationScreen api={warehouseApi} facility={facility} onBack={() => navigation.goBack()} />}</Stack.Screen>
+              <Stack.Screen name="Exceptions">{({ navigation }) => <ExceptionsScreen api={warehouseApi} facility={facility} onBack={() => navigation.goBack()} />}</Stack.Screen>
               <Stack.Screen name="HoldingFees">{({ navigation }) => <HoldingFeesScreen onBack={() => navigation.goBack()} />}</Stack.Screen>
             </Stack.Group>
           ) : null}
-        </Stack.Navigator>
-      </NavigationContainer>
+          </Stack.Navigator>
+        </NavigationContainer>
+      </WarehouseShellProvider>
     </SafeAreaProvider>
   )
 }

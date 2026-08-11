@@ -1117,3 +1117,116 @@ export async function getWarehouseWorkspaceData(locale = "en-GB"): Promise<Wareh
     calendar: calendarData(orders),
   }
 }
+
+export type WarehousePurchaseOrderLine = {
+  id?: string
+  lineNumber?: number
+  itemId: string | null
+  sku: string
+  supplierItemCode: string | null
+  description: string
+  quantity: number
+  receivedQuantity?: number
+  uomCode: string
+  unitPrice: number
+  taxRate: number
+  netAmount?: number
+  taxAmount?: number
+  totalAmount?: number
+  requestedDeliveryDate: string | null
+  metadata?: Record<string, unknown>
+}
+
+export type WarehousePurchaseOrderInput = {
+  facilityId: string
+  customerOrgId: string
+  supplierOrgId: string | null
+  number: string
+  supplierName: string
+  buyerReference: string | null
+  supplierReference: string | null
+  issueDate: string | null
+  expectedDeliveryDate: string | null
+  currencyCode: string
+  deliveryTerms: string | null
+  paymentTerms: string | null
+  deliveryAddress: string | null
+  notes: string | null
+  sourceFileName?: string | null
+  extractionMode?: string | null
+  extractionModel?: string | null
+  extractionMetadata?: Record<string, unknown>
+  lines: WarehousePurchaseOrderLine[]
+}
+
+export type WarehousePurchaseOrder = WarehousePurchaseOrderInput & {
+  id: string
+  facilityCode: string
+  facilityName: string
+  customerName: string
+  warehouseOrderId: string | null
+  statusCode: "draft" | "issued" | "part_received" | "received" | "cancelled"
+  netAmount: number
+  taxAmount: number
+  totalAmount: number
+  version: number
+  createdAt: string
+  updatedAt: string
+  events: Array<{
+    id: string
+    typeCode: string
+    at: string
+    fromStatusCode: string | null
+    toStatusCode: string | null
+    notes: string | null
+    metadata: Record<string, unknown>
+  }>
+}
+
+export type WarehousePurchaseOrderReference = {
+  facilities: { id: string; code: string; name: string }[]
+  organisations: { id: string; name: string }[]
+  items: {
+    id: string
+    customerOrgId: string
+    facilityId: string
+    sku: string
+    description: string
+    uomCode: string
+    quantityBasisCode: "count" | "weight" | "volume"
+    allowsFractionalQuantity: boolean
+  }[]
+  currencies: string[]
+}
+
+export function getWarehousePurchaseOrderReference() {
+  return requestWarehouse<WarehousePurchaseOrderReference>("/purchase-orders/reference", "GET")
+}
+
+export function listWarehousePurchaseOrders(options: { facilityId?: string; statusCode?: string; search?: string } = {}) {
+  return requestWarehouse<WarehousePurchaseOrder[]>(`/purchase-orders${toQuery(options)}`, "GET")
+}
+
+export function getWarehousePurchaseOrder(id: string) {
+  return requestWarehouse<WarehousePurchaseOrder>(`/purchase-orders/${id}`, "GET")
+}
+
+export function createWarehousePurchaseOrder(input: WarehousePurchaseOrderInput) {
+  return requestWarehouse<WarehousePurchaseOrder>("/purchase-orders", "POST", input)
+}
+
+export function updateWarehousePurchaseOrder(id: string, input: WarehousePurchaseOrderInput) {
+  return requestWarehouse<WarehousePurchaseOrder>(`/purchase-orders/${id}`, "PUT", input)
+}
+
+export function issueWarehousePurchaseOrder(id: string, notes?: string) {
+  return requestWarehouse<WarehousePurchaseOrder>(`/purchase-orders/${id}/issue`, "POST", { notes: notes ?? null })
+}
+
+export function cancelWarehousePurchaseOrder(id: string, notes?: string) {
+  return requestWarehouse<WarehousePurchaseOrder>(`/purchase-orders/${id}/cancel`, "POST", { notes: notes ?? null })
+}
+
+export function createInboundOrderFromPurchaseOrder(id: string) {
+  return requestWarehouse<WarehousePurchaseOrder>(`/purchase-orders/${id}/create-inbound`, "POST", {})
+}
