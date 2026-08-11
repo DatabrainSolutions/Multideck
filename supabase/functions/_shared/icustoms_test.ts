@@ -2,6 +2,8 @@ import {
   buildICustomsB1ExportXml,
   buildICustomsH1ImportXml,
   type ExportDeclarationInput,
+  iCustomsCommodityDetail,
+  iCustomsCommoditySuggestions,
   ICustomsClient,
   providerIssues,
   validateICustomsB1Export,
@@ -10,6 +12,10 @@ import {
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
+}
+
+function occurrences(value: string, fragment: string) {
+  return value.split(fragment).length - 1;
 }
 
 function validDeclaration(): ExportDeclarationInput {
@@ -237,6 +243,82 @@ Deno.test("providerIssues exposes actionable HMRC errors without raw provider me
   );
 });
 
+Deno.test("iCustomsCommoditySuggestions normalises and deduplicates 10-digit results", () => {
+  const suggestions = iCustomsCommoditySuggestions({
+    activityid: "private-provider-activity",
+    response: [{
+      query: "hardback books",
+      country: "UK",
+      commodities: [
+        { "HS-Code": "4901100000", Description: "Printed books", Confidence: 28 },
+        { "HS-Code": "4901100000", Description: "Duplicate", Confidence: 99 },
+        { "HS-Code": "invalid", Description: "Invalid", Confidence: 50 },
+        { "HS-Code": "4901990000", Description: "Other printed books", Confidence: 96 },
+      ],
+    }],
+  });
+  assert(suggestions.length === 2, "Expected unique, valid commodity suggestions.");
+  assert(suggestions[0].code === "4901100000", "Expected provider result order to be preserved.");
+  assert(suggestions[1].confidence === 96, "Expected the bounded provider confidence value.");
+  assert(!("activityid" in suggestions[0]), "Provider activity identifiers must stay server-side.");
+});
+
+Deno.test("iCustomsCommodityDetail returns direction-specific certificate mappings", () => {
+  const payload = {
+    data: {
+      attributes: {
+        goods_nomenclature_item_id: "4901100000",
+        description_plain: "In single sheets, whether or not folded",
+        declarable: true,
+        validity_start_date: "1972-01-01T00:00:00.000Z",
+        validity_end_date: null,
+      },
+      relationships: {
+        import_measures: { data: [{ id: "import-measure", type: "measure" }] },
+        export_measures: { data: [{ id: "export-measure", type: "measure" }] },
+      },
+      meta: {
+        duty_calculator: {
+          applicable_vat_options: { VATZ: "VAT zero rate", VAT: "Value added tax (20.0%)" },
+        },
+      },
+    },
+    included: [
+      { id: "summary", type: "import_trade_summary", attributes: { basic_third_country_duty: "<span>0.00</span> %" } },
+      { id: "import-measure", type: "measure", relationships: { measure_conditions: { data: [{ id: "import-waiver", type: "measure_condition" }] } } },
+      { id: "export-measure", type: "measure", relationships: { measure_conditions: { data: [{ id: "export-waiver", type: "measure_condition" }] } } },
+      { id: "import-waiver", type: "measure_condition", attributes: { document_code: "Y920", certificate_description: "Goods other than those described in the footnotes", guidance_cds: "Complete statement 'Not covered by footnote'. - No document status code is required.", action: "Import allowed" } },
+      { id: "export-waiver", type: "measure_condition", attributes: { document_code: "Y999", certificate_description: "Export licence not required", guidance_cds: "Complete statement 'CDS Waiver'. - No document status code is required.", action: "Export allowed" } },
+    ],
+  };
+
+  const importDetail = iCustomsCommodityDetail(payload, "import");
+  assert(importDetail.code === "4901100000" && importDetail.declarable, "Expected a declarable tariff record.");
+  assert(importDetail.dutyRate === "0.00 %", "Expected HTML-free duty data.");
+  assert(importDetail.vatOptions.some((option) => option.code === "VAT" && option.rate === "20.0"), "Expected VAT options.");
+  assert(importDetail.certificates.length === 1 && importDetail.certificates[0].code === "Y920", "Expected import-only certificates.");
+  assert(importDetail.certificates[0].category === "Y" && importDetail.certificates[0].type === "920", "Expected CDS category/type mapping.");
+  assert(importDetail.certificates[0].statement === "Not covered by footnote" && !importDetail.certificates[0].referenceRequired, "Expected the waiver declaration statement without a false document-reference requirement.");
+
+  const exportDetail = iCustomsCommodityDetail(payload, "export");
+  assert(exportDetail.certificates.length === 1 && exportDetail.certificates[0].code === "Y999", "Expected export-only certificates.");
+  assert(exportDetail.dutyRate === null && exportDetail.vatOptions.length === 0, "Export detail must not present import tax data.");
+});
+
+Deno.test("H1 validation accepts a certificate waiver statement without a document ID", () => {
+  const declaration = validImportDeclaration();
+  const item = (declaration.items as Array<Record<string, unknown>>)[0];
+  item.additionalDocumentCategory = "Y";
+  item.additionalDocumentType = "920";
+  item.additionalDocumentId = "";
+  item.additionalDocumentName = "Not covered by footnote";
+  const issues = validateICustomsH1Import(declaration);
+  assert(
+    !issues.some((issue) => issue.includes("additional document 1")),
+    "A provider-backed waiver statement should not invent a document reference.",
+  );
+});
+
 Deno.test("validateICustomsH1Import requires structured parties and item document references", () => {
   const declaration = validImportDeclaration();
   declaration.importerName = "";
@@ -353,15 +435,60 @@ Deno.test("validateICustomsB1Export keeps the generated DUCR suffix within the i
   );
 });
 
-Deno.test("validateICustomsB1Export fails closed for optional documents the current flow cannot encode safely", () => {
+Deno.test("buildICustomsB1ExportXml includes optional supporting documents", () => {
   const declaration = validDeclaration();
-  (declaration.items as Array<Record<string, unknown>>)[0]
-    .additionalDocumentId = "DOC-1";
+  Object.assign((declaration.items as Array<Record<string, unknown>>)[0], {
+    additionalDocumentCategory: "N",
+    additionalDocumentType: "935",
+    additionalDocumentId: "DOC1",
+  });
   const issues = validateICustomsB1Export(declaration);
   assert(
-    issues.some((issue) => issue.includes("optional additional documents")),
-    "Expected an explicit unsupported-field issue.",
+    !issues.some((issue) => issue.includes("additional document")),
+    "Expected the complete optional document to validate.",
   );
+  assert(
+    buildICustomsB1ExportXml(declaration).includes("<AdditionalDocument><CategoryCode>N</CategoryCode><ID>DOC1</ID>"),
+    "Expected the export document to be included in the goods item.",
+  );
+});
+
+Deno.test("buildICustomsH1ImportXml maps repeatable iCustoms item groups in entered order", () => {
+  const declaration = validImportDeclaration();
+  declaration.totalPackages = "13";
+  Object.assign((declaration.items as Array<Record<string, unknown>>)[0], {
+    taricCode: "A001",
+    additionalTaricCodes: [{ id: "taric-2", code: "A002" }],
+    nationalCode: "VATZ",
+    additionalNationalCodes: [{ id: "national-2", code: "VAT1" }],
+    additionalPackageDetails: [{ id: "package-2", kind: "PK", marks: "MD-IMPORT-002", count: "3" }],
+    additionalProcedureCodes: [{ id: "procedure-2", code: "1CD" }],
+    additionalPreviousDocuments: [{ id: "previous-2", category: "Z", type: "MRN", reference: "25GB00000000000002" }],
+    additionalDocuments: [{ id: "document-2", category: "N", type: "936", reference: "DOC2", name: "Second licence", lpcoExemptionCode: "", writeOff: "Licensing Authority", validityDate: "2026-12-31" }],
+    additionalInformationStatements: [{ id: "information-1", statementCode: "00500" }, { id: "information-2", statementCode: "00501" }],
+    dutyCalculations: [{ id: "duty-1", taxType: "A00", paymentMethod: "A", baseQuantity: "100", unitCode: "KGM", declaredTax: "25" }, { id: "duty-2", taxType: "B00", paymentMethod: "A", baseQuantity: "90", unitCode: "KGM", declaredTax: "5" }],
+    valuationAdjustments: [{ id: "adjustment-1", code: "AB", currency: "GBP", amount: "12.50" }, { id: "adjustment-2", code: "CD", currency: "GBP", amount: "2.50" }],
+    itemExporters: [{ id: "exporter-1", partyId: "IE4809539S" }, { id: "exporter-2", partyId: "IE4809539T" }],
+    itemSellers: [{ id: "seller-1", partyId: "SELLER1" }],
+    itemBuyers: [{ id: "buyer-1", partyId: "BUYER1" }],
+    domesticDutyTaxParties: [{ id: "fiscal-1", partyId: "GB123456789", roleCode: "FR1" }, { id: "fiscal-2", partyId: "GB987654321", roleCode: "FR3" }],
+    mutualRecognitionParties: [{ id: "mutual-1", partyId: "AEO123" }, { id: "mutual-2", partyId: "AEO456" }],
+  });
+
+  const issues = validateICustomsH1Import(declaration);
+  assert(!issues.length, `Expected repeatable rows to validate: ${issues.join(" | ")}`);
+  const xml = buildICustomsH1ImportXml(declaration);
+  assert(occurrences(xml, "<AdditionalTaricCode>") === 2, "Expected two TARIC codes.");
+  assert(occurrences(xml, "<AdditionalNationalCode>") === 2, "Expected two national codes.");
+  assert(occurrences(xml, "<Packaging>") === 2 && xml.includes("<SequenceNumeric>2</SequenceNumeric><MarksNumbersID>MD-IMPORT-002</MarksNumbersID>"), "Expected sequential package groups.");
+  assert(occurrences(xml, "<GovernmentAdditionalProcedure>") === 2, "Expected two additional procedures.");
+  assert(occurrences(xml, "<PreviousDocument>") === 2, "Expected two item previous documents.");
+  assert(occurrences(xml, "<AdditionalDocument>") === 2 && xml.includes("<EffectiveDateTime><DateTime>2026-12-31</DateTime></EffectiveDateTime>"), "Expected both supporting documents and their validity data.");
+  assert(occurrences(xml, "<AdditionalInformation>") === 2, "Expected two additional information statements.");
+  assert(occurrences(xml, "<DutyTaxFee>") === 2, "Expected two duty calculations.");
+  assert(occurrences(xml, "<ValuationAdjustment>") === 2, "Expected two additions or deductions.");
+  assert(occurrences(xml, "<DomesticDutyTaxParty>") === 2, "Expected two domestic duty tax parties.");
+  assert(occurrences(xml, "<AEOMutualRecognitionParty>") === 2, "Expected two mutual recognition parties.");
 });
 
 Deno.test("ICustomsClient authenticates once and sends the draft with a bearer token", async () => {
@@ -411,6 +538,51 @@ Deno.test("ICustomsClient authenticates once and sends the draft with a bearer t
     new Headers(calls[1].init?.headers).get("Authorization") ===
       "Bearer sandbox-token",
     "Expected the bearer token on the draft request.",
+  );
+});
+
+Deno.test("ICustomsClient uses the observed commodity search and tariff endpoints", async () => {
+  const calls: Array<{ url: string; init?: RequestInit }> = [];
+  const transport = ((url: string | URL | Request, init?: RequestInit) => {
+    calls.push({ url: String(url), init });
+    if (calls.length === 1) {
+      return Promise.resolve(
+        new Response(JSON.stringify({ token: "sandbox-token" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    }
+    return Promise.resolve(
+      new Response(JSON.stringify({ data: {} }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+  }) as typeof fetch;
+  const client = new ICustomsClient({
+    baseUrl: "https://ihub-tdr.customscloud.co",
+    environment: "sandbox",
+    apiKey: "test-key",
+    apiSecret: "test-secret",
+  }, transport);
+
+  await client.searchCommodities("hardback books", "GB");
+  await client.tariffDetails("4901100000");
+
+  assert(
+    calls[1].url.endsWith("/api/iclassification/v1.0.0/aisearch"),
+    "Expected the iCustoms commodity-classification endpoint.",
+  );
+  assert(
+    calls[1].init?.body ===
+      JSON.stringify([{ query: "hardback books", country: "UK" }]),
+    "Expected the UK classification request contract.",
+  );
+  assert(
+    calls[2].url.endsWith("/api/v2/tariDetails") &&
+      calls[2].init?.body === JSON.stringify({ commodity_code: "4901100000" }),
+    "Expected the iCustoms tariff-detail request contract.",
   );
 });
 

@@ -12,6 +12,7 @@ const automation = read("multideck.client/src/components/multideck/contact-card-
 const schema = read("supabase/migrations/20260731212420_qr_contact_cards_supabase.sql")
 const automationRuns = read("supabase/migrations/20260803223000_contact_card_automation_runs.sql")
 const design = read("multideck.client/src/components/multideck/contact-card-design.tsx")
+const cardLayouts = read("multideck.client/src/lib/card-layout.ts")
 const publicView = read("multideck.client/src/components/multideck/contact-card-public-view.tsx")
 const tenantConsent = read("supabase/migrations/20260803224500_contact_card_tenant_marketing_consent.sql")
 const consentServiceRole = read("supabase/migrations/20260803224600_grant_marketing_consent_service_role.sql")
@@ -22,6 +23,7 @@ const analyticsPanel = read("multideck.client/src/components/multideck/contact-c
 const contactCardDexter = read("multideck.client/src/components/multideck/contact-card-dexter.tsx")
 const dexterApi = read("multideck.client/src/lib/dexter-api.ts")
 const dexterFunction = read("supabase/functions/agent-dexter/index.ts")
+const crmFieldMappings = read("supabase/migrations/20260811085329_contact_card_crm_field_mappings.sql")
 
 test("QR cards have no local demo-store fallback", () => {
   assert.doesNotMatch(store, /localStorage|createSeedCards|resetContactCards/)
@@ -51,9 +53,20 @@ test("contact-card automation suggestions use the real Dexter Edge Function", ()
   assert.doesNotMatch(contactCardDexter, /deterministic stand-in|Math\.random|proposeAutomation/)
 })
 
+test("contact cards always create or update CRM leads using allowlisted field mappings", () => {
+  assert.match(crmFieldMappings, /apply_contact_card_crm_field_mappings/)
+  assert.match(crmFieldMappings, /duplicateHandling/)
+  assert.match(crmFieldMappings, /mappedFields/)
+  assert.match(crmFieldMappings, /perform private\.apply_contact_card_crm_field_mappings/)
+  assert.match(automation, /CRM field mapping/)
+  assert.match(automation, /duplicateHandling: "update"/)
+  assert.match(dexterFunction, /Allowed sources: firstName, lastName, email, company, phone, marketingConsent, cardName, fixed/)
+  assert.match(dexterFunction, /const actionKinds = new Set\(\["add-to-crm"\]\)/)
+})
+
 test("contact cards expose four layouts, social links and a real QR test path", () => {
   for (const preset of ["classic", "editorial", "compact", "spotlight"]) {
-    assert.match(design, new RegExp(`id: "${preset}"`))
+    assert.match(cardLayouts, new RegExp(`id: "${preset}"`))
   }
   assert.match(design, /ContactCardSocialLinksEditor/)
   assert.match(design, /Test QR code/)

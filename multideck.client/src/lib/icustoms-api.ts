@@ -41,6 +41,34 @@ export type ICustomsWorkspaceState = {
   connection: ICustomsConnectionState
 }
 
+export type ICustomsCommoditySuggestion = {
+  code: string
+  description: string
+  confidence: number | null
+}
+
+export type ICustomsCommodityCertificate = {
+  code: string
+  category: string
+  type: string
+  description: string
+  guidance: string
+  statement: string | null
+  referenceRequired: boolean
+  action: string | null
+}
+
+export type ICustomsCommodityDetail = {
+  code: string
+  description: string
+  declarable: boolean
+  validFrom: string | null
+  validTo: string | null
+  dutyRate: string | null
+  vatOptions: Array<{ code: string; label: string; rate: string | null }>
+  certificates: ICustomsCommodityCertificate[]
+}
+
 export type ICustomsValidation = {
   ready: boolean
   issues: string[]
@@ -103,4 +131,18 @@ export function submitICustomsDeclaration(declarationId: string, idempotencyKey:
 
 export function refreshICustomsDeclaration(declarationId: string) {
   return request<{ declaration: ICustomsDeclarationState }>(`/declarations/${encodeURIComponent(declarationId)}/refresh`, { method: "POST" })
+}
+
+export function searchICustomsCommodities(query: string) {
+  return request<{ suggestions: ICustomsCommoditySuggestion[]; source: string }>("/commodities/search", {
+    method: "POST",
+    body: JSON.stringify({ query }),
+  })
+}
+
+export function getICustomsCommodityDetails(commodityCode: string, direction: "import" | "export") {
+  return request<{ detail: ICustomsCommodityDetail; source: string }>("/commodities/details", {
+    method: "POST",
+    body: JSON.stringify({ commodityCode, direction }),
+  })
 }

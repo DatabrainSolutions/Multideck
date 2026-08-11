@@ -2,22 +2,52 @@ export type ExportDeclarationCategory = string
 export type ExportDeclarationType = string
 export type DeclarationDirection = "export" | "import"
 
+export type CustomsCodeEntry = { id: string; code: string }
+export type CustomsPackageEntry = { id: string; kind: string; marks: string; count: string }
+export type CustomsPreviousDocumentEntry = { id: string; category: string; type: string; reference: string }
+export type CustomsAdditionalDocumentEntry = {
+  id: string
+  category: string
+  type: string
+  reference: string
+  name: string
+  lpcoExemptionCode: string
+  writeOff: string
+  validityDate: string
+}
+export type CustomsAdditionalInformationEntry = { id: string; statementCode: string }
+export type CustomsDutyCalculationEntry = {
+  id: string
+  taxType: string
+  paymentMethod: string
+  baseQuantity: string
+  unitCode: string
+  declaredTax: string
+}
+export type CustomsValuationAdjustmentEntry = { id: string; code: string; currency: string; amount: string }
+export type CustomsPartyEntry = { id: string; partyId: string }
+export type CustomsFiscalPartyEntry = { id: string; partyId: string; roleCode: string }
+
 export type ExportDeclarationItem = {
   id: string
   commodityCode: string
   description: string
   dangerousGoodsCode: string
   taricCode: string
+  additionalTaricCodes: CustomsCodeEntry[]
   nationalCode: string
+  additionalNationalCodes: CustomsCodeEntry[]
   cusCode: string
   packageKind: string
   packageMarks: string
   packageCount: string
+  additionalPackageDetails: CustomsPackageEntry[]
   transactionNature: string
   preferentialOrigin: string
   nonPreferentialOrigin: string
   procedureCode: string
   additionalProcedureCode: string
+  additionalProcedureCodes: CustomsCodeEntry[]
   tariffQuantity: string
   grossMass: string
   netMass: string
@@ -27,11 +57,23 @@ export type ExportDeclarationItem = {
   previousDocumentCategory: string
   previousDocumentType: string
   previousDocumentReference: string
+  additionalPreviousDocuments: CustomsPreviousDocumentEntry[]
   additionalDocumentCategory: string
   additionalDocumentType: string
   additionalDocumentId: string
   additionalDocumentName: string
   lpcoExemptionCode: string
+  additionalDocumentWriteOff: string
+  additionalDocumentValidityDate: string
+  additionalDocuments: CustomsAdditionalDocumentEntry[]
+  additionalInformationStatements: CustomsAdditionalInformationEntry[]
+  dutyCalculations: CustomsDutyCalculationEntry[]
+  valuationAdjustments: CustomsValuationAdjustmentEntry[]
+  itemExporters: CustomsPartyEntry[]
+  itemSellers: CustomsPartyEntry[]
+  itemBuyers: CustomsPartyEntry[]
+  domesticDutyTaxParties: CustomsFiscalPartyEntry[]
+  mutualRecognitionParties: CustomsPartyEntry[]
   consignor: string
   consignee: string
   destinationCountry: string
@@ -148,16 +190,20 @@ export function createExportDeclarationItem(index = 1): ExportDeclarationItem {
     description: "",
     dangerousGoodsCode: "",
     taricCode: "",
+    additionalTaricCodes: [],
     nationalCode: "",
+    additionalNationalCodes: [],
     cusCode: "",
     packageKind: "",
     packageMarks: "",
     packageCount: "",
+    additionalPackageDetails: [],
     transactionNature: "",
     preferentialOrigin: "",
     nonPreferentialOrigin: "",
     procedureCode: "",
     additionalProcedureCode: "",
+    additionalProcedureCodes: [],
     tariffQuantity: "",
     grossMass: "",
     netMass: "",
@@ -167,11 +213,23 @@ export function createExportDeclarationItem(index = 1): ExportDeclarationItem {
     previousDocumentCategory: "",
     previousDocumentType: "",
     previousDocumentReference: "",
+    additionalPreviousDocuments: [],
     additionalDocumentCategory: "",
     additionalDocumentType: "",
     additionalDocumentId: "",
     additionalDocumentName: "",
     lpcoExemptionCode: "",
+    additionalDocumentWriteOff: "",
+    additionalDocumentValidityDate: "",
+    additionalDocuments: [],
+    additionalInformationStatements: [{ id: "additional-information-1", statementCode: "" }],
+    dutyCalculations: [{ id: "duty-calculation-1", taxType: "", paymentMethod: "", baseQuantity: "", unitCode: "", declaredTax: "" }],
+    valuationAdjustments: [],
+    itemExporters: [{ id: "item-exporter-1", partyId: "" }],
+    itemSellers: [{ id: "item-seller-1", partyId: "" }],
+    itemBuyers: [{ id: "item-buyer-1", partyId: "" }],
+    domesticDutyTaxParties: [{ id: "domestic-duty-tax-party-1", partyId: "", roleCode: "" }],
+    mutualRecognitionParties: [{ id: "mutual-recognition-party-1", partyId: "" }],
     consignor: "",
     consignee: "",
     destinationCountry: "",
@@ -407,9 +465,31 @@ export function validateStandaloneExportDraft(draft: StandaloneExportDraft): Dec
     if (item.previousDocumentReference.trim() && !/^[A-Za-z0-9]{1,35}$/.test(item.previousDocumentReference.trim())) push("previousDocumentReference", "Use up to 35 letters and numbers for the previous document reference.")
     if (draft.direction === "import" && !item.customsValuationMethod.trim()) push("customsValuationMethod", "Add the customs valuation method.")
     if (draft.direction === "import" && !/^\d{3}$/.test(item.preferenceCode.trim())) push("preferenceCode", "Add the three-digit preference code.")
+    item.additionalPackageDetails.forEach((entry) => {
+      if ((entry.kind || entry.marks || entry.count) && (!entry.kind || !entry.marks.trim() || !positive(entry.count) || !Number.isInteger(Number(entry.count)))) push("additionalPackageDetails", "Complete every added package detail.")
+    })
+    item.additionalProcedureCodes.forEach((entry) => {
+      if (entry.code && !/^[A-Za-z0-9]{3}$/.test(entry.code)) push("additionalProcedureCodes", "Use a three-character additional procedure code.")
+    })
+    item.additionalPreviousDocuments.forEach((entry) => {
+      if ((entry.category || entry.type || entry.reference) && ((draft.direction === "import" && !entry.category) || !entry.type || !/^[A-Za-z0-9]{1,35}$/.test(entry.reference))) push("additionalPreviousDocuments", "Complete every added previous document.")
+    })
+    const additionalDocuments = [{ category: item.additionalDocumentCategory, type: item.additionalDocumentType, reference: item.additionalDocumentId }, ...item.additionalDocuments]
+    additionalDocuments.forEach((entry) => {
+      if ((entry.category || entry.type || entry.reference) && (!entry.category || !entry.type || !entry.reference.trim())) push("additionalDocuments", "Complete every added document category, type and ID.")
+    })
+    item.dutyCalculations.forEach((entry) => {
+      if ((entry.taxType || entry.paymentMethod || entry.baseQuantity || entry.unitCode || entry.declaredTax) && (!entry.taxType || !positive(entry.baseQuantity) || !entry.unitCode)) push("dutyCalculations", "Complete every added duty calculation.")
+    })
+    item.valuationAdjustments.forEach((entry) => {
+      if ((entry.code || entry.currency || entry.amount) && (!entry.code || !entry.currency || !positive(entry.amount))) push("valuationAdjustments", "Complete every addition or deduction.")
+    })
+    item.domesticDutyTaxParties.forEach((entry) => {
+      if ((entry.partyId || entry.roleCode) && (!entry.partyId || !/^(?:FR[1-5]|FR7)$/i.test(entry.roleCode))) push("domesticDutyTaxParties", "Complete every domestic duty tax party.")
+    })
   })
 
-  const packageTotal = draft.items.reduce((total, item) => total + (Number(item.packageCount) || 0), 0)
+  const packageTotal = draft.items.reduce((total, item) => total + (Number(item.packageCount) || 0) + item.additionalPackageDetails.reduce((itemTotal, entry) => itemTotal + (Number(entry.count) || 0), 0), 0)
   const grossMassTotal = draft.items.reduce((total, item) => total + (Number(item.grossMass) || 0), 0)
   const netMassTotal = draft.items.reduce((total, item) => total + (Number(item.netMass) || 0), 0)
   const amountTotal = draft.items.reduce((total, item) => total + (Number(item.itemPrice) || 0), 0)

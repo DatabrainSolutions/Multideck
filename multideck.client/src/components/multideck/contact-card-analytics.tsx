@@ -24,7 +24,7 @@ import {
 import { cn } from "@/lib/utils"
 
 function formatPercent(value: number | null) {
-  if (value === null) return "—"
+  if (value === null) return "-"
   return `${(value * 100).toFixed(1)}%`
 }
 
@@ -77,7 +77,7 @@ function Funnel({ card, muted }: { card: ContactCard; muted: boolean }) {
             <p className="flex items-baseline justify-end gap-2 text-right">
               <span className="text-[15px] font-medium text-[var(--md-ink)] tabular-nums">{formatCount(step.value)}</span>
               <span className="w-[52px] text-[12px] text-[var(--md-subtle)] tabular-nums">
-                {dropped === null ? "" : dropped > 0 ? `−${(dropped * 100).toFixed(0)}%` : "—"}
+                {dropped === null ? "" : dropped > 0 ? `−${(dropped * 100).toFixed(0)}%` : "-"}
               </span>
             </p>
           </li>

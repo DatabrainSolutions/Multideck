@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { ArrowLeft, CheckCircle2, ChevronDown, CircleAlert, Copy, FileCheck2, Plus, RefreshCw, Send, Sparkles, Trash2 } from "@/components/icons/hugeicons"
+import { ArrowLeft, CheckCircle2, ChevronDown, CircleAlert, Copy, ExternalLink, FileCheck2, Plus, RefreshCw, Search, Send, Sparkles, Trash2 } from "@/components/icons/hugeicons"
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui"
 import { toast } from "sonner"
@@ -21,6 +21,7 @@ import {
   createExportDeclarationItem,
   createStandaloneDeclarationDraft,
   declarationCompletion,
+  type CustomsPartyEntry,
   type DeclarationIssue,
   type ExportDeclarationItem,
   type StandaloneExportDraft,
@@ -28,13 +29,21 @@ import {
 import { createEmptyCustomsReferenceData, useCustomsReferenceData, type CustomsCatalogCode, type CustomsReferenceData } from "@/lib/customs-reference-data"
 import { listJobRelatedDeclarationDrafts, listStandaloneDeclarationDrafts, loadStandaloneDeclarationDraft, reopenRejectedCustomsDeclaration, saveStandaloneDeclarationDraft, type CustomsDraftSummary } from "@/lib/customs-drafts-api"
 import { hasCustomsInvoiceImportRecovery, moveCustomsInvoiceImportRecovery } from "@/lib/customs-invoice-import-recovery"
-import { getICustomsDeclarationState, ICustomsApiError, refreshICustomsDeclaration, saveICustomsProviderDraft, submitICustomsDeclaration, validateICustomsDeclaration, type ICustomsProviderIssue, type ICustomsWorkspaceState } from "@/lib/icustoms-api"
+import { getICustomsCommodityDetails, getICustomsDeclarationState, ICustomsApiError, refreshICustomsDeclaration, saveICustomsProviderDraft, searchICustomsCommodities, submitICustomsDeclaration, validateICustomsDeclaration, type ICustomsCommodityCertificate, type ICustomsCommodityDetail, type ICustomsCommoditySuggestion, type ICustomsProviderIssue, type ICustomsWorkspaceState } from "@/lib/icustoms-api"
 import { mdMotion, reduceMotion } from "@/lib/motion"
+import iCustomsLogo from "@/assets/integrations/icustoms.svg"
 
 type DeclarationKind = "export" | "import"
 type EditorTab = "declaration" | "parties" | "transport" | "documents" | "items" | "review"
 type EditorViewMode = "tabs" | "form"
 type FormTab = "general" | "items"
+
+let repeatableCustomsEntrySequence = 0
+
+function repeatableCustomsEntryId(prefix: string) {
+  repeatableCustomsEntrySequence += 1
+  return `${prefix}-${Date.now()}-${repeatableCustomsEntrySequence}`
+}
 
 const CustomsBoxVisibilityContext = createContext(false)
 const CustomsReferenceDataContext = createContext<{ data: CustomsReferenceData; loading: boolean; error: string | null }>({ data: createEmptyCustomsReferenceData(), loading: true, error: null })
@@ -285,6 +294,24 @@ function translateCustomsMessage(message: string, t: (text: string) => string) {
   return `${t("This contact is missing:")} ${contact[1].split(", ").map(t).join(", ")}.`
 }
 
+function iCustomsDeclarationUrl(direction: DeclarationKind, correlationId: string, environment: "sandbox" | "production") {
+  const providerId = correlationId.trim()
+  if (!providerId) return null
+  const configuredAppUrl = String(import.meta.env.VITE_ICUSTOMS_APP_URL ?? "").trim()
+  const fallbackAppUrl = environment === "production" ? "https://app.customscloud.co" : "https://app-tdr.customscloud.co"
+  try {
+    const url = new URL(configuredAppUrl || fallbackAppUrl)
+    url.pathname = direction === "export"
+      ? `/export/cds/edit/${encodeURIComponent(providerId)}`
+      : `/cds/edit/${encodeURIComponent(providerId)}`
+    url.search = ""
+    url.hash = ""
+    return url.toString()
+  } catch {
+    return null
+  }
+}
+
 function formatDraftAmount(amount: number | null, currency: string | null) {
   if (amount === null) return "—"
   if (!currency) return amount.toLocaleString(undefined, { maximumFractionDigits: 2 })
@@ -310,7 +337,6 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
   const [validated, setValidated] = useState(false)
   const invoiceImportRecoveryKey = declarationId ?? "new"
   const [invoiceImportOpen, setInvoiceImportOpen] = useState(() => hasCustomsInvoiceImportRecovery(invoiceImportRecoveryKey))
-  const [focusTarget, setFocusTarget] = useState<{ field: string; nonce: number } | null>(null)
   const [loadingDraft, setLoadingDraft] = useState(Boolean(declarationId))
   const [draftLoadError, setDraftLoadError] = useState<string | null>(null)
   const [savingDraft, setSavingDraft] = useState(false)
@@ -371,16 +397,6 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
     return () => { cancelled = true }
   }, [declarationId])
 
-  useEffect(() => {
-    if (!focusTarget) return
-    const timer = window.setTimeout(() => {
-      const target = document.querySelector<HTMLElement>(`[data-customs-field="${focusTarget.field}"]`)
-      target?.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" })
-      target?.querySelector<HTMLElement>("input, textarea, button")?.focus({ preventScroll: true })
-    }, 80)
-    return () => window.clearTimeout(timer)
-  }, [activeItemId, focusTarget, formTab, tab, viewMode])
-
   function update<K extends keyof StandaloneExportDraft>(field: K, value: StandaloneExportDraft[K]) {
     setDraft((current) => ({ ...current, [field]: value }))
   }
@@ -400,11 +416,8 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
     setValidated(true)
     const first = completion.issues[0]
     if (first) {
-      if (viewMode === "form") {
-        setFormTab(first.scope === "item" ? "items" : "general")
-      } else {
-        selectTab(first.scope === "item" ? "items" : generalTabForField(first.field))
-      }
+      setViewMode("tabs")
+      selectTab("review")
       toast.warning(t("Declaration needs attention"), { description: `${completion.issues.length} ${t("checks remain")}` })
     } else {
       if (viewMode === "tabs") selectTab("review")
@@ -523,33 +536,6 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
     } finally {
       setICustomsBusy(null)
     }
-  }
-
-  function fixIssue(issue: DeclarationIssue) {
-    setValidated(true)
-    if (issue.scope === "item") {
-      if (issue.itemId) setActiveItemId(issue.itemId)
-      selectTab("items")
-    } else {
-      selectTab(generalTabForField(issue.field))
-    }
-    setFocusTarget({ field: issue.field, nonce: Date.now() })
-  }
-
-  function fixProviderIssue(issue: ICustomsProviderIssue) {
-    const target = providerIssueTarget(issue)
-    if (issue.itemNumber) {
-      const item = draft.items[issue.itemNumber - 1]
-      if (item) setActiveItemId(item.id)
-      if (issue.dataElement === "2/3") setShowOptional(true)
-      if (viewMode === "form") setFormTab("items")
-      else selectTab("items")
-    } else if (viewMode === "form") {
-      setFormTab("general")
-    } else {
-      selectTab(generalTabForField(target))
-    }
-    setFocusTarget({ field: target, nonce: Date.now() })
   }
 
   function addItem() {
@@ -685,8 +671,8 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
       {referenceData.loading ? <Surface padding="sm" className="rounded-[var(--md-radius-lg)]"><p className="text-[11px] text-[var(--md-text)]">{t("Loading Customs reference data")}</p></Surface> : null}
       {referenceData.error ? <Surface padding="sm" className="rounded-[var(--md-radius-lg)]"><div className="flex items-center gap-2 text-[11px] text-[var(--md-red)]"><CircleAlert className="size-4 shrink-0" /><span><strong>{t("Customs reference data unavailable")}</strong> {t("Selection fields remain locked until the database catalogue is available.")}</span></div></Surface> : null}
 
-      {viewMode === "form" && formTab === "general" ? <GeneralFormView draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} highlightedField={focusTarget?.field} t={t} /> : null}
-      {viewMode === "form" && formTab === "items" ? <ItemsSection items={draft.items} activeItem={activeItem} activeItemId={activeItemId} onSelectItem={setActiveItemId} onAdd={addItem} onOpenInvoiceImport={() => setInvoiceImportOpen(true)} onDuplicate={duplicateItem} onRemove={removeItem} update={updateItem} updateRow={updateItemById} showDataElements={showDataElements} showOptional={showOptional} issues={activeItemIssueFields} validated={validated} highlightedField={focusTarget?.field} t={t} /> : null}
+      {viewMode === "form" && formTab === "general" ? <GeneralFormView draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} t={t} /> : null}
+      {viewMode === "form" && formTab === "items" ? <ItemsSection items={draft.items} activeItem={activeItem} activeItemId={activeItemId} onSelectItem={setActiveItemId} onAdd={addItem} onOpenInvoiceImport={() => setInvoiceImportOpen(true)} onDuplicate={duplicateItem} onRemove={removeItem} update={updateItem} updateRow={updateItemById} showDataElements={showDataElements} showOptional={showOptional} issues={activeItemIssueFields} validated={validated} t={t} /> : null}
       {viewMode === "tabs" ? <div className="relative min-w-0 overflow-x-clip">
         <AnimatePresence initial={false} mode="popLayout">
           <motion.div
@@ -699,12 +685,12 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
             transition={reduceMotion(shouldReduceMotion, mdMotion.micro)}
             className="min-w-0"
           >
-            {tab === "declaration" ? <DeclarationSection draft={draft} update={update} showDataElements={showDataElements} issues={issueFields} highlightedField={focusTarget?.field} t={t} /> : null}
-            {tab === "parties" ? <PartiesSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} highlightedField={focusTarget?.field} t={t} /> : null}
-            {tab === "transport" ? <TransportSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} highlightedField={focusTarget?.field} t={t} /> : null}
-            {tab === "documents" ? <DocumentsSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} highlightedField={focusTarget?.field} t={t} /> : null}
-            {tab === "items" ? <ItemsSection items={draft.items} activeItem={activeItem} activeItemId={activeItemId} onSelectItem={setActiveItemId} onAdd={addItem} onOpenInvoiceImport={() => setInvoiceImportOpen(true)} onDuplicate={duplicateItem} onRemove={removeItem} update={updateItem} updateRow={updateItemById} showDataElements={showDataElements} showOptional={showOptional} issues={activeItemIssueFields} validated={validated} highlightedField={focusTarget?.field} t={t} /> : null}
-            {tab === "review" ? <ReviewSection draft={draft} completion={completion} iCustomsState={iCustomsState} iCustomsBusy={iCustomsBusy} iCustomsIssues={iCustomsIssues} onValidate={validate} onFixIssue={fixIssue} onFixProviderIssue={fixProviderIssue} onCreateDraft={() => void createOrUpdateICustomsDraft()} onSubmit={() => setSubmitDialogOpen(true)} onRefresh={() => void refreshFromICustoms()} t={t} /> : null}
+            {tab === "declaration" ? <DeclarationSection draft={draft} update={update} showDataElements={showDataElements} issues={issueFields} t={t} /> : null}
+            {tab === "parties" ? <PartiesSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} t={t} /> : null}
+            {tab === "transport" ? <TransportSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} t={t} /> : null}
+            {tab === "documents" ? <DocumentsSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} t={t} /> : null}
+            {tab === "items" ? <ItemsSection items={draft.items} activeItem={activeItem} activeItemId={activeItemId} onSelectItem={setActiveItemId} onAdd={addItem} onOpenInvoiceImport={() => setInvoiceImportOpen(true)} onDuplicate={duplicateItem} onRemove={removeItem} update={updateItem} updateRow={updateItemById} showDataElements={showDataElements} showOptional={showOptional} issues={activeItemIssueFields} validated={validated} t={t} /> : null}
+            {tab === "review" ? <ReviewSection draft={draft} completion={completion} iCustomsState={iCustomsState} iCustomsBusy={iCustomsBusy} iCustomsIssues={iCustomsIssues} update={update} updateItem={updateItemById} onValidate={validate} onCreateDraft={() => void createOrUpdateICustomsDraft()} onSubmit={() => setSubmitDialogOpen(true)} onRefresh={() => void refreshFromICustoms()} t={t} /> : null}
           </motion.div>
         </AnimatePresence>
       </div> : null}
@@ -1082,6 +1068,236 @@ function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, on
   </div>
 }
 
+function CommodityAssistant({ item, direction, update, onClose, t }: {
+  item: ExportDeclarationItem
+  direction: DeclarationKind
+  update: <K extends keyof ExportDeclarationItem>(field: K, value: ExportDeclarationItem[K]) => void
+  onClose: () => void
+  t: (text: string) => string
+}) {
+  const searchInput = useRef<HTMLInputElement>(null)
+  const [query, setQuery] = useState(item.description.trim() || item.commodityCode)
+  const [suggestions, setSuggestions] = useState<ICustomsCommoditySuggestion[]>([])
+  const [selectedSuggestion, setSelectedSuggestion] = useState<ICustomsCommoditySuggestion | null>(null)
+  const [detail, setDetail] = useState<ICustomsCommodityDetail | null>(null)
+  const [selectedCertificates, setSelectedCertificates] = useState<Record<string, boolean>>({})
+  const [certificateReferences, setCertificateReferences] = useState<Record<string, string>>({})
+  const [busy, setBusy] = useState<"search" | "details" | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    searchInput.current?.focus()
+  }, [])
+
+  async function loadDetails(suggestion: ICustomsCommoditySuggestion) {
+    setSelectedSuggestion(suggestion)
+    setDetail(null)
+    setSelectedCertificates({})
+    setCertificateReferences({})
+    setError(null)
+    setBusy("details")
+    try {
+      const response = await getICustomsCommodityDetails(suggestion.code, direction)
+      setDetail(response.detail)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t("Commodity details could not be loaded."))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function runSearch() {
+    const resolvedQuery = query.trim()
+    if (resolvedQuery.length < 2) {
+      setError(t("Enter at least two characters or a 10-digit commodity code."))
+      return
+    }
+    setError(null)
+    setSuggestions([])
+    setSelectedSuggestion(null)
+    setDetail(null)
+    setSelectedCertificates({})
+    setCertificateReferences({})
+    if (/^\d{10}$/.test(resolvedQuery)) {
+      await loadDetails({ code: resolvedQuery, description: item.description.trim(), confidence: null })
+      return
+    }
+    setBusy("search")
+    try {
+      const response = await searchICustomsCommodities(resolvedQuery)
+      setSuggestions(response.suggestions)
+      if (!response.suggestions.length) setError(t("No matching commodity codes were returned."))
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t("Commodity search could not be completed."))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  function toggleCertificate(certificate: ICustomsCommodityCertificate, checked: boolean) {
+    setSelectedCertificates((current) => ({ ...current, [certificate.code]: checked }))
+    if (!checked) {
+      setCertificateReferences((current) => {
+        const next = { ...current }
+        delete next[certificate.code]
+        return next
+      })
+    }
+  }
+
+  function applySelection() {
+    if (!detail || !selectedSuggestion || !detail.declarable) return
+    const certificates = detail.certificates.filter((certificate) => selectedCertificates[certificate.code])
+    const missingReference = certificates.find((certificate) => certificate.referenceRequired && !certificateReferences[certificate.code]?.trim())
+    if (missingReference) {
+      setError(`${missingReference.code}: ${t("enter the required document reference before applying.")}`)
+      return
+    }
+
+    update("commodityCode", detail.code)
+    if (!item.description.trim()) {
+      const enteredDescription = query.trim()
+      const resolvedDescription = /^\d{10}$/.test(enteredDescription)
+        ? detail.description || selectedSuggestion.description
+        : enteredDescription || selectedSuggestion.description || detail.description
+      if (resolvedDescription) update("description", resolvedDescription)
+    }
+
+    const existingCodes = new Set([
+      `${item.additionalDocumentCategory}${item.additionalDocumentType}`.toUpperCase(),
+      ...item.additionalDocuments.map((entry) => `${entry.category}${entry.type}`.toUpperCase()),
+    ].filter(Boolean))
+    const newCertificates = certificates.filter((certificate) => !existingCodes.has(certificate.code))
+    let usePrimary = ![
+      item.additionalDocumentCategory,
+      item.additionalDocumentType,
+      item.additionalDocumentId,
+      item.additionalDocumentName,
+      item.lpcoExemptionCode,
+    ].some((value) => value.trim())
+    const additionalDocuments = [...item.additionalDocuments]
+
+    for (const certificate of newCertificates) {
+      const reference = certificateReferences[certificate.code]?.trim() || ""
+      const name = certificate.statement || ""
+      if (usePrimary) {
+        update("additionalDocumentCategory", certificate.category)
+        update("additionalDocumentType", certificate.type)
+        update("additionalDocumentId", reference)
+        update("additionalDocumentName", name)
+        usePrimary = false
+      } else {
+        additionalDocuments.push({
+          id: repeatableCustomsEntryId("additional-document"),
+          category: certificate.category,
+          type: certificate.type,
+          reference,
+          name,
+          lpcoExemptionCode: "",
+          writeOff: "",
+          validityDate: "",
+        })
+      }
+    }
+    if (additionalDocuments.length !== item.additionalDocuments.length) {
+      update("additionalDocuments", additionalDocuments)
+    }
+    toast.success(t("Commodity selection applied"))
+    onClose()
+  }
+
+  const selectedCertificateCount = Object.values(selectedCertificates).filter(Boolean).length
+  const formattedCode = (code: string) => code.replace(/(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/, "$1 $2 $3 $4 $5")
+
+  return <section id={`commodity-assistant-${item.id}`} aria-label={t("Commodity assistant")} className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-3 shadow-[var(--md-shadow-line)]">
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-[var(--md-radius-sm)] bg-[color-mix(in_srgb,var(--md-accent)_9%,var(--md-surface-soft))] text-[var(--md-accent)]"><Sparkles className="size-3.5" aria-hidden="true" /></span>
+          <div>
+            <h4 className="text-[12px] font-semibold text-[var(--md-ink)]">{t("Commodity assistant")}</h4>
+            <p className="text-[10px] text-[var(--md-subtle)]">{t(direction === "import" ? "UK CDS import tariff and certificates" : "UK CDS export tariff and certificates")}</p>
+          </div>
+        </div>
+      </div>
+      <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-[10px]" onClick={onClose}>{t("Close")}</Button>
+    </div>
+
+    <div className="mt-3">
+      <label htmlFor={`commodity-search-${item.id}`} className="mb-1 block text-[10.5px] font-medium text-[var(--md-text)]">{t("Search by goods description or 10-digit code")}</label>
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <Input ref={searchInput} id={`commodity-search-${item.id}`} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void runSearch() } }} placeholder={t("e.g. hardback books or 4901100000")} className="h-8 flex-1 rounded-[var(--md-radius-sm)] bg-[var(--md-surface-soft)] text-[11px]" />
+        <Button type="button" size="sm" className="h-8 gap-1.5 px-3 text-[10.5px]" disabled={busy !== null} onClick={() => void runSearch()}>{busy === "search" ? <RefreshCw className="size-3.5 animate-spin" aria-hidden="true" /> : <Search className="size-3.5" aria-hidden="true" />}{t(busy === "search" ? "Searching" : "Search tariff")}</Button>
+      </div>
+      <p className="mt-1.5 text-[9.5px] leading-4 text-[var(--md-subtle)]">{t("Multideck uses the declaration direction automatically. Review a result before applying it to this goods line.")}</p>
+    </div>
+
+    {error ? <p role="alert" className="mt-3 rounded-[var(--md-radius-sm)] bg-[color-mix(in_srgb,var(--md-red)_8%,transparent)] px-2.5 py-2 text-[10px] leading-4 text-[var(--md-red)]">{error}</p> : null}
+
+    {suggestions.length || selectedSuggestion ? <div className={cn("mt-3 grid gap-3", suggestions.length > 0 && "lg:grid-cols-[minmax(220px,0.8fr)_minmax(0,1.2fr)]")}>
+      {suggestions.length ? <div>
+        <p className="mb-1.5 text-[10px] font-semibold text-[var(--md-ink)]">{t("Suggested commodities")}</p>
+        <div className="max-h-[270px] space-y-1 overflow-y-auto pe-1">
+          {suggestions.map((suggestion) => {
+            const selected = selectedSuggestion?.code === suggestion.code
+            return <button key={suggestion.code} type="button" aria-pressed={selected} onClick={() => void loadDetails(suggestion)} className={cn("w-full rounded-[var(--md-radius-sm)] px-2.5 py-2 text-start outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-[var(--md-accent)]", selected ? "bg-[color-mix(in_srgb,var(--md-accent)_9%,var(--md-surface-soft))]" : "bg-[var(--md-surface-soft)] hover:bg-[var(--md-hover)]") }>
+              <span className="block text-[10.5px] font-semibold tabular-nums text-[var(--md-ink)]">{formattedCode(suggestion.code)}</span>
+              <span className="mt-0.5 line-clamp-2 block text-[9.5px] leading-4 text-[var(--md-text)]">{suggestion.description}</span>
+            </button>
+          })}
+        </div>
+      </div> : null}
+
+      <div aria-live="polite">
+        {busy === "details" ? <div className="flex min-h-28 items-center justify-center gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] text-[10px] text-[var(--md-subtle)]"><RefreshCw className="size-3.5 animate-spin" aria-hidden="true" />{t("Loading tariff details")}</div> : null}
+        {detail && selectedSuggestion ? <div className="rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] p-3 shadow-[var(--md-shadow-line)]">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <p className="text-[11px] font-semibold tabular-nums text-[var(--md-ink)]">{formattedCode(detail.code)}</p>
+              <p className="mt-0.5 text-[9.5px] leading-4 text-[var(--md-text)]">{detail.description || selectedSuggestion.description}</p>
+            </div>
+            <StatusPill tone={detail.declarable ? "green" : "red"} className="h-5 px-2 text-[9px]">{t(detail.declarable ? "Declarable" : "Not declarable")}</StatusPill>
+          </div>
+
+          {direction === "import" ? <div className="mt-2 flex flex-wrap gap-1.5">
+            {detail.dutyRate ? <span className="rounded-[var(--md-radius-xs)] bg-[var(--md-surface)] px-2 py-1 text-[9px] text-[var(--md-text)]"><strong className="font-semibold text-[var(--md-ink)]">{t("Third-country duty")}</strong> · {detail.dutyRate}</span> : null}
+            {detail.vatOptions.map((option) => <span key={option.code} className="rounded-[var(--md-radius-xs)] bg-[var(--md-surface)] px-2 py-1 text-[9px] text-[var(--md-text)]"><strong className="font-semibold text-[var(--md-ink)]">{option.code}</strong> · {option.label}</span>)}
+          </div> : null}
+
+          <div className="mt-3 border-t border-[var(--md-line)] pt-2.5">
+            <div className="flex items-baseline justify-between gap-2">
+              <p className="text-[10px] font-semibold text-[var(--md-ink)]">{t("Certificates and waivers")}</p>
+              <span className="text-[9px] text-[var(--md-subtle)]">{selectedCertificateCount} {t("selected")}</span>
+            </div>
+            <p className="mt-0.5 text-[9px] leading-4 text-[var(--md-subtle)]">{t("Select only the documents or legal declarations that genuinely apply to these goods.")}</p>
+            {detail.certificates.length ? <div className="mt-2 max-h-[310px] space-y-1.5 overflow-y-auto pe-1">
+              {detail.certificates.map((certificate) => {
+                const checked = Boolean(selectedCertificates[certificate.code])
+                return <div key={certificate.code} className={cn("rounded-[var(--md-radius-sm)] bg-[var(--md-surface)] p-2.5", checked && "shadow-[inset_0_0_0_1px_var(--md-accent)]") }>
+                  <div className="flex items-start gap-2">
+                    <Checkbox id={`certificate-${item.id}-${certificate.code}`} checked={checked} onCheckedChange={(value) => toggleCertificate(certificate, value === true)} aria-label={`${certificate.code} ${certificate.description}`} />
+                    <label htmlFor={`certificate-${item.id}-${certificate.code}`} className="min-w-0 flex-1 cursor-pointer">
+                      <span className="block text-[10px] font-semibold text-[var(--md-ink)]">{certificate.code}</span>
+                      <span className="mt-0.5 block text-[9px] leading-4 text-[var(--md-text)]">{certificate.description}</span>
+                    </label>
+                  </div>
+                  {certificate.guidance ? <details className="ms-6 mt-1.5 text-[9px] text-[var(--md-subtle)]"><summary className="cursor-pointer font-medium text-[var(--md-accent)]">{t("View CDS guidance")}</summary><p className="mt-1 whitespace-pre-line leading-4">{certificate.guidance}</p></details> : null}
+                  {checked && certificate.referenceRequired ? <div className="ms-6 mt-2"><label htmlFor={`certificate-reference-${item.id}-${certificate.code}`} className="mb-1 block text-[9px] font-medium text-[var(--md-text)]">{t("Document reference")}</label><Input id={`certificate-reference-${item.id}-${certificate.code}`} value={certificateReferences[certificate.code] ?? ""} onChange={(event) => setCertificateReferences((current) => ({ ...current, [certificate.code]: event.target.value.slice(0, 70) }))} className="h-7 rounded-[var(--md-radius-xs)] bg-[var(--md-surface-soft)] text-[10px]" /></div> : null}
+                </div>
+              })}
+            </div> : <p className="mt-2 text-[9.5px] text-[var(--md-subtle)]">{t("No declaration-specific certificates were returned for this code.")}</p>}
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--md-line)] pt-2.5">
+            <p className="text-[9px] text-[var(--md-subtle)]">{t("Source: iCustoms UK Online Tariff")}</p>
+            <Button type="button" size="sm" className="h-7 px-3 text-[10px]" disabled={!detail.declarable} onClick={applySelection}>{t("Apply to goods line")}</Button>
+          </div>
+        </div> : null}
+      </div>
+    </div> : null}
+  </section>
+}
+
 function ItemDetailsEditor({ item, itemNumber, onDuplicate, onRemove, canRemove, update, showDataElements, showOptional, issues, highlightedField, t }: {
   item: ExportDeclarationItem
   itemNumber: number
@@ -1096,6 +1312,7 @@ function ItemDetailsEditor({ item, itemNumber, onDuplicate, onRemove, canRemove,
   t: (text: string) => string
 }) {
   const declarationDirection = useContext(CustomsDirectionContext)
+  const [commodityAssistantOpen, setCommodityAssistantOpen] = useState(false)
   const packageKindFields = useReferenceOptions("package_kind", t, "Select package")
   const countryFields = useReferenceOptions("country", t, "Select country")
   const optionalCountries = useReferenceOptions("country", t, "Not specified")
@@ -1106,6 +1323,7 @@ function ItemDetailsEditor({ item, itemNumber, onDuplicate, onRemove, canRemove,
   const previousDocumentTypes = useReferenceOptions("previous_document_type", t, "Select document type")
 
   return <div className="space-y-3" aria-label={`${t("Item details")} ${itemNumber}`}>
+    {commodityAssistantOpen ? <CommodityAssistant item={item} direction={declarationDirection} update={update} onClose={() => setCommodityAssistantOpen(false)} t={t} /> : null}
     <div className={cn("grid items-start gap-3", declarationDirection === "import" ? "xl:grid-cols-2" : "xl:grid-cols-[minmax(260px,0.95fr)_minmax(260px,0.88fr)_minmax(300px,1.05fr)]")}>
       <div className="space-y-3">
         <ItemDetailGroup title={t("Commodity")}>
@@ -1113,30 +1331,66 @@ function ItemDetailsEditor({ item, itemNumber, onDuplicate, onRemove, canRemove,
           <TextField label={t("Commodity code")} dataElement="6/14" customsBox="33" required showDataElements={showDataElements} value={item.commodityCode} onChange={(value) => update("commodityCode", value.replace(/\D/g, "").slice(0, 10))} invalid={issues.has("commodityCode")} fieldKey="commodityCode" highlighted={highlightedField === "commodityCode"} />
           {declarationDirection === "export" ? <TextField label={t("UN dangerous goods code")} dataElement="6/12" customsBox="31" showDataElements={showDataElements} value={item.dangerousGoodsCode} onChange={(value) => update("dangerousGoodsCode", value)} /> : null}
           <TextAreaField label={t("Description of goods")} dataElement="6/8" customsBox="31" required showDataElements={showDataElements} value={item.description} onChange={(value) => update("description", value)} invalid={issues.has("description")} fieldKey="description" highlighted={highlightedField === "description"} />
-          {showOptional ? <><TextField label={t("TARIC additional code")} dataElement="6/16" customsBox="33" showDataElements={showDataElements} value={item.taricCode} onChange={(value) => update("taricCode", value)} /><TextField label={t("National additional code")} dataElement="6/17" customsBox="33" showDataElements={showDataElements} value={item.nationalCode} onChange={(value) => update("nationalCode", value)} /><TextField label={t("CUS code")} dataElement="6/13" customsBox="31" showDataElements={showDataElements} value={item.cusCode} onChange={(value) => update("cusCode", value)} /></> : null}
+          {showOptional ? <TextField label={t("CUS code")} dataElement="6/13" customsBox="31" showDataElements={showDataElements} value={item.cusCode} onChange={(value) => update("cusCode", value)} /> : null}
           </FieldGrid>
+          <div className="mt-2 flex justify-end">
+            <Button type="button" variant="outline" size="sm" className="h-7 gap-1.5 px-2.5 text-[10px]" aria-expanded={commodityAssistantOpen} aria-controls={`commodity-assistant-${item.id}`} onClick={() => setCommodityAssistantOpen((current) => !current)}><Search className="size-3.5" aria-hidden="true" />{t(commodityAssistantOpen ? "Hide commodity assistant" : "Find commodity code")}</Button>
+          </div>
+          {showOptional ? <div className="mt-3 space-y-3">
+            <RepeatableCustomsFields title={t("TARIC additional codes")} addLabel={t("Add TARIC code")} onAdd={() => update("additionalTaricCodes", [...item.additionalTaricCodes, { id: repeatableCustomsEntryId("taric"), code: "" }])}>
+              <TextField label={t("TARIC additional code")} dataElement="6/16" customsBox="33" showDataElements={showDataElements} value={item.taricCode} onChange={(value) => update("taricCode", value)} />
+              {item.additionalTaricCodes.map((entry) => <RepeatableCustomsRow key={entry.id} removeLabel={t("Remove TARIC code")} onRemove={() => update("additionalTaricCodes", item.additionalTaricCodes.filter((candidate) => candidate.id !== entry.id))}><TextField label={t("TARIC additional code")} dataElement="6/16" customsBox="33" showDataElements={showDataElements} value={entry.code} onChange={(code) => update("additionalTaricCodes", item.additionalTaricCodes.map((candidate) => candidate.id === entry.id ? { ...candidate, code } : candidate))} /></RepeatableCustomsRow>)}
+            </RepeatableCustomsFields>
+            <RepeatableCustomsFields title={t("National additional codes")} addLabel={t("Add national code")} onAdd={() => update("additionalNationalCodes", [...item.additionalNationalCodes, { id: repeatableCustomsEntryId("national"), code: "" }])}>
+              <TextField label={t("National additional code")} dataElement="6/17" customsBox="33" showDataElements={showDataElements} value={item.nationalCode} onChange={(value) => update("nationalCode", value)} />
+              {item.additionalNationalCodes.map((entry) => <RepeatableCustomsRow key={entry.id} removeLabel={t("Remove national code")} onRemove={() => update("additionalNationalCodes", item.additionalNationalCodes.filter((candidate) => candidate.id !== entry.id))}><TextField label={t("National additional code")} dataElement="6/17" customsBox="33" showDataElements={showDataElements} value={entry.code} onChange={(code) => update("additionalNationalCodes", item.additionalNationalCodes.map((candidate) => candidate.id === entry.id ? { ...candidate, code } : candidate))} /></RepeatableCustomsRow>)}
+            </RepeatableCustomsFields>
+          </div> : null}
         </ItemDetailGroup>
 
         <ItemDetailGroup title={t("Packaging & procedure")}>
-          <FieldGrid className="grid-cols-1 sm:grid-cols-2 md:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-2">
-          <SelectField label={t("Package kind")} dataElement="6/9" customsBox="31" required showDataElements={showDataElements} value={item.packageKind} onChange={(value) => update("packageKind", value)} invalid={issues.has("packageKind")} fieldKey="packageKind" highlighted={highlightedField === "packageKind"} options={packageKindFields} />
-          <TextField label={t("Package marks")} dataElement="6/11" customsBox="31" required showDataElements={showDataElements} value={item.packageMarks} onChange={(value) => update("packageMarks", value)} invalid={issues.has("packageMarks")} fieldKey="packageMarks" highlighted={highlightedField === "packageMarks"} />
-          <TextField label={t("Package count")} dataElement="6/10" customsBox="31" required showDataElements={showDataElements} value={item.packageCount} onChange={(value) => update("packageCount", value)} invalid={issues.has("packageCount")} fieldKey="packageCount" highlighted={highlightedField === "packageCount"} />
-          <SelectField label={t("Non-preferential origin")} dataElement="5/15" customsBox="34" required showDataElements={showDataElements} value={item.nonPreferentialOrigin} onChange={(value) => update("nonPreferentialOrigin", value)} invalid={issues.has("nonPreferentialOrigin")} fieldKey="nonPreferentialOrigin" highlighted={highlightedField === "nonPreferentialOrigin"} options={countryFields} />
-          <SelectField label={t("Procedure code")} dataElement="1/10" customsBox="37" required showDataElements={showDataElements} value={item.procedureCode} onChange={(value) => update("procedureCode", value)} invalid={issues.has("procedureCode")} fieldKey="procedureCode" highlighted={highlightedField === "procedureCode"} options={procedureCodeFields} />
-          <SelectField label={t("Additional procedure code")} dataElement="1/11" customsBox="37" required showDataElements={showDataElements} value={item.additionalProcedureCode} onChange={(value) => update("additionalProcedureCode", value)} invalid={issues.has("additionalProcedureCode")} fieldKey="additionalProcedureCode" highlighted={highlightedField === "additionalProcedureCode"} options={additionalProcedureCodeFields} />
-          </FieldGrid>
+          <div className="space-y-3">
+            <RepeatableCustomsFields title={t("Package details")} addLabel={t("Add package detail")} onAdd={() => update("additionalPackageDetails", [...item.additionalPackageDetails, { id: repeatableCustomsEntryId("package"), kind: "", marks: "", count: "" }])}>
+              <FieldGrid className="grid-cols-1 sm:grid-cols-2 md:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-2">
+                <SelectField label={t("Package kind")} dataElement="6/9" customsBox="31" required showDataElements={showDataElements} value={item.packageKind} onChange={(value) => update("packageKind", value)} invalid={issues.has("packageKind")} fieldKey="packageKind" highlighted={highlightedField === "packageKind"} options={packageKindFields} />
+                <TextField label={t("Package marks")} dataElement="6/11" customsBox="31" required showDataElements={showDataElements} value={item.packageMarks} onChange={(value) => update("packageMarks", value)} invalid={issues.has("packageMarks")} fieldKey="packageMarks" highlighted={highlightedField === "packageMarks"} />
+                <TextField label={t("Package count")} dataElement="6/10" customsBox="31" required showDataElements={showDataElements} value={item.packageCount} onChange={(value) => update("packageCount", value)} invalid={issues.has("packageCount")} fieldKey="packageCount" highlighted={highlightedField === "packageCount"} />
+              </FieldGrid>
+              {item.additionalPackageDetails.map((entry) => <RepeatableCustomsRow key={entry.id} removeLabel={t("Remove package detail")} onRemove={() => update("additionalPackageDetails", item.additionalPackageDetails.filter((candidate) => candidate.id !== entry.id))}><FieldGrid className="grid-cols-1 sm:grid-cols-2 md:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-2"><SelectField label={t("Package kind")} dataElement="6/9" customsBox="31" showDataElements={showDataElements} value={entry.kind} onChange={(kind) => update("additionalPackageDetails", item.additionalPackageDetails.map((candidate) => candidate.id === entry.id ? { ...candidate, kind } : candidate))} options={packageKindFields} /><TextField label={t("Package marks")} dataElement="6/11" customsBox="31" showDataElements={showDataElements} value={entry.marks} onChange={(marks) => update("additionalPackageDetails", item.additionalPackageDetails.map((candidate) => candidate.id === entry.id ? { ...candidate, marks } : candidate))} /><TextField label={t("Package count")} dataElement="6/10" customsBox="31" showDataElements={showDataElements} value={entry.count} onChange={(count) => update("additionalPackageDetails", item.additionalPackageDetails.map((candidate) => candidate.id === entry.id ? { ...candidate, count } : candidate))} /></FieldGrid></RepeatableCustomsRow>)}
+            </RepeatableCustomsFields>
+            <FieldGrid className="grid-cols-1 sm:grid-cols-2 md:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-2">
+              <SelectField label={t("Non-preferential origin")} dataElement="5/15" customsBox="34" required showDataElements={showDataElements} value={item.nonPreferentialOrigin} onChange={(value) => update("nonPreferentialOrigin", value)} invalid={issues.has("nonPreferentialOrigin")} fieldKey="nonPreferentialOrigin" highlighted={highlightedField === "nonPreferentialOrigin"} options={countryFields} />
+              <SelectField label={t("Procedure code")} dataElement="1/10" customsBox="37" required showDataElements={showDataElements} value={item.procedureCode} onChange={(value) => update("procedureCode", value)} invalid={issues.has("procedureCode")} fieldKey="procedureCode" highlighted={highlightedField === "procedureCode"} options={procedureCodeFields} />
+            </FieldGrid>
+            <RepeatableCustomsFields title={t("Additional procedure codes")} addLabel={t("Add procedure code")} onAdd={() => update("additionalProcedureCodes", [...item.additionalProcedureCodes, { id: repeatableCustomsEntryId("procedure"), code: "" }])}>
+              <SelectField label={t("Additional procedure code")} dataElement="1/11" customsBox="37" required showDataElements={showDataElements} value={item.additionalProcedureCode} onChange={(value) => update("additionalProcedureCode", value)} invalid={issues.has("additionalProcedureCode")} fieldKey="additionalProcedureCode" highlighted={highlightedField === "additionalProcedureCode"} options={additionalProcedureCodeFields} />
+              {item.additionalProcedureCodes.map((entry) => <RepeatableCustomsRow key={entry.id} removeLabel={t("Remove procedure code")} onRemove={() => update("additionalProcedureCodes", item.additionalProcedureCodes.filter((candidate) => candidate.id !== entry.id))}><SelectField label={t("Additional procedure code")} dataElement="1/11" customsBox="37" showDataElements={showDataElements} value={entry.code} onChange={(code) => update("additionalProcedureCodes", item.additionalProcedureCodes.map((candidate) => candidate.id === entry.id ? { ...candidate, code } : candidate))} options={additionalProcedureCodeFields} /></RepeatableCustomsRow>)}
+            </RepeatableCustomsFields>
+          </div>
         </ItemDetailGroup>
       </div>
 
       <div className="space-y-3">
         <ItemDetailGroup title={t("Documents")}>
-          <FieldGrid className="grid-cols-1 sm:grid-cols-1 md:grid-cols-1 xl:grid-cols-1 2xl:grid-cols-1">
-            {declarationDirection === "import" ? <SelectField label={t("Previous document category")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={item.previousDocumentCategory} onChange={(value) => update("previousDocumentCategory", value)} invalid={issues.has("previousDocumentCategory")} fieldKey="previousDocumentCategory" highlighted={highlightedField === "previousDocumentCategory"} options={previousDocumentCategories} /> : null}
-            <SelectField label={t("Previous document type")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={item.previousDocumentType} onChange={(value) => update("previousDocumentType", value)} options={previousDocumentTypes} />
-            <TextField label={t("Previous document reference")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={item.previousDocumentReference} onChange={(value) => update("previousDocumentReference", value.replace(/[^A-Za-z0-9]/g, "").slice(0, 35))} invalid={issues.has("previousDocumentReference")} fieldKey="previousDocumentReference" highlighted={highlightedField === "previousDocumentReference"} maxLength={35} />
-            {showOptional ? <><TextField label={t("Additional document category")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={item.additionalDocumentCategory} onChange={(value) => update("additionalDocumentCategory", value)} fieldKey="additionalDocumentCategory" highlighted={highlightedField === "additionalDocumentCategory"} /><TextField label={t("Additional document type")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={item.additionalDocumentType} onChange={(value) => update("additionalDocumentType", value)} fieldKey="additionalDocumentType" highlighted={highlightedField === "additionalDocumentType"} /><TextField label={t("Additional document ID")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={item.additionalDocumentId} onChange={(value) => update("additionalDocumentId", value)} fieldKey="additionalDocumentId" highlighted={highlightedField === "additionalDocumentId"} /><TextField label={t("Additional document name")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={item.additionalDocumentName} onChange={(value) => update("additionalDocumentName", value)} /><TextField label={t("LPCO exemption code")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={item.lpcoExemptionCode} onChange={(value) => update("lpcoExemptionCode", value)} /></> : null}
-          </FieldGrid>
+          <div className="space-y-3">
+            <RepeatableCustomsFields title={t("Previous documents")} addLabel={t("Add previous document")} onAdd={() => update("additionalPreviousDocuments", [...item.additionalPreviousDocuments, { id: repeatableCustomsEntryId("previous-document"), category: "", type: "", reference: "" }])}>
+              <FieldGrid className="grid-cols-1 sm:grid-cols-1 md:grid-cols-1 xl:grid-cols-1 2xl:grid-cols-1">
+                {declarationDirection === "import" ? <SelectField label={t("Previous document category")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={item.previousDocumentCategory} onChange={(value) => update("previousDocumentCategory", value)} invalid={issues.has("previousDocumentCategory")} fieldKey="previousDocumentCategory" highlighted={highlightedField === "previousDocumentCategory"} options={previousDocumentCategories} /> : null}
+                <SelectField label={t("Previous document type")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={item.previousDocumentType} onChange={(value) => update("previousDocumentType", value)} options={previousDocumentTypes} />
+                <TextField label={t("Previous document reference")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={item.previousDocumentReference} onChange={(value) => update("previousDocumentReference", value.replace(/[^A-Za-z0-9]/g, "").slice(0, 35))} invalid={issues.has("previousDocumentReference")} fieldKey="previousDocumentReference" highlighted={highlightedField === "previousDocumentReference"} maxLength={35} />
+              </FieldGrid>
+              {item.additionalPreviousDocuments.map((entry) => <RepeatableCustomsRow key={entry.id} removeLabel={t("Remove previous document")} onRemove={() => update("additionalPreviousDocuments", item.additionalPreviousDocuments.filter((candidate) => candidate.id !== entry.id))}><FieldGrid className="grid-cols-1 sm:grid-cols-1 md:grid-cols-1 xl:grid-cols-1 2xl:grid-cols-1">{declarationDirection === "import" ? <SelectField label={t("Previous document category")} dataElement="2/1" customsBox="40" showDataElements={showDataElements} value={entry.category} onChange={(category) => update("additionalPreviousDocuments", item.additionalPreviousDocuments.map((candidate) => candidate.id === entry.id ? { ...candidate, category } : candidate))} options={previousDocumentCategories} /> : null}<SelectField label={t("Previous document type")} dataElement="2/1" customsBox="40" showDataElements={showDataElements} value={entry.type} onChange={(type) => update("additionalPreviousDocuments", item.additionalPreviousDocuments.map((candidate) => candidate.id === entry.id ? { ...candidate, type } : candidate))} options={previousDocumentTypes} /><TextField label={t("Previous document reference")} dataElement="2/1" customsBox="40" showDataElements={showDataElements} value={entry.reference} onChange={(reference) => update("additionalPreviousDocuments", item.additionalPreviousDocuments.map((candidate) => candidate.id === entry.id ? { ...candidate, reference: reference.replace(/[^A-Za-z0-9]/g, "").slice(0, 35) } : candidate))} maxLength={35} /></FieldGrid></RepeatableCustomsRow>)}
+            </RepeatableCustomsFields>
+            {showOptional ? <>
+              <RepeatableCustomsFields title={t("Additional documents")} addLabel={t("Add additional document")} onAdd={() => update("additionalDocuments", [...item.additionalDocuments, { id: repeatableCustomsEntryId("additional-document"), category: "", type: "", reference: "", name: "", lpcoExemptionCode: "", writeOff: "", validityDate: "" }])}>
+                <FieldGrid className="grid-cols-1 sm:grid-cols-1 md:grid-cols-1 xl:grid-cols-1 2xl:grid-cols-1"><TextField label={t("Additional document category")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={item.additionalDocumentCategory} onChange={(value) => update("additionalDocumentCategory", value)} /><TextField label={t("Additional document type")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={item.additionalDocumentType} onChange={(value) => update("additionalDocumentType", value)} /><TextField label={t("Additional document ID")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={item.additionalDocumentId} onChange={(value) => update("additionalDocumentId", value)} /><TextField label={t("Additional document name")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={item.additionalDocumentName} onChange={(value) => update("additionalDocumentName", value)} /><TextField label={t("LPCO exemption code")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={item.lpcoExemptionCode} onChange={(value) => update("lpcoExemptionCode", value)} /><TextField label={t("Writing-off issuing authority")} dataElement="8/7" customsBox="44" showDataElements={showDataElements} value={item.additionalDocumentWriteOff} onChange={(value) => update("additionalDocumentWriteOff", value)} /><TextField label={t("Writing-off date of validity")} dataElement="8/7" customsBox="44" showDataElements={showDataElements} value={item.additionalDocumentValidityDate} onChange={(value) => update("additionalDocumentValidityDate", value)} inputType="date" /></FieldGrid>
+                {item.additionalDocuments.map((entry) => <RepeatableCustomsRow key={entry.id} removeLabel={t("Remove additional document")} onRemove={() => update("additionalDocuments", item.additionalDocuments.filter((candidate) => candidate.id !== entry.id))}><FieldGrid className="grid-cols-1 sm:grid-cols-1 md:grid-cols-1 xl:grid-cols-1 2xl:grid-cols-1"><TextField label={t("Additional document category")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={entry.category} onChange={(category) => update("additionalDocuments", item.additionalDocuments.map((candidate) => candidate.id === entry.id ? { ...candidate, category } : candidate))} /><TextField label={t("Additional document type")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={entry.type} onChange={(type) => update("additionalDocuments", item.additionalDocuments.map((candidate) => candidate.id === entry.id ? { ...candidate, type } : candidate))} /><TextField label={t("Additional document ID")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={entry.reference} onChange={(reference) => update("additionalDocuments", item.additionalDocuments.map((candidate) => candidate.id === entry.id ? { ...candidate, reference } : candidate))} /><TextField label={t("Additional document name")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={entry.name} onChange={(name) => update("additionalDocuments", item.additionalDocuments.map((candidate) => candidate.id === entry.id ? { ...candidate, name } : candidate))} /><TextField label={t("LPCO exemption code")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={entry.lpcoExemptionCode} onChange={(lpcoExemptionCode) => update("additionalDocuments", item.additionalDocuments.map((candidate) => candidate.id === entry.id ? { ...candidate, lpcoExemptionCode } : candidate))} /><TextField label={t("Writing-off issuing authority")} dataElement="8/7" customsBox="44" showDataElements={showDataElements} value={entry.writeOff} onChange={(writeOff) => update("additionalDocuments", item.additionalDocuments.map((candidate) => candidate.id === entry.id ? { ...candidate, writeOff } : candidate))} /><TextField label={t("Writing-off date of validity")} dataElement="8/7" customsBox="44" showDataElements={showDataElements} value={entry.validityDate} onChange={(validityDate) => update("additionalDocuments", item.additionalDocuments.map((candidate) => candidate.id === entry.id ? { ...candidate, validityDate } : candidate))} inputType="date" /></FieldGrid></RepeatableCustomsRow>)}
+              </RepeatableCustomsFields>
+              <RepeatableCustomsFields title={t("Additional information")} addLabel={t("Add information statement")} onAdd={() => update("additionalInformationStatements", [...item.additionalInformationStatements, { id: repeatableCustomsEntryId("additional-information"), statementCode: "" }])}>
+                {item.additionalInformationStatements.map((entry, index) => index === 0 ? <TextField key={entry.id} label={t("Statement code")} dataElement="2/2" customsBox="44" showDataElements={showDataElements} value={entry.statementCode} onChange={(statementCode) => update("additionalInformationStatements", item.additionalInformationStatements.map((candidate) => candidate.id === entry.id ? { ...candidate, statementCode } : candidate))} /> : <RepeatableCustomsRow key={entry.id} removeLabel={t("Remove information statement")} onRemove={() => update("additionalInformationStatements", item.additionalInformationStatements.filter((candidate) => candidate.id !== entry.id))}><TextField label={t("Statement code")} dataElement="2/2" customsBox="44" showDataElements={showDataElements} value={entry.statementCode} onChange={(statementCode) => update("additionalInformationStatements", item.additionalInformationStatements.map((candidate) => candidate.id === entry.id ? { ...candidate, statementCode } : candidate))} /></RepeatableCustomsRow>)}
+              </RepeatableCustomsFields>
+            </> : null}
+          </div>
         </ItemDetailGroup>
 
         <ItemDetailGroup title={t("Weights & values")}>
@@ -1149,6 +1403,17 @@ function ItemDetailsEditor({ item, itemNumber, onDuplicate, onRemove, canRemove,
           <TextField label={t("Statistical value")} dataElement="8/6" customsBox="46" required showDataElements={showDataElements} value={item.statisticalValue} onChange={(value) => update("statisticalValue", value)} invalid={issues.has("statisticalValue")} fieldKey="statisticalValue" highlighted={highlightedField === "statisticalValue"} />
           {declarationDirection === "import" ? <><TextField label={t("Customs valuation method")} dataElement="4/16" customsBox="43" required showDataElements={showDataElements} value={item.customsValuationMethod} onChange={(value) => update("customsValuationMethod", value.replace(/\D/g, "").slice(0, 1))} invalid={issues.has("customsValuationMethod")} fieldKey="customsValuationMethod" highlighted={highlightedField === "customsValuationMethod"} maxLength={1} /><TextField label={t("Preference code")} dataElement="4/17" customsBox="36" required showDataElements={showDataElements} value={item.preferenceCode} onChange={(value) => update("preferenceCode", value.replace(/\D/g, "").slice(0, 3))} invalid={issues.has("preferenceCode")} fieldKey="preferenceCode" highlighted={highlightedField === "preferenceCode"} maxLength={3} /></> : null}
           </FieldGrid>
+          {showOptional && declarationDirection === "import" ? <div className="mt-3 space-y-3">
+            <RepeatableCustomsFields title={t("Duty calculations")} addLabel={t("Add duty calculation")} onAdd={() => update("dutyCalculations", [...item.dutyCalculations, { id: repeatableCustomsEntryId("duty"), taxType: "", paymentMethod: "", baseQuantity: "", unitCode: "", declaredTax: "" }])}>
+              {item.dutyCalculations.map((entry, index) => {
+                const fields = <FieldGrid className="grid-cols-1 sm:grid-cols-2 md:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-2"><TextField label={t("Tax type")} dataElement="4/3" customsBox="47" showDataElements={showDataElements} value={entry.taxType} onChange={(taxType) => update("dutyCalculations", item.dutyCalculations.map((candidate) => candidate.id === entry.id ? { ...candidate, taxType } : candidate))} /><TextField label={t("Method of payment")} dataElement="4/8" customsBox="47" showDataElements={showDataElements} value={entry.paymentMethod} onChange={(paymentMethod) => update("dutyCalculations", item.dutyCalculations.map((candidate) => candidate.id === entry.id ? { ...candidate, paymentMethod } : candidate))} /><TextField label={t("Tax base quantity")} dataElement="4/4" customsBox="47" showDataElements={showDataElements} value={entry.baseQuantity} onChange={(baseQuantity) => update("dutyCalculations", item.dutyCalculations.map((candidate) => candidate.id === entry.id ? { ...candidate, baseQuantity } : candidate))} /><TextField label={t("Unit code")} dataElement="4/4" customsBox="47" showDataElements={showDataElements} value={entry.unitCode} onChange={(unitCode) => update("dutyCalculations", item.dutyCalculations.map((candidate) => candidate.id === entry.id ? { ...candidate, unitCode } : candidate))} /><TextField label={t("Declared tax")} dataElement="4/6" customsBox="47" showDataElements={showDataElements} value={entry.declaredTax} onChange={(declaredTax) => update("dutyCalculations", item.dutyCalculations.map((candidate) => candidate.id === entry.id ? { ...candidate, declaredTax } : candidate))} /></FieldGrid>
+                return index === 0 ? <div key={entry.id}>{fields}</div> : <RepeatableCustomsRow key={entry.id} removeLabel={t("Remove duty calculation")} onRemove={() => update("dutyCalculations", item.dutyCalculations.filter((candidate) => candidate.id !== entry.id))}>{fields}</RepeatableCustomsRow>
+              })}
+            </RepeatableCustomsFields>
+            <RepeatableCustomsFields title={t("Additions and deductions")} addLabel={t("Add addition or deduction")} onAdd={() => update("valuationAdjustments", [...item.valuationAdjustments, { id: repeatableCustomsEntryId("valuation-adjustment"), code: "", currency: item.currency, amount: "" }])}>
+              {item.valuationAdjustments.length ? item.valuationAdjustments.map((entry) => <RepeatableCustomsRow key={entry.id} removeLabel={t("Remove addition or deduction")} onRemove={() => update("valuationAdjustments", item.valuationAdjustments.filter((candidate) => candidate.id !== entry.id))}><FieldGrid className="grid-cols-1 sm:grid-cols-2 md:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-2"><TextField label={t("Code identifying")} dataElement="4/9" customsBox="45" showDataElements={showDataElements} value={entry.code} onChange={(code) => update("valuationAdjustments", item.valuationAdjustments.map((candidate) => candidate.id === entry.id ? { ...candidate, code } : candidate))} /><SelectField label={t("Currency code")} dataElement="4/9" customsBox="45" showDataElements={showDataElements} value={entry.currency} onChange={(currency) => update("valuationAdjustments", item.valuationAdjustments.map((candidate) => candidate.id === entry.id ? { ...candidate, currency } : candidate))} options={currencyFields} /><TextField label={t("Amount")} dataElement="4/9" customsBox="45" showDataElements={showDataElements} value={entry.amount} onChange={(amount) => update("valuationAdjustments", item.valuationAdjustments.map((candidate) => candidate.id === entry.id ? { ...candidate, amount } : candidate))} /></FieldGrid></RepeatableCustomsRow>) : <p className="text-[10.5px] text-[var(--md-subtle)]">{t("No additions or deductions added")}</p>}
+            </RepeatableCustomsFields>
+          </div> : null}
         </ItemDetailGroup>
       </div>
 
@@ -1162,6 +1427,20 @@ function ItemDetailsEditor({ item, itemNumber, onDuplicate, onRemove, canRemove,
         </FieldGrid>
       </ItemDetailGroup> : null}
     </div>
+    {showOptional ? <ItemDetailGroup title={t("Additional item parties")}>
+      <div className="grid gap-3 xl:grid-cols-3">
+        <PartyReferenceCustomsFields title={t("Exporters")} fieldLabel={t("Exporter ID")} addLabel={t("Add exporter")} removeLabel={t("Remove exporter")} entries={item.itemExporters} entryPrefix="item-exporter" onChange={(entries) => update("itemExporters", entries)} showDataElements={showDataElements} dataElement="3/1" />
+        <PartyReferenceCustomsFields title={t("Sellers")} fieldLabel={t("Seller ID")} addLabel={t("Add seller")} removeLabel={t("Remove seller")} entries={item.itemSellers} entryPrefix="item-seller" onChange={(entries) => update("itemSellers", entries)} showDataElements={showDataElements} dataElement="3/24" />
+        <PartyReferenceCustomsFields title={t("Buyers")} fieldLabel={t("Buyer ID")} addLabel={t("Add buyer")} removeLabel={t("Remove buyer")} entries={item.itemBuyers} entryPrefix="item-buyer" onChange={(entries) => update("itemBuyers", entries)} showDataElements={showDataElements} dataElement="3/26" />
+        <RepeatableCustomsFields title={t("Domestic duty tax parties")} addLabel={t("Add domestic duty tax party")} onAdd={() => update("domesticDutyTaxParties", [...item.domesticDutyTaxParties, { id: repeatableCustomsEntryId("domestic-duty-tax-party"), partyId: "", roleCode: "" }])}>
+          {item.domesticDutyTaxParties.map((entry, index) => {
+            const fields = <FieldGrid className="grid-cols-1"><TextField label={t("Party ID")} dataElement="3/40" customsBox="44" showDataElements={showDataElements} value={entry.partyId} onChange={(partyId) => update("domesticDutyTaxParties", item.domesticDutyTaxParties.map((candidate) => candidate.id === entry.id ? { ...candidate, partyId } : candidate))} /><TextField label={t("Role code")} dataElement="3/40" customsBox="44" showDataElements={showDataElements} value={entry.roleCode} onChange={(roleCode) => update("domesticDutyTaxParties", item.domesticDutyTaxParties.map((candidate) => candidate.id === entry.id ? { ...candidate, roleCode: roleCode.toUpperCase().slice(0, 3) } : candidate))} maxLength={3} /></FieldGrid>
+            return index === 0 ? <div key={entry.id}>{fields}</div> : <RepeatableCustomsRow key={entry.id} removeLabel={t("Remove domestic duty tax party")} onRemove={() => update("domesticDutyTaxParties", item.domesticDutyTaxParties.filter((candidate) => candidate.id !== entry.id))}>{fields}</RepeatableCustomsRow>
+          })}
+        </RepeatableCustomsFields>
+        <PartyReferenceCustomsFields title={t("Mutual recognition parties")} fieldLabel={t("Mutual recognition party ID")} addLabel={t("Add mutual recognition party")} removeLabel={t("Remove mutual recognition party")} entries={item.mutualRecognitionParties} entryPrefix="mutual-recognition-party" onChange={(entries) => update("mutualRecognitionParties", entries)} showDataElements={showDataElements} dataElement="3/39" />
+      </div>
+    </ItemDetailGroup> : null}
     <div className="flex flex-wrap justify-end gap-2 border-t border-[var(--md-line)] pt-3">
       <Button type="button" variant="outline" size="sm" onClick={onDuplicate} className="group/duplicate transition-[transform,background,color,box-shadow] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:-translate-y-px hover:shadow-[var(--md-shadow-soft)] active:translate-y-0 active:scale-[0.96] motion-reduce:transform-none motion-reduce:transition-none"><span className="relative size-3.5" aria-hidden="true"><Copy className="absolute inset-0 size-3.5 opacity-0 transition-[transform,opacity] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover/duplicate:-translate-x-[2px] group-hover/duplicate:translate-y-[2px] group-hover/duplicate:opacity-30 motion-reduce:transform-none motion-reduce:transition-none" /><Copy className="absolute inset-0 size-3.5 transition-transform duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover/duplicate:translate-x-[1px] group-hover/duplicate:-translate-y-[1px] motion-reduce:transform-none motion-reduce:transition-none" /></span>{t("Duplicate")}</Button>
       <Button type="button" variant="ghost" size="sm" disabled={!canRemove} onClick={onRemove}><Trash2 className="size-3.5" />{t("Remove")}</Button>
@@ -1174,6 +1453,46 @@ function ItemDetailGroup({ title, children }: { title: string; children: ReactNo
     <h3 className="mb-3 text-[14px] font-medium text-[var(--md-ink)]">{title}</h3>
     {children}
   </section>
+}
+
+function RepeatableCustomsFields({ title, addLabel, onAdd, children }: { title: string; addLabel: string; onAdd: () => void; children: ReactNode }) {
+  return <section aria-label={title} className="space-y-2.5 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] p-3 shadow-[var(--md-shadow-line)]">
+    <div className="flex items-center justify-between gap-3">
+      <h4 className="text-[11px] font-medium text-[var(--md-ink)]">{title}</h4>
+      <Button type="button" variant="outline" size="sm" className="h-8 shrink-0 px-2.5 text-[11px]" onClick={onAdd}>
+        <Plus className="size-3.5" />{addLabel}
+      </Button>
+    </div>
+    {children}
+  </section>
+}
+
+function RepeatableCustomsRow({ removeLabel, onRemove, children }: { removeLabel: string; onRemove: () => void; children: ReactNode }) {
+  return <div className="relative rounded-[var(--md-radius-sm)] bg-[var(--md-surface)] p-2.5 pe-12 shadow-[var(--md-shadow-line)]">
+    {children}
+    <Button type="button" variant="ghost" size="icon" className="absolute end-1.5 top-1.5 size-9 text-[var(--md-red)] hover:bg-[color-mix(in_srgb,var(--md-red)_9%,transparent)] hover:text-[var(--md-red)]" onClick={onRemove} aria-label={removeLabel} title={removeLabel}>
+      <Trash2 className="size-4" />
+    </Button>
+  </div>
+}
+
+function PartyReferenceCustomsFields({ title, fieldLabel, addLabel, removeLabel, entries, entryPrefix, onChange, showDataElements, dataElement }: {
+  title: string
+  fieldLabel: string
+  addLabel: string
+  removeLabel: string
+  entries: CustomsPartyEntry[]
+  entryPrefix: string
+  onChange: (entries: CustomsPartyEntry[]) => void
+  showDataElements: boolean
+  dataElement: string
+}) {
+  return <RepeatableCustomsFields title={title} addLabel={addLabel} onAdd={() => onChange([...entries, { id: repeatableCustomsEntryId(entryPrefix), partyId: "" }])}>
+    {entries.map((entry, index) => {
+      const field = <TextField label={fieldLabel} dataElement={dataElement} customsBox="44" showDataElements={showDataElements} value={entry.partyId} onChange={(partyId) => onChange(entries.map((candidate) => candidate.id === entry.id ? { ...candidate, partyId } : candidate))} />
+      return index === 0 ? <div key={entry.id}>{field}</div> : <RepeatableCustomsRow key={entry.id} removeLabel={removeLabel} onRemove={() => onChange(entries.filter((candidate) => candidate.id !== entry.id))}>{field}</RepeatableCustomsRow>
+    })}
+  </RepeatableCustomsFields>
 }
 
 function ItemTableSelect({ label, value, onChange, options, invalid }: { label: string; value: string; onChange: (value: string) => void; options: ReadonlyArray<readonly [string, string]>; invalid?: boolean }) {
@@ -1211,30 +1530,61 @@ function validatedItemField(issues: Set<string>, missing: Array<keyof ExportDecl
   return issues.has(field) && missing.includes(field)
 }
 
-function ReviewSection({ draft, completion, iCustomsState, iCustomsBusy, iCustomsIssues, onValidate, onFixIssue, onFixProviderIssue, onCreateDraft, onSubmit, onRefresh, t }: {
+function ReviewSection({ draft, completion, iCustomsState, iCustomsBusy, iCustomsIssues, update, updateItem, onValidate, onCreateDraft, onSubmit, onRefresh, t }: {
   draft: StandaloneExportDraft
   completion: ReturnType<typeof declarationCompletion>
   iCustomsState: ICustomsWorkspaceState | null
   iCustomsBusy: "loading" | "draft" | "submit" | "refresh" | null
   iCustomsIssues: string[]
+  update: <K extends keyof StandaloneExportDraft>(field: K, value: StandaloneExportDraft[K]) => void
+  updateItem: <K extends keyof ExportDeclarationItem>(itemId: string, field: K, value: ExportDeclarationItem[K]) => void
   onValidate: () => void
-  onFixIssue: (issue: DeclarationIssue) => void
-  onFixProviderIssue: (issue: ICustomsProviderIssue) => void
   onCreateDraft: () => void
   onSubmit: () => void
   onRefresh: () => void
   t: (text: string) => string
 }) {
+  const shouldReduceMotion = Boolean(useReducedMotion())
+  const [openFixKey, setOpenFixKey] = useState<string | null>(null)
+  const [heldIssue, setHeldIssue] = useState<DeclarationIssue | null>(null)
   const provider = iCustomsState?.declaration.provider
   const hasProviderDraft = Boolean(iCustomsState?.declaration.hasCustomsDraft)
   const providerLifecycleStarted = Boolean(provider && ["submitted", "accepted", "rejected"].includes(provider.status))
   const providerRejected = provider?.status === "rejected"
   const connectionUnavailable = iCustomsState?.connection.configured === false
   const providerIssues = provider?.issues ?? []
+  const providerDeclarationUrl = hasProviderDraft && draft.iCustomsCorrelationId
+    ? iCustomsDeclarationUrl(draft.direction, draft.iCustomsCorrelationId, iCustomsState?.connection.environment ?? "sandbox")
+    : null
+
+  const reviewIssues = heldIssue && !completion.issues.some((issue) => issue.id === heldIssue.id)
+    ? [...completion.issues, heldIssue]
+    : completion.issues
+
+  function openFix(key: string, issue?: DeclarationIssue) {
+    setOpenFixKey(key)
+    setHeldIssue(issue ?? null)
+    window.setTimeout(() => {
+      document.getElementById(`customs-review-fix-${key}`)?.querySelector<HTMLElement>("input, textarea, button")?.focus()
+    }, 80)
+  }
+
+  function confirmFix() {
+    setOpenFixKey(null)
+    setHeldIssue(null)
+  }
+
   return <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
     <Surface padding="lg" className="rounded-[var(--md-radius-xl)]">
       <div className="flex items-center justify-between gap-4"><span><p className="text-[12px] font-medium text-[var(--md-accent)]">{t("Declaration readiness")}</p><h2 className="mt-1 text-[22px] font-medium text-[var(--md-ink)]">{completion.percent}% {t("complete")}</h2><p className="mt-1 text-[12px] text-[var(--md-text)]">{completion.completeChecks}/{completion.totalChecks} {t("configured checks complete")}</p></span><div className="relative grid size-24 place-items-center rounded-full" style={{ background: `conic-gradient(var(--md-accent) ${completion.percent}%, var(--md-line) 0)` }}><div className="grid size-[78px] place-items-center rounded-full bg-[var(--md-surface)] text-[17px] font-medium">{completion.percent}%</div></div></div>
-      {completion.issues.length ? <div className="mt-5 divide-y divide-[var(--md-line)] border-t border-[var(--md-line)]">{completion.issues.slice(0, 14).map((issue) => <div key={issue.id} className="flex min-h-11 items-center gap-3 py-2"><CircleAlert className="size-4 shrink-0 text-[var(--md-red)]" /><span className="min-w-0 flex-1 text-[12px] text-[var(--md-text)]">{issue.itemNumber ? `${t("Item")} ${issue.itemNumber}: ` : ""}{translateCustomsMessage(issue.message, t)}</span><Button type="button" variant="outline" size="sm" className="min-w-[48px] rounded-[var(--md-radius-md)]" onClick={() => onFixIssue(issue)}>{t("Fix")}</Button></div>)}</div> : <div className="mt-5 flex gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-accent-a10)] p-4"><CheckCircle2 className="size-5 text-[var(--md-green)]" /><span className="text-[13px] text-[var(--md-text)]"><strong className="block text-[var(--md-ink)]">{t("Current form checks passed")}</strong>{t("Ready for secure server integration checks.")}</span></div>}
+      {reviewIssues.length ? <div className="mt-5 divide-y divide-[var(--md-line)] border-t border-[var(--md-line)]">{reviewIssues.slice(0, 14).map((issue) => {
+        const fixKey = `form-${issue.id}`
+        const expanded = openFixKey === fixKey
+        return <div key={issue.id} className="py-2">
+          <div className="flex min-h-11 items-center gap-3"><CircleAlert className="size-4 shrink-0 text-[var(--md-red)]" /><span className="min-w-0 flex-1 text-[12px] text-[var(--md-text)]">{issue.itemNumber ? `${t("Item")} ${issue.itemNumber}: ` : ""}{translateCustomsMessage(issue.message, t)}</span><Button type="button" variant="outline" size="sm" aria-expanded={expanded} aria-controls={`customs-review-fix-${fixKey}`} className="min-w-[64px] rounded-[var(--md-radius-md)]" onClick={() => openFix(fixKey, issue)}>{t("Fix")}<ChevronDown className={cn("size-3.5 transition-transform duration-200 motion-reduce:transition-none", expanded && "rotate-180")} /></Button></div>
+          <AnimatePresence initial={false}>{expanded ? <motion.div id={`customs-review-fix-${fixKey}`} initial={shouldReduceMotion ? false : { height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={reduceMotion(shouldReduceMotion, mdMotion.panel)} className="overflow-hidden"><div className="ms-7 mt-1 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-3 shadow-[var(--md-shadow-line)]"><ReviewFixSectionHeader draft={draft} issue={issue} t={t} /><ReviewFixFields draft={draft} issue={issue} update={update} updateItem={updateItem} t={t} /><div className="mt-3 flex justify-end border-t border-[var(--md-line)] pt-3"><Button type="button" size="sm" className="min-w-[88px] rounded-[var(--md-radius-md)]" onClick={confirmFix}>{t("Confirm")}</Button></div></div></motion.div> : null}</AnimatePresence>
+        </div>
+      })}</div> : <div className="mt-5 flex gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-accent-a10)] p-4"><CheckCircle2 className="size-5 text-[var(--md-green)]" /><span className="text-[13px] text-[var(--md-text)]"><strong className="block text-[var(--md-ink)]">{t("Current form checks passed")}</strong>{t("Ready for secure server integration checks.")}</span></div>}
     </Surface>
     <div className="space-y-4">
       <Surface padding="lg" className="rounded-[var(--md-radius-xl)]"><h2 className="text-[14px] font-medium text-[var(--md-ink)]">{t("Declaration summary")}</h2><dl className="mt-4 divide-y divide-[var(--md-line)] border-t border-[var(--md-line)]"><Summary label={t("Reference")} value={draft.multideckReference} /><Summary label={t("Category")} value={draft.declarationCategory} /><Summary label={t("Type")} value={draft.declarationType} /><Summary label={t("Items")} value={String(draft.items.length)} /><Summary label={t("Destination")} value={draft.destinationCountry || t("Not set")} /></dl></Surface>
@@ -1247,11 +1597,17 @@ function ReviewSection({ draft, completion, iCustomsState, iCustomsBusy, iCustom
         {iCustomsBusy === "loading" ? <p className="mt-4 text-[12px] text-[var(--md-subtle)]">{t("Checking the customs connection")}</p> : null}
         {connectionUnavailable ? <div role="alert" className="mt-4 flex gap-2 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-amber)_10%,transparent)] p-3 text-[12px] text-[var(--md-text)]"><CircleAlert className="mt-0.5 size-4 shrink-0 text-[var(--md-amber)]" /><span>{t("The customs test connection is not configured on the server yet.")}</span></div> : null}
         {provider ? <dl className="mt-4 divide-y divide-[var(--md-line)] border-y border-[var(--md-line)]"><Summary label={t("Submission status")} value={t(titleCase(provider.status))} />{provider.mrn ? <Summary label="MRN" value={provider.mrn} /> : null}{provider.updatedAt ? <Summary label={t("Last customs update")} value={new Date(provider.updatedAt).toLocaleString()} /> : null}</dl> : null}
+        {providerDeclarationUrl ? <Button asChild variant="outline" className="mt-4 w-full"><a href={providerDeclarationUrl} target="_blank" rel="noopener noreferrer"><span>{t("View in")}</span><img src={iCustomsLogo} alt="iCustoms" className="h-4 w-auto" /><ExternalLink className="size-3.5" /></a></Button> : null}
         {providerIssues.length ? <div role="alert" className="mt-4 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red)_7%,var(--md-surface))] p-3">
           <div className="flex items-start gap-2"><CircleAlert className="mt-0.5 size-4 shrink-0 text-[var(--md-red)]" /><div><p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Customs rejected this declaration")}</p><p className="mt-0.5 text-[11px] leading-4 text-[var(--md-text)]">{t("Correct the fields below, then save a new customs draft before submitting again.")}</p></div></div>
-          <div className="mt-3 space-y-2">{providerIssues.slice(0, 20).map((issue, index) => <div key={`${issue.code}-${issue.dataElement}-${issue.itemNumber ?? "header"}-${index}`} className="rounded-[var(--md-radius-md)] bg-[var(--md-surface)] p-2.5 shadow-[var(--md-shadow-line)]">
-            <div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="text-[10px] font-medium text-[var(--md-red)]">{t(providerIssueFieldLabel(issue))}{issue.itemNumber ? ` · ${t("Item")} ${issue.itemNumber}` : ""}{issue.dataElement ? ` · DE ${issue.dataElement}` : ""}{issue.code ? ` · ${issue.code}` : ""}</p><p className="mt-1 text-[11px] leading-4 text-[var(--md-ink)]">{issue.message}</p><p className="mt-1 text-[10.5px] leading-4 text-[var(--md-text)]">{t(providerIssueGuidance(issue))}</p></div><Button type="button" variant="outline" size="sm" className="min-w-[48px] rounded-[var(--md-radius-md)]" onClick={() => onFixProviderIssue(issue)}>{t("Fix")}</Button></div>
-          </div>)}</div>
+          <div className="mt-3 space-y-2">{providerIssues.slice(0, 20).map((issue, index) => {
+            const fixKey = `provider-${issue.code}-${issue.dataElement}-${issue.itemNumber ?? "header"}-${index}`
+            const expanded = openFixKey === fixKey
+            return <div key={fixKey} className="rounded-[var(--md-radius-md)] bg-[var(--md-surface)] p-2.5 shadow-[var(--md-shadow-line)]">
+              <div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="text-[10px] font-medium text-[var(--md-red)]">{t(providerIssueFieldLabel(issue))}{issue.itemNumber ? ` · ${t("Item")} ${issue.itemNumber}` : ""}{issue.dataElement ? ` · DE ${issue.dataElement}` : ""}{issue.code ? ` · ${issue.code}` : ""}</p><p className="mt-1 text-[11px] leading-4 text-[var(--md-ink)]">{issue.message}</p><p className="mt-1 text-[10.5px] leading-4 text-[var(--md-text)]">{t(providerIssueGuidance(issue))}</p></div><Button type="button" variant="outline" size="sm" aria-expanded={expanded} aria-controls={`customs-review-fix-${fixKey}`} className="min-w-[64px] rounded-[var(--md-radius-md)]" onClick={() => openFix(fixKey)}>{t("Fix")}<ChevronDown className={cn("size-3.5 transition-transform duration-200 motion-reduce:transition-none", expanded && "rotate-180")} /></Button></div>
+              <AnimatePresence initial={false}>{expanded ? <motion.div id={`customs-review-fix-${fixKey}`} initial={shouldReduceMotion ? false : { height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={reduceMotion(shouldReduceMotion, mdMotion.panel)} className="overflow-hidden"><div className="mt-3 border-t border-[var(--md-line)] pt-3"><ReviewFixSectionHeader draft={draft} providerIssue={issue} t={t} /><ReviewFixFields draft={draft} providerIssue={issue} update={update} updateItem={updateItem} t={t} /><div className="mt-3 flex justify-end border-t border-[var(--md-line)] pt-3"><Button type="button" size="sm" className="min-w-[88px] rounded-[var(--md-radius-md)]" onClick={confirmFix}>{t("Confirm")}</Button></div></div></motion.div> : null}</AnimatePresence>
+            </div>
+          })}</div>
         </div> : null}
         {provider?.errorMessage && !providerIssues.length ? <div role="alert" className="mt-4 flex gap-2 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red)_7%,var(--md-surface))] p-3 text-[12px] text-[var(--md-text)]"><CircleAlert className="mt-0.5 size-4 shrink-0 text-[var(--md-red)]" /><span><strong className="block text-[var(--md-ink)]">{t("Customs service needs attention")}</strong>{t(provider.errorMessage)}</span></div> : null}
         {iCustomsIssues.length ? <div role="alert" className="mt-4"><p className="text-[12px] font-medium text-[var(--md-red)]">{t("Customs checks still need attention")}</p><ul className="mt-2 space-y-1.5 ps-4 text-[11px] leading-4 text-[var(--md-text)]">{iCustomsIssues.slice(0, 8).map((issue) => <li key={issue} className="list-disc">{translateCustomsMessage(issue, t)}</li>)}</ul></div> : null}
@@ -1261,6 +1617,196 @@ function ReviewSection({ draft, completion, iCustomsState, iCustomsBusy, iCustom
       </Surface>
     </div>
   </div>
+}
+
+type ReviewFieldMeta = {
+  label: string
+  dataElement?: string
+  customsBox?: string
+  catalog?: CustomsCatalogCode
+  textarea?: boolean
+  suffix?: string
+  maxLength?: number
+}
+
+function reviewSectionForField(field: string): Exclude<EditorTab, "items" | "review"> {
+  if (["importer", "exporter", "consignee", "carrier", "declarant", "representative", "seller", "buyer", "representationType", "authorisationIdentifier", "authorisationCategory"].includes(field) || /^(importer|exporter|consignee|declarant)(Name|AddressLine|City|Postcode|Country)$/.test(field)) return "parties"
+  if (["exportCountry", "destinationCountry", "borderMode", "inlandMode", "containerId", "goodsLocationName", "goodsLocationIdentifier"].includes(field)) return "transport"
+  if (["exitOffice", "presentationOffice", "previousDocumentCategory", "previousDocumentType", "previousDocumentReference", "transactionNature", "tradeTerms", "customsValuationMethod"].includes(field)) return "documents"
+  return "declaration"
+}
+
+function reviewFixSectionLabel(draft: StandaloneExportDraft, issue: DeclarationIssue | undefined, providerIssue: ICustomsProviderIssue | undefined, t: (text: string) => string) {
+  const itemNumber = issue?.itemNumber ?? providerIssue?.itemNumber
+  if (issue?.scope === "item" || itemNumber) return itemNumber ? `${t("Items")} · ${t("Item")} ${itemNumber}` : t("Items")
+  const field = issue?.field ?? (providerIssue ? providerIssueTarget(providerIssue) : "")
+  const section = reviewSectionForField(field)
+  if (section === "parties") return t("Parties")
+  if (section === "transport") return t("Transport")
+  if (section === "documents") return t(draft.direction === "import" ? "Import terms" : "Documents & offices")
+  return t("Declaration")
+}
+
+function ReviewFixSectionHeader({ draft, issue, providerIssue, t }: {
+  draft: StandaloneExportDraft
+  issue?: DeclarationIssue
+  providerIssue?: ICustomsProviderIssue
+  t: (text: string) => string
+}) {
+  return <h3 className="mb-3 text-[12px] font-medium text-[var(--md-ink)]">{reviewFixSectionLabel(draft, issue, providerIssue, t)}</h3>
+}
+
+const reviewFieldMetaByKey: Record<string, ReviewFieldMeta> = {
+  declarationCategory: { label: "Declaration category", dataElement: "1/1", customsBox: "1", catalog: "declaration_category" },
+  declarationType: { label: "Type of declaration", dataElement: "1/2", customsBox: "1", catalog: "declaration_type" },
+  traderReference: { label: "Trader reference number", dataElement: "2/4", customsBox: "44", maxLength: 19 },
+  totalAmount: { label: "Total amount", dataElement: "4/11", customsBox: "22" },
+  currency: { label: "Currency code", dataElement: "4/10", customsBox: "22", catalog: "currency" },
+  totalPackages: { label: "Total packages", dataElement: "6/18", customsBox: "6" },
+  totalGrossMass: { label: "Total gross mass", dataElement: "6/5", customsBox: "35", suffix: "kg" },
+  totalNetMass: { label: "Total net mass", dataElement: "6/1", customsBox: "38", suffix: "kg" },
+  importer: { label: "Importer", dataElement: "3/16", customsBox: "8" },
+  exporter: { label: "Exporter", dataElement: "3/1", customsBox: "2" },
+  consignee: { label: "Consignee", dataElement: "3/9", customsBox: "8" },
+  declarant: { label: "Declarant", dataElement: "3/17", customsBox: "14" },
+  representationType: { label: "Type of representation", dataElement: "3/21", customsBox: "14", catalog: "representation_type" },
+  authorisationIdentifier: { label: "Authorisation identifier" },
+  authorisationCategory: { label: "Authorisation category", maxLength: 3 },
+  exportCountry: { label: "Export country", dataElement: "5/14", customsBox: "15", catalog: "country" },
+  destinationCountry: { label: "Country of destination", dataElement: "5/8", customsBox: "17", catalog: "country" },
+  borderMode: { label: "Mode at border", dataElement: "7/4", customsBox: "25", catalog: "transport_mode" },
+  transactionNature: { label: "Nature of transaction", dataElement: "8/5", customsBox: "24", catalog: "transaction_nature" },
+  tradeTerms: { label: "Trade terms", dataElement: "4/1", customsBox: "20", maxLength: 3 },
+  goodsLocationName: { label: "Name of place", dataElement: "5/23", customsBox: "30" },
+  goodsLocationIdentifier: { label: "Goods location identifier", dataElement: "5/23", customsBox: "30" },
+  isContainerised: { label: "Transported in container", dataElement: "7/2", customsBox: "19", catalog: "container_indicator" },
+  containerId: { label: "Container ID", dataElement: "7/10", customsBox: "31" },
+  exitOffice: { label: "Customs office of exit", dataElement: "5/12", customsBox: "29" },
+  previousDocumentCategory: { label: "Previous document category", dataElement: "2/1", customsBox: "40", catalog: "previous_document_category" },
+  previousDocumentType: { label: "Previous document type", dataElement: "2/1", customsBox: "40", catalog: "previous_document_type" },
+  previousDocumentReference: { label: "Previous document reference", dataElement: "2/1", customsBox: "40", maxLength: 35 },
+  commodityCode: { label: "Commodity code", dataElement: "6/14", customsBox: "33", maxLength: 10 },
+  description: { label: "Description of goods", dataElement: "6/8", customsBox: "31", textarea: true },
+  packageKind: { label: "Package kind", dataElement: "6/9", customsBox: "31", catalog: "package_kind" },
+  packageMarks: { label: "Package marks", dataElement: "6/11", customsBox: "31" },
+  packageCount: { label: "Package count", dataElement: "6/10", customsBox: "31" },
+  nonPreferentialOrigin: { label: "Non-preferential origin", dataElement: "5/15", customsBox: "34", catalog: "country" },
+  procedureCode: { label: "Procedure code", dataElement: "1/10", customsBox: "37", catalog: "procedure_code" },
+  additionalProcedureCode: { label: "Additional procedure code", dataElement: "1/11", customsBox: "37", catalog: "additional_procedure_code" },
+  grossMass: { label: "Gross mass", dataElement: "6/5", customsBox: "35", suffix: "kg" },
+  netMass: { label: "Net mass", dataElement: "6/1", customsBox: "38", suffix: "kg" },
+  itemPrice: { label: "Item price", dataElement: "4/14", customsBox: "42" },
+  statisticalValue: { label: "Statistical value", dataElement: "8/6", customsBox: "46" },
+  customsValuationMethod: { label: "Customs valuation method", dataElement: "4/16", customsBox: "43", maxLength: 1 },
+  preferenceCode: { label: "Preference code", dataElement: "4/17", customsBox: "36", maxLength: 3 },
+  additionalDocumentCategory: { label: "Additional document category", dataElement: "2/3", customsBox: "44" },
+  additionalDocumentType: { label: "Additional document type", dataElement: "2/3", customsBox: "44" },
+  additionalDocumentId: { label: "Additional document ID", dataElement: "2/3", customsBox: "44" },
+}
+
+function reviewFieldMeta(field: string): ReviewFieldMeta {
+  const contact = field.match(/^(importer|exporter|consignee|declarant)(Name|AddressLine|City|Postcode|Country)$/)
+  if (!contact) return reviewFieldMetaByKey[field] ?? { label: titleCase(field) }
+  const party = titleCase(contact[1])
+  const suffixes: Record<string, string> = { Name: "legal name", AddressLine: "street address", City: "town or city", Postcode: "postcode", Country: "country" }
+  const partyElements: Record<string, readonly [string, string]> = {
+    importer: ["3/15", "8"],
+    exporter: ["3/2", "2"],
+    consignee: ["3/10", "8"],
+    declarant: ["3/18", "14"],
+  }
+  const [dataElement, customsBox] = partyElements[contact[1]]
+  return { label: `${party} ${suffixes[contact[2]]}`, dataElement, customsBox, catalog: contact[2] === "Country" ? "country" : undefined }
+}
+
+function fieldsForReviewIssue(draft: StandaloneExportDraft, issue?: DeclarationIssue, providerIssue?: ICustomsProviderIssue) {
+  if (providerIssue) {
+    if (providerIssue.itemNumber && providerIssue.dataElement === "1/10") return ["procedureCode", "additionalProcedureCode"]
+    if (providerIssue.itemNumber && providerIssue.dataElement === "2/3") return ["additionalDocumentCategory", "additionalDocumentType", "additionalDocumentId"]
+    return [providerIssueTarget(providerIssue)]
+  }
+  if (!issue) return []
+  const contact = issue.id.match(/^general-(importer|exporter|consignee|declarant)-contact$/)
+  if (contact) {
+    return [`${contact[1]}Name`, `${contact[1]}AddressLine`, `${contact[1]}City`, `${contact[1]}Postcode`, `${contact[1]}Country`]
+  }
+  if (issue.id === "general-authorisation") return ["authorisationIdentifier", "authorisationCategory"]
+  if (issue.id === "general-goods-location") return ["goodsLocationName", "goodsLocationIdentifier"]
+  return [issue.field]
+}
+
+function ReviewFixFields({ draft, issue, providerIssue, update, updateItem, t }: {
+  draft: StandaloneExportDraft
+  issue?: DeclarationIssue
+  providerIssue?: ICustomsProviderIssue
+  update: <K extends keyof StandaloneExportDraft>(field: K, value: StandaloneExportDraft[K]) => void
+  updateItem: <K extends keyof ExportDeclarationItem>(itemId: string, field: K, value: ExportDeclarationItem[K]) => void
+  t: (text: string) => string
+}) {
+  const itemId = issue?.itemId ?? (providerIssue?.itemNumber ? draft.items[providerIssue.itemNumber - 1]?.id : undefined)
+  const fields = fieldsForReviewIssue(draft, issue, providerIssue)
+  return <CompactCustomsFormContext.Provider value><FieldGrid className="grid-cols-1 md:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-2">{fields.map((field) => <ReviewFixField key={field} draft={draft} itemId={itemId} field={field} update={update} updateItem={updateItem} t={t} />)}</FieldGrid></CompactCustomsFormContext.Provider>
+}
+
+function ReviewFixField({ draft, itemId, field, update, updateItem, t }: {
+  draft: StandaloneExportDraft
+  itemId?: string
+  field: string
+  update: <K extends keyof StandaloneExportDraft>(field: K, value: StandaloneExportDraft[K]) => void
+  updateItem: <K extends keyof ExportDeclarationItem>(itemId: string, field: K, value: ExportDeclarationItem[K]) => void
+  t: (text: string) => string
+}) {
+  const declarationCategories = useReferenceOptions("declaration_category", t, "Select category")
+  const declarationTypes = useReferenceOptions("declaration_type", t, "Select type")
+  const currencies = useReferenceOptions("currency", t, "Select currency")
+  const countries = useReferenceOptions("country", t, "Select country")
+  const transportModes = useReferenceOptions("transport_mode", t, "Select transport mode")
+  const transactionNatures = useReferenceOptions("transaction_nature", t, "Select nature")
+  const representationTypes = useReferenceOptions("representation_type", t, "Not specified")
+  const containerIndicators = useReferenceOptions("container_indicator", t, "Select option")
+  const previousDocumentCategories = useReferenceOptions("previous_document_category", t, "Select category")
+  const previousDocumentTypes = useReferenceOptions("previous_document_type", t, "Select document type")
+  const packageKinds = useReferenceOptions("package_kind", t, "Select package")
+  const procedureCodes = useReferenceOptions("procedure_code", t, "Select procedure")
+  const additionalProcedureCodes = useReferenceOptions("additional_procedure_code", t, "Select procedure")
+  const optionsByCatalog: Partial<Record<CustomsCatalogCode, ReadonlyArray<readonly [string, string]>>> = {
+    declaration_category: draft.direction === "import" ? declarationCategories.filter(([code]) => !code || code === "H1") : declarationCategories,
+    declaration_type: declarationTypes,
+    currency: currencies,
+    country: countries,
+    transport_mode: transportModes,
+    transaction_nature: transactionNatures,
+    representation_type: representationTypes,
+    container_indicator: containerIndicators,
+    previous_document_category: previousDocumentCategories,
+    previous_document_type: previousDocumentTypes,
+    package_kind: packageKinds,
+    procedure_code: procedureCodes,
+    additional_procedure_code: additionalProcedureCodes,
+  }
+  const item = itemId ? draft.items.find((candidate) => candidate.id === itemId) : undefined
+  const rawValue = item ? item[field as keyof ExportDeclarationItem] : draft[field as keyof StandaloneExportDraft]
+  if (Array.isArray(rawValue)) {
+    return <p className="rounded-[var(--md-radius-md)] bg-[var(--md-surface)] p-3 text-[11px] leading-4 text-[var(--md-text)] shadow-[var(--md-shadow-line)]">{t("Open this goods line in Items to complete the highlighted repeatable rows.")}</p>
+  }
+  const value = String(rawValue ?? "")
+  const meta = reviewFieldMeta(field)
+  const setValue = (next: string) => {
+    let normalized = next
+    if (field === "traderReference") normalized = next.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 19)
+    if (field === "tradeTerms") normalized = next.toUpperCase().slice(0, 3)
+    if (field === "authorisationCategory") normalized = next.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 3)
+    if (field === "previousDocumentReference") normalized = next.replace(/[^A-Za-z0-9]/g, "").slice(0, 35)
+    if (field === "commodityCode") normalized = next.replace(/\D/g, "").slice(0, 10)
+    if (field === "customsValuationMethod") normalized = next.replace(/\D/g, "").slice(0, 1)
+    if (field === "preferenceCode") normalized = next.replace(/\D/g, "").slice(0, 3)
+    if (item && itemId) updateItem(itemId, field as keyof ExportDeclarationItem, normalized as never)
+    else update(field as keyof StandaloneExportDraft, normalized as never)
+  }
+  const options = meta.catalog ? optionsByCatalog[meta.catalog] : undefined
+  if (options) return <SelectField label={t(meta.label)} dataElement={meta.dataElement} customsBox={meta.customsBox} required showDataElements value={value} onChange={setValue} options={options} invalid fieldKey={`review-${itemId ?? "header"}-${field}`} />
+  if (meta.textarea) return <TextAreaField label={t(meta.label)} dataElement={meta.dataElement} customsBox={meta.customsBox} required showDataElements value={value} onChange={setValue} invalid fieldKey={`review-${itemId ?? "header"}-${field}`} />
+  return <TextField label={t(meta.label)} dataElement={meta.dataElement} customsBox={meta.customsBox} required showDataElements value={value} onChange={setValue} invalid fieldKey={`review-${itemId ?? "header"}-${field}`} suffix={meta.suffix} maxLength={meta.maxLength} />
 }
 
 function providerIssueTarget(issue: ICustomsProviderIssue) {
@@ -1317,13 +1863,6 @@ function providerIssueGuidance(issue: ICustomsProviderIssue) {
   return "Review the highlighted customs field and the related declaration details before trying again."
 }
 
-function generalTabForField(field: string): EditorTab {
-  if (["importer", "exporter", "consignee", "carrier", "declarant", "representative", "seller", "buyer"].includes(field) || /^(importer|exporter|consignee|declarant)(Name|AddressLine|City|Postcode|Country)$/.test(field)) return "parties"
-  if (["exportCountry", "destinationCountry", "borderMode", "inlandMode", "containerId", "goodsLocationName", "goodsLocationIdentifier"].includes(field)) return "transport"
-  if (["exitOffice", "presentationOffice", "previousDocumentCategory", "previousDocumentType", "previousDocumentReference", "transactionNature", "tradeTerms", "customsValuationMethod"].includes(field)) return "documents"
-  return "declaration"
-}
-
 function Toggle({ checked, onChange, children }: { checked: boolean; onChange: (checked: boolean) => void; children: ReactNode }) {
   return <label className="flex h-9 items-center gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] px-3 text-[12px] text-[var(--md-text)] shadow-[var(--md-shadow-line)]"><Checkbox checked={checked} onCheckedChange={(value) => onChange(value === true)} />{children}</label>
 }
@@ -1342,12 +1881,12 @@ function FieldShell({ label, dataElement, customsBox, required, showDataElements
   const showCustomsBoxNumbers = useContext(CustomsBoxVisibilityContext)
   const compact = useContext(CompactCustomsFormContext)
   const showAnnotations = (showDataElements && dataElement) || (showCustomsBoxNumbers && customsBox)
-  return <label data-field-invalid={invalid || undefined} className={cn("min-w-0", compact && "grid grid-cols-[minmax(76px,0.42fr)_minmax(0,0.58fr)] items-center gap-1.5", className)}><span className={cn("flex items-center gap-1.5 font-medium text-[var(--md-text)]", compact ? "min-h-0 text-[10.5px] leading-[1.15]" : "mb-1.5 min-h-5 text-[11px]")}><span className={cn(compact ? "line-clamp-2" : "truncate")}>{label}</span>{required ? <span className="text-[var(--md-red)]">*</span> : null}{showAnnotations ? <span className={cn("flex shrink-0 items-center gap-1", !compact && "ms-auto")}>{showDataElements && dataElement ? <span className={cn("rounded-[var(--md-radius-sm)] bg-[color-mix(in_srgb,var(--md-blue)_8%,transparent)] font-medium tabular-nums text-[var(--md-blue)]", compact ? "px-1 py-0.5 text-[8.5px]" : "px-1.5 py-0.5 text-[10px]")} dir="ltr">DE {dataElement}</span> : null}{showCustomsBoxNumbers && customsBox ? <span className={cn("rounded-[var(--md-radius-sm)] bg-[var(--md-accent-a10)] font-medium tabular-nums text-[var(--md-accent)]", compact ? "px-1 py-0.5 text-[8.5px]" : "px-1.5 py-0.5 text-[10px]")} dir="ltr">{`Box ${customsBox}`}</span> : null}</span> : null}</span><span data-customs-field={fieldKey} className={cn("block rounded-[var(--md-radius-md)] transition-[box-shadow] duration-300", invalid && "ring-2 ring-[color-mix(in_srgb,var(--md-red)_22%,transparent)]", highlighted && "ring-2 ring-[var(--md-accent)] shadow-[0_0_20px_var(--md-accent)]")}>{children}</span></label>
+  return <label data-field-invalid={invalid || undefined} className={cn("min-w-0", compact && "grid grid-cols-[minmax(76px,0.42fr)_minmax(0,0.58fr)] items-center gap-1.5", className)}><span className={cn("flex items-center gap-1.5 font-medium text-[var(--md-text)]", compact ? "min-h-0 text-[10.5px] leading-[1.15]" : "mb-1.5 min-h-5 text-[11px]")}><span className={cn(compact ? "line-clamp-2" : "truncate")}>{label}</span>{required ? <span className="text-[var(--md-red)]">*</span> : null}{showAnnotations ? <span className={cn("flex shrink-0 items-center gap-1", !compact && "ms-auto")}>{showDataElements && dataElement ? <span className={cn("rounded-[var(--md-radius-sm)] bg-[color-mix(in_srgb,var(--md-blue)_8%,transparent)] font-medium tabular-nums text-[var(--md-blue)]", compact ? "px-1 py-0.5 text-[8.5px]" : "px-1.5 py-0.5 text-[10px]")} dir="ltr">DE {dataElement}</span> : null}{showCustomsBoxNumbers && customsBox ? <span className={cn("rounded-[var(--md-radius-sm)] bg-[var(--md-accent-a10)] font-medium tabular-nums text-[var(--md-accent)]", compact ? "px-1 py-0.5 text-[8.5px]" : "px-1.5 py-0.5 text-[10px]")} dir="ltr">{`Box ${customsBox}`}</span> : null}</span> : null}</span><span data-customs-field={fieldKey} className={cn("block rounded-[var(--md-radius-md)] transition-[box-shadow] duration-300", highlighted && "ring-2 ring-[var(--md-accent)] shadow-[0_0_20px_var(--md-accent)]")}>{children}</span></label>
 }
 
-function TextField({ label, value, onChange, dataElement, customsBox, required, showDataElements, invalid, highlighted, fieldKey, placeholder, suffix, maxLength }: { label: string; value: string; onChange: (value: string) => void; dataElement?: string; customsBox?: string; required?: boolean; showDataElements: boolean; invalid?: boolean; highlighted?: boolean; fieldKey?: string; placeholder?: string; suffix?: string; maxLength?: number }) {
+function TextField({ label, value, onChange, dataElement, customsBox, required, showDataElements, invalid, highlighted, fieldKey, placeholder, suffix, maxLength, inputType = "text" }: { label: string; value: string; onChange: (value: string) => void; dataElement?: string; customsBox?: string; required?: boolean; showDataElements: boolean; invalid?: boolean; highlighted?: boolean; fieldKey?: string; placeholder?: string; suffix?: string; maxLength?: number; inputType?: "text" | "date" }) {
   const compact = useContext(CompactCustomsFormContext)
-  return <FieldShell label={label} dataElement={dataElement} customsBox={customsBox} required={required} showDataElements={showDataElements} invalid={invalid} highlighted={highlighted} fieldKey={fieldKey}><div className="relative"><Input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} maxLength={maxLength} aria-invalid={invalid || undefined} dir="ltr" className={cn("border-0 bg-[var(--md-field-bg)] shadow-[var(--md-shadow-line)]", compact ? "h-8 px-2 text-[11px]" : "h-9 text-[13px]", suffix && "pe-10")} />{suffix ? <span className="pointer-events-none absolute end-3 top-1/2 -translate-y-1/2 text-[10px] text-[var(--md-subtle)]">{suffix}</span> : null}</div></FieldShell>
+  return <FieldShell label={label} dataElement={dataElement} customsBox={customsBox} required={required} showDataElements={showDataElements} invalid={invalid} highlighted={highlighted} fieldKey={fieldKey}><div className="relative"><Input type={inputType} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} maxLength={maxLength} aria-invalid={invalid || undefined} dir="ltr" className={cn("border-0 bg-[var(--md-field-bg)] shadow-[var(--md-shadow-line)]", compact ? "h-8 px-2 text-[11px]" : "h-9 text-[13px]", suffix && "pe-10")} />{suffix ? <span className="pointer-events-none absolute end-3 top-1/2 -translate-y-1/2 text-[10px] text-[var(--md-subtle)]">{suffix}</span> : null}</div></FieldShell>
 }
 
 function TextAreaField({ label, value, onChange, dataElement, customsBox, required, showDataElements, invalid, highlighted, fieldKey, className }: { label: string; value: string; onChange: (value: string) => void; dataElement?: string; customsBox?: string; required?: boolean; showDataElements: boolean; invalid?: boolean; highlighted?: boolean; fieldKey?: string; className?: string }) {

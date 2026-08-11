@@ -7,8 +7,10 @@ import {
   ImageUp,
   Plus,
   QrCode,
+  ScanText,
   Trash2,
   TriangleAlert,
+  UsersRound,
 } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -17,6 +19,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
+import { RegisterFacetSelect, RegisterSearchField } from "@/components/multideck/register-toolbar"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { WizardDialog, type WizardStep } from "@/components/multideck/wizard-dialog"
@@ -33,11 +36,14 @@ import {
   PanelSkeleton,
   SaveIndicator,
 } from "@/components/multideck/contact-card-components"
-import { AutomationEnableRow, AutomationSummaryBand, CardAutomationPanel } from "@/components/multideck/contact-card-automation"
+import { AutomationEnableRow, CardAutomationPanel } from "@/components/multideck/contact-card-automation"
 import { CardAnalyticsPanel } from "@/components/multideck/contact-card-analytics"
 import { CardDesignPanel, ContactCardSocialLinksEditor } from "@/components/multideck/contact-card-design"
 import { useLanguage } from "@/i18n/language-provider"
+import { getApiTeamUsers } from "@/lib/api"
 import { mdMotion, reduceMotion } from "@/lib/motion"
+import { createProfilePhotoSignedUrl, createProfilePhotoSignedUrls } from "@/lib/profile-photo"
+import { getSupabaseSession } from "@/lib/supabase"
 import { subscribeTopBarAction, topBarActionEvents } from "@/lib/top-bar-action-events"
 import {
   cardPublicPath,
@@ -46,6 +52,8 @@ import {
   deleteCard,
   reloadContactCards,
   readLogoFile,
+  pauseAutomation,
+  resumeAutomation,
   setCardStatus,
   updateCard,
   useContactCard,
@@ -54,11 +62,11 @@ import {
 import type { ContactCard } from "@/data/contact-card-data"
 
 function formatPercent(value: number | null) {
-  return value === null ? "—" : `${(value * 100).toFixed(1)}%`
+  return value === null ? "-" : `${(value * 100).toFixed(1)}%`
 }
 
 function relativeDay(iso: string | null) {
-  if (!iso) return "—"
+  if (!iso) return "-"
   const date = new Date(iso)
   const days = Math.floor((Date.now() - date.getTime()) / 86_400_000)
   if (days <= 0) return "Today"
@@ -153,7 +161,7 @@ function CreateCardWizard({
         if (!nextOpen) onClose()
       }}
       title="Create a QR contact card"
-      description="A card represents one person. Everything else — the public page, the lead source and any automation — can be set up afterwards."
+      description="A card represents one person. The public page, lead source and any automation can be set up afterwards."
       steps={steps}
       activeStepId={activeStep}
       onStepChange={(stepId) => setActiveStep(stepId as CreateCardStep)}
@@ -231,8 +239,38 @@ export function ContactCardsPage({ navigate }: { navigate: (path: string) => voi
   const { t } = useLanguage()
   const { cards, status, error } = useSortedCards()
   const [createOpen, setCreateOpen] = useState(false)
+  const [query, setQuery] = useState("")
+  const [statusFilter, setStatusFilter] = useState("")
+  const [automationFilter, setAutomationFilter] = useState("")
+  const [ownerProfilePhotoUrls, setOwnerProfilePhotoUrls] = useState<Map<string, string>>(new Map())
+  const ownerIds = useMemo(() => [...new Set(cards.map((card) => card.ownerUserId).filter(Boolean))], [cards])
+  const ownerIdsKey = ownerIds.join("|")
 
   useEffect(() => subscribeTopBarAction(topBarActionEvents.createCrmContactCard, () => setCreateOpen(true)), [])
+
+  useEffect(() => {
+    if (ownerIds.length === 0) {
+      setOwnerProfilePhotoUrls(new Map())
+      return
+    }
+
+    let active = true
+    void getSupabaseSession()
+      .then(async (session) => {
+        if (!session) return new Map<string, string>()
+        const team = await getApiTeamUsers(session.access_token)
+        const relevantOwners = team.users.filter((user) => ownerIds.includes(user.id) && user.profilePhoto)
+        const signedUrls = await createProfilePhotoSignedUrls(relevantOwners.flatMap((user) => user.profilePhoto ? [user.profilePhoto] : []))
+        return new Map(relevantOwners.flatMap((user) => {
+          const url = user.profilePhoto ? signedUrls.get(user.profilePhoto.path) : null
+          return url ? [[user.id, url] as const] : []
+        }))
+      })
+      .then((urls) => { if (active) setOwnerProfilePhotoUrls(urls) })
+      .catch((photoError) => console.warn("Contact card owner profile photos could not be loaded.", photoError))
+
+    return () => { active = false }
+  }, [ownerIdsKey])
 
   const summary = useMemo(() => {
     const totals = cards.map(cardTotals)
@@ -251,6 +289,19 @@ export function ContactCardsPage({ navigate }: { navigate: (path: string) => voi
     }
   }, [cards])
 
+  const filteredCards = useMemo(() => {
+    const term = query.trim().toLocaleLowerCase()
+    return cards.filter((card) => {
+      if (statusFilter && card.status !== statusFilter) return false
+      const health = card.automation.autoPausedReason || card.automation.failures > 0
+        ? "attention"
+        : card.automation.state
+      if (automationFilter && health !== automationFilter) return false
+      return !term || [card.label, card.context, card.leadSource, card.person.fullName, card.person.company, card.person.email]
+        .some((value) => value?.toLocaleLowerCase().includes(term))
+    })
+  }, [automationFilter, cards, query, statusFilter])
+
   const columns: DataTableColumn<ContactCard>[] = [
     {
       id: "card",
@@ -259,7 +310,7 @@ export function ContactCardsPage({ navigate }: { navigate: (path: string) => voi
       sortValue: (card) => card.label,
       cell: (card) => (
         <div className="flex min-w-0 items-center gap-3">
-          <CardPersonBadge card={card} size="sm" />
+          <CardPersonBadge card={card} size="sm" profilePhotoUrl={ownerProfilePhotoUrls.get(card.ownerUserId)} />
           <div className="min-w-0">
             <p className="truncate text-[13px] font-medium text-[var(--md-ink)]" data-i18n-skip dir="auto">
               {card.label}
@@ -337,22 +388,23 @@ export function ContactCardsPage({ navigate }: { navigate: (path: string) => voi
 
   return (
     <div className="md-page md-page-stack">
-      <div>
+      <header className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(320px,560px)] lg:items-start">
         <div className="min-w-0">
           <p className="text-[12px] font-medium uppercase tracking-normal text-[var(--md-subtle)]">{t("CRM")}</p>
           <h1 className="mt-2 text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]">{t("Contact cards")}</h1>
-          <p className="mt-2 max-w-[68ch] text-[13px] leading-5 text-[var(--md-text)]">
-            {t("A shareable QR card for each person. Someone scans it, shares their details, and gets your contact details back — the lead lands in the CRM with the card's source.")}
-          </p>
         </div>
-      </div>
+        <p className="max-w-[68ch] text-[13px] leading-5 text-[var(--md-text)] lg:justify-self-end lg:pt-5 lg:text-end">
+          {t("A shareable QR card for each person. Someone scans it, shares their details, and gets your contact details back. The lead lands in the CRM with the card's source.")}
+        </p>
+      </header>
 
       {status === "ready" && cards.length > 0 ? (
-        <div className="grid gap-[var(--md-gap-lg)] sm:grid-cols-2 xl:grid-cols-4">
-          <CardMetricTile label={t("Live cards")} value={summary.live.toLocaleString()} detail={`${cards.length} ${t("total")}`} />
-          <CardMetricTile label={t("Scans")} value={summary.scans.toLocaleString()} detail={t("Across all cards")} />
-          <CardMetricTile label={t("Contacts shared")} value={summary.exchanges.toLocaleString()} detail={`${summary.leads.toLocaleString()} ${t("new leads")}`} tone="teal" />
+        <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
+          <CardMetricTile icon={IdCard} label={t("Live cards")} value={summary.live.toLocaleString()} detail={`${cards.length} ${t("total")}`} />
+          <CardMetricTile icon={ScanText} label={t("Scans")} value={summary.scans.toLocaleString()} detail={t("Across all cards")} />
+          <CardMetricTile icon={UsersRound} label={t("Contacts shared")} value={summary.exchanges.toLocaleString()} detail={`${summary.leads.toLocaleString()} ${t("new leads")}`} tone="teal" />
           <CardMetricTile
+            icon={TriangleAlert}
             label={t("Needs attention")}
             value={summary.needsAttention.toLocaleString()}
             detail={summary.needsAttention > 0 ? t("Automations with failures") : t("All automations healthy")}
@@ -361,16 +413,16 @@ export function ContactCardsPage({ navigate }: { navigate: (path: string) => voi
         </div>
       ) : null}
 
-      <Surface padding="md" className="p-5">
+      <div className="min-w-0">
         {status === "loading" ? (
-          <>
+          <Surface padding="md">
             <SectionHeader title={t("Your cards")} />
             <PanelSkeleton className="mt-4" rows={5} />
-          </>
+          </Surface>
         ) : status === "error" ? (
-          <PanelError message={error ?? t("Unable to load contact cards. Check your connection and try again.")} onRetry={reloadContactCards} />
+          <Surface padding="md"><PanelError message={error ?? t("Unable to load contact cards. Check your connection and try again.")} onRetry={reloadContactCards} /></Surface>
         ) : cards.length === 0 ? (
-          <PanelMessage
+          <Surface padding="md"><PanelMessage
             icon={IdCard}
             title={t("No contact cards yet")}
             body={t("Create a card for a person, print or display the code, and every scan becomes a contact exchange and a CRM lead.")}
@@ -383,18 +435,24 @@ export function ContactCardsPage({ navigate }: { navigate: (path: string) => voi
                 {t("New card")}
               </Button>
             }
-          />
+          /></Surface>
         ) : (
           <DataTable
             columns={columns}
-            rows={cards}
+            rows={filteredCards}
             getRowKey={(card) => card.id}
             storageKey="contact-cards"
             ariaLabel={t("Contact cards")}
             onRowClick={(card) => navigate(`/crm/contact-cards/${card.id}`)}
+            compactToolbar
+            toolbarSearch={<RegisterSearchField value={query} onChange={setQuery} onClear={() => setQuery("")} label="Search contact cards" placeholder="Search contact cards…" className="sm:w-[190px]" />}
+            toolbarFilters={<>
+              <RegisterFacetSelect label="Card status" allLabel="All statuses" value={statusFilter} options={[{ value: "published", label: "Live" }, { value: "draft", label: "Draft" }, { value: "paused", label: "Paused" }]} onChange={setStatusFilter} className="w-[116px]" />
+              <RegisterFacetSelect label="Automation" allLabel="All automations" value={automationFilter} options={[{ value: "active", label: "Active" }, { value: "attention", label: "Needs attention" }, { value: "paused", label: "Paused" }, { value: "off", label: "Off" }]} onChange={setAutomationFilter} className="w-[132px]" />
+            </>}
           />
         )}
-      </Surface>
+      </div>
 
       <CreateCardWizard
         open={createOpen}
@@ -427,6 +485,27 @@ export function ContactCardDetailPage({ cardId, navigate }: { cardId: string; na
   const shouldReduceMotion = useReducedMotion()
   const { card, status, error } = useContactCard(cardId)
   const [tab, setTab] = useState<CardTab>(readTab)
+  const [ownerProfilePhotoUrl, setOwnerProfilePhotoUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!card?.ownerUserId) {
+      setOwnerProfilePhotoUrl(null)
+      return
+    }
+
+    let active = true
+    void getSupabaseSession()
+      .then(async (session) => {
+        if (!session) return null
+        const team = await getApiTeamUsers(session.access_token)
+        const owner = team.users.find((user) => user.id === card.ownerUserId)
+        return owner?.profilePhoto ? createProfilePhotoSignedUrl(owner.profilePhoto) : null
+      })
+      .then((url) => { if (active) setOwnerProfilePhotoUrl(url) })
+      .catch((photoError) => console.warn("The contact card owner's profile photo could not be loaded.", photoError))
+
+    return () => { active = false }
+  }, [card?.ownerUserId])
 
   function selectTab(next: CardTab) {
     setTab(next)
@@ -495,7 +574,7 @@ export function ContactCardDetailPage({ cardId, navigate }: { cardId: string; na
 
         <div className="flex flex-col gap-[var(--md-gap-lg)] xl:flex-row xl:items-start xl:justify-between">
           <div className="flex min-w-0 items-start gap-3.5">
-            <CardPersonBadge card={card} />
+            <CardPersonBadge card={card} profilePhotoUrl={ownerProfilePhotoUrl} />
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2.5">
                 <h1 className="text-[24px] font-medium leading-tight tracking-normal text-[var(--md-ink)]" data-i18n-skip dir="auto">
@@ -526,6 +605,14 @@ export function ContactCardDetailPage({ cardId, navigate }: { cardId: string; na
           </div>
 
           <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <label className="inline-flex h-10 items-center gap-2 rounded-[var(--md-radius-lg)] bg-white/35 px-3 text-[13px] font-medium text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
+              <span>{t(card.automation.state === "active" ? "Active" : "Not active")}</span>
+              <Switch
+                checked={card.automation.state === "active"}
+                aria-label={t("Automation active")}
+                onCheckedChange={(active) => active ? resumeAutomation(card.id) : pauseAutomation(card.id)}
+              />
+            </label>
             <Button
               variant="ghost"
               className="h-10 rounded-[var(--md-radius-lg)] bg-white/35 px-4 text-[13px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] hover:bg-white/65"
@@ -569,9 +656,9 @@ export function ContactCardDetailPage({ cardId, navigate }: { cardId: string; na
           transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.smooth)}
         >
           {tab === "Overview" ? (
-            <div className="grid gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1fr)_360px] xl:gap-[var(--md-page-section-gap)]">
-              <div className="grid gap-[var(--md-page-stack-gap)] xl:order-1">
-                <div className="grid gap-[var(--md-gap-lg)] sm:grid-cols-2 2xl:grid-cols-4">
+            <div className="grid items-start gap-[var(--md-page-stack-gap)] xl:grid-cols-[minmax(0,1fr)_360px] xl:gap-[var(--md-page-section-gap)]">
+              <div className="grid content-start gap-[var(--md-page-stack-gap)] xl:order-1">
+                <div className="grid content-start gap-2 sm:grid-cols-2 2xl:grid-cols-4">
                   <CardMetricTile label={t("Scans")} value={totals.scans.toLocaleString()} detail={`${totals.uniqueScans.toLocaleString()} ${t("unique")}`} />
                   <CardMetricTile label={t("Contacts shared")} value={totals.exchanges.toLocaleString()} tone="teal" detail={t("Completed exchanges")} />
                   <CardMetricTile label={t("Conversion")} value={formatPercent(totals.conversion)} detail={t("Of unique visits")} />
@@ -581,8 +668,6 @@ export function ContactCardDetailPage({ cardId, navigate }: { cardId: string; na
                     detail={`${totals.leadsMatched.toLocaleString()} ${t("matched existing")}`}
                   />
                 </div>
-
-                <AutomationSummaryBand card={card} onOpen={() => selectTab("Automation")} />
 
                 <Surface padding="md" className="p-5">
                   <SectionHeader title={t("Recent exchanges")} meta={t("The most recent people who shared their details.")} />

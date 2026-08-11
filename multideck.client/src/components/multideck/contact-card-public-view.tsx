@@ -64,7 +64,7 @@ export function PublicCardShell({
       {preview ? (
         <div className="sticky top-0 z-20 flex items-center justify-center gap-2 bg-[var(--card-ink)] px-4 py-2 text-center text-[12.5px] font-medium text-[var(--card-page-bg)]">
           <Eye className="size-3.5 shrink-0" strokeWidth={1.6} />
-          {t("Preview — nothing is recorded and no lead is created")}
+          {t("Preview only. Nothing is recorded and no lead is created")}
         </div>
       ) : null}
 

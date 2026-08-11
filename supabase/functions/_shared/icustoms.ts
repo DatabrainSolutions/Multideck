@@ -23,6 +23,34 @@ export type ICustomsPublicIssue = {
   itemNumber: number | null;
 };
 
+export type ICustomsCommoditySuggestion = {
+  code: string;
+  description: string;
+  confidence: number | null;
+};
+
+export type ICustomsCommodityCertificate = {
+  code: string;
+  category: string;
+  type: string;
+  description: string;
+  guidance: string;
+  statement: string | null;
+  referenceRequired: boolean;
+  action: string | null;
+};
+
+export type ICustomsCommodityDetail = {
+  code: string;
+  description: string;
+  declarable: boolean;
+  validFrom: string | null;
+  validTo: string | null;
+  dutyRate: string | null;
+  vatOptions: Array<{ code: string; label: string; rate: string | null }>;
+  certificates: ICustomsCommodityCertificate[];
+};
+
 type Json = Record<string, unknown>;
 
 export type ExportDeclarationItemInput = {
@@ -30,15 +58,19 @@ export type ExportDeclarationItemInput = {
   description?: unknown;
   dangerousGoodsCode?: unknown;
   taricCode?: unknown;
+  additionalTaricCodes?: unknown;
   nationalCode?: unknown;
+  additionalNationalCodes?: unknown;
   cusCode?: unknown;
   packageKind?: unknown;
   packageMarks?: unknown;
   packageCount?: unknown;
+  additionalPackageDetails?: unknown;
   transactionNature?: unknown;
   nonPreferentialOrigin?: unknown;
   procedureCode?: unknown;
   additionalProcedureCode?: unknown;
+  additionalProcedureCodes?: unknown;
   tariffQuantity?: unknown;
   grossMass?: unknown;
   netMass?: unknown;
@@ -48,11 +80,23 @@ export type ExportDeclarationItemInput = {
   previousDocumentCategory?: unknown;
   previousDocumentType?: unknown;
   previousDocumentReference?: unknown;
+  additionalPreviousDocuments?: unknown;
   additionalDocumentCategory?: unknown;
   additionalDocumentType?: unknown;
   additionalDocumentId?: unknown;
   additionalDocumentName?: unknown;
   lpcoExemptionCode?: unknown;
+  additionalDocumentWriteOff?: unknown;
+  additionalDocumentValidityDate?: unknown;
+  additionalDocuments?: unknown;
+  additionalInformationStatements?: unknown;
+  dutyCalculations?: unknown;
+  valuationAdjustments?: unknown;
+  itemExporters?: unknown;
+  itemSellers?: unknown;
+  itemBuyers?: unknown;
+  domesticDutyTaxParties?: unknown;
+  mutualRecognitionParties?: unknown;
   consignee?: unknown;
   destinationCountry?: unknown;
   ucr?: unknown;
@@ -173,6 +217,18 @@ function itemInputs(value: unknown): ExportDeclarationItemInput[] {
       Boolean(item) && typeof item === "object" && !Array.isArray(item)
     ).slice(0, 9999)
     : [];
+}
+
+function repeatableInputs(value: unknown, maximum = 99): Json[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is Json =>
+      Boolean(entry) && typeof entry === "object" && !Array.isArray(entry)
+    ).slice(0, maximum)
+    : [];
+}
+
+function hasAnyValue(entry: Json, keys: string[]) {
+  return keys.some((key) => clean(entry[key]));
 }
 
 function contactMissing(
@@ -367,6 +423,11 @@ export function validateICustomsDeclaration(
     const itemCurrency = upper(item.currency, 3);
     const procedureCode = upper(item.procedureCode, 4);
     const additionalProcedureCode = upper(item.additionalProcedureCode, 3);
+    const extraPackages = repeatableInputs(item.additionalPackageDetails);
+    const extraPreviousDocuments = repeatableInputs(
+      item.additionalPreviousDocuments,
+    );
+    const additionalDocuments = repeatableInputs(item.additionalDocuments);
 
     if (!/^\d{10}$/.test(commodityCode)) {
       issues.push(`${line}: enter a 10-digit commodity code.`);
@@ -434,19 +495,34 @@ export function validateICustomsDeclaration(
         `${line}: use up to 35 letters and numbers for the previous document reference.`,
       );
     }
-    if (
-      direction === "export" && (
-        clean(item.additionalDocumentCategory, 1) ||
-        clean(item.additionalDocumentType, 3) ||
-        clean(item.additionalDocumentId, 70) ||
-        clean(item.additionalDocumentName, 70) ||
-        clean(item.lpcoExemptionCode, 2)
-      )
-    ) {
-      issues.push(
-        `${line}: optional additional documents are not supported by this connected declaration flow yet.`,
-      );
-    }
+    repeatableInputs(item.additionalTaricCodes).forEach((entry, entryIndex) => {
+      if (hasAnyValue(entry, ["code"]) && !/^[A-Z0-9]{1,4}$/.test(upper(entry.code, 4))) {
+        issues.push(`${line}, TARIC code ${entryIndex + 2}: use up to four letters and numbers.`);
+      }
+    });
+    repeatableInputs(item.additionalNationalCodes).forEach((entry, entryIndex) => {
+      if (hasAnyValue(entry, ["code"]) && !/^[A-Z0-9]{1,4}$/.test(upper(entry.code, 4))) {
+        issues.push(`${line}, national code ${entryIndex + 2}: use up to four letters and numbers.`);
+      }
+    });
+    extraPackages.forEach((entry, entryIndex) => {
+      const count = positiveNumber(entry.count);
+      if (!hasAnyValue(entry, ["kind", "marks", "count"])) return;
+      if (!/^[A-Z0-9]{1,2}$/.test(upper(entry.kind, 2)) || !clean(entry.marks, 42) || !count || !Number.isInteger(count)) {
+        issues.push(`${line}, package detail ${entryIndex + 2}: complete kind, marks and a whole package count.`);
+      }
+    });
+    repeatableInputs(item.additionalProcedureCodes).forEach((entry, entryIndex) => {
+      if (hasAnyValue(entry, ["code"]) && !/^[A-Z0-9]{3}$/.test(upper(entry.code, 3))) {
+        issues.push(`${line}, additional procedure ${entryIndex + 2}: use a three-character code.`);
+      }
+    });
+    extraPreviousDocuments.forEach((entry, entryIndex) => {
+      if (!hasAnyValue(entry, ["category", "type", "reference"])) return;
+      if ((direction === "import" && !/^[XYZ]$/.test(upper(entry.category, 1))) || !/^[A-Z0-9]{1,3}$/.test(upper(entry.type, 3)) || !/^[A-Za-z0-9]{1,35}$/.test(clean(entry.reference, 35))) {
+        issues.push(`${line}, previous document ${entryIndex + 2}: complete a valid category, type and reference.`);
+      }
+    });
     if (direction === "import") {
       if (!/^\d$/.test(clean(item.customsValuationMethod, 1))) {
         issues.push(`${line}: add the one-digit customs valuation method.`);
@@ -454,27 +530,44 @@ export function validateICustomsDeclaration(
       if (!/^\d{3}$/.test(clean(item.preferenceCode, 3))) {
         issues.push(`${line}: add the three-digit preference code.`);
       }
-      const hasAdditionalDocument = Boolean(
-        clean(item.additionalDocumentCategory, 1) ||
-          clean(item.additionalDocumentType, 3) ||
-          clean(item.additionalDocumentId, 70) ||
-          clean(item.additionalDocumentName, 70) ||
-          clean(item.lpcoExemptionCode, 2),
-      );
-      if (
-        hasAdditionalDocument && (
-          !/^[A-Z0-9]$/.test(upper(item.additionalDocumentCategory, 1)) ||
-          !/^[A-Z0-9]{1,3}$/.test(upper(item.additionalDocumentType, 3)) ||
-          !clean(item.additionalDocumentId, 70)
-        )
-      ) {
-        issues.push(
-          `${line}: complete the additional document category, type and ID.`,
-        );
-      }
     }
 
-    packageSum += packageCount ?? 0;
+    const primaryAdditionalDocument = {
+      category: item.additionalDocumentCategory,
+      type: item.additionalDocumentType,
+      reference: item.additionalDocumentId,
+      name: item.additionalDocumentName,
+      lpcoExemptionCode: item.lpcoExemptionCode,
+      writeOff: item.additionalDocumentWriteOff,
+      validityDate: item.additionalDocumentValidityDate,
+    };
+    [primaryAdditionalDocument, ...additionalDocuments].forEach((entry, entryIndex) => {
+      if (!hasAnyValue(entry, ["category", "type", "reference", "name", "lpcoExemptionCode", "writeOff", "validityDate"])) return;
+      if (!/^[A-Z0-9]$/.test(upper(entry.category, 1)) || !/^[A-Z0-9]{1,3}$/.test(upper(entry.type, 3)) || (!clean(entry.reference, 70) && !clean(entry.name, 120))) {
+        issues.push(`${line}, additional document ${entryIndex + 1}: complete the category, type and either the ID or declaration statement.`);
+      }
+    });
+
+    repeatableInputs(item.dutyCalculations).forEach((entry, entryIndex) => {
+      if (!hasAnyValue(entry, ["taxType", "paymentMethod", "baseQuantity", "unitCode", "declaredTax"])) return;
+      if (!clean(entry.taxType, 3) || !clean(entry.unitCode, 4) || !positiveNumber(entry.baseQuantity)) {
+        issues.push(`${line}, duty calculation ${entryIndex + 1}: complete tax type, base quantity and unit code.`);
+      }
+    });
+    repeatableInputs(item.valuationAdjustments).forEach((entry, entryIndex) => {
+      if (!hasAnyValue(entry, ["code", "currency", "amount"])) return;
+      if (!clean(entry.code, 4) || !/^[A-Z]{3}$/.test(upper(entry.currency, 3)) || !positiveNumber(entry.amount)) {
+        issues.push(`${line}, addition or deduction ${entryIndex + 1}: complete code, currency and amount.`);
+      }
+    });
+    repeatableInputs(item.domesticDutyTaxParties).forEach((entry, entryIndex) => {
+      if (!hasAnyValue(entry, ["partyId", "roleCode"])) return;
+      if (!clean(entry.partyId, 17) || !/^(?:FR[1-5]|FR7)$/.test(upper(entry.roleCode, 3))) {
+        issues.push(`${line}, domestic duty tax party ${entryIndex + 1}: complete the party ID and role code.`);
+      }
+    });
+
+    packageSum += (packageCount ?? 0) + extraPackages.reduce((sum, entry) => sum + (positiveNumber(entry.count) ?? 0), 0);
     grossMassSum += grossMass ?? 0;
     netMassSum += netMass ?? 0;
     invoiceSum += itemPrice ?? 0;
@@ -628,12 +721,28 @@ export function buildICustomsDeclarationXml(
     const itemDestination = upper(item.destinationCountry, 2) ||
       destinationCountry;
     const itemCurrency = upper(item.currency, 3);
+    const taricCodes = [
+      upper(item.taricCode, 4),
+      ...repeatableInputs(item.additionalTaricCodes).map((entry) => upper(entry.code, 4)),
+    ].filter(Boolean);
+    const nationalCodes = [
+      upper(item.nationalCode, 4),
+      ...repeatableInputs(item.additionalNationalCodes).map((entry) => upper(entry.code, 4)),
+    ].filter(Boolean);
     const classification = [
       element("CommodityCode", upper(item.commodityCode, 10)),
       element("CusCode", upper(item.cusCode, 8)),
-      element("AdditionalTaricCode", upper(item.taricCode, 4)),
-      element("AdditionalNationalCode", upper(item.nationalCode, 4)),
+      ...taricCodes.map((code) => element("AdditionalTaricCode", code)),
+      ...nationalCodes.map((code) => element("AdditionalNationalCode", code)),
     ].join("");
+    const dutyCalculations = repeatableInputs(item.dutyCalculations)
+      .filter((entry) => hasAnyValue(entry, ["taxType", "paymentMethod", "baseQuantity", "unitCode", "declaredTax"]))
+      .map((entry) => group("DutyTaxFee", [
+        element("TypeCode", upper(entry.taxType, 3)),
+        element("PaymentMethodCode", upper(entry.paymentMethod, 2)),
+        element("TaxBaseQuantity", decimal(entry.baseQuantity, 6), { unitCode: upper(entry.unitCode, 4) }),
+        element("PaymentAmount", decimal(entry.declaredTax, 2), { currencyID: itemCurrency }),
+      ].join(""))).join("");
     const commodity = group(
       "Commodity",
       [
@@ -663,6 +772,7 @@ export function buildICustomsDeclarationXml(
             currencyID: itemCurrency,
           }),
         ),
+        dutyCalculations,
       ].join(""),
     );
     const itemConsignee = direction === "export"
@@ -672,31 +782,82 @@ export function buildICustomsDeclarationXml(
         partyContact(input, "consignee"),
       )
       : "";
-    const additionalDocument = direction === "import"
-      ? group(
-        "AdditionalDocument",
-        [
-          element("CategoryCode", upper(item.additionalDocumentCategory, 1)),
-          element("ID", item.additionalDocumentId),
-          element("Name", item.additionalDocumentName),
-          element("TypeCode", upper(item.additionalDocumentType, 3)),
-          element("LPCOExemptionCode", upper(item.lpcoExemptionCode, 2)),
-        ].join(""),
-      )
-      : "";
-    const itemPreviousDocument = group(
+    const primaryAdditionalDocument: Json = {
+      category: item.additionalDocumentCategory,
+      type: item.additionalDocumentType,
+      reference: item.additionalDocumentId,
+      name: item.additionalDocumentName,
+      lpcoExemptionCode: item.lpcoExemptionCode,
+      writeOff: item.additionalDocumentWriteOff,
+      validityDate: item.additionalDocumentValidityDate,
+    };
+    const additionalDocuments = [primaryAdditionalDocument, ...repeatableInputs(item.additionalDocuments)]
+      .filter((entry) => hasAnyValue(entry, ["category", "type", "reference", "name", "lpcoExemptionCode", "writeOff", "validityDate"]))
+      .map((entry) => group("AdditionalDocument", [
+        element("CategoryCode", upper(entry.category, 1)),
+        group("EffectiveDateTime", element("DateTime", clean(entry.validityDate, 10))),
+        element("ID", entry.reference),
+        element("Name", entry.name),
+        group("Submitter", element("Name", entry.writeOff)),
+        element("TypeCode", upper(entry.type, 3)),
+        element("LPCOExemptionCode", upper(entry.lpcoExemptionCode, 2)),
+      ].join(""))).join("");
+    const previousDocuments = [{
+      category: item.previousDocumentCategory,
+      type: item.previousDocumentType,
+      reference: item.previousDocumentReference,
+    }, ...repeatableInputs(item.additionalPreviousDocuments)]
+      .filter((entry) => hasAnyValue(entry, ["category", "type", "reference"]));
+    const itemPreviousDocuments = previousDocuments.map((entry, documentIndex) => group(
       "PreviousDocument",
       [
-        element(
-          "CategoryCode",
-          upper(item.previousDocumentCategory, 1) ||
-            upper(input.previousDocumentCategory, 1),
-        ),
-        element("ID", item.previousDocumentReference),
-        element("TypeCode", upper(item.previousDocumentType, 3)),
-        element("LineNumeric", String(index + 1)),
+        element("CategoryCode", upper(entry.category, 1) || upper(input.previousDocumentCategory, 1)),
+        element("ID", entry.reference),
+        element("TypeCode", upper(entry.type, 3)),
+        element("LineNumeric", String(documentIndex + 1)),
       ].join(""),
-    );
+    )).join("");
+    const additionalInformation = repeatableInputs(item.additionalInformationStatements)
+      .filter((entry) => hasAnyValue(entry, ["statementCode"]))
+      .map((entry) => group("AdditionalInformation", element("StatementCode", upper(entry.statementCode, 5))))
+      .join("");
+    const additionalProcedures = [
+      upper(item.additionalProcedureCode, 3),
+      ...repeatableInputs(item.additionalProcedureCodes).map((entry) => upper(entry.code, 3)),
+    ].filter(Boolean).map((code) => group("GovernmentAdditionalProcedure", element("CurrentCode", code))).join("");
+    const packages = [{ kind: item.packageKind, marks: item.packageMarks, count: item.packageCount }, ...repeatableInputs(item.additionalPackageDetails)]
+      .filter((entry) => hasAnyValue(entry, ["kind", "marks", "count"]))
+      .map((entry, packageIndex) => group("Packaging", [
+        element("SequenceNumeric", String(packageIndex + 1)),
+        element("MarksNumbersID", entry.marks),
+        element("QuantityQuantity", decimal(entry.count, 0)),
+        element("TypeCode", upper(entry.kind, 2)),
+      ].join(""))).join("");
+    const valuationAdjustments = repeatableInputs(item.valuationAdjustments)
+      .filter((entry) => hasAnyValue(entry, ["code", "currency", "amount"]));
+    const valuationAdjustmentXml = direction === "import"
+      ? (valuationAdjustments.length
+        ? valuationAdjustments.map((entry) => group("ValuationAdjustment", [
+          element("AdditionCode", upper(entry.code, 4)),
+          element("Amount", decimal(entry.amount, 2), { currencyID: upper(entry.currency, 3) || itemCurrency }),
+        ].join(""))).join("")
+        : group("ValuationAdjustment", element("AdditionCode", "0000")))
+      : "";
+    const partyReferences = (name: string, value: unknown) => repeatableInputs(value)
+      .filter((entry) => hasAnyValue(entry, ["partyId"]))
+      .map((entry) => group(name, element("ID", clean(entry.partyId, 35))))
+      .join("");
+    const domesticDutyTaxParties = repeatableInputs(item.domesticDutyTaxParties)
+      .filter((entry) => hasAnyValue(entry, ["partyId", "roleCode"]))
+      .map((entry, partyIndex) => group("DomesticDutyTaxParty", [
+        element("SequenceNumeric", String(partyIndex + 1)),
+        element("ID", clean(entry.partyId, 17)),
+        element("RoleCode", upper(entry.roleCode, 3)),
+      ].join(""))).join("");
+    const mutualRecognitionParties = repeatableInputs(item.mutualRecognitionParties)
+      .filter((entry) => hasAnyValue(entry, ["partyId"]))
+      .map((entry) => group("AEOMutualRecognitionParty", element("ID", clean(entry.partyId, 35))))
+      .join("");
 
     return group(
       "GovernmentAgencyGoodsItem",
@@ -712,7 +873,8 @@ export function buildICustomsDeclarationXml(
               clean(input.transactionNature, 2),
           )
           : "",
-        additionalDocument,
+        additionalDocuments,
+        additionalInformation,
         commodity,
         direction === "import"
           ? group(
@@ -725,6 +887,11 @@ export function buildICustomsDeclarationXml(
           )
           : "",
         itemConsignee,
+        partyReferences("Exporter", item.itemExporters),
+        partyReferences("Seller", item.itemSellers),
+        partyReferences("Buyer", item.itemBuyers),
+        domesticDutyTaxParties,
+        mutualRecognitionParties,
         direction === "export"
           ? group("Destination", element("CountryCode", itemDestination))
           : "",
@@ -735,10 +902,7 @@ export function buildICustomsDeclarationXml(
             element("PreviousCode", procedureCode.slice(2, 4)),
           ].join(""),
         ),
-        group(
-          "GovernmentAdditionalProcedure",
-          element("CurrentCode", upper(item.additionalProcedureCode, 3)),
-        ),
+        additionalProcedures,
         group(
           "Origin",
           [
@@ -746,39 +910,29 @@ export function buildICustomsDeclarationXml(
             element("TypeCode", "2"),
           ].join(""),
         ),
-        group(
-          "Packaging",
-          [
-            element("SequenceNumeric", "1"),
-            element("MarksNumbersID", item.packageMarks),
-            element("QuantityQuantity", decimal(item.packageCount, 0)),
-            element("TypeCode", upper(item.packageKind, 2)),
-          ].join(""),
-        ),
-        direction === "export" ? itemPreviousDocument : "",
-        direction === "import"
-          ? group("ValuationAdjustment", element("AdditionCode", "0000"))
-          : "",
+        packages,
+        direction === "export" ? itemPreviousDocuments : "",
+        valuationAdjustmentXml,
       ].join(""),
     );
   }).join("");
 
   const importPreviousDocuments = direction === "import"
-    ? items.map((item, index) =>
-      group(
+    ? items.flatMap((item, itemIndex) => [{
+      category: item.previousDocumentCategory,
+      type: item.previousDocumentType,
+      reference: item.previousDocumentReference,
+    }, ...repeatableInputs(item.additionalPreviousDocuments)].map((entry) => ({ entry, itemIndex })))
+      .filter(({ entry }) => hasAnyValue(entry, ["category", "type", "reference"]))
+      .map(({ entry, itemIndex }) => group(
         "PreviousDocument",
         [
-          element(
-            "CategoryCode",
-            upper(item.previousDocumentCategory, 1) ||
-              upper(input.previousDocumentCategory, 1),
-          ),
-          element("ID", item.previousDocumentReference),
-          element("TypeCode", upper(item.previousDocumentType, 3)),
-          element("LineNumeric", String(index + 1)),
+          element("CategoryCode", upper(entry.category, 1) || upper(input.previousDocumentCategory, 1)),
+          element("ID", entry.reference),
+          element("TypeCode", upper(entry.type, 3)),
+          element("LineNumeric", String(itemIndex + 1)),
         ].join(""),
-      )
-    ).join("")
+      )).join("")
     : "";
 
   const transportEquipment = isContainerised
@@ -1181,6 +1335,25 @@ export class ICustomsClient {
       `/api/cds/v1/notification/${encodeURIComponent(correlationId)}`,
     );
   }
+
+  searchCommodities(query: string, country = "UK") {
+    return this.request("/api/iclassification/v1.0.0/aisearch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify([{
+        query: clean(query, 180),
+        country: upper(country, 2) === "GB" ? "UK" : upper(country, 2),
+      }]),
+    });
+  }
+
+  tariffDetails(commodityCode: string) {
+    return this.request("/api/v2/tariDetails", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ commodity_code: clean(commodityCode, 10) }),
+    });
+  }
 }
 
 export function providerRecord(value: unknown): Json {
@@ -1195,6 +1368,171 @@ function providerRecords(value: unknown) {
       Boolean(entry) && typeof entry === "object" && !Array.isArray(entry)
     )
     : [];
+}
+
+function providerRelationshipIds(value: unknown) {
+  return new Set(
+    providerRecords(providerRecord(value).data).map((entry) =>
+      clean(entry.id, 80)
+    ).filter(Boolean),
+  );
+}
+
+function plainProviderText(value: unknown, maximum = 2_000) {
+  return clean(value, maximum * 2)
+    .replace(/<br\s*\/?\s*>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;|&#160;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;|&#34;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/\r/g, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+    .slice(0, maximum);
+}
+
+export function iCustomsCommoditySuggestions(
+  value: unknown,
+): ICustomsCommoditySuggestion[] {
+  const body = providerRecord(value);
+  const seen = new Set<string>();
+  const suggestions: ICustomsCommoditySuggestion[] = [];
+  for (const response of providerRecords(body.response)) {
+    for (const commodity of providerRecords(response.commodities)) {
+      const code = clean(
+        commodity["HS-Code"] ?? commodity.hs_code ?? commodity.code,
+        20,
+      ).replace(/\D/g, "").slice(0, 10);
+      const description = plainProviderText(
+        commodity.Description ?? commodity.description,
+        600,
+      );
+      if (!/^\d{10}$/.test(code) || !description || seen.has(code)) continue;
+      seen.add(code);
+      const rawConfidence = Number(
+        commodity.Confidence ?? commodity.confidence,
+      );
+      suggestions.push({
+        code,
+        description,
+        confidence: Number.isFinite(rawConfidence)
+          ? Math.max(0, Math.min(100, rawConfidence))
+          : null,
+      });
+      if (suggestions.length >= 20) return suggestions;
+    }
+  }
+  return suggestions;
+}
+
+export function iCustomsCommodityDetail(
+  value: unknown,
+  direction: "import" | "export",
+): ICustomsCommodityDetail {
+  const body = providerRecord(value);
+  const data = providerRecord(body.data);
+  const attributes = providerRecord(data.attributes);
+  const relationships = providerRecord(data.relationships);
+  const included = providerRecords(body.included);
+  const code = clean(attributes.goods_nomenclature_item_id, 20).replace(
+    /\D/g,
+    "",
+  ).slice(0, 10);
+
+  const measureIds = providerRelationshipIds(
+    relationships[direction === "import" ? "import_measures" : "export_measures"],
+  );
+  const conditionIds = new Set<string>();
+  for (const item of included) {
+    if (item.type !== "measure" || !measureIds.has(clean(item.id, 80))) {
+      continue;
+    }
+    const itemRelationships = providerRecord(item.relationships);
+    for (
+      const condition of providerRecords(
+        providerRecord(itemRelationships.measure_conditions).data,
+      )
+    ) {
+      const id = clean(condition.id, 80);
+      if (id) conditionIds.add(id);
+    }
+  }
+
+  const certificatesByCode = new Map<string, ICustomsCommodityCertificate>();
+  for (const item of included) {
+    if (
+      item.type !== "measure_condition" ||
+      !conditionIds.has(clean(item.id, 80))
+    ) continue;
+    const itemAttributes = providerRecord(item.attributes);
+    const documentCode = upper(itemAttributes.document_code, 4);
+    if (!/^[A-Z0-9]{4}$/.test(documentCode)) continue;
+    const description = plainProviderText(
+      itemAttributes.certificate_description ?? itemAttributes.requirement,
+      1_000,
+    );
+    const guidance = plainProviderText(itemAttributes.guidance_cds, 2_000);
+    const statementMatch = guidance.match(
+      /Complete statement\s+["'‘’]([^"'‘’]+)["'‘’]/i,
+    );
+    const certificate: ICustomsCommodityCertificate = {
+      code: documentCode,
+      category: documentCode.slice(0, 1),
+      type: documentCode.slice(1),
+      description,
+      guidance,
+      statement: statementMatch?.[1]?.trim() || null,
+      referenceRequired: !/No document status code (?:is )?required/i.test(
+        guidance,
+      ),
+      action: plainProviderText(itemAttributes.action, 160) || null,
+    };
+    if (!certificatesByCode.has(documentCode)) {
+      certificatesByCode.set(documentCode, certificate);
+    }
+  }
+
+  const vatOptions = direction === "import"
+    ? Object.entries(
+      providerRecord(
+        providerRecord(data.meta).duty_calculator,
+      ).applicable_vat_options as Json ?? {},
+    ).flatMap(([vatCode, labelValue]) => {
+      const label = plainProviderText(labelValue, 200);
+      if (!label) return [];
+      return [{
+        code: upper(vatCode, 12),
+        label,
+        rate: label.match(/(\d+(?:\.\d+)?)\s*%/)?.[1] ?? null,
+      }];
+    })
+    : [];
+  const tradeSummary = included.find((item) =>
+    item.type === "import_trade_summary"
+  );
+  const dutyRate = direction === "import"
+    ? plainProviderText(
+      providerRecord(tradeSummary?.attributes).basic_third_country_duty,
+      120,
+    ) || null
+    : null;
+
+  return {
+    code,
+    description: plainProviderText(
+      attributes.description_plain ?? attributes.formatted_description ??
+        attributes.description,
+      1_000,
+    ),
+    declarable: attributes.declarable === true,
+    validFrom: clean(attributes.validity_start_date, 40) || null,
+    validTo: clean(attributes.validity_end_date, 40) || null,
+    dutyRate,
+    vatOptions,
+    certificates: Array.from(certificatesByCode.values()),
+  };
 }
 
 /**

@@ -1122,6 +1122,7 @@ Separate confirmed facts, missing evidence and professional judgement. Never inf
 Name the relevant jurisdiction when it is known. Treat legal, tax, sanctions, dangerous goods and classification guidance as operational support, not legal certainty.
 The dedicated commercial-invoice importer remains the safest route when item lines must be overlaid on the source PDF and individually reviewed before they change a customs declaration. Dexter chat can also extract evidence from an operator-uploaded document with its listed document tool, then use only an available allowlisted workspace action. It cannot bypass declaration review or claim a destination change succeeded without a successful action result. Temporary upload and OCR states are not meaningful watch events; Watching for you follows the destination record only after an applied change emits its normal event.
 Customs declaration records and their latest recorded iCustoms submission state are connected through the customs_declarations data domain. Dexter may inspect, create and edit operator-owned UK CDS import and export drafts through its listed actions, and watch one exact declaration. For a create or edit action, put every known header and goods-line field into draft_json as one valid JSON object; use only source-backed values, preserve unknown fields when editing, and never invent a commodity code, customs value, party identifier, licence or previous-document reference. Dexter can validate and save an exact current declaration as an iCustoms draft. It can submit only after a separate, explicit in-chat approval, including when the operator has Full access; that approval sends the declaration once to the configured iCustoms environment. Never imply that saving an iCustoms draft, seeing a queued submission, or submitting it proves the declaration was accepted.
+Live iCustoms commodity suggestions, tariff measures and certificate options deliberately require operator review in the goods-line Commodity assistant and are not callable from Dexter. If asked to run that lookup, say so clearly and direct the operator to Find commodity code on the exact goods line; do not guess or reproduce a stale result. The lookup itself creates no persisted business event, so Watching for you begins only after the operator applies and saves the declaration change through the normal Customs workflow.
 Structure substantial answers as current position, blocker or exposure, evidence needed, then safest next operational step.`,
   ops: `## Operations and exceptions specialist
 Act like an experienced forwarding operations controller. Prioritise what needs attention now and who should do what next.
@@ -2439,7 +2440,7 @@ Deno.serve(async (request) => {
     const prompt = cleanString(body.message, MAX_PROMPT_CHARACTERS)
     const locale = parseLocale(cleanString(body.locale, 20))
     if (!isUuid(cardId) || !prompt) {
-      return json(request, { code: "invalid_request", message: "Choose a contact card and describe the automation you want." }, 400)
+      return json(request, { code: "invalid_request", message: "Choose a contact card and describe the CRM fields you want to populate." }, 400)
     }
 
     const { data: workspaceData, error: workspaceError } = await userClient.rpc("multideck_contact_cards_workspace")
@@ -2471,17 +2472,16 @@ Deno.serve(async (request) => {
       model: MODEL_ROUTES.fast.model,
       reasoning: { effort: "medium" },
       instructions: [
-        "You compile one contact-card automation request into a small, reviewable draft.",
-        "Use only the condition and action kinds listed below. Never invent a workspace owner, pipeline, stage, field, list, or email sender.",
-        "Use exact owner, pipeline, and stage IDs from the supplied database records whenever those actions are requested.",
-        "Do not add a safe-looking fallback when the request is unclear. Return an empty actions array instead.",
+        "You compile one contact-card CRM field-mapping request into a small, reviewable draft.",
+        "Every valid submission already creates a CRM lead or updates the existing lead with the same email. Do not create workflow conditions or optional actions.",
+        "Return exactly one add-to-crm action with recordType=lead and duplicateHandling=update.",
+        "fieldMappings must be a JSON string containing an array of source, target and optional value objects.",
+        "Allowed sources: firstName, lastName, email, company, phone, marketingConsent, cardName, fixed.",
+        "Allowed targets: firstName, lastName, email, company, phone, jobTitle, notes, campaign.",
+        "A fixed source must include its literal value. Never invent fields outside those allowlists.",
         "conditionsJson must be a JSON array of objects with kind, negated, and value.",
         "actionsJson must be a JSON array of objects with kind, delayMinutes, and config. Every config value must be a string.",
-        "Allowed conditions: free-email, known-company, new-lead, email-domain, within-dates.",
-        "Allowed actions: add-to-crm, assign-owner, pipeline-stage, add-to-list, create-task, notify-user, send-email.",
-        "For add-to-crm use destination=crm, recordType=lead or deal, duplicateHandling=update, and exact pipelineId/stageId when a pipeline is requested.",
-        "For assign-owner use ownerId and owner. For create-task use assigneeId, assignee and dueInDays. For notify-user use userId and user.",
-        "For send-email use the contact-card person's exact email as from and a short template name. Delay is in minutes.",
+        "conditionsJson must always be an empty JSON array.",
         "Return only the define_contact_card_automation tool call.",
         localeInstruction(locale),
       ].join("\n"),
@@ -2539,13 +2539,8 @@ Deno.serve(async (request) => {
       return json(request, { code: "automation_proposal_invalid", message: "Dexter returned an incomplete automation. Try describing it again." }, 422)
     }
 
-    const conditionKinds = new Set(["free-email", "known-company", "new-lead", "email-domain", "within-dates"])
-    const actionKinds = new Set(["add-to-crm", "assign-owner", "pipeline-stage", "add-to-list", "create-task", "notify-user", "send-email"])
-    const conditions = (Array.isArray(rawConditions) ? rawConditions.filter(isObject) : []).slice(0, 8).flatMap((candidate) => {
-      const kind = cleanString(candidate.kind, 40)
-      if (!conditionKinds.has(kind)) return []
-      return [{ kind, negated: candidate.negated === true, value: cleanString(candidate.value, 500) }]
-    })
+    const actionKinds = new Set(["add-to-crm"])
+    const conditions: JsonObject[] = []
 
     const actions: JsonObject[] = []
     for (const candidate of (Array.isArray(rawActions) ? rawActions.filter(isObject) : []).slice(0, 12)) {
@@ -2569,16 +2564,29 @@ Deno.serve(async (request) => {
         if (kind === "notify-user") Object.assign(config, { userId: owner.id, user: owner.name })
       }
 
-      if (kind === "add-to-crm" || kind === "pipeline-stage") {
+      if (kind === "pipeline-stage") {
         const pipeline = pipelines.find((entry) => entry.id === config.pipelineId)
         const stage = pipeline?.stages.find((entry) => entry.id === config.stageId)
         if (!pipeline || !stage) return json(request, { code: "automation_proposal_invalid_pipeline", message: "Dexter could not match that pipeline and stage to the live CRM." }, 422)
         Object.assign(config, { pipelineId: pipeline.id, pipeline: pipeline.name, stageId: stage.id, stage: stage.name })
-        if (kind === "add-to-crm") Object.assign(config, {
+      }
+
+      if (kind === "add-to-crm") {
+        const allowedSources = new Set(["firstName", "lastName", "email", "company", "phone", "marketingConsent", "cardName", "fixed"])
+        const allowedTargets = new Set(["firstName", "lastName", "email", "company", "phone", "jobTitle", "notes", "campaign"])
+        let proposedMappings: unknown = []
+        try { proposedMappings = JSON.parse(config.fieldMappings || "[]") } catch { proposedMappings = [] }
+        const mappings = (Array.isArray(proposedMappings) ? proposedMappings.filter(isObject) : []).slice(0, 16).flatMap((mapping) => {
+          const source = cleanString(mapping.source, 40)
+          const target = cleanString(mapping.target, 40)
+          if (!allowedSources.has(source) || !allowedTargets.has(target)) return []
+          return [{ source, target, ...(source === "fixed" ? { value: cleanString(mapping.value, 2_000) } : {}) }]
+        })
+        Object.assign(config, {
           destination: "crm",
-          recordType: config.recordType === "deal" ? "deal" : "lead",
+          recordType: "lead",
           duplicateHandling: "update",
-          fieldMappings: JSON.stringify([
+          fieldMappings: JSON.stringify(mappings.length > 0 ? mappings : [
             { source: "firstName", target: "firstName" },
             { source: "lastName", target: "lastName" },
             { source: "email", target: "email" },

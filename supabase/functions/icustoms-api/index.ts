@@ -14,6 +14,8 @@ import {
   buildICustomsDeclarationXml,
   type ExportDeclarationInput,
   ICustomsClient,
+  iCustomsCommodityDetail,
+  iCustomsCommoditySuggestions,
   iCustomsDraftPath,
   ICustomsProviderError,
   type ICustomsResponse,
@@ -603,6 +605,51 @@ async function refreshDeclaration(
   };
 }
 
+async function searchCommodities(input: Json) {
+  const query = text(input.query, 180);
+  if (query.length < 2) {
+    throw new HttpError(
+      400,
+      "Enter at least two characters or a 10-digit commodity code.",
+    );
+  }
+  const response = await new ICustomsClient(readICustomsConfig())
+    .searchCommodities(query, "UK");
+  return {
+    suggestions: iCustomsCommoditySuggestions(response.body),
+    source: "iCustoms UK commodity classification",
+  };
+}
+
+async function commodityDetails(input: Json) {
+  const commodityCode = text(input.commodityCode, 20).replace(/\D/g, "");
+  if (!/^\d{10}$/.test(commodityCode)) {
+    throw new HttpError(400, "Enter a valid 10-digit commodity code.");
+  }
+  const direction = input.direction === "import"
+    ? "import"
+    : input.direction === "export"
+    ? "export"
+    : null;
+  if (!direction) {
+    throw new HttpError(400, "Choose whether this is an import or export.");
+  }
+  const response = await new ICustomsClient(readICustomsConfig())
+    .tariffDetails(commodityCode);
+  const detail = iCustomsCommodityDetail(response.body, direction);
+  if (!/^\d{10}$/.test(detail.code)) {
+    throw new ICustomsProviderError(
+      502,
+      "The customs service did not return a valid commodity record.",
+      "icustoms_commodity_invalid",
+    );
+  }
+  return {
+    detail,
+    source: "iCustoms UK Online Tariff",
+  };
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders(request) });
@@ -616,6 +663,16 @@ Deno.serve(async (request) => {
 
     if (method === "GET" && parts[0] === "connection") {
       return json(request, connectionState());
+    }
+    if (
+      method === "POST" && parts[0] === "commodities" && parts[1] === "search"
+    ) {
+      return json(request, await searchCommodities(await body<Json>(request)));
+    }
+    if (
+      method === "POST" && parts[0] === "commodities" && parts[1] === "details"
+    ) {
+      return json(request, await commodityDetails(await body<Json>(request)));
     }
     if (parts[0] !== "declarations" || !uuid(parts[1])) {
       throw new HttpError(404, "Customs service route not found.");
