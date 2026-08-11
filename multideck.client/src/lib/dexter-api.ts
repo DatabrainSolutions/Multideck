@@ -38,7 +38,7 @@ export type DexterEmailDraftAddress = {
 }
 
 export type DexterEmailDraftDelivery = {
-  status: "draft" | "sending" | "queued" | "sent" | "failed"
+  status: "draft" | "creating_draft" | "draft_created" | "sending" | "queued" | "sent" | "failed"
   sendRequestId?: string | null
   messageId?: string | null
   threadId?: string | null
@@ -47,6 +47,7 @@ export type DexterEmailDraftDelivery = {
 
 export type DexterEmailDraft = {
   id: string
+  requestedAction: "create_draft" | "send"
   mode: "new" | "reply" | "reply_all" | "forward"
   mailboxId: string | null
   sourceMessageId: string | null
@@ -256,6 +257,7 @@ export type SendDexterMessageInput = {
   locale: string
   accessMode: DexterAccessMode
   approvedAction?: {
+    id?: string
     action: string
     arguments: Record<string, unknown>
   } | null
@@ -382,6 +384,17 @@ export async function recordDexterEmailDraftDelivery(messageId: string, sendRequ
   })
   if (error) throw new DexterApiError("The email was sent, but Dexter could not save its delivery status. Refresh the conversation to check it.")
   if (!data || typeof data !== "object") throw new DexterApiError("Dexter could not confirm the saved delivery status.")
+  return data as DexterEmailDraftDelivery
+}
+
+export async function recordDexterProviderDraftDelivery(messageId: string, draftMessageId: string) {
+  if (!supabase) throw new DexterApiError("Agent Dexter is not connected to this workspace.")
+  const { data, error } = await supabase.rpc("multideck_dexter_record_provider_draft_delivery", {
+    p_message_id: messageId,
+    p_draft_message_id: draftMessageId,
+  })
+  if (error) throw new DexterApiError("The provider draft was created, but Dexter could not save its status. Refresh the conversation to check it.")
+  if (!data || typeof data !== "object") throw new DexterApiError("Dexter could not confirm the provider draft status.")
   return data as DexterEmailDraftDelivery
 }
 

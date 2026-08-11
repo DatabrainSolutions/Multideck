@@ -439,6 +439,9 @@ verify_jwt = true
 [functions.finance]
 verify_jwt = true
 
+[functions.rates-api]
+verify_jwt = true
+
 # OAuth callbacks and provider notifications do not carry a Multideck JWT.
 # Both functions perform their own route-specific authentication and verification.
 # Invoked by tenant-local pg_cron. The function validates a separate random
@@ -455,6 +458,9 @@ verify_jwt = false
 verify_jwt = true
 
 [functions.customs-invoice-ocr]
+verify_jwt = true
+
+[functions.icustoms-api]
 verify_jwt = true
 
 # [edge_runtime.secrets]

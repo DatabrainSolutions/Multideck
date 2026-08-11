@@ -59,6 +59,7 @@ import {
 } from "@/components/multideck/dexter-action-approval"
 import { defaultDexterModelId, type DexterModelId } from "@/data/dexter-models"
 import {
+  customsDeclarationMentionItems,
   customerMentionItems,
   dealMentionItems,
   defaultDexterMentionItems,
@@ -112,6 +113,7 @@ import {
   type DexterConversationsChangedDetail,
 } from "@/lib/dexter-navigation"
 import { listCustomers } from "@/lib/customer-api"
+import { listStandaloneExportDrafts } from "@/lib/customs-drafts-api"
 import { listLeads } from "@/lib/lead-api"
 import { listDeals, type ApiDeal } from "@/lib/deal-api"
 import { listDexterEmailContextSources } from "@/lib/inbox-api"
@@ -1671,7 +1673,7 @@ export function AgentDexterPage({
   }, [t])
   const watchMentionItems = useMemo(() => mentionItems.filter((mention) => {
     if (mention.type === "email") return true
-    if (!(["booking", "lead", "deal", "quote"] as const).includes(mention.type as "booking" | "lead" | "deal" | "quote")) return false
+    if (!(["booking", "lead", "deal", "declaration", "quote"] as const).includes(mention.type as "booking" | "lead" | "deal" | "declaration" | "quote")) return false
     const rawId = mention.id.startsWith(`${mention.type}:`)
       ? mention.id.slice(mention.type.length + 1)
       : mention.id
@@ -1740,21 +1742,11 @@ export function AgentDexterPage({
     id: watch.id,
     title: watch.title,
     body: readableWatchSummary(watch, t),
-    meta: watch.status === "paused"
-      ? t("Paused")
-      : watch.capability === "email" && (watch.healthStatus === "degraded" || watch.healthStatus === "error")
-        ? t("Connection delayed")
-        : watch.capability === "email" && watch.healthStatus === "starting"
-          ? t("Starting checks")
-          : t("Active"),
+    // Status word and tone are no longer mapped here: the rail and its detail
+    // pane derive both from the watch itself, so they cannot drift apart.
     detail: watch.healthMessage
       ? t(watch.healthMessage)
       : readableWatchEvent(watch, t) || (watch.triggerCount ? `${watch.triggerCount} ${t("alerts")}` : t("No alerts yet")),
-    tone: watch.status === "paused"
-      ? "neutral"
-      : watch.healthStatus === "degraded" || watch.healthStatus === "error"
-        ? "amber"
-        : watch.latestEvent ? "amber" : "teal",
     status: watch.status,
     capability: watch.capability,
     targetLabel: watch.targetLabel,
@@ -1808,13 +1800,15 @@ export function AgentDexterPage({
       listCustomers(),
       listLeads(),
       listDeals(),
+      listStandaloneExportDrafts(),
       listDexterEmailContextSources(),
-    ]).then(([customerResult, leadResult, dealResult, emailResult]) => {
+    ]).then(([customerResult, leadResult, dealResult, declarationResult, emailResult]) => {
       if (!active) return
       setMentionItems(mergeDexterMentionItems(
         customerResult.status === "fulfilled" ? customerMentionItems(customerResult.value) : [],
         leadResult.status === "fulfilled" ? leadMentionItems(leadResult.value) : [],
         dealResult.status === "fulfilled" ? dealMentionItems(dealResult.value) : [],
+        declarationResult.status === "fulfilled" ? customsDeclarationMentionItems(declarationResult.value) : [],
         emailResult.status === "fulfilled"
           ? emailMentionItems(emailResult.value)
           : emailMentionItems(null, true),
@@ -2605,7 +2599,7 @@ export function AgentDexterPage({
         locale: language,
         accessMode,
         approvedAction: decision === "approve"
-          ? { action: action.action, arguments: action.arguments }
+          ? { id: action.id, action: action.action, arguments: action.arguments }
           : null,
         actionDecision: decision,
         attachments: [],

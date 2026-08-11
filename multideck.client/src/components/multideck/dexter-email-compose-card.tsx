@@ -4,6 +4,7 @@ import {
   AlertCircle,
   Check,
   Eye,
+  FilePenLine,
   Scissors,
   SendHorizontal,
   Sparkles,
@@ -30,12 +31,14 @@ import {
   duplicateSentDexterEmailDraft,
   refineDexterEmailDraft,
   recordDexterEmailDraftDelivery,
+  recordDexterProviderDraftDelivery,
   updateDexterEmailDraft,
   type DexterEmailDraft,
   type DexterEmailDraftAddress,
 } from "@/lib/dexter-api";
 import {
   buildReplyRequest,
+  createProviderDraft,
   createIdempotencyKey,
   dedupeAddresses,
   InboxApiError,
@@ -168,6 +171,22 @@ function sendErrorCopy(error: unknown, t: (value: string) => string) {
   );
 }
 
+function providerDraftErrorCopy(error: unknown, t: (value: string) => string) {
+  if (!(error instanceof InboxApiError))
+    return t("The provider draft could not be created. Your editable copy is still here.");
+  if (error.code === "offline")
+    return t("The provider result is unknown. Your editable copy is safe. Check the mailbox before trying again.");
+  if (error.code === "reauthorization_required")
+    return t("Reconnect this mailbox in Inbox, then create the draft again.");
+  if (error.code === "forbidden")
+    return t("You do not have permission to create a draft in this mailbox. Choose another mailbox or ask an administrator for send access.");
+  if (error.code === "unauthenticated")
+    return t("Sign in again before creating the provider draft.");
+  if (error.code === "rate_limited")
+    return t("The mail provider is temporarily limiting requests. Wait a moment, then create the draft again.");
+  return t("The provider draft could not be created. Your editable copy is still here.");
+}
+
 function draftAddress(address: MailAddress): DexterEmailDraftAddress {
   return { address: address.address, displayName: address.displayName };
 }
@@ -178,6 +197,10 @@ function statusCopy(
   t: (value: string) => string,
 ) {
   if (error) return error;
+  if (status === "draft_created")
+    return t("Draft created in the connected mail provider.");
+  if (status === "creating_draft")
+    return t("Creating the draft in the connected mail provider.");
   if (status === "sent") return t("Sent through the connected mail provider.");
   if (status === "queued")
     return t(
@@ -189,7 +212,7 @@ function statusCopy(
     );
   if (status === "sending")
     return t("Sending through the connected mail provider.");
-  return t("Nothing is sent until you select the paper plane.");
+  return t("Nothing leaves Multideck until you choose the email action.");
 }
 
 function DexterRefineSubmit({
@@ -303,6 +326,8 @@ export function DexterEmailComposeCard({
   const [invalidField, setInvalidField] = useState<
     "to" | "cc" | "bcc" | "body" | "mailbox" | null
   >(null);
+  const requestedAction =
+    draft.requestedAction === "create_draft" ? "create_draft" : "send";
   const idempotencyKey = useRef(createIdempotencyKey());
   const saveTimer = useRef<number | null>(null);
   const hydratedDraftId = useRef(draft.id);
@@ -340,7 +365,12 @@ export function DexterEmailComposeCard({
     sendCapableMailboxes.find((mailbox) => mailbox.id === mailboxId) ?? null;
   const isSentSource =
     draft.delivery.status === "sent" && activeMessageId === messageId;
-  const locked = status === "sending";
+  const isProviderDraftSource =
+    draft.delivery.status === "draft_created" && activeMessageId === messageId;
+  const locked =
+    status === "sending" ||
+    status === "creating_draft" ||
+    status === "draft_created";
 
   function beginEditableCopy() {
     if (
@@ -461,6 +491,7 @@ export function DexterEmailComposeCard({
   function currentDraft(nextStatus: DraftStatus = status): DexterEmailDraft {
     return {
       ...draft,
+      requestedAction,
       id: activeDraftId,
       mailboxId: mailboxId || null,
       to: parseAddresses(toText).addresses.map(draftAddress),
@@ -650,7 +681,9 @@ export function DexterEmailComposeCard({
       isCreatingCopy ||
       copyFailed ||
       status === "sent" ||
-      status === "sending"
+      status === "sending" ||
+      status === "creating_draft" ||
+      status === "draft_created"
     )
       return;
     if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
@@ -702,8 +735,15 @@ export function DexterEmailComposeCard({
       .catch(() => undefined);
   }, [draft.delivery.sendRequestId, draft.delivery.status, messageId, preview]);
 
-  async function handleSend() {
-    if (preview || isSentSource || locked || isCreatingCopy || copyFailed)
+  async function handleEmailAction() {
+    if (
+      preview ||
+      isSentSource ||
+      isProviderDraftSource ||
+      locked ||
+      isCreatingCopy ||
+      copyFailed
+    )
       return;
     setError(null);
     setInvalidField(null);
@@ -715,7 +755,10 @@ export function DexterEmailComposeCard({
       setError(t("Choose a connected mailbox that can send email."));
       return;
     }
-    if (to.invalid || to.addresses.length === 0) {
+    if (
+      to.invalid ||
+      (requestedAction === "send" && to.addresses.length === 0)
+    ) {
       setInvalidField("to");
       setError(t("Add at least one complete email address."));
       return;
@@ -736,7 +779,11 @@ export function DexterEmailComposeCard({
       return;
     }
 
-    setStatus("sending");
+    setStatus(
+      requestedAction === "create_draft"
+        ? "creating_draft"
+        : "sending",
+    );
     const edits = {
       subject,
       bodyText,
@@ -774,6 +821,42 @@ export function DexterEmailComposeCard({
     };
 
     try {
+      if (requestedAction === "create_draft") {
+        const receipt = await createProviderDraft(request);
+        const providerStatus: DraftStatus =
+          receipt.status === "created"
+            ? "draft_created"
+            : receipt.status === "failed"
+              ? "failed"
+              : "creating_draft";
+        setStatus(providerStatus);
+        if (!receipt.messageId) {
+          throw new InboxApiError(
+            t("The provider draft was created without a recoverable Multideck receipt."),
+          );
+        }
+        try {
+          const delivery = await recordDexterProviderDraftDelivery(
+            activeMessageId,
+            receipt.messageId,
+          );
+          const next = { ...currentDraft(delivery.status), delivery };
+          setStatus(delivery.status);
+          if (activeMessageId === messageId) onDraftChange?.(next);
+        } catch {
+          setError(
+            providerStatus === "draft_created"
+              ? t(
+                  "The provider draft was created, but Dexter could not save the receipt. Refresh this conversation to recover the confirmed status.",
+                )
+              : t(
+                  "The provider is still creating the draft, but Dexter could not save the latest receipt. Check the mailbox before trying again.",
+                ),
+          );
+        }
+        return;
+      }
+
       const receipt = await sendMail(request);
       const providerStatus: DraftStatus =
         receipt.status === "sent"
@@ -815,7 +898,11 @@ export function DexterEmailComposeCard({
       ) {
         idempotencyKey.current = createIdempotencyKey();
       }
-      setError(sendErrorCopy(sendError, t));
+      setError(
+        requestedAction === "create_draft"
+          ? providerDraftErrorCopy(sendError, t)
+          : sendErrorCopy(sendError, t),
+      );
     }
   }
 
@@ -848,11 +935,17 @@ export function DexterEmailComposeCard({
   const sendLabel = t(
     status === "sent"
       ? "Sent"
-      : status === "queued"
-        ? "Check status"
-        : status === "sending"
-          ? "Sending"
-          : "Send",
+      : status === "draft_created"
+        ? "Draft created"
+        : status === "queued"
+          ? "Check status"
+          : status === "sending"
+            ? "Sending"
+            : status === "creating_draft"
+              ? "Creating draft"
+              : requestedAction === "create_draft"
+                ? "Create draft"
+                : "Send email",
   );
   const selectionRefinementOpen =
     refinementOpen && refinementSelection !== null;
@@ -995,6 +1088,7 @@ export function DexterEmailComposeCard({
           disabled={
             preview ||
             isSentSource ||
+            isProviderDraftSource ||
             locked ||
             isCreatingCopy ||
             copyFailed ||
@@ -1005,16 +1099,24 @@ export function DexterEmailComposeCard({
               ? "Check send status"
               : status === "sent"
                 ? "Sent"
-                : "Send email",
+                : status === "draft_created"
+                  ? "Draft created"
+                  : requestedAction === "create_draft"
+                    ? "Create draft"
+                    : "Send email",
           )}
           title={t(
             status === "queued"
               ? "Check send status"
               : status === "sent"
                 ? "Sent"
-                : "Send email",
+                : status === "draft_created"
+                  ? "Draft created"
+                  : requestedAction === "create_draft"
+                    ? "Create draft"
+                    : "Send email",
           )}
-          onClick={() => void handleSend()}
+          onClick={() => void handleEmailAction()}
           className={cn(
             "md-dexter-pill relative h-11 min-w-[104px] shrink-0 overflow-hidden rounded-full px-3.5 text-[13px] font-medium text-white shadow-[var(--md-shadow-line)] transition-[box-shadow,opacity,scale] duration-150 hover:text-white focus-visible:text-white active:scale-[0.96] disabled:active:scale-100 motion-reduce:transition-none motion-reduce:active:scale-100",
           )}
@@ -1024,7 +1126,7 @@ export function DexterEmailComposeCard({
           </span>
           <span className="md-dexter-pill__contrast" aria-hidden="true" />
           <AnimatePresence initial={false} mode="popLayout">
-            {status === "sent" ? (
+            {status === "sent" || status === "draft_created" ? (
               <motion.span
                 key="sent"
                 className="relative z-10 inline-flex items-center gap-1.5"
@@ -1043,7 +1145,7 @@ export function DexterEmailComposeCard({
                 />
                 {sendLabel}
               </motion.span>
-            ) : status === "sending" ? (
+            ) : status === "sending" || status === "creating_draft" ? (
               <motion.span
                 key="sending"
                 className="relative z-10 inline-flex items-center gap-1.5"
@@ -1066,11 +1168,19 @@ export function DexterEmailComposeCard({
                   ease: "easeOut",
                 }}
               >
-                <SendHorizontal
-                  className="size-3.5 rtl:-scale-x-100"
-                  strokeWidth={1.7}
-                  aria-hidden="true"
-                />
+                {requestedAction === "create_draft" ? (
+                  <FilePenLine
+                    className="size-3.5"
+                    strokeWidth={1.7}
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <SendHorizontal
+                    className="size-3.5 rtl:-scale-x-100"
+                    strokeWidth={1.7}
+                    aria-hidden="true"
+                  />
+                )}
                 {sendLabel}
               </motion.span>
             ) : (
@@ -1085,11 +1195,19 @@ export function DexterEmailComposeCard({
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ duration: 0.18, ease: "easeOut" }}
               >
-                <SendHorizontal
-                  className="size-3.5 rtl:-scale-x-100"
-                  strokeWidth={1.7}
-                  aria-hidden="true"
-                />
+                {requestedAction === "create_draft" ? (
+                  <FilePenLine
+                    className="size-3.5"
+                    strokeWidth={1.7}
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <SendHorizontal
+                    className="size-3.5 rtl:-scale-x-100"
+                    strokeWidth={1.7}
+                    aria-hidden="true"
+                  />
+                )}
                 {sendLabel}
               </motion.span>
             )}

@@ -26,10 +26,24 @@ test("authenticated Edge boundary is registered", () => {
 })
 
 test("complete browser route contract is present", () => {
-  for (const route of ["providers", "connections", "workspace", "authorize", "shared-mailboxes", "group-mailboxes", "mailboxes", "automatic-reply", "ai-context-sources", "sync", "threads", "read-state", "trash", "summary", "drafts", "send", "attachments"]) {
+  for (const route of ["providers", "connections", "workspace", "authorize", "shared-mailboxes", "group-mailboxes", "mailboxes", "automatic-reply", "ai-context-sources", "sync", "threads", "read-state", "trash", "summary", "drafts", "provider-drafts", "send", "attachments"]) {
     assert.match(index, new RegExp(`\\b${route.replace("-", "-")}\\b`), `missing ${route}`)
   }
   for (const method of ["GET", "POST", "PATCH", "DELETE", "OPTIONS"]) assert.match(index, new RegExp(`"${method}"`))
+})
+
+test("provider drafts use the authenticated Gmail and Outlook draft APIs", () => {
+  assert.match(index, /path\[0\] === "provider-drafts"/)
+  assert.match(index, /request\.headers\.get\("Idempotency-Key"\)/)
+  assert.match(runtime, /export async function createProviderDraft/)
+  assert.match(runtime, /requirePermission\(admin, actor, "Email\.Send"\)/)
+  assert.match(runtime, /requireMailbox\(admin, actor, mailboxId, "send"\)/)
+  assert.match(runtime, /users\/me\/drafts/)
+  assert.match(runtime, /resolved\.command === "reply" \? "createReply" : resolved\.command === "reply_all" \? "createReplyAll" : "createForward"/)
+  assert.match(runtime, /messages\/\$\{encodeURIComponent\(sourceId\)\}\/\$\{action\}/)
+  assert.match(runtime, /CommMessage_IsDraft: true/)
+  assert.match(runtime, /providerDraftState: "created"/)
+  assert.doesNotMatch(index, /accessToken|refreshToken|CommConn_SecretRef/)
 })
 
 test("automatic replies stay mailbox-scoped, provider-backed, and permission checked", () => {

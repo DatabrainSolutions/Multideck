@@ -2115,7 +2115,7 @@ export const galleryComponents = [
     category: "Feedback",
     description: "Compact semantic pills for workflow status and descriptive table attributes.",
     details: "Keep the shell on the table surface with primary theme text and a thin hairline. The small leading dot or icon carries the documented status or category colour.",
-    foundOn: [{ label: "Overview", route: "/" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Overview", route: "/" }, { label: "Bookings", route: "/bookings" }, { label: "Booking detail", route: "/bookings/md-22455" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Warehouse orders", route: "/warehouse/orders" }, { label: "Rates & contracts", route: "/rates" }, { label: "Reports", route: "/reports" }, { label: "Settings", route: "/settings" }, { label: "Components", route: "/components" }],
     componentCode: `export function StatusPill({ tone = "neutral", indicator, children, className }) {\n  return (\n    <Badge className={cn("bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[0_0_0_1px_var(--md-line)]", className)}>\n      {indicator ?? <span className="size-1.5 rounded-full" style={{ backgroundColor: toneToVar(tone) }} />}\n      {children}\n    </Badge>\n  )\n}`,
     usageCode: `<StatusPill kind="status" tone="amber">Under review</StatusPill>\n<StatusPill kind="attribute" tone="blue">Ocean</StatusPill>`,
   },
@@ -2271,8 +2271,8 @@ export const galleryComponents = [
     id: "dexter-email-compose-card",
     name: "Dexter Email Composer",
     category: "Agent Dexter",
-    description: "An editable Gmail or Outlook draft prepared inside a Dexter conversation, with in-place refinement and an explicit provider-backed send control.",
-    details: "Use only for structured drafts returned by Dexter's prepare_email_draft tool. Operators can refine the whole draft from the edit icon or select a passage for focused changes without replacing the composer. Recipients and the sending mailbox stay empty unless confirmed by the selected thread, attached workspace context, or the operator. Sending reuses Inbox permissions and idempotency, preserves the draft after failures, and shows Sent only after provider confirmation.",
+    description: "An editable Gmail or Outlook email prepared inside a Dexter conversation, with in-place refinement and an explicit provider-backed Create draft or Send email action.",
+    details: "Use only for structured email actions returned by Dexter's prepare_email_draft tool. Operators can refine the whole email from the edit icon or select a passage for focused changes without replacing the composer. Recipients and the mailbox stay empty unless confirmed by the selected thread, attached workspace context, or the operator. Provider draft creation and sending reuse Inbox permissions and idempotency, preserve the editable copy after failures, and show completion only after Gmail or Outlook confirms the action.",
     foundOn: [
       { label: "Agent Dexter", route: "/agent-dexter" },
       { label: "Components", route: "/components?component=dexter-email-compose-card" },
@@ -2281,17 +2281,22 @@ export const galleryComponents = [
   const [status, setStatus] = useState(draft.delivery.status)
   const idempotencyKey = useRef(createIdempotencyKey())
 
-  async function send() {
-    setStatus("sending")
-    const receipt = await sendMail(buildReplyRequest({
+  async function runEmailAction() {
+    setStatus(draft.requestedAction === "create_draft" ? "creating_draft" : "sending")
+    const request = buildReplyRequest({
       mode: draft.mode,
       mailboxId: draft.mailboxId,
       threadId: draft.threadId,
       sourceMessageId: draft.sourceMessageId,
       edits: collectEditableFields(),
       idempotencyKey: idempotencyKey.current,
-    }))
-    const delivery = await recordDexterEmailDraftDelivery(messageId, receipt.id)
+    })
+    const receipt = draft.requestedAction === "create_draft"
+      ? await createProviderDraft(request)
+      : await sendMail(request)
+    const delivery = draft.requestedAction === "create_draft"
+      ? await recordDexterProviderDraftDelivery(messageId, receipt.messageId)
+      : await recordDexterEmailDraftDelivery(messageId, receipt.id)
     setStatus(delivery.status)
     onDraftChange?.({ ...draft, delivery })
   }
@@ -2302,8 +2307,8 @@ export const galleryComponents = [
     <RecipientFields to={draft.to} cc={draft.cc} bcc={draft.bcc} />
     <Input aria-label="Subject" value={draft.subject} />
     <Textarea aria-label="Message" value={draft.bodyText} onSelect={showSelectionActions} />
-    <Button aria-label="Send email" disabled={status === "sending"} onClick={send}>
-      <SendHorizontal aria-hidden />
+    <Button disabled={status === "sending" || status === "creating_draft"} onClick={runEmailAction}>
+      {draft.requestedAction === "create_draft" ? "Create draft" : "Send email"}
     </Button>
     <p role="status">{deliveryStatusCopy(status)}</p>
   </section>
@@ -2315,8 +2320,8 @@ export const galleryComponents = [
 />
 
 // message.emailDraft must come from Dexter's structured prepare_email_draft
-// result. The component resolves send-capable mailboxes through Inbox and
-// never sends until the operator selects the paper plane.`,
+// result. In Approve mode the component is the approval surface. In Full
+// access the same authenticated Inbox action is completed by Dexter.`,
   },
   {
     id: "dexter-action-pill",
@@ -3246,7 +3251,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "Navigation",
     description: "A compact mode switch with one spring-animated selection pill for two to four exclusive choices.",
     details: "Use for short mutually exclusive view modes. The selected pill preserves spatial continuity, respects reduced motion, and stays visually identical across settings, dashboards, registers, and workflows.",
-    foundOn: [{ label: "Paper Tray", route: "/paper-tray" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Inbox", route: "/inbox" }, { label: "Standalone declarations", route: "/customs/standalone/export/new" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Paper Tray", route: "/paper-tray" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "Bookings", route: "/bookings" }, { label: "Rates & contracts", route: "/rates" }, { label: "Inbox", route: "/inbox" }, { label: "Standalone declarations", route: "/customs/standalone/export/new" }, { label: "Components", route: "/components" }],
     componentCode: `export function SegmentedControl({ options, value, onChange }) {\n  const controlId = useId()\n  const shouldReduceMotion = useReducedMotion()\n\n  return (\n    <div role="group" className="relative isolate inline-flex rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-1">\n      {options.map((option) => (\n        <button key={option} aria-pressed={value === option} onClick={() => onChange(option)}>\n          {value === option ? (\n            <motion.span layoutId={controlId + "-active"} transition={reduceMotion(shouldReduceMotion, mdMotion.spring)} />\n          ) : null}\n          {option}\n        </button>\n      ))}\n    </div>\n  )\n}`,
     usageCode: `<SegmentedControl\n  options={["Table", "Board"]}\n  value={viewMode}\n  onChange={setViewMode}\n/>`,
   },
@@ -3286,7 +3291,7 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     category: "Data",
     description: "The canonical Multideck table for registers, compact summaries, editable grids, and operational history.",
     details: "Declare each column's data kind so numeric alignment, long text, statuses, and attributes stay consistent. The transparent toolbar sits on the page background above the rounded table surface: toggles on the left, then search, filters, options, and Columns on the right. Mobile collapses that right cluster first.",
-    foundOn: [{ label: "Quotes", route: "/quotes" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Bookings", route: "/bookings" }, { label: "Facilities", route: "/warehouse/facilities" }, { label: "Locations", route: "/warehouse/locations" }, { label: "Items", route: "/warehouse/items" }, { label: "Components", route: "/components" }],
+    foundOn: [{ label: "Quotes", route: "/quotes" }, { label: "Customers", route: "/customers" }, { label: "CRM leads", route: "/crm/leads" }, { label: "CRM accounts", route: "/crm/accounts" }, { label: "CRM contacts", route: "/crm/contacts" }, { label: "Bookings", route: "/bookings" }, { label: "Rates & contracts", route: "/rates" }, { label: "Facilities", route: "/warehouse/facilities" }, { label: "Locations", route: "/warehouse/locations" }, { label: "Items", route: "/warehouse/items" }, { label: "Components", route: "/components" }],
     componentCode: `export function DataTable({ columns, rows, toolbarTabs, toolbarSearch, toolbarFilters, toolbarOptions }) {\n  return (\n    <section>\n      <TableToolbar tabs={toolbarTabs} search={toolbarSearch} filters={toolbarFilters} options={toolbarOptions} columnsLast />\n      <TableSurface>\n        <Table>{/* semantic columns, persisted layout, accessible interactions */}</Table>\n      </TableSurface>\n    </section>\n  )\n}`,
     usageCode: `<DataTable\n  ariaLabel="Supplier charges"\n  columns={chargeColumns}\n  rows={charges}\n  getRowKey={(charge) => charge.id}\n  storageKey="quote-charges-in"\n  onRowClick={selectCharge}\n/>`,
   },
@@ -3818,20 +3823,20 @@ export function EmailMessageRenderer({ sanitizedHtml, bodyText, inlineAttachment
     id: "dexter-monitor-card",
     name: "Dexter Monitor Card",
     category: "Agent Dexter",
-    description: "A compact, wrapping Watch update card that stays readable inside the 288–336px Dexter rail.",
-    details: "Use in the right rail of Agent Dexter. Titles, conditions and activity clamp to two lines; metadata stacks when space is constrained, and the card never creates horizontal scroll.",
+    description: "A Watch card that answers is anything up, what happened, and which watch said so — in that order, inside the 288–336px Dexter rail.",
+    details: "Use in the right rail of Agent Dexter. The change is the loud line and the watch's own name drops beneath it; the rule text never appears here because it repeats the title. An unopened watch gets a tone-coloured inline-start bar, a tinted field and the only breathing dot in the rail, so movement always means news rather than liveness.",
     foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components" }],
-    componentCode: `export function DexterMonitorCard({ monitor, active, onClick }) {\n  return (\n    <button className="w-full min-w-0" data-active={active} onClick={onClick}>\n      <h3 className="line-clamp-2 break-words">{monitor.title}</h3>\n      <p className="line-clamp-2 break-words">{monitor.body}</p>\n      <footer className="grid gap-1.5">{monitor.meta}<span className="line-clamp-2">{monitor.detail}</span></footer>\n    </button>\n  )\n}`,
+    componentCode: `export function DexterMonitorCard({ monitor, index = 0, active, onClick }) {\n  const state = dexterWatchState(monitor, t)\n  const stamp = dexterWatchStamp(state.at, language, t)\n  return (\n    <button\n      className="md-watch-card w-full min-w-0"\n      data-active={active}\n      data-state={state.key}\n      data-unread={state.unread ? "true" : undefined}\n      style={{ "--md-watch-tone": toneToVar(state.tone), "--md-watch-delay": \`\${index * 0.9}s\` }}\n      onClick={onClick}\n    >\n      <span className="flex items-center gap-2">\n        <span className="md-watch-dot" />\n        <span className="md-watch-card__state">{state.label}</span>\n        {stamp ? <time className="ms-auto tabular-nums">{stamp}</time> : null}\n      </span>\n      <span className="line-clamp-3 font-medium">{state.news || monitor.title}</span>\n      <span className="truncate">{state.news ? monitor.title : t("Nothing has matched yet")}</span>\n    </button>\n  )\n}`,
     usageCode: `<DexterMonitorStack monitors={monitors} onAsk={openWatcherComposer} />`,
   },
   {
     id: "dexter-monitor-detail",
     name: "Dexter Monitor Detail",
     category: "Agent Dexter",
-    description: "The responsive Watch detail pane for understanding a triggered update and handing its real email attachments to Dexter.",
-    details: "Use when an operator selects a Watch card. Promote the current email, preview and attachments above diagnostics. Ask Dexter attaches authorised context without sending or replacing a draft; constrained widths replace the list with this pane and provide Back.",
+    description: "The responsive Watch detail pane: what happened, the one next step, then what the watch is actually looking for.",
+    details: "Use when an operator selects a Watch card. The change leads in plain words with its timestamp, and the email body, preview and attachments sit under it as evidence. There is one action row for the whole update rather than buttons buried in a sub-card. Only an email watch can report a lost source — a deal or quote change must never be described as a missing email. The rule stays expanded with labels in their own column, because it is the only thing that explains why the watch fired; constrained widths replace the list with this pane and provide Back.",
     foundOn: [{ label: "Agent Dexter", route: "/agent-dexter" }, { label: "Components", route: "/components" }],
-    componentCode: `export function DexterMonitorDetailSheet({ monitor, compactBack, onClose, onAskEvent, onAskAttachment }) {\n  const email = monitor.latestEvent?.context?.kind === "email" ? monitor.latestEvent.context : null\n  return (\n    <aside>\n      <button onClick={onClose}>{compactBack ? "Back" : "Close"}</button>\n      <h2>{monitor.title}</h2>\n      {email?.availability === "available" ? <section>\n        <h3>{email.subject}</h3>\n        <p>{email.preview}</p>\n        <button onClick={onAskEvent}>Ask Dexter about this update</button>\n        {email.attachments.map(file => <DexterEmailAttachmentCard key={file.id} attachment={file} variant="watch" onAskDexter={onAskAttachment} />)}\n      </section> : <UnavailableUpdateState />}\n      <details><summary>Watch conditions and connection details</summary></details>\n    </aside>\n  )\n}`,
+    componentCode: `export function DexterMonitorDetailSheet({ monitor, compactBack, onClose, onAskEvent, onAskAttachment }) {\n  const state = dexterWatchState(monitor, t)\n  const email = monitor.latestEvent?.context?.kind === "email" ? monitor.latestEvent.context : null\n  const emailReadable = email?.availability === "available"\n  const emailLost = monitor.capability === "email" && monitor.latestEvent && !emailReadable\n  return (\n    <aside>\n      <header>\n        <h2>{monitor.title}</h2>\n        <StatusPill>{state.label}</StatusPill>\n      </header>\n\n      <section>\n        <h3>What happened</h3>\n        <p>{state.news || monitor.latestEvent?.body}</p>\n        <time dateTime={state.at}>{new Date(state.at).toLocaleString(language)}</time>\n        {emailReadable ? <EmailEvidence email={email} onAskAttachment={onAskAttachment} /> : null}\n        {emailLost ? <UnavailableUpdateState email={email} /> : null}\n        <Button onClick={onAskEvent}>Ask Dexter about this update</Button>\n      </section>\n\n      <section>\n        <h3>What I'm watching</h3>\n        <dl>{/* Looking for - How it checks - On - Last checked */}</dl>\n      </section>\n\n      <footer>\n        <Button onClick={togglePause}>Pause this watch</Button>\n        <Button onClick={onDelete}>Delete</Button>\n      </footer>\n    </aside>\n  )\n}`,
     usageCode: `<AnimatePresence>\n  {selectedMonitor ? (\n    <DexterMonitorDetailSheet\n      monitor={selectedMonitor}\n      onClose={() => setSelectedMonitor(null)}\n    />\n  ) : null}\n</AnimatePresence>`,
   },
   {

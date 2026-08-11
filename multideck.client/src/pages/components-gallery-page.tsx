@@ -2596,6 +2596,7 @@ function ComponentPreview({ id }: { id: string }) {
             preview
             draft={{
               id: "gallery-dexter-email-draft",
+              requestedAction: "create_draft",
               mode: "reply",
               mailboxId: "preview-mailbox",
               threadId: "gallery-thread",
@@ -2774,15 +2775,31 @@ function ComponentPreview({ id }: { id: string }) {
       ) : null}
 
       {id === "dexter-monitor-card" ? (
-        <div className="w-full max-w-[420px]">
+        <div className="grid w-full max-w-[336px] gap-2.5">
           <DexterMonitorCard
             monitor={{
+              id: "gallery-monitor-fired",
               title: "Berth queue - MD-22479",
               body: "Watching Rotterdam congestion. Re-pings if ETA shifts more than 6h.",
-              meta: "since Wed 09:18",
-              detail: "last ping 36 min ago",
-              tone: "amber",
+              detail: "MD-22479 ETA moved from 04 Jun to 06 Jun.",
+              triggerCount: 2,
+              latestEvent: {
+                id: "gallery-monitor-event",
+                title: "ETA shifted",
+                body: "MD-22479 ETA moved from 04 Jun to 06 Jun.",
+                changed: {},
+                createdAt: new Date(Date.now() - 36 * 60_000).toISOString(),
+              },
             }}
+          />
+          <DexterMonitorCard
+            monitor={{
+              id: "gallery-monitor-armed",
+              title: "Marlow quote accepted",
+              body: "Alert me when a live quote for Marlow Apparel becomes accepted.",
+              detail: "No alerts yet",
+            }}
+            index={1}
           />
         </div>
       ) : null}
@@ -2798,12 +2815,13 @@ function ComponentPreview({ id }: { id: string }) {
                 id: "gallery-email-watch",
                 title: "Berth queue - MD-22479",
                 body: "Watching Rotterdam congestion. Re-pings if ETA shifts more than 6h.",
-                meta: "since Wed 09:18",
-                detail: "last ping 36 min ago",
-                tone: "amber",
+                detail: "Email from Maria Chen: Invoice for MD-22479",
+                ruleLabel: "Emails from maria@example.com that mention “MD-22479”.",
+                targetLabel: "MD-22479",
                 capability: "email",
                 status: "active",
                 healthStatus: "healthy",
+                lastSourceCheckAt: "2026-08-02T16:14:02Z",
                 triggerCount: 1,
                 latestEvent: {
                   id: "gallery-watch-event",
@@ -2843,6 +2861,8 @@ function ComponentPreview({ id }: { id: string }) {
               onClose={() => toast.success("Monitor detail closed")}
               onAskEvent={() => toast.success("Update added to Dexter")}
               onAskAttachment={() => toast.success("Attachment added to Dexter")}
+              onSetStatus={(status) => toast.success(`Watch ${status === "paused" ? "paused" : "resumed"}`)}
+              onDelete={() => toast.success("Watch deleted")}
             />
           </div>
         </div>

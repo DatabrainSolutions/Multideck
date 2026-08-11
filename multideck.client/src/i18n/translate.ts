@@ -1,5 +1,6 @@
 import type { LanguageCode } from "./languages"
 import { customsDeclarationPhrases } from "./customs-declaration-phrases"
+import { ratesPhrases } from "./rates-phrases"
 
 type WordDictionary = Record<string, string>
 type PhraseDictionary = Record<string, Partial<Record<LanguageCode, string>>>
@@ -453,6 +454,9 @@ const dexterWritingProfilePhrases: PhraseDictionary = {
   "Loading mailboxes": { de: "Postfächer werden geladen", fr: "Chargement des boîtes", ar: "جارٍ تحميل صناديق البريد" },
   "Add a subject": { de: "Betreff hinzufügen", fr: "Ajouter un objet", ar: "أضف موضوعًا" },
   "Nothing is sent until you select the paper plane.": { de: "Es wird nichts gesendet, bis Sie den Papierflieger auswählen.", fr: "Rien n’est envoyé tant que vous ne sélectionnez pas l’avion en papier.", ar: "لن يتم إرسال شيء حتى تختار رمز الطائرة الورقية." },
+  "Nothing leaves Multideck until you choose the email action.": { de: "Nichts verlässt Multideck, bis Sie die E-Mail-Aktion auswählen.", fr: "Rien ne quitte Multideck tant que vous n’avez pas choisi l’action e-mail.", ar: "لن يغادر شيء Multideck حتى تختار إجراء البريد." },
+  "Draft created in the connected mail provider.": { de: "Entwurf beim verbundenen E-Mail-Anbieter erstellt.", fr: "Brouillon créé chez le fournisseur de messagerie connecté.", ar: "تم إنشاء المسودة لدى مزود البريد المتصل." },
+  "Creating the draft in the connected mail provider.": { de: "Entwurf wird beim verbundenen E-Mail-Anbieter erstellt.", fr: "Création du brouillon chez le fournisseur de messagerie connecté.", ar: "جارٍ إنشاء المسودة لدى مزود البريد المتصل." },
   "Sent through the connected mail provider.": { de: "Über den verbundenen E-Mail-Anbieter gesendet.", fr: "Envoyé par le fournisseur de messagerie connecté.", ar: "تم الإرسال عبر مزود البريد المتصل." },
   "Queued. Select the send control again to check the provider status.": { de: "In Warteschlange. Wählen Sie den Sendebefehl erneut, um den Anbieterstatus zu prüfen.", fr: "En file d’attente. Sélectionnez à nouveau la commande d’envoi pour vérifier l’état du fournisseur.", ar: "في قائمة الانتظار. اختر زر الإرسال مرة أخرى للتحقق من حالة المزود." },
   "Sending through the connected mail provider.": { de: "Wird über den verbundenen E-Mail-Anbieter gesendet.", fr: "Envoi par le fournisseur de messagerie connecté.", ar: "جارٍ الإرسال عبر مزود البريد المتصل." },
@@ -469,6 +473,9 @@ const dexterWritingProfilePhrases: PhraseDictionary = {
   "Check the Bcc address, then try again.": { de: "Prüfen Sie die Bcc-Adresse und versuchen Sie es erneut.", fr: "Vérifiez l’adresse Cci, puis réessayez.", ar: "تحقق من عنوان النسخة المخفية ثم حاول مرة أخرى." },
   "Unable to load a send-capable mailbox. Reconnect it in Inbox and try again.": { de: "Ein sendefähiges Postfach konnte nicht geladen werden. Verbinden Sie es in Inbox erneut und versuchen Sie es erneut.", fr: "Impossible de charger une boîte autorisée à envoyer. Reconnectez-la dans Inbox et réessayez.", ar: "تعذر تحميل صندوق قادر على الإرسال. أعد ربطه في Inbox وحاول مرة أخرى." },
   "Send email": { de: "E-Mail senden", fr: "Envoyer l’e-mail", ar: "إرسال البريد" },
+  "Create draft": { de: "Entwurf erstellen", fr: "Créer le brouillon", ar: "إنشاء مسودة" },
+  "Creating draft": { de: "Entwurf wird erstellt", fr: "Création du brouillon", ar: "جارٍ إنشاء المسودة" },
+  "Draft created": { de: "Entwurf erstellt", fr: "Brouillon créé", ar: "تم إنشاء المسودة" },
   "Check send status": { de: "Sendestatus prüfen", fr: "Vérifier l’état de l’envoi", ar: "التحقق من حالة الإرسال" },
   "From": { de: "Von", fr: "De", ar: "من" },
   "Cc": { de: "Cc", fr: "Cc", ar: "نسخة" },
@@ -478,6 +485,15 @@ const dexterWritingProfilePhrases: PhraseDictionary = {
   "Sent by the provider, but Dexter could not save the receipt. Refresh this conversation to recover the confirmed status.": { de: "Der Anbieter hat die E-Mail gesendet, aber Dexter konnte die Bestätigung nicht speichern. Aktualisieren Sie diese Unterhaltung, um den bestätigten Status wiederherzustellen.", fr: "Le fournisseur a envoyé l’e-mail, mais Dexter n’a pas pu enregistrer le reçu. Actualisez cette conversation pour récupérer l’état confirmé.", ar: "أرسل المزود البريد، لكن تعذر على ديكستر حفظ الإيصال. حدّث هذه المحادثة لاستعادة الحالة المؤكدة." },
   "The provider accepted this email, but Dexter could not save the latest receipt. Select the plane again to recover its status without duplicating the send.": { de: "Der Anbieter hat diese E-Mail angenommen, aber Dexter konnte die aktuelle Bestätigung nicht speichern. Wählen Sie den Flieger erneut, um den Status ohne doppelten Versand wiederherzustellen.", fr: "Le fournisseur a accepté cet e-mail, mais Dexter n’a pas pu enregistrer le dernier reçu. Sélectionnez à nouveau l’avion pour récupérer son état sans doubler l’envoi.", ar: "قبل المزود هذا البريد، لكن تعذر على ديكستر حفظ أحدث إيصال. اختر الطائرة مرة أخرى لاستعادة حالته دون تكرار الإرسال." },
   "The provider rejected this email. Your draft is safe, but Dexter could not save the failure receipt. Check the details before trying again.": { de: "Der Anbieter hat diese E-Mail abgelehnt. Ihr Entwurf ist sicher, aber Dexter konnte die Fehlerbestätigung nicht speichern. Prüfen Sie die Angaben vor dem nächsten Versuch.", fr: "Le fournisseur a rejeté cet e-mail. Votre brouillon est conservé, mais Dexter n’a pas pu enregistrer le reçu d’échec. Vérifiez les détails avant de réessayer.", ar: "رفض المزود هذا البريد. مسودتك محفوظة، لكن تعذر على ديكستر حفظ إيصال الفشل. تحقق من التفاصيل قبل المحاولة مجددًا." },
+  "The provider draft could not be created. Your editable copy is still here.": { de: "Der Anbieterentwurf konnte nicht erstellt werden. Ihre bearbeitbare Kopie ist weiterhin vorhanden.", fr: "Le brouillon n’a pas pu être créé chez le fournisseur. Votre copie modifiable est toujours disponible.", ar: "تعذر إنشاء المسودة لدى المزود. ما زالت نسختك القابلة للتعديل موجودة." },
+  "The provider result is unknown. Your editable copy is safe. Check the mailbox before trying again.": { de: "Das Ergebnis des Anbieters ist unbekannt. Ihre bearbeitbare Kopie ist sicher. Prüfen Sie das Postfach vor einem erneuten Versuch.", fr: "Le résultat du fournisseur est inconnu. Votre copie modifiable est conservée. Vérifiez la boîte avant de réessayer.", ar: "نتيجة المزود غير معروفة. نسختك القابلة للتعديل محفوظة. تحقق من صندوق البريد قبل المحاولة مجددًا." },
+  "Reconnect this mailbox in Inbox, then create the draft again.": { de: "Verbinden Sie dieses Postfach in Inbox erneut und erstellen Sie den Entwurf dann noch einmal.", fr: "Reconnectez cette boîte dans Inbox, puis créez à nouveau le brouillon.", ar: "أعد ربط صندوق البريد في Inbox ثم أنشئ المسودة مجددًا." },
+  "You do not have permission to create a draft in this mailbox. Choose another mailbox or ask an administrator for send access.": { de: "Sie dürfen in diesem Postfach keinen Entwurf erstellen. Wählen Sie ein anderes Postfach oder bitten Sie eine Administration um Sendeberechtigung.", fr: "Vous n’êtes pas autorisé à créer un brouillon dans cette boîte. Choisissez-en une autre ou demandez un accès d’envoi à un administrateur.", ar: "ليست لديك صلاحية إنشاء مسودة في صندوق البريد هذا. اختر صندوقًا آخر أو اطلب من المسؤول صلاحية الإرسال." },
+  "Sign in again before creating the provider draft.": { de: "Melden Sie sich erneut an, bevor Sie den Anbieterentwurf erstellen.", fr: "Reconnectez-vous avant de créer le brouillon chez le fournisseur.", ar: "سجّل الدخول مجددًا قبل إنشاء المسودة لدى المزود." },
+  "The mail provider is temporarily limiting requests. Wait a moment, then create the draft again.": { de: "Der E-Mail-Anbieter begrenzt Anfragen vorübergehend. Warten Sie einen Moment und erstellen Sie den Entwurf dann erneut.", fr: "Le fournisseur limite temporairement les demandes. Patientez un instant, puis créez à nouveau le brouillon.", ar: "يفرض مزود البريد حدًا مؤقتًا على الطلبات. انتظر قليلًا ثم أنشئ المسودة مجددًا." },
+  "The provider draft was created without a recoverable Multideck receipt.": { de: "Der Anbieterentwurf wurde ohne wiederherstellbare Multideck-Bestätigung erstellt.", fr: "Le brouillon a été créé chez le fournisseur sans reçu Multideck récupérable.", ar: "تم إنشاء المسودة لدى المزود دون إيصال Multideck قابل للاستعادة." },
+  "The provider draft was created, but Dexter could not save the receipt. Refresh this conversation to recover the confirmed status.": { de: "Der Anbieterentwurf wurde erstellt, aber Dexter konnte die Bestätigung nicht speichern. Aktualisieren Sie diese Unterhaltung, um den bestätigten Status wiederherzustellen.", fr: "Le brouillon a été créé chez le fournisseur, mais Dexter n’a pas pu enregistrer le reçu. Actualisez cette conversation pour récupérer l’état confirmé.", ar: "تم إنشاء المسودة لدى المزود، لكن تعذر على ديكستر حفظ الإيصال. حدّث المحادثة لاستعادة الحالة المؤكدة." },
+  "The provider is still creating the draft, but Dexter could not save the latest receipt. Check the mailbox before trying again.": { de: "Der Anbieter erstellt den Entwurf noch, aber Dexter konnte die aktuelle Bestätigung nicht speichern. Prüfen Sie das Postfach vor einem erneuten Versuch.", fr: "Le fournisseur crée encore le brouillon, mais Dexter n’a pas pu enregistrer le dernier reçu. Vérifiez la boîte avant de réessayer.", ar: "ما زال المزود ينشئ المسودة، لكن تعذر على ديكستر حفظ أحدث إيصال. تحقق من صندوق البريد قبل المحاولة مجددًا." },
   "Personal email style is not enabled for this workspace yet.": { de: "Der persönliche E-Mail-Stil ist für diesen Arbeitsbereich noch nicht aktiviert.", fr: "Le style d’e-mail personnel n’est pas encore activé pour cet espace.", ar: "لم يتم تفعيل أسلوب البريد الشخصي لمساحة العمل هذه بعد." },
   "Sign in again to manage your writing profile.": { de: "Melden Sie sich erneut an, um Ihr Schreibprofil zu verwalten.", fr: "Reconnectez-vous pour gérer votre profil de rédaction.", ar: "سجّل الدخول مجددًا لإدارة ملف الكتابة." },
   "Your Multideck operator profile is unavailable.": { de: "Ihr Multideck-Bedienerprofil ist nicht verfügbar.", fr: "Votre profil opérateur Multideck n’est pas disponible.", ar: "ملف المشغل في Multideck غير متاح." },
@@ -1753,6 +1769,17 @@ const phrases: PhraseDictionary = {
   "No matching change yet. Dexter is watching live updates without polling the LLM.": { de: "Noch keine passende Änderung. Dexter beobachtet Live-Updates ohne LLM-Abfragen.", fr: "Aucun changement correspondant. Dexter surveille les mises à jour sans interroger le LLM.", ar: "لا يوجد تغيير مطابق بعد. يراقب ديكستر التحديثات المباشرة دون استدعاء نموذج اللغة." },
   "On connected data changes - no LLM polling": { de: "Bei Änderungen verbundener Daten - keine LLM-Abfragen", fr: "Lors des changements de données connectées - sans interrogation du LLM", ar: "عند تغير البيانات المتصلة - دون استدعاء نموذج اللغة" },
   "Watchers": { de: "Überwachungen", fr: "Surveillances", ar: "المراقبات" },
+  "new": { de: "neu", fr: "nouveau", ar: "جديد" },
+  "Matched": { de: "Ausgelöst", fr: "Déclenchée", ar: "تحققت" },
+  "Watching": { de: "Wird beobachtet", fr: "Sous surveillance", ar: "قيد المراقبة" },
+  "Needs attention": { de: "Braucht Aufmerksamkeit", fr: "Nécessite votre attention", ar: "يحتاج إلى انتباه" },
+  "just now": { de: "gerade eben", fr: "à l’instant", ar: "الآن" },
+  "Nothing has matched yet": { de: "Noch nichts passiert", fr: "Rien ne correspond encore", ar: "لا يوجد تطابق بعد" },
+  "What I’m watching": { de: "Was ich beobachte", fr: "Ce que je surveille", ar: "ما الذي أراقبه" },
+  "Applies to": { de: "Gilt für", fr: "S’applique à", ar: "ينطبق على" },
+  "alert": { de: "Warnung", fr: "alerte", ar: "تنبيه" },
+  "Pause this watch": { de: "Diese Überwachung pausieren", fr: "Mettre cette surveillance en pause", ar: "إيقاف هذه المراقبة مؤقتا" },
+  "Resume this watch": { de: "Diese Überwachung fortsetzen", fr: "Reprendre cette surveillance", ar: "استئناف هذه المراقبة" },
   "Hide watchers": { de: "Überwachungen ausblenden", fr: "Masquer les surveillances", ar: "إخفاء المراقبات" },
   "Watch something else": { de: "Etwas anderes beobachten", fr: "Surveiller autre chose", ar: "راقب شيئا آخر" },
   "Conditions": { de: "Bedingungen", fr: "Conditions", ar: "الشروط" },
@@ -1783,10 +1810,10 @@ const phrases: PhraseDictionary = {
     fr: "Utiliser Outlook comme source d’e-mails",
     ar: "استخدم Outlook كمصدر للبريد الإلكتروني",
   },
-  "Try Gmail, Outlook, a booking reference, customer, lead, quote or page name.": {
-    de: "Versuche es mit Gmail, Outlook, einer Buchungsreferenz, einem Kunden, Lead, Angebot oder Seitennamen.",
-    fr: "Essayez Gmail, Outlook, une référence de réservation, un client, un prospect, un devis ou un nom de page.",
-    ar: "جرّب Gmail أو Outlook أو مرجع حجز أو عميلا أو عميلا محتملا أو عرض سعر أو اسم صفحة.",
+  "Try Gmail, Outlook, a booking or declaration reference, customer, lead, quote or page name.": {
+    de: "Versuche es mit Gmail, Outlook, einer Buchungs- oder Anmeldungsreferenz, einem Kunden, Lead, Angebot oder Seitennamen.",
+    fr: "Essayez Gmail, Outlook, une référence de réservation ou de déclaration, un client, un prospect, un devis ou un nom de page.",
+    ar: "جرّب Gmail أو Outlook أو مرجع حجز أو إقرار أو عميلا أو عميلا محتملا أو عرض سعر أو اسم صفحة.",
   },
   "Previous conversations": { de: "Frühere Unterhaltungen", fr: "Conversations précédentes", ar: "المحادثات السابقة" },
   "History": { de: "Verlauf", fr: "Historique", ar: "السجل" },
@@ -4465,6 +4492,7 @@ const phrases: PhraseDictionary = {
   "Connect this email provider in Settings to use it with Dexter": { de: "Verbinde diesen E-Mail-Anbieter in den Einstellungen, um ihn mit Dexter zu verwenden", fr: "Connectez ce fournisseur de messagerie dans les paramètres pour l’utiliser avec Dexter", ar: "اربط موفر البريد هذا في الإعدادات لاستخدامه مع ديكستر" },
   "Email context is temporarily unavailable. Open Settings to review the connection.": { de: "Der E-Mail-Kontext ist vorübergehend nicht verfügbar. Öffne die Einstellungen, um die Verbindung zu prüfen.", fr: "Le contexte e-mail est temporairement indisponible. Ouvrez les paramètres pour vérifier la connexion.", ar: "سياق البريد الإلكتروني غير متاح مؤقتًا. افتح الإعدادات لمراجعة الاتصال." },
   "Fixture data — this is local sample mail for design review, not a connected mailbox.": { de: "Testdaten — dies ist lokale Beispielpost für die Designprüfung, kein verbundenes Postfach.", fr: "Données de test — ce courrier local sert à la revue de design, ce n’est pas une boîte connectée.", ar: "بيانات تجريبية — هذا بريد نموذجي محلي لمراجعة التصميم، وليس صندوق بريد متصلًا." },
+  ...ratesPhrases,
 }
 
 const wordDictionaries: Record<Exclude<LanguageCode, "en-GB" | "en-US">, WordDictionary> = {

@@ -627,6 +627,8 @@ function CustomisableSidebarSection({
 function routeMatches(item: NavItem, route: string) {
   if (!item.route) return false
   if (item.route === "/") return route === "/"
+  if (item.route === "/customs/standalone/export") return /^\/customs\/standalone\/(export|import)(\/|$)/.test(route)
+  if (item.route === "/customs/job-related/export") return /^\/customs\/job-related\/(export|import)(\/|$)/.test(route)
   if (item.route === "/bookings") {
     return route === "/bookings" || (/^\/bookings\/[^/]+$/.test(route) && route !== "/bookings/new" && route !== "/bookings/provisional")
   }
@@ -1518,7 +1520,7 @@ export function AppSidebar({
                   <button
                     type="button"
                     className={cn(
-                      "group relative flex h-10 w-full items-center gap-2.5 overflow-hidden rounded-[var(--md-radius-md)] px-3 text-start text-[13px] font-medium text-white shadow-[var(--md-shadow-line)] transition-[transform,box-shadow] hover:-translate-y-px focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a20)] motion-reduce:hover:translate-y-0",
+                      "group relative flex h-10 w-full items-center gap-2.5 overflow-hidden rounded-[var(--md-radius-lg)] px-3 text-start text-[13px] font-medium text-white shadow-[var(--md-shadow-line)] transition-[transform,box-shadow] hover:-translate-y-px focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a20)] motion-reduce:hover:translate-y-0",
                       collapsed && "justify-center px-0",
                     )}
                     onClick={startDexterConversation}

@@ -1,10 +1,11 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
-import { ArrowLeft, CheckCircle2, ChevronDown, CircleAlert, Copy, ExternalLink, FileCheck2, Link2, Plus, Sparkles, Trash2 } from "@/components/icons/hugeicons"
-import { AnimatePresence, motion, useReducedMotion } from "motion/react"
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { ArrowLeft, CheckCircle2, ChevronDown, CircleAlert, Copy, FileCheck2, Plus, RefreshCw, Send, Sparkles, Trash2 } from "@/components/icons/hugeicons"
+import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
@@ -18,15 +19,16 @@ import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
 import {
   createExportDeclarationItem,
-  createStandaloneExportDraft,
+  createStandaloneDeclarationDraft,
   declarationCompletion,
   type DeclarationIssue,
   type ExportDeclarationItem,
   type StandaloneExportDraft,
 } from "@/lib/customs-declaration"
 import { createEmptyCustomsReferenceData, useCustomsReferenceData, type CustomsCatalogCode, type CustomsReferenceData } from "@/lib/customs-reference-data"
-import { listStandaloneExportDrafts, loadStandaloneExportDraft, saveStandaloneExportDraft, type CustomsDraftSummary } from "@/lib/customs-drafts-api"
+import { listJobRelatedDeclarationDrafts, listStandaloneDeclarationDrafts, loadStandaloneDeclarationDraft, reopenRejectedCustomsDeclaration, saveStandaloneDeclarationDraft, type CustomsDraftSummary } from "@/lib/customs-drafts-api"
 import { hasCustomsInvoiceImportRecovery, moveCustomsInvoiceImportRecovery } from "@/lib/customs-invoice-import-recovery"
+import { getICustomsDeclarationState, ICustomsApiError, refreshICustomsDeclaration, saveICustomsProviderDraft, submitICustomsDeclaration, validateICustomsDeclaration, type ICustomsProviderIssue, type ICustomsWorkspaceState } from "@/lib/icustoms-api"
 import { mdMotion, reduceMotion } from "@/lib/motion"
 
 type DeclarationKind = "export" | "import"
@@ -34,11 +36,10 @@ type EditorTab = "declaration" | "parties" | "transport" | "documents" | "items"
 type EditorViewMode = "tabs" | "form"
 type FormTab = "general" | "items"
 
-const editorTabOrder: readonly EditorTab[] = ["declaration", "parties", "transport", "documents", "items", "review"]
-
 const CustomsBoxVisibilityContext = createContext(false)
 const CustomsReferenceDataContext = createContext<{ data: CustomsReferenceData; loading: boolean; error: string | null }>({ data: createEmptyCustomsReferenceData(), loading: true, error: null })
 const CompactCustomsFormContext = createContext(false)
+const CustomsDirectionContext = createContext<DeclarationKind>("export")
 
 export function CustomsDeclarationsPage({
   route,
@@ -51,10 +52,10 @@ export function CustomsDeclarationsPage({
   const jobRelated = route.startsWith("/customs/job-related")
   const kind: DeclarationKind = route.includes("/import") ? "import" : "export"
   const creating = route.endsWith("/new")
-  const editMatch = route.match(/^\/customs\/standalone\/export\/([0-9a-f-]{36})$/i)
+  const editMatch = route.match(/^\/customs\/standalone\/(export|import)\/([0-9a-f-]{36})$/i)
 
-  if (!jobRelated && kind === "export" && (creating || editMatch)) {
-    return <StandaloneExportEditor navigate={navigate} declarationId={editMatch?.[1]} />
+  if (!jobRelated && (creating || editMatch)) {
+    return <StandaloneDeclarationEditor navigate={navigate} kind={kind} declarationId={editMatch?.[2]} />
   }
 
   const base = jobRelated ? "/customs/job-related" : "/customs/standalone"
@@ -69,18 +70,18 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, t }: {
   t: (text: string) => string
 }) {
   const [drafts, setDrafts] = useState<CustomsDraftSummary[]>([])
-  const [loading, setLoading] = useState(!jobRelated && kind === "export")
+  const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState("")
   const [destinationFilter, setDestinationFilter] = useState("")
 
   useEffect(() => {
-    if (jobRelated || kind !== "export") return
     let cancelled = false
     setLoading(true)
     setLoadError(null)
-    listStandaloneExportDrafts()
+    const loadDeclarations = jobRelated ? listJobRelatedDeclarationDrafts : listStandaloneDeclarationDrafts
+    loadDeclarations(kind)
       .then((savedDrafts) => {
         if (!cancelled) setDrafts(savedDrafts)
       })
@@ -104,6 +105,20 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, t }: {
       sortValue: (draft) => draft.reference,
       cell: (draft) => <strong className="block text-[12px] font-medium tabular-nums text-[var(--md-ink)]" dir="ltr">{draft.reference}</strong>,
     },
+    ...(jobRelated ? [{
+      id: "jobReference",
+      label: t("Job reference"),
+      width: 190,
+      minWidth: 152,
+      resizable: true,
+      sortValue: (draft: CustomsDraftSummary) => draft.jobReference ?? draft.jobId ?? "",
+      cell: (draft: CustomsDraftSummary) => (
+        <span className="block min-w-0">
+          <strong className="block truncate text-[12px] font-medium tabular-nums text-[var(--md-ink)]" dir="ltr">{draft.jobReference ?? t("Not set")}</strong>
+          {draft.bookingReference ? <span className="mt-0.5 block truncate text-[11px] text-[var(--md-subtle)]" dir="ltr">{draft.bookingReference}</span> : null}
+        </span>
+      ),
+    }] : []),
     {
       id: "status",
       label: "Status",
@@ -159,7 +174,7 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, t }: {
       sortValue: (draft) => new Date(draft.updatedAt).getTime(),
       cell: (draft) => <span className="text-[11px] text-[var(--md-subtle)]">{new Date(draft.updatedAt).toLocaleString()}</span>,
     },
-  ], [t])
+  ], [jobRelated, t])
 
   const statuses = useMemo(() => [...new Set(drafts.map((draft) => draft.status).filter(Boolean))].sort(), [drafts])
   const destinations = useMemo(() => [...new Set(drafts.map((draft) => draft.destinationCountry).filter((value): value is string => Boolean(value)))].sort(), [drafts])
@@ -169,33 +184,22 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, t }: {
       if (statusFilter && draft.status !== statusFilter) return false
       if (destinationFilter && draft.destinationCountry !== destinationFilter) return false
       if (!query) return true
-      return [draft.reference, draft.traderReference, draft.status, draft.destinationCountry, draft.currency, draft.amount]
+      return [draft.reference, draft.jobReference, draft.bookingReference, draft.customerName, draft.route, draft.traderReference, draft.status, draft.destinationCountry, draft.currency, draft.amount]
         .some((value) => String(value ?? "").toLocaleLowerCase().includes(query))
     })
   }, [destinationFilter, drafts, search, statusFilter])
 
   return (
     <div className="space-y-5">
-      <header className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-        <div>
-          <p className="text-[12px] font-medium text-[var(--md-accent)]">{t("Customs & Compliance")}</p>
-          <h1 className="mt-2 text-[28px] font-medium tracking-[-0.035em] text-[var(--md-ink)]">
-            {t(jobRelated ? "Job Related Declarations" : "Stand Alone Declarations")}
-          </h1>
-          <p className="mt-2 max-w-[680px] text-[13px] leading-5 text-[var(--md-text)]">
-            {t(jobRelated
-              ? "Declarations created from an existing Multideck job, with shipment data brought forward safely."
-              : "Create and manage declarations that are not linked to a Multideck job.")}
-          </p>
-        </div>
-        <div className="self-start xl:self-auto">
-          <RegisterViewSwitch
-            options={["Export", "Import"] as const}
-            value={kind === "export" ? "Export" : "Import"}
-            onChange={(nextKind) => navigate(`${base}/${nextKind.toLocaleLowerCase()}`)}
-            ariaLabel={t("Declaration direction")}
-          />
-        </div>
+      <header className="flex flex-col gap-2 xl:flex-row xl:items-start xl:justify-between xl:gap-8">
+        <h1 className="text-[28px] font-medium tracking-[-0.035em] text-[var(--md-ink)]">
+          {t(jobRelated ? "Job Related Declarations" : "Stand Alone Declarations")}
+        </h1>
+        <p className="max-w-[680px] text-[13px] leading-5 text-[var(--md-text)] xl:max-w-[520px] xl:pt-1 xl:text-end">
+          {t(jobRelated
+            ? "Declarations created from an existing Multideck job, with shipment data brought forward safely."
+            : "Create and manage declarations that are not linked to a Multideck job.")}
+        </p>
       </header>
 
       <DataTable
@@ -206,7 +210,16 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, t }: {
         getRowKey={(draft) => draft.id}
         storageKey={`customs-${jobRelated ? "job-related" : "standalone"}-${kind}-register`}
         rowClassName="hover:bg-[var(--md-hover)]"
-        onRowClick={!jobRelated && kind === "export" ? (draft) => navigate(`/customs/standalone/export/${draft.id}`) : undefined}
+        onRowClick={!jobRelated ? (draft) => navigate(`/customs/standalone/${kind}/${draft.id}`) : undefined}
+        toolbarTabs={(
+          <RegisterViewSwitch
+            options={["Export", "Import"] as const}
+            value={kind === "export" ? "Export" : "Import"}
+            onChange={(nextKind) => navigate(`${base}/${nextKind.toLocaleLowerCase()}`)}
+            ariaLabel={t("Declaration direction")}
+            compact
+          />
+        )}
         toolbarSearch={<RegisterSearchField value={search} onChange={setSearch} onClear={() => setSearch("")} label="Search declarations" placeholder="Search declarations" />}
         toolbarFilters={(
           <>
@@ -248,12 +261,12 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, t }: {
               <FileCheck2 className="size-5" strokeWidth={1.4} />
             </div>
             <h3 className="mt-4 text-[16px] font-medium text-[var(--md-ink)]">
-              {t(kind === "export" && !jobRelated ? "Ready for the first standalone export" : "This declaration flow is next")}
+              {t(!jobRelated ? (kind === "export" ? "Ready for the first standalone export" : "Ready for the first standalone import") : "This declaration flow is next")}
             </h3>
             <p className="mt-2 text-[13px] leading-5 text-[var(--md-text)]">
-              {t(kind === "export" && !jobRelated
-                ? "Create a draft using the new section-based CDS workspace."
-                : "We will enable this after the standalone export workflow is agreed and connected.")}
+              {t(!jobRelated
+                ? "Create a draft using the section-based CDS workspace."
+                : "Create the declaration from its linked Multideck job when this workflow is enabled.")}
             </p>
           </div>
         )}
@@ -266,6 +279,12 @@ function titleCase(value: string) {
   return value.replace(/[_-]+/g, " ").replace(/\b\w/g, (character) => character.toLocaleUpperCase())
 }
 
+function translateCustomsMessage(message: string, t: (text: string) => string) {
+  const contact = message.match(/^This contact is missing: (.+)\.$/)
+  if (!contact) return t(message)
+  return `${t("This contact is missing:")} ${contact[1].split(", ").map(t).join(", ")}.`
+}
+
 function formatDraftAmount(amount: number | null, currency: string | null) {
   if (amount === null) return "—"
   if (!currency) return amount.toLocaleString(undefined, { maximumFractionDigits: 2 })
@@ -276,13 +295,12 @@ function formatDraftAmount(amount: number | null, currency: string | null) {
   }
 }
 
-function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: string) => void; declarationId?: string }) {
-  const { t, direction } = useLanguage()
+function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { navigate: (path: string) => void; kind: DeclarationKind; declarationId?: string }) {
+  const { t } = useLanguage()
   const shouldReduceMotion = Boolean(useReducedMotion())
-  const referenceData = useCustomsReferenceData("export")
-  const [draft, setDraft] = useState<StandaloneExportDraft>(createStandaloneExportDraft)
+  const referenceData = useCustomsReferenceData(kind)
+  const [draft, setDraft] = useState<StandaloneExportDraft>(() => createStandaloneDeclarationDraft(kind))
   const [tab, setTab] = useState<EditorTab>("declaration")
-  const [tabDirection, setTabDirection] = useState(1)
   const [viewMode, setViewMode] = useState<EditorViewMode>("tabs")
   const [formTab, setFormTab] = useState<FormTab>("general")
   const [activeItemId, setActiveItemId] = useState(draft.items[0].id)
@@ -296,16 +314,18 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
   const [loadingDraft, setLoadingDraft] = useState(Boolean(declarationId))
   const [draftLoadError, setDraftLoadError] = useState<string | null>(null)
   const [savingDraft, setSavingDraft] = useState(false)
+  const [iCustomsState, setICustomsState] = useState<ICustomsWorkspaceState | null>(null)
+  const [iCustomsBusy, setICustomsBusy] = useState<"loading" | "draft" | "submit" | "refresh" | null>(declarationId ? "loading" : null)
+  const [iCustomsIssues, setICustomsIssues] = useState<string[]>([])
+  const [submitDialogOpen, setSubmitDialogOpen] = useState(false)
   const completion = useMemo(() => declarationCompletion(draft), [draft])
-  const spatialTabDirection = direction === "rtl" ? -tabDirection : tabDirection
   const activeItem = draft.items.find((item) => item.id === activeItemId) ?? draft.items[0]
   const issueFields = useMemo(() => new Set(validated ? completion.issues.map((issue) => issue.field) : []), [completion.issues, validated])
   const activeItemIssueFields = useMemo(() => new Set(validated ? completion.issues.filter((issue) => issue.itemId === activeItemId).map((issue) => issue.field) : []), [activeItemId, completion.issues, validated])
-  const fallbackUrl = import.meta.env.VITE_ICUSTOMS_APP_URL || "https://app-tdr.customscloud.co/cds/export"
+  const registerPath = `/customs/standalone/${kind}`
 
   function selectTab(nextTab: EditorTab) {
     if (nextTab === tab) return
-    setTabDirection(editorTabOrder.indexOf(nextTab) > editorTabOrder.indexOf(tab) ? 1 : -1)
     setTab(nextTab)
   }
 
@@ -318,7 +338,7 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
     let cancelled = false
     setLoadingDraft(true)
     setDraftLoadError(null)
-    loadStandaloneExportDraft(declarationId)
+    loadStandaloneDeclarationDraft(declarationId, kind)
       .then((savedDraft) => {
         if (cancelled) return
         setDraft(savedDraft)
@@ -330,6 +350,23 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
       })
       .finally(() => {
         if (!cancelled) setLoadingDraft(false)
+      })
+    return () => { cancelled = true }
+  }, [declarationId, kind])
+
+  useEffect(() => {
+    if (!declarationId) return
+    let cancelled = false
+    setICustomsBusy("loading")
+    getICustomsDeclarationState(declarationId)
+      .then((state) => {
+        if (!cancelled) setICustomsState(state)
+      })
+      .catch((reason: unknown) => {
+        console.error("The iCustoms declaration state could not be loaded.", reason)
+      })
+      .finally(() => {
+        if (!cancelled) setICustomsBusy(null)
       })
     return () => { cancelled = true }
   }, [declarationId])
@@ -378,17 +415,113 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
   async function saveDraft() {
     if (savingDraft) return
     setSavingDraft(true)
+    let savedLocally = false
     try {
-      const saved = await saveStandaloneExportDraft(draft, declarationId)
+      if (declarationId && iCustomsState?.declaration.provider?.status === "rejected") {
+        await reopenRejectedCustomsDeclaration(declarationId)
+      }
+      const saved = await saveStandaloneDeclarationDraft(draft, declarationId)
+      savedLocally = true
       moveCustomsInvoiceImportRecovery(invoiceImportRecoveryKey, saved.id)
       setDraft((current) => ({ ...current, multideckReference: saved.reference }))
-      toast.success(t("Draft saved"), { description: saved.reference })
-      navigate("/customs/standalone/export")
+      const providerStatus = iCustomsState?.declaration.provider?.status
+      const hasEditableProviderDraft = Boolean(iCustomsState?.declaration.hasCustomsDraft) && !["submitted", "accepted", "rejected"].includes(providerStatus ?? "")
+      if (hasEditableProviderDraft) {
+        setICustomsBusy("draft")
+        const validation = await validateICustomsDeclaration(saved.id)
+        if (!validation.ready) {
+          setICustomsIssues(validation.issues)
+          toast.warning(t("Saved in Multideck, but the customs test draft needs attention"), { description: `${validation.issues.length} ${t("customs checks remain")}` })
+          return
+        }
+        await saveICustomsProviderDraft(saved.id, crypto.randomUUID())
+        const state = await getICustomsDeclarationState(saved.id)
+        setICustomsState(state)
+        toast.success(t("Draft saved and customs test draft updated"), { description: saved.reference })
+      } else {
+        toast.success(t("Draft saved"), { description: saved.reference })
+      }
+      navigate(registerPath)
     } catch (reason) {
-      console.error("The Customs draft could not be saved.", reason)
-      toast.error(t("Draft could not be saved"), { description: t("Your changes remain on screen. Try saving again.") })
+      console.error("The Customs draft or its provider mirror could not be saved.", reason)
+      if (savedLocally && iCustomsState?.declaration.hasCustomsDraft) {
+        toast.error(t("Saved in Multideck, but the customs update failed"), { description: t(reason instanceof Error ? reason.message : "Try saving again before submission.") })
+      } else {
+        toast.error(t("Draft could not be saved"), { description: t("Your changes remain on screen. Try saving again.") })
+      }
     } finally {
       setSavingDraft(false)
+      setICustomsBusy(null)
+    }
+  }
+
+  async function createOrUpdateICustomsDraft() {
+    if (iCustomsBusy || savingDraft) return
+    if (completion.issues.length) {
+      validate()
+      return
+    }
+    setICustomsBusy("draft")
+    setICustomsIssues([])
+    try {
+      if (declarationId && iCustomsState?.declaration.provider?.status === "rejected") {
+        await reopenRejectedCustomsDeclaration(declarationId)
+      }
+      const saved = await saveStandaloneDeclarationDraft(draft, declarationId)
+      moveCustomsInvoiceImportRecovery(invoiceImportRecoveryKey, saved.id)
+      setDraft((current) => ({ ...current, multideckReference: saved.reference }))
+      const validation = await validateICustomsDeclaration(saved.id)
+      if (!validation.ready) {
+        setICustomsIssues(validation.issues)
+        toast.warning(t("Declaration needs attention"), { description: `${validation.issues.length} ${t("customs checks remain")}` })
+        return
+      }
+      const result = await saveICustomsProviderDraft(saved.id, crypto.randomUUID())
+      const state = await getICustomsDeclarationState(saved.id)
+      setICustomsState(state)
+      toast.success(t(result.declaration.provider?.status === "acknowledged" ? "Customs test draft created" : "Customs test draft updated"), { description: saved.reference })
+      if (!declarationId) navigate(`${registerPath}/${saved.id}`)
+    } catch (reason) {
+      const error = reason instanceof ICustomsApiError ? reason : new ICustomsApiError(reason instanceof Error ? reason.message : "The customs test draft could not be created.")
+      setICustomsIssues(error.issues)
+      toast.error(t("Customs test draft could not be created"), { description: t(error.message) })
+    } finally {
+      setICustomsBusy(null)
+    }
+  }
+
+  async function submitToICustoms() {
+    if (!declarationId || iCustomsBusy) return
+    setICustomsBusy("submit")
+    setICustomsIssues([])
+    try {
+      await submitICustomsDeclaration(declarationId, crypto.randomUUID())
+      const state = await getICustomsDeclarationState(declarationId)
+      setICustomsState(state)
+      setSubmitDialogOpen(false)
+      toast.success(t("Declaration submitted in Test Mode"), { description: state.declaration.provider?.mrn ?? draft.multideckReference })
+    } catch (reason) {
+      const error = reason instanceof ICustomsApiError ? reason : new ICustomsApiError(reason instanceof Error ? reason.message : "The declaration could not be submitted.")
+      setICustomsIssues(error.issues)
+      toast.error(t("Customs submission failed"), { description: t(error.message) })
+    } finally {
+      setICustomsBusy(null)
+    }
+  }
+
+  async function refreshFromICustoms() {
+    if (!declarationId || iCustomsBusy) return
+    setICustomsBusy("refresh")
+    try {
+      await refreshICustomsDeclaration(declarationId)
+      const state = await getICustomsDeclarationState(declarationId)
+      setICustomsState(state)
+      toast.success(t("Customs status refreshed"))
+    } catch (reason) {
+      const error = reason instanceof Error ? reason.message : "The customs status could not be refreshed."
+      toast.error(t("Customs status could not be refreshed"), { description: t(error) })
+    } finally {
+      setICustomsBusy(null)
     }
   }
 
@@ -401,6 +534,22 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
       selectTab(generalTabForField(issue.field))
     }
     setFocusTarget({ field: issue.field, nonce: Date.now() })
+  }
+
+  function fixProviderIssue(issue: ICustomsProviderIssue) {
+    const target = providerIssueTarget(issue)
+    if (issue.itemNumber) {
+      const item = draft.items[issue.itemNumber - 1]
+      if (item) setActiveItemId(item.id)
+      if (issue.dataElement === "2/3") setShowOptional(true)
+      if (viewMode === "form") setFormTab("items")
+      else selectTab("items")
+    } else if (viewMode === "form") {
+      setFormTab("general")
+    } else {
+      selectTab(generalTabForField(target))
+    }
+    setFocusTarget({ field: target, nonce: Date.now() })
   }
 
   function addItem() {
@@ -440,32 +589,34 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
     { id: "declaration", label: t("Declaration") },
     { id: "parties", label: t("Parties") },
     { id: "transport", label: t("Transport") },
-    { id: "documents", label: t("Documents & offices") },
+    { id: "documents", label: t(kind === "import" ? "Import terms" : "Documents & offices") },
     { id: "items", label: `${t("Items")} (${draft.items.length})` },
     { id: "review", label: t("Review") },
   ]
+  const customsStatus = iCustomsState?.declaration.provider?.status ?? iCustomsState?.declaration.status ?? "draft"
 
   if (loadingDraft) {
     return <Surface padding="lg" className="rounded-[var(--md-radius-xl)]"><p className="text-[13px] text-[var(--md-text)]">{t("Loading saved declaration")}</p></Surface>
   }
 
   if (draftLoadError) {
-    return <Surface padding="lg" className="rounded-[var(--md-radius-xl)]"><CircleAlert className="size-5 text-[var(--md-red)]" /><h1 className="mt-3 text-[18px] font-medium text-[var(--md-ink)]">{t("Saved declaration unavailable")}</h1><p className="mt-2 text-[12px] text-[var(--md-text)]">{t("Return to the declaration register and choose the draft again.")}</p><Button type="button" variant="outline" className="mt-4" onClick={() => navigate("/customs/standalone/export")}>{t("Back to standalone declarations")}</Button></Surface>
+    return <Surface padding="lg" className="rounded-[var(--md-radius-xl)]"><CircleAlert className="size-5 text-[var(--md-red)]" /><h1 className="mt-3 text-[18px] font-medium text-[var(--md-ink)]">{t("Saved declaration unavailable")}</h1><p className="mt-2 text-[12px] text-[var(--md-text)]">{t("Return to the declaration register and choose the draft again.")}</p><Button type="button" variant="outline" className="mt-4" onClick={() => navigate(registerPath)}>{t("Back to standalone declarations")}</Button></Surface>
   }
 
   return (
+    <CustomsDirectionContext.Provider value={kind}>
     <CustomsReferenceDataContext.Provider value={referenceData}>
     <CustomsBoxVisibilityContext.Provider value={showCustomsBoxNumbers}>
-    <div className="min-w-0 max-w-full space-y-4 overflow-x-clip" data-testid="standalone-export-editor">
+    <div className="min-w-0 max-w-full space-y-4 overflow-x-clip" data-testid={`standalone-${kind}-editor`}>
       <header>
         <div className="flex min-w-0 flex-col justify-center">
-          <button type="button" onClick={() => navigate("/customs/standalone/export")} className="inline-flex items-center gap-2 text-[12px] font-medium text-[var(--md-text)] hover:text-[var(--md-accent)]">
+          <button type="button" onClick={() => navigate(registerPath)} className="inline-flex items-center gap-2 text-[12px] font-medium text-[var(--md-text)] hover:text-[var(--md-accent)]">
             <ArrowLeft className="size-3.5 rtl:rotate-180" /> {t("Back to standalone declarations")}
           </button>
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <h1 className="text-[26px] font-medium tracking-[-0.035em] text-[var(--md-ink)]">{t(declarationId ? "Edit export declaration" : "New export declaration")}</h1>
-            <StatusPill tone="teal">{t("Standalone export")}</StatusPill>
-            <StatusPill>{t("Draft")}</StatusPill>
+            <h1 className="text-[26px] font-medium tracking-[-0.035em] text-[var(--md-ink)]">{t(declarationId ? (kind === "import" ? "Edit import declaration" : "Edit export declaration") : (kind === "import" ? "New import declaration" : "New export declaration"))}</h1>
+            <StatusPill tone="teal">{t(kind === "import" ? "Standalone import" : "Standalone export")}</StatusPill>
+            <StatusPill tone={customsStatusTone(customsStatus)}>{t(titleCase(customsStatus))}</StatusPill>
           </div>
           <p className="mt-1 text-[13px] text-[var(--md-text)]">{t(viewMode === "tabs" ? "Complete one focused section at a time. Move between sections whenever you need." : "Scan and complete the declaration in one compact form, with goods lines kept in Items.")}</p>
         </div>
@@ -488,38 +639,40 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
         </div>
         <div className="flex shrink-0 items-center gap-2 sm:justify-end">
           <Button type="button" variant="outline" size="sm" className="h-9" disabled={savingDraft} onClick={() => void saveDraft()}>{t(savingDraft ? "Saving draft" : "Save draft")}</Button>
-          <Button asChild variant="outline" size="sm" className="h-9"><a href={fallbackUrl} target="_blank" rel="noreferrer"><ICustomsLogo className="size-3.5" />{t("Open iCustoms")}<ExternalLink className="size-3.5" /></a></Button>
           <Button type="button" size="sm" className="h-9" onClick={validate}><FileCheck2 className="size-3.5" />{t("Validate")}</Button>
         </div>
       </div>
 
-      {viewMode === "tabs" ? <nav className="max-w-full overflow-x-auto rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)]" aria-label={t("Declaration sections")}>
-        <div className="grid min-w-[840px] grid-cols-6 gap-1">
-          {editorTabs.map((entry, index) => (
-            <button
-              key={entry.id}
-              type="button"
-              onClick={() => selectTab(entry.id)}
-              aria-current={tab === entry.id ? "step" : undefined}
-              data-customs-tab={entry.id}
-              className={cn(
-                "relative isolate flex min-h-10 items-center gap-1.5 overflow-hidden rounded-[var(--md-radius-lg)] px-2.5 text-start transition-[color,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a28)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--md-surface)] motion-reduce:active:scale-100 motion-reduce:transition-none",
-                tab === entry.id ? "text-[var(--md-selected-text)]" : "text-[var(--md-text)] hover:bg-[var(--md-hover)]",
-              )}
-            >
-              {tab === entry.id ? <motion.span
-                aria-hidden="true"
-                data-customs-active-tab
-                layoutId="customs-export-active-tab"
-                className="absolute inset-0 -z-10 rounded-[var(--md-radius-lg)] bg-[var(--md-selected-bg)]"
-                transition={reduceMotion(shouldReduceMotion, mdMotion.spring)}
-              /> : null}
-              <span className={cn("relative z-10 grid size-5 shrink-0 place-items-center rounded-full text-[10px] font-medium transition-[background-color,color] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]", tab === entry.id ? "bg-[var(--md-accent)] text-white" : "bg-[var(--md-surface-tint)]")}>{index + 1}</span>
-              <strong className="relative z-10 min-w-0 truncate text-[12px] font-medium leading-5">{entry.label}</strong>
-            </button>
-          ))}
-        </div>
-      </nav> : <TabsRail
+      {viewMode === "tabs" ? <LayoutGroup id={`customs-${kind}-sections`}>
+        <nav className="relative isolate max-w-full overflow-x-auto rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)]" aria-label={t("Declaration sections")}>
+          <div className="grid min-w-[840px] grid-cols-6 gap-1">
+            {editorTabs.map((entry, index) => (
+              <button
+                key={entry.id}
+                type="button"
+                onClick={() => selectTab(entry.id)}
+                aria-current={tab === entry.id ? "step" : undefined}
+                aria-controls={`customs-panel-${entry.id}`}
+                data-customs-tab={entry.id}
+                className={cn(
+                  "relative flex min-h-10 items-center gap-1.5 rounded-[var(--md-radius-lg)] px-2.5 text-start transition-[color,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a28)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--md-surface)] motion-reduce:active:scale-100 motion-reduce:transition-none",
+                  tab === entry.id ? "text-[var(--md-selected-text)]" : "text-[var(--md-text)] hover:bg-[var(--md-hover)]",
+                )}
+              >
+                {tab === entry.id ? <motion.span
+                  aria-hidden="true"
+                  data-customs-active-tab
+                  layoutId={`customs-${kind}-active-tab`}
+                  className="absolute inset-0 -z-10 rounded-[var(--md-radius-lg)] bg-[var(--md-selected-bg)] shadow-[inset_0_0_0_1px_var(--md-accent-a14),0_2px_5px_rgba(11,20,19,0.06)]"
+                  transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.spring)}
+                /> : null}
+                <span className={cn("relative z-10 grid size-5 shrink-0 place-items-center rounded-full text-[10px] font-medium transition-[background-color,color] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none", tab === entry.id ? "bg-[var(--md-accent)] text-white" : "bg-[var(--md-surface-tint)]")}>{index + 1}</span>
+                <strong className="relative z-10 min-w-0 truncate text-[12px] font-medium leading-5">{entry.label}</strong>
+              </button>
+            ))}
+          </div>
+        </nav>
+      </LayoutGroup> : <TabsRail
         tabs={[
           { label: t("General") },
           { label: t("Items"), value: String(draft.items.length) },
@@ -534,33 +687,47 @@ function StandaloneExportEditor({ navigate, declarationId }: { navigate: (path: 
 
       {viewMode === "form" && formTab === "general" ? <GeneralFormView draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} highlightedField={focusTarget?.field} t={t} /> : null}
       {viewMode === "form" && formTab === "items" ? <ItemsSection items={draft.items} activeItem={activeItem} activeItemId={activeItemId} onSelectItem={setActiveItemId} onAdd={addItem} onOpenInvoiceImport={() => setInvoiceImportOpen(true)} onDuplicate={duplicateItem} onRemove={removeItem} update={updateItem} updateRow={updateItemById} showDataElements={showDataElements} showOptional={showOptional} issues={activeItemIssueFields} validated={validated} highlightedField={focusTarget?.field} t={t} /> : null}
-      {viewMode === "tabs" ? <AnimatePresence initial={false} mode="popLayout" custom={spatialTabDirection}>
-        <motion.div
-          key={tab}
-          custom={spatialTabDirection}
-          data-customs-tab-panel={tab}
-          variants={{
-            initial: (direction: number) => ({ opacity: shouldReduceMotion ? 1 : 0, x: shouldReduceMotion ? 0 : direction * 6 }),
-            active: { opacity: 1, x: 0, transition: reduceMotion(shouldReduceMotion, mdMotion.fast) },
-            exit: (direction: number) => ({ opacity: shouldReduceMotion ? 1 : 0, x: shouldReduceMotion ? 0 : direction * -4, transition: reduceMotion(shouldReduceMotion, mdMotion.exit) }),
-          }}
-          initial="initial"
-          animate="active"
-          exit="exit"
-          className="min-w-0"
-        >
-          {tab === "declaration" ? <DeclarationSection draft={draft} update={update} showDataElements={showDataElements} issues={issueFields} highlightedField={focusTarget?.field} t={t} /> : null}
-          {tab === "parties" ? <PartiesSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} highlightedField={focusTarget?.field} t={t} /> : null}
-          {tab === "transport" ? <TransportSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} highlightedField={focusTarget?.field} t={t} /> : null}
-          {tab === "documents" ? <DocumentsSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} highlightedField={focusTarget?.field} t={t} /> : null}
-          {tab === "items" ? <ItemsSection items={draft.items} activeItem={activeItem} activeItemId={activeItemId} onSelectItem={setActiveItemId} onAdd={addItem} onOpenInvoiceImport={() => setInvoiceImportOpen(true)} onDuplicate={duplicateItem} onRemove={removeItem} update={updateItem} updateRow={updateItemById} showDataElements={showDataElements} showOptional={showOptional} issues={activeItemIssueFields} validated={validated} highlightedField={focusTarget?.field} t={t} /> : null}
-          {tab === "review" ? <ReviewSection draft={draft} completion={completion} fallbackUrl={fallbackUrl} onValidate={validate} onFixIssue={fixIssue} t={t} /> : null}
-        </motion.div>
-      </AnimatePresence> : null}
+      {viewMode === "tabs" ? <div className="relative min-w-0 overflow-x-clip">
+        <AnimatePresence initial={false} mode="popLayout">
+          <motion.div
+            key={tab}
+            id={`customs-panel-${tab}`}
+            data-customs-tab-panel={tab}
+            initial={{ opacity: shouldReduceMotion ? 1 : 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: shouldReduceMotion ? 1 : 0 }}
+            transition={reduceMotion(shouldReduceMotion, mdMotion.micro)}
+            className="min-w-0"
+          >
+            {tab === "declaration" ? <DeclarationSection draft={draft} update={update} showDataElements={showDataElements} issues={issueFields} highlightedField={focusTarget?.field} t={t} /> : null}
+            {tab === "parties" ? <PartiesSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} highlightedField={focusTarget?.field} t={t} /> : null}
+            {tab === "transport" ? <TransportSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} highlightedField={focusTarget?.field} t={t} /> : null}
+            {tab === "documents" ? <DocumentsSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} highlightedField={focusTarget?.field} t={t} /> : null}
+            {tab === "items" ? <ItemsSection items={draft.items} activeItem={activeItem} activeItemId={activeItemId} onSelectItem={setActiveItemId} onAdd={addItem} onOpenInvoiceImport={() => setInvoiceImportOpen(true)} onDuplicate={duplicateItem} onRemove={removeItem} update={updateItem} updateRow={updateItemById} showDataElements={showDataElements} showOptional={showOptional} issues={activeItemIssueFields} validated={validated} highlightedField={focusTarget?.field} t={t} /> : null}
+            {tab === "review" ? <ReviewSection draft={draft} completion={completion} iCustomsState={iCustomsState} iCustomsBusy={iCustomsBusy} iCustomsIssues={iCustomsIssues} onValidate={validate} onFixIssue={fixIssue} onFixProviderIssue={fixProviderIssue} onCreateDraft={() => void createOrUpdateICustomsDraft()} onSubmit={() => setSubmitDialogOpen(true)} onRefresh={() => void refreshFromICustoms()} t={t} /> : null}
+          </motion.div>
+        </AnimatePresence>
+      </div> : null}
+      <Dialog open={submitDialogOpen} onOpenChange={setSubmitDialogOpen}>
+        <DialogContent className="rounded-[var(--md-radius-xl)] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t("Submit declaration in Test Mode?")}</DialogTitle>
+            <DialogDescription>{t("This sends the saved declaration to the customs test service. It will not enter the live customs environment.")}</DialogDescription>
+          </DialogHeader>
+          <div className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3 text-[12px] text-[var(--md-text)]">
+            <p className="font-medium text-[var(--md-ink)]">{draft.multideckReference || t("Saved declaration")}</p>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild><Button type="button" variant="outline">{t("Keep as draft")}</Button></DialogClose>
+            <Button type="button" disabled={iCustomsBusy === "submit"} onClick={() => void submitToICustoms()}><Send className="size-4" />{t(iCustomsBusy === "submit" ? "Submitting" : "Submit")}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
     {invoiceImportOpen ? <CustomsInvoiceImportWorkspace key={invoiceImportRecoveryKey} recoveryKey={invoiceImportRecoveryKey} onClose={() => setInvoiceImportOpen(false)} onApply={applyInvoiceItems} existingItemCount={draft.items.length} /> : null}
     </CustomsBoxVisibilityContext.Provider>
     </CustomsReferenceDataContext.Provider>
+    </CustomsDirectionContext.Provider>
   )
 }
 
@@ -596,42 +763,87 @@ function GeneralFormView(props: SectionProps & { showOptional: boolean }) {
 }
 
 function DeclarationSection({ draft, update, showDataElements, issues, highlightedField, t }: SectionProps) {
-  const declarationCategories = useReferenceOptions("declaration_category", t, "Select category")
+  const direction = useContext(CustomsDirectionContext)
+  const allDeclarationCategories = useReferenceOptions("declaration_category", t, "Select category")
+  const declarationCategories = direction === "import"
+    ? allDeclarationCategories.filter(([code]) => !code || code === "H1")
+    : allDeclarationCategories
   const declarationTypes = useReferenceOptions("declaration_type", t, "Select type")
   const currencies = useReferenceOptions("currency", t, "Select currency")
-  return <SectionFrame title={t("Declaration details")} description={t("Core identity and totals for this export declaration.")}>
+  return <SectionFrame title={t("Declaration details")} description={t(direction === "import" ? "Core identity and totals for this import declaration." : "Core identity and totals for this export declaration.")}>
     <FieldGrid>
       <SelectField label={t("Declaration category")} dataElement="1/1" customsBox="1" required showDataElements={showDataElements} value={draft.declarationCategory} onChange={(value) => update("declarationCategory", value)} options={declarationCategories} />
       <SelectField label={t("Type of declaration")} dataElement="1/2" customsBox="1" required showDataElements={showDataElements} value={draft.declarationType} onChange={(value) => update("declarationType", value)} options={declarationTypes} />
-      <TextField label={t("Trader reference number")} dataElement="2/4" customsBox="44" required showDataElements={showDataElements} value={draft.traderReference} onChange={(value) => update("traderReference", value)} invalid={issues.has("traderReference")} fieldKey="traderReference" highlighted={highlightedField === "traderReference"} />
-      <TextField label={t("Internal reference")} showDataElements={showDataElements} value={draft.internalReference} onChange={(value) => update("internalReference", value)} />
-      <TextField label={t("UCN")} showDataElements={showDataElements} value={draft.ucn} onChange={(value) => update("ucn", value)} />
-      <TextField label={t("Badge ID")} showDataElements={showDataElements} value={draft.badgeId} onChange={(value) => update("badgeId", value)} />
+      <TextField label={t("Trader reference number")} dataElement="2/4" customsBox="44" required showDataElements={showDataElements} value={draft.traderReference} onChange={(value) => update("traderReference", value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 19))} invalid={issues.has("traderReference")} fieldKey="traderReference" highlighted={highlightedField === "traderReference"} maxLength={19} />
+      {direction === "export" ? <><TextField label={t("Internal reference")} showDataElements={showDataElements} value={draft.internalReference} onChange={(value) => update("internalReference", value)} /><TextField label={t("UCN")} showDataElements={showDataElements} value={draft.ucn} onChange={(value) => update("ucn", value)} /><TextField label={t("Badge ID")} showDataElements={showDataElements} value={draft.badgeId} onChange={(value) => update("badgeId", value)} /></> : null}
       <TextField label={t("Total amount")} dataElement="4/11" customsBox="22" required showDataElements={showDataElements} value={draft.totalAmount} onChange={(value) => update("totalAmount", value)} invalid={issues.has("totalAmount")} fieldKey="totalAmount" highlighted={highlightedField === "totalAmount"} />
       <SelectField label={t("Currency code")} dataElement="4/10" customsBox="22" required showDataElements={showDataElements} value={draft.currency} onChange={(value) => update("currency", value)} options={currencies} />
       <TextField label={t("Total packages")} dataElement="6/18" customsBox="6" required showDataElements={showDataElements} value={draft.totalPackages} onChange={(value) => update("totalPackages", value)} invalid={issues.has("totalPackages")} fieldKey="totalPackages" highlighted={highlightedField === "totalPackages"} />
       <TextField label={t("Total gross mass")} dataElement="6/5" customsBox="35" required showDataElements={showDataElements} value={draft.totalGrossMass} onChange={(value) => update("totalGrossMass", value)} invalid={issues.has("totalGrossMass")} fieldKey="totalGrossMass" highlighted={highlightedField === "totalGrossMass"} suffix="kg" />
-      <TextField label={t("Total net mass")} dataElement="6/1" customsBox="38" required showDataElements={showDataElements} value={draft.totalNetMass} onChange={(value) => update("totalNetMass", value)} invalid={issues.has("totalNetMass")} fieldKey="totalNetMass" highlighted={highlightedField === "totalNetMass"} suffix="kg" />
+      {direction === "export" ? <TextField label={t("Total net mass")} dataElement="6/1" customsBox="38" required showDataElements={showDataElements} value={draft.totalNetMass} onChange={(value) => update("totalNetMass", value)} invalid={issues.has("totalNetMass")} fieldKey="totalNetMass" highlighted={highlightedField === "totalNetMass"} suffix="kg" /> : null}
     </FieldGrid>
   </SectionFrame>
 }
 
 function PartiesSection({ draft, update, showDataElements, showOptional, issues, highlightedField, t }: SectionProps & { showOptional: boolean }) {
+  const direction = useContext(CustomsDirectionContext)
   const representationTypes = useReferenceOptions("representation_type", t, "Not specified")
-  return <SectionFrame title={t("Party details")} description={t("Exporter, consignee, declarant and representation.")}>
+  const countries = useReferenceOptions("country", t, "Select country")
+  return <SectionFrame title={t("Party details")} description={t(direction === "import" ? "Importer, exporter, declarant and representation." : "Exporter, consignee, declarant and representation.")}>
     <FieldGrid>
+      {direction === "import" ? <>
+        <PartyContactWarning values={[draft.importerName, draft.importerAddressLine, draft.importerCity, draft.importerPostcode, draft.importerCountry]} fields={["importerName", "importerAddressLine", "importerCity", "importerPostcode", "importerCountry"]} issues={issues} t={t} />
+        <TextField label={t("Importer")} dataElement="3/16" customsBox="8" required showDataElements={showDataElements} value={draft.importer} onChange={(value) => update("importer", value)} invalid={issues.has("importer")} fieldKey="importer" highlighted={highlightedField === "importer"} placeholder={t("Name or EORI")} />
+        <TextField label={t("Importer legal name")} dataElement="3/16" customsBox="8" required showDataElements={showDataElements} value={draft.importerName} onChange={(value) => update("importerName", value)} invalid={issues.has("importerName")} fieldKey="importerName" highlighted={highlightedField === "importerName"} />
+        <TextField label={t("Importer street address")} dataElement="3/15" customsBox="8" required showDataElements={showDataElements} value={draft.importerAddressLine} onChange={(value) => update("importerAddressLine", value)} invalid={issues.has("importerAddressLine")} fieldKey="importerAddressLine" highlighted={highlightedField === "importerAddressLine"} />
+        <TextField label={t("Importer town or city")} dataElement="3/15" customsBox="8" required showDataElements={showDataElements} value={draft.importerCity} onChange={(value) => update("importerCity", value)} invalid={issues.has("importerCity")} fieldKey="importerCity" highlighted={highlightedField === "importerCity"} />
+        <TextField label={t("Importer postcode")} dataElement="3/15" customsBox="8" required showDataElements={showDataElements} value={draft.importerPostcode} onChange={(value) => update("importerPostcode", value)} invalid={issues.has("importerPostcode")} fieldKey="importerPostcode" highlighted={highlightedField === "importerPostcode"} />
+        <SelectField label={t("Importer country")} dataElement="3/15" customsBox="8" required showDataElements={showDataElements} value={draft.importerCountry} onChange={(value) => update("importerCountry", value)} invalid={issues.has("importerCountry")} fieldKey="importerCountry" highlighted={highlightedField === "importerCountry"} options={countries} />
+      </> : null}
+      <PartyContactWarning values={[draft.exporterName, draft.exporterAddressLine, draft.exporterCity, draft.exporterPostcode, draft.exporterCountry]} fields={["exporterName", "exporterAddressLine", "exporterCity", "exporterPostcode", "exporterCountry"]} issues={issues} t={t} />
       <TextField label={t("Exporter")} dataElement="3/1" customsBox="2" required showDataElements={showDataElements} value={draft.exporter} onChange={(value) => update("exporter", value)} invalid={issues.has("exporter")} fieldKey="exporter" highlighted={highlightedField === "exporter"} placeholder={t("Name or EORI")} />
-      <TextField label={t("Consignee")} dataElement="3/9" customsBox="8" required showDataElements={showDataElements} value={draft.consignee} onChange={(value) => update("consignee", value)} invalid={issues.has("consignee")} fieldKey="consignee" highlighted={highlightedField === "consignee"} placeholder={t("Name or EORI")} />
-      <TextField label={t("Carrier")} showDataElements={showDataElements} value={draft.carrier} onChange={(value) => update("carrier", value)} placeholder={t("Name or EORI")} />
+      <TextField label={t("Exporter legal name")} dataElement="3/1" customsBox="2" required showDataElements={showDataElements} value={draft.exporterName} onChange={(value) => update("exporterName", value)} invalid={issues.has("exporterName")} fieldKey="exporterName" highlighted={highlightedField === "exporterName"} />
+      <TextField label={t("Exporter street address")} dataElement="3/2" customsBox="2" required showDataElements={showDataElements} value={draft.exporterAddressLine} onChange={(value) => update("exporterAddressLine", value)} invalid={issues.has("exporterAddressLine")} fieldKey="exporterAddressLine" highlighted={highlightedField === "exporterAddressLine"} />
+      <TextField label={t("Exporter town or city")} dataElement="3/2" customsBox="2" required showDataElements={showDataElements} value={draft.exporterCity} onChange={(value) => update("exporterCity", value)} invalid={issues.has("exporterCity")} fieldKey="exporterCity" highlighted={highlightedField === "exporterCity"} />
+      <TextField label={t("Exporter postcode")} dataElement="3/2" customsBox="2" required showDataElements={showDataElements} value={draft.exporterPostcode} onChange={(value) => update("exporterPostcode", value)} invalid={issues.has("exporterPostcode")} fieldKey="exporterPostcode" highlighted={highlightedField === "exporterPostcode"} />
+      <SelectField label={t("Exporter country")} dataElement="3/2" customsBox="2" required showDataElements={showDataElements} value={draft.exporterCountry} onChange={(value) => update("exporterCountry", value)} invalid={issues.has("exporterCountry")} fieldKey="exporterCountry" highlighted={highlightedField === "exporterCountry"} options={countries} />
+      {direction === "export" ? <><PartyContactWarning values={[draft.consigneeName, draft.consigneeAddressLine, draft.consigneeCity, draft.consigneePostcode, draft.consigneeCountry]} fields={["consigneeName", "consigneeAddressLine", "consigneeCity", "consigneePostcode", "consigneeCountry"]} issues={issues} t={t} /><TextField label={t("Consignee")} dataElement="3/9" customsBox="8" required showDataElements={showDataElements} value={draft.consignee} onChange={(value) => update("consignee", value)} invalid={issues.has("consignee")} fieldKey="consignee" highlighted={highlightedField === "consignee"} placeholder={t("Name or EORI")} />
+      <TextField label={t("Consignee legal name")} dataElement="3/9" customsBox="8" required showDataElements={showDataElements} value={draft.consigneeName} onChange={(value) => update("consigneeName", value)} invalid={issues.has("consigneeName")} fieldKey="consigneeName" highlighted={highlightedField === "consigneeName"} />
+      <TextField label={t("Consignee street address")} dataElement="3/10" customsBox="8" required showDataElements={showDataElements} value={draft.consigneeAddressLine} onChange={(value) => update("consigneeAddressLine", value)} invalid={issues.has("consigneeAddressLine")} fieldKey="consigneeAddressLine" highlighted={highlightedField === "consigneeAddressLine"} />
+      <TextField label={t("Consignee town or city")} dataElement="3/10" customsBox="8" required showDataElements={showDataElements} value={draft.consigneeCity} onChange={(value) => update("consigneeCity", value)} invalid={issues.has("consigneeCity")} fieldKey="consigneeCity" highlighted={highlightedField === "consigneeCity"} />
+      <TextField label={t("Consignee postcode")} dataElement="3/10" customsBox="8" required showDataElements={showDataElements} value={draft.consigneePostcode} onChange={(value) => update("consigneePostcode", value)} invalid={issues.has("consigneePostcode")} fieldKey="consigneePostcode" highlighted={highlightedField === "consigneePostcode"} />
+      <SelectField label={t("Consignee country")} dataElement="3/10" customsBox="8" required showDataElements={showDataElements} value={draft.consigneeCountry} onChange={(value) => update("consigneeCountry", value)} invalid={issues.has("consigneeCountry")} fieldKey="consigneeCountry" highlighted={highlightedField === "consigneeCountry"} options={countries} /></> : null}
+      {direction === "export" ? <TextField label={t("Carrier")} showDataElements={showDataElements} value={draft.carrier} onChange={(value) => update("carrier", value)} placeholder={t("Name or EORI")} /> : null}
+      <PartyContactWarning values={[draft.declarantName, draft.declarantAddressLine, draft.declarantCity, draft.declarantPostcode, draft.declarantCountry]} fields={["declarantName", "declarantAddressLine", "declarantCity", "declarantPostcode", "declarantCountry"]} issues={issues} t={t} />
       <TextField label={t("Declarant")} dataElement="3/17" customsBox="14" required showDataElements={showDataElements} value={draft.declarant} onChange={(value) => update("declarant", value)} invalid={issues.has("declarant")} fieldKey="declarant" highlighted={highlightedField === "declarant"} placeholder={t("Name or EORI")} />
-      <TextField label={t("Representative")} dataElement="3/19" customsBox="14" showDataElements={showDataElements} value={draft.representative} onChange={(value) => update("representative", value)} placeholder={t("Name or EORI")} />
-      <SelectField label={t("Type of representation")} dataElement="3/21" customsBox="14" showDataElements={showDataElements} value={draft.representationType} onChange={(value) => update("representationType", value)} options={representationTypes} />
+      <TextField label={t("Declarant legal name")} dataElement="3/17" customsBox="14" required showDataElements={showDataElements} value={draft.declarantName} onChange={(value) => update("declarantName", value)} invalid={issues.has("declarantName")} fieldKey="declarantName" highlighted={highlightedField === "declarantName"} />
+      <TextField label={t("Declarant street address")} dataElement="3/18" customsBox="14" required showDataElements={showDataElements} value={draft.declarantAddressLine} onChange={(value) => update("declarantAddressLine", value)} invalid={issues.has("declarantAddressLine")} fieldKey="declarantAddressLine" highlighted={highlightedField === "declarantAddressLine"} />
+      <TextField label={t("Declarant town or city")} dataElement="3/18" customsBox="14" required showDataElements={showDataElements} value={draft.declarantCity} onChange={(value) => update("declarantCity", value)} invalid={issues.has("declarantCity")} fieldKey="declarantCity" highlighted={highlightedField === "declarantCity"} />
+      <TextField label={t("Declarant postcode")} dataElement="3/18" customsBox="14" required showDataElements={showDataElements} value={draft.declarantPostcode} onChange={(value) => update("declarantPostcode", value)} invalid={issues.has("declarantPostcode")} fieldKey="declarantPostcode" highlighted={highlightedField === "declarantPostcode"} />
+      <SelectField label={t("Declarant country")} dataElement="3/18" customsBox="14" required showDataElements={showDataElements} value={draft.declarantCountry} onChange={(value) => update("declarantCountry", value)} invalid={issues.has("declarantCountry")} fieldKey="declarantCountry" highlighted={highlightedField === "declarantCountry"} options={countries} />
+      {direction === "export" ? <TextField label={t("Representative")} dataElement="3/19" customsBox="14" showDataElements={showDataElements} value={draft.representative} onChange={(value) => update("representative", value)} placeholder={t("Name or EORI")} /> : null}
+      <SelectField label={t("Type of representation")} dataElement="3/21" customsBox="14" required={direction === "import"} showDataElements={showDataElements} value={draft.representationType} onChange={(value) => update("representationType", value)} invalid={issues.has("representationType")} fieldKey="representationType" highlighted={highlightedField === "representationType"} options={representationTypes} />
       {showOptional ? <><TextField label={t("Authorisation identifier")} showDataElements={showDataElements} value={draft.authorisationIdentifier} onChange={(value) => update("authorisationIdentifier", value)} /><TextField label={t("Authorisation category")} showDataElements={showDataElements} value={draft.authorisationCategory} onChange={(value) => update("authorisationCategory", value)} /></> : null}
     </FieldGrid>
   </SectionFrame>
 }
 
+function PartyContactWarning({ values, fields, issues, t }: {
+  values: string[]
+  fields: string[]
+  issues: Set<string>
+  t: (text: string) => string
+}) {
+  const labels = ["Name", "Street", "City", "Postcode", "Country"]
+  const missing = values.flatMap((value, index) => value.trim() ? [] : [{ field: fields[index], label: labels[index] }])
+  if (!missing.length || !missing.some(({ field }) => issues.has(field))) return null
+  return <p role="alert" className="col-span-full -mb-1 text-[11px] font-medium text-[var(--md-red)]">
+    {t("This contact is missing:")} {missing.map(({ label }) => t(label)).join(", ")}.
+  </p>
+}
+
 function TransportSection({ draft, update, showDataElements, showOptional, issues, highlightedField, t }: SectionProps & { showOptional: boolean }) {
+  const direction = useContext(CustomsDirectionContext)
   const countries = useReferenceOptions("country", t, "Select country")
   const transportModes = useReferenceOptions("transport_mode", t, "Select transport mode")
   const goodsLocationTypes = useReferenceOptions("goods_location_type", t, "Select type")
@@ -640,41 +852,42 @@ function TransportSection({ draft, update, showDataElements, showOptional, issue
     <FieldGrid>
       <SelectField label={t("Export country")} dataElement="5/14" customsBox="15" required showDataElements={showDataElements} value={draft.exportCountry} onChange={(value) => update("exportCountry", value)} options={countries} />
       <SelectField label={t("Country of destination")} dataElement="5/8" customsBox="17" required showDataElements={showDataElements} value={draft.destinationCountry} onChange={(value) => update("destinationCountry", value)} invalid={issues.has("destinationCountry")} fieldKey="destinationCountry" highlighted={highlightedField === "destinationCountry"} options={countries} />
-      <SelectField label={t("Inland transport mode")} dataElement="7/5" customsBox="26" showDataElements={showDataElements} value={draft.inlandMode} onChange={(value) => update("inlandMode", value)} options={transportModes} />
+      {direction === "export" ? <SelectField label={t("Inland transport mode")} dataElement="7/5" customsBox="26" showDataElements={showDataElements} value={draft.inlandMode} onChange={(value) => update("inlandMode", value)} options={transportModes} /> : null}
       <SelectField label={t("Mode at border")} dataElement="7/4" customsBox="25" required showDataElements={showDataElements} value={draft.borderMode} onChange={(value) => update("borderMode", value)} options={transportModes} />
+      <SelectField label={t("Border transport nationality")} dataElement="7/15" customsBox="21" showDataElements={showDataElements} value={draft.borderNationality} onChange={(value) => update("borderNationality", value)} options={countries} />
       <TextField label={t("Border identification number")} dataElement="7/14" customsBox="21" showDataElements={showDataElements} value={draft.borderIdentificationNumber} onChange={(value) => update("borderIdentificationNumber", value)} />
-      <TextField label={t("Departure identification number")} dataElement="7/7" customsBox="18" showDataElements={showDataElements} value={draft.departureIdentificationNumber} onChange={(value) => update("departureIdentificationNumber", value)} />
+      {direction === "import" ? <><TextField label={t("Arrival transport type")} dataElement="7/9" customsBox="18" showDataElements={showDataElements} value={draft.arrivalIdentificationType} onChange={(value) => update("arrivalIdentificationType", value)} /><TextField label={t("Arrival identification number")} dataElement="7/7" customsBox="18" showDataElements={showDataElements} value={draft.arrivalIdentificationNumber} onChange={(value) => update("arrivalIdentificationNumber", value)} /></> : <TextField label={t("Departure identification number")} dataElement="7/7" customsBox="18" showDataElements={showDataElements} value={draft.departureIdentificationNumber} onChange={(value) => update("departureIdentificationNumber", value)} />}
       <SelectField label={t("Type of location")} dataElement="5/23" customsBox="30" showDataElements={showDataElements} value={draft.goodsLocationType} onChange={(value) => update("goodsLocationType", value)} options={goodsLocationTypes} />
       <TextField label={t("Name of place")} dataElement="5/23" customsBox="30" showDataElements={showDataElements} value={draft.goodsLocationName} onChange={(value) => update("goodsLocationName", value)} />
-      <TextField label={t("Goods location identifier")} dataElement="5/23" customsBox="30" showDataElements={showDataElements} value={draft.goodsLocationIdentifier} onChange={(value) => update("goodsLocationIdentifier", value)} />
+      <TextField label={t("Goods location identifier")} dataElement="5/23" customsBox="30" required={direction === "import"} showDataElements={showDataElements} value={draft.goodsLocationIdentifier} onChange={(value) => update("goodsLocationIdentifier", value)} invalid={issues.has("goodsLocationIdentifier")} fieldKey="goodsLocationIdentifier" highlighted={highlightedField === "goodsLocationIdentifier"} />
       <SelectField label={t("Transported in container")} dataElement="7/2" customsBox="19" showDataElements={showDataElements} value={draft.isContainerised} onChange={(value) => update("isContainerised", value)} options={containerIndicators} />
       {draft.isContainerised === "1" ? <><TextField label={t("Container ID")} dataElement="7/10" customsBox="31" required showDataElements={showDataElements} value={draft.containerId} onChange={(value) => update("containerId", value)} invalid={issues.has("containerId")} fieldKey="containerId" highlighted={highlightedField === "containerId"} /><TextField label={t("Seal identifier")} dataElement="7/18" customsBox="31" showDataElements={showDataElements} value={draft.sealIdentifier} onChange={(value) => update("sealIdentifier", value)} /></> : null}
-      {showOptional ? <><TextField label={t("GVMS AI code")} showDataElements={showDataElements} value={draft.gvmsCode} onChange={(value) => update("gvmsCode", value)} /><TextField label={t("GVMS AI code value")} showDataElements={showDataElements} value={draft.gvmsValue} onChange={(value) => update("gvmsValue", value)} /><TextField label={t("Routing country")} showDataElements={showDataElements} value={draft.routingCountry} onChange={(value) => update("routingCountry", value)} /></> : null}
+      {showOptional && direction === "export" ? <><TextField label={t("GVMS AI code")} showDataElements={showDataElements} value={draft.gvmsCode} onChange={(value) => update("gvmsCode", value)} /><TextField label={t("GVMS AI code value")} showDataElements={showDataElements} value={draft.gvmsValue} onChange={(value) => update("gvmsValue", value)} /><TextField label={t("Routing country")} showDataElements={showDataElements} value={draft.routingCountry} onChange={(value) => update("routingCountry", value)} /></> : null}
     </FieldGrid>
   </SectionFrame>
 }
 
 function DocumentsSection({ draft, update, showDataElements, showOptional, issues, highlightedField, t }: SectionProps & { showOptional: boolean }) {
+  const direction = useContext(CustomsDirectionContext)
   const previousDocumentCategories = useReferenceOptions("previous_document_category", t, "Select category")
   const previousDocumentTypes = useReferenceOptions("previous_document_type", t, "Select document type")
   const transactionNatures = useReferenceOptions("transaction_nature", t, "Select nature")
-  return <SectionFrame title={t("Documents and customs offices")} description={t("Previous documents, controlling offices and guarantees.")}>
+  return <SectionFrame title={t(direction === "import" ? "Import terms" : "Documents and customs offices")} description={t(direction === "import" ? "Trade terms and the transaction details applied to every goods item." : "Previous documents, controlling offices and guarantees.")}>
     <FieldGrid>
-      <SelectField label={t("Previous document category")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={draft.previousDocumentCategory} onChange={(value) => update("previousDocumentCategory", value)} options={previousDocumentCategories} />
-      <SelectField label={t("Previous document type")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={draft.previousDocumentType} onChange={(value) => update("previousDocumentType", value)} options={previousDocumentTypes} />
-      <TextField label={t("Document reference")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={draft.previousDocumentReference} onChange={(value) => update("previousDocumentReference", value)} invalid={issues.has("previousDocumentReference")} fieldKey="previousDocumentReference" highlighted={highlightedField === "previousDocumentReference"} />
-      <SelectField label={t("Nature of transaction")} dataElement="8/5" customsBox="24" showDataElements={showDataElements} value={draft.transactionNature} onChange={(value) => update("transactionNature", value)} options={transactionNatures} />
-      <TextField label={t("Exchange rate")} dataElement="4/15" customsBox="23" showDataElements={showDataElements} value={draft.exchangeRate} onChange={(value) => update("exchangeRate", value)} />
-      <TextField label={t("Customs office of exit")} dataElement="5/12" customsBox="29" required showDataElements={showDataElements} value={draft.exitOffice} onChange={(value) => update("exitOffice", value)} invalid={issues.has("exitOffice")} fieldKey="exitOffice" highlighted={highlightedField === "exitOffice"} />
-      {showOptional ? <><TextField label={t("Supervising office")} dataElement="5/27" showDataElements={showDataElements} value={draft.supervisingOffice} onChange={(value) => update("supervisingOffice", value)} /><TextField label={t("Customs office of presentation")} dataElement="5/26" showDataElements={showDataElements} value={draft.presentationOffice} onChange={(value) => update("presentationOffice", value)} /><TextField label={t("Warehouse type")} dataElement="2/7" customsBox="49" showDataElements={showDataElements} value={draft.warehouseType} onChange={(value) => update("warehouseType", value)} /><TextField label={t("Warehouse identifier")} dataElement="2/7" customsBox="49" showDataElements={showDataElements} value={draft.warehouseIdentifier} onChange={(value) => update("warehouseIdentifier", value)} /><TextField label={t("Guarantee type")} dataElement="8/2" customsBox="52" showDataElements={showDataElements} value={draft.guaranteeType} onChange={(value) => update("guaranteeType", value)} /><TextField label={t("GRN or guarantee ID")} dataElement="8/3" customsBox="52" showDataElements={showDataElements} value={draft.guaranteeReference} onChange={(value) => update("guaranteeReference", value)} /></> : null}
+      {direction === "export" ? <><SelectField label={t("Previous document category")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={draft.previousDocumentCategory} onChange={(value) => update("previousDocumentCategory", value)} options={previousDocumentCategories} /><SelectField label={t("Previous document type")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={draft.previousDocumentType} onChange={(value) => update("previousDocumentType", value)} options={previousDocumentTypes} /><TextField label={t("Document reference")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={draft.previousDocumentReference} onChange={(value) => update("previousDocumentReference", value.replace(/[^A-Za-z0-9]/g, "").slice(0, 35))} invalid={issues.has("previousDocumentReference")} fieldKey="previousDocumentReference" highlighted={highlightedField === "previousDocumentReference"} maxLength={35} /></> : null}
+      <SelectField label={t("Nature of transaction")} dataElement="8/5" customsBox="24" required showDataElements={showDataElements} value={draft.transactionNature} onChange={(value) => update("transactionNature", value)} invalid={issues.has("transactionNature")} fieldKey="transactionNature" highlighted={highlightedField === "transactionNature"} options={transactionNatures} />
+      {direction === "import" ? <TextField label={t("Trade terms")} dataElement="4/1" customsBox="20" required showDataElements={showDataElements} value={draft.tradeTerms} onChange={(value) => update("tradeTerms", value.toUpperCase().slice(0, 3))} invalid={issues.has("tradeTerms")} fieldKey="tradeTerms" highlighted={highlightedField === "tradeTerms"} maxLength={3} /> : <><TextField label={t("Exchange rate")} dataElement="4/15" customsBox="23" showDataElements={showDataElements} value={draft.exchangeRate} onChange={(value) => update("exchangeRate", value)} /><TextField label={t("Customs office of exit")} dataElement="5/12" customsBox="29" required showDataElements={showDataElements} value={draft.exitOffice} onChange={(value) => update("exitOffice", value)} invalid={issues.has("exitOffice")} fieldKey="exitOffice" highlighted={highlightedField === "exitOffice"} /></>}
+      {showOptional && direction === "export" ? <><TextField label={t("Supervising office")} dataElement="5/27" showDataElements={showDataElements} value={draft.supervisingOffice} onChange={(value) => update("supervisingOffice", value)} /><TextField label={t("Customs office of presentation")} dataElement="5/26" showDataElements={showDataElements} value={draft.presentationOffice} onChange={(value) => update("presentationOffice", value)} /><TextField label={t("Warehouse type")} dataElement="2/7" customsBox="49" showDataElements={showDataElements} value={draft.warehouseType} onChange={(value) => update("warehouseType", value)} /><TextField label={t("Warehouse identifier")} dataElement="2/7" customsBox="49" showDataElements={showDataElements} value={draft.warehouseIdentifier} onChange={(value) => update("warehouseIdentifier", value)} /><TextField label={t("Guarantee type")} dataElement="8/2" customsBox="52" showDataElements={showDataElements} value={draft.guaranteeType} onChange={(value) => update("guaranteeType", value)} /><TextField label={t("GRN or guarantee ID")} dataElement="8/3" customsBox="52" showDataElements={showDataElements} value={draft.guaranteeReference} onChange={(value) => update("guaranteeReference", value)} /></> : null}
     </FieldGrid>
   </SectionFrame>
 }
 
 function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, onOpenInvoiceImport, onDuplicate, onRemove, update, updateRow, showDataElements, showOptional, issues, validated, highlightedField, t }: { items: ExportDeclarationItem[]; activeItem: ExportDeclarationItem; activeItemId: string; onSelectItem: (id: string) => void; onAdd: () => void; onOpenInvoiceImport: () => void; onDuplicate: (itemId?: string) => void; onRemove: (itemId?: string) => void; update: <K extends keyof ExportDeclarationItem>(field: K, value: ExportDeclarationItem[K]) => void; updateRow: <K extends keyof ExportDeclarationItem>(itemId: string, field: K, value: ExportDeclarationItem[K]) => void; showDataElements: boolean; showOptional: boolean; issues: Set<string>; validated: boolean; highlightedField?: string; t: (text: string) => string }) {
   const { direction } = useLanguage()
+  const declarationDirection = useContext(CustomsDirectionContext)
   const shouldReduceMotion = Boolean(useReducedMotion())
-  const [expandedItemId, setExpandedItemId] = useState<string | null>(activeItemId)
+  const [expandedItemId, setExpandedItemId] = useState<string | null>(null)
+  const previousActiveItemId = useRef(activeItemId)
   const packageKinds = useReferenceOptions("package_kind", t)
   const countries = useReferenceOptions("country", t)
   const procedureCodes = useReferenceOptions("procedure_code", t)
@@ -682,6 +895,8 @@ function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, on
   const currencies = useReferenceOptions("currency", t)
 
   useEffect(() => {
+    if (previousActiveItemId.current === activeItemId) return
+    previousActiveItemId.current = activeItemId
     setExpandedItemId(activeItemId)
   }, [activeItemId])
 
@@ -701,7 +916,7 @@ function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, on
       canPin: false,
       cell: (item) => {
         const index = items.findIndex((candidate) => candidate.id === item.id)
-        const missing = mandatoryItemGaps(item)
+        const missing = mandatoryItemGaps(item, declarationDirection)
         const expanded = item.id === expandedItemId
         return <button type="button" data-item-disclosure aria-expanded={expanded} aria-controls={`item-details-${item.id}`} aria-label={`${t(expanded ? "Collapse item details" : "Expand item details")} ${index + 1}`} onClick={(event) => { event.stopPropagation(); toggleItem(item.id) }} className="group/disclosure flex min-h-9 w-full items-center gap-1.5 rounded-[var(--md-radius-sm)] px-1 text-start outline-none transition-colors duration-150 hover:bg-[var(--md-surface)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] focus-visible:ring-offset-1 active:bg-[var(--md-hover)]">
           <ChevronDown className={cn("size-3.5 shrink-0 text-[var(--md-subtle)] transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none", expanded && "rotate-180")} aria-hidden="true" />
@@ -713,63 +928,63 @@ function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, on
       },
     },
     {
-      id: "commodityCode", label: "Commodity code", width: 120, minWidth: 120, kind: "text", canPin: false,
-      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item); return <Input aria-label={`${t("Commodity code")} ${index + 1}`} className={cn(inputClass, validatedItemField(issues, missing, "commodityCode") && "ring-1 ring-[var(--md-red)]")} value={item.commodityCode} onChange={(event) => updateRow(item.id, "commodityCode", event.target.value.replace(/\D/g, "").slice(0, 10))} /> },
+      id: "commodityCode", label: t("Commodity code"), width: 120, minWidth: 120, kind: "text", canPin: false,
+      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item, declarationDirection); return <Input aria-label={`${t("Commodity code")} ${index + 1}`} className={cn(inputClass, validatedItemField(issues, missing, "commodityCode") && "ring-1 ring-[var(--md-red)]")} value={item.commodityCode} onChange={(event) => updateRow(item.id, "commodityCode", event.target.value.replace(/\D/g, "").slice(0, 10))} /> },
     },
     {
-      id: "description", label: "Description of goods", width: 200, minWidth: 200, kind: "long-text", canPin: false,
-      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item); return <Input aria-label={`${t("Description of goods")} ${index + 1}`} className={cn(inputClass, validatedItemField(issues, missing, "description") && "ring-1 ring-[var(--md-red)]")} value={item.description} onChange={(event) => updateRow(item.id, "description", event.target.value)} /> },
+      id: "description", label: t("Description of goods"), width: 200, minWidth: 200, kind: "long-text", canPin: false,
+      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item, declarationDirection); return <Input aria-label={`${t("Description of goods")} ${index + 1}`} className={cn(inputClass, validatedItemField(issues, missing, "description") && "ring-1 ring-[var(--md-red)]")} value={item.description} onChange={(event) => updateRow(item.id, "description", event.target.value)} /> },
     },
     {
-      id: "packageKind", label: "Package kind", width: 96, minWidth: 96, kind: "attribute", canPin: false,
-      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item); return <ItemTableSelect label={`${t("Package kind")} ${index + 1}`} value={item.packageKind} onChange={(value) => updateRow(item.id, "packageKind", value)} options={packageKinds} invalid={validatedItemField(issues, missing, "packageKind")} /> },
+      id: "packageKind", label: t("Package kind"), width: 96, minWidth: 96, kind: "attribute", canPin: false,
+      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item, declarationDirection); return <ItemTableSelect label={`${t("Package kind")} ${index + 1}`} value={item.packageKind} onChange={(value) => updateRow(item.id, "packageKind", value)} options={packageKinds} invalid={validatedItemField(issues, missing, "packageKind")} /> },
     },
     {
-      id: "packageMarks", label: "Package marks", width: 130, minWidth: 130, kind: "text", canPin: false,
-      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item); return <Input aria-label={`${t("Package marks")} ${index + 1}`} className={cn(inputClass, validatedItemField(issues, missing, "packageMarks") && "ring-1 ring-[var(--md-red)]")} value={item.packageMarks} onChange={(event) => updateRow(item.id, "packageMarks", event.target.value)} /> },
+      id: "packageMarks", label: t("Package marks"), width: 130, minWidth: 130, kind: "text", canPin: false,
+      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item, declarationDirection); return <Input aria-label={`${t("Package marks")} ${index + 1}`} className={cn(inputClass, validatedItemField(issues, missing, "packageMarks") && "ring-1 ring-[var(--md-red)]")} value={item.packageMarks} onChange={(event) => updateRow(item.id, "packageMarks", event.target.value)} /> },
     },
     {
-      id: "packageCount", label: "Package count", width: 82, minWidth: 82, kind: "number", canPin: false,
-      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item); return <Input aria-label={`${t("Package count")} ${index + 1}`} inputMode="numeric" className={cn(inputClass, validatedItemField(issues, missing, "packageCount") && "ring-1 ring-[var(--md-red)]")} value={item.packageCount} onChange={(event) => updateRow(item.id, "packageCount", event.target.value)} /> },
+      id: "packageCount", label: t("Package count"), width: 82, minWidth: 82, kind: "number", canPin: false,
+      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item, declarationDirection); return <Input aria-label={`${t("Package count")} ${index + 1}`} inputMode="numeric" className={cn(inputClass, validatedItemField(issues, missing, "packageCount") && "ring-1 ring-[var(--md-red)]")} value={item.packageCount} onChange={(event) => updateRow(item.id, "packageCount", event.target.value)} /> },
     },
     {
-      id: "origin", label: "Non-preferential origin", width: 112, minWidth: 112, kind: "attribute", canPin: false,
-      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item); return <ItemTableSelect label={`${t("Non-preferential origin")} ${index + 1}`} value={item.nonPreferentialOrigin} onChange={(value) => updateRow(item.id, "nonPreferentialOrigin", value)} options={countries} invalid={validatedItemField(issues, missing, "nonPreferentialOrigin")} /> },
+      id: "origin", label: t("Non-preferential origin"), width: 112, minWidth: 112, kind: "attribute", canPin: false,
+      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item, declarationDirection); return <ItemTableSelect label={`${t("Non-preferential origin")} ${index + 1}`} value={item.nonPreferentialOrigin} onChange={(value) => updateRow(item.id, "nonPreferentialOrigin", value)} options={countries} invalid={validatedItemField(issues, missing, "nonPreferentialOrigin")} /> },
     },
     {
-      id: "procedureCode", label: "Procedure code", width: 102, minWidth: 102, kind: "attribute", canPin: false,
-      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item); return <ItemTableSelect label={`${t("Procedure code")} ${index + 1}`} value={item.procedureCode} onChange={(value) => updateRow(item.id, "procedureCode", value)} options={procedureCodes} invalid={validatedItemField(issues, missing, "procedureCode")} /> },
+      id: "procedureCode", label: t("Procedure code"), width: 102, minWidth: 102, kind: "attribute", canPin: false,
+      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item, declarationDirection); return <ItemTableSelect label={`${t("Procedure code")} ${index + 1}`} value={item.procedureCode} onChange={(value) => updateRow(item.id, "procedureCode", value)} options={procedureCodes} invalid={validatedItemField(issues, missing, "procedureCode")} /> },
     },
     {
-      id: "additionalProcedureCode", label: "Additional procedure code", width: 118, minWidth: 118, kind: "attribute", canPin: false,
-      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item); return <ItemTableSelect label={`${t("Additional procedure code")} ${index + 1}`} value={item.additionalProcedureCode} onChange={(value) => updateRow(item.id, "additionalProcedureCode", value)} options={additionalProcedureCodes} invalid={validatedItemField(issues, missing, "additionalProcedureCode")} /> },
+      id: "additionalProcedureCode", label: t("Additional procedure code"), width: 118, minWidth: 118, kind: "attribute", canPin: false,
+      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item, declarationDirection); return <ItemTableSelect label={`${t("Additional procedure code")} ${index + 1}`} value={item.additionalProcedureCode} onChange={(value) => updateRow(item.id, "additionalProcedureCode", value)} options={additionalProcedureCodes} invalid={validatedItemField(issues, missing, "additionalProcedureCode")} /> },
     },
     ...(["grossMass", "netMass"] as const).map((field) => ({
       id: field,
-      label: field === "grossMass" ? "Gross mass" : "Net mass",
+      label: t(field === "grossMass" ? "Gross mass" : "Net mass"),
       width: 88,
       minWidth: 88,
       kind: "number" as const,
       canPin: false,
-      cell: (item: ExportDeclarationItem) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item); return <Input aria-label={`${t(field === "grossMass" ? "Gross mass" : "Net mass")} ${index + 1}`} inputMode="decimal" className={cn(inputClass, validatedItemField(issues, missing, field) && "ring-1 ring-[var(--md-red)]")} value={item[field]} onChange={(event) => updateRow(item.id, field, event.target.value)} /> },
+      cell: (item: ExportDeclarationItem) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item, declarationDirection); return <Input aria-label={`${t(field === "grossMass" ? "Gross mass" : "Net mass")} ${index + 1}`} inputMode="decimal" className={cn(inputClass, validatedItemField(issues, missing, field) && "ring-1 ring-[var(--md-red)]")} value={item[field]} onChange={(event) => updateRow(item.id, field, event.target.value)} /> },
     })),
     {
-      id: "price", label: "Price / currency", width: 155, minWidth: 155, kind: "number", canPin: false,
-      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item); return <div className="grid grid-cols-[1fr_72px] gap-1"><Input aria-label={`${t("Item price")} ${index + 1}`} inputMode="decimal" className={cn(inputClass, validatedItemField(issues, missing, "itemPrice") && "ring-1 ring-[var(--md-red)]")} value={item.itemPrice} onChange={(event) => updateRow(item.id, "itemPrice", event.target.value)} /><ItemTableSelect label={`${t("Currency code")} ${index + 1}`} value={item.currency} onChange={(value) => updateRow(item.id, "currency", value)} options={currencies} /></div> },
+      id: "price", label: t("Price / currency"), width: 155, minWidth: 155, kind: "number", canPin: false,
+      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item, declarationDirection); return <div className="grid grid-cols-[1fr_72px] gap-1"><Input aria-label={`${t("Item price")} ${index + 1}`} inputMode="decimal" className={cn(inputClass, validatedItemField(issues, missing, "itemPrice") && "ring-1 ring-[var(--md-red)]")} value={item.itemPrice} onChange={(event) => updateRow(item.id, "itemPrice", event.target.value)} /><ItemTableSelect label={`${t("Currency code")} ${index + 1}`} value={item.currency} onChange={(value) => updateRow(item.id, "currency", value)} options={currencies} /></div> },
     },
     {
-      id: "statisticalValue", label: "Statistical value", width: 105, minWidth: 105, kind: "number", canPin: false,
-      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item); return <Input aria-label={`${t("Statistical value")} ${index + 1}`} inputMode="decimal" className={cn(inputClass, validatedItemField(issues, missing, "statisticalValue") && "ring-1 ring-[var(--md-red)]")} value={item.statisticalValue} onChange={(event) => updateRow(item.id, "statisticalValue", event.target.value)} /> },
+      id: "statisticalValue", label: t("Statistical value"), width: 105, minWidth: 105, kind: "number", canPin: false,
+      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item, declarationDirection); return <Input aria-label={`${t("Statistical value")} ${index + 1}`} inputMode="decimal" className={cn(inputClass, validatedItemField(issues, missing, "statisticalValue") && "ring-1 ring-[var(--md-red)]")} value={item.statisticalValue} onChange={(event) => updateRow(item.id, "statisticalValue", event.target.value)} /> },
     },
     {
-      id: "previousDocumentReference", label: "Previous document reference", width: 150, minWidth: 150, kind: "text", canPin: false,
-      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item); return <Input aria-label={`${t("Previous document reference")} ${index + 1}`} className={cn(inputClass, validatedItemField(issues, missing, "previousDocumentReference") && "ring-1 ring-[var(--md-red)]")} value={item.previousDocumentReference} onChange={(event) => updateRow(item.id, "previousDocumentReference", event.target.value)} /> },
+      id: "previousDocumentReference", label: t("Previous document reference"), width: 150, minWidth: 150, kind: "text", canPin: false,
+      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item, declarationDirection); return <Input aria-label={`${t("Previous document reference")} ${index + 1}`} className={cn(inputClass, validatedItemField(issues, missing, "previousDocumentReference") && "ring-1 ring-[var(--md-red)]")} value={item.previousDocumentReference} maxLength={35} onChange={(event) => updateRow(item.id, "previousDocumentReference", event.target.value.replace(/[^A-Za-z0-9]/g, "").slice(0, 35))} /> },
     },
     {
-      id: "actions", label: "Actions", width: 54, minWidth: 54, kind: "actions", canHide: false, canPin: false,
+      id: "actions", label: t("Actions"), width: 54, minWidth: 54, kind: "actions", canHide: false, canPin: false,
       cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); return <button type="button" aria-label={`${t("Remove")} ${t("Item")} ${index + 1}`} disabled={items.length === 1} onClick={(event) => { event.stopPropagation(); onRemove(item.id) }} className="grid size-8 place-items-center rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] hover:bg-[var(--md-surface)] hover:text-[var(--md-red)] disabled:opacity-30"><Trash2 className="size-3.5" /></button> },
     },
-  ], [additionalProcedureCodes, countries, currencies, expandedItemId, issues, items, packageKinds, procedureCodes, t, updateRow])
+  ], [additionalProcedureCodes, countries, currencies, declarationDirection, expandedItemId, issues, items, packageKinds, procedureCodes, t, updateRow])
 
   return <div className="min-w-0 space-y-4">
     <Surface padding="none" className="w-full min-w-0 max-w-full overflow-hidden rounded-[var(--md-radius-xl)]">
@@ -782,7 +997,7 @@ function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, on
       </header>
       <div className="w-full min-w-0 max-w-full [container-type:inline-size]" data-testid="mandatory-goods-line-scroll">
         <DataTable
-          ariaLabel="Mandatory goods-line fields"
+          ariaLabel={t("Mandatory goods-line fields")}
           columns={itemColumns}
           rows={items}
           getRowKey={(item) => item.id}
@@ -880,21 +1095,23 @@ function ItemDetailsEditor({ item, itemNumber, onDuplicate, onRemove, canRemove,
   highlightedField?: string
   t: (text: string) => string
 }) {
+  const declarationDirection = useContext(CustomsDirectionContext)
   const packageKindFields = useReferenceOptions("package_kind", t, "Select package")
   const countryFields = useReferenceOptions("country", t, "Select country")
   const optionalCountries = useReferenceOptions("country", t, "Not specified")
   const procedureCodeFields = useReferenceOptions("procedure_code", t, "Select procedure")
   const additionalProcedureCodeFields = useReferenceOptions("additional_procedure_code", t, "Select procedure")
   const currencyFields = useReferenceOptions("currency", t, "Select currency")
+  const previousDocumentCategories = useReferenceOptions("previous_document_category", t, "Select category")
   const previousDocumentTypes = useReferenceOptions("previous_document_type", t, "Select document type")
 
   return <div className="space-y-3" aria-label={`${t("Item details")} ${itemNumber}`}>
-    <div className="grid items-start gap-3 xl:grid-cols-[minmax(260px,0.95fr)_minmax(260px,0.88fr)_minmax(300px,1.05fr)]">
+    <div className={cn("grid items-start gap-3", declarationDirection === "import" ? "xl:grid-cols-2" : "xl:grid-cols-[minmax(260px,0.95fr)_minmax(260px,0.88fr)_minmax(300px,1.05fr)]")}>
       <div className="space-y-3">
         <ItemDetailGroup title={t("Commodity")}>
           <FieldGrid className="grid-cols-1 sm:grid-cols-1 md:grid-cols-1 xl:grid-cols-1 2xl:grid-cols-1">
           <TextField label={t("Commodity code")} dataElement="6/14" customsBox="33" required showDataElements={showDataElements} value={item.commodityCode} onChange={(value) => update("commodityCode", value.replace(/\D/g, "").slice(0, 10))} invalid={issues.has("commodityCode")} fieldKey="commodityCode" highlighted={highlightedField === "commodityCode"} />
-          <TextField label={t("UN dangerous goods code")} dataElement="6/12" customsBox="31" showDataElements={showDataElements} value={item.dangerousGoodsCode} onChange={(value) => update("dangerousGoodsCode", value)} />
+          {declarationDirection === "export" ? <TextField label={t("UN dangerous goods code")} dataElement="6/12" customsBox="31" showDataElements={showDataElements} value={item.dangerousGoodsCode} onChange={(value) => update("dangerousGoodsCode", value)} /> : null}
           <TextAreaField label={t("Description of goods")} dataElement="6/8" customsBox="31" required showDataElements={showDataElements} value={item.description} onChange={(value) => update("description", value)} invalid={issues.has("description")} fieldKey="description" highlighted={highlightedField === "description"} />
           {showOptional ? <><TextField label={t("TARIC additional code")} dataElement="6/16" customsBox="33" showDataElements={showDataElements} value={item.taricCode} onChange={(value) => update("taricCode", value)} /><TextField label={t("National additional code")} dataElement="6/17" customsBox="33" showDataElements={showDataElements} value={item.nationalCode} onChange={(value) => update("nationalCode", value)} /><TextField label={t("CUS code")} dataElement="6/13" customsBox="31" showDataElements={showDataElements} value={item.cusCode} onChange={(value) => update("cusCode", value)} /></> : null}
           </FieldGrid>
@@ -915,9 +1132,10 @@ function ItemDetailsEditor({ item, itemNumber, onDuplicate, onRemove, canRemove,
       <div className="space-y-3">
         <ItemDetailGroup title={t("Documents")}>
           <FieldGrid className="grid-cols-1 sm:grid-cols-1 md:grid-cols-1 xl:grid-cols-1 2xl:grid-cols-1">
+            {declarationDirection === "import" ? <SelectField label={t("Previous document category")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={item.previousDocumentCategory} onChange={(value) => update("previousDocumentCategory", value)} invalid={issues.has("previousDocumentCategory")} fieldKey="previousDocumentCategory" highlighted={highlightedField === "previousDocumentCategory"} options={previousDocumentCategories} /> : null}
             <SelectField label={t("Previous document type")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={item.previousDocumentType} onChange={(value) => update("previousDocumentType", value)} options={previousDocumentTypes} />
-            <TextField label={t("Previous document reference")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={item.previousDocumentReference} onChange={(value) => update("previousDocumentReference", value)} invalid={issues.has("previousDocumentReference")} fieldKey="previousDocumentReference" highlighted={highlightedField === "previousDocumentReference"} />
-            {showOptional ? <><TextField label={t("Additional document category")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={item.additionalDocumentCategory} onChange={(value) => update("additionalDocumentCategory", value)} /><TextField label={t("Additional document ID")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={item.additionalDocumentId} onChange={(value) => update("additionalDocumentId", value)} /><TextField label={t("Additional document name")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={item.additionalDocumentName} onChange={(value) => update("additionalDocumentName", value)} /><TextField label={t("LPCO exemption code")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={item.lpcoExemptionCode} onChange={(value) => update("lpcoExemptionCode", value)} /></> : null}
+            <TextField label={t("Previous document reference")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={item.previousDocumentReference} onChange={(value) => update("previousDocumentReference", value.replace(/[^A-Za-z0-9]/g, "").slice(0, 35))} invalid={issues.has("previousDocumentReference")} fieldKey="previousDocumentReference" highlighted={highlightedField === "previousDocumentReference"} maxLength={35} />
+            {showOptional ? <><TextField label={t("Additional document category")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={item.additionalDocumentCategory} onChange={(value) => update("additionalDocumentCategory", value)} fieldKey="additionalDocumentCategory" highlighted={highlightedField === "additionalDocumentCategory"} /><TextField label={t("Additional document type")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={item.additionalDocumentType} onChange={(value) => update("additionalDocumentType", value)} fieldKey="additionalDocumentType" highlighted={highlightedField === "additionalDocumentType"} /><TextField label={t("Additional document ID")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={item.additionalDocumentId} onChange={(value) => update("additionalDocumentId", value)} fieldKey="additionalDocumentId" highlighted={highlightedField === "additionalDocumentId"} /><TextField label={t("Additional document name")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={item.additionalDocumentName} onChange={(value) => update("additionalDocumentName", value)} /><TextField label={t("LPCO exemption code")} dataElement="2/3" customsBox="44" showDataElements={showDataElements} value={item.lpcoExemptionCode} onChange={(value) => update("lpcoExemptionCode", value)} /></> : null}
           </FieldGrid>
         </ItemDetailGroup>
 
@@ -929,11 +1147,12 @@ function ItemDetailsEditor({ item, itemNumber, onDuplicate, onRemove, canRemove,
           <TextField label={t("Item price")} dataElement="4/14" customsBox="42" required showDataElements={showDataElements} value={item.itemPrice} onChange={(value) => update("itemPrice", value)} invalid={issues.has("itemPrice")} fieldKey="itemPrice" highlighted={highlightedField === "itemPrice"} />
           <SelectField label={t("Currency code")} dataElement="4/10" customsBox="22" required showDataElements={showDataElements} value={item.currency} onChange={(value) => update("currency", value)} options={currencyFields} />
           <TextField label={t("Statistical value")} dataElement="8/6" customsBox="46" required showDataElements={showDataElements} value={item.statisticalValue} onChange={(value) => update("statisticalValue", value)} invalid={issues.has("statisticalValue")} fieldKey="statisticalValue" highlighted={highlightedField === "statisticalValue"} />
+          {declarationDirection === "import" ? <><TextField label={t("Customs valuation method")} dataElement="4/16" customsBox="43" required showDataElements={showDataElements} value={item.customsValuationMethod} onChange={(value) => update("customsValuationMethod", value.replace(/\D/g, "").slice(0, 1))} invalid={issues.has("customsValuationMethod")} fieldKey="customsValuationMethod" highlighted={highlightedField === "customsValuationMethod"} maxLength={1} /><TextField label={t("Preference code")} dataElement="4/17" customsBox="36" required showDataElements={showDataElements} value={item.preferenceCode} onChange={(value) => update("preferenceCode", value.replace(/\D/g, "").slice(0, 3))} invalid={issues.has("preferenceCode")} fieldKey="preferenceCode" highlighted={highlightedField === "preferenceCode"} maxLength={3} /></> : null}
           </FieldGrid>
         </ItemDetailGroup>
       </div>
 
-      <ItemDetailGroup title={t("Parties & transport")}>
+      {declarationDirection === "export" ? <ItemDetailGroup title={t("Parties & transport")}>
         <FieldGrid className="grid-cols-1 sm:grid-cols-1 md:grid-cols-1 xl:grid-cols-1 2xl:grid-cols-1">
           <TextField label={t("Consignor")} dataElement="3/7" customsBox="2" showDataElements={showDataElements} value={item.consignor} onChange={(value) => update("consignor", value)} />
           <TextField label={t("Consignee")} dataElement="3/9" customsBox="8" showDataElements={showDataElements} value={item.consignee} onChange={(value) => update("consignee", value)} />
@@ -941,7 +1160,7 @@ function ItemDetailsEditor({ item, itemNumber, onDuplicate, onRemove, canRemove,
           <TextField label={t("Reference number or UCR")} dataElement="2/4" customsBox="44" showDataElements={showDataElements} value={item.ucr} onChange={(value) => update("ucr", value)} />
           <TextField label={t("Container identification number")} dataElement="7/10" customsBox="31" showDataElements={showDataElements} value={item.containerId} onChange={(value) => update("containerId", value)} />
         </FieldGrid>
-      </ItemDetailGroup>
+      </ItemDetailGroup> : null}
     </div>
     <div className="flex flex-wrap justify-end gap-2 border-t border-[var(--md-line)] pt-3">
       <Button type="button" variant="outline" size="sm" onClick={onDuplicate} className="group/duplicate transition-[transform,background,color,box-shadow] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:-translate-y-px hover:shadow-[var(--md-shadow-soft)] active:translate-y-0 active:scale-[0.96] motion-reduce:transform-none motion-reduce:transition-none"><span className="relative size-3.5" aria-hidden="true"><Copy className="absolute inset-0 size-3.5 opacity-0 transition-[transform,opacity] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover/duplicate:-translate-x-[2px] group-hover/duplicate:translate-y-[2px] group-hover/duplicate:opacity-30 motion-reduce:transform-none motion-reduce:transition-none" /><Copy className="absolute inset-0 size-3.5 transition-transform duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover/duplicate:translate-x-[1px] group-hover/duplicate:-translate-y-[1px] motion-reduce:transform-none motion-reduce:transition-none" /></span>{t("Duplicate")}</Button>
@@ -965,7 +1184,7 @@ function ItemTableSelect({ label, value, onChange, options, invalid }: { label: 
   </Select>
 }
 
-function mandatoryItemGaps(item: ExportDeclarationItem): Array<keyof ExportDeclarationItem> {
+function mandatoryItemGaps(item: ExportDeclarationItem, declarationDirection: DeclarationKind = "export"): Array<keyof ExportDeclarationItem> {
   const missing: Array<keyof ExportDeclarationItem> = []
   if (!/^\d{10}$/.test(item.commodityCode)) missing.push("commodityCode")
   if (!item.description.trim()) missing.push("description")
@@ -982,6 +1201,9 @@ function mandatoryItemGaps(item: ExportDeclarationItem): Array<keyof ExportDecla
   if (!(Number(item.statisticalValue) > 0)) missing.push("statisticalValue")
   if (!item.previousDocumentType) missing.push("previousDocumentType")
   if (!item.previousDocumentReference.trim()) missing.push("previousDocumentReference")
+  if (declarationDirection === "import" && !item.previousDocumentCategory) missing.push("previousDocumentCategory")
+  if (declarationDirection === "import" && !item.customsValuationMethod.trim()) missing.push("customsValuationMethod")
+  if (declarationDirection === "import" && !/^\d{3}$/.test(item.preferenceCode.trim())) missing.push("preferenceCode")
   return missing
 }
 
@@ -989,23 +1211,116 @@ function validatedItemField(issues: Set<string>, missing: Array<keyof ExportDecl
   return issues.has(field) && missing.includes(field)
 }
 
-function ReviewSection({ draft, completion, fallbackUrl, onValidate, onFixIssue, t }: { draft: StandaloneExportDraft; completion: ReturnType<typeof declarationCompletion>; fallbackUrl: string; onValidate: () => void; onFixIssue: (issue: DeclarationIssue) => void; t: (text: string) => string }) {
+function ReviewSection({ draft, completion, iCustomsState, iCustomsBusy, iCustomsIssues, onValidate, onFixIssue, onFixProviderIssue, onCreateDraft, onSubmit, onRefresh, t }: {
+  draft: StandaloneExportDraft
+  completion: ReturnType<typeof declarationCompletion>
+  iCustomsState: ICustomsWorkspaceState | null
+  iCustomsBusy: "loading" | "draft" | "submit" | "refresh" | null
+  iCustomsIssues: string[]
+  onValidate: () => void
+  onFixIssue: (issue: DeclarationIssue) => void
+  onFixProviderIssue: (issue: ICustomsProviderIssue) => void
+  onCreateDraft: () => void
+  onSubmit: () => void
+  onRefresh: () => void
+  t: (text: string) => string
+}) {
+  const provider = iCustomsState?.declaration.provider
+  const hasProviderDraft = Boolean(iCustomsState?.declaration.hasCustomsDraft)
+  const providerLifecycleStarted = Boolean(provider && ["submitted", "accepted", "rejected"].includes(provider.status))
+  const providerRejected = provider?.status === "rejected"
+  const connectionUnavailable = iCustomsState?.connection.configured === false
+  const providerIssues = provider?.issues ?? []
   return <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
     <Surface padding="lg" className="rounded-[var(--md-radius-xl)]">
       <div className="flex items-center justify-between gap-4"><span><p className="text-[12px] font-medium text-[var(--md-accent)]">{t("Declaration readiness")}</p><h2 className="mt-1 text-[22px] font-medium text-[var(--md-ink)]">{completion.percent}% {t("complete")}</h2><p className="mt-1 text-[12px] text-[var(--md-text)]">{completion.completeChecks}/{completion.totalChecks} {t("configured checks complete")}</p></span><div className="relative grid size-24 place-items-center rounded-full" style={{ background: `conic-gradient(var(--md-accent) ${completion.percent}%, var(--md-line) 0)` }}><div className="grid size-[78px] place-items-center rounded-full bg-[var(--md-surface)] text-[17px] font-medium">{completion.percent}%</div></div></div>
-      {completion.issues.length ? <div className="mt-5 divide-y divide-[var(--md-line)] border-t border-[var(--md-line)]">{completion.issues.slice(0, 14).map((issue) => <div key={issue.id} className="flex min-h-11 items-center gap-3 py-2"><CircleAlert className="size-4 shrink-0 text-[var(--md-red)]" /><span className="min-w-0 flex-1 text-[12px] text-[var(--md-text)]">{issue.itemNumber ? `${t("Item")} ${issue.itemNumber}: ` : ""}{t(issue.message)}</span><Button type="button" variant="outline" size="sm" className="min-w-[48px] rounded-[var(--md-radius-md)]" onClick={() => onFixIssue(issue)}>{t("Fix")}</Button></div>)}</div> : <div className="mt-5 flex gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-accent-a10)] p-4"><CheckCircle2 className="size-5 text-[var(--md-green)]" /><span className="text-[13px] text-[var(--md-text)]"><strong className="block text-[var(--md-ink)]">{t("Current form checks passed")}</strong>{t("Ready for secure server integration checks.")}</span></div>}
+      {completion.issues.length ? <div className="mt-5 divide-y divide-[var(--md-line)] border-t border-[var(--md-line)]">{completion.issues.slice(0, 14).map((issue) => <div key={issue.id} className="flex min-h-11 items-center gap-3 py-2"><CircleAlert className="size-4 shrink-0 text-[var(--md-red)]" /><span className="min-w-0 flex-1 text-[12px] text-[var(--md-text)]">{issue.itemNumber ? `${t("Item")} ${issue.itemNumber}: ` : ""}{translateCustomsMessage(issue.message, t)}</span><Button type="button" variant="outline" size="sm" className="min-w-[48px] rounded-[var(--md-radius-md)]" onClick={() => onFixIssue(issue)}>{t("Fix")}</Button></div>)}</div> : <div className="mt-5 flex gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-accent-a10)] p-4"><CheckCircle2 className="size-5 text-[var(--md-green)]" /><span className="text-[13px] text-[var(--md-text)]"><strong className="block text-[var(--md-ink)]">{t("Current form checks passed")}</strong>{t("Ready for secure server integration checks.")}</span></div>}
     </Surface>
     <div className="space-y-4">
       <Surface padding="lg" className="rounded-[var(--md-radius-xl)]"><h2 className="text-[14px] font-medium text-[var(--md-ink)]">{t("Declaration summary")}</h2><dl className="mt-4 divide-y divide-[var(--md-line)] border-t border-[var(--md-line)]"><Summary label={t("Reference")} value={draft.multideckReference} /><Summary label={t("Category")} value={draft.declarationCategory} /><Summary label={t("Type")} value={draft.declarationType} /><Summary label={t("Items")} value={String(draft.items.length)} /><Summary label={t("Destination")} value={draft.destinationCountry || t("Not set")} /></dl></Surface>
-      <Surface padding="lg" className="rounded-[var(--md-radius-xl)]"><div className="flex gap-3"><Link2 className="mt-0.5 size-4 text-[var(--md-accent)]" /><p className="text-[12px] leading-5 text-[var(--md-text)]">{t("API credentials, XML generation, submission and audit stay on the App server. Nothing sensitive enters the browser.")}</p></div><Button type="button" className="mt-4 w-full" onClick={onValidate}>{t("Run form checks")}</Button><Button asChild variant="outline" className="mt-2 w-full"><a href={fallbackUrl} target="_blank" rel="noreferrer"><ICustomsLogo className="size-4" />{t("Continue in iCustoms")}<ExternalLink className="size-3.5" /></a></Button></Surface>
+      <Surface padding="lg" className="rounded-[var(--md-radius-xl)]">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 gap-3"><Send className="mt-0.5 size-4 shrink-0 text-[var(--md-accent)]" /><div><h2 className="text-[14px] font-medium text-[var(--md-ink)]">{t("Customs submission")}</h2><p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Multideck submits this declaration securely and keeps every customs response here.")}</p></div></div>
+          <StatusPill tone="teal">{t("Test mode")}</StatusPill>
+        </div>
+
+        {iCustomsBusy === "loading" ? <p className="mt-4 text-[12px] text-[var(--md-subtle)]">{t("Checking the customs connection")}</p> : null}
+        {connectionUnavailable ? <div role="alert" className="mt-4 flex gap-2 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-amber)_10%,transparent)] p-3 text-[12px] text-[var(--md-text)]"><CircleAlert className="mt-0.5 size-4 shrink-0 text-[var(--md-amber)]" /><span>{t("The customs test connection is not configured on the server yet.")}</span></div> : null}
+        {provider ? <dl className="mt-4 divide-y divide-[var(--md-line)] border-y border-[var(--md-line)]"><Summary label={t("Submission status")} value={t(titleCase(provider.status))} />{provider.mrn ? <Summary label="MRN" value={provider.mrn} /> : null}{provider.updatedAt ? <Summary label={t("Last customs update")} value={new Date(provider.updatedAt).toLocaleString()} /> : null}</dl> : null}
+        {providerIssues.length ? <div role="alert" className="mt-4 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red)_7%,var(--md-surface))] p-3">
+          <div className="flex items-start gap-2"><CircleAlert className="mt-0.5 size-4 shrink-0 text-[var(--md-red)]" /><div><p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Customs rejected this declaration")}</p><p className="mt-0.5 text-[11px] leading-4 text-[var(--md-text)]">{t("Correct the fields below, then save a new customs draft before submitting again.")}</p></div></div>
+          <div className="mt-3 space-y-2">{providerIssues.slice(0, 20).map((issue, index) => <div key={`${issue.code}-${issue.dataElement}-${issue.itemNumber ?? "header"}-${index}`} className="rounded-[var(--md-radius-md)] bg-[var(--md-surface)] p-2.5 shadow-[var(--md-shadow-line)]">
+            <div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="text-[10px] font-medium text-[var(--md-red)]">{t(providerIssueFieldLabel(issue))}{issue.itemNumber ? ` · ${t("Item")} ${issue.itemNumber}` : ""}{issue.dataElement ? ` · DE ${issue.dataElement}` : ""}{issue.code ? ` · ${issue.code}` : ""}</p><p className="mt-1 text-[11px] leading-4 text-[var(--md-ink)]">{issue.message}</p><p className="mt-1 text-[10.5px] leading-4 text-[var(--md-text)]">{t(providerIssueGuidance(issue))}</p></div><Button type="button" variant="outline" size="sm" className="min-w-[48px] rounded-[var(--md-radius-md)]" onClick={() => onFixProviderIssue(issue)}>{t("Fix")}</Button></div>
+          </div>)}</div>
+        </div> : null}
+        {provider?.errorMessage && !providerIssues.length ? <div role="alert" className="mt-4 flex gap-2 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red)_7%,var(--md-surface))] p-3 text-[12px] text-[var(--md-text)]"><CircleAlert className="mt-0.5 size-4 shrink-0 text-[var(--md-red)]" /><span><strong className="block text-[var(--md-ink)]">{t("Customs service needs attention")}</strong>{t(provider.errorMessage)}</span></div> : null}
+        {iCustomsIssues.length ? <div role="alert" className="mt-4"><p className="text-[12px] font-medium text-[var(--md-red)]">{t("Customs checks still need attention")}</p><ul className="mt-2 space-y-1.5 ps-4 text-[11px] leading-4 text-[var(--md-text)]">{iCustomsIssues.slice(0, 8).map((issue) => <li key={issue} className="list-disc">{translateCustomsMessage(issue, t)}</li>)}</ul></div> : null}
+
+        {!hasProviderDraft ? <Button type="button" className="mt-4 w-full" disabled={Boolean(iCustomsBusy) || connectionUnavailable} onClick={onCreateDraft}><Send className="size-4" />{t(iCustomsBusy === "draft" ? "Creating customs test draft" : "Create customs test draft")}</Button> : providerRejected ? <><Button type="button" className="mt-4 w-full" disabled={Boolean(iCustomsBusy) || connectionUnavailable || completion.issues.length > 0} onClick={onCreateDraft}><RefreshCw className="size-4" />{t(iCustomsBusy === "draft" ? "Creating corrected customs test draft" : "Create corrected customs test draft")}</Button><Button type="button" variant="ghost" className="mt-2 w-full" disabled={Boolean(iCustomsBusy)} onClick={onRefresh}>{t(iCustomsBusy === "refresh" ? "Refreshing customs status" : "Refresh customs status")}</Button></> : providerLifecycleStarted ? <Button type="button" className="mt-4 w-full" disabled={Boolean(iCustomsBusy)} onClick={onRefresh}><RefreshCw className="size-4" />{t(iCustomsBusy === "refresh" ? "Refreshing customs status" : "Refresh customs status")}</Button> : <><Button type="button" className="mt-4 w-full" disabled={Boolean(iCustomsBusy) || connectionUnavailable} onClick={onSubmit}><Send className="size-4" />{t("Submit")}</Button><Button type="button" variant="outline" className="mt-2 w-full" disabled={Boolean(iCustomsBusy) || connectionUnavailable} onClick={onCreateDraft}><RefreshCw className="size-4" />{t(iCustomsBusy === "draft" ? "Updating customs test draft" : "Update customs test draft")}</Button></>}
+        <Button type="button" variant="ghost" className="mt-2 w-full" onClick={onValidate}>{t("Run form checks")}</Button>
+      </Surface>
     </div>
   </div>
 }
 
+function providerIssueTarget(issue: ICustomsProviderIssue) {
+  if (issue.itemNumber) {
+    if (issue.dataElement === "4/16") return "customsValuationMethod"
+    if (issue.dataElement === "2/3" && issue.elementName === "CategoryCode") return "additionalDocumentCategory"
+    if (issue.dataElement === "2/3" && issue.elementName === "DocumentID") return "additionalDocumentId"
+    if (issue.dataElement === "2/3") return "additionalDocumentType"
+    if (issue.dataElement === "1/10") return "procedureCode"
+    if (issue.elementName === "CommodityCode") return "commodityCode"
+    if (issue.elementName === "TypeCode" && issue.dataElement === "6/9") return "packageKind"
+    return "description"
+  }
+  const fields: Record<string, string> = {
+    "3/1": "exporter",
+    "3/2": "exporterAddressLine",
+    "3/9": "consignee",
+    "3/10": "consigneeAddressLine",
+    "3/15": "importerAddressLine",
+    "3/16": "importer",
+    "3/17": "declarant",
+    "3/18": "declarantAddressLine",
+    "5/8": "destinationCountry",
+    "5/14": "exportCountry",
+    "5/23": "goodsLocationName",
+    "7/4": "borderMode",
+    "7/10": "containerId",
+  }
+  return fields[issue.dataElement ?? ""] ?? "traderReference"
+}
+
+function providerIssueFieldLabel(issue: ICustomsProviderIssue) {
+  if (issue.dataElement === "3/16") return "Importer identifier"
+  if (issue.dataElement === "4/16") return "Customs valuation method"
+  if (issue.dataElement === "2/3" && issue.elementName === "CategoryCode") return "Additional document category"
+  if (issue.dataElement === "2/3" && issue.elementName === "TypeCode") return "Additional document type"
+  if (issue.dataElement === "2/3" && issue.elementName === "DocumentID") return "Additional document ID"
+  if (issue.dataElement === "1/10") return "Procedure code"
+  return issue.elementName || "Customs field"
+}
+
+function customsStatusTone(status: string): "green" | "amber" | "red" | "blue" | "neutral" | "teal" {
+  if (["accepted", "released", "cleared"].includes(status)) return "green"
+  if (["rejected", "error"].includes(status)) return "red"
+  if (["submitted", "acknowledged"].includes(status)) return "blue"
+  return "neutral"
+}
+
+function providerIssueGuidance(issue: ICustomsProviderIssue) {
+  if (issue.dataElement === "3/16") return "Check that the importer EORI or VAT number is recognised for this declaration."
+  if (issue.dataElement === "4/16") return "Review the customs valuation method on this goods item and any values it requires."
+  if (issue.dataElement === "2/3") return "Review the additional document code, or remove the optional document if it does not apply."
+  if (issue.dataElement === "1/10") return "Review the procedure and additional procedure combination on this goods item."
+  return "Review the highlighted customs field and the related declaration details before trying again."
+}
+
 function generalTabForField(field: string): EditorTab {
-  if (["exporter", "consignee", "carrier", "declarant", "representative"].includes(field)) return "parties"
-  if (["exportCountry", "destinationCountry", "borderMode", "inlandMode", "containerId"].includes(field)) return "transport"
-  if (["exitOffice", "previousDocumentCategory", "previousDocumentType", "previousDocumentReference"].includes(field)) return "documents"
+  if (["importer", "exporter", "consignee", "carrier", "declarant", "representative", "seller", "buyer"].includes(field) || /^(importer|exporter|consignee|declarant)(Name|AddressLine|City|Postcode|Country)$/.test(field)) return "parties"
+  if (["exportCountry", "destinationCountry", "borderMode", "inlandMode", "containerId", "goodsLocationName", "goodsLocationIdentifier"].includes(field)) return "transport"
+  if (["exitOffice", "presentationOffice", "previousDocumentCategory", "previousDocumentType", "previousDocumentReference", "transactionNature", "tradeTerms", "customsValuationMethod"].includes(field)) return "documents"
   return "declaration"
 }
 
@@ -1030,9 +1345,9 @@ function FieldShell({ label, dataElement, customsBox, required, showDataElements
   return <label data-field-invalid={invalid || undefined} className={cn("min-w-0", compact && "grid grid-cols-[minmax(76px,0.42fr)_minmax(0,0.58fr)] items-center gap-1.5", className)}><span className={cn("flex items-center gap-1.5 font-medium text-[var(--md-text)]", compact ? "min-h-0 text-[10.5px] leading-[1.15]" : "mb-1.5 min-h-5 text-[11px]")}><span className={cn(compact ? "line-clamp-2" : "truncate")}>{label}</span>{required ? <span className="text-[var(--md-red)]">*</span> : null}{showAnnotations ? <span className={cn("flex shrink-0 items-center gap-1", !compact && "ms-auto")}>{showDataElements && dataElement ? <span className={cn("rounded-[var(--md-radius-sm)] bg-[color-mix(in_srgb,var(--md-blue)_8%,transparent)] font-medium tabular-nums text-[var(--md-blue)]", compact ? "px-1 py-0.5 text-[8.5px]" : "px-1.5 py-0.5 text-[10px]")} dir="ltr">DE {dataElement}</span> : null}{showCustomsBoxNumbers && customsBox ? <span className={cn("rounded-[var(--md-radius-sm)] bg-[var(--md-accent-a10)] font-medium tabular-nums text-[var(--md-accent)]", compact ? "px-1 py-0.5 text-[8.5px]" : "px-1.5 py-0.5 text-[10px]")} dir="ltr">{`Box ${customsBox}`}</span> : null}</span> : null}</span><span data-customs-field={fieldKey} className={cn("block rounded-[var(--md-radius-md)] transition-[box-shadow] duration-300", invalid && "ring-2 ring-[color-mix(in_srgb,var(--md-red)_22%,transparent)]", highlighted && "ring-2 ring-[var(--md-accent)] shadow-[0_0_20px_var(--md-accent)]")}>{children}</span></label>
 }
 
-function TextField({ label, value, onChange, dataElement, customsBox, required, showDataElements, invalid, highlighted, fieldKey, placeholder, suffix }: { label: string; value: string; onChange: (value: string) => void; dataElement?: string; customsBox?: string; required?: boolean; showDataElements: boolean; invalid?: boolean; highlighted?: boolean; fieldKey?: string; placeholder?: string; suffix?: string }) {
+function TextField({ label, value, onChange, dataElement, customsBox, required, showDataElements, invalid, highlighted, fieldKey, placeholder, suffix, maxLength }: { label: string; value: string; onChange: (value: string) => void; dataElement?: string; customsBox?: string; required?: boolean; showDataElements: boolean; invalid?: boolean; highlighted?: boolean; fieldKey?: string; placeholder?: string; suffix?: string; maxLength?: number }) {
   const compact = useContext(CompactCustomsFormContext)
-  return <FieldShell label={label} dataElement={dataElement} customsBox={customsBox} required={required} showDataElements={showDataElements} invalid={invalid} highlighted={highlighted} fieldKey={fieldKey}><div className="relative"><Input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} aria-invalid={invalid || undefined} dir="ltr" className={cn("border-0 bg-[var(--md-field-bg)] shadow-[var(--md-shadow-line)]", compact ? "h-8 px-2 text-[11px]" : "h-9 text-[13px]", suffix && "pe-10")} />{suffix ? <span className="pointer-events-none absolute end-3 top-1/2 -translate-y-1/2 text-[10px] text-[var(--md-subtle)]">{suffix}</span> : null}</div></FieldShell>
+  return <FieldShell label={label} dataElement={dataElement} customsBox={customsBox} required={required} showDataElements={showDataElements} invalid={invalid} highlighted={highlighted} fieldKey={fieldKey}><div className="relative"><Input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} maxLength={maxLength} aria-invalid={invalid || undefined} dir="ltr" className={cn("border-0 bg-[var(--md-field-bg)] shadow-[var(--md-shadow-line)]", compact ? "h-8 px-2 text-[11px]" : "h-9 text-[13px]", suffix && "pe-10")} />{suffix ? <span className="pointer-events-none absolute end-3 top-1/2 -translate-y-1/2 text-[10px] text-[var(--md-subtle)]">{suffix}</span> : null}</div></FieldShell>
 }
 
 function TextAreaField({ label, value, onChange, dataElement, customsBox, required, showDataElements, invalid, highlighted, fieldKey, className }: { label: string; value: string; onChange: (value: string) => void; dataElement?: string; customsBox?: string; required?: boolean; showDataElements: boolean; invalid?: boolean; highlighted?: boolean; fieldKey?: string; className?: string }) {
@@ -1048,8 +1363,4 @@ function SelectField({ label, value, onChange, options, dataElement, customsBox,
 
 function Summary({ label, value }: { label: string; value: string }) {
   return <div className="flex justify-between gap-4 py-2.5"><dt className="text-[11px] text-[var(--md-subtle)]">{label}</dt><dd className="m-0 text-end text-[12px] font-medium text-[var(--md-ink)]">{value}</dd></div>
-}
-
-function ICustomsLogo({ className }: { className?: string }) {
-  return <svg aria-hidden="true" className={cn("shrink-0 text-[#4943f4]", className)} viewBox="0 0 850 850" fill="currentColor"><path d="M850 183A425 425 0 1 0 850 667L578 423 302 665V181l276 242Z" /></svg>
 }

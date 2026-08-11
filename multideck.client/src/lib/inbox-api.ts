@@ -36,6 +36,7 @@ import {
   type Mailbox,
   type MailboxFolder,
   type OutboundAttachment,
+  type ProviderDraftReceipt,
   type SendReceipt,
   type SendRequest,
   type ThreadPage,
@@ -505,6 +506,30 @@ export async function sendMail(request: SendRequest): Promise<SendReceipt> {
         threadId: readOptionalText(pickField(record, "threadId")),
         messageId: readOptionalText(pickField(record, "messageId")),
         status: rawStatus === "sent" || rawStatus === "delivered" ? "sent" : rawStatus === "failed" ? "failed" : "queued",
+        reused: readFlag(pickField(record, "reused")),
+      }
+    },
+  })
+}
+
+/**
+ * Creates one explicit draft in the connected Gmail or Outlook mailbox.
+ * This is deliberately separate from the local composer autosave so editing
+ * never creates a trail of provider drafts on each keystroke.
+ */
+export async function createProviderDraft(request: SendRequest): Promise<ProviderDraftReceipt> {
+  return inboxRequest("/provider-drafts", {
+    method: "POST",
+    headers: { "Idempotency-Key": request.idempotencyKey },
+    body: JSON.stringify({ ...buildSendPayload(request), idempotencyKey: request.idempotencyKey }),
+    normalize: (payload) => {
+      const record = readRecord(payload)
+      const rawStatus = readText(pickField(record, "status")).toLowerCase()
+      return {
+        id: readText(pickField(record, "id", "draftRequestId")),
+        threadId: readOptionalText(pickField(record, "threadId")),
+        messageId: readOptionalText(pickField(record, "messageId")),
+        status: rawStatus === "created" ? "created" : rawStatus === "failed" ? "failed" : "creating",
         reused: readFlag(pickField(record, "reused")),
       }
     },

@@ -1,6 +1,7 @@
 import {
   BriefcaseBusiness,
   Building2,
+  FileCheck2,
   FileText,
   LayoutPanelTop,
   Mail,
@@ -15,11 +16,12 @@ import { bookings, customers } from "@/data/multideck-data"
 import { quoteRegisterRecords } from "@/data/quote-register-data"
 import { sidebarAreas, sidebarPrimary, sidebarSecondary, type NavItem } from "@/data/navigation-data"
 import type { ApiCustomer } from "@/lib/customer-api"
+import type { CustomsDraftSummary } from "@/lib/customs-drafts-api"
 import type { ApiDeal } from "@/lib/deal-api"
 import type { ApiLead } from "@/lib/lead-api"
 import type { DexterEmailContextSource, MailProvider } from "@/lib/inbox-contract"
 
-export type DexterMentionType = "email" | "booking" | "customer" | "lead" | "deal" | "page" | "quote" | "document"
+export type DexterMentionType = "email" | "booking" | "customer" | "lead" | "deal" | "declaration" | "page" | "quote" | "document"
 
 export type DexterMentionItem = {
   id: string
@@ -205,6 +207,29 @@ export function dealMentionItems(items: ApiDeal[]): DexterMentionItem[] {
     ].filter(Boolean).join(" "),
     route: `/crm/deals?record=${encodeURIComponent(deal.id)}`,
     icon: BriefcaseBusiness,
+  }))
+}
+
+export function customsDeclarationMentionItems(items: CustomsDraftSummary[]): DexterMentionItem[] {
+  return items.map((declaration) => ({
+    id: `declaration:${declaration.id}`,
+    type: "declaration",
+    title: declaration.reference,
+    meta: [
+      declaration.status,
+      declaration.destinationCountry,
+      declaration.amount === null ? null : [declaration.currency, declaration.amount].filter(Boolean).join(" "),
+    ].filter(Boolean).join(" · "),
+    keywords: [
+      declaration.traderReference,
+      declaration.currency,
+      declaration.amount,
+      declaration.itemCount,
+      "items",
+      "customs declaration filing cds export",
+    ].filter((value) => value !== null && value !== undefined && value !== "").join(" "),
+    route: `/customs/standalone/export/${declaration.id}`,
+    icon: FileCheck2,
   }))
 }
 
