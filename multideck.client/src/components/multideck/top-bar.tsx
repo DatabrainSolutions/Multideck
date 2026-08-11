@@ -44,6 +44,12 @@ const crmCreateActions: Partial<Record<string, CrmCreateAction>> = {
   "/crm/deals": { label: "New deal", path: "/crm/leads" },
 }
 
+const ratesTopBarActions: Partial<Record<string, { importLabel: string; createLabel: string }>> = {
+  "/rates": { importLabel: "Import rates", createLabel: "New rate" },
+  "/rates/contracts": { importLabel: "Import contracts", createLabel: "New contract" },
+  "/rates/tariffs": { importLabel: "Import tariffs", createLabel: "New tariff" },
+}
+
 function WarehouseTopBarAction({ route, navigate }: { route: string; navigate: (path: string) => void }) {
   const { t } = useLanguage()
 
@@ -113,9 +119,11 @@ export function TopBar({
   const isQuotes = route === "/quotes"
   const isWarehouse = route.startsWith("/warehouse")
   const isStandaloneExportRegister = route === "/customs/standalone/export"
+  const isStandaloneImportRegister = route === "/customs/standalone/import"
   const isReports = route === "/reports"
   const isOperationalJobScreen = route === "/" || route.startsWith("/bookings") || route.startsWith("/quotes") || isRoadRoute || isWarehouse
   const crmCreateAction = crmCreateActions[route]
+  const ratesTopBarAction = ratesTopBarActions[route]
   const { direction, t } = useLanguage()
   const [currentRecordName, setCurrentRecordName] = useState<string | null>(null)
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
@@ -251,7 +259,27 @@ export function TopBar({
           <div className="ml-auto min-w-0 flex-1 md:max-w-[560px]">
             <CommandInput placeholder={isBookingList || isRoadRoute ? "Job, reference, customer, route..." : isQuotes ? "Quote, customer, route, reference..." : isWarehouse ? "SKU, bin, order, customer, goods movement..." : isCustomerList ? "Search customers, contacts, or bookings..." : isCrmRoute ? "Search leads, contacts, deals, emails, lists, or marketing..." : isReports ? "Report name, template, customer..." : "Ask Multideck or jump to anything..."} onNavigate={navigate} />
           </div>
-          {isBookingList ? (
+          {ratesTopBarAction ? (
+            <>
+              <Button
+                variant="ghost"
+                className={cn("hidden sm:inline-flex", topBarGhostActionClass)}
+                onClick={() => dispatchTopBarAction(topBarActionEvents.importRates)}
+              >
+                <Upload data-icon="inline-start" strokeWidth={1.2} />
+                {t(ratesTopBarAction.importLabel)}
+              </Button>
+              <Button
+                aria-label={t(ratesTopBarAction.createLabel)}
+                title={t(ratesTopBarAction.createLabel)}
+                className={topBarPrimaryActionClass}
+                onClick={() => dispatchTopBarAction(topBarActionEvents.createRate)}
+              >
+                <Plus data-icon="inline-start" strokeWidth={1.2} />
+                <span className="hidden sm:inline">{t(ratesTopBarAction.createLabel)}</span>
+              </Button>
+            </>
+          ) : isBookingList ? (
             <>
               <Button variant="ghost" className={cn("hidden sm:inline-flex", topBarGhostActionClass)}>
                 <Upload data-icon="inline-start" strokeWidth={1.2} />
@@ -327,6 +355,11 @@ export function TopBar({
             <Button aria-label={t("New export declaration")} title={t("New export declaration")} className={topBarPrimaryActionClass} onClick={() => navigate("/customs/standalone/export/new")}>
               <Plus data-icon="inline-start" strokeWidth={1.2} />
               <span className="hidden sm:inline">{t("New export declaration")}</span>
+            </Button>
+          ) : isStandaloneImportRegister ? (
+            <Button aria-label={t("New import declaration")} title={t("New import declaration")} className={topBarPrimaryActionClass} onClick={() => navigate("/customs/standalone/import/new")}>
+              <Plus data-icon="inline-start" strokeWidth={1.2} />
+              <span className="hidden sm:inline">{t("New import declaration")}</span>
             </Button>
           ) : isReports ? (
             <>

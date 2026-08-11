@@ -16,6 +16,7 @@ import {
   aiContextSources,
   authorize,
   connections,
+  createProviderDraft,
   deleteDraft,
   disconnect,
   getThread,
@@ -134,6 +135,18 @@ Deno.serve(async (request) => {
       // third. `readOutboundAttachments` still holds the real per-file and
       // total limits; this only keeps a legitimate send from being cut off here.
       return jsonResponse(request, allowedOrigins, await sendMail(clients.admin, actor, await readJson(request, 24_000_000), request.headers.get("Idempotency-Key")?.trim() ?? ""))
+    }
+    if (method === "POST" && path.length === 1 && path[0] === "provider-drafts") {
+      return jsonResponse(
+        request,
+        allowedOrigins,
+        await createProviderDraft(
+          clients.admin,
+          actor,
+          await readJson(request, 24_000_000),
+          request.headers.get("Idempotency-Key")?.trim() ?? "",
+        ),
+      )
     }
     if (method === "GET" && path.length === 2 && path[0] === "attachments") {
       const inline = new URL(request.url).searchParams.get("disposition") === "inline"

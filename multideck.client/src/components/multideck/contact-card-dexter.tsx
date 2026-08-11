@@ -109,7 +109,7 @@ export function AskDexterDrawer({
               <div className="flex items-start gap-3">
                 <DexterBrandMark className="mt-0.5 shrink-0" />
                 <p className="text-[13.5px] leading-[1.55] text-[var(--md-text)]">
-                  {t("Describe what should happen when someone shares their details on this card. I'll suggest the steps — nothing is added until you accept it.")}
+                  {t("Describe what should happen when someone shares their details on this card. I'll suggest the steps, and nothing is added until you accept them.")}
                 </p>
               </div>
 

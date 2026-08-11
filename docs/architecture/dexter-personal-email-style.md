@@ -15,13 +15,17 @@ Dexter can learn a compact, private writing profile from eligible sent mail afte
 
 `load_operator_email_style` is exposed to Agent Dexter only for an explicit email draft, reply or rewrite. The profile is tone guidance: current thread facts, workspace evidence and direct operator instructions always win.
 
-`prepare_email_draft` returns structured compose metadata. Recipients, mailbox identities and reply context must come from the selected email, an explicitly attached record or direct operator input; unknown values remain empty. The inline composer reuses the Inbox mailbox permission checks, recipient resolution, idempotent send endpoint and provider receipt.
+`prepare_email_draft` returns structured compose metadata plus the operator's requested provider action: `create_draft` or `send`. Recipients, mailbox identities and reply context must come from the selected email, an explicitly attached record or direct operator input; unknown values remain empty. The inline composer reuses the Inbox mailbox permission checks, recipient resolution, idempotent provider-draft and send endpoints, and provider receipts.
 
-The operator's paper-plane click is the send approval. There is no automatic or scheduled sending.
+In **Approve** mode, the inline composer is the approval surface. The operator can ask Dexter to revise the wording, then explicitly selects **Create draft** or **Send email**. In **Full access**, Dexter performs that same allowlisted action immediately through the signed-in operator's Inbox boundary. Gmail and Outlook therefore share one permission, idempotency and audit path; Dexter never receives provider tokens or service-role credentials. A request that does not explicitly say to send defaults to creating a provider draft.
+
+Creating a provider draft is separate from the local keystroke autosave. Autosave protects the editable Dexter copy without creating provider clutter; only the explicit action creates one Gmail or Outlook draft. Full-access execution is interactive and request-bound, never scheduled.
 
 Sent provider messages stay immutable. When an operator clicks a sent composer, Dexter creates a tenant-scoped draft revision and edits that copy in place. This revision is part of the existing compose workflow, not a new operational domain event, so it does not create a Watching for you signal.
 
 Inline draft refinement uses the dedicated `dexter-email-refine` Edge Function. It reuses the authenticated draft-update RPC as the tenant, owner and editability boundary, treats draft text as untrusted input, and returns revised plain text to the existing mounted composer. It never sends email and does not add a new conversation response. Selection refinements replace only the chosen range; the surrounding body remains byte-for-byte unchanged. This direct, operator-invoked edit is not a background event and deliberately has no Watching for you adapter or idle LLM loop.
+
+Provider draft creation and sending also do not add a dedicated watch adapter. They are immediate operator-requested actions with an inline confirmed or failed result, while ordinary mailbox sync and existing email watch events remain the source for later inbound replies and provider changes. No idle LLM polling is introduced.
 
 ## Refresh and Watching for you
 

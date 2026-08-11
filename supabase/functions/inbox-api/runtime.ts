@@ -2975,6 +2975,230 @@ async function providerSend(
   return await sendDraft({ ...draft, conversationId: draft.conversationId ?? resolved.source?.CommMessage_ProviderConversationID })
 }
 
+async function providerCreateDraft(
+  provider: MailProvider,
+  token: string,
+  mailbox: Row,
+  resolved: Awaited<ReturnType<typeof resolveRecipients>>,
+  subject: string,
+  bodyText: string,
+  internetMessageId: string,
+  attachments: OutboundAttachment[] = [],
+) {
+  const from = { address: mailbox.CommMailbox_Address, displayName: mailbox.CommMailbox_DisplayName }
+  if (provider === "gmail") {
+    let headers: Row = {}
+    if (resolved.source) { try { headers = JSON.parse(resolved.source.CommMessage_HeaderJSON ?? "{}") } catch { headers = {} } }
+    const sourceInternetMessageId = resolved.source?.CommMessage_InternetMessageID
+    const mime = {
+      from, to: resolved.to, cc: resolved.cc, bcc: resolved.bcc, subject, bodyText, bodyHtml: null,
+      messageId: internetMessageId,
+      inReplyTo: sourceInternetMessageId,
+      references: appendInternetMessageReference(headers.references ?? headers.References, sourceInternetMessageId),
+      attachments,
+    }
+    const threadId = resolved.command.startsWith("reply") && resolved.source?.CommMessage_ProviderThreadID
+      ? resolved.source.CommMessage_ProviderThreadID
+      : null
+    let response: Response
+    if (attachments.length) {
+      const boundary = `--=_multideck_draft_${crypto.randomUUID().replace(/-/g, "")}`
+      const metadata = { message: threadId ? { threadId } : {} }
+      const preamble = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: message/rfc822\r\n\r\n`
+      const multipartBody = new Blob([preamble, buildMimeMessage(mime), `\r\n--${boundary}--\r\n`])
+      response = await fetch("https://gmail.googleapis.com/upload/gmail/v1/users/me/drafts?uploadType=multipart", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": `multipart/related; boundary="${boundary}"` },
+        body: multipartBody,
+      })
+    } else {
+      const message = { raw: buildRfc2822(mime), ...(threadId ? { threadId } : {}) }
+      response = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/drafts", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ message }),
+      })
+    }
+    if (!response.ok) throw providerErrorStatus(response)
+    const draft = await response.json()
+    const providerDraftId = cleanString(draft.id, 1_000)
+    const providerMessageId = cleanString(draft.message?.id, 1_000)
+    if (!providerDraftId || !providerMessageId) {
+      throw new InboxHttpError(502, "The mail provider did not return a stable draft identifier.", "provider_identity_missing")
+    }
+    return {
+      providerDraftId,
+      providerMessageId,
+      providerThreadId: cleanString(draft.message?.threadId, 1_000) || threadId,
+      providerConversationId: null,
+      internetMessageId,
+    }
+  }
+
+  const owner = mailbox.CommMailbox_TypeCode === "shared" ? `users/${encodeURIComponent(mailbox.CommMailbox_Address)}` : "me"
+  const recipients = (items: MailAddress[]) => items.map((item) => ({ emailAddress: { address: item.address, name: item.displayName } }))
+  const message = {
+    subject,
+    internetMessageId,
+    body: { contentType: "Text", content: bodyText },
+    toRecipients: recipients(resolved.to),
+    ccRecipients: recipients(resolved.cc),
+    bccRecipients: recipients(resolved.bcc),
+  }
+  const graphHeaders = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Prefer: 'IdType="ImmutableId"' }
+  let draft: Row
+  if (resolved.command === "new") {
+    const create = await fetch(`https://graph.microsoft.com/v1.0/${owner}/messages`, {
+      method: "POST",
+      headers: graphHeaders,
+      body: JSON.stringify(message),
+    })
+    if (!create.ok) throw providerErrorStatus(create)
+    draft = await create.json()
+  } else {
+    const sourceId = resolved.source?.CommMessage_ProviderMessageID
+    if (!sourceId) throw new InboxHttpError(409, "The provider no longer has the source message needed for this response.", "source_missing_at_provider")
+    const action = resolved.command === "reply" ? "createReply" : resolved.command === "reply_all" ? "createReplyAll" : "createForward"
+    const create = await fetch(`https://graph.microsoft.com/v1.0/${owner}/messages/${encodeURIComponent(sourceId)}/${action}`, {
+      method: "POST",
+      headers: graphHeaders,
+      body: "{}",
+    })
+    if (!create.ok) throw providerErrorStatus(create)
+    draft = await create.json()
+    const patch = await fetch(`https://graph.microsoft.com/v1.0/${owner}/messages/${encodeURIComponent(draft.id)}`, {
+      method: "PATCH",
+      headers: graphHeaders,
+      body: JSON.stringify(message),
+    })
+    if (!patch.ok) throw providerErrorStatus(patch)
+  }
+  const providerDraftId = cleanString(draft.id, 1_000)
+  if (!providerDraftId) throw new InboxHttpError(502, "The mail provider did not return a stable draft identifier.", "provider_identity_missing")
+  if (attachments.length) await graphAttachFiles(owner, token, providerDraftId, attachments)
+  return {
+    providerDraftId,
+    providerMessageId: providerDraftId,
+    providerThreadId: cleanString(draft.conversationId, 1_000) || resolved.source?.CommMessage_ProviderThreadID || null,
+    providerConversationId: cleanString(draft.conversationId, 1_000) || resolved.source?.CommMessage_ProviderConversationID || null,
+    internetMessageId,
+  }
+}
+
+export async function createProviderDraft(admin: Db, actor: Actor, body: Row, suppliedKey: string) {
+  await requirePermission(admin, actor, "Email.Send")
+  if (!suppliedKey || suppliedKey.length > 200) {
+    throw new InboxHttpError(400, "An Idempotency-Key header is required when creating an email draft.", "idempotency_key_required")
+  }
+  const idempotencyKey = await sha256Hex(`${actor.userId}:provider-draft:${suppliedKey}`)
+  const existing = await result<Row>(admin.from("Comm_Messages")
+    .select("CommMessage_ID,CommMessage_ThreadID,CommMessage_StatusCode,CommMessage_ProviderMessageID")
+    .eq("CommMessage_IdempotencyKey", idempotencyKey)
+    .maybeSingle())
+  if (existing) {
+    return {
+      id: existing.CommMessage_ID,
+      threadId: existing.CommMessage_ThreadID,
+      messageId: existing.CommMessage_ID,
+      status: existing.CommMessage_StatusCode === "failed" ? "failed" : existing.CommMessage_ProviderMessageID ? "created" : "creating",
+      reused: true,
+    }
+  }
+
+  const mailboxId = cleanString(body.mailboxId, 80)
+  const { mailbox, connection } = await requireMailbox(admin, actor, mailboxId, "send")
+  if (!mailbox.CommMailbox_OutboundEnabled || !connection.CommConn_OutboundEnabled || connection.CommConn_StatusCode !== "active") {
+    throw new InboxHttpError(409, "Reconnect this mailbox before creating a draft.", "reauthorization_required")
+  }
+  const resolved = await resolveRecipients(admin, mailbox, body)
+  const subject = cleanString(body.subject, 500) || resolved.source?.CommMessage_Subject || "(No subject)"
+  const bodyText = cleanString(body.bodyText, 2_000_000)
+  if (!bodyText) throw new InboxHttpError(400, "Write a message before creating a draft.", "body_required")
+  const attachments = readOutboundAttachments(body.attachments)
+  const threadId = resolved.source?.CommMessage_ThreadID ?? await newThread(admin, actor, subject, mailbox)
+  const messageId = crypto.randomUUID()
+  const now = new Date().toISOString()
+  const internetMessageId = `<${messageId}@messages.multideck.app>`
+  await result(admin.from("Comm_Messages").insert({
+    CommMessage_ID: messageId,
+    CommMessage_ThreadID: threadId,
+    CommMessage_ParentMessageID: resolved.command === "forward" ? resolved.source?.CommMessage_ID : null,
+    CommMessage_ReplyToMessageID: resolved.command.startsWith("reply") ? resolved.source?.CommMessage_ID : null,
+    CommMessage_MailboxID: mailboxId,
+    CommMessage_ChannelCode: "email",
+    CommMessage_DirectionCode: "outbound",
+    CommMessage_StatusCode: "draft",
+    CommMessage_SourceTypeCode: "manual",
+    CommMessage_ContentFormatCode: "plain_text",
+    CommMessage_PriorityCode: "normal",
+    CommMessage_SensitivityCode: mailbox.CommMailbox_DefaultSensitivityCode ?? "internal",
+    CommMessage_ProviderThreadID: resolved.source?.CommMessage_ProviderThreadID ?? null,
+    CommMessage_ProviderConversationID: resolved.source?.CommMessage_ProviderConversationID ?? null,
+    CommMessage_InternetMessageID: internetMessageId,
+    CommMessage_IdempotencyKey: idempotencyKey,
+    CommMessage_Subject: subject,
+    CommMessage_BodyPreview: bodyText.slice(0, 1000),
+    CommMessage_BodyText: bodyText,
+    CommMessage_BodyJSON: JSON.stringify({ mode: resolved.command, sourceMessageId: resolved.source?.CommMessage_ID ?? null }),
+    CommMessage_HeaderJSON: JSON.stringify({ command: resolved.command, providerDraftState: "creating" }),
+    CommMessage_MessageDate: now,
+    CommMessage_HasAttachments: attachments.length > 0,
+    CommMessage_IsInbound: false,
+    CommMessage_IsInternal: false,
+    CommMessage_IsDraft: true,
+    CommMessage_IsSpam: false,
+    CommMessage_IsBodyRedacted: false,
+    CommMessage_IsTrainingAllowed: false,
+    CommMessage_CreatedAt: now,
+    CommMessage_CreatedBy: actor.userId,
+    CommMessage_UpdatedAt: now,
+    CommMessage_UpdatedBy: actor.userId,
+    CommMessage_IsDeleted: false,
+  }))
+  await addRecipients(admin, messageId, [{ address: mailbox.CommMailbox_Address, displayName: mailbox.CommMailbox_DisplayName }], "from", now)
+  await addRecipients(admin, messageId, resolved.to, "to", now)
+  await addRecipients(admin, messageId, resolved.cc, "cc", now)
+  await addRecipients(admin, messageId, resolved.bcc, "bcc", now)
+
+  try {
+    const creds = await credential(admin, connection)
+    const providerDraft = await providerCreateDraft(
+      publicProvider(connection.CommConn_ProviderTypeCode),
+      creds.accessToken,
+      mailbox,
+      resolved,
+      subject,
+      bodyText,
+      internetMessageId,
+      attachments,
+    )
+    const completed = new Date().toISOString()
+    await result(admin.from("Comm_Messages").update({
+      CommMessage_ProviderMessageID: providerDraft.providerMessageId,
+      CommMessage_ProviderThreadID: providerDraft.providerThreadId,
+      CommMessage_ProviderConversationID: providerDraft.providerConversationId,
+      CommMessage_InternetMessageID: providerDraft.internetMessageId,
+      CommMessage_HeaderJSON: JSON.stringify({
+        command: resolved.command,
+        providerDraftId: providerDraft.providerDraftId,
+        providerDraftState: "created",
+      }),
+      CommMessage_UpdatedAt: completed,
+      CommMessage_UpdatedBy: actor.userId,
+    }).eq("CommMessage_ID", messageId))
+    return { id: messageId, threadId, messageId, status: "created", reused: false }
+  } catch (error) {
+    const failed = new Date().toISOString()
+    await result(admin.from("Comm_Messages").update({
+      CommMessage_StatusCode: "failed",
+      CommMessage_HeaderJSON: JSON.stringify({ command: resolved.command, providerDraftState: "failed" }),
+      CommMessage_UpdatedAt: failed,
+      CommMessage_UpdatedBy: actor.userId,
+    }).eq("CommMessage_ID", messageId)).catch(() => undefined)
+    throw error
+  }
+}
+
 function escapeTrackedHtml(value: string) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;").replace(/\r?\n/g, "<br>")
 }

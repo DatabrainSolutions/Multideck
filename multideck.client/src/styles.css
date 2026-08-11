@@ -1567,7 +1567,11 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
    every frame for no visible gain. The veil above them does the blurring. */
 .md-watch-card {
   position: relative;
-  background: color-mix(in srgb, var(--md-surface) 86%, transparent);
+  overflow: hidden;
+  /* Near-opaque on purpose. These cards sit over a blurred wash, and at the old
+     86% the body text picked up whatever was drifting behind the rail — the
+     glass belongs around the cards, not through the words. */
+  background-color: color-mix(in srgb, var(--md-surface) 96%, transparent);
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--md-surface) 70%, transparent),
     0 1px 2px rgba(11, 20, 19, 0.04),
@@ -1583,16 +1587,63 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
 }
 
 .dark .md-watch-card {
-  background: color-mix(in srgb, var(--md-surface) 78%, transparent);
+  background-color: color-mix(in srgb, var(--md-surface) 92%, transparent);
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.07),
     0 1px 2px rgba(0, 0, 0, 0.2),
     0 10px 26px rgba(0, 0, 0, 0.26);
 }
 
+/* An unread watch earns a tone-coloured edge and a warmer field. This is the
+   only thing in the rail that says "look here first", so nothing else in the
+   stack is allowed to use it. Carried on `background-image` and the inline-start
+   bar, both of which survive the `background-color` swaps hover and selection
+   make on top of them. */
+.md-watch-card[data-unread="true"]::before {
+  content: "";
+  position: absolute;
+  inset-block: 10px;
+  inset-inline-start: 0;
+  width: 3px;
+  border-start-end-radius: 999px;
+  border-end-end-radius: 999px;
+  background: var(--md-watch-tone, var(--md-accent));
+}
+
+.md-watch-card[data-unread="true"] {
+  background-image: linear-gradient(
+    to var(--md-watch-tint-dir, right),
+    color-mix(in srgb, var(--md-watch-tone, var(--md-accent)) 8%, transparent),
+    transparent 132px
+  );
+}
+
+[dir="rtl"] .md-watch-card {
+  --md-watch-tint-dir: left;
+}
+
+.dark .md-watch-card[data-unread="true"] {
+  background-image: linear-gradient(
+    to var(--md-watch-tint-dir, right),
+    color-mix(in srgb, var(--md-watch-tone, var(--md-accent)) 14%, transparent),
+    transparent 132px
+  );
+}
+
+/* The state word is the card's first line, so it is coloured only when there is
+   something to say. A rail of amber labels would flatten right back out. */
+.md-watch-card__state {
+  color: var(--md-subtle);
+}
+
+.md-watch-card[data-state="alert"] .md-watch-card__state,
+.md-watch-card[data-state="attention"] .md-watch-card__state {
+  color: var(--md-watch-tone, var(--md-amber));
+}
+
 .md-watch-card:hover {
   translate: 0 -2px;
-  background: color-mix(in srgb, var(--md-surface) 98%, transparent);
+  background-color: color-mix(in srgb, var(--md-surface) 98%, transparent);
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--md-surface) 84%, transparent),
     0 2px 4px rgba(11, 20, 19, 0.05),
@@ -1601,7 +1652,7 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
 }
 
 .dark .md-watch-card:hover {
-  background: color-mix(in srgb, var(--md-surface) 96%, transparent);
+  background-color: color-mix(in srgb, var(--md-surface) 96%, transparent);
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.1),
     0 2px 6px rgba(0, 0, 0, 0.24),
@@ -1620,7 +1671,7 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
    row, and it is the only thing marking which. */
 .md-watch-card[data-active="true"] {
   translate: 0 -2px;
-  background: color-mix(in srgb, var(--md-surface) 100%, transparent);
+  background-color: color-mix(in srgb, var(--md-surface) 100%, transparent);
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--md-surface) 86%, transparent),
     0 2px 4px rgba(11, 20, 19, 0.05),
@@ -1629,7 +1680,7 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
 }
 
 .dark .md-watch-card[data-active="true"] {
-  background: color-mix(in srgb, var(--md-surface) 100%, transparent);
+  background-color: color-mix(in srgb, var(--md-surface) 100%, transparent);
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.12),
     0 2px 6px rgba(0, 0, 0, 0.24),
@@ -1672,16 +1723,15 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
   translate: 0 0;
 }
 
-/* The live dot's halo. One slow breath, only on monitors that are actually
-   armed — a pulse on everything would read as a page-wide loading state. */
+/* The dot's halo. Sits still by default; the breath is added back only for a
+   watch the operator has not opened yet (see `[data-unread]` below). */
 .md-watch-dot::after {
   content: "";
   position: absolute;
   inset: -3px;
   border-radius: 999px;
   background: currentColor;
-  opacity: 0.24;
-  animation: md-watch-dot-breathe 2.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  opacity: 0.2;
 }
 
 @keyframes md-watch-dot-breathe {
@@ -1880,17 +1930,43 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
   width: 7px;
   height: 7px;
   border-radius: 999px;
+  color: var(--md-watch-tone, var(--md-accent));
   background: currentColor;
   box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 15%, transparent);
 }
 
-/* Offset per card, so four armed monitors never breathe in unison. */
-.md-watch-dot::after {
+/* Movement means news. Every card used to breathe, which made the whole rail
+   read as one loading state and told the eye nothing about where to land — only
+   an unopened watch pulses now, offset per card so two never beat in unison. */
+.md-watch-card[data-unread="true"] .md-watch-dot::after {
+  animation: md-watch-dot-breathe 2.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   animation-delay: var(--md-watch-delay, 0s);
 }
 
-.md-watch-card__meta {
-  border-top: 1px solid color-mix(in srgb, var(--md-ink) 6%, transparent);
+/* Only shown when something is actually waiting, so it is allowed to be loud. */
+.md-watch-rail__badge {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding-inline: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--md-amber) 14%, transparent);
+  color: var(--md-amber);
+  font-size: 11.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-amber) 22%, transparent);
+}
+
+/* Section labels in the watch sheet: quiet, wide, and clearly not the content
+   under them, so the sheet reads as answers rather than one long paragraph. */
+.md-watch-sheet__heading {
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--md-subtle);
 }
 
 /* ── Dexter conversation header ──────────────────────────────────────────────
@@ -2058,6 +2134,7 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
   }
 
   .md-watch-dot::after,
+  .md-watch-card[data-unread="true"] .md-watch-dot::after,
   .md-dexter-live-dot::after {
     animation: none;
     opacity: 0.18;

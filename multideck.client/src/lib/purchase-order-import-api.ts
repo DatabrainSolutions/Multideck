@@ -1,5 +1,4 @@
 import { getSupabaseSession, supabase, supabaseFunctionsUrl, supabasePublicApiKey } from "@/lib/supabase"
-import { extractEmbeddedPdfText } from "@/lib/customs-invoice-pdf-text"
 
 const endpoint = `${supabaseFunctionsUrl}/customs-invoice-ocr`
 const maxBytes = 10 * 1024 * 1024
@@ -36,7 +35,7 @@ export type PurchaseOrderExtractionResult = {
   lines: ExtractedPurchaseOrderLine[]
   model: string
   pageCount: number
-  extractionMode: "embedded_text" | "mistral_ocr"
+  extractionMode: "mistral_ocr"
   timings: Record<string, number>
 }
 
@@ -55,19 +54,13 @@ export async function extractPurchaseOrder(
     throw new PurchaseOrderExtractionError("Purchase order extraction is unavailable for this workspace.", 503)
   }
   options.onStage?.("reading")
-  const embedded = await extractEmbeddedPdfText(file)
   options.onStage?.("extracting")
+  const extractionId = crypto.randomUUID()
   let token = await accessToken(false)
-  let response = embedded
-    ? await sendEmbedded(file, embedded, token, options.signal)
-    : await sendPdf(file, token, options.signal)
+  let response = await sendPdf(file, extractionId, token, options.signal)
   if (response.status === 401) {
     token = await accessToken(true)
-    response = embedded ? await sendEmbedded(file, embedded, token, options.signal) : await sendPdf(file, token, options.signal)
-  }
-  if (embedded && await requestsOcrFallback(response)) {
-    response = await sendPdf(file, token, options.signal)
-    if (response.status === 401) response = await sendPdf(file, await accessToken(true), options.signal)
+    response = await sendPdf(file, extractionId, token, options.signal)
   }
   if (!response.ok) throw new PurchaseOrderExtractionError(await errorMessage(response), response.status)
   const payload = await response.json().catch(() => null)
@@ -86,18 +79,15 @@ async function accessToken(refresh: boolean) {
   throw new PurchaseOrderExtractionError("Sign in again to import a purchase order.", 401)
 }
 
-function sendEmbedded(file: File, embedded: { text: string; pageCount: number }, token: string, signal?: AbortSignal) {
-  return send(JSON.stringify({ documentType: "purchase_order", embeddedText: embedded.text, fileName: file.name, pageCount: embedded.pageCount }), token, signal, "application/json")
-}
-
-function sendPdf(file: File, token: string, signal?: AbortSignal) {
+function sendPdf(file: File, extractionId: string, token: string, signal?: AbortSignal) {
   const form = new FormData()
   form.set("documentType", "purchase_order")
+  form.set("extractionId", extractionId)
   form.set("file", file, file.name)
   return send(form, token, signal)
 }
 
-async function send(body: BodyInit, token: string, signal?: AbortSignal, contentType?: string) {
+async function send(body: BodyInit, token: string, signal?: AbortSignal) {
   try {
     return await fetch(endpoint, {
       method: "POST",
@@ -108,20 +98,13 @@ async function send(body: BodyInit, token: string, signal?: AbortSignal, content
         Accept: "application/json",
         Authorization: `Bearer ${token}`,
         apikey: supabasePublicApiKey,
-        "x-client-info": "multideck-purchase-order-import/1",
-        ...(contentType ? { "Content-Type": contentType } : {}),
+        "x-client-info": "multideck-purchase-order-import/2",
       },
     })
   } catch (error) {
     if (signal?.aborted) throw error
     throw new PurchaseOrderExtractionError("Unable to import the purchase order. Check your connection and try again.")
   }
-}
-
-async function requestsOcrFallback(response: Response) {
-  if (response.status !== 422) return false
-  const payload = await response.clone().json().catch(() => ({})) as Record<string, unknown>
-  return payload.fallbackToMistralOcr === true
 }
 
 async function errorMessage(response: Response) {
@@ -174,7 +157,7 @@ function normalize(value: unknown): PurchaseOrderExtractionResult {
     lines,
     model: text(source.model),
     pageCount: numeric(source.pageCount),
-    extractionMode: source.extractionMode === "embedded_text" ? "embedded_text" : "mistral_ocr",
+    extractionMode: "mistral_ocr",
     timings: Object.fromEntries(Object.entries(record(source.timings)).flatMap(([key, entry]) => typeof entry === "number" ? [[key, entry]] : [])),
   }
 }

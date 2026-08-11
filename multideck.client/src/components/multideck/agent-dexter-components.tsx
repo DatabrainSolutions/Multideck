@@ -9,6 +9,9 @@ import {
   Boxes,
   Check,
   ChevronDown,
+  CirclePause,
+  CirclePlay,
+  ExternalLink,
   FileText,
   Hand,
   Handshake,
@@ -19,6 +22,7 @@ import {
   Search,
   ShieldCheck,
   Sparkles,
+  Trash2,
   TriangleAlert,
   Upload,
   Users,
@@ -118,10 +122,10 @@ export type DexterHistoryItem = {
 export type DexterMonitor = {
   id?: string
   title: string
+  /** The rule in plain words. Reference only — the card shows `detail` instead. */
   body: string
-  meta: string
+  /** The humanised change, or the health message when the source is struggling. */
   detail: string
-  tone: StatusTone
   status?: "active" | "paused"
   capability?: string
   targetLabel?: string | null
@@ -616,6 +620,7 @@ const mentionTypeLabels: Record<DexterMentionType, string> = {
   customer: "Customer",
   lead: "Lead",
   deal: "Deal",
+  declaration: "Declaration",
   page: "Page",
   quote: "Quote",
   document: "Document",
@@ -743,7 +748,7 @@ export function DexterMentionInput({
   const results = useMemo(() => {
     const normalizedQuery = query?.trim().toLocaleLowerCase() ?? ""
     if (!normalizedQuery) {
-      const typeOrder: DexterMentionType[] = ["email", "booking", "customer", "lead", "deal", "page", "quote", "document"]
+      const typeOrder: DexterMentionType[] = ["email", "booking", "customer", "lead", "deal", "declaration", "page", "quote", "document"]
       const firstFromEachType = typeOrder.flatMap((type) => items.filter((item) => item.type === type).slice(0, 1))
       const additionalItems = typeOrder.flatMap((type) => items.filter((item) => item.type === type).slice(1, 2))
       return [...firstFromEachType, ...additionalItems].slice(0, 8)
@@ -1206,7 +1211,7 @@ export function DexterMentionInput({
               {menuResultCount === 0 ? (
                 <div className="px-3 py-5 text-center">
                   <p className="text-[13px] font-medium text-[var(--md-ink)]">{t(menuKind === "command" ? "No matching commands" : "No matching workspace items")}</p>
-                  <p className="mt-1 text-[11.5px] text-[var(--md-subtle)]">{t(menuKind === "command" ? "Try chat or watch." : "Try Gmail, Outlook, a booking reference, customer, lead, quote or page name.")}</p>
+                  <p className="mt-1 text-[11.5px] text-[var(--md-subtle)]">{t(menuKind === "command" ? "Try chat or watch." : "Try Gmail, Outlook, a booking or declaration reference, customer, lead, quote or page name.")}</p>
                 </div>
               ) : null}
             </div>
@@ -1782,10 +1787,72 @@ export function DexterHistoryList({
   )
 }
 
+type DexterWatchStateKey = "alert" | "attention" | "paused" | "watching"
+
+/** Rail order: what landed, then what needs looking at, then what is still armed. */
+const watchStateRank: Record<DexterWatchStateKey, number> = { alert: 0, attention: 1, watching: 2, paused: 3 }
+
+type DexterWatchState = {
+  key: DexterWatchStateKey
+  tone: StatusTone
+  label: string
+  /** Something landed that the operator has not opened yet. */
+  unread: boolean
+  /** The change itself, when there is one. Empty means the watch is still armed. */
+  news: string
+  /** When the change landed, for the rail's short stamp and the sheet's full one. */
+  at: string | null
+}
+
 /**
- * One monitor, floating on the rail's wash rather than sitting in a panel. The
- * tone dot carries both the severity and the liveness — a halo breathes out of
- * it on a long cycle, offset per card so the stack never pulses in unison.
+ * One derivation of what a watch is doing, shared by the card and the detail
+ * sheet so the rail can never disagree with the pane it opens.
+ *
+ * `news` deliberately prefers the humanised change over the rule: the rule
+ * repeats the watch title almost word for word, and showing both is what made
+ * the old card read as three near-identical sentences.
+ */
+function dexterWatchState(monitor: DexterMonitor, t: (text: string) => string): DexterWatchState {
+  const status = monitor.status ?? "active"
+  const degraded = monitor.healthStatus === "degraded" || monitor.healthStatus === "error"
+  const unread = Boolean(monitor.latestEvent && !monitor.latestEvent.readAt)
+  const news = monitor.latestEvent || monitor.healthMessage ? monitor.detail : ""
+  const at = monitor.latestEvent?.createdAt ?? monitor.lastTriggeredAt ?? null
+
+  if (status === "paused") return { key: "paused", tone: "neutral", label: t("Paused"), unread: false, news, at }
+  if (degraded) return { key: "attention", tone: "amber", label: t("Needs attention"), unread, news, at }
+  if (monitor.latestEvent) {
+    return { key: "alert", tone: "amber", label: unread ? t("New") : t("Matched"), unread, news, at }
+  }
+  return { key: "watching", tone: "teal", label: t("Watching"), unread: false, news, at }
+}
+
+/**
+ * Short form on purpose: the rail is scanned, not read. The sheet shows the full
+ * timestamp for anyone who needs the exact moment.
+ */
+function dexterWatchStamp(value: string | null | undefined, language: string, t: (text: string) => string) {
+  if (!value) return ""
+  const time = new Date(value).getTime()
+  if (Number.isNaN(time)) return ""
+
+  const minutes = Math.round((time - Date.now()) / 60_000)
+  if (Math.abs(minutes) < 1) return t("just now")
+
+  const relative = new Intl.RelativeTimeFormat(language, { numeric: "auto", style: "narrow" })
+  if (Math.abs(minutes) < 60) return relative.format(minutes, "minute")
+  if (Math.abs(minutes) < 1440) return relative.format(Math.round(minutes / 60), "hour")
+  if (Math.abs(minutes) < 43_200) return relative.format(Math.round(minutes / 1440), "day")
+  return relative.format(Math.round(minutes / 43_200), "month")
+}
+
+/**
+ * One monitor, floating on the rail's wash rather than sitting in a panel.
+ *
+ * Read top to bottom it answers the three questions in the order an operator
+ * asks them: is anything up, what happened, and which watch said so. The change
+ * is the loud line — the watch's own name drops to the quiet line beneath it,
+ * because by the time you are reading a card you already know you set it.
  */
 export function DexterMonitorCard({
   monitor,
@@ -1799,33 +1866,36 @@ export function DexterMonitorCard({
   active?: boolean
   onClick?: () => void
 }) {
-  const { t } = useLanguage()
+  const { t, language } = useLanguage()
+  const state = dexterWatchState(monitor, t)
+  const stamp = dexterWatchStamp(state.at, language, t)
 
   return (
     <button
       type="button"
       data-active={active ? "true" : undefined}
+      data-state={state.key}
+      data-unread={state.unread ? "true" : undefined}
       aria-expanded={onClick ? active : undefined}
       className="md-watch-card block w-full rounded-[16px] p-3.5 text-start"
+      style={{ "--md-watch-tone": toneToVar(state.tone), "--md-watch-delay": `${index * 0.9}s` } as CSSProperties}
       onClick={onClick}
     >
-      <span className="flex items-start gap-2.5">
-        <span
-          className="md-watch-dot mt-[5px] shrink-0"
-          style={{ color: toneToVar(monitor.tone), "--md-watch-delay": `${index * 0.9}s` } as CSSProperties}
-          aria-hidden="true"
-        />
-        <span className="min-w-0 flex-1">
-          <span className="line-clamp-2 block break-words text-[13px] font-medium leading-[1.4] text-[var(--md-ink)]">{monitor.title}</span>
-          <span className="mt-1.5 line-clamp-2 block break-words text-[12px] leading-[1.55] text-[var(--md-text)]">{monitor.body}</span>
-        </span>
+      <span className="flex items-center gap-2 text-[11.5px] leading-none">
+        <span className="md-watch-dot shrink-0" aria-hidden="true" />
+        <span className="md-watch-card__state min-w-0 truncate font-medium">{state.label}</span>
+        {stamp ? (
+          <time className="ms-auto shrink-0 tabular-nums text-[var(--md-subtle)]" dateTime={state.at ?? undefined}>{stamp}</time>
+        ) : null}
       </span>
-      <span className="md-watch-card__meta mt-3 grid min-w-0 gap-1.5 pt-2.5 text-[11px] text-[var(--md-subtle)]">
-        <span className="font-medium">{t(monitor.meta)}</span>
-        <span className="flex min-w-0 items-start gap-1">
-          <span className="line-clamp-2 min-w-0 flex-1 break-words">{monitor.detail}</span>
-          <ArrowRight className="md-watch-card__go size-3 shrink-0 text-[var(--md-accent)]" strokeWidth={1.4} />
-        </span>
+
+      <span className="mt-2.5 line-clamp-3 block break-words text-[13.5px] font-medium leading-[1.45] text-[var(--md-ink)]">
+        {state.news || monitor.title}
+      </span>
+
+      <span className="mt-2 flex min-w-0 items-center gap-1.5 text-[12px] leading-[1.5] text-[var(--md-text)]">
+        <span className="min-w-0 flex-1 truncate">{state.news ? monitor.title : t("Nothing has matched yet")}</span>
+        <ArrowRight className="md-watch-card__go size-3.5 shrink-0 text-[var(--md-accent)]" strokeWidth={1.5} />
       </span>
     </button>
   )
@@ -1854,6 +1924,27 @@ export function DexterMonitorStack({
   const { t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
 
+  // Anything that landed outranks anything still armed. A watch that has never
+  // fired is, by definition, the one with nothing to say.
+  const { ordered, unreadCount } = useMemo(() => {
+    const entries = monitors
+      .map((monitor, index) => ({ monitor, index, state: dexterWatchState(monitor, t) }))
+      .sort((left, right) => {
+        if (left.state.unread !== right.state.unread) return left.state.unread ? -1 : 1
+        const byState = watchStateRank[left.state.key] - watchStateRank[right.state.key]
+        if (byState !== 0) return byState
+        const leftAt = left.state.at ? Date.parse(left.state.at) : 0
+        const rightAt = right.state.at ? Date.parse(right.state.at) : 0
+        if (leftAt !== rightAt) return rightAt - leftAt
+        return left.index - right.index
+      })
+
+    return {
+      ordered: entries.map((entry) => entry.monitor),
+      unreadCount: entries.filter((entry) => entry.state.unread).length,
+    }
+  }, [monitors, t])
+
   return (
     <aside className="relative flex h-full min-h-0 flex-col">
       <motion.span
@@ -1872,7 +1963,7 @@ export function DexterMonitorStack({
               <p className="mt-1.5">{t("Type /watch in Dexter, then describe the change that matters.")}</p>
             </div>
           ) : null}
-          {monitors.map((monitor, index) => (
+          {ordered.map((monitor, index) => (
             <motion.div
               key={monitor.id ?? `${monitor.title}-${index}`}
               initial={shouldReduceMotion ? false : { opacity: 0, y: 10, filter: "blur(6px)" }}
@@ -1902,7 +1993,13 @@ export function DexterMonitorStack({
           <span className="md-dexter-live-dot shrink-0" aria-hidden="true" />
           <span className="truncate">{t("Watching for you")}</span>
         </h2>
-        <span className="shrink-0 text-[12px] text-[var(--md-subtle)]">{monitors.length}</span>
+        {/* A raw total says nothing. What matters is whether any of them have
+            news, so the count only shouts when something is waiting. */}
+        {unreadCount ? (
+          <span className="md-watch-rail__badge shrink-0">{unreadCount} {t("new")}</span>
+        ) : (
+          <span className="shrink-0 text-[12px] tabular-nums text-[var(--md-subtle)]">{monitors.length}</span>
+        )}
         {onCollapse ? (
           <button
             type="button"
@@ -2129,8 +2226,9 @@ export function DexterMonitorDetailSheet({
    */
   floating?: boolean
 }) {
-  const { t } = useLanguage()
+  const { t, language } = useLanguage()
   const status = monitor.status ?? "active"
+  const state = dexterWatchState(monitor, t)
   const healthStatus = monitor.healthStatus ?? "starting"
   const healthTone = healthStatus === "healthy"
     ? "green"
@@ -2143,6 +2241,13 @@ export function DexterMonitorDetailSheet({
   const emailContext = monitor.latestEvent?.context?.kind === "email"
     ? monitor.latestEvent.context
     : null
+  const emailReadable = emailContext?.availability === "available"
+  // Only an email watch can lose its source. A deal or quote watch reaching this
+  // branch used to be told its email had been deleted, which is why a perfectly
+  // good stage change read as an error.
+  const emailLost = monitor.capability === "email" && Boolean(monitor.latestEvent) && !emailReadable
+  const sectionId = `watch-${monitor.id ?? "selected"}`
+  const stamp = dexterWatchStamp(state.at, language, t)
 
   return (
     <aside
@@ -2156,15 +2261,17 @@ export function DexterMonitorDetailSheet({
       <header className="border-b border-[rgba(11,20,19,0.07)] px-[var(--md-gap-xl)] py-[var(--md-page-stack-gap)] max-sm:ps-[72px]">
         <div className="flex items-start justify-between gap-[var(--md-gap-lg)]">
           <div className="min-w-0">
-            <h2 className="flex items-start gap-2 break-words text-[18px] font-medium leading-6 text-[var(--md-ink)]">
-              <span className="size-2.5 rounded-full" style={{ background: toneToVar(monitor.tone) }} />
-              {monitor.title}
+            <h2 className="flex items-start gap-2.5 break-words text-[18px] font-medium leading-6 text-[var(--md-ink)]">
+              <span className="mt-[7px] size-2.5 shrink-0 rounded-full" style={{ background: toneToVar(state.tone) }} />
+              <span className="min-w-0">{monitor.title}</span>
             </h2>
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px] text-[var(--md-text)]">
+            {/* Pills only. The old header also carried a sentence about how the
+                watch runs, which is reference, not status — it now lives with the
+                rest of the watch's definition further down. */}
+            <div className="mt-3 flex flex-wrap items-center gap-2">
               <StatusPill tone={status === "active" ? "green" : "neutral"}>{t(status === "active" ? "Active" : "Paused")}</StatusPill>
               {monitor.capability === "email" && status === "active" ? <StatusPill tone={healthTone}>{healthLabel}</StatusPill> : null}
-              {monitor.triggerCount ? <StatusPill tone="amber">{monitor.triggerCount} {t("alerts")}</StatusPill> : null}
-              <span>{monitor.capability === "email" ? t("Inbox checked automatically") : t("Checks when your connected data changes")}</span>
+              {monitor.triggerCount ? <StatusPill tone="amber">{monitor.triggerCount} {t(monitor.triggerCount === 1 ? "alert" : "alerts")}</StatusPill> : null}
             </div>
           </div>
           <button type="button" className="grid size-9 shrink-0 place-items-center rounded-full text-[var(--md-subtle)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]" onClick={onClose} aria-label={t(compactBack ? "Back to watches" : "Close monitor detail")}>
@@ -2175,85 +2282,93 @@ export function DexterMonitorDetailSheet({
 
       <div className="min-h-0 flex-1 overflow-y-auto px-[var(--md-gap-xl)] py-[var(--md-page-stack-gap)] md-scrollbar">
         {monitor.capability === "email" && status === "active" && healthStatus !== "healthy" ? (
-          <div role="status" className="mt-4 rounded-[var(--md-radius-lg)] bg-[rgba(221,138,43,0.10)] px-4 py-3 text-[13px] leading-5 text-[var(--md-ink)] shadow-[var(--md-shadow-line)]">
+          <div role="status" className="mb-[var(--md-page-section-gap)] rounded-[var(--md-radius-lg)] bg-[rgba(221,138,43,0.10)] px-4 py-3 text-[13px] leading-5 text-[var(--md-ink)] shadow-[var(--md-shadow-line)]">
             <p className="font-medium">{healthLabel}</p>
             <p className="mt-1 text-[var(--md-text)]">{t(monitor.healthMessage ?? "Dexter is retrying automatically. You do not need to recreate this watch.")}</p>
           </div>
         ) : null}
 
-        <section aria-labelledby={`watch-update-${monitor.id ?? "selected"}`}>
-          <h3 id={`watch-update-${monitor.id ?? "selected"}`} className="text-[14px] font-medium text-[var(--md-text)]">{t("Latest update")}</h3>
-          {emailContext?.availability === "available" ? (
-            <div className="mt-3 min-w-0 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)]">
-              <div className="flex min-w-0 items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="break-words text-[14px] font-medium leading-5 text-[var(--md-ink)]">{emailContext.subject || t("No subject")}</p>
-                  <p className="mt-1 break-words text-[12px] text-[var(--md-text)]">
-                    <bdi dir="auto" data-i18n-skip>{emailContext.senderName || emailContext.senderEmail}</bdi>
-                    {emailContext.senderName && emailContext.senderEmail ? <span data-i18n-skip dir="ltr"> &lt;{emailContext.senderEmail}&gt;</span> : null}
+        {/* The change first, in plain words, at a size you can read from across
+            the desk. Everything else on this pane is context for it. */}
+        <section aria-labelledby={`${sectionId}-happened`}>
+          <h3 id={`${sectionId}-happened`} className="md-watch-sheet__heading">{t("What happened")}</h3>
+
+          {monitor.latestEvent ? (
+            <>
+              {/* A readable email says all of this better in the card below, so
+                  the summary line steps aside rather than saying it twice. */}
+              {emailReadable ? null : (
+                <>
+                  <p className="mt-2.5 break-words text-[15px] font-medium leading-[1.5] text-[var(--md-ink)]">
+                    {state.news || monitor.latestEvent.body}
                   </p>
+                  {state.at ? (
+                    <p className="mt-1.5 text-[12px] text-[var(--md-subtle)]">
+                      <time dateTime={state.at}>{new Date(state.at).toLocaleString(language)}</time>
+                      {stamp ? <span> · {stamp}</span> : null}
+                    </p>
+                  ) : null}
+                </>
+              )}
+
+              {emailReadable && emailContext ? (
+                <div className="mt-3 min-w-0 rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)]">
+                  <div className="flex min-w-0 items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="break-words text-[14px] font-medium leading-5 text-[var(--md-ink)]">{emailContext.subject || t("No subject")}</p>
+                      <p className="mt-1 break-words text-[12px] text-[var(--md-text)]">
+                        <bdi dir="auto" data-i18n-skip>{emailContext.senderName || emailContext.senderEmail}</bdi>
+                        {emailContext.senderName && emailContext.senderEmail ? <span data-i18n-skip dir="ltr"> &lt;{emailContext.senderEmail}&gt;</span> : null}
+                      </p>
+                    </div>
+                    <time className="shrink-0 text-[11px] tabular-nums text-[var(--md-subtle)]" dateTime={emailContext.receivedAt}>
+                      {new Date(emailContext.receivedAt).toLocaleString(language)}
+                    </time>
+                  </div>
+                  {emailContext.preview ? (
+                    <p data-i18n-skip dir="auto" className="mt-3 line-clamp-6 whitespace-pre-wrap break-words text-[13px] leading-5 text-[var(--md-text)]">{emailContext.preview}</p>
+                  ) : <p className="mt-3 text-[13px] text-[var(--md-subtle)]">{t("No email preview is available.")}</p>}
+                  {emailContext.attachments.length ? (
+                    <div className="mt-4">
+                      <h4 className="text-[12px] font-medium text-[var(--md-text)]">{t("Attachments")}</h4>
+                      <div className="mt-2 grid min-w-0 gap-2">
+                        {emailContext.attachments.map((attachment) => (
+                          <DexterEmailAttachmentCard key={attachment.id} attachment={attachment} variant="watch" onAskDexter={onAskAttachment} />
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
-                <time className="shrink-0 text-[11px] tabular-nums text-[var(--md-subtle)]" dateTime={emailContext.receivedAt}>
-                  {new Date(emailContext.receivedAt).toLocaleString()}
-                </time>
-              </div>
-              {emailContext.preview ? (
-                <p data-i18n-skip dir="auto" className="mt-3 line-clamp-6 whitespace-pre-wrap break-words text-[13px] leading-5 text-[var(--md-text)]">{emailContext.preview}</p>
-              ) : <p className="mt-3 text-[13px] text-[var(--md-subtle)]">{t("No email preview is available.")}</p>}
+              ) : null}
+
+              {emailLost ? (
+                <div role="status" className="mt-4 rounded-[var(--md-radius-lg)] bg-[rgba(221,138,43,0.10)] px-4 py-3 text-[13px] leading-5 text-[var(--md-ink)] shadow-[var(--md-shadow-line)]">
+                  <p className="font-medium">{t(emailContext?.availability === "reconnect_required" ? "Reconnect email to open this update" : "This email is no longer available")}</p>
+                  <p className="mt-1 text-[var(--md-text)]">{emailContext?.availability === "reconnect_required" ? t(emailContext.unavailableReason ?? monitor.latestEvent.body) : t("The email may have been deleted, moved to Spam or Bin, or you may no longer have access to it.")}</p>
+                </div>
+              ) : null}
+
+              {/* One action row for the whole update, so there is exactly one
+                  obvious next step rather than buttons buried in a sub-card. */}
               <div className="mt-4 flex flex-wrap items-center gap-2">
                 <Button type="button" size="sm" className="h-9 rounded-[var(--md-radius-md)] px-3 text-[12px]" onClick={onAskEvent}>
                   <MessageCircle className="size-3.5" strokeWidth={1.4} />
                   {t("Ask Dexter about this update")}
                 </Button>
-                {emailContext.sourceUrl ? (
+                {emailReadable && emailContext?.sourceUrl ? (
                   <Button asChild type="button" variant="ghost" size="sm" className="h-9 rounded-[var(--md-radius-md)] px-3 text-[12px]">
-                    <a href={emailContext.sourceUrl} target="_blank" rel="noreferrer">{t("Open email")}</a>
+                    <a href={emailContext.sourceUrl} target="_blank" rel="noreferrer">
+                      {t("Open email")}
+                      <ExternalLink className="size-3.5" strokeWidth={1.4} />
+                    </a>
                   </Button>
                 ) : null}
               </div>
-              <div className="mt-5">
-                <h4 className="text-[12px] font-medium text-[var(--md-text)]">{t("Attachments")}</h4>
-                {emailContext.attachments.length ? (
-                  <div className="mt-2 grid min-w-0 gap-2">
-                    {emailContext.attachments.map((attachment) => (
-                      <DexterEmailAttachmentCard key={attachment.id} attachment={attachment} variant="watch" onAskDexter={onAskAttachment} />
-                    ))}
-                  </div>
-                ) : <p className="mt-2 text-[12px] leading-5 text-[var(--md-subtle)]">{t("This email has no eligible attachments.")}</p>}
-              </div>
-            </div>
-          ) : monitor.latestEvent ? (
-            <div role="status" className="mt-3 rounded-[var(--md-radius-lg)] bg-[rgba(221,138,43,0.10)] px-4 py-3 text-[13px] leading-5 text-[var(--md-ink)] shadow-[var(--md-shadow-line)]">
-              <p className="font-medium">{t(emailContext?.availability === "reconnect_required" ? "Reconnect email to open this update" : "This email is no longer available")}</p>
-              <p className="mt-1 text-[var(--md-text)]">{emailContext?.availability === "reconnect_required" ? t(emailContext.unavailableReason ?? monitor.latestEvent.body) : t("The email may have been deleted, moved to Spam or Bin, or you may no longer have access to it.")}</p>
-            </div>
+            </>
           ) : (
-            <p className="mt-3 text-[13px] leading-5 text-[var(--md-text)]">{t("Nothing has matched yet. I’ll let you know when it does.")}</p>
+            <p className="mt-2.5 text-[14px] leading-6 text-[var(--md-text)]">{t("Nothing has matched yet. I’ll let you know when it does.")}</p>
           )}
         </section>
-
-        <details className="mt-[var(--md-page-section-gap)] rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-4">
-          <summary className="cursor-pointer text-[13px] font-medium text-[var(--md-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a42)]">{t("About this watch")}</summary>
-          <Surface padding="none" className="mt-4 rounded-[var(--md-radius-lg)] bg-transparent shadow-none">
-            <p className="text-[13px] leading-6 text-[var(--md-ink)]">{monitor.body}</p>
-          </Surface>
-          <div className="mt-3 divide-y divide-[rgba(11,20,19,0.07)] text-[13px]">
-            <div className="flex justify-between gap-4 py-3">
-              <span className="text-[var(--md-text)]">{t("Looking for")}</span>
-              <span className="font-medium text-[var(--md-ink)]">{monitor.ruleLabel ?? t("The change you asked Dexter to watch")}</span>
-            </div>
-            <div className="flex justify-between gap-4 py-3">
-              <span className="text-[var(--md-text)]">{t("How it checks")}</span>
-              <span className="text-end font-medium text-[var(--md-ink)]">{t(monitor.capability === "email" ? "Your inbox is checked automatically" : "It checks whenever your connected data changes")}</span>
-            </div>
-            {monitor.capability === "email" && monitor.lastSourceCheckAt ? (
-              <div className="flex justify-between gap-4 py-3">
-                <span className="text-[var(--md-text)]">{t("Last checked")}</span>
-                <span className="font-medium text-[var(--md-ink)]">{new Date(monitor.lastSourceCheckAt).toLocaleString()}</span>
-              </div>
-            ) : null}
-          </div>
-        </details>
 
         {monitor.action ? (
           <section className="mt-[var(--md-page-section-gap)] rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-4 shadow-[var(--md-shadow-line)]">
@@ -2263,11 +2378,58 @@ export function DexterMonitorDetailSheet({
             <p className="mt-3 text-[12px] leading-5 text-[var(--md-subtle)]">{t("Dexter has not run this action. Open a chat and ask Dexter to review it before you approve anything.")}</p>
           </section>
         ) : null}
+
+        {/* Short enough to stay open. Collapsing it hid the one thing that
+            explains why the watch fired at all. Labels sit in their own column
+            so a long rule reads as a sentence instead of ragged right-aligned
+            text tucked against the pane edge. */}
+        <section className="mt-[var(--md-page-section-gap)]" aria-labelledby={`${sectionId}-rule`}>
+          <h3 id={`${sectionId}-rule`} className="md-watch-sheet__heading">{t("What I’m watching")}</h3>
+          <dl className="mt-3 grid grid-cols-[minmax(0,7rem)_minmax(0,1fr)] gap-x-4 border-t border-[var(--md-line)] text-[13px] leading-[1.55]">
+            <dt className="border-b border-[var(--md-line)] py-3 text-[var(--md-text)]">{t("Looking for")}</dt>
+            <dd className="min-w-0 break-words border-b border-[var(--md-line)] py-3 font-medium text-[var(--md-ink)]">{monitor.ruleLabel ?? monitor.body}</dd>
+
+            <dt className="border-b border-[var(--md-line)] py-3 text-[var(--md-text)]">{t("How it checks")}</dt>
+            <dd className="min-w-0 break-words border-b border-[var(--md-line)] py-3 font-medium text-[var(--md-ink)]">
+              {t(monitor.capability === "email" ? "Your inbox is checked automatically" : "It checks whenever your connected data changes")}
+            </dd>
+
+            {monitor.targetLabel ? (
+              <>
+                <dt className="border-b border-[var(--md-line)] py-3 text-[var(--md-text)]">{t("Applies to")}</dt>
+                <dd className="min-w-0 break-words border-b border-[var(--md-line)] py-3 font-medium text-[var(--md-ink)]">{monitor.targetLabel}</dd>
+              </>
+            ) : null}
+
+            {monitor.lastSourceCheckAt ? (
+              <>
+                <dt className="border-b border-[var(--md-line)] py-3 text-[var(--md-text)]">{t("Last checked")}</dt>
+                <dd className="min-w-0 break-words border-b border-[var(--md-line)] py-3 font-medium tabular-nums text-[var(--md-ink)]">
+                  {new Date(monitor.lastSourceCheckAt).toLocaleString(language)}
+                </dd>
+              </>
+            ) : null}
+          </dl>
+        </section>
       </div>
 
-      <footer className="grid grid-cols-[1fr_auto] gap-[var(--md-gap-md)] border-t border-[var(--md-line)] px-[var(--md-gap-xl)] py-[var(--md-gap-lg)]">
-        <Button variant="ghost" className="h-10 rounded-[var(--md-radius-md)] bg-white/60 text-[13px] shadow-[var(--md-shadow-line)]" onClick={() => onSetStatus?.(status === "active" ? "paused" : "active")}>{t(status === "active" ? "Pause" : "Resume")}</Button>
-        <Button variant="ghost" className="h-10 rounded-[var(--md-radius-md)] bg-[rgba(209,78,78,0.08)] px-4 text-[13px] text-[var(--md-red)] shadow-[0_0_0_1px_rgba(209,78,78,0.16)]" onClick={onDelete}>{t("Delete")}</Button>
+      <footer className="flex flex-wrap items-center justify-between gap-[var(--md-gap-md)] border-t border-[var(--md-line)] px-[var(--md-gap-xl)] py-[var(--md-gap-lg)]">
+        <Button
+          variant="ghost"
+          className="h-10 rounded-[var(--md-radius-md)] bg-white/60 px-4 text-[13px] shadow-[var(--md-shadow-line)]"
+          onClick={() => onSetStatus?.(status === "active" ? "paused" : "active")}
+        >
+          {status === "active" ? <CirclePause className="size-4" strokeWidth={1.4} /> : <CirclePlay className="size-4" strokeWidth={1.4} />}
+          {t(status === "active" ? "Pause this watch" : "Resume this watch")}
+        </Button>
+        <Button
+          variant="ghost"
+          className="h-10 rounded-[var(--md-radius-md)] px-3 text-[13px] text-[var(--md-subtle)] hover:bg-[rgba(209,78,78,0.08)] hover:text-[var(--md-red)]"
+          onClick={onDelete}
+        >
+          <Trash2 className="size-4" strokeWidth={1.4} />
+          {t("Delete")}
+        </Button>
       </footer>
     </aside>
   )

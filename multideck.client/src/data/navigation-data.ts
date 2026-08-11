@@ -43,6 +43,7 @@ import {
   Sparkles,
   TriangleAlert,
   Truck,
+  Upload,
   Users,
   type LucideIcon,
 } from "@/components/icons/hugeicons"
@@ -173,9 +174,11 @@ export const sidebarAreas: SidebarArea[] = [
     label: "Rates & Contracts",
     icon: ReceiptText,
     destinations: [
-      { id: "rate-contracts", label: "Rate contracts", icon: FileText },
-      { id: "tariffs-charges", label: "Tariffs & charges", icon: SlidersHorizontal },
-      { id: "rate-results", label: "Rate results", icon: ChartLine },
+      { id: "rate-management", label: "Rate management", icon: ReceiptText, route: "/rates" },
+      { id: "rate-contracts", label: "Rate contracts", icon: FileText, route: "/rates/contracts" },
+      { id: "tariffs-charges", label: "Tariffs & charges", icon: SlidersHorizontal, route: "/rates/tariffs" },
+      { id: "rate-imports", label: "Imports & review", icon: Upload, route: "/rates/imports" },
+      { id: "rate-results", label: "Quote matching", icon: ChartLine, route: "/rates/results" },
     ],
   },
   {

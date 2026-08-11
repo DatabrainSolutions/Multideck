@@ -67,6 +67,12 @@ test("send keeps its idempotency key in both the Edge header and payload", () =>
   assert.match(source, /idempotencyKey: request\.idempotencyKey/)
 })
 
+test("provider drafts use the same authenticated idempotent Inbox transport", () => {
+  assert.match(source, /export async function createProviderDraft/)
+  assert.match(source, /inboxRequest\("\/provider-drafts"/)
+  assert.match(source, /"Idempotency-Key": request\.idempotencyKey/)
+})
+
 test("attachments are fetched from the same authenticated Edge transport", () => {
   assert.match(source, /fetchInboxEdge\(`\/attachments\/\$\{encodeURIComponent\(attachmentId\)\}\$\{inline/)
   assert.match(source, /URL\.createObjectURL\(await response\.blob\(\)\)/)

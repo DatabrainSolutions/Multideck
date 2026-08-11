@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { ChevronDown, ChevronUp, CircleCheck, CirclePause, CirclePlay, Filter, Health, LoaderCircle, Mail, MorphingIcon, RotateCcw, TestTube2, TriangleAlert, Workflow, X } from "@/components/icons/hugeicons"
+import { ChevronDown, ChevronUp, CircleCheck, CirclePause, CirclePlay, Filter, Health, LoaderCircle, Mail, MorphingIcon, Plus, RotateCcw, TestTube2, Trash2, TriangleAlert, Workflow, X } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import {
@@ -29,6 +29,7 @@ import {
   sendAutomationTest,
   testAutomation,
   turnAutomationOff,
+  updateCard,
   updateAutomation,
   useContactCardStore,
 } from "@/lib/contact-card-store"
@@ -812,7 +813,127 @@ export function AutomationRunHistory({ runs, onRerun }: { runs: AutomationRun[];
   )
 }
 
+type CrmFieldMapping = { source: string; target: string; value?: string }
+
+const crmFieldOptions = [
+  ["firstName", "First name"],
+  ["lastName", "Last name"],
+  ["email", "Email"],
+  ["company", "Company"],
+  ["phone", "Phone"],
+  ["jobTitle", "Job title"],
+  ["notes", "Notes"],
+  ["campaign", "Campaign"],
+] as const
+
+const formSourceOptions = [
+  ["firstName", "First name"],
+  ["lastName", "Last name"],
+  ["email", "Email"],
+  ["company", "Company"],
+  ["phone", "Phone"],
+  ["marketingConsent", "Marketing consent"],
+  ["cardName", "Card name"],
+  ["fixed", "Fixed value"],
+] as const
+
+function readCrmFieldMappings(card: ContactCard): CrmFieldMapping[] {
+  const raw = card.automation.actions.find((action) => action.kind === "add-to-crm")?.config.fieldMappings
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return []
+    return parsed.flatMap((item) => {
+      if (!item || typeof item !== "object") return []
+      const mapping = item as Record<string, unknown>
+      return typeof mapping.source === "string" && typeof mapping.target === "string"
+        ? [{ source: mapping.source, target: mapping.target, value: typeof mapping.value === "string" ? mapping.value : "" }]
+        : []
+    })
+  } catch {
+    return []
+  }
+}
+
+function CrmFieldMappingPanel({ card }: { card: ContactCard }) {
+  const { t } = useLanguage()
+  const mappings = readCrmFieldMappings(card)
+
+  function saveMappings(next: CrmFieldMapping[]) {
+    updateAutomation(card.id, (automation) => ({
+      ...automation,
+      actions: automation.actions.map((action) => action.kind === "add-to-crm"
+        ? { ...action, enabled: true, config: { ...action.config, duplicateHandling: "update", recordType: "lead", fieldMappings: JSON.stringify(next) } }
+        : { ...action, enabled: false }),
+    }))
+  }
+
+  function updateMapping(index: number, patch: Partial<CrmFieldMapping>) {
+    saveMappings(mappings.map((mapping, mappingIndex) => mappingIndex === index ? { ...mapping, ...patch } : mapping))
+  }
+
+  return (
+    <div className="grid gap-[var(--md-page-stack-gap)]">
+      <Surface padding="md" className="p-5">
+        <SectionHeader
+          title={t("CRM field mapping")}
+          meta={t("Every submission creates a CRM contact or updates the existing contact with the same email address.")}
+          action={card.automation.hasUnpublishedChanges ? (
+            <Button className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-accent)] text-[13px] text-[var(--md-accent-ink)]" onClick={() => { publishAutomation(card.id); toast.success(t("CRM mapping saved")) }}>
+              {t("Save changes")}
+            </Button>
+          ) : null}
+        />
+
+        <div className="mt-5 grid gap-5">
+          <label className="grid gap-1.5 sm:grid-cols-[180px_minmax(0,1fr)] sm:items-center">
+            <span><span className="block text-[13px] font-medium text-[var(--md-ink)]">{t("Lead source")}</span><span className="mt-0.5 block text-[11.5px] text-[var(--md-subtle)]">{t("Applied to every submission")}</span></span>
+            <Input value={card.leadSource} onChange={(event) => updateCard(card.id, (current) => ({ ...current, leadSource: event.target.value }))} placeholder={t("Add a lead source")} className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] text-base sm:text-[13px]" />
+          </label>
+
+          <div className="h-px bg-[var(--md-line)]" />
+
+          <div>
+            <div className="flex items-end justify-between gap-4">
+              <div><p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Form to CRM fields")}</p><p className="mt-1 text-[12px] text-[var(--md-subtle)]">{t("Choose where each answer is stored on the contact or lead.")}</p></div>
+              <Button variant="outline" className="h-8 rounded-[var(--md-radius-md)] text-[12px]" onClick={() => saveMappings([...mappings, { source: "fixed", target: "notes", value: "" }])}>
+                <Plus data-icon="inline-start" strokeWidth={1.4} />{t("Add field")}
+              </Button>
+            </div>
+
+            <div className="mt-3 grid gap-2">
+              {mappings.map((mapping, index) => (
+                <div key={`${mapping.target}-${index}`} className="grid gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-2 sm:grid-cols-[minmax(140px,0.8fr)_minmax(0,1fr)_20px_minmax(140px,0.8fr)_32px] sm:items-center">
+                  <Select value={mapping.source} onValueChange={(source) => updateMapping(index, { source, value: source === "fixed" ? mapping.value : "" })}>
+                    <SelectTrigger aria-label={t("Form answer")} className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] text-[13px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>{formSourceOptions.map(([value, label]) => <SelectItem key={value} value={value}>{t(label)}</SelectItem>)}</SelectContent>
+                  </Select>
+                  {mapping.source === "fixed" ? (
+                    <Input value={mapping.value ?? ""} onChange={(event) => updateMapping(index, { value: event.target.value })} aria-label={t("Fixed value")} placeholder={t("Enter a fixed value")} className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] text-base sm:text-[13px]" />
+                  ) : <span className="hidden sm:block" />}
+                  <span className="hidden text-center text-[var(--md-subtle)] sm:block" aria-hidden="true">→</span>
+                  <Select value={mapping.target} onValueChange={(target) => updateMapping(index, { target })}>
+                    <SelectTrigger aria-label={t("CRM field")} className="h-9 rounded-[var(--md-radius-md)] bg-[var(--md-surface)] text-[13px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>{crmFieldOptions.map(([value, label]) => <SelectItem key={value} value={value}>{t(label)}</SelectItem>)}</SelectContent>
+                  </Select>
+                  <Button variant="ghost" size="icon" className="size-8 rounded-[var(--md-radius-md)] text-[var(--md-subtle)] hover:text-[var(--md-red)]" aria-label={t("Remove field mapping")} onClick={() => saveMappings(mappings.filter((_, mappingIndex) => mappingIndex !== index))}>
+                    <Trash2 className="size-3.5" strokeWidth={1.4} />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Surface>
+    </div>
+  )
+}
+
 export function CardAutomationPanel({ card }: { card: ContactCard }) {
+  return <CrmFieldMappingPanel card={card} />
+}
+
+function LegacyCardAutomationPanel({ card }: { card: ContactCard }) {
   const { t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
   const { automation } = card

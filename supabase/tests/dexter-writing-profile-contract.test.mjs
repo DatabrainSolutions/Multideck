@@ -8,6 +8,7 @@ const read = (path) => readFileSync(resolve(repoRoot, path), "utf8")
 
 const migration = read("supabase/migrations/20260803230000_dexter_personal_email_writing_profile.sql")
 const duplicateDraftMigration = read("supabase/migrations/20260804002000_dexter_duplicate_sent_email_draft.sql")
+const providerActionMigration = read("supabase/migrations/20260810140331_dexter_provider_email_actions.sql")
 const featureFlagMigration = read("supabase/migrations/20260803233000_dexter_personal_email_style_feature_flag.sql")
 const generator = read("supabase/functions/dexter-writing-profile/index.ts")
 const dexter = read("supabase/functions/agent-dexter/index.ts")
@@ -102,7 +103,7 @@ test("every detected email-writing request returns the composer even when person
   assert.match(dexter, /enabled: false, status: "unavailable", guidance: ""/)
   assert.match(dexter, /No enabled personal email style is available\. Draft normally from current evidence/)
   assert.match(dexter, /emailStyleLoaded = true/)
-  assert.match(dexter, /if \(prepared\.draft\)[\s\S]*emailDraft: prepared\.draft/)
+  assert.match(dexter, /if \(prepared\.draft\)[\s\S]*let emailDraft = prepared\.draft/)
   assert.match(dexter, /selectedEmailFollowUp/)
   assert.match(dexter, /const addressedWriting = emailAddressesIn\(prompt\)\.size > 0/)
   assert.match(dexter, /const directWriteTo =/)
@@ -123,11 +124,14 @@ test("structured drafts keep unknown fields empty and resolve replies through se
 test("the inline composer reuses Inbox idempotency and persists provider-backed status", () => {
   assert.match(composer, /createIdempotencyKey\(\)/)
   assert.match(composer, /sendMail\(request\)/)
+  assert.match(composer, /createProviderDraft\(request\)/)
+  assert.match(composer, /requestedAction === "create_draft"/)
   assert.match(composer, /parsedEntries\.some\(\s*\(entry\)\s*=>\s*entry\.length !== 1/)
   assert.match(
     composer,
     /recordDexterEmailDraftDelivery\(\s*activeMessageId,\s*receipt\.id,?\s*\)/,
   )
+  assert.match(composer, /recordDexterProviderDraftDelivery\(\s*activeMessageId,\s*receipt\.messageId,?\s*\)/)
   assert.match(composer, /disabled=\{preview \|\| locked \|\| isCreatingCopy\}/)
   assert.match(composer, /addedTo: to\.addresses/)
   assert.match(composer, /removedAddresses:/)
@@ -143,7 +147,24 @@ test("the inline composer reuses Inbox idempotency and persists provider-backed 
   assert.match(migration, /send\."CommSend_RequestedBy" = v_context\.user_id/)
   assert.match(migration, /conversation\."AICNV_CompanyID" = v_context\.company_id[\s\S]*conversation\."AICNV_OwnerUserID" = v_context\.user_id/)
   assert.match(migration, /'emailDraft'/)
+  assert.match(providerActionMigration, /create or replace function public\.multideck_dexter_record_provider_draft_delivery/)
+  assert.match(providerActionMigration, /draft_created/)
+  assert.match(providerActionMigration, /requestedAction/)
   assert.match(dexterPage, /message\.emailDraft[\s\S]*DexterEmailComposeCard/)
+})
+
+test("Approve mode keeps email actions inline while Full access executes the same allowlisted action", () => {
+  assert.match(dexter, /function requestedEmailAction/)
+  assert.match(dexter, /requestedAction: \{[\s\S]{0,240}enum: \["create_draft", "send"\]/)
+  assert.match(dexter, /requestedAction === "send" \? "\/send" : "\/provider-drafts"/)
+  assert.match(dexter, /if \(accessMode === "full"\)[\s\S]*executeFullAccessEmail/)
+  assert.match(dexter, /Authorization: authorization/)
+  assert.match(dexter, /Connect a send-capable Gmail or Outlook mailbox/)
+  assert.match(composer, /requestedAction === "create_draft"[\s\S]*"Create draft"/)
+  assert.match(composer, /requestedAction === "create_draft"[\s\S]*FilePenLine/)
+  assert.match(architecture, /Approve\*\* mode/)
+  assert.match(architecture, /Full access\*\*/)
+  assert.match(architecture, /immediate operator-requested actions/)
 })
 
 test("settings, localisation and the component catalogue expose the finished product surface", () => {
@@ -162,6 +183,10 @@ test("settings, localisation and the component catalogue expose the finished pro
     "Eligible messages",
     "Last refreshed",
     "Editable email draft",
+    "Create draft",
+    "Creating draft",
+    "Draft created",
+    "Send email",
     "Nothing is sent until you select the paper plane.",
     "The provider result is unknown. Your draft is safe. Check your connection, then select the plane again to recover the same send without duplicating it.",
     "You do not have permission to send from this mailbox. Choose another mailbox or ask an administrator for send access.",

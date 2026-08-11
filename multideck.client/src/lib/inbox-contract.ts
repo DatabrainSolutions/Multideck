@@ -302,6 +302,15 @@ export type SendReceipt = {
   reused: boolean
 }
 
+export type ProviderDraftReceipt = {
+  id: string
+  threadId: string | null
+  messageId: string | null
+  status: "created" | "creating" | "failed"
+  /** True when the idempotency key matched an earlier provider-draft request. */
+  reused: boolean
+}
+
 /**
  * What the browser is allowed to say about a reply. The server resolves the
  * final recipient list from `mode` plus `sourceMessageId`; the client only ever

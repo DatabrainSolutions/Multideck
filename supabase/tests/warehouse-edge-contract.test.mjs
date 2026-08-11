@@ -28,6 +28,7 @@ const inventoryHandlingMigration = await readFile(new URL("migrations/2026080416
 const inventoryDexterMigration = await readFile(new URL("migrations/20260804161000_warehouse_inventory_dexter_parity.sql", root), "utf8")
 const rescheduleMigration = await readFile(new URL("migrations/20260808090000_warehouse_order_reschedule.sql", root), "utf8")
 const purchaseOrderMigration = await readFile(new URL("migrations/20260805100000_warehouse_purchase_orders.sql", root), "utf8")
+const fullWarehouseCapabilitiesMigration = await readFile(new URL("migrations/20260811145223_dexter_full_warehouse_capabilities.sql", root), "utf8")
 const baseline = await readFile(new URL("baseline/public-schema.sql", root), "utf8")
 const clientSource = await readFile(new URL("../multideck.client/src/lib/warehouse.ts", root), "utf8")
 const orderSource = await readFile(new URL("functions/warehouse/routes/orders.ts", root), "utf8")
@@ -66,6 +67,17 @@ test("calendar rescheduling accepts every Postgres UUID shape and persists throu
   assert.match(httpSource, /\[0-9a-f\]\{4\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{4\}/)
   assert.doesNotMatch(httpSource, /\[1-5\]\[0-9a-f\]\{3\}/)
   assert.doesNotMatch(httpSource, /\[89ab\]\[0-9a-f\]\{3\}/)
+})
+
+test("non-final warehouse order details can be edited only through the scoped service procedure", () => {
+  assert.match(orderSource, /request\.method === "PUT" && orderId && path\.length === 2 \? "update"/)
+  assert.match(orderSource, /rpc\("warehouse_edge_update_order_mutation"/)
+  assert.match(fullWarehouseCapabilitiesMigration, /create or replace function public\.warehouse_edge_update_order_mutation/)
+  assert.match(fullWarehouseCapabilitiesMigration, /"WMSOrder_StatusCode" in \('complete', 'cancelled'\)/)
+  assert.match(fullWarehouseCapabilitiesMigration, /"WMSOrder_FacilityID" = any\(p_allowed_facility_ids\)/)
+  assert.match(fullWarehouseCapabilitiesMigration, /"WMSOrder_CustomerOrgID" = any\(p_allowed_organisation_ids\)/)
+  assert.match(fullWarehouseCapabilitiesMigration, /revoke all on function public\.warehouse_edge_update_order_mutation[\s\S]*from public, anon, authenticated/)
+  assert.match(fullWarehouseCapabilitiesMigration, /grant execute on function public\.warehouse_edge_update_order_mutation[\s\S]*to service_role/)
 })
 
 test("all new inventory changes enter through the Warehouse Edge Function and service-only atomic procedures", () => {

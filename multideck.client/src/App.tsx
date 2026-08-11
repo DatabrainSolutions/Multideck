@@ -40,6 +40,7 @@ const PaperTrayPage = lazy(() => import("@/pages/paper-tray-page").then((module)
 const NavigationLabPage = lazy(() => import("@/pages/navigation-lab-page").then((module) => ({ default: module.NavigationLabPage })))
 const QuoteDetailPage = lazy(() => import("@/pages/quotes-page").then((module) => ({ default: module.QuoteDetailPage })))
 const QuotesRegisterPage = lazy(() => import("@/pages/quotes-register-page").then((module) => ({ default: module.QuotesRegisterPage })))
+const RatesPage = lazy(() => import("@/pages/rates-page").then((module) => ({ default: module.RatesPage })))
 const ReportTemplateBuilderPage = lazy(() => import("@/pages/report-template-builder-page").then((module) => ({ default: module.ReportTemplateBuilderPage })))
 const ReportViewerPage = lazy(() => import("@/pages/report-viewer-page").then((module) => ({ default: module.ReportViewerPage })))
 const SettingsPage = lazy(() => import("@/pages/settings-page").then((module) => ({ default: module.SettingsPage })))
@@ -121,12 +122,18 @@ const validRoutes = new Set([
   "/customs/standalone/export",
   "/customs/standalone/export/new",
   "/customs/standalone/import",
+  "/customs/standalone/import/new",
   "/customs/job-related/export",
   "/customs/job-related/import",
   "/paper-tray",
   "/playground/navigation",
   "/quotes",
   "/quotes/3",
+  "/rates",
+  "/rates/contracts",
+  "/rates/tariffs",
+  "/rates/imports",
+  "/rates/results",
   "/reports",
   "/reports/templates/monthly-client-review",
   "/settings",
@@ -171,7 +178,7 @@ function isRoadJobDetailRoute(path: string) {
 }
 
 function isCustomsDeclarationEditRoute(path: string) {
-  return /^\/customs\/standalone\/export\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(path)
+  return /^\/customs\/standalone\/(export|import)\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(path)
 }
 
 /** The Marketing drive became Drive; old links still have to land somewhere real. */
@@ -620,6 +627,7 @@ export default function App() {
                   {route === "/playground/navigation" ? <NavigationLabPage /> : null}
                   {route === "/quotes" ? <QuotesRegisterPage navigate={navigate} /> : null}
                   {isQuoteDetailRoute(route) ? <QuoteDetailPage key={route} variant="cargowise" quoteId={route.split("/").at(-1)} /> : null}
+                  {route.startsWith("/rates") ? <RatesPage route={route as "/rates" | "/rates/contracts" | "/rates/tariffs" | "/rates/imports" | "/rates/results"} navigate={navigate} /> : null}
                   {route === "/reports" ? <ReportsPage navigate={navigate} /> : null}
                   {route === "/settings" ? (
                     <SettingsPage

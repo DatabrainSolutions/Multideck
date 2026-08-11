@@ -476,7 +476,7 @@ export function CardDesignPanel({ card }: { card: ContactCard }) {
         <Surface padding="md" className="p-5">
           <SectionHeader title={t("Colour and theme")} />
           <div className="mt-2 divide-y divide-[rgba(11,20,19,0.06)]">
-            <ControlRow label={t("Accent")} hint={t("Used for the header, marks and — when it has enough contrast — buttons.")}>
+            <ControlRow label={t("Accent")} hint={t("Used for the header, marks and buttons when it has enough contrast.")}>
               <div className="grid gap-3">
                 <div className="flex flex-wrap gap-2">
                   {ACCENT_PRESETS.map((preset) => {

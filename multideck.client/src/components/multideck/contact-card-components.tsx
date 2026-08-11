@@ -308,9 +308,21 @@ export function cardInitials(card: ContactCard) {
     .join("")
 }
 
-/** The card's mark: its logo where one exists, otherwise the person's initials. */
-export function CardPersonBadge({ card, size = "md" }: { card: ContactCard; size?: "sm" | "md" | "lg" }) {
+/** The card person's photo, falling back to the card logo and then initials. */
+export function CardPersonBadge({ card, size = "md", profilePhotoUrl }: { card: ContactCard; size?: "sm" | "md" | "lg"; profilePhotoUrl?: string | null }) {
   const dimension = size === "sm" ? "size-8 text-[12px]" : size === "lg" ? "size-14 text-[18px]" : "size-11 text-[15px]"
+  const personPhoto = card.person.profileImageDataUrl || profilePhotoUrl
+
+  if (personPhoto) {
+    return (
+      <span
+        aria-hidden="true"
+        className={cn("grid shrink-0 place-items-center overflow-hidden rounded-full bg-[var(--md-surface-tint)] shadow-[var(--md-shadow-line)]", dimension)}
+      >
+        <img src={personPhoto} alt="" className="size-full object-cover" />
+      </span>
+    )
+  }
 
   if (card.branding.logoDataUrl) {
     return (
@@ -343,29 +355,42 @@ export function CardMetricTile({
   value,
   detail,
   tone = "neutral",
+  icon: Icon,
   className,
 }: {
   label: string
   value: string
   detail?: string
   tone?: StatusTone
+  icon?: LucideIcon
   className?: string
 }) {
   return (
-    <Surface padding="sm" className={cn("min-h-[86px] rounded-[var(--md-radius-xl)] p-4", className)}>
-      <p className="truncate text-[12px] font-medium leading-4 text-[var(--md-text)]">{label}</p>
-      <strong
-        className={cn(
-          "mt-1.5 block text-[26px] font-medium leading-none tracking-normal tabular-nums",
-          tone === "green" && "text-[var(--md-green)]",
-          tone === "amber" && "text-[var(--md-amber)]",
-          tone === "neutral" && "text-[var(--md-ink)]",
-          tone === "teal" && "text-[var(--md-accent)]",
-        )}
-      >
-        {value}
-      </strong>
-      {detail ? <p className="mt-2 truncate text-[12px] text-[var(--md-subtle)]">{detail}</p> : null}
+    <Surface padding="none" className={cn("h-[44px] min-w-0 rounded-[var(--md-radius-lg)] px-3 py-1.5", className)}>
+      <div className="flex h-full min-w-0 items-center gap-2.5">
+        <strong
+          className={cn(
+            "shrink-0 text-[19px] font-medium leading-none tracking-normal tabular-nums",
+            tone === "green" && "text-[var(--md-green)]",
+            tone === "amber" && "text-[var(--md-amber)]",
+            tone === "neutral" && "text-[var(--md-ink)]",
+            tone === "teal" && "text-[var(--md-accent)]",
+          )}
+          data-i18n-skip
+          dir="ltr"
+        >
+          {value}
+        </strong>
+        <div className="min-w-0">
+          <p className="truncate text-[10.5px] font-medium leading-[13px] text-[var(--md-text)]">{label}</p>
+          {detail ? <p className="truncate text-[9px] leading-[11px] text-[var(--md-subtle)]">{detail}</p> : null}
+        </div>
+        {Icon ? (
+          <span className="ms-auto grid size-7 shrink-0 place-items-center rounded-[calc(var(--md-radius-lg)-4px)] bg-[var(--md-surface-tint)] text-[var(--md-accent)]">
+            <Icon className="size-3.5" strokeWidth={1.4} aria-hidden="true" />
+          </span>
+        ) : null}
+      </div>
     </Surface>
   )
 }

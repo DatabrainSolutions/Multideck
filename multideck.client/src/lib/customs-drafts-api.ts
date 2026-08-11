@@ -1,8 +1,9 @@
-import { createExportDeclarationItem, createStandaloneExportDraft, type ExportDeclarationItem, type StandaloneExportDraft } from "@/lib/customs-declaration"
+import { createExportDeclarationItem, createStandaloneDeclarationDraft, type DeclarationDirection, type ExportDeclarationItem, type StandaloneExportDraft } from "@/lib/customs-declaration"
 import { supabase } from "@/lib/supabase"
 
 type SavedDraftRow = {
   CUST_id: string
+  CUST_JobID: string | null
   CUST_LocalReferenceNumber: string | null
   CUST_TraderReference: string | null
   CUST_Status: string
@@ -12,6 +13,14 @@ type SavedDraftRow = {
   CUST_GenericPayloadJSON: unknown
   CUST_CreatedAt: string
   CUST_UpdatedAt: string
+}
+
+type LiveBookingRow = {
+  Job_ID: string
+  Job_Reference: string | null
+  Booking_Reference: string | null
+  Customer_Name: string | null
+  Route: string | null
 }
 
 type SavedItemRow = {
@@ -27,6 +36,11 @@ type SaveDraftResultRow = {
 
 export type CustomsDraftSummary = {
   id: string
+  jobId: string | null
+  jobReference: string | null
+  bookingReference: string | null
+  customerName: string | null
+  route: string | null
   reference: string
   traderReference: string | null
   status: string
@@ -37,6 +51,8 @@ export type CustomsDraftSummary = {
   createdAt: string
   updatedAt: string
 }
+
+export type CustomsDeclarationScope = "standalone" | "job-related"
 
 export type SaveCustomsDraftResult = {
   id: string
@@ -61,22 +77,52 @@ function numeric(value: number | string | null) {
   return Number.isFinite(parsed) ? parsed : null
 }
 
-export async function listStandaloneExportDrafts(): Promise<CustomsDraftSummary[]> {
+export async function listCustomsDeclarationDrafts(
+  direction: DeclarationDirection,
+  scope: CustomsDeclarationScope,
+): Promise<CustomsDraftSummary[]> {
   const client = requireSupabase()
-  const { data, error } = await client
+  const query = client
     .from("Customs_Declarations")
-    .select("CUST_id, CUST_LocalReferenceNumber, CUST_TraderReference, CUST_Status, CUST_CountryOfDestinationCodeSnapshot, CUST_InvoiceAmount, CUST_InvoiceCurrencyCodeSnapshot, CUST_GenericPayloadJSON, CUST_CreatedAt, CUST_UpdatedAt")
-    .eq("CUST_Direction", "export")
-    .eq("CUST_DeclarationKind", "cds_export")
+    .select("CUST_id, CUST_JobID, CUST_LocalReferenceNumber, CUST_TraderReference, CUST_Status, CUST_CountryOfDestinationCodeSnapshot, CUST_InvoiceAmount, CUST_InvoiceCurrencyCodeSnapshot, CUST_GenericPayloadJSON, CUST_CreatedAt, CUST_UpdatedAt")
+    .eq("CUST_Direction", direction)
+    .eq("CUST_DeclarationKind", `cds_${direction}`)
     .eq("CUST_IsDeleted", false)
     .order("CUST_UpdatedAt", { ascending: false })
 
+  const { data, error } = scope === "standalone"
+    ? await query.is("CUST_JobID", null)
+    : await query.not("CUST_JobID", "is", null)
+
   if (error) throw error
 
-  return ((data ?? []) as SavedDraftRow[]).map((row) => {
+  const savedDrafts = (data ?? []) as SavedDraftRow[]
+  const jobIds = savedDrafts.flatMap((draft) => draft.CUST_JobID ? [draft.CUST_JobID] : [])
+  const linkedJobs = new Map<string, LiveBookingRow>()
+
+  if (jobIds.length) {
+    const { data: jobRows, error: jobsError } = await client
+      .from("App_Live_Bookings")
+      .select("Job_ID, Job_Reference, Booking_Reference, Customer_Name, Route")
+      .in("Job_ID", jobIds)
+
+    if (jobsError) {
+      console.warn("Linked Customs jobs could not be loaded.", jobsError)
+    } else {
+      for (const job of (jobRows ?? []) as LiveBookingRow[]) linkedJobs.set(job.Job_ID, job)
+    }
+  }
+
+  return savedDrafts.map((row) => {
     const payload = record(row.CUST_GenericPayloadJSON)
+    const job = row.CUST_JobID ? linkedJobs.get(row.CUST_JobID) : null
     return {
       id: row.CUST_id,
+      jobId: row.CUST_JobID,
+      jobReference: job?.Job_Reference ?? null,
+      bookingReference: job?.Booking_Reference ?? null,
+      customerName: job?.Customer_Name ?? null,
+      route: job?.Route ?? null,
       reference: row.CUST_LocalReferenceNumber ?? row.CUST_id,
       traderReference: row.CUST_TraderReference,
       status: row.CUST_Status,
@@ -90,14 +136,20 @@ export async function listStandaloneExportDrafts(): Promise<CustomsDraftSummary[
   })
 }
 
-export async function loadStandaloneExportDraft(declarationId: string): Promise<StandaloneExportDraft> {
+export const listStandaloneDeclarationDrafts = (direction: DeclarationDirection) => listCustomsDeclarationDrafts(direction, "standalone")
+export const listJobRelatedDeclarationDrafts = (direction: DeclarationDirection) => listCustomsDeclarationDrafts(direction, "job-related")
+
+export async function loadStandaloneDeclarationDraft(declarationId: string, direction: DeclarationDirection): Promise<StandaloneExportDraft> {
   const client = requireSupabase()
   const [{ data: declaration, error: declarationError }, { data: itemRows, error: itemsError }] = await Promise.all([
     client
       .from("Customs_Declarations")
       .select("CUST_id, CUST_LocalReferenceNumber, CUST_iCustomsExternalID, CUST_GenericPayloadJSON")
       .eq("CUST_id", declarationId)
-      .eq("CUST_Status", "draft")
+      .eq("CUST_Direction", direction)
+      .eq("CUST_DeclarationKind", `cds_${direction}`)
+      .is("CUST_JobID", null)
+      .in("CUST_Status", ["draft", "rejected"])
       .eq("CUST_IsDeleted", false)
       .single(),
     client
@@ -121,7 +173,7 @@ export async function loadStandaloneExportDraft(declarationId: string): Promise<
   })
 
   return {
-    ...createStandaloneExportDraft(),
+    ...createStandaloneDeclarationDraft(direction),
     ...saved,
     multideckReference: declaration.CUST_LocalReferenceNumber ?? declaration.CUST_id,
     iCustomsCorrelationId: declaration.CUST_iCustomsExternalID,
@@ -129,13 +181,21 @@ export async function loadStandaloneExportDraft(declarationId: string): Promise<
   } as StandaloneExportDraft
 }
 
-export async function saveStandaloneExportDraft(
+export async function reopenRejectedCustomsDeclaration(declarationId: string) {
+  const client = requireSupabase()
+  const { error } = await client.rpc("reopen_rejected_customs_declaration", {
+    p_declaration_id: declarationId,
+  })
+  if (error) throw error
+}
+
+export async function saveStandaloneDeclarationDraft(
   draft: StandaloneExportDraft,
   declarationId?: string,
 ): Promise<SaveCustomsDraftResult> {
   const client = requireSupabase()
   const { data, error } = await client
-    .rpc("save_customs_export_draft", {
+    .rpc(draft.direction === "import" ? "save_customs_import_draft" : "save_customs_export_draft", {
       p_declaration_id: declarationId ?? null,
       p_draft: draft,
     })
@@ -150,3 +210,9 @@ export async function saveStandaloneExportDraft(
     updatedAt: saved.updated_at,
   }
 }
+
+export const listStandaloneExportDrafts = () => listStandaloneDeclarationDrafts("export")
+export const listStandaloneImportDrafts = () => listStandaloneDeclarationDrafts("import")
+export const loadStandaloneExportDraft = (declarationId: string) => loadStandaloneDeclarationDraft(declarationId, "export")
+export const loadStandaloneImportDraft = (declarationId: string) => loadStandaloneDeclarationDraft(declarationId, "import")
+export const saveStandaloneExportDraft = saveStandaloneDeclarationDraft
