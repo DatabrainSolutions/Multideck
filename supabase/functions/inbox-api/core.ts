@@ -348,6 +348,7 @@ export function connectionStatus(row: Record<string, unknown>) {
 export function readAllowedOrigins(environment: Record<string, string | undefined>) {
   const values = [
     ...(environment.EMAIL_ALLOWED_REDIRECT_ORIGINS ?? "").split(","),
+    ...(environment.APP_ALLOWED_ORIGINS ?? "").split(","),
     environment.EMAIL_CANONICAL_APP_ORIGIN ?? "",
     environment.APP_URL ?? "",
     "http://localhost:3000",

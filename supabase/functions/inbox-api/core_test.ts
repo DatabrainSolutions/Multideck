@@ -39,9 +39,11 @@ Deno.test("only exact HTTPS and local development origins are allowlisted", () =
   const origins = readAllowedOrigins({
     EMAIL_ALLOWED_REDIRECT_ORIGINS: "https://jenkar.multideck.app,https://evil.test/path,http://not-local.test",
     EMAIL_CANONICAL_APP_ORIGIN: "https://databrain.multideck.app",
+    APP_ALLOWED_ORIGINS: "https://test.multideck.app",
   })
   assert(origins.has("https://jenkar.multideck.app"))
   assert(origins.has("https://databrain.multideck.app"))
+  assert(origins.has("https://test.multideck.app"))
   assert(origins.has("http://localhost:3000"))
   assert(!origins.has("https://evil.test"))
   assert(!origins.has("http://not-local.test"))

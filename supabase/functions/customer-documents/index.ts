@@ -12,6 +12,7 @@ import { createCustomerDocumentReadUrl, listCustomerDocuments } from "../_shared
 const allowedOrigins = readAllowedOrigins({
   EMAIL_ALLOWED_REDIRECT_ORIGINS: Deno.env.get("EMAIL_ALLOWED_REDIRECT_ORIGINS"),
   EMAIL_CANONICAL_APP_ORIGIN: Deno.env.get("EMAIL_CANONICAL_APP_ORIGIN"),
+  APP_ALLOWED_ORIGINS: Deno.env.get("APP_ALLOWED_ORIGINS"),
   APP_URL: Deno.env.get("APP_URL"),
 })
 
