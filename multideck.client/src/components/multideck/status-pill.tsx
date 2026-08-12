@@ -13,7 +13,7 @@ export function StatusPill({
   className,
 }: {
   tone?: StatusTone
-  /** The semantic tone is carried by the indicator; the shell follows the table theme. */
+  /** Table pills use the filled Figma palette; non-table pills retain the compact dot treatment. */
   kind?: "status" | "attribute"
   indicator?: ReactNode | false
   children: ReactNode
@@ -21,13 +21,21 @@ export function StatusPill({
 }) {
   const tableKind = useContext(TablePillKindContext)
   const resolvedKind = kind ?? tableKind ?? "status"
-  const showIndicator = indicator !== false
+  const filledTablePill = tableKind !== null || kind === "status"
+  const showIndicator = indicator !== false && (indicator != null || !filledTablePill)
 
   return (
     <Badge
       variant="secondary"
       data-pill-kind={resolvedKind}
-      className={cn("h-[21px] rounded-full bg-[var(--md-surface)] px-[9px] text-[11.5px] font-medium leading-none tabular-nums text-[var(--md-ink)] shadow-[0_0_0_1px_var(--md-line)]", className)}
+      data-tone={tone}
+      data-table-pill={filledTablePill ? "true" : undefined}
+      className={cn(
+        "md-status-pill h-[21px] rounded-full bg-[var(--md-surface)] px-[9px] text-[11.5px] font-medium leading-none tabular-nums text-[var(--md-ink)] shadow-[0_0_0_1px_var(--md-line)]",
+        filledTablePill && "h-6 rounded-[var(--md-radius-md)] px-2.5 text-[12px] font-normal shadow-none",
+        filledTablePill && tableToneClass[tone],
+        className,
+      )}
     >
       {showIndicator ? (indicator ?? (
         <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: toneToVar(tone) }} />
@@ -37,12 +45,25 @@ export function StatusPill({
   )
 }
 
+const tableToneClass: Record<StatusTone, string> = {
+  green: "bg-[var(--md-status-green-bg)] text-[var(--md-status-green-ink)]",
+  amber: "bg-[var(--md-status-amber-bg)] text-[var(--md-status-amber-ink)]",
+  red: "bg-[var(--md-status-red-bg)] text-[var(--md-status-red-ink)]",
+  blue: "bg-[var(--md-status-blue-bg)] text-[var(--md-status-blue-ink)]",
+  orange: "bg-[var(--md-status-orange-bg)] text-[var(--md-status-orange-ink)]",
+  purple: "bg-[var(--md-status-purple-bg)] text-[var(--md-status-purple-ink)]",
+  teal: "bg-[var(--md-status-blue-bg)] text-[var(--md-status-blue-ink)]",
+  neutral: "bg-[var(--md-status-blue-bg)] text-[var(--md-status-blue-ink)]",
+}
+
 export function toneToVar(tone: StatusTone) {
   return {
     green: "var(--md-green)",
     amber: "var(--md-amber)",
     red: "var(--md-red)",
     blue: "var(--md-blue)",
+    orange: "var(--md-orange)",
+    purple: "var(--md-purple)",
     neutral: "var(--md-subtle)",
     teal: "var(--md-accent)",
   }[tone]

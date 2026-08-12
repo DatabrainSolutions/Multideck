@@ -346,6 +346,21 @@ form:not([novalidate]) :where(input:not([type="hidden"]), textarea, select):user
   --md-comparison-positive: #19754f;
   --md-comparison-negative: #c34854;
   --md-blue: #4a7d9c;
+  /* Filled table statuses from the approved Figma light-mode palette. */
+  --md-status-green-bg: #d1ffc8;
+  --md-status-green-ink: #0f5f00;
+  --md-status-amber-bg: #fbffc8;
+  --md-status-amber-ink: #928600;
+  --md-status-red-bg: #ffc8c8;
+  --md-status-red-ink: #8b0000;
+  --md-status-blue-bg: #c8fff9;
+  --md-status-blue-ink: #005b58;
+  --md-status-orange-bg: #ffdac8;
+  --md-status-orange-ink: #984a00;
+  --md-status-purple-bg: #cec8ff;
+  --md-status-purple-ink: #29007e;
+  --md-orange: #984a00;
+  --md-purple: #29007e;
   --md-ai-cyan: #219ebc;
   --md-ai-magenta: #c95ccb;
   --md-ai-gold: #e5b73b;
@@ -493,6 +508,21 @@ form:not([novalidate]) :where(input:not([type="hidden"]), textarea, select):user
   --md-comparison-positive: #72d9ad;
   --md-comparison-negative: #ff8d98;
   --md-blue: #7fb0cf;
+  /* Filled table statuses from the approved Figma dark-mode palette. */
+  --md-status-green-bg: #031300;
+  --md-status-green-ink: #a8ff98;
+  --md-status-amber-bg: #2c2900;
+  --md-status-amber-ink: #fff68e;
+  --md-status-red-bg: #250000;
+  --md-status-red-ink: #ffa2a2;
+  --md-status-blue-bg: #002523;
+  --md-status-blue-ink: #adfffc;
+  --md-status-orange-bg: #251200;
+  --md-status-orange-ink: #ffb570;
+  --md-status-purple-bg: #0c0025;
+  --md-status-purple-ink: #dcccff;
+  --md-orange: #ffb570;
+  --md-purple: #dcccff;
   --md-ai-cyan: #38bdf8;
   --md-ai-magenta: #e264e2;
   --md-ai-gold: #f2c94c;
@@ -711,6 +741,12 @@ form:not([novalidate]) :where(input:not([type="hidden"]), textarea, select):user
 .md-email-status-pill {
   justify-content: center;
   text-align: center;
+}
+
+/* Every pill inside an operator table uses the flat Figma treatment. Non-table
+   pills retain the shared badge hairline and leading indicator. */
+.md-status-pill[data-table-pill="true"] {
+  box-shadow: none;
 }
 
 /* Armed only while an accent change is in flight, then dropped. Leaving it on

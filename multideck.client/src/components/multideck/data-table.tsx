@@ -618,7 +618,10 @@ export function DataTable<Row>({
                         column.cellClassName,
                       )}
                     >
-                      <TablePillKindContext.Provider value={column.kind === "status" || column.kind === "attribute" ? column.kind : null}>
+                      {/* Every StatusPill rendered in a DataTable cell inherits the
+                          filled table treatment, even if the column was classified
+                          as text/custom by an older screen. */}
+                      <TablePillKindContext.Provider value={column.kind === "attribute" ? "attribute" : "status"}>
                         {column.cell(row)}
                       </TablePillKindContext.Provider>
                     </TableCell>

@@ -188,7 +188,7 @@ async function requireCompanyId() {
   return data.Company_ID as string
 }
 
-const tones = new Set<StatusTone>(["neutral", "teal", "green", "amber", "red", "blue"])
+const tones = new Set<StatusTone>(["neutral", "teal", "green", "amber", "red", "blue", "orange", "purple"])
 function tone(value: unknown): StatusTone {
   return typeof value === "string" && tones.has(value as StatusTone) ? value as StatusTone : "neutral"
 }

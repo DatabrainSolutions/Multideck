@@ -713,8 +713,23 @@ export function CrmDealDetailPanel({ deal }: { deal?: CrmDeal }) {
 
 function leadStatusTone(lead: ApiLead): StatusTone {
   if (lead.isDisqualified) return "red"
-  if (lead.isConverted) return "teal"
-  if (lead.isOpen) return lead.qualificationScore !== null && lead.qualificationScore >= 70 ? "green" : "blue"
+  if (lead.isConverted) return "green"
+
+  const stage = `${lead.statusCode} ${lead.statusName}`.toLocaleLowerCase()
+  if (/\b(new|uncontacted|prospect)\b/.test(stage)) return "purple"
+  if (/\b(contacted|engaged|outreach|working|conversation)\b/.test(stage)) return "orange"
+  if (/\b(qualified|discovery|evaluated)\b/.test(stage)) return "blue"
+  if (/\b(approved|ready)\b/.test(stage)) return "green"
+  if (/\b(nurture|nurturing|follow[- ]?up|waiting|on hold)\b/.test(stage)) return "amber"
+
+  if (lead.isOpen) {
+    const openStagePalette: StatusTone[] = ["blue", "purple", "orange", "amber"]
+    const hash = Array.from(lead.statusCode || lead.statusName).reduce(
+      (total, character) => ((total * 31) + character.codePointAt(0)!) >>> 0,
+      0,
+    )
+    return openStagePalette[hash % openStagePalette.length]
+  }
   return "neutral"
 }
 

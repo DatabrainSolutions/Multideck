@@ -3,9 +3,11 @@ import "@/quotes-transfer.css"
 import { DotLottieReact } from "@lottiefiles/dotlottie-react"
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
 import {
+  AiEditing,
   BrainCircuit,
   CheckCircle2,
   CalendarDays,
+  ChartAnalysis,
   CircleDollarSign,
   Clock3,
   Copy,
@@ -19,9 +21,9 @@ import {
   Plus,
   Printer,
   ReceiptText,
+  Radar,
   RotateCcw,
   Save,
-  Sparkles,
   Route,
   Search,
   Send,
@@ -844,7 +846,7 @@ function QuoteOverviewSignals({ quote, compact = false }: { quote: QuoteRecord; 
         <span aria-hidden="true" className="pointer-events-none absolute inset-0 bg-[linear-gradient(145deg,rgba(2,13,11,0.08),rgba(1,9,8,0.34))]" />
         <div className="relative z-10 flex items-center justify-between gap-2">
           <div className="min-w-0">
-            <p className="flex items-center gap-1 text-[11px] font-medium uppercase leading-3 tracking-[0.02em] text-white/68"><Sparkles className="size-3 text-white/85" strokeWidth={1.5} />{t("AI temperature")}</p>
+            <p className="flex items-center gap-1 text-[11px] font-medium uppercase leading-3 tracking-[0.02em] text-white/68"><Radar className="size-3 text-white/85" strokeWidth={1.5} />{t("AI temperature")}</p>
             <p className="mt-0.5 text-[13px] font-medium text-white">{successScore}% {t("likely to win")}</p>
           </div>
           <StatusPill tone="amber" className="border-0 bg-white/12 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.16)]">{t("Warm")}</StatusPill>
@@ -919,17 +921,17 @@ function ClientPricingIntelligence() {
   const { t } = useLanguage()
   const intelligence = getRecentQuoteIntelligence()
   const metrics = [
-    ["Historical win rate", intelligence.winRate, `${intelligence.wonCount} won / ${intelligence.lostCount} lost / ${intelligence.pendingCount} pending`, "Price position", "Current sell is inside the recent won range.", "text-[clamp(30px,2.4vw,36px)]", false],
-    ["Won price band", `${moneyWhole(intelligence.targetRevenue - 180)}–${moneyWhole(intelligence.targetRevenue + 180)}`, `${intelligence.wonMargin} average won margin`, "Customer focus", "Prioritise sea FCL and road lanes.", "text-[clamp(20px,1.45vw,22px)]", false],
-    ["Suggested pitch", money(intelligence.targetRevenue), `${money(intelligence.targetCost)} cost / ${money(intelligence.targetProfit)} profit`, "Margin warning", `Lost quotes averaged ${intelligence.lostMargin} margin.`, "text-[clamp(28px,2.2vw,34px)]", false],
-    ["AI win likelihood", "68%", "Lane, price and history signal", "AI confidence", "Modelled from customer quote history, current margin, and route fit.", "text-[clamp(28px,2.2vw,34px)]", true],
-    ["Price confidence", "84%", "Inside the recent won range", "How this is scored", "Confidence rises when the proposed sell remains inside this customer's accepted price band.", "text-[clamp(28px,2.2vw,34px)]", true],
-    ["Margin headroom", moneyWhole(intelligence.targetProfit), "Above estimated carrier cost", "AI margin view", `Suggested sell leaves ${money(intelligence.targetProfit)} above the estimated carrier cost.`, "text-[clamp(26px,2vw,32px)]", true],
+    ["Historical win rate", intelligence.winRate, `${intelligence.wonCount} won / ${intelligence.lostCount} lost / ${intelligence.pendingCount} pending`, "Price position", "Current sell is inside the recent won range.", "text-[clamp(30px,2.4vw,36px)]", null],
+    ["Won price band", `${moneyWhole(intelligence.targetRevenue - 180)}–${moneyWhole(intelligence.targetRevenue + 180)}`, `${intelligence.wonMargin} average won margin`, "Customer focus", "Prioritise sea FCL and road lanes.", "text-[clamp(20px,1.45vw,22px)]", null],
+    ["Suggested pitch", money(intelligence.targetRevenue), `${money(intelligence.targetCost)} cost / ${money(intelligence.targetProfit)} profit`, "Margin warning", `Lost quotes averaged ${intelligence.lostMargin} margin.`, "text-[clamp(28px,2.2vw,34px)]", null],
+    ["AI win likelihood", "68%", "Lane, price and history signal", "AI confidence", "Modelled from customer quote history, current margin, and route fit.", "text-[clamp(28px,2.2vw,34px)]", ChartAnalysis],
+    ["Price confidence", "84%", "Inside the recent won range", "How this is scored", "Confidence rises when the proposed sell remains inside this customer's accepted price band.", "text-[clamp(28px,2.2vw,34px)]", Gauge],
+    ["Margin headroom", moneyWhole(intelligence.targetProfit), "Above estimated carrier cost", "AI margin view", `Suggested sell leaves ${money(intelligence.targetProfit)} above the estimated carrier cost.`, "text-[clamp(26px,2vw,32px)]", BrainCircuit],
   ] as const
 
   return (
     <div className="grid h-full gap-1.5 sm:grid-cols-3">
-        {metrics.map(([label, value, detail, infoTitle, infoDetail, valueSize, isAi]) => (
+        {metrics.map(([label, value, detail, infoTitle, infoDetail, valueSize, AiMetricIcon]) => (
           <div key={label} className="relative flex min-h-[96px] min-w-0 flex-col justify-between overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-accent-abyss-deep)] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_0_0_1px_var(--md-accent-veil-ring-a12),0_10px_22px_var(--md-accent-veil-cast-a18)]">
             <span aria-hidden="true" className="pointer-events-none absolute inset-0">
               <SpectralBloomShader />
@@ -952,7 +954,7 @@ function ClientPricingIntelligence() {
             </Popover>
             <div className="relative z-10 min-w-0">
               <p className="flex min-w-0 items-center gap-1 pe-8 text-[9.5px] font-medium uppercase tracking-[0.02em] text-white/65">
-                {isAi ? <Sparkles className="size-3 shrink-0 text-white/85" strokeWidth={1.5} /> : null}
+                {AiMetricIcon ? <AiMetricIcon className="size-3 shrink-0 text-white/85" strokeWidth={1.5} /> : null}
                 <span className="truncate">{t(label)}</span>
               </p>
               <p data-i18n-skip dir="ltr" className={cn("mt-1 whitespace-nowrap font-medium leading-[1.08] tracking-[-0.035em] tabular-nums text-white", valueSize)}>{value}</p>
@@ -1735,7 +1737,7 @@ function QuoteOverviewPanel({ quote }: { quote: QuoteRecord }) {
 
       <div className="grid gap-1.5 xl:grid-cols-[1.1fr_1fr_0.85fr]">
         <Surface padding="xs" className="rounded-[var(--md-radius-md)]">
-          <SectionHeader title="AI quote command" meta="Fast read on commercial readiness." />
+          <SectionHeader title={<span className="inline-flex items-center gap-1.5"><ChartAnalysis className="size-3.5 text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" />{t("AI quote command")}</span>} meta="Fast read on commercial readiness." />
           <div className="mt-2 grid gap-1.5">
             <InsightRow icon={BrainCircuit} title="Recommended next action" detail="Select carrier or confirm freight cost before approval." tone="amber" />
             <InsightRow icon={Gauge} title="Margin guardrail" detail={`Profit ratio ${profitRatio.toFixed(1)} percent against 15 percent target.`} tone={profitRatio >= 15 ? "green" : "amber"} />
@@ -1807,7 +1809,7 @@ function QuoteAiOverviewPanel({ quote }: { quote: QuoteRecord }) {
           <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_220px]">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-1.5">
-                <StatusPill tone="blue">AI modern</StatusPill>
+                <StatusPill tone="blue"><AiEditing className="size-3" strokeWidth={1.4} aria-hidden="true" />AI modern</StatusPill>
                 <span data-i18n-skip dir="ltr" className="text-[12px] font-medium text-[var(--md-subtle)]">{quote.id}</span>
                 <span className="text-[12px] text-[var(--md-subtle)]">/</span>
                 <span data-i18n-skip dir="auto" className="text-[12px] font-medium text-[var(--md-ink)]">{quote.customer}</span>
@@ -1842,7 +1844,7 @@ function QuoteAiOverviewPanel({ quote }: { quote: QuoteRecord }) {
 
       <div className="grid gap-1.5 xl:grid-cols-[0.95fr_1.05fr_1fr]">
         <Surface padding="xs" className="rounded-[var(--md-radius-md)]">
-          <SectionHeader title="AI checks" meta="Signal, not a price build-up." />
+          <SectionHeader title={<span className="inline-flex items-center gap-1.5"><BrainCircuit className="size-3.5 text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" />{t("AI checks")}</span>} meta="Signal, not a price build-up." />
           <div className="mt-2 grid gap-1.5">
             <InsightRow icon={Gauge} title="Margin guardrail" detail={`Profit ratio ${profitRatio.toFixed(1)} percent against 15 percent target.`} tone={profitRatio >= 15 ? "green" : "amber"} />
             <InsightRow icon={TriangleAlert} title="Issue blockers" detail="Consignee, carrier, and creditor are incomplete." tone="amber" />
@@ -2020,6 +2022,7 @@ function CargoWiseSelectField({
   editable = false,
   dataOptions = false,
   action,
+  valueIcon: ValueIcon,
   onChange,
 }: {
   label: string
@@ -2032,6 +2035,7 @@ function CargoWiseSelectField({
   editable?: boolean
   dataOptions?: boolean
   action?: ReactNode
+  valueIcon?: typeof Search
   onChange?: (value: string) => void
 }) {
   const { t } = useLanguage()
@@ -2057,6 +2061,7 @@ function CargoWiseSelectField({
             invalid && "ring-1 ring-[var(--md-red)]",
           )}
         >
+          {ValueIcon ? <ValueIcon className="size-3.5 shrink-0 text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" /> : null}
           <SelectValue />
         </SelectTrigger>
         <SelectContent className="rounded-[var(--md-radius-md)] border-0 bg-[var(--md-surface)] shadow-[var(--md-shadow-lift)]">
@@ -2091,6 +2096,7 @@ function CargoWiseGroup({
   title,
   children,
   headerAction,
+  icon: Icon,
   compact = false,
   className,
   contentClassName,
@@ -2098,6 +2104,7 @@ function CargoWiseGroup({
   title: string
   children: ReactNode
   headerAction?: ReactNode
+  icon?: typeof Search
   compact?: boolean
   className?: string
   contentClassName?: string
@@ -2107,7 +2114,10 @@ function CargoWiseGroup({
   return (
     <section className={cn("h-full overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]", compact ? "p-2" : "p-2.5", className)}>
       <div className={cn("flex min-w-0 items-center justify-between gap-2", compact ? "mb-1.5" : "mb-2")}>
-        <h3 className="min-w-0 text-[12px] font-medium leading-4 text-[var(--md-ink)]">{t(title)}</h3>
+        <h3 className="flex min-w-0 items-center gap-1.5 text-[12px] font-medium leading-4 text-[var(--md-ink)]">
+          {Icon ? <Icon className="size-3.5 shrink-0 text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" /> : null}
+          <span>{t(title)}</span>
+        </h3>
         {headerAction}
       </div>
       <div className={cn("grid", compact ? "gap-1.5" : "gap-2", contentClassName)}>{children}</div>
@@ -2724,14 +2734,14 @@ function QuoteCargoWiseChargesPanel({ quote, charges }: { quote: QuoteRecord; ch
             { label: "Copy from quote", icon: Copy },
           ]} />
           <div className="mt-1 grid gap-1 md:grid-cols-2">
-            <CargoWiseSelectField label="Rate mode" value="AI assisted" options={["Manual", "AI assisted", "Tariff", "Historic quote"]} />
+            <CargoWiseSelectField label="Rate mode" value="AI assisted" valueIcon={AiEditing} options={["Manual", "AI assisted", "Tariff", "Historic quote"]} />
             <CargoWiseSelectField label="Margin rule" value="15% minimum" options={["10% minimum", "15% minimum", "20% target", "Pass-through"]} />
             <CargoWiseSelectField label="FX source" value="Live rate" options={["Live rate", "Manual override", "Month-end rate"]} />
             <CargoWiseSelectField label="Approval" value="Required" options={["Not required", "Required", "Approved"]} />
           </div>
         </CargoWiseGroup>
 
-        <CargoWiseGroup title="AI pricing read">
+        <CargoWiseGroup title="AI pricing read" icon={ChartAnalysis}>
           <div className="grid gap-1">
             <InsightRow icon={Gauge} title="Pitch guidance" detail="Current sell is inside this client's won band; keep freight cost visible before sending." tone="green" />
             <InsightRow icon={TriangleAlert} title="Exposure" detail="International freight is negative cost recovery. Confirm carrier rate or reason code." tone="amber" />
@@ -3223,7 +3233,10 @@ export function QuoteDetailPage({ variant = "operator", quoteId }: { variant?: Q
           <div className="flex w-full min-w-0 items-center gap-1.5 lg:w-auto lg:shrink-0">
             <div className="min-w-0">
               <div className="flex flex-nowrap items-center gap-1.5">
-                <h1 className="shrink-0 text-[14px] font-medium leading-5 text-[var(--md-ink)]">{t(heading)}</h1>
+                <h1 className="flex shrink-0 items-center gap-1.5 text-[14px] font-medium leading-5 text-[var(--md-ink)]">
+                  {variant === "ai" ? <ChartAnalysis className="size-4 text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" /> : null}
+                  <span>{t(heading)}</span>
+                </h1>
                 <button
                   type="button"
                   aria-label={t(quoteRefCopied ? "Quote reference copied" : "Copy quote reference")}

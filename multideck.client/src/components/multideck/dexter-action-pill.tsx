@@ -1,5 +1,5 @@
 import { lazy, memo, Suspense, type ComponentProps, type CSSProperties, type ReactNode } from "react"
-import { Sparkles, type LucideIcon } from "@/components/icons/hugeicons"
+import { AiBrain, type LucideIcon } from "@/components/icons/hugeicons"
 import "@/dexter-transfer.css"
 import { Button } from "@/components/ui/button"
 import { useLanguage } from "@/i18n/language-provider"
@@ -84,7 +84,7 @@ function SlotLabel({ label, direction }: { label: string; direction: "ltr" | "rt
 }
 
 export function DexterActionPill({
-  icon: Icon = Sparkles,
+  icon: Icon = AiBrain,
   iconElement,
   iconClassName,
   iconOnly = false,

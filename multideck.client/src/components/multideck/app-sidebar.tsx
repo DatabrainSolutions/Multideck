@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { AiBrain, Archive, ArrowLeft, Bell, Boxes, Check, ChevronDown, ChevronRight, Clock3, FileText, Folder, Inbox, LifeBuoy, LoaderCircle, LogOut, MailWarning, MorphingIcon, Pencil, Plus, PanelLeftClose, PanelLeftOpen, Pin, Search, Send, Settings, Sparkles, Tags, Trash2, TriangleAlert, Users, X, type LucideIcon } from "@/components/icons/hugeicons"
+import { AiBrain, Archive, ArrowLeft, Bell, Boxes, ChartAnalysis, Check, ChevronDown, ChevronRight, Clock3, FileText, Folder, Inbox, LifeBuoy, LoaderCircle, LogOut, MailWarning, MorphingIcon, Pencil, Plus, PanelLeftClose, PanelLeftOpen, Pin, Search, Send, Settings, Tags, Trash2, TriangleAlert, Users, X, type LucideIcon } from "@/components/icons/hugeicons"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -33,6 +33,7 @@ import {
 import multideckFullLogo from "@/assets/brand/multideck-full-logo.svg"
 import { MailProviderMark, mailProviderLabels } from "@/components/multideck/mailbox-provider-switch"
 import { useOptionalInboxWorkspace, type InboxNavigationView } from "@/lib/inbox-workspace"
+import { defaultCoverPhotoUrl } from "@/lib/default-cover-photo"
 import type { MailboxFolder } from "@/lib/inbox-api"
 import { dismissAllWorkspaceNotifications, dismissWorkspaceNotification, listWorkspaceNotifications, markAllWorkspaceNotificationsRead, markWorkspaceNotificationRead, markWorkspaceNotificationUnread, type WorkspaceNotification } from "@/lib/notification-api"
 
@@ -2058,8 +2059,8 @@ export function AppSidebar({
             className="md-account-sheet w-[232px] max-w-[calc(100vw-32px)] gap-0 overflow-hidden rounded-[var(--md-radius-2xl)] border-0 bg-[var(--md-surface)] p-0 text-[var(--md-ink)] shadow-[0_22px_60px_rgba(11,20,19,0.20),inset_0_0_0_1px_rgba(255,255,255,0.72)]"
           >
             <div className="relative h-[112px] overflow-hidden bg-[color-mix(in_srgb,var(--md-accent)_11%,var(--md-surface-soft))]">
-              {accountCoverPhotoUrl ? (
-                <img src={accountCoverPhotoUrl} alt="" className="size-full object-cover" decoding="async" />
+              {accountCoverPhotoUrl || !currentUser?.coverPhoto ? (
+                <img src={accountCoverPhotoUrl ?? defaultCoverPhotoUrl} alt="" className="size-full object-cover" decoding="async" />
               ) : (
                 <div
                   aria-hidden="true"
@@ -2117,7 +2118,7 @@ export function AppSidebar({
                     openSettingsSection("ai-usage")
                   }}
                 >
-                  <Sparkles data-icon="inline-start" className="size-4" strokeWidth={1.4} />
+                  <ChartAnalysis data-icon="inline-start" className="size-4" strokeWidth={1.4} />
                   <span className="min-w-0 flex-1 truncate">{t("AI usage")}</span>
                   <svg
                     aria-hidden="true"

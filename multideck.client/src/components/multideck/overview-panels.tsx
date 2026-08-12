@@ -1402,7 +1402,7 @@ export function QueueRow({
       <TableCell className="w-[110px] py-3 pl-0 text-[12px] font-medium text-[var(--md-ink)]">{item.id}</TableCell>
       <TableCell className="py-3 text-[13px] text-[var(--md-ink)]">{item.entry}</TableCell>
       <TableCell className="py-3 text-right">
-        <StatusPill tone={item.tone}>{item.status}</StatusPill>
+        <StatusPill kind="status" tone={item.tone}>{item.status}</StatusPill>
       </TableCell>
     </motion.tr>
   )

@@ -44,7 +44,7 @@ type SalesQuoteRow = {
   Quote_Source: string
 }
 
-const statusTones = new Set<StatusTone>(["neutral", "teal", "green", "amber", "red", "blue"])
+const statusTones = new Set<StatusTone>(["neutral", "teal", "green", "amber", "red", "blue", "orange", "purple"])
 
 function tone(value: string): StatusTone {
   return statusTones.has(value as StatusTone) ? value as StatusTone : "neutral"

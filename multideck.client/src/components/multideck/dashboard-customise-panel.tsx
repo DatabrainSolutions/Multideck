@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type PointerEvent, type ReactNode } from "react"
 import { AnimatePresence, motion } from "motion/react"
-import { Check, CornerDownLeft, Eye, GripVertical, LayoutDashboard, Maximize2, RefreshCcw, SlidersHorizontal, Sparkles, Trash2, X } from "@/components/icons/hugeicons"
+import { AiEditing, Check, CornerDownLeft, Eye, GripVertical, LayoutDashboard, Maximize2, RefreshCcw, SlidersHorizontal, Trash2, X } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -1276,7 +1276,7 @@ export function DashboardCustomisePanel({
       <header className="flex h-[62px] shrink-0 items-center justify-between px-5 shadow-[inset_0_-1px_0_rgba(11,20,19,0.06)]">
         <div className="flex items-center gap-2">
           <span className="grid size-8 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-accent-a10)] shadow-[var(--md-shadow-line)]">
-            <Sparkles className="size-4 text-[var(--md-accent)]" strokeWidth={1.4} />
+            <AiEditing className="size-4 text-[var(--md-accent)]" strokeWidth={1.4} />
           </span>
           <div>
             <h2 className="text-[15px] font-medium tracking-normal text-[var(--md-ink)]">Dashboard assistant</h2>
@@ -1384,7 +1384,7 @@ export function DashboardCustomisePanel({
           <div className="flex min-h-full flex-col justify-end gap-3 pb-2">
             <div className="mb-auto pt-16 text-center">
               <div className="mx-auto grid size-12 place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-surface-soft)] shadow-[var(--md-shadow-line)]">
-                <Sparkles className="size-5 text-[var(--md-accent)]" strokeWidth={1.25} />
+                <AiEditing className="size-5 text-[var(--md-accent)]" strokeWidth={1.25} />
               </div>
               <p className="mx-auto mt-4 max-w-[270px] text-[13px] leading-6 text-[var(--md-text)]">Ask for the dashboard you need. This mock panel shows how Multideck could rebuild the view around an operator goal.</p>
             </div>

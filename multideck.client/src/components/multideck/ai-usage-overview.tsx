@@ -1,6 +1,6 @@
 import { memo, useMemo, useState, type ReactNode } from "react"
 import { motion, useReducedMotion } from "motion/react"
-import { Activity, ChevronRight, Cpu, Info, MessageCircle, WandSparkles, type LucideIcon } from "@/components/icons/hugeicons"
+import { Activity, ChartAnalysis, ChevronRight, Cpu, Info, MessageCircle, WandSparkles, type LucideIcon } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { CountUpValue } from "@/components/multideck/rolling-digits"
@@ -479,7 +479,10 @@ function AllowanceCard({
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-[15px] font-medium text-[var(--md-ink)]">{t("Monthly AI allowance")}</h2>
+            <h2 className="flex items-center gap-1.5 text-[15px] font-medium text-[var(--md-ink)]">
+              <ChartAnalysis className="size-4 shrink-0 text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" />
+              <span>{t("Monthly AI allowance")}</span>
+            </h2>
             <StatusPill tone={statusTone}>{t(statusLabel)}</StatusPill>
           </div>
           <p className="mt-1 text-[12.5px] leading-5 text-[var(--md-text)]">

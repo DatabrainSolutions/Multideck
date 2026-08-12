@@ -10,6 +10,7 @@ import {
   BriefcaseBusiness,
   CalendarClock,
   Camera,
+  ChartAnalysis,
   Check,
   ChevronRight,
   CircleAlert,
@@ -18,6 +19,7 @@ import {
   Cpu,
   CreditCard,
   Database,
+  EditUser02,
   ExternalLink,
   FileText,
   Globe2,
@@ -34,7 +36,6 @@ import {
   MessageCircle,
   MonitorSmartphone,
   Palette,
-  Pencil,
   Plug,
   Search,
   ShieldCheck,
@@ -174,6 +175,7 @@ import {
   type NotificationEventType,
 } from "@/lib/notification-preferences"
 import { mdMotion, reduceMotion, staggerRamp } from "@/lib/motion"
+import { defaultCoverPhotoUrl } from "@/lib/default-cover-photo"
 import { cn } from "@/lib/utils"
 
 function compactAction(label: string, onClick?: () => void) {
@@ -861,8 +863,8 @@ function ProfileTab({
           />
 
           <div className="group/cover relative h-[190px] overflow-hidden bg-[color-mix(in_srgb,var(--md-accent)_10%,var(--md-surface-soft))] sm:h-[230px]">
-            {coverPhotoUrl ? (
-              <img src={coverPhotoUrl} alt="" className="size-full object-cover" loading="eager" fetchPriority="high" decoding="async" />
+            {coverPhotoUrl || !coverPhoto ? (
+              <img src={coverPhotoUrl ?? defaultCoverPhotoUrl} alt="" className="size-full object-cover" loading="eager" fetchPriority="high" decoding="async" />
             ) : (
               <div
                 className="absolute inset-0 opacity-55"
@@ -2924,7 +2926,7 @@ function UserPermissionsTab() {
           <Tooltip>
             <TooltipTrigger asChild>
               <Button type="button" variant="ghost" size="icon" className="size-8 rounded-[var(--md-radius-md)] text-[var(--md-text)] hover:bg-[var(--md-surface-tint)] hover:text-[var(--md-ink)]" aria-label={`${t("Edit permissions for")} ${user.displayName}`} onClick={() => openEditor(user)}>
-                <Pencil className="size-3.5" strokeWidth={1.45} aria-hidden="true" />
+                <EditUser02 className="size-3.5" strokeWidth={1.45} aria-hidden="true" />
               </Button>
             </TooltipTrigger>
             <TooltipContent>{t("Edit permissions")}</TooltipContent>
@@ -3972,6 +3974,7 @@ function AiUsageOverviewScreen({
   return (
     <>
       <SettingsPageHeader
+        icon={ChartAnalysis}
         eyebrow="Workspace / AI usage"
         title="AI usage"
         description="What Dexter gave back this month, what it cost, and how much of the included allowance is left."
@@ -4045,6 +4048,7 @@ function AiUsageHistoryScreen({
   return (
     <>
       <SettingsPageHeader
+        icon={History}
         eyebrow="Workspace / AI usage / History"
         title="Usage history"
         description="Every Dexter response recorded this month, with the tokens each one used."

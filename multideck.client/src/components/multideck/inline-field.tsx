@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { AlertCircle, Check, Pencil, X } from "@/components/icons/hugeicons"
+import { AlertCircle, Check, Pencil, X, type LucideIcon } from "@/components/icons/hugeicons"
 
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -652,12 +652,14 @@ export function InlineSwitchField({
   onSave,
   hint,
   readOnly = false,
+  icon: Icon,
 }: {
   label: string
   checked: boolean
   onSave: (next: boolean) => Promise<void> | void
   hint?: string
   readOnly?: boolean
+  icon?: LucideIcon
 }) {
   const { t } = useLanguage()
   const { state, message, setState, setMessage, markSaved } = useSaveState()
@@ -679,7 +681,10 @@ export function InlineSwitchField({
   if (stacked) {
     return (
       <div className={stackedShellClass}>
-        <span className={labelClass}>{t(label)}</span>
+        <span className={cn(labelClass, "inline-flex items-center gap-1.5")}>
+          {Icon ? <Icon className="size-3.5 shrink-0 text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" /> : null}
+          <span>{t(label)}</span>
+        </span>
         <div className="grid gap-1">
           <div className="flex min-h-8 items-center justify-between gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-field-bg)] px-2 shadow-[var(--md-shadow-line)]">
             <span className={cn(valueClass, "truncate")}>{t(checked ? "Yes" : "No")}</span>
@@ -697,7 +702,10 @@ export function InlineSwitchField({
   return (
     <div className={cn(rowShellClass, "items-center")}>
       <div className="min-w-0">
-        <span className={cn(labelClass, "block")}>{t(label)}</span>
+        <span className={cn(labelClass, "flex items-center gap-1.5")}>
+          {Icon ? <Icon className="size-3.5 shrink-0 text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" /> : null}
+          <span>{t(label)}</span>
+        </span>
         {hint ? <span className="mt-0.5 block text-[11px] leading-4 text-[var(--md-subtle)]">{t(hint)}</span> : null}
       </div>
       <div className="flex items-center justify-end gap-2">
