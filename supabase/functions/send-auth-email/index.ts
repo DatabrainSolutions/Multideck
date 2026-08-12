@@ -139,7 +139,9 @@ Deno.serve(async (request) => {
       return new Response(JSON.stringify({}), { headers: { "Content-Type": "application/json" } })
     }
 
-    const key = translations[actionType] ? actionType : "magiclink"
+    const inviteRecovery = actionType === "recovery"
+      && safeMultideckUrl(payload.email_data.redirect_to ?? payload.email_data.site_url).includes("mode=invite")
+    const key = inviteRecovery ? "invite" : translations[actionType] ? actionType : "magiclink"
     const copy = translations[key][locale]
     const rendered = renderBrandedEmail({
       subject: copy.subject,

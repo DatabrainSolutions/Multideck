@@ -1165,7 +1165,13 @@ export function AuthFlow({
     try {
       const passwordSession = await ensurePasswordUpdateSession()
       if (!passwordSession) throw new Error("The password link does not contain an active session.")
-      const { error: updateError } = await supabase.auth.updateUser({ password })
+      const { error: updateError } = await supabase.auth.updateUser(step === "accept-invite" ? {
+        password,
+        data: {
+          ...passwordSession.user.user_metadata,
+          multideck_password_created_at: new Date().toISOString(),
+        },
+      } : { password })
       if (updateError) throw updateError
 
       if (step === "accept-invite") {

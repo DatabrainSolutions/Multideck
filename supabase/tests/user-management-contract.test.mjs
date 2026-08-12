@@ -51,6 +51,8 @@ test("pending invitations can be resent only through the tenant-safe server path
   assert.match(team, /requirePermission\(admin, current\.User_ID, "Users\.Invite"\)/)
   assert.match(team, /eq\("Company_ID", current\.Company_ID\)/)
   assert.match(team, /This user has already accepted their invitation\./)
+  assert.match(team, /multideck_password_created_at/)
+  assert.match(team, /resetPasswordForEmail\(target\.User_Email/)
   assert.match(team, /admin\.auth\.admin\.inviteUserByEmail\(target\.User_Email/)
   assert.match(settings, /resendApiTeamUserInvitation/)
   assert.match(settings, /user\.status === "Invited"/)
@@ -58,6 +60,7 @@ test("pending invitations can be resent only through the tenant-safe server path
   assert.match(settings, /Delete invite/)
   assert.match(settings, /deleteApiTeamUser\(session\.access_token, deleteInviteCandidate\.id\)/)
   assert.match(api, /`\/\$\{userId\}\/invitation`/)
+  assert.match(authFlow, /multideck_password_created_at/)
 })
 
 test("the branded invite explicitly hands users to password creation", () => {

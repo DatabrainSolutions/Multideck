@@ -27,6 +27,19 @@ function invitationOrigin(request: Request, value: unknown) {
   return requestedOrigin
 }
 
+const passwordMarkerRequiredFrom = Date.parse("2026-08-12T00:00:00Z")
+
+function isPendingInvitation(authUser: any) {
+  if (!authUser?.invited_at) return false
+  const passwordCreated = Boolean(authUser.user_metadata?.multideck_password_created_at)
+  const invitedAt = Date.parse(authUser.invited_at)
+  // Earlier users predate the explicit password marker, so retain the old
+  // sign-in fallback for them. New invitations stay pending until password setup.
+  return Number.isFinite(invitedAt) && invitedAt >= passwordMarkerRequiredFrom
+    ? !passwordCreated
+    : !authUser.last_sign_in_at
+}
+
 async function userDto(admin: any, row: any) {
   const [{ data: company }, { data: officeLinks }, { data: roleLinks }, authResult] = await Promise.all([
     row.Company_ID ? admin.from("cmp_Company").select("Company_ID,Company_Name").eq("Company_ID", row.Company_ID).maybeSingle() : Promise.resolve({ data: null }),
@@ -45,7 +58,7 @@ async function userDto(admin: any, row: any) {
     sizeBytes: row[`User_${kind}PhotoSizeBytes`], updatedAt: row[`User_${kind}PhotoUpdatedAt`],
   }) : null
   const authUser = authResult?.data?.user ?? null
-  const invitationPending = Boolean(authUser?.invited_at && !authUser?.last_sign_in_at)
+  const invitationPending = isPendingInvitation(authUser)
   return {
     id: row.User_ID, authUserId: row.Auth_User_ID, displayName: [row.User_Firstname, row.User_Lastname].filter(Boolean).join(" ") || row.User_Email,
     firstName: row.User_Firstname, lastName: row.User_Lastname, email: row.User_Email,
@@ -213,19 +226,24 @@ Deno.serve(async (request) => {
 
       const { data: authRecord, error: authRecordError } = await admin.auth.admin.getUserById(target.Auth_User_ID)
       if (authRecordError || !authRecord?.user) throw new HttpError(404, "Pending invitation not found.")
-      if (authRecord.user.confirmed_at || authRecord.user.last_sign_in_at) throw new HttpError(409, "This user has already accepted their invitation.")
+      if (!isPendingInvitation(authRecord.user)) throw new HttpError(409, "This user has already accepted their invitation.")
 
       const redirectTo = `${appOrigin}/auth?mode=invite`
-      const { data: invite, error: inviteError } = await admin.auth.admin.inviteUserByEmail(target.User_Email, {
-        redirectTo,
-        data: {
-          ...authRecord.user.user_metadata,
-          first_name: target.User_Firstname ?? null,
-          last_name: target.User_Lastname ?? null,
-        },
-      })
-      if (inviteError) throw new HttpError(400, inviteError.message)
-      if (invite.user.id !== target.Auth_User_ID) throw new HttpError(409, "The invitation could not be matched to this workspace user.")
+      if (authRecord.user.confirmed_at) {
+        const { error: recoveryError } = await admin.auth.resetPasswordForEmail(target.User_Email, { redirectTo })
+        if (recoveryError) throw new HttpError(400, recoveryError.message)
+      } else {
+        const { data: invite, error: inviteError } = await admin.auth.admin.inviteUserByEmail(target.User_Email, {
+          redirectTo,
+          data: {
+            ...authRecord.user.user_metadata,
+            first_name: target.User_Firstname ?? null,
+            last_name: target.User_Lastname ?? null,
+          },
+        })
+        if (inviteError) throw new HttpError(400, inviteError.message)
+        if (invite.user.id !== target.Auth_User_ID) throw new HttpError(409, "The invitation could not be matched to this workspace user.")
+      }
       return json(request, { user: await userDto(admin, target) })
     }
     if (parts.length === 1 && request.method === "DELETE") {
