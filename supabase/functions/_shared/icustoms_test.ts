@@ -47,6 +47,10 @@ function validDeclaration(): ExportDeclarationInput {
     declarantCity: "London",
     declarantPostcode: "E17DB",
     declarantCountry: "GB",
+    representative: "GB123456789000",
+    representationType: "2",
+    authorisationIdentifier: "GB123456789000",
+    authorisationCategory: "EXRR",
     exportCountry: "GB",
     destinationCountry: "FR",
     borderMode: "1",
@@ -57,6 +61,8 @@ function validDeclaration(): ExportDeclarationInput {
     previousDocumentCategory: "Z",
     previousDocumentType: "MRN",
     previousDocumentReference: "25GB00000000000001",
+    headerAdditionalInformationCode: "RRS01",
+    headerAdditionalInformationDescription: "EXPORTER",
     isContainerised: "0",
     items: [{
       commodityCode: "0803101000",
@@ -65,7 +71,7 @@ function validDeclaration(): ExportDeclarationInput {
       packageMarks: "MD-TEST-001",
       packageCount: "10",
       nonPreferentialOrigin: "GB",
-      procedureCode: "1000",
+      procedureCode: "1040",
       additionalProcedureCode: "000",
       grossMass: "100",
       netMass: "90",
@@ -198,6 +204,37 @@ Deno.test("buildICustomsH1ImportXml follows the documented H1 contract", () => {
   assert(
     !xml.includes("<TotalGrossMass>"),
     "The H1 contract uses TotalGrossMassMeasure only.",
+  );
+});
+
+Deno.test("buildICustomsB1ExportXml keeps common parties, destinations and previous documents at header level", () => {
+  const xml = buildICustomsB1ExportXml(validDeclaration());
+  assert(occurrences(xml, "<Consignee>") === 1, "Expected one header-level consignee.");
+  assert(occurrences(xml, "<Destination>") === 1, "Expected one header-level destination.");
+  assert(occurrences(xml, "<PreviousDocument>") === 1, "Expected one header-level previous document.");
+  assert(xml.includes("<Agent>") && xml.includes("<AgentFunctionCode>2</AgentFunctionCode>"), "Expected export representation data.");
+  assert(xml.includes("<CategoryCode>EXRR</CategoryCode>"), "Expected the export authorisation holder.");
+  assert(
+    xml.includes("<AdditionalInformation><StatementCode>RRS01</StatementCode><StatementDescription>EXPORTER</StatementDescription></AdditionalInformation>"),
+    "Expected declaration-level additional information.",
+  );
+  assert(xml.includes("<CurrentCode>10</CurrentCode>") && xml.includes("<PreviousCode>40</PreviousCode>"), "Expected the documented export procedure split.");
+});
+
+Deno.test("B1 accepts the WCO DUCR format for DCR previous documents", () => {
+  const declaration = validDeclaration();
+  declaration.previousDocumentType = "DCR";
+  declaration.previousDocumentReference = "6GB603202734852-MD0003";
+  const item = (declaration.items as Array<Record<string, unknown>>)[0];
+  item.previousDocumentType = "DCR";
+  item.previousDocumentReference = "6GB603202734852-MD0003";
+  assert(
+    !validateICustomsB1Export(declaration).some((issue) => issue.toLowerCase().includes("previous document reference") || issue.toLowerCase().includes("ducr format")),
+    "Expected the WCO DUCR reference to pass validation.",
+  );
+  assert(
+    buildICustomsB1ExportXml(declaration).includes("<ID>6GB603202734852-MD0003</ID>"),
+    "Expected the DUCR hyphen to be preserved in XML.",
   );
 });
 

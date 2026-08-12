@@ -40,6 +40,7 @@ export function DocumentEvidenceViewer({
   title,
   meta,
   empty,
+  actions,
   className,
   bodyClassName,
 }: {
@@ -50,6 +51,7 @@ export function DocumentEvidenceViewer({
   title: string
   meta?: ReactNode
   empty?: ReactNode
+  actions?: ReactNode
   className?: string
   bodyClassName?: string
 }) {
@@ -81,11 +83,14 @@ export function DocumentEvidenceViewer({
         <h2 className="truncate text-[13px] font-medium">{title}</h2>
         {meta}
       </span>
-      <span className="flex items-center gap-0.5 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] p-0.5 shadow-[var(--md-shadow-line)]">
-        <ZoomButton label={t("Zoom out")} onClick={() => setZoom((current) => Math.max(minZoom, current - zoomStep))} disabled={zoom <= minZoom}><Minus className="size-3.5" /></ZoomButton>
-        <span className="min-w-[42px] px-1 text-center text-[10.5px] tabular-nums text-[var(--md-text)]">{Math.round(zoom * 100)}%</span>
-        <ZoomButton label={t("Zoom in")} onClick={() => setZoom((current) => Math.min(maxZoom, current + zoomStep))} disabled={zoom >= maxZoom}><Plus className="size-3.5" /></ZoomButton>
-        <ZoomButton label={t("Fit width")} onClick={() => setZoom(1)} disabled={zoom === 1}><Maximize2 className="size-3.5" /></ZoomButton>
+      <span className="flex items-center gap-2">
+        <span className="flex items-center gap-0.5 rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] p-0.5 shadow-[var(--md-shadow-line)]">
+          <ZoomButton label={t("Zoom out")} onClick={() => setZoom((current) => Math.max(minZoom, current - zoomStep))} disabled={zoom <= minZoom}><Minus className="size-3.5" /></ZoomButton>
+          <span className="min-w-[42px] px-1 text-center text-[10.5px] tabular-nums text-[var(--md-text)]">{Math.round(zoom * 100)}%</span>
+          <ZoomButton label={t("Zoom in")} onClick={() => setZoom((current) => Math.min(maxZoom, current + zoomStep))} disabled={zoom >= maxZoom}><Plus className="size-3.5" /></ZoomButton>
+          <ZoomButton label={t("Fit width")} onClick={() => setZoom(1)} disabled={zoom === 1}><Maximize2 className="size-3.5" /></ZoomButton>
+        </span>
+        {actions}
       </span>
     </header>
 

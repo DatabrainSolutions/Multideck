@@ -328,6 +328,7 @@ async function saveProviderSuccess(
     : "acknowledged";
   const submissionValues: Json = {
     ICUSS_Status: submissionStatus,
+    ICUSS_ProviderStatus: providerStatus,
     ICUSS_iCustomsDeclarationID: correlationId,
     ICUSS_iCustomsSubmissionID:
       providerReference(response.body, ["submission_id", "submissionId"]) ||
@@ -541,6 +542,29 @@ async function submitDeclaration(
       "This declaration has already entered the provider submission lifecycle and cannot be submitted again.",
     );
   }
+  const { data: acceptedItemRows, error: acceptedItemRowsError } = await admin
+    .from("Customs_Items")
+    .select("CUSTI_ItemNumber, CUSTI_ItemPayloadJSON")
+    .eq("CUSTI_CustomsID", declarationId)
+    .order("CUSTI_ItemNumber", { ascending: true });
+  if (acceptedItemRowsError) {
+    throw new HttpError(500, acceptedItemRowsError.message);
+  }
+  const declarationSnapshot = {
+    schemaVersion: 1,
+    capturedAt: new Date().toISOString(),
+    declaration: {
+      id: declaration.CUST_id,
+      direction: declaration.CUST_Direction,
+      declarationKind: declaration.CUST_DeclarationKind,
+      localReferenceNumber: declaration.CUST_LocalReferenceNumber,
+      genericPayload: providerRecord(declaration.CUST_GenericPayloadJSON),
+    },
+    items: (acceptedItemRows ?? []).map((row) => ({
+      itemNumber: row.CUSTI_ItemNumber,
+      payload: providerRecord(row.CUSTI_ItemPayloadJSON),
+    })),
+  };
   const { data: submission, error: prepareError } = await admin.from(
     "ICUS_Submissions",
   ).update({
@@ -550,6 +574,7 @@ async function submitDeclaration(
     ICUSS_RequestPath: `/api/cds/v1/submit/${correlationId}`,
     ICUSS_RequestHeadersJSON: {},
     ICUSS_RequestPayloadJSON: { operation: "submit", correlationId },
+    ICUSS_DeclarationSnapshotJSON: declarationSnapshot,
     ICUSS_AttemptCount: Number(latest.ICUSS_AttemptCount ?? 0) + 1,
     ICUSS_UpdatedAt: new Date().toISOString(),
     ICUSS_UpdatedBy: actor.User_ID,

@@ -152,6 +152,8 @@ export type StandaloneExportDraft = {
   previousDocumentCategory: string
   previousDocumentType: string
   previousDocumentReference: string
+  headerAdditionalInformationCode: string
+  headerAdditionalInformationDescription: string
   transactionNature: string
   exchangeRate: string
   tradeTerms: string
@@ -310,6 +312,8 @@ export function createStandaloneDeclarationDraft(direction: DeclarationDirection
     previousDocumentCategory: "",
     previousDocumentType: "",
     previousDocumentReference: "",
+    headerAdditionalInformationCode: "",
+    headerAdditionalInformationDescription: "",
     transactionNature: "",
     exchangeRate: "",
     tradeTerms: "",
@@ -344,6 +348,12 @@ export function createStandaloneImportDraft(): StandaloneExportDraft {
 function positive(value: string) {
   const number = Number(value)
   return Number.isFinite(number) && number > 0
+}
+
+function validPreviousDocumentReference(reference: string, type: string) {
+  const normalized = reference.trim()
+  if (type.trim().toUpperCase() === "DCR") return /^\d[A-Z]{2}[A-Z0-9]{12}-[A-Z0-9]{1,18}$/.test(normalized.toUpperCase())
+  return /^[A-Za-z0-9]{1,35}$/.test(normalized)
 }
 
 export function validateStandaloneExportDraft(draft: StandaloneExportDraft): DeclarationIssue[] {
@@ -394,7 +404,7 @@ export function validateStandaloneExportDraft(draft: StandaloneExportDraft): Dec
       issues.push({ id: "general-trade-terms-format", scope: "general", field: "tradeTerms", message: "Use the three-letter trade terms code." })
     }
     if (draft.authorisationIdentifier.trim() || draft.authorisationCategory.trim()) {
-      if (!draft.authorisationIdentifier.trim() || !/^[A-Z0-9]{1,3}$/.test(draft.authorisationCategory.trim().toUpperCase())) {
+      if (!draft.authorisationIdentifier.trim() || !/^[A-Z0-9]{1,4}$/.test(draft.authorisationCategory.trim().toUpperCase())) {
         issues.push({ id: "general-authorisation", scope: "general", field: !draft.authorisationIdentifier.trim() ? "authorisationIdentifier" : "authorisationCategory", message: "Complete both the authorisation identifier and category." })
       }
     }
@@ -404,8 +414,18 @@ export function validateStandaloneExportDraft(draft: StandaloneExportDraft): Dec
     requireGeneral("previousDocumentCategory", "Select the previous document category.")
     requireGeneral("previousDocumentType", "Select the previous document type.")
     requireGeneral("previousDocumentReference", "Add the previous document reference.")
-    if (draft.previousDocumentReference.trim() && !/^[A-Za-z0-9]{1,35}$/.test(draft.previousDocumentReference.trim())) {
-      issues.push({ id: "general-previous-document-reference-format", scope: "general", field: "previousDocumentReference", message: "Use up to 35 letters and numbers for the previous document reference." })
+    if (draft.previousDocumentReference.trim() && !validPreviousDocumentReference(draft.previousDocumentReference, draft.previousDocumentType)) {
+      issues.push({ id: "general-previous-document-reference-format", scope: "general", field: "previousDocumentReference", message: draft.previousDocumentType === "DCR" ? "Use the DUCR format: year, country, 12-character EORI, hyphen and unique reference." : "Use up to 35 letters and numbers for the previous document reference." })
+    }
+  }
+  if (draft.headerAdditionalInformationCode.trim() || draft.headerAdditionalInformationDescription.trim()) {
+    if (!/^[A-Z0-9]{1,5}$/.test(draft.headerAdditionalInformationCode.trim().toUpperCase()) || !draft.headerAdditionalInformationDescription.trim()) {
+      issues.push({
+        id: "general-header-additional-information",
+        scope: "general",
+        field: !draft.headerAdditionalInformationCode.trim() ? "headerAdditionalInformationCode" : "headerAdditionalInformationDescription",
+        message: "Complete both the additional information code and description.",
+      })
     }
   }
 
@@ -462,7 +482,7 @@ export function validateStandaloneExportDraft(draft: StandaloneExportDraft): Dec
     if (draft.direction === "import" && !item.previousDocumentCategory) push("previousDocumentCategory", "Select the previous document category.")
     if (!item.previousDocumentType) push("previousDocumentType", "Select the previous document type.")
     if (!item.previousDocumentReference.trim()) push("previousDocumentReference", "Add a previous document reference.")
-    if (item.previousDocumentReference.trim() && !/^[A-Za-z0-9]{1,35}$/.test(item.previousDocumentReference.trim())) push("previousDocumentReference", "Use up to 35 letters and numbers for the previous document reference.")
+    if (item.previousDocumentReference.trim() && !validPreviousDocumentReference(item.previousDocumentReference, item.previousDocumentType)) push("previousDocumentReference", item.previousDocumentType === "DCR" ? "Use the DUCR format: year, country, 12-character EORI, hyphen and unique reference." : "Use up to 35 letters and numbers for the previous document reference.")
     if (draft.direction === "import" && !item.customsValuationMethod.trim()) push("customsValuationMethod", "Add the customs valuation method.")
     if (draft.direction === "import" && !/^\d{3}$/.test(item.preferenceCode.trim())) push("preferenceCode", "Add the three-digit preference code.")
     item.additionalPackageDetails.forEach((entry) => {

@@ -2710,6 +2710,33 @@ export const galleryComponents = [
     usageCode: `<DocumentViewer\n  item={selectedDocument}\n  trays={paperTrays}\n  currentTrayId={selectedTrayId}\n  onClose={closeDocument}\n  onMove={moveDocument}\n  onRemove={removeDocument}\n  onDownload={downloadDocument}\n/>`,
   },
   {
+    id: "pdf-document-viewer-dialog",
+    name: "PDF Document Viewer Dialog",
+    category: "Operations",
+    description: "A full-page PDF reader that places white document sheets directly over the blurred application, with multipage scrolling, owned zoom controls, and an explicit download lifecycle.",
+    details: "Use for private generated documents that operators need to inspect without losing their place. The first sheet fits completely inside the viewport, a restrained glass rail keeps zoom and download actions available, and Download moves through Downloading and Done while focus, Escape and reduced-motion behaviour remain intact.",
+    foundOn: [{ label: "Standalone export", route: "/customs/standalone/export" }, { label: "Standalone import", route: "/customs/standalone/import" }, { label: "Components", route: "/components?component=pdf-document-viewer-dialog" }],
+    componentCode: `export function PdfDocumentViewerDialog({ open, onOpenChange, blob, title, fileName, onDownload }) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent overlayClassName="backdrop-blur" className="fixed inset-0 bg-transparent">
+        <PdfPageStack pages={renderedPages} initialView="fit-page" />
+        <PdfGlassControls onDownload={onDownload} />
+      </DialogContent>
+    </Dialog>
+  )
+}`,
+    usageCode: `<PdfDocumentViewerDialog
+  open={viewerOpen}
+  onOpenChange={setViewerOpen}
+  blob={declarationPdf}
+  title="CDS export declaration"
+  fileName="CDS-Export-MRN.pdf"
+  meta="MRN 26GB…"
+  onDownload={downloadDeclaration}
+/>`,
+  },
+  {
     id: "document-workspace",
     name: "Document Workspace",
     category: "Operations",

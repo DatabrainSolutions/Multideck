@@ -1,5 +1,5 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { ArrowLeft, CheckCircle2, ChevronDown, CircleAlert, Copy, ExternalLink, FileCheck2, Plus, RefreshCw, ScanText, Search, Send, Trash2 } from "@/components/icons/hugeicons"
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { ArrowLeft, CheckCircle2, ChevronDown, CircleAlert, Copy, ExternalLink, FileCheck2, FileText, Plus, RefreshCw, ScanText, Search, Send, Trash2 } from "@/components/icons/hugeicons"
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui"
 import { toast } from "sonner"
@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
+import { PdfDocumentViewerDialog } from "@/components/multideck/pdf-document-viewer-dialog"
 import { RegisterFacetSelect, RegisterSearchField, RegisterViewSwitch } from "@/components/multideck/register-toolbar"
 import { Surface } from "@/components/multideck/surface"
 import { StatusPill } from "@/components/multideck/status-pill"
@@ -30,6 +31,8 @@ import {
 import { createEmptyCustomsReferenceData, useCustomsReferenceData, type CustomsCatalogCode, type CustomsReferenceData } from "@/lib/customs-reference-data"
 import { listJobRelatedDeclarationDrafts, listStandaloneDeclarationDrafts, loadStandaloneDeclarationDraft, reopenRejectedCustomsDeclaration, saveStandaloneDeclarationDraft, type CustomsDraftSummary } from "@/lib/customs-drafts-api"
 import { hasCustomsInvoiceImportRecovery, moveCustomsInvoiceImportRecovery } from "@/lib/customs-invoice-import-recovery"
+import { fetchCustomsDeclarationPdf, getCustomsDeclarationDocument, type CustomsDeclarationDocument } from "@/lib/customs-declaration-document-api"
+import { customsStatusPollDelay, isTerminalCustomsStatus, shouldPollCustomsStatus } from "@/lib/customs-status-lifecycle"
 import { getICustomsCommodityDetails, getICustomsDeclarationState, ICustomsApiError, refreshICustomsDeclaration, saveICustomsProviderDraft, searchICustomsCommodities, submitICustomsDeclaration, validateICustomsDeclaration, type ICustomsCommodityCertificate, type ICustomsCommodityDetail, type ICustomsCommoditySuggestion, type ICustomsProviderIssue, type ICustomsWorkspaceState } from "@/lib/icustoms-api"
 import { mdMotion, reduceMotion } from "@/lib/motion"
 import iCustomsLogo from "@/assets/integrations/icustoms.svg"
@@ -38,6 +41,7 @@ type DeclarationKind = "export" | "import"
 type EditorTab = "declaration" | "parties" | "transport" | "documents" | "items" | "review"
 type EditorViewMode = "tabs" | "form"
 type FormTab = "general" | "items"
+type CustomsStatusLifecycle = { phase: "idle" | "waiting" | "checking" | "complete" | "timed-out" | "error"; message?: string }
 
 let repeatableCustomsEntrySequence = 0
 
@@ -345,11 +349,27 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
   const [iCustomsBusy, setICustomsBusy] = useState<"loading" | "draft" | "submit" | "refresh" | null>(declarationId ? "loading" : null)
   const [iCustomsIssues, setICustomsIssues] = useState<string[]>([])
   const [submitDialogOpen, setSubmitDialogOpen] = useState(false)
+  const [pdfOpen, setPdfOpen] = useState(false)
+  const [pdfBusy, setPdfBusy] = useState(false)
+  const [pdfDocument, setPdfDocument] = useState<CustomsDeclarationDocument | null>(null)
+  const [pdfBlob, setPdfBlob] = useState<Blob | null>(null)
+  const [pdfLoadError, setPdfLoadError] = useState<string | null>(null)
+  const [statusLifecycle, setStatusLifecycle] = useState<CustomsStatusLifecycle>({ phase: "idle" })
+  const iCustomsBusyRef = useRef(iCustomsBusy)
+  const statusRefreshInFlightRef = useRef<Promise<ICustomsWorkspaceState | null> | null>(null)
+  const statusPollTimerRef = useRef<number | null>(null)
+  const lastFocusRefreshAtRef = useRef(0)
+  const pdfLoadInFlightRef = useRef<Promise<{ document: CustomsDeclarationDocument; blob: Blob }> | null>(null)
+  const pdfAutoLoadAttemptedForRef = useRef<string | null>(null)
   const completion = useMemo(() => declarationCompletion(draft), [draft])
   const activeItem = draft.items.find((item) => item.id === activeItemId) ?? draft.items[0]
   const issueFields = useMemo(() => new Set(validated ? completion.issues.map((issue) => issue.field) : []), [completion.issues, validated])
   const activeItemIssueFields = useMemo(() => new Set(validated ? completion.issues.filter((issue) => issue.itemId === activeItemId).map((issue) => issue.field) : []), [activeItemId, completion.issues, validated])
   const registerPath = `/customs/standalone/${kind}`
+
+  useEffect(() => {
+    iCustomsBusyRef.current = iCustomsBusy
+  }, [iCustomsBusy])
 
   function selectTab(nextTab: EditorTab) {
     if (nextTab === tab) return
@@ -523,19 +543,80 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
     }
   }
 
-  async function refreshFromICustoms() {
-    if (!declarationId || iCustomsBusy) return
-    setICustomsBusy("refresh")
+  const refreshFromICustoms = useCallback(async () => {
+    if (!declarationId || iCustomsBusyRef.current) return null
+    if (statusRefreshInFlightRef.current) return statusRefreshInFlightRef.current
+
+    const refresh = (async () => {
+      setStatusLifecycle({ phase: "checking" })
+      try {
+        await refreshICustomsDeclaration(declarationId)
+        const state = await getICustomsDeclarationState(declarationId)
+        setICustomsState(state)
+        const status = state.declaration.provider?.status ?? state.declaration.status
+        setStatusLifecycle({ phase: isTerminalCustomsStatus(status) ? "complete" : "waiting" })
+        return state
+      } catch (reason) {
+        const message = reason instanceof Error ? reason.message : "The customs response could not be checked."
+        setStatusLifecycle({ phase: "error", message })
+        return null
+      } finally {
+        statusRefreshInFlightRef.current = null
+      }
+    })()
+
+    statusRefreshInFlightRef.current = refresh
+    return refresh
+  }, [declarationId])
+
+  const loadDeclarationPdf = useCallback(async () => {
+    if (!declarationId) return null
+    if (pdfDocument && pdfBlob) return { document: pdfDocument, blob: pdfBlob }
+    if (pdfLoadInFlightRef.current) return pdfLoadInFlightRef.current
+
+    setPdfBusy(true)
+    setPdfLoadError(null)
+    const load = (async () => {
+      try {
+        const document = await getCustomsDeclarationDocument(declarationId)
+        const blob = await fetchCustomsDeclarationPdf(document)
+        setPdfDocument(document)
+        setPdfBlob(blob)
+        return { document, blob }
+      } catch (reason) {
+        const message = reason instanceof Error ? reason.message : "Try again after the declaration is accepted."
+        setPdfLoadError(message)
+        throw reason
+      } finally {
+        setPdfBusy(false)
+        pdfLoadInFlightRef.current = null
+      }
+    })()
+    pdfLoadInFlightRef.current = load
+    return load
+  }, [declarationId, pdfBlob, pdfDocument])
+
+  async function openDeclarationPdf() {
     try {
-      await refreshICustomsDeclaration(declarationId)
-      const state = await getICustomsDeclarationState(declarationId)
-      setICustomsState(state)
-      toast.success(t("Customs status refreshed"))
+      const loaded = await loadDeclarationPdf()
+      if (loaded) setPdfOpen(true)
     } catch (reason) {
-      const error = reason instanceof Error ? reason.message : "The customs status could not be refreshed."
-      toast.error(t("Customs status could not be refreshed"), { description: t(error) })
-    } finally {
-      setICustomsBusy(null)
+      toast.error(t("Declaration PDF unavailable"), { description: t(reason instanceof Error ? reason.message : "Try again after the declaration is accepted.") })
+    }
+  }
+
+  async function downloadDeclarationPdf() {
+    if (!pdfDocument || !pdfBlob) throw new Error("The declaration PDF is not ready.")
+    try {
+      const url = URL.createObjectURL(pdfBlob)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = pdfDocument.fileName
+      link.click()
+      window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
+    } catch (reason) {
+      toast.error(t("Download failed"), { description: t("Open the declaration PDF again and retry.") })
+      throw reason
     }
   }
 
@@ -581,6 +662,80 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
     { id: "review", label: t("Review") },
   ]
   const customsStatus = iCustomsState?.declaration.provider?.status ?? iCustomsState?.declaration.status ?? "draft"
+  const declarationPdfAvailable = Boolean(declarationId && iCustomsState?.declaration.provider?.mrn && ["accepted", "released", "cleared"].includes(customsStatus))
+  const statusPollingNeeded = shouldPollCustomsStatus(customsStatus)
+
+  useEffect(() => {
+    if (!declarationId || !statusPollingNeeded) {
+      if (statusPollTimerRef.current !== null) window.clearTimeout(statusPollTimerRef.current)
+      statusPollTimerRef.current = null
+      if (isTerminalCustomsStatus(customsStatus)) setStatusLifecycle({ phase: "complete" })
+      return
+    }
+
+    let cancelled = false
+    let attempt = 0
+    setStatusLifecycle({ phase: "waiting" })
+
+    const schedule = () => {
+      if (cancelled) return
+      const delay = customsStatusPollDelay(attempt)
+      if (delay === null) {
+        setStatusLifecycle({ phase: "timed-out" })
+        return
+      }
+      statusPollTimerRef.current = window.setTimeout(async () => {
+        if (cancelled) return
+        if (document.visibilityState !== "visible") {
+          statusPollTimerRef.current = window.setTimeout(schedule, 5_000)
+          return
+        }
+        attempt += 1
+        const state = await refreshFromICustoms()
+        const nextStatus = state?.declaration.provider?.status ?? state?.declaration.status
+        if (!cancelled && (!state || shouldPollCustomsStatus(nextStatus))) schedule()
+      }, delay)
+    }
+
+    schedule()
+    return () => {
+      cancelled = true
+      if (statusPollTimerRef.current !== null) window.clearTimeout(statusPollTimerRef.current)
+      statusPollTimerRef.current = null
+    }
+  }, [customsStatus, declarationId, refreshFromICustoms, statusPollingNeeded])
+
+  useEffect(() => {
+    if (!declarationId) return
+    const refreshOnReturn = () => {
+      if (document.visibilityState !== "visible" || !shouldPollCustomsStatus(iCustomsState?.declaration.provider?.status ?? iCustomsState?.declaration.status)) return
+      const now = Date.now()
+      if (now - lastFocusRefreshAtRef.current < 1_500) return
+      lastFocusRefreshAtRef.current = now
+      const wasTimedOut = statusLifecycle.phase === "timed-out"
+      void refreshFromICustoms().then((state) => {
+        const refreshedStatus = state?.declaration.provider?.status ?? state?.declaration.status
+        if (wasTimedOut && shouldPollCustomsStatus(refreshedStatus)) setStatusLifecycle({ phase: "timed-out" })
+      })
+    }
+    window.addEventListener("focus", refreshOnReturn)
+    document.addEventListener("visibilitychange", refreshOnReturn)
+    return () => {
+      window.removeEventListener("focus", refreshOnReturn)
+      document.removeEventListener("visibilitychange", refreshOnReturn)
+    }
+  }, [declarationId, iCustomsState, refreshFromICustoms, statusLifecycle.phase])
+
+  useEffect(() => {
+    const acceptedMrn = iCustomsState?.declaration.provider?.mrn ?? null
+    if (!declarationPdfAvailable || !acceptedMrn) {
+      pdfAutoLoadAttemptedForRef.current = null
+      return
+    }
+    if (pdfBlob || pdfBusy || pdfAutoLoadAttemptedForRef.current === acceptedMrn) return
+    pdfAutoLoadAttemptedForRef.current = acceptedMrn
+    void loadDeclarationPdf().catch(() => undefined)
+  }, [declarationPdfAvailable, iCustomsState?.declaration.provider?.mrn, loadDeclarationPdf, pdfBlob, pdfBusy])
 
   if (loadingDraft) {
     return <Surface padding="lg" className="rounded-[var(--md-radius-xl)]"><p className="text-[13px] text-[var(--md-text)]">{t("Loading saved declaration")}</p></Surface>
@@ -625,6 +780,7 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2 sm:justify-end">
+          <Button type="button" variant="ghost" size="sm" className="h-9 bg-black px-3 text-white shadow-none hover:bg-black/80 hover:text-white" disabled={!declarationPdfAvailable || pdfBusy} onClick={() => void openDeclarationPdf()}><FileText className="size-3.5" />{t(pdfBusy ? "Preparing PDF" : pdfLoadError ? "Retry PDF" : "PDF")}</Button>
           <Button type="button" variant="outline" size="sm" className="h-9" disabled={savingDraft} onClick={() => void saveDraft()}>{t(savingDraft ? "Saving draft" : "Save draft")}</Button>
           <Button type="button" size="sm" className="h-9" onClick={validate}><FileCheck2 className="size-3.5" />{t("Validate")}</Button>
         </div>
@@ -691,7 +847,7 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
             {tab === "transport" ? <TransportSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} t={t} /> : null}
             {tab === "documents" ? <DocumentsSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} t={t} /> : null}
             {tab === "items" ? <ItemsSection items={draft.items} activeItem={activeItem} activeItemId={activeItemId} onSelectItem={setActiveItemId} onAdd={addItem} onOpenInvoiceImport={() => setInvoiceImportOpen(true)} onDuplicate={duplicateItem} onRemove={removeItem} update={updateItem} updateRow={updateItemById} showDataElements={showDataElements} showOptional={showOptional} issues={activeItemIssueFields} validated={validated} t={t} /> : null}
-            {tab === "review" ? <ReviewSection draft={draft} completion={completion} iCustomsState={iCustomsState} iCustomsBusy={iCustomsBusy} iCustomsIssues={iCustomsIssues} update={update} updateItem={updateItemById} onValidate={validate} onCreateDraft={() => void createOrUpdateICustomsDraft()} onSubmit={() => setSubmitDialogOpen(true)} onRefresh={() => void refreshFromICustoms()} t={t} /> : null}
+            {tab === "review" ? <ReviewSection draft={draft} completion={completion} iCustomsState={iCustomsState} iCustomsBusy={iCustomsBusy} iCustomsIssues={iCustomsIssues} statusLifecycle={statusLifecycle} pdfAvailable={declarationPdfAvailable} pdfBusy={pdfBusy} pdfLoadError={pdfLoadError} update={update} updateItem={updateItemById} onOpenPdf={() => void openDeclarationPdf()} onValidate={validate} onCreateDraft={() => void createOrUpdateICustomsDraft()} onSubmit={() => setSubmitDialogOpen(true)} t={t} /> : null}
           </motion.div>
         </AnimatePresence>
       </div> : null}
@@ -710,6 +866,7 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <PdfDocumentViewerDialog open={pdfOpen} onOpenChange={setPdfOpen} blob={pdfBlob} title={t(kind === "import" ? "CDS import declaration" : "CDS export declaration")} fileName={pdfDocument?.fileName ?? "declaration.pdf"} meta={pdfDocument?.mrn ? `MRN ${pdfDocument.mrn}` : undefined} onDownload={downloadDeclarationPdf} />
     </div>
     {invoiceImportOpen ? <CustomsInvoiceImportWorkspace key={invoiceImportRecoveryKey} recoveryKey={invoiceImportRecoveryKey} onClose={() => setInvoiceImportOpen(false)} onApply={applyInvoiceItems} existingItemCount={draft.items.length} /> : null}
     </CustomsBoxVisibilityContext.Provider>
@@ -825,7 +982,7 @@ function PartiesSection({ draft, update, showDataElements, showOptional, issues,
         {direction === "export" ? <TextField label={t("Carrier")} showDataElements={showDataElements} value={draft.carrier} onChange={(value) => update("carrier", value)} placeholder={t("Name or EORI")} /> : null}
         {direction === "export" ? <TextField label={t("Representative")} dataElement="3/19" customsBox="14" showDataElements={showDataElements} value={draft.representative} onChange={(value) => update("representative", value)} placeholder={t("Name or EORI")} /> : null}
         <SelectField label={t("Type of representation")} dataElement="3/21" customsBox="14" required={direction === "import"} showDataElements={showDataElements} value={draft.representationType} onChange={(value) => update("representationType", value)} invalid={issues.has("representationType")} fieldKey="representationType" highlighted={highlightedField === "representationType"} options={representationTypes} />
-        {showOptional ? <><TextField label={t("Authorisation identifier")} showDataElements={showDataElements} value={draft.authorisationIdentifier} onChange={(value) => update("authorisationIdentifier", value)} /><TextField label={t("Authorisation category")} showDataElements={showDataElements} value={draft.authorisationCategory} onChange={(value) => update("authorisationCategory", value)} /></> : null}
+        {showOptional ? <><TextField label={t("Authorisation identifier")} showDataElements={showDataElements} value={draft.authorisationIdentifier} onChange={(value) => update("authorisationIdentifier", value)} /><TextField label={t("Authorisation category")} showDataElements={showDataElements} value={draft.authorisationCategory} onChange={(value) => update("authorisationCategory", value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4))} maxLength={4} /></> : null}
       </PartyFieldsGroup>
     </div>
   </section>
@@ -887,7 +1044,9 @@ function DocumentsSection({ draft, update, showDataElements, showOptional, issue
   const transactionNatures = useReferenceOptions("transaction_nature", t, "Select nature")
   return <SectionFrame title={t(direction === "import" ? "Import terms" : "Documents and customs offices")} description={t(direction === "import" ? "Trade terms and the transaction details applied to every goods item." : "Previous documents, controlling offices and guarantees.")}>
     <FieldGrid>
-      {direction === "export" ? <><SelectField label={t("Previous document category")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={draft.previousDocumentCategory} onChange={(value) => update("previousDocumentCategory", value)} options={previousDocumentCategories} /><SelectField label={t("Previous document type")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={draft.previousDocumentType} onChange={(value) => update("previousDocumentType", value)} options={previousDocumentTypes} /><TextField label={t("Document reference")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={draft.previousDocumentReference} onChange={(value) => update("previousDocumentReference", value.replace(/[^A-Za-z0-9]/g, "").slice(0, 35))} invalid={issues.has("previousDocumentReference")} fieldKey="previousDocumentReference" highlighted={highlightedField === "previousDocumentReference"} maxLength={35} /></> : null}
+      {direction === "export" ? <><SelectField label={t("Previous document category")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={draft.previousDocumentCategory} onChange={(value) => update("previousDocumentCategory", value)} options={previousDocumentCategories} /><SelectField label={t("Previous document type")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={draft.previousDocumentType} onChange={(value) => update("previousDocumentType", value)} options={previousDocumentTypes} /><TextField label={t("Document reference")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={draft.previousDocumentReference} onChange={(value) => update("previousDocumentReference", value.replace(/[^A-Za-z0-9-]/g, "").slice(0, 35))} invalid={issues.has("previousDocumentReference")} fieldKey="previousDocumentReference" highlighted={highlightedField === "previousDocumentReference"} maxLength={35} /></> : null}
+      <TextField label={t("Additional information code")} dataElement="2/2" customsBox="44" showDataElements={showDataElements} value={draft.headerAdditionalInformationCode} onChange={(value) => update("headerAdditionalInformationCode", value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 5))} invalid={issues.has("headerAdditionalInformationCode")} fieldKey="headerAdditionalInformationCode" highlighted={highlightedField === "headerAdditionalInformationCode"} maxLength={5} />
+      <TextField label={t("Additional information description")} dataElement="2/2" customsBox="44" showDataElements={showDataElements} value={draft.headerAdditionalInformationDescription} onChange={(value) => update("headerAdditionalInformationDescription", value.slice(0, 512))} invalid={issues.has("headerAdditionalInformationDescription")} fieldKey="headerAdditionalInformationDescription" highlighted={highlightedField === "headerAdditionalInformationDescription"} maxLength={512} />
       <SelectField label={t("Nature of transaction")} dataElement="8/5" customsBox="24" required showDataElements={showDataElements} value={draft.transactionNature} onChange={(value) => update("transactionNature", value)} invalid={issues.has("transactionNature")} fieldKey="transactionNature" highlighted={highlightedField === "transactionNature"} options={transactionNatures} />
       {direction === "import" ? <TextField label={t("Trade terms")} dataElement="4/1" customsBox="20" required showDataElements={showDataElements} value={draft.tradeTerms} onChange={(value) => update("tradeTerms", value.toUpperCase().slice(0, 3))} invalid={issues.has("tradeTerms")} fieldKey="tradeTerms" highlighted={highlightedField === "tradeTerms"} maxLength={3} /> : <><TextField label={t("Exchange rate")} dataElement="4/15" customsBox="23" showDataElements={showDataElements} value={draft.exchangeRate} onChange={(value) => update("exchangeRate", value)} /><TextField label={t("Customs office of exit")} dataElement="5/12" customsBox="29" required showDataElements={showDataElements} value={draft.exitOffice} onChange={(value) => update("exitOffice", value)} invalid={issues.has("exitOffice")} fieldKey="exitOffice" highlighted={highlightedField === "exitOffice"} /></>}
       {showOptional && direction === "export" ? <><TextField label={t("Supervising office")} dataElement="5/27" showDataElements={showDataElements} value={draft.supervisingOffice} onChange={(value) => update("supervisingOffice", value)} /><TextField label={t("Customs office of presentation")} dataElement="5/26" showDataElements={showDataElements} value={draft.presentationOffice} onChange={(value) => update("presentationOffice", value)} /><TextField label={t("Warehouse type")} dataElement="2/7" customsBox="49" showDataElements={showDataElements} value={draft.warehouseType} onChange={(value) => update("warehouseType", value)} /><TextField label={t("Warehouse identifier")} dataElement="2/7" customsBox="49" showDataElements={showDataElements} value={draft.warehouseIdentifier} onChange={(value) => update("warehouseIdentifier", value)} /><TextField label={t("Guarantee type")} dataElement="8/2" customsBox="52" showDataElements={showDataElements} value={draft.guaranteeType} onChange={(value) => update("guaranteeType", value)} /><TextField label={t("GRN or guarantee ID")} dataElement="8/3" customsBox="52" showDataElements={showDataElements} value={draft.guaranteeReference} onChange={(value) => update("guaranteeReference", value)} /></> : null}
@@ -1000,7 +1159,7 @@ function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, on
     },
     {
       id: "previousDocumentReference", label: t("Previous document reference"), width: 150, minWidth: 150, kind: "text", canPin: false,
-      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item, declarationDirection); return <Input aria-label={`${t("Previous document reference")} ${index + 1}`} className={cn(inputClass, validatedItemField(issues, missing, "previousDocumentReference") && "ring-1 ring-[var(--md-red)]")} value={item.previousDocumentReference} maxLength={35} onChange={(event) => updateRow(item.id, "previousDocumentReference", event.target.value.replace(/[^A-Za-z0-9]/g, "").slice(0, 35))} /> },
+      cell: (item) => { const index = items.findIndex((candidate) => candidate.id === item.id); const missing = mandatoryItemGaps(item, declarationDirection); return <Input aria-label={`${t("Previous document reference")} ${index + 1}`} className={cn(inputClass, validatedItemField(issues, missing, "previousDocumentReference") && "ring-1 ring-[var(--md-red)]")} value={item.previousDocumentReference} maxLength={35} onChange={(event) => updateRow(item.id, "previousDocumentReference", event.target.value.replace(/[^A-Za-z0-9-]/g, "").slice(0, 35))} /> },
     },
     {
       id: "actions", label: t("Actions"), width: 54, minWidth: 54, kind: "actions", canHide: false, canPin: false,
@@ -1562,9 +1721,9 @@ function ItemDetailsEditor({ item, itemNumber, onDuplicate, onRemove, canRemove,
               <FieldGrid className="grid-cols-1 sm:grid-cols-1 md:grid-cols-1 xl:grid-cols-1 2xl:grid-cols-1">
                 {declarationDirection === "import" ? <SelectField label={t("Previous document category")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={item.previousDocumentCategory} onChange={(value) => update("previousDocumentCategory", value)} invalid={issues.has("previousDocumentCategory")} fieldKey="previousDocumentCategory" highlighted={highlightedField === "previousDocumentCategory"} options={previousDocumentCategories} /> : null}
                 <SelectField label={t("Previous document type")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={item.previousDocumentType} onChange={(value) => update("previousDocumentType", value)} options={previousDocumentTypes} />
-                <TextField label={t("Previous document reference")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={item.previousDocumentReference} onChange={(value) => update("previousDocumentReference", value.replace(/[^A-Za-z0-9]/g, "").slice(0, 35))} invalid={issues.has("previousDocumentReference")} fieldKey="previousDocumentReference" highlighted={highlightedField === "previousDocumentReference"} maxLength={35} />
+                <TextField label={t("Previous document reference")} dataElement="2/1" customsBox="40" required showDataElements={showDataElements} value={item.previousDocumentReference} onChange={(value) => update("previousDocumentReference", value.replace(/[^A-Za-z0-9-]/g, "").slice(0, 35))} invalid={issues.has("previousDocumentReference")} fieldKey="previousDocumentReference" highlighted={highlightedField === "previousDocumentReference"} maxLength={35} />
               </FieldGrid>
-              {item.additionalPreviousDocuments.map((entry) => <RepeatableCustomsRow key={entry.id} removeLabel={t("Remove previous document")} onRemove={() => update("additionalPreviousDocuments", item.additionalPreviousDocuments.filter((candidate) => candidate.id !== entry.id))}><FieldGrid className="grid-cols-1 sm:grid-cols-1 md:grid-cols-1 xl:grid-cols-1 2xl:grid-cols-1">{declarationDirection === "import" ? <SelectField label={t("Previous document category")} dataElement="2/1" customsBox="40" showDataElements={showDataElements} value={entry.category} onChange={(category) => update("additionalPreviousDocuments", item.additionalPreviousDocuments.map((candidate) => candidate.id === entry.id ? { ...candidate, category } : candidate))} options={previousDocumentCategories} /> : null}<SelectField label={t("Previous document type")} dataElement="2/1" customsBox="40" showDataElements={showDataElements} value={entry.type} onChange={(type) => update("additionalPreviousDocuments", item.additionalPreviousDocuments.map((candidate) => candidate.id === entry.id ? { ...candidate, type } : candidate))} options={previousDocumentTypes} /><TextField label={t("Previous document reference")} dataElement="2/1" customsBox="40" showDataElements={showDataElements} value={entry.reference} onChange={(reference) => update("additionalPreviousDocuments", item.additionalPreviousDocuments.map((candidate) => candidate.id === entry.id ? { ...candidate, reference: reference.replace(/[^A-Za-z0-9]/g, "").slice(0, 35) } : candidate))} maxLength={35} /></FieldGrid></RepeatableCustomsRow>)}
+              {item.additionalPreviousDocuments.map((entry) => <RepeatableCustomsRow key={entry.id} removeLabel={t("Remove previous document")} onRemove={() => update("additionalPreviousDocuments", item.additionalPreviousDocuments.filter((candidate) => candidate.id !== entry.id))}><FieldGrid className="grid-cols-1 sm:grid-cols-1 md:grid-cols-1 xl:grid-cols-1 2xl:grid-cols-1">{declarationDirection === "import" ? <SelectField label={t("Previous document category")} dataElement="2/1" customsBox="40" showDataElements={showDataElements} value={entry.category} onChange={(category) => update("additionalPreviousDocuments", item.additionalPreviousDocuments.map((candidate) => candidate.id === entry.id ? { ...candidate, category } : candidate))} options={previousDocumentCategories} /> : null}<SelectField label={t("Previous document type")} dataElement="2/1" customsBox="40" showDataElements={showDataElements} value={entry.type} onChange={(type) => update("additionalPreviousDocuments", item.additionalPreviousDocuments.map((candidate) => candidate.id === entry.id ? { ...candidate, type } : candidate))} options={previousDocumentTypes} /><TextField label={t("Previous document reference")} dataElement="2/1" customsBox="40" showDataElements={showDataElements} value={entry.reference} onChange={(reference) => update("additionalPreviousDocuments", item.additionalPreviousDocuments.map((candidate) => candidate.id === entry.id ? { ...candidate, reference: reference.replace(/[^A-Za-z0-9-]/g, "").slice(0, 35) } : candidate))} maxLength={35} /></FieldGrid></RepeatableCustomsRow>)}
             </RepeatableCustomsFields>
             {showOptional ? <>
               <RepeatableCustomsFields title={t("Additional documents")} addLabel={t("Add additional document")} onAdd={() => update("additionalDocuments", [...item.additionalDocuments, { id: repeatableCustomsEntryId("additional-document"), category: "", type: "", reference: "", name: "", lpcoExemptionCode: "", writeOff: "", validityDate: "" }])}>
@@ -1715,18 +1874,22 @@ function validatedItemField(issues: Set<string>, missing: Array<keyof ExportDecl
   return issues.has(field) && missing.includes(field)
 }
 
-function ReviewSection({ draft, completion, iCustomsState, iCustomsBusy, iCustomsIssues, update, updateItem, onValidate, onCreateDraft, onSubmit, onRefresh, t }: {
+function ReviewSection({ draft, completion, iCustomsState, iCustomsBusy, iCustomsIssues, statusLifecycle, pdfAvailable, pdfBusy, pdfLoadError, update, updateItem, onOpenPdf, onValidate, onCreateDraft, onSubmit, t }: {
   draft: StandaloneExportDraft
   completion: ReturnType<typeof declarationCompletion>
   iCustomsState: ICustomsWorkspaceState | null
   iCustomsBusy: "loading" | "draft" | "submit" | "refresh" | null
   iCustomsIssues: string[]
+  statusLifecycle: CustomsStatusLifecycle
+  pdfAvailable: boolean
+  pdfBusy: boolean
+  pdfLoadError: string | null
   update: <K extends keyof StandaloneExportDraft>(field: K, value: StandaloneExportDraft[K]) => void
   updateItem: <K extends keyof ExportDeclarationItem>(itemId: string, field: K, value: ExportDeclarationItem[K]) => void
+  onOpenPdf: () => void
   onValidate: () => void
   onCreateDraft: () => void
   onSubmit: () => void
-  onRefresh: () => void
   t: (text: string) => string
 }) {
   const shouldReduceMotion = Boolean(useReducedMotion())
@@ -1734,7 +1897,8 @@ function ReviewSection({ draft, completion, iCustomsState, iCustomsBusy, iCustom
   const [heldIssue, setHeldIssue] = useState<DeclarationIssue | null>(null)
   const provider = iCustomsState?.declaration.provider
   const hasProviderDraft = Boolean(iCustomsState?.declaration.hasCustomsDraft)
-  const providerLifecycleStarted = Boolean(provider && ["submitted", "accepted", "rejected"].includes(provider.status))
+  const providerLifecycleStarted = Boolean(provider && (shouldPollCustomsStatus(provider.status) || isTerminalCustomsStatus(provider.status)))
+  const providerAwaitingResponse = shouldPollCustomsStatus(provider?.status)
   const providerRejected = provider?.status === "rejected"
   const connectionUnavailable = iCustomsState?.connection.configured === false
   const providerIssues = provider?.issues ?? []
@@ -1782,7 +1946,11 @@ function ReviewSection({ draft, completion, iCustomsState, iCustomsBusy, iCustom
         {iCustomsBusy === "loading" ? <p className="mt-4 text-[12px] text-[var(--md-subtle)]">{t("Checking the customs connection")}</p> : null}
         {connectionUnavailable ? <div role="alert" className="mt-4 flex gap-2 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-amber)_10%,transparent)] p-3 text-[12px] text-[var(--md-text)]"><CircleAlert className="mt-0.5 size-4 shrink-0 text-[var(--md-amber)]" /><span>{t("The customs test connection is not configured on the server yet.")}</span></div> : null}
         {provider ? <dl className="mt-4 divide-y divide-[var(--md-line)] border-y border-[var(--md-line)]"><Summary label={t("Submission status")} value={t(titleCase(provider.status))} />{provider.mrn ? <Summary label="MRN" value={provider.mrn} /> : null}{provider.updatedAt ? <Summary label={t("Last customs update")} value={new Date(provider.updatedAt).toLocaleString()} /> : null}</dl> : null}
-        {providerDeclarationUrl ? <Button asChild variant="outline" className="mt-4 w-full"><a href={providerDeclarationUrl} target="_blank" rel="noopener noreferrer"><span>{t("View in")}</span><img src={iCustomsLogo} alt="iCustoms" className="h-4 w-auto" /><ExternalLink className="size-3.5" /></a></Button> : null}
+        {providerAwaitingResponse ? <div role="status" aria-live="polite" className="mt-4 flex gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-accent-a10)] p-3 text-[12px] text-[var(--md-text)]"><RefreshCw className={cn("mt-0.5 size-4 shrink-0 text-[var(--md-accent)]", statusLifecycle.phase === "checking" && "animate-spin motion-reduce:animate-none")} /><span><strong className="block text-[var(--md-ink)]">{t(statusLifecycle.phase === "timed-out" ? "Customs response is taking longer than expected" : "Waiting for the customs response")}</strong>{t(statusLifecycle.phase === "timed-out" ? "Multideck will check again when you return to this declaration." : "Multideck checks automatically while this declaration is open.")}</span></div> : null}
+        {statusLifecycle.phase === "error" ? <div role="alert" className="mt-4 flex gap-2 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-amber)_10%,transparent)] p-3 text-[12px] text-[var(--md-text)]"><CircleAlert className="mt-0.5 size-4 shrink-0 text-[var(--md-amber)]" /><span><strong className="block text-[var(--md-ink)]">{t("Customs status check was interrupted")}</strong>{t(statusLifecycle.message ?? "Multideck will retry automatically.")}</span></div> : null}
+        <Button type="button" variant="ghost" className="mt-4 w-full bg-black text-white shadow-none hover:bg-black/80 hover:text-white" disabled={!pdfAvailable || pdfBusy} onClick={onOpenPdf}><FileText className="size-4" />{t(pdfBusy ? "Preparing declaration PDF" : pdfLoadError ? "Retry declaration PDF" : pdfAvailable ? "View declaration PDF" : "PDF available after acceptance")}</Button>
+        {pdfLoadError && pdfAvailable ? <p role="alert" className="mt-2 text-[11px] leading-4 text-[var(--md-red)]">{t("The declaration PDF could not be prepared automatically. Choose Retry declaration PDF to try again.")}</p> : null}
+        {providerDeclarationUrl ? <Button asChild variant="outline" className="mt-2 w-full"><a href={providerDeclarationUrl} target="_blank" rel="noopener noreferrer"><span>{t("View in")}</span><img src={iCustomsLogo} alt="iCustoms" className="h-4 w-auto" /><ExternalLink className="size-3.5" /></a></Button> : null}
         {providerIssues.length ? <div role="alert" className="mt-4 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red)_7%,var(--md-surface))] p-3">
           <div className="flex items-start gap-2"><CircleAlert className="mt-0.5 size-4 shrink-0 text-[var(--md-red)]" /><div><p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Customs rejected this declaration")}</p><p className="mt-0.5 text-[11px] leading-4 text-[var(--md-text)]">{t("Correct the fields below, then save a new customs draft before submitting again.")}</p></div></div>
           <div className="mt-3 space-y-2">{providerIssues.slice(0, 20).map((issue, index) => {
@@ -1797,7 +1965,7 @@ function ReviewSection({ draft, completion, iCustomsState, iCustomsBusy, iCustom
         {provider?.errorMessage && !providerIssues.length ? <div role="alert" className="mt-4 flex gap-2 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red)_7%,var(--md-surface))] p-3 text-[12px] text-[var(--md-text)]"><CircleAlert className="mt-0.5 size-4 shrink-0 text-[var(--md-red)]" /><span><strong className="block text-[var(--md-ink)]">{t("Customs service needs attention")}</strong>{t(provider.errorMessage)}</span></div> : null}
         {iCustomsIssues.length ? <div role="alert" className="mt-4"><p className="text-[12px] font-medium text-[var(--md-red)]">{t("Customs checks still need attention")}</p><ul className="mt-2 space-y-1.5 ps-4 text-[11px] leading-4 text-[var(--md-text)]">{iCustomsIssues.slice(0, 8).map((issue) => <li key={issue} className="list-disc">{translateCustomsMessage(issue, t)}</li>)}</ul></div> : null}
 
-        {!hasProviderDraft ? <Button type="button" className="mt-4 w-full" disabled={Boolean(iCustomsBusy) || connectionUnavailable} onClick={onCreateDraft}><Send className="size-4" />{t(iCustomsBusy === "draft" ? "Creating customs test draft" : "Create customs test draft")}</Button> : providerRejected ? <><Button type="button" className="mt-4 w-full" disabled={Boolean(iCustomsBusy) || connectionUnavailable || completion.issues.length > 0} onClick={onCreateDraft}><RefreshCw className="size-4" />{t(iCustomsBusy === "draft" ? "Creating corrected customs test draft" : "Create corrected customs test draft")}</Button><Button type="button" variant="ghost" className="mt-2 w-full" disabled={Boolean(iCustomsBusy)} onClick={onRefresh}>{t(iCustomsBusy === "refresh" ? "Refreshing customs status" : "Refresh customs status")}</Button></> : providerLifecycleStarted ? <Button type="button" className="mt-4 w-full" disabled={Boolean(iCustomsBusy)} onClick={onRefresh}><RefreshCw className="size-4" />{t(iCustomsBusy === "refresh" ? "Refreshing customs status" : "Refresh customs status")}</Button> : <><Button type="button" className="mt-4 w-full" disabled={Boolean(iCustomsBusy) || connectionUnavailable} onClick={onSubmit}><Send className="size-4" />{t("Submit")}</Button><Button type="button" variant="outline" className="mt-2 w-full" disabled={Boolean(iCustomsBusy) || connectionUnavailable} onClick={onCreateDraft}><RefreshCw className="size-4" />{t(iCustomsBusy === "draft" ? "Updating customs test draft" : "Update customs test draft")}</Button></>}
+        {!hasProviderDraft ? <Button type="button" className="mt-4 w-full" disabled={Boolean(iCustomsBusy) || connectionUnavailable} onClick={onCreateDraft}><Send className="size-4" />{t(iCustomsBusy === "draft" ? "Creating customs test draft" : "Create customs test draft")}</Button> : providerRejected ? <Button type="button" className="mt-4 w-full" disabled={Boolean(iCustomsBusy) || connectionUnavailable || completion.issues.length > 0} onClick={onCreateDraft}><RefreshCw className="size-4" />{t(iCustomsBusy === "draft" ? "Creating corrected customs test draft" : "Create corrected customs test draft")}</Button> : providerLifecycleStarted ? null : <><Button type="button" className="mt-4 w-full" disabled={Boolean(iCustomsBusy) || connectionUnavailable} onClick={onSubmit}><Send className="size-4" />{t("Submit")}</Button><Button type="button" variant="outline" className="mt-2 w-full" disabled={Boolean(iCustomsBusy) || connectionUnavailable} onClick={onCreateDraft}><RefreshCw className="size-4" />{t(iCustomsBusy === "draft" ? "Updating customs test draft" : "Update customs test draft")}</Button></>}
         <Button type="button" variant="ghost" className="mt-2 w-full" onClick={onValidate}>{t("Run form checks")}</Button>
       </Surface>
     </div>
@@ -1817,7 +1985,7 @@ type ReviewFieldMeta = {
 function reviewSectionForField(field: string): Exclude<EditorTab, "items" | "review"> {
   if (["importer", "exporter", "consignee", "carrier", "declarant", "representative", "seller", "buyer", "representationType", "authorisationIdentifier", "authorisationCategory"].includes(field) || /^(importer|exporter|consignee|declarant)(Name|AddressLine|City|Postcode|Country)$/.test(field)) return "parties"
   if (["exportCountry", "destinationCountry", "borderMode", "inlandMode", "containerId", "goodsLocationName", "goodsLocationIdentifier"].includes(field)) return "transport"
-  if (["exitOffice", "presentationOffice", "previousDocumentCategory", "previousDocumentType", "previousDocumentReference", "transactionNature", "tradeTerms", "customsValuationMethod"].includes(field)) return "documents"
+  if (["exitOffice", "presentationOffice", "previousDocumentCategory", "previousDocumentType", "previousDocumentReference", "headerAdditionalInformationCode", "headerAdditionalInformationDescription", "transactionNature", "tradeTerms", "customsValuationMethod"].includes(field)) return "documents"
   return "declaration"
 }
 
@@ -1857,7 +2025,7 @@ const reviewFieldMetaByKey: Record<string, ReviewFieldMeta> = {
   declarant: { label: "Declarant", dataElement: "3/17", customsBox: "14" },
   representationType: { label: "Type of representation", dataElement: "3/21", customsBox: "14", catalog: "representation_type" },
   authorisationIdentifier: { label: "Authorisation identifier" },
-  authorisationCategory: { label: "Authorisation category", maxLength: 3 },
+  authorisationCategory: { label: "Authorisation category", maxLength: 4 },
   exportCountry: { label: "Export country", dataElement: "5/14", customsBox: "15", catalog: "country" },
   destinationCountry: { label: "Country of destination", dataElement: "5/8", customsBox: "17", catalog: "country" },
   borderMode: { label: "Mode at border", dataElement: "7/4", customsBox: "25", catalog: "transport_mode" },
@@ -1871,6 +2039,8 @@ const reviewFieldMetaByKey: Record<string, ReviewFieldMeta> = {
   previousDocumentCategory: { label: "Previous document category", dataElement: "2/1", customsBox: "40", catalog: "previous_document_category" },
   previousDocumentType: { label: "Previous document type", dataElement: "2/1", customsBox: "40", catalog: "previous_document_type" },
   previousDocumentReference: { label: "Previous document reference", dataElement: "2/1", customsBox: "40", maxLength: 35 },
+  headerAdditionalInformationCode: { label: "Additional information code", dataElement: "2/2", customsBox: "44", maxLength: 5 },
+  headerAdditionalInformationDescription: { label: "Additional information description", dataElement: "2/2", customsBox: "44", maxLength: 512 },
   commodityCode: { label: "Commodity code", dataElement: "6/14", customsBox: "33", maxLength: 10 },
   description: { label: "Description of goods", dataElement: "6/8", customsBox: "31", textarea: true },
   packageKind: { label: "Package kind", dataElement: "6/9", customsBox: "31", catalog: "package_kind" },
@@ -1909,6 +2079,7 @@ function fieldsForReviewIssue(draft: StandaloneExportDraft, issue?: DeclarationI
   if (providerIssue) {
     if (providerIssue.itemNumber && providerIssue.dataElement === "1/10") return ["procedureCode", "additionalProcedureCode"]
     if (providerIssue.itemNumber && providerIssue.dataElement === "2/3") return ["additionalDocumentCategory", "additionalDocumentType", "additionalDocumentId"]
+    if (!providerIssue.itemNumber && providerIssue.dataElement === "2/2") return ["headerAdditionalInformationCode", "headerAdditionalInformationDescription"]
     return [providerIssueTarget(providerIssue)]
   }
   if (!issue) return []
@@ -1917,6 +2088,7 @@ function fieldsForReviewIssue(draft: StandaloneExportDraft, issue?: DeclarationI
     return [`${contact[1]}Name`, `${contact[1]}AddressLine`, `${contact[1]}City`, `${contact[1]}Postcode`, `${contact[1]}Country`]
   }
   if (issue.id === "general-authorisation") return ["authorisationIdentifier", "authorisationCategory"]
+  if (issue.id === "general-header-additional-information") return ["headerAdditionalInformationCode", "headerAdditionalInformationDescription"]
   if (issue.id === "general-goods-location") return ["goodsLocationName", "goodsLocationIdentifier"]
   return [issue.field]
 }
@@ -1981,8 +2153,10 @@ function ReviewFixField({ draft, itemId, field, update, updateItem, t }: {
     let normalized = next
     if (field === "traderReference") normalized = next.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 19)
     if (field === "tradeTerms") normalized = next.toUpperCase().slice(0, 3)
-    if (field === "authorisationCategory") normalized = next.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 3)
-    if (field === "previousDocumentReference") normalized = next.replace(/[^A-Za-z0-9]/g, "").slice(0, 35)
+    if (field === "authorisationCategory") normalized = next.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4)
+    if (field === "headerAdditionalInformationCode") normalized = next.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 5)
+    if (field === "headerAdditionalInformationDescription") normalized = next.slice(0, 512)
+    if (field === "previousDocumentReference") normalized = next.replace(/[^A-Za-z0-9-]/g, "").slice(0, 35)
     if (field === "commodityCode") normalized = next.replace(/\D/g, "").slice(0, 10)
     if (field === "customsValuationMethod") normalized = next.replace(/\D/g, "").slice(0, 1)
     if (field === "preferenceCode") normalized = next.replace(/\D/g, "").slice(0, 3)
@@ -2018,6 +2192,7 @@ function providerIssueTarget(issue: ICustomsProviderIssue) {
     "5/8": "destinationCountry",
     "5/14": "exportCountry",
     "5/23": "goodsLocationName",
+    "2/2": "headerAdditionalInformationCode",
     "7/4": "borderMode",
     "7/10": "containerId",
   }

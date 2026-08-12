@@ -167,6 +167,8 @@ export type ExportDeclarationInput = {
   previousDocumentCategory?: unknown;
   previousDocumentType?: unknown;
   previousDocumentReference?: unknown;
+  headerAdditionalInformationCode?: unknown;
+  headerAdditionalInformationDescription?: unknown;
   transactionNature?: unknown;
   exchangeRate?: unknown;
   tradeTerms?: unknown;
@@ -200,6 +202,13 @@ function clean(value: unknown, maximum = 280) {
 
 function upper(value: unknown, maximum = 40) {
   return clean(value, maximum).toUpperCase();
+}
+
+function validPreviousDocumentReference(reference: string, type: unknown) {
+  if (upper(type, 3) === "DCR") {
+    return /^\d[A-Z]{2}[A-Z0-9]{12}-[A-Z0-9]{1,18}$/.test(reference.toUpperCase());
+  }
+  return /^[A-Za-z0-9]{1,35}$/.test(reference);
 }
 
 function positiveNumber(value: unknown) {
@@ -379,11 +388,11 @@ export function validateICustomsDeclaration(
       );
     }
     const authorisationIdentifier = clean(input.authorisationIdentifier, 35);
-    const authorisationCategory = upper(input.authorisationCategory, 3);
+    const authorisationCategory = upper(input.authorisationCategory, 4);
     if (authorisationIdentifier || authorisationCategory) {
       if (
         !authorisationIdentifier ||
-        !/^[A-Z0-9]{1,3}$/.test(authorisationCategory)
+        !/^[A-Z0-9]{1,4}$/.test(authorisationCategory)
       ) {
         issues.push("Complete both the authorisation identifier and category.");
       }
@@ -401,9 +410,31 @@ export function validateICustomsDeclaration(
     );
     if (!previousDocumentReference) {
       issues.push("Add the previous document reference.");
-    } else if (!/^[A-Za-z0-9]{1,35}$/.test(previousDocumentReference)) {
+    } else if (!validPreviousDocumentReference(previousDocumentReference, input.previousDocumentType)) {
       issues.push(
-        "Use up to 35 letters and numbers for the previous document reference.",
+        upper(input.previousDocumentType, 3) === "DCR"
+          ? "Use the DUCR format: year, country, 12-character EORI, hyphen and unique reference."
+          : "Use up to 35 letters and numbers for the previous document reference.",
+      );
+    }
+  }
+  const headerAdditionalInformationCode = upper(
+    input.headerAdditionalInformationCode,
+    5,
+  );
+  const headerAdditionalInformationDescription = clean(
+    input.headerAdditionalInformationDescription,
+    512,
+  );
+  if (
+    headerAdditionalInformationCode || headerAdditionalInformationDescription
+  ) {
+    if (
+      !/^[A-Z0-9]{1,5}$/.test(headerAdditionalInformationCode) ||
+      !headerAdditionalInformationDescription
+    ) {
+      issues.push(
+        "Complete both the additional information code and description.",
       );
     }
   }
@@ -492,9 +523,9 @@ export function validateICustomsDeclaration(
     );
     if (!itemPreviousDocumentReference) {
       issues.push(`${line}: add a previous document reference.`);
-    } else if (!/^[A-Za-z0-9]{1,35}$/.test(itemPreviousDocumentReference)) {
+    } else if (!validPreviousDocumentReference(itemPreviousDocumentReference, item.previousDocumentType)) {
       issues.push(
-        `${line}: use up to 35 letters and numbers for the previous document reference.`,
+        `${line}: ${upper(item.previousDocumentType, 3) === "DCR" ? "use the DUCR format: year, country, 12-character EORI, hyphen and unique reference" : "use up to 35 letters and numbers for the previous document reference"}.`,
       );
     }
     repeatableInputs(item.additionalTaricCodes).forEach((entry, entryIndex) => {
@@ -521,7 +552,7 @@ export function validateICustomsDeclaration(
     });
     extraPreviousDocuments.forEach((entry, entryIndex) => {
       if (!hasAnyValue(entry, ["category", "type", "reference"])) return;
-      if ((direction === "import" && !/^[XYZ]$/.test(upper(entry.category, 1))) || !/^[A-Z0-9]{1,3}$/.test(upper(entry.type, 3)) || !/^[A-Za-z0-9]{1,35}$/.test(clean(entry.reference, 35))) {
+      if ((direction === "import" && !/^[XYZ]$/.test(upper(entry.category, 1))) || !/^[A-Z0-9]{1,3}$/.test(upper(entry.type, 3)) || !validPreviousDocumentReference(clean(entry.reference, 35), entry.type)) {
         issues.push(`${line}, previous document ${entryIndex + 2}: complete a valid category, type and reference.`);
       }
     });
@@ -648,6 +679,7 @@ function party(
     | "Exporter"
     | "Consignee"
     | "Declarant"
+    | "Agent"
     | "Seller"
     | "Buyer",
   value: unknown,
@@ -720,8 +752,7 @@ export function buildICustomsDeclarationXml(
   const items = itemInputs(input.items);
   const goodsItems = items.map((item, index) => {
     const procedureCode = upper(item.procedureCode, 4);
-    const itemDestination = upper(item.destinationCountry, 2) ||
-      destinationCountry;
+    const explicitItemDestination = upper(item.destinationCountry, 2);
     const itemCurrency = upper(item.currency, 3);
     const taricCodes = [
       upper(item.taricCode, 4),
@@ -777,10 +808,13 @@ export function buildICustomsDeclarationXml(
         dutyCalculations,
       ].join(""),
     );
-    const itemConsignee = direction === "export"
+    const explicitItemConsignee = clean(item.consignee, 70);
+    const itemConsignee = direction === "export" &&
+        explicitItemConsignee &&
+        explicitItemConsignee !== clean(input.consignee, 70)
       ? party(
         "Consignee",
-        clean(item.consignee, 70) || input.consignee,
+        explicitItemConsignee,
         partyContact(input, "consignee"),
       )
       : "";
@@ -809,7 +843,12 @@ export function buildICustomsDeclarationXml(
       type: item.previousDocumentType,
       reference: item.previousDocumentReference,
     }, ...repeatableInputs(item.additionalPreviousDocuments)]
-      .filter((entry) => hasAnyValue(entry, ["category", "type", "reference"]));
+      .filter((entry) => hasAnyValue(entry, ["category", "type", "reference"]))
+      .filter((entry) => direction !== "export" || !(
+        (upper(entry.category, 1) || upper(input.previousDocumentCategory, 1)) === upper(input.previousDocumentCategory, 1) &&
+        upper(entry.type, 3) === upper(input.previousDocumentType, 3) &&
+        clean(entry.reference, 35) === clean(input.previousDocumentReference, 35)
+      ));
     const itemPreviousDocuments = previousDocuments.map((entry, documentIndex) => group(
       "PreviousDocument",
       [
@@ -894,8 +933,8 @@ export function buildICustomsDeclarationXml(
         partyReferences("Buyer", item.itemBuyers),
         domesticDutyTaxParties,
         mutualRecognitionParties,
-        direction === "export"
-          ? group("Destination", element("CountryCode", itemDestination))
+        direction === "export" && explicitItemDestination && explicitItemDestination !== destinationCountry
+          ? group("Destination", element("CountryCode", explicitItemDestination))
           : "",
         group(
           "GovernmentProcedure",
@@ -1056,15 +1095,33 @@ export function buildICustomsDeclarationXml(
       }),
       element("TotalGrossMassMeasure", decimal(input.totalGrossMass)),
       element("TotalPackageQuantity", decimal(input.totalPackages, 0)),
-      direction === "import"
+      clean(input.headerAdditionalInformationCode, 5)
+        ? group(
+          "AdditionalInformation",
+          [
+            element(
+              "StatementCode",
+              upper(input.headerAdditionalInformationCode, 5),
+            ),
+            element(
+              "StatementDescription",
+              clean(input.headerAdditionalInformationDescription, 512),
+            ),
+          ].join(""),
+        )
+        : "",
+      clean(input.representative, 70)
+        ? party("Agent", input.representative, partyContact(input, "declarant"))
+        : "",
+      clean(input.representationType, 1)
         ? element("AgentFunctionCode", clean(input.representationType, 1))
         : "",
-      direction === "import"
+      clean(input.authorisationIdentifier, 35) && clean(input.authorisationCategory, 4)
         ? group(
           "AuthorisationHolder",
           [
             element("ID", input.authorisationIdentifier),
-            element("CategoryCode", upper(input.authorisationCategory, 3)),
+            element("CategoryCode", upper(input.authorisationCategory, 4)),
           ].join(""),
         )
         : "",

@@ -149,7 +149,6 @@ export async function loadStandaloneDeclarationDraft(declarationId: string, dire
       .eq("CUST_Direction", direction)
       .eq("CUST_DeclarationKind", `cds_${direction}`)
       .is("CUST_JobID", null)
-      .in("CUST_Status", ["draft", "rejected"])
       .eq("CUST_IsDeleted", false)
       .single(),
     client

@@ -193,6 +193,7 @@ import { matchesFilterQuery, type FilterFieldOption, type FilterQuery } from "@/
 import { MultiSelectMenu } from "@/components/multideck/multi-select-menu"
 import { DocumentViewer, PaperTrayStack } from "@/components/multideck/paper-tray"
 import { DocumentEvidenceViewer } from "@/components/multideck/document-evidence-viewer"
+import { PdfDocumentViewerDialog } from "@/components/multideck/pdf-document-viewer-dialog"
 import { DocumentExtractionProgress } from "@/components/multideck/document-extraction-progress"
 import { DocumentWorkspace, documentWorkspaceSampleDocuments } from "@/components/multideck/document-workspace"
 import { createInitialPaperTrays } from "@/data/paper-tray-data"
@@ -240,7 +241,7 @@ const gallerySidebarGroups: GallerySidebarGroup[] = [
   {
     label: "Operations",
     helper: "Freight workflow pieces",
-    ids: ["paper-tray-stack", "document-viewer", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
+    ids: ["paper-tray-stack", "document-viewer", "pdf-document-viewer-dialog", "document-workspace", "document-extraction-progress", "document-evidence-viewer", "audit-timeline", "audit-workspace", "booking-row", "interactive-map", "animated-list", "world-clock", "timezone-work-queue", "queue-row", "customer-avatar", "customer-metric-card", "contact-profile", "primary-contacts-panel", "data-table", "unified-quote-charges-workspace", "quote-search-builder", "warehouse-table", "warehouse-form-field", "warehouse-quantity-uom-field", "purchase-order-line-editor", "warehouse-object-summary", "warehouse-exception-summary", "warehouse-kanban-board", "dot-grid-loader", "geo-panel", "record-header", "active-bookings-panel", "your-jobs-panel", "priority-queue", "coverage-panel", "lane-mix-panel", "booking-metric-card", "booking-search-builder", "bookings-table", "booking-board-preview", "domestic-job-stage-rail", "domestic-road-job-card", "domestic-road-kanban-board", "booking-arrival-card", "booking-exception-panel", "booking-checklist", "booking-ask-panel", "side-panels"],
   },
   {
     label: "CRM",
@@ -953,6 +954,50 @@ const previewDocumentPageMarkup = [
 
 const previewDocumentPageUrl = `data:image/svg+xml;utf8,${encodeURIComponent(previewDocumentPageMarkup)}`
 
+function createGalleryDeclarationPdf() {
+  const pageOne = [
+    "BT /F1 17 Tf 56 780 Td (CDS export declaration) Tj ET",
+    "BT /F1 9 Tf 56 754 Td (MRN 26GB 0000 0000 0000 00) Tj ET",
+    "0.82 G 56 730 m 539 730 l S",
+    "BT /F1 10 Tf 56 690 Td (Declaration details) Tj ET",
+    "0.9 G 56 668 m 539 668 l S 56 632 m 539 632 l S 56 596 m 539 596 l S",
+    "BT /F1 9 Tf 68 646 Td (Exporter) Tj ET BT /F1 9 Tf 240 646 Td (Jenkar Shipping Ltd) Tj ET",
+    "BT /F1 9 Tf 68 610 Td (Destination) Tj ET BT /F1 9 Tf 240 610 Td (United Kingdom) Tj ET",
+    "BT /F1 9 Tf 68 574 Td (Items) Tj ET BT /F1 9 Tf 240 574 Td (2) Tj ET",
+  ].join("\n")
+  const pageTwo = [
+    "BT /F1 17 Tf 56 780 Td (Goods items) Tj ET",
+    "0.82 G 56 750 m 539 750 l S",
+    "BT /F1 10 Tf 56 714 Td (Item 1) Tj ET",
+    "BT /F1 9 Tf 68 684 Td (Commodity code) Tj ET BT /F1 9 Tf 240 684 Td (8471 30 00 00) Tj ET",
+    "BT /F1 9 Tf 68 656 Td (Description) Tj ET BT /F1 9 Tf 240 656 Td (Portable computers) Tj ET",
+    "0.9 G 56 624 m 539 624 l S",
+    "BT /F1 10 Tf 56 588 Td (Item 2) Tj ET",
+    "BT /F1 9 Tf 68 558 Td (Commodity code) Tj ET BT /F1 9 Tf 240 558 Td (8528 52 10 00) Tj ET",
+    "BT /F1 9 Tf 68 530 Td (Description) Tj ET BT /F1 9 Tf 240 530 Td (Computer monitors) Tj ET",
+  ].join("\n")
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R 6 0 R] /Count 2 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    `<< /Length ${pageOne.length} >>\nstream\n${pageOne}\nendstream`,
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 7 0 R >>",
+    `<< /Length ${pageTwo.length} >>\nstream\n${pageTwo}\nendstream`,
+  ]
+  let pdf = "%PDF-1.4\n"
+  const offsets = [0]
+  objects.forEach((object, index) => {
+    offsets.push(pdf.length)
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`
+  })
+  const xref = pdf.length
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`
+  pdf += offsets.slice(1).map((offset) => `${String(offset).padStart(10, "0")} 00000 n \n`).join("")
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`
+  return new Blob([pdf], { type: "application/pdf" })
+}
+
 const previewExtractionStages = [
   { id: "reading", label: "Reading the document", detail: "Opening the PDF and collecting its text and layout.", ceiling: 24, expectedMs: 1_400 },
   { id: "extracting", label: "Finding the item lines", detail: "Picking out goods rows, quantities, values and codes.", ceiling: 88, expectedMs: 9_000 },
@@ -980,6 +1025,15 @@ function DocumentEvidenceViewerPreview() {
       empty="The document preview is still being prepared."
     />
   )
+}
+
+function PdfDocumentViewerDialogPreview() {
+  const [open, setOpen] = useState(false)
+  const previewPdf = useMemo(createGalleryDeclarationPdf, [])
+  return <div className="grid min-h-[240px] w-full max-w-[720px] place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-8 shadow-[var(--md-shadow-line)]">
+    <div className="text-center"><FileText className="mx-auto size-7 text-[var(--md-accent)]" /><h3 className="mt-3 text-[15px] font-medium text-[var(--md-ink)]">Accepted declaration PDF</h3><p className="mt-1 text-[12px] text-[var(--md-text)]">Open the focused reader to inspect its zoom and download controls.</p><Button type="button" variant="ghost" className="mt-4 bg-black text-white shadow-none hover:bg-black/80 hover:text-white" onClick={() => setOpen(true)}>Open PDF viewer</Button></div>
+    <PdfDocumentViewerDialog open={open} onOpenChange={setOpen} blob={previewPdf} title="CDS export declaration" fileName="CDS-Export-MRN.pdf" meta="MRN 26GB 0000 0000 0000 00" onDownload={async () => undefined} />
+  </div>
 }
 
 const previewAutomationRuns: AutomationRun[] = [
@@ -1725,6 +1779,8 @@ function ComponentPreview({ id }: { id: string }) {
           />
         </div>
       ) : null}
+
+      {id === "pdf-document-viewer-dialog" ? <PdfDocumentViewerDialogPreview /> : null}
 
       {id === "document-workspace" ? (
         <div className="w-full max-w-[1120px]">
