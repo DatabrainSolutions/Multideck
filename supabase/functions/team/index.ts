@@ -174,10 +174,17 @@ Deno.serve(async (request) => {
       if (!target) throw new HttpError(404, "User not found.")
       if (target.User_ID === current.User_ID) throw new HttpError(400, "You cannot remove your own Multideck access.")
 
+      const { data: targetRoleLinks, error: targetRoleLinksError } = await admin.from("cmp_Users_Roles").select("sys_UserRole_ID").eq("User_ID", target.User_ID)
+      if (targetRoleLinksError) throw new HttpError(500, targetRoleLinksError.message)
+      const targetRoleIds = (targetRoleLinks ?? []).map((role: any) => role.sys_UserRole_ID)
+      const { data: targetRoles, error: targetRolesError } = targetRoleIds.length
+        ? await admin.from("sys_UserRoles").select("sys_UserRole_ID,sys_UserRole_Name").in("sys_UserRole_ID", targetRoleIds)
+        : { data: [], error: null }
+      if (targetRolesError) throw new HttpError(500, targetRolesError.message)
+
       const { data: administrator } = await admin.from("sys_UserRoles").select("sys_UserRole_ID").eq("sys_UserRole_Name", "Administrator").maybeSingle()
       if (administrator) {
-        const { data: targetRoles } = await admin.from("cmp_Users_Roles").select("sys_UserRole_ID").eq("User_ID", target.User_ID)
-        if ((targetRoles ?? []).some((role: any) => role.sys_UserRole_ID === administrator.sys_UserRole_ID)) {
+        if (targetRoleIds.includes(administrator.sys_UserRole_ID)) {
           const { data: companyUsers } = await admin.from("cmp_Users").select("User_ID").eq("Company_ID", current.Company_ID).neq("User_ID", target.User_ID)
           const otherIds = (companyUsers ?? []).map((companyUser: any) => companyUser.User_ID)
           const { count } = otherIds.length ? await admin.from("cmp_Users_Roles").select("*", { count: "exact", head: true }).in("User_ID", otherIds).eq("sys_UserRole_ID", administrator.sys_UserRole_ID) : { count: 0 }
@@ -193,6 +200,16 @@ Deno.serve(async (request) => {
       if (officeError) throw new HttpError(500, officeError.message)
       const { error: roleError } = await admin.from("cmp_Users_Roles").delete().eq("User_ID", target.User_ID)
       if (roleError) throw new HttpError(500, roleError.message)
+      for (const role of targetRoles ?? []) {
+        if (role.sys_UserRole_Name !== `Custom · ${target.User_ID}`) continue
+        const { count: remainingRoleAssignments, error: remainingRoleAssignmentsError } = await admin.from("cmp_Users_Roles").select("*", { count: "exact", head: true }).eq("sys_UserRole_ID", role.sys_UserRole_ID)
+        if (remainingRoleAssignmentsError) throw new HttpError(500, remainingRoleAssignmentsError.message)
+        if (remainingRoleAssignments) continue
+        const { error: permissionLinkError } = await admin.from("sys_UserRole_Permissions").delete().eq("sys_UserRole_ID", role.sys_UserRole_ID)
+        if (permissionLinkError) throw new HttpError(500, permissionLinkError.message)
+        const { error: customRoleError } = await admin.from("sys_UserRoles").delete().eq("sys_UserRole_ID", role.sys_UserRole_ID)
+        if (customRoleError) throw new HttpError(500, customRoleError.message)
+      }
       const { error: profileError } = await admin.from("cmp_Users").update({ Company_ID: null, Auth_User_ID: null }).eq("User_ID", target.User_ID)
       if (profileError) throw new HttpError(500, profileError.message)
       return json(request, null, 204)

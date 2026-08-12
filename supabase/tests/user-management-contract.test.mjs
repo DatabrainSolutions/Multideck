@@ -81,6 +81,8 @@ test("user deletion is confirmed in the client and constrained in the tenant ser
   assert.match(team, /Keep at least one administrator/)
   assert.match(team, /admin\.auth\.admin\.deleteUser/)
   assert.match(team, /Company_ID: null, Auth_User_ID: null/)
+  assert.match(team, /role\.sys_UserRole_Name !== `Custom · \$\{target\.User_ID\}`/)
+  assert.match(team, /sys_UserRole_Permissions/)
 })
 
 test("Dexter clearly declines high-impact identity writes and idle user watches", () => {
