@@ -6,10 +6,21 @@ export class HttpError extends Error {
   }
 }
 
+export function isTrustedMultideckOrigin(value: string) {
+  try {
+    const url = new URL(value)
+    if (url.protocol !== "https:" && url.protocol !== "http:") return false
+    if (url.hostname === "localhost" || url.hostname === "127.0.0.1") return true
+    return url.protocol === "https:" && (url.hostname === "multideck.app" || url.hostname.endsWith(".multideck.app"))
+  } catch {
+    return false
+  }
+}
+
 export function corsHeaders(request: Request) {
   const appUrl = Deno.env.get("APP_URL")?.trim() || "https://dev.multideck.app"
   const origin = request.headers.get("Origin")?.trim() || appUrl
-  const allowed = origin === appUrl || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
+  const allowed = origin === appUrl || isTrustedMultideckOrigin(origin)
   return {
     "Access-Control-Allow-Origin": allowed ? origin : appUrl,
     "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info",

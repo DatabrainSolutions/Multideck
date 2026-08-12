@@ -12,7 +12,7 @@ import { isSupabaseConfigured, isWorkspaceRouterHost, multideckRootHost, supabas
 import authPanelBackdrop from "@/assets/auth/auth-panel-backdrop.jpg"
 import multideckLogoMark from "@/assets/brand/multideck-logo-mark.svg"
 
-export type AuthFlowStep = "signin" | "verify" | "forgot-password" | "reset-password" | "signed-out"
+export type AuthFlowStep = "signin" | "verify" | "forgot-password" | "reset-password" | "accept-invite" | "signed-out"
 
 export type WorkspaceDirectoryEntry = {
   slug: string
@@ -55,6 +55,11 @@ const authCopyByStep: Record<AuthFlowStep, AuthCopy> = {
     title: "A fresh key.\nThe same workspace.",
     body: "Choose a strong new password. Your bookings, customer promises, and workspace access stay exactly where they are.",
     footnote: "Security changes are confirmed by email",
+  },
+  "accept-invite": {
+    title: "Your workspace.\nYour secure key.",
+    body: "Create the password for your administrator-approved Multideck account. You’ll enter the workspace as soon as it is saved.",
+    footnote: "Invite-only access for your team",
   },
   "signed-out": {
     title: "Lights off.\nDexter keeps watch.",
@@ -229,6 +234,7 @@ function FreightNarrative({
   className?: string
   componentPreview?: boolean
 }) {
+  const { t } = useLanguage()
   const copy = authCopyByStep[step]
   const muted = step === "signed-out"
 
@@ -262,8 +268,8 @@ function FreightNarrative({
             <ShieldCheck className="size-3.5" strokeWidth={1.5} />
             Private workspace
           </div>
-          <h1 className="whitespace-pre-line text-[24px] font-medium leading-[1.22] tracking-normal">{copy.title}</h1>
-          <p className="mt-4 max-w-[470px] text-[14px] leading-6 text-white/64">{copy.body}</p>
+          <h1 className="whitespace-pre-line text-[24px] font-medium leading-[1.22] tracking-normal">{t(copy.title)}</h1>
+          <p className="mt-4 max-w-[470px] text-[14px] leading-6 text-white/64">{t(copy.body)}</p>
 
           <div className="mt-8 flex max-w-[520px] flex-col gap-2.5">
             {authBookings.map((booking, index) => (
@@ -307,7 +313,7 @@ function FreightNarrative({
         {copy.footnote ? (
           <p className={cn("mt-auto flex items-center gap-3 text-[12px] text-white/58", muted && "text-white/55")}>
             <span className="size-2 rounded-full bg-[var(--md-accent-lift-warm)] shadow-[0_0_0_4px_color-mix(in_srgb,var(--md-accent-lift-warm)_12%,transparent)]" />
-            {copy.footnote}
+            {t(copy.footnote)}
           </p>
         ) : null}
       </div>
@@ -793,6 +799,7 @@ function ResetPasswordPanel({
   message,
   error,
   fieldErrors = {},
+  inviteMode = false,
 }: {
   password: string
   confirmation: string
@@ -803,16 +810,20 @@ function ResetPasswordPanel({
   message?: string | null
   error?: string | null
   fieldErrors?: AuthFieldErrors
+  inviteMode?: boolean
 }) {
+  const { t } = useLanguage()
   return (
     <div className="w-full max-w-[520px]">
       <BrandLockup />
       <div className="mt-10 grid size-11 place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-accent-a10)] text-[var(--md-accent)]">
         <ShieldCheck className="size-5" strokeWidth={1.4} />
       </div>
-      <h2 className="mt-5 text-[24px] font-medium leading-tight text-[var(--md-ink)]">Choose a new password</h2>
+      <h2 className="mt-5 text-[24px] font-medium leading-tight text-[var(--md-ink)]">{t(inviteMode ? "Set your password" : "Choose a new password")}</h2>
       <p className="mt-2 text-[14px] leading-6 text-[var(--md-text)]">
-        Use at least 12 characters. A unique passphrase is easier to remember and harder to guess.
+        {t(inviteMode
+          ? "Create a password with at least 12 characters. You’ll be signed in to your Multideck workspace when it is ready."
+          : "Use at least 12 characters. A unique passphrase is easier to remember and harder to guess.")}
       </p>
 
       <AuthAlert tone="error">{error}</AuthAlert>
@@ -862,7 +873,7 @@ function ResetPasswordPanel({
         <AuthFieldError id="confirm-password-error">{fieldErrors.confirmation}</AuthFieldError>
         <Button type="submit" disabled={isSubmitting} className="mt-5 h-12 w-full rounded-[var(--md-radius-xl)] bg-[var(--md-accent)] text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]">
           {isSubmitting ? <Loader2 data-icon="inline-start" className="me-2 size-4 animate-spin" strokeWidth={1.5} /> : null}
-          {isSubmitting ? "Updating password" : "Update password"}
+          {t(isSubmitting ? (inviteMode ? "Creating your password" : "Updating password") : (inviteMode ? "Create my password" : "Update password"))}
         </Button>
       </form>
     </div>
@@ -1226,10 +1237,15 @@ export function AuthFlow({
       const { error: updateError } = await supabase.auth.updateUser({ password })
       if (updateError) throw updateError
 
-      toast.success("Password updated", { description: "Your new password is ready to use." })
-      window.history.replaceState({}, "", "/settings?tab=security")
-      if (navigate) navigate("/settings?tab=security")
-      else window.location.assign("/settings?tab=security")
+      if (step === "accept-invite") {
+        toast.success("Password created", { description: "Welcome to your Multideck workspace." })
+        goToApp()
+      } else {
+        toast.success("Password updated", { description: "Your new password is ready to use." })
+        window.history.replaceState({}, "", "/settings?tab=security")
+        if (navigate) navigate("/settings?tab=security")
+        else window.location.assign("/settings?tab=security")
+      }
     } catch (updateError) {
       console.error(updateError)
       setError("Unable to update your password. Request a fresh recovery link and try again.")
@@ -1400,7 +1416,7 @@ export function AuthFlow({
           fieldError={fieldErrors.email}
         />
       ) : null}
-      {step === "reset-password" ? (
+      {step === "reset-password" || step === "accept-invite" ? (
         <ResetPasswordPanel
           password={password}
           confirmation={passwordConfirmation}
@@ -1417,6 +1433,7 @@ export function AuthFlow({
           message={message}
           error={error}
           fieldErrors={fieldErrors}
+          inviteMode={step === "accept-invite"}
         />
       ) : null}
       {step === "signed-out" ? <SignedOutPanel onSignBackIn={() => goToSignIn(false)} onSwitchAccount={() => goToSignIn(true)} /> : null}

@@ -1,10 +1,24 @@
-import { authenticate, body, corsHeaders, currentInternalUser, failure, HttpError, json, requirePermission, routeParts } from "../_shared/backend.ts"
+import { authenticate, body, corsHeaders, currentInternalUser, failure, HttpError, isTrustedMultideckOrigin, json, requirePermission, routeParts } from "../_shared/backend.ts"
 
 const SYSTEM_ROLES: Record<string, { description: string; canEditPermissions: boolean }> = {
   Administrator: { description: "Full workspace administration across users, roles, data, integrations, and billing.", canEditPermissions: false },
-  "Operations manager": { description: "Manage day-to-day freight operations, users, reports, and customer work without changing authorization rules.", canEditPermissions: true },
-  Operator: { description: "Create and update operational freight records while keeping destructive and admin actions restricted.", canEditPermissions: true },
-  Viewer: { description: "Read-only access for people who need visibility without operational edit rights.", canEditPermissions: true },
+  "Company Admin": { description: "Manage the company workspace, its people, and day-to-day configuration.", canEditPermissions: false },
+  "Company Manager": { description: "Coordinate company operations and team activity without system administration.", canEditPermissions: false },
+  "Company User": { description: "Use the company workspace for assigned operational work.", canEditPermissions: false },
+  "Guest User": { description: "Limited workspace visibility for temporary or external collaboration.", canEditPermissions: false },
+  "Operations manager": { description: "Manage day-to-day freight operations, users, reports, and customer work without changing authorization rules.", canEditPermissions: false },
+  Operator: { description: "Create and update operational freight records while keeping destructive and admin actions restricted.", canEditPermissions: false },
+  "System Admin": { description: "Maintain system-level configuration and protected workspace access.", canEditPermissions: false },
+  Viewer: { description: "Read-only access for people who need visibility without operational edit rights.", canEditPermissions: false },
+}
+
+function invitationOrigin(request: Request, value: unknown) {
+  const requestOrigin = request.headers.get("Origin")?.trim() ?? ""
+  const requestedOrigin = String(value ?? "").trim().replace(/\/+$/, "")
+  if (!requestedOrigin || requestedOrigin !== requestOrigin || !isTrustedMultideckOrigin(requestedOrigin)) {
+    throw new HttpError(400, "The invitation must return to the Multideck workspace that sent it.")
+  }
+  return requestedOrigin
 }
 
 async function userDto(admin: any, row: any) {
@@ -87,7 +101,7 @@ async function createRole(admin: any, payload: any) {
 async function setRolePermissions(admin: any, roleId: string, values: string[], protect = true) {
   const { data: role } = await admin.from("sys_UserRoles").select("*").eq("sys_UserRole_ID", roleId).maybeSingle()
   if (!role) throw new HttpError(404, "Choose a valid role before changing permissions.")
-  if (protect && role.sys_UserRole_Name === "Administrator") throw new HttpError(400, "The Administrator role is built in and always keeps every permission.")
+  if (protect && SYSTEM_ROLES[role.sys_UserRole_Name]) throw new HttpError(400, "Built-in role permissions cannot be changed.")
   const normalized = [...new Set((values ?? []).map((value) => String(value).trim()).filter(Boolean))]
   const { data: permissions } = normalized.length ? await admin.from("sys_Permissions").select("sys_Permission_ID,sys_Permission_Value").in("sys_Permission_Value", normalized) : { data: [] }
   if ((permissions ?? []).length !== normalized.length) throw new HttpError(400, "Choose valid permissions before updating the role.")
@@ -108,6 +122,7 @@ Deno.serve(async (request) => {
     if (!parts.length && request.method === "POST") {
       await requirePermission(admin, current.User_ID, "Users.Invite")
       const payload = await body<any>(request); const email = String(payload.email ?? "").trim().toLowerCase()
+      const appOrigin = invitationOrigin(request, payload.appOrigin)
       if (!/^\S+@\S+\.\S+$/.test(email)) throw new HttpError(400, "Enter a valid email address.")
       const { data: office } = await admin.from("cmp_Offices").select("*").eq("Office_ID", payload.officeId).eq("Company_ID", current.Company_ID).maybeSingle()
       if (!office) throw new HttpError(400, "Choose a valid office in this company.")
@@ -116,7 +131,7 @@ Deno.serve(async (request) => {
       if (payload.roleId) { const { data: selectedRole } = await admin.from("sys_UserRoles").select("sys_UserRole_ID").eq("sys_UserRole_ID", payload.roleId).maybeSingle(); if (!selectedRole) throw new HttpError(400, "Choose a valid role before inviting the user.") }
       let invited = false; let authUserId = profile?.Auth_User_ID ?? null
       if (!authUserId) {
-        const redirectTo = `${Deno.env.get("APP_URL")?.replace(/\/$/, "") || "https://dev.multideck.app"}/auth`
+        const redirectTo = `${appOrigin}/auth?mode=invite`
         const { data: invite, error } = await admin.auth.admin.inviteUserByEmail(email, { redirectTo, data: { first_name: payload.firstName ?? null, last_name: payload.lastName ?? null } })
         if (error) throw new HttpError(400, error.message)
         authUserId = invite.user.id; invited = true
@@ -129,6 +144,35 @@ Deno.serve(async (request) => {
       if (payload.roleId) { await admin.from("cmp_Users_Roles").delete().eq("User_ID", profile.User_ID); await admin.from("cmp_Users_Roles").insert({ User_ID: profile.User_ID, sys_UserRole_ID: payload.roleId }) }
       profile = (await admin.from("cmp_Users").select("*").eq("User_ID", profile.User_ID).single()).data
       return json(request, { user: await userDto(admin, profile), company: { id: current.Company_ID, name: (await admin.from("cmp_Company").select("Company_Name").eq("Company_ID", current.Company_ID).single()).data.Company_Name }, office: { id: office.Office_ID, name: office.Office_Name, address: office.Office_Address }, invited }, 201)
+    }
+    if (parts.length === 1 && request.method === "DELETE") {
+      await requirePermission(admin, current.User_ID, "Users.Manage")
+      const { data: target } = await admin.from("cmp_Users").select("*").eq("User_ID", parts[0]).eq("Company_ID", current.Company_ID).maybeSingle()
+      if (!target) throw new HttpError(404, "User not found.")
+      if (target.User_ID === current.User_ID) throw new HttpError(400, "You cannot remove your own Multideck access.")
+
+      const { data: administrator } = await admin.from("sys_UserRoles").select("sys_UserRole_ID").eq("sys_UserRole_Name", "Administrator").maybeSingle()
+      if (administrator) {
+        const { data: targetRoles } = await admin.from("cmp_Users_Roles").select("sys_UserRole_ID").eq("User_ID", target.User_ID)
+        if ((targetRoles ?? []).some((role: any) => role.sys_UserRole_ID === administrator.sys_UserRole_ID)) {
+          const { data: companyUsers } = await admin.from("cmp_Users").select("User_ID").eq("Company_ID", current.Company_ID).neq("User_ID", target.User_ID)
+          const otherIds = (companyUsers ?? []).map((companyUser: any) => companyUser.User_ID)
+          const { count } = otherIds.length ? await admin.from("cmp_Users_Roles").select("*", { count: "exact", head: true }).in("User_ID", otherIds).eq("sys_UserRole_ID", administrator.sys_UserRole_ID) : { count: 0 }
+          if (!count) throw new HttpError(400, "Keep at least one administrator in the company before removing this user.")
+        }
+      }
+
+      if (target.Auth_User_ID) {
+        const { error: authError } = await admin.auth.admin.deleteUser(target.Auth_User_ID)
+        if (authError) throw new HttpError(500, "The user's sign-in access could not be revoked. No profile changes were made.")
+      }
+      const { error: officeError } = await admin.from("cmp_Users_Offices").delete().eq("User_ID", target.User_ID)
+      if (officeError) throw new HttpError(500, officeError.message)
+      const { error: roleError } = await admin.from("cmp_Users_Roles").delete().eq("User_ID", target.User_ID)
+      if (roleError) throw new HttpError(500, roleError.message)
+      const { error: profileError } = await admin.from("cmp_Users").update({ Company_ID: null, Auth_User_ID: null }).eq("User_ID", target.User_ID)
+      if (profileError) throw new HttpError(500, profileError.message)
+      return json(request, null, 204)
     }
     if (parts[1] === "office" && request.method === "PATCH") {
       await requirePermission(admin, current.User_ID, "Users.Manage"); const payload = await body<any>(request)

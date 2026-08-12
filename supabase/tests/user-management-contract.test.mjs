@@ -1,0 +1,92 @@
+import assert from "node:assert/strict"
+import { readFile } from "node:fs/promises"
+import test from "node:test"
+
+const supabaseRoot = new URL("../", import.meta.url)
+const repoRoot = new URL("../", supabaseRoot)
+const readSupabase = (path) => readFile(new URL(path, supabaseRoot), "utf8")
+const readRepo = (path) => readFile(new URL(path, repoRoot), "utf8")
+
+const [team, backend, authEmail, dexter, settings, navigation, api, authFlow, authPage, app, translations] = await Promise.all([
+  readSupabase("functions/team/index.ts"),
+  readSupabase("functions/_shared/backend.ts"),
+  readSupabase("functions/send-auth-email/index.ts"),
+  readSupabase("functions/agent-dexter/index.ts"),
+  readRepo("multideck.client/src/pages/settings-page.tsx"),
+  readRepo("multideck.client/src/data/settings-navigation.ts"),
+  readRepo("multideck.client/src/lib/api.ts"),
+  readRepo("multideck.client/src/components/multideck/auth-flow.tsx"),
+  readRepo("multideck.client/src/pages/auth-flow-page.tsx"),
+  readRepo("multideck.client/src/App.tsx"),
+  readRepo("multideck.client/src/i18n/translate.ts"),
+])
+
+test("Users is restored under the Developer settings section and uses the shared DataTable", () => {
+  assert.match(navigation, /label: "Developer"[\s\S]*?id: "users"[\s\S]*?label: "Users"/)
+  assert.match(settings, /function UsersTab\(\)/)
+  assert.match(settings, /storageKey="settings-users"/)
+  assert.match(settings, /case "users":[\s\S]*?<UsersTab \/>/)
+  assert.match(settings, /Invite people to this Multideck workspace/)
+})
+
+test("invitations are host-aware and cannot redirect to an arbitrary origin", () => {
+  assert.match(settings, /appOrigin: window\.location\.origin/)
+  assert.match(team, /requestedOrigin !== requestOrigin/)
+  assert.match(team, /isTrustedMultideckOrigin\(requestedOrigin\)/)
+  assert.match(team, /`\$\{appOrigin\}\/auth\?mode=invite`/)
+  assert.match(backend, /hostname\.endsWith\("\.multideck\.app"\)/)
+  assert.match(api, /appOrigin: string/)
+})
+
+test("the branded invite explicitly hands users to password creation", () => {
+  assert.match(authEmail, /buttonLabel: "Accept invitation"/)
+  assert.match(authEmail, /then create your password to enter the workspace/)
+  assert.match(authEmail, /code: key === "magiclink"/)
+  assert.match(authPage, /mode === "invite" \? "accept-invite"/)
+  assert.match(authFlow, /Set your password/)
+  assert.match(authFlow, /Create my password/)
+  assert.match(authFlow, /step === "accept-invite"[\s\S]*?goToApp\(\)/)
+  assert.match(app, /authMode === "reset-password" \|\| authMode === "invite"/)
+})
+
+test("permissions are user-first with protected predefined roles and private Custom access", () => {
+  assert.match(settings, /function UserPermissionsTab\(\)/)
+  assert.match(settings, /storageKey="settings-user-permissions"/)
+  assert.match(settings, /<Pencil[\s\S]*?<Trash2/)
+  assert.match(settings, /<SelectItem value="custom">/)
+  assert.match(settings, /Read & write/)
+  assert.match(settings, /updateApiUserRoles/)
+  assert.match(settings, /Custom · \$\{editingUser\.id\}/)
+  for (const roleName of ["Administrator", "Operations manager", "Operator", "Viewer"]) {
+    assert.match(team, new RegExp(`${roleName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}.*canEditPermissions: false`))
+  }
+  assert.match(team, /protect && SYSTEM_ROLES\[role\.sys_UserRole_Name\]/)
+  assert.match(team, /Built-in role permissions cannot be changed/)
+})
+
+test("user deletion is confirmed in the client and constrained in the tenant service", () => {
+  assert.match(settings, /Delete this user\?/)
+  assert.match(settings, /deleteApiTeamUser/)
+  assert.match(api, /method: "DELETE"/)
+  assert.match(team, /You cannot remove your own Multideck access/)
+  assert.match(team, /Keep at least one administrator/)
+  assert.match(team, /admin\.auth\.admin\.deleteUser/)
+  assert.match(team, /Company_ID: null, Auth_User_ID: null/)
+})
+
+test("Dexter clearly declines high-impact identity writes and idle user watches", () => {
+  assert.match(dexter, /Workspace user invitations, role assignments, custom permission changes and user deletion/)
+  assert.match(dexter, /deliberately not connected to Dexter writes or Watching for you/)
+  assert.match(dexter, /direct the operator to the relevant Settings page/)
+})
+
+test("new user-management language is available in German, French, and Arabic", () => {
+  for (const phrase of ["Developer / Users", "Invite a user", "Edit user permissions", "Read & write", "Delete this user?", "Set your password"]) {
+    const start = translations.indexOf(`"${phrase}"`)
+    assert.notEqual(start, -1, `${phrase} is missing`)
+    const entry = translations.slice(start, start + 700)
+    assert.match(entry, /de:/)
+    assert.match(entry, /fr:/)
+    assert.match(entry, /ar:/)
+  }
+})

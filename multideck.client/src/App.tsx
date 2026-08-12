@@ -344,7 +344,8 @@ export default function App() {
   const hasResolvedAuthenticatedSessionRef = useRef(false)
   const isLocalNavigationLab = import.meta.env.DEV
     && (route === "/playground/navigation" || route === "/settings")
-  const isPasswordRecoveryRoute = route === "/auth" && new URLSearchParams(window.location.search).get("mode") === "reset-password"
+  const authMode = route === "/auth" ? new URLSearchParams(window.location.search).get("mode") : null
+  const isPasswordSetupRoute = route === "/auth" && (authMode === "reset-password" || authMode === "invite")
   // Shortcuts and the Dexter summon belong to the signed-in workspace. The
   // sign-in screen and the public contact card must stay inert.
   const isWorkspaceRoute = !isContactCardPublicRoute(route) && route !== "/auth" && (authStatus === "authenticated" || isLocalNavigationLab)
@@ -523,11 +524,11 @@ export default function App() {
       return
     }
 
-    if (authStatus === "authenticated" && route === "/auth" && !isPasswordRecoveryRoute) {
+    if (authStatus === "authenticated" && route === "/auth" && !isPasswordSetupRoute) {
       window.history.replaceState({}, "", takeAuthReturnPath())
       startTransition(() => setRoute(getRoute()))
     }
-  }, [authStatus, isPasswordRecoveryRoute, route])
+  }, [authStatus, isPasswordSetupRoute, route])
 
   useEffect(() => {
     if (authStatus !== "authenticated" || currentUser?.actorType !== "customer") return
@@ -572,7 +573,7 @@ export default function App() {
               <Suspense fallback={<RouteFallback fullScreen />}>
                 <ContactCardPublicPage slug={route.split("/").at(-1) ?? ""} />
               </Suspense>
-            ) : (!isLocalNavigationLab && ((authStatus === "checking" && route !== "/auth") || (authStatus === "authenticated" && route === "/auth" && !isPasswordRecoveryRoute))) ? (
+            ) : (!isLocalNavigationLab && ((authStatus === "checking" && route !== "/auth") || (authStatus === "authenticated" && route === "/auth" && !isPasswordSetupRoute))) ? (
               <RouteFallback fullScreen />
             ) : !isLocalNavigationLab && (authStatus === "unauthenticated" || route === "/auth") ? (
               <Suspense fallback={<RouteFallback fullScreen />}>

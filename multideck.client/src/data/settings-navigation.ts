@@ -23,6 +23,7 @@ export type SettingsSectionId =
   | "shortcuts"
   | "dexter"
   | "permissions"
+  | "users"
   | "integrations"
   | "billing"
   | "ai-usage"
@@ -62,6 +63,12 @@ export const settingsNavigationGroups: SettingsNavigationGroup[] = [
       { id: "integrations", label: "Integrations", description: "Connected mail and systems", icon: Cloud },
       { id: "billing", label: "Billing", description: "Plan, payment and invoices", icon: CreditCard },
       { id: "ai-usage", label: "AI usage", description: "Spend, actions and guardrails", icon: Sparkles },
+    ],
+  },
+  {
+    label: "Developer",
+    items: [
+      { id: "users", label: "Users", description: "Invite and manage workspace users", icon: UsersRound },
     ],
   },
   {

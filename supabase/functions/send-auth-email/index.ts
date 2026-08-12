@@ -34,10 +34,10 @@ const translations: Record<string, Record<"en" | "de" | "fr" | "ar", Copy>> = {
     ar: { subject: "إعادة تعيين كلمة مرور Multideck", title: "أعد تعيين كلمة المرور", body: ["تلقينا طلبا لإعادة تعيين كلمة مرور مساحة عمل Multideck الخاصة بك.", "استخدم الرابط الآمن أدناه لاختيار كلمة مرور جديدة."], buttonLabel: "اختيار كلمة مرور جديدة", eyebrow: "استعادة الحساب", footer: "إذا لم تطلب ذلك، يمكنك تجاهل هذه الرسالة بأمان." },
   },
   invite: {
-    en: { subject: "Your Multideck workspace is ready", title: "You’re invited to Multideck", body: ["Your workspace administrator has created your private Multideck account.", "Accept the invitation below to finish setting up access."], buttonLabel: "Accept invitation", eyebrow: "Workspace invitation", footer: "This invitation is only for the email address it was sent to." },
-    de: { subject: "Dein Multideck-Arbeitsbereich ist bereit", title: "Du bist zu Multideck eingeladen", body: ["Dein Administrator hat dein privates Multideck-Konto erstellt.", "Nimm die Einladung an, um deinen Zugang einzurichten."], buttonLabel: "Einladung annehmen", eyebrow: "Workspace-Einladung", footer: "Diese Einladung gilt nur für die Empfängeradresse." },
-    fr: { subject: "Votre espace Multideck est prêt", title: "Vous êtes invité sur Multideck", body: ["Votre administrateur a créé votre compte Multideck privé.", "Acceptez l’invitation ci-dessous pour finaliser votre accès."], buttonLabel: "Accepter l’invitation", eyebrow: "Invitation à l’espace", footer: "Cette invitation est réservée à l’adresse qui l’a reçue." },
-    ar: { subject: "مساحة Multideck الخاصة بك جاهزة", title: "تمت دعوتك إلى Multideck", body: ["أنشأ مسؤول مساحة العمل حساب Multideck الخاص بك.", "اقبل الدعوة أدناه لإكمال إعداد الوصول."], buttonLabel: "قبول الدعوة", eyebrow: "دعوة مساحة العمل", footer: "هذه الدعوة مخصصة فقط لعنوان البريد الذي استلمها." },
+    en: { subject: "Your Multideck workspace is ready", title: "You’re invited to Multideck", body: ["Your workspace administrator has created your private Multideck account.", "Accept the invitation below, then create your password to enter the workspace."], buttonLabel: "Accept invitation", eyebrow: "Workspace invitation", footer: "This invitation is only for the email address it was sent to." },
+    de: { subject: "Dein Multideck-Arbeitsbereich ist bereit", title: "Du bist zu Multideck eingeladen", body: ["Dein Administrator hat dein privates Multideck-Konto erstellt.", "Nimm die Einladung an und erstelle anschließend dein Passwort."], buttonLabel: "Einladung annehmen", eyebrow: "Workspace-Einladung", footer: "Diese Einladung gilt nur für die Empfängeradresse." },
+    fr: { subject: "Votre espace Multideck est prêt", title: "Vous êtes invité sur Multideck", body: ["Votre administrateur a créé votre compte Multideck privé.", "Acceptez l’invitation, puis créez votre mot de passe pour accéder à l’espace."], buttonLabel: "Accepter l’invitation", eyebrow: "Invitation à l’espace", footer: "Cette invitation est réservée à l’adresse qui l’a reçue." },
+    ar: { subject: "مساحة Multideck الخاصة بك جاهزة", title: "تمت دعوتك إلى Multideck", body: ["أنشأ مسؤول مساحة العمل حساب Multideck الخاص بك.", "اقبل الدعوة ثم أنشئ كلمة المرور للدخول إلى مساحة العمل."], buttonLabel: "قبول الدعوة", eyebrow: "دعوة مساحة العمل", footer: "هذه الدعوة مخصصة فقط لعنوان البريد الذي استلمها." },
   },
   magiclink: {
     en: { subject: "Sign in to Multideck", title: "Your secure sign-in link", body: ["Use the link below or enter the six-digit code in Multideck.", "The link can only be used once and expires shortly."], buttonLabel: "Sign in securely", eyebrow: "Private workspace access", footer: "If you did not request this sign-in, you can ignore this email." },
@@ -148,7 +148,7 @@ Deno.serve(async (request) => {
       body: copy.body,
       buttonLabel: copy.buttonLabel,
       buttonUrl: verificationUrl(payload.email_data),
-      code: payload.email_data.token,
+      code: key === "magiclink" ? payload.email_data.token : undefined,
       eyebrow: copy.eyebrow,
       footer: copy.footer,
       locale,

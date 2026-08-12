@@ -68,6 +68,7 @@ export type ApiTeamUsersResponse = {
 
 export type CreateTeamUserRequest = {
   email: string
+  appOrigin: string
   firstName?: string | null
   lastName?: string | null
   companyId?: string | null
@@ -259,6 +260,14 @@ export async function changeApiTeamUserOffice(accessToken: string, userId: strin
   }
 
   return response.json() as Promise<ApiTeamUser>
+}
+
+export async function deleteApiTeamUser(accessToken: string, userId: string): Promise<void> {
+  const response = await edgeFetch("team", `/${userId}`, accessToken, { method: "DELETE" })
+
+  if (!response.ok) {
+    throw new Error(await parseApiError(response))
+  }
 }
 
 export async function getApiAuthorizationState(accessToken: string): Promise<ApiAuthorizationState> {
