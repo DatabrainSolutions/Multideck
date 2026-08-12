@@ -723,7 +723,7 @@ async function executeWorkspaceAction(
   actionCode: string,
   args: JsonObject,
   accessMode: "approve" | "full",
-  executionKey = crypto.randomUUID(),
+  executionKey: string = crypto.randomUUID(),
 ) {
   if (actionCode === CREATE_PURCHASE_ORDER_ACTION) {
     const facilityId = cleanString(args.facility_id, 80)

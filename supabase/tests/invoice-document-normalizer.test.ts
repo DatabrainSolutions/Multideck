@@ -20,6 +20,15 @@ function decodeTemplate(value: unknown) {
   return new TextDecoder().decode(Uint8Array.from(atob(body.template ?? ""), (character) => character.charCodeAt(0)))
 }
 
+function patchZipXml(bytes: Uint8Array, pathSuffix: string, update: (xml: string) => string) {
+  const archive = XLSX.CFB.read(bytes, { type: "array" })
+  const index = archive.FullPaths.findIndex((path: string) => path.endsWith(pathSuffix))
+  if (index < 0) throw new Error(`Missing ${pathSuffix}`)
+  const xml = new TextDecoder().decode(archive.FileIndex[index].content)
+  archive.FileIndex[index].content = new TextEncoder().encode(update(xml))
+  return new Uint8Array(XLSX.CFB.write(archive, { type: "buffer", fileType: "zip" } as any))
+}
+
 Deno.test("normalises every visible non-empty workbook tab in order without executing cell content", async () => {
   const workbook = XLSX.utils.book_new()
   const longDescription = "A very long goods description that must remain complete in the prepared PDF even when the source cell is wider than a printed page. ".repeat(3).trim()
@@ -84,6 +93,169 @@ Deno.test("normalises every visible non-empty workbook tab in order without exec
   }
 })
 
+Deno.test("excludes hidden-sheet text and formulas from OCR coverage evidence", async () => {
+  const workbook = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+    ["Reference", "Description"],
+    ["VISIBLE-INVOICE-0042", "Visible sanitary ware evidence"],
+  ]), "Invoice")
+  const hidden = XLSX.utils.aoa_to_sheet([
+    ["SECRET-HIDDEN-991", "This content must never be required from OCR"],
+  ])
+  hidden.C2 = { t: "n", f: "SUM(1,2)", v: 3, w: "3" }
+  hidden["!ref"] = "A1:C2"
+  XLSX.utils.book_append_sheet(workbook, hidden, "Hidden costs")
+  workbook.Workbook = { Sheets: [{ name: "Invoice", Hidden: 0 }, { name: "Hidden costs", Hidden: 1 }] }
+
+  const bytes = new Uint8Array(XLSX.write(workbook, { type: "array", bookType: "xlsx" }) as ArrayBuffer)
+  const previousFetch = globalThis.fetch
+  globalThis.fetch = async () => new Response(await onePagePdf(), { status: 200 })
+  try {
+    Deno.env.set("CARBONE_URL", "https://carbone.example.test")
+    Deno.env.set("CARBONE_API_TOKEN", "test-token")
+    const prepared = await prepareInvoiceDocument({
+      bytes,
+      fileName: "hidden-evidence.xlsx",
+      providerMimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    })
+    assert(prepared.distinctiveSourceText.some((value) => value.includes("VISIBLE-INVOICE-0042")))
+    assert(!prepared.distinctiveSourceText.some((value) => value.includes("SECRET-HIDDEN-991")))
+    assert(!prepared.conversion.warnings.some((value) => value.includes("formula")))
+  } finally {
+    globalThis.fetch = previousFetch
+    Deno.env.delete("CARBONE_URL")
+    Deno.env.delete("CARBONE_API_TOKEN")
+  }
+})
+
+Deno.test("detects hidden ODS tabs even when the parser omits workbook sheet state", async () => {
+  const workbook = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([["Visible reference", "ODS-VISIBLE-0042"]]), "Invoice")
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([["Hidden reference", "ODS-HIDDEN-991"]]), "Hidden costs")
+  const original = new Uint8Array(XLSX.write(workbook, { type: "array", bookType: "ods" }) as ArrayBuffer)
+  const bytes = patchZipXml(original, "content.xml", (xml) => xml.replace(
+    '<table:table table:name="Hidden costs"',
+    '<table:table table:display="false" table:name="Hidden costs"',
+  ))
+  const previousFetch = globalThis.fetch
+  globalThis.fetch = async () => new Response(await onePagePdf(), { status: 200 })
+  try {
+    Deno.env.set("CARBONE_URL", "https://carbone.example.test")
+    Deno.env.set("CARBONE_API_TOKEN", "test-token")
+    const prepared = await prepareInvoiceDocument({
+      bytes,
+      fileName: "hidden-tabs.ods",
+      providerMimeType: "application/vnd.oasis.opendocument.spreadsheet",
+    })
+    assertEquals(prepared.conversion.sheets, [
+      { name: "Invoice", status: "included" },
+      { name: "Hidden costs", status: "hidden" },
+    ])
+    assert(!prepared.distinctiveSourceText.some((value) => value.includes("ODS-HIDDEN-991")))
+  } finally {
+    globalThis.fetch = previousFetch
+    Deno.env.delete("CARBONE_URL")
+    Deno.env.delete("CARBONE_API_TOKEN")
+  }
+})
+
+Deno.test("restores supplementary Unicode characters truncated by legacy SheetJS XML entity parsing", async () => {
+  const workbook = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([["Description"], ["emoji \uf6a2\uf4e6"]]), "Invoice")
+  const original = new Uint8Array(XLSX.write(workbook, { type: "array", bookType: "xlsx", bookSST: true }) as ArrayBuffer)
+  const bytes = patchZipXml(original, "xl/sharedStrings.xml", (xml) => xml
+    .replace("\uf6a2", "&#128674;")
+    .replace("\uf4e6", "&#128230;"))
+  const previousFetch = globalThis.fetch
+  let renderedHtml = ""
+  globalThis.fetch = async (_input, init) => {
+    renderedHtml = decodeTemplate(JSON.parse(String(init?.body ?? "{}")))
+    return new Response(await onePagePdf(), { status: 200 })
+  }
+  try {
+    Deno.env.set("CARBONE_URL", "https://carbone.example.test")
+    Deno.env.set("CARBONE_API_TOKEN", "test-token")
+    await prepareInvoiceDocument({
+      bytes,
+      fileName: "unicode-emoji.xlsx",
+      providerMimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    })
+    assertStringIncludes(renderedHtml, "emoji 🚢📦")
+  } finally {
+    globalThis.fetch = previousFetch
+    Deno.env.delete("CARBONE_URL")
+    Deno.env.delete("CARBONE_API_TOKEN")
+  }
+})
+
+Deno.test("projects cross-band merged cells into every affected wide-table band", async () => {
+  const workbook = XLSX.utils.book_new()
+  const sheet = XLSX.utils.aoa_to_sheet([
+    ["Identifier", "Description", ...Array.from({ length: 18 }, (_, index) => `Column ${index + 3}`)],
+    ["BAND-ID-0001", "Wide invoice", ...Array.from({ length: 18 }, (_, index) => `Value ${index + 3}`)],
+    [],
+  ])
+  sheet["!merges"] = [XLSX.utils.decode_range("C3:M3")]
+  sheet.C3 = { t: "s", v: "MERGED-CONTENT-ALPHA-OMEGA", w: "MERGED-CONTENT-ALPHA-OMEGA" }
+  sheet["!ref"] = "A1:T3"
+  XLSX.utils.book_append_sheet(workbook, sheet, "Wide invoice")
+  const bytes = new Uint8Array(XLSX.write(workbook, { type: "array", bookType: "xlsx" }) as ArrayBuffer)
+  const previousFetch = globalThis.fetch
+  let renderedHtml = ""
+  globalThis.fetch = async (_input, init) => {
+    renderedHtml = decodeTemplate(JSON.parse(String(init?.body ?? "{}")))
+    return new Response(await onePagePdf(), { status: 200 })
+  }
+  try {
+    Deno.env.set("CARBONE_URL", "https://carbone.example.test")
+    Deno.env.set("CARBONE_API_TOKEN", "test-token")
+    await prepareInvoiceDocument({
+      bytes,
+      fileName: "wide-merged.xlsx",
+      providerMimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    })
+    assertEquals(renderedHtml.match(/MERGED-CONTENT-ALPHA-OMEGA/g)?.length, 2)
+  } finally {
+    globalThis.fetch = previousFetch
+    Deno.env.delete("CARBONE_URL")
+    Deno.env.delete("CARBONE_API_TOKEN")
+  }
+})
+
+Deno.test("normalises formula workbooks even when they otherwise have a direct print layout", async () => {
+  const workbook = XLSX.utils.book_new()
+  const invoice = XLSX.utils.aoa_to_sheet([
+    ["SKU", "Quantity", "Unit price", "Total"],
+    ["FORMULA-SAFE-001", 2, 25, 50],
+  ])
+  invoice.D2 = { t: "n", f: "B2*C2", v: 50, w: "50" }
+  XLSX.utils.book_append_sheet(workbook, invoice, "Invoice")
+  workbook.Workbook = { Names: [{ Name: "_xlnm.Print_Area", Ref: "Invoice!$A$1:$D$2", Sheet: 0 }] }
+  const bytes = new Uint8Array(XLSX.write(workbook, { type: "array", bookType: "xlsx" }) as ArrayBuffer)
+  const previousFetch = globalThis.fetch
+  let templateName = ""
+  globalThis.fetch = async (_input, init) => {
+    const body = JSON.parse(String(init?.body ?? "{}")) as { reportName?: string }
+    templateName = body.reportName ?? ""
+    return new Response(await onePagePdf(), { status: 200 })
+  }
+  try {
+    Deno.env.set("CARBONE_URL", "https://carbone.example.test")
+    Deno.env.set("CARBONE_API_TOKEN", "test-token")
+    const prepared = await prepareInvoiceDocument({
+      bytes,
+      fileName: "formula-print-area.xlsx",
+      providerMimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    })
+    assertEquals(prepared.conversion.strategy, "spreadsheet_normalised")
+    assertEquals(templateName, "formula-print-area")
+  } finally {
+    globalThis.fetch = previousFetch
+    Deno.env.delete("CARBONE_URL")
+    Deno.env.delete("CARBONE_API_TOKEN")
+  }
+})
+
 Deno.test("coverage accepts visual line wrapping inside a source identifier but still rejects missing content", () => {
   const wrapped = spreadsheetCoverage(["AQUAECO/BAGNODESIGN"], [{
     pages: [{ markdown: "Marks: AQUAECO/BAGNODESI\nGN" }],
@@ -96,15 +268,20 @@ Deno.test("coverage accepts visual line wrapping inside a source identifier but 
 Deno.test("validates every accepted source extension against its MIME type and binary signature", () => {
   const textBytes = new TextEncoder()
   const zip = (marker: string) => textBytes.encode(`PK\u0003\u0004 ${marker}`)
-  const ole = new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0, 0])
+  const legacyWorkbook = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(legacyWorkbook, XLSX.utils.aoa_to_sheet([["Invoice", "LEGACY-XLS-42"]]), "Invoice")
+  const legacyXls = new Uint8Array(XLSX.write(legacyWorkbook, { type: "array", bookType: "xls" }) as ArrayBuffer)
+  const legacyDocument = XLSX.CFB.utils.cfb_new()
+  XLSX.CFB.utils.cfb_add(legacyDocument, "WordDocument", textBytes.encode("legacy word invoice"))
+  const legacyDoc = new Uint8Array(XLSX.CFB.write(legacyDocument, { type: "buffer" }))
   const cases: Array<[string, string, Uint8Array]> = [
     ["invoice.pdf", "application/pdf", textBytes.encode("%PDF-1.7")],
     ["invoice.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", zip("xl/ [Content_Types].xml")],
-    ["invoice.xls", "application/vnd.ms-excel", ole],
+    ["invoice.xls", "application/vnd.ms-excel", legacyXls],
     ["invoice.csv", "text/csv", textBytes.encode("reference,value\nINV-1,10")],
     ["invoice.tsv", "text/tab-separated-values", textBytes.encode("reference\tvalue\nINV-1\t10")],
     ["invoice.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", zip("word/ [Content_Types].xml")],
-    ["invoice.doc", "application/msword", ole],
+    ["invoice.doc", "application/msword", legacyDoc],
     ["invoice.ods", "application/vnd.oasis.opendocument.spreadsheet", zip("application/vnd.oasis.opendocument.spreadsheet")],
     ["invoice.odt", "application/vnd.oasis.opendocument.text", zip("application/vnd.oasis.opendocument.text")],
     ["invoice.png", "image/png", new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])],
@@ -117,10 +294,20 @@ Deno.test("validates every accepted source extension against its MIME type and b
   }
   assertEquals(validateInvoiceDocumentSource(cases[1][2], "invoice.xlsx", "application/vnd.ms-excel").extension, ".xlsx")
   assertEquals(validateInvoiceDocumentSource(cases[3][2], "invoice.csv", "text/plain").extension, ".csv")
+  assertRejects(
+    async () => { validateInvoiceDocumentSource(legacyXls, "invoice.doc", "application/msword") },
+    InvoiceDocumentPreparationError,
+    "does not match",
+  )
+  assertRejects(
+    async () => { validateInvoiceDocumentSource(legacyDoc, "invoice.xls", "application/vnd.ms-excel") },
+    InvoiceDocumentPreparationError,
+    "does not match",
+  )
 })
 
-Deno.test("preserves quoted CSV newlines and rejects mismatched, encrypted and macro sources before conversion", async () => {
-  const csv = new TextEncoder().encode('sku,description,value\nA-1,"first line\nsecond line",10\n')
+Deno.test("preserves quoted UTF-8 CSV newlines and rejects mismatched, encrypted and macro sources before conversion", async () => {
+  const csv = new TextEncoder().encode('sku,description,value\nA-1,"first line\nsecond line café العربية 中文",10\n')
   const previousFetch = globalThis.fetch
   let renderedHtml = ""
   globalThis.fetch = async (_input, init) => {
@@ -131,7 +318,7 @@ Deno.test("preserves quoted CSV newlines and rejects mismatched, encrypted and m
     Deno.env.set("CARBONE_URL", "https://carbone.example.test")
     Deno.env.set("CARBONE_API_TOKEN", "test-token")
     await prepareInvoiceDocument({ bytes: csv, fileName: "invoice.csv", providerMimeType: "text/csv" })
-    assertStringIncludes(renderedHtml, "first line\nsecond line")
+    assertStringIncludes(renderedHtml, "first line\nsecond line café العربية 中文")
   } finally {
     globalThis.fetch = previousFetch
     Deno.env.delete("CARBONE_URL")
