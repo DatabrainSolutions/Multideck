@@ -1,6 +1,6 @@
 import type { ReactNode } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { RefreshCw, Sparkles } from "@/components/icons/hugeicons"
+import { AiBrain, RefreshCw } from "@/components/icons/hugeicons"
 import { SpectralBloomShader } from "@/components/multideck/dexter-action-pill"
 import { Button } from "@/components/ui/button"
 import { useLanguage } from "@/i18n/language-provider"
@@ -69,7 +69,7 @@ function SummaryHeader({
 
   return (
     <div className="flex min-w-0 items-center gap-2">
-      <Sparkles className="size-3.5 shrink-0 text-white/90" strokeWidth={1.5} aria-hidden="true" />
+      <AiBrain className="size-3.5 shrink-0 text-white/90" strokeWidth={1.5} aria-hidden="true" />
       <p className="min-w-0 truncate text-[11.5px] font-medium uppercase tracking-[0.07em] text-white/90">
         {t("Dexter summary")}
       </p>
