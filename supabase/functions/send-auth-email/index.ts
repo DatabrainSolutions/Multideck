@@ -82,12 +82,11 @@ function verificationUrl(emailData: AuthEmailData, deferVerification = false) {
   const redirectTo = safeMultideckUrl(emailData.redirect_to ?? emailData.site_url)
   const tokenHash = emailData.token_hash ?? ""
 
-  // Corporate mail scanners commonly open links before the recipient. Invite
-  // links therefore land on Multideck first and are redeemed only after an
-  // explicit button press in the browser.
-  if (deferVerification && tokenHash) {
+  // Corporate mail scanners can render pages and activate controls, so an
+  // invite URL must not contain any redeemable secret. The recipient enters
+  // the separately rendered six-digit code inside Multideck instead.
+  if (deferVerification) {
     const confirmationUrl = new URL(redirectTo)
-    confirmationUrl.searchParams.set("token_hash", tokenHash)
     confirmationUrl.searchParams.set("type", actionType)
     return confirmationUrl.toString()
   }
@@ -163,7 +162,7 @@ Deno.serve(async (request) => {
       body: copy.body,
       buttonLabel: copy.buttonLabel,
       buttonUrl: verificationUrl(payload.email_data, key === "invite"),
-      code: key === "magiclink" ? payload.email_data.token : undefined,
+      code: key === "magiclink" || key === "invite" ? payload.email_data.token : undefined,
       eyebrow: copy.eyebrow,
       footer: copy.footer,
       locale,

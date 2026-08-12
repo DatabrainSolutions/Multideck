@@ -36,7 +36,6 @@ type AuthFieldErrors = {
 }
 
 type InviteVerification = {
-  tokenHash: string
   type: EmailOtpType
 }
 
@@ -45,10 +44,9 @@ const inviteOtpTypes = new Set<EmailOtpType>(["invite", "recovery"])
 function readInviteVerification(): InviteVerification | null {
   if (typeof window === "undefined") return null
   const parameters = new URLSearchParams(window.location.search)
-  const tokenHash = parameters.get("token_hash")
   const type = parameters.get("type") as EmailOtpType | null
-  if (!tokenHash || !type || !inviteOtpTypes.has(type)) return null
-  return { tokenHash, type }
+  if (!type || !inviteOtpTypes.has(type)) return null
+  return { type }
 }
 
 const authCopyByStep: Record<AuthFlowStep, AuthCopy> = {
@@ -772,8 +770,8 @@ function ResetPasswordPanel({
           : "Use at least 12 characters. A unique passphrase is easier to remember and harder to guess.")}
       </p>
 
-      <AuthAlert tone="error">{error}</AuthAlert>
-      <AuthAlert tone="info">{message}</AuthAlert>
+      <AuthAlert tone="error">{error ? t(error) : null}</AuthAlert>
+      <AuthAlert tone="info">{message ? t(message) : null}</AuthAlert>
 
       <form
         noValidate
@@ -826,7 +824,25 @@ function ResetPasswordPanel({
   )
 }
 
-function ConfirmInvitePanel({ onConfirm, isSubmitting, error }: { onConfirm: () => void | Promise<void>; isSubmitting: boolean; error?: string | null }) {
+function ConfirmInvitePanel({
+  email,
+  code,
+  onEmailChange,
+  onCodeChange,
+  onConfirm,
+  isSubmitting,
+  error,
+  fieldErrors,
+}: {
+  email: string
+  code: string
+  onEmailChange: (value: string) => void
+  onCodeChange: (value: string) => void
+  onConfirm: () => void | Promise<void>
+  isSubmitting: boolean
+  error?: string | null
+  fieldErrors: Pick<AuthFieldErrors, "email" | "code">
+}) {
   const { t } = useLanguage()
   return (
     <div className="w-full max-w-[520px]">
@@ -836,18 +852,52 @@ function ConfirmInvitePanel({ onConfirm, isSubmitting, error }: { onConfirm: () 
       </div>
       <h2 className="mt-5 text-[24px] font-medium leading-tight text-[var(--md-ink)]">{t("Confirm your invitation")}</h2>
       <p className="mt-2 text-[14px] leading-6 text-[var(--md-text)]">
-        {t("Continue to securely confirm this invitation, then create your Multideck password.")}
+        {t("Enter the work email and six-digit code from the newest invitation. This keeps the invitation safe from automatic email checks.")}
       </p>
-      <AuthAlert tone="error">{error}</AuthAlert>
-      <Button
-        type="button"
-        disabled={isSubmitting}
-        className="mt-7 h-12 w-full rounded-[var(--md-radius-xl)] bg-[var(--md-accent)] text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]"
-        onClick={() => void onConfirm()}
-      >
-        {isSubmitting ? <Loader2 data-icon="inline-start" className="me-2 size-4 animate-spin" strokeWidth={1.5} /> : null}
-        {t(isSubmitting ? "Confirming invitation" : "Continue securely")}
-      </Button>
+      <form className="mt-7" onSubmit={(event) => { event.preventDefault(); void onConfirm() }} noValidate>
+        <label className="text-[13px] font-medium text-[var(--md-ink)]" htmlFor="invitation-email">{t("Work email")}</label>
+        <Input
+          id="invitation-email"
+          type="email"
+          inputMode="email"
+          autoComplete="email"
+          dir="ltr"
+          value={email}
+          disabled={isSubmitting}
+          aria-invalid={Boolean(fieldErrors.email)}
+          aria-describedby={fieldErrors.email ? "invitation-email-error" : undefined}
+          onChange={(event) => onEmailChange(event.target.value)}
+          className="mt-2 h-12 rounded-[var(--md-radius-xl)] border-0 bg-white/82 px-4 text-[14px] shadow-[var(--md-shadow-line)]"
+        />
+        <AuthFieldError id="invitation-email-error">{fieldErrors.email ? t(fieldErrors.email) : null}</AuthFieldError>
+
+        <label className="mt-5 block text-[13px] font-medium text-[var(--md-ink)]" htmlFor="invitation-code">{t("Invitation code")}</label>
+        <Input
+          id="invitation-code"
+          type="text"
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          maxLength={6}
+          dir="ltr"
+          value={code}
+          disabled={isSubmitting}
+          aria-invalid={Boolean(fieldErrors.code)}
+          aria-describedby={fieldErrors.code ? "invitation-code-error" : undefined}
+          onChange={(event) => onCodeChange(event.target.value.replace(/\D/g, "").slice(0, 6))}
+          className="mt-2 h-12 rounded-[var(--md-radius-xl)] border-0 bg-white/82 px-4 text-[18px] font-medium tracking-[0.24em] shadow-[var(--md-shadow-line)]"
+        />
+        <AuthFieldError id="invitation-code-error">{fieldErrors.code ? t(fieldErrors.code) : null}</AuthFieldError>
+
+        <AuthAlert tone="error">{error ? t(error) : null}</AuthAlert>
+        <Button
+          type="submit"
+          disabled={isSubmitting}
+          className="mt-7 h-12 w-full rounded-[var(--md-radius-xl)] bg-[var(--md-accent)] text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]"
+        >
+          {isSubmitting ? <Loader2 data-icon="inline-start" className="me-2 size-4 animate-spin" strokeWidth={1.5} /> : null}
+          {t(isSubmitting ? "Confirming invitation" : "Confirm invitation")}
+        </Button>
+      </form>
     </div>
   )
 }
@@ -1026,7 +1076,7 @@ export function AuthFlow({
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<AuthFieldErrors>({})
   const [inviteVerification] = useState<InviteVerification | null>(() => galleryMode ? null : readInviteVerification())
-  const [inviteConfirmed, setInviteConfirmed] = useState(() => !inviteVerification)
+  const [inviteConfirmed, setInviteConfirmed] = useState(() => galleryMode || initialStep !== "accept-invite")
 
   const goToApp = useCallback(() => {
     const destination = takeAuthReturnPath()
@@ -1238,15 +1288,27 @@ export function AuthFlow({
 
   async function confirmInvitation() {
     clearFeedback()
+    const normalizedEmail = email.trim().toLowerCase()
+    const normalizedCode = code.replace(/\D/g, "")
+
+    if (!/^\S+@\S+\.\S+$/.test(normalizedEmail)) {
+      showFieldError("email", "Enter a valid work email.", "invitation-email")
+      return
+    }
+    if (normalizedCode.length !== 6) {
+      showFieldError("code", "Enter the six-digit code from your email.", "invitation-code")
+      return
+    }
     if (!supabase || !inviteVerification) {
-      setError(supabaseConfigurationError ?? "This invitation could not be confirmed.")
+      setError(supabaseConfigurationError ?? "Open the newest invitation email and use its secure link before entering the code.")
       return
     }
 
     setIsSubmitting(true)
     try {
       const { data, error: verificationError } = await supabase.auth.verifyOtp({
-        token_hash: inviteVerification.tokenHash,
+        email: normalizedEmail,
+        token: normalizedCode,
         type: inviteVerification.type,
       })
       if (verificationError) throw verificationError
@@ -1260,7 +1322,7 @@ export function AuthFlow({
       setInviteConfirmed(true)
       setMessage("Invitation confirmed. Create your password to enter the workspace.")
     } catch (verificationError) {
-      setError("This invitation is no longer current. Open the most recent Multideck invitation in your inbox.")
+      setError("That code is incorrect or has expired. Use the code in the newest invitation email.")
     } finally {
       setIsSubmitting(false)
     }
@@ -1431,9 +1493,20 @@ export function AuthFlow({
       ) : null}
       {step === "accept-invite" && !inviteConfirmed ? (
         <ConfirmInvitePanel
+          email={email}
+          code={code}
+          onEmailChange={(value) => {
+            setEmail(value)
+            clearFieldFeedback("email")
+          }}
+          onCodeChange={(value) => {
+            setCode(value)
+            clearFieldFeedback("code")
+          }}
           onConfirm={confirmInvitation}
           isSubmitting={isSubmitting}
           error={error}
+          fieldErrors={fieldErrors}
         />
       ) : null}
       {(step === "reset-password" || step === "accept-invite") && inviteConfirmed ? (
