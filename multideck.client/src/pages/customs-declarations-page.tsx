@@ -137,7 +137,7 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, t }: {
       minWidth: 104,
       resizable: true,
       sortValue: (draft) => draft.status,
-      cell: (draft) => <StatusPill>{t(titleCase(draft.status))}</StatusPill>,
+      cell: (draft) => <StatusPill tone={customsStatusTone(draft.status)}>{t(titleCase(draft.status))}</StatusPill>,
     },
     {
       id: "traderReference",
@@ -2034,9 +2034,11 @@ function providerIssueFieldLabel(issue: ICustomsProviderIssue) {
 }
 
 function customsStatusTone(status: string): "green" | "amber" | "red" | "blue" | "neutral" | "teal" {
-  if (["accepted", "released", "cleared"].includes(status)) return "green"
-  if (["rejected", "error"].includes(status)) return "red"
-  if (["submitted", "acknowledged"].includes(status)) return "blue"
+  const normalizedStatus = status.trim().toLocaleLowerCase()
+  if (["submitted", "accepted", "released", "cleared"].includes(normalizedStatus)) return "green"
+  if (["rejected", "error"].includes(normalizedStatus)) return "red"
+  if (normalizedStatus === "draft") return "amber"
+  if (normalizedStatus === "acknowledged") return "blue"
   return "neutral"
 }
 
