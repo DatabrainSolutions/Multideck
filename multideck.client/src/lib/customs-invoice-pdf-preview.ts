@@ -20,7 +20,7 @@ export type RenderPdfPagesOptions = {
   onPage?: (page: RenderedPdfPage) => void
 }
 
-export async function renderPdfPageImages(file: File, options: RenderPdfPagesOptions = {}): Promise<RenderedPdfPage[]> {
+export async function renderPdfPageImages(file: Blob, options: RenderPdfPagesOptions = {}): Promise<RenderedPdfPage[]> {
   const { maxPages = defaultMaxPages, targetWidth = defaultTargetWidth, signal, onPage } = options
   const rendered: RenderedPdfPage[] = []
 

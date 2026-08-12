@@ -4,11 +4,11 @@ import {
   normaliseDexterOcrResult,
 } from "../functions/_shared/dexter-document-ocr.ts"
 
-Deno.test("Dexter routes only provider-supported upload formats through OCR", () => {
-  for (const fileName of ["invoice.pdf", "manifest.DOCX", "packing-list.pptx", "scan.png", "photo.jpeg", "proof.webp"]) {
+Deno.test("Dexter routes the agreed invoice formats through the shared PDF normaliser", () => {
+  for (const fileName of ["invoice.pdf", "manifest.DOCX", "legacy.doc", "lines.csv", "lines.tsv", "charges.xlsx", "legacy.xls", "sheet.ods", "letter.odt", "scan.png", "photo.jpeg", "proof.webp"]) {
     assertEquals(isDexterOcrFileName(fileName), true, fileName)
   }
-  for (const fileName of ["charges.xlsx", "notes.txt", "lines.csv", "archive.zip", "document"]) {
+  for (const fileName of ["notes.txt", "packing-list.pptx", "archive.zip", "document"]) {
     assertEquals(isDexterOcrFileName(fileName), false, fileName)
   }
 })

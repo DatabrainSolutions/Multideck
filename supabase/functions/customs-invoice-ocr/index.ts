@@ -10,18 +10,30 @@ import {
   normalizePurchaseOrderAnnotation,
   purchaseOrderAnnotationFormat,
 } from "../_shared/customs-invoice-ocr.ts"
+import {
+  INVOICE_DOCUMENT_NORMALIZER_VERSION,
+  InvoiceDocumentPreparationError,
+  type PreparedInvoiceDocument,
+  prepareInvoiceDocument,
+  spreadsheetCoverage,
+  validateInvoiceDocumentSource,
+} from "../_shared/invoice-document-normalizer.ts"
 
 const functionName = "customs-invoice-ocr"
 const documentBucket = "multideck-documents"
 const mistralOcrUrl = "https://api.mistral.ai/v1/ocr"
 const signedUrlLifetimeSeconds = 300
+const preparedPdfLifetimeHours = 1
 const readyCacheLifetimeDays = 30
 const failedRecordLifetimeHours = 24
+const pagesPerMistralRequest = 8
 const purchaseOrderSchemaVersion = 1
 
 type Actor = { userId: string; authUserId: string; companyId: string }
-type TemporaryInvoice = { storedObjectId: string; objectPath: string; signedUrl: string }
 type DocumentType = "commercial_invoice" | "purchase_order"
+type InvoiceInput = Awaited<ReturnType<typeof readInvoiceInput>>
+type PreparedObject = { storedObjectId: string; objectPath: string; previewExpiresAt: string }
+type PageRange = { start: number; end: number }
 
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request) })
@@ -32,13 +44,16 @@ Deno.serve(async (request) => {
     const actor = actorFromProfile(profile, user.id)
     const path = routeParts(request, functionName)
 
+    await cleanupExpiredPreparedPdfs(admin)
     if (request.method === "POST" && path.length === 0) return await extractInvoice(request, admin, actor)
     if (request.method === "GET" && path.length === 1) return await readExtraction(request, admin, actor, path[0])
     if (request.method === "DELETE" && path.length === 1) return await cancelExtraction(request, admin, actor, path[0])
     throw new HttpError(405, "This invoice import action is not supported.")
   } catch (error) {
-    if (!(error instanceof HttpError)) console.error(`${functionName}: unexpected request error`, error)
-    const publicError = error instanceof HttpError ? error : new HttpError(500, "Unable to import this invoice. Try again.")
+    const publicError = publicHttpError(error)
+    if (!(error instanceof HttpError) && !(error instanceof InvoiceDocumentPreparationError)) {
+      console.error(`${functionName}: unexpected request error`, error)
+    }
     return json(request, { detail: publicError.message }, publicError.status)
   }
 })
@@ -51,64 +66,99 @@ async function extractInvoice(request: Request, admin: SupabaseClient, actor: Ac
   const input = await timings.measure("input", () => readInvoiceInput(request))
   await validateDeclaration(admin, actor, input.declarationId)
   await expireOldExtractions(admin)
-
-  const hash = await timings.measure("hash", () => sha256Hex(input.bytes))
+  const sourceHash = await timings.measure("source_hash", () => sha256Hex(input.bytes))
+  let prepared = await timings.measure("conversion", () => prepareInput(input))
+  let preparedHash = await timings.measure("prepared_hash", () => sha256Hex(prepared.pdfBytes))
   const schemaVersion = documentSchemaVersion(input.documentType)
-  const cached = await timings.measure("cache", () => readyCanonical(admin, actor.companyId, hash, schemaVersion))
+
+  const cached = await timings.measure("cache", () => readyCanonical(admin, actor.companyId, sourceHash, schemaVersion))
   if (cached) {
-    const clone = await cloneCachedExtraction(admin, actor, input, hash, cached)
-    return timedJson(request, extractionResponse(clone, true, timings.snapshot()), 200, timings)
+    await cloneCachedExtraction(admin, actor, input, sourceHash, prepared, preparedHash, cached)
+    const stored = await timings.measure("storage", () => storePreparedPdf(admin, actor, input, sourceHash, prepared, preparedHash))
+    const saved = await updateExtraction(admin, input.extractionId, {
+      CUSTIE_StoredObjectID: stored.storedObjectId,
+      CUSTIE_PreviewExpiresAt: stored.previewExpiresAt,
+      CUSTIE_UpdatedAt: new Date().toISOString(),
+    })
+    return timedJson(request, await extractionResponse(admin, saved, true, timings.snapshot()), 200, timings)
   }
 
-  const claimed = await claimCanonicalExtraction(admin, actor, input, hash)
+  const claimed = await claimCanonicalExtraction(admin, actor, input, sourceHash, prepared, preparedHash)
   if (!claimed) {
-    const completed = await timings.measure("cache_wait", () => waitForCanonical(admin, actor.companyId, hash, schemaVersion))
+    const completed = await timings.measure("cache_wait", () => waitForCanonical(admin, actor.companyId, sourceHash, schemaVersion))
     if (!completed) throw new HttpError(409, "This invoice is already being processed. Wait a moment and try again.")
-    const clone = await cloneCachedExtraction(admin, actor, input, hash, completed)
-    return timedJson(request, extractionResponse(clone, true, timings.snapshot()), 200, timings)
+    await cloneCachedExtraction(admin, actor, input, sourceHash, prepared, preparedHash, completed)
+    const stored = await timings.measure("storage", () => storePreparedPdf(admin, actor, input, sourceHash, prepared, preparedHash))
+    const saved = await updateExtraction(admin, input.extractionId, {
+      CUSTIE_StoredObjectID: stored.storedObjectId,
+      CUSTIE_PreviewExpiresAt: stored.previewExpiresAt,
+      CUSTIE_UpdatedAt: new Date().toISOString(),
+    })
+    return timedJson(request, await extractionResponse(admin, saved, true, timings.snapshot()), 200, timings)
   }
 
-  let temporary: TemporaryInvoice | null = null
+  let stored: PreparedObject | null = null
   try {
-    temporary = await timings.measure("storage", () => storeTemporaryInvoice(admin, actor, input, hash))
+    stored = await timings.measure("storage", () => storePreparedPdf(admin, actor, input, sourceHash, prepared, preparedHash))
     await updateExtraction(admin, input.extractionId, {
-      CUSTIE_StoredObjectID: temporary.storedObjectId,
+      CUSTIE_StoredObjectID: stored.storedObjectId,
+      CUSTIE_PreviewExpiresAt: stored.previewExpiresAt,
       CUSTIE_UpdatedAt: new Date().toISOString(),
     })
 
-    const providerPayload = await timings.measure("mistral", () => extractWithMistralOcr(apiKey, temporary!.signedUrl, input.documentType))
-    const extraction = timings.measureSync("normalize", () => input.documentType === "purchase_order"
-      ? normalizePurchaseOrderAnnotation(providerPayload.document_annotation)
-      : normalizeCommercialInvoiceAnnotation(providerPayload.document_annotation))
-    if (!extraction.lines.length) throw new HttpError(422, "No item lines were found. Check the PDF or choose another document.")
+    let payloads = await timings.measure("mistral", () => extractWithMistralOcr(admin, apiKey, stored!, prepared.pageCount, input.documentType))
+    let coverage = spreadsheetCoverage(prepared.distinctiveSourceText, payloads)
+    if (!coverage.passed && prepared.conversion.strategy === "office_pdf" && prepared.conversion.sheets.length) {
+      await cleanupPreparedObject(admin, stored)
+      stored = null
+      prepared = await timings.measure("conversion_fallback", () => prepareInput(input, true))
+      preparedHash = await sha256Hex(prepared.pdfBytes)
+      stored = await storePreparedPdf(admin, actor, input, sourceHash, prepared, preparedHash)
+      await updateExtraction(admin, input.extractionId, {
+        CUSTIE_StoredObjectID: stored.storedObjectId,
+        CUSTIE_ConvertedSHA256: preparedHash,
+        CUSTIE_ConversionJSON: prepared.conversion,
+        CUSTIE_PageCount: prepared.pageCount,
+        CUSTIE_PreviewExpiresAt: stored.previewExpiresAt,
+        CUSTIE_UpdatedAt: new Date().toISOString(),
+      })
+      payloads = await timings.measure("mistral_fallback", () => extractWithMistralOcr(admin, apiKey, stored!, prepared.pageCount, input.documentType))
+      coverage = spreadsheetCoverage(prepared.distinctiveSourceText, payloads)
+    }
+    if (!coverage.passed) {
+      throw new HttpError(422, "The prepared invoice did not preserve enough spreadsheet content to import safely. Remove unrelated formatting or save it as a PDF and try again.")
+    }
 
-    const usage = asRecord(providerPayload.usage_info ?? providerPayload.usage)
-    const pageCount = Array.isArray(providerPayload.pages) ? providerPayload.pages.length : 0
-    const providerModel = cleanText(providerPayload.model, 80) || MISTRAL_OCR_MODEL
-    const evidencePages = timings.measureSync("evidence", () => normalizeInvoiceEvidencePages(providerPayload))
+    const merged = timings.measureSync("normalize", () => mergeProviderPayloads(payloads, prepared.pageCount, input.documentType))
+    if (!merged.extraction.lines.length) {
+      throw new HttpError(422, "No item lines were found. Check the prepared document or choose another invoice.")
+    }
+
     const result = {
       extractionId: input.extractionId,
-      ...extraction,
+      ...merged.extraction,
       documentType: input.documentType,
-      model: providerModel,
+      model: merged.providerModel,
       requestedModel: MISTRAL_OCR_MODEL,
-      pageCount,
+      pageCount: prepared.pageCount,
       extractionMode: "mistral_ocr" as const,
-      pages: evidencePages,
-      usage: { pagesProcessed: finiteNumber(usage.pages_processed) ?? finiteNumber(usage.pages) ?? pageCount },
+      pages: merged.evidencePages,
+      usage: { pagesProcessed: merged.pagesProcessed },
+      document: { ...prepared.conversion, pageCount: prepared.pageCount },
     }
 
     const current = await extractionRow(admin, input.extractionId, actor)
     if (current?.CUSTIE_StatusCode === "cancelled") throw new HttpError(409, "Invoice import was cancelled.")
-
     const completedAt = new Date()
     const saved = await updateExtraction(admin, input.extractionId, {
-      CUSTIE_ProviderModel: providerModel,
+      CUSTIE_ProviderModel: merged.providerModel,
       CUSTIE_StatusCode: "ready",
       CUSTIE_ResultJSON: result,
       CUSTIE_UsageJSON: result.usage,
       CUSTIE_TimingsJSON: timings.snapshot(),
-      CUSTIE_PageCount: pageCount,
+      CUSTIE_PageCount: prepared.pageCount,
+      CUSTIE_ConvertedSHA256: preparedHash,
+      CUSTIE_ConversionJSON: prepared.conversion,
       CUSTIE_FailureCode: null,
       CUSTIE_UpdatedAt: completedAt.toISOString(),
       CUSTIE_CompletedAt: completedAt.toISOString(),
@@ -117,19 +167,26 @@ async function extractInvoice(request: Request, admin: SupabaseClient, actor: Ac
 
     console.info(`${functionName}: extraction complete`, {
       extractionId: input.extractionId,
-      byteCount: input.bytes.byteLength,
-      pageCount,
-      lineCount: extraction.lines.length,
-      evidencePageCount: evidencePages.length,
+      sourceFormat: prepared.conversion.sourceFormat,
+      conversionStrategy: prepared.conversion.strategy,
+      sourceBytes: input.bytes.byteLength,
+      preparedBytes: prepared.pdfBytes.byteLength,
+      pageCount: prepared.pageCount,
+      chunkCount: payloads.length,
+      lineCount: merged.extraction.lines.length,
+      coverageRatio: coverage.ratio,
       cacheHit: false,
       timings: timings.snapshot(),
     })
-    return timedJson(request, extractionResponse(saved, false, timings.snapshot()), 200, timings)
+    return timedJson(request, await extractionResponse(admin, saved, false, timings.snapshot()), 200, timings)
   } catch (error) {
+    if (stored) await cleanupPreparedObject(admin, stored)
     const current = await extractionRow(admin, input.extractionId, actor).catch(() => null)
     if (current?.CUSTIE_StatusCode !== "cancelled") {
       const failedAt = new Date()
       await updateExtraction(admin, input.extractionId, {
+        CUSTIE_StoredObjectID: null,
+        CUSTIE_PreviewExpiresAt: null,
         CUSTIE_StatusCode: "failed",
         CUSTIE_FailureCode: failureCode(error),
         CUSTIE_TimingsJSON: timings.snapshot(),
@@ -139,8 +196,6 @@ async function extractInvoice(request: Request, admin: SupabaseClient, actor: Ac
       }).catch(() => undefined)
     }
     throw error
-  } finally {
-    if (temporary) await cleanupTemporaryInvoice(admin, temporary)
   }
 }
 
@@ -148,7 +203,9 @@ async function readExtraction(request: Request, admin: SupabaseClient, actor: Ac
   validateUuid(extractionId, "extraction")
   const row = await extractionRow(admin, extractionId, actor)
   if (!row) throw new HttpError(404, "This invoice review is no longer available.")
-  if (row.CUSTIE_StatusCode === "ready") return json(request, extractionResponse(row, Boolean(row.CUSTIE_SourceExtractionID), asRecord(row.CUSTIE_TimingsJSON)))
+  if (row.CUSTIE_StatusCode === "ready") {
+    return json(request, await extractionResponse(admin, row, Boolean(row.CUSTIE_SourceExtractionID), asRecord(row.CUSTIE_TimingsJSON)))
+  }
   if (row.CUSTIE_StatusCode === "processing") return json(request, { extractionId, status: "processing" }, 202)
   if (row.CUSTIE_StatusCode === "expired") throw new HttpError(410, "This invoice review has expired. Upload the invoice again.")
   if (row.CUSTIE_StatusCode === "cancelled") throw new HttpError(409, "Invoice import was cancelled.")
@@ -159,14 +216,23 @@ async function cancelExtraction(request: Request, admin: SupabaseClient, actor: 
   validateUuid(extractionId, "extraction")
   const row = await extractionRow(admin, extractionId, actor)
   if (!row) return json(request, {}, 204)
+  await cleanupPreparedPdfForRow(admin, row)
   if (row.CUSTIE_StatusCode === "processing") {
     const cancelledAt = new Date()
     await updateExtraction(admin, extractionId, {
       CUSTIE_StatusCode: "cancelled",
       CUSTIE_FailureCode: "cancelled_by_user",
+      CUSTIE_StoredObjectID: null,
+      CUSTIE_PreviewExpiresAt: null,
       CUSTIE_UpdatedAt: cancelledAt.toISOString(),
       CUSTIE_CompletedAt: cancelledAt.toISOString(),
       CUSTIE_ExpiresAt: addHours(cancelledAt, failedRecordLifetimeHours).toISOString(),
+    })
+  } else {
+    await updateExtraction(admin, extractionId, {
+      CUSTIE_StoredObjectID: null,
+      CUSTIE_PreviewExpiresAt: null,
+      CUSTIE_UpdatedAt: new Date().toISOString(),
     })
   }
   return json(request, {}, 204)
@@ -175,23 +241,29 @@ async function cancelExtraction(request: Request, admin: SupabaseClient, actor: 
 async function readInvoiceInput(request: Request) {
   const form = await request.formData()
   const file = form.get("file")
-  if (!(file instanceof File)) throw new HttpError(400, "Choose a PDF commercial invoice to continue.")
-  validatePdf(file)
-
+  if (!(file instanceof File)) throw new HttpError(400, "Choose a commercial invoice to continue.")
   const bytes = new Uint8Array(await file.arrayBuffer())
-  if (!hasPdfSignature(bytes)) throw new HttpError(415, "The selected file is not a valid PDF.")
+  const fileName = cleanFileName(file.name)
+  const type = documentType(form.get("documentType"))
+  if (type === "purchase_order" && (!fileName.toLowerCase().endsWith(".pdf") || file.type !== "application/pdf")) {
+    throw new HttpError(415, "Purchase order import currently supports PDF files only.")
+  }
+  validateInvoiceDocumentSource(bytes, fileName, file.type, MAX_COMMERCIAL_INVOICE_BYTES)
   const extractionId = cleanText(form.get("extractionId"), 36)
   validateUuid(extractionId, "extraction")
   const declarationId = cleanText(form.get("declarationId"), 36) || null
   if (declarationId) validateUuid(declarationId, "declaration")
-  return {
-    extractionId,
-    declarationId,
-    documentType: documentType(form.get("documentType")),
-    bytes,
-    fileName: cleanFileName(file.name),
-    mimeType: "application/pdf",
-  }
+  return { extractionId, declarationId, documentType: type, bytes, fileName, mimeType: file.type || "application/octet-stream" }
+}
+
+function prepareInput(input: InvoiceInput, forceSpreadsheetNormalisation = false) {
+  return prepareInvoiceDocument({
+    bytes: input.bytes,
+    fileName: input.fileName,
+    providerMimeType: input.mimeType,
+    maximumInputBytes: MAX_COMMERCIAL_INVOICE_BYTES,
+    forceSpreadsheetNormalisation,
+  })
 }
 
 async function validateDeclaration(admin: SupabaseClient, actor: Actor, declarationId: string | null) {
@@ -208,12 +280,11 @@ async function readyCanonical(admin: SupabaseClient, companyId: string, hash: st
     .eq("CUSTIE_SHA256", hash)
     .eq("CUSTIE_RequestedModel", MISTRAL_OCR_MODEL)
     .eq("CUSTIE_SchemaVersion", schemaVersion)
+    .eq("CUSTIE_NormalizerVersion", INVOICE_DOCUMENT_NORMALIZER_VERSION)
     .is("CUSTIE_SourceExtractionID", null)
     .eq("CUSTIE_StatusCode", "ready")
     .gt("CUSTIE_ExpiresAt", new Date().toISOString())
-    .order("CUSTIE_CompletedAt", { ascending: false })
-    .limit(1)
-    .maybeSingle()
+    .order("CUSTIE_CompletedAt", { ascending: false }).limit(1).maybeSingle()
   if (error) throw new HttpError(503, "Invoice import could not check previous results.")
   return data as Record<string, unknown> | null
 }
@@ -221,8 +292,10 @@ async function readyCanonical(admin: SupabaseClient, companyId: string, hash: st
 async function claimCanonicalExtraction(
   admin: SupabaseClient,
   actor: Actor,
-  input: Awaited<ReturnType<typeof readInvoiceInput>>,
-  hash: string,
+  input: InvoiceInput,
+  sourceHash: string,
+  prepared: PreparedInvoiceDocument,
+  preparedHash: string,
 ) {
   const { data, error } = await admin.from("Customs_InvoiceExtractions").insert({
     CUSTIE_ID: input.extractionId,
@@ -232,9 +305,13 @@ async function claimCanonicalExtraction(
     CUSTIE_FileName: input.fileName,
     CUSTIE_MimeType: input.mimeType,
     CUSTIE_FileSizeBytes: input.bytes.byteLength,
-    CUSTIE_SHA256: hash,
+    CUSTIE_SHA256: sourceHash,
+    CUSTIE_ConvertedSHA256: preparedHash,
+    CUSTIE_ConversionJSON: prepared.conversion,
     CUSTIE_RequestedModel: MISTRAL_OCR_MODEL,
     CUSTIE_SchemaVersion: documentSchemaVersion(input.documentType),
+    CUSTIE_NormalizerVersion: INVOICE_DOCUMENT_NORMALIZER_VERSION,
+    CUSTIE_PageCount: prepared.pageCount,
     CUSTIE_StatusCode: "processing",
   }).select("*").single()
   if (!error) return data as Record<string, unknown>
@@ -245,13 +322,19 @@ async function claimCanonicalExtraction(
 async function cloneCachedExtraction(
   admin: SupabaseClient,
   actor: Actor,
-  input: Awaited<ReturnType<typeof readInvoiceInput>>,
-  hash: string,
+  input: InvoiceInput,
+  sourceHash: string,
+  prepared: PreparedInvoiceDocument,
+  preparedHash: string,
   cached: Record<string, unknown>,
 ) {
-  if (cached.CUSTIE_ID === input.extractionId && cached.CUSTIE_UserID === actor.userId) return cached
   const now = new Date()
-  const result = { ...asRecord(cached.CUSTIE_ResultJSON), extractionId: input.extractionId }
+  const result = {
+    ...asRecord(cached.CUSTIE_ResultJSON),
+    extractionId: input.extractionId,
+    pageCount: prepared.pageCount,
+    document: { ...prepared.conversion, pageCount: prepared.pageCount },
+  }
   const { data, error } = await admin.from("Customs_InvoiceExtractions").insert({
     CUSTIE_ID: input.extractionId,
     CUSTIE_CompanyID: actor.companyId,
@@ -261,15 +344,18 @@ async function cloneCachedExtraction(
     CUSTIE_FileName: input.fileName,
     CUSTIE_MimeType: input.mimeType,
     CUSTIE_FileSizeBytes: input.bytes.byteLength,
-    CUSTIE_SHA256: hash,
+    CUSTIE_SHA256: sourceHash,
+    CUSTIE_ConvertedSHA256: preparedHash,
+    CUSTIE_ConversionJSON: prepared.conversion,
     CUSTIE_RequestedModel: MISTRAL_OCR_MODEL,
     CUSTIE_ProviderModel: cached.CUSTIE_ProviderModel,
     CUSTIE_SchemaVersion: documentSchemaVersion(input.documentType),
+    CUSTIE_NormalizerVersion: INVOICE_DOCUMENT_NORMALIZER_VERSION,
     CUSTIE_StatusCode: "ready",
     CUSTIE_ResultJSON: result,
     CUSTIE_UsageJSON: {},
     CUSTIE_TimingsJSON: { cache_hit: 1 },
-    CUSTIE_PageCount: cached.CUSTIE_PageCount,
+    CUSTIE_PageCount: prepared.pageCount,
     CUSTIE_CompletedAt: now.toISOString(),
     CUSTIE_ExpiresAt: cached.CUSTIE_ExpiresAt,
   }).select("*").single()
@@ -286,33 +372,32 @@ async function waitForCanonical(admin: SupabaseClient, companyId: string, hash: 
   return null
 }
 
-async function storeTemporaryInvoice(
+async function storePreparedPdf(
   admin: SupabaseClient,
   actor: Actor,
-  input: Awaited<ReturnType<typeof readInvoiceInput>>,
-  hash: string,
-): Promise<TemporaryInvoice> {
+  input: InvoiceInput,
+  sourceHash: string,
+  prepared: PreparedInvoiceDocument,
+  preparedHash: string,
+): Promise<PreparedObject> {
   const storedObjectId = crypto.randomUUID()
   const createdAt = new Date()
+  const previewExpiresAt = addHours(createdAt, preparedPdfLifetimeHours).toISOString()
   const objectPath = [
-    "v1", "customs", "invoice-extractions", actor.companyId.replaceAll("-", ""), actor.userId.replaceAll("-", ""),
+    "v2", "customs", "invoice-extractions", actor.companyId.replaceAll("-", ""), actor.userId.replaceAll("-", ""),
     String(createdAt.getUTCFullYear()), String(createdAt.getUTCMonth() + 1).padStart(2, "0"), `${input.extractionId}.pdf`,
   ].join("/")
-  const { error: uploadError } = await admin.storage.from(documentBucket).upload(objectPath, input.bytes, {
-    contentType: "application/pdf",
-    cacheControl: "0",
-    upsert: false,
+  const { error: uploadError } = await admin.storage.from(documentBucket).upload(objectPath, prepared.pdfBytes, {
+    contentType: "application/pdf", cacheControl: "0", upsert: false,
     metadata: {
-      concern: "customs",
-      aggregatetype: "customs_invoice_extraction",
-      aggregateid: input.extractionId.replaceAll("-", ""),
-      companyid: actor.companyId.replaceAll("-", ""),
-      userid: actor.userId.replaceAll("-", ""),
-      sha256: hash,
+      concern: "customs", aggregatetype: "customs_invoice_extraction", aggregateid: input.extractionId.replaceAll("-", ""),
+      companyid: actor.companyId.replaceAll("-", ""), userid: actor.userId.replaceAll("-", ""),
+      source_sha256: sourceHash, prepared_sha256: preparedHash, expires_at: previewExpiresAt,
     },
   })
-  if (uploadError) throw new HttpError(503, "The invoice could not be uploaded securely. Try again.")
+  if (uploadError) throw new HttpError(503, "The prepared invoice could not be stored securely. Try again.")
 
+  const preparedName = input.fileName.replace(/\.[^.]+$/, "") + ".prepared.pdf"
   const { error: catalogueError } = await admin.from("DOC_StoredObjects").insert({
     DOCStoredObject_ID: storedObjectId,
     DOCStoredObject_ConcernCode: "customs",
@@ -322,44 +407,83 @@ async function storeTemporaryInvoice(
     DOCStoredObject_ProviderCode: "supabase_storage",
     DOCStoredObject_Container: documentBucket,
     DOCStoredObject_BlobName: objectPath,
-    DOCStoredObject_OriginalFileName: input.fileName,
+    DOCStoredObject_OriginalFileName: preparedName,
     DOCStoredObject_MimeType: "application/pdf",
-    DOCStoredObject_FileSizeBytes: input.bytes.byteLength,
-    DOCStoredObject_SHA256: hash,
+    DOCStoredObject_FileSizeBytes: prepared.pdfBytes.byteLength,
+    DOCStoredObject_SHA256: preparedHash,
     DOCStoredObject_StatusCode: "active",
     DOCStoredObject_CreatedAt: createdAt.toISOString(),
     DOCStoredObject_CreatedBy: actor.userId,
   })
   if (catalogueError) {
     await admin.storage.from(documentBucket).remove([objectPath])
-    throw new HttpError(503, "The invoice could not be prepared securely. Try again.")
+    throw new HttpError(503, "The prepared invoice could not be catalogued securely. Try again.")
   }
-
-  const { data, error } = await admin.storage.from(documentBucket).createSignedUrl(objectPath, signedUrlLifetimeSeconds)
-  if (error || !data?.signedUrl) {
-    await cleanupTemporaryInvoice(admin, { storedObjectId, objectPath, signedUrl: "" })
-    throw new HttpError(503, "The invoice could not be prepared securely. Try again.")
-  }
-  return { storedObjectId, objectPath, signedUrl: data.signedUrl }
+  return { storedObjectId, objectPath, previewExpiresAt }
 }
 
-async function cleanupTemporaryInvoice(admin: SupabaseClient, temporary: TemporaryInvoice) {
+async function cleanupPreparedObject(admin: SupabaseClient, stored: PreparedObject) {
   const [storageResult, catalogueResult] = await Promise.all([
-    admin.storage.from(documentBucket).remove([temporary.objectPath]),
-    admin.from("DOC_StoredObjects").delete().eq("DOCStoredObject_ID", temporary.storedObjectId),
+    admin.storage.from(documentBucket).remove([stored.objectPath]),
+    admin.from("DOC_StoredObjects").delete().eq("DOCStoredObject_ID", stored.storedObjectId),
   ])
-  if (storageResult.error) console.error(`${functionName}: temporary storage cleanup failed`, { storedObjectId: temporary.storedObjectId })
-  if (catalogueResult.error) console.error(`${functionName}: temporary catalogue cleanup failed`, { storedObjectId: temporary.storedObjectId })
+  if (storageResult.error) console.error(`${functionName}: prepared PDF storage cleanup failed`, { storedObjectId: stored.storedObjectId })
+  if (catalogueResult.error) console.error(`${functionName}: prepared PDF catalogue cleanup failed`, { storedObjectId: stored.storedObjectId })
 }
 
-async function extractWithMistralOcr(apiKey: string, signedUrl: string, documentType: DocumentType) {
+async function cleanupPreparedPdfForRow(admin: SupabaseClient, row: Record<string, unknown>) {
+  const storedObjectId = cleanText(row.CUSTIE_StoredObjectID, 36)
+  if (!storedObjectId) return
+  const { data } = await admin.from("DOC_StoredObjects").select("DOCStoredObject_BlobName")
+    .eq("DOCStoredObject_ID", storedObjectId).maybeSingle()
+  const objectPath = cleanText(data?.DOCStoredObject_BlobName, 1_000)
+  if (objectPath) await cleanupPreparedObject(admin, { storedObjectId, objectPath, previewExpiresAt: "" })
+  await admin.from("Customs_InvoiceExtractions").update({
+    CUSTIE_StoredObjectID: null,
+    CUSTIE_PreviewExpiresAt: null,
+    CUSTIE_UpdatedAt: new Date().toISOString(),
+  }).eq("CUSTIE_ID", row.CUSTIE_ID)
+}
+
+async function cleanupExpiredPreparedPdfs(admin: SupabaseClient) {
+  const now = new Date().toISOString()
+  const { data, error } = await admin.from("Customs_InvoiceExtractions").select("CUSTIE_ID,CUSTIE_StoredObjectID,CUSTIE_PreviewExpiresAt")
+    .not("CUSTIE_StoredObjectID", "is", null).lt("CUSTIE_PreviewExpiresAt", now).limit(25)
+  if (error) {
+    console.warn(`${functionName}: prepared PDF expiry sweep could not run`)
+    return
+  }
+  for (const row of data ?? []) await cleanupPreparedPdfForRow(admin, row).catch(() => undefined)
+}
+
+async function extractWithMistralOcr(
+  admin: SupabaseClient,
+  apiKey: string,
+  stored: PreparedObject,
+  pageCount: number,
+  documentType: DocumentType,
+) {
+  const { data, error } = await admin.storage.from(documentBucket).createSignedUrl(stored.objectPath, signedUrlLifetimeSeconds)
+  if (error || !data?.signedUrl) throw new HttpError(503, "The prepared invoice could not be opened securely. Try again.")
+  const ranges = pageRanges(pageCount)
+  return await Promise.all(ranges.map((range) => requestMistralChunk(apiKey, data.signedUrl, documentType, range, ranges.length > 1)))
+}
+
+async function requestMistralChunk(
+  apiKey: string,
+  signedUrl: string,
+  documentType: DocumentType,
+  range: PageRange,
+  includeRange: boolean,
+) {
   const purchaseOrder = documentType === "purchase_order"
-  const providerResponse = await fetch(mistralOcrUrl, {
+  const response = await fetch(mistralOcrUrl, {
     method: "POST",
     headers: mistralHeaders(apiKey),
     body: JSON.stringify({
       model: MISTRAL_OCR_MODEL,
       document: { type: "document_url", document_url: signedUrl },
+      ...(includeRange ? { pages: `${range.start}-${range.end}` } : {}),
       include_blocks: true,
       include_image_base64: false,
       image_limit: 0,
@@ -376,7 +500,81 @@ async function extractWithMistralOcr(apiKey: string, signedUrl: string, document
     }),
     signal: AbortSignal.timeout(120_000),
   })
-  return providerJson(providerResponse)
+  return providerJson(response)
+}
+
+function mergeProviderPayloads(payloads: Record<string, unknown>[], pageCount: number, documentType: DocumentType) {
+  const ranges = pageRanges(pageCount)
+  const evidencePages = payloads.flatMap((payload, index) => {
+    const range = ranges[index]
+    return normalizeInvoiceEvidencePages(payload).map((page) => ({
+      ...page,
+      page: absolutePage(page.page, range),
+      blocks: page.blocks.map((block) => ({ ...block, id: `block-${absolutePage(page.page, range)}-${block.id}` })),
+    }))
+  }).sort((left, right) => left.page - right.page)
+  const providerModel = payloads.map((payload) => cleanText(payload.model, 80)).find(Boolean) || MISTRAL_OCR_MODEL
+  const pagesProcessed = payloads.reduce((total, payload) => {
+    const usage = asRecord(payload.usage_info ?? payload.usage)
+    return total + (finiteNumber(usage.pages_processed) ?? finiteNumber(usage.pages) ?? (Array.isArray(payload.pages) ? payload.pages.length : 0))
+  }, 0)
+
+  if (documentType === "purchase_order") {
+    const chunks = payloads.map((payload, index) => adjustExtractionPages(normalizePurchaseOrderAnnotation(payload.document_annotation), ranges[index]))
+    const first = chunks[0] ?? normalizePurchaseOrderAnnotation({})
+    return {
+      extraction: {
+        ...first,
+        number: chunks.map((chunk) => chunk.number).find(Boolean) || "",
+        supplierName: chunks.map((chunk) => chunk.supplierName).find(Boolean) || "",
+        supplierReference: chunks.map((chunk) => chunk.supplierReference).find(Boolean) || "",
+        buyerReference: chunks.map((chunk) => chunk.buyerReference).find(Boolean) || "",
+        issueDate: chunks.map((chunk) => chunk.issueDate).find(Boolean) || "",
+        expectedDeliveryDate: chunks.map((chunk) => chunk.expectedDeliveryDate).find(Boolean) || "",
+        currencyCode: chunks.map((chunk) => chunk.currencyCode).find(Boolean) || "",
+        deliveryTerms: chunks.map((chunk) => chunk.deliveryTerms).find(Boolean) || "",
+        paymentTerms: chunks.map((chunk) => chunk.paymentTerms).find(Boolean) || "",
+        deliveryAddress: chunks.map((chunk) => chunk.deliveryAddress).find(Boolean) || "",
+        notes: chunks.map((chunk) => chunk.notes).find(Boolean) || "",
+        lines: deduplicateLines(chunks.flatMap((chunk) => chunk.lines)),
+      }, evidencePages, providerModel, pagesProcessed,
+    }
+  }
+  const chunks = payloads.map((payload, index) => adjustExtractionPages(normalizeCommercialInvoiceAnnotation(payload.document_annotation), ranges[index]))
+  return {
+    extraction: {
+      invoiceNumber: chunks.map((chunk) => chunk.invoiceNumber).find(Boolean) || "",
+      lines: deduplicateLines(chunks.flatMap((chunk) => chunk.lines)).map((line, index) => ({ ...line, id: `ocr-line-${index + 1}` })),
+    }, evidencePages, providerModel, pagesProcessed,
+  }
+}
+
+function adjustExtractionPages<T extends { lines: Array<{ page: number }> }>(extraction: T, range: PageRange): T {
+  return { ...extraction, lines: extraction.lines.map((line) => ({ ...line, page: absolutePage(line.page, range) })) }
+}
+
+function absolutePage(page: number, range: PageRange) {
+  const chunkLength = range.end - range.start + 1
+  return range.start > 0 && page <= chunkLength ? page + range.start : page
+}
+
+function deduplicateLines<T extends { page: number; description: string }>(lines: T[]) {
+  const seen = new Set<string>()
+  return lines.filter((line) => {
+    const value = line as T & Record<string, unknown>
+    const key = [line.page, cleanText(value.sku, 120), cleanText(line.description, 800).toLowerCase(), finiteNumber(value.quantity), finiteNumber(value.unitPrice)].join("|")
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function pageRanges(pageCount: number) {
+  const ranges: PageRange[] = []
+  for (let start = 0; start < pageCount; start += pagesPerMistralRequest) {
+    ranges.push({ start, end: Math.min(pageCount - 1, start + pagesPerMistralRequest - 1) })
+  }
+  return ranges
 }
 
 async function providerJson(response: Response) {
@@ -389,11 +587,7 @@ async function providerJson(response: Response) {
 }
 
 function mistralHeaders(apiKey: string) {
-  return {
-    Authorization: `Bearer ${apiKey}`,
-    "Content-Type": "application/json",
-    "User-Agent": "Multideck document extraction/4",
-  }
+  return { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "User-Agent": "Multideck document extraction/5" }
 }
 
 async function extractionRow(admin: SupabaseClient, extractionId: string, actor: Actor) {
@@ -413,33 +607,27 @@ async function expireOldExtractions(admin: SupabaseClient) {
   const now = new Date().toISOString()
   await admin.from("Customs_InvoiceExtractions").update({ CUSTIE_StatusCode: "expired", CUSTIE_UpdatedAt: now })
     .eq("CUSTIE_StatusCode", "ready").lt("CUSTIE_ExpiresAt", now).is("CUSTIE_SourceExtractionID", null)
-  await admin.from("Customs_InvoiceExtractions").delete().in("CUSTIE_StatusCode", ["failed", "cancelled", "expired"])
-    .lt("CUSTIE_ExpiresAt", now)
+  await admin.from("Customs_InvoiceExtractions").delete().in("CUSTIE_StatusCode", ["failed", "cancelled", "expired"]).lt("CUSTIE_ExpiresAt", now)
 }
 
-function extractionResponse(row: Record<string, unknown>, cacheHit: boolean, timings: Record<string, unknown>) {
-  return {
-    ...asRecord(row.CUSTIE_ResultJSON),
-    extractionId: row.CUSTIE_ID,
-    cacheHit,
-    timings,
-  }
+async function extractionResponse(admin: SupabaseClient, row: Record<string, unknown>, cacheHit: boolean, timings: Record<string, unknown>) {
+  const result = { ...asRecord(row.CUSTIE_ResultJSON) }
+  const preview = await preparedPdfPreview(admin, row)
+  const document = { ...asRecord(result.document), ...asRecord(row.CUSTIE_ConversionJSON), pageCount: Number(row.CUSTIE_PageCount) || 0, ...preview }
+  return { ...result, document, extractionId: row.CUSTIE_ID, cacheHit, timings }
 }
 
-function validatePdf(file: File) {
-  if (!file.size) throw new HttpError(400, "The selected PDF is empty.")
-  if (file.size > MAX_COMMERCIAL_INVOICE_BYTES) throw new HttpError(413, "Choose a PDF commercial invoice smaller than 10 MB.")
-  const nameLooksLikePdf = file.name.toLowerCase().endsWith(".pdf")
-  if (file.type !== "application/pdf" && !nameLooksLikePdf) throw new HttpError(415, "Only PDF commercial invoices are supported.")
-}
-
-function hasPdfSignature(bytes: Uint8Array) {
-  return bytes.length >= 5 && new TextDecoder().decode(bytes.subarray(0, 5)) === "%PDF-"
-}
-
-async function sha256Hex(bytes: Uint8Array) {
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))
-  return [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("")
+async function preparedPdfPreview(admin: SupabaseClient, row: Record<string, unknown>) {
+  const storedObjectId = cleanText(row.CUSTIE_StoredObjectID, 36)
+  const expiresAt = cleanText(row.CUSTIE_PreviewExpiresAt, 40)
+  if (!storedObjectId || !expiresAt || new Date(expiresAt).getTime() <= Date.now()) return {}
+  const { data: stored } = await admin.from("DOC_StoredObjects").select("DOCStoredObject_Container,DOCStoredObject_BlobName,DOCStoredObject_StatusCode")
+    .eq("DOCStoredObject_ID", storedObjectId).maybeSingle()
+  if (!stored || stored.DOCStoredObject_StatusCode !== "active") return {}
+  const { data, error } = await admin.storage.from(stored.DOCStoredObject_Container).createSignedUrl(stored.DOCStoredObject_BlobName, signedUrlLifetimeSeconds)
+  if (error || !data?.signedUrl) return {}
+  const signedExpiresAt = new Date(Math.min(Date.now() + signedUrlLifetimeSeconds * 1_000, new Date(expiresAt).getTime())).toISOString()
+  return { previewUrl: data.signedUrl, previewExpiresAt: signedExpiresAt }
 }
 
 function actorFromProfile(profile: Record<string, unknown>, authUserId: string): Actor {
@@ -460,9 +648,7 @@ function documentSchemaVersion(value: DocumentType) {
 }
 
 function validateUuid(value: string, label: string) {
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
-    throw new HttpError(400, `Choose a valid ${label}.`)
-  }
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) throw new HttpError(400, `Choose a valid ${label}.`)
 }
 
 function cleanFileName(value: unknown) {
@@ -483,36 +669,34 @@ function finiteNumber(value: unknown) {
 
 function providerError(status: number) {
   if (status === 429) return new HttpError(429, "Invoice import is busy. Wait a moment and try again.")
-  if (status === 400 || status === 413 || status === 415 || status === 422) {
-    return new HttpError(422, "This invoice could not be read. Choose a clearer PDF or try another invoice.")
-  }
+  if ([400, 413, 415, 422].includes(status)) return new HttpError(422, "This invoice could not be read. Choose a clearer source or try another invoice.")
   return new HttpError(502, "Invoice import is temporarily unavailable. Try again.")
 }
 
+function publicHttpError(error: unknown) {
+  if (error instanceof HttpError) return error
+  if (error instanceof InvoiceDocumentPreparationError) return new HttpError(error.status, error.message)
+  if (error instanceof DOMException && error.name === "TimeoutError") return new HttpError(504, "Invoice import took too long. Try again.")
+  return new HttpError(500, "Unable to import this invoice. Try again.")
+}
+
 function failureCode(error: unknown) {
+  if (error instanceof InvoiceDocumentPreparationError) return error.code
   if (error instanceof HttpError) return `http_${error.status}`
   if (error instanceof DOMException && error.name === "TimeoutError") return "provider_timeout"
   return "unexpected_error"
 }
 
-function addDays(date: Date, days: number) {
-  return new Date(date.getTime() + days * 86_400_000)
+async function sha256Hex(bytes: Uint8Array) {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))
+  return [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("")
 }
 
-function addHours(date: Date, hours: number) {
-  return new Date(date.getTime() + hours * 3_600_000)
-}
+function addDays(date: Date, days: number) { return new Date(date.getTime() + days * 86_400_000) }
+function addHours(date: Date, hours: number) { return new Date(date.getTime() + hours * 3_600_000) }
+function delay(milliseconds: number) { return new Promise((resolve) => setTimeout(resolve, milliseconds)) }
 
-function delay(milliseconds: number) {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds))
-}
-
-function timedJson(
-  request: Request,
-  body: unknown,
-  status: number,
-  timings: RequestTimings,
-) {
+function timedJson(request: Request, body: unknown, status: number, timings: RequestTimings) {
   const response = json(request, body, status)
   response.headers.set("Server-Timing", timings.header())
   response.headers.set("Access-Control-Expose-Headers", "Server-Timing, X-Multideck-Extraction-Mode")
@@ -523,33 +707,16 @@ function timedJson(
 class RequestTimings {
   private readonly startedAt = performance.now()
   private readonly phases = new Map<string, number>()
-
   async measure<T>(name: string, action: () => Promise<T>) {
     const startedAt = performance.now()
-    try {
-      return await action()
-    } finally {
-      this.phases.set(name, performance.now() - startedAt)
-    }
+    try { return await action() } finally { this.phases.set(name, performance.now() - startedAt) }
   }
-
   measureSync<T>(name: string, action: () => T) {
     const startedAt = performance.now()
-    try {
-      return action()
-    } finally {
-      this.phases.set(name, performance.now() - startedAt)
-    }
+    try { return action() } finally { this.phases.set(name, performance.now() - startedAt) }
   }
-
   snapshot() {
-    return Object.fromEntries([
-      ...this.phases.entries().map(([name, duration]) => [name, Math.round(duration)] as const),
-      ["total", Math.round(performance.now() - this.startedAt)] as const,
-    ])
+    return Object.fromEntries([...this.phases.entries().map(([name, duration]) => [name, Math.round(duration)] as const), ["total", Math.round(performance.now() - this.startedAt)] as const])
   }
-
-  header() {
-    return Object.entries(this.snapshot()).map(([name, duration]) => `${name};dur=${duration}`).join(", ")
-  }
+  header() { return Object.entries(this.snapshot()).map(([name, duration]) => `${name};dur=${duration}`).join(", ") }
 }

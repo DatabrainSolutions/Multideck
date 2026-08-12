@@ -62,6 +62,16 @@ function recovery() {
       height: 1400,
       blocks: [{ id: "row-1", type: "line", text: "SKU-44 Rugged laptop", box: { x: 0.1, y: 0.2, width: 0.8, height: 0.03 } }],
     }],
+    document: {
+      sourceFormat: "xlsx",
+      sourceMimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      converted: true,
+      strategy: "spreadsheet_normalised" as const,
+      sheets: [{ name: "Invoice", status: "included" as const }],
+      warnings: ["Prepared safely"],
+      normalizerVersion: 2,
+      pageCount: 3,
+    },
     activeLineId: "line-1",
     reviewFilter: "approved" as const,
     reviewTab: "result" as const,
@@ -81,6 +91,8 @@ test("restores a compact server extraction reference and review decisions", () =
   assert.equal(restored?.reviewFilter, "approved")
   assert.equal(restored?.reviewTab, "result")
   assert.equal(restored?.savedAt, 50)
+  assert.equal(restored?.document.sheets[0].name, "Invoice")
+  assert.equal("previewUrl" in (restored?.document ?? {}), false)
   assert.equal(hasCustomsInvoiceImportRecovery("declaration-1"), true)
   assert.equal(readCustomsInvoiceImportRecovery("declaration-2"), null)
 })

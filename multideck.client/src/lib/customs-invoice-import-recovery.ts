@@ -1,8 +1,9 @@
 import type { ExtractedInvoiceLine, InvoiceLineSelection } from "@/lib/customs-invoice-import"
 import type { EvidencePage } from "@/lib/customs-invoice-evidence"
+import type { InvoiceDocumentMetadata } from "@/lib/customs-invoice-import-api"
 
 const storageKeyPrefix = "multideck.customs.invoice-import"
-const recoveryVersion = 2
+const recoveryVersion = 3
 
 export type InvoiceImportReviewFilter = "all" | "attention" | "approved"
 export type InvoiceImportReviewTab = "lines" | "result"
@@ -16,6 +17,7 @@ export type CustomsInvoiceImportRecovery = {
   selections: Record<string, InvoiceLineSelection>
   descriptionOverrides: Record<string, string>
   evidencePages: EvidencePage[]
+  document: Omit<InvoiceDocumentMetadata, "previewUrl" | "previewExpiresAt">
   activeLineId: string
   reviewFilter: InvoiceImportReviewFilter
   reviewTab: InvoiceImportReviewTab
@@ -36,7 +38,7 @@ function storage() {
 export function readCustomsInvoiceImportRecovery(declarationKey: string): CustomsInvoiceImportRecovery | null {
   try {
     const parsed = JSON.parse(storage()?.getItem(storageKey(declarationKey)) ?? "null") as StoredCustomsInvoiceImportRecovery | null
-    if (!parsed || (parsed.version !== 1 && parsed.version !== recoveryVersion)) return null
+    if (!parsed || ![1, 2, recoveryVersion].includes(parsed.version ?? 0)) return null
     const lines = Array.isArray(parsed.lines) ? parsed.lines as ExtractedInvoiceLine[] : []
     const extractionId = typeof parsed.extractionId === "string" ? parsed.extractionId : ""
     if (!extractionId && !lines.length) return null
@@ -49,6 +51,7 @@ export function readCustomsInvoiceImportRecovery(declarationKey: string): Custom
       selections: record(parsed.selections) as Record<string, InvoiceLineSelection>,
       descriptionOverrides: record(parsed.descriptionOverrides) as Record<string, string>,
       evidencePages: Array.isArray(parsed.evidencePages) ? parsed.evidencePages as EvidencePage[] : [],
+      document: recoveredDocument(parsed.document),
       activeLineId: typeof parsed.activeLineId === "string" ? parsed.activeLineId : lines[0]?.id ?? "",
       reviewFilter: isReviewFilter(parsed.reviewFilter) ? parsed.reviewFilter : "all",
       reviewTab: isReviewTab(parsed.reviewTab) ? parsed.reviewTab : "lines",
@@ -86,6 +89,20 @@ export function saveCustomsInvoiceImportRecovery(
     } catch {
       // Blocked or full storage must not interrupt the live review workflow.
     }
+  }
+}
+
+function recoveredDocument(value: unknown): CustomsInvoiceImportRecovery["document"] {
+  const source = record(value)
+  return {
+    sourceFormat: typeof source.sourceFormat === "string" ? source.sourceFormat : "",
+    sourceMimeType: typeof source.sourceMimeType === "string" ? source.sourceMimeType : "",
+    converted: source.converted === true,
+    strategy: source.strategy === "office_pdf" || source.strategy === "spreadsheet_normalised" ? source.strategy : "passthrough",
+    sheets: Array.isArray(source.sheets) ? source.sheets as CustomsInvoiceImportRecovery["document"]["sheets"] : [],
+    warnings: Array.isArray(source.warnings) ? source.warnings.filter((item): item is string => typeof item === "string") : [],
+    normalizerVersion: typeof source.normalizerVersion === "number" ? source.normalizerVersion : 0,
+    pageCount: typeof source.pageCount === "number" ? source.pageCount : 0,
   }
 }
 

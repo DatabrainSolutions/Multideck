@@ -460,6 +460,9 @@ verify_jwt = true
 [functions.customs-invoice-ocr]
 verify_jwt = true
 
+[functions.customs-invoice-preview-cleanup]
+verify_jwt = false
+
 [functions.icustoms-api]
 verify_jwt = true
 
