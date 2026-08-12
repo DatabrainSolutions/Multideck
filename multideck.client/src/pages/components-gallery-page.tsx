@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { useTheme } from "next-themes"
-import { AiBrain, ArrowLeft, ArrowRight, Bell, Check, Clipboard, Cloud, Component, Download, Eye, FileText, Folder, Forklift, Home03, Image, KeyRound, Mail, Moon02, Pencil, Pin, Search, Settings2, Ship, Sparkles, Trash2, UserRound } from "@/components/icons/hugeicons"
+import { AiBrain, ArrowLeft, ArrowRight, Bell, BrainCircuit, Check, Clipboard, Cloud, Component, Download, Eye, FileText, Folder, Forklift, Home03, Image, KeyRound, Mail, Moon02, Pencil, Pin, Search, Settings2, Ship, Trash2, UserRound } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import toastErrorIcon from "@/assets/toasts/toast-error.png"
 import toastGeneralIcon from "@/assets/toasts/toast-general.png"
@@ -86,7 +86,7 @@ import { MailComposer, type ComposerState } from "@/components/multideck/mail-co
 import { ThreadSummary } from "@/components/multideck/thread-summary"
 import type { InboxThreadListItem, Mailbox, MailProvider, ThreadSummaryState } from "@/lib/inbox-api"
 import { SectionHeader, Surface } from "@/components/multideck/surface"
-import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
+import { StatusPill, TablePillKindContext, toneToVar } from "@/components/multideck/status-pill"
 import { CodeInput, FreightNarrative, SignInPanel, SignedOutPanel, VerifyPanel, WorkspaceRouterPanel } from "@/components/multideck/auth-flow"
 import { AuthIdentityManager, AuthProviderSelector } from "@/components/multideck/auth-provider-selector"
 import { DashboardPriorityQueue } from "@/components/multideck/dashboard-priority-queue"
@@ -664,7 +664,7 @@ const settingsPreviewGroups: SettingsTabGroup[] = [
     label: "Workspace",
     items: [
       { id: "notifications", label: "Notifications", badge: "3", icon: Bell },
-      { id: "agent-dexter", label: "Agent Dexter", icon: Sparkles },
+      { id: "agent-dexter", label: "Agent Dexter", icon: AiBrain },
     ],
   },
 ]
@@ -1324,8 +1324,8 @@ function ComponentPreview({ id }: { id: string }) {
 
       {id === "status-pill" ? (
         <div className="grid w-full max-w-[640px] gap-4 rounded-[var(--md-radius-xl)] bg-white/60 p-[var(--md-gap-xl)] shadow-[var(--md-shadow-line)]">
-          <div><p className="mb-2 text-[11px] font-medium text-[var(--md-subtle)]">Workflow statuses</p><div className="flex flex-wrap gap-2"><StatusPill kind="status" tone="green">Cleared</StatusPill><StatusPill kind="status" tone="amber">Under review</StatusPill><StatusPill kind="status" tone="red">Action required</StatusPill><StatusPill kind="status" tone="blue">Submitted</StatusPill></div></div>
-          <div><p className="mb-2 text-[11px] font-medium text-[var(--md-subtle)]">Descriptive attributes</p><div className="flex flex-wrap gap-2"><StatusPill kind="attribute" tone="teal">Ocean</StatusPill><StatusPill kind="attribute" tone="blue">Customer</StatusPill><StatusPill kind="attribute" tone="amber">Express</StatusPill></div></div>
+          <div><p className="mb-2 text-[11px] font-medium text-[var(--md-subtle)]">Workflow statuses</p><TablePillKindContext.Provider value="status"><div className="flex flex-wrap gap-2"><StatusPill tone="purple">New</StatusPill><StatusPill tone="orange">Contacted</StatusPill><StatusPill tone="blue">Qualified</StatusPill><StatusPill tone="amber">Nurturing</StatusPill><StatusPill tone="green">Converted</StatusPill><StatusPill tone="red">Disqualified</StatusPill></div></TablePillKindContext.Provider></div>
+          <div><p className="mb-2 text-[11px] font-medium text-[var(--md-subtle)]">Descriptive attributes</p><TablePillKindContext.Provider value="attribute"><div className="flex flex-wrap gap-2"><StatusPill tone="teal">Ocean</StatusPill><StatusPill tone="blue">Customer</StatusPill><StatusPill tone="amber">Express</StatusPill><StatusPill tone="neutral">Standard</StatusPill></div></TablePillKindContext.Provider></div>
         </div>
       ) : null}
 
@@ -1620,14 +1620,14 @@ function ComponentPreview({ id }: { id: string }) {
       {id === "sidebar" ? (
         <div className="grid w-full max-w-[660px] gap-4 sm:grid-cols-2">
           <div className="rounded-[var(--md-radius-xl)] bg-[var(--md-sidebar-bg)] p-4 shadow-[var(--md-shadow-line)]">
-            <SidebarNavItem item={{ label: "Agent Dexter", icon: Sparkles }} accent="dexter" onClick={() => undefined} />
+            <SidebarNavItem item={{ label: "Agent Dexter", icon: AiBrain }} accent="dexter" onClick={() => undefined} />
             <SidebarNavItem item={{ label: "Home", icon: galleryIcons.sidebar }} onClick={() => undefined} affordance="branch" />
             <SidebarNavItem item={{ label: "Operations", icon: Ship }} onClick={() => undefined} affordance="branch" />
             <SidebarNavItem item={{ label: "Sales", icon: galleryIcons["crm-pipeline-board"] }} onClick={() => undefined} affordance="branch" />
             <SidebarNavItem item={{ label: "CRM", icon: galleryIcons["crm-metrics-grid"] }} onClick={() => undefined} affordance="branch" />
           </div>
           <div className="rounded-[var(--md-radius-xl)] bg-[var(--md-sidebar-bg)] p-4 shadow-[var(--md-shadow-line)]">
-            <SidebarNavItem item={{ label: "Agent Dexter", icon: Sparkles }} accent="dexter" onClick={() => undefined} />
+            <SidebarNavItem item={{ label: "Agent Dexter", icon: AiBrain }} accent="dexter" onClick={() => undefined} />
             <div className="mb-3 flex items-center gap-2 px-2 text-[12px] font-medium text-[var(--md-subtle)]">
               <ArrowLeft data-icon="inline-start" className="size-3.5" strokeWidth={1.2} />
               <span>Operations</span>
@@ -2670,7 +2670,7 @@ function ComponentPreview({ id }: { id: string }) {
           <WatchModeAurora active />
           <div className="relative z-10 flex h-full items-center justify-center px-6 text-center">
             <div>
-              <Sparkles className="mx-auto size-6 text-[var(--md-accent)]" strokeWidth={1.35} />
+              <BrainCircuit className="mx-auto size-6 text-[var(--md-accent)]" strokeWidth={1.35} />
               <p className="mt-4 text-[20px] font-medium text-[var(--md-ink)]">What do you want me to watch?</p>
               <p className="mt-2 text-[13px] text-[var(--md-text)]">A subtle, accent-matched mode cue rises from the bottom edge.</p>
             </div>

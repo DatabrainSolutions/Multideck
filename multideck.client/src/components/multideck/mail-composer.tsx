@@ -15,7 +15,6 @@ import {
   PenLine,
   Plus,
   Send,
-  Sparkles,
   Trash2,
   X,
 } from "@/components/icons/hugeicons"
@@ -218,7 +217,7 @@ function RecipientField({
             title={lockedTitle}
             className="inline-flex h-7 max-w-full items-center gap-1.5 rounded-full bg-[var(--md-surface-tint)] px-2 text-[12.5px] text-[var(--md-text)] shadow-[var(--md-shadow-line)]"
           >
-            <Sparkles className="size-3 shrink-0 text-[var(--md-accent)]" strokeWidth={1.6} aria-hidden="true" />
+            <AiEditing className="size-3 shrink-0 text-[var(--md-accent)]" strokeWidth={1.6} aria-hidden="true" />
             <span className="min-w-0 truncate">{lockedLabel}</span>
           </span>
         ) : null}

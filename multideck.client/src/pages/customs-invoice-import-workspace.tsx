@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent as ReactKeyboardEvent } from "react"
 import { DotLottieReact } from "@lottiefiles/dotlottie-react"
-import { ArrowLeft, Check, CheckCheck, CircleAlert, FileText, Merge, Minus, ShieldCheck, Sparkles, Split, Square } from "@/components/icons/hugeicons"
+import { ArrowLeft, Check, CheckCheck, CircleAlert, FileText, Merge, Minus, ScanText, ShieldCheck, Split, Square } from "@/components/icons/hugeicons"
 import { useReducedMotion } from "motion/react"
 import { useTheme } from "next-themes"
 import { toast } from "sonner"
@@ -511,7 +511,7 @@ export function CustomsInvoiceImportWorkspace({
       <header className="flex flex-wrap items-center justify-between gap-4 border-b border-[var(--md-line)] bg-[var(--md-surface)] px-5 py-4 lg:px-7">
         <div className="flex min-w-0 items-center gap-3">
           <button type="button" onClick={onClose} className="grid size-9 shrink-0 place-items-center rounded-[var(--md-radius-md)] text-[var(--md-text)] hover:bg-[var(--md-hover)]" aria-label={t("Back to declaration")}><ArrowLeft className="size-4 rtl:rotate-180" /></button>
-          <div className="grid size-10 shrink-0 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-accent-a10)] text-[var(--md-accent)]"><Sparkles className="size-5" /></div>
+          <div className="grid size-10 shrink-0 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-accent-a10)] text-[var(--md-accent)]"><ScanText className="size-5" /></div>
           <span className="min-w-0">
             <span className="flex flex-wrap items-center gap-2">
               <h1 id="invoice-import-workspace-title" className="text-[21px] font-medium tracking-[-0.025em]">{t("Invoice import")}</h1>

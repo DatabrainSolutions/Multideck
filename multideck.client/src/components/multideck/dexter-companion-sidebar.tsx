@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react"
-import { ArrowUp, Check, Sparkles, X } from "@/components/icons/hugeicons"
+import { AiBrain, ArrowUp, Check, X } from "@/components/icons/hugeicons"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { Button } from "@/components/ui/button"
 import {
@@ -231,7 +231,7 @@ export function DexterCompanionSidebar({
                   />
                   <div className="mt-3 flex items-center justify-between gap-3">
                     <span className={cn("inline-flex items-center gap-1.5 text-[11px] font-medium", sentPrompt ? "text-[var(--md-accent)]" : "text-[var(--md-subtle)]")}>
-                      {sentPrompt ? <Check className="size-3" strokeWidth={1.4} /> : <Sparkles className="size-3" strokeWidth={1.25} />}
+                      {sentPrompt ? <Check className="size-3" strokeWidth={1.4} /> : <AiBrain className="size-3" strokeWidth={1.25} />}
                       {t(sentPrompt ? "Brief prepared" : "Uses this page as context")}
                     </span>
                     <DexterActionPill

@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { ArrowLeft, CheckCircle2, ChevronDown, CircleAlert, Copy, ExternalLink, FileCheck2, Plus, RefreshCw, Search, Send, Sparkles, Trash2 } from "@/components/icons/hugeicons"
+import { ArrowLeft, CheckCircle2, ChevronDown, CircleAlert, Copy, ExternalLink, FileCheck2, Plus, RefreshCw, ScanText, Search, Send, Trash2 } from "@/components/icons/hugeicons"
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui"
 import { toast } from "sonner"
@@ -1030,7 +1030,7 @@ function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, on
           <h2 className="text-[14px] font-medium text-[var(--md-ink)]">{t("Mandatory goods-line fields")}</h2>
           <p className="mt-0.5 text-[11px] text-[var(--md-subtle)]">{t("Add rows and enter the essentials here. Expand a line to edit all of its details in place.")}</p>
         </span>
-        <div className="flex flex-wrap items-center gap-2"><Button type="button" variant="outline" size="sm" onClick={onOpenInvoiceImport}><Sparkles className="size-3.5" />{t("Import invoice")}</Button><Button type="button" size="sm" onClick={onAdd}><Plus className="size-3.5" />{t("Add item")}</Button></div>
+        <div className="flex flex-wrap items-center gap-2"><Button type="button" variant="outline" size="sm" onClick={onOpenInvoiceImport}><ScanText className="size-3.5" />{t("Import invoice")}</Button><Button type="button" size="sm" onClick={onAdd}><Plus className="size-3.5" />{t("Add item")}</Button></div>
       </header>
       <div ref={goodsLineTableRef} className="w-full min-w-0 max-w-full [container-type:inline-size]" data-testid="mandatory-goods-line-scroll">
         <DataTable
@@ -1375,7 +1375,7 @@ function CommoditySmartSearch({ item, direction, update, triggerClassName, trigg
       <FileCheck2 className="size-3.5" aria-hidden="true" />
       {t("Certificates list")}
     </Button> : <button type="button" aria-label={t("Smart commodity search")} aria-haspopup="dialog" aria-controls={dialogId} onClick={(event) => { event.stopPropagation(); handleOpenChange(true) }} className={cn("grid size-7 place-items-center rounded-[var(--md-radius-sm)] text-[var(--md-subtle)] outline-none transition-[background-color,color,transform] duration-150 hover:bg-[var(--md-accent-a10)] hover:text-[var(--md-accent)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] active:scale-[0.96]", open && "bg-[var(--md-accent-a10)] text-[var(--md-accent)]", triggerClassName)}>
-      <Sparkles className="size-3.5" aria-hidden="true" />
+      <Search className="size-3.5" aria-hidden="true" />
     </button>}
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent id={dialogId} className={cn("flex max-h-[min(calc(100dvh-32px),780px)] flex-col gap-0 overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-0", triggerVariant === "certificates" ? "sm:max-w-[680px]" : "sm:max-w-[760px]")} onOpenAutoFocus={(event) => { if (triggerVariant === "search") { event.preventDefault(); searchInput.current?.focus() } }}>

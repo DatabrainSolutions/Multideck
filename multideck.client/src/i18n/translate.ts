@@ -1231,6 +1231,8 @@ const phrases: PhraseDictionary = {
   "Analytics & reporting": { de: "Analysen & Berichte", fr: "Analyses et rapports", ar: "التحليلات والتقارير" },
   "Convert": { de: "Konvertieren", fr: "Convertir", ar: "تحويل" },
   "blue stage colour": { de: "Blaue Phasenfarbe", fr: "Couleur d’étape bleue", ar: "لون مرحلة أزرق" },
+  "purple stage colour": { de: "Violette Phasenfarbe", fr: "Couleur d’étape violette", ar: "لون مرحلة بنفسجي" },
+  "orange stage colour": { de: "Orangefarbene Phasenfarbe", fr: "Couleur d’étape orange", ar: "لون مرحلة برتقالي" },
   "teal stage colour": { de: "Türkise Phasenfarbe", fr: "Couleur d’étape turquoise", ar: "لون مرحلة فيروزي" },
   "amber stage colour": { de: "Bernsteinfarbene Phasenfarbe", fr: "Couleur d’étape ambre", ar: "لون مرحلة كهرماني" },
   "green stage colour": { de: "Grüne Phasenfarbe", fr: "Couleur d’étape verte", ar: "لون مرحلة أخضر" },

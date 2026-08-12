@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react"
-import { ArrowRight, LoaderCircle, Mail, RefreshCw, Sparkles, UserRoundCheck, UsersRound } from "@/components/icons/hugeicons"
+import { AiBrain, ArrowRight, LoaderCircle, Mail, RefreshCw, UserRoundCheck, UsersRound } from "@/components/icons/hugeicons"
 import { ContactCreateDialog } from "@/components/multideck/contact-create-dialog"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { DexterDockedPage } from "@/components/multideck/dexter-companion-sidebar"
@@ -89,7 +89,7 @@ export function CrmContactsPage({ navigate }: { navigate: (path: string) => void
     <DexterDockedPage open={dexterOpen} onClose={() => setDexterOpen(false)} contextLabel={t("Contacts")} className="md-page md-page-stack-compact">
       <header className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
         <div className="min-w-0"><div className="flex flex-wrap items-baseline gap-x-3 gap-y-1"><h1 className="text-[22px] font-medium leading-tight text-[var(--md-ink)]">{t("Contacts")}</h1><p className="text-[11px] font-medium text-[var(--md-subtle)]">{t("Customer management")}</p></div><p className="mt-1 max-w-[900px] text-[12px] leading-5 text-[var(--md-text)]">{t("The people behind each account, with communication preferences, consent and recent relationship context.")}</p></div>
-        <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setDexterOpen(true)} className="h-10 rounded-[var(--md-radius-lg)]"><Sparkles className="size-4" strokeWidth={1.4} />{t("Ask Dexter")}</Button></div>
+        <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setDexterOpen(true)} className="h-10 rounded-[var(--md-radius-lg)]"><AiBrain className="size-4" strokeWidth={1.4} />{t("Ask Dexter")}</Button></div>
       </header>
 
       <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">

@@ -1,5 +1,5 @@
 import { useId, useMemo, type CSSProperties, type ReactNode } from "react"
-import { ArrowRight, Download, LayoutGrid, List, Mail, Map as MapIcon, MapPin, Phone, Plus, Sparkles, X } from "@/components/icons/hugeicons"
+import { AiBrain, ArrowRight, Download, LayoutGrid, List, Mail, Map as MapIcon, MapPin, Phone, Plus, X } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
@@ -729,7 +729,7 @@ export function DexterPulsePanel() {
   return (
     <section className="rounded-[var(--md-radius-xl)] bg-[var(--md-accent-a12)] p-[var(--md-page-stack-gap)] shadow-[inset_0_0_0_1px_var(--md-accent-a22)]">
       <div className="flex items-center gap-3">
-        <Sparkles className="size-4 text-[var(--md-accent)]" strokeWidth={1.2} />
+        <AiBrain className="size-4 text-[var(--md-accent)]" strokeWidth={1.2} />
         <h2 className="text-[15px] font-medium text-[var(--md-ink)]">Dexter · customer pulse</h2>
       </div>
       <p className="mt-[var(--md-page-stack-gap)] text-[15px] leading-7 text-[var(--md-ink)]">

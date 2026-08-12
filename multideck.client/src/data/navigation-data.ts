@@ -6,6 +6,7 @@ import {
   BriefcaseBusiness,
   CalendarDays,
   ChartAnalysis,
+  BrainCircuit,
   ChartLine,
   ChartNoAxesCombined,
   ClipboardCheck,
@@ -40,7 +41,6 @@ import {
   Settings2,
   Ship,
   SlidersHorizontal,
-  Sparkles,
   TriangleAlert,
   Truck,
   Upload,
@@ -225,7 +225,7 @@ export const sidebarAreas: SidebarArea[] = [
   {
     id: "insights-ai",
     label: "Insights & AI",
-    icon: Sparkles,
+    icon: BrainCircuit,
     destinations: [
       { id: "reports-exports", label: "Reports & exports", icon: ChartAnalysis, route: "/reports" },
       { id: "ai-workspace", label: "AI workspace", icon: AiBrain, route: "/agent-dexter" },

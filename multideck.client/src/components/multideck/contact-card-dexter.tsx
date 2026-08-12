@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { ArrowRight, Check, Filter, LoaderCircle, Sparkles, TriangleAlert } from "@/components/icons/hugeicons"
+import { AiBrain, ArrowRight, Check, Filter, LoaderCircle, TriangleAlert } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { SideDrawer } from "@/components/multideck/side-drawer"
@@ -141,7 +141,7 @@ export function AskDexterDrawer({
                       }}
                       className="flex items-center gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] px-3 py-2.5 text-start text-[13px] text-[var(--md-text)] transition-[background-color,color,transform] duration-[180ms] ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-accent-a10)] hover:text-[var(--md-ink)] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a22)] motion-reduce:transition-none"
                     >
-                      <Sparkles className="size-3.5 shrink-0 text-[var(--md-accent)]" strokeWidth={1.5} />
+                      <AiBrain className="size-3.5 shrink-0 text-[var(--md-accent)]" strokeWidth={1.5} />
                       <span className="min-w-0 flex-1">{example}</span>
                       <ArrowRight className="size-3.5 shrink-0 text-[var(--md-subtle)]" strokeWidth={1.5} />
                     </motion.button>

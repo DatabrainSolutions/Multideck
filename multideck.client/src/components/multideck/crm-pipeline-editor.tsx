@@ -244,7 +244,7 @@ const exitTween = { duration: 0.22, ease: [0.4, 0, 1, 1] as const }
 const instant = { duration: 0 }
 
 const probabilitySteps = [0, 10, 25, 50, 75, 90, 100]
-const toneOptions: StatusTone[] = ["blue", "teal", "amber", "green", "red", "neutral"]
+const toneOptions: StatusTone[] = ["blue", "purple", "orange", "teal", "amber", "green", "red", "neutral"]
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)

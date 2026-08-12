@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  AiBeautify,
   AiEditing,
   AlertCircle,
   Check,
@@ -7,7 +8,6 @@ import {
   FilePenLine,
   Scissors,
   SendHorizontal,
-  Sparkles,
   Type,
   WandSparkles,
   X,
@@ -1466,7 +1466,7 @@ export function DexterEmailComposeCard({
                         submitRefinement();
                       }}
                     >
-                      <Sparkles
+                      <AiBeautify
                         className="ms-1 size-3.5 shrink-0 text-[var(--md-subtle)]"
                         strokeWidth={1.5}
                         aria-hidden="true"
@@ -1542,7 +1542,7 @@ export function DexterEmailComposeCard({
                         onClick={() => void openRefinement(bodySelection)}
                         className="inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-[12px] font-medium transition-colors hover:bg-[var(--md-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)] motion-reduce:transition-none"
                       >
-                        <Sparkles
+                        <AiBeautify
                           className="size-3.5"
                           strokeWidth={1.5}
                           aria-hidden="true"

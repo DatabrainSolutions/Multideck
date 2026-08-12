@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
-import { ArrowLeft, ArrowRight, BriefcaseBusiness, Building2, CalendarDays, Languages, Mail, Phone, Plus, RefreshCw, Trash2, UsersRound } from "@/components/icons/hugeicons"
+import { AiBrain, ArrowLeft, ArrowRight, BriefcaseBusiness, Building2, CalendarDays, Languages, Mail, Phone, Plus, RefreshCw, Trash2, UsersRound } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { CopyableField } from "@/components/multideck/copyable-field"
 import { CustomerAvatar } from "@/components/multideck/customer-components"
@@ -145,7 +145,7 @@ export function CrmContactDetailPage({ contactId, navigate }: { contactId: strin
             <InlineField label="Marketing" value={t(currentContact.consentMarketing ? "Opted in" : "Opted out")} readOnly />
             <InlineField label="Source" value={humanize(currentContact.marketingConsentSource) ?? ""} readOnly />
             <InlineSwitchField label="Allow direct sales contact" checked={currentContact.consentSalesContact} onSave={(consentSalesContact) => patch({ consentSalesContact })} />
-            <InlineSwitchField label="Allow AI training on approved data" checked={currentContact.trainingAllowed} onSave={(trainingAllowed) => patch({ trainingAllowed })} />
+            <InlineSwitchField icon={AiBrain} label="Allow AI training on approved data" checked={currentContact.trainingAllowed} onSave={(trainingAllowed) => patch({ trainingAllowed })} />
           </InlineFieldCard>
 
           <InlineFieldCard title="Additional fields" meta={customFields.length ? String(customFields.length) : undefined} directEdit>

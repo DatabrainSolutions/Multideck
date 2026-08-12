@@ -7,6 +7,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react"
+import type { StatusTone } from "@/data/multideck-data"
 import {
   ChevronDown,
   ChevronUp,
@@ -64,7 +65,7 @@ export type TrayShipmentProgress = {
   progress: number
   eta: string
   etaTime?: string
-  tone: "green" | "amber" | "red" | "blue" | "teal" | "neutral"
+  tone: StatusTone
 }
 
 export type PaperTray = {

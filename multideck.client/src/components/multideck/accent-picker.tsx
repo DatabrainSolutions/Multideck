@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { AnimatePresence, motion, useInView, useReducedMotion } from "motion/react"
-import { Check, LayoutDashboard, Ship, Sparkles } from "@/components/icons/hugeicons"
+import { AiBrain, Check, LayoutDashboard, Ship } from "@/components/icons/hugeicons"
 import { useTheme } from "next-themes"
 import { StaticBloomShader } from "@/components/multideck/dexter-action-pill"
 import { useLanguage } from "@/i18n/language-provider"
@@ -152,7 +152,7 @@ const AccentCard = memo(function AccentCard({
               at full width; here the veil's only job is the 10px caption, and
               holding it back lets more of the accent through. */}
           <span className="absolute inset-0" style={{ background: paint.pillVeil }} />
-          <Sparkles className="relative z-10 size-[11px] shrink-0 text-white" strokeWidth={1.5} />
+          <AiBrain className="relative z-10 size-[11px] shrink-0 text-white" strokeWidth={1.5} />
           <span className="relative z-10 truncate text-[10px] font-medium leading-none text-white">
             {t(`Ask ${agentName}`)}
           </span>

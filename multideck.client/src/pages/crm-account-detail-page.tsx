@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 import { motion, useReducedMotion } from "motion/react"
-import { ArrowLeft, ArrowRight, Building2, CalendarDays, Check, Clock, Health, Mail, MapPin, Phone, Plus, RefreshCw, Trash2, TriangleAlert, UsersRound, Wallet } from "@/components/icons/hugeicons"
+import { AiBrain, ArrowLeft, ArrowRight, Building2, CalendarDays, Check, Clock, Health, Mail, MapPin, Phone, Plus, RefreshCw, Trash2, TriangleAlert, UsersRound, Wallet, type LucideIcon } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { ContactCreateDialog } from "@/components/multideck/contact-create-dialog"
 import { CopyableField } from "@/components/multideck/copyable-field"
@@ -443,6 +443,7 @@ export function CrmAccountDetailPage({ accountId, navigate }: { accountId: strin
                     />
                   </div>
                   <PreferenceToggleRow
+                    icon={AiBrain}
                     label="AI training"
                     checked={currentAccount.trainingAllowed}
                     onSave={(trainingAllowed) => patch({ trainingAllowed })}
@@ -685,6 +686,7 @@ function PreferenceToggleRow({
   preferred,
   onPrefer,
   preferenceDisabled = false,
+  icon: Icon,
 }: {
   label: string
   checked: boolean
@@ -692,6 +694,7 @@ function PreferenceToggleRow({
   preferred?: boolean
   onPrefer?: () => void
   preferenceDisabled?: boolean
+  icon?: LucideIcon
 }) {
   const { t } = useLanguage()
   const [shown, setShown] = useState(checked)
@@ -719,7 +722,10 @@ function PreferenceToggleRow({
       "grid min-h-11 items-center gap-2 border-t border-[var(--md-line)] px-3 py-2.5 first:border-t-0",
       hasPreference ? "grid-cols-[minmax(0,1fr)_52px_42px]" : "grid-cols-[minmax(0,1fr)_32px]",
     )}>
-      <span className="min-w-0 text-[13px] font-medium leading-5 text-[var(--md-ink)]">{t(label)}</span>
+      <span className="flex min-w-0 items-center gap-1.5 text-[13px] font-medium leading-5 text-[var(--md-ink)]">
+        {Icon ? <Icon className="size-3.5 shrink-0 text-[var(--md-accent)]" strokeWidth={1.4} aria-hidden="true" /> : null}
+        <span>{t(label)}</span>
+      </span>
       {hasPreference ? (
         <StateCircle
           checked={Boolean(preferred)}

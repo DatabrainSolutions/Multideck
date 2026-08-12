@@ -26,7 +26,6 @@ import {
   MessageSquareText,
   Radar,
   RefreshCw,
-  Sparkles,
   type LucideIcon,
 } from "@/components/icons/hugeicons"
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
@@ -305,7 +304,7 @@ function DexterConversationHeader({
       </div>
       <div className="pointer-events-auto flex shrink-0 items-center gap-0.5">
         <HeaderAction
-          icon={Sparkles}
+          icon={Radar}
           label={t("Watchers")}
           onClick={onToggleWatchers}
           expanded={watchersOpen}
@@ -2777,7 +2776,7 @@ export function AgentDexterPage({
             <WatchModeAurora active={dexterMode === "watch"} />
             <div className="pointer-events-auto absolute end-[var(--md-page-stack-gap)] top-[18px] z-30">
               <HeaderAction
-                icon={Sparkles}
+                icon={Radar}
                 label={t("Watchers")}
                 onClick={toggleWatchers}
                 expanded={!isMonitorRailCollapsed}

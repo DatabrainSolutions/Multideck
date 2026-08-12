@@ -3,6 +3,7 @@ import { createPortal } from "react-dom"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { toast } from "sonner"
 import {
+  AiBrain,
   Activity,
   Building2,
   CalendarClock,
@@ -23,7 +24,6 @@ import {
   Search,
   SendHorizontal,
   SlidersHorizontal,
-  Sparkles,
   Star,
   ShieldCheck,
   Table2,
@@ -2312,7 +2312,7 @@ export function BookingAskPanel({
         onClick={() => onCollapsedChange?.(false)}
       >
         <span className="absolute inset-[-9px] -z-10 rounded-full bg-[var(--md-accent-a18)] blur-md" />
-        <Sparkles className="size-5" strokeWidth={1.5} />
+        <AiBrain className="size-5" strokeWidth={1.5} />
       </button>
     )
   }
@@ -2322,7 +2322,7 @@ export function BookingAskPanel({
       <div className="flex items-center justify-between gap-3 px-5 py-4 shadow-[inset_0_-1px_0_rgba(11,20,19,0.08)]">
         <div className="flex min-w-0 items-center gap-3">
           <span className="grid size-8 place-items-center rounded-full bg-[var(--md-accent)] text-[var(--md-accent-ink)]">
-            <Sparkles className="size-4" strokeWidth={1.4} />
+            <AiBrain className="size-4" strokeWidth={1.4} />
           </span>
           <div className="min-w-0">
             <h2 className="truncate text-[15px] font-medium text-[var(--md-ink)]">Ask about this booking</h2>

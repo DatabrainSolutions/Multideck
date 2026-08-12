@@ -94,6 +94,7 @@ import {
   DotIcon as DotIconData,
   DownloadIcon as DownloadIconData,
   Edit03Icon as Edit03IconData,
+  EditUser02Icon as EditUser02IconData,
   ExpandIcon as ExpandIconData,
   ExternalLinkIcon as ExternalLinkIconData,
   EyeIcon as EyeIconData,
@@ -421,6 +422,7 @@ export const Database = createMultideckIcon(DatabaseIconData, "Database")
 export const DotIcon = createMultideckIcon(DotIconData, "DotIcon")
 export const Download = createMultideckIcon(DownloadIconData, "Download")
 export const Edit3 = createMultideckIcon(Edit03IconData, "Edit3")
+export const EditUser02 = createMultideckIcon(EditUser02IconData, "EditUser02")
 export const Expand = createMultideckIcon(ExpandIconData, "Expand")
 export const ExternalLink = createMultideckIcon(ExternalLinkIconData, "ExternalLink")
 export const Eye = createMultideckIcon(EyeIconData, "Eye")
