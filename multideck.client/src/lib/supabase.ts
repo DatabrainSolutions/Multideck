@@ -44,3 +44,31 @@ export async function getSupabaseSession(): Promise<Session | null> {
 
   return data.session
 }
+
+/**
+ * Supabase invitations use an implicit token hash even when the client uses
+ * PKCE for ordinary sign-in. Hydrate that trusted invite session explicitly
+ * before changing the new user's password, then remove the tokens from the URL.
+ */
+export async function ensurePasswordUpdateSession(): Promise<Session | null> {
+  if (!supabase) return null
+
+  if (typeof window !== "undefined" && window.location.hash) {
+    const hash = new URLSearchParams(window.location.hash.slice(1))
+    const accessToken = hash.get("access_token")
+    const refreshToken = hash.get("refresh_token")
+
+    if (accessToken && refreshToken) {
+      const { data, error } = await supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      })
+      if (error) throw error
+
+      window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.search}`)
+      return data.session
+    }
+  }
+
+  return getSupabaseSession()
+}

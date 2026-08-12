@@ -7,7 +7,7 @@ const repoRoot = new URL("../", supabaseRoot)
 const readSupabase = (path) => readFile(new URL(path, supabaseRoot), "utf8")
 const readRepo = (path) => readFile(new URL(path, repoRoot), "utf8")
 
-const [team, backend, authEmail, dexter, userValidationGrant, settings, navigation, api, authFlow, authPage, app, translations] = await Promise.all([
+const [team, backend, authEmail, dexter, userValidationGrant, settings, navigation, api, authFlow, authPage, app, supabaseClient, translations] = await Promise.all([
   readSupabase("functions/team/index.ts"),
   readSupabase("functions/_shared/backend.ts"),
   readSupabase("functions/send-auth-email/index.ts"),
@@ -19,6 +19,7 @@ const [team, backend, authEmail, dexter, userValidationGrant, settings, navigati
   readRepo("multideck.client/src/components/multideck/auth-flow.tsx"),
   readRepo("multideck.client/src/pages/auth-flow-page.tsx"),
   readRepo("multideck.client/src/App.tsx"),
+  readRepo("multideck.client/src/lib/supabase.ts"),
   readRepo("multideck.client/src/i18n/translate.ts"),
 ])
 
@@ -52,6 +53,9 @@ test("the branded invite explicitly hands users to password creation", () => {
   assert.match(authFlow, /Create my password/)
   assert.match(authFlow, /step === "accept-invite"[\s\S]*?goToApp\(\)/)
   assert.match(app, /authMode === "reset-password" \|\| authMode === "invite"/)
+  assert.match(authFlow, /ensurePasswordUpdateSession\(\)/)
+  assert.match(supabaseClient, /supabase\.auth\.setSession/)
+  assert.match(supabaseClient, /window\.history\.replaceState/)
 })
 
 test("permissions are user-first with protected predefined roles and private Custom access", () => {

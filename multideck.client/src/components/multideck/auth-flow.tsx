@@ -8,7 +8,7 @@ import { AuthProviderSelector, type AuthProviderId } from "@/components/multidec
 import { takeAuthReturnPath } from "@/lib/auth-routing"
 import { useLanguage } from "@/i18n/language-provider"
 import { cn } from "@/lib/utils"
-import { isSupabaseConfigured, isWorkspaceRouterHost, multideckRootHost, supabase, supabaseConfigurationError } from "@/lib/supabase"
+import { ensurePasswordUpdateSession, isSupabaseConfigured, isWorkspaceRouterHost, multideckRootHost, supabase, supabaseConfigurationError } from "@/lib/supabase"
 import authPanelBackdrop from "@/assets/auth/auth-panel-backdrop.jpg"
 import multideckLogoMark from "@/assets/brand/multideck-logo-mark.svg"
 
@@ -1234,6 +1234,8 @@ export function AuthFlow({
 
     setIsSubmitting(true)
     try {
+      const passwordSession = await ensurePasswordUpdateSession()
+      if (!passwordSession) throw new Error("The password link does not contain an active session.")
       const { error: updateError } = await supabase.auth.updateUser({ password })
       if (updateError) throw updateError
 
