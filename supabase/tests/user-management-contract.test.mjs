@@ -7,7 +7,7 @@ const repoRoot = new URL("../", supabaseRoot)
 const readSupabase = (path) => readFile(new URL(path, supabaseRoot), "utf8")
 const readRepo = (path) => readFile(new URL(path, repoRoot), "utf8")
 
-const [team, backend, authEmail, dexter, userValidationGrant, settings, navigation, api, authFlow, authPage, app, supabaseClient, translations] = await Promise.all([
+const [team, backend, authEmail, dexter, userValidationGrant, settings, navigation, api, authFlow, authPage, app, translations, acceptInvitation, invitationTicket] = await Promise.all([
   readSupabase("functions/team/index.ts"),
   readSupabase("functions/_shared/backend.ts"),
   readSupabase("functions/send-auth-email/index.ts"),
@@ -19,8 +19,9 @@ const [team, backend, authEmail, dexter, userValidationGrant, settings, navigati
   readRepo("multideck.client/src/components/multideck/auth-flow.tsx"),
   readRepo("multideck.client/src/pages/auth-flow-page.tsx"),
   readRepo("multideck.client/src/App.tsx"),
-  readRepo("multideck.client/src/lib/supabase.ts"),
   readRepo("multideck.client/src/i18n/translate.ts"),
+  readSupabase("functions/accept-invitation/index.ts"),
+  readSupabase("functions/_shared/invitation-ticket.ts"),
 ])
 
 test("Users is restored under the Developer settings section and uses the shared DataTable", () => {
@@ -60,33 +61,51 @@ test("pending invitations can be resent only through the tenant-safe server path
   assert.match(settings, /Delete invite/)
   assert.match(settings, /deleteApiTeamUser\(session\.access_token, deleteInviteCandidate\.id\)/)
   assert.match(api, /`\/\$\{userId\}\/invitation`/)
-  assert.match(authFlow, /multideck_password_created_at/)
+  assert.match(acceptInvitation, /multideck_password_created_at/)
 })
 
-test("the branded invite explicitly hands users to password creation", () => {
+test("the branded invite opens password creation without a consumable auth link or code", () => {
   assert.match(authEmail, /buttonLabel: "Accept invitation"/)
   assert.match(authEmail, /then create your password to enter the workspace/)
-  assert.match(authEmail, /code: key === "magiclink" \|\| key === "invite"/)
+  assert.match(authEmail, /code: key === "magiclink"/)
   assert.match(authPage, /mode === "invite" \? "accept-invite"/)
   assert.match(authFlow, /Set your password/)
   assert.match(authFlow, /Create my password/)
   assert.match(authFlow, /step === "accept-invite"[\s\S]*?goToApp\(\)/)
   assert.match(app, /authMode === "reset-password" \|\| authMode === "invite"/)
   assert.match(authFlow, /ensurePasswordUpdateSession\(\)/)
-  assert.match(authEmail, /verificationUrl\(payload\.email_data, key === "invite"\)/)
-  assert.match(authEmail, /confirmationUrl\.searchParams\.set\("type", actionType\)/)
-  assert.doesNotMatch(authEmail, /confirmationUrl\.searchParams\.set\("token_hash"/)
-  assert.match(authFlow, /email: normalizedEmail,[\s\S]*?token: normalizedCode,[\s\S]*?type: inviteVerification\.type/)
-  assert.match(authFlow, /Confirm your invitation/)
-  assert.match(authFlow, /That code is incorrect or has expired\./)
-  assert.match(supabaseClient, /supabase\.auth\.setSession/)
-  assert.match(supabaseClient, /window\.history\.replaceState/)
+  assert.match(authEmail, /createInvitationTicket\(userId, serviceRoleKey, expiry\)/)
+  assert.match(authEmail, /confirmationUrl\.searchParams\.set\("ticket"/)
+  assert.doesNotMatch(authEmail, /key === "invite" \? payload\.email_data\.token/)
+  assert.match(authFlow, /functions\.invoke<\{ email\?: string \}>\("accept-invitation"/)
+  assert.match(authFlow, /acceptedInvitation\.email,[\s\S]*?password/)
+  assert.match(acceptInvitation, /verifyInvitationTicket\(ticket, serviceRoleKey\)/)
+  assert.match(acceptInvitation, /admin\.auth\.admin\.updateUserById/)
+  assert.match(acceptInvitation, /email_confirm: true/)
+  assert.match(acceptInvitation, /app_metadata:/)
+  assert.doesNotMatch(authFlow, /inviteVerification\.type/)
+  assert.doesNotMatch(authFlow, /Confirm your invitation/)
+  assert.match(authFlow, /Invitation link unavailable/)
+  assert.match(invitationTicket, /mail scanner|not consumed|multideck-invitation/)
+})
+
+test("invitation expiry is selected by the administrator and signed into the link", () => {
+  assert.match(settings, /Invite expires/)
+  for (const value of ["3d", "7d", "30d", "never"]) assert.match(settings, new RegExp(`value="${value}"`))
+  assert.match(settings, /invitationExpiry: inviteForm\.invitationExpiry/)
+  assert.match(api, /invitationExpiry: ApiInvitationExpiry/)
+  assert.match(team, /invitationExpiry\(payload\.invitationExpiry\)/)
+  assert.match(team, /multideck_invitation_expiry: expiry/)
+  assert.match(authEmail, /multideck_invitation_expiry/)
+  assert.match(invitationTicket, /"3d": 3 \* 24 \* 60 \* 60/)
+  assert.match(invitationTicket, /"30d": 30 \* 24 \* 60 \* 60/)
+  assert.match(invitationTicket, /expiry === "never" \? null/)
 })
 
 test("permissions are user-first with protected predefined roles and reusable saved roles", () => {
   assert.match(settings, /function UserPermissionsTab\(\)/)
   assert.match(settings, /storageKey="settings-user-permissions"/)
-  assert.match(settings, /<Pencil[\s\S]*?<Trash2/)
+  assert.match(settings, /<(?:Pencil|EditUser02)[\s\S]*?<Trash2/)
   assert.match(settings, /Create reusable roles once/)
   assert.match(settings, /<DialogTitle>\{t\("Create a role"\)\}<\/DialogTitle>/)
   assert.match(settings, /createApiAuthorizationRole\(session\.access_token/)
@@ -128,7 +147,7 @@ test("Dexter clearly declines high-impact identity writes and idle user watches"
 })
 
 test("new user-management language is available in German, French, and Arabic", () => {
-  for (const phrase of ["Developer / Users", "Invite a user", "Invited", "Resend invite", "Delete invite", "Delete this invitation?", "Create a role", "Saved roles", "Role access", "Edit user permissions", "Read & write", "Delete this user?", "Set your password"]) {
+  for (const phrase of ["Developer / Users", "Invite a user", "Invited", "Resend invite", "Delete invite", "Delete this invitation?", "Create a role", "Saved roles", "Role access", "Edit user permissions", "Read & write", "Delete this user?", "Set your password", "Invite expires", "Never (until accepted)"]) {
     const start = translations.indexOf(`"${phrase}"`)
     assert.notEqual(start, -1, `${phrase} is missing`)
     const entry = translations.slice(start, start + 700)

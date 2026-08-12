@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react"
-import type { EmailOtpType, Provider } from "@supabase/supabase-js"
+import type { Provider } from "@supabase/supabase-js"
 import { ArrowRight, Building2, Clock3, KeyRound, Loader2, Mail, ShieldCheck, TriangleAlert } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -36,17 +36,15 @@ type AuthFieldErrors = {
 }
 
 type InviteVerification = {
-  type: EmailOtpType
+  ticket: string
 }
-
-const inviteOtpTypes = new Set<EmailOtpType>(["invite", "recovery"])
 
 function readInviteVerification(): InviteVerification | null {
   if (typeof window === "undefined") return null
   const parameters = new URLSearchParams(window.location.search)
-  const type = parameters.get("type") as EmailOtpType | null
-  if (!type || !inviteOtpTypes.has(type)) return null
-  return { type }
+  const ticket = parameters.get("ticket")?.trim() ?? ""
+  if (ticket.length < 80 || ticket.length > 2048 || ticket.split(".").length !== 2) return null
+  return { ticket }
 }
 
 const authCopyByStep: Record<AuthFlowStep, AuthCopy> = {
@@ -824,25 +822,7 @@ function ResetPasswordPanel({
   )
 }
 
-function ConfirmInvitePanel({
-  email,
-  code,
-  onEmailChange,
-  onCodeChange,
-  onConfirm,
-  isSubmitting,
-  error,
-  fieldErrors,
-}: {
-  email: string
-  code: string
-  onEmailChange: (value: string) => void
-  onCodeChange: (value: string) => void
-  onConfirm: () => void | Promise<void>
-  isSubmitting: boolean
-  error?: string | null
-  fieldErrors: Pick<AuthFieldErrors, "email" | "code">
-}) {
+function InviteLinkUnavailablePanel() {
   const { t } = useLanguage()
   return (
     <div className="w-full max-w-[520px]">
@@ -850,54 +830,10 @@ function ConfirmInvitePanel({
       <div className="mt-10 grid size-11 place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-accent-a10)] text-[var(--md-accent)]">
         <ShieldCheck className="size-5" strokeWidth={1.4} aria-hidden="true" />
       </div>
-      <h2 className="mt-5 text-[24px] font-medium leading-tight text-[var(--md-ink)]">{t("Confirm your invitation")}</h2>
+      <h2 className="mt-5 text-[24px] font-medium leading-tight text-[var(--md-ink)]">{t("Invitation link unavailable")}</h2>
       <p className="mt-2 text-[14px] leading-6 text-[var(--md-text)]">
-        {t("Enter the work email and six-digit code from the newest invitation. This keeps the invitation safe from automatic email checks.")}
+        {t("Ask your workspace administrator to resend the invitation. New links stay valid for seven days and are not used up by email security checks.")}
       </p>
-      <form className="mt-7" onSubmit={(event) => { event.preventDefault(); void onConfirm() }} noValidate>
-        <label className="text-[13px] font-medium text-[var(--md-ink)]" htmlFor="invitation-email">{t("Work email")}</label>
-        <Input
-          id="invitation-email"
-          type="email"
-          inputMode="email"
-          autoComplete="email"
-          dir="ltr"
-          value={email}
-          disabled={isSubmitting}
-          aria-invalid={Boolean(fieldErrors.email)}
-          aria-describedby={fieldErrors.email ? "invitation-email-error" : undefined}
-          onChange={(event) => onEmailChange(event.target.value)}
-          className="mt-2 h-12 rounded-[var(--md-radius-xl)] border-0 bg-white/82 px-4 text-[14px] shadow-[var(--md-shadow-line)]"
-        />
-        <AuthFieldError id="invitation-email-error">{fieldErrors.email ? t(fieldErrors.email) : null}</AuthFieldError>
-
-        <label className="mt-5 block text-[13px] font-medium text-[var(--md-ink)]" htmlFor="invitation-code">{t("Invitation code")}</label>
-        <Input
-          id="invitation-code"
-          type="text"
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          maxLength={6}
-          dir="ltr"
-          value={code}
-          disabled={isSubmitting}
-          aria-invalid={Boolean(fieldErrors.code)}
-          aria-describedby={fieldErrors.code ? "invitation-code-error" : undefined}
-          onChange={(event) => onCodeChange(event.target.value.replace(/\D/g, "").slice(0, 6))}
-          className="mt-2 h-12 rounded-[var(--md-radius-xl)] border-0 bg-white/82 px-4 text-[18px] font-medium tracking-[0.24em] shadow-[var(--md-shadow-line)]"
-        />
-        <AuthFieldError id="invitation-code-error">{fieldErrors.code ? t(fieldErrors.code) : null}</AuthFieldError>
-
-        <AuthAlert tone="error">{error ? t(error) : null}</AuthAlert>
-        <Button
-          type="submit"
-          disabled={isSubmitting}
-          className="mt-7 h-12 w-full rounded-[var(--md-radius-xl)] bg-[var(--md-accent)] text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]"
-        >
-          {isSubmitting ? <Loader2 data-icon="inline-start" className="me-2 size-4 animate-spin" strokeWidth={1.5} /> : null}
-          {t(isSubmitting ? "Confirming invitation" : "Confirm invitation")}
-        </Button>
-      </form>
     </div>
   )
 }
@@ -1076,7 +1012,7 @@ export function AuthFlow({
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<AuthFieldErrors>({})
   const [inviteVerification] = useState<InviteVerification | null>(() => galleryMode ? null : readInviteVerification())
-  const [inviteConfirmed, setInviteConfirmed] = useState(() => galleryMode || initialStep !== "accept-invite")
+  const inviteLinkAvailable = galleryMode || initialStep !== "accept-invite" || Boolean(inviteVerification)
 
   const goToApp = useCallback(() => {
     const destination = takeAuthReturnPath()
@@ -1257,73 +1193,48 @@ export function AuthFlow({
 
     setIsSubmitting(true)
     try {
-      const passwordSession = await ensurePasswordUpdateSession()
-      if (!passwordSession) throw new Error("The password link does not contain an active session.")
-      const { error: updateError } = await supabase.auth.updateUser(step === "accept-invite" ? {
-        password,
-        data: {
-          ...passwordSession.user.user_metadata,
-          multideck_password_created_at: new Date().toISOString(),
-        },
-      } : { password })
-      if (updateError) throw updateError
-
       if (step === "accept-invite") {
+        if (!inviteVerification) throw new Error("The invitation link does not contain a valid ticket.")
+
+        const { data: acceptedInvitation, error: acceptError } = await supabase.functions.invoke<{ email?: string }>("accept-invitation", {
+          body: { ticket: inviteVerification.ticket, password },
+        })
+        if (acceptError || !acceptedInvitation?.email) throw acceptError ?? new Error("The invitation could not be completed.")
+
+        const { data: signedIn, error: signInError } = await supabase.auth.signInWithPassword({
+          email: acceptedInvitation.email,
+          password,
+        })
+        if (signInError || !signedIn.session) {
+          console.error(signInError)
+          setError("Your password was created, but Multideck could not sign you in automatically. Return to sign in and use your new password.")
+          setIsSubmitting(false)
+          return
+        }
+
+        const parameters = new URLSearchParams(window.location.search)
+        parameters.delete("ticket")
+        const query = parameters.toString()
+        window.history.replaceState({}, document.title, `${window.location.pathname}${query ? `?${query}` : ""}`)
         toast.success("Password created", { description: "Welcome to your Multideck workspace." })
         goToApp()
-      } else {
-        toast.success("Password updated", { description: "Your new password is ready to use." })
-        window.history.replaceState({}, "", "/settings?tab=security")
-        if (navigate) navigate("/settings?tab=security")
-        else window.location.assign("/settings?tab=security")
+        return
       }
+
+      const passwordSession = await ensurePasswordUpdateSession()
+      if (!passwordSession) throw new Error("The password link does not contain an active session.")
+      const { error: updateError } = await supabase.auth.updateUser({ password })
+      if (updateError) throw updateError
+
+      toast.success("Password updated", { description: "Your new password is ready to use." })
+      window.history.replaceState({}, "", "/settings?tab=security")
+      if (navigate) navigate("/settings?tab=security")
+      else window.location.assign("/settings?tab=security")
     } catch (updateError) {
       console.error(updateError)
       setError(step === "accept-invite"
-        ? "This invitation is no longer current. Open the most recent Multideck invitation in your inbox."
+        ? "This invitation link is invalid, expired, or already completed. Ask your workspace administrator to resend it."
         : "Unable to update your password. Request a fresh recovery link and try again.")
-      setIsSubmitting(false)
-    }
-  }
-
-  async function confirmInvitation() {
-    clearFeedback()
-    const normalizedEmail = email.trim().toLowerCase()
-    const normalizedCode = code.replace(/\D/g, "")
-
-    if (!/^\S+@\S+\.\S+$/.test(normalizedEmail)) {
-      showFieldError("email", "Enter a valid work email.", "invitation-email")
-      return
-    }
-    if (normalizedCode.length !== 6) {
-      showFieldError("code", "Enter the six-digit code from your email.", "invitation-code")
-      return
-    }
-    if (!supabase || !inviteVerification) {
-      setError(supabaseConfigurationError ?? "Open the newest invitation email and use its secure link before entering the code.")
-      return
-    }
-
-    setIsSubmitting(true)
-    try {
-      const { data, error: verificationError } = await supabase.auth.verifyOtp({
-        email: normalizedEmail,
-        token: normalizedCode,
-        type: inviteVerification.type,
-      })
-      if (verificationError) throw verificationError
-      if (!data.session) throw new Error("Supabase did not return an invitation session.")
-
-      const parameters = new URLSearchParams(window.location.search)
-      parameters.delete("token_hash")
-      parameters.delete("type")
-      const query = parameters.toString()
-      window.history.replaceState({}, document.title, `${window.location.pathname}${query ? `?${query}` : ""}`)
-      setInviteConfirmed(true)
-      setMessage("Invitation confirmed. Create your password to enter the workspace.")
-    } catch (verificationError) {
-      setError("That code is incorrect or has expired. Use the code in the newest invitation email.")
-    } finally {
       setIsSubmitting(false)
     }
   }
@@ -1491,25 +1402,8 @@ export function AuthFlow({
           fieldError={fieldErrors.email}
         />
       ) : null}
-      {step === "accept-invite" && !inviteConfirmed ? (
-        <ConfirmInvitePanel
-          email={email}
-          code={code}
-          onEmailChange={(value) => {
-            setEmail(value)
-            clearFieldFeedback("email")
-          }}
-          onCodeChange={(value) => {
-            setCode(value)
-            clearFieldFeedback("code")
-          }}
-          onConfirm={confirmInvitation}
-          isSubmitting={isSubmitting}
-          error={error}
-          fieldErrors={fieldErrors}
-        />
-      ) : null}
-      {(step === "reset-password" || step === "accept-invite") && inviteConfirmed ? (
+      {step === "accept-invite" && !inviteLinkAvailable ? <InviteLinkUnavailablePanel /> : null}
+      {(step === "reset-password" || step === "accept-invite") && inviteLinkAvailable ? (
         <ResetPasswordPanel
           password={password}
           confirmation={passwordConfirmation}

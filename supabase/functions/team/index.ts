@@ -27,11 +27,19 @@ function invitationOrigin(request: Request, value: unknown) {
   return requestedOrigin
 }
 
+function invitationExpiry(value: unknown) {
+  if (value === "3d" || value === "7d" || value === "30d" || value === "never") return value
+  throw new HttpError(400, "Choose when the invitation should expire.")
+}
+
 const passwordMarkerRequiredFrom = Date.parse("2026-08-12T00:00:00Z")
 
 function isPendingInvitation(authUser: any) {
   if (!authUser?.invited_at) return false
-  const passwordCreated = Boolean(authUser.user_metadata?.multideck_password_created_at)
+  const passwordCreated = Boolean(
+    authUser.app_metadata?.multideck_password_created_at
+    || authUser.user_metadata?.multideck_password_created_at,
+  )
   const invitedAt = Date.parse(authUser.invited_at)
   // Earlier users predate the explicit password marker, so retain the old
   // sign-in fallback for them. New invitations stay pending until password setup.
@@ -169,6 +177,7 @@ Deno.serve(async (request) => {
       await requirePermission(admin, current.User_ID, "Users.Invite")
       const payload = await body<any>(request); const email = String(payload.email ?? "").trim().toLowerCase()
       const appOrigin = invitationOrigin(request, payload.appOrigin)
+      const expiry = invitationExpiry(payload.invitationExpiry)
       if (!/^\S+@\S+\.\S+$/.test(email)) throw new HttpError(400, "Enter a valid email address.")
       const { data: office } = await admin.from("cmp_Offices").select("*").eq("Office_ID", payload.officeId).eq("Company_ID", current.Company_ID).maybeSingle()
       if (!office) throw new HttpError(400, "Choose a valid office in this company.")
@@ -181,7 +190,7 @@ Deno.serve(async (request) => {
       let invited = false; let authUserId = profile?.Auth_User_ID ?? null
       if (!authUserId) {
         const redirectTo = `${appOrigin}/auth?mode=invite`
-        const { data: invite, error } = await admin.auth.admin.inviteUserByEmail(email, { redirectTo, data: { first_name: payload.firstName ?? null, last_name: payload.lastName ?? null } })
+        const { data: invite, error } = await admin.auth.admin.inviteUserByEmail(email, { redirectTo, data: { first_name: payload.firstName ?? null, last_name: payload.lastName ?? null, multideck_invitation_expiry: expiry } })
         if (error) throw new HttpError(400, error.message)
         authUserId = invite.user.id; invited = true
 

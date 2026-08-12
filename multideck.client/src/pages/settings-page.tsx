@@ -109,6 +109,7 @@ import {
   updateApiUserRoles,
   type ApiAuthorizationRole,
   type ApiAuthorizationState,
+  type ApiInvitationExpiry,
   type ApiPermission,
   type ApiTeamUser,
   type ApiTeamUsersResponse,
@@ -2327,6 +2328,7 @@ const emptyInviteForm = {
   roleTitle: "Operator",
   roleId: "",
   officeId: "",
+  invitationExpiry: "7d" as ApiInvitationExpiry,
 }
 
 function getTeamUserInitials(user: ApiTeamUser) {
@@ -2545,6 +2547,7 @@ function UsersTab() {
         officeId: inviteForm.officeId,
         roleId: inviteForm.roleId,
         roleTitle: authorizationState?.roles.find((role) => role.id === inviteForm.roleId)?.name ?? null,
+        invitationExpiry: inviteForm.invitationExpiry,
       })
       setTeam((current) => current ? { ...current, users: upsertTeamUser(current.users, response.user) } : current)
       const defaultRole = getDefaultInviteRole((authorizationState?.roles ?? []).filter((role) => role.isSystem))
@@ -2783,6 +2786,18 @@ function UsersTab() {
                 </Select>
               </label>
             </div>
+            <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">
+              {t("Invite expires")}
+              <Select value={inviteForm.invitationExpiry} onValueChange={(invitationExpiry) => setInviteForm((current) => ({ ...current, invitationExpiry: invitationExpiry as ApiInvitationExpiry }))}>
+                <SelectTrigger className="h-10 w-full rounded-[var(--md-radius-lg)]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="3d">{t("3 days")}</SelectItem>
+                  <SelectItem value="7d">{t("7 days")}</SelectItem>
+                  <SelectItem value="30d">{t("30 days")}</SelectItem>
+                  <SelectItem value="never">{t("Never (until accepted)")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </label>
             <DialogFooter className="mt-2">
               <Button type="button" variant="ghost" disabled={inviting} onClick={() => setInviteOpen(false)}>{t("Cancel")}</Button>
               <Button type="submit" disabled={inviting || !team?.offices.length || !assignableRoles.length} className="bg-[var(--md-accent)] text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]">

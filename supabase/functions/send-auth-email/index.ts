@@ -1,6 +1,7 @@
 import { Webhook } from "npm:standardwebhooks@1.0.0"
 import { normaliseLocale, renderBrandedEmail, safeMultideckUrl } from "../_shared/email-template.ts"
 import { MULTIDECK_EMAIL_FROM, MULTIDECK_EMAIL_REPLY_TO } from "../_shared/email-sender.ts"
+import { createInvitationTicket, parseInvitationExpiry, type InvitationExpiry } from "../_shared/invitation-ticket.ts"
 
 type AuthEmailData = {
   token?: string
@@ -12,6 +13,7 @@ type AuthEmailData = {
 
 type AuthHookPayload = {
   user: {
+    id?: string
     email?: string
     user_metadata?: Record<string, unknown>
   }
@@ -76,18 +78,42 @@ const securityCopy: Record<string, { subject: string; title: string; body: strin
   mfa_factor_unenrolled_notification: { subject: "A security factor was removed", title: "Security factor removed", body: "A multi-factor authentication method was removed from your Multideck account." },
 }
 
-function verificationUrl(emailData: AuthEmailData, deferVerification = false) {
+function invitationExpirySentence(locale: "en" | "de" | "fr" | "ar", expiry: InvitationExpiry) {
+  const duration = {
+    en: { "3d": "three days", "7d": "seven days", "30d": "30 days" },
+    de: { "3d": "drei Tage", "7d": "sieben Tage", "30d": "30 Tage" },
+    fr: { "3d": "trois jours", "7d": "sept jours", "30d": "30 jours" },
+    ar: { "3d": "ثلاثة أيام", "7d": "سبعة أيام", "30d": "30 يوما" },
+  } as const
+  if (expiry === "never") {
+    return {
+      en: "The link stays valid until you create your password, even if your email security system checks it first.",
+      de: "Der Link bleibt gültig, bis du dein Passwort erstellst – auch wenn dein E-Mail-Sicherheitssystem ihn vorher prüft.",
+      fr: "Le lien reste valable jusqu’à la création de votre mot de passe, même si votre système de sécurité des e-mails le vérifie d’abord.",
+      ar: "يظل الرابط صالحا حتى تنشئ كلمة المرور، حتى إذا فحصه نظام أمان البريد الإلكتروني أولا.",
+    }[locale]
+  }
+  return {
+    en: `The link stays valid for ${duration.en[expiry]} until you create your password, even if your email security system checks it first.`,
+    de: `Der Link bleibt ${duration.de[expiry]} gültig, bis du dein Passwort erstellst – auch wenn dein E-Mail-Sicherheitssystem ihn vorher prüft.`,
+    fr: `Le lien reste valable ${duration.fr[expiry]} jusqu’à la création de votre mot de passe, même si votre système de sécurité des e-mails le vérifie d’abord.`,
+    ar: `يظل الرابط صالحا لمدة ${duration.ar[expiry]} حتى تنشئ كلمة المرور، حتى إذا فحصه نظام أمان البريد الإلكتروني أولا.`,
+  }[locale]
+}
+
+async function verificationUrl(emailData: AuthEmailData, useInvitationTicket = false, userId?: string, expiry: InvitationExpiry = "7d") {
   const projectUrl = Deno.env.get("SUPABASE_URL") ?? ""
   const actionType = emailData.email_action_type ?? "magiclink"
   const redirectTo = safeMultideckUrl(emailData.redirect_to ?? emailData.site_url)
   const tokenHash = emailData.token_hash ?? ""
 
-  // Corporate mail scanners can render pages and activate controls, so an
-  // invite URL must not contain any redeemable secret. The recipient enters
-  // the separately rendered six-digit code inside Multideck instead.
-  if (deferVerification) {
+  // This ticket is not consumed when a mail scanner opens the link. It remains
+  // valid until the recipient actually saves a password or its chosen expiry.
+  if (useInvitationTicket) {
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
+    if (!userId || !serviceRoleKey) throw new Error("Invitation ticket configuration is missing")
     const confirmationUrl = new URL(redirectTo)
-    confirmationUrl.searchParams.set("type", actionType)
+    confirmationUrl.searchParams.set("ticket", await createInvitationTicket(userId, serviceRoleKey, expiry))
     return confirmationUrl.toString()
   }
 
@@ -155,14 +181,15 @@ Deno.serve(async (request) => {
       && safeMultideckUrl(payload.email_data.redirect_to ?? payload.email_data.site_url).includes("mode=invite")
     const key = inviteRecovery ? "invite" : translations[actionType] ? actionType : "magiclink"
     const copy = translations[key][locale]
+    const invitationExpiry = parseInvitationExpiry(payload.user.user_metadata?.multideck_invitation_expiry)
     const rendered = renderBrandedEmail({
       subject: copy.subject,
       preview: copy.body[0],
       title: copy.title,
-      body: copy.body,
+      body: key === "invite" ? [...copy.body, invitationExpirySentence(locale, invitationExpiry)] : copy.body,
       buttonLabel: copy.buttonLabel,
-      buttonUrl: verificationUrl(payload.email_data, key === "invite"),
-      code: key === "magiclink" || key === "invite" ? payload.email_data.token : undefined,
+      buttonUrl: await verificationUrl(payload.email_data, key === "invite", payload.user.id, invitationExpiry),
+      code: key === "magiclink" ? payload.email_data.token : undefined,
       eyebrow: copy.eyebrow,
       footer: copy.footer,
       locale,

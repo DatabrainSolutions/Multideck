@@ -67,6 +67,8 @@ export type ApiTeamUsersResponse = {
   users: ApiTeamUser[]
 }
 
+export type ApiInvitationExpiry = "3d" | "7d" | "30d" | "never"
+
 export type CreateTeamUserRequest = {
   email: string
   appOrigin: string
@@ -76,6 +78,7 @@ export type CreateTeamUserRequest = {
   officeId?: string | null
   roleTitle?: string | null
   roleId?: string | null
+  invitationExpiry: ApiInvitationExpiry
 }
 
 export type CreateTeamUserResponse = {
