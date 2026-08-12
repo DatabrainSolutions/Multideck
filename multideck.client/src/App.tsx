@@ -168,6 +168,10 @@ function isWarehouseOrderDetailRoute(path: string) {
   return /^\/warehouse\/orders\/[^/]+$/.test(path)
 }
 
+function isWarehousePurchaseOrderDetailRoute(path: string) {
+  return path === "/warehouse/purchase-orders/new" || /^\/warehouse\/purchase-orders\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(path)
+}
+
 /** So does a warehouse item. */
 function isWarehouseItemDetailRoute(path: string) {
   return /^\/warehouse\/items\/[^/]+$/.test(path)
@@ -250,6 +254,7 @@ function getRoute() {
   if (isCustomsDeclarationEditRoute(window.location.pathname)) return window.location.pathname
   if (isQuoteDetailRoute(window.location.pathname)) return window.location.pathname
   if (isWarehouseOrderDetailRoute(window.location.pathname)) return window.location.pathname
+  if (isWarehousePurchaseOrderDetailRoute(window.location.pathname)) return window.location.pathname
   if (isWarehouseItemDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCustomerDetailRoute(window.location.pathname)) return window.location.pathname
   if (isCrmAccountDetailRoute(window.location.pathname)) return window.location.pathname

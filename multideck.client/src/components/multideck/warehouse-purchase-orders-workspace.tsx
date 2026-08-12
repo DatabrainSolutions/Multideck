@@ -1,23 +1,30 @@
-import { useEffect, useMemo, useRef, useState } from "react"
-import { AlertCircle, ArrowDownToLine, FileText as FileSearch, Loader2, Plus, RefreshCw, Send, Trash2, Upload } from "@/components/icons/hugeicons"
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
+import { AlertCircle, ArrowDownToLine, ArrowLeft, Check, ChevronDown, FileText as FileSearch, History, Link2, Loader2, Plus, ReceiptText, RefreshCw, Search, Send, Trash2, Upload, XCircle } from "@/components/icons/hugeicons"
+import { motion, useReducedMotion } from "motion/react"
 import { toast } from "sonner"
+import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { DocumentExtractionProgress } from "@/components/multideck/document-extraction-progress"
+import { DotGridLoaderPanel } from "@/components/multideck/dot-grid-loader"
+import { RegisterFacetSelect, RegisterRevalidatingMark, RegisterSearchField, RegisterViewSwitch } from "@/components/multideck/register-toolbar"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { Surface } from "@/components/multideck/surface"
-import { WarehouseInventoryTable } from "@/components/multideck/warehouse-components"
-import { WarehouseFormField, warehouseDialogFooterClass, warehouseDialogHeaderClass } from "@/components/multideck/warehouse-management-components"
+import { WarehouseFormField } from "@/components/multideck/warehouse-management-components"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Textarea } from "@/components/ui/textarea"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useLanguage } from "@/i18n/language-provider"
 import { extractPurchaseOrder, type PurchaseOrderExtractionStage } from "@/lib/purchase-order-import-api"
+import { mdMotion, staggerRamp } from "@/lib/motion"
+import { cn } from "@/lib/utils"
 import {
   WarehouseApiError,
   cancelWarehousePurchaseOrder,
   createInboundOrderFromPurchaseOrder,
   createWarehousePurchaseOrder,
+  getNextWarehousePurchaseOrderNumber,
+  getWarehousePurchaseOrder,
   getWarehousePurchaseOrderReference,
   issueWarehousePurchaseOrder,
   listWarehousePurchaseOrders,
@@ -28,7 +35,7 @@ import {
   type WarehousePurchaseOrderReference,
 } from "@/lib/warehouse"
 
-const controlClass = "!h-10 !w-full rounded-[var(--md-radius-lg)] border-0 bg-white/68 !px-3 !text-[13px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] placeholder:text-[var(--md-subtle)] active:!scale-100 focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
+const controlClass = "!h-9 !w-full rounded-[var(--md-radius-md)] border-0 bg-white/68 !px-3 !text-[12.5px] text-[var(--md-ink)] shadow-[var(--md-shadow-line)] placeholder:text-[var(--md-subtle)] active:!scale-100 focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)]"
 const emptyLine = (): WarehousePurchaseOrderLine => ({ itemId: null, sku: "", supplierItemCode: null, description: "", quantity: 1, uomCode: "EA", unitPrice: 0, taxRate: 0, requestedDeliveryDate: null })
 const emptyInput = (): WarehousePurchaseOrderInput => ({ facilityId: "", customerOrgId: "", supplierOrgId: null, number: "", supplierName: "", buyerReference: null, supplierReference: null, issueDate: null, expectedDeliveryDate: null, currencyCode: "GBP", deliveryTerms: null, paymentTerms: null, deliveryAddress: null, notes: null, lines: [emptyLine()] })
 function errorMessage(error: unknown) {
@@ -67,6 +74,63 @@ function normaliseInput(order: WarehousePurchaseOrder): WarehousePurchaseOrderIn
   }
 }
 
+function SearchablePurchaseOrderSelect({ value, options, placeholder, searchPlaceholder, emptyLabel, disabled, onChange }: { value: string; options: Array<{ id: string; name: string; code?: string }>; placeholder: string; searchPlaceholder: string; emptyLabel: string; disabled?: boolean; onChange: (value: string) => void }) {
+  const { direction, t } = useLanguage()
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState("")
+  const [highlightedIndex, setHighlightedIndex] = useState(-1)
+  const listId = useId()
+  const listRef = useRef<HTMLDivElement>(null)
+  const selected = options.find((option)=>option.id === value)
+  const matches = options.filter((option)=>`${option.code ?? ""} ${option.name}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
+  useEffect(() => {
+    if (highlightedIndex < 0) return
+    listRef.current?.querySelector<HTMLElement>(`[data-option-index="${highlightedIndex}"]`)?.scrollIntoView({ block: "nearest" })
+  }, [highlightedIndex])
+  const choose = (option: { id: string }) => { onChange(option.id); setOpen(false) }
+  const handleSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "ArrowDown") {
+      event.preventDefault()
+      setHighlightedIndex((current)=>matches.length ? Math.min(current + 1, matches.length - 1) : -1)
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault()
+      setHighlightedIndex((current)=>matches.length ? (current <= 0 ? matches.length - 1 : current - 1) : -1)
+    } else if (event.key === "Enter" && highlightedIndex >= 0 && matches[highlightedIndex]) {
+      event.preventDefault(); choose(matches[highlightedIndex])
+    } else if (event.key === "Escape") {
+      event.preventDefault(); setOpen(false)
+    }
+  }
+  return <Popover open={open} onOpenChange={(nextOpen)=>{ setOpen(nextOpen); setHighlightedIndex(-1); if(!nextOpen) setQuery("") }}>
+    <PopoverTrigger asChild><button type="button" role="combobox" aria-expanded={open} aria-controls={listId} disabled={disabled} onKeyDown={(event)=>{ if(event.key === "ArrowDown" || event.key === "ArrowUp"){ event.preventDefault(); setOpen(true) } }} className={cn(controlClass,"flex items-center justify-between gap-2 text-start disabled:cursor-not-allowed disabled:opacity-50")}><span className={cn("min-w-0 truncate",!selected&&"text-[var(--md-subtle)]")}>{selected ? <>{selected.code ? <><bdi dir="ltr">{selected.code}</bdi><span className="text-[var(--md-subtle)]"> · </span></> : null}{selected.name}</> : t(placeholder)}</span><ChevronDown className="size-3.5 shrink-0 text-[var(--md-subtle)]" /></button></PopoverTrigger>
+    <PopoverContent align="start" sideOffset={5} dir={direction} className="w-[var(--radix-popover-trigger-width)] min-w-[260px] gap-1 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-lift)]">
+      <div className="relative m-1"><Search className="pointer-events-none absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-[var(--md-subtle)]" /><Input autoFocus role="combobox" aria-expanded="true" aria-controls={listId} aria-activedescendant={highlightedIndex >= 0 ? `${listId}-option-${highlightedIndex}` : undefined} value={query} onChange={(event)=>{ setQuery(event.target.value); setHighlightedIndex(-1) }} onKeyDown={handleSearchKeyDown} placeholder={t(searchPlaceholder)} className="h-8 rounded-[var(--md-radius-md)] ps-8 text-[12px]" /></div>
+      <div ref={listRef} id={listId} role="listbox" className="max-h-56 overflow-y-auto p-1 md-scrollbar">{matches.map((option,index)=><button id={`${listId}-option-${index}`} data-option-index={index} key={option.id} type="button" role="option" aria-selected={option.id===value} onMouseMove={()=>setHighlightedIndex(index)} onClick={()=>choose(option)} className={cn("flex w-full items-center gap-2 rounded-[var(--md-radius-md)] px-2.5 py-2 text-start text-[12px] hover:bg-[var(--md-hover)]",option.id===value&&"bg-[var(--md-selected-bg)]",index===highlightedIndex&&"bg-[var(--md-hover)] ring-1 ring-inset ring-[var(--md-accent-a18)]")}>{option.code ? <bdi dir="ltr" className="shrink-0 font-medium text-[var(--md-accent)]">{option.code}</bdi> : null}<span className="min-w-0 truncate">{option.name}</span>{option.id===value?<Check className="ms-auto size-3.5 shrink-0 text-[var(--md-accent)]"/>:null}</button>)}{!matches.length?<p className="px-3 py-5 text-center text-[12px] text-[var(--md-subtle)]">{t(emptyLabel)}</p>:null}</div>
+    </PopoverContent>
+  </Popover>
+}
+
+function PurchaseOrderDetailsFields({ form, reference, editable, generatingNumber, onGenerateNumber, patch }: { form: WarehousePurchaseOrderInput; reference: WarehousePurchaseOrderReference | null; editable: boolean; generatingNumber: boolean; onGenerateNumber: () => void; patch: <K extends keyof WarehousePurchaseOrderInput>(key: K, value: WarehousePurchaseOrderInput[K]) => void }) {
+  const { t } = useLanguage()
+  const organisations = reference?.organisations ?? []
+  return <div className="grid gap-x-2.5 gap-y-2 md:grid-cols-16">
+    <WarehouseFormField label={t("Purchase order number")} required className="md:col-span-4"><div className="flex gap-1.5"><Input disabled={!editable} value={form.number} onChange={(event)=>patch("number",event.target.value)} className={controlClass} dir="ltr" /><Button type="button" variant="outline" disabled={!editable || !form.facilityId || generatingNumber} onClick={onGenerateNumber} className="h-9 shrink-0 rounded-[var(--md-radius-md)] px-2.5 text-[11.5px]">{generatingNumber ? <Loader2 className="size-3.5 animate-spin" /> : null}{t("Auto-generate")}</Button></div></WarehouseFormField>
+    <WarehouseFormField label={t("Warehouse")} required className="md:col-span-4"><SearchablePurchaseOrderSelect disabled={!editable} value={form.facilityId} options={(reference?.facilities ?? []).map((facility)=>({ id:facility.id,name:facility.name,code:facility.code }))} placeholder="Choose warehouse" searchPlaceholder="Search warehouses…" emptyLabel="No matching warehouses" onChange={(value)=>{ patch("facilityId",value); patch("lines",form.lines.map((line)=>({ ...line,itemId:null }))) }} /></WarehouseFormField>
+    <WarehouseFormField label={t("Stock owner")} required className="md:col-span-4"><SearchablePurchaseOrderSelect disabled={!editable} value={form.customerOrgId} options={organisations} placeholder="Choose organisation" searchPlaceholder="Search stock owners…" emptyLabel="No matching stock owners" onChange={(value)=>{ patch("customerOrgId",value); patch("lines",form.lines.map((line)=>({ ...line,itemId:null }))) }} /></WarehouseFormField>
+    <WarehouseFormField label={t("Supplier")} className="md:col-span-4"><Input disabled={!editable} value={form.supplierName} onChange={(event)=>patch("supplierName",event.target.value)} className={controlClass} dir="auto" /></WarehouseFormField>
+
+    <WarehouseFormField label={t("Buyer reference")} className="md:col-span-4"><Input disabled={!editable} value={form.buyerReference ?? ""} onChange={(event)=>patch("buyerReference",event.target.value||null)} className={controlClass} dir="ltr" /></WarehouseFormField>
+    <WarehouseFormField label={t("Supplier reference")} className="md:col-span-4"><Input disabled={!editable} value={form.supplierReference ?? ""} onChange={(event)=>patch("supplierReference",event.target.value||null)} className={controlClass} dir="ltr" /></WarehouseFormField>
+    <WarehouseFormField label={t("Currency")} required className="md:col-span-2"><Select disabled={!editable} value={form.currencyCode} onValueChange={(value)=>patch("currencyCode",value)}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent>{reference?.currencies.map((currency)=><SelectItem key={currency} value={currency}>{currency}</SelectItem>)}</SelectContent></Select></WarehouseFormField>
+    <WarehouseFormField label={t("Issue date")} className="md:col-span-2"><Input disabled={!editable} type="date" value={form.issueDate ?? ""} onChange={(event)=>patch("issueDate",event.target.value||null)} className={controlClass} dir="ltr" /></WarehouseFormField>
+    <WarehouseFormField label={t("Expected delivery")} className="md:col-span-4"><Input disabled={!editable} type="date" value={form.expectedDeliveryDate ?? ""} onChange={(event)=>patch("expectedDeliveryDate",event.target.value||null)} className={controlClass} dir="ltr" /></WarehouseFormField>
+
+    <WarehouseFormField label={t("Delivery terms")} className="md:col-span-4"><Input disabled={!editable} value={form.deliveryTerms ?? ""} onChange={(event)=>patch("deliveryTerms",event.target.value||null)} className={controlClass} /></WarehouseFormField>
+    <WarehouseFormField label={t("Payment terms")} className="md:col-span-4"><Input disabled={!editable} value={form.paymentTerms ?? ""} onChange={(event)=>patch("paymentTerms",event.target.value||null)} className={controlClass} /></WarehouseFormField>
+    <WarehouseFormField label={t("Notes")} className="md:col-span-8"><Input disabled={!editable} value={form.notes ?? ""} onChange={(event)=>patch("notes",event.target.value||null)} className={controlClass} dir="auto" /></WarehouseFormField>
+  </div>
+}
+
 /** Reusable line editor for purchase-order entry and document-extraction review. */
 export function PurchaseOrderLineEditor({
   lines,
@@ -86,51 +150,51 @@ export function PurchaseOrderLineEditor({
   const { t } = useLanguage()
   const items = reference?.items.filter((item)=>item.facilityId === facilityId && item.customerOrgId === customerOrgId) ?? []
   const patch = (index: number, changes: Partial<WarehousePurchaseOrderLine>) => onChange(lines.map((line, lineIndex)=>lineIndex === index ? { ...line, ...changes } : line))
-  return <div className="grid gap-2">
-    {lines.map((line, index) => {
-      const selectedItem = items.find((item)=>item.id === line.itemId)
-      const amount = Math.max(0, Number(line.quantity) || 0) * Math.max(0, Number(line.unitPrice) || 0)
-      return <div key={line.id ?? index} className="grid gap-2 rounded-[var(--md-radius-lg)] bg-white/44 p-3 shadow-[var(--md-shadow-line)] lg:grid-cols-12">
-        <WarehouseFormField label={t("Warehouse item")} required className="lg:col-span-3">
-          <Select disabled={disabled || !facilityId || !customerOrgId} value={line.itemId ?? "__unmatched__"} onValueChange={(value) => {
-            const item = items.find((candidate)=>candidate.id === value)
-            patch(index, { itemId: item?.id ?? null, sku: item?.sku ?? line.sku, description: line.description || item?.description || "", uomCode: item?.uomCode ?? line.uomCode })
-          }}><SelectTrigger className={controlClass}><SelectValue placeholder={t("Match item")} /></SelectTrigger><SelectContent><SelectItem value="__unmatched__">{t("Unmatched")}</SelectItem>{items.map((item)=><SelectItem key={item.id} value={item.id}>{item.sku} · {item.description}</SelectItem>)}</SelectContent></Select>
-        </WarehouseFormField>
-        <WarehouseFormField label={t("SKU")} className="lg:col-span-2"><Input disabled={disabled} value={line.sku} onChange={(event)=>patch(index,{ sku:event.target.value })} className={controlClass} dir="ltr" /></WarehouseFormField>
-        <WarehouseFormField label={t("Description")} required className="lg:col-span-4"><Input disabled={disabled} value={line.description} onChange={(event)=>patch(index,{ description:event.target.value })} className={controlClass} dir="auto" /></WarehouseFormField>
-        <WarehouseFormField label={t("Quantity")} required className="lg:col-span-1"><Input disabled={disabled} type="number" min="0.000001" step={selectedItem?.allowsFractionalQuantity ? "0.001" : "1"} value={line.quantity} onChange={(event)=>patch(index,{ quantity:Number(event.target.value) })} className={controlClass} dir="ltr" /></WarehouseFormField>
-        <WarehouseFormField label={t("UOM")} className="lg:col-span-1"><Input disabled={disabled} value={line.uomCode} onChange={(event)=>patch(index,{ uomCode:event.target.value.toUpperCase() })} className={controlClass} dir="ltr" /></WarehouseFormField>
-        <Button disabled={disabled || lines.length === 1} type="button" variant="ghost" size="icon" aria-label={t("Remove line")} onClick={()=>onChange(lines.filter((_,lineIndex)=>lineIndex!==index))} className="mt-6 size-10 rounded-[var(--md-radius-lg)] text-[var(--md-red)] lg:col-span-1"><Trash2 className="size-4" /></Button>
-        <WarehouseFormField label={t("Supplier item code")} className="lg:col-span-3"><Input disabled={disabled} value={line.supplierItemCode ?? ""} onChange={(event)=>patch(index,{ supplierItemCode:event.target.value || null })} className={controlClass} dir="ltr" /></WarehouseFormField>
-        <WarehouseFormField label={t("Unit price")} className="lg:col-span-2"><Input disabled={disabled} type="number" min="0" step="0.01" value={line.unitPrice} onChange={(event)=>patch(index,{ unitPrice:Number(event.target.value) })} className={controlClass} dir="ltr" /></WarehouseFormField>
-        <WarehouseFormField label={t("Tax %")} className="lg:col-span-2"><Input disabled={disabled} type="number" min="0" step="0.01" value={line.taxRate} onChange={(event)=>patch(index,{ taxRate:Number(event.target.value) })} className={controlClass} dir="ltr" /></WarehouseFormField>
-        <WarehouseFormField label={t("Line delivery date")} className="lg:col-span-3"><Input disabled={disabled} type="date" value={line.requestedDeliveryDate ?? ""} onChange={(event)=>patch(index,{ requestedDeliveryDate:event.target.value || null })} className={controlClass} dir="ltr" /></WarehouseFormField>
-        <div className="flex items-end justify-end pb-2 lg:col-span-2"><span className="text-[12px] text-[var(--md-subtle)]">{t("Net")} <strong dir="ltr" className="ms-1 font-medium tabular-nums text-[var(--md-ink)]">{amount.toFixed(2)}</strong></span></div>
-      </div>
-    })}
-    {!disabled ? <Button type="button" variant="ghost" onClick={()=>onChange([...lines,emptyLine()])} className="h-9 justify-self-start rounded-[var(--md-radius-lg)]"><Plus className="size-4" />{t("Add line")}</Button> : null}
-  </div>
+  const rows = useMemo(() => lines.map((line, index) => ({ line, index })), [lines])
+  const lineControlClass = "!h-8 w-full rounded-[var(--md-radius-sm)] border-0 bg-white/72 !px-2 !text-[12px] shadow-[var(--md-shadow-line)] active:!scale-100"
+  const columns = useMemo<DataTableColumn<{ line: WarehousePurchaseOrderLine; index: number }>[]>(() => [
+    { id:"item",label:"Warehouse item",width:190,minWidth:150,canHide:false,resizable:true,cell:({line,index})=><SearchablePurchaseOrderSelect disabled={disabled || !facilityId || !customerOrgId} value={line.itemId ?? ""} options={items.map((item)=>({ id:item.id,code:item.sku,name:item.description }))} placeholder="Match item" searchPlaceholder="Search warehouse items…" emptyLabel="No matching warehouse items" onChange={(value)=>{ const item=items.find((candidate)=>candidate.id===value); if(item) patch(index,{itemId:item.id,sku:item.sku,description:line.description || item.description,uomCode:item.uomCode}) }} /> },
+    { id:"sku",label:"SKU",width:105,minWidth:80,resizable:true,cell:({line,index})=><Input disabled={disabled} value={line.sku} onChange={(event)=>patch(index,{sku:event.target.value})} className={lineControlClass} dir="ltr" /> },
+    { id:"description",label:"Description",width:240,minWidth:160,canHide:false,resizable:true,cell:({line,index})=><Input disabled={disabled} value={line.description} onChange={(event)=>patch(index,{description:event.target.value})} className={lineControlClass} dir="auto" /> },
+    { id:"quantity",label:"Qty",kind:"number",width:76,minWidth:64,resizable:true,cell:({line,index})=>{ const item=items.find((candidate)=>candidate.id===line.itemId); return <Input disabled={disabled} type="number" min="0.000001" step={item?.allowsFractionalQuantity?"0.001":"1"} value={line.quantity} onChange={(event)=>patch(index,{quantity:Number(event.target.value)})} className={lineControlClass} dir="ltr" /> } },
+    { id:"uom",label:"UOM",width:68,minWidth:58,resizable:true,cell:({line,index})=><Input disabled={disabled} value={line.uomCode} onChange={(event)=>patch(index,{uomCode:event.target.value.toUpperCase()})} className={lineControlClass} dir="ltr" /> },
+    { id:"unitPrice",label:"Unit price",kind:"number",width:92,minWidth:72,resizable:true,cell:({line,index})=><Input disabled={disabled} type="number" min="0" step="0.01" value={line.unitPrice} onChange={(event)=>patch(index,{unitPrice:Number(event.target.value)})} className={lineControlClass} dir="ltr" /> },
+    { id:"tax",label:"Tax %",kind:"number",width:72,minWidth:62,resizable:true,cell:({line,index})=><Input disabled={disabled} type="number" min="0" step="0.01" value={line.taxRate} onChange={(event)=>patch(index,{taxRate:Number(event.target.value)})} className={lineControlClass} dir="ltr" /> },
+    { id:"supplierCode",label:"Supplier code",width:120,minWidth:92,resizable:true,defaultHidden:true,cell:({line,index})=><Input disabled={disabled} value={line.supplierItemCode ?? ""} onChange={(event)=>patch(index,{supplierItemCode:event.target.value||null})} className={lineControlClass} dir="ltr" /> },
+    { id:"delivery",label:"Delivery",kind:"date",width:126,minWidth:110,resizable:true,defaultHidden:true,cell:({line,index})=><Input disabled={disabled} type="date" value={line.requestedDeliveryDate ?? ""} onChange={(event)=>patch(index,{requestedDeliveryDate:event.target.value||null})} className={lineControlClass} dir="ltr" /> },
+    { id:"net",label:"Net",kind:"number",width:86,minWidth:72,resizable:true,cell:({line})=><span dir="ltr" className="tabular-nums text-[12px] font-medium">{(Math.max(0,Number(line.quantity)||0)*Math.max(0,Number(line.unitPrice)||0)).toFixed(2)}</span> },
+    { id:"actions",label:"",kind:"actions",width:44,minWidth:44,canHide:false,canPin:false,cell:({index})=><Button disabled={disabled || lines.length===1} type="button" variant="ghost" size="icon" aria-label={t("Remove line")} onClick={()=>onChange(lines.filter((_,lineIndex)=>lineIndex!==index))} className="size-8 rounded-[var(--md-radius-sm)] text-[var(--md-red)]"><Trash2 className="size-3.5" /></Button> },
+  ], [customerOrgId, disabled, facilityId, items, lines, onChange, t])
+  return <DataTable ariaLabel="Purchase order lines" columnsButtonLabel="Manage purchase order line columns" storageKey="purchase-order-line-editor" columns={columns} rows={rows} getRowKey={({line,index})=>line.id ?? `line-${index}`} minimumWidth={1120} compactToolbar emptyState={null} toolbarOptions={!disabled?<Button type="button" variant="ghost" onClick={()=>onChange([...lines,emptyLine()])} className="h-8 rounded-[var(--md-radius-md)] px-2.5 text-[12px]"><Plus className="size-3.5" />{t("Add line")}</Button>:null} rowClassName="h-[48px]" tableClassName="text-[12px]" />
 }
 
-function PurchaseOrderDialog({ open, order, reference, onOpenChange, onChanged }: { open: boolean; order: WarehousePurchaseOrder | null; reference: WarehousePurchaseOrderReference | null; onOpenChange: (open: boolean)=>void; onChanged: ()=>void }) {
+export function WarehousePurchaseOrderCreateView({ navigate }: { navigate?: (path: string) => void }) {
   const { t } = useLanguage()
   const [form, setForm] = useState<WarehousePurchaseOrderInput>(emptyInput)
+  const [reference, setReference] = useState<WarehousePurchaseOrderReference | null>(null)
   const [saving, setSaving] = useState(false)
+  const [generatingNumber, setGeneratingNumber] = useState(false)
   const [extracting, setExtracting] = useState(false)
   const [stage, setStage] = useState<PurchaseOrderExtractionStage | null>(null)
   const [error, setError] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
-  const editable = !order || (["draft","issued"].includes(order.statusCode) && !order.warehouseOrderId)
+  const editable = true
   const extractionStages = useMemo(() => [
     { id: "reading", label: t("Reading the document"), detail: t("Checking the PDF and its embedded text."), ceiling: 28, expectedMs: 2_000 },
     { id: "extracting", label: t("Finding header and lines"), detail: t("Identifying supplier, dates, references and ordered goods."), ceiling: 88, expectedMs: 10_000 },
     { id: "organising", label: t("Preparing the review"), detail: t("Matching extracted SKUs to warehouse items."), ceiling: 98, expectedMs: 2_000 },
   ], [t])
-  useEffect(() => { if (open) { setForm(order ? normaliseInput(order) : emptyInput()); setError(null); setStage(null) } }, [open, order])
+  useEffect(() => { getWarehousePurchaseOrderReference().then(setReference).catch((cause) => setError(errorMessage(cause))) }, [])
   const patch = <K extends keyof WarehousePurchaseOrderInput>(key: K, value: WarehousePurchaseOrderInput[K]) => setForm((current)=>({ ...current, [key]: value }))
-  const supplierOptions = reference?.organisations ?? []
   const total = form.lines.reduce((sum,line)=>sum+Math.max(0,line.quantity)*Math.max(0,line.unitPrice)*(1+Math.max(0,line.taxRate)/100),0)
+
+  async function generateNumber() {
+    if (!form.facilityId) return
+    setGeneratingNumber(true); setError(null)
+    try { patch("number", (await getNextWarehousePurchaseOrderNumber(form.facilityId)).number) }
+    catch (cause) { setError(errorMessage(cause)) }
+    finally { setGeneratingNumber(false) }
+  }
 
   async function importDocument(file: File) {
     abortRef.current?.abort(); abortRef.current = new AbortController(); setExtracting(true); setError(null); setStage("reading")
@@ -167,81 +231,284 @@ function PurchaseOrderDialog({ open, order, reference, onOpenChange, onChanged }
 
   async function save() {
     setError(null)
-    if (!form.facilityId || !form.customerOrgId || !form.number.trim() || !form.supplierName.trim() || form.lines.some((line)=>!line.description.trim() || line.quantity<=0 || !line.uomCode.trim())) { setError(t("Complete the purchase order header and every required line field.")); return }
+    if (!form.facilityId || !form.customerOrgId || !form.number.trim() || form.lines.some((line)=>!line.description.trim() || line.quantity<=0 || !line.uomCode.trim())) { setError(t("Complete the purchase order header and every required line field.")); return }
     setSaving(true)
     try {
       const payload = { ...form, extractionMetadata:{ ...(form.extractionMetadata ?? {}),reviewedAt:new Date().toISOString() } }
-      await (order ? updateWarehousePurchaseOrder(order.id,payload) : createWarehousePurchaseOrder(payload))
-      toast.success(t(order ? "Purchase order updated." : "Purchase order created.")); onChanged(); onOpenChange(false)
+      const created = await createWarehousePurchaseOrder(payload)
+      toast.success(t("Purchase order created.")); navigate?.(purchaseOrderDetailPath(created))
     } catch (cause) { setError(errorMessage(cause)) } finally { setSaving(false) }
   }
 
-  async function action(kind: "issue"|"cancel"|"inbound") {
+  return <div className="grid gap-[var(--md-gap-md)]">
+    <motion.header initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={mdMotion.enter} className="grid gap-3">
+      <button type="button" onClick={() => navigate?.("/warehouse/purchase-orders")} className="group inline-flex h-8 w-fit items-center gap-1.5 rounded-[var(--md-radius-md)] px-2 -ms-2 text-[12.5px] font-medium text-[var(--md-text)] outline-none transition-[background,color] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)]"><ArrowLeft className="size-3.5 rtl:rotate-180" strokeWidth={1.5} />{t("Back to purchase orders")}</button>
+      <div className="flex flex-wrap items-start justify-between gap-4"><div><h1 className="text-[24px] font-medium leading-none tracking-[-0.015em] text-[var(--md-ink)]">{t("New purchase order")}</h1><p className="mt-1.5 text-[13px] text-[var(--md-text)]">{t("Enter the header and lines, or import a supplier PDF and review the extracted values before saving.")}</p></div><Button disabled={saving || extracting} onClick={() => void save()} className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] text-[var(--md-accent-ink)]">{saving ? <Loader2 className="size-4 animate-spin" /> : null}{t("Create purchase order")}</Button></div>
+    </motion.header>
+    <PurchaseOrderSection index={0} title="Purchase order details" meta="Supplier, dates, ownership and commercial references." action={<label className="inline-flex h-8 cursor-pointer items-center gap-2 rounded-[var(--md-radius-md)] bg-white/58 px-2.5 text-[12px] font-medium shadow-[var(--md-shadow-line)]"><Upload className="size-3.5" />{t("Extract from PDF")}<input className="sr-only" type="file" accept="application/pdf,.pdf" onChange={(event)=>{ const file=event.target.files?.[0]; if(file){ patch("sourceFileName",file.name); void importDocument(file) } event.currentTarget.value="" }} /></label>}>
+      {extracting ? <DocumentExtractionProgress title={t("Reading purchase order")} detail={t("Extracted values are never saved until you review and confirm them.")} fileName={form.sourceFileName ?? undefined} stages={extractionStages} activeStageId={stage} onCancel={()=>abortRef.current?.abort()} /> : <PurchaseOrderDetailsFields form={form} reference={reference} editable onGenerateNumber={() => void generateNumber()} generatingNumber={generatingNumber} patch={patch} />}
+      {error ? <div className="mt-4 flex items-start gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-red-a08)] px-3 py-2.5 text-[12px] text-[var(--md-red)]" role="alert"><AlertCircle className="mt-0.5 size-4 shrink-0" />{t(error)}</div>:null}
+    </PurchaseOrderSection>
+    {!extracting ? <PurchaseOrderSection index={1} title="Order lines" meta="Match each extracted line to the correct warehouse item before issuing." action={<span className="text-[12px] text-[var(--md-subtle)]">{t("Total")} <strong dir="ltr" className="ms-1 font-medium tabular-nums text-[var(--md-ink)]">{form.currencyCode} {total.toFixed(2)}</strong></span>}><PurchaseOrderLineEditor lines={form.lines} reference={reference} facilityId={form.facilityId} customerOrgId={form.customerOrgId} onChange={(lines)=>patch("lines",lines)} /></PurchaseOrderSection> : null}
+  </div>
+}
+
+const purchaseOrderScopes = ["Open", "All"] as const
+type PurchaseOrderScope = (typeof purchaseOrderScopes)[number]
+
+const purchaseOrderStatuses = ["draft", "issued", "part_received", "received", "cancelled"] as const
+
+export function purchaseOrderDetailPath(order: { id: string }) {
+  return `/warehouse/purchase-orders/${encodeURIComponent(order.id)}`
+}
+
+export function warehousePurchaseOrderDetailId(route: string) {
+  const match = /^\/warehouse\/purchase-orders\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i.exec(route)
+  return match ? decodeURIComponent(match[1]) : null
+}
+
+export function WarehousePurchaseOrdersWorkspace({ navigate }: { navigate?: (path: string) => void }) {
+  const { language, t } = useLanguage()
+  const [reference, setReference] = useState<WarehousePurchaseOrderReference | null>(null)
+  const [orders, setOrders] = useState<WarehousePurchaseOrder[] | null>(null)
+  const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get("search") ?? "")
+  const [committedSearch, setCommittedSearch] = useState(search)
+  const [facilityId, setFacilityId] = useState("")
+  const [statusCode, setStatusCode] = useState("")
+  const [scope, setScope] = useState<PurchaseOrderScope>("Open")
+  const [pending, setPending] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const requestedRecordIdRef = useRef(new URLSearchParams(window.location.search).get("record"))
+  const requestId = useRef(0)
+  const dateOnly = useMemo(() => new Intl.DateTimeFormat(language, { dateStyle: "medium" }), [language])
+
+  const refresh = useCallback(async function refresh() {
+    const ticket = ++requestId.current
+    setPending(true)
+    try {
+      const [nextReference, nextOrders] = await Promise.all([
+        reference ?? getWarehousePurchaseOrderReference(),
+        listWarehousePurchaseOrders({
+          facilityId: facilityId || undefined,
+          statusCode: statusCode || undefined,
+          search: committedSearch.trim() || undefined,
+        }),
+      ])
+      if (ticket !== requestId.current) return
+      setReference(nextReference)
+      setOrders(nextOrders)
+      setError(null)
+      const requested = requestedRecordIdRef.current
+      if (requested) {
+        requestedRecordIdRef.current = null
+        const requestedOrder = nextOrders.find((order) => order.id === requested)
+        if (requestedOrder) navigate?.(purchaseOrderDetailPath(requestedOrder))
+      }
+    } catch (cause) {
+      if (ticket !== requestId.current) return
+      setError(errorMessage(cause))
+      setOrders([])
+    } finally {
+      if (ticket === requestId.current) setPending(false)
+    }
+  }, [reference, facilityId, statusCode, committedSearch])
+
+  useEffect(() => { void refresh() }, [refresh])
+
+  useEffect(() => {
+    if (search === committedSearch) return
+    const timer = window.setTimeout(() => setCommittedSearch(search), 320)
+    return () => window.clearTimeout(timer)
+  }, [search, committedSearch])
+
+  const visible = useMemo(() => (orders ?? []).filter((order) => (
+    scope === "All" || !["received", "cancelled"].includes(order.statusCode)
+  )), [orders, scope])
+
+  const columns = useMemo<DataTableColumn<WarehousePurchaseOrder>[]>(() => [
+    {
+      id: "number",
+      label: "Purchase order",
+      width: 192,
+      minWidth: 160,
+      resizable: true,
+      canHide: false,
+      sortValue: (order) => order.number,
+      cell: (order) => <div className="min-w-0"><span data-i18n-skip dir="ltr" className="text-[12px] font-medium tabular-nums text-[var(--md-ink)]">{order.number}</span><p className="truncate text-[11px] text-[var(--md-subtle)]">{order.buyerReference ?? t("No buyer reference")}</p></div>,
+    },
+    { id: "supplier", label: "Supplier", width: 210, resizable: true, sortValue: (order) => order.supplierName, cell: (order) => <div className="min-w-0"><p className="truncate text-[12.5px] font-medium text-[var(--md-ink)]">{order.supplierName}</p><p className="truncate text-[11px] text-[var(--md-subtle)]">{order.customerName}</p></div> },
+    { id: "warehouse", label: "Warehouse", width: 176, resizable: true, sortValue: (order) => order.facilityName, cell: (order) => <span className="truncate text-[12.5px] text-[var(--md-text)]">{order.facilityName}</span> },
+    { id: "delivery", label: "Expected", width: 152, resizable: true, sortValue: (order) => order.expectedDeliveryDate, cell: (order) => <span className="whitespace-nowrap text-[12px] text-[var(--md-text)]">{order.expectedDeliveryDate ? dateOnly.format(new Date(`${order.expectedDeliveryDate}T00:00:00`)) : "—"}</span> },
+    { id: "lines", label: "Lines", width: 88, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (order) => order.lines.length, cell: (order) => <span dir="ltr" className="tabular-nums">{order.lines.length}</span> },
+    { id: "total", label: "Total", width: 140, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (order) => order.totalAmount, cell: (order) => <span dir="ltr" className="whitespace-nowrap font-medium tabular-nums text-[var(--md-ink)]">{order.currencyCode} {order.totalAmount.toFixed(2)}</span> },
+    { id: "status", label: "Status", kind: "status", width: 144, resizable: true, headerClassName: "text-end", cellClassName: "text-end", sortValue: (order) => order.statusCode, cell: (order) => <StatusPill tone={statusTone(order.statusCode)}>{t(order.statusCode.replace("_", " "))}</StatusPill> },
+  ], [dateOnly, t])
+
+  const loaded = orders !== null
+  const hasFilters = Boolean(search.trim() || facilityId || statusCode)
+  const clearFilters = () => { setSearch(""); setCommittedSearch(""); setFacilityId(""); setStatusCode("") }
+  const emptyState = error ? (
+    <div className="mx-auto max-w-[380px]" role="alert">
+      <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Purchase orders could not be loaded")}</p>
+      <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{error}</p>
+      <Button type="button" variant="outline" className="mt-3 h-8 rounded-[var(--md-radius-md)] text-[12px]" onClick={() => void refresh()}><RefreshCw data-icon="inline-start" className="size-3.5" strokeWidth={1.4} />{t("Try again")}</Button>
+    </div>
+  ) : !loaded ? (
+    <DotGridLoaderPanel label="Loading purchase orders" minHeight={0} />
+  ) : hasFilters ? (
+    <div className="mx-auto max-w-[380px]">
+      <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("No purchase orders match these filters")}</p>
+      <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Widen the search or switch warehouse to see more.")}</p>
+      <Button type="button" variant="outline" className="mt-3 h-8 rounded-[var(--md-radius-md)] text-[12px]" onClick={clearFilters}>{t("Clear filters")}</Button>
+    </div>
+  ) : (
+    <div className="mx-auto max-w-[380px]">
+      <FileSearch className="mx-auto size-5 text-[var(--md-accent)]" strokeWidth={1.35} />
+      <p className="mt-2 text-[13px] font-medium text-[var(--md-ink)]">{t(scope === "Open" ? "No open purchase orders" : "No purchase orders yet")}</p>
+      <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Purchase orders appear here once supplier work is recorded.")}</p>
+    </div>
+  )
+
+  return <div className="grid gap-[var(--md-page-stack-gap)]">
+    <DataTable
+      ariaLabel="Purchase orders"
+      columnsButtonLabel="Manage purchase order columns"
+      storageKey="warehouse-purchase-orders"
+      columns={columns}
+      rows={visible}
+      getRowKey={(order) => order.id}
+      onRowClick={(order) => navigate?.(purchaseOrderDetailPath(order))}
+      rowClassName="hover:bg-[var(--md-hover)]"
+      compactToolbar
+      emptyState={emptyState}
+      toolbarTabs={<RegisterViewSwitch options={purchaseOrderScopes} value={scope} onChange={setScope} counts={{ [scope]: visible.length } as Partial<Record<PurchaseOrderScope, number>>} ariaLabel="Purchase order scope" compact />}
+      toolbarSearch={<RegisterSearchField value={search} onChange={setSearch} onClear={() => { setSearch(""); setCommittedSearch("") }} label="Search purchase orders" placeholder="PO, supplier, reference" className="sm:min-w-[156px] sm:w-[156px]" />}
+      toolbarFilters={<>
+        <RegisterFacetSelect label="Status" allLabel="All statuses" value={statusCode} options={purchaseOrderStatuses.map((status) => ({ value: status, label: status.replace("_", " ") }))} onChange={setStatusCode} className="w-[120px] sm:w-[120px]" />
+        <RegisterFacetSelect label="Warehouse" allLabel="All warehouses" value={facilityId} options={(reference?.facilities ?? []).map((facility) => ({ value: facility.id, label: facility.name }))} onChange={setFacilityId} className="w-[132px] sm:w-[132px]" />
+      </>}
+      toolbarOptions={<RegisterRevalidatingMark active={pending && loaded} />}
+    />
+  </div>
+}
+
+function PurchaseOrderSection({ index, title, meta, action, children }: { index: number; title: string; meta?: string; action?: ReactNode; children: ReactNode }) {
+  const { t } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
+  return <motion.section initial={shouldReduceMotion ? false : { opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={shouldReduceMotion ? { duration: 0 } : { ...mdMotion.enter, delay: staggerRamp(index, 0.05) }} className="overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]">
+    <div className="flex flex-wrap items-start justify-between gap-2 px-3.5 py-2.5 shadow-[var(--md-stroke-bottom)]"><div className="min-w-0"><h2 className="text-[13px] font-medium leading-4 text-[var(--md-ink)]">{t(title)}</h2>{meta ? <p className="mt-0.5 text-[11px] leading-4 text-[var(--md-text)]">{t(meta)}</p> : null}</div>{action ? <div className="shrink-0">{action}</div> : null}</div>
+    <div className="p-3.5">{children}</div>
+  </motion.section>
+}
+
+export function WarehousePurchaseOrderDetailView({ purchaseOrderId, navigate }: { purchaseOrderId: string; navigate?: (path: string) => void }) {
+  const { language, t } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
+  const [order, setOrder] = useState<WarehousePurchaseOrder | null>(null)
+  const [form, setForm] = useState<WarehousePurchaseOrderInput | null>(null)
+  const [savedForm, setSavedForm] = useState("")
+  const [reference, setReference] = useState<WarehousePurchaseOrderReference | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [generatingNumber, setGeneratingNumber] = useState(false)
+  const dateTime = useMemo(() => new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }), [language])
+
+  const load = useCallback(async () => {
+    try {
+      const found = await getWarehousePurchaseOrder(purchaseOrderId)
+      const nextForm = normaliseInput(found)
+      setOrder(found); setForm(nextForm); setSavedForm(JSON.stringify(nextForm)); setLoadError(null)
+    } catch (cause) { setLoadError(errorMessage(cause)) }
+  }, [purchaseOrderId])
+
+  useEffect(() => { void load() }, [load])
+  useEffect(() => { getWarehousePurchaseOrderReference().then(setReference).catch(() => undefined) }, [])
+
+  async function runAction(kind: "issue" | "cancel" | "inbound") {
     if (!order) return
     setSaving(true); setError(null)
     try {
-      if (kind==="issue") await issueWarehousePurchaseOrder(order.id)
-      else if (kind==="cancel") await cancelWarehousePurchaseOrder(order.id)
+      if (kind === "issue") await issueWarehousePurchaseOrder(order.id)
+      else if (kind === "cancel") await cancelWarehousePurchaseOrder(order.id)
       else await createInboundOrderFromPurchaseOrder(order.id)
-      toast.success(t(kind==="issue" ? "Purchase order issued." : kind==="cancel" ? "Purchase order cancelled." : "Goods-in order created.")); onChanged(); onOpenChange(false)
+      toast.success(t(kind === "issue" ? "Purchase order issued." : kind === "cancel" ? "Purchase order cancelled." : "Goods-in order created."))
+      await load()
     } catch (cause) { setError(errorMessage(cause)) } finally { setSaving(false) }
   }
 
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[92vh] overflow-hidden border-0 bg-[var(--md-surface)] p-0 sm:max-w-[1120px]">
-    <DialogHeader className={warehouseDialogHeaderClass}><DialogTitle>{order ? `${t("Purchase order")} ${order.number}` : t("New purchase order")}</DialogTitle><DialogDescription>{t("Enter the header and lines, or import a supplier PDF and review the extracted values before saving.")}</DialogDescription></DialogHeader>
-    <div className="min-h-0 overflow-y-auto px-6 py-5">
-      {extracting ? <DocumentExtractionProgress title={t("Reading purchase order")} detail={t("Extracted values are never saved until you review and confirm them.")} fileName={form.sourceFileName ?? undefined} stages={extractionStages} activeStageId={stage} onCancel={()=>abortRef.current?.abort()} /> : <div className="grid gap-5">
-        <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Header")}</p><p className="mt-1 text-[11.5px] text-[var(--md-subtle)]">{form.sourceFileName ? <>{t("Extracted from")} <span dir="auto">{form.sourceFileName}</span> · {t("review required")}</> : t("Supplier, dates, ownership and commercial references.")}</p></div>{editable ? <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-[var(--md-radius-lg)] bg-white/58 px-3 text-[12px] font-medium shadow-[var(--md-shadow-line)]"><Upload className="size-4" />{t("Extract from PDF")}<input className="sr-only" type="file" accept="application/pdf,.pdf" onChange={(event)=>{ const file=event.target.files?.[0]; if(file){ patch("sourceFileName",file.name); void importDocument(file) } event.currentTarget.value="" }} /></label>:null}</div>
-        <div className="grid gap-3 md:grid-cols-12">
-          <WarehouseFormField label={t("Warehouse")} required className="md:col-span-4"><Select disabled={!editable} value={form.facilityId} onValueChange={(value)=>{ patch("facilityId",value); patch("lines",form.lines.map((line)=>({ ...line,itemId:null }))) }}><SelectTrigger className={controlClass}><SelectValue placeholder={t("Choose warehouse")} /></SelectTrigger><SelectContent>{reference?.facilities.map((facility)=><SelectItem key={facility.id} value={facility.id}>{facility.name}</SelectItem>)}</SelectContent></Select></WarehouseFormField>
-          <WarehouseFormField label={t("Stock owner")} required className="md:col-span-4"><Select disabled={!editable} value={form.customerOrgId} onValueChange={(value)=>{ patch("customerOrgId",value); patch("lines",form.lines.map((line)=>({ ...line,itemId:null }))) }}><SelectTrigger className={controlClass}><SelectValue placeholder={t("Choose organisation")} /></SelectTrigger><SelectContent>{supplierOptions.map((organisation)=><SelectItem key={organisation.id} value={organisation.id}>{organisation.name}</SelectItem>)}</SelectContent></Select></WarehouseFormField>
-          <WarehouseFormField label={t("Purchase order number")} required className="md:col-span-4"><Input disabled={!editable} value={form.number} onChange={(event)=>patch("number",event.target.value)} className={controlClass} dir="ltr" /></WarehouseFormField>
-          <WarehouseFormField label={t("Supplier")} required className="md:col-span-4"><Input disabled={!editable} value={form.supplierName} onChange={(event)=>patch("supplierName",event.target.value)} className={controlClass} dir="auto" /></WarehouseFormField>
-          <WarehouseFormField label={t("Link supplier record")} className="md:col-span-4"><Select disabled={!editable} value={form.supplierOrgId ?? "__none__"} onValueChange={(value)=>{ const supplier=supplierOptions.find((item)=>item.id===value); patch("supplierOrgId",supplier?.id ?? null); if(supplier) patch("supplierName",supplier.name) }}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__none__">{t("No linked record")}</SelectItem>{supplierOptions.map((organisation)=><SelectItem key={organisation.id} value={organisation.id}>{organisation.name}</SelectItem>)}</SelectContent></Select></WarehouseFormField>
-          <WarehouseFormField label={t("Currency")} required className="md:col-span-2"><Select disabled={!editable} value={form.currencyCode} onValueChange={(value)=>patch("currencyCode",value)}><SelectTrigger className={controlClass}><SelectValue /></SelectTrigger><SelectContent>{reference?.currencies.map((currency)=><SelectItem key={currency} value={currency}>{currency}</SelectItem>)}</SelectContent></Select></WarehouseFormField>
-          <WarehouseFormField label={t("Issue date")} className="md:col-span-2"><Input disabled={!editable} type="date" value={form.issueDate ?? ""} onChange={(event)=>patch("issueDate",event.target.value||null)} className={controlClass} dir="ltr" /></WarehouseFormField>
-          <WarehouseFormField label={t("Expected delivery")} className="md:col-span-3"><Input disabled={!editable} type="date" value={form.expectedDeliveryDate ?? ""} onChange={(event)=>patch("expectedDeliveryDate",event.target.value||null)} className={controlClass} dir="ltr" /></WarehouseFormField>
-          <WarehouseFormField label={t("Buyer reference")} className="md:col-span-3"><Input disabled={!editable} value={form.buyerReference ?? ""} onChange={(event)=>patch("buyerReference",event.target.value||null)} className={controlClass} dir="ltr" /></WarehouseFormField>
-          <WarehouseFormField label={t("Supplier reference")} className="md:col-span-3"><Input disabled={!editable} value={form.supplierReference ?? ""} onChange={(event)=>patch("supplierReference",event.target.value||null)} className={controlClass} dir="ltr" /></WarehouseFormField>
-          <WarehouseFormField label={t("Delivery terms")} className="md:col-span-3"><Input disabled={!editable} value={form.deliveryTerms ?? ""} onChange={(event)=>patch("deliveryTerms",event.target.value||null)} className={controlClass} /></WarehouseFormField>
-          <WarehouseFormField label={t("Payment terms")} className="md:col-span-3"><Input disabled={!editable} value={form.paymentTerms ?? ""} onChange={(event)=>patch("paymentTerms",event.target.value||null)} className={controlClass} /></WarehouseFormField>
-          <WarehouseFormField label={t("Delivery address")} className="md:col-span-6"><Textarea disabled={!editable} value={form.deliveryAddress ?? ""} onChange={(event)=>patch("deliveryAddress",event.target.value||null)} className="min-h-20 rounded-[var(--md-radius-lg)] border-0 bg-white/68 shadow-[var(--md-shadow-line)]" dir="auto" /></WarehouseFormField>
-          <WarehouseFormField label={t("Notes")} className="md:col-span-6"><Textarea disabled={!editable} value={form.notes ?? ""} onChange={(event)=>patch("notes",event.target.value||null)} className="min-h-20 rounded-[var(--md-radius-lg)] border-0 bg-white/68 shadow-[var(--md-shadow-line)]" dir="auto" /></WarehouseFormField>
-        </div>
-        <div><div className="mb-3 flex items-end justify-between"><div><p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Lines")}</p><p className="mt-1 text-[11.5px] text-[var(--md-subtle)]">{t("Match each extracted line to the correct warehouse item before issuing.")}</p></div><p className="text-[12px] text-[var(--md-subtle)]">{t("Total")} <strong dir="ltr" className="ms-1 font-medium tabular-nums text-[var(--md-ink)]">{form.currencyCode} {total.toFixed(2)}</strong></p></div><PurchaseOrderLineEditor lines={form.lines} reference={reference} facilityId={form.facilityId} customerOrgId={form.customerOrgId} disabled={!editable} onChange={(lines)=>patch("lines",lines)} /></div>
-      </div>}
-      {error ? <div className="mt-4 flex items-start gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-red-a08)] px-3 py-2.5 text-[12px] text-[var(--md-red)]" role="alert"><AlertCircle className="mt-0.5 size-4 shrink-0" />{t(error)}</div>:null}
-    </div>
-    <DialogFooter className={`${warehouseDialogFooterClass} flex-row items-center justify-between`}><div>{order && !order.warehouseOrderId && !["received","cancelled"].includes(order.statusCode)?<Button variant="ghost" disabled={saving} onClick={()=>void action("cancel")} className="text-[var(--md-red)]">{t("Cancel PO")}</Button>:null}</div><div className="flex flex-wrap justify-end gap-2"><Button variant="ghost" onClick={()=>onOpenChange(false)}>{t("Close")}</Button>{order?.statusCode==="issued" && !order.warehouseOrderId?<Button variant="outline" disabled={saving} onClick={()=>void action("inbound")}><ArrowDownToLine className="size-4" />{t("Create goods-in order")}</Button>:null}{order?.statusCode==="draft"?<Button variant="outline" disabled={saving || order.lines.some((line)=>!line.itemId)} onClick={()=>void action("issue")}><Send className="size-4" />{t("Issue PO")}</Button>:null}{editable?<Button disabled={saving||extracting} onClick={()=>void save()} className="bg-[var(--md-accent)] text-[var(--md-accent-ink)]">{saving?<Loader2 className="size-4 animate-spin" />:null}{t(order?"Save changes":"Create purchase order")}</Button>:null}</div></DialogFooter>
-  </DialogContent></Dialog>
-}
+  function patch<K extends keyof WarehousePurchaseOrderInput>(key: K, value: WarehousePurchaseOrderInput[K]) {
+    setForm((current) => current ? { ...current, [key]: value } : current)
+  }
 
-export function WarehousePurchaseOrdersWorkspace() {
-  const { language, t } = useLanguage()
-  const [reference,setReference]=useState<WarehousePurchaseOrderReference|null>(null)
-  const [orders,setOrders]=useState<WarehousePurchaseOrder[]|null>(null)
-  const [search,setSearch]=useState("")
-  const [facilityId,setFacilityId]=useState("")
-  const [statusCode,setStatusCode]=useState("__all__")
-  const [selected,setSelected]=useState<WarehousePurchaseOrder|null>(null)
-  const [createOpen,setCreateOpen]=useState(false)
-  const [error,setError]=useState<string|null>(null)
-  const requestedRecordIdRef=useRef(new URLSearchParams(window.location.search).get("record"))
-  async function refresh(){setError(null);try{const [nextReference,nextOrders]=await Promise.all([reference??getWarehousePurchaseOrderReference(),listWarehousePurchaseOrders({facilityId:facilityId||undefined,statusCode:statusCode==="__all__"?undefined:statusCode,search:search.trim()||undefined})]);setReference(nextReference);setOrders(nextOrders);const requested=requestedRecordIdRef.current;if(requested){requestedRecordIdRef.current=null;setSelected(nextOrders.find((order)=>order.id===requested)??null)}else if(selected)setSelected(nextOrders.find((order)=>order.id===selected.id)??null)}catch(cause){setError(errorMessage(cause));setOrders([])}}
-  useEffect(()=>{const timer=window.setTimeout(()=>{void refresh()},250);return()=>window.clearTimeout(timer)},[facilityId,statusCode,search]) // eslint-disable-line react-hooks/exhaustive-deps
-  const money=useMemo(()=>new Intl.NumberFormat(language,{style:"currency",currency:"GBP",maximumFractionDigits:2}),[language])
-  const columns=[
-    {key:"number",label:"Purchase order",className:"min-w-[180px]",render:(order:WarehousePurchaseOrder)=><div><span dir="ltr" className="text-[13px] font-medium text-[var(--md-ink)]">{order.number}</span><p className="mt-1 text-[11px] text-[var(--md-subtle)]">{order.buyerReference??t("No buyer reference")}</p></div>},
-    {key:"supplier",label:"Supplier",className:"min-w-[190px]",render:(order:WarehousePurchaseOrder)=><div><p className="text-[13px] font-medium text-[var(--md-ink)]">{order.supplierName}</p><p className="mt-1 text-[11px] text-[var(--md-subtle)]">{order.customerName}</p></div>},
-    {key:"warehouse",label:"Warehouse",render:(order:WarehousePurchaseOrder)=><span className="text-[12px] text-[var(--md-text)]">{order.facilityName}</span>},
-    {key:"delivery",label:"Expected",render:(order:WarehousePurchaseOrder)=><span className="text-[12px] text-[var(--md-text)]">{order.expectedDeliveryDate?new Intl.DateTimeFormat(language,{dateStyle:"medium"}).format(new Date(`${order.expectedDeliveryDate}T00:00:00`)):"—"}</span>},
-    {key:"lines",label:"Lines",align:"center" as const,render:(order:WarehousePurchaseOrder)=><span className="tabular-nums">{order.lines.length}</span>},
-    {key:"total",label:"Total",align:"right" as const,render:(order:WarehousePurchaseOrder)=><span dir="ltr" className="font-medium tabular-nums">{order.currencyCode==="GBP"?money.format(order.totalAmount):`${order.currencyCode} ${order.totalAmount.toFixed(2)}`}</span>},
-    {key:"status",label:"Status",align:"right" as const,render:(order:WarehousePurchaseOrder)=><StatusPill tone={statusTone(order.statusCode)}>{t(order.statusCode.replace("_"," "))}</StatusPill>},
-  ]
-  return <div className="grid gap-[var(--md-page-stack-gap)]"><div className="flex flex-col gap-3 xl:flex-row xl:items-center"><div className="xl:me-auto"><h2 className="text-[15px] font-medium text-[var(--md-ink)]">{t("Purchase orders")}</h2><p className="mt-1 text-[13px] text-[var(--md-text)]">{t("Enter supplier orders manually or extract a PDF, review every value, and turn an issued PO into goods-in work.")}</p></div><div className="flex flex-wrap gap-2"><Select value={facilityId||"__all__"} onValueChange={(value)=>setFacilityId(value==="__all__"?"":value)}><SelectTrigger className="h-10 min-w-[190px] rounded-[var(--md-radius-lg)] border-0 bg-white/68 shadow-[var(--md-shadow-line)]"><SelectValue placeholder={t("All warehouses")} /></SelectTrigger><SelectContent><SelectItem value="__all__">{t("All warehouses")}</SelectItem>{reference?.facilities.map((facility)=><SelectItem key={facility.id} value={facility.id}>{facility.name}</SelectItem>)}</SelectContent></Select><Select value={statusCode} onValueChange={setStatusCode}><SelectTrigger className="h-10 min-w-[150px] rounded-[var(--md-radius-lg)] border-0 bg-white/68 shadow-[var(--md-shadow-line)]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__all__">{t("All statuses")}</SelectItem>{["draft","issued","part_received","received","cancelled"].map((status)=><SelectItem key={status} value={status}>{t(status.replace("_"," "))}</SelectItem>)}</SelectContent></Select><Input value={search} onChange={(event)=>setSearch(event.target.value)} placeholder={t("Search PO or supplier…")} className={`${controlClass} sm:!w-64`} /><Button variant="ghost" size="icon" aria-label={t("Refresh purchase orders")} onClick={()=>void refresh()} className="size-10 rounded-[var(--md-radius-lg)] bg-white/48 shadow-[var(--md-shadow-line)]"><RefreshCw className="size-4" /></Button><Button onClick={()=>setCreateOpen(true)} className="h-10 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] text-[var(--md-accent-ink)]"><Plus className="size-4" />{t("New purchase order")}</Button></div></div>
-    {error||orders===null||orders.length===0?<Surface padding="lg" className="grid min-h-[220px] place-items-center text-center"><div><span className="mx-auto grid size-11 place-items-center rounded-[var(--md-radius-lg)] bg-white/58 text-[var(--md-accent)] shadow-[var(--md-shadow-line)]">{orders===null&&!error?<Loader2 className="size-5 animate-spin" />:error?<AlertCircle className="size-5" />:<FileSearch className="size-5" />}</span><p className="mt-3 text-[14px] font-medium">{t(error?"Purchase orders could not be loaded":orders===null?"Loading purchase orders":"No purchase orders match these filters")}</p>{error?<p className="mt-1 text-[12px] text-[var(--md-text)]">{t(error)}</p>:null}</div></Surface>:<WarehouseInventoryTable rows={orders} columns={columns} minWidth={980} onRowClick={setSelected} rowDetailLabel={(order)=>`${t("Open purchase order")} ${order.number}`} />}
-    <PurchaseOrderDialog open={createOpen} order={null} reference={reference} onOpenChange={setCreateOpen} onChanged={()=>void refresh()} />
-    <PurchaseOrderDialog open={Boolean(selected)} order={selected} reference={reference} onOpenChange={(next)=>{if(!next)setSelected(null)}} onChanged={()=>void refresh()} />
+  async function generateNumber() {
+    if (!form?.facilityId) return
+    setGeneratingNumber(true); setError(null)
+    try { patch("number", (await getNextWarehousePurchaseOrderNumber(form.facilityId)).number) }
+    catch (cause) { setError(errorMessage(cause)) }
+    finally { setGeneratingNumber(false) }
+  }
+
+  async function save() {
+    if (!order || !form) return
+    setError(null)
+    if (!form.facilityId || !form.customerOrgId || !form.number.trim() || form.lines.some((line) => !line.description.trim() || line.quantity <= 0 || !line.uomCode.trim())) {
+      setError(t("Complete the purchase order header and every required line field.")); return
+    }
+    setSaving(true)
+    try {
+      await updateWarehousePurchaseOrder(order.id, { ...form, extractionMetadata: { ...(form.extractionMetadata ?? {}), reviewedAt: new Date().toISOString() } })
+      toast.success(t("Purchase order updated."))
+      await load()
+    } catch (cause) { setError(errorMessage(cause)) } finally { setSaving(false) }
+  }
+
+  const backButton = <button type="button" onClick={() => navigate?.("/warehouse/purchase-orders")} className="group inline-flex h-8 items-center gap-1.5 rounded-[var(--md-radius-md)] px-2 -ms-2 text-[12.5px] font-medium text-[var(--md-text)] outline-none transition-[background,color] duration-200 hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a24)]"><ArrowLeft className="size-3.5 transition-transform duration-200 group-hover:-translate-x-0.5 rtl:rotate-180 rtl:group-hover:translate-x-0.5" strokeWidth={1.5} />{t("Back to purchase orders")}</button>
+
+  if (loadError) return <div className="grid gap-4">{backButton}<Surface padding="lg" className="grid min-h-[240px] place-items-center rounded-[var(--md-radius-xl)] text-center" role="alert"><div><p className="text-[15px] font-medium text-[var(--md-ink)]">{t("Purchase order not found")}</p><p className="mt-2 text-[13px] text-[var(--md-text)]">{loadError}</p></div></Surface></div>
+  if (!order || !form) return <div className="grid gap-4">{backButton}<Surface padding="lg" className="grid min-h-[240px] place-items-center rounded-[var(--md-radius-xl)]"><DotGridLoaderPanel label="Loading purchase order" minHeight={0} /></Surface></div>
+
+  const editable = ["draft", "issued"].includes(order.statusCode) && !order.warehouseOrderId
+  const dirty = JSON.stringify(form) !== savedForm
+  const canCancel = !["received", "cancelled"].includes(order.statusCode) && !order.warehouseOrderId
+  const canIssue = order.statusCode === "draft" && form.lines.every((line) => line.itemId)
+  const canCreateInbound = order.statusCode === "issued" && !order.warehouseOrderId
+  const linkedWarehouseOrderNumber = order.events.flatMap((event) => {
+    const value = event.metadata?.warehouseOrderNumber
+    return typeof value === "string" && value.trim() ? [value] : []
+  })[0] ?? null
+
+  return <div className="grid gap-[var(--md-gap-md)]">
+    <motion.header initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={shouldReduceMotion ? { duration: 0 } : mdMotion.enter} className="grid gap-3">
+      {backButton}
+      <div className="flex flex-wrap items-start justify-between gap-4"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2.5"><h1 data-i18n-skip dir="ltr" className="text-[24px] font-medium leading-none tracking-[-0.015em] tabular-nums text-[var(--md-ink)]">{form.number}</h1><StatusPill tone={statusTone(order.statusCode)}>{t(order.statusCode.replace("_", " "))}</StatusPill></div><p className="mt-1.5 text-[13px] leading-5 text-[var(--md-text)]">{form.supplierName ? <><span dir="auto">{form.supplierName}</span><span className="text-[var(--md-subtle)]"> · </span></> : null}<span dir="auto">{order.customerName}</span><span className="text-[var(--md-subtle)]"> · </span><span dir="auto">{order.facilityName}</span></p></div>
+        <div className="flex flex-wrap items-center gap-2">{canCancel ? <Button variant="ghost" disabled={saving || dirty} onClick={() => void runAction("cancel")} className="h-9 rounded-[var(--md-radius-lg)] text-[13px] text-[var(--md-red)]"><XCircle className="size-4" />{t("Cancel PO")}</Button> : null}{canIssue ? <Button variant="outline" disabled={saving || dirty} onClick={() => void runAction("issue")} className="h-9 rounded-[var(--md-radius-lg)]"><Send className="size-4" />{t("Issue PO")}</Button> : null}{canCreateInbound ? <Button variant="outline" disabled={saving || dirty} onClick={() => void runAction("inbound")} className="h-9 rounded-[var(--md-radius-lg)]"><ArrowDownToLine className="size-4" />{t("Create goods-in order")}</Button> : null}{editable ? <Button disabled={saving || !dirty} onClick={() => void save()} className="h-9 rounded-[var(--md-radius-lg)] bg-[var(--md-accent)] text-[var(--md-accent-ink)]">{saving ? <Loader2 className="size-4 animate-spin" /> : null}{t("Save changes")}</Button> : null}</div>
+      </div>
+    </motion.header>
+
+    {error ? <div className="flex items-start gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-red-a08)] px-3 py-2.5 text-[12px] text-[var(--md-red)]" role="alert"><AlertCircle className="mt-0.5 size-4 shrink-0" />{t(error)}</div> : null}
+
+    <Tabs defaultValue="details" className="gap-[var(--md-gap-md)]">
+      <TabsList variant="line" className="h-auto w-full max-w-full justify-start gap-1 overflow-x-auto bg-transparent p-0">
+        <TabsTrigger value="details" className="h-8 rounded-[var(--md-radius-md)] px-2.5 text-[12px]">{t("Details")}</TabsTrigger>
+        <TabsTrigger value="activity" className="h-8 rounded-[var(--md-radius-md)] px-2.5 text-[12px]"><History className="size-3.5" />{t("Activity")}</TabsTrigger>
+        {order.warehouseOrderId ? <TabsTrigger value="goods-in" className="h-8 rounded-[var(--md-radius-md)] px-2.5 text-[12px]"><Link2 className="size-3.5" />{t("Linked goods-in")}</TabsTrigger> : null}
+      </TabsList>
+      <TabsContent value="details" className="mt-0 grid content-start gap-[var(--md-gap-md)]">
+        <PurchaseOrderSection index={0} title="Purchase order details" meta="Supplier, dates, ownership and commercial references.">
+          <PurchaseOrderDetailsFields form={form} reference={reference} editable={editable} onGenerateNumber={() => void generateNumber()} generatingNumber={generatingNumber} patch={patch} />
+        </PurchaseOrderSection>
+        <PurchaseOrderSection index={1} title="Order lines" meta="The goods, quantities and commercial values agreed with the supplier.">
+          <PurchaseOrderLineEditor lines={form.lines} reference={reference} facilityId={form.facilityId} customerOrgId={form.customerOrgId} disabled={!editable} onChange={(lines) => patch("lines", lines)} />
+        </PurchaseOrderSection>
+        {order.sourceFileName ? <PurchaseOrderSection index={2} title="Source document"><div className="flex items-center gap-3"><span className="grid size-9 shrink-0 place-items-center rounded-[var(--md-radius-md)] bg-[var(--md-surface-soft)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]"><ReceiptText className="size-4" /></span><div className="min-w-0"><p dir="auto" className="truncate text-[12.5px] font-medium text-[var(--md-ink)]">{order.sourceFileName}</p><p className="mt-0.5 text-[11px] text-[var(--md-subtle)]">{t("Reviewed extraction source")}</p></div></div></PurchaseOrderSection> : null}
+      </TabsContent>
+      <TabsContent value="activity" className="mt-0">
+        <PurchaseOrderSection index={0} title="Activity" meta="Every recorded change to this purchase order."><ol>{order.events.length ? order.events.map((event) => <li key={event.id} className="flex gap-3 py-2.5 first:pt-0 last:pb-0"><span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-[var(--md-radius-sm)] bg-[var(--md-surface-soft)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]"><History className="size-3.5" /></span><div className="min-w-0"><p className="text-[12.5px] font-medium text-[var(--md-ink)]">{t(event.typeCode.replaceAll("_", " "))}</p><p className="mt-0.5 text-[11px] text-[var(--md-subtle)]">{dateTime.format(new Date(event.at))}{event.notes ? ` · ${event.notes}` : ""}</p></div></li>) : <p className="py-3 text-center text-[12px] text-[var(--md-text)]">{t("No activity recorded yet.")}</p>}</ol></PurchaseOrderSection>
+      </TabsContent>
+      {order.warehouseOrderId ? <TabsContent value="goods-in" className="mt-0">
+        <PurchaseOrderSection index={0} title="Linked goods-in"><button type="button" disabled={!linkedWarehouseOrderNumber} onClick={() => linkedWarehouseOrderNumber && navigate?.(`/warehouse/orders/${encodeURIComponent(linkedWarehouseOrderNumber.toLowerCase())}?from=${encodeURIComponent(purchaseOrderDetailPath(order))}`)} className="flex w-full items-center gap-3 rounded-[var(--md-radius-md)] p-2 text-start transition-colors hover:bg-[var(--md-hover)] disabled:cursor-default disabled:opacity-60"><Link2 className="size-4 text-[var(--md-accent)]" /><span className="text-[12.5px] font-medium text-[var(--md-ink)]">{linkedWarehouseOrderNumber ?? t("Linked warehouse order")}</span></button></PurchaseOrderSection>
+      </TabsContent> : null}
+    </Tabs>
   </div>
 }

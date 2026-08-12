@@ -53,6 +53,10 @@ const ratesTopBarActions: Partial<Record<string, { importLabel: string; createLa
 function WarehouseTopBarAction({ route, navigate }: { route: string; navigate: (path: string) => void }) {
   const { t } = useLanguage()
 
+  if (route === "/warehouse/purchase-orders") {
+    return <Button aria-label={t("New purchase order")} title={t("New purchase order")} className={topBarPrimaryActionClass} onClick={() => navigate("/warehouse/purchase-orders/new")}><Plus data-icon="inline-start" strokeWidth={1.2} /><span className="hidden sm:inline">{t("New purchase order")}</span></Button>
+  }
+
   if (route === "/warehouse/inventory") {
     return (
       <DropdownMenu>
