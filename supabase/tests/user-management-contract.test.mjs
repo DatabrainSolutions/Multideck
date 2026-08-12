@@ -45,6 +45,21 @@ test("invitations are host-aware and cannot redirect to an arbitrary origin", ()
   assert.match(userValidationGrant, /grant execute on function private\.is_valid_table_pinned_columns\(jsonb\) to service_role/)
 })
 
+test("pending invitations can be resent only through the tenant-safe server path", () => {
+  assert.match(team, /status: invitationPending \? "Invited"/)
+  assert.match(team, /parts\[1\] === "invitation"/)
+  assert.match(team, /requirePermission\(admin, current\.User_ID, "Users\.Invite"\)/)
+  assert.match(team, /eq\("Company_ID", current\.Company_ID\)/)
+  assert.match(team, /This user has already accepted their invitation\./)
+  assert.match(team, /admin\.auth\.admin\.inviteUserByEmail\(target\.User_Email/)
+  assert.match(settings, /resendApiTeamUserInvitation/)
+  assert.match(settings, /user\.status === "Invited"/)
+  assert.match(settings, /Resend invite/)
+  assert.match(settings, /Delete invite/)
+  assert.match(settings, /deleteApiTeamUser\(session\.access_token, deleteInviteCandidate\.id\)/)
+  assert.match(api, /`\/\$\{userId\}\/invitation`/)
+})
+
 test("the branded invite explicitly hands users to password creation", () => {
   assert.match(authEmail, /buttonLabel: "Accept invitation"/)
   assert.match(authEmail, /then create your password to enter the workspace/)
@@ -104,7 +119,7 @@ test("Dexter clearly declines high-impact identity writes and idle user watches"
 })
 
 test("new user-management language is available in German, French, and Arabic", () => {
-  for (const phrase of ["Developer / Users", "Invite a user", "Create a role", "Saved roles", "Role access", "Edit user permissions", "Read & write", "Delete this user?", "Set your password"]) {
+  for (const phrase of ["Developer / Users", "Invite a user", "Invited", "Resend invite", "Delete invite", "Delete this invitation?", "Create a role", "Saved roles", "Role access", "Edit user permissions", "Read & write", "Delete this user?", "Set your password"]) {
     const start = translations.indexOf(`"${phrase}"`)
     assert.notEqual(start, -1, `${phrase} is missing`)
     const entry = translations.slice(start, start + 700)

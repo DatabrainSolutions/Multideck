@@ -28,10 +28,11 @@ function invitationOrigin(request: Request, value: unknown) {
 }
 
 async function userDto(admin: any, row: any) {
-  const [{ data: company }, { data: officeLinks }, { data: roleLinks }] = await Promise.all([
+  const [{ data: company }, { data: officeLinks }, { data: roleLinks }, authResult] = await Promise.all([
     row.Company_ID ? admin.from("cmp_Company").select("Company_ID,Company_Name").eq("Company_ID", row.Company_ID).maybeSingle() : Promise.resolve({ data: null }),
     admin.from("cmp_Users_Offices").select("Office_ID").eq("User_ID", row.User_ID),
     admin.from("cmp_Users_Roles").select("sys_UserRole_ID").eq("User_ID", row.User_ID),
+    row.Auth_User_ID ? admin.auth.admin.getUserById(row.Auth_User_ID) : Promise.resolve({ data: { user: null } }),
   ])
   const officeIds = (officeLinks ?? []).map((item: any) => item.Office_ID)
   const roleIds = (roleLinks ?? []).map((item: any) => item.sys_UserRole_ID)
@@ -43,13 +44,16 @@ async function userDto(admin: any, row: any) {
     bucket: row[`User_${kind}PhotoBucket`], path: row[`User_${kind}PhotoPath`], mimeType: row[`User_${kind}PhotoMimeType`],
     sizeBytes: row[`User_${kind}PhotoSizeBytes`], updatedAt: row[`User_${kind}PhotoUpdatedAt`],
   }) : null
+  const authUser = authResult?.data?.user ?? null
+  const invitationPending = Boolean(authUser?.invited_at && !authUser?.last_sign_in_at)
   return {
     id: row.User_ID, authUserId: row.Auth_User_ID, displayName: [row.User_Firstname, row.User_Lastname].filter(Boolean).join(" ") || row.User_Email,
     firstName: row.User_Firstname, lastName: row.User_Lastname, email: row.User_Email,
     company: company ? { id: company.Company_ID, name: company.Company_Name } : null,
     offices: (offices ?? []).map((item: any) => ({ id: item.Office_ID, name: item.Office_Name, address: item.Office_Address })),
     roles: (roles ?? []).map((item: any) => ({ id: item.sys_UserRole_ID, name: item.sys_UserRole_Name })),
-    status: row.Auth_User_ID ? "Active" : "Profile only", jobTitle: row.User_JobTitle,
+    status: invitationPending ? "Invited" : row.Auth_User_ID ? "Active" : "Profile only",
+    invitationSentAt: invitationPending ? authUser.invited_at : null,
     profilePhoto: makePhoto("Profile"), coverPhoto: makePhoto("Cover"),
   }
 }
@@ -199,6 +203,30 @@ Deno.serve(async (request) => {
       }
       profile = (await admin.from("cmp_Users").select("*").eq("User_ID", profile.User_ID).single()).data
       return json(request, { user: await userDto(admin, profile), company: { id: current.Company_ID, name: (await admin.from("cmp_Company").select("Company_Name").eq("Company_ID", current.Company_ID).single()).data.Company_Name }, office: { id: office.Office_ID, name: office.Office_Name, address: office.Office_Address }, invited }, 201)
+    }
+    if (parts.length === 2 && parts[1] === "invitation" && request.method === "POST") {
+      await requirePermission(admin, current.User_ID, "Users.Invite")
+      const payload = await body<any>(request)
+      const appOrigin = invitationOrigin(request, payload.appOrigin)
+      const { data: target } = await admin.from("cmp_Users").select("*").eq("User_ID", parts[0]).eq("Company_ID", current.Company_ID).maybeSingle()
+      if (!target?.Auth_User_ID) throw new HttpError(404, "Pending invitation not found.")
+
+      const { data: authRecord, error: authRecordError } = await admin.auth.admin.getUserById(target.Auth_User_ID)
+      if (authRecordError || !authRecord?.user) throw new HttpError(404, "Pending invitation not found.")
+      if (authRecord.user.confirmed_at || authRecord.user.last_sign_in_at) throw new HttpError(409, "This user has already accepted their invitation.")
+
+      const redirectTo = `${appOrigin}/auth?mode=invite`
+      const { data: invite, error: inviteError } = await admin.auth.admin.inviteUserByEmail(target.User_Email, {
+        redirectTo,
+        data: {
+          ...authRecord.user.user_metadata,
+          first_name: target.User_Firstname ?? null,
+          last_name: target.User_Lastname ?? null,
+        },
+      })
+      if (inviteError) throw new HttpError(400, inviteError.message)
+      if (invite.user.id !== target.Auth_User_ID) throw new HttpError(409, "The invitation could not be matched to this workspace user.")
+      return json(request, { user: await userDto(admin, target) })
     }
     if (parts.length === 1 && request.method === "DELETE") {
       await requirePermission(admin, current.User_ID, "Users.Manage")

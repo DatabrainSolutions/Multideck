@@ -39,6 +39,7 @@ export type ApiTeamUser = {
   offices: ApiOffice[]
   roles: ApiTeamRole[]
   status: string
+  invitationSentAt?: string | null
   actorType?: "internal" | "customer"
   organisations?: ApiOrganisation[]
   permissions?: string[]
@@ -245,6 +246,23 @@ export async function createApiTeamUser(accessToken: string, user: CreateTeamUse
   }
 
   return response.json() as Promise<CreateTeamUserResponse>
+}
+
+export async function resendApiTeamUserInvitation(accessToken: string, userId: string, appOrigin: string): Promise<ApiTeamUser> {
+  const response = await edgeFetch("team", `/${userId}/invitation`, accessToken, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ appOrigin }),
+  })
+
+  if (!response.ok) {
+    throw new Error(await parseApiError(response))
+  }
+
+  const body = await response.json() as { user: ApiTeamUser }
+  return body.user
 }
 
 export async function changeApiTeamUserOffice(accessToken: string, userId: string, request: ChangeTeamUserOfficeRequest): Promise<ApiTeamUser> {

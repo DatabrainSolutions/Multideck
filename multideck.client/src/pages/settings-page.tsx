@@ -104,6 +104,7 @@ import {
   getApiCurrentUser,
   getApiAuthorizationState,
   getApiTeamUsers,
+  resendApiTeamUserInvitation,
   updateApiCurrentUserProfile,
   updateApiUserRoles,
   type ApiAuthorizationRole,
@@ -2486,6 +2487,9 @@ function UsersTab() {
   const [inviteOpen, setInviteOpen] = useState(false)
   const [inviteForm, setInviteForm] = useState(emptyInviteForm)
   const [inviting, setInviting] = useState(false)
+  const [resendingUserId, setResendingUserId] = useState<string | null>(null)
+  const [deleteInviteCandidate, setDeleteInviteCandidate] = useState<ApiTeamUser | null>(null)
+  const [deletingInvite, setDeletingInvite] = useState(false)
 
   const loadUsers = useCallback(async () => {
     setLoading(true)
@@ -2556,6 +2560,42 @@ function UsersTab() {
     }
   }
 
+  async function resendInvitation(user: ApiTeamUser) {
+    setResendingUserId(user.id)
+    try {
+      const session = await getSupabaseSession()
+      if (!session?.access_token) throw new Error(t("Sign in again before inviting users."))
+      const updatedUser = await resendApiTeamUserInvitation(session.access_token, user.id, window.location.origin)
+      setTeam((current) => current ? { ...current, users: upsertTeamUser(current.users, updatedUser) } : current)
+      toast.success(t("Invitation resent"), { description: user.email })
+    } catch (error) {
+      toast.error(t("Invitation could not be resent"), {
+        description: error instanceof Error ? error.message : t("Check the email address, then try again."),
+      })
+    } finally {
+      setResendingUserId(null)
+    }
+  }
+
+  async function deleteInvitation() {
+    if (!deleteInviteCandidate) return
+    setDeletingInvite(true)
+    try {
+      const session = await getSupabaseSession()
+      if (!session?.access_token) throw new Error(t("Sign in again before removing users."))
+      await deleteApiTeamUser(session.access_token, deleteInviteCandidate.id)
+      setTeam((current) => current ? { ...current, users: current.users.filter((user) => user.id !== deleteInviteCandidate.id) } : current)
+      toast.success(t("Invitation deleted"), { description: deleteInviteCandidate.email })
+      setDeleteInviteCandidate(null)
+    } catch (error) {
+      toast.error(t("Invitation could not be deleted"), {
+        description: error instanceof Error ? error.message : t("Check your access and try again."),
+      })
+    } finally {
+      setDeletingInvite(false)
+    }
+  }
+
   const roles = authorizationState?.roles ?? []
   const assignableRoles = getAssignableRoles(roles)
   const predefinedRoles = assignableRoles.filter((role) => role.isSystem)
@@ -2611,7 +2651,44 @@ function UsersTab() {
       sortValue: (user) => user.status,
       cell: (user) => <StatusPill tone={user.status === "Active" ? "teal" : "amber"}>{t(user.status)}</StatusPill>,
     },
-  ], [roles, t])
+    {
+      id: "actions",
+      label: t("Actions"),
+      kind: "actions",
+      align: "end",
+      width: 244,
+      minWidth: 220,
+      canHide: false,
+      canPin: false,
+      resizable: false,
+      cell: (user) => user.status === "Invited" ? (
+        <div className="flex items-center justify-end gap-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={resendingUserId === user.id || deletingInvite}
+            className="h-8 rounded-[var(--md-radius-md)] px-2.5 text-[11.5px] text-[var(--md-text)] hover:bg-[var(--md-surface-tint)] hover:text-[var(--md-ink)]"
+            onClick={() => void resendInvitation(user)}
+          >
+            {resendingUserId === user.id ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Mail className="size-3.5" strokeWidth={1.4} aria-hidden="true" />}
+            {t(resendingUserId === user.id ? "Resending" : "Resend invite")}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={resendingUserId === user.id || deletingInvite}
+            className="h-8 rounded-[var(--md-radius-md)] px-2.5 text-[11.5px] text-[var(--md-subtle)] hover:bg-[rgba(209,78,78,0.08)] hover:text-[var(--md-red)]"
+            onClick={() => setDeleteInviteCandidate(user)}
+          >
+            <Trash2 className="size-3.5" strokeWidth={1.45} aria-hidden="true" />
+            {t("Delete invite")}
+          </Button>
+        </div>
+      ) : null,
+    },
+  ], [deletingInvite, resendingUserId, roles, t])
 
   return (
     <>
@@ -2635,7 +2712,7 @@ function UsersTab() {
             rows={visibleUsers}
             getRowKey={(user) => user.id}
             storageKey="settings-users"
-            minimumWidth={760}
+            minimumWidth={860}
             toolbarSearch={(
               <label className="relative block w-[min(280px,70vw)]">
                 <span className="sr-only">{t("Search users")}</span>
@@ -2714,6 +2791,23 @@ function UsersTab() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(deleteInviteCandidate)} onOpenChange={(open) => !open && !deletingInvite && setDeleteInviteCandidate(null)}>
+        <DialogContent className="border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[460px]">
+          <DialogHeader className="text-start">
+            <DialogTitle>{t("Delete this invitation?")}</DialogTitle>
+            <DialogDescription>{t("This removes the pending invitation and workspace access. The person will need a new invitation before they can sign in.")}</DialogDescription>
+          </DialogHeader>
+          {deleteInviteCandidate ? <div className="mt-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3"><TeamUserIdentity user={deleteInviteCandidate} /></div> : null}
+          <DialogFooter className="mt-4">
+            <Button type="button" variant="ghost" disabled={deletingInvite} onClick={() => setDeleteInviteCandidate(null)}>{t("Cancel")}</Button>
+            <Button type="button" disabled={deletingInvite} className="bg-[var(--md-red)] text-white hover:opacity-90" onClick={() => void deleteInvitation()}>
+              {deletingInvite ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Trash2 className="size-3.5" strokeWidth={1.45} aria-hidden="true" />}
+              {t(deletingInvite ? "Deleting invite" : "Delete invite")}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
