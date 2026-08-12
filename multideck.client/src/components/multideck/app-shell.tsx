@@ -4,6 +4,7 @@ import type { AuthUserSummary } from "@/lib/auth-user"
 import { useSidebarCollapsed } from "@/lib/sidebar-preferences"
 import { useLanguage } from "@/i18n/language-provider"
 import { Button } from "@/components/ui/button"
+import { moveTabToAdjacentField } from "@/components/ui/field-tab-navigation"
 import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { AppSidebar } from "./app-sidebar"
 import { TopBar } from "./top-bar"
@@ -130,6 +131,7 @@ export function AppShell({
         ) : null}
         <main
           ref={pageScrollRef}
+          onKeyDownCapture={moveTabToAdjacentField}
           onScroll={route === "/warehouse/items" ? (event) => writeWarehouseItemsScrollTop(event.currentTarget.scrollTop) : undefined}
           className={cn(
             "min-h-0 min-w-0 flex-1",

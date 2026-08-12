@@ -2649,7 +2649,7 @@ function UsersTab() {
       width: 130,
       minWidth: 110,
       sortValue: (user) => user.status,
-      cell: (user) => <StatusPill tone={user.status === "Active" ? "teal" : "amber"}>{t(user.status)}</StatusPill>,
+      cell: (user) => <StatusPill tone={user.status === "Active" ? "green" : "amber"}>{t(user.status)}</StatusPill>,
     },
     {
       id: "actions",
@@ -3002,7 +3002,7 @@ function UserPermissionsTab() {
       width: 150,
       minWidth: 120,
       sortValue: (user) => user.status,
-      cell: (user) => <StatusPill tone={user.status === "Active" ? "teal" : "amber"}>{t(user.status)}</StatusPill>,
+      cell: (user) => <StatusPill tone={user.status === "Active" ? "green" : "amber"}>{t(user.status)}</StatusPill>,
     },
     {
       id: "actions",

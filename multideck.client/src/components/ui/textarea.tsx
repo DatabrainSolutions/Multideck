@@ -1,6 +1,7 @@
 import * as React from "react"
 
 import { cn } from "@/lib/utils"
+import { moveTabToAdjacentField } from "@/components/ui/field-tab-navigation"
 import { useInvalidFeedback } from "@/components/ui/use-invalid-feedback"
 
 type TextareaProps = React.ComponentProps<"textarea"> & {
@@ -11,6 +12,7 @@ function Textarea({
   className,
   invalidFeedbackMotion = true,
   "aria-invalid": ariaInvalid,
+  onKeyDown,
   ...props
 }: TextareaProps) {
   const invalidFeedback = useInvalidFeedback(ariaInvalid, invalidFeedbackMotion)
@@ -20,6 +22,10 @@ function Textarea({
       data-slot="textarea"
       data-invalid-feedback={invalidFeedback}
       aria-invalid={ariaInvalid}
+      onKeyDown={(event) => {
+        onKeyDown?.(event)
+        moveTabToAdjacentField(event)
+      }}
       className={cn(
         "premium-stroke-soft flex field-sizing-content min-h-16 w-full rounded-lg bg-[var(--md-field-bg)] px-2.5 py-2 text-base transition-[background-color,border-color,box-shadow,color,opacity] outline-none placeholder:text-muted-foreground hover:bg-[var(--md-field-bg-hover)] focus-visible:border-ring focus-visible:bg-[var(--md-field-bg-hover)] focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40",
         className

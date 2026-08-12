@@ -5,6 +5,7 @@ import { Select as SelectPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "@/components/icons/hugeicons"
+import { moveTabToAdjacentField } from "@/components/ui/field-tab-navigation"
 import { useInvalidFeedback } from "@/components/ui/use-invalid-feedback"
 
 function Select({
@@ -38,6 +39,7 @@ function SelectTrigger({
   children,
   invalidFeedbackMotion = true,
   "aria-invalid": ariaInvalid,
+  onKeyDown,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Trigger> & {
   size?: "sm" | "default"
@@ -45,12 +47,18 @@ function SelectTrigger({
 }) {
   const invalidFeedback = useInvalidFeedback(ariaInvalid, invalidFeedbackMotion)
 
+  function handleKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
+    onKeyDown?.(event)
+    moveTabToAdjacentField(event)
+  }
+
   return (
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
       data-size={size}
       data-invalid-feedback={invalidFeedback}
       aria-invalid={ariaInvalid}
+      onKeyDown={handleKeyDown}
       className={cn(
         "premium-stroke-soft flex w-fit items-center justify-between gap-1.5 rounded-lg bg-[var(--md-field-bg)] py-2 pe-2 ps-2.5 text-sm whitespace-nowrap transition-[background-color,border-color,box-shadow,color,opacity,transform] duration-160 ease-[cubic-bezier(0.22,1,0.36,1)] outline-none select-none hover:bg-[var(--md-field-bg-hover)] focus-visible:border-ring focus-visible:bg-[var(--md-field-bg-hover)] focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 data-placeholder:text-muted-foreground data-[state=open]:bg-[var(--md-field-bg-hover)] data-[state=open]:shadow-[var(--md-shadow-soft)] data-[size=default]:h-8 data-[size=sm]:h-7 data-[size=sm]:rounded-[min(var(--radius-md),10px)] *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-1.5 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className

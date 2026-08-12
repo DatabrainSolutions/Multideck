@@ -357,6 +357,7 @@ export function MultideckDateRangePicker({
       <PopoverTrigger asChild>
         <Button
           type="button"
+          data-form-field
           variant="ghost"
           disabled={disabled}
           aria-invalid={missing || undefined}
