@@ -58,14 +58,24 @@ test("the branded invite explicitly hands users to password creation", () => {
   assert.match(supabaseClient, /window\.history\.replaceState/)
 })
 
-test("permissions are user-first with protected predefined roles and private Custom access", () => {
+test("permissions are user-first with protected predefined roles and reusable saved roles", () => {
   assert.match(settings, /function UserPermissionsTab\(\)/)
   assert.match(settings, /storageKey="settings-user-permissions"/)
   assert.match(settings, /<Pencil[\s\S]*?<Trash2/)
-  assert.match(settings, /<SelectItem value="custom">/)
+  assert.match(settings, /Create reusable roles once/)
+  assert.match(settings, /<DialogTitle>\{t\("Create a role"\)\}<\/DialogTitle>/)
+  assert.match(settings, /createApiAuthorizationRole\(session\.access_token/)
+  assert.match(settings, /Saved roles/)
+  assert.match(settings, /getAssignableRoles/)
+  assert.doesNotMatch(settings, /<SelectItem value="custom">/)
   assert.match(settings, /Read & write/)
   assert.match(settings, /updateApiUserRoles/)
-  assert.match(settings, /Custom · \$\{editingUser\.id\}/)
+  assert.match(settings, /previousRole\?\.isLegacyCustom/)
+  assert.match(api, /isLegacyCustom: boolean/)
+  assert.match(team, /Reusable workspace role\./)
+  assert.match(team, /Enable at least one permission before creating the role/)
+  assert.match(team, /isLegacyCustomRoleName\(selectedRole\.sys_UserRole_Name\)/)
+  assert.match(team, /Choose valid reusable roles/)
   for (const roleName of ["Administrator", "Operations manager", "Operator", "Viewer"]) {
     assert.match(team, new RegExp(`${roleName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}.*canEditPermissions: false`))
   }
@@ -81,6 +91,7 @@ test("user deletion is confirmed in the client and constrained in the tenant ser
   assert.match(team, /Keep at least one administrator/)
   assert.match(team, /admin\.auth\.admin\.deleteUser/)
   assert.match(team, /Company_ID: null, Auth_User_ID: null/)
+  assert.match(team, /isLegacyCustomRoleName\(role\.sys_UserRole_Name\)/)
   assert.match(team, /role\.sys_UserRole_Name !== `Custom · \$\{target\.User_ID\}`/)
   assert.match(team, /sys_UserRole_Permissions/)
 })
@@ -92,7 +103,7 @@ test("Dexter clearly declines high-impact identity writes and idle user watches"
 })
 
 test("new user-management language is available in German, French, and Arabic", () => {
-  for (const phrase of ["Developer / Users", "Invite a user", "Edit user permissions", "Read & write", "Delete this user?", "Set your password"]) {
+  for (const phrase of ["Developer / Users", "Invite a user", "Create a role", "Saved roles", "Role access", "Edit user permissions", "Read & write", "Delete this user?", "Set your password"]) {
     const start = translations.indexOf(`"${phrase}"`)
     assert.notEqual(start, -1, `${phrase} is missing`)
     const entry = translations.slice(start, start + 700)

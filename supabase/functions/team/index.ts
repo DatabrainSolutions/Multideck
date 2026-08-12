@@ -12,6 +12,12 @@ const SYSTEM_ROLES: Record<string, { description: string; canEditPermissions: bo
   Viewer: { description: "Read-only access for people who need visibility without operational edit rights.", canEditPermissions: false },
 }
 
+const LEGACY_CUSTOM_ROLE_PATTERN = /^Custom · [0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+function isLegacyCustomRoleName(name: string) {
+  return LEGACY_CUSTOM_ROLE_PATTERN.test(name)
+}
+
 function invitationOrigin(request: Request, value: unknown) {
   const requestOrigin = request.headers.get("Origin")?.trim() ?? ""
   const requestedOrigin = String(value ?? "").trim().replace(/\/+$/, "")
@@ -75,7 +81,15 @@ async function authorizationState(admin: any, current: any) {
     const ids = (links ?? []).map((link: any) => link.sys_Permission_ID)
     const { data: values } = ids.length ? await admin.from("sys_Permissions").select("sys_Permission_Value").in("sys_Permission_ID", ids).order("sys_Permission_Value") : { data: [] }
     const definition = SYSTEM_ROLES[role.sys_UserRole_Name]
-    return { id: role.sys_UserRole_ID, name: role.sys_UserRole_Name, description: definition?.description ?? "Custom role.", isSystem: Boolean(definition), canEditPermissions: definition?.canEditPermissions ?? true, permissionValues: (values ?? []).map((item: any) => item.sys_Permission_Value) }
+    return {
+      id: role.sys_UserRole_ID,
+      name: role.sys_UserRole_Name,
+      description: definition?.description ?? "Reusable workspace role.",
+      isSystem: Boolean(definition),
+      isLegacyCustom: isLegacyCustomRoleName(role.sys_UserRole_Name),
+      canEditPermissions: definition?.canEditPermissions ?? true,
+      permissionValues: (values ?? []).map((item: any) => item.sys_Permission_Value),
+    }
   }))
   const userRoles = await Promise.all((teamUsers ?? []).map(async (teamUser: any) => {
     const { data } = await admin.from("cmp_Users_Roles").select("sys_UserRole_ID").eq("User_ID", teamUser.User_ID)
@@ -90,22 +104,37 @@ async function authorizationState(admin: any, current: any) {
 async function createRole(admin: any, payload: any) {
   const name = String(payload.name ?? "").trim().replace(/\s+/g, " ")
   if (!name || name.length > 50) throw new HttpError(400, "Enter a role name of 50 characters or fewer.")
+  if (isLegacyCustomRoleName(name)) throw new HttpError(400, "Choose a reusable role name instead of a user-specific Custom role name.")
+  const permissionValues = [...new Set((payload.permissionValues ?? []).map((value: unknown) => String(value).trim()).filter(Boolean))]
+  if (!permissionValues.length) throw new HttpError(400, "Enable at least one permission before creating the role.")
+  const { data: selectedPermissions, error: selectedPermissionsError } = await admin.from("sys_Permissions").select("sys_Permission_ID,sys_Permission_Value").in("sys_Permission_Value", permissionValues)
+  if (selectedPermissionsError) throw new HttpError(500, selectedPermissionsError.message)
+  if ((selectedPermissions ?? []).length !== permissionValues.length) throw new HttpError(400, "Choose valid permissions before creating the role.")
   const { data: existing } = await admin.from("sys_UserRoles").select("sys_UserRole_ID").ilike("sys_UserRole_Name", name).maybeSingle()
   if (existing) throw new HttpError(409, "A role with this name already exists.")
   const { data: role, error } = await admin.from("sys_UserRoles").insert({ sys_UserRole_Name: name }).select().single()
   if (error) throw new HttpError(error.code === "23505" ? 409 : 500, error.message)
-  await setRolePermissions(admin, role.sys_UserRole_ID, payload.permissionValues ?? [], false)
+  try {
+    await setRolePermissions(admin, role.sys_UserRole_ID, permissionValues, false)
+  } catch (error) {
+    await admin.from("sys_UserRoles").delete().eq("sys_UserRole_ID", role.sys_UserRole_ID)
+    throw error
+  }
   return (await authorizationState(admin, { Company_ID: "00000000-0000-0000-0000-000000000000" })).roles.find((item: any) => item.id === role.sys_UserRole_ID)
 }
 
 async function setRolePermissions(admin: any, roleId: string, values: string[], protect = true) {
-  const { data: role } = await admin.from("sys_UserRoles").select("*").eq("sys_UserRole_ID", roleId).maybeSingle()
+  const { data: role, error: roleError } = await admin.from("sys_UserRoles").select("*").eq("sys_UserRole_ID", roleId).maybeSingle()
+  if (roleError) throw new HttpError(500, roleError.message)
   if (!role) throw new HttpError(404, "Choose a valid role before changing permissions.")
   if (protect && SYSTEM_ROLES[role.sys_UserRole_Name]) throw new HttpError(400, "Built-in role permissions cannot be changed.")
   const normalized = [...new Set((values ?? []).map((value) => String(value).trim()).filter(Boolean))]
-  const { data: permissions } = normalized.length ? await admin.from("sys_Permissions").select("sys_Permission_ID,sys_Permission_Value").in("sys_Permission_Value", normalized) : { data: [] }
+  if (!normalized.length) throw new HttpError(400, "Keep at least one permission on the role.")
+  const { data: permissions, error: permissionsError } = await admin.from("sys_Permissions").select("sys_Permission_ID,sys_Permission_Value").in("sys_Permission_Value", normalized)
+  if (permissionsError) throw new HttpError(500, permissionsError.message)
   if ((permissions ?? []).length !== normalized.length) throw new HttpError(400, "Choose valid permissions before updating the role.")
-  await admin.from("sys_UserRole_Permissions").delete().eq("sys_UserRole_ID", roleId)
+  const { error: permissionDeleteError } = await admin.from("sys_UserRole_Permissions").delete().eq("sys_UserRole_ID", roleId)
+  if (permissionDeleteError) throw new HttpError(500, permissionDeleteError.message)
   if ((permissions ?? []).length) {
     const { error } = await admin.from("sys_UserRole_Permissions").insert((permissions ?? []).map((item: any) => ({ sys_UserRole_ID: roleId, sys_Permission_ID: item.sys_Permission_ID })))
     if (error) throw new HttpError(500, error.message)
@@ -128,7 +157,10 @@ Deno.serve(async (request) => {
       if (!office) throw new HttpError(400, "Choose a valid office in this company.")
       let { data: profile } = await admin.from("cmp_Users").select("*").ilike("User_Email", email).maybeSingle()
       if (profile?.Company_ID && profile.Company_ID !== current.Company_ID) throw new HttpError(409, "This email is already linked to another company profile.")
-      if (payload.roleId) { const { data: selectedRole } = await admin.from("sys_UserRoles").select("sys_UserRole_ID").eq("sys_UserRole_ID", payload.roleId).maybeSingle(); if (!selectedRole) throw new HttpError(400, "Choose a valid role before inviting the user.") }
+      if (payload.roleId) {
+        const { data: selectedRole } = await admin.from("sys_UserRoles").select("sys_UserRole_ID,sys_UserRole_Name").eq("sys_UserRole_ID", payload.roleId).maybeSingle()
+        if (!selectedRole || isLegacyCustomRoleName(selectedRole.sys_UserRole_Name)) throw new HttpError(400, "Choose a valid reusable role before inviting the user.")
+      }
       let invited = false; let authUserId = profile?.Auth_User_ID ?? null
       if (!authUserId) {
         const redirectTo = `${appOrigin}/auth?mode=invite`
@@ -201,7 +233,7 @@ Deno.serve(async (request) => {
       const { error: roleError } = await admin.from("cmp_Users_Roles").delete().eq("User_ID", target.User_ID)
       if (roleError) throw new HttpError(500, roleError.message)
       for (const role of targetRoles ?? []) {
-        if (role.sys_UserRole_Name !== `Custom · ${target.User_ID}`) continue
+        if (!isLegacyCustomRoleName(role.sys_UserRole_Name) || role.sys_UserRole_Name !== `Custom · ${target.User_ID}`) continue
         const { count: remainingRoleAssignments, error: remainingRoleAssignmentsError } = await admin.from("cmp_Users_Roles").select("*", { count: "exact", head: true }).eq("sys_UserRole_ID", role.sys_UserRole_ID)
         if (remainingRoleAssignmentsError) throw new HttpError(500, remainingRoleAssignmentsError.message)
         if (remainingRoleAssignments) continue
@@ -236,7 +268,8 @@ Deno.serve(async (request) => {
       if (parts[1] === "users" && parts[3] === "roles" && request.method === "PATCH") {
         const payload = await body<any>(request); const roleIds = [...new Set(payload.roleIds ?? [])]; if (!roleIds.length) throw new HttpError(400, "Choose at least one role.")
         const { data: target } = await admin.from("cmp_Users").select("User_ID").eq("User_ID", parts[2]).eq("Company_ID", current.Company_ID).maybeSingle(); if (!target) throw new HttpError(404, "User not found.")
-        const { data: roles } = await admin.from("sys_UserRoles").select("sys_UserRole_ID,sys_UserRole_Name").in("sys_UserRole_ID", roleIds); if ((roles ?? []).length !== roleIds.length) throw new HttpError(400, "Choose valid roles.")
+        const { data: roles } = await admin.from("sys_UserRoles").select("sys_UserRole_ID,sys_UserRole_Name").in("sys_UserRole_ID", roleIds)
+        if ((roles ?? []).length !== roleIds.length || (roles ?? []).some((role: any) => isLegacyCustomRoleName(role.sys_UserRole_Name))) throw new HttpError(400, "Choose valid reusable roles.")
         const { data: administrator } = await admin.from("sys_UserRoles").select("sys_UserRole_ID").eq("sys_UserRole_Name", "Administrator").maybeSingle()
         if (administrator && !(roles ?? []).some((role: any) => role.sys_UserRole_ID === administrator.sys_UserRole_ID)) {
           const { data: existingTargetRoles } = await admin.from("cmp_Users_Roles").select("sys_UserRole_ID").eq("User_ID", target.User_ID)

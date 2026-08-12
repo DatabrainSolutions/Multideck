@@ -113,6 +113,7 @@ export type ApiAuthorizationRole = {
   name: string
   description: string
   isSystem: boolean
+  isLegacyCustom: boolean
   canEditPermissions: boolean
   permissionValues: string[]
 }
