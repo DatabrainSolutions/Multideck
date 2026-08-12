@@ -2,10 +2,12 @@
 import * as XLSX from "npm:xlsx@0.18.5/xlsx.mjs"
 import * as cptable from "npm:xlsx@0.18.5/dist/cpexcel.full.mjs"
 import { PDFDocument } from "npm:pdf-lib@1.17.1"
+import WordExtractor from "npm:word-extractor@1.0.4"
+import { Buffer } from "node:buffer"
 
 XLSX.set_cptable(cptable)
 
-export const INVOICE_DOCUMENT_NORMALIZER_VERSION = 2
+export const INVOICE_DOCUMENT_NORMALIZER_VERSION = 7
 export const MAX_PREPARED_INVOICE_BYTES = 25 * 1024 * 1024
 export const MAX_PREPARED_INVOICE_PAGES = 30
 
@@ -155,15 +157,15 @@ export function validateInvoiceDocumentSource(
   if (mimeType && mimeType !== "application/octet-stream" && !source.acceptedMimeTypes.includes(mimeType)) {
     throw new InvoiceDocumentPreparationError("The invoice file type does not match its filename.", 415, "invoice_document_type_mismatch")
   }
-  if (!validSignature(bytes, source)) {
-    throw new InvoiceDocumentPreparationError("The invoice file type does not match its filename or the file is damaged.", 415, "invoice_document_signature_mismatch")
-  }
   if (isEncryptedOfficeArchive(bytes)) {
     throw new InvoiceDocumentPreparationError("Password-protected invoice files are not supported. Save an unlocked copy and try again.", 415, "invoice_document_encrypted")
   }
   if (containsOfficeMarker(bytes, "vbaProject.bin")
     || ((source.extension === ".doc" || source.extension === ".xls") && hasLegacyOfficeMacros(bytes))) {
     throw new InvoiceDocumentPreparationError("Macro-enabled invoice files are not supported. Save a macro-free copy and try again.", 415, "invoice_document_macro_enabled")
+  }
+  if (!validSignature(bytes, source)) {
+    throw new InvoiceDocumentPreparationError("The invoice file type does not match its filename or the file is damaged.", 415, "invoice_document_signature_mismatch")
   }
   return source
 }
@@ -210,6 +212,28 @@ export async function prepareInvoiceDocument(input: PrepareInvoiceDocumentInput)
     } else {
       strategy = "office_pdf"
       pdfBytes = await convertWithCarbone(input.bytes, input.fileName, "L")
+    }
+  } else if (source.extension === ".doc") {
+    try {
+      pdfBytes = await convertWithCarbone(input.bytes, input.fileName, "L")
+    } catch (error) {
+      if (!(error instanceof InvoiceDocumentPreparationError) || error.code !== "invoice_conversion_unreadable") throw error
+      try {
+        const docxBytes = await convertWithCarbone(input.bytes, input.fileName, undefined, "docx")
+        pdfBytes = await convertWithCarbone(docxBytes, input.fileName.replace(/\.doc$/i, ".docx"), "L")
+      } catch (intermediateError) {
+        if (!(intermediateError instanceof InvoiceDocumentPreparationError) || intermediateError.code !== "invoice_conversion_unreadable") {
+          throw intermediateError
+        }
+        const fallback = await legacyWordHtml(input.bytes, input.fileName)
+        distinctiveSourceText = fallback.distinctiveSourceText
+        warnings.push("The legacy Word document was prepared in a content-safe text layout because its original layout could not be converted.")
+        pdfBytes = await convertWithCarbone(
+          new TextEncoder().encode(fallback.html),
+          input.fileName.replace(/\.doc$/i, ".html"),
+          "C",
+        )
+      }
     }
   } else {
     pdfBytes = await convertWithCarbone(input.bytes, input.fileName, "L")
@@ -286,6 +310,7 @@ function validSignature(bytes: Uint8Array, source: SourceDefinition) {
   }
   if (source.extension === ".doc" || source.extension === ".xls") {
     return startsWith(bytes, [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])
+      && legacyOfficeContainerMatches(bytes, source.extension)
   }
   if (source.extension === ".csv" || source.extension === ".tsv") {
     return !bytes.slice(0, Math.min(bytes.byteLength, 8_192)).includes(0)
@@ -349,11 +374,24 @@ function hasLegacyOfficeMacros(bytes: Uint8Array) {
   }
 }
 
+function legacyOfficeContainerMatches(bytes: Uint8Array, extension: ".doc" | ".xls") {
+  try {
+    const compound = XLSX.CFB.read(bytes, { type: "array" })
+    const paths = compound.FullPaths.map((path: string) => path.replaceAll("\\", "/"))
+    if (extension === ".doc") return paths.some((path: string) => /(?:^|\/)WordDocument$/i.test(path))
+    return paths.some((path: string) => /(?:^|\/)(?:Workbook|Book)$/i.test(path))
+  } catch {
+    return false
+  }
+}
+
 function inspectSpreadsheet(bytes: Uint8Array, source: SourceDefinition, fileName: string): SpreadsheetInspection {
   let workbook: XLSX.WorkBook
   try {
-    workbook = XLSX.read(bytes, {
-      type: "array",
+    const delimited = source.extension === ".csv" || source.extension === ".tsv"
+    workbook = XLSX.read(delimited ? decodeDelimitedText(bytes) : bytes, {
+      type: delimited ? "string" : "array",
+      FS: source.extension === ".tsv" ? "\t" : undefined,
       cellFormula: true,
       cellHTML: false,
       cellNF: true,
@@ -380,17 +418,38 @@ function inspectSpreadsheet(bytes: Uint8Array, source: SourceDefinition, fileNam
   }
 
   const workbookSheetState = new Map((workbook.Workbook?.Sheets ?? []).map((sheet) => [sheet.name, Number(sheet.Hidden) || 0]))
+  const hiddenOpenDocumentSheets = source.extension === ".ods" ? odsHiddenSheetNames(bytes) : new Set<string>()
+  const supplementaryCharacters = source.extension === ".xlsx" || source.extension === ".ods"
+    ? spreadsheetSupplementaryCharacterMap(bytes)
+    : new Map<number, string>()
   const sheets: SpreadsheetSheet[] = []
   const warnings: string[] = []
   const distinctive = new Set<string>()
   let nonEmptyCellCount = 0
   let formulaWithoutValueCount = 0
   let formulaCount = 0
+  let linkCount = 0
   let longUnwrappedCell = false
 
   for (const sheetName of workbook.SheetNames) {
     const worksheet = workbook.Sheets[sheetName]
-    const hidden = (workbookSheetState.get(sheetName) ?? 0) > 0
+    const displaySheetName = (source.extension === ".csv" || source.extension === ".tsv") && workbook.SheetNames.length === 1
+      ? fileName.replace(/\.[^.]+$/, "").trim().slice(0, 160) || "Invoice"
+      : sheetName
+    const hidden = (workbookSheetState.get(sheetName) ?? 0) > 0 || hiddenOpenDocumentSheets.has(sheetName)
+    if (hidden) {
+      sheets.push({
+        name: displaySheetName,
+        status: "hidden",
+        cells: [],
+        merges: [],
+        minRow: 0,
+        maxRow: 0,
+        minColumn: 0,
+        maxColumn: 0,
+      })
+      continue
+    }
     const cells: SpreadsheetCell[] = []
     let minRow = Number.POSITIVE_INFINITY
     let maxRow = -1
@@ -412,7 +471,7 @@ function inspectSpreadsheet(bytes: Uint8Array, source: SourceDefinition, fileNam
           const cell = worksheet[XLSX.utils.encode_cell({ r: row, c: column })] as XLSX.CellObject | undefined
           if (!cell) continue
           const value = cell.w ?? (cell.v === undefined || cell.v === null ? "" : XLSX.utils.format_cell(cell))
-          const displayed = String(value ?? "").replace(/\r\n?/g, "\n").trim()
+          const displayed = restoreSpreadsheetCharacters(String(value ?? ""), supplementaryCharacters).replace(/\r\n?/g, "\n").trim()
           const formulaWithoutValue = Boolean(cell.f) && (cell.v === undefined || cell.v === null || displayed === "")
           if (!displayed && !formulaWithoutValue) continue
           nonEmptyCellCount += 1
@@ -425,6 +484,7 @@ function inspectSpreadsheet(bytes: Uint8Array, source: SourceDefinition, fileNam
           }
           if (formulaWithoutValue) formulaWithoutValueCount += 1
           if (cell.f) formulaCount += 1
+          if (cell.l) linkCount += 1
           const wrap = Boolean((cell.s as Record<string, any> | undefined)?.alignment?.wrapText)
           if (displayed.length > longCellThreshold && !wrap) longUnwrappedCell = true
           if (displayed.length >= 12 && distinctive.size < evidenceTextLimit) distinctive.add(displayed.slice(0, 600))
@@ -445,7 +505,7 @@ function inspectSpreadsheet(bytes: Uint8Array, source: SourceDefinition, fileNam
       endColumn: merge.e.c,
     }))
     sheets.push({
-      name: sheetName,
+      name: displaySheetName,
       status,
       cells,
       merges,
@@ -470,6 +530,9 @@ function inspectSpreadsheet(bytes: Uint8Array, source: SourceDefinition, fileNam
   if (formulaCount) {
     warnings.push(`${formulaCount} ${formulaCount === 1 ? "formula was" : "formulas were"} not recalculated; only saved displayed values were included.`)
   }
+  if (linkCount) {
+    warnings.push(`${linkCount} ${linkCount === 1 ? "link was" : "links were"} not opened; only displayed cell text was included.`)
+  }
 
   const onlySheet = included[0]
   const usedColumns = onlySheet ? onlySheet.maxColumn - onlySheet.minColumn + 1 : 0
@@ -481,12 +544,104 @@ function inspectSpreadsheet(bytes: Uint8Array, source: SourceDefinition, fileNam
     && usedColumns <= directSpreadsheetColumns
     && safePrintArea
     && !longUnwrappedCell
+    && formulaCount === 0
     && formulaWithoutValueCount === 0
+    && linkCount === 0
 
   if (!safeForDirectConversion) {
     warnings.unshift(`${fileName} was prepared in a content-safe layout so every visible cell can be reviewed.`)
   }
   return { sheets, warnings, distinctiveSourceText: [...distinctive], safeForDirectConversion }
+}
+
+function decodeDelimitedText(bytes: Uint8Array) {
+  const content = bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf ? bytes.subarray(3) : bytes
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(content)
+  } catch {
+    return new TextDecoder("windows-1252").decode(content)
+  }
+}
+
+function odsHiddenSheetNames(bytes: Uint8Array) {
+  const hiddenStyles = new Set<string>()
+  const hiddenSheets = new Set<string>()
+  try {
+    const archive = XLSX.CFB.read(bytes, { type: "array" })
+    const contentIndex = archive.FullPaths.findIndex((path: string) => /(?:^|\/)content\.xml$/i.test(path))
+    const content = contentIndex >= 0 ? archive.FileIndex[contentIndex]?.content : undefined
+    if (!content || content.length > 32 * 1024 * 1024) return hiddenSheets
+    const xml = new TextDecoder().decode(content)
+    for (const match of xml.matchAll(/<style:style\b([^>]*)>([\s\S]*?)<\/style:style>/gi)) {
+      const attributes = match[1]
+      const body = match[2]
+      const name = xmlAttribute(attributes, "style:name")
+      const family = xmlAttribute(attributes, "style:family")
+      if (name && family === "table" && /\btable:display\s*=\s*["']false["']/i.test(body)) hiddenStyles.add(name)
+    }
+    for (const match of xml.matchAll(/<table:table\b([^>]*)>/gi)) {
+      const attributes = match[1]
+      const name = xmlAttribute(attributes, "table:name")
+      const style = xmlAttribute(attributes, "table:style-name")
+      const hiddenInline = /\b(?:table:display|table:visibility)\s*=\s*["'](?:false|collapse)["']/i.test(attributes)
+      if (name && (hiddenInline || (style && hiddenStyles.has(style)))) hiddenSheets.add(name)
+    }
+  } catch {
+    return hiddenSheets
+  }
+  return hiddenSheets
+}
+
+function spreadsheetSupplementaryCharacterMap(bytes: Uint8Array) {
+  const candidates = new Map<number, Set<string>>()
+  const basicCharacters = new Set<number>()
+  try {
+    const archive = XLSX.CFB.read(bytes, { type: "array" })
+    let inspectedBytes = 0
+    for (let index = 0; index < archive.FullPaths.length; index += 1) {
+      if (!/\.xml$/i.test(archive.FullPaths[index])) continue
+      const content = archive.FileIndex[index]?.content
+      if (!content) continue
+      inspectedBytes += content.length
+      if (inspectedBytes > 32 * 1024 * 1024) break
+      const xml = decodeXmlEntities(new TextDecoder().decode(content))
+      for (const character of xml) {
+        const codePoint = character.codePointAt(0) ?? 0
+        if (codePoint <= 0xffff) {
+          basicCharacters.add(codePoint)
+          continue
+        }
+        const truncated = codePoint & 0xffff
+        const values = candidates.get(truncated) ?? new Set<string>()
+        values.add(character)
+        candidates.set(truncated, values)
+      }
+    }
+  } catch {
+    return new Map<number, string>()
+  }
+  return new Map([...candidates].flatMap(([truncated, values]) => (
+    values.size === 1 && !basicCharacters.has(truncated) ? [[truncated, [...values][0]] as const] : []
+  )))
+}
+
+function restoreSpreadsheetCharacters(value: string, replacements: Map<number, string>) {
+  if (!replacements.size) return value
+  return [...value].map((character) => replacements.get(character.codePointAt(0) ?? 0) ?? character).join("")
+}
+
+function xmlAttribute(attributes: string, name: string) {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  const match = attributes.match(new RegExp(`(?:^|\\s)${escaped}\\s*=\\s*(["'])(.*?)\\1`, "i"))
+  return match ? decodeXmlEntities(match[2]) : ""
+}
+
+function decodeXmlEntities(value: string) {
+  return value.replace(/&(?:#(\d+)|#x([\da-f]+)|amp|quot|apos|lt|gt);/gi, (entity, decimal, hexadecimal) => {
+    if (decimal) return String.fromCodePoint(Number(decimal))
+    if (hexadecimal) return String.fromCodePoint(Number.parseInt(hexadecimal, 16))
+    return ({ "&amp;": "&", "&quot;": '"', "&apos;": "'", "&lt;": "<", "&gt;": ">" } as Record<string, string>)[entity.toLowerCase()] ?? entity
+  })
 }
 
 function hasPrintArea(workbook: XLSX.WorkBook, sheetName: string) {
@@ -507,7 +662,7 @@ function spreadsheetHtml(inspection: SpreadsheetInspection, fileName: string) {
 <style>
   @page { size: A3 landscape; margin: 12mm; }
   * { box-sizing: border-box; }
-  body { margin: 0; color: #292929; background: #fff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; font-size: 9pt; }
+  body { margin: 0; color: #292929; background: #fff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Arial Unicode MS", "Hiragino Sans GB", "Noto Sans", Arial, sans-serif; font-size: 9pt; }
   section { break-before: page; }
   section:first-of-type { break-before: auto; }
   h1 { margin: 0 0 2mm; font-size: 15pt; font-weight: 600; }
@@ -529,12 +684,19 @@ function renderSheet(sheet: SpreadsheetSheet) {
   const bands = columnBands(sheet)
   return bands.map((columns, bandIndex) => {
     const cellMap = new Map(sheet.cells.map((cell) => [`${cell.row}:${cell.column}`, cell]))
-    const rows = unique(sheet.cells.filter((cell) => columns.includes(cell.column)).map((cell) => cell.row)).sort((a, b) => a - b)
+    const mergedRows = sheet.merges.flatMap((merge) => {
+      if (!columns.some((column) => column >= merge.startColumn && column <= merge.endColumn)) return []
+      return Array.from({ length: merge.endRow - merge.startRow + 1 }, (_, index) => merge.startRow + index)
+    })
+    const rows = unique([
+      ...sheet.cells.filter((cell) => columns.includes(cell.column)).map((cell) => cell.row),
+      ...mergedRows,
+    ]).sort((a, b) => a - b)
     const headerRow = detectHeaderRow(rows, columns, cellMap)
     const renderedRows = rows.map((row) => renderSpreadsheetRow(sheet, row, columns, cellMap, row === headerRow))
     const header = headerRow === null ? "" : renderedRows.splice(rows.indexOf(headerRow), 1)[0]
     const rangeLabel = columns.length ? `${XLSX.utils.encode_col(columns[0])}-${XLSX.utils.encode_col(columns.at(-1)!)}` : ""
-    return `<section class="band"><h1>${escapeHtml(sheet.name)}</h1><h2>${bands.length > 1 ? `Part ${bandIndex + 1} of ${bands.length} - columns ${rangeLabel}` : "Visible spreadsheet content"}</h2><table>${header ? `<thead>${header}</thead>` : ""}<tbody>${renderedRows.join("")}</tbody></table></section>`
+    return `<section class="band"><h1 dir="auto">${escapeHtml(sheet.name)}</h1><h2>${bands.length > 1 ? `Part ${bandIndex + 1} of ${bands.length} - columns ${rangeLabel}` : "Visible spreadsheet content"}</h2><table>${header ? `<thead>${header}</thead>` : ""}<tbody>${renderedRows.join("")}</tbody></table></section>`
   }).join("\n")
 }
 
@@ -569,21 +731,65 @@ function renderSpreadsheetRow(
   for (let index = 0; index < columns.length; index += 1) {
     const column = columns[index]
     const covering = sheet.merges.find((merge) => row >= merge.startRow && row <= merge.endRow && column >= merge.startColumn && column <= merge.endColumn)
-    if (covering && (row !== covering.startRow || column !== covering.startColumn)) continue
-    const cell = cells.get(`${row}:${column}`)
     const includedMergedColumns = covering
       ? columns.filter((candidate) => candidate >= covering.startColumn && candidate <= covering.endColumn)
       : []
+    if (covering && (row !== covering.startRow || column !== includedMergedColumns[0])) continue
+    const cell = covering
+      ? cells.get(`${covering.startRow}:${covering.startColumn}`)
+      : cells.get(`${row}:${column}`)
     const colspan = includedMergedColumns.length > 1 ? ` colspan="${includedMergedColumns.length}"` : ""
     const rowspan = covering && covering.endRow > covering.startRow ? ` rowspan="${covering.endRow - covering.startRow + 1}"` : ""
     const className = cell?.formulaWithoutValue ? ' class="formula-missing"' : ""
-    rendered.push(`<${tag}${colspan}${rowspan}${className}>${escapeHtml(cell?.text ?? "")}</${tag}>`)
+    rendered.push(`<${tag}${colspan}${rowspan}${className} dir="auto">${escapeHtml(cell?.text ?? "")}</${tag}>`)
   }
   return `<tr>${rendered.join("")}</tr>`
 }
 
 function imageHtml(bytes: Uint8Array, mimeType: string, fileName: string) {
   return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'"><title>${escapeHtml(fileName)}</title><style>@page{size:A4;margin:10mm}html,body{margin:0}body{display:grid;min-height:calc(100vh - 20mm);place-items:center}img{display:block;max-width:100%;max-height:100%;object-fit:contain}</style></head><body><img alt="Invoice" src="data:${mimeType};base64,${base64(bytes)}"></body></html>`
+}
+
+async function legacyWordHtml(bytes: Uint8Array, fileName: string) {
+  try {
+    const document = await new WordExtractor().extract(Buffer.from(bytes))
+    const sections = [
+      ["Headers", document.getHeaders()],
+      ["Document", document.getBody()],
+      ["Text boxes", document.getTextboxes()],
+      ["Footnotes", document.getFootnotes()],
+      ["Endnotes", document.getEndnotes()],
+      ["Annotations", document.getAnnotations()],
+      ["Footers", document.getFooters()],
+    ].filter((section) => section[1].trim())
+    if (!sections.length) throw new Error("empty_legacy_word")
+    const combined = sections.map((section) => section[1]).join("\n")
+    if (combined.length > 2_000_000) {
+      throw new InvoiceDocumentPreparationError(
+        "This Word invoice contains too much text to prepare safely. Remove unrelated content and try again.",
+        413,
+        "invoice_document_too_complex",
+      )
+    }
+    const distinctiveSourceText = unique(combined.split(/\r?\n/)
+      .map((line) => line.replace(/\t+/g, " ").replace(/\s+/g, " ").trim())
+      .filter((line) => line.length >= 12 && line.length <= evidenceTextLimit))
+      .slice(0, 24)
+    const renderedSections = sections.map(([heading, text]) =>
+      `<section><h2>${escapeHtml(heading)}</h2><div class="document-text" dir="auto">${escapeHtml(text.replace(/\r\n?/g, "\n"))}</div></section>`
+    ).join("")
+    return {
+      distinctiveSourceText,
+      html: `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>${escapeHtml(fileName)}</title><style>@page{size:A4;margin:12mm}*{box-sizing:border-box}body{margin:0;color:#202020;font-family:Arial,"Arial Unicode MS","Noto Sans","Noto Sans Arabic","Noto Sans CJK SC",sans-serif;font-size:9pt;line-height:1.35}h1{margin:0 0 8mm;font-size:15pt}h2{margin:6mm 0 2mm;font-size:10pt}.document-text{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;tab-size:4}section+section{break-before:page}</style></head><body><h1 dir="auto">${escapeHtml(fileName)}</h1>${renderedSections}</body></html>`,
+    }
+  } catch (error) {
+    if (error instanceof InvoiceDocumentPreparationError) throw error
+    throw new InvoiceDocumentPreparationError(
+      "This legacy Word invoice could not be read safely. Save it as DOCX or PDF and try again.",
+      422,
+      "invoice_conversion_unreadable",
+    )
+  }
 }
 
 async function imageToPdf(bytes: Uint8Array, mimeType: string) {
@@ -605,21 +811,24 @@ async function imageToPdf(bytes: Uint8Array, mimeType: string) {
   }
 }
 
-async function convertWithCarbone(bytes: Uint8Array, fileName: string, converter: "L" | "C") {
+async function convertWithCarbone(
+  bytes: Uint8Array,
+  fileName: string,
+  converter: "L" | "C" | undefined,
+  convertTo: "pdf" | "docx" = "pdf",
+) {
   const response = await fetch(`${carboneBaseUrl()}/render/template?download=true`, {
     method: "POST",
     headers: {
       Authorization: carboneAuthorization(),
       "Content-Type": "application/json",
       "carbone-version": Deno.env.get("CARBONE_API_VERSION")?.trim() || "5",
-      "User-Agent": "Multideck invoice document normalizer/2",
+      "User-Agent": "Multideck invoice document normalizer/7",
     },
     body: JSON.stringify({
-      data: {},
       template: base64(bytes),
-      convertTo: "pdf",
-      converter,
-      hardRefresh: true,
+      convertTo,
+      ...(converter ? { converter } : {}),
       reportName: safeReportName(fileName),
     }),
     signal: AbortSignal.timeout(carboneTimeout()),
@@ -641,8 +850,15 @@ async function convertWithCarbone(bytes: Uint8Array, fileName: string, converter
     throw new InvoiceDocumentPreparationError("The prepared invoice is too large. Remove unrelated pages or tabs and try again.", 413, "invoice_pdf_too_large")
   }
   const converted = new Uint8Array(await response.arrayBuffer())
-  if (!converted.byteLength || converted.byteLength > MAX_PREPARED_INVOICE_BYTES || !startsWith(converted, [0x25, 0x50, 0x44, 0x46, 0x2d])) {
-    throw new InvoiceDocumentPreparationError("The invoice converter returned an invalid PDF. Try again.", 502, "invoice_conversion_invalid_pdf")
+  const validPdf = convertTo !== "pdf" || startsWith(converted, [0x25, 0x50, 0x44, 0x46, 0x2d])
+  const validDocx = convertTo !== "docx"
+    || (startsWith(converted, [0x50, 0x4b]) && containsOfficeMarker(converted, "word/") && containsOfficeMarker(converted, "[Content_Types].xml"))
+  if (!converted.byteLength || converted.byteLength > MAX_PREPARED_INVOICE_BYTES || !validPdf || !validDocx) {
+    throw new InvoiceDocumentPreparationError(
+      `The invoice converter returned an invalid ${convertTo.toUpperCase()} file. Try again.`,
+      502,
+      `invoice_conversion_invalid_${convertTo}`,
+    )
   }
   return converted
 }
@@ -717,7 +933,7 @@ function escapeHtml(value: string) {
   })[character]!)
 }
 
-function unique(values: number[]) {
+function unique<T>(values: T[]) {
   return [...new Set(values)]
 }
 

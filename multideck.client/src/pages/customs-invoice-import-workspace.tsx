@@ -938,6 +938,9 @@ function localizedDocumentWarning(warning: string, t: (text: string) => string) 
   if (formulas) return `${formulas[1]} ${t(Number(formulas[1]) === 1 ? "formula used its saved displayed value" : "formulas used their saved displayed values")}.`
   const missing = warning.match(/^(\d+) (?:formula has|formulas have) no saved result/)
   if (missing) return `${missing[1]} ${t(Number(missing[1]) === 1 ? "formula has no saved result and needs checking" : "formulas have no saved result and need checking")}.`
+  const links = warning.match(/^(\d+) (?:link was|links were) not opened;/)
+  if (links) return `${links[1]} ${t(Number(links[1]) === 1 ? "link was not opened; only displayed cell text was included" : "links were not opened; only displayed cell text was included")}.`
+  if (warning.includes("legacy Word document")) return t("The legacy Word document was prepared in a content-safe text layout because its original layout could not be converted.")
   if (warning.includes("content-safe layout")) return t("The spreadsheet was prepared in a content-safe layout so every visible cell can be reviewed.")
   return t(warning)
 }
