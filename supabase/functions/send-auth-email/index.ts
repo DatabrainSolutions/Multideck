@@ -1,5 +1,6 @@
 import { Webhook } from "npm:standardwebhooks@1.0.0"
 import { normaliseLocale, renderBrandedEmail, safeMultideckUrl } from "../_shared/email-template.ts"
+import { MULTIDECK_EMAIL_FROM, MULTIDECK_EMAIL_REPLY_TO } from "../_shared/email-sender.ts"
 
 type AuthEmailData = {
   token?: string
@@ -93,8 +94,8 @@ async function sendWithResend(to: string, subject: string, html: string, text: s
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      from: Deno.env.get("EMAIL_FROM") ?? "Multideck <support@multideck.app>",
-      reply_to: Deno.env.get("EMAIL_REPLY_TO") ?? "support@multideck.app",
+      from: MULTIDECK_EMAIL_FROM,
+      reply_to: MULTIDECK_EMAIL_REPLY_TO,
       to: [to],
       subject,
       html,
