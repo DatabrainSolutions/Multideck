@@ -74173,6 +74173,11 @@ GRANT ALL ON FUNCTION "public"."set_current_user_language_preference"("p_locale"
 
 
 
+GRANT EXECUTE ON FUNCTION "private"."is_valid_sidebar_layout"("jsonb") TO "service_role";
+GRANT EXECUTE ON FUNCTION "private"."is_valid_table_pinned_columns"("jsonb") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."set_current_user_profile_photo"("p_bucket" "text", "p_path" "text", "p_mime_type" "text", "p_size_bytes" bigint) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."set_current_user_profile_photo"("p_bucket" "text", "p_path" "text", "p_mime_type" "text", "p_size_bytes" bigint) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."set_current_user_profile_photo"("p_bucket" "text", "p_path" "text", "p_mime_type" "text", "p_size_bytes" bigint) TO "service_role";

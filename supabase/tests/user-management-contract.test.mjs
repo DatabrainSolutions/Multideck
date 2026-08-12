@@ -7,11 +7,12 @@ const repoRoot = new URL("../", supabaseRoot)
 const readSupabase = (path) => readFile(new URL(path, supabaseRoot), "utf8")
 const readRepo = (path) => readFile(new URL(path, repoRoot), "utf8")
 
-const [team, backend, authEmail, dexter, settings, navigation, api, authFlow, authPage, app, translations] = await Promise.all([
+const [team, backend, authEmail, dexter, userValidationGrant, settings, navigation, api, authFlow, authPage, app, translations] = await Promise.all([
   readSupabase("functions/team/index.ts"),
   readSupabase("functions/_shared/backend.ts"),
   readSupabase("functions/send-auth-email/index.ts"),
   readSupabase("functions/agent-dexter/index.ts"),
+  readSupabase("migrations/20260812095000_grant_service_role_user_validation.sql"),
   readRepo("multideck.client/src/pages/settings-page.tsx"),
   readRepo("multideck.client/src/data/settings-navigation.ts"),
   readRepo("multideck.client/src/lib/api.ts"),
@@ -38,6 +39,8 @@ test("invitations are host-aware and cannot redirect to an arbitrary origin", ()
   assert.match(api, /appOrigin: string/)
   assert.match(team, /legacy auth trigger provisions a default workspace profile/)
   assert.match(team, /eq\("Auth_User_ID", authUserId\)\.maybeSingle\(\)/)
+  assert.match(userValidationGrant, /grant execute on function private\.is_valid_sidebar_layout\(jsonb\) to service_role/)
+  assert.match(userValidationGrant, /grant execute on function private\.is_valid_table_pinned_columns\(jsonb\) to service_role/)
 })
 
 test("the branded invite explicitly hands users to password creation", () => {
