@@ -2,10 +2,12 @@
 import * as XLSX from "npm:xlsx@0.18.5/xlsx.mjs"
 import * as cptable from "npm:xlsx@0.18.5/dist/cpexcel.full.mjs"
 import { PDFDocument } from "npm:pdf-lib@1.17.1"
+import WordExtractor from "npm:word-extractor@1.0.4"
+import { Buffer } from "node:buffer"
 
 XLSX.set_cptable(cptable)
 
-export const INVOICE_DOCUMENT_NORMALIZER_VERSION = 3
+export const INVOICE_DOCUMENT_NORMALIZER_VERSION = 7
 export const MAX_PREPARED_INVOICE_BYTES = 25 * 1024 * 1024
 export const MAX_PREPARED_INVOICE_PAGES = 30
 
@@ -210,6 +212,28 @@ export async function prepareInvoiceDocument(input: PrepareInvoiceDocumentInput)
     } else {
       strategy = "office_pdf"
       pdfBytes = await convertWithCarbone(input.bytes, input.fileName, "L")
+    }
+  } else if (source.extension === ".doc") {
+    try {
+      pdfBytes = await convertWithCarbone(input.bytes, input.fileName, "L")
+    } catch (error) {
+      if (!(error instanceof InvoiceDocumentPreparationError) || error.code !== "invoice_conversion_unreadable") throw error
+      try {
+        const docxBytes = await convertWithCarbone(input.bytes, input.fileName, undefined, "docx")
+        pdfBytes = await convertWithCarbone(docxBytes, input.fileName.replace(/\.doc$/i, ".docx"), "L")
+      } catch (intermediateError) {
+        if (!(intermediateError instanceof InvoiceDocumentPreparationError) || intermediateError.code !== "invoice_conversion_unreadable") {
+          throw intermediateError
+        }
+        const fallback = await legacyWordHtml(input.bytes, input.fileName)
+        distinctiveSourceText = fallback.distinctiveSourceText
+        warnings.push("The legacy Word document was prepared in a content-safe text layout because its original layout could not be converted.")
+        pdfBytes = await convertWithCarbone(
+          new TextEncoder().encode(fallback.html),
+          input.fileName.replace(/\.doc$/i, ".html"),
+          "C",
+        )
+      }
     }
   } else {
     pdfBytes = await convertWithCarbone(input.bytes, input.fileName, "L")
@@ -726,6 +750,48 @@ function imageHtml(bytes: Uint8Array, mimeType: string, fileName: string) {
   return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'"><title>${escapeHtml(fileName)}</title><style>@page{size:A4;margin:10mm}html,body{margin:0}body{display:grid;min-height:calc(100vh - 20mm);place-items:center}img{display:block;max-width:100%;max-height:100%;object-fit:contain}</style></head><body><img alt="Invoice" src="data:${mimeType};base64,${base64(bytes)}"></body></html>`
 }
 
+async function legacyWordHtml(bytes: Uint8Array, fileName: string) {
+  try {
+    const document = await new WordExtractor().extract(Buffer.from(bytes))
+    const sections = [
+      ["Headers", document.getHeaders()],
+      ["Document", document.getBody()],
+      ["Text boxes", document.getTextboxes()],
+      ["Footnotes", document.getFootnotes()],
+      ["Endnotes", document.getEndnotes()],
+      ["Annotations", document.getAnnotations()],
+      ["Footers", document.getFooters()],
+    ].filter((section) => section[1].trim())
+    if (!sections.length) throw new Error("empty_legacy_word")
+    const combined = sections.map((section) => section[1]).join("\n")
+    if (combined.length > 2_000_000) {
+      throw new InvoiceDocumentPreparationError(
+        "This Word invoice contains too much text to prepare safely. Remove unrelated content and try again.",
+        413,
+        "invoice_document_too_complex",
+      )
+    }
+    const distinctiveSourceText = unique(combined.split(/\r?\n/)
+      .map((line) => line.replace(/\t+/g, " ").replace(/\s+/g, " ").trim())
+      .filter((line) => line.length >= 12 && line.length <= evidenceTextLimit))
+      .slice(0, 24)
+    const renderedSections = sections.map(([heading, text]) =>
+      `<section><h2>${escapeHtml(heading)}</h2><div class="document-text" dir="auto">${escapeHtml(text.replace(/\r\n?/g, "\n"))}</div></section>`
+    ).join("")
+    return {
+      distinctiveSourceText,
+      html: `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>${escapeHtml(fileName)}</title><style>@page{size:A4;margin:12mm}*{box-sizing:border-box}body{margin:0;color:#202020;font-family:Arial,"Arial Unicode MS","Noto Sans","Noto Sans Arabic","Noto Sans CJK SC",sans-serif;font-size:9pt;line-height:1.35}h1{margin:0 0 8mm;font-size:15pt}h2{margin:6mm 0 2mm;font-size:10pt}.document-text{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;tab-size:4}section+section{break-before:page}</style></head><body><h1 dir="auto">${escapeHtml(fileName)}</h1>${renderedSections}</body></html>`,
+    }
+  } catch (error) {
+    if (error instanceof InvoiceDocumentPreparationError) throw error
+    throw new InvoiceDocumentPreparationError(
+      "This legacy Word invoice could not be read safely. Save it as DOCX or PDF and try again.",
+      422,
+      "invoice_conversion_unreadable",
+    )
+  }
+}
+
 async function imageToPdf(bytes: Uint8Array, mimeType: string) {
   try {
     const pdf = await PDFDocument.create()
@@ -745,21 +811,24 @@ async function imageToPdf(bytes: Uint8Array, mimeType: string) {
   }
 }
 
-async function convertWithCarbone(bytes: Uint8Array, fileName: string, converter: "L" | "C") {
+async function convertWithCarbone(
+  bytes: Uint8Array,
+  fileName: string,
+  converter: "L" | "C" | undefined,
+  convertTo: "pdf" | "docx" = "pdf",
+) {
   const response = await fetch(`${carboneBaseUrl()}/render/template?download=true`, {
     method: "POST",
     headers: {
       Authorization: carboneAuthorization(),
       "Content-Type": "application/json",
       "carbone-version": Deno.env.get("CARBONE_API_VERSION")?.trim() || "5",
-      "User-Agent": "Multideck invoice document normalizer/3",
+      "User-Agent": "Multideck invoice document normalizer/7",
     },
     body: JSON.stringify({
-      data: {},
       template: base64(bytes),
-      convertTo: "pdf",
-      converter,
-      hardRefresh: true,
+      convertTo,
+      ...(converter ? { converter } : {}),
       reportName: safeReportName(fileName),
     }),
     signal: AbortSignal.timeout(carboneTimeout()),
@@ -781,8 +850,15 @@ async function convertWithCarbone(bytes: Uint8Array, fileName: string, converter
     throw new InvoiceDocumentPreparationError("The prepared invoice is too large. Remove unrelated pages or tabs and try again.", 413, "invoice_pdf_too_large")
   }
   const converted = new Uint8Array(await response.arrayBuffer())
-  if (!converted.byteLength || converted.byteLength > MAX_PREPARED_INVOICE_BYTES || !startsWith(converted, [0x25, 0x50, 0x44, 0x46, 0x2d])) {
-    throw new InvoiceDocumentPreparationError("The invoice converter returned an invalid PDF. Try again.", 502, "invoice_conversion_invalid_pdf")
+  const validPdf = convertTo !== "pdf" || startsWith(converted, [0x25, 0x50, 0x44, 0x46, 0x2d])
+  const validDocx = convertTo !== "docx"
+    || (startsWith(converted, [0x50, 0x4b]) && containsOfficeMarker(converted, "word/") && containsOfficeMarker(converted, "[Content_Types].xml"))
+  if (!converted.byteLength || converted.byteLength > MAX_PREPARED_INVOICE_BYTES || !validPdf || !validDocx) {
+    throw new InvoiceDocumentPreparationError(
+      `The invoice converter returned an invalid ${convertTo.toUpperCase()} file. Try again.`,
+      502,
+      `invoice_conversion_invalid_${convertTo}`,
+    )
   }
   return converted
 }
@@ -857,7 +933,7 @@ function escapeHtml(value: string) {
   })[character]!)
 }
 
-function unique(values: number[]) {
+function unique<T>(values: T[]) {
   return [...new Set(values)]
 }
 

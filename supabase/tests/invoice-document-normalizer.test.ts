@@ -306,6 +306,70 @@ Deno.test("validates every accepted source extension against its MIME type and b
   )
 })
 
+Deno.test("sends office sources to Carbone as conversion-only documents without template rendering", async () => {
+  const textBytes = new TextEncoder()
+  const legacyDocument = XLSX.CFB.utils.cfb_new()
+  XLSX.CFB.utils.cfb_add(legacyDocument, "WordDocument", textBytes.encode("legacy word invoice"))
+  const legacyDoc = new Uint8Array(XLSX.CFB.write(legacyDocument, { type: "buffer" }))
+  const previousFetch = globalThis.fetch
+  let requestBody: Record<string, unknown> = {}
+  globalThis.fetch = async (_input, init) => {
+    requestBody = JSON.parse(String(init?.body ?? "{}"))
+    return new Response(await onePagePdf(), { status: 200, headers: { "content-type": "application/pdf" } })
+  }
+  try {
+    Deno.env.set("CARBONE_URL", "https://carbone.example.test")
+    Deno.env.set("CARBONE_API_TOKEN", "test-token")
+    const prepared = await prepareInvoiceDocument({
+      bytes: legacyDoc,
+      fileName: "legacy-invoice.doc",
+      providerMimeType: "application/msword",
+    })
+    assertEquals(prepared.pageCount, 1)
+    assertEquals(prepared.conversion.normalizerVersion, 7)
+    assert(!("data" in requestBody))
+    assert(!("hardRefresh" in requestBody))
+    assertEquals(requestBody.convertTo, "pdf")
+    assertEquals(requestBody.converter, "L")
+  } finally {
+    globalThis.fetch = previousFetch
+    Deno.env.delete("CARBONE_URL")
+    Deno.env.delete("CARBONE_API_TOKEN")
+  }
+})
+
+Deno.test("retries unreadable legacy Word conversion through a DOCX intermediate", async () => {
+  const textBytes = new TextEncoder()
+  const legacyDocument = XLSX.CFB.utils.cfb_new()
+  XLSX.CFB.utils.cfb_add(legacyDocument, "WordDocument", textBytes.encode("legacy word invoice"))
+  const legacyDoc = new Uint8Array(XLSX.CFB.write(legacyDocument, { type: "buffer" }))
+  const fakeDocx = textBytes.encode("PK\u0003\u0004 word/document.xml [Content_Types].xml")
+  const previousFetch = globalThis.fetch
+  const targets: string[] = []
+  globalThis.fetch = async (_input, init) => {
+    const body = JSON.parse(String(init?.body ?? "{}")) as { convertTo?: string }
+    targets.push(body.convertTo ?? "")
+    if (targets.length === 1) return new Response("legacy direct conversion rejected", { status: 422 })
+    if (targets.length === 2) return new Response(fakeDocx, { status: 200 })
+    return new Response(await onePagePdf(), { status: 200, headers: { "content-type": "application/pdf" } })
+  }
+  try {
+    Deno.env.set("CARBONE_URL", "https://carbone.example.test")
+    Deno.env.set("CARBONE_API_TOKEN", "test-token")
+    const prepared = await prepareInvoiceDocument({
+      bytes: legacyDoc,
+      fileName: "legacy-invoice.doc",
+      providerMimeType: "application/msword",
+    })
+    assertEquals(prepared.pageCount, 1)
+    assertEquals(targets, ["pdf", "docx", "pdf"])
+  } finally {
+    globalThis.fetch = previousFetch
+    Deno.env.delete("CARBONE_URL")
+    Deno.env.delete("CARBONE_API_TOKEN")
+  }
+})
+
 Deno.test("preserves quoted UTF-8 CSV newlines and rejects mismatched, encrypted and macro sources before conversion", async () => {
   const csv = new TextEncoder().encode('sku,description,value\nA-1,"first line\nsecond line café العربية 中文",10\n')
   const previousFetch = globalThis.fetch
