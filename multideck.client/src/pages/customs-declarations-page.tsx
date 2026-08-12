@@ -774,45 +774,71 @@ function DeclarationSection({ draft, update, showDataElements, issues, highlight
 
 function PartiesSection({ draft, update, showDataElements, showOptional, issues, highlightedField, t }: SectionProps & { showOptional: boolean }) {
   const direction = useContext(CustomsDirectionContext)
+  const compact = useContext(CompactCustomsFormContext)
   const representationTypes = useReferenceOptions("representation_type", t, "Not specified")
   const countries = useReferenceOptions("country", t, "Select country")
-  return <SectionFrame title={t("Party details")} description={t(direction === "import" ? "Importer, exporter, declarant and representation." : "Exporter, consignee, declarant and representation.")}>
-    <FieldGrid>
+  return <section aria-labelledby="customs-party-details-heading" className="min-w-0">
+    <header className={cn("flex flex-col gap-1 px-1 sm:flex-row sm:items-center sm:justify-between sm:gap-6", compact ? "mb-2" : "mb-3")}>
+      <h2 id="customs-party-details-heading" className={cn("shrink-0 font-medium text-[var(--md-ink)]", compact ? "text-[13px]" : "text-[15px]")}>{t("Party details")}</h2>
+      <p className={cn("text-[var(--md-subtle)]", compact ? "text-[10.5px] leading-4" : "text-[12px] leading-5 sm:max-w-[65%] sm:text-end")}>{t(direction === "import" ? "Importer, exporter, declarant and representation." : "Exporter, consignee, declarant and representation.")}</p>
+    </header>
+    <div className="grid min-w-0 gap-3 xl:grid-cols-2">
       {direction === "import" ? <>
-        <PartyContactWarning values={[draft.importerName, draft.importerAddressLine, draft.importerCity, draft.importerPostcode, draft.importerCountry]} fields={["importerName", "importerAddressLine", "importerCity", "importerPostcode", "importerCountry"]} issues={issues} t={t} />
-        <TextField label={t("Importer")} dataElement="3/16" customsBox="8" required showDataElements={showDataElements} value={draft.importer} onChange={(value) => update("importer", value)} invalid={issues.has("importer")} fieldKey="importer" highlighted={highlightedField === "importer"} placeholder={t("Name or EORI")} />
-        <TextField label={t("Importer legal name")} dataElement="3/16" customsBox="8" required showDataElements={showDataElements} value={draft.importerName} onChange={(value) => update("importerName", value)} invalid={issues.has("importerName")} fieldKey="importerName" highlighted={highlightedField === "importerName"} />
-        <TextField label={t("Importer street address")} dataElement="3/15" customsBox="8" required showDataElements={showDataElements} value={draft.importerAddressLine} onChange={(value) => update("importerAddressLine", value)} invalid={issues.has("importerAddressLine")} fieldKey="importerAddressLine" highlighted={highlightedField === "importerAddressLine"} />
-        <TextField label={t("Importer town or city")} dataElement="3/15" customsBox="8" required showDataElements={showDataElements} value={draft.importerCity} onChange={(value) => update("importerCity", value)} invalid={issues.has("importerCity")} fieldKey="importerCity" highlighted={highlightedField === "importerCity"} />
-        <TextField label={t("Importer postcode")} dataElement="3/15" customsBox="8" required showDataElements={showDataElements} value={draft.importerPostcode} onChange={(value) => update("importerPostcode", value)} invalid={issues.has("importerPostcode")} fieldKey="importerPostcode" highlighted={highlightedField === "importerPostcode"} />
-        <SelectField label={t("Importer country")} dataElement="3/15" customsBox="8" required showDataElements={showDataElements} value={draft.importerCountry} onChange={(value) => update("importerCountry", value)} invalid={issues.has("importerCountry")} fieldKey="importerCountry" highlighted={highlightedField === "importerCountry"} options={countries} />
+        <PartyFieldsGroup title={t("Importer")}>
+          <PartyContactWarning values={[draft.importerName, draft.importerAddressLine, draft.importerCity, draft.importerPostcode, draft.importerCountry]} fields={["importerName", "importerAddressLine", "importerCity", "importerPostcode", "importerCountry"]} issues={issues} t={t} />
+          <TextField label={t("Importer")} dataElement="3/16" customsBox="8" required showDataElements={showDataElements} value={draft.importer} onChange={(value) => update("importer", value)} invalid={issues.has("importer")} fieldKey="importer" highlighted={highlightedField === "importer"} placeholder={t("Name or EORI")} />
+          <TextField label={t("Importer legal name")} dataElement="3/16" customsBox="8" required showDataElements={showDataElements} value={draft.importerName} onChange={(value) => update("importerName", value)} invalid={issues.has("importerName")} fieldKey="importerName" highlighted={highlightedField === "importerName"} />
+          <TextField label={t("Importer street address")} dataElement="3/15" customsBox="8" required showDataElements={showDataElements} value={draft.importerAddressLine} onChange={(value) => update("importerAddressLine", value)} invalid={issues.has("importerAddressLine")} fieldKey="importerAddressLine" highlighted={highlightedField === "importerAddressLine"} />
+          <TextField label={t("Importer town or city")} dataElement="3/15" customsBox="8" required showDataElements={showDataElements} value={draft.importerCity} onChange={(value) => update("importerCity", value)} invalid={issues.has("importerCity")} fieldKey="importerCity" highlighted={highlightedField === "importerCity"} />
+          <TextField label={t("Importer postcode")} dataElement="3/15" customsBox="8" required showDataElements={showDataElements} value={draft.importerPostcode} onChange={(value) => update("importerPostcode", value)} invalid={issues.has("importerPostcode")} fieldKey="importerPostcode" highlighted={highlightedField === "importerPostcode"} />
+          <SelectField label={t("Importer country")} dataElement="3/15" customsBox="8" required showDataElements={showDataElements} value={draft.importerCountry} onChange={(value) => update("importerCountry", value)} invalid={issues.has("importerCountry")} fieldKey="importerCountry" highlighted={highlightedField === "importerCountry"} options={countries} />
+        </PartyFieldsGroup>
       </> : null}
-      <PartyContactWarning values={[draft.exporterName, draft.exporterAddressLine, draft.exporterCity, draft.exporterPostcode, draft.exporterCountry]} fields={["exporterName", "exporterAddressLine", "exporterCity", "exporterPostcode", "exporterCountry"]} issues={issues} t={t} />
-      <TextField label={t("Exporter")} dataElement="3/1" customsBox="2" required showDataElements={showDataElements} value={draft.exporter} onChange={(value) => update("exporter", value)} invalid={issues.has("exporter")} fieldKey="exporter" highlighted={highlightedField === "exporter"} placeholder={t("Name or EORI")} />
-      <TextField label={t("Exporter legal name")} dataElement="3/1" customsBox="2" required showDataElements={showDataElements} value={draft.exporterName} onChange={(value) => update("exporterName", value)} invalid={issues.has("exporterName")} fieldKey="exporterName" highlighted={highlightedField === "exporterName"} />
-      <TextField label={t("Exporter street address")} dataElement="3/2" customsBox="2" required showDataElements={showDataElements} value={draft.exporterAddressLine} onChange={(value) => update("exporterAddressLine", value)} invalid={issues.has("exporterAddressLine")} fieldKey="exporterAddressLine" highlighted={highlightedField === "exporterAddressLine"} />
-      <TextField label={t("Exporter town or city")} dataElement="3/2" customsBox="2" required showDataElements={showDataElements} value={draft.exporterCity} onChange={(value) => update("exporterCity", value)} invalid={issues.has("exporterCity")} fieldKey="exporterCity" highlighted={highlightedField === "exporterCity"} />
-      <TextField label={t("Exporter postcode")} dataElement="3/2" customsBox="2" required showDataElements={showDataElements} value={draft.exporterPostcode} onChange={(value) => update("exporterPostcode", value)} invalid={issues.has("exporterPostcode")} fieldKey="exporterPostcode" highlighted={highlightedField === "exporterPostcode"} />
-      <SelectField label={t("Exporter country")} dataElement="3/2" customsBox="2" required showDataElements={showDataElements} value={draft.exporterCountry} onChange={(value) => update("exporterCountry", value)} invalid={issues.has("exporterCountry")} fieldKey="exporterCountry" highlighted={highlightedField === "exporterCountry"} options={countries} />
-      {direction === "export" ? <><PartyContactWarning values={[draft.consigneeName, draft.consigneeAddressLine, draft.consigneeCity, draft.consigneePostcode, draft.consigneeCountry]} fields={["consigneeName", "consigneeAddressLine", "consigneeCity", "consigneePostcode", "consigneeCountry"]} issues={issues} t={t} /><TextField label={t("Consignee")} dataElement="3/9" customsBox="8" required showDataElements={showDataElements} value={draft.consignee} onChange={(value) => update("consignee", value)} invalid={issues.has("consignee")} fieldKey="consignee" highlighted={highlightedField === "consignee"} placeholder={t("Name or EORI")} />
-      <TextField label={t("Consignee legal name")} dataElement="3/9" customsBox="8" required showDataElements={showDataElements} value={draft.consigneeName} onChange={(value) => update("consigneeName", value)} invalid={issues.has("consigneeName")} fieldKey="consigneeName" highlighted={highlightedField === "consigneeName"} />
-      <TextField label={t("Consignee street address")} dataElement="3/10" customsBox="8" required showDataElements={showDataElements} value={draft.consigneeAddressLine} onChange={(value) => update("consigneeAddressLine", value)} invalid={issues.has("consigneeAddressLine")} fieldKey="consigneeAddressLine" highlighted={highlightedField === "consigneeAddressLine"} />
-      <TextField label={t("Consignee town or city")} dataElement="3/10" customsBox="8" required showDataElements={showDataElements} value={draft.consigneeCity} onChange={(value) => update("consigneeCity", value)} invalid={issues.has("consigneeCity")} fieldKey="consigneeCity" highlighted={highlightedField === "consigneeCity"} />
-      <TextField label={t("Consignee postcode")} dataElement="3/10" customsBox="8" required showDataElements={showDataElements} value={draft.consigneePostcode} onChange={(value) => update("consigneePostcode", value)} invalid={issues.has("consigneePostcode")} fieldKey="consigneePostcode" highlighted={highlightedField === "consigneePostcode"} />
-      <SelectField label={t("Consignee country")} dataElement="3/10" customsBox="8" required showDataElements={showDataElements} value={draft.consigneeCountry} onChange={(value) => update("consigneeCountry", value)} invalid={issues.has("consigneeCountry")} fieldKey="consigneeCountry" highlighted={highlightedField === "consigneeCountry"} options={countries} /></> : null}
-      {direction === "export" ? <TextField label={t("Carrier")} showDataElements={showDataElements} value={draft.carrier} onChange={(value) => update("carrier", value)} placeholder={t("Name or EORI")} /> : null}
-      <PartyContactWarning values={[draft.declarantName, draft.declarantAddressLine, draft.declarantCity, draft.declarantPostcode, draft.declarantCountry]} fields={["declarantName", "declarantAddressLine", "declarantCity", "declarantPostcode", "declarantCountry"]} issues={issues} t={t} />
-      <TextField label={t("Declarant")} dataElement="3/17" customsBox="14" required showDataElements={showDataElements} value={draft.declarant} onChange={(value) => update("declarant", value)} invalid={issues.has("declarant")} fieldKey="declarant" highlighted={highlightedField === "declarant"} placeholder={t("Name or EORI")} />
-      <TextField label={t("Declarant legal name")} dataElement="3/17" customsBox="14" required showDataElements={showDataElements} value={draft.declarantName} onChange={(value) => update("declarantName", value)} invalid={issues.has("declarantName")} fieldKey="declarantName" highlighted={highlightedField === "declarantName"} />
-      <TextField label={t("Declarant street address")} dataElement="3/18" customsBox="14" required showDataElements={showDataElements} value={draft.declarantAddressLine} onChange={(value) => update("declarantAddressLine", value)} invalid={issues.has("declarantAddressLine")} fieldKey="declarantAddressLine" highlighted={highlightedField === "declarantAddressLine"} />
-      <TextField label={t("Declarant town or city")} dataElement="3/18" customsBox="14" required showDataElements={showDataElements} value={draft.declarantCity} onChange={(value) => update("declarantCity", value)} invalid={issues.has("declarantCity")} fieldKey="declarantCity" highlighted={highlightedField === "declarantCity"} />
-      <TextField label={t("Declarant postcode")} dataElement="3/18" customsBox="14" required showDataElements={showDataElements} value={draft.declarantPostcode} onChange={(value) => update("declarantPostcode", value)} invalid={issues.has("declarantPostcode")} fieldKey="declarantPostcode" highlighted={highlightedField === "declarantPostcode"} />
-      <SelectField label={t("Declarant country")} dataElement="3/18" customsBox="14" required showDataElements={showDataElements} value={draft.declarantCountry} onChange={(value) => update("declarantCountry", value)} invalid={issues.has("declarantCountry")} fieldKey="declarantCountry" highlighted={highlightedField === "declarantCountry"} options={countries} />
-      {direction === "export" ? <TextField label={t("Representative")} dataElement="3/19" customsBox="14" showDataElements={showDataElements} value={draft.representative} onChange={(value) => update("representative", value)} placeholder={t("Name or EORI")} /> : null}
-      <SelectField label={t("Type of representation")} dataElement="3/21" customsBox="14" required={direction === "import"} showDataElements={showDataElements} value={draft.representationType} onChange={(value) => update("representationType", value)} invalid={issues.has("representationType")} fieldKey="representationType" highlighted={highlightedField === "representationType"} options={representationTypes} />
-      {showOptional ? <><TextField label={t("Authorisation identifier")} showDataElements={showDataElements} value={draft.authorisationIdentifier} onChange={(value) => update("authorisationIdentifier", value)} /><TextField label={t("Authorisation category")} showDataElements={showDataElements} value={draft.authorisationCategory} onChange={(value) => update("authorisationCategory", value)} /></> : null}
-    </FieldGrid>
-  </SectionFrame>
+      <PartyFieldsGroup title={t("Exporter")}>
+        <PartyContactWarning values={[draft.exporterName, draft.exporterAddressLine, draft.exporterCity, draft.exporterPostcode, draft.exporterCountry]} fields={["exporterName", "exporterAddressLine", "exporterCity", "exporterPostcode", "exporterCountry"]} issues={issues} t={t} />
+        <TextField label={t("Exporter")} dataElement="3/1" customsBox="2" required showDataElements={showDataElements} value={draft.exporter} onChange={(value) => update("exporter", value)} invalid={issues.has("exporter")} fieldKey="exporter" highlighted={highlightedField === "exporter"} placeholder={t("Name or EORI")} />
+        <TextField label={t("Exporter legal name")} dataElement="3/1" customsBox="2" required showDataElements={showDataElements} value={draft.exporterName} onChange={(value) => update("exporterName", value)} invalid={issues.has("exporterName")} fieldKey="exporterName" highlighted={highlightedField === "exporterName"} />
+        <TextField label={t("Exporter street address")} dataElement="3/2" customsBox="2" required showDataElements={showDataElements} value={draft.exporterAddressLine} onChange={(value) => update("exporterAddressLine", value)} invalid={issues.has("exporterAddressLine")} fieldKey="exporterAddressLine" highlighted={highlightedField === "exporterAddressLine"} />
+        <TextField label={t("Exporter town or city")} dataElement="3/2" customsBox="2" required showDataElements={showDataElements} value={draft.exporterCity} onChange={(value) => update("exporterCity", value)} invalid={issues.has("exporterCity")} fieldKey="exporterCity" highlighted={highlightedField === "exporterCity"} />
+        <TextField label={t("Exporter postcode")} dataElement="3/2" customsBox="2" required showDataElements={showDataElements} value={draft.exporterPostcode} onChange={(value) => update("exporterPostcode", value)} invalid={issues.has("exporterPostcode")} fieldKey="exporterPostcode" highlighted={highlightedField === "exporterPostcode"} />
+        <SelectField label={t("Exporter country")} dataElement="3/2" customsBox="2" required showDataElements={showDataElements} value={draft.exporterCountry} onChange={(value) => update("exporterCountry", value)} invalid={issues.has("exporterCountry")} fieldKey="exporterCountry" highlighted={highlightedField === "exporterCountry"} options={countries} />
+      </PartyFieldsGroup>
+      {direction === "export" ? <PartyFieldsGroup title={t("Consignee")}>
+        <PartyContactWarning values={[draft.consigneeName, draft.consigneeAddressLine, draft.consigneeCity, draft.consigneePostcode, draft.consigneeCountry]} fields={["consigneeName", "consigneeAddressLine", "consigneeCity", "consigneePostcode", "consigneeCountry"]} issues={issues} t={t} />
+        <TextField label={t("Consignee")} dataElement="3/9" customsBox="8" required showDataElements={showDataElements} value={draft.consignee} onChange={(value) => update("consignee", value)} invalid={issues.has("consignee")} fieldKey="consignee" highlighted={highlightedField === "consignee"} placeholder={t("Name or EORI")} />
+        <TextField label={t("Consignee legal name")} dataElement="3/9" customsBox="8" required showDataElements={showDataElements} value={draft.consigneeName} onChange={(value) => update("consigneeName", value)} invalid={issues.has("consigneeName")} fieldKey="consigneeName" highlighted={highlightedField === "consigneeName"} />
+        <TextField label={t("Consignee street address")} dataElement="3/10" customsBox="8" required showDataElements={showDataElements} value={draft.consigneeAddressLine} onChange={(value) => update("consigneeAddressLine", value)} invalid={issues.has("consigneeAddressLine")} fieldKey="consigneeAddressLine" highlighted={highlightedField === "consigneeAddressLine"} />
+        <TextField label={t("Consignee town or city")} dataElement="3/10" customsBox="8" required showDataElements={showDataElements} value={draft.consigneeCity} onChange={(value) => update("consigneeCity", value)} invalid={issues.has("consigneeCity")} fieldKey="consigneeCity" highlighted={highlightedField === "consigneeCity"} />
+        <TextField label={t("Consignee postcode")} dataElement="3/10" customsBox="8" required showDataElements={showDataElements} value={draft.consigneePostcode} onChange={(value) => update("consigneePostcode", value)} invalid={issues.has("consigneePostcode")} fieldKey="consigneePostcode" highlighted={highlightedField === "consigneePostcode"} />
+        <SelectField label={t("Consignee country")} dataElement="3/10" customsBox="8" required showDataElements={showDataElements} value={draft.consigneeCountry} onChange={(value) => update("consigneeCountry", value)} invalid={issues.has("consigneeCountry")} fieldKey="consigneeCountry" highlighted={highlightedField === "consigneeCountry"} options={countries} />
+      </PartyFieldsGroup> : null}
+      <PartyFieldsGroup title={t("Declarant")} className="xl:col-span-2" fieldsClassName="xl:grid-cols-3 2xl:grid-cols-3">
+        <PartyContactWarning values={[draft.declarantName, draft.declarantAddressLine, draft.declarantCity, draft.declarantPostcode, draft.declarantCountry]} fields={["declarantName", "declarantAddressLine", "declarantCity", "declarantPostcode", "declarantCountry"]} issues={issues} t={t} />
+        <TextField label={t("Declarant")} dataElement="3/17" customsBox="14" required showDataElements={showDataElements} value={draft.declarant} onChange={(value) => update("declarant", value)} invalid={issues.has("declarant")} fieldKey="declarant" highlighted={highlightedField === "declarant"} placeholder={t("Name or EORI")} />
+        <TextField label={t("Declarant legal name")} dataElement="3/17" customsBox="14" required showDataElements={showDataElements} value={draft.declarantName} onChange={(value) => update("declarantName", value)} invalid={issues.has("declarantName")} fieldKey="declarantName" highlighted={highlightedField === "declarantName"} />
+        <TextField label={t("Declarant street address")} dataElement="3/18" customsBox="14" required showDataElements={showDataElements} value={draft.declarantAddressLine} onChange={(value) => update("declarantAddressLine", value)} invalid={issues.has("declarantAddressLine")} fieldKey="declarantAddressLine" highlighted={highlightedField === "declarantAddressLine"} />
+        <TextField label={t("Declarant town or city")} dataElement="3/18" customsBox="14" required showDataElements={showDataElements} value={draft.declarantCity} onChange={(value) => update("declarantCity", value)} invalid={issues.has("declarantCity")} fieldKey="declarantCity" highlighted={highlightedField === "declarantCity"} />
+        <TextField label={t("Declarant postcode")} dataElement="3/18" customsBox="14" required showDataElements={showDataElements} value={draft.declarantPostcode} onChange={(value) => update("declarantPostcode", value)} invalid={issues.has("declarantPostcode")} fieldKey="declarantPostcode" highlighted={highlightedField === "declarantPostcode"} />
+        <SelectField label={t("Declarant country")} dataElement="3/18" customsBox="14" required showDataElements={showDataElements} value={draft.declarantCountry} onChange={(value) => update("declarantCountry", value)} invalid={issues.has("declarantCountry")} fieldKey="declarantCountry" highlighted={highlightedField === "declarantCountry"} options={countries} />
+      </PartyFieldsGroup>
+      <PartyFieldsGroup title={t(direction === "export" ? "Carrier & representation" : "Representation")} className="xl:col-span-2" fieldsClassName="xl:grid-cols-3 2xl:grid-cols-3">
+        {direction === "export" ? <TextField label={t("Carrier")} showDataElements={showDataElements} value={draft.carrier} onChange={(value) => update("carrier", value)} placeholder={t("Name or EORI")} /> : null}
+        {direction === "export" ? <TextField label={t("Representative")} dataElement="3/19" customsBox="14" showDataElements={showDataElements} value={draft.representative} onChange={(value) => update("representative", value)} placeholder={t("Name or EORI")} /> : null}
+        <SelectField label={t("Type of representation")} dataElement="3/21" customsBox="14" required={direction === "import"} showDataElements={showDataElements} value={draft.representationType} onChange={(value) => update("representationType", value)} invalid={issues.has("representationType")} fieldKey="representationType" highlighted={highlightedField === "representationType"} options={representationTypes} />
+        {showOptional ? <><TextField label={t("Authorisation identifier")} showDataElements={showDataElements} value={draft.authorisationIdentifier} onChange={(value) => update("authorisationIdentifier", value)} /><TextField label={t("Authorisation category")} showDataElements={showDataElements} value={draft.authorisationCategory} onChange={(value) => update("authorisationCategory", value)} /></> : null}
+      </PartyFieldsGroup>
+    </div>
+  </section>
+}
+
+function PartyFieldsGroup({ title, children, className, fieldsClassName }: { title: string; children: ReactNode; className?: string; fieldsClassName?: string }) {
+  const compact = useContext(CompactCustomsFormContext)
+  return <section aria-label={title} className={cn("min-w-0 max-w-full bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]", compact ? "rounded-[var(--md-radius-md)] p-3" : "rounded-[var(--md-radius-lg)] p-4", className)}>
+    <h3 className={cn("font-medium text-[var(--md-ink)]", compact ? "mb-2 text-[11px] leading-4" : "mb-3 text-[12px] leading-5")}>{title}</h3>
+    <div className="min-w-0">
+      <FieldGrid className={cn("min-w-0 grid-cols-1 sm:grid-cols-2 md:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-2", fieldsClassName)}>{children}</FieldGrid>
+    </div>
+  </section>
 }
 
 function PartyContactWarning({ values, fields, issues, t }: {
@@ -875,6 +901,7 @@ function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, on
   const shouldReduceMotion = Boolean(useReducedMotion())
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null)
   const previousActiveItemId = useRef(activeItemId)
+  const goodsLineTableRef = useRef<HTMLDivElement>(null)
   const packageKinds = useReferenceOptions("package_kind", t)
   const countries = useReferenceOptions("country", t)
   const procedureCodes = useReferenceOptions("procedure_code", t)
@@ -887,6 +914,12 @@ function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, on
     setExpandedItemId(activeItemId)
   }, [activeItemId])
 
+  useEffect(() => {
+    if (!expandedItemId) return
+    const scrollContainer = goodsLineTableRef.current?.querySelector<HTMLElement>('[data-slot="table-container"]')
+    if (scrollContainer) scrollContainer.scrollLeft = 0
+  }, [expandedItemId])
+
   const toggleItem = (itemId: string) => {
     if (itemId !== activeItemId) onSelectItem(itemId)
     setExpandedItemId((current) => current === itemId ? null : itemId)
@@ -897,19 +930,21 @@ function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, on
     {
       id: "line",
       label: "Line",
-      width: 84,
-      minWidth: 84,
+      width: 64,
+      minWidth: 64,
       canHide: false,
       canPin: false,
       cell: (item) => {
         const index = items.findIndex((candidate) => candidate.id === item.id)
         const missing = mandatoryItemGaps(item, declarationDirection)
         const expanded = item.id === expandedItemId
-        return <button type="button" data-item-disclosure aria-expanded={expanded} aria-controls={`item-details-${item.id}`} aria-label={`${t(expanded ? "Collapse item details" : "Expand item details")} ${index + 1}`} onClick={(event) => { event.stopPropagation(); toggleItem(item.id) }} className="group/disclosure flex min-h-9 w-full min-w-0 items-center gap-1.5 overflow-hidden rounded-[var(--md-radius-sm)] px-1 text-start outline-none transition-colors duration-150 hover:bg-[var(--md-surface)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] focus-visible:ring-offset-1 active:bg-[var(--md-hover)]">
+        const statusLabel = missing.length ? `${missing.length} ${t(validated ? "errors" : "required")}` : t("Complete")
+        return <button type="button" data-item-disclosure aria-expanded={expanded} aria-controls={`item-details-${item.id}`} aria-label={`${t(expanded ? "Collapse item details" : "Expand item details")} ${index + 1}. ${statusLabel}`} onClick={(event) => { event.stopPropagation(); toggleItem(item.id) }} className="group/disclosure flex min-h-9 w-full min-w-0 items-center gap-1.5 overflow-hidden rounded-[var(--md-radius-sm)] px-1 text-start outline-none transition-colors duration-150 hover:bg-[var(--md-surface)] focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] focus-visible:ring-offset-1 active:bg-[var(--md-hover)]">
           <ChevronDown className={cn("size-3.5 shrink-0 text-[var(--md-subtle)] transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none", expanded && "rotate-180")} aria-hidden="true" />
-          <span className="min-w-0">
+          <span className="flex min-w-0 items-center gap-1.5">
             <strong className="block text-[11px] font-semibold text-[var(--md-ink)]">{index + 1}</strong>
-            <span className={cn("mt-0.5 block whitespace-nowrap text-[8px] font-medium", missing.length ? "text-[var(--md-amber)]" : "text-[var(--md-green)]")}>{missing.length ? `${missing.length} ${t("required")}` : t("Complete")}</span>
+            <span aria-hidden="true" className={cn("block size-2 rounded-full", missing.length ? (validated ? "bg-[var(--md-red)]" : "bg-[var(--md-amber)]") : "bg-[var(--md-green)]")} />
+            <span className="sr-only">{statusLabel}</span>
           </span>
         </button>
       },
@@ -986,7 +1021,7 @@ function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, on
       headerClassName: cn(column.headerClassName, "border-e border-[var(--md-line)] last:border-e-0"),
       cellClassName: cn(column.cellClassName, "border-e border-[var(--md-line)] last:border-e-0"),
     }
-  }), [additionalProcedureCodes, countries, currencies, declarationDirection, expandedItemId, issues, items, packageKinds, procedureCodes, t, updateRow])
+  }), [additionalProcedureCodes, countries, currencies, declarationDirection, expandedItemId, issues, items, packageKinds, procedureCodes, t, updateRow, validated])
 
   return <div className="min-w-0 space-y-4">
     <Surface padding="none" className="w-full min-w-0 max-w-full overflow-hidden rounded-[var(--md-radius-xl)]">
@@ -997,7 +1032,7 @@ function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, on
         </span>
         <div className="flex flex-wrap items-center gap-2"><Button type="button" variant="outline" size="sm" onClick={onOpenInvoiceImport}><Sparkles className="size-3.5" />{t("Import invoice")}</Button><Button type="button" size="sm" onClick={onAdd}><Plus className="size-3.5" />{t("Add item")}</Button></div>
       </header>
-      <div className="w-full min-w-0 max-w-full [container-type:inline-size]" data-testid="mandatory-goods-line-scroll">
+      <div ref={goodsLineTableRef} className="w-full min-w-0 max-w-full [container-type:inline-size]" data-testid="mandatory-goods-line-scroll">
         <DataTable
           ariaLabel={t("Mandatory goods-line fields")}
           columns={itemColumns}
@@ -1008,7 +1043,7 @@ function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, on
           minimumWidth={1780}
           showToolbar={false}
           showColumnManager={false}
-          className="rounded-none shadow-none"
+          className={cn("rounded-none shadow-none", expandedItemId && "[&_[data-slot=table-container]]:overflow-x-hidden")}
           tableClassName="table-fixed text-start"
           rowProps={(item) => ({
             onClick: (event) => { if (!(event.target as HTMLElement).closest("input, button, [role='combobox']")) toggleItem(item.id) },
@@ -1053,7 +1088,7 @@ function ItemsSection({ items, activeItem, activeItemId, onSelectItem, onAdd, on
                           transition={reduceMotion(shouldReduceMotion, expanded ? mdMotion.panel : mdMotion.exit)}
                           className="overflow-hidden"
                         >
-                          <div className="w-full min-w-[1780px] p-3">
+                          <div className="sticky start-0 w-[100cqw] min-w-0 max-w-[100cqw] p-3">
                             <ItemDetailsEditor
                               item={item}
                               itemNumber={index + 1}
@@ -1475,9 +1510,9 @@ function ItemDetailsEditor({ item, itemNumber, onDuplicate, onRemove, canRemove,
   const previousDocumentCategories = useReferenceOptions("previous_document_category", t, "Select category")
   const previousDocumentTypes = useReferenceOptions("previous_document_type", t, "Select document type")
 
-  return <div className="space-y-3" aria-label={`${t("Item details")} ${itemNumber}`}>
-    <div className={cn("grid items-start gap-3", declarationDirection === "import" ? "xl:grid-cols-2" : "xl:grid-cols-[minmax(260px,0.95fr)_minmax(260px,0.88fr)_minmax(300px,1.05fr)]")}>
-      <div className="space-y-3">
+  return <div className="min-w-0 max-w-full space-y-3" aria-label={`${t("Item details")} ${itemNumber}`}>
+    <div className={cn("grid min-w-0 items-start gap-3", declarationDirection === "import" ? "xl:grid-cols-2" : "xl:grid-cols-[minmax(260px,0.95fr)_minmax(260px,0.88fr)_minmax(300px,1.05fr)]")}>
+      <div className="min-w-0 space-y-3">
         <ItemDetailGroup title={t("Commodity")}>
           <FieldGrid className="grid-cols-1 sm:grid-cols-1 md:grid-cols-1 xl:grid-cols-1 2xl:grid-cols-1">
           <div className="relative"><TextField label={t("Commodity code")} dataElement="6/14" customsBox="33" required showDataElements={showDataElements} value={item.commodityCode} onChange={(value) => update("commodityCode", value.replace(/\D/g, "").slice(0, 10))} invalid={issues.has("commodityCode")} fieldKey="commodityCode" highlighted={highlightedField === "commodityCode"} inputClassName="pe-10" /><CommoditySmartSearch item={item} direction={declarationDirection} update={update} triggerClassName="absolute bottom-1 end-1" t={t} /></div>
@@ -1520,7 +1555,7 @@ function ItemDetailsEditor({ item, itemNumber, onDuplicate, onRemove, canRemove,
         </ItemDetailGroup>
       </div>
 
-      <div className="space-y-3">
+      <div className="min-w-0 space-y-3">
         <ItemDetailGroup title={t("Documents")}>
           <div className="space-y-3">
             <RepeatableCustomsFields title={t("Previous documents")} addLabel={t("Add previous document")} onAdd={() => update("additionalPreviousDocuments", [...item.additionalPreviousDocuments, { id: repeatableCustomsEntryId("previous-document"), category: "", type: "", reference: "" }])}>
@@ -1599,7 +1634,7 @@ function ItemDetailsEditor({ item, itemNumber, onDuplicate, onRemove, canRemove,
 }
 
 function ItemDetailGroup({ title, children }: { title: string; children: ReactNode }) {
-  return <section aria-label={title} className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)]">
+  return <section aria-label={title} className="min-w-0 max-w-full rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-line)]">
     <h3 className="mb-3 text-[14px] font-medium text-[var(--md-ink)]">{title}</h3>
     {children}
   </section>
@@ -2019,7 +2054,15 @@ function Toggle({ checked, onChange, children }: { checked: boolean; onChange: (
 
 function SectionFrame({ title, description, children }: { title: string; description: string; children: ReactNode }) {
   const compact = useContext(CompactCustomsFormContext)
-  return <Surface padding="none" className={cn("overflow-hidden", compact ? "rounded-[var(--md-radius-lg)]" : "rounded-[var(--md-radius-xl)]")}><header className={cn("border-b border-[var(--md-line)]", compact ? "px-3 py-2.5" : "px-5 py-3")}><div className={cn(!compact && "flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-6")}><h2 className={cn("shrink-0 font-medium text-[var(--md-ink)]", compact ? "text-[13px]" : "text-[15px]")}>{title}</h2><p className={cn("text-[var(--md-subtle)]", compact ? "mt-0.5 text-[10.5px] leading-4" : "text-[12px] leading-5 sm:max-w-[65%] sm:text-end")}>{description}</p></div></header><div className={cn("bg-[var(--md-surface-soft)]", compact ? "p-3" : "p-5")}>{children}</div></Surface>
+  return <section className="min-w-0">
+    <header className={cn("flex flex-col gap-1 px-1 sm:flex-row sm:items-center sm:justify-between sm:gap-6", compact ? "mb-2" : "mb-3")}>
+      <h2 className={cn("shrink-0 font-medium text-[var(--md-ink)]", compact ? "text-[13px]" : "text-[15px]")}>{title}</h2>
+      <p className={cn("text-[var(--md-subtle)]", compact ? "text-[10.5px] leading-4" : "text-[12px] leading-5 sm:max-w-[65%] sm:text-end")}>{description}</p>
+    </header>
+    <div className={cn("min-w-0 bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]", compact ? "rounded-[var(--md-radius-md)] p-3" : "rounded-[var(--md-radius-lg)] p-5")}>
+      {children}
+    </div>
+  </section>
 }
 
 function FieldGrid({ children, className }: { children: ReactNode; className?: string }) {

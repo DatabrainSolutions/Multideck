@@ -273,6 +273,7 @@ export const customsDeclarationPhrases: PhraseDictionary = {
   "Consignee postcode": { de: "Postleitzahl des Empfängers", fr: "Code postal du destinataire", ar: "الرمز البريدي للمرسل إليه" },
   "Consignee country": { de: "Land des Empfängers", fr: "Pays du destinataire", ar: "بلد المرسل إليه" },
   Carrier: { de: "Beförderer", fr: "Transporteur", ar: "الناقل" },
+  "Carrier & representation": { de: "Beförderer und Vertretung", fr: "Transporteur et représentation", ar: "الناقل والتمثيل" },
   Declarant: { de: "Anmelder", fr: "Déclarant", ar: "المُقر" },
   "Declarant legal name": { de: "Rechtlicher Name des Anmelders", fr: "Nom légal du déclarant", ar: "الاسم القانوني للمُقر" },
   "Declarant street address": { de: "Straße des Anmelders", fr: "Adresse du déclarant", ar: "عنوان شارع المُقر" },
