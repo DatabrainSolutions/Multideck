@@ -76,11 +76,23 @@ const securityCopy: Record<string, { subject: string; title: string; body: strin
   mfa_factor_unenrolled_notification: { subject: "A security factor was removed", title: "Security factor removed", body: "A multi-factor authentication method was removed from your Multideck account." },
 }
 
-function verificationUrl(emailData: AuthEmailData) {
+function verificationUrl(emailData: AuthEmailData, deferVerification = false) {
   const projectUrl = Deno.env.get("SUPABASE_URL") ?? ""
   const actionType = emailData.email_action_type ?? "magiclink"
   const redirectTo = safeMultideckUrl(emailData.redirect_to ?? emailData.site_url)
-  return `${projectUrl}/auth/v1/verify?token=${encodeURIComponent(emailData.token_hash ?? "")}&type=${encodeURIComponent(actionType)}&redirect_to=${encodeURIComponent(redirectTo)}`
+  const tokenHash = emailData.token_hash ?? ""
+
+  // Corporate mail scanners commonly open links before the recipient. Invite
+  // links therefore land on Multideck first and are redeemed only after an
+  // explicit button press in the browser.
+  if (deferVerification && tokenHash) {
+    const confirmationUrl = new URL(redirectTo)
+    confirmationUrl.searchParams.set("token_hash", tokenHash)
+    confirmationUrl.searchParams.set("type", actionType)
+    return confirmationUrl.toString()
+  }
+
+  return `${projectUrl}/auth/v1/verify?token=${encodeURIComponent(tokenHash)}&type=${encodeURIComponent(actionType)}&redirect_to=${encodeURIComponent(redirectTo)}`
 }
 
 async function sendWithResend(to: string, subject: string, html: string, text: string) {
@@ -150,7 +162,7 @@ Deno.serve(async (request) => {
       title: copy.title,
       body: copy.body,
       buttonLabel: copy.buttonLabel,
-      buttonUrl: verificationUrl(payload.email_data),
+      buttonUrl: verificationUrl(payload.email_data, key === "invite"),
       code: key === "magiclink" ? payload.email_data.token : undefined,
       eyebrow: copy.eyebrow,
       footer: copy.footer,

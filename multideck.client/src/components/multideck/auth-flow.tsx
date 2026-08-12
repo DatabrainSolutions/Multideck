@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react"
-import type { Provider } from "@supabase/supabase-js"
+import type { EmailOtpType, Provider } from "@supabase/supabase-js"
 import { ArrowRight, Building2, Clock3, KeyRound, Loader2, Mail, ShieldCheck, TriangleAlert } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -33,6 +33,22 @@ type AuthFieldErrors = {
   newPassword?: string
   confirmation?: string
   code?: string
+}
+
+type InviteVerification = {
+  tokenHash: string
+  type: EmailOtpType
+}
+
+const inviteOtpTypes = new Set<EmailOtpType>(["invite", "recovery"])
+
+function readInviteVerification(): InviteVerification | null {
+  if (typeof window === "undefined") return null
+  const parameters = new URLSearchParams(window.location.search)
+  const tokenHash = parameters.get("token_hash")
+  const type = parameters.get("type") as EmailOtpType | null
+  if (!tokenHash || !type || !inviteOtpTypes.has(type)) return null
+  return { tokenHash, type }
 }
 
 const authCopyByStep: Record<AuthFlowStep, AuthCopy> = {
@@ -810,6 +826,32 @@ function ResetPasswordPanel({
   )
 }
 
+function ConfirmInvitePanel({ onConfirm, isSubmitting, error }: { onConfirm: () => void | Promise<void>; isSubmitting: boolean; error?: string | null }) {
+  const { t } = useLanguage()
+  return (
+    <div className="w-full max-w-[520px]">
+      <BrandLockup />
+      <div className="mt-10 grid size-11 place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-accent-a10)] text-[var(--md-accent)]">
+        <ShieldCheck className="size-5" strokeWidth={1.4} aria-hidden="true" />
+      </div>
+      <h2 className="mt-5 text-[24px] font-medium leading-tight text-[var(--md-ink)]">{t("Confirm your invitation")}</h2>
+      <p className="mt-2 text-[14px] leading-6 text-[var(--md-text)]">
+        {t("Continue to securely confirm this invitation, then create your Multideck password.")}
+      </p>
+      <AuthAlert tone="error">{error}</AuthAlert>
+      <Button
+        type="button"
+        disabled={isSubmitting}
+        className="mt-7 h-12 w-full rounded-[var(--md-radius-xl)] bg-[var(--md-accent)] text-[13px] font-medium text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]"
+        onClick={() => void onConfirm()}
+      >
+        {isSubmitting ? <Loader2 data-icon="inline-start" className="me-2 size-4 animate-spin" strokeWidth={1.5} /> : null}
+        {t(isSubmitting ? "Confirming invitation" : "Continue securely")}
+      </Button>
+    </div>
+  )
+}
+
 function CodeInput({
   code,
   onCodeChange,
@@ -983,6 +1025,8 @@ export function AuthFlow({
   const [message, setMessage] = useState<string | null>(!galleryMode && !isSupabaseConfigured ? supabaseConfigurationError : null)
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<AuthFieldErrors>({})
+  const [inviteVerification] = useState<InviteVerification | null>(() => galleryMode ? null : readInviteVerification())
+  const [inviteConfirmed, setInviteConfirmed] = useState(() => !inviteVerification)
 
   const goToApp = useCallback(() => {
     const destination = takeAuthReturnPath()
@@ -1185,7 +1229,39 @@ export function AuthFlow({
       }
     } catch (updateError) {
       console.error(updateError)
-      setError("Unable to update your password. Request a fresh recovery link and try again.")
+      setError(step === "accept-invite"
+        ? "This invitation is no longer current. Open the most recent Multideck invitation in your inbox."
+        : "Unable to update your password. Request a fresh recovery link and try again.")
+      setIsSubmitting(false)
+    }
+  }
+
+  async function confirmInvitation() {
+    clearFeedback()
+    if (!supabase || !inviteVerification) {
+      setError(supabaseConfigurationError ?? "This invitation could not be confirmed.")
+      return
+    }
+
+    setIsSubmitting(true)
+    try {
+      const { data, error: verificationError } = await supabase.auth.verifyOtp({
+        token_hash: inviteVerification.tokenHash,
+        type: inviteVerification.type,
+      })
+      if (verificationError) throw verificationError
+      if (!data.session) throw new Error("Supabase did not return an invitation session.")
+
+      const parameters = new URLSearchParams(window.location.search)
+      parameters.delete("token_hash")
+      parameters.delete("type")
+      const query = parameters.toString()
+      window.history.replaceState({}, document.title, `${window.location.pathname}${query ? `?${query}` : ""}`)
+      setInviteConfirmed(true)
+      setMessage("Invitation confirmed. Create your password to enter the workspace.")
+    } catch (verificationError) {
+      setError("This invitation is no longer current. Open the most recent Multideck invitation in your inbox.")
+    } finally {
       setIsSubmitting(false)
     }
   }
@@ -1353,7 +1429,14 @@ export function AuthFlow({
           fieldError={fieldErrors.email}
         />
       ) : null}
-      {step === "reset-password" || step === "accept-invite" ? (
+      {step === "accept-invite" && !inviteConfirmed ? (
+        <ConfirmInvitePanel
+          onConfirm={confirmInvitation}
+          isSubmitting={isSubmitting}
+          error={error}
+        />
+      ) : null}
+      {(step === "reset-password" || step === "accept-invite") && inviteConfirmed ? (
         <ResetPasswordPanel
           password={password}
           confirmation={passwordConfirmation}
