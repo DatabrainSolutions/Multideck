@@ -355,7 +355,7 @@ export function validateStandaloneExportDraft(draft: StandaloneExportDraft): Dec
 
   requireGeneral("declarationCategory", "Select a declaration category.")
   requireGeneral("declarationType", "Select a declaration type.")
-  requireGeneral("traderReference", "Add a trader reference number.")
+  if (draft.direction === "export") requireGeneral("internalReference", "Add an internal reference.")
   if (draft.traderReference.trim() && !/^[A-Z0-9]{1,19}$/.test(draft.traderReference.trim())) {
     issues.push({ id: "general-trader-reference-format", scope: "general", field: "traderReference", message: "Use up to 19 uppercase letters and numbers for the trader reference." })
   }

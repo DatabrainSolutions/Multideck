@@ -23,6 +23,7 @@ function validDeclaration(): ExportDeclarationInput {
     declarationCategory: "B1",
     declarationType: "A",
     traderReference: "MDTEST001",
+    internalReference: "MD-INTERNAL-001",
     totalAmount: "1000",
     currency: "GBP",
     totalPackages: "10",
@@ -400,6 +401,23 @@ Deno.test("validateICustomsB1Export reconciles declaration and goods-line totals
   assert(
     issues.some((issue) => issue.includes("package total")),
     "Expected a package total mismatch.",
+  );
+});
+
+Deno.test("validateICustomsB1Export requires the internal reference and permits a blank trader reference", () => {
+  const declaration = validDeclaration();
+  declaration.traderReference = "";
+  const issuesWithoutTraderReference = validateICustomsB1Export(declaration);
+  assert(
+    !issuesWithoutTraderReference.some((issue) => issue.toLowerCase().includes("trader reference")),
+    "Expected the trader reference to be optional.",
+  );
+
+  declaration.internalReference = "";
+  const issuesWithoutInternalReference = validateICustomsB1Export(declaration);
+  assert(
+    issuesWithoutInternalReference.includes("Add an internal reference."),
+    "Expected the internal reference to be required for exports.",
   );
 });
 

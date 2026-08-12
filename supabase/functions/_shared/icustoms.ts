@@ -109,6 +109,7 @@ export type ExportDeclarationInput = {
   declarationCategory?: unknown;
   declarationType?: unknown;
   traderReference?: unknown;
+  internalReference?: unknown;
   totalAmount?: unknown;
   currency?: unknown;
   totalPackages?: unknown;
@@ -277,10 +278,11 @@ export function validateICustomsDeclaration(
   if (!/^[A-Z]{3}$/.test(currency)) {
     issues.push("Choose a valid three-letter declaration currency.");
   }
+  if (direction === "export" && !clean(input.internalReference, 80)) {
+    issues.push("Add an internal reference.");
+  }
   const traderReference = clean(input.traderReference, 80);
-  if (!traderReference) {
-    issues.push("Add a trader reference number.");
-  } else if (!/^[A-Z0-9]{1,19}$/.test(traderReference)) {
+  if (traderReference && !/^[A-Z0-9]{1,19}$/.test(traderReference)) {
     issues.push(
       "Use up to 19 uppercase letters and numbers for the trader reference.",
     );

@@ -301,6 +301,7 @@ export const customsDeclarationPhrases: PhraseDictionary = {
   "Trader reference number": { de: "Händlerreferenz", fr: "Référence du déclarant", ar: "الرقم المرجعي للتاجر" },
   "Use up to 19 uppercase letters and numbers for the trader reference.": { de: "Verwenden Sie für die Händlerreferenz höchstens 19 Großbuchstaben und Zahlen.", fr: "Utilisez au maximum 19 lettres majuscules et chiffres pour la référence du déclarant.", ar: "استخدم ما يصل إلى 19 حرفًا إنجليزيًا كبيرًا ورقمًا للرقم المرجعي للتاجر." },
   "Internal reference": { de: "Interne Referenz", fr: "Référence interne", ar: "المرجع الداخلي" },
+  "Add an internal reference.": { de: "Fügen Sie eine interne Referenz hinzu.", fr: "Ajoutez une référence interne.", ar: "أضف مرجعًا داخليًا." },
   "Badge ID": { de: "Ausweis-ID", fr: "Identifiant du badge", ar: "معرّف الشارة" },
   "Total amount": { de: "Gesamtbetrag", fr: "Montant total", ar: "المبلغ الإجمالي" },
   "Currency code": { de: "Währungscode", fr: "Code devise", ar: "رمز العملة" },
