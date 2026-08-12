@@ -1203,6 +1203,10 @@ export function getWarehousePurchaseOrderReference() {
   return requestWarehouse<WarehousePurchaseOrderReference>("/purchase-orders/reference", "GET")
 }
 
+export function getNextWarehousePurchaseOrderNumber(facilityId: string) {
+  return requestWarehouse<{ number: string }>(`/purchase-orders/next-number${toQuery({ facilityId })}`, "GET")
+}
+
 export function listWarehousePurchaseOrders(options: { facilityId?: string; statusCode?: string; search?: string } = {}) {
   return requestWarehouse<WarehousePurchaseOrder[]>(`/purchase-orders${toQuery(options)}`, "GET")
 }

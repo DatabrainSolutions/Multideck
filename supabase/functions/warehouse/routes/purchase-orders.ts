@@ -114,8 +114,25 @@ export async function handlePurchaseOrders(request, path, url, admin, actor) {
     };
   }
 
+  if (request.method === "GET" && path[1] === "next-number") {
+    const facilityId = uuid(url.searchParams.get("facilityId"), "warehouse");
+    if (!context.facilityIds.includes(facilityId)) throw new HttpError(403, "You do not have access to this warehouse.");
+    const facility = context.facilities.find((row)=>row.WMSFacility_ID === facilityId);
+    const prefix = `PO-${String(facility?.WMSFacility_Code ?? "WH").toUpperCase()}-${new Date().getUTCFullYear()}`;
+    const { data, error } = await admin.from("WMS_PurchaseOrders")
+      .select("WMSPO_Number")
+      .eq("WMSPO_FacilityID", facilityId)
+      .eq("WMSPO_IsDeleted", false)
+      .ilike("WMSPO_Number", `${prefix}-%`);
+    if (error) throw error;
+    const used = new Set((data ?? []).map((row)=>String(row.WMSPO_Number).toUpperCase()));
+    let sequence = 1;
+    while (used.has(`${prefix}-${String(sequence).padStart(4, "0")}`)) sequence += 1;
+    return { number: `${prefix}-${String(sequence).padStart(4, "0")}` };
+  }
+
   let rows = await loadPurchaseOrders(admin, context);
-  const purchaseOrderId = path[1] && path[1] !== "reference" ? uuid(path[1], "purchase order") : null;
+  const purchaseOrderId = path[1] && !["reference", "next-number"].includes(path[1]) ? uuid(path[1], "purchase order") : null;
   if (request.method === "GET" && purchaseOrderId) {
     const found = rows.filter((row)=>row.WMSPO_ID === purchaseOrderId);
     if (!found.length) throw new HttpError(404, "This purchase order does not exist in your workspace.");

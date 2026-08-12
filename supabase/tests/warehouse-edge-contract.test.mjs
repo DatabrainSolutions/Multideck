@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { readFile } from "node:fs/promises"
+import { readdir, readFile } from "node:fs/promises"
 import test from "node:test"
 
 const root = new URL("../", import.meta.url)
@@ -27,13 +27,21 @@ const portalRoleReactivationMigration = await readFile(new URL("migrations/20260
 const inventoryHandlingMigration = await readFile(new URL("migrations/20260804160000_warehouse_inventory_handling_units.sql", root), "utf8")
 const inventoryDexterMigration = await readFile(new URL("migrations/20260804161000_warehouse_inventory_dexter_parity.sql", root), "utf8")
 const rescheduleMigration = await readFile(new URL("migrations/20260808090000_warehouse_order_reschedule.sql", root), "utf8")
-const purchaseOrderMigration = await readFile(new URL("migrations/20260805100000_warehouse_purchase_orders.sql", root), "utf8")
+const purchaseOrderMigration = await readFile(new URL("migrations/20260805100500_warehouse_purchase_orders.sql", root), "utf8")
+const optionalPurchaseOrderSupplierMigration = await readFile(new URL("migrations/20260812143000_optional_purchase_order_supplier.sql", root), "utf8")
 const fullWarehouseCapabilitiesMigration = await readFile(new URL("migrations/20260811145223_dexter_full_warehouse_capabilities.sql", root), "utf8")
 const baseline = await readFile(new URL("baseline/public-schema.sql", root), "utf8")
 const clientSource = await readFile(new URL("../multideck.client/src/lib/warehouse.ts", root), "utf8")
 const orderSource = await readFile(new URL("functions/warehouse/routes/orders.ts", root), "utf8")
 const httpSource = await readFile(new URL("functions/warehouse/shared/http.ts", root), "utf8")
 const portalSource = await readFile(new URL("functions/warehouse/routes/portal-users.ts", root), "utf8")
+
+test("purchase orders keep a unique, atomic migration version", async () => {
+  const migrationFiles = await readdir(new URL("migrations/", root))
+  assert.deepEqual(migrationFiles.filter((file) => file.startsWith("20260805100500_")), ["20260805100500_warehouse_purchase_orders.sql"])
+  assert.match(purchaseOrderMigration, /^--[^\n]*\n(?:--[^\n]*\n)*\s*begin;/i)
+  assert.match(purchaseOrderMigration, /commit;\s*$/i)
+})
 
 test("warehouse client uses the tenant Supabase Edge Function as its only backend", () => {
   assert.match(clientSource, /supabaseFunctionsUrl.*warehouse/s)
@@ -139,6 +147,20 @@ test("purchase orders save header and lines atomically and can create real inbou
   assert.match(purchaseOrderMigration, /'create_inbound'/)
   assert.match(purchaseOrderMigration, /purchaseOrderLineId/)
   assert.doesNotMatch(clientSource, /\.from\(["']WMS_Purchase/)
+})
+
+test("purchase order numbers can be generated against the selected warehouse database", () => {
+  assert.match(edgeSource, /path\[1\] === "next-number"/)
+  assert.match(edgeSource, /WMSPO_FacilityID/)
+  assert.match(edgeSource, /WMSPO_Number/)
+  assert.match(clientSource, /getNextWarehousePurchaseOrderNumber/)
+})
+
+test("purchase order supplier remains optional free text across UI, database and Dexter", () => {
+  assert.doesNotMatch(purchaseOrderMigration, /Enter the supplier name/u)
+  assert.match(optionalPurchaseOrderSupplierMigration, /supplier_name/u)
+  assert.match(optionalPurchaseOrderSupplierMigration, /supplier_org_id/u)
+  assert.doesNotMatch(purchaseOrderMigration, /"required":\[[^\]]*"supplier_name"/u)
 })
 
 test("purchase orders have Dexter read, approval-safe write and event-driven watch parity", () => {
