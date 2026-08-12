@@ -15,6 +15,8 @@ test("customs invoice extraction remains authenticated, private, cached and Mist
 
   assert.match(edge, /authenticate\(request\)/)
   assert.match(edge, /currentInternalUser\(admin, user\)/)
+  assert.match(edge, /actorFromProfile\(profile, user\.id\)/)
+  assert.match(edge, /CUST_CreatedBy", actor\.authUserId/)
   assert.match(edge, /Deno\.env\.get\("MISTRAL_OCR_API_KEY"\)/)
   assert.match(edge, /https:\/\/api\.mistral\.ai\/v1\/ocr/)
   assert.doesNotMatch(edge, /chat\/completions|embeddedText|mistral-small/i)

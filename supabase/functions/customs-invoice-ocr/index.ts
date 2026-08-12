@@ -19,7 +19,7 @@ const readyCacheLifetimeDays = 30
 const failedRecordLifetimeHours = 24
 const purchaseOrderSchemaVersion = 1
 
-type Actor = { userId: string; companyId: string }
+type Actor = { userId: string; authUserId: string; companyId: string }
 type TemporaryInvoice = { storedObjectId: string; objectPath: string; signedUrl: string }
 type DocumentType = "commercial_invoice" | "purchase_order"
 
@@ -29,7 +29,7 @@ Deno.serve(async (request) => {
   try {
     const { admin, user } = await authenticate(request)
     const profile = await currentInternalUser(admin, user)
-    const actor = actorFromProfile(profile)
+    const actor = actorFromProfile(profile, user.id)
     const path = routeParts(request, functionName)
 
     if (request.method === "POST" && path.length === 0) return await extractInvoice(request, admin, actor)
@@ -197,7 +197,7 @@ async function readInvoiceInput(request: Request) {
 async function validateDeclaration(admin: SupabaseClient, actor: Actor, declarationId: string | null) {
   if (!declarationId) return
   const { data, error } = await admin.from("Customs_Declarations").select("CUST_id")
-    .eq("CUST_id", declarationId).eq("CUST_CreatedBy", actor.userId).eq("CUST_IsDeleted", false).maybeSingle()
+    .eq("CUST_id", declarationId).eq("CUST_CreatedBy", actor.authUserId).eq("CUST_IsDeleted", false).maybeSingle()
   if (error) throw new HttpError(503, "The declaration could not be checked before import.")
   if (!data) throw new HttpError(403, "You cannot import an invoice into this declaration.")
 }
@@ -442,12 +442,13 @@ async function sha256Hex(bytes: Uint8Array) {
   return [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("")
 }
 
-function actorFromProfile(profile: Record<string, unknown>): Actor {
+function actorFromProfile(profile: Record<string, unknown>, authUserId: string): Actor {
   const userId = cleanText(profile.User_ID, 36)
   const companyId = cleanText(profile.Company_ID, 36)
   validateUuid(userId, "profile")
+  validateUuid(authUserId, "account")
   validateUuid(companyId, "workspace")
-  return { userId, companyId }
+  return { userId, authUserId, companyId }
 }
 
 function documentType(value: FormDataEntryValue | null): DocumentType {
