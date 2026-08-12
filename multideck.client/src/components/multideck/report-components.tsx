@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react"
 import {
+  AiBeautify,
   BarChart3,
   ChevronDown,
   ChevronLeft,
@@ -13,7 +14,6 @@ import {
   Map,
   Plus,
   Search,
-  Sparkles,
   Table2,
   TrendingUp,
   X,
@@ -1160,7 +1160,7 @@ export const reportWidgets: ReportWidget[] = [
   { id: "mixed-chart", title: "Mixed chart", description: "Bar and line together", group: "Visualizations", type: "chart", visualization: "mixed", icon: <BarChart3 className="size-5" strokeWidth={1.2} /> },
   { id: "booking-table", title: "Booking table", description: "Every booking in period", group: "Lists & tables", type: "table", icon: <Table2 className="size-5" strokeWidth={1.2} /> },
   { id: "exception-log", title: "Exception log", description: "Issues & resolutions", group: "Lists & tables", type: "exception-log", icon: <FileText className="size-5" strokeWidth={1.2} /> },
-  { id: "written-summary", title: "Written summary", description: "Dexter narrative block", group: "Narrative", type: "summary", icon: <Sparkles className="size-5" strokeWidth={1.2} /> },
+  { id: "written-summary", title: "Written summary", description: "Dexter narrative block", group: "Narrative", type: "summary", icon: <AiBeautify className="size-5" strokeWidth={1.2} /> },
 ]
 
 export function ReportBlockView({
@@ -1199,7 +1199,7 @@ export function ReportBlockView({
       {block.type === "summary" ? (
         <div className="md-report-summary-block rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-[var(--md-page-stack-gap)]">
           <div className="md-report-summary-header flex items-center gap-3">
-            <Sparkles className="size-4 text-[var(--md-accent)]" strokeWidth={1.4} />
+            <AiBeautify className="size-4 text-[var(--md-accent)]" strokeWidth={1.4} />
             <h3 className="md-report-summary-title text-[15px] font-medium text-[var(--md-ink)]">{block.title}</h3>
           </div>
           <p className="md-report-summary-body mt-3 text-[15px] leading-7 text-[var(--md-text)]">{block.body}</p>

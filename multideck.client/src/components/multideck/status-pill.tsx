@@ -52,7 +52,7 @@ const tableToneClass: Record<StatusTone, string> = {
   blue: "bg-[var(--md-status-blue-bg)] text-[var(--md-status-blue-ink)]",
   orange: "bg-[var(--md-status-orange-bg)] text-[var(--md-status-orange-ink)]",
   purple: "bg-[var(--md-status-purple-bg)] text-[var(--md-status-purple-ink)]",
-  teal: "bg-[var(--md-status-blue-bg)] text-[var(--md-status-blue-ink)]",
+  teal: "bg-[var(--md-status-teal-bg)] text-[var(--md-status-teal-ink)]",
   neutral: "bg-[var(--md-status-blue-bg)] text-[var(--md-status-blue-ink)]",
 }
 

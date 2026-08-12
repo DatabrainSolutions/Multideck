@@ -12,11 +12,11 @@
  */
 
 import {
+  AiBrain,
   ArrowLeftRight,
   Compass,
   MousePointerClick,
   Search,
-  Sparkles,
   SquareDashed,
   type LucideIcon,
 } from "@/components/icons/hugeicons"
@@ -46,7 +46,7 @@ export const shortcutGroups: ShortcutGroup[] = [
     id: "dexter",
     label: "Dexter",
     description: "Summon the agent where you already are, or open its workspace.",
-    icon: Sparkles,
+    icon: AiBrain,
   },
   {
     id: "search",

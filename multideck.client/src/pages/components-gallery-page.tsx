@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { useTheme } from "next-themes"
-import { AiBrain, ArrowLeft, ArrowRight, Bell, Check, Clipboard, Cloud, Component, Download, Eye, FileText, Folder, Forklift, Home03, Image, KeyRound, Mail, Moon02, Pencil, Pin, Search, Settings2, Ship, Sparkles, Trash2, UserRound } from "@/components/icons/hugeicons"
+import { AiBrain, ArrowLeft, ArrowRight, Bell, BrainCircuit, Check, Clipboard, Cloud, Component, Download, Eye, FileText, Folder, Forklift, Home03, Image, KeyRound, Mail, Moon02, Pencil, Pin, Search, Settings2, Ship, Trash2, UserRound } from "@/components/icons/hugeicons"
 import { toast } from "sonner"
 import toastErrorIcon from "@/assets/toasts/toast-error.png"
 import toastGeneralIcon from "@/assets/toasts/toast-general.png"
@@ -2670,7 +2670,7 @@ function ComponentPreview({ id }: { id: string }) {
           <WatchModeAurora active />
           <div className="relative z-10 flex h-full items-center justify-center px-6 text-center">
             <div>
-              <Sparkles className="mx-auto size-6 text-[var(--md-accent)]" strokeWidth={1.35} />
+              <BrainCircuit className="mx-auto size-6 text-[var(--md-accent)]" strokeWidth={1.35} />
               <p className="mt-4 text-[20px] font-medium text-[var(--md-ink)]">What do you want me to watch?</p>
               <p className="mt-2 text-[13px] text-[var(--md-text)]">A subtle, accent-matched mode cue rises from the bottom edge.</p>
             </div>

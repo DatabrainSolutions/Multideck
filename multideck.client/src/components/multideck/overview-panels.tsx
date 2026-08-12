@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties } from "react"
 import { AnimatePresence, LayoutGroup, motion } from "motion/react"
-import { ArrowLeft, ArrowRight, CalendarDays, ChevronDown, Loader2, Mail, Plus, ReceiptText, RefreshCw, Save, ShieldCheck, Ship, Sparkles, TriangleAlert } from "@/components/icons/hugeicons"
+import { AiBrain, ArrowLeft, ArrowRight, BrainCircuit, CalendarDays, ChevronDown, Loader2, Mail, Plus, ReceiptText, RefreshCw, Save, ShieldCheck, Ship, TriangleAlert } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -969,7 +969,7 @@ export function TimezoneFocusPanel({ selectedCode }: { selectedCode: string }) {
         </div>
         <div className="flex flex-col gap-3 bg-[var(--md-surface-tint)] px-5 py-4 md:flex-row md:items-center md:justify-between">
           <p className="text-[13px] leading-5 text-[var(--md-text)]">
-            <Sparkles className="mr-2 inline size-3.5 text-[var(--md-accent)]" strokeWidth={1.2} />
+            <AiBrain className="mr-2 inline size-3.5 text-[var(--md-accent)]" strokeWidth={1.2} />
             Dexter can quote the <span className="font-medium text-[var(--md-ink)]">{queue.readyToQuote} ready RFQs</span> and chase the <span className="font-medium text-[var(--md-ink)]">{queue.needAction} blockers</span> before the {city.city} cutoff.
           </p>
           <DexterActionPill label="Let Dexter handle it" className="h-9 min-w-[158px] px-4 text-[13px]" />
@@ -1281,7 +1281,7 @@ export function MorningDigestPanel({
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2">
           <span className="grid size-8 place-items-center rounded-full bg-[var(--md-accent)] text-[var(--md-accent-ink)]">
-            <Sparkles className="size-4" strokeWidth={1.2} />
+            <BrainCircuit className="size-4" strokeWidth={1.2} />
           </span>
           <h2 className="text-[15px] font-medium text-[var(--md-ink)]">Today's action list</h2>
         </div>

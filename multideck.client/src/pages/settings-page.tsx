@@ -40,7 +40,6 @@ import {
   Search,
   ShieldCheck,
   Smartphone,
-  Sparkles,
   TicketCheck,
   Trash2,
   Upload,
@@ -4393,7 +4392,7 @@ function DocsTab() {
       title: "Set AI approval guardrails",
       detail: "Control Dexter actions, spend limits, and review points.",
       category: "AI",
-      icon: Sparkles,
+      icon: ShieldCheck,
       steps: ["Set a spend warning below the monthly budget.", "Keep chargeable actions behind explicit approval.", "Leave customs and live exception alerts running at the limit."],
     },
     {

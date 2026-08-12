@@ -3,6 +3,7 @@ import { SentIcon as SendHorizontalIcon } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
 import type { LucideIcon } from "@/components/icons/hugeicons"
 import {
+  AiBrain,
   ArrowRight,
   ArrowLeft,
   BarChart3,
@@ -21,7 +22,6 @@ import {
   Plus,
   Search,
   ShieldCheck,
-  Sparkles,
   Trash2,
   TriangleAlert,
   Upload,
@@ -2581,7 +2581,7 @@ export function DexterSuggestionGrid({
 }
 
 export const defaultDexterSpecialists: DexterSpecialist[] = [
-  { id: "auto", name: "Auto", label: "Default", description: "Dexter reads the request and routes it to the right specialist.", icon: Sparkles },
+  { id: "auto", name: "Auto", label: "Default", description: "Dexter reads the request and routes it to the right specialist.", icon: AiBrain },
   { id: "sales", name: "Sales", description: "Rates, quotes, margins, win-back drafts", icon: PackageCheck },
   { id: "customs", name: "Customs", description: "HS codes, holds, licences, document checks", icon: ShieldCheck },
   { id: "ops", name: "Ops & exceptions", description: "Delays, reroutes, terminals, carrier escalations", icon: Zap },

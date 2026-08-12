@@ -26,7 +26,6 @@ import {
   MessageSquareText,
   Radar,
   RefreshCw,
-  Radar,
   type LucideIcon,
 } from "@/components/icons/hugeicons"
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"

@@ -349,12 +349,14 @@ form:not([novalidate]) :where(input:not([type="hidden"]), textarea, select):user
   /* Filled table statuses from the approved Figma light-mode palette. */
   --md-status-green-bg: #d1ffc8;
   --md-status-green-ink: #0f5f00;
-  --md-status-amber-bg: #fbffc8;
-  --md-status-amber-ink: #928600;
+  --md-status-amber-bg: #f2edb0;
+  --md-status-amber-ink: #746a00;
   --md-status-red-bg: #ffc8c8;
   --md-status-red-ink: #8b0000;
-  --md-status-blue-bg: #c8fff9;
-  --md-status-blue-ink: #005b58;
+  --md-status-blue-bg: #dcecea;
+  --md-status-blue-ink: #315f5b;
+  --md-status-teal-bg: #dcecea;
+  --md-status-teal-ink: #315f5b;
   --md-status-orange-bg: #ffdac8;
   --md-status-orange-ink: #984a00;
   --md-status-purple-bg: #cec8ff;
@@ -517,6 +519,8 @@ form:not([novalidate]) :where(input:not([type="hidden"]), textarea, select):user
   --md-status-red-ink: #ffa2a2;
   --md-status-blue-bg: #002523;
   --md-status-blue-ink: #adfffc;
+  --md-status-teal-bg: #002523;
+  --md-status-teal-ink: #adfffc;
   --md-status-orange-bg: #251200;
   --md-status-orange-ink: #ffb570;
   --md-status-purple-bg: #0c0025;
