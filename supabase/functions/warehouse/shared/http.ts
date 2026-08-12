@@ -14,6 +14,7 @@ export function cors(request) {
   const origin = request.headers.get("Origin")?.trim() || "";
   const allowed = new Set([
     configured,
+    ...(Deno.env.get("APP_ALLOWED_ORIGINS") ?? "").split(",").map((value) => value.trim()).filter(Boolean),
     "http://localhost:3000",
     "http://127.0.0.1:3000"
   ]);

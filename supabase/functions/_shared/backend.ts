@@ -17,10 +17,28 @@ export function isTrustedMultideckOrigin(value: string) {
   }
 }
 
+export function readAllowedAppOrigins() {
+  const values = [
+    Deno.env.get("APP_URL")?.trim() || "https://dev.multideck.app",
+    ...(Deno.env.get("APP_ALLOWED_ORIGINS") ?? "").split(","),
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+  ]
+  const origins = new Set<string>()
+  for (const value of values) {
+    try {
+      const candidate = value.trim()
+      const url = new URL(candidate)
+      if (url.origin === candidate && isTrustedMultideckOrigin(candidate)) origins.add(candidate)
+    } catch { /* ignore malformed configuration */ }
+  }
+  return origins
+}
+
 export function corsHeaders(request: Request) {
   const appUrl = Deno.env.get("APP_URL")?.trim() || "https://dev.multideck.app"
   const origin = request.headers.get("Origin")?.trim() || appUrl
-  const allowed = origin === appUrl || isTrustedMultideckOrigin(origin)
+  const allowed = readAllowedAppOrigins().has(origin)
   return {
     "Access-Control-Allow-Origin": allowed ? origin : appUrl,
     "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info",
