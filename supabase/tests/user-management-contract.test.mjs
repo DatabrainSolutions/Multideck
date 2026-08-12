@@ -87,6 +87,11 @@ test("the branded invite opens password creation without a consumable auth link 
   assert.doesNotMatch(authFlow, /Confirm your invitation/)
   assert.match(authFlow, /Invitation link unavailable/)
   assert.match(invitationTicket, /mail scanner|not consumed|multideck-invitation/)
+  assert.match(authFlow, /minLength=\{8\}/)
+  assert.match(authFlow, /password\.length < 8/)
+  assert.match(acceptInvitation, /password\.length < 8/)
+  assert.match(acceptInvitation, /between 8 and 128 characters/)
+  assert.doesNotMatch(authFlow, /at least 12 characters/)
 })
 
 test("invitation expiry is selected by the administrator and signed into the link", () => {

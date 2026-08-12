@@ -665,7 +665,7 @@ const userManagementPhrases: PhraseDictionary = {
   "Your workspace.\nYour secure key.": { de: "Dein Workspace.\nDein sicherer Schlüssel.", fr: "Votre espace.\nVotre clé sécurisée.", ar: "مساحة عملك.\nمفتاحك الآمن." },
   "Create the password for your administrator-approved Multideck account. You’ll enter the workspace as soon as it is saved.": { de: "Erstelle das Passwort für dein vom Administrator freigegebenes Multideck-Konto. Danach gelangst du direkt in den Workspace.", fr: "Créez le mot de passe de votre compte Multideck approuvé par l’administrateur. Vous accéderez ensuite directement à l’espace.", ar: "أنشئ كلمة المرور لحساب Multideck المعتمد من المسؤول. ستدخل مساحة العمل فور حفظها." },
   "Set your password": { de: "Passwort festlegen", fr: "Définissez votre mot de passe", ar: "عيّن كلمة المرور" },
-  "Create a password with at least 12 characters. You’ll be signed in to your Multideck workspace when it is ready.": { de: "Erstelle ein Passwort mit mindestens 12 Zeichen. Danach wirst du direkt in Multideck angemeldet.", fr: "Créez un mot de passe d’au moins 12 caractères. Vous serez ensuite connecté à votre espace Multideck.", ar: "أنشئ كلمة مرور من 12 حرفا على الأقل. سيتم تسجيل دخولك إلى مساحة Multideck عند جاهزيتها." },
+  "Create a password with at least 8 characters. You’ll be signed in to your Multideck workspace when it is ready.": { de: "Erstelle ein Passwort mit mindestens 8 Zeichen. Danach wirst du direkt in Multideck angemeldet.", fr: "Créez un mot de passe d’au moins 8 caractères. Vous serez ensuite connecté à votre espace Multideck.", ar: "أنشئ كلمة مرور من 8 أحرف على الأقل. سيتم تسجيل دخولك إلى مساحة Multideck عند جاهزيتها." },
   "Create my password": { de: "Mein Passwort erstellen", fr: "Créer mon mot de passe", ar: "إنشاء كلمة مروري" },
   "Creating your password": { de: "Passwort wird erstellt", fr: "Création du mot de passe", ar: "جار إنشاء كلمة المرور" },
   "Invitation link unavailable": { de: "Einladungslink nicht verfügbar", fr: "Lien d’invitation indisponible", ar: "رابط الدعوة غير متاح" },
@@ -1635,10 +1635,10 @@ const phrases: PhraseDictionary = {
   "Send recovery link": { de: "Wiederherstellungslink senden", fr: "Envoyer le lien de récupération", ar: "إرسال رابط الاستعادة" },
   "Back to sign in": { de: "Zurück zur Anmeldung", fr: "Retour à la connexion", ar: "العودة إلى تسجيل الدخول" },
   "Choose a new password": { de: "Neues Passwort wählen", fr: "Choisissez un nouveau mot de passe", ar: "اختر كلمة مرور جديدة" },
-  "Use at least 12 characters. A unique passphrase is easier to remember and harder to guess.": {
-    de: "Verwende mindestens 12 Zeichen. Eine einzigartige Passphrase ist leichter zu merken und schwerer zu erraten.",
-    fr: "Utilisez au moins 12 caractères. Une phrase secrète unique est plus facile à retenir et plus difficile à deviner.",
-    ar: "استخدم 12 حرفا على الأقل. عبارة المرور الفريدة أسهل في التذكر وأصعب في التخمين.",
+  "Use at least 8 characters. A unique password is easier to remember and harder to guess.": {
+    de: "Verwende mindestens 8 Zeichen. Ein einzigartiges Passwort ist leichter zu merken und schwerer zu erraten.",
+    fr: "Utilisez au moins 8 caractères. Un mot de passe unique est plus facile à retenir et plus difficile à deviner.",
+    ar: "استخدم 8 أحرف على الأقل. كلمة المرور الفريدة أسهل في التذكر وأصعب في التخمين.",
   },
   "New password": { de: "Neues Passwort", fr: "Nouveau mot de passe", ar: "كلمة المرور الجديدة" },
   "Confirm new password": { de: "Neues Passwort bestätigen", fr: "Confirmez le nouveau mot de passe", ar: "تأكيد كلمة المرور الجديدة" },
@@ -2835,10 +2835,10 @@ const phrases: PhraseDictionary = {
     fr: "Ce champ est obligatoire.",
     ar: "هذا الحقل مطلوب.",
   },
-  "Use at least 12 characters for your new password.": {
-    de: "Verwende mindestens 12 Zeichen für dein neues Passwort.",
-    fr: "Utilisez au moins 12 caractères pour votre nouveau mot de passe.",
-    ar: "استخدم 12 حرفا على الأقل لكلمة المرور الجديدة.",
+  "Use at least 8 characters for your new password.": {
+    de: "Verwende mindestens 8 Zeichen für dein neues Passwort.",
+    fr: "Utilisez au moins 8 caractères pour votre nouveau mot de passe.",
+    ar: "استخدم 8 أحرف على الأقل لكلمة المرور الجديدة.",
   },
   "The two passwords do not match.": {
     de: "Die beiden Passwörter stimmen nicht überein.",

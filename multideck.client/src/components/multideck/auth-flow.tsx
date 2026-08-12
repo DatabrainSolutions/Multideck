@@ -764,8 +764,8 @@ function ResetPasswordPanel({
       <h2 className="mt-5 text-[24px] font-medium leading-tight text-[var(--md-ink)]">{t(inviteMode ? "Set your password" : "Choose a new password")}</h2>
       <p className="mt-2 text-[14px] leading-6 text-[var(--md-text)]">
         {t(inviteMode
-          ? "Create a password with at least 12 characters. You’ll be signed in to your Multideck workspace when it is ready."
-          : "Use at least 12 characters. A unique passphrase is easier to remember and harder to guess.")}
+          ? "Create a password with at least 8 characters. You’ll be signed in to your Multideck workspace when it is ready."
+          : "Use at least 8 characters. A unique password is easier to remember and harder to guess.")}
       </p>
 
       <AuthAlert tone="error">{error ? t(error) : null}</AuthAlert>
@@ -789,7 +789,7 @@ function ResetPasswordPanel({
           dir="ltr"
           disabled={isSubmitting}
           required
-          minLength={12}
+          minLength={8}
           aria-invalid={Boolean(fieldErrors.newPassword)}
           aria-describedby={fieldErrors.newPassword ? "new-password-error" : undefined}
           type="password"
@@ -806,7 +806,7 @@ function ResetPasswordPanel({
           dir="ltr"
           disabled={isSubmitting}
           required
-          minLength={12}
+          minLength={8}
           aria-invalid={Boolean(fieldErrors.confirmation)}
           aria-describedby={fieldErrors.confirmation ? "confirm-password-error" : undefined}
           type="password"
@@ -1178,8 +1178,8 @@ export function AuthFlow({
   async function updatePassword() {
     clearFeedback()
 
-    if (password.length < 12) {
-      showFieldError("newPassword", "Use at least 12 characters for your new password.", "new-password")
+    if (password.length < 8) {
+      showFieldError("newPassword", "Use at least 8 characters for your new password.", "new-password")
       return
     }
     if (password !== passwordConfirmation) {
