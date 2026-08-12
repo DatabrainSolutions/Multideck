@@ -12,7 +12,7 @@ import { WarehouseOrderDetailView, orderDetailPath, warehouseOrderDetailNumber }
 import { WarehouseItemDetailView, warehouseItemDetailSku } from "@/components/multideck/warehouse-item-detail"
 import { WarehouseInventoryWorkspace } from "@/components/multideck/warehouse-inventory-workspace"
 import { DotGridLoaderPanel } from "@/components/multideck/dot-grid-loader"
-import { WarehousePurchaseOrdersWorkspace } from "@/components/multideck/warehouse-purchase-orders-workspace"
+import { WarehousePurchaseOrderCreateView, WarehousePurchaseOrderDetailView, WarehousePurchaseOrdersWorkspace, warehousePurchaseOrderDetailId } from "@/components/multideck/warehouse-purchase-orders-workspace"
 import { Surface } from "@/components/multideck/surface"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -58,8 +58,9 @@ export function WarehousePage({ route, currentUser, navigate }: { route: string;
   // rather than from component state means the back button still points at Goods
   // out after a reload or when the link arrives from someone else.
   const detailOrderNumber = warehouseOrderDetailNumber(route)
+  const detailPurchaseOrderId = warehousePurchaseOrderDetailId(route)
   const detailItemSku = warehouseItemDetailSku(route)
-  const activeSection = (warehouseRouteItems.find((item) => item.route === route)?.label ?? (detailOrderNumber ? "Orders" : detailItemSku ? "Items" : "Dashboard")) as WarehouseSection
+  const activeSection = (warehouseRouteItems.find((item) => item.route === route)?.label ?? (detailPurchaseOrderId || route === "/warehouse/purchase-orders/new" ? "Purchase orders" : detailOrderNumber ? "Orders" : detailItemSku ? "Items" : "Dashboard")) as WarehouseSection
   const [warehouseData, setWarehouseData] = useState<WarehouseWorkspaceData | null>(null)
   const [loadState, setLoadState] = useState<"idle" | "loading" | "error">("idle")
   const [reloadToken, setReloadToken] = useState(0)
@@ -199,6 +200,22 @@ export function WarehousePage({ route, currentUser, navigate }: { route: string;
     )
   }
 
+  if (detailPurchaseOrderId && !isCustomer) {
+    return (
+      <main className="md-page md-page-stack">
+        <WarehousePurchaseOrderDetailView
+          key={detailPurchaseOrderId}
+          purchaseOrderId={detailPurchaseOrderId}
+          navigate={navigate}
+        />
+      </main>
+    )
+  }
+
+  if (route === "/warehouse/purchase-orders/new" && !isCustomer) {
+    return <main className="md-page md-page-stack"><WarehousePurchaseOrderCreateView navigate={navigate} /></main>
+  }
+
   return (
     <main className="md-page md-page-stack">
       {activeSection !== "Calendar" || !warehouseData ? (
@@ -230,7 +247,7 @@ export function WarehousePage({ route, currentUser, navigate }: { route: string;
           {activeSection === "Goods in" ? <WarehouseOrdersManagementView typeFilter="inbound" registerRoute="/warehouse/goods-in" navigate={navigate} /> : null}
           {activeSection === "Goods out" ? <WarehouseOrdersManagementView typeFilter="outbound" registerRoute="/warehouse/goods-out" navigate={navigate} /> : null}
           {activeSection === "Orders" ? <WarehouseOrdersManagementView isCustomer={isCustomer} canCreateInbound={canCreateInbound} canCreateOutbound={canCreateOutbound} registerRoute="/warehouse/orders" navigate={navigate} /> : null}
-          {activeSection === "Purchase orders" && !isCustomer ? <WarehousePurchaseOrdersWorkspace /> : null}
+          {activeSection === "Purchase orders" && !isCustomer ? <WarehousePurchaseOrdersWorkspace navigate={navigate} /> : null}
           {activeSection === "Users" && canManageUsers ? <WarehouseOrganisationUsersView currentUser={currentUser} /> : null}
           {activeSection === "Calendar" ? dashboardOrCalendarState ?? (
             <WarehouseCalendarView

@@ -2,6 +2,8 @@
 -- Browser clients use the authenticated Warehouse Edge Function. Header/line writes
 -- remain atomic and service-role-only, with immutable events and deterministic watches.
 
+begin;
+
 create table if not exists public."WMS_PurchaseOrders" (
   "WMSPO_ID" uuid primary key default gen_random_uuid(),
   "WMSPO_FacilityID" uuid not null references public."WMS_Facilities"("WMSFacility_ID"),
@@ -134,7 +136,6 @@ begin
     if v_facility_id is null or not coalesce(v_facility_id=any(p_allowed_facility_ids),false) then raise exception 'WMS403: Choose a warehouse in your company.'; end if;
     if v_customer_org_id is null or not exists(select 1 from public."Org_Master" where "Org_id"=v_customer_org_id) then raise exception 'WMS400: Choose the stock owner.'; end if;
     if coalesce(nullif(btrim(p_payload->>'number'),''),'')='' then raise exception 'WMS400: Enter a purchase order number.'; end if;
-    if coalesce(nullif(btrim(p_payload->>'supplierName'),''),'')='' then raise exception 'WMS400: Enter the supplier name.'; end if;
     if upper(coalesce(nullif(btrim(p_payload->>'currencyCode'),''),'GBP')) !~ '^[A-Z]{3}$' then raise exception 'WMS400: Enter a three-letter currency code.'; end if;
     v_lines := p_payload->'lines';
     if v_lines is null or jsonb_typeof(v_lines) is distinct from 'array' or jsonb_array_length(v_lines)=0 then raise exception 'WMS400: Add at least one purchase order line.'; end if;
@@ -146,7 +147,7 @@ begin
         "WMSPO_PaymentTerms","WMSPO_DeliveryAddress","WMSPO_Notes","WMSPO_SourceFileName","WMSPO_ExtractionModeCode","WMSPO_ExtractionModel",
         "WMSPO_ExtractionMetadataJSON","WMSPO_CreatedBy","WMSPO_UpdatedBy"
       ) values (
-        v_id,v_facility_id,v_customer_org_id,v_supplier_org_id,left(btrim(p_payload->>'number'),120),'draft',left(btrim(p_payload->>'supplierName'),240),
+        v_id,v_facility_id,v_customer_org_id,v_supplier_org_id,left(btrim(p_payload->>'number'),120),'draft',left(coalesce(btrim(p_payload->>'supplierName'),''),240),
         nullif(left(btrim(p_payload->>'buyerReference'),160),''),nullif(left(btrim(p_payload->>'supplierReference'),160),''),nullif(p_payload->>'issueDate','')::date,
         nullif(p_payload->>'expectedDeliveryDate','')::date,upper(coalesce(nullif(btrim(p_payload->>'currencyCode'),''),'GBP')),nullif(left(btrim(p_payload->>'deliveryTerms'),180),''),
         nullif(left(btrim(p_payload->>'paymentTerms'),180),''),nullif(btrim(p_payload->>'deliveryAddress'),''),nullif(btrim(p_payload->>'notes'),''),
@@ -157,7 +158,7 @@ begin
       v_id := p_purchase_order_id;
       update public."WMS_PurchaseOrders" set
         "WMSPO_FacilityID"=v_facility_id,"WMSPO_CustomerOrgID"=v_customer_org_id,"WMSPO_SupplierOrgID"=v_supplier_org_id,
-        "WMSPO_Number"=left(btrim(p_payload->>'number'),120),"WMSPO_SupplierName"=left(btrim(p_payload->>'supplierName'),240),
+        "WMSPO_Number"=left(btrim(p_payload->>'number'),120),"WMSPO_SupplierName"=left(coalesce(btrim(p_payload->>'supplierName'),''),240),
         "WMSPO_BuyerReference"=nullif(left(btrim(p_payload->>'buyerReference'),160),''),"WMSPO_SupplierReference"=nullif(left(btrim(p_payload->>'supplierReference'),160),''),
         "WMSPO_IssueDate"=nullif(p_payload->>'issueDate','')::date,"WMSPO_ExpectedDeliveryDate"=nullif(p_payload->>'expectedDeliveryDate','')::date,
         "WMSPO_CurrencyCode"=upper(coalesce(nullif(btrim(p_payload->>'currencyCode'),''),'GBP')),"WMSPO_DeliveryTerms"=nullif(left(btrim(p_payload->>'deliveryTerms'),180),''),
@@ -295,5 +296,7 @@ create or replace function public.multideck_dexter_action_create_purchase_order(
 revoke all on function public.multideck_dexter_action_create_purchase_order(uuid,uuid,jsonb) from public,anon,authenticated;
 
 insert into public."sys_AIDexterActions" ("AIDexterAction_Code","AIDexterAction_DomainCode","AIDexterAction_Name","AIDexterAction_Description","AIDexterAction_Function","AIDexterAction_ParametersJSON","AIDexterAction_SortOrder","AIDexterAction_IsActive","AIDexterAction_UpdatedAt") values
-('create_purchase_order','purchase_orders','Create purchase order','Create a reviewed draft purchase order through the Warehouse Edge Function. Approval is always required.','multideck_dexter_action_create_purchase_order','{"type":"object","properties":{"facility_id":{"type":"string"},"customer_org_id":{"type":"string"},"number":{"type":"string"},"supplier_name":{"type":"string"},"supplier_org_id":{"type":["string","null"]},"currency_code":{"type":"string"},"issue_date":{"type":["string","null"]},"expected_delivery_date":{"type":["string","null"]},"notes":{"type":["string","null"]},"lines":{"type":"array","items":{"type":"object","properties":{"item_id":{"type":["string","null"]},"sku":{"type":["string","null"]},"description":{"type":"string"},"quantity":{"type":"number","exclusiveMinimum":0},"uom_code":{"type":"string"},"unit_price":{"type":"number","minimum":0},"tax_rate":{"type":"number","minimum":0}},"required":["item_id","sku","description","quantity","uom_code","unit_price","tax_rate"],"additionalProperties":false}}},"required":["facility_id","customer_org_id","number","supplier_name","supplier_org_id","currency_code","issue_date","expected_delivery_date","notes","lines"],"additionalProperties":false}'::jsonb,16,true,now())
+('create_purchase_order','purchase_orders','Create purchase order','Create a reviewed draft purchase order through the Warehouse Edge Function. Approval is always required.','multideck_dexter_action_create_purchase_order','{"type":"object","properties":{"facility_id":{"type":"string"},"customer_org_id":{"type":"string"},"number":{"type":"string"},"supplier_name":{"type":"string"},"supplier_org_id":{"type":["string","null"]},"currency_code":{"type":"string"},"issue_date":{"type":["string","null"]},"expected_delivery_date":{"type":["string","null"]},"notes":{"type":["string","null"]},"lines":{"type":"array","items":{"type":"object","properties":{"item_id":{"type":["string","null"]},"sku":{"type":["string","null"]},"description":{"type":"string"},"quantity":{"type":"number","exclusiveMinimum":0},"uom_code":{"type":"string"},"unit_price":{"type":"number","minimum":0},"tax_rate":{"type":"number","minimum":0}},"required":["item_id","sku","description","quantity","uom_code","unit_price","tax_rate"],"additionalProperties":false}}},"required":["facility_id","customer_org_id","number","currency_code","issue_date","expected_delivery_date","notes","lines"],"additionalProperties":false}'::jsonb,16,true,now())
 on conflict ("AIDexterAction_Code") do update set "AIDexterAction_DomainCode"=excluded."AIDexterAction_DomainCode","AIDexterAction_Name"=excluded."AIDexterAction_Name","AIDexterAction_Description"=excluded."AIDexterAction_Description","AIDexterAction_Function"=excluded."AIDexterAction_Function","AIDexterAction_ParametersJSON"=excluded."AIDexterAction_ParametersJSON","AIDexterAction_IsActive"=true,"AIDexterAction_UpdatedAt"=now();
+
+commit;

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent } from "react"
+import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent as ReactKeyboardEvent } from "react"
 import { DotLottieReact } from "@lottiefiles/dotlottie-react"
 import { ArrowLeft, Check, CheckCheck, CircleAlert, FileText, Merge, Minus, ShieldCheck, Sparkles, Split, Square } from "@/components/icons/hugeicons"
 import { useReducedMotion } from "motion/react"
@@ -96,6 +96,7 @@ export function CustomsInvoiceImportWorkspace({
   const invoiceInputRef = useRef<HTMLInputElement>(null)
   const invoiceDragDepth = useRef(0)
   const reviewListRef = useRef<HTMLDivElement>(null)
+  const workspaceRef = useRef<HTMLDivElement>(null)
 
   const groups = useMemo(() => groupInvoiceLines(lines), [lines])
   const output = useMemo(() => buildInvoiceOutputLines(groups, selections, descriptionOverrides), [descriptionOverrides, groups, selections])
@@ -143,6 +144,60 @@ export function CustomsInvoiceImportWorkspace({
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = "hidden"
     return () => { document.body.style.overflow = previousOverflow }
+  }, [])
+
+  useEffect(() => {
+    const workspace = workspaceRef.current
+    if (!workspace) return
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const focusableSelector = [
+      "button:not([disabled])",
+      "[href]",
+      "input:not([disabled])",
+      "select:not([disabled])",
+      "textarea:not([disabled])",
+      "[tabindex]:not([tabindex='-1'])",
+    ].join(",")
+    const focusableElements = () => [...workspace.querySelectorAll<HTMLElement>(focusableSelector)]
+      .filter((element) => element.getClientRects().length > 0 && element.getAttribute("aria-hidden") !== "true")
+    const focusFirst = () => {
+      const dropzone = workspace.querySelector<HTMLElement>("[data-testid='commercial-invoice-dropzone']")
+      const target = dropzone ?? focusableElements()[0]
+      target?.focus()
+    }
+    const focusFrame = window.requestAnimationFrame(focusFirst)
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.key !== "Tab") return
+      const focusable = focusableElements()
+      if (!focusable.length) {
+        event.preventDefault()
+        return
+      }
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      const active = document.activeElement
+      if (!workspace.contains(active)) {
+        event.preventDefault()
+        ;(event.shiftKey ? last : first).focus()
+      } else if (event.shiftKey && active === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    const keepFocusInside = (event: FocusEvent) => {
+      if (!workspace.contains(event.target as Node)) focusFirst()
+    }
+    document.addEventListener("keydown", trapFocus, true)
+    document.addEventListener("focusin", keepFocusInside, true)
+    return () => {
+      window.cancelAnimationFrame(focusFrame)
+      document.removeEventListener("keydown", trapFocus, true)
+      document.removeEventListener("focusin", keepFocusInside, true)
+      previouslyFocused?.focus()
+    }
   }, [])
 
   useEffect(() => () => {
@@ -394,7 +449,7 @@ export function CustomsInvoiceImportWorkspace({
     focusLine(visibleLineIds[next])
   }
 
-  function handleReviewKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+  function handleReviewKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
     const target = event.target as HTMLElement
     if (target.closest("input, textarea, [contenteditable='true']")) return
 
@@ -444,7 +499,14 @@ export function CustomsInvoiceImportWorkspace({
 
   const showInvoiceDropzone = !extracting && !lines.length
 
-  return <div className="fixed inset-0 isolate z-[80] h-[100dvh] w-screen overflow-hidden bg-[var(--md-bg)] text-[var(--md-ink)]" data-testid="invoice-import-workspace">
+  return <div
+    ref={workspaceRef}
+    className="fixed inset-0 isolate z-[80] h-[100dvh] w-screen overflow-hidden bg-[var(--md-bg)] text-[var(--md-ink)]"
+    data-testid="invoice-import-workspace"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="invoice-import-workspace-title"
+  >
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex flex-wrap items-center justify-between gap-4 border-b border-[var(--md-line)] bg-[var(--md-surface)] px-5 py-4 lg:px-7">
         <div className="flex min-w-0 items-center gap-3">
@@ -452,7 +514,7 @@ export function CustomsInvoiceImportWorkspace({
           <div className="grid size-10 shrink-0 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-accent-a10)] text-[var(--md-accent)]"><Sparkles className="size-5" /></div>
           <span className="min-w-0">
             <span className="flex flex-wrap items-center gap-2">
-              <h1 className="text-[21px] font-medium tracking-[-0.025em]">{t("Invoice import")}</h1>
+              <h1 id="invoice-import-workspace-title" className="text-[21px] font-medium tracking-[-0.025em]">{t("Invoice import")}</h1>
               {lines.length ? <StatusPill tone="teal">{includedCount} {t("of")} {lines.length} {t("approved")}</StatusPill> : <StatusPill tone="teal">{t("Review before applying")}</StatusPill>}
             </span>
             <p className="mt-0.5 truncate text-[11px] text-[var(--md-subtle)]" dir="auto">{invoiceName || t("Review invoice lines, choose what to combine, then add them to the declaration.")}</p>
