@@ -12,9 +12,25 @@ const endpoint = `${supabaseFunctionsUrl}/${functionName}`
 const maxInvoiceBytes = 10 * 1024 * 1024
 const sessionRefreshLeewaySeconds = 30
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const acceptedExtensions = new Set(["pdf", "xlsx", "xls", "csv", "tsv", "docx", "doc", "ods", "odt", "png", "jpg", "jpeg", "webp"])
+
+export const commercialInvoiceFileAccept = ".pdf,.xlsx,.xls,.csv,.tsv,.docx,.doc,.ods,.odt,.png,.jpg,.jpeg,.webp"
 
 /** The observable phases of a server-owned import, in order. */
-export type InvoiceImportStage = "uploading" | "extracting" | "organising"
+export type InvoiceImportStage = "uploading" | "converting" | "extracting" | "organising"
+
+export type InvoiceDocumentMetadata = {
+  sourceFormat: string
+  sourceMimeType: string
+  converted: boolean
+  strategy: "passthrough" | "office_pdf" | "spreadsheet_normalised"
+  sheets: Array<{ name: string; status: "included" | "hidden" | "empty" }>
+  warnings: string[]
+  normalizerVersion: number
+  pageCount: number
+  previewUrl: string
+  previewExpiresAt: string
+}
 
 export type CommercialInvoiceExtractionResult = {
   extractionId: string
@@ -28,6 +44,7 @@ export type CommercialInvoiceExtractionResult = {
   /** Where each provider block sat, so reviewed lines can be shown in place. */
   evidencePages: EvidencePage[]
   timings: Record<string, number>
+  document: InvoiceDocumentMetadata
 }
 
 export type ExtractCommercialInvoiceOptions = {
@@ -57,15 +74,29 @@ export async function extractCommercialInvoice(
   if (!uuidPattern.test(extractionId)) throw new CommercialInvoiceExtractionError("Unable to start this invoice import.", 400)
 
   onStage?.("uploading")
-  let token = await accessToken(false)
-  let response = await uploadPdf(file, extractionId, declarationId, token, signal, () => onStage?.("extracting"))
-  if (response.status === 401) {
-    token = await accessToken(true)
-    response = await uploadPdf(file, extractionId, declarationId, token, signal, () => onStage?.("extracting"))
+  let conversionTimer: ReturnType<typeof globalThis.setTimeout> | undefined
+  const onUploaded = () => {
+    if (file.name.toLowerCase().endsWith(".pdf")) {
+      onStage?.("extracting")
+      return
+    }
+    onStage?.("converting")
+    conversionTimer = globalThis.setTimeout(() => onStage?.("extracting"), 1_200)
   }
-  const payload = await successfulPayload(response)
-  onStage?.("organising")
-  return normalizeResult(payload)
+  try {
+    let token = await accessToken(false)
+    let response = await uploadInvoice(file, extractionId, declarationId, token, signal, onUploaded)
+    if (response.status === 401) {
+      if (conversionTimer) globalThis.clearTimeout(conversionTimer)
+      token = await accessToken(true)
+      response = await uploadInvoice(file, extractionId, declarationId, token, signal, onUploaded)
+    }
+    const payload = await successfulPayload(response)
+    onStage?.("organising")
+    return normalizeResult(payload)
+  } finally {
+    if (conversionTimer) globalThis.clearTimeout(conversionTimer)
+  }
 }
 
 export async function readCommercialInvoiceExtraction(
@@ -111,7 +142,7 @@ async function accessToken(forceRefresh: boolean) {
   throw new CommercialInvoiceExtractionError("Sign in again to import an invoice.", 401)
 }
 
-function uploadPdf(
+function uploadInvoice(
   file: File,
   extractionId: string,
   declarationId: string | undefined,
@@ -133,7 +164,7 @@ function uploadPdf(
     request.setRequestHeader("Accept", "application/json")
     request.setRequestHeader("Authorization", `Bearer ${token}`)
     request.setRequestHeader("apikey", supabasePublicApiKey)
-    request.setRequestHeader("x-client-info", "multideck-customs-invoice-import/2")
+    request.setRequestHeader("x-client-info", "multideck-customs-invoice-import/3")
     request.upload.addEventListener("load", onUploaded, { once: true })
     request.addEventListener("load", () => {
       cleanup()
@@ -174,7 +205,7 @@ function fetchWithToken(url: string, init: RequestInit, token: string) {
       Accept: "application/json",
       Authorization: `Bearer ${token}`,
       apikey: supabasePublicApiKey,
-      "x-client-info": "multideck-customs-invoice-import/2",
+      "x-client-info": "multideck-customs-invoice-import/3",
       ...init.headers,
     },
   })
@@ -196,10 +227,11 @@ function validateConfiguration() {
 }
 
 function validateInvoice(file: File) {
-  if (!file.size) throw new CommercialInvoiceExtractionError("The selected PDF is empty.", 400)
-  if (file.size > maxInvoiceBytes) throw new CommercialInvoiceExtractionError("Choose a PDF commercial invoice smaller than 10 MB.", 413)
-  if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
-    throw new CommercialInvoiceExtractionError("Only PDF commercial invoices are supported.", 415)
+  if (!file.size) throw new CommercialInvoiceExtractionError("The selected invoice file is empty.", 400)
+  if (file.size > maxInvoiceBytes) throw new CommercialInvoiceExtractionError("Choose an invoice file smaller than 10 MB.", 413)
+  const extension = file.name.toLowerCase().match(/\.([a-z0-9]{1,10})$/)?.[1] ?? ""
+  if (!acceptedExtensions.has(extension)) {
+    throw new CommercialInvoiceExtractionError("Choose a PDF, Excel, CSV, Word or image invoice.", 415)
   }
 }
 
@@ -245,6 +277,30 @@ function normalizeResult(payload: unknown): CommercialInvoiceExtractionResult {
     cacheHit: result.cacheHit === true,
     evidencePages: normalizeEvidencePages(result.pages),
     timings: numberRecord(result.timings),
+    document: normalizeDocumentMetadata(result.document),
+  }
+}
+
+function normalizeDocumentMetadata(value: unknown): InvoiceDocumentMetadata {
+  const source = asRecord(value)
+  const strategy = source.strategy === "office_pdf" || source.strategy === "spreadsheet_normalised" ? source.strategy : "passthrough"
+  const sheets = Array.isArray(source.sheets) ? source.sheets.flatMap((entry) => {
+    const sheet = asRecord(entry)
+    const name = text(sheet.name)
+    const status: InvoiceDocumentMetadata["sheets"][number]["status"] = sheet.status === "hidden" || sheet.status === "empty" ? sheet.status : "included"
+    return name ? [{ name, status }] : []
+  }) : []
+  return {
+    sourceFormat: text(source.sourceFormat),
+    sourceMimeType: text(source.sourceMimeType),
+    converted: source.converted === true,
+    strategy,
+    sheets,
+    warnings: Array.isArray(source.warnings) ? source.warnings.filter((entry): entry is string => typeof entry === "string" && Boolean(entry.trim())) : [],
+    normalizerVersion: number(source.normalizerVersion),
+    pageCount: number(source.pageCount),
+    previewUrl: text(source.previewUrl),
+    previewExpiresAt: text(source.previewExpiresAt),
   }
 }
 

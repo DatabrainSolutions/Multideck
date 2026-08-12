@@ -30,9 +30,11 @@ import {
 } from "@/lib/customs-invoice-import-recovery"
 import {
   cancelCommercialInvoiceExtraction,
+  commercialInvoiceFileAccept,
   CommercialInvoiceExtractionError,
   extractCommercialInvoice,
   readCommercialInvoiceExtraction,
+  type InvoiceDocumentMetadata,
   type InvoiceImportStage,
 } from "@/lib/customs-invoice-import-api"
 import { buildInvoiceLineEvidence, type EvidencePage, type InvoiceLineEvidence } from "@/lib/customs-invoice-evidence"
@@ -48,6 +50,10 @@ type ReviewTab = "lines" | "result"
 
 const reviewFilters: readonly ReviewFilter[] = ["all", "attention", "approved"]
 const reviewTabs: readonly ReviewTab[] = ["lines", "result"]
+const emptyDocumentMetadata: InvoiceDocumentMetadata = {
+  sourceFormat: "", sourceMimeType: "", converted: false, strategy: "passthrough", sheets: [], warnings: [],
+  normalizerVersion: 0, pageCount: 0, previewUrl: "", previewExpiresAt: "",
+}
 
 export function CustomsInvoiceImportWorkspace({
   recoveryKey,
@@ -73,6 +79,10 @@ export function CustomsInvoiceImportWorkspace({
   // blank placeholder pages; the extracted fields and decisions remain complete.
   const [evidencePages, setEvidencePages] = useState<EvidencePage[]>([])
   const [documentPages, setDocumentPages] = useState<RenderedPdfPage[]>([])
+  const [documentMetadata, setDocumentMetadata] = useState<InvoiceDocumentMetadata>(() => ({
+    ...emptyDocumentMetadata,
+    ...(recovered?.document ?? {}),
+  }))
   const [activeLineId, setActiveLineId] = useState(() => recovered?.activeLineId ?? "")
   const [reviewFilter, setReviewFilter] = useState<ReviewFilter>(() => recovered?.reviewFilter ?? "all")
   const [reviewTab, setReviewTab] = useState<ReviewTab>(() => recovered?.reviewTab ?? "lines")
@@ -123,7 +133,8 @@ export function CustomsInvoiceImportWorkspace({
   }), [attentionLineIds, evidence, lines, t])
 
   const extractionStages = useMemo<ExtractionStage[]>(() => [
-    { id: "uploading", label: t("Uploading securely"), detail: t("Sending the PDF to your private workspace."), ceiling: 24, expectedMs: 1_400 },
+    { id: "uploading", label: t("Uploading securely"), detail: t("Sending the invoice file to your private workspace."), ceiling: 20, expectedMs: 1_400 },
+    { id: "converting", label: t("Preparing the document"), detail: t("Creating a review-safe PDF without clipping spreadsheet content."), ceiling: 52, expectedMs: 3_500 },
     { id: "extracting", label: t("Finding the item lines"), detail: t("Reading the complete document and extracting goods rows, quantities, values and codes."), ceiling: 88, expectedMs: 9_000 },
     { id: "organising", label: t("Preparing the review"), detail: t("Grouping by commodity code and locating each line on the page."), ceiling: 99, expectedMs: 1_200 },
   ], [t])
@@ -157,7 +168,9 @@ export function CustomsInvoiceImportWorkspace({
         setLines(result.lines)
         setSelections(Object.keys(recovered.selections).length ? recovered.selections : createDefaultInvoiceSelections(result.lines))
         setEvidencePages(result.evidencePages)
+        setDocumentMetadata(result.document)
         setActiveLineId(recovered.activeLineId || result.lines[0]?.id || "")
+        void renderPreparedPreview(result.document.previewUrl, requestId, controller.signal)
       })
       .catch((error: unknown) => {
         if (extractionRequest.current !== requestId || controller.signal.aborted) return
@@ -184,11 +197,12 @@ export function CustomsInvoiceImportWorkspace({
       selections,
       descriptionOverrides,
       evidencePages,
+      document: withoutPreview(documentMetadata),
       activeLineId,
       reviewFilter,
       reviewTab,
     })
-  }, [activeLineId, descriptionOverrides, evidencePages, extractedInvoiceNumber, extractionId, invoiceName, lines, recoveryKey, reviewFilter, reviewTab, selections])
+  }, [activeLineId, descriptionOverrides, documentMetadata, evidencePages, extractedInvoiceNumber, extractionId, invoiceName, lines, recoveryKey, reviewFilter, reviewTab, selections])
 
   function updateSelection(lineId: string, update: Partial<InvoiceLineSelection>) {
     setSelections((current) => ({ ...current, [lineId]: { ...current[lineId], ...update } }))
@@ -222,6 +236,30 @@ export function CustomsInvoiceImportWorkspace({
     setDocumentPages([])
   }
 
+  async function renderPreparedPreview(previewUrl: string, requestId: number, signal: AbortSignal) {
+    if (!previewUrl) return
+    try {
+      const response = await fetch(previewUrl, { credentials: "omit", signal })
+      if (!response.ok) return
+      const pdf = await response.blob()
+      if (pdf.type && pdf.type !== "application/pdf") return
+      releaseDocumentPages()
+      await renderPdfPageImages(pdf, {
+        signal,
+        onPage: (page) => {
+          if (extractionRequest.current !== requestId) {
+            releasePdfPageImages([page])
+            return
+          }
+          documentPagesRef.current = [...documentPagesRef.current, page]
+          setDocumentPages(documentPagesRef.current)
+        },
+      })
+    } catch {
+      // Extracted fields remain reviewable if the short-lived visual preview expires.
+    }
+  }
+
   async function selectInvoice(file: File | undefined) {
     if (!file) return
     if (extractionId) void cancelCommercialInvoiceExtraction(extractionId)
@@ -243,6 +281,7 @@ export function CustomsInvoiceImportWorkspace({
     setSelections({})
     setDescriptionOverrides({})
     setEvidencePages([])
+    setDocumentMetadata(emptyDocumentMetadata)
     setActiveLineId("")
     setReviewFilter("all")
     setReviewTab("lines")
@@ -250,9 +289,9 @@ export function CustomsInvoiceImportWorkspace({
     setStage("uploading")
     setExtracting(true)
 
-    // Page images are drawn while the item lines are being found, so the document is
-    // already on screen when the review opens.
-    void renderPdfPageImages(file, {
+    // A source PDF is already the exact provider input. Other formats are rendered
+    // only from the server-prepared PDF returned after conversion.
+    if (file.name.toLowerCase().endsWith(".pdf")) void renderPdfPageImages(file, {
       signal: controller.signal,
       onPage: (page) => {
         if (!isCurrent()) {
@@ -277,7 +316,9 @@ export function CustomsInvoiceImportWorkspace({
       setLines(result.lines)
       setSelections(createDefaultInvoiceSelections(result.lines))
       setEvidencePages(result.evidencePages)
+      setDocumentMetadata(result.document)
       setActiveLineId(result.lines[0]?.id ?? "")
+      void renderPreparedPreview(result.document.previewUrl, requestId, controller.signal)
       // No success toast: the review screen is the confirmation, and a toast would sit over
       // the apply buttons at the very moment the operator wants them.
     } catch (error) {
@@ -305,6 +346,7 @@ export function CustomsInvoiceImportWorkspace({
     setExtractionId("")
     setInvoiceName("")
     setExtractionError("")
+    setDocumentMetadata(emptyDocumentMetadata)
     clearCustomsInvoiceImportRecovery(recoveryKey)
     if (currentExtractionId) void cancelCommercialInvoiceExtraction(currentExtractionId)
   }
@@ -337,8 +379,7 @@ export function CustomsInvoiceImportWorkspace({
     setIsDraggingInvoice(false)
     if (extracting) return
     const files = Array.from(event.dataTransfer.files)
-    const pdf = files.find((file) => file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) ?? files[0]
-    void selectInvoice(pdf)
+    void selectInvoice(files[0])
   }
 
   function focusLine(lineId: string) {
@@ -387,7 +428,18 @@ export function CustomsInvoiceImportWorkspace({
       return
     }
     clearCustomsInvoiceImportRecovery(recoveryKey)
+    if (extractionId) void cancelCommercialInvoiceExtraction(extractionId)
     onApply(invoiceOutputToDeclarationItems(output, invoiceReference), mode, includedCount)
+  }
+
+  function discardAndClose() {
+    const currentExtractionId = extractionId
+    extractionRequest.current += 1
+    abortExtraction.current?.abort()
+    releaseDocumentPages()
+    clearCustomsInvoiceImportRecovery(recoveryKey)
+    if (currentExtractionId) void cancelCommercialInvoiceExtraction(currentExtractionId)
+    onClose()
   }
 
   const showInvoiceDropzone = !extracting && !lines.length
@@ -406,7 +458,7 @@ export function CustomsInvoiceImportWorkspace({
             <p className="mt-0.5 truncate text-[11px] text-[var(--md-subtle)]" dir="auto">{invoiceName || t("Review invoice lines, choose what to combine, then add them to the declaration.")}</p>
           </span>
         </div>
-        <Button type="button" variant="ghost" onClick={onClose}>{t("Cancel")}</Button>
+        <Button type="button" variant="ghost" onClick={discardAndClose}>{t("Cancel")}</Button>
       </header>
 
       <main className={cn("min-h-0 flex-1 overflow-y-auto p-4 lg:p-6", showInvoiceDropzone && "flex flex-col")}>
@@ -424,7 +476,7 @@ export function CustomsInvoiceImportWorkspace({
           /> : null}
 
           {showInvoiceDropzone ? <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
-            <input ref={invoiceInputRef} id="commercial-invoice-file" type="file" accept="application/pdf,.pdf" className="sr-only" onChange={(event) => { void selectInvoice(event.target.files?.[0]); event.currentTarget.value = "" }} />
+            <input ref={invoiceInputRef} id="commercial-invoice-file" type="file" accept={commercialInvoiceFileAccept} className="sr-only" onChange={(event) => { void selectInvoice(event.target.files?.[0]); event.currentTarget.value = "" }} />
             <button
               type="button"
               className={cn(
@@ -443,7 +495,7 @@ export function CustomsInvoiceImportWorkspace({
               {extractionError ? <span className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-[rgba(221,138,43,0.12)] px-2.5 py-1 text-[10px] font-medium text-[var(--md-amber)]"><CircleAlert className="size-3" />{t("Unable to import invoice")}</span> : null}
               <span className="mt-2 block text-[18px] font-medium tracking-[-0.015em]">{t(isDraggingInvoice ? "Release to import this invoice" : extractionError ? "Choose another commercial invoice" : "Drop a commercial invoice here")}</span>
               {extractionError ? <span className="mt-2 block max-w-xl text-[12px] leading-5 text-[var(--md-text)]" role="alert">{extractionError}</span> : null}
-              <span id="commercial-invoice-upload-detail" className="mt-2 block text-[12px] leading-5 text-[var(--md-text)]">{t("Drop a PDF here or click to choose one, up to 10 MB.")}</span>
+              <span id="commercial-invoice-upload-detail" className="mt-2 block text-[12px] leading-5 text-[var(--md-text)]">{t("PDF, Excel, CSV, Word or image, up to 10 MB.")}</span>
               <span id="commercial-invoice-upload-safety" className="mt-1 block max-w-xl text-[10px] leading-4 text-[var(--md-subtle)]">{t("Its item lines will appear for review before anything changes in the declaration.")}</span>
             </button>
           </Surface> : null}
@@ -455,14 +507,26 @@ export function CustomsInvoiceImportWorkspace({
               boxes={documentBoxes}
               activeBoxId={activeLineId}
               onSelectBox={focusLine}
-              title={t("Your invoice")}
+              title={t("Prepared document")}
               meta={<StatusPill>{documentBoxes.length} {t("of")} {lines.length} {t("located")}</StatusPill>}
               empty={t(recovered
-                ? "Your extracted lines and review choices were restored. The document preview is unavailable after returning."
+                ? "Your extracted lines and review choices were restored. The prepared document is loading."
                 : "The document preview is still being prepared.")}
             />
 
             <section className="flex min-w-0 flex-col gap-3" aria-label={t("Invoice line review")}>
+              {documentMetadata.sheets.length || documentMetadata.warnings.length ? <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
+                <div className="px-4 py-3">
+                  <h2 className="text-[12px] font-medium">{t("Prepared document")}</h2>
+                  {documentMetadata.sheets.some((sheet) => sheet.status === "included") ? <p className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10.5px] text-[var(--md-text)]">
+                    <span>{t("Included sheets")}:</span>
+                    {documentMetadata.sheets.filter((sheet) => sheet.status === "included").map((sheet) => <span key={sheet.name} dir="auto" className="rounded-full bg-[var(--md-surface-tint)] px-2 py-0.5 font-medium">{sheet.name}</span>)}
+                  </p> : null}
+                  {documentMetadata.warnings.length ? <ul className="mt-2 space-y-1 text-[10px] leading-4 text-[var(--md-amber)]">
+                    {documentMetadata.warnings.map((warning) => <li key={warning} className="flex items-start gap-1.5"><CircleAlert className="mt-0.5 size-3 shrink-0" /><span>{localizedDocumentWarning(warning, t)}</span></li>)}
+                  </ul> : null}
+                </div>
+              </Surface> : null}
               <Surface padding="none" className="overflow-hidden rounded-[var(--md-radius-xl)]">
                 <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
                   <span className="min-w-0">
@@ -858,4 +922,22 @@ function formatCurrency(value: number, currency: string) {
   return currency
     ? new Intl.NumberFormat(undefined, { style: "currency", currency }).format(value)
     : new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value)
+}
+
+function withoutPreview(document: InvoiceDocumentMetadata) {
+  const { previewUrl: _previewUrl, previewExpiresAt: _previewExpiresAt, ...persistable } = document
+  return persistable
+}
+
+function localizedDocumentWarning(warning: string, t: (text: string) => string) {
+  const hidden = warning.match(/^(\d+) hidden (?:sheet was|sheets were) not included\.$/)
+  if (hidden) return `${hidden[1]} ${t(Number(hidden[1]) === 1 ? "hidden sheet was not included" : "hidden sheets were not included")}.`
+  const empty = warning.match(/^(\d+) empty (?:sheet was|sheets were) skipped\.$/)
+  if (empty) return `${empty[1]} ${t(Number(empty[1]) === 1 ? "empty sheet was skipped" : "empty sheets were skipped")}.`
+  const formulas = warning.match(/^(\d+) (?:formula was|formulas were) not recalculated;/)
+  if (formulas) return `${formulas[1]} ${t(Number(formulas[1]) === 1 ? "formula used its saved displayed value" : "formulas used their saved displayed values")}.`
+  const missing = warning.match(/^(\d+) (?:formula has|formulas have) no saved result/)
+  if (missing) return `${missing[1]} ${t(Number(missing[1]) === 1 ? "formula has no saved result and needs checking" : "formulas have no saved result and need checking")}.`
+  if (warning.includes("content-safe layout")) return t("The spreadsheet was prepared in a content-safe layout so every visible cell can be reviewed.")
+  return t(warning)
 }

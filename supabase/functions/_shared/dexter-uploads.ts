@@ -12,8 +12,13 @@ const supportedFiles: Record<string, { mimeType: string; kind: "image" | "file" 
   ".pdf": { mimeType: "application/pdf", kind: "file" },
   ".txt": { mimeType: "text/plain", kind: "file" },
   ".csv": { mimeType: "text/csv", kind: "file" },
+  ".tsv": { mimeType: "text/tab-separated-values", kind: "file" },
+  ".doc": { mimeType: "application/msword", kind: "file" },
   ".docx": { mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", kind: "file" },
+  ".xls": { mimeType: "application/vnd.ms-excel", kind: "file" },
   ".xlsx": { mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", kind: "file" },
+  ".ods": { mimeType: "application/vnd.oasis.opendocument.spreadsheet", kind: "file" },
+  ".odt": { mimeType: "application/vnd.oasis.opendocument.text", kind: "file" },
   ".pptx": { mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation", kind: "file" },
   ".png": { mimeType: "image/png", kind: "image" },
   ".jpg": { mimeType: "image/jpeg", kind: "image" },
@@ -38,12 +43,13 @@ function validateSignature(bytes: Uint8Array, ext: string) {
     return startsWith(bytes, [0x52, 0x49, 0x46, 0x46])
       && String.fromCharCode(...bytes.slice(8, 12)) === "WEBP"
   }
-  if ([".docx", ".xlsx", ".pptx"].includes(ext)) {
+  if ([".docx", ".xlsx", ".pptx", ".ods", ".odt"].includes(ext)) {
     return startsWith(bytes, [0x50, 0x4b, 0x03, 0x04])
       || startsWith(bytes, [0x50, 0x4b, 0x05, 0x06])
       || startsWith(bytes, [0x50, 0x4b, 0x07, 0x08])
   }
-  if (ext === ".txt" || ext === ".csv") return !bytes.slice(0, 8_192).includes(0)
+  if (ext === ".doc" || ext === ".xls") return startsWith(bytes, [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])
+  if (ext === ".txt" || ext === ".csv" || ext === ".tsv") return !bytes.slice(0, 8_192).includes(0)
   return false
 }
 
@@ -53,7 +59,7 @@ function fileDefinition(fileName: string, bytes: Uint8Array) {
   if (!definition || !validateSignature(bytes, ext)) {
     throw new InboxHttpError(
       422,
-      "Dexter supports PDF, TXT, CSV, DOCX, XLSX, PPTX, PNG, JPEG and WebP files.",
+      "Dexter supports PDF, text, CSV, Excel, Word, OpenDocument, PowerPoint, PNG, JPEG and WebP files.",
       "upload_type_unsupported",
     )
   }
