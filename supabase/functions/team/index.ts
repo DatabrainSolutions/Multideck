@@ -135,13 +135,36 @@ Deno.serve(async (request) => {
         const { data: invite, error } = await admin.auth.admin.inviteUserByEmail(email, { redirectTo, data: { first_name: payload.firstName ?? null, last_name: payload.lastName ?? null } })
         if (error) throw new HttpError(400, error.message)
         authUserId = invite.user.id; invited = true
+
+        // The legacy auth trigger provisions a default workspace profile before
+        // inviteUserByEmail returns. Reconcile that fresh row into the inviting
+        // company instead of attempting to insert a duplicate profile.
+        const { data: provisionedProfile, error: provisionedProfileError } = await admin.from("cmp_Users").select("*").eq("Auth_User_ID", authUserId).maybeSingle()
+        if (provisionedProfileError) throw new HttpError(500, provisionedProfileError.message)
+        if (provisionedProfile && profile && provisionedProfile.User_ID !== profile.User_ID) {
+          const { error: provisionedOfficeError } = await admin.from("cmp_Users_Offices").delete().eq("User_ID", provisionedProfile.User_ID)
+          if (provisionedOfficeError) throw new HttpError(500, provisionedOfficeError.message)
+          const { error: provisionedRoleError } = await admin.from("cmp_Users_Roles").delete().eq("User_ID", provisionedProfile.User_ID)
+          if (provisionedRoleError) throw new HttpError(500, provisionedRoleError.message)
+          const { error: provisionedProfileDeleteError } = await admin.from("cmp_Users").delete().eq("User_ID", provisionedProfile.User_ID)
+          if (provisionedProfileDeleteError) throw new HttpError(500, provisionedProfileDeleteError.message)
+        } else if (provisionedProfile) {
+          profile = provisionedProfile
+        }
       }
       const row = { Company_ID: current.Company_ID, User_Email: email, User_Firstname: payload.firstName?.trim() || null, User_Lastname: payload.lastName?.trim() || null, Auth_User_ID: authUserId }
-      if (profile) await admin.from("cmp_Users").update(row).eq("User_ID", profile.User_ID)
+      if (profile) { const updated = await admin.from("cmp_Users").update(row).eq("User_ID", profile.User_ID); if (updated.error) throw new HttpError(500, updated.error.message) }
       else { const created = await admin.from("cmp_Users").insert(row).select().single(); if (created.error) throw new HttpError(500, created.error.message); profile = created.data }
-      await admin.from("cmp_Users_Offices").delete().eq("User_ID", profile.User_ID)
-      await admin.from("cmp_Users_Offices").insert({ User_ID: profile.User_ID, Office_ID: office.Office_ID })
-      if (payload.roleId) { await admin.from("cmp_Users_Roles").delete().eq("User_ID", profile.User_ID); await admin.from("cmp_Users_Roles").insert({ User_ID: profile.User_ID, sys_UserRole_ID: payload.roleId }) }
+      const { error: officeDeleteError } = await admin.from("cmp_Users_Offices").delete().eq("User_ID", profile.User_ID)
+      if (officeDeleteError) throw new HttpError(500, officeDeleteError.message)
+      const { error: officeInsertError } = await admin.from("cmp_Users_Offices").insert({ User_ID: profile.User_ID, Office_ID: office.Office_ID })
+      if (officeInsertError) throw new HttpError(500, officeInsertError.message)
+      if (payload.roleId) {
+        const { error: roleDeleteError } = await admin.from("cmp_Users_Roles").delete().eq("User_ID", profile.User_ID)
+        if (roleDeleteError) throw new HttpError(500, roleDeleteError.message)
+        const { error: roleInsertError } = await admin.from("cmp_Users_Roles").insert({ User_ID: profile.User_ID, sys_UserRole_ID: payload.roleId })
+        if (roleInsertError) throw new HttpError(500, roleInsertError.message)
+      }
       profile = (await admin.from("cmp_Users").select("*").eq("User_ID", profile.User_ID).single()).data
       return json(request, { user: await userDto(admin, profile), company: { id: current.Company_ID, name: (await admin.from("cmp_Company").select("Company_Name").eq("Company_ID", current.Company_ID).single()).data.Company_Name }, office: { id: office.Office_ID, name: office.Office_Name, address: office.Office_Address }, invited }, 201)
     }

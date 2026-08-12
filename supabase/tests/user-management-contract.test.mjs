@@ -36,6 +36,8 @@ test("invitations are host-aware and cannot redirect to an arbitrary origin", ()
   assert.match(team, /`\$\{appOrigin\}\/auth\?mode=invite`/)
   assert.match(backend, /hostname\.endsWith\("\.multideck\.app"\)/)
   assert.match(api, /appOrigin: string/)
+  assert.match(team, /legacy auth trigger provisions a default workspace profile/)
+  assert.match(team, /eq\("Auth_User_ID", authUserId\)\.maybeSingle\(\)/)
 })
 
 test("the branded invite explicitly hands users to password creation", () => {
