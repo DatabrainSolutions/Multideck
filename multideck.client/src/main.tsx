@@ -2,6 +2,7 @@ import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import App from "./App"
 import { ensureAccentApplied, ensureAccentPreferenceLoaded } from "./lib/accent-theme"
+import { installDeploymentPreloadRecovery } from "./lib/deployment-recovery"
 import "./styles.css"
 
 // Before the first render, so the saved accent is already on the page rather than
@@ -9,6 +10,7 @@ import "./styles.css"
 // step earlier still, by the blocking script in index.html.
 ensureAccentApplied()
 void ensureAccentPreferenceLoaded()
+installDeploymentPreloadRecovery()
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
