@@ -32,6 +32,7 @@ export type ICustomsDeclarationState = {
   id: string
   reference: string | null
   status: string
+  correlationId: string | null
   hasCustomsDraft: boolean
   provider: ICustomsSubmissionState | null
 }
@@ -138,6 +139,19 @@ export function saveICustomsProviderDraft(declarationId: string, idempotencyKey:
   return request<ProviderMutationResult>(`/declarations/${encodeURIComponent(declarationId)}/provider-draft`, {
     method: "POST",
     body: JSON.stringify({ idempotencyKey }),
+  })
+}
+
+export function startICustomsProviderDraft(declarationId: string, idempotencyKey: string) {
+  return request<ProviderMutationResult>(`/declarations/${encodeURIComponent(declarationId)}/provider-draft-start`, {
+    method: "POST",
+    body: JSON.stringify({ idempotencyKey }),
+  })
+}
+
+export function deleteICustomsProviderDraft(declarationId: string) {
+  return request<{ deleted: true; providerDeleted: boolean }>(`/declarations/${encodeURIComponent(declarationId)}/provider-draft`, {
+    method: "DELETE",
   })
 }
 

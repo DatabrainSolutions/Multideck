@@ -600,6 +600,44 @@ async function customsProviderActionFetch(
   }
 }
 
+async function startCustomsProviderDraftFetch(
+  authorization: string,
+  targetId: string,
+  executionKey: string,
+) {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")?.trim() ?? ""
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY")?.trim() ?? ""
+  try {
+    const response = await fetch(
+      `${supabaseUrl}/functions/v1/icustoms-api/declarations/${encodeURIComponent(targetId)}/provider-draft-start`,
+      {
+        method: "POST",
+        headers: { Authorization: authorization, apikey: anonKey, "Content-Type": "application/json" },
+        body: JSON.stringify({ idempotencyKey: `dexter:start:${executionKey}` }),
+      },
+    )
+    const payload = await response.json().catch(() => ({}))
+    return response.ok
+      ? { data: payload, error: null }
+      : {
+        data: null,
+        error: {
+          code: `icustoms_${response.status}`,
+          message: cleanString(payload?.detail, 300)
+            || "The iCustoms draft could not be created. Your work remains saved in Multideck for recovery.",
+        },
+      }
+  } catch {
+    return {
+      data: null,
+      error: {
+        code: "icustoms_unavailable",
+        message: "The iCustoms draft could not be created. Your work remains saved in Multideck for recovery.",
+      },
+    }
+  }
+}
+
 function warehouseActionPayload(args: JsonObject) {
   return Object.fromEntries(Object.entries(args).filter(([key, value]) => (
     key !== "target_id" && key !== "reason" && value !== null
@@ -776,11 +814,26 @@ async function executeWorkspaceAction(
   if (CUSTOMS_DRAFT_ACTIONS.has(actionCode)) {
     const normalised = customsDraftPayload(actionCode, args)
     if (normalised.error || !normalised.data) return normalised
-    return await userClient.rpc("multideck_dexter_execute_action", {
+    const saved = await userClient.rpc("multideck_dexter_execute_action", {
       p_action: actionCode,
       p_arguments: normalised.data,
       p_access_mode: accessMode,
     })
+    if (saved.error || actionCode !== CREATE_CUSTOMS_DECLARATION_ACTION) return saved
+    const savedRecord = isObject(saved.data) && isObject(saved.data.result) ? saved.data.result : null
+    const recordId = cleanString(savedRecord?.recordId, 80)
+    if (!isUuid(recordId)) {
+      return {
+        data: null,
+        error: {
+          code: "customs_draft_result_invalid",
+          message: "The Customs recovery record was saved, but Dexter could not start its iCustoms draft.",
+        },
+      }
+    }
+    const provider = await startCustomsProviderDraftFetch(authorization, recordId, executionKey)
+    if (provider.error) return provider
+    return { data: { ...saved.data, provider: provider.data }, error: null }
   }
 
   if (actionCode === SAVE_CUSTOMS_PROVIDER_DRAFT_ACTION || actionCode === SUBMIT_CUSTOMS_DECLARATION_ACTION) {
@@ -1295,7 +1348,7 @@ Check origin, destination, commodity description, HS classification, value and c
 Separate confirmed facts, missing evidence and professional judgement. Never infer clearance, admissibility, duty, tax, sanctions status, licence requirements or an HS code from incomplete evidence.
 Name the relevant jurisdiction when it is known. Treat legal, tax, sanctions, dangerous goods and classification guidance as operational support, not legal certainty.
 The dedicated commercial-invoice importer remains the safest route when item lines must be overlaid on the exact prepared PDF and individually reviewed before they change a customs declaration. It accepts PDF, Excel, CSV, Word, OpenDocument and image invoices through the same content-safe document normaliser used by Dexter. Dexter chat can also extract read-only evidence from those operator-uploaded formats with its listed document tool, then use only an available allowlisted workspace action. It cannot bypass declaration review or claim a destination change succeeded without a successful action result. Temporary upload, conversion and OCR states are explicitly not meaningful watch events; Watching for you follows the destination record only after an applied change emits its normal deterministic event.
-Customs declaration records and their latest recorded iCustoms submission state are connected through the customs_declarations data domain. Dexter may inspect, create and edit operator-owned UK CDS import and export drafts through its listed actions, and watch one exact declaration. For a create or edit action, put every known header and goods-line field into draft_json as one valid JSON object; use only source-backed values, preserve unknown fields when editing, and never invent a commodity code, customs value, party identifier, licence or previous-document reference. Dexter can validate and save an exact current declaration as an iCustoms draft. It can submit only after a separate, explicit in-chat approval, including when the operator has Full access; that approval sends the declaration once to the configured iCustoms environment. Deleting a Customs draft is intentionally not available to Dexter: direct the operator to the declaration register, where destructive inline confirmation is required. Deleting an abandoned, unsubmitted draft is not a meaningful Watching for you event. Never imply that saving an iCustoms draft, seeing a queued submission, or submitting it proves the declaration was accepted.
+Customs declaration records and their latest recorded iCustoms submission state are connected through the customs_declarations data domain. Dexter may inspect, create and edit operator-owned UK CDS import and export drafts through its listed actions, and watch one exact declaration. Creating a declaration also creates its editable iCustoms draft; it does not submit anything to HMRC. For a create or edit action, put every known header and goods-line field into draft_json as one valid JSON object; use only source-backed values, preserve unknown fields when editing, and never invent a commodity code, customs value, party identifier, licence or previous-document reference. Dexter can validate and save an exact current declaration as an iCustoms draft. It can submit only after a separate, explicit in-chat approval, including when the operator has Full access; that approval sends the declaration once to the configured iCustoms environment. Deleting a Customs draft is intentionally not available to Dexter: direct the operator to the declaration register, where destructive inline confirmation is required. Deleting an abandoned, unsubmitted draft is not a meaningful Watching for you event. Never imply that saving an iCustoms draft, seeing a queued submission, or submitting it proves the declaration was accepted.
 Live iCustoms commodity suggestions, tariff measures and certificate options deliberately require operator review in the goods-line Commodity assistant and are not callable from Dexter. If asked to run that lookup, say so clearly and direct the operator to Find commodity code on the exact goods line; do not guess or reproduce a stale result. The lookup itself creates no persisted business event, so Watching for you begins only after the operator applies and saves the declaration change through the normal Customs workflow.
 Structure substantial answers as current position, blocker or exposure, evidence needed, then safest next operational step.`,
   ops: `## Operations and exceptions specialist
@@ -1951,11 +2004,11 @@ function preparedActionDescription(
     const draftLabel = direction === "import" ? "import" : direction === "export" ? "export" : "Customs"
     const isCreate = actionCode === CREATE_CUSTOMS_DECLARATION_ACTION
     return sanitiseAnswer({
-      "en-GB": `${isCreate ? "Create" : "Save changes to"} this ${draftLabel} Customs draft${itemCount === null ? "" : ` with ${itemCount} goods item${itemCount === 1 ? "" : "s"}`}. It will remain a Multideck draft and will not be sent to iCustoms.`,
-      "en-US": `${isCreate ? "Create" : "Save changes to"} this ${draftLabel} Customs draft${itemCount === null ? "" : ` with ${itemCount} goods item${itemCount === 1 ? "" : "s"}`}. It will remain a Multideck draft and will not be sent to iCustoms.`,
-      de: `${isCreate ? "Erstelle" : "Speichere Änderungen an"} diesem ${draftLabel === "import" ? "Einfuhr" : draftLabel === "export" ? "Ausfuhr" : "Zoll"}-Anmeldungsentwurf${itemCount === null ? "" : ` mit ${itemCount} Warenposition${itemCount === 1 ? "" : "en"}`}. Er bleibt ein Multideck-Entwurf und wird nicht an iCustoms gesendet.`,
-      fr: `${isCreate ? "Créer" : "Enregistrer les modifications de"} ce brouillon de déclaration ${draftLabel === "import" ? "d'importation" : draftLabel === "export" ? "d'exportation" : "en douane"}${itemCount === null ? "" : ` avec ${itemCount} article${itemCount === 1 ? "" : "s"}`}. Il reste dans Multideck et n'est pas envoyé à iCustoms.`,
-      ar: `${isCreate ? "إنشاء" : "حفظ تعديلات"} مسودة إقرار ${draftLabel === "import" ? "استيراد" : draftLabel === "export" ? "تصدير" : "جمركي"}${itemCount === null ? "" : ` مع ${itemCount} من بنود البضائع`}. ستبقى مسودة في Multideck ولن يتم إرسالها إلى iCustoms.`,
+      "en-GB": `${isCreate ? "Create" : "Save changes to"} this ${draftLabel} Customs draft${itemCount === null ? "" : ` with ${itemCount} goods item${itemCount === 1 ? "" : "s"}`}.${isCreate ? " This creates its editable iCustoms draft but does not submit anything to HMRC." : " This updates the Multideck recovery record; submitting to HMRC remains a separate approved action."}`,
+      "en-US": `${isCreate ? "Create" : "Save changes to"} this ${draftLabel} Customs draft${itemCount === null ? "" : ` with ${itemCount} goods item${itemCount === 1 ? "" : "s"}`}.${isCreate ? " This creates its editable iCustoms draft but does not submit anything to HMRC." : " This updates the Multideck recovery record; submitting to HMRC remains a separate approved action."}`,
+      de: `${isCreate ? "Erstelle" : "Speichere Änderungen an"} diesem ${draftLabel === "import" ? "Einfuhr" : draftLabel === "export" ? "Ausfuhr" : "Zoll"}-Anmeldungsentwurf${itemCount === null ? "" : ` mit ${itemCount} Warenposition${itemCount === 1 ? "" : "en"}`}.${isCreate ? " Dadurch wird der bearbeitbare iCustoms-Entwurf erstellt, aber nichts an HMRC übermittelt." : " Dadurch wird der Multideck-Wiederherstellungsdatensatz aktualisiert; die Übermittlung an HMRC bleibt eine separate genehmigte Aktion."}`,
+      fr: `${isCreate ? "Créer" : "Enregistrer les modifications de"} ce brouillon de déclaration ${draftLabel === "import" ? "d'importation" : draftLabel === "export" ? "d'exportation" : "en douane"}${itemCount === null ? "" : ` avec ${itemCount} article${itemCount === 1 ? "" : "s"}`}.${isCreate ? " Cela crée son brouillon iCustoms modifiable sans rien soumettre au HMRC." : " Cela met à jour la copie de récupération Multideck ; la soumission au HMRC reste une action approuvée distincte."}`,
+      ar: `${isCreate ? "إنشاء" : "حفظ تعديلات"} مسودة إقرار ${draftLabel === "import" ? "استيراد" : draftLabel === "export" ? "تصدير" : "جمركي"}${itemCount === null ? "" : ` مع ${itemCount} من بنود البضائع`}.${isCreate ? " سيؤدي ذلك إلى إنشاء مسودة iCustoms قابلة للتعديل دون تقديم أي شيء إلى HMRC." : " سيؤدي ذلك إلى تحديث سجل الاسترداد في Multideck؛ ويظل التقديم إلى HMRC إجراءً منفصلاً يتطلب الموافقة."}`,
     }[locale])
   }
   if (actionCode === SAVE_CUSTOMS_PROVIDER_DRAFT_ACTION) {

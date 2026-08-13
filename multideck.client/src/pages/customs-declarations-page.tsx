@@ -31,11 +31,11 @@ import {
   type StandaloneExportDraft,
 } from "@/lib/customs-declaration"
 import { createEmptyCustomsReferenceData, useCustomsReferenceData, type CustomsCatalogCode, type CustomsReferenceData } from "@/lib/customs-reference-data"
-import { deleteCustomsDeclarationDraft, listJobRelatedDeclarationDrafts, listStandaloneDeclarationDrafts, loadStandaloneDeclarationDraft, reopenRejectedCustomsDeclaration, saveStandaloneDeclarationDraft, type CustomsDraftSummary } from "@/lib/customs-drafts-api"
+import { listJobRelatedDeclarationDrafts, listStandaloneDeclarationDrafts, loadStandaloneDeclarationDraft, reopenRejectedCustomsDeclaration, saveStandaloneDeclarationDraft, type CustomsDraftSummary } from "@/lib/customs-drafts-api"
 import { hasCustomsInvoiceImportRecovery, moveCustomsInvoiceImportRecovery } from "@/lib/customs-invoice-import-recovery"
 import { fetchCustomsDeclarationPdf, getCustomsDeclarationDocument, type CustomsDeclarationDocument } from "@/lib/customs-declaration-document-api"
 import { customsStatusPollDelay, isTerminalCustomsStatus, shouldPollCustomsStatus, shouldPollCustomsSubmission } from "@/lib/customs-status-lifecycle"
-import { getICustomsCommodityDetails, getICustomsDeclarationState, ICustomsApiError, refreshICustomsDeclaration, saveICustomsProviderDraft, searchICustomsCommodities, submitICustomsDeclaration, validateICustomsDeclaration, type ICustomsCommodityCertificate, type ICustomsCommodityDetail, type ICustomsCommoditySuggestion, type ICustomsProviderIssue, type ICustomsWorkspaceState } from "@/lib/icustoms-api"
+import { deleteICustomsProviderDraft, getICustomsCommodityDetails, getICustomsDeclarationState, ICustomsApiError, refreshICustomsDeclaration, saveICustomsProviderDraft, searchICustomsCommodities, startICustomsProviderDraft, submitICustomsDeclaration, validateICustomsDeclaration, type ICustomsCommodityCertificate, type ICustomsCommodityDetail, type ICustomsCommoditySuggestion, type ICustomsProviderIssue, type ICustomsWorkspaceState } from "@/lib/icustoms-api"
 import { mdMotion, reduceMotion } from "@/lib/motion"
 import iCustomsLogo from "@/assets/integrations/icustoms.svg"
 
@@ -98,18 +98,16 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, current
   const [destinationFilter, setDestinationFilter] = useState("")
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null)
   const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null)
+  const [contextDeleteDraft, setContextDeleteDraft] = useState<CustomsDraftSummary | null>(null)
 
-  const requestDelete = useCallback(async (draft: CustomsDraftSummary) => {
+  const deleteDraft = useCallback(async (draft: CustomsDraftSummary) => {
     if (draft.status.toLocaleLowerCase() !== "draft" || deletingDraftId) return
-    if (confirmingDeleteId !== draft.id) {
-      setConfirmingDeleteId(draft.id)
-      return
-    }
     setDeletingDraftId(draft.id)
     try {
-      await deleteCustomsDeclarationDraft(draft.id)
+      await deleteICustomsProviderDraft(draft.id)
       setDrafts((current) => current.filter((candidate) => candidate.id !== draft.id))
       setConfirmingDeleteId(null)
+      setContextDeleteDraft(null)
       toast.success(t("Draft deleted"), { description: draft.reference })
     } catch (reason) {
       console.error("The Customs draft could not be deleted.", reason)
@@ -119,7 +117,16 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, current
     } finally {
       setDeletingDraftId(null)
     }
-  }, [confirmingDeleteId, deletingDraftId, t])
+  }, [deletingDraftId, t])
+
+  const requestDelete = useCallback((draft: CustomsDraftSummary) => {
+    if (draft.status.toLocaleLowerCase() !== "draft" || deletingDraftId) return
+    if (confirmingDeleteId !== draft.id) {
+      setConfirmingDeleteId(draft.id)
+      return
+    }
+    void deleteDraft(draft)
+  }, [confirmingDeleteId, deleteDraft, deletingDraftId])
 
   useEffect(() => {
     let cancelled = false
@@ -304,11 +311,11 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, current
               <ContextMenuPrimitive.Item
                 disabled={draft.status.toLocaleLowerCase() !== "draft" || deletingDraftId === draft.id}
                 className="md-sidebar-menu-item group/menu flex h-9 cursor-default select-none items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2 text-[13px] font-medium text-[var(--md-text)] outline-none transition-[background,color] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] data-[disabled]:opacity-40 data-[highlighted]:bg-[color-mix(in_srgb,var(--md-red)_9%,transparent)] data-[highlighted]:text-[var(--md-red)]"
-                onSelect={() => void requestDelete(draft)}
+                onSelect={() => setContextDeleteDraft(draft)}
               >
                 <span className="md-sidebar-menu-item__icon grid size-5 shrink-0 place-items-center text-[var(--md-subtle)] transition-colors duration-150 group-data-[highlighted]/menu:text-[var(--md-red)]"><Trash2 className="size-4" strokeWidth={1.3} /></span>
                 <span className="min-w-0 flex-1 truncate text-start">{t("Delete draft")}</span>
-                <span className="shrink-0 text-[11px] font-normal text-[var(--md-subtle)]">{t(draft.status.toLocaleLowerCase() === "draft" ? "Confirm in row" : "Drafts only")}</span>
+                <span className="shrink-0 text-[11px] font-normal text-[var(--md-subtle)]">{t(draft.status.toLocaleLowerCase() === "draft" ? "Confirmation required" : "Drafts only")}</span>
               </ContextMenuPrimitive.Item>
             </ContextMenuPrimitive.Content>
           </ContextMenuPrimitive.Portal>
@@ -373,6 +380,19 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, current
           </div>
         )}
       />
+      <Dialog open={Boolean(contextDeleteDraft)} onOpenChange={(open) => { if (!open && !deletingDraftId) setContextDeleteDraft(null) }}>
+        <DialogContent className="sm:max-w-[440px]">
+          <DialogHeader>
+            <DialogTitle>{t("Delete this draft?")}</DialogTitle>
+            <DialogDescription>{t("This deletes the draft from iCustoms and removes its Multideck recovery record. Submitted declarations are kept for audit.")}</DialogDescription>
+          </DialogHeader>
+          {contextDeleteDraft ? <p className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 py-2 text-[12px] font-medium tabular-nums text-[var(--md-ink)]" dir="ltr">{contextDeleteDraft.reference}</p> : null}
+          <DialogFooter>
+            <Button type="button" variant="ghost" disabled={Boolean(deletingDraftId)} onClick={() => setContextDeleteDraft(null)}>{t("Cancel")}</Button>
+            <Button type="button" disabled={!contextDeleteDraft || Boolean(deletingDraftId)} className="bg-[var(--md-red)] text-white hover:opacity-90" onClick={() => { if (contextDeleteDraft) void deleteDraft(contextDeleteDraft) }}>{deletingDraftId ? t("Deleting") : t("Delete draft")}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -517,10 +537,11 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
   const [validated, setValidated] = useState(false)
   const invoiceImportRecoveryKey = declarationId ?? "new"
   const [invoiceImportOpen, setInvoiceImportOpen] = useState(() => hasCustomsInvoiceImportRecovery(invoiceImportRecoveryKey))
-  const [loadingDraft, setLoadingDraft] = useState(true)
+  const [loadingDraft, setLoadingDraft] = useState(Boolean(declarationId))
   const [draftLoadError, setDraftLoadError] = useState<string | null>(null)
   const [draftLoadAttempt, setDraftLoadAttempt] = useState(0)
   const [savingDraft, setSavingDraft] = useState(false)
+  const [creatingInitialDraft, setCreatingInitialDraft] = useState(!declarationId)
   const [autosaveStatus, setAutosaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle")
   const [iCustomsState, setICustomsState] = useState<ICustomsWorkspaceState | null>(null)
   const [iCustomsBusy, setICustomsBusy] = useState<"loading" | "draft" | "submit" | "refresh" | null>(declarationId ? "loading" : null)
@@ -539,6 +560,7 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
   const pdfLoadInFlightRef = useRef<Promise<{ document: CustomsDeclarationDocument; blob: Blob }> | null>(null)
   const pdfAutoLoadAttemptedForRef = useRef<string | null>(null)
   const initialDraftCreationRef = useRef(false)
+  const initialDraftServerRef = useRef<{ id: string; reference: string } | null>(null)
   const lastSavedDraftSnapshotRef = useRef<string | null>(null)
   const draftRef = useRef(draft)
   const autosaveQueueRef = useRef<Promise<void>>(Promise.resolve())
@@ -576,24 +598,39 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
     if (declarationId || initialDraftCreationRef.current) return
     let cancelled = false
     initialDraftCreationRef.current = true
-    setLoadingDraft(true)
+    setCreatingInitialDraft(true)
     setDraftLoadError(null)
     setAutosaveStatus("saving")
-    saveStandaloneDeclarationDraft(draftRef.current)
-      .then((saved) => {
+    const createInitialDraft = async () => {
+      try {
+        const saved = initialDraftServerRef.current ?? await saveStandaloneDeclarationDraft(draftRef.current)
         if (cancelled) return
+        initialDraftServerRef.current = saved
         moveCustomsInvoiceImportRecovery("new", saved.id)
-        lastSavedDraftSnapshotRef.current = JSON.stringify({ ...draftRef.current, multideckReference: saved.reference })
+        let savedSnapshot = ""
+        do {
+          const latestDraft = { ...draftRef.current, multideckReference: saved.reference }
+          savedSnapshot = JSON.stringify(latestDraft)
+          await saveStandaloneDeclarationDraft(latestDraft, saved.id)
+        } while (!cancelled && JSON.stringify({ ...draftRef.current, multideckReference: saved.reference }) !== savedSnapshot)
+        if (cancelled) return
+        lastSavedDraftSnapshotRef.current = savedSnapshot
+        setDraft((current) => current.multideckReference === saved.reference ? current : { ...current, multideckReference: saved.reference })
         setAutosaveStatus("saved")
+        setCreatingInitialDraft(false)
+        void startICustomsProviderDraft(saved.id, `start-${saved.id}`).catch((reason: unknown) => {
+          console.error("The initial iCustoms draft could not be created.", reason)
+        })
         navigate(`${registerPath}/${saved.id}`)
-      })
-      .catch((reason: unknown) => {
+      } catch (reason) {
         console.error("The initial Customs draft could not be created.", reason)
         if (cancelled) return
         setDraftLoadError(reason instanceof Error ? reason.message : "The Customs draft could not be started.")
         setAutosaveStatus("error")
-        setLoadingDraft(false)
-      })
+        setCreatingInitialDraft(false)
+      }
+    }
+    void createInitialDraft()
     return () => { cancelled = true }
   }, [declarationId, draftLoadAttempt, navigate, registerPath])
 
@@ -636,6 +673,20 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
       })
     return () => { cancelled = true }
   }, [declarationId])
+
+  useEffect(() => {
+    if (!declarationId || iCustomsState?.declaration.hasCustomsDraft || iCustomsState?.declaration.provider?.status !== "queued") return
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      getICustomsDeclarationState(declarationId)
+        .then((state) => { if (!cancelled) setICustomsState(state) })
+        .catch((reason: unknown) => console.error("The starting iCustoms draft could not be refreshed.", reason))
+    }, 650)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [declarationId, iCustomsState?.declaration.hasCustomsDraft, iCustomsState?.declaration.provider?.status])
 
   function update<K extends keyof StandaloneExportDraft>(field: K, value: StandaloneExportDraft[K]) {
     setDraft((current) => ({ ...current, [field]: value }))
@@ -744,14 +795,20 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
         const state = await getICustomsDeclarationState(saved.id)
         setICustomsState(state)
         toast.success(t("Draft saved and customs test draft updated"), { description: saved.reference })
+      } else if (!iCustomsState?.declaration.hasCustomsDraft) {
+        setICustomsBusy("draft")
+        await startICustomsProviderDraft(saved.id, `start-${saved.id}`)
+        const state = await getICustomsDeclarationState(saved.id)
+        setICustomsState(state)
+        toast.success(t("Draft saved and iCustoms draft created"), { description: saved.reference })
       } else {
         toast.success(t("Draft saved"), { description: saved.reference })
       }
       navigate(registerPath)
     } catch (reason) {
       console.error("The Customs draft or its provider mirror could not be saved.", reason)
-      if (savedLocally && iCustomsState?.declaration.hasCustomsDraft) {
-        toast.error(t("Saved in Multideck, but the customs update failed"), { description: t(reason instanceof Error ? reason.message : "Try saving again before submission.") })
+      if (savedLocally) {
+        toast.error(t("Your work is saved for recovery, but the iCustoms draft failed"), { description: t(reason instanceof Error ? reason.message : "Retry the iCustoms draft before submission.") })
       } else {
         toast.error(t("Draft could not be saved"), { description: t("Your changes remain on screen. Try saving again.") })
       }
@@ -763,7 +820,8 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
 
   async function createOrUpdateICustomsDraft() {
     if (iCustomsBusy || savingDraft) return
-    if (completion.issues.length) {
+    const hasProviderDraft = Boolean(iCustomsState?.declaration.hasCustomsDraft)
+    if (hasProviderDraft && completion.issues.length) {
       validate()
       return
     }
@@ -776,6 +834,14 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
       const saved = await saveStandaloneDeclarationDraft(draft, declarationId)
       moveCustomsInvoiceImportRecovery(invoiceImportRecoveryKey, saved.id)
       setDraft((current) => ({ ...current, multideckReference: saved.reference }))
+      if (!hasProviderDraft) {
+        const result = await startICustomsProviderDraft(saved.id, `start-${saved.id}`)
+        const state = await getICustomsDeclarationState(saved.id)
+        setICustomsState(state)
+        toast.success(t(result.idempotentReplay ? "iCustoms draft ready" : "iCustoms draft created"), { description: saved.reference })
+        if (!declarationId) navigate(`${registerPath}/${saved.id}`)
+        return
+      }
       const validation = await validateICustomsDeclaration(saved.id)
       if (!validation.ready) {
         setICustomsIssues(validation.issues)
@@ -1014,8 +1080,8 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
     return <Surface padding="lg" className="rounded-[var(--md-radius-xl)]"><p role="status" className="text-[13px] text-[var(--md-text)]">{t(declarationId ? "Loading saved declaration" : "Starting your draft")}</p></Surface>
   }
 
-  if (draftLoadError) {
-    return <Surface padding="lg" className="rounded-[var(--md-radius-xl)]"><CircleAlert className="size-5 text-[var(--md-red)]" /><h1 className="mt-3 text-[18px] font-medium text-[var(--md-ink)]">{t(declarationId ? "Saved declaration unavailable" : "Draft could not be started")}</h1><p className="mt-2 text-[12px] text-[var(--md-text)]">{t(declarationId ? "Your saved declaration is still intact. Try loading it again." : "No work has been lost. Check your connection and try again.")}</p><div className="mt-4 flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={() => { if (!declarationId) initialDraftCreationRef.current = false; setDraftLoadAttempt((attempt) => attempt + 1) }}><RefreshCw className="size-4" />{t("Try again")}</Button><Button type="button" variant="ghost" onClick={() => navigate(registerPath)}>{t("Back to standalone declarations")}</Button></div></Surface>
+  if (draftLoadError && declarationId) {
+    return <Surface padding="lg" className="rounded-[var(--md-radius-xl)]"><CircleAlert className="size-5 text-[var(--md-red)]" /><h1 className="mt-3 text-[18px] font-medium text-[var(--md-ink)]">{t("Saved declaration unavailable")}</h1><p className="mt-2 text-[12px] text-[var(--md-text)]">{t("Your saved declaration is still intact. Try loading it again.")}</p><div className="mt-4 flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={() => setDraftLoadAttempt((attempt) => attempt + 1)}><RefreshCw className="size-4" />{t("Try again")}</Button><Button type="button" variant="ghost" onClick={() => navigate(registerPath)}>{t("Back to standalone declarations")}</Button></div></Surface>
   }
 
   return (
@@ -1060,9 +1126,9 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
           >
             {autosaveStatus === "saving" ? t("Saving automatically") : autosaveStatus === "saved" ? t("All changes saved") : autosaveStatus === "error" ? t("Changes could not be saved") : null}
           </span>
-          {autosaveStatus === "error" ? <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-[11px]" onClick={() => void queueAutosave(draft)}><RefreshCw className="size-3.5" />{t("Retry save")}</Button> : null}
+          {autosaveStatus === "error" ? <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-[11px]" onClick={() => { if (!declarationId) { initialDraftCreationRef.current = false; setDraftLoadAttempt((attempt) => attempt + 1); return } void queueAutosave(draft) }}><RefreshCw className="size-3.5" />{t("Retry save")}</Button> : null}
           <Button type="button" variant="ghost" size="sm" className="h-9 bg-black px-3 text-white shadow-none hover:bg-black/80 hover:text-white" disabled={!declarationPdfAvailable || pdfBusy} onClick={() => void openDeclarationPdf()}><FileText className="size-3.5" />{t(pdfBusy ? "Preparing declaration" : pdfLoadError ? "Retry declaration" : "View declaration")}</Button>
-          <Button type="button" variant="outline" size="sm" className="h-9" disabled={savingDraft} onClick={() => void saveDraft()}>{t(savingDraft ? "Saving draft" : "Save draft")}</Button>
+          <Button type="button" variant="outline" size="sm" className="h-9" disabled={savingDraft || creatingInitialDraft} onClick={() => void saveDraft()}>{t(savingDraft ? "Saving draft" : "Save draft")}</Button>
           <Button type="button" size="sm" className="h-9" onClick={validate}><FileCheck2 className="size-3.5" />{t("Validate")}</Button>
         </div>
       </div>
@@ -2184,8 +2250,9 @@ function ReviewSection({ draft, completion, iCustomsState, iCustomsBusy, iCustom
   const providerAccepted = ["accepted", "released", "cleared"].includes(provider?.status ?? "")
   const connectionUnavailable = iCustomsState?.connection.configured === false
   const providerIssues = provider?.issues ?? []
-  const providerDeclarationUrl = hasProviderDraft && draft.iCustomsCorrelationId
-    ? iCustomsDeclarationUrl(draft.direction, draft.iCustomsCorrelationId, iCustomsState?.connection.environment ?? "sandbox")
+  const providerCorrelationId = iCustomsState?.declaration.correlationId ?? draft.iCustomsCorrelationId
+  const providerDeclarationUrl = hasProviderDraft && providerCorrelationId
+    ? iCustomsDeclarationUrl(draft.direction, providerCorrelationId, iCustomsState?.connection.environment ?? "sandbox")
     : null
 
   const reviewIssues = heldIssue && !completion.issues.some((issue) => issue.id === heldIssue.id)
@@ -2238,7 +2305,7 @@ function ReviewSection({ draft, completion, iCustomsState, iCustomsBusy, iCustom
 
         {iCustomsBusy === "loading" ? <p className="mt-4 text-[12px] text-[var(--md-subtle)]">{t("Checking the customs connection")}</p> : null}
         {connectionUnavailable ? <div role="alert" className="mt-4 flex gap-2 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-amber)_10%,transparent)] p-3 text-[12px] text-[var(--md-text)]"><CircleAlert className="mt-0.5 size-4 shrink-0 text-[var(--md-amber)]" /><span>{t("The customs test connection is not configured on the server yet.")}</span></div> : null}
-        {provider ? <dl className="mt-4 divide-y divide-[var(--md-line)] border-y border-[var(--md-line)]"><Summary label={t("Submission status")} value={t(titleCase(provider.status))} />{provider.mrn ? <Summary label="MRN" value={provider.mrn} /> : null}{provider.updatedAt ? <Summary label={t("Last customs update")} value={new Date(provider.updatedAt).toLocaleString()} /> : null}</dl> : null}
+        {provider ? <dl className="mt-4 divide-y divide-[var(--md-line)] border-y border-[var(--md-line)]"><Summary label={t("iCustoms draft status")} value={t(provider.status === "queued" ? "Starting" : titleCase(provider.status))} />{provider.mrn ? <Summary label="MRN" value={provider.mrn} /> : null}{provider.updatedAt ? <Summary label={t("Last customs update")} value={new Date(provider.updatedAt).toLocaleString()} /> : null}</dl> : null}
         {providerAwaitingResponse ? <div role="status" aria-live="polite" className="mt-4 flex gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-accent-a10)] p-3 text-[12px] text-[var(--md-text)]"><RefreshCw className={cn("mt-0.5 size-4 shrink-0 text-[var(--md-accent)]", statusLifecycle.phase === "checking" && "animate-spin motion-reduce:animate-none")} /><span><strong className="block text-[var(--md-ink)]">{t(statusLifecycle.phase === "timed-out" ? "Customs response is taking longer than expected" : "Waiting for the customs response")}</strong>{t(statusLifecycle.phase === "timed-out" ? "Multideck will check again when you return to this declaration." : "Multideck checks automatically while this declaration is open.")}</span></div> : null}
         {statusLifecycle.phase === "error" ? <div role="alert" className="mt-4 flex gap-2 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-amber)_10%,transparent)] p-3 text-[12px] text-[var(--md-text)]"><CircleAlert className="mt-0.5 size-4 shrink-0 text-[var(--md-amber)]" /><span><strong className="block text-[var(--md-ink)]">{t("Customs status check was interrupted")}</strong>{t(statusLifecycle.message ?? "Multideck will retry automatically.")}</span></div> : null}
         <Button type="button" variant="ghost" className="mt-4 w-full bg-black text-white shadow-none hover:bg-black/80 hover:text-white" disabled={!pdfAvailable || pdfBusy} onClick={onOpenPdf}><FileText className="size-4" />{t(pdfBusy ? "Preparing declaration PDF" : pdfLoadError ? "Retry declaration PDF" : pdfAvailable ? "View declaration PDF" : "PDF available after acceptance")}</Button>
@@ -2251,7 +2318,7 @@ function ReviewSection({ draft, completion, iCustomsState, iCustomsBusy, iCustom
         {provider?.errorMessage && !providerIssues.length ? <div role="alert" className="mt-4 flex gap-2 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red)_7%,var(--md-surface))] p-3 text-[12px] text-[var(--md-text)]"><CircleAlert className="mt-0.5 size-4 shrink-0 text-[var(--md-red)]" /><span><strong className="block text-[var(--md-ink)]">{t("Customs service needs attention")}</strong>{t(provider.errorMessage)}</span></div> : null}
         {iCustomsIssues.length ? <div role="alert" className="mt-4"><p className="text-[12px] font-medium text-[var(--md-red)]">{t("Customs checks still need attention")}</p><ul className="mt-2 space-y-1.5 ps-4 text-[11px] leading-4 text-[var(--md-text)]">{iCustomsIssues.slice(0, 8).map((issue) => <li key={issue} className="list-disc">{translateCustomsMessage(issue, t)}</li>)}</ul></div> : null}
 
-        {!hasProviderDraft ? <Button type="button" className="mt-4 w-full" disabled={Boolean(iCustomsBusy) || connectionUnavailable} onClick={onCreateDraft}><Send className="size-4" />{t(iCustomsBusy === "draft" ? "Creating customs test draft" : "Create customs test draft")}</Button> : providerRejected ? <Button type="button" className="mt-4 w-full" disabled={Boolean(iCustomsBusy) || connectionUnavailable || completion.issues.length > 0} onClick={onCreateDraft}><RefreshCw className="size-4" />{t(iCustomsBusy === "draft" ? "Creating corrected customs test draft" : "Create corrected customs test draft")}</Button> : providerLifecycleStarted ? null : <><Button type="button" className="mt-4 w-full" disabled={Boolean(iCustomsBusy) || connectionUnavailable} onClick={onSubmit}><Send className="size-4" />{t("Submit")}</Button><Button type="button" variant="outline" className="mt-2 w-full" disabled={Boolean(iCustomsBusy) || connectionUnavailable} onClick={onCreateDraft}><RefreshCw className="size-4" />{t(iCustomsBusy === "draft" ? "Updating customs test draft" : "Update customs test draft")}</Button></>}
+        {!hasProviderDraft ? <Button type="button" className="mt-4 w-full" disabled={Boolean(iCustomsBusy) || connectionUnavailable || provider?.status === "queued"} onClick={onCreateDraft}><RefreshCw className={cn("size-4", (iCustomsBusy === "draft" || provider?.status === "queued") && "animate-spin motion-reduce:animate-none")} />{t(provider?.status === "queued" ? "Starting iCustoms draft" : iCustomsBusy === "draft" ? "Retrying iCustoms draft" : "Retry iCustoms draft")}</Button> : providerRejected ? <Button type="button" className="mt-4 w-full" disabled={Boolean(iCustomsBusy) || connectionUnavailable || completion.issues.length > 0} onClick={onCreateDraft}><RefreshCw className="size-4" />{t(iCustomsBusy === "draft" ? "Creating corrected customs test draft" : "Create corrected customs test draft")}</Button> : providerLifecycleStarted ? null : <><Button type="button" className="mt-4 w-full" disabled={Boolean(iCustomsBusy) || connectionUnavailable} onClick={onSubmit}><Send className="size-4" />{t("Submit")}</Button><Button type="button" variant="outline" className="mt-2 w-full" disabled={Boolean(iCustomsBusy) || connectionUnavailable} onClick={onCreateDraft}><RefreshCw className="size-4" />{t(iCustomsBusy === "draft" ? "Updating customs test draft" : "Update customs test draft")}</Button></>}
         <Button type="button" variant="ghost" className="mt-2 w-full" onClick={onValidate}>{t("Run form checks")}</Button>
       </Surface>
     </div>

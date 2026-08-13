@@ -12,6 +12,7 @@ import {
 } from "../_shared/backend.ts";
 import {
   buildICustomsDeclarationXml,
+  buildICustomsDraftShellXml,
   type ExportDeclarationInput,
   ICustomsClient,
   iCustomsCommodityDetail,
@@ -169,6 +170,7 @@ function publicDeclaration(row: Json, submission: Json | null) {
     id: row.CUST_id,
     reference: row.CUST_LocalReferenceNumber,
     status: row.CUST_Status,
+    correlationId: correlationFrom(row, submission) || null,
     hasCustomsDraft: Boolean(correlationFrom(row, submission)),
     provider: publicSubmission(submission),
   };
@@ -231,6 +233,7 @@ async function createSubmission(
   path: string,
   requestPayload: Json,
   declarationKind: string,
+  contentType = "application/xml",
 ) {
   const { data, error } = await admin.from("ICUS_Submissions").insert({
     ICUSS_ApiConnectionID: SANDBOX_CONNECTION_ID,
@@ -241,7 +244,7 @@ async function createSubmission(
     ICUSS_IdempotencyKey: idempotencyKey,
     ICUSS_RequestMethod: "POST",
     ICUSS_RequestPath: path,
-    ICUSS_RequestHeadersJSON: { "content-type": "application/xml" },
+    ICUSS_RequestHeadersJSON: { "content-type": contentType },
     ICUSS_RequestPayloadJSON: requestPayload,
     ICUSS_AttemptCount: 1,
     ICUSS_CreatedBy: actor.User_ID,
@@ -307,6 +310,29 @@ async function recordProviderFailure(
 function correlationFrom(declaration: Json, submission: Json | null) {
   return text(declaration.CUST_iCustomsExternalID, 160) ||
     text(submission?.ICUSS_iCustomsDeclarationID, 160);
+}
+
+function workspaceDraftId(value: unknown) {
+  const record = providerRecord(value);
+  const general = providerRecord(record.gen ?? record.general);
+  const direct = text(
+    general.id ?? record.general_id ?? record.generalId ?? record.UUID ??
+      record.uuid,
+    160,
+  );
+  if (direct) return direct;
+  const data = providerRecord(record.data);
+  return text(data.general_id ?? data.generalId ?? data.id, 160) ||
+    providerReference(record.data, ["general_id", "generalId"]);
+}
+
+function providerDeclarationIsMissing(value: unknown) {
+  const record = providerRecord(value);
+  if (record.success !== false) return false;
+  const providerStatus = Number(record.status);
+  const message = text(record.message, 500).toLocaleLowerCase("en-GB");
+  return providerStatus === 401 || message.includes("no declaration") ||
+    message.includes("not found") || message.includes("does not exist");
 }
 
 async function saveProviderSuccess(
@@ -497,6 +523,262 @@ async function providerDraft(
     await recordProviderFailure(admin, actor, submission, error);
     throw error;
   }
+}
+
+async function startProviderDraft(
+  admin: SupabaseClient,
+  user: User,
+  actor: Actor,
+  declarationId: string,
+  input: Json,
+) {
+  const declaration = await declarationForUser(
+    admin,
+    user,
+    declarationId,
+    true,
+  );
+  const latest = await latestSubmission(admin, declarationId);
+  const existingCorrelation = correlationFrom(declaration, latest);
+  if (existingCorrelation) {
+    return {
+      declaration: publicDeclaration(declaration, latest),
+      idempotentReplay: true,
+    };
+  }
+  if (text(latest?.ICUSS_Status, 40) === "queued") {
+    return {
+      declaration: publicDeclaration(declaration, latest),
+      idempotentReplay: true,
+    };
+  }
+
+  const idempotencyKey = text(input.idempotencyKey, 160) ||
+    `start-draft-${declarationId}-${crypto.randomUUID()}`;
+  const previous = await idempotentSubmission(
+    admin,
+    declarationId,
+    idempotencyKey,
+  );
+  if (previous) {
+    return {
+      declaration: publicDeclaration(declaration, previous),
+      idempotentReplay: true,
+    };
+  }
+  const direction = declaration.CUST_Direction === "import"
+    ? "import"
+    : "export";
+  const path = iCustomsDraftPath(null);
+  const xml = buildICustomsDraftShellXml(
+    direction,
+    text(declaration.CUST_LocalReferenceNumber, 160),
+  );
+  const submission = await createSubmission(
+    admin,
+    actor,
+    declarationId,
+    idempotencyKey,
+    path,
+    await requestMetadata(xml, "create_draft_shell"),
+    text(declaration.CUST_DeclarationKind, 40),
+  );
+  try {
+    const response = await connectedICustomsClient().createDraft(xml);
+    const responseRecord = providerRecord(response.body);
+    if (responseRecord.success === false) {
+      throw new ICustomsProviderError(
+        response.status || 502,
+        text(responseRecord.message, 500) ||
+          "The customs service could not start this draft.",
+        "icustoms_workspace_draft_failed",
+        response.body,
+      );
+    }
+    const correlationId = providerCorrelationId(response.body);
+    if (!correlationId) {
+      throw new ICustomsProviderError(
+        502,
+        "The customs service created the draft without returning its reference.",
+        "icustoms_correlation_missing",
+        response.body,
+      );
+    }
+    const saved = await saveProviderSuccess(
+      admin,
+      actor,
+      declaration,
+      submission,
+      response,
+      "draft",
+      correlationId,
+      "draft",
+    );
+    const internalDraftId = workspaceDraftId(response.body);
+    if (internalDraftId) {
+      const { error } = await admin.from("ICUS_Submissions").update({
+        ICUSS_iCustomsSubmissionID: internalDraftId,
+        ICUSS_UpdatedAt: new Date().toISOString(),
+        ICUSS_UpdatedBy: actor.User_ID,
+      }).eq("ICUSS_id", saved.submission.ICUSS_id);
+      if (error) throw new HttpError(500, error.message);
+      saved.submission.ICUSS_iCustomsSubmissionID = internalDraftId;
+    }
+    await audit(
+      admin,
+      actor,
+      declarationId,
+      "icustoms_workspace_draft_created",
+      "The editable iCustoms draft was created when the operator opened the declaration.",
+      { status: declaration.CUST_Status },
+      { status: saved.declaration.CUST_Status, correlationId },
+    );
+    return {
+      declaration: publicDeclaration(saved.declaration, saved.submission),
+      idempotentReplay: false,
+    };
+  } catch (error) {
+    await recordProviderFailure(admin, actor, submission, error);
+    throw error;
+  }
+}
+
+async function deleteProviderDraft(
+  admin: SupabaseClient,
+  user: User,
+  actor: Actor,
+  declarationId: string,
+) {
+  const declaration = await declarationForUser(
+    admin,
+    user,
+    declarationId,
+    true,
+  );
+  const latest = await latestSubmission(admin, declarationId);
+  if (text(latest?.ICUSS_Status, 40) === "queued") {
+    throw new HttpError(
+      409,
+      "The iCustoms draft is still starting. Try deleting it again in a moment.",
+    );
+  }
+
+  const correlationId = correlationFrom(declaration, latest);
+  let internalDraftId = text(latest?.ICUSS_iCustomsSubmissionID, 160);
+  let providerDeleted = false;
+  if (correlationId) {
+    const client = connectedICustomsClient();
+    if (!internalDraftId) {
+      const details = await client.declarationDetails(
+        declaration.CUST_Direction === "import" ? "import" : "export",
+        correlationId,
+      );
+      if (providerDeclarationIsMissing(details.body)) {
+        providerDeleted = true;
+      } else {
+        const detailRecord = providerRecord(details.body);
+        if (detailRecord.success === false) {
+          throw new ICustomsProviderError(
+            Number(detailRecord.status) || 502,
+            text(detailRecord.message, 500) ||
+              "The customs service could not inspect this draft.",
+            "icustoms_workspace_draft_lookup_failed",
+            details.body,
+          );
+        }
+        internalDraftId = workspaceDraftId(details.body);
+      }
+      if (!providerDeleted && !internalDraftId) {
+        throw new ICustomsProviderError(
+          502,
+          "The customs service did not return the draft identifier needed for deletion. The draft remains available.",
+          "icustoms_workspace_draft_id_missing",
+        );
+      }
+    }
+    if (!providerDeleted) {
+      try {
+        const response = await client.deleteWorkspaceDraft(internalDraftId);
+        const responseRecord = providerRecord(response.body);
+        if (responseRecord.success === false) {
+          throw new ICustomsProviderError(
+            response.status || 502,
+            text(responseRecord.message, 500) ||
+              "The customs service could not delete this draft.",
+            "icustoms_workspace_draft_delete_failed",
+            response.body,
+          );
+        }
+      } catch (error) {
+        if (!(error instanceof ICustomsProviderError) || error.status !== 404) {
+          throw error;
+        }
+      }
+      try {
+        const verification = await client.declarationDetails(
+          declaration.CUST_Direction === "import" ? "import" : "export",
+          correlationId,
+        );
+        if (!providerDeclarationIsMissing(verification.body)) {
+          throw new ICustomsProviderError(
+            502,
+            "iCustoms still has this draft, so Multideck has kept the recovery record.",
+            "icustoms_workspace_draft_still_exists",
+          );
+        }
+        providerDeleted = true;
+      } catch (error) {
+        if (!(error instanceof ICustomsProviderError) || error.status !== 404) {
+          throw error;
+        }
+        providerDeleted = true;
+      }
+    }
+  }
+
+  const now = new Date().toISOString();
+  const { data: deleted, error: deleteError } = await admin.from(
+    "Customs_Declarations",
+  ).update({
+    CUST_IsDeleted: true,
+    CUST_UpdatedAt: now,
+    CUST_UpdatedBy: actor.User_ID,
+  }).eq("CUST_id", declarationId).eq("CUST_CreatedBy", user.id).eq(
+    "CUST_Status",
+    "draft",
+  ).eq("CUST_IsDeleted", false).select("CUST_id").maybeSingle();
+  if (deleteError) throw new HttpError(500, deleteError.message);
+  if (!deleted) {
+    throw new HttpError(
+      409,
+      "That Customs declaration is unavailable or can no longer be deleted.",
+    );
+  }
+  if (latest?.ICUSS_id) {
+    const { error } = await admin.from("ICUS_Submissions").update({
+      ICUSS_Status: "cancelled",
+      ICUSS_ProviderStatus: providerDeleted ? "deleted" : "not_created",
+      ICUSS_CompletedAt: now,
+      ICUSS_UpdatedAt: now,
+      ICUSS_UpdatedBy: actor.User_ID,
+    }).eq("ICUSS_id", latest.ICUSS_id);
+    if (error) throw new HttpError(500, error.message);
+  }
+  await audit(
+    admin,
+    actor,
+    declarationId,
+    "draft_deleted",
+    providerDeleted
+      ? "The abandoned iCustoms draft and its Multideck mirror were deleted."
+      : "The local recovery record was deleted; no iCustoms draft had been created.",
+    {
+      status: declaration.CUST_Status,
+      iCustomsCorrelationId: correlationId || null,
+    },
+    { isDeleted: true, providerDeleted },
+  );
+  return { deleted: true, providerDeleted };
 }
 
 async function submitDeclaration(
@@ -815,6 +1097,24 @@ Deno.serve(async (request) => {
           declarationId,
           await body<Json>(request),
         ),
+      );
+    }
+    if (method === "POST" && parts[2] === "provider-draft-start") {
+      return json(
+        request,
+        await startProviderDraft(
+          admin,
+          user,
+          actor,
+          declarationId,
+          await body<Json>(request),
+        ),
+      );
+    }
+    if (method === "DELETE" && parts[2] === "provider-draft") {
+      return json(
+        request,
+        await deleteProviderDraft(admin, user, actor, declarationId),
       );
     }
     if (method === "POST" && parts[2] === "submit") {

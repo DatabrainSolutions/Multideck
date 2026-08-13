@@ -1452,6 +1452,22 @@ export function buildICustomsH1ImportXml(input: ExportDeclarationInput) {
   return buildICustomsDeclarationXml(input, "import");
 }
 
+export function buildICustomsDraftShellXml(
+  direction: "import" | "export",
+  localReference: string,
+) {
+  const reference = clean(localReference, 19);
+  return [
+    "<iCustoms><Declaration>",
+    element("DeclarationCategory", direction === "import" ? "H1" : "B1"),
+    element("TypeCode", direction === "import" ? "IMA" : "EXA"),
+    reference
+      ? group("UCR", element("TraderAssignedReferenceID", reference))
+      : "",
+    "</Declaration></iCustoms>",
+  ].join("");
+}
+
 function allowedBaseUrl(value: string) {
   const normalized = value.replace(/\/+$/, "");
   if (
@@ -1629,6 +1645,22 @@ export class ICustomsClient {
       headers: { "Content-Type": "application/xml" },
       body: xml,
     });
+  }
+
+  declarationDetails(
+    direction: "import" | "export",
+    correlationId: string,
+  ) {
+    return this.request(
+      `/api/cds/v1/GetDeclaration/${direction}/${encodeURIComponent(correlationId)}`,
+    );
+  }
+
+  deleteWorkspaceDraft(providerDraftId: string) {
+    return this.request(
+      `/api/v2/delete_draft/${encodeURIComponent(providerDraftId)}`,
+      { method: "GET" },
+    );
   }
 
   submit(correlationId: string) {
@@ -1918,7 +1950,7 @@ export function providerIssues(value: unknown): ICustomsPublicIssue[] {
 
 export function providerCorrelationId(value: unknown) {
   const record = providerRecord(value);
-  return clean(record.co_relation_id, 160) ||
+  return clean(record.co_relation_id, 160) || clean(record.co_relation, 160) ||
     clean(record.correlation_id, 160) || clean(record.declaration_id, 160);
 }
 

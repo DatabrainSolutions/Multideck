@@ -1,5 +1,6 @@
 import {
   buildICustomsB1ExportXml,
+  buildICustomsDraftShellXml,
   buildICustomsH1ImportXml,
   type ExportDeclarationInput,
   ICustomsClient,
@@ -853,6 +854,60 @@ Deno.test("ICustomsClient authenticates once and sends the draft with a bearer t
     new Headers(calls[1].init?.headers).get("Authorization") ===
       "Bearer sandbox-token",
     "Expected the bearer token on the draft request.",
+  );
+});
+
+Deno.test("ICustomsClient creates the smallest honest provider draft shell and deletes its workspace record", async () => {
+  const calls: Array<{ url: string; init?: RequestInit }> = [];
+  const transport = ((url: string | URL | Request, init?: RequestInit) => {
+    calls.push({ url: String(url), init });
+    if (calls.length === 1) {
+      return Promise.resolve(
+        new Response(JSON.stringify({ token: "sandbox-token", user_id: 42 }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    }
+    return Promise.resolve(
+      new Response(
+        JSON.stringify({
+          success: true,
+          gen: { id: 37120 },
+          co_relation: "sandbox-correlation",
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+  }) as typeof fetch;
+  const client = new ICustomsClient({
+    baseUrl: "https://ihub-tdr.customscloud.co",
+    environment: "sandbox",
+    apiKey: "test-key",
+    apiSecret: "test-secret",
+  }, transport);
+
+  const shell = buildICustomsDraftShellXml("export", "MD-CDS-EX-TEST");
+  await client.createDraft(shell);
+  await client.deleteWorkspaceDraft("37120");
+
+  assert(
+    calls[1].url.endsWith("/api/cds/v1/draft") &&
+      calls[1].init?.method === "POST",
+    "Expected the supported iCustoms draft-creation route.",
+  );
+  assert(
+    shell.includes("<DeclarationCategory>B1</DeclarationCategory>") &&
+      shell.includes("<TypeCode>EXA</TypeCode>") &&
+      shell.includes("<TraderAssignedReferenceID>MD-CDS-EX-TEST</TraderAssignedReferenceID>") &&
+      !shell.includes("<Commodity>") &&
+      calls[1].init?.body === shell,
+    "Expected only direction, type, and the truthful local reference in the initial shell.",
+  );
+  assert(
+    calls[2].url.endsWith("/api/v2/delete_draft/37120") &&
+      calls[2].init?.method === "GET",
+    "Expected the same provider draft to be deleted through the iCustoms app route.",
   );
 });
 
