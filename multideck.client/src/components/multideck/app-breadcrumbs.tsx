@@ -38,6 +38,7 @@ const staticLeafLabels: Record<string, string> = {
   "/playground/navigation": "Navigation lab",
   "/quotes": "Quotes",
   "/reports": "Reports",
+  "/reports/scheduled": "Scheduled reports",
   "/road-control": "Road control",
   "/road-control/new": "New road job",
   "/settings": "Settings",
@@ -132,6 +133,14 @@ export function getAppBreadcrumbTrail(route: string, leafLabel?: string | null):
       { label: "Reports", route: "/reports" },
       { label: "Report templates", route: "/reports" },
       { label: "Monthly client review" },
+    ]
+  }
+
+  if (route === "/reports/scheduled") {
+    return [
+      { label: "Home", route: "/" },
+      { label: "Reports", route: "/reports" },
+      { label: staticLeafLabels[route] },
     ]
   }
 

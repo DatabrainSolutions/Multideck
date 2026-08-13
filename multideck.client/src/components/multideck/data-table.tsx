@@ -55,12 +55,16 @@ type DataTableProps<Row> = {
   selectedRowKeys?: ReadonlySet<string>
   ariaLabel?: string
   columnsButtonLabel?: string
+  /** Page or register context that should align with the table controls. */
+  toolbarLeading?: ReactNode
   /** View tabs or equivalent view toggles only. Search, filters, and actions belong in trailing slots. */
   toolbarTabs?: ReactNode
   /** Trailing controls are rendered in this fixed order: search, filters, options, columns. */
   toolbarSearch?: ReactNode
   toolbarFilters?: ReactNode
   toolbarOptions?: ReactNode
+  /** Contextual feedback or setup UI shown between the toolbar and table surface. */
+  contentBeforeTable?: ReactNode
   /** Lets an intentionally compact register keep its controls on one desktop row. */
   compactToolbar?: boolean
   emptyState?: ReactNode
@@ -118,10 +122,12 @@ export function DataTable<Row>({
   selectedRowKeys,
   ariaLabel,
   columnsButtonLabel,
+  toolbarLeading,
   toolbarTabs,
   toolbarSearch,
   toolbarFilters,
   toolbarOptions,
+  contentBeforeTable,
   compactToolbar = false,
   emptyState,
   minimumWidth: minimumWidthOverride,
@@ -413,6 +419,7 @@ export function DataTable<Row>({
   }
 
   const hasTrailingToolbar = Boolean(toolbarSearch || toolbarFilters || toolbarOptions || showColumnManager)
+  const hasLeadingToolbar = Boolean(toolbarLeading || toolbarTabs)
 
   return (
     <div className={cn("w-full min-w-0", className)}>
@@ -420,12 +427,13 @@ export function DataTable<Row>({
           switch, three filters and a search will not fit one line on a laptop, and
           two clean rows read far better than a leading group floating in the
           middle of a ragged three-row block. */}
-      {showToolbar ? <div data-table-toolbar className={cn("mb-2 flex min-h-9 flex-nowrap items-center gap-x-2 gap-y-1.5 bg-transparent px-0 py-0.5 sm:flex-wrap", toolbarTabs ? "justify-between" : "justify-end")}>
-        {toolbarTabs ? <div data-table-tabs className="flex min-w-0 items-center gap-1 overflow-x-auto sm:shrink-0 sm:overflow-visible">{toolbarTabs}</div> : null}
+      {showToolbar ? <div data-table-toolbar className={cn("mb-2 flex min-h-9 flex-nowrap items-center gap-x-2 gap-y-1.5 bg-transparent px-0 py-0.5 sm:flex-wrap", hasLeadingToolbar ? "justify-between" : "justify-end")}>
+        {toolbarLeading ? <div data-table-leading className="min-w-0 flex-1">{toolbarLeading}</div> : null}
+        {!toolbarLeading && toolbarTabs ? <div data-table-tabs className="flex min-w-0 items-center gap-1 overflow-x-auto sm:shrink-0 sm:overflow-visible">{toolbarTabs}</div> : null}
         {/* The minimum width is what makes the trailing controls drop to their own
             line as one block. Without it they wrap control by control around the
             leading group and the row loses its reading order. */}
-        {hasTrailingToolbar ? <div data-table-trailing-controls className={cn("ms-auto flex flex-none flex-nowrap items-center justify-end gap-1.5 sm:flex-wrap", compactToolbar ? "sm:min-w-[min(100%,520px)]" : "sm:min-w-[min(100%,560px)]")}>
+        {hasTrailingToolbar ? <div data-table-trailing-controls className={cn("ms-auto flex flex-none flex-nowrap items-center justify-end gap-1.5 sm:flex-wrap", toolbarLeading ? "sm:min-w-0" : compactToolbar ? "sm:min-w-[min(100%,520px)]" : "sm:min-w-[min(100%,560px)]")}>
           {mobileToolbarControls && (toolbarSearch || toolbarFilters || toolbarOptions) ? <Popover>
             <PopoverTrigger asChild>
               <button type="button" className="inline-flex h-8 items-center gap-1.5 rounded-[var(--md-radius-md)] px-2.5 text-[12px] font-medium text-[var(--md-text)] transition-[background,color,box-shadow,transform] hover:bg-[var(--md-surface)] hover:text-[var(--md-ink)] hover:shadow-[var(--md-shadow-line)] active:scale-[0.96]" aria-label={t("Table controls")}>
@@ -514,6 +522,7 @@ export function DataTable<Row>({
           </div> : null}
         </div> : null}
       </div> : null}
+      {contentBeforeTable ? <div data-table-content-before className="mb-3">{contentBeforeTable}</div> : null}
 
       <div data-table-surface className={cn("overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] shadow-[var(--md-shadow-line)]", !showToolbar && "h-full")}>
       <Table aria-label={ariaLabel ? t(ariaLabel) : undefined} className={tableClassName} style={{ minWidth: minimumWidth }}>

@@ -135,6 +135,7 @@ const validRoutes = new Set([
   "/rates/imports",
   "/rates/results",
   "/reports",
+  "/reports/scheduled",
   "/reports/templates/monthly-client-review",
   "/settings",
   "/warehouse",
@@ -634,7 +635,9 @@ export default function App() {
                   {route === "/quotes" ? <QuotesRegisterPage navigate={navigate} /> : null}
                   {isQuoteDetailRoute(route) ? <QuoteDetailPage key={route} variant="cargowise" quoteId={route.split("/").at(-1)} /> : null}
                   {route.startsWith("/rates") ? <RatesPage route={route as "/rates" | "/rates/contracts" | "/rates/tariffs" | "/rates/imports" | "/rates/results"} navigate={navigate} /> : null}
-                  {route === "/reports" ? <ReportsPage navigate={navigate} /> : null}
+                  {route === "/reports" || route === "/reports/scheduled"
+                    ? <ReportsPage route={route} />
+                    : null}
                   {route === "/settings" ? (
                     <SettingsPage
                       navigate={navigate}

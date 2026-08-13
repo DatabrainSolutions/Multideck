@@ -113,6 +113,21 @@ const supabaseConfig = read(
 const notificationEmailFunction = read(
   "supabase/functions/send-notification-email/index.ts",
 )
+const purchaseOrderStrictSchemaMigration = read(
+  "supabase/migrations/20260813153500_fix_dexter_purchase_order_strict_schema.sql",
+)
+
+test("Dexter uses the shared allowlisted CORS boundary", () => {
+  assert.match(edgeFunction, /import \{ corsHeaders \} from "\.\.\/_shared\/backend\.ts"/)
+  assert.doesNotMatch(edgeFunction, /function corsHeaders\(request: Request\)/)
+})
+
+test("Dexter purchase order creation remains optional-supplier and OpenAI-strict", () => {
+  assert.match(purchaseOrderStrictSchemaMigration, /'\{properties,supplier_name,type\}'/)
+  assert.match(purchaseOrderStrictSchemaMigration, /\["string", "null"\]/)
+  assert.match(purchaseOrderStrictSchemaMigration, /"supplier_name", "supplier_org_id"/)
+  assert.doesNotMatch(edgeFunction, /!supplierName \|\| !\/\^\[A-Z\]\{3\}\$\//)
+})
 
 test("Dexter redirects off-topic requests without narrowing useful freight work", () => {
   assert.match(edgeFunction, /PROMPT_VERSION = "freight-coworker-2026-08-11-warehouse-capabilities"/)

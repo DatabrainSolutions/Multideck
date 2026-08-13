@@ -134,7 +134,7 @@ export function WizardDialog({
                   >
                     <span
                       className={cn(
-                        "grid size-[22px] shrink-0 place-items-center rounded-full text-[11px] font-medium tabular-nums transition-[background-color,color,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
+                        "relative isolate grid size-[22px] shrink-0 place-items-center rounded-full text-[11px] font-medium tabular-nums transition-[background-color,color,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] before:absolute before:-inset-[3px] before:-z-10 before:rounded-full before:bg-[var(--md-surface)] before:content-['']",
                         isCurrent
                           ? "bg-[var(--md-accent)] text-[var(--md-accent-ink)] shadow-[0_0_0_3px_var(--md-accent-a14)]"
                           : isDone

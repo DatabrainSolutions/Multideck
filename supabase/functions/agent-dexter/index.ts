@@ -14,6 +14,7 @@ import {
   type DexterEmailToolState,
 } from "./email-context.ts"
 import { attachEmailDocumentToCustomer } from "../_shared/customer-documents.ts"
+import { corsHeaders } from "../_shared/backend.ts"
 import {
   extractDexterUploadedDocument,
   isDexterOcrFileName,
@@ -70,29 +71,12 @@ const MODEL_ROUTES: Record<DexterModelLane, { model: string; effort: "medium" | 
   worker: { model: "gpt-5.6-terra", effort: "medium" },
 }
 
-function corsHeaders(request: Request) {
-  const configuredOrigin = Deno.env.get("APP_URL")?.trim() || "https://dev.multideck.app"
-  const requestOrigin = request.headers.get("Origin")?.trim() ?? ""
-  const allowedOrigins = new Set([
-    configuredOrigin,
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-  ])
-
-  return {
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Origin": allowedOrigins.has(requestOrigin) ? requestOrigin : configuredOrigin,
-    "Cache-Control": "no-store",
-    "Vary": "Origin",
-  }
-}
-
 function json(request: Request, body: JsonObject, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
       ...corsHeaders(request),
+      "Cache-Control": "no-store",
       "Content-Type": "application/json; charset=utf-8",
     },
   })
@@ -732,7 +716,7 @@ async function executeWorkspaceAction(
     const supplierName = cleanString(args.supplier_name, 240)
     const currencyCode = cleanString(args.currency_code, 3).toUpperCase()
     const sourceLines = Array.isArray(args.lines) ? args.lines : []
-    if (!isUuid(facilityId) || !isUuid(customerOrgId) || !number || !supplierName || !/^[A-Z]{3}$/.test(currencyCode) || sourceLines.length === 0) {
+    if (!isUuid(facilityId) || !isUuid(customerOrgId) || !number || !/^[A-Z]{3}$/.test(currencyCode) || sourceLines.length === 0) {
       return { data: null, error: { code: "invalid_action", message: "The approved warehouse, stock owner, purchase order header or lines are invalid." } }
     }
     const lines = sourceLines.flatMap((value) => {

@@ -12,6 +12,8 @@ export const topBarActionEvents = {
   createCrmContactCard: "multideck:crm:create-contact-card",
   createRate: "multideck:rates:create-rate",
   importRates: "multideck:rates:import",
+  startReportDraft: "multideck:reporting:start-draft",
+  startReportSchedule: "multideck:reporting:start-schedule",
 } as const
 
 export type TopBarActionEvent = (typeof topBarActionEvents)[keyof typeof topBarActionEvents]

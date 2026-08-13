@@ -125,6 +125,8 @@ export function TopBar({
   const isStandaloneExportRegister = route === "/customs/standalone/export"
   const isStandaloneImportRegister = route === "/customs/standalone/import"
   const isReports = route === "/reports"
+  const isScheduledReports = route === "/reports/scheduled"
+  const isReportingRoute = isReports || isScheduledReports
   const isOperationalJobScreen = route === "/" || route.startsWith("/bookings") || route.startsWith("/quotes") || isRoadRoute || isWarehouse
   const crmCreateAction = crmCreateActions[route]
   const ratesTopBarAction = ratesTopBarActions[route]
@@ -261,7 +263,7 @@ export function TopBar({
         <>
           <AppBreadcrumbs route={route} navigate={navigate} leafLabel={currentRecordName} className="hidden min-w-[210px] md:block" />
           <div className="ml-auto min-w-0 flex-1 md:max-w-[560px]">
-            <CommandInput placeholder={isBookingList || isRoadRoute ? "Job, reference, customer, route..." : isQuotes ? "Quote, customer, route, reference..." : isWarehouse ? "SKU, bin, order, customer, goods movement..." : isCustomerList ? "Search customers, contacts, or bookings..." : isCrmRoute ? "Search leads, contacts, deals, emails, lists, or marketing..." : isReports ? "Report name, template, customer..." : "Ask Multideck or jump to anything..."} onNavigate={navigate} />
+            <CommandInput placeholder={isBookingList || isRoadRoute ? "Job, reference, customer, route..." : isQuotes ? "Quote, customer, route, reference..." : isWarehouse ? "SKU, bin, order, customer, goods movement..." : isCustomerList ? "Search customers, contacts, or bookings..." : isCrmRoute ? "Search leads, contacts, deals, emails, lists, or marketing..." : isReportingRoute ? "Report name, template, customer..." : "Ask Multideck or jump to anything..."} onNavigate={navigate} />
           </div>
           {ratesTopBarAction ? (
             <>
@@ -366,30 +368,25 @@ export function TopBar({
               <span className="hidden sm:inline">{t("New import declaration")}</span>
             </Button>
           ) : isReports ? (
-            <>
-              <Button
-                variant="ghost"
-                className={cn("hidden sm:inline-flex", topBarGhostActionClass)}
-                onClick={() =>
-                  toast.success("Report schedules opened", {
-                    description: "Review cadence, recipients, and upcoming runs.",
-                  })
-                }
-              >
-                Schedules
-              </Button>
-              <Button
-                className={topBarPrimaryActionClass}
-                onClick={() =>
-                  toast.success("New report draft created", {
-                    description: "Choose a template, customer scope, and output format next.",
-                  })
-                }
-              >
-                <Plus data-icon="inline-start" strokeWidth={1.2} />
-                <span className="hidden sm:inline">New report</span>
-              </Button>
-            </>
+            <Button
+              aria-label={t("Create report")}
+              title={t("Create report")}
+              className={topBarPrimaryActionClass}
+              onClick={() => dispatchTopBarAction(topBarActionEvents.startReportDraft)}
+            >
+              <Plus data-icon="inline-start" strokeWidth={1.2} />
+              <span className="hidden sm:inline">{t("Create report")}</span>
+            </Button>
+          ) : isScheduledReports ? (
+            <Button
+              aria-label={t("Set up scheduled report")}
+              title={t("Set up scheduled report")}
+              className={topBarPrimaryActionClass}
+              onClick={() => dispatchTopBarAction(topBarActionEvents.startReportSchedule)}
+            >
+              <Plus data-icon="inline-start" strokeWidth={1.2} />
+              <span className="hidden sm:inline">{t("Set up scheduled report")}</span>
+            </Button>
           ) : isRoadControl ? (
             <Button aria-label={t("New road job")} title={t("New road job")} className={topBarPrimaryActionClass} onClick={() => navigate("/road-control/new")}>
               <Plus data-icon="inline-start" strokeWidth={1.2} />
@@ -397,7 +394,7 @@ export function TopBar({
             </Button>
           ) : (
             <>
-              {!isOperationalJobScreen ? (
+              {!isOperationalJobScreen && !isReportingRoute ? (
                 <>
                   <Tooltip>
                     <TooltipTrigger asChild>

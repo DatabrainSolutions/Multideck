@@ -2,6 +2,7 @@ import type { LanguageCode } from "./languages"
 import { customsDeclarationPhrases } from "./customs-declaration-phrases"
 import { purchaseOrderPhrases } from "./purchase-order-phrases"
 import { ratesPhrases } from "./rates-phrases"
+import { reportingPhrases } from "./reporting-phrases"
 import { broadcastSettingsPhrases } from "./broadcast-settings-phrases"
 
 type WordDictionary = Record<string, string>
@@ -4715,6 +4716,7 @@ const phrases: PhraseDictionary = {
   "Email context is temporarily unavailable. Open Settings to review the connection.": { de: "Der E-Mail-Kontext ist vorübergehend nicht verfügbar. Öffne die Einstellungen, um die Verbindung zu prüfen.", fr: "Le contexte e-mail est temporairement indisponible. Ouvrez les paramètres pour vérifier la connexion.", ar: "سياق البريد الإلكتروني غير متاح مؤقتًا. افتح الإعدادات لمراجعة الاتصال." },
   "Fixture data — this is local sample mail for design review, not a connected mailbox.": { de: "Testdaten — dies ist lokale Beispielpost für die Designprüfung, kein verbundenes Postfach.", fr: "Données de test — ce courrier local sert à la revue de design, ce n’est pas une boîte connectée.", ar: "بيانات تجريبية — هذا بريد نموذجي محلي لمراجعة التصميم، وليس صندوق بريد متصلًا." },
   ...ratesPhrases,
+  ...reportingPhrases,
 }
 
 const wordDictionaries: Record<Exclude<LanguageCode, "en-GB" | "en-US">, WordDictionary> = {
