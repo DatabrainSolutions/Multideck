@@ -32,7 +32,18 @@ test("invite and edit preserve reusable role selection and open the inline role 
   assert.match(settingsSource, /await deleteApiAuthorizationRole\(session\.access_token, previousRole\.id\)/u)
   assert.match(settingsSource, /<RolePermissionMatrix areas=\{permissionAreas\}/u)
   assert.match(settingsSource, /<ArrowLeft className="size-3\.5 rtl:-scale-x-100"/u)
-  assert.match(settingsSource, /duration: shouldReduceMotion \? 0 : 0\.22/u)
+})
+
+test("user details and permissions swap inside one stable, retargetable dialog shell", () => {
+  const usersTab = settingsSource.slice(settingsSource.indexOf("function UsersTab()"), settingsSource.indexOf("const mailProviderCopy"))
+  assert.match(settingsSource, /h-\[min\(760px,calc\(100dvh-32px\)\)\].*grid-rows-\[minmax\(0,1fr\)\].*overflow-hidden/u)
+  assert.match(settingsSource, /absolute inset-0 overflow-y-auto overscroll-contain pe-1 .*\[scrollbar-gutter:stable\].*will-change-\[transform,opacity\]/u)
+  assert.match(usersTab, /<AnimatePresence mode="sync" initial=\{false\} custom=/u)
+  assert.match(usersTab, /transition=\{accessPanelTransition\}/u)
+  assert.match(usersTab, /const accessPanelDistance = shouldReduceMotion \? 0 : direction === "rtl" \? -8 : 8/u)
+  assert.match(usersTab, /reduceMotion\(Boolean\(shouldReduceMotion\), mdMotion\.smooth\)/u)
+  assert.doesNotMatch(usersTab, /mode="wait"/u)
+  assert.doesNotMatch(usersTab, /filter: "blur/u)
 })
 
 test("new merged access copy is available in every supported language", () => {

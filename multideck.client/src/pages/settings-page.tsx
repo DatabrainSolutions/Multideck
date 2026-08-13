@@ -2344,6 +2344,13 @@ const emptyInviteForm = {
 }
 
 const makeRoleSelectValue = "__make_workspace_role__"
+const accessDialogShellClassName = "h-[min(760px,calc(100dvh-32px))] max-h-none grid-rows-[minmax(0,1fr)] overflow-hidden border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[760px]"
+const accessDialogPanelClassName = "absolute inset-0 overflow-y-auto overscroll-contain pe-1 [backface-visibility:hidden] [scrollbar-gutter:stable] will-change-[transform,opacity] motion-reduce:will-change-auto"
+const accessDialogPanelVariants = {
+  enter: (distance: number) => ({ opacity: 0, x: distance, zIndex: 1 }),
+  visible: { opacity: 1, x: 0, zIndex: 1 },
+  exit: (distance: number) => ({ opacity: 0, x: -distance, zIndex: 0 }),
+}
 
 function getTeamUserInitials(user: ApiTeamUser) {
   const source = [user.firstName, user.lastName].filter(Boolean).join(" ").trim() || user.displayName || user.email
@@ -2516,8 +2523,10 @@ function UserActionTooltip({ label, children }: { label: string; children: React
 }
 
 function UsersTab() {
-  const { t } = useLanguage()
+  const { direction, t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
+  const accessPanelDistance = shouldReduceMotion ? 0 : direction === "rtl" ? -8 : 8
+  const accessPanelTransition = reduceMotion(Boolean(shouldReduceMotion), mdMotion.smooth)
   const [team, setTeam] = useState<ApiTeamUsersResponse | null>(null)
   const [authorizationState, setAuthorizationState] = useState<ApiAuthorizationState | null>(null)
   const [loading, setLoading] = useState(true)
@@ -3138,14 +3147,15 @@ function UsersTab() {
         setInviteOpen(open)
         if (!open && roleComposerTarget === "invite") setRoleComposerTarget(null)
       }}>
-        <DialogContent className="max-h-[min(860px,calc(100dvh-32px))] overflow-y-auto border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[760px]">
-          <AnimatePresence mode="wait" initial={false}>
+        <DialogContent className={accessDialogShellClassName}>
+          <div className="relative isolate min-h-0 overflow-hidden">
+            <AnimatePresence mode="sync" initial={false} custom={roleComposerTarget === "invite" ? accessPanelDistance : -accessPanelDistance}>
             {roleComposerTarget === "invite" ? (
-              <motion.div key="invite-role" initial={shouldReduceMotion ? false : { opacity: 0, y: 8, filter: "blur(3px)" }} animate={{ opacity: 1, y: 0, filter: "blur(0px)" }} exit={shouldReduceMotion ? undefined : { opacity: 0, y: -8, filter: "blur(3px)" }} transition={{ duration: shouldReduceMotion ? 0 : 0.22, ease: [0.22, 1, 0.36, 1] }}>
+              <motion.div key="invite-role" className={accessDialogPanelClassName} custom={accessPanelDistance} variants={accessDialogPanelVariants} initial={shouldReduceMotion ? false : "enter"} animate="visible" exit={shouldReduceMotion ? undefined : "exit"} transition={accessPanelTransition}>
                 {renderRoleComposer("invite")}
               </motion.div>
             ) : (
-              <motion.div key="invite-details" initial={shouldReduceMotion ? false : { opacity: 0, y: 8, filter: "blur(3px)" }} animate={{ opacity: 1, y: 0, filter: "blur(0px)" }} exit={shouldReduceMotion ? undefined : { opacity: 0, y: -8, filter: "blur(3px)" }} transition={{ duration: shouldReduceMotion ? 0 : 0.22, ease: [0.22, 1, 0.36, 1] }}>
+              <motion.div key="invite-details" className={accessDialogPanelClassName} custom={-accessPanelDistance} variants={accessDialogPanelVariants} initial={shouldReduceMotion ? false : "enter"} animate="visible" exit={shouldReduceMotion ? undefined : "exit"} transition={accessPanelTransition}>
                 <DialogHeader className="text-start">
                   <DialogTitle>{t("Invite a user")}</DialogTitle>
                   <DialogDescription>{t("They’ll receive a branded Multideck invitation and create their password before entering this workspace.")}</DialogDescription>
@@ -3191,7 +3201,8 @@ function UsersTab() {
                 </form>
               </motion.div>
             )}
-          </AnimatePresence>
+            </AnimatePresence>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -3223,14 +3234,15 @@ function UsersTab() {
         setEditingUser(null)
         if (roleComposerTarget === "edit") setRoleComposerTarget(null)
       }}>
-        <DialogContent className="max-h-[min(860px,calc(100dvh-32px))] overflow-y-auto border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[760px]">
-          <AnimatePresence mode="wait" initial={false}>
+        <DialogContent className={accessDialogShellClassName}>
+          <div className="relative isolate min-h-0 overflow-hidden">
+            <AnimatePresence mode="sync" initial={false} custom={roleComposerTarget === "edit" ? accessPanelDistance : -accessPanelDistance}>
             {roleComposerTarget === "edit" ? (
-              <motion.div key="edit-role" initial={shouldReduceMotion ? false : { opacity: 0, y: 8, filter: "blur(3px)" }} animate={{ opacity: 1, y: 0, filter: "blur(0px)" }} exit={shouldReduceMotion ? undefined : { opacity: 0, y: -8, filter: "blur(3px)" }} transition={{ duration: shouldReduceMotion ? 0 : 0.22, ease: [0.22, 1, 0.36, 1] }}>
+              <motion.div key="edit-role" className={accessDialogPanelClassName} custom={accessPanelDistance} variants={accessDialogPanelVariants} initial={shouldReduceMotion ? false : "enter"} animate="visible" exit={shouldReduceMotion ? undefined : "exit"} transition={accessPanelTransition}>
                 {renderRoleComposer("edit")}
               </motion.div>
             ) : (
-              <motion.div key="edit-details" initial={shouldReduceMotion ? false : { opacity: 0, y: 8, filter: "blur(3px)" }} animate={{ opacity: 1, y: 0, filter: "blur(0px)" }} exit={shouldReduceMotion ? undefined : { opacity: 0, y: -8, filter: "blur(3px)" }} transition={{ duration: shouldReduceMotion ? 0 : 0.22, ease: [0.22, 1, 0.36, 1] }}>
+              <motion.div key="edit-details" className={accessDialogPanelClassName} custom={-accessPanelDistance} variants={accessDialogPanelVariants} initial={shouldReduceMotion ? false : "enter"} animate="visible" exit={shouldReduceMotion ? undefined : "exit"} transition={accessPanelTransition}>
           <DialogHeader className="text-start"><DialogTitle className="text-balance">{t("Edit user")}</DialogTitle><DialogDescription className="text-pretty">{t("Update their profile, office, departments and workspace role. Their email address stays tied to their sign-in account.")}</DialogDescription></DialogHeader>
           <form className="mt-5 grid gap-5" onSubmit={saveUser}>
             {editingUserRole?.isLegacyCustom ? <div className="rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-amber)_10%,var(--md-surface))] px-3.5 py-3 text-[12px] leading-5 text-[var(--md-text)] shadow-[var(--md-shadow-line)]">{t("This user has an older one-user Custom role. Choose a saved role to replace it.")}</div> : null}
@@ -3280,7 +3292,8 @@ function UsersTab() {
           </form>
               </motion.div>
             )}
-          </AnimatePresence>
+            </AnimatePresence>
+          </div>
         </DialogContent>
       </Dialog>
 
