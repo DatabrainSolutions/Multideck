@@ -191,6 +191,15 @@ export async function reopenRejectedCustomsDeclaration(declarationId: string) {
   if (error) throw error
 }
 
+export async function deleteCustomsDeclarationDraft(declarationId: string) {
+  const client = requireSupabase()
+  const { data, error } = await client.rpc("delete_customs_draft", {
+    p_declaration_id: declarationId,
+  })
+  if (error) throw error
+  if (data !== true) throw new Error("This Customs draft could not be deleted.")
+}
+
 export async function saveStandaloneDeclarationDraft(
   draft: StandaloneExportDraft,
   declarationId?: string,

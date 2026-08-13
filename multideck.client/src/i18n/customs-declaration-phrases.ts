@@ -3,6 +3,21 @@ import type { LanguageCode } from "./languages"
 type PhraseDictionary = Record<string, Partial<Record<LanguageCode, string>>>
 
 export const customsDeclarationPhrases: PhraseDictionary = {
+  "Delete draft": { de: "Entwurf löschen", fr: "Supprimer le brouillon", ar: "حذف المسودة" },
+  "Only draft declarations can be deleted": { de: "Nur Entwürfe können gelöscht werden", fr: "Seuls les brouillons de déclaration peuvent être supprimés", ar: "يمكن حذف مسودات الإقرارات فقط" },
+  "Confirm in row": { de: "In Zeile bestätigen", fr: "Confirmer dans la ligne", ar: "التأكيد في الصف" },
+  "Drafts only": { de: "Nur Entwürfe", fr: "Brouillons uniquement", ar: "المسودات فقط" },
+  "Draft deleted": { de: "Entwurf gelöscht", fr: "Brouillon supprimé", ar: "تم حذف المسودة" },
+  "Draft could not be deleted": { de: "Entwurf konnte nicht gelöscht werden", fr: "Le brouillon n’a pas pu être supprimé", ar: "تعذر حذف المسودة" },
+  "Try deleting the draft again.": { de: "Versuchen Sie erneut, den Entwurf zu löschen.", fr: "Réessayez de supprimer le brouillon.", ar: "حاول حذف المسودة مرة أخرى." },
+  "Starting your draft": { de: "Ihr Entwurf wird gestartet", fr: "Création de votre brouillon", ar: "جارٍ بدء مسودتك" },
+  "Draft could not be started": { de: "Der Entwurf konnte nicht gestartet werden", fr: "Le brouillon n’a pas pu être créé", ar: "تعذر بدء المسودة" },
+  "No work has been lost. Check your connection and try again.": { de: "Es sind keine Arbeiten verloren gegangen. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.", fr: "Aucun travail n’a été perdu. Vérifiez votre connexion et réessayez.", ar: "لم يتم فقدان أي عمل. تحقق من اتصالك وحاول مرة أخرى." },
+  "Your saved declaration is still intact. Try loading it again.": { de: "Ihre gespeicherte Anmeldung ist weiterhin vorhanden. Versuchen Sie erneut, sie zu laden.", fr: "Votre déclaration enregistrée est toujours intacte. Réessayez de la charger.", ar: "لا يزال إقرارك المحفوظ سليماً. حاول تحميله مرة أخرى." },
+  "Saving automatically": { de: "Wird automatisch gespeichert", fr: "Enregistrement automatique", ar: "جارٍ الحفظ تلقائياً" },
+  "All changes saved": { de: "Alle Änderungen gespeichert", fr: "Toutes les modifications sont enregistrées", ar: "تم حفظ جميع التغييرات" },
+  "Changes could not be saved": { de: "Änderungen konnten nicht gespeichert werden", fr: "Les modifications n’ont pas pu être enregistrées", ar: "تعذر حفظ التغييرات" },
+  "Retry save": { de: "Speichern erneut versuchen", fr: "Réessayer l’enregistrement", ar: "إعادة محاولة الحفظ" },
   "View declaration": { de: "Anmeldung anzeigen", fr: "Afficher la déclaration", ar: "عرض الإقرار" },
   "Preparing declaration": { de: "Anmeldung wird vorbereitet", fr: "Préparation de la déclaration", ar: "جارٍ إعداد الإقرار" },
   "Retry declaration": { de: "Anmeldung erneut versuchen", fr: "Réessayer la déclaration", ar: "إعادة محاولة الإقرار" },

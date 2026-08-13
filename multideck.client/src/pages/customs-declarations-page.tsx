@@ -31,7 +31,7 @@ import {
   type StandaloneExportDraft,
 } from "@/lib/customs-declaration"
 import { createEmptyCustomsReferenceData, useCustomsReferenceData, type CustomsCatalogCode, type CustomsReferenceData } from "@/lib/customs-reference-data"
-import { listJobRelatedDeclarationDrafts, listStandaloneDeclarationDrafts, loadStandaloneDeclarationDraft, reopenRejectedCustomsDeclaration, saveStandaloneDeclarationDraft, type CustomsDraftSummary } from "@/lib/customs-drafts-api"
+import { deleteCustomsDeclarationDraft, listJobRelatedDeclarationDrafts, listStandaloneDeclarationDrafts, loadStandaloneDeclarationDraft, reopenRejectedCustomsDeclaration, saveStandaloneDeclarationDraft, type CustomsDraftSummary } from "@/lib/customs-drafts-api"
 import { hasCustomsInvoiceImportRecovery, moveCustomsInvoiceImportRecovery } from "@/lib/customs-invoice-import-recovery"
 import { fetchCustomsDeclarationPdf, getCustomsDeclarationDocument, type CustomsDeclarationDocument } from "@/lib/customs-declaration-document-api"
 import { customsStatusPollDelay, isTerminalCustomsStatus, shouldPollCustomsStatus, shouldPollCustomsSubmission } from "@/lib/customs-status-lifecycle"
@@ -88,12 +88,38 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, current
   currentUser?: AuthUserSummary | null
   t: (text: string) => string
 }) {
+  const { direction } = useLanguage()
+  const shouldReduceMotion = Boolean(useReducedMotion())
   const [drafts, setDrafts] = useState<CustomsDraftSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState("")
   const [destinationFilter, setDestinationFilter] = useState("")
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null)
+  const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null)
+
+  const requestDelete = useCallback(async (draft: CustomsDraftSummary) => {
+    if (draft.status.toLocaleLowerCase() !== "draft" || deletingDraftId) return
+    if (confirmingDeleteId !== draft.id) {
+      setConfirmingDeleteId(draft.id)
+      return
+    }
+    setDeletingDraftId(draft.id)
+    try {
+      await deleteCustomsDeclarationDraft(draft.id)
+      setDrafts((current) => current.filter((candidate) => candidate.id !== draft.id))
+      setConfirmingDeleteId(null)
+      toast.success(t("Draft deleted"), { description: draft.reference })
+    } catch (reason) {
+      console.error("The Customs draft could not be deleted.", reason)
+      toast.error(t("Draft could not be deleted"), {
+        description: t(reason instanceof Error ? reason.message : "Try deleting the draft again."),
+      })
+    } finally {
+      setDeletingDraftId(null)
+    }
+  }, [confirmingDeleteId, deletingDraftId, t])
 
   useEffect(() => {
     let cancelled = false
@@ -210,7 +236,31 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, current
       sortValue: (draft) => new Date(draft.updatedAt).getTime(),
       cell: (draft) => <span className="text-[11px] text-[var(--md-subtle)]">{new Date(draft.updatedAt).toLocaleString()}</span>,
     },
-  ], [currentUser, jobRelated, t])
+    {
+      id: "actions",
+      label: "Actions",
+      headerContent: <span className="sr-only">{t("Actions")}</span>,
+      kind: "actions",
+      align: "center",
+      width: 82,
+      minWidth: 82,
+      maxWidth: 82,
+      canHide: false,
+      canPin: false,
+      headerClassName: "px-2 [&>span]:justify-center",
+      cellClassName: "px-2 py-2",
+      cell: (draft) => <DeclarationDeleteAction
+        draft={draft}
+        confirming={confirmingDeleteId === draft.id}
+        deleting={deletingDraftId === draft.id}
+        disabled={draft.status.toLocaleLowerCase() !== "draft"}
+        shouldReduceMotion={shouldReduceMotion}
+        onCancel={() => setConfirmingDeleteId(null)}
+        onDelete={() => void requestDelete(draft)}
+        t={t}
+      />,
+    },
+  ], [confirmingDeleteId, currentUser, deletingDraftId, jobRelated, requestDelete, shouldReduceMotion, t])
 
   const statuses = useMemo(() => [...new Set(drafts.map((draft) => draft.status).filter(Boolean))].sort(), [drafts])
   const destinations = useMemo(() => [...new Set(drafts.map((draft) => draft.destinationCountry).filter((value): value is string => Boolean(value)))].sort(), [drafts])
@@ -244,9 +294,25 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, current
         columns={columns}
         rows={loading || loadError ? [] : filteredDrafts}
         getRowKey={(draft) => draft.id}
-        storageKey={`customs-${jobRelated ? "job-related" : "standalone"}-${kind}-register-v2`}
+        storageKey={`customs-${jobRelated ? "job-related" : "standalone"}-${kind}-register-v3`}
         rowClassName="hover:bg-[var(--md-hover)]"
         onRowClick={!jobRelated ? (draft) => navigate(`/customs/standalone/${kind}/${draft.id}`) : undefined}
+        wrapRow={(draft, row) => <ContextMenuPrimitive.Root dir={direction}>
+          <ContextMenuPrimitive.Trigger asChild>{row}</ContextMenuPrimitive.Trigger>
+          <ContextMenuPrimitive.Portal>
+            <ContextMenuPrimitive.Content collisionPadding={14} className="md-sidebar-menu premium-stroke z-50 origin-(--radix-context-menu-content-transform-origin) rounded-[var(--md-radius-xl)] bg-[color-mix(in_srgb,var(--md-surface)_96%,transparent)] p-1 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] backdrop-blur-xl">
+              <ContextMenuPrimitive.Item
+                disabled={draft.status.toLocaleLowerCase() !== "draft" || deletingDraftId === draft.id}
+                className="md-sidebar-menu-item group/menu flex h-9 cursor-default select-none items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2 text-[13px] font-medium text-[var(--md-text)] outline-none transition-[background,color] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] data-[disabled]:opacity-40 data-[highlighted]:bg-[color-mix(in_srgb,var(--md-red)_9%,transparent)] data-[highlighted]:text-[var(--md-red)]"
+                onSelect={() => void requestDelete(draft)}
+              >
+                <span className="md-sidebar-menu-item__icon grid size-5 shrink-0 place-items-center text-[var(--md-subtle)] transition-colors duration-150 group-data-[highlighted]/menu:text-[var(--md-red)]"><Trash2 className="size-4" strokeWidth={1.3} /></span>
+                <span className="min-w-0 flex-1 truncate text-start">{t("Delete draft")}</span>
+                <span className="shrink-0 text-[11px] font-normal text-[var(--md-subtle)]">{t(draft.status.toLocaleLowerCase() === "draft" ? "Confirm in row" : "Drafts only")}</span>
+              </ContextMenuPrimitive.Item>
+            </ContextMenuPrimitive.Content>
+          </ContextMenuPrimitive.Portal>
+        </ContextMenuPrimitive.Root>}
         toolbarTabs={(
           <RegisterViewSwitch
             options={["Export", "Import"] as const}
@@ -308,6 +374,64 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, current
         )}
       />
     </div>
+  )
+}
+
+function DeclarationDeleteAction({ draft, confirming, deleting, disabled, shouldReduceMotion, onCancel, onDelete, t }: {
+  draft: CustomsDraftSummary
+  confirming: boolean
+  deleting: boolean
+  disabled: boolean
+  shouldReduceMotion: boolean
+  onCancel: () => void
+  onDelete: () => void
+  t: (text: string) => string
+}) {
+  return (
+    <span className="relative block h-7 w-[62px]" onClick={(event) => event.stopPropagation()}>
+      <motion.button
+        type="button"
+        initial={false}
+        animate={{ width: confirming ? 62 : 28 }}
+        className={cn(
+          "group/delete absolute inset-y-0 right-0 grid h-7 origin-right place-items-center overflow-hidden rounded-full text-[var(--md-subtle)] outline-none",
+          confirming
+            ? "bg-[rgba(209,78,78,0.12)] px-2 text-[11px] font-medium text-[var(--md-red)] hover:bg-[rgba(209,78,78,0.18)]"
+            : "hover:text-[var(--md-red)]",
+        )}
+        aria-label={t(disabled ? "Only draft declarations can be deleted" : confirming ? "Confirm delete" : "Delete draft") + `: ${draft.reference}`}
+        title={t(disabled ? "Only draft declarations can be deleted" : confirming ? "Confirm delete" : "Delete draft")}
+        disabled={disabled || deleting}
+        onClick={(event) => { event.stopPropagation(); onDelete() }}
+        onBlur={() => { if (confirming && !deleting) onCancel() }}
+        onKeyDown={(event) => {
+          event.stopPropagation()
+          if (event.key !== "Escape" || !confirming || deleting) return
+          event.preventDefault()
+          onCancel()
+        }}
+        transition={reduceMotion(shouldReduceMotion, confirming ? mdMotion.fast : mdMotion.micro)}
+      >
+        <span
+          className={cn(
+            "absolute grid size-6 place-items-center rounded-full transition-[background-color,box-shadow,color,opacity,transform] duration-150 group-hover/delete:bg-[rgba(209,78,78,0.10)] group-hover/delete:shadow-[var(--md-shadow-line)] group-focus-visible/delete:ring-[3px] group-focus-visible/delete:ring-[var(--md-accent-a20)] group-active/delete:scale-[0.94] motion-reduce:transition-none",
+            confirming ? "scale-75 opacity-0" : "scale-100 opacity-100",
+          )}
+          aria-hidden="true"
+        >
+          <Trash2 className="size-3.5" strokeWidth={1.3} />
+        </span>
+        <span
+          className={cn(
+            "whitespace-nowrap transition-[opacity,transform] duration-150 motion-reduce:transition-none",
+            confirming ? "translate-y-0 opacity-100" : "translate-y-1 opacity-0",
+          )}
+          aria-hidden={!confirming}
+        >
+          {deleting ? t("Deleting") : t("Confirm")}
+        </span>
+      </motion.button>
+    </span>
   )
 }
 
@@ -393,9 +517,11 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
   const [validated, setValidated] = useState(false)
   const invoiceImportRecoveryKey = declarationId ?? "new"
   const [invoiceImportOpen, setInvoiceImportOpen] = useState(() => hasCustomsInvoiceImportRecovery(invoiceImportRecoveryKey))
-  const [loadingDraft, setLoadingDraft] = useState(Boolean(declarationId))
+  const [loadingDraft, setLoadingDraft] = useState(true)
   const [draftLoadError, setDraftLoadError] = useState<string | null>(null)
+  const [draftLoadAttempt, setDraftLoadAttempt] = useState(0)
   const [savingDraft, setSavingDraft] = useState(false)
+  const [autosaveStatus, setAutosaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle")
   const [iCustomsState, setICustomsState] = useState<ICustomsWorkspaceState | null>(null)
   const [iCustomsBusy, setICustomsBusy] = useState<"loading" | "draft" | "submit" | "refresh" | null>(declarationId ? "loading" : null)
   const [iCustomsIssues, setICustomsIssues] = useState<string[]>([])
@@ -412,6 +538,12 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
   const lastFocusRefreshAtRef = useRef(0)
   const pdfLoadInFlightRef = useRef<Promise<{ document: CustomsDeclarationDocument; blob: Blob }> | null>(null)
   const pdfAutoLoadAttemptedForRef = useRef<string | null>(null)
+  const initialDraftCreationRef = useRef(false)
+  const lastSavedDraftSnapshotRef = useRef<string | null>(null)
+  const draftRef = useRef(draft)
+  const autosaveQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const autosaveSequenceRef = useRef(0)
+  const editorMountedRef = useRef(true)
   const completion = useMemo(() => declarationCompletion(draft), [draft])
   const activeItem = draft.items.find((item) => item.id === activeItemId) ?? draft.items[0]
   const issueFields = useMemo(() => new Set(validated ? completion.issues.map((issue) => issue.field) : []), [completion.issues, validated])
@@ -421,6 +553,15 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
   useEffect(() => {
     iCustomsBusyRef.current = iCustomsBusy
   }, [iCustomsBusy])
+
+  useEffect(() => {
+    draftRef.current = draft
+  }, [draft])
+
+  useEffect(() => {
+    editorMountedRef.current = true
+    return () => { editorMountedRef.current = false }
+  }, [])
 
   function selectTab(nextTab: EditorTab) {
     if (nextTab === tab) return
@@ -432,6 +573,31 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
   }, [invoiceImportRecoveryKey])
 
   useEffect(() => {
+    if (declarationId || initialDraftCreationRef.current) return
+    let cancelled = false
+    initialDraftCreationRef.current = true
+    setLoadingDraft(true)
+    setDraftLoadError(null)
+    setAutosaveStatus("saving")
+    saveStandaloneDeclarationDraft(draftRef.current)
+      .then((saved) => {
+        if (cancelled) return
+        moveCustomsInvoiceImportRecovery("new", saved.id)
+        lastSavedDraftSnapshotRef.current = JSON.stringify({ ...draftRef.current, multideckReference: saved.reference })
+        setAutosaveStatus("saved")
+        navigate(`${registerPath}/${saved.id}`)
+      })
+      .catch((reason: unknown) => {
+        console.error("The initial Customs draft could not be created.", reason)
+        if (cancelled) return
+        setDraftLoadError(reason instanceof Error ? reason.message : "The Customs draft could not be started.")
+        setAutosaveStatus("error")
+        setLoadingDraft(false)
+      })
+    return () => { cancelled = true }
+  }, [declarationId, draftLoadAttempt, navigate, registerPath])
+
+  useEffect(() => {
     if (!declarationId) return
     let cancelled = false
     setLoadingDraft(true)
@@ -441,6 +607,8 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
         if (cancelled) return
         setDraft(savedDraft)
         setActiveItemId(savedDraft.items[0].id)
+        lastSavedDraftSnapshotRef.current = JSON.stringify(savedDraft)
+        setAutosaveStatus("saved")
       })
       .catch((reason: unknown) => {
         console.error("The Customs draft could not be loaded.", reason)
@@ -450,7 +618,7 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
         if (!cancelled) setLoadingDraft(false)
       })
     return () => { cancelled = true }
-  }, [declarationId, kind])
+  }, [declarationId, draftLoadAttempt, kind])
 
   useEffect(() => {
     if (!declarationId) return
@@ -484,6 +652,56 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
     }))
   }
 
+  const queueAutosave = useCallback((nextDraft: StandaloneExportDraft) => {
+    if (!declarationId) return Promise.resolve()
+    const snapshot = JSON.stringify(nextDraft)
+    if (snapshot === lastSavedDraftSnapshotRef.current) return autosaveQueueRef.current
+    const sequence = ++autosaveSequenceRef.current
+    if (editorMountedRef.current) setAutosaveStatus("saving")
+
+    const operation = autosaveQueueRef.current.then(async () => {
+      if (snapshot === lastSavedDraftSnapshotRef.current) return
+      try {
+        const saved = await saveStandaloneDeclarationDraft(nextDraft, declarationId)
+        const persistedDraft = nextDraft.multideckReference === saved.reference
+          ? nextDraft
+          : { ...nextDraft, multideckReference: saved.reference }
+        lastSavedDraftSnapshotRef.current = JSON.stringify(persistedDraft)
+        moveCustomsInvoiceImportRecovery(declarationId, saved.id)
+        if (editorMountedRef.current && nextDraft.multideckReference !== saved.reference) {
+          setDraft((current) => current.multideckReference === saved.reference ? current : { ...current, multideckReference: saved.reference })
+        }
+        if (editorMountedRef.current && sequence === autosaveSequenceRef.current) setAutosaveStatus("saved")
+      } catch (reason) {
+        console.error("The Customs draft could not be saved automatically.", reason)
+        if (editorMountedRef.current && sequence === autosaveSequenceRef.current) setAutosaveStatus("error")
+      }
+    })
+
+    autosaveQueueRef.current = operation
+    return operation
+  }, [declarationId])
+
+  useEffect(() => {
+    if (!declarationId || loadingDraft || draftLoadError || savingDraft || iCustomsBusy === "loading") return
+    const declarationStatus = iCustomsState?.declaration.status?.toLocaleLowerCase()
+    if (declarationStatus && declarationStatus !== "draft") return
+    const snapshot = JSON.stringify(draft)
+    if (snapshot === lastSavedDraftSnapshotRef.current) return
+    const timer = window.setTimeout(() => { void queueAutosave(draft) }, 850)
+    return () => window.clearTimeout(timer)
+  }, [declarationId, draft, draftLoadError, iCustomsBusy, iCustomsState?.declaration.status, loadingDraft, queueAutosave, savingDraft])
+
+  useEffect(() => {
+    if (!declarationId) return
+    const saveBeforeBackgrounding = () => {
+      if (document.visibilityState !== "hidden") return
+      void queueAutosave(draftRef.current)
+    }
+    document.addEventListener("visibilitychange", saveBeforeBackgrounding)
+    return () => document.removeEventListener("visibilitychange", saveBeforeBackgrounding)
+  }, [declarationId, queueAutosave])
+
   function validate() {
     setValidated(true)
     const first = completion.issues[0]
@@ -502,11 +720,14 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
     setSavingDraft(true)
     let savedLocally = false
     try {
+      await autosaveQueueRef.current
       if (declarationId && iCustomsState?.declaration.provider?.status === "rejected") {
         await reopenRejectedCustomsDeclaration(declarationId)
       }
       const saved = await saveStandaloneDeclarationDraft(draft, declarationId)
       savedLocally = true
+      lastSavedDraftSnapshotRef.current = JSON.stringify({ ...draft, multideckReference: saved.reference })
+      setAutosaveStatus("saved")
       moveCustomsInvoiceImportRecovery(invoiceImportRecoveryKey, saved.id)
       setDraft((current) => ({ ...current, multideckReference: saved.reference }))
       const providerStatus = iCustomsState?.declaration.provider?.status
@@ -790,11 +1011,11 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
   }, [declarationPdfAvailable, iCustomsState?.declaration.provider?.mrn, loadDeclarationPdf, pdfBlob, pdfBusy])
 
   if (loadingDraft) {
-    return <Surface padding="lg" className="rounded-[var(--md-radius-xl)]"><p className="text-[13px] text-[var(--md-text)]">{t("Loading saved declaration")}</p></Surface>
+    return <Surface padding="lg" className="rounded-[var(--md-radius-xl)]"><p role="status" className="text-[13px] text-[var(--md-text)]">{t(declarationId ? "Loading saved declaration" : "Starting your draft")}</p></Surface>
   }
 
   if (draftLoadError) {
-    return <Surface padding="lg" className="rounded-[var(--md-radius-xl)]"><CircleAlert className="size-5 text-[var(--md-red)]" /><h1 className="mt-3 text-[18px] font-medium text-[var(--md-ink)]">{t("Saved declaration unavailable")}</h1><p className="mt-2 text-[12px] text-[var(--md-text)]">{t("Return to the declaration register and choose the draft again.")}</p><Button type="button" variant="outline" className="mt-4" onClick={() => navigate(registerPath)}>{t("Back to standalone declarations")}</Button></Surface>
+    return <Surface padding="lg" className="rounded-[var(--md-radius-xl)]"><CircleAlert className="size-5 text-[var(--md-red)]" /><h1 className="mt-3 text-[18px] font-medium text-[var(--md-ink)]">{t(declarationId ? "Saved declaration unavailable" : "Draft could not be started")}</h1><p className="mt-2 text-[12px] text-[var(--md-text)]">{t(declarationId ? "Your saved declaration is still intact. Try loading it again." : "No work has been lost. Check your connection and try again.")}</p><div className="mt-4 flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={() => { if (!declarationId) initialDraftCreationRef.current = false; setDraftLoadAttempt((attempt) => attempt + 1) }}><RefreshCw className="size-4" />{t("Try again")}</Button><Button type="button" variant="ghost" onClick={() => navigate(registerPath)}>{t("Back to standalone declarations")}</Button></div></Surface>
   }
 
   return (
@@ -831,7 +1052,15 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
             <Toggle checked={showOptional} onChange={setShowOptional}>{t("Optional fields")}</Toggle>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2 sm:justify-end">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+          <span
+            role={autosaveStatus === "error" ? "alert" : "status"}
+            aria-live="polite"
+            className={cn("text-[11px]", autosaveStatus === "error" ? "text-[var(--md-red)]" : "text-[var(--md-subtle)]")}
+          >
+            {autosaveStatus === "saving" ? t("Saving automatically") : autosaveStatus === "saved" ? t("All changes saved") : autosaveStatus === "error" ? t("Changes could not be saved") : null}
+          </span>
+          {autosaveStatus === "error" ? <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-[11px]" onClick={() => void queueAutosave(draft)}><RefreshCw className="size-3.5" />{t("Retry save")}</Button> : null}
           <Button type="button" variant="ghost" size="sm" className="h-9 bg-black px-3 text-white shadow-none hover:bg-black/80 hover:text-white" disabled={!declarationPdfAvailable || pdfBusy} onClick={() => void openDeclarationPdf()}><FileText className="size-3.5" />{t(pdfBusy ? "Preparing declaration" : pdfLoadError ? "Retry declaration" : "View declaration")}</Button>
           <Button type="button" variant="outline" size="sm" className="h-9" disabled={savingDraft} onClick={() => void saveDraft()}>{t(savingDraft ? "Saving draft" : "Save draft")}</Button>
           <Button type="button" size="sm" className="h-9" onClick={validate}><FileCheck2 className="size-3.5" />{t("Validate")}</Button>
