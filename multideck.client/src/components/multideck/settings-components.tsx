@@ -108,13 +108,30 @@ export function SettingsPageHeader({
   description,
   actions,
   icon: Icon,
+  descriptionPlacement = "aside",
 }: {
   eyebrow?: string
   title: string
   description: string
   actions?: ReactNode
   icon?: LucideIcon
+  descriptionPlacement?: "aside" | "under-title"
 }) {
+  if (descriptionPlacement === "under-title") {
+    return (
+      <header className="grid gap-3 py-1 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start lg:gap-[var(--md-page-section-gap)]">
+        <div className="min-w-0">
+          <h1 className="flex items-center gap-2.5 text-balance text-[24px] font-medium leading-[1.1] tracking-[-0.02em] text-[var(--md-ink)]">
+            {Icon ? <span className="grid size-9 shrink-0 place-items-center rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] text-[var(--md-accent)] shadow-[var(--md-shadow-line)]"><Icon className="size-4" strokeWidth={1.4} aria-hidden="true" /></span> : null}
+            <span>{title}</span>
+          </h1>
+          <p className="mt-2 max-w-[65ch] text-pretty text-[14px] leading-6 text-[var(--md-text)]">{description}</p>
+        </div>
+        {actions ? <div className="flex flex-wrap items-center gap-2 lg:justify-end">{actions}</div> : null}
+      </header>
+    )
+  }
+
   return (
     <header className="grid gap-3 py-1 lg:grid-cols-[minmax(0,1fr)_minmax(320px,560px)] lg:items-end lg:gap-[var(--md-page-section-gap)]">
       <h1 className="flex items-center gap-2.5 text-balance text-[24px] font-medium leading-[1.1] tracking-[-0.02em] text-[var(--md-ink)]">

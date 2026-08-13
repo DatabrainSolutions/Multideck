@@ -3,6 +3,7 @@ import type { User } from "@supabase/supabase-js"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import {
   Activity,
+  Ban,
   BadgeCheck,
   Bell,
   BookOpen,
@@ -36,6 +37,7 @@ import {
   MessageCircle,
   MonitorSmartphone,
   Palette,
+  Plus,
   Plug,
   Search,
   ShieldCheck,
@@ -44,6 +46,7 @@ import {
   Trash2,
   Upload,
   UserRound,
+  UserRoundCheck,
   Users,
   WandSparkles,
   Webhook,
@@ -67,6 +70,8 @@ import { AccentPicker } from "@/components/multideck/accent-picker"
 import { AiUsageOverview } from "@/components/multideck/ai-usage-overview"
 import { SegmentedControl } from "@/components/multideck/workflow-components"
 import { AuthIdentityManager } from "@/components/multideck/auth-provider-selector"
+import { BroadcastSettings } from "@/components/multideck/broadcast-settings"
+import { CopyFeedbackTransition, CopyStatusIcon } from "@/components/multideck/copyable-field"
 import { SpectralBloomShader } from "@/components/multideck/dexter-action-pill"
 import { ShortcutKeys } from "@/components/multideck/keyboard-shortcut-keys"
 import { KeyboardShortcutsPanel } from "@/components/multideck/keyboard-shortcuts-panel"
@@ -98,13 +103,18 @@ import { languageOptions, getLanguageOption } from "@/i18n/languages"
 import { useLanguage } from "@/i18n/language-provider"
 import {
   createApiAuthorizationRole,
+  createApiDepartment,
   createApiTeamUser,
   deleteApiAuthorizationRole,
   deleteApiTeamUser,
+  deleteApiTeamUserInvitation,
   getApiCurrentUser,
   getApiAuthorizationState,
   getApiTeamUsers,
+  getApiTeamUserDeletionImpact,
   resendApiTeamUserInvitation,
+  updateApiTeamUser,
+  updateApiTeamUserStatus,
   updateApiCurrentUserProfile,
   updateApiUserRoles,
   type ApiAuthorizationRole,
@@ -112,6 +122,7 @@ import {
   type ApiInvitationExpiry,
   type ApiPermission,
   type ApiTeamUser,
+  type ApiTeamUserDeletionImpact,
   type ApiTeamUsersResponse,
 } from "@/lib/api"
 import {
@@ -2328,6 +2339,7 @@ const emptyInviteForm = {
   roleTitle: "Operator",
   roleId: "",
   officeId: "",
+  departmentIds: [] as string[],
   invitationExpiry: "7d" as ApiInvitationExpiry,
 }
 
@@ -2464,9 +2476,22 @@ function RolePermissionMatrix({
 }
 
 function TeamUserIdentity({ user }: { user: ApiTeamUser }) {
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setPhotoUrl(null)
+    if (!user.profilePhoto) return () => { cancelled = true }
+    void createProfilePhotoSignedUrl(user.profilePhoto).then((url) => {
+      if (!cancelled) setPhotoUrl(url)
+    }).catch(() => undefined)
+    return () => { cancelled = true }
+  }, [user.profilePhoto])
+
   return (
     <div className="flex min-w-0 items-center gap-3">
       <Avatar className="size-9 shrink-0 rounded-full">
+        {photoUrl ? <AvatarImage src={photoUrl} alt="" className="rounded-full object-cover" /> : null}
         <AvatarFallback className="rounded-full bg-[var(--md-surface-tint)] text-[12px] font-medium text-[var(--md-ink)]">
           {getTeamUserInitials(user)}
         </AvatarFallback>
@@ -2479,6 +2504,22 @@ function TeamUserIdentity({ user }: { user: ApiTeamUser }) {
   )
 }
 
+function UserActionTooltip({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent
+        side="top"
+        sideOffset={7}
+        className="rounded-[var(--md-radius-md)] border border-[color-mix(in_srgb,var(--md-accent)_28%,transparent)] bg-[var(--md-ink)] px-2.5 py-1.5 text-[11.5px] font-medium text-[var(--md-surface)] shadow-[var(--md-shadow-lift)] data-[side=top]:slide-in-from-bottom-1 motion-reduce:animate-none [&_[data-radix-tooltip-arrow]]:bg-[var(--md-ink)] [&_[data-radix-tooltip-arrow]]:fill-[var(--md-ink)]"
+      >
+        <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-[var(--md-accent)]" />
+        {label}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
 function UsersTab() {
   const { t } = useLanguage()
   const [team, setTeam] = useState<ApiTeamUsersResponse | null>(null)
@@ -2486,12 +2527,28 @@ function UsersTab() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
+  const [currentAuthUserId, setCurrentAuthUserId] = useState<string | null>(null)
   const [inviteOpen, setInviteOpen] = useState(false)
   const [inviteForm, setInviteForm] = useState(emptyInviteForm)
   const [inviting, setInviting] = useState(false)
   const [resendingUserId, setResendingUserId] = useState<string | null>(null)
   const [deleteInviteCandidate, setDeleteInviteCandidate] = useState<ApiTeamUser | null>(null)
   const [deletingInvite, setDeletingInvite] = useState(false)
+  const [editingUser, setEditingUser] = useState<ApiTeamUser | null>(null)
+  const [editForm, setEditForm] = useState({ firstName: "", lastName: "", jobTitle: "", officeId: "", roleId: "", departmentIds: [] as string[] })
+  const [savingUser, setSavingUser] = useState(false)
+  const [newDepartmentName, setNewDepartmentName] = useState("")
+  const [creatingDepartment, setCreatingDepartment] = useState(false)
+  const [statusCandidate, setStatusCandidate] = useState<ApiTeamUser | null>(null)
+  const [changingStatus, setChangingStatus] = useState(false)
+  const [deleteCandidate, setDeleteCandidate] = useState<ApiTeamUser | null>(null)
+  const [deletionImpact, setDeletionImpact] = useState<ApiTeamUserDeletionImpact | null>(null)
+  const [loadingDeletionImpact, setLoadingDeletionImpact] = useState(false)
+  const [replacementUserId, setReplacementUserId] = useState("")
+  const [deletionConfirmation, setDeletionConfirmation] = useState("")
+  const [deletionNameCopied, setDeletionNameCopied] = useState(false)
+  const deletionNameCopyTimerRef = useRef<number | null>(null)
+  const [deletingUser, setDeletingUser] = useState(false)
 
   const loadUsers = useCallback(async () => {
     setLoading(true)
@@ -2503,6 +2560,7 @@ function UsersTab() {
         getApiTeamUsers(session.access_token),
         getApiAuthorizationState(session.access_token),
       ])
+      setCurrentAuthUserId(session.user.id)
       const defaultRole = getDefaultInviteRole(nextAuthorization.roles.filter((role) => role.isSystem))
       setTeam(nextTeam)
       setAuthorizationState(nextAuthorization)
@@ -2522,6 +2580,10 @@ function UsersTab() {
   useEffect(() => {
     void loadUsers()
   }, [loadUsers])
+
+  useEffect(() => () => {
+    if (deletionNameCopyTimerRef.current !== null) window.clearTimeout(deletionNameCopyTimerRef.current)
+  }, [])
 
   async function sendInvitation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -2546,6 +2608,7 @@ function UsersTab() {
         companyId: team?.company?.id ?? null,
         officeId: inviteForm.officeId,
         roleId: inviteForm.roleId,
+        departmentIds: inviteForm.departmentIds,
         roleTitle: authorizationState?.roles.find((role) => role.id === inviteForm.roleId)?.name ?? null,
         invitationExpiry: inviteForm.invitationExpiry,
       })
@@ -2586,7 +2649,7 @@ function UsersTab() {
     try {
       const session = await getSupabaseSession()
       if (!session?.access_token) throw new Error(t("Sign in again before removing users."))
-      await deleteApiTeamUser(session.access_token, deleteInviteCandidate.id)
+      await deleteApiTeamUserInvitation(session.access_token, deleteInviteCandidate.id)
       setTeam((current) => current ? { ...current, users: current.users.filter((user) => user.id !== deleteInviteCandidate.id) } : current)
       toast.success(t("Invitation deleted"), { description: deleteInviteCandidate.email })
       setDeleteInviteCandidate(null)
@@ -2596,6 +2659,189 @@ function UsersTab() {
       })
     } finally {
       setDeletingInvite(false)
+    }
+  }
+
+  function openUserEditor(user: ApiTeamUser) {
+    const role = getPrimaryRole(user, authorizationState?.roles ?? [])
+    setEditingUser(user)
+    setNewDepartmentName("")
+    setEditForm({
+      firstName: user.firstName ?? "",
+      lastName: user.lastName ?? "",
+      jobTitle: user.jobTitle ?? "",
+      officeId: user.offices[0]?.id ?? team?.offices[0]?.id ?? "",
+      roleId: role?.id ?? "",
+      departmentIds: user.departments.map((department) => department.id),
+    })
+  }
+
+  async function createAndAssignDepartment() {
+    const name = newDepartmentName.trim()
+    if (!name || creatingDepartment) return
+    setCreatingDepartment(true)
+    try {
+      const session = await getSupabaseSession()
+      if (!session?.access_token) throw new Error(t("Sign in again before managing team users."))
+      const department = await createApiDepartment(session.access_token, name)
+      setTeam((current) => current ? {
+        ...current,
+        departments: [...current.departments.filter((item) => item.id !== department.id), department]
+          .sort((left, right) => left.name.localeCompare(right.name)),
+      } : current)
+      setEditForm((current) => ({ ...current, departmentIds: [...new Set([...current.departmentIds, department.id])] }))
+      setNewDepartmentName("")
+      toast.success(t("Department created"), { description: department.name })
+    } catch (error) {
+      toast.error(t("Department could not be created"), { description: error instanceof Error ? error.message : t("Check the name and try again.") })
+    } finally {
+      setCreatingDepartment(false)
+    }
+  }
+
+  async function saveUser(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!editingUser) return
+    setSavingUser(true)
+    try {
+      const session = await getSupabaseSession()
+      if (!session?.access_token) throw new Error(t("Sign in again before managing team users."))
+      const updated = await updateApiTeamUser(session.access_token, editingUser.id, {
+        firstName: editForm.firstName,
+        lastName: editForm.lastName,
+        jobTitle: editForm.jobTitle || null,
+        officeId: editForm.officeId,
+        roleIds: [editForm.roleId],
+        departmentIds: editForm.departmentIds,
+      })
+      setTeam((current) => current ? { ...current, users: upsertTeamUser(current.users, updated) } : current)
+      toast.success(t("User details saved"), { description: updated.email })
+      setEditingUser(null)
+    } catch (error) {
+      toast.error(t("User details could not be saved"), { description: error instanceof Error ? error.message : t("Check the details and try again.") })
+    } finally {
+      setSavingUser(false)
+    }
+  }
+
+  async function changeUserStatus() {
+    if (!statusCandidate) return
+    setChangingStatus(true)
+    try {
+      const session = await getSupabaseSession()
+      if (!session?.access_token) throw new Error(t("Sign in again before managing team users."))
+      const nextStatus = statusCandidate.status === "Deactivated" ? "active" : "deactivated"
+      const updated = await updateApiTeamUserStatus(session.access_token, statusCandidate.id, nextStatus)
+      setTeam((current) => current ? { ...current, users: upsertTeamUser(current.users, updated) } : current)
+      toast.success(t(nextStatus === "active" ? "User reactivated" : "User deactivated"), { description: updated.email })
+      setStatusCandidate(null)
+    } catch (error) {
+      toast.error(t("User status could not be changed"), { description: error instanceof Error ? error.message : t("Check your access and try again.") })
+    } finally {
+      setChangingStatus(false)
+    }
+  }
+
+  async function openDeleteUser(user: ApiTeamUser) {
+    setDeleteCandidate(user)
+    setDeletionImpact(null)
+    setReplacementUserId("")
+    setDeletionConfirmation("")
+    setDeletionNameCopied(false)
+    setLoadingDeletionImpact(true)
+    try {
+      const qaMode = import.meta.env.DEV ? new URLSearchParams(window.location.search).get("usersQa") : null
+      if (qaMode === "zero" || qaMode === "has-work") {
+        const groups = qaMode === "has-work" ? [
+          { key: "App_Live_Bookings.Booking_OwnerUserID", table: "Jobs", field: "Booking_OwnerUserID", count: 4 },
+          { key: "Workflow_Tasks.Task_AssignedUserID", table: "Tasks", field: "Task_AssignedUserID", count: 7 },
+          { key: "CRM_Accounts.Account_OwnerUserID", table: "Customer records", field: "Account_OwnerUserID", count: 2 },
+        ] : []
+        setDeletionImpact({
+          alreadyDeleted: false,
+          requiresReassignment: groups.length > 0,
+          totalTransferable: groups.reduce((total, group) => total + group.count, 0),
+          groups,
+          cleanup: [],
+          retainedAttribution: [],
+          impactToken: `local-rendered-qa-${qaMode}`,
+          eligibleUsers: (team?.users ?? []).filter((candidate) => candidate.id !== user.id && candidate.status === "Active" && candidate.authUserId !== currentAuthUserId).slice(0, 5),
+        })
+        return
+      }
+      const session = await getSupabaseSession()
+      if (!session?.access_token) throw new Error(t("Sign in again before removing users."))
+      const impact = await getApiTeamUserDeletionImpact(session.access_token, user.id)
+      setDeletionImpact(impact)
+      if (impact.eligibleUsers.length === 1) setReplacementUserId(impact.eligibleUsers[0].id)
+    } catch (error) {
+      const unavailable = error instanceof Error && error.message === "USER_DELETION_IMPACT_UNAVAILABLE"
+      toast.error(t(unavailable ? "Deletion tools are unavailable" : "Deletion impact could not be loaded"), {
+        description: t(unavailable ? "The workspace backend needs the latest user lifecycle update before deletion can be checked safely." : "Refresh the users list and try again."),
+      })
+      setDeleteCandidate(null)
+    } finally {
+      setLoadingDeletionImpact(false)
+    }
+  }
+
+  async function copyDeletionConfirmationName() {
+    if (!deleteCandidate) return
+    try {
+      const value = deleteCandidate.displayName
+      let copied = false
+      if (navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(value)
+          copied = true
+        } catch {
+          copied = false
+        }
+      }
+      if (!copied) {
+        const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null
+        const fallback = document.createElement("textarea")
+        fallback.value = value
+        fallback.setAttribute("readonly", "")
+        fallback.style.position = "fixed"
+        fallback.style.inset = "0 auto auto -9999px"
+        document.body.appendChild(fallback)
+        fallback.select()
+        copied = document.execCommand("copy")
+        fallback.remove()
+        activeElement?.focus()
+      }
+      if (!copied) throw new Error("Clipboard unavailable")
+      if (deletionNameCopyTimerRef.current !== null) window.clearTimeout(deletionNameCopyTimerRef.current)
+      setDeletionNameCopied(true)
+      deletionNameCopyTimerRef.current = window.setTimeout(() => {
+        setDeletionNameCopied(false)
+        deletionNameCopyTimerRef.current = null
+      }, 1600)
+    } catch {
+      setDeletionNameCopied(false)
+      toast.error(t("Name could not be copied"), { description: t("Select the name and copy it manually.") })
+    }
+  }
+
+  async function permanentlyDeleteUser() {
+    if (!deleteCandidate || !deletionImpact) return
+    setDeletingUser(true)
+    try {
+      const session = await getSupabaseSession()
+      if (!session?.access_token) throw new Error(t("Sign in again before removing users."))
+      await deleteApiTeamUser(session.access_token, deleteCandidate.id, {
+        impactToken: deletionImpact.impactToken,
+        replacementUserId: deletionImpact.requiresReassignment ? replacementUserId : null,
+        confirmation: deletionConfirmation,
+      })
+      setTeam((current) => current ? { ...current, users: current.users.filter((user) => user.id !== deleteCandidate.id) } : current)
+      toast.success(t("User permanently deleted"), { description: deleteCandidate.email })
+      setDeleteCandidate(null)
+    } catch (error) {
+      toast.error(t("User could not be deleted"), { description: error instanceof Error ? error.message : t("Review the reassignment summary and try again.") })
+    } finally {
+      setDeletingUser(false)
     }
   }
 
@@ -2617,8 +2863,8 @@ function UsersTab() {
       id: "user",
       label: t("User"),
       kind: "identity",
-      width: 280,
-      minWidth: 220,
+      width: 240,
+      minWidth: 200,
       canHide: false,
       canPin: true,
       sortValue: (user) => user.displayName,
@@ -2631,67 +2877,54 @@ function UsersTab() {
       width: 220,
       minWidth: 150,
       sortValue: (user) => user.offices[0]?.name ?? "",
-      cell: (user) => <span className="text-[12.5px] text-[var(--md-text)]">{user.offices.map(getOfficeLabel).join(" · ") || t("No office assigned")}</span>,
+      cellTitle: (user) => user.offices.map(getOfficeLabel).join(" · ") || t("No office assigned"),
+      cell: (user) => <div className="flex min-w-0 items-center gap-1.5"><span className="min-w-0 truncate text-[12.5px] text-[var(--md-text)]">{user.offices[0] ? getOfficeLabel(user.offices[0]) : t("No office assigned")}</span>{user.offices.length > 1 ? <span className="shrink-0 text-[11px] font-medium text-[var(--md-subtle)]">+{user.offices.length - 1}</span> : null}</div>,
     },
     {
       id: "role",
       label: t("Role"),
       kind: "status",
-      width: 170,
-      minWidth: 130,
+      width: 150,
+      minWidth: 120,
       sortValue: (user) => getRoleDisplayName(getPrimaryRole(user, roles)),
       cell: (user) => {
         const role = getPrimaryRole(user, roles)
-        return <StatusPill tone={role?.isLegacyCustom ? "amber" : role?.isSystem ? "blue" : "teal"}>{t(getRoleDisplayName(role))}</StatusPill>
+        return <div className="min-w-0 overflow-hidden"><StatusPill className="max-w-full truncate" tone={role?.isLegacyCustom ? "amber" : role?.isSystem ? "blue" : "teal"}>{t(getRoleDisplayName(role))}</StatusPill></div>
       },
     },
     {
       id: "status",
       label: t("Status"),
       kind: "status",
-      width: 130,
-      minWidth: 110,
+      width: 112,
+      minWidth: 104,
       sortValue: (user) => user.status,
-      cell: (user) => <StatusPill tone={user.status === "Active" ? "green" : "amber"}>{t(user.status)}</StatusPill>,
+      cell: (user) => <div className="min-w-0 overflow-hidden"><StatusPill className="max-w-full truncate" tone={user.status === "Active" ? "green" : user.status === "Deactivated" ? "neutral" : "amber"}>{t(user.status)}</StatusPill></div>,
     },
     {
       id: "actions",
       label: t("Actions"),
       kind: "actions",
       align: "end",
-      width: 244,
-      minWidth: 220,
+      width: 136,
+      minWidth: 124,
       canHide: false,
       canPin: false,
       resizable: false,
       cell: (user) => user.status === "Invited" ? (
         <div className="flex items-center justify-end gap-1">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={resendingUserId === user.id || deletingInvite}
-            className="h-8 rounded-[var(--md-radius-md)] px-2.5 text-[11.5px] text-[var(--md-text)] hover:bg-[var(--md-surface-tint)] hover:text-[var(--md-ink)]"
-            onClick={() => void resendInvitation(user)}
-          >
-            {resendingUserId === user.id ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Mail className="size-3.5" strokeWidth={1.4} aria-hidden="true" />}
-            {t(resendingUserId === user.id ? "Resending" : "Resend invite")}
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={resendingUserId === user.id || deletingInvite}
-            className="h-8 rounded-[var(--md-radius-md)] px-2.5 text-[11.5px] text-[var(--md-subtle)] hover:bg-[rgba(209,78,78,0.08)] hover:text-[var(--md-red)]"
-            onClick={() => setDeleteInviteCandidate(user)}
-          >
-            <Trash2 className="size-3.5" strokeWidth={1.45} aria-hidden="true" />
-            {t("Delete invite")}
-          </Button>
+          <UserActionTooltip label={t(resendingUserId === user.id ? "Resending" : "Resend invite")}><Button type="button" variant="ghost" size="icon" disabled={resendingUserId === user.id || deletingInvite} className="size-8 rounded-[var(--md-radius-md)] text-[var(--md-text)] hover:bg-[var(--md-surface-tint)] hover:text-[var(--md-ink)]" aria-label={`${t("Resend invite")} ${user.displayName}`} onClick={() => void resendInvitation(user)}>{resendingUserId === user.id ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Mail className="size-3.5" strokeWidth={1.4} aria-hidden="true" />}</Button></UserActionTooltip>
+          <UserActionTooltip label={t("Delete invite")}><Button type="button" variant="ghost" size="icon" disabled={resendingUserId === user.id || deletingInvite} className="size-8 rounded-[var(--md-radius-md)] text-[var(--md-subtle)] hover:bg-[rgba(209,78,78,0.08)] hover:text-[var(--md-red)]" aria-label={`${t("Delete invite")} ${user.displayName}`} onClick={() => setDeleteInviteCandidate(user)}><Trash2 className="size-3.5" strokeWidth={1.45} aria-hidden="true" /></Button></UserActionTooltip>
         </div>
-      ) : null,
+      ) : (
+        <div className="flex items-center justify-end gap-1">
+          <UserActionTooltip label={t("Edit")}><Button type="button" variant="ghost" size="icon" className="size-8 rounded-[var(--md-radius-md)] text-[var(--md-text)] hover:bg-[var(--md-surface-tint)] hover:text-[var(--md-ink)]" aria-label={`${t("Edit")} ${user.displayName}`} onClick={() => openUserEditor(user)}><EditUser02 className="size-3.5" strokeWidth={1.5} aria-hidden="true" /></Button></UserActionTooltip>
+          <UserActionTooltip label={t(user.status === "Deactivated" ? "Reactivate" : "Deactivate")}><Button type="button" variant="ghost" size="icon" disabled={user.authUserId === currentAuthUserId} className="size-8 rounded-[var(--md-radius-md)] text-[var(--md-text)] hover:bg-[var(--md-surface-tint)] hover:text-[var(--md-ink)]" aria-label={`${t(user.status === "Deactivated" ? "Reactivate" : "Deactivate")} ${user.displayName}`} onClick={() => setStatusCandidate(user)}>{user.status === "Deactivated" ? <UserRoundCheck className="size-3.5" strokeWidth={1.5} aria-hidden="true" /> : <Ban className="size-3.5" strokeWidth={1.5} aria-hidden="true" />}</Button></UserActionTooltip>
+          <UserActionTooltip label={user.authUserId === currentAuthUserId ? t("You cannot remove your own access") : t("Delete user")}><Button type="button" variant="ghost" size="icon" disabled={user.authUserId === currentAuthUserId} className="size-8 rounded-[var(--md-radius-md)] text-[var(--md-subtle)] hover:bg-[rgba(209,78,78,0.08)] hover:text-[var(--md-red)]" aria-label={`${t("Delete user")} ${user.displayName}`} onClick={() => void openDeleteUser(user)}><Trash2 className="size-3.5" strokeWidth={1.5} aria-hidden="true" /></Button></UserActionTooltip>
+        </div>
+      ),
     },
-  ], [deletingInvite, resendingUserId, roles, t])
+  ], [currentAuthUserId, deletingInvite, resendingUserId, roles, t])
 
   return (
     <>
@@ -2699,6 +2932,7 @@ function UsersTab() {
         eyebrow={t("Developer / Users")}
         title={t("Users")}
         description={t("Invite people to this Multideck workspace and see who currently has access.")}
+        descriptionPlacement="under-title"
         actions={primaryAction(t("Invite user"), () => setInviteOpen(true))}
       />
       <div className="mt-[var(--md-page-stack-gap)]">
@@ -2714,7 +2948,7 @@ function UsersTab() {
             columns={columns}
             rows={visibleUsers}
             getRowKey={(user) => user.id}
-            storageKey="settings-users"
+            storageKey="settings-users-v2"
             minimumWidth={860}
             toolbarSearch={(
               <label className="relative block w-[min(280px,70vw)]">
@@ -2752,6 +2986,20 @@ function UsersTab() {
                 <SettingsInput value={inviteForm.lastName} onChange={(event) => setInviteForm((current) => ({ ...current, lastName: event.target.value }))} autoComplete="family-name" />
               </label>
             </div>
+            {(team?.departments ?? []).some((department) => department.isActive) ? (
+              <fieldset className="grid gap-2">
+                <legend className="text-[12px] font-medium text-[var(--md-ink)]">{t("Departments")}</legend>
+                <p className="text-[11.5px] leading-5 text-[var(--md-text)]">{t("Choose every department this person belongs to.")}</p>
+                <div className="grid gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3 sm:grid-cols-2">
+                  {(team?.departments ?? []).filter((department) => department.isActive).map((department) => (
+                    <label key={department.id} className="flex min-h-10 cursor-pointer items-center gap-2.5 text-[12px] text-[var(--md-ink)]">
+                      <Checkbox checked={inviteForm.departmentIds.includes(department.id)} onCheckedChange={(checked) => setInviteForm((current) => ({ ...current, departmentIds: checked ? [...current.departmentIds, department.id] : current.departmentIds.filter((id) => id !== department.id) }))} />
+                      <span>{department.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            ) : null}
             <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">
               {t("Work email")}
               <SettingsInput value={inviteForm.email} onChange={(event) => setInviteForm((current) => ({ ...current, email: event.target.value }))} type="email" inputMode="email" autoComplete="email" dir="ltr" required placeholder="name@company.com" data-i18n-skip />
@@ -2825,6 +3073,84 @@ function UsersTab() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={Boolean(editingUser)} onOpenChange={(open) => !open && !savingUser && !creatingDepartment && setEditingUser(null)}>
+        <DialogContent className="max-h-[min(760px,calc(100dvh-32px))] overflow-y-auto border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[620px]">
+          <DialogHeader className="text-start"><DialogTitle className="text-balance">{t("Edit user")}</DialogTitle><DialogDescription className="text-pretty">{t("Update their profile, office, departments and workspace role. Their email address stays tied to their sign-in account.")}</DialogDescription></DialogHeader>
+          <form className="mt-2 grid gap-5" onSubmit={saveUser}>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">{t("First name")}<SettingsInput className="text-base sm:text-sm" value={editForm.firstName} onChange={(event) => setEditForm((current) => ({ ...current, firstName: event.target.value }))} maxLength={50} required /></label>
+              <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Last name")}<SettingsInput className="text-base sm:text-sm" value={editForm.lastName} onChange={(event) => setEditForm((current) => ({ ...current, lastName: event.target.value }))} maxLength={50} required /></label>
+            </div>
+            <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Job title")}<SettingsInput className="text-base sm:text-sm" value={editForm.jobTitle} onChange={(event) => setEditForm((current) => ({ ...current, jobTitle: event.target.value }))} maxLength={120} placeholder={t("For example, Operations manager")} /></label>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Office")}<Select value={editForm.officeId} onValueChange={(officeId) => setEditForm((current) => ({ ...current, officeId }))}><SelectTrigger className="h-10 w-full rounded-[var(--md-radius-lg)]"><SelectValue /></SelectTrigger><SelectContent>{(team?.offices ?? []).map((office) => <SelectItem key={office.id} value={office.id}>{getOfficeLabel(office)}</SelectItem>)}</SelectContent></Select></label>
+              <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Role")}<Select value={editForm.roleId} onValueChange={(roleId) => setEditForm((current) => ({ ...current, roleId }))}><SelectTrigger className="h-10 w-full rounded-[var(--md-radius-lg)]"><SelectValue /></SelectTrigger><SelectContent>{assignableRoles.map((role) => <SelectItem key={role.id} value={role.id}>{role.name}</SelectItem>)}</SelectContent></Select></label>
+            </div>
+            <fieldset className="grid gap-3">
+              <legend className="text-[12px] font-medium text-[var(--md-ink)]">{t("Departments")}</legend>
+              <p className="text-pretty text-[11.5px] leading-5 text-[var(--md-text)]">{t("Assign one or more departments. Create a new department here if it is missing.")}</p>
+              {(team?.departments ?? []).length ? (
+                <div className="grid gap-2 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-3 sm:grid-cols-2">
+                  {(team?.departments ?? []).map((department) => {
+                    const checked = editForm.departmentIds.includes(department.id)
+                    return (
+                      <label key={department.id} className="flex min-h-11 cursor-pointer items-center gap-2.5 rounded-[var(--md-radius-lg)] px-2 text-[12px] text-[var(--md-ink)] transition-colors duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-surface)] motion-reduce:transition-none">
+                        <Checkbox disabled={!department.isActive && !checked} checked={checked} onCheckedChange={(nextChecked) => setEditForm((current) => ({ ...current, departmentIds: nextChecked ? [...new Set([...current.departmentIds, department.id])] : current.departmentIds.filter((id) => id !== department.id) }))} />
+                        <span className="min-w-0 break-words" data-i18n-skip dir="auto">{department.name}{department.isActive ? "" : ` · ${t("Inactive")}`}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              ) : <p className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3 py-3 text-[12px] leading-5 text-[var(--md-text)]">{t("No departments yet. Create the first one below.")}</p>}
+              <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Department name")}<SettingsInput className="text-base sm:text-sm" value={newDepartmentName} onChange={(event) => setNewDepartmentName(event.target.value)} maxLength={80} placeholder={t("For example, Customs")} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void createAndAssignDepartment() } }} /></label>
+                <Button type="button" variant="secondary" disabled={creatingDepartment || !newDepartmentName.trim()} className="h-10 rounded-[var(--md-radius-lg)] transition-[background-color,color,scale] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.96] motion-reduce:transition-none motion-reduce:active:scale-100" onClick={() => void createAndAssignDepartment()}>{creatingDepartment ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Plus className="size-3.5" strokeWidth={1.5} aria-hidden="true" />}{t(creatingDepartment ? "Creating department" : "Create department")}</Button>
+              </div>
+            </fieldset>
+            <DialogFooter className="mt-2"><Button type="button" variant="ghost" disabled={savingUser || creatingDepartment} onClick={() => setEditingUser(null)}>{t("Cancel")}</Button><Button type="submit" disabled={savingUser || creatingDepartment || !editForm.firstName.trim() || !editForm.lastName.trim() || !editForm.officeId || !editForm.roleId} className="bg-[var(--md-accent)] text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]">{savingUser ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Check className="size-3.5" strokeWidth={1.5} aria-hidden="true" />}{t(savingUser ? "Saving user" : "Save user")}</Button></DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(statusCandidate)} onOpenChange={(open) => !open && !changingStatus && setStatusCandidate(null)}>
+        <DialogContent className="border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[480px]">
+          <DialogHeader className="text-start"><DialogTitle className="text-balance">{t(statusCandidate?.status === "Deactivated" ? "Reactivate this user?" : "Deactivate this user?")}</DialogTitle><DialogDescription className="text-pretty">{t(statusCandidate?.status === "Deactivated" ? "They will regain access with their existing sign-in and assigned role." : "They will lose access immediately. Their profile, assignments and history stay in the workspace, and you can reactivate them later.")}</DialogDescription></DialogHeader>
+          {statusCandidate ? <div className="mt-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3"><TeamUserIdentity user={statusCandidate} /></div> : null}
+          <DialogFooter className="mt-4"><Button type="button" variant="ghost" disabled={changingStatus} onClick={() => setStatusCandidate(null)}>{t("Cancel")}</Button><Button type="button" disabled={changingStatus} className={statusCandidate?.status === "Deactivated" ? "bg-[var(--md-accent)] text-[var(--md-accent-ink)]" : "bg-[var(--md-amber)] text-white"} onClick={() => void changeUserStatus()}>{changingStatus ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <ShieldCheck className="size-3.5" strokeWidth={1.5} aria-hidden="true" />}{t(statusCandidate?.status === "Deactivated" ? "Reactivate user" : "Deactivate user")}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(deleteCandidate)} onOpenChange={(open) => !open && !deletingUser && setDeleteCandidate(null)}>
+        <DialogContent className="max-h-[min(820px,calc(100dvh-16px))] max-w-[calc(100%-1rem)] overflow-y-auto border-0 bg-[var(--md-surface)] p-3 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-h-[min(820px,calc(100dvh-32px))] sm:max-w-[640px] sm:p-4">
+          <DialogHeader className="text-start"><DialogTitle className="text-balance">{t("Permanently delete this user?")}</DialogTitle><DialogDescription className="text-pretty">{t("Their sign-in, memberships and personal settings will be removed. Audit-required history keeps a non-personal deleted-user reference.")}</DialogDescription></DialogHeader>
+          {deleteCandidate ? <div className="mt-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3"><TeamUserIdentity user={deleteCandidate} /></div> : null}
+          {loadingDeletionImpact ? <div className="grid min-h-28 place-items-center" role="status"><LoaderCircle className="size-5 animate-spin text-[var(--md-accent)] motion-reduce:animate-none" aria-hidden="true" /><span className="sr-only">{t("Checking assigned work")}</span></div> : deletionImpact ? (
+            <div className="mt-4 grid gap-5">
+              {deletionImpact.requiresReassignment ? <section className="grid gap-3"><div><p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Reassign active work before deletion")}</p><p className="mt-1 text-pretty text-[12px] leading-5 text-[var(--md-text)]">{t("The transfer and deletion run in one transaction. If anything changes, deletion stops so you can review the updated scope.")}</p></div><div className="grid gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3">{deletionImpact.groups.map((group) => <div key={group.key} className="flex items-center justify-between gap-4 text-[12px]"><span className="min-w-0 break-words text-[var(--md-text)]">{group.table}</span><span className="tabular-nums font-medium text-[var(--md-ink)]">{group.count}</span></div>)}<div className="mt-1 flex items-center justify-between gap-4 pt-2 text-[13px] font-medium"><span>{t("Total records to transfer")}</span><span className="tabular-nums">{deletionImpact.totalTransferable}</span></div></div><label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Transfer to")}<Select value={replacementUserId} onValueChange={setReplacementUserId}><SelectTrigger className="h-12 w-full rounded-[var(--md-radius-lg)]"><SelectValue placeholder={t("Choose an active user")} /></SelectTrigger><SelectContent>{deletionImpact.eligibleUsers.map((user) => <SelectItem key={user.id} value={user.id}><TeamUserIdentity user={user} /></SelectItem>)}</SelectContent></Select></label></section> : <div className="rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-green)_9%,var(--md-surface))] p-3.5"><p className="text-[13px] font-medium text-[var(--md-ink)]">{t("No active work needs reassignment")}</p><p className="mt-1 text-pretty text-[12px] leading-5 text-[var(--md-text)]">{t("Deletion can continue without transferring jobs, tasks or ownership.")}</p></div>}
+              <div className="grid gap-2">
+                <div className="flex flex-wrap items-center gap-1.5 text-[12px] font-medium text-[var(--md-ink)]">
+                  <span>{t("Type {name} to confirm").split("{name}")[0]}</span>
+                  <button
+                    type="button"
+                    aria-label={deletionNameCopied ? t("Name copied") : `${t("Copy name")}: ${deleteCandidate?.displayName ?? ""}`}
+                    title={deletionNameCopied ? t("Copied") : t("Copy name")}
+                    className="group inline-flex min-h-7 items-center gap-1.5 rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] px-2 text-[12px] font-medium text-[var(--md-ink)] shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow,color,scale] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-accent-a10)] hover:text-[var(--md-accent)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] active:scale-[0.96] motion-reduce:transition-none motion-reduce:active:scale-100"
+                    onClick={() => void copyDeletionConfirmationName()}
+                  >
+                    <CopyFeedbackTransition value={deleteCandidate?.displayName ?? ""} copiedValue={t("Copied")} active={deletionNameCopied} effect="slot" inline ariaHidden animateIntrinsicWidth className="h-[1em] leading-none" originalDirection="auto" copiedDirection="auto" />
+                    <CopyStatusIcon copied={deletionNameCopied} iconClassName="size-3.5" className="shrink-0" />
+                  </button>
+                  <span>{t("Type {name} to confirm").split("{name}")[1]}</span>
+                </div>
+                <SettingsInput aria-label={deleteCandidate ? t("Type {name} to confirm").replace("{name}", deleteCandidate.displayName) : t("Confirmation name")} className="text-base sm:text-sm" value={deletionConfirmation} onChange={(event) => setDeletionConfirmation(event.target.value)} placeholder={deleteCandidate?.displayName ?? ""} dir="auto" data-i18n-skip />
+                <span className="sr-only" role="status" aria-live="polite">{deletionNameCopied ? t("Name copied") : ""}</span>
+              </div>
+            </div>
+          ) : null}
+          <DialogFooter className="-mx-3 -mb-3 mt-5 sm:-mx-4 sm:-mb-4"><Button type="button" variant="ghost" disabled={deletingUser} onClick={() => setDeleteCandidate(null)}>{t("Cancel")}</Button><Button type="button" disabled={deletingUser || !deletionImpact || (deletionImpact.requiresReassignment && !replacementUserId) || deletionConfirmation.trim() !== deleteCandidate?.displayName.trim()} className="bg-[var(--md-red)] text-white hover:opacity-90" onClick={() => void permanentlyDeleteUser()}>{deletingUser ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Trash2 className="size-3.5" strokeWidth={1.5} aria-hidden="true" />}{t(deletingUser ? "Deleting user" : "Permanently delete user")}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
@@ -2833,7 +3159,6 @@ function UserPermissionsTab() {
   const { t } = useLanguage()
   const [team, setTeam] = useState<ApiTeamUsersResponse | null>(null)
   const [authorizationState, setAuthorizationState] = useState<ApiAuthorizationState | null>(null)
-  const [currentAuthUserId, setCurrentAuthUserId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
@@ -2844,8 +3169,6 @@ function UserPermissionsTab() {
   const [roleNameDraft, setRoleNameDraft] = useState("")
   const [newRolePermissionDraft, setNewRolePermissionDraft] = useState<string[]>([])
   const [creatingRole, setCreatingRole] = useState(false)
-  const [deleteCandidate, setDeleteCandidate] = useState<ApiTeamUser | null>(null)
-  const [deleting, setDeleting] = useState(false)
 
   const loadPermissions = useCallback(async () => {
     setLoading(true)
@@ -2857,7 +3180,6 @@ function UserPermissionsTab() {
         getApiTeamUsers(session.access_token),
         getApiAuthorizationState(session.access_token),
       ])
-      setCurrentAuthUserId(session.user.id)
       setTeam(nextTeam)
       setAuthorizationState(nextAuthorization)
     } catch (error) {
@@ -2961,26 +3283,6 @@ function UserPermissionsTab() {
     }
   }
 
-  async function deleteUser() {
-    if (!deleteCandidate) return
-    setDeleting(true)
-    try {
-      const session = await getSupabaseSession()
-      if (!session?.access_token) throw new Error(t("Sign in again before removing users."))
-      await deleteApiTeamUser(session.access_token, deleteCandidate.id)
-      setTeam((current) => current ? { ...current, users: current.users.filter((user) => user.id !== deleteCandidate.id) } : current)
-      setAuthorizationState((current) => current ? { ...current, userRoles: current.userRoles.filter((assignment) => assignment.userId !== deleteCandidate.id) } : current)
-      toast.success(t("User removed"), { description: deleteCandidate.email })
-      setDeleteCandidate(null)
-    } catch (error) {
-      toast.error(t("User could not be removed"), {
-        description: error instanceof Error ? error.message : t("Check your access and try again."),
-      })
-    } finally {
-      setDeleting(false)
-    }
-  }
-
   const users = team?.users ?? []
   const editingUserRole = editingUser ? getPrimaryRole(editingUser, roles) : null
   const selectedEditorRole = assignableRoles.find((role) => role.id === roleSelection) ?? null
@@ -3024,8 +3326,8 @@ function UserPermissionsTab() {
       label: t("Actions"),
       kind: "actions",
       align: "end",
-      width: 120,
-      minWidth: 104,
+      width: 72,
+      minWidth: 64,
       canHide: false,
       canPin: false,
       resizable: false,
@@ -3039,18 +3341,10 @@ function UserPermissionsTab() {
             </TooltipTrigger>
             <TooltipContent>{t("Edit permissions")}</TooltipContent>
           </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button type="button" variant="ghost" size="icon" disabled={user.authUserId === currentAuthUserId} className="size-8 rounded-[var(--md-radius-md)] text-[var(--md-subtle)] hover:bg-[rgba(209,78,78,0.08)] hover:text-[var(--md-red)]" aria-label={`${t("Delete")} ${user.displayName}`} onClick={() => setDeleteCandidate(user)}>
-                <Trash2 className="size-3.5" strokeWidth={1.45} aria-hidden="true" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{user.authUserId === currentAuthUserId ? t("You cannot remove your own access") : t("Delete user")}</TooltipContent>
-          </Tooltip>
         </div>
       ),
     },
-  ], [currentAuthUserId, roles, t])
+  ], [roles, t])
 
   return (
     <>
@@ -3182,22 +3476,6 @@ function UserPermissionsTab() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(deleteCandidate)} onOpenChange={(open) => !open && !deleting && setDeleteCandidate(null)}>
-        <DialogContent className="border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[460px]">
-          <DialogHeader className="text-start">
-            <DialogTitle>{t("Delete this user?")}</DialogTitle>
-            <DialogDescription>{t("Their Multideck sign-in will be revoked and they’ll disappear from this workspace. Historical records keep their name for audit context.")}</DialogDescription>
-          </DialogHeader>
-          {deleteCandidate ? <div className="mt-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3"><TeamUserIdentity user={deleteCandidate} /></div> : null}
-          <DialogFooter className="mt-4">
-            <Button type="button" variant="ghost" disabled={deleting} onClick={() => setDeleteCandidate(null)}>{t("Cancel")}</Button>
-            <Button type="button" disabled={deleting} className="bg-[var(--md-red)] text-white hover:opacity-90" onClick={() => void deleteUser()}>
-              {deleting ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Trash2 className="size-3.5" strokeWidth={1.45} aria-hidden="true" />}
-              {t(deleting ? "Deleting user" : "Delete user")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </>
   )
 }
@@ -4876,6 +5154,8 @@ function TabContent({
       return <UserPermissionsTab />
     case "users":
       return <UsersTab />
+    case "broadcast":
+      return <BroadcastSettings />
     case "integrations":
       return <IntegrationsTab navigate={navigate} />
     case "billing":

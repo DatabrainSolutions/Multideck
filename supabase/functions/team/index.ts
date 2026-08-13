@@ -49,17 +49,20 @@ function isPendingInvitation(authUser: any) {
 }
 
 async function userDto(admin: any, row: any) {
-  const [{ data: company }, { data: officeLinks }, { data: roleLinks }, authResult] = await Promise.all([
+  const [{ data: company }, { data: officeLinks }, { data: roleLinks }, { data: departmentLinks }, authResult] = await Promise.all([
     row.Company_ID ? admin.from("cmp_Company").select("Company_ID,Company_Name").eq("Company_ID", row.Company_ID).maybeSingle() : Promise.resolve({ data: null }),
     admin.from("cmp_Users_Offices").select("Office_ID").eq("User_ID", row.User_ID),
     admin.from("cmp_Users_Roles").select("sys_UserRole_ID").eq("User_ID", row.User_ID),
+    admin.from("cmp_Users_Departments").select("Department_ID").eq("User_ID", row.User_ID),
     row.Auth_User_ID ? admin.auth.admin.getUserById(row.Auth_User_ID) : Promise.resolve({ data: { user: null } }),
   ])
   const officeIds = (officeLinks ?? []).map((item: any) => item.Office_ID)
   const roleIds = (roleLinks ?? []).map((item: any) => item.sys_UserRole_ID)
-  const [{ data: offices }, { data: roles }] = await Promise.all([
+  const departmentIds = (departmentLinks ?? []).map((item: any) => item.Department_ID)
+  const [{ data: offices }, { data: roles }, { data: departments }] = await Promise.all([
     officeIds.length ? admin.from("cmp_Offices").select("Office_ID,Office_Name,Office_Address").in("Office_ID", officeIds).order("Office_Name") : Promise.resolve({ data: [] }),
     roleIds.length ? admin.from("sys_UserRoles").select("sys_UserRole_ID,sys_UserRole_Name").in("sys_UserRole_ID", roleIds).order("sys_UserRole_Name") : Promise.resolve({ data: [] }),
+    departmentIds.length ? admin.from("cmp_Departments").select("Department_ID,Department_Name,Department_IsActive").in("Department_ID", departmentIds).order("Department_Name") : Promise.resolve({ data: [] }),
   ])
   const makePhoto = (kind: string) => row[`User_${kind}PhotoPath`] ? ({
     bucket: row[`User_${kind}PhotoBucket`], path: row[`User_${kind}PhotoPath`], mimeType: row[`User_${kind}PhotoMimeType`],
@@ -73,25 +76,150 @@ async function userDto(admin: any, row: any) {
     company: company ? { id: company.Company_ID, name: company.Company_Name } : null,
     offices: (offices ?? []).map((item: any) => ({ id: item.Office_ID, name: item.Office_Name, address: item.Office_Address })),
     roles: (roles ?? []).map((item: any) => ({ id: item.sys_UserRole_ID, name: item.sys_UserRole_Name })),
-    status: invitationPending ? "Invited" : row.Auth_User_ID ? "Active" : "Profile only",
+    departments: (departments ?? []).map((item: any) => ({ id: item.Department_ID, name: item.Department_Name, isActive: item.Department_IsActive })),
+    status: row.User_AccessStatus === "deactivated" ? "Deactivated" : invitationPending ? "Invited" : row.Auth_User_ID ? "Active" : "Profile only",
     invitationSentAt: invitationPending ? authUser.invited_at : null,
+    deactivatedAt: row.User_DeactivatedAt ?? null, jobTitle: row.User_JobTitle ?? null,
     profilePhoto: makePhoto("Profile"), coverPhoto: makePhoto("Cover"),
   }
 }
 
 async function listTeam(admin: any, current: any) {
   if (!current.Company_ID) throw new HttpError(403, "Your Multideck user is not assigned to a company yet.")
-  const [{ data: company }, { data: offices }, { data: users, error }] = await Promise.all([
+  const [{ data: company }, { data: offices }, { data: departments }, { data: users, error }] = await Promise.all([
     admin.from("cmp_Company").select("Company_ID,Company_Name").eq("Company_ID", current.Company_ID).maybeSingle(),
     admin.from("cmp_Offices").select("Office_ID,Office_Name,Office_Address").eq("Company_ID", current.Company_ID).order("Office_Name"),
-    admin.from("cmp_Users").select("*").eq("Company_ID", current.Company_ID).order("User_Firstname").order("User_Lastname").order("User_Email"),
+    admin.from("cmp_Departments").select("Department_ID,Department_Name,Department_IsActive").eq("Company_ID", current.Company_ID).order("Department_Name"),
+    admin.from("cmp_Users").select("*").eq("Company_ID", current.Company_ID).neq("User_AccessStatus", "deleted").order("User_Firstname").order("User_Lastname").order("User_Email"),
   ])
   if (error) throw new HttpError(500, error.message)
   return {
     company: company ? { id: company.Company_ID, name: company.Company_Name } : null,
     offices: (offices ?? []).map((item: any) => ({ id: item.Office_ID, name: item.Office_Name, address: item.Office_Address })),
+    departments: (departments ?? []).map((item: any) => ({ id: item.Department_ID, name: item.Department_Name, isActive: item.Department_IsActive })),
     users: await Promise.all((users ?? []).map((item: any) => userDto(admin, item))),
   }
+}
+
+async function createDepartment(admin: any, current: any, payload: any) {
+  if (!current.Company_ID) throw new HttpError(403, "Your Multideck user is not assigned to a company yet.")
+  const name = String(payload.name ?? "").trim().replace(/\s+/g, " ")
+  if (!name) throw new HttpError(400, "Enter a department name.")
+  if (name.length > 80) throw new HttpError(400, "Keep the department name to 80 characters or fewer.")
+  const { data, error } = await admin.from("cmp_Departments").insert({
+    Company_ID: current.Company_ID,
+    Department_Name: name,
+    Department_IsActive: true,
+  }).select("Department_ID,Department_Name,Department_IsActive").single()
+  if (error) {
+    if (error.code === "23505") throw new HttpError(409, "A department with this name already exists.")
+    throw new HttpError(500, error.message)
+  }
+  return { id: data.Department_ID, name: data.Department_Name, isActive: data.Department_IsActive }
+}
+
+async function roleIdsForUser(admin: any, userId: string) {
+  const { data, error } = await admin.from("cmp_Users_Roles").select("sys_UserRole_ID").eq("User_ID", userId)
+  if (error) throw new HttpError(500, error.message)
+  return (data ?? []).map((item: any) => item.sys_UserRole_ID)
+}
+
+async function ensureAdministratorSurvives(admin: any, companyId: string, targetUserId: string, nextRoleIds: string[] | null = null) {
+  const { data: managePermission } = await admin.from("sys_Permissions").select("sys_Permission_ID").eq("sys_Permission_Value", "Users.Manage").maybeSingle()
+  if (!managePermission) return
+  const { data: managingRoleLinks } = await admin.from("sys_UserRole_Permissions").select("sys_UserRole_ID").eq("sys_Permission_ID", managePermission.sys_Permission_ID)
+  const managingRoleIds = (managingRoleLinks ?? []).map((link: any) => link.sys_UserRole_ID)
+  if (!managingRoleIds.length) return
+  const currentRoleIds = await roleIdsForUser(admin, targetUserId)
+  const removesUserManager = currentRoleIds.some((roleId) => managingRoleIds.includes(roleId))
+    && (nextRoleIds === null || !nextRoleIds.some((roleId) => managingRoleIds.includes(roleId)))
+  if (!removesUserManager) return
+  const { data: otherActiveUsers } = await admin.from("cmp_Users")
+    .select("User_ID").eq("Company_ID", companyId).eq("User_AccessStatus", "active").neq("User_ID", targetUserId)
+  const otherIds = (otherActiveUsers ?? []).map((item: any) => item.User_ID)
+  const { count } = otherIds.length
+    ? await admin.from("cmp_Users_Roles").select("*", { count: "exact", head: true }).in("User_ID", otherIds).in("sys_UserRole_ID", managingRoleIds)
+    : { count: 0 }
+  if (!count) throw new HttpError(400, "Keep at least one active administrator who can manage users before changing this user.")
+}
+
+async function updateTeamUser(admin: any, current: any, targetId: string, payload: any) {
+  const { data: target } = await admin.from("cmp_Users").select("*").eq("User_ID", targetId).eq("Company_ID", current.Company_ID).neq("User_AccessStatus", "deleted").maybeSingle()
+  if (!target) throw new HttpError(404, "User not found.")
+  const firstName = String(payload.firstName ?? "").trim()
+  const lastName = String(payload.lastName ?? "").trim()
+  const jobTitle = String(payload.jobTitle ?? "").trim()
+  if (!firstName || !lastName) throw new HttpError(400, "Enter the user's first and last name.")
+  if (firstName.length > 50 || lastName.length > 50) throw new HttpError(400, "Keep each name to 50 characters or fewer.")
+  if (jobTitle.length > 120) throw new HttpError(400, "Keep the job title to 120 characters or fewer.")
+  const roleIds = [...new Set((payload.roleIds ?? []).map((value: unknown) => String(value)))] as string[]
+  if (!roleIds.length) throw new HttpError(400, "Choose at least one role.")
+  const { data: roles } = await admin.from("sys_UserRoles").select("sys_UserRole_ID,sys_UserRole_Name").in("sys_UserRole_ID", roleIds)
+  if ((roles ?? []).length !== roleIds.length || (roles ?? []).some((role: any) => isLegacyCustomRoleName(role.sys_UserRole_Name))) throw new HttpError(400, "Choose valid reusable roles.")
+  const { data: office } = await admin.from("cmp_Offices").select("Office_ID").eq("Office_ID", payload.officeId).eq("Company_ID", current.Company_ID).maybeSingle()
+  if (!office) throw new HttpError(400, "Choose a valid office in this company.")
+  const departmentIds = [...new Set((payload.departmentIds ?? []).map((value: unknown) => String(value)))] as string[]
+  const { data: departments } = departmentIds.length ? await admin.from("cmp_Departments").select("Department_ID").in("Department_ID", departmentIds).eq("Company_ID", current.Company_ID).eq("Department_IsActive", true) : { data: [] }
+  if ((departments ?? []).length !== departmentIds.length) throw new HttpError(400, "Choose active departments in this company.")
+  await ensureAdministratorSurvives(admin, current.Company_ID, target.User_ID, roleIds)
+
+  const { error: profileError } = await admin.from("cmp_Users").update({ User_Firstname: firstName, User_Lastname: lastName, User_JobTitle: jobTitle || null }).eq("User_ID", target.User_ID)
+  if (profileError) throw new HttpError(500, profileError.message)
+  const { error: officeDeleteError } = await admin.from("cmp_Users_Offices").delete().eq("User_ID", target.User_ID)
+  if (officeDeleteError) throw new HttpError(500, officeDeleteError.message)
+  const { error: officeInsertError } = await admin.from("cmp_Users_Offices").insert({ User_ID: target.User_ID, Office_ID: office.Office_ID })
+  if (officeInsertError) throw new HttpError(500, officeInsertError.message)
+  const { error: roleDeleteError } = await admin.from("cmp_Users_Roles").delete().eq("User_ID", target.User_ID)
+  if (roleDeleteError) throw new HttpError(500, roleDeleteError.message)
+  const { error: roleInsertError } = await admin.from("cmp_Users_Roles").insert(roleIds.map((roleId) => ({ User_ID: target.User_ID, sys_UserRole_ID: roleId })))
+  if (roleInsertError) throw new HttpError(500, roleInsertError.message)
+  const { error: departmentDeleteError } = await admin.from("cmp_Users_Departments").delete().eq("User_ID", target.User_ID)
+  if (departmentDeleteError) throw new HttpError(500, departmentDeleteError.message)
+  if (departmentIds.length) {
+    const { error: departmentInsertError } = await admin.from("cmp_Users_Departments").insert(departmentIds.map((departmentId) => ({ User_ID: target.User_ID, Department_ID: departmentId, Department_AssignedBy: current.User_ID })))
+    if (departmentInsertError) throw new HttpError(500, departmentInsertError.message)
+  }
+  if (target.Auth_User_ID) {
+    const { data: authRecord } = await admin.auth.admin.getUserById(target.Auth_User_ID)
+    if (authRecord?.user) {
+      await admin.auth.admin.updateUserById(target.Auth_User_ID, { user_metadata: { ...authRecord.user.user_metadata, first_name: firstName, last_name: lastName } })
+    }
+  }
+  const { data: updated } = await admin.from("cmp_Users").select("*").eq("User_ID", target.User_ID).single()
+  return userDto(admin, updated)
+}
+
+async function setUserAccessStatus(admin: any, current: any, targetId: string, status: string) {
+  const { data: target } = await admin.from("cmp_Users").select("*").eq("User_ID", targetId).eq("Company_ID", current.Company_ID).neq("User_AccessStatus", "deleted").maybeSingle()
+  if (!target) throw new HttpError(404, "User not found.")
+  if (target.User_ID === current.User_ID) throw new HttpError(400, "You cannot change your own access status.")
+  if (status !== "active" && status !== "deactivated") throw new HttpError(400, "Choose a valid user status.")
+  if (status === target.User_AccessStatus) return userDto(admin, target)
+
+  if (status === "deactivated") {
+    await ensureAdministratorSurvives(admin, current.Company_ID, target.User_ID)
+    if (!target.Auth_User_ID) throw new HttpError(409, "Only an active signed-in user can be deactivated.")
+    const { error: banError } = await admin.auth.admin.updateUserById(target.Auth_User_ID, { ban_duration: "876000h" })
+    if (banError) throw new HttpError(500, "The user's sign-in could not be blocked. No access changes were made.")
+    const { data: updated, error } = await admin.from("cmp_Users").update({
+      User_AccessStatus: "deactivated", User_RetainedAuthUserID: target.Auth_User_ID, Auth_User_ID: null,
+      User_DeactivatedAt: new Date().toISOString(), User_DeactivatedBy: current.User_ID,
+    }).eq("User_ID", target.User_ID).eq("Auth_User_ID", target.Auth_User_ID).select().maybeSingle()
+    if (error || !updated) throw new HttpError(500, "Sign-in was blocked, but the workspace status could not be saved. Retry to finish deactivation.")
+    return userDto(admin, updated)
+  }
+
+  if (!target.User_RetainedAuthUserID) throw new HttpError(409, "This user no longer has an account that can be reactivated.")
+  const { data: attached, error: attachError } = await admin.from("cmp_Users").update({
+    User_AccessStatus: "active", Auth_User_ID: target.User_RetainedAuthUserID, User_DeactivatedAt: null, User_DeactivatedBy: null,
+  }).eq("User_ID", target.User_ID).eq("User_AccessStatus", "deactivated").select().maybeSingle()
+  if (attachError || !attached) throw new HttpError(500, "The user's workspace access could not be restored.")
+  const { error: unbanError } = await admin.auth.admin.updateUserById(target.User_RetainedAuthUserID, { ban_duration: "none" })
+  if (unbanError) {
+    await admin.from("cmp_Users").update({ User_AccessStatus: "deactivated", Auth_User_ID: null }).eq("User_ID", target.User_ID)
+    throw new HttpError(500, "The user's sign-in could not be restored. Their account remains deactivated.")
+  }
+  return userDto(admin, attached)
 }
 
 async function authorizationState(admin: any, current: any) {
@@ -173,6 +301,10 @@ Deno.serve(async (request) => {
     const current = await currentInternalUser(admin, user)
     const parts = routeParts(request, "team")
     if (!parts.length && request.method === "GET") { await requirePermission(admin, current.User_ID, "Users.Read"); return json(request, await listTeam(admin, current)) }
+    if (parts.length === 1 && parts[0] === "departments" && request.method === "POST") {
+      await requirePermission(admin, current.User_ID, "Users.Manage")
+      return json(request, await createDepartment(admin, current, await body(request)), 201)
+    }
     if (!parts.length && request.method === "POST") {
       await requirePermission(admin, current.User_ID, "Users.Invite")
       const payload = await body<any>(request); const email = String(payload.email ?? "").trim().toLowerCase()
@@ -181,6 +313,11 @@ Deno.serve(async (request) => {
       if (!/^\S+@\S+\.\S+$/.test(email)) throw new HttpError(400, "Enter a valid email address.")
       const { data: office } = await admin.from("cmp_Offices").select("*").eq("Office_ID", payload.officeId).eq("Company_ID", current.Company_ID).maybeSingle()
       if (!office) throw new HttpError(400, "Choose a valid office in this company.")
+      const departmentIds = [...new Set((payload.departmentIds ?? []).map((value: unknown) => String(value)))] as string[]
+      const { data: departments } = departmentIds.length
+        ? await admin.from("cmp_Departments").select("Department_ID").in("Department_ID", departmentIds).eq("Company_ID", current.Company_ID).eq("Department_IsActive", true)
+        : { data: [] }
+      if ((departments ?? []).length !== departmentIds.length) throw new HttpError(400, "Choose active departments in this company.")
       let { data: profile } = await admin.from("cmp_Users").select("*").ilike("User_Email", email).maybeSingle()
       if (profile?.Company_ID && profile.Company_ID !== current.Company_ID) throw new HttpError(409, "This email is already linked to another company profile.")
       if (payload.roleId) {
@@ -223,6 +360,12 @@ Deno.serve(async (request) => {
         const { error: roleInsertError } = await admin.from("cmp_Users_Roles").insert({ User_ID: profile.User_ID, sys_UserRole_ID: payload.roleId })
         if (roleInsertError) throw new HttpError(500, roleInsertError.message)
       }
+      const { error: departmentDeleteError } = await admin.from("cmp_Users_Departments").delete().eq("User_ID", profile.User_ID)
+      if (departmentDeleteError) throw new HttpError(500, departmentDeleteError.message)
+      if (departmentIds.length) {
+        const { error: departmentInsertError } = await admin.from("cmp_Users_Departments").insert(departmentIds.map((departmentId) => ({ User_ID: profile.User_ID, Department_ID: departmentId, Department_AssignedBy: current.User_ID })))
+        if (departmentInsertError) throw new HttpError(500, departmentInsertError.message)
+      }
       profile = (await admin.from("cmp_Users").select("*").eq("User_ID", profile.User_ID).single()).data
       return json(request, { user: await userDto(admin, profile), company: { id: current.Company_ID, name: (await admin.from("cmp_Company").select("Company_Name").eq("Company_ID", current.Company_ID).single()).data.Company_Name }, office: { id: office.Office_ID, name: office.Office_Name, address: office.Office_Address }, invited }, 201)
     }
@@ -255,51 +398,84 @@ Deno.serve(async (request) => {
       }
       return json(request, { user: await userDto(admin, target) })
     }
-    if (parts.length === 1 && request.method === "DELETE") {
+    if (parts.length === 2 && parts[1] === "invitation" && request.method === "DELETE") {
       await requirePermission(admin, current.User_ID, "Users.Manage")
       const { data: target } = await admin.from("cmp_Users").select("*").eq("User_ID", parts[0]).eq("Company_ID", current.Company_ID).maybeSingle()
-      if (!target) throw new HttpError(404, "User not found.")
-      if (target.User_ID === current.User_ID) throw new HttpError(400, "You cannot remove your own Multideck access.")
-
-      const { data: targetRoleLinks, error: targetRoleLinksError } = await admin.from("cmp_Users_Roles").select("sys_UserRole_ID").eq("User_ID", target.User_ID)
-      if (targetRoleLinksError) throw new HttpError(500, targetRoleLinksError.message)
-      const targetRoleIds = (targetRoleLinks ?? []).map((role: any) => role.sys_UserRole_ID)
-      const { data: targetRoles, error: targetRolesError } = targetRoleIds.length
-        ? await admin.from("sys_UserRoles").select("sys_UserRole_ID,sys_UserRole_Name").in("sys_UserRole_ID", targetRoleIds)
-        : { data: [], error: null }
-      if (targetRolesError) throw new HttpError(500, targetRolesError.message)
-
-      const { data: administrator } = await admin.from("sys_UserRoles").select("sys_UserRole_ID").eq("sys_UserRole_Name", "Administrator").maybeSingle()
-      if (administrator) {
-        if (targetRoleIds.includes(administrator.sys_UserRole_ID)) {
-          const { data: companyUsers } = await admin.from("cmp_Users").select("User_ID").eq("Company_ID", current.Company_ID).neq("User_ID", target.User_ID)
-          const otherIds = (companyUsers ?? []).map((companyUser: any) => companyUser.User_ID)
-          const { count } = otherIds.length ? await admin.from("cmp_Users_Roles").select("*", { count: "exact", head: true }).in("User_ID", otherIds).eq("sys_UserRole_ID", administrator.sys_UserRole_ID) : { count: 0 }
-          if (!count) throw new HttpError(400, "Keep at least one administrator in the company before removing this user.")
-        }
-      }
-
-      if (target.Auth_User_ID) {
-        const { error: authError } = await admin.auth.admin.deleteUser(target.Auth_User_ID)
-        if (authError) throw new HttpError(500, "The user's sign-in access could not be revoked. No profile changes were made.")
-      }
-      const { error: officeError } = await admin.from("cmp_Users_Offices").delete().eq("User_ID", target.User_ID)
-      if (officeError) throw new HttpError(500, officeError.message)
-      const { error: roleError } = await admin.from("cmp_Users_Roles").delete().eq("User_ID", target.User_ID)
-      if (roleError) throw new HttpError(500, roleError.message)
-      for (const role of targetRoles ?? []) {
-        if (!isLegacyCustomRoleName(role.sys_UserRole_Name) || role.sys_UserRole_Name !== `Custom · ${target.User_ID}`) continue
-        const { count: remainingRoleAssignments, error: remainingRoleAssignmentsError } = await admin.from("cmp_Users_Roles").select("*", { count: "exact", head: true }).eq("sys_UserRole_ID", role.sys_UserRole_ID)
-        if (remainingRoleAssignmentsError) throw new HttpError(500, remainingRoleAssignmentsError.message)
-        if (remainingRoleAssignments) continue
-        const { error: permissionLinkError } = await admin.from("sys_UserRole_Permissions").delete().eq("sys_UserRole_ID", role.sys_UserRole_ID)
-        if (permissionLinkError) throw new HttpError(500, permissionLinkError.message)
-        const { error: customRoleError } = await admin.from("sys_UserRoles").delete().eq("sys_UserRole_ID", role.sys_UserRole_ID)
-        if (customRoleError) throw new HttpError(500, customRoleError.message)
-      }
+      if (!target?.Auth_User_ID) throw new HttpError(404, "Pending invitation not found.")
+      const { data: authRecord } = await admin.auth.admin.getUserById(target.Auth_User_ID)
+      if (!authRecord?.user || !isPendingInvitation(authRecord.user)) throw new HttpError(409, "Only a pending invitation can be deleted here.")
+      const { error: authError } = await admin.auth.admin.deleteUser(target.Auth_User_ID)
+      if (authError) throw new HttpError(500, "The pending sign-in could not be removed. No profile changes were made.")
+      await admin.from("cmp_Users_Offices").delete().eq("User_ID", target.User_ID)
+      await admin.from("cmp_Users_Roles").delete().eq("User_ID", target.User_ID)
       const { error: profileError } = await admin.from("cmp_Users").update({ Company_ID: null, Auth_User_ID: null }).eq("User_ID", target.User_ID)
       if (profileError) throw new HttpError(500, profileError.message)
       return json(request, null, 204)
+    }
+    if (parts.length === 1 && request.method === "PATCH") {
+      await requirePermission(admin, current.User_ID, "Users.Manage")
+      return json(request, await updateTeamUser(admin, current, parts[0], await body(request)))
+    }
+    if (parts.length === 2 && parts[1] === "status" && request.method === "PATCH") {
+      await requirePermission(admin, current.User_ID, "Users.Manage")
+      const payload = await body<any>(request)
+      return json(request, await setUserAccessStatus(admin, current, parts[0], String(payload.status ?? "")))
+    }
+    if (parts.length === 2 && parts[1] === "deletion-impact" && request.method === "GET") {
+      await requirePermission(admin, current.User_ID, "Users.Manage")
+      const { data: target } = await admin.from("cmp_Users").select("User_ID").eq("User_ID", parts[0]).eq("Company_ID", current.Company_ID).neq("User_AccessStatus", "deleted").maybeSingle()
+      if (!target) throw new HttpError(404, "User not found.")
+      if (target.User_ID === current.User_ID) throw new HttpError(400, "You cannot delete your own Multideck access.")
+      await ensureAdministratorSurvives(admin, current.Company_ID, target.User_ID)
+      const { data: impact, error } = await admin.rpc("User_DeletionImpact", { p_actor_user_id: current.User_ID, p_target_user_id: target.User_ID })
+      if (error) throw new HttpError(500, error.message)
+      const { data: eligibleRows } = await admin.from("cmp_Users").select("*").eq("Company_ID", current.Company_ID).eq("User_AccessStatus", "active").neq("User_ID", target.User_ID).order("User_Firstname").order("User_Lastname")
+      return json(request, { ...impact, eligibleUsers: await Promise.all((eligibleRows ?? []).map((row: any) => userDto(admin, row))) })
+    }
+    if (parts.length === 1 && request.method === "DELETE") {
+      await requirePermission(admin, current.User_ID, "Users.Manage")
+      const payload = await body<any>(request)
+      const { data: target } = await admin.from("cmp_Users").select("*").eq("User_ID", parts[0]).or(`Company_ID.eq.${current.Company_ID},User_FormerCompanyID.eq.${current.Company_ID}`).maybeSingle()
+      if (!target) throw new HttpError(404, "User not found.")
+      if (target.User_ID === current.User_ID) throw new HttpError(400, "You cannot delete your own Multideck access.")
+      if (target.User_AccessStatus !== "deleted") await ensureAdministratorSurvives(admin, current.Company_ID, target.User_ID)
+      const confirmationName = [target.User_Firstname, target.User_Lastname].filter(Boolean).join(" ") || target.User_Email
+      if (target.User_AccessStatus !== "deleted" && (!payload.confirmation || String(payload.confirmation).trim() !== confirmationName)) {
+        throw new HttpError(400, "Enter the user's exact display name to confirm permanent deletion.")
+      }
+      const retainedAuthUserId = target.Auth_User_ID ?? target.User_RetainedAuthUserID
+      if (retainedAuthUserId && target.User_AccessStatus !== "deleted") {
+        const { error: banError } = await admin.auth.admin.updateUserById(retainedAuthUserId, { ban_duration: "876000h" })
+        if (banError) throw new HttpError(500, "The user's sign-in could not be blocked. No workspace changes were made.")
+      }
+      const { data: result, error: deleteError } = await admin.rpc("User_DeleteWithReassignment", {
+        p_actor_user_id: current.User_ID,
+        p_target_user_id: target.User_ID,
+        p_replacement_user_id: payload.replacementUserId || null,
+        p_expected_impact_token: String(payload.impactToken ?? ""),
+      })
+      if (deleteError) {
+        if (retainedAuthUserId && target.User_AccessStatus === "active") {
+          await admin.auth.admin.updateUserById(retainedAuthUserId, { ban_duration: "none" })
+        }
+        throw new HttpError(409, deleteError.message)
+      }
+      if (retainedAuthUserId) {
+        const { error: authError } = await admin.auth.admin.deleteUser(retainedAuthUserId)
+        if (authError && target.User_AccessStatus !== "deleted") throw new HttpError(500, "Workspace access and work reassignment succeeded, but Auth cleanup is still pending. Retry deletion to finish safely.")
+      }
+      const cleanupArtifacts = Array.isArray(result?.cleanupArtifacts) ? result.cleanupArtifacts : []
+      for (const artifact of cleanupArtifacts) {
+        if (!artifact?.bucket || !artifact?.path) continue
+        const { error: storageError } = await admin.storage.from(String(artifact.bucket)).remove([String(artifact.path)])
+        if (storageError) throw new HttpError(500, "Access and reassignment succeeded, but personal file cleanup is still pending. Retry deletion to finish safely.")
+      }
+      if (cleanupArtifacts.length) {
+        const { error: cleanupMarkerError } = await admin.from("cmp_Users").update({ User_DeletionCleanupPending: [] }).eq("User_ID", target.User_ID).eq("User_AccessStatus", "deleted")
+        if (cleanupMarkerError) throw new HttpError(500, "Personal files were removed, but cleanup finalisation is still pending. Retry deletion to finish safely.")
+      }
+      const { cleanupArtifacts: _privateCleanupArtifacts, ...publicResult } = result ?? {}
+      return json(request, publicResult)
     }
     if (parts[1] === "office" && request.method === "PATCH") {
       await requirePermission(admin, current.User_ID, "Users.Manage"); const payload = await body<any>(request)
@@ -325,16 +501,7 @@ Deno.serve(async (request) => {
         const { data: target } = await admin.from("cmp_Users").select("User_ID").eq("User_ID", parts[2]).eq("Company_ID", current.Company_ID).maybeSingle(); if (!target) throw new HttpError(404, "User not found.")
         const { data: roles } = await admin.from("sys_UserRoles").select("sys_UserRole_ID,sys_UserRole_Name").in("sys_UserRole_ID", roleIds)
         if ((roles ?? []).length !== roleIds.length || (roles ?? []).some((role: any) => isLegacyCustomRoleName(role.sys_UserRole_Name))) throw new HttpError(400, "Choose valid reusable roles.")
-        const { data: administrator } = await admin.from("sys_UserRoles").select("sys_UserRole_ID").eq("sys_UserRole_Name", "Administrator").maybeSingle()
-        if (administrator && !(roles ?? []).some((role: any) => role.sys_UserRole_ID === administrator.sys_UserRole_ID)) {
-          const { data: existingTargetRoles } = await admin.from("cmp_Users_Roles").select("sys_UserRole_ID").eq("User_ID", target.User_ID)
-          if ((existingTargetRoles ?? []).some((role: any) => role.sys_UserRole_ID === administrator.sys_UserRole_ID)) {
-            const { data: companyUsers } = await admin.from("cmp_Users").select("User_ID").eq("Company_ID", current.Company_ID).neq("User_ID", target.User_ID)
-            const otherIds = (companyUsers ?? []).map((companyUser: any) => companyUser.User_ID)
-            const { count } = otherIds.length ? await admin.from("cmp_Users_Roles").select("*", { count: "exact", head: true }).in("User_ID", otherIds).eq("sys_UserRole_ID", administrator.sys_UserRole_ID) : { count: 0 }
-            if (!count) throw new HttpError(400, "Keep at least one administrator in the company before changing this user's roles.")
-          }
-        }
+        await ensureAdministratorSurvives(admin, current.Company_ID, target.User_ID, roleIds as string[])
         await admin.from("cmp_Users_Roles").delete().eq("User_ID", target.User_ID); await admin.from("cmp_Users_Roles").insert(roleIds.map((id: string) => ({ User_ID: target.User_ID, sys_UserRole_ID: id })))
         return json(request, { userId: target.User_ID, roleIds })
       }

@@ -20,6 +20,12 @@ export type ApiTeamRole = {
   name: string
 }
 
+export type ApiDepartment = {
+  id: string
+  name: string
+  isActive: boolean
+}
+
 export type ApiUserProfilePhoto = {
   bucket: "profile-photos"
   path: string
@@ -38,7 +44,9 @@ export type ApiTeamUser = {
   company: ApiCompany | null
   offices: ApiOffice[]
   roles: ApiTeamRole[]
+  departments: ApiDepartment[]
   status: string
+  deactivatedAt?: string | null
   invitationSentAt?: string | null
   actorType?: "internal" | "customer"
   organisations?: ApiOrganisation[]
@@ -47,6 +55,24 @@ export type ApiTeamUser = {
   jobTitle: string | null
   profilePhoto: ApiUserProfilePhoto | null
   coverPhoto: ApiUserProfilePhoto | null
+}
+
+export type ApiDeletionImpactGroup = {
+  key: string
+  table: string
+  field?: string
+  count: number
+}
+
+export type ApiTeamUserDeletionImpact = {
+  alreadyDeleted: boolean
+  requiresReassignment: boolean
+  totalTransferable: number
+  groups: ApiDeletionImpactGroup[]
+  cleanup: ApiDeletionImpactGroup[]
+  retainedAttribution: ApiDeletionImpactGroup[]
+  impactToken: string
+  eligibleUsers: ApiTeamUser[]
 }
 
 export type ApiAuthSession = {
@@ -64,6 +90,7 @@ export type ApiAuthSession = {
 export type ApiTeamUsersResponse = {
   company: ApiCompany | null
   offices: ApiOffice[]
+  departments: ApiDepartment[]
   users: ApiTeamUser[]
 }
 
@@ -78,6 +105,7 @@ export type CreateTeamUserRequest = {
   officeId?: string | null
   roleTitle?: string | null
   roleId?: string | null
+  departmentIds?: string[]
   invitationExpiry: ApiInvitationExpiry
 }
 
@@ -90,6 +118,15 @@ export type CreateTeamUserResponse = {
 
 export type ChangeTeamUserOfficeRequest = {
   officeId: string
+}
+
+export type UpdateTeamUserRequest = {
+  firstName: string
+  lastName: string
+  jobTitle: string | null
+  officeId: string
+  roleIds: string[]
+  departmentIds?: string[]
 }
 
 export type UpdateCurrentUserProfileRequest = {
@@ -204,6 +241,16 @@ export async function getApiTeamUsers(accessToken: string): Promise<ApiTeamUsers
   return response.json() as Promise<ApiTeamUsersResponse>
 }
 
+export async function createApiDepartment(accessToken: string, name: string): Promise<ApiDepartment> {
+  const response = await edgeFetch("team", "/departments", accessToken, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  })
+  if (!response.ok) throw new Error(await parseApiError(response))
+  return response.json() as Promise<ApiDepartment>
+}
+
 export async function getApiCurrentUser(accessToken: string): Promise<ApiTeamUser> {
   const response = await edgeFetch("account", "", accessToken)
 
@@ -268,6 +315,11 @@ export async function resendApiTeamUserInvitation(accessToken: string, userId: s
   return body.user
 }
 
+export async function deleteApiTeamUserInvitation(accessToken: string, userId: string): Promise<void> {
+  const response = await edgeFetch("team", `/${userId}/invitation`, accessToken, { method: "DELETE" })
+  if (!response.ok) throw new Error(await parseApiError(response))
+}
+
 export async function changeApiTeamUserOffice(accessToken: string, userId: string, request: ChangeTeamUserOfficeRequest): Promise<ApiTeamUser> {
   const response = await edgeFetch("team", `/${userId}/office`, accessToken, {
     method: "PATCH",
@@ -284,8 +336,47 @@ export async function changeApiTeamUserOffice(accessToken: string, userId: strin
   return response.json() as Promise<ApiTeamUser>
 }
 
-export async function deleteApiTeamUser(accessToken: string, userId: string): Promise<void> {
-  const response = await edgeFetch("team", `/${userId}`, accessToken, { method: "DELETE" })
+export async function updateApiTeamUser(accessToken: string, userId: string, request: UpdateTeamUserRequest): Promise<ApiTeamUser> {
+  const response = await edgeFetch("team", `/${userId}`, accessToken, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  })
+  if (!response.ok) throw new Error(await parseApiError(response))
+  return response.json() as Promise<ApiTeamUser>
+}
+
+export async function updateApiTeamUserStatus(accessToken: string, userId: string, status: "active" | "deactivated"): Promise<ApiTeamUser> {
+  const response = await edgeFetch("team", `/${userId}/status`, accessToken, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  })
+  if (!response.ok) throw new Error(await parseApiError(response))
+  return response.json() as Promise<ApiTeamUser>
+}
+
+export async function getApiTeamUserDeletionImpact(accessToken: string, userId: string): Promise<ApiTeamUserDeletionImpact> {
+  const response = await edgeFetch("team", `/${userId}/deletion-impact`, accessToken)
+  if (!response.ok) {
+    const detail = await parseApiError(response)
+    // Older tenant deployments do not expose this route. Keep deletion fail-closed,
+    // but give the UI a stable signal so it can explain the required backend update
+    // instead of surfacing an internal "Team endpoint not found" response.
+    if (response.status === 404 || detail === "Team endpoint not found.") {
+      throw new Error("USER_DELETION_IMPACT_UNAVAILABLE")
+    }
+    throw new Error(detail)
+  }
+  return response.json() as Promise<ApiTeamUserDeletionImpact>
+}
+
+export async function deleteApiTeamUser(accessToken: string, userId: string, request: { impactToken: string; replacementUserId: string | null; confirmation: string }): Promise<void> {
+  const response = await edgeFetch("team", `/${userId}`, accessToken, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  })
 
   if (!response.ok) {
     throw new Error(await parseApiError(response))

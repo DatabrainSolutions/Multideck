@@ -436,6 +436,9 @@ verify_jwt = true
 [functions.team]
 verify_jwt = true
 
+[functions.developer-broadcasts]
+verify_jwt = true
+
 [functions.customers]
 verify_jwt = true
 

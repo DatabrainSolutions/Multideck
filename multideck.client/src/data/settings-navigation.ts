@@ -24,6 +24,7 @@ export type SettingsSectionId =
   | "dexter"
   | "permissions"
   | "users"
+  | "broadcast"
   | "integrations"
   | "billing"
   | "ai-usage"
@@ -69,6 +70,7 @@ export const settingsNavigationGroups: SettingsNavigationGroup[] = [
     label: "Developer",
     items: [
       { id: "users", label: "Users", description: "Invite and manage workspace users", icon: UsersRound },
+      { id: "broadcast", label: "Broadcast", description: "Create reviewed workspace broadcasts", icon: Megaphone },
     ],
   },
   {

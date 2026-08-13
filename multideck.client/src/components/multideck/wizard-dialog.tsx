@@ -111,7 +111,7 @@ export function WizardDialog({
         {/* The rail answers three questions at once: how many steps there are,
             which one this is, and which are already filled in. */}
         {!isFormLayout ? (
-          <nav aria-label={t("Steps")} className={cn("pb-4 pt-4", presentation === "drawer" ? "px-5" : "px-6")}>
+          <nav aria-label={t("Steps")} className={cn("shrink-0 pb-4 pt-4", presentation === "drawer" ? "px-5" : "px-6")}>
             <ol className="relative flex items-start justify-between gap-2">
             <span aria-hidden="true" className="absolute inset-x-0 top-[11px] h-px bg-[var(--md-line)]" />
             <motion.span
@@ -155,7 +155,10 @@ export function WizardDialog({
           </nav>
         ) : null}
 
-        <div className={cn("md-scrollbar min-h-0 flex-1 overflow-y-auto pb-5", presentation === "drawer" ? "px-5" : "px-6", isFormLayout && "pt-4")} style={{ minHeight: presentation === "drawer" ? undefined : bodyMinHeight }}>
+        <div
+          className={cn("md-scrollbar min-h-0 flex-1 overflow-y-auto pb-5", presentation === "drawer" ? "px-5" : "px-6", isFormLayout && "pt-4")}
+          style={{ flexBasis: presentation === "drawer" ? undefined : bodyMinHeight }}
+        >
           {/* mode="wait" with a short exit: the outgoing step is gone before the
               next arrives, so two sets of fields are never stacked, and rapid
               stepping still feels answered. */}
@@ -181,7 +184,7 @@ export function WizardDialog({
           )}
         </div>
 
-        <div className={cn("flex flex-row items-center justify-between gap-2 bg-[var(--md-surface-soft)] py-4 shadow-[var(--md-stroke-top)]", presentation === "drawer" ? "flex-wrap px-4" : "px-6")}>
+        <div className={cn("flex shrink-0 flex-row items-center justify-between gap-2 bg-[var(--md-surface-soft)] pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 shadow-[var(--md-stroke-top)]", presentation === "drawer" ? "flex-wrap px-4" : "px-6")}>
           <div className="flex items-center gap-2">
             {secondaryAction}
           </div>
@@ -243,8 +246,14 @@ export function WizardDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={cn("gap-0 overflow-hidden border-0 bg-[var(--md-surface)] p-0 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[720px]", className)}>
-        <DialogHeader className="gap-1 px-6 pb-4 pt-5 text-start shadow-[var(--md-stroke-bottom)]">
+      <DialogContent
+        className={cn("flex max-h-[calc(100dvh-1rem)] min-h-0 flex-col gap-0 overflow-hidden border-0 bg-[var(--md-surface)] p-0 text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-h-[calc(100dvh-2rem)] sm:max-w-[720px]", className)}
+        onEscapeKeyDown={(event) => {
+          const activeElement = document.activeElement
+          if (activeElement instanceof Element && activeElement.closest('[data-wizard-escape-contained="true"]')) event.preventDefault()
+        }}
+      >
+        <DialogHeader className="shrink-0 gap-1 px-6 pb-4 pt-5 text-start shadow-[var(--md-stroke-bottom)]">
           <DialogTitle className="text-[16px] font-medium">{t(title)}</DialogTitle>
           {description ? <DialogDescription className="text-[13px] leading-5 text-[var(--md-text)]">{t(description)}</DialogDescription> : null}
         </DialogHeader>

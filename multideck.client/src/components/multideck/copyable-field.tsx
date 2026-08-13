@@ -274,6 +274,7 @@ export function CopyFeedbackTransition({
   copiedClassName,
   originalDirection,
   copiedDirection,
+  animateIntrinsicWidth = false,
 }: {
   value: string
   copiedValue: string
@@ -286,6 +287,7 @@ export function CopyFeedbackTransition({
   copiedClassName?: string
   originalDirection?: "ltr" | "rtl" | "auto"
   copiedDirection?: "ltr" | "rtl" | "auto"
+  animateIntrinsicWidth?: boolean
 }) {
   const shouldReduceMotion = useReducedMotion()
   const rootRef = useRef<HTMLElement | null>(null)
@@ -295,6 +297,7 @@ export function CopyFeedbackTransition({
   const expandedWidthRef = useRef<number | null>(null)
   const releaseTimerRef = useRef<number | null>(null)
   const [expandedWidth, setExpandedWidth] = useState<number | null>(null)
+  const [intrinsicWidth, setIntrinsicWidth] = useState<number | null>(null)
   const [isSwapping, setIsSwapping] = useState(false)
   const [wrapsOntoMultipleLines, setWrapsOntoMultipleLines] = useState(false)
   const [valueFontSize, setValueFontSize] = useState<number | null>(null)
@@ -343,6 +346,10 @@ export function CopyFeedbackTransition({
   const Root = inline ? "span" : "div"
   const Layer = inline ? "span" : "div"
 
+  useLayoutEffect(() => {
+    naturalWidthRef.current = null
+  }, [value])
+
   // Track the resting size while the value is at rest, so an expansion always compares against the
   // real natural width rather than a box that is already holding open for "Copied".
   useLayoutEffect(() => {
@@ -351,7 +358,11 @@ export function CopyFeedbackTransition({
     if (!root || !originalLayer || active || isExpanded) return
 
     const measure = () => {
-      naturalWidthRef.current = readLayoutWidth(root)
+      const naturalWidth = animateIntrinsicWidth
+        ? naturalWidthRef.current ?? readLayoutWidth(originalLayer)
+        : readLayoutWidth(root)
+      naturalWidthRef.current = naturalWidth
+      if (animateIntrinsicWidth) setIntrinsicWidth(naturalWidth)
       setValueFontSize(readValueFontSize(originalLayer))
 
       // Only decides where "Copied" sits vertically: on a wrapped value it belongs on the first line.
@@ -366,7 +377,7 @@ export function CopyFeedbackTransition({
     observer.observe(root)
     observer.observe(originalLayer)
     return () => observer.disconnect()
-  }, [active, isExpanded, value])
+  }, [active, animateIntrinsicWidth, isExpanded, value])
 
   // Compositor promotion is only worth its cost while a swap is actually running. `active` carries
   // the opening frame so the layer exists before the characters move, and this keeps it alive until
@@ -403,8 +414,14 @@ export function CopyFeedbackTransition({
     if (active) {
       const copiedWidth = readLayoutWidth(copiedLayer)
       const naturalWidth = naturalWidthRef.current ?? readLayoutWidth(root)
+      if (animateIntrinsicWidth) setIntrinsicWidth(copiedWidth)
       applyExpandedWidth(copiedWidth > naturalWidth ? copiedWidth : null)
       return
+    }
+
+    if (animateIntrinsicWidth) {
+      const naturalWidth = naturalWidthRef.current ?? readLayoutWidth(root)
+      setIntrinsicWidth(naturalWidth)
     }
 
     if (expandedWidthRef.current === null) return
@@ -413,7 +430,7 @@ export function CopyFeedbackTransition({
       applyExpandedWidth(null)
       releaseTimerRef.current = null
     }, shouldReduceMotion ? 0 : swapDuration)
-  }, [active, shouldReduceMotion, swapDuration])
+  }, [active, animateIntrinsicWidth, shouldReduceMotion, swapDuration])
 
   useEffect(() => () => {
     if (releaseTimerRef.current !== null) window.clearTimeout(releaseTimerRef.current)
@@ -427,12 +444,13 @@ export function CopyFeedbackTransition({
       data-effect={resolvedEffect}
       data-active={active || undefined}
       className={cn(
-        "relative min-w-0 max-w-full overflow-hidden transition-[min-width] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+        "relative min-w-0 max-w-full overflow-hidden transition-[width,min-width] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
         inline ? "inline-block" : "block",
         className,
       )}
       style={{
         minWidth: expandedWidth === null ? undefined : `${expandedWidth}px`,
+        width: animateIntrinsicWidth && intrinsicWidth !== null ? `${intrinsicWidth}px` : undefined,
         transitionDuration: shouldReduceMotion ? "0ms" : `${expandDuration}ms`,
       }}
     >

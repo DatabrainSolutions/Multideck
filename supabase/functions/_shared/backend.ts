@@ -80,6 +80,9 @@ export async function currentInternalUser(admin: SupabaseClient, authUser: User)
   const { data, error } = await admin.from("cmp_Users").select("*").eq("Auth_User_ID", authUser.id).maybeSingle()
   if (error) throw new HttpError(500, error.message)
   if (!data) throw new HttpError(403, "Your Supabase account is not linked to a Multideck company profile yet.")
+  if (data.User_AccessStatus && data.User_AccessStatus !== "active") {
+    throw new HttpError(403, "Your Multideck access has been deactivated. Contact a workspace administrator.")
+  }
   return data
 }
 

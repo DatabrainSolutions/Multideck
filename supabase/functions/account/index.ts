@@ -13,6 +13,9 @@ async function internalProfile(admin: any, user: any) {
   const { data: row, error } = await admin.from("cmp_Users").select("*").eq("Auth_User_ID", user.id).maybeSingle()
   if (error) throw new HttpError(500, error.message)
   if (!row) return null
+  if (row.User_AccessStatus && row.User_AccessStatus !== "active") {
+    throw new HttpError(403, "Your Multideck access has been deactivated. Contact a workspace administrator.")
+  }
   const [{ data: company }, { data: officeLinks }, { data: roleLinks }, permissions] = await Promise.all([
     row.Company_ID ? admin.from("cmp_Company").select("Company_ID,Company_Name").eq("Company_ID", row.Company_ID).maybeSingle() : Promise.resolve({ data: null }),
     admin.from("cmp_Users_Offices").select("Office_ID").eq("User_ID", row.User_ID),
