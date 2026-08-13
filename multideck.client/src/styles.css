@@ -2394,6 +2394,17 @@ html[dir="rtl"] .md-nav-arrow[data-affordance="branch"] {
     border-radius: 999px;
   }
 
+  /* Tables remain horizontally scrollable by trackpad, touch and keyboard,
+     but the permanent scrollbar competes with dense register content. */
+  .md-table-scroll {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .md-table-scroll::-webkit-scrollbar {
+    display: none;
+  }
+
   .dark .md-scrollbar {
     scrollbar-color: rgba(182, 196, 189, 0.2) transparent;
   }

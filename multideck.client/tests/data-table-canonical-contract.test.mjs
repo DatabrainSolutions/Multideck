@@ -13,6 +13,7 @@ const topBarSource = await readFile(new URL("../src/components/multideck/top-bar
 const topBarActionSource = await readFile(new URL("../src/lib/top-bar-action-events.ts", import.meta.url), "utf8")
 const appSource = await readFile(new URL("../src/App.tsx", import.meta.url), "utf8")
 const warehousePageSource = await readFile(new URL("../src/pages/warehouse-page.tsx", import.meta.url), "utf8")
+const tablePrimitiveSource = await readFile(new URL("../src/components/ui/table.tsx", import.meta.url), "utf8")
 const styleSource = await readFile(new URL("../src/styles.css", import.meta.url), "utf8")
 
 async function collectTsxFiles(directory) {
@@ -50,6 +51,12 @@ test("search, filters, and the Columns icon use the shared tab corner radius", (
   const columnsButton = dataTableSource.slice(dataTableSource.lastIndexOf("<button", dataTableSource.indexOf("<Columns3")), dataTableSource.indexOf("<Columns3"))
   assert.match(columnsButton, /rounded-\[var\(--md-radius-lg\)\]/u)
   assert.match(columnsButton, /aria-label=\{t\(columnsButtonLabel/u)
+})
+
+test("table scrollbars stay hidden without disabling horizontal overflow", () => {
+  assert.match(tablePrimitiveSource, /className="md-table-scroll relative w-full overflow-x-auto"/u)
+  assert.match(styleSource, /\.md-table-scroll\s*\{[^}]*scrollbar-width: none;[^}]*-ms-overflow-style: none;/su)
+  assert.match(styleSource, /\.md-table-scroll::-webkit-scrollbar\s*\{[^}]*display: none;/su)
 })
 
 test("semantic pill colour is confined to the indicator", () => {

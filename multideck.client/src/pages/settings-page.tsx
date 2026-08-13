@@ -3,6 +3,7 @@ import type { User } from "@supabase/supabase-js"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import {
   Activity,
+  ArrowLeft,
   Ban,
   BadgeCheck,
   Bell,
@@ -116,7 +117,6 @@ import {
   updateApiTeamUser,
   updateApiTeamUserStatus,
   updateApiCurrentUserProfile,
-  updateApiUserRoles,
   type ApiAuthorizationRole,
   type ApiAuthorizationState,
   type ApiInvitationExpiry,
@@ -2343,6 +2343,8 @@ const emptyInviteForm = {
   invitationExpiry: "7d" as ApiInvitationExpiry,
 }
 
+const makeRoleSelectValue = "__make_workspace_role__"
+
 function getTeamUserInitials(user: ApiTeamUser) {
   const source = [user.firstName, user.lastName].filter(Boolean).join(" ").trim() || user.displayName || user.email
   const parts = source.split(/\s+/).filter(Boolean)
@@ -2407,13 +2409,6 @@ function getRoleDisplayName(role: ApiAuthorizationRole | null) {
 
 function getAssignableRoles(roles: ApiAuthorizationRole[]) {
   return roles.filter((role) => !role.isLegacyCustom)
-}
-
-function upsertUserRoleAssignment(assignments: ApiAuthorizationState["userRoles"], userId: string, roleIds: string[]) {
-  const nextAssignment = { userId, roleIds }
-  return assignments.some((assignment) => assignment.userId === userId)
-    ? assignments.map((assignment) => (assignment.userId === userId ? nextAssignment : assignment))
-    : [...assignments, nextAssignment]
 }
 
 function RolePermissionMatrix({
@@ -2522,6 +2517,7 @@ function UserActionTooltip({ label, children }: { label: string; children: React
 
 function UsersTab() {
   const { t } = useLanguage()
+  const shouldReduceMotion = useReducedMotion()
   const [team, setTeam] = useState<ApiTeamUsersResponse | null>(null)
   const [authorizationState, setAuthorizationState] = useState<ApiAuthorizationState | null>(null)
   const [loading, setLoading] = useState(true)
@@ -2531,6 +2527,11 @@ function UsersTab() {
   const [inviteOpen, setInviteOpen] = useState(false)
   const [inviteForm, setInviteForm] = useState(emptyInviteForm)
   const [inviting, setInviting] = useState(false)
+  const [createRoleOpen, setCreateRoleOpen] = useState(false)
+  const [roleComposerTarget, setRoleComposerTarget] = useState<"invite" | "edit" | null>(null)
+  const [roleNameDraft, setRoleNameDraft] = useState("")
+  const [newRolePermissionDraft, setNewRolePermissionDraft] = useState<string[]>([])
+  const [creatingRole, setCreatingRole] = useState(false)
   const [resendingUserId, setResendingUserId] = useState<string | null>(null)
   const [deleteInviteCandidate, setDeleteInviteCandidate] = useState<ApiTeamUser | null>(null)
   const [deletingInvite, setDeletingInvite] = useState(false)
@@ -2584,6 +2585,62 @@ function UsersTab() {
   useEffect(() => () => {
     if (deletionNameCopyTimerRef.current !== null) window.clearTimeout(deletionNameCopyTimerRef.current)
   }, [])
+
+  function beginRoleCreation(target: "invite" | "edit" | "standalone") {
+    setRoleNameDraft("")
+    setNewRolePermissionDraft([])
+    if (target === "standalone") {
+      setCreateRoleOpen(true)
+      return
+    }
+    setRoleComposerTarget(target)
+  }
+
+  function closeRoleComposer(target: "invite" | "edit") {
+    if (!creatingRole && roleComposerTarget === target) setRoleComposerTarget(null)
+  }
+
+  async function createWorkspaceRole(target: "invite" | "edit" | "standalone") {
+    const name = roleNameDraft.trim().replace(/\s+/g, " ")
+    if (!name) {
+      toast.error(t("Role name is required"))
+      return
+    }
+    if (!newRolePermissionDraft.length) {
+      toast.error(t("Enable at least one permission before creating the role."))
+      return
+    }
+
+    setCreatingRole(true)
+    try {
+      const session = await getSupabaseSession()
+      if (!session?.access_token) throw new Error(t("Sign in again before creating a role."))
+      const role = await createApiAuthorizationRole(session.access_token, {
+        name,
+        permissionValues: newRolePermissionDraft,
+      })
+      setAuthorizationState((current) => current ? {
+        ...current,
+        roles: [...current.roles, role].sort((left, right) => left.name.localeCompare(right.name)),
+      } : current)
+      if (target === "invite") {
+        setInviteForm((current) => ({ ...current, roleId: role.id, roleTitle: role.name }))
+        setRoleComposerTarget(null)
+      } else if (target === "edit") {
+        setEditForm((current) => ({ ...current, roleId: role.id }))
+        setRoleComposerTarget(null)
+      } else {
+        setCreateRoleOpen(false)
+      }
+      toast.success(t("Role created"), { description: role.name })
+    } catch (error) {
+      toast.error(t("Role could not be created"), {
+        description: error instanceof Error ? error.message : t("Check the role name and permissions, then try again."),
+      })
+    } finally {
+      setCreatingRole(false)
+    }
+  }
 
   async function sendInvitation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -2671,7 +2728,7 @@ function UsersTab() {
       lastName: user.lastName ?? "",
       jobTitle: user.jobTitle ?? "",
       officeId: user.offices[0]?.id ?? team?.offices[0]?.id ?? "",
-      roleId: role?.id ?? "",
+      roleId: role && !role.isLegacyCustom ? role.id : "",
       departmentIds: user.departments.map((department) => department.id),
     })
   }
@@ -2706,6 +2763,7 @@ function UsersTab() {
     try {
       const session = await getSupabaseSession()
       if (!session?.access_token) throw new Error(t("Sign in again before managing team users."))
+      const previousRole = getPrimaryRole(editingUser, authorizationState?.roles ?? [])
       const updated = await updateApiTeamUser(session.access_token, editingUser.id, {
         firstName: editForm.firstName,
         lastName: editForm.lastName,
@@ -2714,8 +2772,18 @@ function UsersTab() {
         roleIds: [editForm.roleId],
         departmentIds: editForm.departmentIds,
       })
+      let legacyRoleCleanupError: string | null = null
+      if (previousRole?.isLegacyCustom && previousRole.id !== editForm.roleId) {
+        try {
+          await deleteApiAuthorizationRole(session.access_token, previousRole.id)
+          setAuthorizationState((current) => current ? { ...current, roles: current.roles.filter((role) => role.id !== previousRole.id) } : current)
+        } catch (error) {
+          legacyRoleCleanupError = error instanceof Error ? error.message : t("The old one-user role could not be removed.")
+        }
+      }
       setTeam((current) => current ? { ...current, users: upsertTeamUser(current.users, updated) } : current)
       toast.success(t("User details saved"), { description: updated.email })
+      if (legacyRoleCleanupError) toast.warning(t("New role assigned, but cleanup needs attention"), { description: legacyRoleCleanupError })
       setEditingUser(null)
     } catch (error) {
       toast.error(t("User details could not be saved"), { description: error instanceof Error ? error.message : t("Check the details and try again.") })
@@ -2849,7 +2917,11 @@ function UsersTab() {
   const assignableRoles = getAssignableRoles(roles)
   const predefinedRoles = assignableRoles.filter((role) => role.isSystem)
   const savedRoles = assignableRoles.filter((role) => !role.isSystem)
+  const permissionAreas = getPermissionAreas(authorizationState?.permissions ?? [])
   const users = team?.users ?? []
+  const editingUserRole = editingUser ? getPrimaryRole(editingUser, roles) : null
+  const selectedInviteRole = assignableRoles.find((role) => role.id === inviteForm.roleId) ?? null
+  const selectedEditRole = assignableRoles.find((role) => role.id === editForm.roleId) ?? null
   const normalizedSearch = searchQuery.trim().toLowerCase()
   const visibleUsers = normalizedSearch ? users.filter((user) => [
     user.displayName,
@@ -2858,13 +2930,59 @@ function UsersTab() {
     getRoleDisplayName(getPrimaryRole(user, roles)),
   ].join(" ").toLowerCase().includes(normalizedSearch)) : users
 
+  function renderRoleComposer(target: "invite" | "edit" | "standalone") {
+    const backLabel = target === "invite" ? t("Back to user details") : target === "edit" ? t("Back to edit user") : t("Back to users")
+    const onBack = () => {
+      if (target === "standalone") setCreateRoleOpen(false)
+      else closeRoleComposer(target)
+    }
+
+    return (
+      <div className="grid gap-5">
+        <button
+          type="button"
+          disabled={creatingRole}
+          className="inline-flex min-h-9 w-fit items-center gap-2 rounded-[var(--md-radius-lg)] px-2 text-[12px] font-medium text-[var(--md-text)] transition-[background-color,color,scale] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-surface-tint)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--md-accent-a14)] active:scale-[0.97] motion-reduce:transition-none motion-reduce:active:scale-100"
+          onClick={onBack}
+        >
+          <ArrowLeft className="size-3.5 rtl:-scale-x-100" strokeWidth={1.5} aria-hidden="true" />
+          {backLabel}
+        </button>
+        <DialogHeader className="text-start">
+          <DialogTitle className="text-balance">{t("Make a role")}</DialogTitle>
+          <DialogDescription className="text-pretty">{t("Choose permissions for a reusable workspace role. You can assign it to more people later.")}</DialogDescription>
+        </DialogHeader>
+        <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">
+          {t("Role name")}
+          <SettingsInput
+            value={roleNameDraft}
+            onChange={(event) => setRoleNameDraft(event.target.value)}
+            maxLength={50}
+            autoComplete="off"
+            placeholder={t("For example, Finance approver")}
+            autoFocus
+          />
+          <span className="text-[11.5px] font-normal leading-5 text-[var(--md-text)]">{t("Use a name people will recognise when assigning access.")}</span>
+        </label>
+        <RolePermissionMatrix areas={permissionAreas} permissionValues={newRolePermissionDraft} onChange={setNewRolePermissionDraft} />
+        <DialogFooter>
+          <Button type="button" variant="ghost" disabled={creatingRole} onClick={onBack}>{t("Cancel")}</Button>
+          <Button type="button" disabled={creatingRole || !roleNameDraft.trim() || !newRolePermissionDraft.length} className="bg-[var(--md-accent)] text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]" onClick={() => void createWorkspaceRole(target)}>
+            {creatingRole ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Check className="size-3.5" strokeWidth={1.5} aria-hidden="true" />}
+            {t(creatingRole ? "Creating role" : "Create role")}
+          </Button>
+        </DialogFooter>
+      </div>
+    )
+  }
+
   const columns = useMemo<DataTableColumn<ApiTeamUser>[]>(() => [
     {
       id: "user",
       label: t("User"),
       kind: "identity",
-      width: 240,
-      minWidth: 200,
+      width: 220,
+      minWidth: 190,
       canHide: false,
       canPin: true,
       sortValue: (user) => user.displayName,
@@ -2874,8 +2992,8 @@ function UsersTab() {
       id: "office",
       label: t("Office"),
       kind: "text",
-      width: 220,
-      minWidth: 150,
+      width: 176,
+      minWidth: 138,
       sortValue: (user) => user.offices[0]?.name ?? "",
       cellTitle: (user) => user.offices.map(getOfficeLabel).join(" · ") || t("No office assigned"),
       cell: (user) => <div className="flex min-w-0 items-center gap-1.5"><span className="min-w-0 truncate text-[12.5px] text-[var(--md-text)]">{user.offices[0] ? getOfficeLabel(user.offices[0]) : t("No office assigned")}</span>{user.offices.length > 1 ? <span className="shrink-0 text-[11px] font-medium text-[var(--md-subtle)]">+{user.offices.length - 1}</span> : null}</div>,
@@ -2884,8 +3002,8 @@ function UsersTab() {
       id: "role",
       label: t("Role"),
       kind: "status",
-      width: 150,
-      minWidth: 120,
+      width: 144,
+      minWidth: 112,
       sortValue: (user) => getRoleDisplayName(getPrimaryRole(user, roles)),
       cell: (user) => {
         const role = getPrimaryRole(user, roles)
@@ -2896,8 +3014,8 @@ function UsersTab() {
       id: "status",
       label: t("Status"),
       kind: "status",
-      width: 112,
-      minWidth: 104,
+      width: 104,
+      minWidth: 96,
       sortValue: (user) => user.status,
       cell: (user) => <div className="min-w-0 overflow-hidden"><StatusPill className="max-w-full truncate" tone={user.status === "Active" ? "green" : user.status === "Deactivated" ? "neutral" : "amber"}>{t(user.status)}</StatusPill></div>,
     },
@@ -2906,8 +3024,8 @@ function UsersTab() {
       label: t("Actions"),
       kind: "actions",
       align: "end",
-      width: 136,
-      minWidth: 124,
+      width: 128,
+      minWidth: 116,
       canHide: false,
       canPin: false,
       resizable: false,
@@ -2929,11 +3047,19 @@ function UsersTab() {
   return (
     <>
       <SettingsPageHeader
-        eyebrow={t("Developer / Users")}
+        eyebrow={t("Workspace / Users")}
         title={t("Users")}
-        description={t("Invite people to this Multideck workspace and see who currently has access.")}
+        description={t("Invite people, assign reusable roles and manage workspace access in one place.")}
         descriptionPlacement="under-title"
-        actions={primaryAction(t("Invite user"), () => setInviteOpen(true))}
+        actions={(
+          <div className="flex items-center gap-2">
+            {compactAction(t("Create role"), () => beginRoleCreation("standalone"))}
+            {primaryAction(t("Invite user"), () => {
+              setRoleComposerTarget(null)
+              setInviteOpen(true)
+            })}
+          </div>
+        )}
       />
       <div className="mt-[var(--md-page-stack-gap)]">
         {loadError ? (
@@ -2943,117 +3069,135 @@ function UsersTab() {
             <div className="mt-3">{compactAction(t("Retry"), () => void loadUsers())}</div>
           </div>
         ) : (
-          <DataTable
-            ariaLabel={t("Workspace users")}
-            columns={columns}
-            rows={visibleUsers}
-            getRowKey={(user) => user.id}
-            storageKey="settings-users-v2"
-            minimumWidth={860}
-            toolbarSearch={(
-              <label className="relative block w-[min(280px,70vw)]">
+          <>
+            <div className="hidden xl:block">
+              <DataTable
+                ariaLabel={t("Workspace users")}
+                columns={columns}
+                rows={visibleUsers}
+                getRowKey={(user) => user.id}
+                storageKey="settings-users-v3"
+                minimumWidth={772}
+                tableClassName="table-fixed"
+                toolbarSearch={(
+                  <label className="relative block w-[min(280px,70vw)]">
+                    <span className="sr-only">{t("Search users")}</span>
+                    <Search className="pointer-events-none absolute start-3 top-1/2 z-10 size-3.5 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.4} />
+                    <SettingsInput value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder={t("Search users")} className="ps-9" />
+                  </label>
+                )}
+                emptyState={(
+                  <div className="grid min-h-40 place-items-center px-6 text-center">
+                    <div>
+                      <p className="text-[13px] font-medium text-[var(--md-ink)]">{loading ? t("Loading users…") : t("No users found")}</p>
+                      <p className="mt-1 text-[12px] text-[var(--md-text)]">{loading ? t("Checking the live workspace roster.") : t("Invite a user or clear the search to continue.")}</p>
+                    </div>
+                  </div>
+                )}
+              />
+            </div>
+            <div className="grid gap-3 xl:hidden">
+              <label className="relative block">
                 <span className="sr-only">{t("Search users")}</span>
                 <Search className="pointer-events-none absolute start-3 top-1/2 z-10 size-3.5 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.4} />
                 <SettingsInput value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder={t("Search users")} className="ps-9" />
               </label>
-            )}
-            emptyState={(
-              <div className="grid min-h-40 place-items-center px-6 text-center">
-                <div>
-                  <p className="text-[13px] font-medium text-[var(--md-ink)]">{loading ? t("Loading users…") : t("No users found")}</p>
-                  <p className="mt-1 text-[12px] text-[var(--md-text)]">{loading ? t("Checking the live workspace roster.") : t("Invite a user or clear the search to continue.")}</p>
-                </div>
-              </div>
-            )}
-          />
+              {visibleUsers.map((user) => {
+                const role = getPrimaryRole(user, roles)
+                return (
+                  <article key={user.id} className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-4 shadow-[var(--md-shadow-soft)]">
+                    <div className="flex items-start justify-between gap-3">
+                      <TeamUserIdentity user={user} />
+                      <StatusPill tone={user.status === "Active" ? "green" : user.status === "Deactivated" ? "neutral" : "amber"}>{t(user.status)}</StatusPill>
+                    </div>
+                    <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-[var(--md-line)] pt-3 text-[12px]">
+                      <div className="min-w-0"><dt className="text-[11px] text-[var(--md-subtle)]">{t("Role")}</dt><dd className="mt-1 truncate font-medium text-[var(--md-ink)]">{t(getRoleDisplayName(role))}</dd></div>
+                      <div className="min-w-0"><dt className="text-[11px] text-[var(--md-subtle)]">{t("Office")}</dt><dd className="mt-1 truncate font-medium text-[var(--md-ink)]">{user.offices[0] ? getOfficeLabel(user.offices[0]) : t("No office assigned")}</dd></div>
+                    </dl>
+                    <div className="mt-3 flex items-center justify-end gap-1">
+                      {user.status === "Invited" ? (
+                        <>
+                          <Button type="button" variant="ghost" size="sm" disabled={resendingUserId === user.id || deletingInvite} onClick={() => void resendInvitation(user)}>{resendingUserId === user.id ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Mail className="size-3.5" strokeWidth={1.4} aria-hidden="true" />}{t(resendingUserId === user.id ? "Resending" : "Resend invite")}</Button>
+                          <Button type="button" variant="ghost" size="icon" disabled={resendingUserId === user.id || deletingInvite} className="text-[var(--md-red)]" aria-label={`${t("Delete invite")} ${user.displayName}`} onClick={() => setDeleteInviteCandidate(user)}><Trash2 className="size-3.5" strokeWidth={1.45} aria-hidden="true" /></Button>
+                        </>
+                      ) : (
+                        <Button type="button" variant="ghost" size="sm" onClick={() => openUserEditor(user)}><EditUser02 className="size-3.5" strokeWidth={1.5} aria-hidden="true" />{t("Edit")}</Button>
+                      )}
+                    </div>
+                  </article>
+                )
+              })}
+              {!visibleUsers.length ? <div className="grid min-h-40 place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] px-6 text-center shadow-[var(--md-shadow-soft)]"><div><p className="text-[13px] font-medium text-[var(--md-ink)]">{loading ? t("Loading users…") : t("No users found")}</p><p className="mt-1 text-[12px] text-[var(--md-text)]">{loading ? t("Checking the live workspace roster.") : t("Invite a user or clear the search to continue.")}</p></div></div> : null}
+            </div>
+          </>
         )}
       </div>
 
-      <Dialog open={inviteOpen} onOpenChange={(open) => !inviting && setInviteOpen(open)}>
-        <DialogContent className="max-h-[min(760px,calc(100dvh-32px))] overflow-y-auto border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[620px]">
-          <DialogHeader className="text-start">
-            <DialogTitle>{t("Invite a user")}</DialogTitle>
-            <DialogDescription>{t("They’ll receive a branded Multideck invitation and create their password before entering this workspace.")}</DialogDescription>
-          </DialogHeader>
-          <form className="mt-2 grid gap-5" onSubmit={sendInvitation}>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">
-                {t("First name")}
-                <SettingsInput value={inviteForm.firstName} onChange={(event) => setInviteForm((current) => ({ ...current, firstName: event.target.value }))} autoComplete="given-name" />
-              </label>
-              <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">
-                {t("Last name")}
-                <SettingsInput value={inviteForm.lastName} onChange={(event) => setInviteForm((current) => ({ ...current, lastName: event.target.value }))} autoComplete="family-name" />
-              </label>
-            </div>
-            {(team?.departments ?? []).some((department) => department.isActive) ? (
-              <fieldset className="grid gap-2">
-                <legend className="text-[12px] font-medium text-[var(--md-ink)]">{t("Departments")}</legend>
-                <p className="text-[11.5px] leading-5 text-[var(--md-text)]">{t("Choose every department this person belongs to.")}</p>
-                <div className="grid gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3 sm:grid-cols-2">
-                  {(team?.departments ?? []).filter((department) => department.isActive).map((department) => (
-                    <label key={department.id} className="flex min-h-10 cursor-pointer items-center gap-2.5 text-[12px] text-[var(--md-ink)]">
-                      <Checkbox checked={inviteForm.departmentIds.includes(department.id)} onCheckedChange={(checked) => setInviteForm((current) => ({ ...current, departmentIds: checked ? [...current.departmentIds, department.id] : current.departmentIds.filter((id) => id !== department.id) }))} />
-                      <span>{department.name}</span>
+      <Dialog open={inviteOpen} onOpenChange={(open) => {
+        if (inviting || creatingRole) return
+        setInviteOpen(open)
+        if (!open && roleComposerTarget === "invite") setRoleComposerTarget(null)
+      }}>
+        <DialogContent className="max-h-[min(860px,calc(100dvh-32px))] overflow-y-auto border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[760px]">
+          <AnimatePresence mode="wait" initial={false}>
+            {roleComposerTarget === "invite" ? (
+              <motion.div key="invite-role" initial={shouldReduceMotion ? false : { opacity: 0, y: 8, filter: "blur(3px)" }} animate={{ opacity: 1, y: 0, filter: "blur(0px)" }} exit={shouldReduceMotion ? undefined : { opacity: 0, y: -8, filter: "blur(3px)" }} transition={{ duration: shouldReduceMotion ? 0 : 0.22, ease: [0.22, 1, 0.36, 1] }}>
+                {renderRoleComposer("invite")}
+              </motion.div>
+            ) : (
+              <motion.div key="invite-details" initial={shouldReduceMotion ? false : { opacity: 0, y: 8, filter: "blur(3px)" }} animate={{ opacity: 1, y: 0, filter: "blur(0px)" }} exit={shouldReduceMotion ? undefined : { opacity: 0, y: -8, filter: "blur(3px)" }} transition={{ duration: shouldReduceMotion ? 0 : 0.22, ease: [0.22, 1, 0.36, 1] }}>
+                <DialogHeader className="text-start">
+                  <DialogTitle>{t("Invite a user")}</DialogTitle>
+                  <DialogDescription>{t("They’ll receive a branded Multideck invitation and create their password before entering this workspace.")}</DialogDescription>
+                </DialogHeader>
+                <form className="mt-5 grid gap-5" onSubmit={sendInvitation}>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">{t("First name")}<SettingsInput value={inviteForm.firstName} onChange={(event) => setInviteForm((current) => ({ ...current, firstName: event.target.value }))} autoComplete="given-name" /></label>
+                    <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Last name")}<SettingsInput value={inviteForm.lastName} onChange={(event) => setInviteForm((current) => ({ ...current, lastName: event.target.value }))} autoComplete="family-name" /></label>
+                  </div>
+                  {(team?.departments ?? []).some((department) => department.isActive) ? (
+                    <fieldset className="grid gap-2">
+                      <legend className="text-[12px] font-medium text-[var(--md-ink)]">{t("Departments")}</legend>
+                      <p className="text-[11.5px] leading-5 text-[var(--md-text)]">{t("Choose every department this person belongs to.")}</p>
+                      <div className="grid gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] p-3 sm:grid-cols-2">
+                        {(team?.departments ?? []).filter((department) => department.isActive).map((department) => (
+                          <label key={department.id} className="flex min-h-10 cursor-pointer items-center gap-2.5 text-[12px] text-[var(--md-ink)]"><Checkbox checked={inviteForm.departmentIds.includes(department.id)} onCheckedChange={(checked) => setInviteForm((current) => ({ ...current, departmentIds: checked ? [...current.departmentIds, department.id] : current.departmentIds.filter((id) => id !== department.id) }))} /><span>{department.name}</span></label>
+                        ))}
+                      </div>
+                    </fieldset>
+                  ) : null}
+                  <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Work email")}<SettingsInput value={inviteForm.email} onChange={(event) => setInviteForm((current) => ({ ...current, email: event.target.value }))} type="email" inputMode="email" autoComplete="email" dir="ltr" required placeholder="name@company.com" data-i18n-skip /></label>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Office")}<Select value={inviteForm.officeId} onValueChange={(officeId) => setInviteForm((current) => ({ ...current, officeId }))}><SelectTrigger className="h-10 w-full rounded-[var(--md-radius-lg)]"><SelectValue placeholder={t("Choose an office")} /></SelectTrigger><SelectContent>{(team?.offices ?? []).map((office) => <SelectItem key={office.id} value={office.id}>{getOfficeLabel(office)}</SelectItem>)}</SelectContent></Select></label>
+                    <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">
+                      {t("Role")}
+                      <Select value={inviteForm.roleId} onValueChange={(roleId) => {
+                        if (roleId === makeRoleSelectValue) beginRoleCreation("invite")
+                        else setInviteForm((current) => ({ ...current, roleId, roleTitle: assignableRoles.find((role) => role.id === roleId)?.name ?? current.roleTitle }))
+                      }}>
+                        <SelectTrigger className="h-10 w-full rounded-[var(--md-radius-lg)]"><SelectValue placeholder={t("Choose a role")} /></SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup><SelectLabel>{t("Predefined roles")}</SelectLabel>{predefinedRoles.map((role) => <SelectItem key={role.id} value={role.id}>{role.name}</SelectItem>)}</SelectGroup>
+                          {savedRoles.length ? <><SelectSeparator /><SelectGroup><SelectLabel>{t("Saved roles")}</SelectLabel>{savedRoles.map((role) => <SelectItem key={role.id} value={role.id}>{role.name}</SelectItem>)}</SelectGroup></> : null}
+                          <SelectSeparator />
+                          <SelectItem value={makeRoleSelectValue}><span className="flex items-center gap-2 font-medium text-[var(--md-accent)]"><Plus className="size-3.5" strokeWidth={1.5} aria-hidden="true" />{t("Make a role")}</span></SelectItem>
+                        </SelectContent>
+                      </Select>
                     </label>
-                  ))}
-                </div>
-              </fieldset>
-            ) : null}
-            <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">
-              {t("Work email")}
-              <SettingsInput value={inviteForm.email} onChange={(event) => setInviteForm((current) => ({ ...current, email: event.target.value }))} type="email" inputMode="email" autoComplete="email" dir="ltr" required placeholder="name@company.com" data-i18n-skip />
-            </label>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">
-                {t("Office")}
-                <Select value={inviteForm.officeId} onValueChange={(officeId) => setInviteForm((current) => ({ ...current, officeId }))}>
-                  <SelectTrigger className="h-10 w-full rounded-[var(--md-radius-lg)]"><SelectValue placeholder={t("Choose an office")} /></SelectTrigger>
-                  <SelectContent>{(team?.offices ?? []).map((office) => <SelectItem key={office.id} value={office.id}>{getOfficeLabel(office)}</SelectItem>)}</SelectContent>
-                </Select>
-              </label>
-              <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">
-                {t("Role")}
-                <Select value={inviteForm.roleId} onValueChange={(roleId) => setInviteForm((current) => ({ ...current, roleId }))}>
-                  <SelectTrigger className="h-10 w-full rounded-[var(--md-radius-lg)]"><SelectValue placeholder={t("Choose a role")} /></SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectLabel>{t("Predefined roles")}</SelectLabel>
-                      {predefinedRoles.map((role) => <SelectItem key={role.id} value={role.id}>{role.name}</SelectItem>)}
-                    </SelectGroup>
-                    {savedRoles.length ? (
-                      <>
-                        <SelectSeparator />
-                        <SelectGroup>
-                          <SelectLabel>{t("Saved roles")}</SelectLabel>
-                          {savedRoles.map((role) => <SelectItem key={role.id} value={role.id}>{role.name}</SelectItem>)}
-                        </SelectGroup>
-                      </>
-                    ) : null}
-                  </SelectContent>
-                </Select>
-              </label>
-            </div>
-            <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">
-              {t("Invite expires")}
-              <Select value={inviteForm.invitationExpiry} onValueChange={(invitationExpiry) => setInviteForm((current) => ({ ...current, invitationExpiry: invitationExpiry as ApiInvitationExpiry }))}>
-                <SelectTrigger className="h-10 w-full rounded-[var(--md-radius-lg)]"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="3d">{t("3 days")}</SelectItem>
-                  <SelectItem value="7d">{t("7 days")}</SelectItem>
-                  <SelectItem value="30d">{t("30 days")}</SelectItem>
-                  <SelectItem value="never">{t("Never (until accepted)")}</SelectItem>
-                </SelectContent>
-              </Select>
-            </label>
-            <DialogFooter className="mt-2">
-              <Button type="button" variant="ghost" disabled={inviting} onClick={() => setInviteOpen(false)}>{t("Cancel")}</Button>
-              <Button type="submit" disabled={inviting || !team?.offices.length || !assignableRoles.length} className="bg-[var(--md-accent)] text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]">
-                {inviting ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Mail className="size-3.5" strokeWidth={1.4} aria-hidden="true" />}
-                {t(inviting ? "Sending invitation" : "Send invitation")}
-              </Button>
-            </DialogFooter>
-          </form>
+                  </div>
+                  {selectedInviteRole ? <div className="flex items-start justify-between gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3.5 py-3 shadow-[var(--md-shadow-line)]"><div className="min-w-0"><p className="text-[13px] font-medium text-[var(--md-ink)]">{selectedInviteRole.name}</p><p className="mt-1 text-[11.5px] leading-5 text-[var(--md-text)]">{t(selectedInviteRole.description || "Reusable workspace role.")}</p></div><StatusPill tone={selectedInviteRole.isSystem ? "blue" : "teal"}>{t(selectedInviteRole.isSystem ? "Predefined" : "Saved role")}</StatusPill></div> : null}
+                  <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Invite expires")}<Select value={inviteForm.invitationExpiry} onValueChange={(invitationExpiry) => setInviteForm((current) => ({ ...current, invitationExpiry: invitationExpiry as ApiInvitationExpiry }))}><SelectTrigger className="h-10 w-full rounded-[var(--md-radius-lg)]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="3d">{t("3 days")}</SelectItem><SelectItem value="7d">{t("7 days")}</SelectItem><SelectItem value="30d">{t("30 days")}</SelectItem><SelectItem value="never">{t("Never (until accepted)")}</SelectItem></SelectContent></Select></label>
+                  <DialogFooter className="mt-2"><Button type="button" variant="ghost" disabled={inviting} onClick={() => setInviteOpen(false)}>{t("Cancel")}</Button><Button type="submit" disabled={inviting || !team?.offices.length || !assignableRoles.length} className="bg-[var(--md-accent)] text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]">{inviting ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Mail className="size-3.5" strokeWidth={1.4} aria-hidden="true" />}{t(inviting ? "Sending invitation" : "Send invitation")}</Button></DialogFooter>
+                </form>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={createRoleOpen} onOpenChange={(open) => !creatingRole && setCreateRoleOpen(open)}>
+        <DialogContent className="max-h-[min(860px,calc(100dvh-32px))] overflow-y-auto border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[760px]">
+          {renderRoleComposer("standalone")}
         </DialogContent>
       </Dialog>
 
@@ -3074,10 +3218,22 @@ function UsersTab() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(editingUser)} onOpenChange={(open) => !open && !savingUser && !creatingDepartment && setEditingUser(null)}>
-        <DialogContent className="max-h-[min(760px,calc(100dvh-32px))] overflow-y-auto border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[620px]">
+      <Dialog open={Boolean(editingUser)} onOpenChange={(open) => {
+        if (open || savingUser || creatingDepartment || creatingRole) return
+        setEditingUser(null)
+        if (roleComposerTarget === "edit") setRoleComposerTarget(null)
+      }}>
+        <DialogContent className="max-h-[min(860px,calc(100dvh-32px))] overflow-y-auto border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[760px]">
+          <AnimatePresence mode="wait" initial={false}>
+            {roleComposerTarget === "edit" ? (
+              <motion.div key="edit-role" initial={shouldReduceMotion ? false : { opacity: 0, y: 8, filter: "blur(3px)" }} animate={{ opacity: 1, y: 0, filter: "blur(0px)" }} exit={shouldReduceMotion ? undefined : { opacity: 0, y: -8, filter: "blur(3px)" }} transition={{ duration: shouldReduceMotion ? 0 : 0.22, ease: [0.22, 1, 0.36, 1] }}>
+                {renderRoleComposer("edit")}
+              </motion.div>
+            ) : (
+              <motion.div key="edit-details" initial={shouldReduceMotion ? false : { opacity: 0, y: 8, filter: "blur(3px)" }} animate={{ opacity: 1, y: 0, filter: "blur(0px)" }} exit={shouldReduceMotion ? undefined : { opacity: 0, y: -8, filter: "blur(3px)" }} transition={{ duration: shouldReduceMotion ? 0 : 0.22, ease: [0.22, 1, 0.36, 1] }}>
           <DialogHeader className="text-start"><DialogTitle className="text-balance">{t("Edit user")}</DialogTitle><DialogDescription className="text-pretty">{t("Update their profile, office, departments and workspace role. Their email address stays tied to their sign-in account.")}</DialogDescription></DialogHeader>
-          <form className="mt-2 grid gap-5" onSubmit={saveUser}>
+          <form className="mt-5 grid gap-5" onSubmit={saveUser}>
+            {editingUserRole?.isLegacyCustom ? <div className="rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-amber)_10%,var(--md-surface))] px-3.5 py-3 text-[12px] leading-5 text-[var(--md-text)] shadow-[var(--md-shadow-line)]">{t("This user has an older one-user Custom role. Choose a saved role to replace it.")}</div> : null}
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">{t("First name")}<SettingsInput className="text-base sm:text-sm" value={editForm.firstName} onChange={(event) => setEditForm((current) => ({ ...current, firstName: event.target.value }))} maxLength={50} required /></label>
               <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Last name")}<SettingsInput className="text-base sm:text-sm" value={editForm.lastName} onChange={(event) => setEditForm((current) => ({ ...current, lastName: event.target.value }))} maxLength={50} required /></label>
@@ -3085,8 +3241,20 @@ function UsersTab() {
             <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Job title")}<SettingsInput className="text-base sm:text-sm" value={editForm.jobTitle} onChange={(event) => setEditForm((current) => ({ ...current, jobTitle: event.target.value }))} maxLength={120} placeholder={t("For example, Operations manager")} /></label>
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Office")}<Select value={editForm.officeId} onValueChange={(officeId) => setEditForm((current) => ({ ...current, officeId }))}><SelectTrigger className="h-10 w-full rounded-[var(--md-radius-lg)]"><SelectValue /></SelectTrigger><SelectContent>{(team?.offices ?? []).map((office) => <SelectItem key={office.id} value={office.id}>{getOfficeLabel(office)}</SelectItem>)}</SelectContent></Select></label>
-              <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Role")}<Select value={editForm.roleId} onValueChange={(roleId) => setEditForm((current) => ({ ...current, roleId }))}><SelectTrigger className="h-10 w-full rounded-[var(--md-radius-lg)]"><SelectValue /></SelectTrigger><SelectContent>{assignableRoles.map((role) => <SelectItem key={role.id} value={role.id}>{role.name}</SelectItem>)}</SelectContent></Select></label>
+              <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">
+                {t("Role")}
+                <Select value={editForm.roleId} onValueChange={(roleId) => roleId === makeRoleSelectValue ? beginRoleCreation("edit") : setEditForm((current) => ({ ...current, roleId }))}>
+                  <SelectTrigger className="h-10 w-full rounded-[var(--md-radius-lg)]"><SelectValue placeholder={t("Choose a role")} /></SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup><SelectLabel>{t("Predefined roles")}</SelectLabel>{predefinedRoles.map((role) => <SelectItem key={role.id} value={role.id}>{role.name}</SelectItem>)}</SelectGroup>
+                    {savedRoles.length ? <><SelectSeparator /><SelectGroup><SelectLabel>{t("Saved roles")}</SelectLabel>{savedRoles.map((role) => <SelectItem key={role.id} value={role.id}>{role.name}</SelectItem>)}</SelectGroup></> : null}
+                    <SelectSeparator />
+                    <SelectItem value={makeRoleSelectValue}><span className="flex items-center gap-2 font-medium text-[var(--md-accent)]"><Plus className="size-3.5" strokeWidth={1.5} aria-hidden="true" />{t("Make a role")}</span></SelectItem>
+                  </SelectContent>
+                </Select>
+              </label>
             </div>
+            {selectedEditRole ? <div className="flex items-start justify-between gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3.5 py-3 shadow-[var(--md-shadow-line)]"><div className="min-w-0"><p className="text-[13px] font-medium text-[var(--md-ink)]">{selectedEditRole.name}</p><p className="mt-1 text-[11.5px] leading-5 text-[var(--md-text)]">{t(selectedEditRole.description || "Reusable workspace role.")}</p></div><StatusPill tone={selectedEditRole.isSystem ? "blue" : "teal"}>{t(selectedEditRole.isSystem ? "Predefined" : "Saved role")}</StatusPill></div> : null}
             <fieldset className="grid gap-3">
               <legend className="text-[12px] font-medium text-[var(--md-ink)]">{t("Departments")}</legend>
               <p className="text-pretty text-[11.5px] leading-5 text-[var(--md-text)]">{t("Assign one or more departments. Create a new department here if it is missing.")}</p>
@@ -3110,6 +3278,9 @@ function UsersTab() {
             </fieldset>
             <DialogFooter className="mt-2"><Button type="button" variant="ghost" disabled={savingUser || creatingDepartment} onClick={() => setEditingUser(null)}>{t("Cancel")}</Button><Button type="submit" disabled={savingUser || creatingDepartment || !editForm.firstName.trim() || !editForm.lastName.trim() || !editForm.officeId || !editForm.roleId} className="bg-[var(--md-accent)] text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]">{savingUser ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Check className="size-3.5" strokeWidth={1.5} aria-hidden="true" />}{t(savingUser ? "Saving user" : "Save user")}</Button></DialogFooter>
           </form>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </DialogContent>
       </Dialog>
 
@@ -3151,331 +3322,6 @@ function UsersTab() {
           <DialogFooter className="-mx-3 -mb-3 mt-5 sm:-mx-4 sm:-mb-4"><Button type="button" variant="ghost" disabled={deletingUser} onClick={() => setDeleteCandidate(null)}>{t("Cancel")}</Button><Button type="button" disabled={deletingUser || !deletionImpact || (deletionImpact.requiresReassignment && !replacementUserId) || deletionConfirmation.trim() !== deleteCandidate?.displayName.trim()} className="bg-[var(--md-red)] text-white hover:opacity-90" onClick={() => void permanentlyDeleteUser()}>{deletingUser ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Trash2 className="size-3.5" strokeWidth={1.5} aria-hidden="true" />}{t(deletingUser ? "Deleting user" : "Permanently delete user")}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
-  )
-}
-
-function UserPermissionsTab() {
-  const { t } = useLanguage()
-  const [team, setTeam] = useState<ApiTeamUsersResponse | null>(null)
-  const [authorizationState, setAuthorizationState] = useState<ApiAuthorizationState | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const [searchQuery, setSearchQuery] = useState("")
-  const [editingUser, setEditingUser] = useState<ApiTeamUser | null>(null)
-  const [roleSelection, setRoleSelection] = useState("")
-  const [saving, setSaving] = useState(false)
-  const [createRoleOpen, setCreateRoleOpen] = useState(false)
-  const [roleNameDraft, setRoleNameDraft] = useState("")
-  const [newRolePermissionDraft, setNewRolePermissionDraft] = useState<string[]>([])
-  const [creatingRole, setCreatingRole] = useState(false)
-
-  const loadPermissions = useCallback(async () => {
-    setLoading(true)
-    setLoadError(null)
-    try {
-      const session = await getSupabaseSession()
-      if (!session?.access_token) throw new Error(t("Sign in again before managing roles and permissions."))
-      const [nextTeam, nextAuthorization] = await Promise.all([
-        getApiTeamUsers(session.access_token),
-        getApiAuthorizationState(session.access_token),
-      ])
-      setTeam(nextTeam)
-      setAuthorizationState(nextAuthorization)
-    } catch (error) {
-      setLoadError(error instanceof Error ? error.message : t("Permissions could not be loaded."))
-    } finally {
-      setLoading(false)
-    }
-  }, [t])
-
-  useEffect(() => {
-    void loadPermissions()
-  }, [loadPermissions])
-
-  const roles = authorizationState?.roles ?? []
-  const assignableRoles = getAssignableRoles(roles)
-  const predefinedRoles = assignableRoles.filter((role) => role.isSystem)
-  const savedRoles = assignableRoles.filter((role) => !role.isSystem)
-  const permissionAreas = getPermissionAreas(authorizationState?.permissions ?? [])
-
-  function openEditor(user: ApiTeamUser) {
-    const role = getPrimaryRole(user, roles)
-    setEditingUser(user)
-    setRoleSelection(role && !role.isLegacyCustom ? role.id : "")
-  }
-
-  function openCreateRole() {
-    setRoleNameDraft("")
-    setNewRolePermissionDraft([])
-    setCreateRoleOpen(true)
-  }
-
-  async function saveUserPermissions() {
-    if (!editingUser || !authorizationState || !roleSelection) return
-    setSaving(true)
-    try {
-      const session = await getSupabaseSession()
-      if (!session?.access_token) throw new Error(t("Sign in again before changing user permissions."))
-      const previousRole = getPrimaryRole(editingUser, authorizationState.roles)
-      const nextRole = assignableRoles.find((role) => role.id === roleSelection)
-      if (!nextRole) throw new Error(t("Choose a valid role."))
-
-      const assignment = await updateApiUserRoles(session.access_token, editingUser.id, { roleIds: [nextRole.id] })
-      let nextRoles = authorizationState.roles
-
-      if (previousRole?.isLegacyCustom && previousRole.id !== nextRole.id) {
-        await deleteApiAuthorizationRole(session.access_token, previousRole.id)
-        nextRoles = nextRoles.filter((role) => role.id !== previousRole.id)
-      }
-
-      setAuthorizationState((current) => current ? {
-        ...current,
-        roles: nextRoles,
-        userRoles: upsertUserRoleAssignment(current.userRoles, assignment.userId, assignment.roleIds),
-      } : current)
-      setTeam((current) => current ? {
-        ...current,
-        users: current.users.map((user) => user.id === editingUser.id ? { ...user, roles: [{ id: nextRole.id, name: nextRole.name }] } : user),
-      } : current)
-      toast.success(t("User permissions saved"), { description: editingUser.email })
-      setEditingUser(null)
-    } catch (error) {
-      toast.error(t("User permissions could not be saved"), {
-        description: error instanceof Error ? error.message : t("Check the role and try again."),
-      })
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function createRole() {
-    const name = roleNameDraft.trim().replace(/\s+/g, " ")
-    if (!name) {
-      toast.error(t("Role name is required"))
-      return
-    }
-    if (!newRolePermissionDraft.length) {
-      toast.error(t("Enable at least one permission before creating the role."))
-      return
-    }
-
-    setCreatingRole(true)
-    try {
-      const session = await getSupabaseSession()
-      if (!session?.access_token) throw new Error(t("Sign in again before creating a role."))
-      const role = await createApiAuthorizationRole(session.access_token, {
-        name,
-        permissionValues: newRolePermissionDraft,
-      })
-      setAuthorizationState((current) => current ? {
-        ...current,
-        roles: [...current.roles, role].sort((a, b) => a.name.localeCompare(b.name)),
-      } : current)
-      setCreateRoleOpen(false)
-      toast.success(t("Role created"), { description: role.name })
-    } catch (error) {
-      toast.error(t("Role could not be created"), {
-        description: error instanceof Error ? error.message : t("Check the role name and permissions, then try again."),
-      })
-    } finally {
-      setCreatingRole(false)
-    }
-  }
-
-  const users = team?.users ?? []
-  const editingUserRole = editingUser ? getPrimaryRole(editingUser, roles) : null
-  const selectedEditorRole = assignableRoles.find((role) => role.id === roleSelection) ?? null
-  const normalizedSearch = searchQuery.trim().toLowerCase()
-  const visibleUsers = normalizedSearch ? users.filter((user) => [user.displayName, user.email, getRoleDisplayName(getPrimaryRole(user, roles))].join(" ").toLowerCase().includes(normalizedSearch)) : users
-  const columns = useMemo<DataTableColumn<ApiTeamUser>[]>(() => [
-    {
-      id: "user",
-      label: t("User"),
-      kind: "identity",
-      width: 320,
-      minWidth: 230,
-      canHide: false,
-      canPin: true,
-      sortValue: (user) => user.displayName,
-      cell: (user) => <TeamUserIdentity user={user} />,
-    },
-    {
-      id: "role",
-      label: t("Role"),
-      kind: "status",
-      width: 200,
-      minWidth: 150,
-      sortValue: (user) => getRoleDisplayName(getPrimaryRole(user, roles)),
-      cell: (user) => {
-        const role = getPrimaryRole(user, roles)
-        return <StatusPill tone={role?.isLegacyCustom ? "amber" : role?.isSystem ? "blue" : "teal"}>{t(getRoleDisplayName(role))}</StatusPill>
-      },
-    },
-    {
-      id: "status",
-      label: t("Status"),
-      kind: "status",
-      width: 150,
-      minWidth: 120,
-      sortValue: (user) => user.status,
-      cell: (user) => <StatusPill tone={user.status === "Active" ? "green" : "amber"}>{t(user.status)}</StatusPill>,
-    },
-    {
-      id: "actions",
-      label: t("Actions"),
-      kind: "actions",
-      align: "end",
-      width: 72,
-      minWidth: 64,
-      canHide: false,
-      canPin: false,
-      resizable: false,
-      cell: (user) => (
-        <div className="flex items-center justify-end gap-1">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button type="button" variant="ghost" size="icon" className="size-8 rounded-[var(--md-radius-md)] text-[var(--md-text)] hover:bg-[var(--md-surface-tint)] hover:text-[var(--md-ink)]" aria-label={`${t("Edit permissions for")} ${user.displayName}`} onClick={() => openEditor(user)}>
-                <EditUser02 className="size-3.5" strokeWidth={1.45} aria-hidden="true" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t("Edit permissions")}</TooltipContent>
-          </Tooltip>
-        </div>
-      ),
-    },
-  ], [roles, t])
-
-  return (
-    <>
-      <SettingsPageHeader
-        eyebrow={t("Workspace / Permissions")}
-        title={t("Permissions")}
-        description={t("Create reusable roles once, then assign the right access to each workspace user.")}
-        actions={(
-          <div className="flex items-center gap-2">
-            {compactAction(t("Refresh"), () => void loadPermissions())}
-            {primaryAction(t("Create role"), openCreateRole)}
-          </div>
-        )}
-      />
-      <div className="mt-[var(--md-page-stack-gap)]">
-        {loadError ? (
-          <div className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-soft)]" role="alert">
-            <p className="text-[13px] font-medium text-[var(--md-red)]">{t("Permissions could not be loaded.")}</p>
-            <p className="mt-1 text-[12px] text-[var(--md-text)]">{loadError}</p>
-            <div className="mt-3">{compactAction(t("Retry"), () => void loadPermissions())}</div>
-          </div>
-        ) : (
-          <DataTable
-            ariaLabel={t("User permissions")}
-            columns={columns}
-            rows={visibleUsers}
-            getRowKey={(user) => user.id}
-            storageKey="settings-user-permissions"
-            minimumWidth={760}
-            toolbarSearch={(
-              <label className="relative block w-[min(280px,70vw)]">
-                <span className="sr-only">{t("Search users")}</span>
-                <Search className="pointer-events-none absolute start-3 top-1/2 z-10 size-3.5 -translate-y-1/2 text-[var(--md-subtle)]" strokeWidth={1.4} />
-                <SettingsInput value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder={t("Search users")} className="ps-9" />
-              </label>
-            )}
-            emptyState={(
-              <div className="grid min-h-40 place-items-center px-6 text-center">
-                <div>
-                  <p className="text-[13px] font-medium text-[var(--md-ink)]">{loading ? t("Loading permissions…") : t("No users found")}</p>
-                  <p className="mt-1 text-[12px] text-[var(--md-text)]">{loading ? t("Checking each user’s live role.") : t("Clear the search to see every workspace user.")}</p>
-                </div>
-              </div>
-            )}
-          />
-        )}
-      </div>
-
-      <Dialog open={createRoleOpen} onOpenChange={(open) => !creatingRole && setCreateRoleOpen(open)}>
-        <DialogContent className="max-h-[min(860px,calc(100dvh-32px))] overflow-y-auto border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[760px]">
-          <DialogHeader className="text-start">
-            <DialogTitle>{t("Create a role")}</DialogTitle>
-            <DialogDescription>{t("Name this access set once. It will be saved to the workspace and can be assigned to any user.")}</DialogDescription>
-          </DialogHeader>
-          <div className="mt-2 grid gap-5">
-            <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">
-              {t("Role name")}
-              <SettingsInput
-                value={roleNameDraft}
-                onChange={(event) => setRoleNameDraft(event.target.value)}
-                maxLength={50}
-                autoComplete="off"
-                placeholder={t("For example, Finance approver")}
-              />
-              <span className="text-[11.5px] font-normal leading-5 text-[var(--md-text)]">{t("Use a name people will recognise when assigning access.")}</span>
-            </label>
-            <RolePermissionMatrix areas={permissionAreas} permissionValues={newRolePermissionDraft} onChange={setNewRolePermissionDraft} />
-          </div>
-          <DialogFooter className="mt-5">
-            <Button type="button" variant="ghost" disabled={creatingRole} onClick={() => setCreateRoleOpen(false)}>{t("Cancel")}</Button>
-            <Button type="button" disabled={creatingRole || !roleNameDraft.trim() || !newRolePermissionDraft.length} className="bg-[var(--md-accent)] text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]" onClick={() => void createRole()}>
-              {creatingRole ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Check className="size-3.5" strokeWidth={1.5} aria-hidden="true" />}
-              {t(creatingRole ? "Creating role" : "Create role")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={Boolean(editingUser)} onOpenChange={(open) => !open && !saving && setEditingUser(null)}>
-        <DialogContent className="border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[560px]">
-          <DialogHeader className="text-start">
-            <DialogTitle>{t("Edit user permissions")}</DialogTitle>
-            <DialogDescription>{editingUser ? `${editingUser.displayName} · ${editingUser.email}` : ""}</DialogDescription>
-          </DialogHeader>
-          <div className="mt-2 grid gap-4">
-            {editingUserRole?.isLegacyCustom ? (
-              <div className="rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-amber)_10%,var(--md-surface))] px-3.5 py-3 text-[12px] leading-5 text-[var(--md-text)] shadow-[var(--md-shadow-line)]">
-                {t("This user has an older one-user Custom role. Choose a saved role to replace it.")}
-              </div>
-            ) : null}
-            <label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">
-              {t("Role")}
-              <Select value={roleSelection} onValueChange={setRoleSelection}>
-                <SelectTrigger className="h-10 w-full rounded-[var(--md-radius-lg)]"><SelectValue placeholder={t("Choose a role")} /></SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectLabel>{t("Predefined roles")}</SelectLabel>
-                    {predefinedRoles.map((role) => <SelectItem key={role.id} value={role.id}>{role.name}</SelectItem>)}
-                  </SelectGroup>
-                  {savedRoles.length ? (
-                    <>
-                      <SelectSeparator />
-                      <SelectGroup>
-                        <SelectLabel>{t("Saved roles")}</SelectLabel>
-                        {savedRoles.map((role) => <SelectItem key={role.id} value={role.id}>{role.name}</SelectItem>)}
-                      </SelectGroup>
-                    </>
-                  ) : null}
-                </SelectContent>
-              </Select>
-            </label>
-            {selectedEditorRole ? (
-              <div className="rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-3.5 py-3 shadow-[var(--md-shadow-line)]">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-[13px] font-medium text-[var(--md-ink)]">{selectedEditorRole.name}</p>
-                  <StatusPill tone={selectedEditorRole.isSystem ? "blue" : "teal"}>{t(selectedEditorRole.isSystem ? "Predefined" : "Saved role")}</StatusPill>
-                </div>
-                <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t(selectedEditorRole.description)}</p>
-              </div>
-            ) : null}
-          </div>
-          <DialogFooter className="mt-5">
-            <Button type="button" variant="ghost" disabled={saving} onClick={() => setEditingUser(null)}>{t("Cancel")}</Button>
-            <Button type="button" disabled={saving || !roleSelection} className="bg-[var(--md-accent)] text-[var(--md-accent-ink)] hover:bg-[var(--md-accent-hover)]" onClick={() => void saveUserPermissions()}>
-              {saving ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Check className="size-3.5" strokeWidth={1.5} aria-hidden="true" />}
-              {t(saving ? "Saving permissions" : "Save permissions")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
     </>
   )
 }
@@ -5150,8 +4996,6 @@ function TabContent({
       return <AgentDexterTab />
     case "notifications":
       return <NotificationsTab />
-    case "permissions":
-      return <UserPermissionsTab />
     case "users":
       return <UsersTab />
     case "broadcast":
@@ -5198,6 +5042,8 @@ export function SettingsPage({
   const activeItem = getSettingsSection(activeTab)
 
   useEffect(() => {
+    const section = new URLSearchParams(window.location.search).get("tab")
+    if (section === "permissions") window.history.replaceState({}, "", "/settings?tab=users")
     const onPopState = () => setActiveTab(readSettingsSectionFromUrl())
     window.addEventListener("popstate", onPopState)
     return () => window.removeEventListener("popstate", onPopState)

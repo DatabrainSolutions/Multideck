@@ -290,20 +290,14 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
     },
     {
       id: "status",
-      label: t("Status and exception"),
+      label: t("Status"),
       kind: "status",
-      width: 220,
-      minWidth: 188,
+      width: 160,
+      minWidth: 136,
+      maxWidth: 200,
       resizable: true,
       sortValue: (booking) => `${booking.status} ${getBookingExceptionSummary(booking)}`,
-      cell: (booking) => (
-        <div className="min-w-0">
-          <BookingStatusPill status={booking.status} />
-          <p className="mt-1.5 truncate text-[11px] leading-4 text-[var(--md-text)]" title={getBookingExceptionSummary(booking)}>
-            {t(getBookingExceptionSummary(booking))}
-          </p>
-        </div>
-      ),
+      cell: (booking) => <BookingStatusPill status={booking.status} />,
     },
     {
       id: "booking",
@@ -342,11 +336,22 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
       ),
     },
     {
+      id: "mode",
+      label: t("Mode"),
+      kind: "attribute",
+      width: 112,
+      minWidth: 104,
+      maxWidth: 132,
+      resizable: true,
+      sortValue: (booking) => booking.mode,
+      cell: (booking) => <BookingModePill mode={booking.mode} />,
+    },
+    {
       id: "movement",
       label: t("Movement"),
-      width: 320,
-      minWidth: 272,
-      maxWidth: 420,
+      width: 268,
+      minWidth: 224,
+      maxWidth: 360,
       resizable: true,
       cellClassName: "align-top py-3",
       sortValue: (booking) => `${booking.origin} ${booking.destination} ${booking.carrier}`,
@@ -357,10 +362,7 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
 
         return (
           <div className="grid min-w-0 gap-1.5">
-            <div className="flex min-w-0 items-center gap-2">
-              <p className="truncate text-[12px] font-medium text-[var(--md-ink)]">{t(direction)}</p>
-              <BookingModePill mode={booking.mode} />
-            </div>
+            <p className="truncate text-[12px] font-medium text-[var(--md-ink)]">{t(direction)}</p>
             <p className="truncate text-[12px] font-medium text-[var(--md-ink)]" title={booking.route}>{booking.route}</p>
             <p className="flex min-w-0 items-center gap-1.5 text-[10.5px] text-[var(--md-text)]">
               <span className="truncate">{t(shipmentType)}</span>
@@ -508,7 +510,7 @@ export function BookingsPage({ navigate }: { navigate: (path: string) => void })
           columns={columns}
           rows={bookingsLoading ? [] : paginatedBookings}
           getRowKey={(booking) => booking.id}
-          storageKey="booking-register-operations-v2"
+          storageKey="booking-register-operations-v3"
           rowClassName={() => "hover:bg-[var(--md-hover)]"}
           onRowClick={openBooking}
           toolbarFilters={(

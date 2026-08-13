@@ -22,7 +22,6 @@ export type SettingsSectionId =
   | "customisation"
   | "shortcuts"
   | "dexter"
-  | "permissions"
   | "users"
   | "broadcast"
   | "integrations"
@@ -60,7 +59,7 @@ export const settingsNavigationGroups: SettingsNavigationGroup[] = [
   {
     label: "Workspace",
     items: [
-      { id: "permissions", label: "Permissions", description: "Roles and sensitive access", icon: UsersRound },
+      { id: "users", label: "Users", description: "People, roles and access", icon: UsersRound },
       { id: "integrations", label: "Integrations", description: "Connected mail and systems", icon: Cloud },
       { id: "billing", label: "Billing", description: "Plan, payment and invoices", icon: CreditCard },
       { id: "ai-usage", label: "AI usage", description: "Spend, actions and guardrails", icon: ChartAnalysis },
@@ -69,7 +68,6 @@ export const settingsNavigationGroups: SettingsNavigationGroup[] = [
   {
     label: "Developer",
     items: [
-      { id: "users", label: "Users", description: "Invite and manage workspace users", icon: UsersRound },
       { id: "broadcast", label: "Broadcast", description: "Create reviewed workspace broadcasts", icon: Megaphone },
     ],
   },
@@ -92,6 +90,7 @@ export function isSettingsSectionId(value: string | null): value is SettingsSect
 export function readSettingsSectionFromUrl(): SettingsSectionId {
   if (typeof window === "undefined") return "profile"
   const section = new URLSearchParams(window.location.search).get("tab")
+  if (section === "permissions") return "users"
   return isSettingsSectionId(section) ? section : "profile"
 }
 
