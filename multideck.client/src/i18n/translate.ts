@@ -2072,6 +2072,9 @@ const phrases: PhraseDictionary = {
   "Previous response": { de: "Vorherige Antwort", fr: "Réponse précédente", ar: "الرد السابق" },
   "Next response": { de: "Nächste Antwort", fr: "Réponse suivante", ar: "الرد التالي" },
   "Response version": { de: "Antwortversion", fr: "Version de la réponse", ar: "نسخة الرد" },
+  "Attempt version": { de: "Versuchsversion", fr: "Version de la tentative", ar: "نسخة المحاولة" },
+  "Previous attempt": { de: "Vorheriger Versuch", fr: "Tentative précédente", ar: "المحاولة السابقة" },
+  "Next attempt": { de: "Nächster Versuch", fr: "Tentative suivante", ar: "المحاولة التالية" },
   "Conversation trail": {
     de: "Unterhaltungsverlauf",
     fr: "Fil de conversation",
@@ -2110,6 +2113,21 @@ const phrases: PhraseDictionary = {
   "Dexter is checking warehouse operations...": { de: "Dexter prüft den Lagerbetrieb...", fr: "Dexter vérifie les opérations d'entrepôt...", ar: "يتحقق ديكستر من عمليات المستودع..." },
   "Dexter could not answer": { de: "Dexter konnte nicht antworten", fr: "Dexter n'a pas pu répondre", ar: "لم يتمكن ديكستر من الإجابة" },
   "Dexter could not answer this request.": { de: "Dexter konnte diese Anfrage nicht beantworten.", fr: "Dexter n'a pas pu répondre à cette demande.", ar: "لم يتمكن ديكستر من الإجابة على هذا الطلب." },
+  "Dexter could not reach the workspace service. Check your connection and retry.": {
+    de: "Dexter konnte den Arbeitsbereichsdienst nicht erreichen. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
+    fr: "Dexter n’a pas pu joindre le service de l’espace de travail. Vérifiez votre connexion et réessayez.",
+    ar: "تعذر على ديكستر الوصول إلى خدمة مساحة العمل. تحقق من اتصالك وحاول مرة أخرى.",
+  },
+  "Dexter took too long to answer. Your message is safe — retry when you are ready.": {
+    de: "Dexters Antwort hat zu lange gedauert. Ihre Nachricht ist sicher — versuchen Sie es erneut, wenn Sie bereit sind.",
+    fr: "Dexter a mis trop de temps à répondre. Votre message est conservé — réessayez lorsque vous êtes prêt.",
+    ar: "استغرق ديكستر وقتًا طويلاً للرد. رسالتك محفوظة — أعد المحاولة عندما تكون مستعدًا.",
+  },
+  "Your session has expired. Sign in again to use Agent Dexter.": {
+    de: "Ihre Sitzung ist abgelaufen. Melden Sie sich erneut an, um Agent Dexter zu verwenden.",
+    fr: "Votre session a expiré. Reconnectez-vous pour utiliser Agent Dexter.",
+    ar: "انتهت صلاحية جلستك. سجل الدخول مرة أخرى لاستخدام وكيل ديكستر.",
+  },
   "This conversation could not be loaded.": { de: "Diese Unterhaltung konnte nicht geladen werden.", fr: "Cette conversation n'a pas pu être chargée.", ar: "تعذر تحميل هذه المحادثة." },
   "Recent": { de: "Zuletzt", fr: "Récent", ar: "الأحدث" },
   "No conversations yet": { de: "Noch keine Unterhaltungen", fr: "Aucune conversation", ar: "لا توجد محادثات بعد" },

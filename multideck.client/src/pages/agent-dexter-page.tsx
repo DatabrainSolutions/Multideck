@@ -91,6 +91,7 @@ import {
   type DexterWatchEmailContext,
   type DexterMessage,
   type DexterPendingAction,
+  type SendDexterMessageInput,
   type DexterWatch,
 } from "@/lib/dexter-api"
 import { supabase } from "@/lib/supabase"
@@ -158,33 +159,45 @@ function isDexterSpecialistId(value: string | null | undefined): value is Dexter
     value === "analytics"
 }
 
-function retainStreamingAssistantId(
-  conversation: DexterConversation,
-  streamingMessageId: string,
-) {
-  const assistantIndex = [...conversation.messages]
-    .map((message, index) => ({ message, index }))
-    .reverse()
-    .find(({ message }) => message.role === "assistant")?.index
-
-  if (assistantIndex === undefined) return conversation
-
-  return {
-    ...conversation,
-    messages: conversation.messages.map((message, index) =>
-      index === assistantIndex
-        ? {
-            ...message,
-            id: streamingMessageId,
-            serverId: message.serverId ?? message.id,
-          }
-        : message,
-    ),
-  }
-}
-
 function dexterMessageServerId(message: DexterMessage) {
   return message.serverId ?? message.id
+}
+
+const DEXTER_PERSISTED_MESSAGE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+function persistedDexterMessageId(message: DexterMessage) {
+  const messageId = dexterMessageServerId(message)
+  return DEXTER_PERSISTED_MESSAGE_ID.test(messageId) ? messageId : null
+}
+
+function persistedDexterMessageIds(messages: DexterMessage[]) {
+  return messages.flatMap((message) => {
+    const messageId = persistedDexterMessageId(message)
+    return messageId ? [messageId] : []
+  })
+}
+
+function latestPersistedAssistantMessage(messages: DexterMessage[]) {
+  return [...messages]
+    .reverse()
+    .find((message) => message.role === "assistant" && persistedDexterMessageId(message))
+}
+
+type DexterComposerDraftSnapshot = {
+  value: string
+  mentions: DexterMentionItem[]
+  attachmentIds: Set<string>
+  emailAttachments: DexterEmailAttachment[]
+  emailUpdates: DexterWatchEmailContext[]
+  uploadedDocuments: DexterUploadedDocument[]
+}
+
+type FailedDexterPrompt = {
+  input: SendDexterMessageInput
+  previousConversation: DexterConversation | null
+  pendingMessage: DexterMessage
+  assistantMessageId: string
+  draft: DexterComposerDraftSnapshot
 }
 
 function appendEmailAttachment(
@@ -1114,6 +1127,8 @@ function ConversationStream({
   actionDecisionError,
   onActionDecision,
   onRetryMessage,
+  onRetryError,
+  onDismissError,
   onSelectResponse,
   onEmailDraftChange,
 }: {
@@ -1131,6 +1146,8 @@ function ConversationStream({
   actionDecisionError: { actionId: string; message: string } | null
   onActionDecision: (action: DexterPendingAction, decision: DexterActionDecision) => void
   onRetryMessage?: (message: DexterMessage) => void
+  onRetryError?: () => void
+  onDismissError: () => void
   onSelectResponse: (userMessageId: string, assistantMessageId: string) => void
   onEmailDraftChange: (messageId: string, draft: DexterEmailDraft) => void
 }) {
@@ -1196,14 +1213,7 @@ function ConversationStream({
     }
   }
 
-  function assistantMessageView(
-    message: DexterMessage,
-    options?: {
-      versionIndex?: number
-      versionCount?: number
-      userMessageId?: string
-    },
-  ) {
+  function assistantMessageView(message: DexterMessage) {
     const isStreamingMessage = message.id === streamingMessageId
     const reasoning = isStreamingMessage
       ? reasoningContent || message.reasoningSummary || ""
@@ -1213,8 +1223,6 @@ function ConversationStream({
       !message.content.trim() &&
       !(message.emailAttachments?.length) &&
       !message.pendingAction
-    const versionIndex = options?.versionIndex ?? 0
-    const versionCount = options?.versionCount ?? 1
 
     return (
       <motion.div
@@ -1307,49 +1315,6 @@ function ConversationStream({
               />
             ) : null}
           </AnimatePresence>
-          {options?.userMessageId && versionCount > 1 ? (
-            <motion.div
-              layout
-              className="mt-3 flex items-center gap-1 text-[11.5px] text-[var(--md-subtle)]"
-              initial={shouldReduceMotion ? false : { opacity: 0, y: 3 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={messageTransition}
-              role="group"
-              aria-label={`${t("Response version")} ${versionIndex + 1} / ${versionCount}`}
-            >
-              <button
-                type="button"
-                className="grid size-7 place-items-center rounded-full transition-colors hover:bg-[var(--md-surface-2)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a42)] disabled:opacity-35"
-                aria-label={t("Previous response")}
-                title={t("Previous response")}
-                disabled={versionIndex === 0}
-                onClick={() => {
-                  const responses = responsesByUserId.get(options.userMessageId!) ?? []
-                  const previous = responses[versionIndex - 1]
-                  if (previous) onSelectResponse(options.userMessageId!, previous.id)
-                }}
-              >
-                <ChevronLeft className="size-3.5 rtl:rotate-180" strokeWidth={1.6} aria-hidden="true" />
-              </button>
-              <span className="min-w-8 text-center tabular-nums">
-                {versionIndex + 1}/{versionCount}
-              </span>
-              <button
-                type="button"
-                className="grid size-7 place-items-center rounded-full transition-colors hover:bg-[var(--md-surface-2)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a42)] disabled:opacity-35"
-                aria-label={t("Next response")}
-                title={t("Next response")}
-                disabled={versionIndex === versionCount - 1}
-                onClick={() => {
-                  const responses = responsesByUserId.get(options.userMessageId!) ?? []
-                  const next = responses[versionIndex + 1]
-                  if (next) onSelectResponse(options.userMessageId!, next.id)
-                }}
-              >
-                <ChevronRight className="size-3.5 rtl:rotate-180" strokeWidth={1.6} aria-hidden="true" />
-              </button>
-            </motion.div>
-          ) : null}
         </div>
       </motion.div>
     )
@@ -1399,6 +1364,7 @@ function ConversationStream({
               : -1
             const isCopied = copiedMessageId === message.id
             const isRetrying = retryingMessageId === message.id
+            const canRetryMessage = Boolean(persistedDexterMessageId(message))
 
             const userItem = (
               <MessageScroller.Item
@@ -1425,6 +1391,47 @@ function ConversationStream({
                     <div className="whitespace-pre-wrap text-[15px] leading-6 text-[var(--md-ink)]">
                       <DexterMentionText text={message.content} items={mentionItems} />
                     </div>
+                    {responses.length > 1 && selectedResponseIndex >= 0 ? (
+                      <motion.div
+                        layout
+                        className="mt-2 flex items-center justify-end gap-1 text-[11.5px] text-[var(--md-subtle)]"
+                        initial={shouldReduceMotion ? false : { opacity: 0, y: 3 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={messageTransition}
+                        role="group"
+                        aria-label={`${t("Attempt version")} ${selectedResponseIndex + 1} / ${responses.length}`}
+                      >
+                        <button
+                          type="button"
+                          className="grid size-8 place-items-center rounded-full transition-colors hover:bg-[var(--md-surface-2)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a42)] disabled:opacity-35"
+                          aria-label={t("Previous attempt")}
+                          title={t("Previous attempt")}
+                          disabled={selectedResponseIndex === 0}
+                          onClick={() => {
+                            const previous = responses[selectedResponseIndex - 1]
+                            if (previous) onSelectResponse(message.id, previous.id)
+                          }}
+                        >
+                          <ChevronLeft className="size-3.5 rtl:rotate-180" strokeWidth={1.6} aria-hidden="true" />
+                        </button>
+                        <span className="min-w-8 text-center tabular-nums">
+                          {selectedResponseIndex + 1}/{responses.length}
+                        </span>
+                        <button
+                          type="button"
+                          className="grid size-8 place-items-center rounded-full transition-colors hover:bg-[var(--md-surface-2)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a42)] disabled:opacity-35"
+                          aria-label={t("Next attempt")}
+                          title={t("Next attempt")}
+                          disabled={selectedResponseIndex === responses.length - 1}
+                          onClick={() => {
+                            const next = responses[selectedResponseIndex + 1]
+                            if (next) onSelectResponse(message.id, next.id)
+                          }}
+                        >
+                          <ChevronRight className="size-3.5 rtl:rotate-180" strokeWidth={1.6} aria-hidden="true" />
+                        </button>
+                      </motion.div>
+                    ) : null}
                     <div className="md-dexter-user-actions pointer-events-none mt-1 flex h-7 translate-y-1 items-center justify-end gap-0.5 opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover/user:pointer-events-auto group-hover/user:translate-y-0 group-hover/user:opacity-100 group-focus-within/user:pointer-events-auto group-focus-within/user:translate-y-0 group-focus-within/user:opacity-100">
                       <motion.button
                         type="button"
@@ -1463,8 +1470,8 @@ function ConversationStream({
                           className="grid size-7 place-items-center rounded-full text-[var(--md-subtle)] transition-colors hover:bg-[var(--md-surface-2)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a42)] disabled:cursor-not-allowed disabled:opacity-40"
                           aria-label={t("Retry response")}
                           title={t("Retry response")}
-                          disabled={isWorking}
-                          whileTap={shouldReduceMotion || isWorking ? undefined : { scale: 0.9 }}
+                          disabled={isWorking || !canRetryMessage}
+                          whileTap={shouldReduceMotion || isWorking || !canRetryMessage ? undefined : { scale: 0.9 }}
                           onClick={() => onRetryMessage(message)}
                         >
                           <motion.span
@@ -1501,11 +1508,7 @@ function ConversationStream({
                 className="min-w-0 shrink-0 [contain-intrinsic-size:auto_12rem] [content-visibility:auto]"
               >
                 <AnimatePresence initial={false} mode="popLayout">
-                  {assistantMessageView(selectedResponse, {
-                    versionIndex: selectedResponseIndex,
-                    versionCount: responses.length,
-                    userMessageId: message.id,
-                  })}
+                  {assistantMessageView(selectedResponse)}
                 </AnimatePresence>
               </MessageScroller.Item>
             ) : null
@@ -1562,11 +1565,34 @@ function ConversationStream({
             role="alert"
           >
             <AlertCircle className="mt-0.5 size-4" strokeWidth={1.4} />
-            <span>
-              <strong>{t("Dexter could not answer")}</strong>
-              <br />
-              {t(error)}
-            </span>
+            <div className="min-w-0">
+              <p>
+                <strong>{t("Dexter could not answer")}</strong>
+                <br />
+                {t(error)}
+              </p>
+              <div className="mt-2.5 flex flex-wrap gap-2">
+                {onRetryError ? (
+                  <motion.button
+                    type="button"
+                    className="min-h-10 rounded-[var(--md-radius-md)] bg-[var(--md-red)] px-3.5 font-medium text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-red)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--md-bg)] disabled:cursor-not-allowed disabled:opacity-45"
+                    disabled={isWorking}
+                    whileTap={shouldReduceMotion || isWorking ? undefined : { scale: 0.97 }}
+                    onClick={onRetryError}
+                  >
+                    {t("Retry")}
+                  </motion.button>
+                ) : null}
+                <motion.button
+                  type="button"
+                  className="min-h-10 rounded-[var(--md-radius-md)] px-3.5 font-medium text-[var(--md-text)] transition-colors hover:bg-[var(--md-surface-2)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a42)]"
+                  whileTap={shouldReduceMotion ? undefined : { scale: 0.97 }}
+                  onClick={onDismissError}
+                >
+                  {t("Dismiss")}
+                </motion.button>
+              </div>
+            </div>
           </div>
         </MessageScroller.Item>
       ) : null}
@@ -1596,6 +1622,7 @@ export function AgentDexterPage({
   const [liveReasoning, setLiveReasoning] = useState("")
   const [isLoadingConversation, setIsLoadingConversation] = useState(Boolean(initialConversationIdRef.current))
   const [error, setError] = useState<string | null>(null)
+  const [failedPrompt, setFailedPrompt] = useState<FailedDexterPrompt | null>(null)
   const [pendingActionDecision, setPendingActionDecision] = useState<{
     actionId: string
     decision: DexterActionDecision
@@ -1645,6 +1672,12 @@ export function AgentDexterPage({
   const attachedItems = useAttachedItems(selectedAttachmentIds)
   const generatedDocumentHandoffRef = useRef(false)
   const taskHandoffRef = useRef(false)
+
+  useEffect(() => () => {
+    activePromptAbortControllerRef.current?.abort()
+    activePromptAbortControllerRef.current = null
+    promptSubmissionInFlightRef.current = false
+  }, [])
 
   useEffect(() => {
     if (taskHandoffRef.current) return
@@ -2120,10 +2153,16 @@ export function AgentDexterPage({
     setComposerValue(value)
   }
 
-  async function submitPrompt(prompt = composerValue, specialistId = selectedSpecialistId) {
-    const message = prompt.trim()
+  async function submitPrompt(
+    prompt = composerValue,
+    specialistId = selectedSpecialistId,
+    failedRetry?: FailedDexterPrompt,
+  ) {
+    const message = (failedRetry?.input.message ?? prompt).trim()
     if (!message || isWorking || promptSubmissionInFlightRef.current) return
-    const matchedCommand = slashCommands.find((item) => item.command.toLowerCase() === message.toLowerCase())
+    const matchedCommand = failedRetry
+      ? undefined
+      : slashCommands.find((item) => item.command.toLowerCase() === message.toLowerCase())
     if (matchedCommand && !matchedCommand.disabled) {
       handleSlashCommand(matchedCommand)
       return
@@ -2226,19 +2265,35 @@ export function AgentDexterPage({
     }
 
     const submissionIntent = conversationIntentRef.current
-    const previousConversation = shouldReuseDexterConversation(
-      activeConversation?.id,
-      submissionIntent.id,
-    ) ? activeConversation : null
+    const retryConversation = failedRetry?.previousConversation?.id &&
+      activeConversation?.id === failedRetry.previousConversation.id
+      ? {
+          ...activeConversation,
+          messages: activeConversation.messages.filter(
+            (item) => item.id !== failedRetry.pendingMessage.id && item.id !== failedRetry.assistantMessageId,
+          ),
+        }
+      : failedRetry?.previousConversation ?? null
+    const previousConversation = failedRetry
+      ? retryConversation
+      : shouldReuseDexterConversation(activeConversation?.id, submissionIntent.id)
+        ? activeConversation
+        : null
     const previousBranchMessages = conversationBranchFor(
       previousConversation?.messages ?? [],
       selectedResponseMessageIds,
     )
-    const parentResponseMessage = [...previousBranchMessages]
-      .reverse()
-      .find((item) => item.role === "assistant")
-    const messageAttachments = composerMessageAttachments()
-    const pendingMessage: DexterMessage = {
+    const parentResponseMessage = latestPersistedAssistantMessage(previousBranchMessages)
+    const messageAttachments = failedRetry?.input.attachments ?? composerMessageAttachments()
+    const draft: DexterComposerDraftSnapshot = failedRetry?.draft ?? {
+      value: composerValue,
+      mentions: composerMentions,
+      attachmentIds: new Set(selectedAttachmentIds),
+      emailAttachments: composerEmailAttachments,
+      emailUpdates: composerEmailUpdates,
+      uploadedDocuments: composerUploadedDocuments,
+    }
+    const pendingMessage: DexterMessage = failedRetry?.pendingMessage ?? {
       id: `pending-${Date.now()}`,
       role: "user",
       content: message,
@@ -2246,7 +2301,7 @@ export function AgentDexterPage({
       specialist: specialistId,
       attachments: messageAttachments,
       parentResponseMessageId: parentResponseMessage
-        ? dexterMessageServerId(parentResponseMessage)
+        ? persistedDexterMessageId(parentResponseMessage)
         : null,
     }
     const assistantStreamMessage: DexterMessage = {
@@ -2270,6 +2325,28 @@ export function AgentDexterPage({
           updatedAt: pendingMessage.createdAt,
           messages: [pendingMessage, assistantStreamMessage],
         }
+    const requestInput: SendDexterMessageInput = failedRetry
+      ? {
+          ...failedRetry.input,
+          conversationId: previousConversation?.id || null,
+          parentResponseMessageId: parentResponseMessage
+            ? persistedDexterMessageId(parentResponseMessage)
+            : null,
+          historyMessageIds: persistedDexterMessageIds(previousBranchMessages),
+        }
+      : {
+          conversationId: previousConversation?.id || null,
+          parentResponseMessageId: parentResponseMessage
+            ? persistedDexterMessageId(parentResponseMessage)
+            : null,
+          historyMessageIds: persistedDexterMessageIds(previousBranchMessages),
+          message,
+          specialist: specialistId,
+          model: selectedModelId,
+          locale: language,
+          accessMode,
+          attachments: messageAttachments,
+        }
 
     pendingScrollToLatestRef.current = true
     setActiveConversation(pendingConversation)
@@ -2279,7 +2356,16 @@ export function AgentDexterPage({
     setLiveReasoning("")
     setStreamingMessageId(assistantStreamMessage.id)
     setError(null)
+    setFailedPrompt(null)
     setActionDecisionError(null)
+    if (!failedRetry || composerValue === failedRetry.draft.value) {
+      setComposerValue("")
+      setComposerMentions([])
+      setSelectedAttachmentIds(new Set())
+      setComposerEmailAttachments([])
+      setComposerEmailUpdates([])
+      setComposerUploadedDocuments([])
+    }
     setShowAttachments(false)
     setShowJumpToLatest(false)
 
@@ -2287,19 +2373,7 @@ export function AgentDexterPage({
     activePromptAbortControllerRef.current = requestController
 
     try {
-      const conversation = await streamDexterMessage({
-        conversationId: previousConversation?.id || null,
-        parentResponseMessageId: parentResponseMessage
-          ? dexterMessageServerId(parentResponseMessage)
-          : null,
-        historyMessageIds: previousBranchMessages.map(dexterMessageServerId),
-        message,
-        specialist: specialistId,
-        model: selectedModelId,
-        locale: language,
-        accessMode,
-        attachments: messageAttachments,
-      }, {
+      const conversation = await streamDexterMessage(requestInput, {
         onAnswerDelta: (delta) => {
           if (conversationIntentRef.current.version !== submissionIntent.version) return
           const stream = streamRef.current
@@ -2363,13 +2437,10 @@ export function AgentDexterPage({
       }, requestController.signal)
       if (conversationIntentRef.current.version !== submissionIntent.version) return
       conversationIntentRef.current = { id: conversation.id, version: submissionIntent.version }
-      setActiveConversation(retainStreamingAssistantId(conversation, assistantStreamMessage.id))
+      setActiveConversation(conversation)
       rememberOpenDexterConversation(conversation.id)
       announceDexterConversationsChanged()
-      setComposerValue("")
-      setComposerMentions([])
-      setSelectedAttachmentIds(new Set())
-      setComposerUploadedDocuments([])
+      setFailedPrompt(null)
     } catch (requestError) {
       if (
         conversationIntentRef.current.version !== submissionIntent.version ||
@@ -2381,9 +2452,9 @@ export function AgentDexterPage({
         const base = current ?? pendingConversation
         const streamingMessage = base.messages.find((item) => item.id === assistantStreamMessage.id)
         if (!streamingMessage?.content.trim() && !liveReasoningRef.current.trim()) {
-          return previousConversation ?? {
-            ...pendingConversation,
-            messages: [pendingMessage],
+          return {
+            ...base,
+            messages: base.messages.filter((item) => item.id !== assistantStreamMessage.id),
           }
         }
 
@@ -2396,6 +2467,19 @@ export function AgentDexterPage({
           ),
         }
       })
+      setFailedPrompt({
+        input: requestInput,
+        previousConversation,
+        pendingMessage,
+        assistantMessageId: assistantStreamMessage.id,
+        draft,
+      })
+      setComposerValue((current) => current.trim() ? current : draft.value)
+      setComposerMentions((current) => current.length ? current : draft.mentions)
+      setSelectedAttachmentIds((current) => current.size ? current : new Set(draft.attachmentIds))
+      setComposerEmailAttachments((current) => current.length ? current : draft.emailAttachments)
+      setComposerEmailUpdates((current) => current.length ? current : draft.emailUpdates)
+      setComposerUploadedDocuments((current) => current.length ? current : draft.uploadedDocuments)
       setError(requestError instanceof Error ? requestError.message : t("Dexter could not answer this request."))
     } finally {
       if (activePromptAbortControllerRef.current !== requestController) return
@@ -2407,15 +2491,19 @@ export function AgentDexterPage({
   }
 
   async function retryPrompt(userMessage: DexterMessage) {
+    const retryMessageId = persistedDexterMessageId(userMessage)
     if (
       !activeConversation?.id ||
       userMessage.role !== "user" ||
-      userMessage.id.startsWith("pending-") ||
-      isWorking
+      !retryMessageId ||
+      isWorking ||
+      promptSubmissionInFlightRef.current
     ) {
       return
     }
 
+    promptSubmissionInFlightRef.current = true
+    const submissionIntent = conversationIntentRef.current
     const previousConversation = activeConversation
     const responses = responseGroupsFor(previousConversation.messages).responsesByUserId.get(userMessage.id) ?? []
     const previousSelectedResponseId =
@@ -2427,11 +2515,12 @@ export function AgentDexterPage({
     const retryMessageIndex = visibleBranchMessages.findIndex(
       (message) => message.id === userMessage.id,
     )
-    const retryHistoryMessageIds = (
+    const retryHistoryMessages = (
       retryMessageIndex >= 0
         ? visibleBranchMessages.slice(0, retryMessageIndex)
         : []
-    ).map(dexterMessageServerId)
+    )
+    const retryHistoryMessageIds = persistedDexterMessageIds(retryHistoryMessages)
     const specialistId = isDexterSpecialistId(userMessage.specialist)
       ? userMessage.specialist
       : selectedSpecialistId
@@ -2459,13 +2548,18 @@ export function AgentDexterPage({
     setLiveReasoning("")
     setStreamingMessageId(assistantStreamMessage.id)
     setError(null)
+    setFailedPrompt(null)
     setActionDecisionError(null)
     setShowAttachments(false)
+    setShowJumpToLatest(false)
+
+    const requestController = new AbortController()
+    activePromptAbortControllerRef.current = requestController
 
     try {
       const conversation = await streamDexterMessage({
         conversationId: previousConversation.id,
-        retryMessageId: dexterMessageServerId(userMessage),
+        retryMessageId,
         historyMessageIds: retryHistoryMessageIds,
         message: userMessage.content,
         specialist: specialistId,
@@ -2475,6 +2569,7 @@ export function AgentDexterPage({
         attachments: userMessage.attachments ?? [],
       }, {
         onAnswerDelta: (delta) => {
+          if (conversationIntentRef.current.version !== submissionIntent.version) return
           setActiveConversation((current) => {
             const base = current ?? previousConversation
             const existingIndex = base.messages.findIndex((item) => item.id === assistantStreamMessage.id)
@@ -2494,10 +2589,12 @@ export function AgentDexterPage({
           })
         },
         onReasoningDelta: (delta) => {
+          if (conversationIntentRef.current.version !== submissionIntent.version) return
           liveReasoningRef.current += delta
           setLiveReasoning(liveReasoningRef.current)
         },
         onEmailAttachment: (attachment) => {
+          if (conversationIntentRef.current.version !== submissionIntent.version) return
           setActiveConversation((current) => {
             const base = current ?? previousConversation
             return {
@@ -2511,6 +2608,7 @@ export function AgentDexterPage({
           })
         },
         onPendingAction: (pendingAction) => {
+          if (conversationIntentRef.current.version !== submissionIntent.version) return
           setActiveConversation((current) => {
             const base = current ?? previousConversation
             return {
@@ -2521,11 +2619,28 @@ export function AgentDexterPage({
             }
           })
         },
-      })
+      }, requestController.signal)
 
-      setActiveConversation(retainStreamingAssistantId(conversation, assistantStreamMessage.id))
+      if (conversationIntentRef.current.version !== submissionIntent.version) return
+      setActiveConversation(conversation)
+      const acknowledgedResponse = responseGroupsFor(conversation.messages)
+        .responsesByUserId.get(retryMessageId)
+        ?.at(-1)
+      if (acknowledgedResponse) {
+        setSelectedResponseMessageIds((current) => ({
+          ...current,
+          [retryMessageId]: acknowledgedResponse.id,
+        }))
+      }
       announceDexterConversationsChanged()
+      setFailedPrompt(null)
     } catch (requestError) {
+      if (
+        conversationIntentRef.current.version !== submissionIntent.version ||
+        (requestError instanceof Error && requestError.name === "AbortError")
+      ) {
+        return
+      }
       setActiveConversation((current) => {
         const base = current ?? previousConversation
         const streamingMessage = base.messages.find((item) => item.id === assistantStreamMessage.id)
@@ -2552,6 +2667,9 @@ export function AgentDexterPage({
       })
       setError(requestError instanceof Error ? requestError.message : t("Dexter could not answer this request."))
     } finally {
+      if (activePromptAbortControllerRef.current !== requestController) return
+      activePromptAbortControllerRef.current = null
+      promptSubmissionInFlightRef.current = false
       setRetryingMessageId(null)
       setIsSending(false)
       setStreamingMessageId(null)
@@ -2568,13 +2686,12 @@ export function AgentDexterPage({
     }
 
     const previousConversation = activeConversation
+    const submissionIntent = conversationIntentRef.current
     const previousBranchMessages = conversationBranchFor(
       previousConversation.messages,
       selectedResponseMessageIds,
     )
-    const parentResponseMessage = [...previousBranchMessages]
-      .reverse()
-      .find((item) => item.role === "assistant")
+    const parentResponseMessage = latestPersistedAssistantMessage(previousBranchMessages)
     const decisionLabel = decision === "approve" ? t("Approve") : t("Deny")
     actionDecisionInFlightRef.current = action.id
     setPendingActionDecision({ actionId: action.id, decision })
@@ -2589,9 +2706,9 @@ export function AgentDexterPage({
       const conversation = await sendDexterMessage({
         conversationId: previousConversation.id,
         parentResponseMessageId: parentResponseMessage
-          ? dexterMessageServerId(parentResponseMessage)
+          ? persistedDexterMessageId(parentResponseMessage)
           : null,
-        historyMessageIds: previousBranchMessages.map(dexterMessageServerId),
+        historyMessageIds: persistedDexterMessageIds(previousBranchMessages),
         message: `${decisionLabel}: ${action.title}`,
         specialist: selectedSpecialistId,
         model: selectedModelId,
@@ -2603,9 +2720,11 @@ export function AgentDexterPage({
         actionDecision: decision,
         attachments: [],
       })
+      if (conversationIntentRef.current.version !== submissionIntent.version) return
       setActiveConversation(conversation)
       announceDexterConversationsChanged()
     } catch (requestError) {
+      if (conversationIntentRef.current.version !== submissionIntent.version) return
       setActionDecisionError({
         actionId: action.id,
         message: requestError instanceof Error
@@ -2613,9 +2732,11 @@ export function AgentDexterPage({
           : t("Dexter could not apply this decision."),
       })
     } finally {
-      actionDecisionInFlightRef.current = null
-      setPendingActionDecision(null)
-      setIsSending(false)
+      if (conversationIntentRef.current.version === submissionIntent.version) {
+        actionDecisionInFlightRef.current = null
+        setPendingActionDecision(null)
+        setIsSending(false)
+      }
     }
   }
 
@@ -2630,9 +2751,12 @@ export function AgentDexterPage({
     setConversationRenderKey(`dexter-conversation-${id}`)
     setIsLoadingConversation(true)
     setError(null)
+    setFailedPrompt(null)
     setActionDecisionError(null)
     setPendingActionDecision(null)
     setIsSending(false)
+    setRetryingMessageId(null)
+    actionDecisionInFlightRef.current = null
     setStreamingMessageId(null)
     try {
       pendingScrollToLatestRef.current = true
@@ -2669,6 +2793,7 @@ export function AgentDexterPage({
     setRetryingMessageId(null)
     setConversationRenderKey(`dexter-new-conversation-${Date.now()}`)
     setError(null)
+    setFailedPrompt(null)
     setActionDecisionError(null)
     setPendingActionDecision(null)
     actionDecisionInFlightRef.current = null
@@ -2940,7 +3065,7 @@ export function AgentDexterPage({
         ) : (
           <motion.div
             key="dexter-conversation"
-            className="grid h-screen min-h-[680px] grid-cols-1 overflow-hidden bg-[var(--md-bg)]"
+            className="grid h-[100dvh] min-h-0 grid-cols-1 overflow-hidden bg-[var(--md-bg)]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -2956,6 +3081,7 @@ export function AgentDexterPage({
           never reflows or re-centres the thread beneath it. */}
             <MessageScroller.Provider
               key={conversationRenderKey}
+              autoScroll
               defaultScrollPosition="end"
               scrollMargin={88}
             >
@@ -2986,6 +3112,17 @@ export function AgentDexterPage({
                         actionDecisionError={actionDecisionError}
                         onActionDecision={(action, decision) => void handleActionDecision(action, decision)}
                         onRetryMessage={dexterMode === "chat" ? (message) => void retryPrompt(message) : undefined}
+                        onRetryError={failedPrompt ? () => void submitPrompt(
+                          failedPrompt.input.message,
+                          isDexterSpecialistId(failedPrompt.input.specialist)
+                            ? failedPrompt.input.specialist
+                            : selectedSpecialistId,
+                          failedPrompt,
+                        ) : undefined}
+                        onDismissError={() => {
+                          setError(null)
+                          setFailedPrompt(null)
+                        }}
                         onSelectResponse={(userMessageId, assistantMessageId) => {
                           setSelectedResponseMessageIds((current) => ({
                             ...current,
@@ -3067,7 +3204,7 @@ export function AgentDexterPage({
 
                 <motion.div
                   ref={composerRef}
-                  className="absolute inset-x-0 bottom-0 z-20 bg-[var(--md-bg)] px-[var(--md-page-stack-gap)] pb-[var(--md-page-stack-gap)] pt-[var(--md-gap-lg)]"
+                  className="absolute inset-x-0 bottom-0 z-20 bg-[var(--md-bg)] px-[var(--md-page-stack-gap)] pb-[max(var(--md-page-stack-gap),env(safe-area-inset-bottom))] pt-[var(--md-gap-lg)]"
                   initial={false}
                   animate={{ y: 0, opacity: 1 }}
                   transition={mdMotion.smooth}

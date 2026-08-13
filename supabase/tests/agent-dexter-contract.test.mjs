@@ -638,9 +638,10 @@ test("Dexter responses keep structured Markdown and one stable reasoning disclos
   assert.match(dexterPage, /DexterReasoningDisclosure/)
   assert.match(dexterPage, /data-reasoning-state=/)
   assert.match(dexterPage, /messages: \[\.\.\.previousConversation\.messages, pendingMessage, assistantStreamMessage\]/)
-  assert.match(dexterPage, /retainStreamingAssistantId\(conversation, assistantStreamMessage\.id\)/)
-  assert.match(dexterPage, /serverId: message\.serverId \?\? message\.id/)
-  assert.match(dexterPage, /historyMessageIds: previousBranchMessages\.map\(dexterMessageServerId\)/)
+  assert.match(dexterPage, /setActiveConversation\(conversation\)/)
+  assert.doesNotMatch(dexterPage, /retainStreamingAssistantId/)
+  assert.match(dexterPage, /historyMessageIds: persistedDexterMessageIds\(previousBranchMessages\)/)
+  assert.doesNotMatch(dexterPage, /historyMessageIds: previousBranchMessages\.map\(dexterMessageServerId\)/)
   assert.doesNotMatch(dexterPage, /hasStreamedDelta/)
 })
 

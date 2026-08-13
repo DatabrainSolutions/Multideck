@@ -510,9 +510,12 @@ function DexterAccessModeToggle({
   const transition = shouldReduceMotion
     ? { duration: 0 }
     : { duration: 0.18, ease: [0.22, 1, 0.36, 1] as const }
-  const labelTransition = shouldReduceMotion
+  const labelFadeOutTransition = shouldReduceMotion
     ? { duration: 0 }
-    : { duration: 0.12, ease: [0.22, 1, 0.36, 1] as const }
+    : { duration: 0.06, ease: [0.22, 1, 0.36, 1] as const }
+  const labelFadeInTransition = shouldReduceMotion
+    ? { duration: 0 }
+    : { duration: 0.09, delay: 0.19, ease: [0.22, 1, 0.36, 1] as const }
 
   useLayoutEffect(() => {
     const measureLabels = () => {
@@ -550,7 +553,7 @@ function DexterAccessModeToggle({
       aria-label={`${label}. ${description}`}
       title={description}
       className={cn(
-        "md-composer-chip inline-flex h-9 shrink-0 items-center gap-2 rounded-full px-2.5 text-[12.5px] font-medium transition-[background-color,color,box-shadow] duration-200",
+        "md-composer-chip inline-flex h-9 shrink-0 items-center gap-2 overflow-hidden rounded-full px-2.5 text-[12.5px] font-medium transition-[background-color,color,box-shadow] duration-200",
         isFullAccess
           ? "bg-[rgba(209,78,78,0.11)] text-[var(--md-red)] shadow-[inset_0_0_0_1px_rgba(209,78,78,0.22)]"
           : "text-[var(--md-ink)]",
@@ -581,7 +584,7 @@ function DexterAccessModeToggle({
         </motion.span>
       </span>
       <span
-        className="relative inline-grid h-5 min-w-0 shrink-0 overflow-visible text-start leading-5 transition-[width] duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
+        className="relative inline-grid h-5 min-w-0 shrink-0 overflow-hidden text-start leading-5 transition-[width] delay-[50ms] duration-[180ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none motion-reduce:delay-0"
         aria-hidden="true"
         style={labelWidths ? { width: labelWidths[mode] } : undefined}
       >
@@ -593,22 +596,36 @@ function DexterAccessModeToggle({
         >
           {label}
         </span>
-        <motion.span
-          className="absolute inset-y-0 start-0 inline-flex items-center whitespace-nowrap"
-          initial={false}
-          animate={{ opacity: isFullAccess ? 0 : 1 }}
-          transition={labelTransition}
-        >
-          <span ref={approveLabelRef}>{approveLabel}</span>
-        </motion.span>
-        <motion.span
-          className="absolute inset-y-0 start-0 inline-flex items-center whitespace-nowrap"
-          initial={false}
-          animate={{ opacity: isFullAccess ? 1 : 0 }}
-          transition={labelTransition}
-        >
-          <span ref={fullAccessLabelRef}>{fullAccessLabel}</span>
-        </motion.span>
+        <span ref={approveLabelRef} className="pointer-events-none absolute invisible whitespace-nowrap">
+          {approveLabel}
+        </span>
+        <span ref={fullAccessLabelRef} className="pointer-events-none absolute invisible whitespace-nowrap">
+          {fullAccessLabel}
+        </span>
+        {shouldReduceMotion ? (
+          <span className="absolute inset-y-0 start-0 inline-flex items-center whitespace-nowrap">
+            {label}
+          </span>
+        ) : (
+          <>
+            <motion.span
+              className="absolute inset-y-0 start-0 inline-flex items-center whitespace-nowrap"
+              initial={false}
+              animate={{ opacity: isFullAccess ? 0 : 1 }}
+              transition={isFullAccess ? labelFadeOutTransition : labelFadeInTransition}
+            >
+              {approveLabel}
+            </motion.span>
+            <motion.span
+              className="absolute inset-y-0 start-0 inline-flex items-center whitespace-nowrap"
+              initial={false}
+              animate={{ opacity: isFullAccess ? 1 : 0 }}
+              transition={isFullAccess ? labelFadeInTransition : labelFadeOutTransition}
+            >
+              {fullAccessLabel}
+            </motion.span>
+          </>
+        )}
       </span>
     </button>
   )
@@ -1447,12 +1464,12 @@ export function DexterPromptComposer({
                 <ContextContentHeader />
               </ContextContent>
             </Context>
-            <DexterAccessModeToggle mode={accessMode} onChange={onAccessModeChange} />
             <motion.div
               className="ms-auto flex shrink-0 items-center gap-2"
               animate={{ scale: canSend ? 1 : 0.94, opacity: canSend ? 1 : 0.55 }}
               transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.spring)}
             >
+              <DexterAccessModeToggle mode={accessMode} onChange={onAccessModeChange} />
               <span
                 aria-hidden="true"
                 title={`${sendShortcutModifier} + Enter`}

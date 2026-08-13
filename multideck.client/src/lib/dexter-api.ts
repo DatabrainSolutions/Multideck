@@ -272,6 +272,20 @@ export class DexterApiError extends Error {
   }
 }
 
+const DEXTER_STREAM_TIMEOUT_MS = 120_000
+
+function dexterConnectionError(error: unknown) {
+  if (error instanceof DexterApiError) return error
+  if (error instanceof Error && error.name === "AbortError") return error
+  if (
+    error instanceof TypeError ||
+    (error instanceof Error && /failed to fetch|fetch failed|networkerror|network request failed/i.test(error.message))
+  ) {
+    return new DexterApiError("Dexter could not reach the workspace service. Check your connection and retry.")
+  }
+  return error
+}
+
 export async function uploadDexterDocument(file: File) {
   const session = await getSupabaseSession()
   if (!session?.access_token) throw new DexterApiError("Sign in again to upload a document to Dexter.")
@@ -321,6 +335,10 @@ async function dexterFunctionError(error: unknown, fallback: string) {
     }
   } else if (error instanceof Error && error.message.trim()) {
     message = error.message
+  }
+
+  if (/failed to fetch|fetch failed|failed to send a request|networkerror|network request failed/i.test(message)) {
+    message = "Dexter could not reach the workspace service. Check your connection and retry."
   }
 
   return new DexterApiError(message)
@@ -547,11 +565,13 @@ export async function streamDexterMessage(
   // closure, which control-flow analysis cannot see, so an inferred return type
   // collapses to `never` at the call site.
 ): Promise<DexterConversation> {
+  if (signal?.aborted) throw new DOMException("The Dexter request was cancelled.", "AbortError")
   const onAnswerDelta = typeof handlers === "function" ? handlers : handlers.onAnswerDelta
   const onReasoningDelta = typeof handlers === "function" ? undefined : handlers.onReasoningDelta
   const onPendingAction = typeof handlers === "function" ? undefined : handlers.onPendingAction
   const onEmailAttachment = typeof handlers === "function" ? undefined : handlers.onEmailAttachment
   const session = await getSupabaseSession()
+  if (signal?.aborted) throw new DOMException("The Dexter request was cancelled.", "AbortError")
   if (!session?.access_token) {
     throw new DexterApiError("Sign in again to use Agent Dexter.")
   }
@@ -559,109 +579,147 @@ export async function streamDexterMessage(
     throw new DexterApiError("Agent Dexter is not connected to this workspace.")
   }
 
-  const response = await fetch(`${supabaseFunctionsUrl}/agent-dexter`, {
+  const requestController = new AbortController()
+  let timedOut = false
+  const forwardAbort = () => requestController.abort(signal?.reason)
+  signal?.addEventListener("abort", forwardAbort, { once: true })
+  const timeout = window.setTimeout(() => {
+    timedOut = true
+    requestController.abort()
+  }, DEXTER_STREAM_TIMEOUT_MS)
+
+  const requestBody = JSON.stringify({ operation: "message", stream: true, ...input })
+  const openStream = (accessToken: string) => fetch(`${supabaseFunctionsUrl}/agent-dexter`, {
     method: "POST",
-    signal,
+    signal: requestController.signal,
     headers: {
       Accept: "text/event-stream",
       apikey: supabasePublicApiKey,
-      Authorization: `Bearer ${session.access_token}`,
+      Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ operation: "message", stream: true, ...input }),
+    body: requestBody,
   })
-  if (!response.ok) {
-    const fallback = "Dexter could not open the response stream."
-    try {
-      const body = await response.clone().json() as DexterFunctionErrorBody
-      throw new DexterApiError(typeof body.message === "string" ? body.message : fallback)
-    } catch (error) {
-      if (error instanceof DexterApiError) throw error
-      throw new DexterApiError(fallback)
-    }
-  }
-  if (!response.body) {
-    throw new DexterApiError("Dexter's response stream could not be opened.")
-  }
-
-  const reader = response.body.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ""
-  let completed: DexterConversation | null = null
-  const streamedEmailAttachments = new Map<string, DexterEmailAttachment>()
-
-  const processEvent = (eventBlock: string) => {
-    const lines = eventBlock.split("\n")
-    const data = lines
-      .filter((line) => line.startsWith("data:"))
-      .map((line) => line.slice(5).trimStart())
-      .join("\n")
-    if (!data) return
-
-    let payload: unknown
-    try {
-      payload = JSON.parse(data)
-    } catch {
-      return
-    }
-    if (typeof payload !== "object" || payload === null) return
-
-    if ("type" in payload && payload.type === "delta" && "delta" in payload && typeof payload.delta === "string") {
-      onAnswerDelta?.(payload.delta)
-    } else if ("type" in payload && payload.type === "reasoning_delta" && "delta" in payload && typeof payload.delta === "string") {
-      onReasoningDelta?.(payload.delta)
-    } else if (
-      "type" in payload &&
-      payload.type === "pending_action" &&
-      "pendingAction" in payload &&
-      typeof payload.pendingAction === "object" &&
-      payload.pendingAction !== null
-    ) {
-      onPendingAction?.(payload.pendingAction as DexterPendingAction)
-    } else if (
-      "type" in payload &&
-      payload.type === "email_attachment" &&
-      "attachment" in payload &&
-      typeof payload.attachment === "object" &&
-      payload.attachment !== null
-    ) {
-      const attachment = payload.attachment as DexterEmailAttachment
-      streamedEmailAttachments.set(attachment.id, attachment)
-      onEmailAttachment?.(attachment)
-    } else if ("type" in payload && payload.type === "complete" && "conversation" in payload) {
-      completed = retainStreamedEmailAttachments(
-        payload.conversation as DexterConversation,
-        [...streamedEmailAttachments.values()],
-      )
-    } else if ("type" in payload && payload.type === "error") {
-      const message = "message" in payload && typeof payload.message === "string"
-        ? payload.message
-        : "Dexter's response was interrupted. Try again in a moment."
-      throw new DexterApiError(message)
-    }
-  }
 
   try {
-    while (true) {
-      const { value, done } = await reader.read()
-      buffer += decoder.decode(value, { stream: !done }).replaceAll("\r\n", "\n")
+    let response = await openStream(session.access_token)
 
-      let boundary = buffer.indexOf("\n\n")
-      while (boundary >= 0) {
-        processEvent(buffer.slice(0, boundary))
-        buffer = buffer.slice(boundary + 2)
-        boundary = buffer.indexOf("\n\n")
+    // A long-lived Dexter tab can cross an access-token boundary between
+    // sequential sends. A 401 is safe to retry once because the function has
+    // rejected the request before processing it; every other failure remains
+    // an explicit operator retry so a write can never be replayed implicitly.
+    if (response.status === 401 && !requestController.signal.aborted && supabase) {
+      const { data, error: refreshError } = await supabase.auth.refreshSession()
+      if (refreshError || !data.session?.access_token) {
+        throw new DexterApiError("Your session has expired. Sign in again to use Agent Dexter.")
       }
-
-      if (done) break
+      response = await openStream(data.session.access_token)
     }
-    if (buffer.trim()) processEvent(buffer)
-  } finally {
-    reader.releaseLock()
-  }
 
-  if (!completed) {
-    throw new DexterApiError("Dexter's response ended before it was saved.")
+    if (!response.ok) {
+      const fallback = response.status === 401
+        ? "Your session has expired. Sign in again to use Agent Dexter."
+        : "Dexter could not open the response stream."
+      try {
+        const body = await response.clone().json() as DexterFunctionErrorBody
+        throw new DexterApiError(typeof body.message === "string" && body.message.trim() ? body.message : fallback)
+      } catch (error) {
+        if (error instanceof DexterApiError) throw error
+        throw new DexterApiError(fallback)
+      }
+    }
+    if (!response.body) {
+      throw new DexterApiError("Dexter's response stream could not be opened.")
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ""
+    let completed: DexterConversation | null = null
+    const streamedEmailAttachments = new Map<string, DexterEmailAttachment>()
+
+    const processEvent = (eventBlock: string) => {
+      const lines = eventBlock.split("\n")
+      const data = lines
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => line.slice(5).trimStart())
+        .join("\n")
+      if (!data) return
+
+      let payload: unknown
+      try {
+        payload = JSON.parse(data)
+      } catch {
+        return
+      }
+      if (typeof payload !== "object" || payload === null) return
+
+      if ("type" in payload && payload.type === "delta" && "delta" in payload && typeof payload.delta === "string") {
+        onAnswerDelta?.(payload.delta)
+      } else if ("type" in payload && payload.type === "reasoning_delta" && "delta" in payload && typeof payload.delta === "string") {
+        onReasoningDelta?.(payload.delta)
+      } else if (
+        "type" in payload &&
+        payload.type === "pending_action" &&
+        "pendingAction" in payload &&
+        typeof payload.pendingAction === "object" &&
+        payload.pendingAction !== null
+      ) {
+        onPendingAction?.(payload.pendingAction as DexterPendingAction)
+      } else if (
+        "type" in payload &&
+        payload.type === "email_attachment" &&
+        "attachment" in payload &&
+        typeof payload.attachment === "object" &&
+        payload.attachment !== null
+      ) {
+        const attachment = payload.attachment as DexterEmailAttachment
+        streamedEmailAttachments.set(attachment.id, attachment)
+        onEmailAttachment?.(attachment)
+      } else if ("type" in payload && payload.type === "complete" && "conversation" in payload) {
+        completed = retainStreamedEmailAttachments(
+          payload.conversation as DexterConversation,
+          [...streamedEmailAttachments.values()],
+        )
+      } else if ("type" in payload && payload.type === "error") {
+        const message = "message" in payload && typeof payload.message === "string"
+          ? payload.message
+          : "Dexter's response was interrupted. Try again in a moment."
+        throw new DexterApiError(message)
+      }
+    }
+
+    try {
+      while (true) {
+        const { value, done } = await reader.read()
+        buffer += decoder.decode(value, { stream: !done }).replaceAll("\r\n", "\n")
+
+        let boundary = buffer.indexOf("\n\n")
+        while (boundary >= 0) {
+          processEvent(buffer.slice(0, boundary))
+          buffer = buffer.slice(boundary + 2)
+          boundary = buffer.indexOf("\n\n")
+        }
+
+        if (done) break
+      }
+      if (buffer.trim()) processEvent(buffer)
+    } finally {
+      reader.releaseLock()
+    }
+
+    if (!completed) {
+      throw new DexterApiError("Dexter's response ended before it was saved.")
+    }
+    return completed
+  } catch (error) {
+    if (signal?.aborted) throw new DOMException("The Dexter request was cancelled.", "AbortError")
+    if (timedOut) {
+      throw new DexterApiError("Dexter took too long to answer. Your message is safe — retry when you are ready.")
+    }
+    throw dexterConnectionError(error)
+  } finally {
+    window.clearTimeout(timeout)
+    signal?.removeEventListener("abort", forwardAbort)
   }
-  return completed
 }

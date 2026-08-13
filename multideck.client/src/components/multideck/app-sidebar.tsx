@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { AiBrain, Archive, ArrowLeft, Bell, Boxes, ChartAnalysis, Check, ChevronDown, ChevronRight, Clock3, FileText, Folder, Inbox, LifeBuoy, LoaderCircle, LogOut, MailWarning, MorphingIcon, Pencil, Plus, PanelLeftClose, PanelLeftOpen, Pin, Search, Send, Settings, Tags, Trash2, TriangleAlert, Users, X, type LucideIcon } from "@/components/icons/hugeicons"
+import { AiBrain, Archive, ArrowLeft, Bell, Boxes, ChartAnalysis, Check, ChevronDown, ChevronRight, Clock3, FileText, Folder, Inbox, LifeBuoy, LoaderCircle, LogOut, MailWarning, MorphingIcon, PencilEdit01, Plus, PanelLeftClose, PanelLeftOpen, Pin, Search, Send, Settings, Tags, Trash2, TriangleAlert, Users, X, type LucideIcon } from "@/components/icons/hugeicons"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -1673,7 +1673,7 @@ export function AppSidebar({
                               }}
                             >
                               <span className="relative grid size-6 place-items-center rounded-full transition-[background-color,box-shadow,color,transform] duration-150 group-hover/secondary:bg-[var(--md-hover)] group-hover/secondary:text-[var(--md-ink)] group-hover/secondary:shadow-[var(--md-shadow-line)] group-focus-visible/secondary:bg-[var(--md-hover)] group-focus-visible/secondary:ring-[3px] group-focus-visible/secondary:ring-[var(--md-accent-a20)] group-active/secondary:scale-[0.94] motion-reduce:transition-none">
-                                <Pencil
+                                <PencilEdit01
                                   className={cn(
                                     "absolute size-3.5 transition-[opacity,transform] duration-150",
                                     confirmingDeleteId === conversation.id ? "scale-75 opacity-0" : "scale-100 opacity-100",
