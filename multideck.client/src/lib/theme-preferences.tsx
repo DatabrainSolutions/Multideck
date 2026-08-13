@@ -125,6 +125,8 @@ export function ThemeProfileSync() {
       // Stamped before the first await, so a click that happens while the
       // session lookup or the profile read is in flight counts as newer.
       const startedAt = performance.now()
+      const choiceAtStart = localChoice
+      const persistedThemeAtStart = lastPersistedTheme
 
       const { data: sessionData, error: sessionError } = await client.auth.getSession()
       if (sessionError) {
@@ -156,14 +158,19 @@ export function ThemeProfileSync() {
 
       const savedTheme = readThemeMode(data)
 
-      // Two ways this browser's choice outranks what the profile just returned:
-      // it was made after this read started, so the read is stale; or it has not
-      // been written yet, so the read is returning the very value it replaces.
-      // Either way, undoing it would flip the interface back under the operator.
+      // This browser's choice outranks a profile read if the click happened after
+      // the read began, if the choice was still queued when the read began, or if
+      // it is still unwritten now. In every case the response can contain the old
+      // value, so applying it would flip the interface back under the operator.
       const isStaleRead = localChoice && localChoice.at > startedAt
+      // A read started while the current choice was still waiting to be saved
+      // can return the previous profile value even if that save completes before
+      // this response is handled. Judge that race from the start of the read,
+      // not from the state after its awaits have finished.
+      const wasUnwrittenAtStart = choiceAtStart && persistedThemeAtStart !== choiceAtStart.mode
       const isUnwritten = localChoice && lastPersistedTheme !== localChoice.mode
 
-      if (localChoice && (isStaleRead || isUnwritten)) {
+      if (localChoice && (isStaleRead || wasUnwrittenAtStart || isUnwritten)) {
         if (savedTheme === localChoice.mode) lastPersistedTheme = localChoice.mode
         else saveTheme(localChoice.mode)
         return

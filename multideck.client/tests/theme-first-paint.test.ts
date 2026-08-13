@@ -38,7 +38,16 @@ test("a choice that failed to save is retried rather than reverted", () => {
   // Otherwise a rejected write leaves the profile holding the old mode, and the
   // next token refresh reads it back and undoes the operator's choice.
   assert.match(themePreferences, /const isUnwritten = localChoice && lastPersistedTheme !== localChoice\.mode/)
-  assert.match(themePreferences, /if \(localChoice && \(isStaleRead \|\| isUnwritten\)\)/)
+  assert.match(themePreferences, /if \(localChoice && \(isStaleRead \|\| wasUnwrittenAtStart \|\| isUnwritten\)\)/)
+})
+
+test("a profile read that began before its queued save cannot restore the old mode", () => {
+  // The write may finish while the read is in flight. Comparing only the final
+  // persisted state would then make the old read look current and flash back.
+  assert.match(themePreferences, /const choiceAtStart = localChoice/)
+  assert.match(themePreferences, /const persistedThemeAtStart = lastPersistedTheme/)
+  assert.match(themePreferences, /const wasUnwrittenAtStart = choiceAtStart && persistedThemeAtStart !== choiceAtStart\.mode/)
+  assert.match(themePreferences, /isStaleRead \|\| wasUnwrittenAtStart \|\| isUnwritten/)
 })
 
 test("only a genuine account change discards this browser's choice", () => {

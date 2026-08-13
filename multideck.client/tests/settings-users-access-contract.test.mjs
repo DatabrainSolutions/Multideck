@@ -37,7 +37,9 @@ test("invite and edit preserve reusable role selection and open the inline role 
 test("user details and permissions swap inside one stable, retargetable dialog shell", () => {
   const usersTab = settingsSource.slice(settingsSource.indexOf("function UsersTab()"), settingsSource.indexOf("const mailProviderCopy"))
   assert.match(settingsSource, /h-\[min\(760px,calc\(100dvh-32px\)\)\].*grid-rows-\[minmax\(0,1fr\)\].*overflow-hidden/u)
-  assert.match(settingsSource, /absolute inset-0 overflow-y-auto overscroll-contain pe-1 .*\[scrollbar-gutter:stable\].*will-change-\[transform,opacity\]/u)
+  assert.match(settingsSource, /absolute inset-0 overflow-x-hidden overflow-y-auto overscroll-contain pe-1 .*\[scrollbar-gutter:stable\].*will-change-\[transform,opacity\]/u)
+  assert.match(settingsSource, /min-w-0 max-w-full overflow-hidden rounded-\[var\(--md-radius-xl\)\]/u)
+  assert.match(settingsSource, /sm:grid-cols-\[minmax\(0,1fr\)_minmax\(140px,180px\)\]/u)
   assert.match(usersTab, /<AnimatePresence mode="sync" initial=\{false\} custom=/u)
   assert.match(usersTab, /transition=\{accessPanelTransition\}/u)
   assert.match(usersTab, /const accessPanelDistance = shouldReduceMotion \? 0 : direction === "rtl" \? -8 : 8/u)

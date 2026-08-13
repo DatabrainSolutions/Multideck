@@ -2345,7 +2345,7 @@ const emptyInviteForm = {
 
 const makeRoleSelectValue = "__make_workspace_role__"
 const accessDialogShellClassName = "h-[min(760px,calc(100dvh-32px))] max-h-none grid-rows-[minmax(0,1fr)] overflow-hidden border-0 bg-[var(--md-surface)] text-[var(--md-ink)] shadow-[var(--md-shadow-lift)] sm:max-w-[760px]"
-const accessDialogPanelClassName = "absolute inset-0 overflow-y-auto overscroll-contain pe-1 [backface-visibility:hidden] [scrollbar-gutter:stable] will-change-[transform,opacity] motion-reduce:will-change-auto"
+const accessDialogPanelClassName = "absolute inset-0 overflow-x-hidden overflow-y-auto overscroll-contain pe-1 [backface-visibility:hidden] [scrollbar-gutter:stable] will-change-[transform,opacity] motion-reduce:will-change-auto"
 const accessDialogPanelVariants = {
   enter: (distance: number) => ({ opacity: 0, x: distance, zIndex: 1 }),
   visible: { opacity: 1, x: 0, zIndex: 1 },
@@ -2441,29 +2441,29 @@ function RolePermissionMatrix({
   }
 
   return (
-    <div className="overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] shadow-[var(--md-shadow-line)]">
-      <div className="flex items-start justify-between gap-4 px-4 py-3.5">
-        <div>
+    <div className="min-w-0 max-w-full overflow-hidden rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] shadow-[var(--md-shadow-line)]">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3 px-4 py-3.5">
+        <div className="min-w-0 flex-1">
           <p className="text-[13px] font-medium text-[var(--md-ink)]">{t("Role access")}</p>
           <p className="mt-1 text-[12px] leading-5 text-[var(--md-text)]">{t("Choose the areas this role can use, then set read or read and write access.")}</p>
         </div>
-        <StatusPill tone="teal">{permissionValues.length} {t("permissions")}</StatusPill>
+        <StatusPill className="shrink-0" tone="teal">{permissionValues.length} {t("permissions")}</StatusPill>
       </div>
       <div className="divide-y divide-[var(--md-line)] bg-[var(--md-surface)]">
         {areas.map((area) => {
           const enabled = area.allValues.some((value) => permissionValues.includes(value))
           const hasWrite = !area.readValues.length || area.allValues.some((value) => !area.readValues.includes(value) && permissionValues.includes(value))
           return (
-            <div key={area.group} className="grid gap-3 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_180px] sm:items-center">
+            <div key={area.group} className="grid min-w-0 gap-3 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_minmax(140px,180px)] sm:items-center">
               <label className="flex min-w-0 cursor-pointer items-start gap-3">
                 <Checkbox className="mt-0.5" checked={enabled} onCheckedChange={(checked) => setAreaEnabled(area, checked === true)} />
                 <span className="min-w-0">
                   <span className="block text-[13px] font-medium text-[var(--md-ink)]">{t(area.group)}</span>
-                  <span className="mt-0.5 block text-[11.5px] leading-5 text-[var(--md-text)]">{area.permissions.map((permission) => t(permission.name)).join(" · ")}</span>
+                  <span className="mt-0.5 block break-words text-[11.5px] leading-5 text-[var(--md-text)]">{area.permissions.map((permission) => t(permission.name)).join(" · ")}</span>
                 </span>
               </label>
               <Select disabled={!enabled} value={hasWrite ? "read-write" : "read"} onValueChange={(value) => setAreaAccess(area, value as "read" | "read-write")}>
-                <SelectTrigger className="h-9 w-full rounded-[var(--md-radius-lg)]"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="h-9 min-w-0 w-full rounded-[var(--md-radius-lg)]"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="read" disabled={!area.readValues.length}>{t("Read")}</SelectItem>
                   <SelectItem value="read-write">{t("Read & write")}</SelectItem>
