@@ -33,6 +33,15 @@ test("inline fixes cover grouped form and provider issues", () => {
   assert.match(source, /section === "documents"[\s\S]*draft\.direction === "import" \? "Import terms" : "Documents & offices"/u)
 })
 
+test("provider rejection fixes stay in the main review panel", () => {
+  const reviewPanelEnd = source.indexOf('</Surface>\n    <div className="space-y-4">', source.indexOf("function ReviewSection"))
+  const providerFixes = source.indexOf("providerRejected && providerIssues.length", source.indexOf("function ReviewSection"))
+
+  assert.ok(reviewPanelEnd > -1)
+  assert.ok(providerFixes > -1)
+  assert.ok(providerFixes < reviewPanelEnd)
+})
+
 test("the iCustoms record link appears only for a real provider draft", () => {
   assert.match(source, /hasProviderDraft && draft\.iCustomsCorrelationId/u)
   assert.match(source, /direction === "export"[\s\S]*`\/export\/cds\/edit\/\$\{encodeURIComponent\(providerId\)\}`[\s\S]*`\/cds\/edit\/\$\{encodeURIComponent\(providerId\)\}`/u)
