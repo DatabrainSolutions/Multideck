@@ -284,6 +284,7 @@ export const customsDeclarationPhrases: PhraseDictionary = {
   "New import declaration": { de: "Neue Einfuhranmeldung", fr: "Nouvelle déclaration d'importation", ar: "إقرار استيراد جديد" },
   "Declaration direction": { de: "Anmeldungsrichtung", fr: "Sens de la déclaration", ar: "اتجاه الإقرار" },
   "Declaration register": { de: "Anmeldungsregister", fr: "Registre des déclarations", ar: "سجل الإقرارات" },
+  "Submitted by": { de: "Eingereicht von", fr: "Soumis par", ar: "مُقدَّم من" },
   "Manage declaration columns": { de: "Anmeldungsspalten verwalten", fr: "Gérer les colonnes des déclarations", ar: "إدارة أعمدة الإقرارات" },
   "Search declarations": { de: "Anmeldungen durchsuchen", fr: "Rechercher des déclarations", ar: "البحث في الإقرارات" },
   "All destinations": { de: "Alle Bestimmungsländer", fr: "Toutes les destinations", ar: "كل الوجهات" },

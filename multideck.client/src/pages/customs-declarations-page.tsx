@@ -4,6 +4,7 @@ import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/r
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -18,6 +19,7 @@ import { StatusPill } from "@/components/multideck/status-pill"
 import { SegmentedControl, TabsRail } from "@/components/multideck/workflow-components"
 import { CustomsInvoiceImportWorkspace } from "@/pages/customs-invoice-import-workspace"
 import { useLanguage } from "@/i18n/language-provider"
+import type { AuthUserSummary } from "@/lib/auth-user"
 import { cn } from "@/lib/utils"
 import {
   createExportDeclarationItem,
@@ -58,9 +60,11 @@ const CustomsDirectionContext = createContext<DeclarationKind>("export")
 export function CustomsDeclarationsPage({
   route,
   navigate,
+  currentUser,
 }: {
   route: string
   navigate: (path: string) => void
+  currentUser?: AuthUserSummary | null
 }) {
   const { t } = useLanguage()
   const jobRelated = route.startsWith("/customs/job-related")
@@ -73,14 +77,15 @@ export function CustomsDeclarationsPage({
   }
 
   const base = jobRelated ? "/customs/job-related" : "/customs/standalone"
-  return <CustomsDeclarationsRegister jobRelated={jobRelated} kind={kind} base={base} navigate={navigate} t={t} />
+  return <CustomsDeclarationsRegister jobRelated={jobRelated} kind={kind} base={base} navigate={navigate} currentUser={currentUser} t={t} />
 }
 
-function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, t }: {
+function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, currentUser, t }: {
   jobRelated: boolean
   kind: DeclarationKind
   base: string
   navigate: (path: string) => void
+  currentUser?: AuthUserSummary | null
   t: (text: string) => string
 }) {
   const [drafts, setDrafts] = useState<CustomsDraftSummary[]>([])
@@ -110,6 +115,23 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, t }: {
   }, [jobRelated, kind])
 
   const columns = useMemo<DataTableColumn<CustomsDraftSummary>[]>(() => [
+    {
+      id: "submittedBy",
+      label: "Submitted by",
+      headerContent: <span className="sr-only">{t("Submitted by")}</span>,
+      kind: "identity",
+      align: "center",
+      width: 64,
+      minWidth: 64,
+      maxWidth: 64,
+      canPin: false,
+      cellTitle: (draft) => draft.submittedBy === currentUser?.id
+        ? currentUser.name ?? currentUser.email ?? t("Not available")
+        : t("Not available"),
+      headerClassName: "px-3 [&>span]:justify-center",
+      cellClassName: "px-3 py-2",
+      cell: (draft) => <DeclarationSubmitterAvatar draft={draft} currentUser={currentUser} t={t} />,
+    },
     {
       id: "reference",
       label: "Reference",
@@ -188,7 +210,7 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, t }: {
       sortValue: (draft) => new Date(draft.updatedAt).getTime(),
       cell: (draft) => <span className="text-[11px] text-[var(--md-subtle)]">{new Date(draft.updatedAt).toLocaleString()}</span>,
     },
-  ], [jobRelated, t])
+  ], [currentUser, jobRelated, t])
 
   const statuses = useMemo(() => [...new Set(drafts.map((draft) => draft.status).filter(Boolean))].sort(), [drafts])
   const destinations = useMemo(() => [...new Set(drafts.map((draft) => draft.destinationCountry).filter((value): value is string => Boolean(value)))].sort(), [drafts])
@@ -222,7 +244,7 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, t }: {
         columns={columns}
         rows={loading || loadError ? [] : filteredDrafts}
         getRowKey={(draft) => draft.id}
-        storageKey={`customs-${jobRelated ? "job-related" : "standalone"}-${kind}-register`}
+        storageKey={`customs-${jobRelated ? "job-related" : "standalone"}-${kind}-register-v2`}
         rowClassName="hover:bg-[var(--md-hover)]"
         onRowClick={!jobRelated ? (draft) => navigate(`/customs/standalone/${kind}/${draft.id}`) : undefined}
         toolbarTabs={(
@@ -286,6 +308,35 @@ function CustomsDeclarationsRegister({ jobRelated, kind, base, navigate, t }: {
         )}
       />
     </div>
+  )
+}
+
+function DeclarationSubmitterAvatar({ draft, currentUser, t }: {
+  draft: CustomsDraftSummary
+  currentUser?: AuthUserSummary | null
+  t: (text: string) => string
+}) {
+  const matchesCurrentUser = draft.submittedBy === currentUser?.id
+  const name = matchesCurrentUser
+    ? currentUser.name ?? currentUser.email ?? t("Not available")
+    : t("Not available")
+  const initials = matchesCurrentUser ? currentUser.initials : "?"
+
+  return (
+    <span
+      className="inline-grid place-items-center"
+      aria-label={`${t("Submitted by")}: ${name}`}
+      title={name}
+    >
+      <Avatar size="sm" className="size-7 rounded-full">
+        {matchesCurrentUser && currentUser.profilePhotoUrl ? (
+          <AvatarImage src={currentUser.profilePhotoUrl} alt="" className="rounded-full object-cover" />
+        ) : null}
+        <AvatarFallback className="rounded-full bg-[var(--md-surface-tint)] text-[10px] font-medium text-[var(--md-ink)]" data-i18n-skip>
+          {initials}
+        </AvatarFallback>
+      </Avatar>
+    </span>
   )
 }
 

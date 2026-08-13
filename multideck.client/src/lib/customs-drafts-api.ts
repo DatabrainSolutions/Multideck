@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase"
 
 type SavedDraftRow = {
   CUST_id: string
+  CUST_CreatedBy: string | null
   CUST_JobID: string | null
   CUST_LocalReferenceNumber: string | null
   CUST_TraderReference: string | null
@@ -36,6 +37,7 @@ type SaveDraftResultRow = {
 
 export type CustomsDraftSummary = {
   id: string
+  submittedBy: string | null
   jobId: string | null
   jobReference: string | null
   bookingReference: string | null
@@ -84,7 +86,7 @@ export async function listCustomsDeclarationDrafts(
   const client = requireSupabase()
   const query = client
     .from("Customs_Declarations")
-    .select("CUST_id, CUST_JobID, CUST_LocalReferenceNumber, CUST_TraderReference, CUST_Status, CUST_CountryOfDestinationCodeSnapshot, CUST_InvoiceAmount, CUST_InvoiceCurrencyCodeSnapshot, CUST_GenericPayloadJSON, CUST_CreatedAt, CUST_UpdatedAt")
+    .select("CUST_id, CUST_CreatedBy, CUST_JobID, CUST_LocalReferenceNumber, CUST_TraderReference, CUST_Status, CUST_CountryOfDestinationCodeSnapshot, CUST_InvoiceAmount, CUST_InvoiceCurrencyCodeSnapshot, CUST_GenericPayloadJSON, CUST_CreatedAt, CUST_UpdatedAt")
     .eq("CUST_Direction", direction)
     .eq("CUST_DeclarationKind", `cds_${direction}`)
     .eq("CUST_IsDeleted", false)
@@ -118,6 +120,7 @@ export async function listCustomsDeclarationDrafts(
     const job = row.CUST_JobID ? linkedJobs.get(row.CUST_JobID) : null
     return {
       id: row.CUST_id,
+      submittedBy: row.CUST_CreatedBy,
       jobId: row.CUST_JobID,
       jobReference: job?.Job_Reference ?? null,
       bookingReference: job?.Booking_Reference ?? null,
