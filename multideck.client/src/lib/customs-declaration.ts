@@ -373,6 +373,7 @@ export function validateStandaloneExportDraft(draft: StandaloneExportDraft): Dec
   if (draft.direction === "import") requireGeneral("importer", "Select or add the importer.")
   requireGeneral("exporter", "Select or add the exporter.")
   if (draft.direction === "export") requireGeneral("consignee", "Select or add the consignee.")
+  if (draft.direction === "export") requireGeneral("carrier", "Add the carrier name or identifier.")
   requireGeneral("declarant", "Select the declarant.")
   const requiredPartyContacts = [
     ...(draft.direction === "import" ? [["importer", ["importerName", "importerAddressLine", "importerCity", "importerPostcode", "importerCountry"]] as const] : []),
@@ -466,6 +467,7 @@ export function validateStandaloneExportDraft(draft: StandaloneExportDraft): Dec
     })
     if (!/^\d{10}$/.test(item.commodityCode)) push("commodityCode", "Enter a 10-digit commodity code.")
     if (!item.description.trim()) push("description", "Add a goods description.")
+    if (draft.direction === "export" && !item.consignor.trim()) push("consignor", "Add the consignor for this goods item.")
     if (!item.packageKind) push("packageKind", "Select a package kind.")
     if (!item.packageMarks.trim()) push("packageMarks", "Add package marks.")
     if (!positive(item.packageCount) || !Number.isInteger(Number(item.packageCount))) push("packageCount", "Enter a whole package count.")
@@ -494,9 +496,9 @@ export function validateStandaloneExportDraft(draft: StandaloneExportDraft): Dec
     item.additionalPreviousDocuments.forEach((entry) => {
       if ((entry.category || entry.type || entry.reference) && ((draft.direction === "import" && !entry.category) || !entry.type || !/^[A-Za-z0-9]{1,35}$/.test(entry.reference))) push("additionalPreviousDocuments", "Complete every added previous document.")
     })
-    const additionalDocuments = [{ category: item.additionalDocumentCategory, type: item.additionalDocumentType, reference: item.additionalDocumentId }, ...item.additionalDocuments]
+    const additionalDocuments = [{ category: item.additionalDocumentCategory, type: item.additionalDocumentType, reference: item.additionalDocumentId, name: item.additionalDocumentName }, ...item.additionalDocuments]
     additionalDocuments.forEach((entry) => {
-      if ((entry.category || entry.type || entry.reference) && (!entry.category || !entry.type || !entry.reference.trim())) push("additionalDocuments", "Complete every added document category, type and ID.")
+      if ((entry.category || entry.type || entry.reference || entry.name) && (!entry.category || !entry.type || (!entry.reference.trim() && !entry.name.trim()))) push("additionalDocuments", "Complete every added document category, type and either an ID or declaration statement.")
     })
     item.dutyCalculations.forEach((entry) => {
       if ((entry.taxType || entry.paymentMethod || entry.baseQuantity || entry.unitCode || entry.declaredTax) && (!entry.taxType || !positive(entry.baseQuantity) || !entry.unitCode)) push("dutyCalculations", "Complete every added duty calculation.")

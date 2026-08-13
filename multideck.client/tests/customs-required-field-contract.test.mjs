@@ -17,3 +17,16 @@ test("validation requires the internal reference for exports while keeping the t
   assert.doesNotMatch(validation, /requireGeneral\("traderReference"/u)
   assert.match(validation, /draft\.traderReference\.trim\(\) && !\/\^\[A-Z0-9\]/u)
 })
+
+test("exports require a carrier and a consignor for every goods item", () => {
+  assert.match(page, /label=\{t\("Carrier"\)\} required[\s\S]*?fieldKey="carrier"/u)
+  assert.match(page, /label=\{t\("Consignor"\)\}[\s\S]*?required[\s\S]*?fieldKey="consignor"/u)
+  assert.match(validation, /draft\.direction === "export"\) requireGeneral\("carrier", "Add the carrier name or identifier\."\)/u)
+  assert.match(validation, /draft\.direction === "export" && !item\.consignor\.trim\(\)\) push\("consignor", "Add the consignor for this goods item\."\)/u)
+})
+
+test("document waivers may use a declaration statement instead of an invented ID", () => {
+  assert.match(validation, /reference: item\.additionalDocumentId, name: item\.additionalDocumentName/u)
+  assert.match(validation, /!entry\.reference\.trim\(\) && !entry\.name\.trim\(\)/u)
+  assert.doesNotMatch(validation, /Complete every added document category, type and ID\./u)
+})

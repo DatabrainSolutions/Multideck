@@ -32,7 +32,7 @@ import { createEmptyCustomsReferenceData, useCustomsReferenceData, type CustomsC
 import { listJobRelatedDeclarationDrafts, listStandaloneDeclarationDrafts, loadStandaloneDeclarationDraft, reopenRejectedCustomsDeclaration, saveStandaloneDeclarationDraft, type CustomsDraftSummary } from "@/lib/customs-drafts-api"
 import { hasCustomsInvoiceImportRecovery, moveCustomsInvoiceImportRecovery } from "@/lib/customs-invoice-import-recovery"
 import { fetchCustomsDeclarationPdf, getCustomsDeclarationDocument, type CustomsDeclarationDocument } from "@/lib/customs-declaration-document-api"
-import { customsStatusPollDelay, isTerminalCustomsStatus, shouldPollCustomsStatus } from "@/lib/customs-status-lifecycle"
+import { customsStatusPollDelay, isTerminalCustomsStatus, shouldPollCustomsStatus, shouldPollCustomsSubmission } from "@/lib/customs-status-lifecycle"
 import { getICustomsCommodityDetails, getICustomsDeclarationState, ICustomsApiError, refreshICustomsDeclaration, saveICustomsProviderDraft, searchICustomsCommodities, submitICustomsDeclaration, validateICustomsDeclaration, type ICustomsCommodityCertificate, type ICustomsCommodityDetail, type ICustomsCommoditySuggestion, type ICustomsProviderIssue, type ICustomsWorkspaceState } from "@/lib/icustoms-api"
 import { mdMotion, reduceMotion } from "@/lib/motion"
 import iCustomsLogo from "@/assets/integrations/icustoms.svg"
@@ -662,8 +662,9 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
     { id: "review", label: t("Review") },
   ]
   const customsStatus = iCustomsState?.declaration.provider?.status ?? iCustomsState?.declaration.status ?? "draft"
+  const customsSubmittedAt = iCustomsState?.declaration.provider?.submittedAt
   const declarationPdfAvailable = Boolean(declarationId && iCustomsState?.declaration.provider?.mrn && ["accepted", "released", "cleared"].includes(customsStatus))
-  const statusPollingNeeded = shouldPollCustomsStatus(customsStatus)
+  const statusPollingNeeded = shouldPollCustomsSubmission(customsStatus, customsSubmittedAt)
 
   useEffect(() => {
     if (!declarationId || !statusPollingNeeded) {
@@ -708,7 +709,7 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
   useEffect(() => {
     if (!declarationId) return
     const refreshOnReturn = () => {
-      if (document.visibilityState !== "visible" || !shouldPollCustomsStatus(iCustomsState?.declaration.provider?.status ?? iCustomsState?.declaration.status)) return
+      if (document.visibilityState !== "visible" || !shouldPollCustomsSubmission(iCustomsState?.declaration.provider?.status ?? iCustomsState?.declaration.status, iCustomsState?.declaration.provider?.submittedAt)) return
       const now = Date.now()
       if (now - lastFocusRefreshAtRef.current < 1_500) return
       lastFocusRefreshAtRef.current = now
@@ -866,7 +867,7 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <PdfDocumentViewerDialog open={pdfOpen} onOpenChange={setPdfOpen} blob={pdfBlob} title={t(kind === "import" ? "CDS import declaration" : "CDS export declaration")} fileName={pdfDocument?.fileName ?? "declaration.pdf"} meta={pdfDocument?.mrn ? `MRN ${pdfDocument.mrn}` : undefined} onDownload={downloadDeclarationPdf} />
+      <PdfDocumentViewerDialog open={pdfOpen} onOpenChange={setPdfOpen} blob={pdfBlob} title={t(kind === "import" ? "CDS import declaration" : "CDS export declaration")} fileName={pdfDocument?.fileName ?? "declaration.pdf"} meta={pdfDocument?.mrn ? `MRN ${pdfDocument.mrn}${pdfDocument.environment === "sandbox" ? ` · ${t("Test environment")}` : ""}` : undefined} onDownload={downloadDeclarationPdf} />
     </div>
     {invoiceImportOpen ? <CustomsInvoiceImportWorkspace key={invoiceImportRecoveryKey} recoveryKey={invoiceImportRecoveryKey} onClose={() => setInvoiceImportOpen(false)} onApply={applyInvoiceItems} existingItemCount={draft.items.length} /> : null}
     </CustomsBoxVisibilityContext.Provider>
@@ -979,7 +980,7 @@ function PartiesSection({ draft, update, showDataElements, showOptional, issues,
         <SelectField label={t("Declarant country")} dataElement="3/18" customsBox="14" required showDataElements={showDataElements} value={draft.declarantCountry} onChange={(value) => update("declarantCountry", value)} invalid={issues.has("declarantCountry")} fieldKey="declarantCountry" highlighted={highlightedField === "declarantCountry"} options={countries} />
       </PartyFieldsGroup>
       <PartyFieldsGroup title={t(direction === "export" ? "Carrier & representation" : "Representation")} className="xl:col-span-2" fieldsClassName="xl:grid-cols-3 2xl:grid-cols-3">
-        {direction === "export" ? <TextField label={t("Carrier")} showDataElements={showDataElements} value={draft.carrier} onChange={(value) => update("carrier", value)} placeholder={t("Name or EORI")} /> : null}
+        {direction === "export" ? <TextField label={t("Carrier")} required showDataElements={showDataElements} value={draft.carrier} onChange={(value) => update("carrier", value)} invalid={issues.has("carrier")} fieldKey="carrier" highlighted={highlightedField === "carrier"} placeholder={t("Name or EORI")} /> : null}
         {direction === "export" ? <TextField label={t("Representative")} dataElement="3/19" customsBox="14" showDataElements={showDataElements} value={draft.representative} onChange={(value) => update("representative", value)} placeholder={t("Name or EORI")} /> : null}
         <SelectField label={t("Type of representation")} dataElement="3/21" customsBox="14" required={direction === "import"} showDataElements={showDataElements} value={draft.representationType} onChange={(value) => update("representationType", value)} invalid={issues.has("representationType")} fieldKey="representationType" highlighted={highlightedField === "representationType"} options={representationTypes} />
         {showOptional ? <><TextField label={t("Authorisation identifier")} showDataElements={showDataElements} value={draft.authorisationIdentifier} onChange={(value) => update("authorisationIdentifier", value)} /><TextField label={t("Authorisation category")} showDataElements={showDataElements} value={draft.authorisationCategory} onChange={(value) => update("authorisationCategory", value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4))} maxLength={4} /></> : null}
@@ -1763,7 +1764,7 @@ function ItemDetailsEditor({ item, itemNumber, onDuplicate, onRemove, canRemove,
 
       {declarationDirection === "export" ? <ItemDetailGroup title={t("Parties & transport")}>
         <FieldGrid className="grid-cols-1 sm:grid-cols-1 md:grid-cols-1 xl:grid-cols-1 2xl:grid-cols-1">
-          <TextField label={t("Consignor")} dataElement="3/7" customsBox="2" showDataElements={showDataElements} value={item.consignor} onChange={(value) => update("consignor", value)} />
+          <TextField label={t("Consignor")} dataElement="3/7" customsBox="2" required showDataElements={showDataElements} value={item.consignor} onChange={(value) => update("consignor", value)} invalid={issues.has("consignor")} fieldKey="consignor" highlighted={highlightedField === "consignor"} />
           <TextField label={t("Consignee")} dataElement="3/9" customsBox="8" showDataElements={showDataElements} value={item.consignee} onChange={(value) => update("consignee", value)} />
           <SelectField label={t("Destination country")} dataElement="5/8" customsBox="17" showDataElements={showDataElements} value={item.destinationCountry} onChange={(value) => update("destinationCountry", value)} options={optionalCountries} />
           <TextField label={t("Reference number or UCR")} dataElement="2/4" customsBox="44" showDataElements={showDataElements} value={item.ucr} onChange={(value) => update("ucr", value)} />
@@ -1897,9 +1898,10 @@ function ReviewSection({ draft, completion, iCustomsState, iCustomsBusy, iCustom
   const [heldIssue, setHeldIssue] = useState<DeclarationIssue | null>(null)
   const provider = iCustomsState?.declaration.provider
   const hasProviderDraft = Boolean(iCustomsState?.declaration.hasCustomsDraft)
-  const providerLifecycleStarted = Boolean(provider && (shouldPollCustomsStatus(provider.status) || isTerminalCustomsStatus(provider.status)))
-  const providerAwaitingResponse = shouldPollCustomsStatus(provider?.status)
+  const providerLifecycleStarted = Boolean(provider?.submittedAt && (shouldPollCustomsStatus(provider.status) || isTerminalCustomsStatus(provider.status)))
+  const providerAwaitingResponse = shouldPollCustomsSubmission(provider?.status, provider?.submittedAt)
   const providerRejected = provider?.status === "rejected"
+  const providerAccepted = ["accepted", "released", "cleared"].includes(provider?.status ?? "")
   const connectionUnavailable = iCustomsState?.connection.configured === false
   const providerIssues = provider?.issues ?? []
   const providerDeclarationUrl = hasProviderDraft && draft.iCustomsCorrelationId
@@ -1951,7 +1953,7 @@ function ReviewSection({ draft, completion, iCustomsState, iCustomsBusy, iCustom
         <Button type="button" variant="ghost" className="mt-4 w-full bg-black text-white shadow-none hover:bg-black/80 hover:text-white" disabled={!pdfAvailable || pdfBusy} onClick={onOpenPdf}><FileText className="size-4" />{t(pdfBusy ? "Preparing declaration PDF" : pdfLoadError ? "Retry declaration PDF" : pdfAvailable ? "View declaration PDF" : "PDF available after acceptance")}</Button>
         {pdfLoadError && pdfAvailable ? <p role="alert" className="mt-2 text-[11px] leading-4 text-[var(--md-red)]">{t("The declaration PDF could not be prepared automatically. Choose Retry declaration PDF to try again.")}</p> : null}
         {providerDeclarationUrl ? <Button asChild variant="outline" className="mt-2 w-full"><a href={providerDeclarationUrl} target="_blank" rel="noopener noreferrer"><span>{t("View in")}</span><img src={iCustomsLogo} alt="iCustoms" className="h-4 w-auto" /><ExternalLink className="size-3.5" /></a></Button> : null}
-        {providerIssues.length ? <div role="alert" className="mt-4 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red)_7%,var(--md-surface))] p-3">
+        {providerRejected && providerIssues.length ? <div role="alert" className="mt-4 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red)_7%,var(--md-surface))] p-3">
           <div className="flex items-start gap-2"><CircleAlert className="mt-0.5 size-4 shrink-0 text-[var(--md-red)]" /><div><p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Customs rejected this declaration")}</p><p className="mt-0.5 text-[11px] leading-4 text-[var(--md-text)]">{t("Correct the fields below, then save a new customs draft before submitting again.")}</p></div></div>
           <div className="mt-3 space-y-2">{providerIssues.slice(0, 20).map((issue, index) => {
             const fixKey = `provider-${issue.code}-${issue.dataElement}-${issue.itemNumber ?? "header"}-${index}`
@@ -1961,6 +1963,10 @@ function ReviewSection({ draft, completion, iCustomsState, iCustomsBusy, iCustom
               <AnimatePresence initial={false}>{expanded ? <motion.div id={`customs-review-fix-${fixKey}`} initial={shouldReduceMotion ? false : { height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={reduceMotion(shouldReduceMotion, mdMotion.panel)} className="overflow-hidden"><div className="mt-3 border-t border-[var(--md-line)] pt-3"><ReviewFixSectionHeader draft={draft} providerIssue={issue} t={t} /><ReviewFixFields draft={draft} providerIssue={issue} update={update} updateItem={updateItem} t={t} /><div className="mt-3 flex justify-end border-t border-[var(--md-line)] pt-3"><Button type="button" size="sm" className="min-w-[88px] rounded-[var(--md-radius-md)]" onClick={confirmFix}>{t("Confirm")}</Button></div></div></motion.div> : null}</AnimatePresence>
             </div>
           })}</div>
+        </div> : null}
+        {providerAccepted && providerIssues.length ? <div role="status" className="mt-4 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-amber)_8%,var(--md-surface))] p-3">
+          <div className="flex items-start gap-2"><CircleAlert className="mt-0.5 size-4 shrink-0 text-[var(--md-amber)]" /><div><p className="text-[12px] font-medium text-[var(--md-ink)]">{t("Customs accepted this declaration with provider messages")}</p><p className="mt-0.5 text-[11px] leading-4 text-[var(--md-text)]">{t("The declaration is accepted. Review these iCustoms messages for awareness; they do not change the accepted status.")}</p></div></div>
+          <ul className="mt-3 space-y-2">{providerIssues.slice(0, 20).map((issue, index) => <li key={`accepted-provider-${issue.code}-${issue.itemNumber ?? "header"}-${index}`} className="rounded-[var(--md-radius-md)] bg-[var(--md-surface)] p-2.5 text-[11px] leading-4 text-[var(--md-text)] shadow-[var(--md-shadow-line)]"><span className="font-medium text-[var(--md-ink)]">{t(providerIssueFieldLabel(issue))}{issue.itemNumber ? ` · ${t("Item")} ${issue.itemNumber}` : ""}{issue.dataElement ? ` · DE ${issue.dataElement}` : ""}{issue.code ? ` · ${issue.code}` : ""}</span><span className="mt-1 block">{issue.message}</span></li>)}</ul>
         </div> : null}
         {provider?.errorMessage && !providerIssues.length ? <div role="alert" className="mt-4 flex gap-2 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red)_7%,var(--md-surface))] p-3 text-[12px] text-[var(--md-text)]"><CircleAlert className="mt-0.5 size-4 shrink-0 text-[var(--md-red)]" /><span><strong className="block text-[var(--md-ink)]">{t("Customs service needs attention")}</strong>{t(provider.errorMessage)}</span></div> : null}
         {iCustomsIssues.length ? <div role="alert" className="mt-4"><p className="text-[12px] font-medium text-[var(--md-red)]">{t("Customs checks still need attention")}</p><ul className="mt-2 space-y-1.5 ps-4 text-[11px] leading-4 text-[var(--md-text)]">{iCustomsIssues.slice(0, 8).map((issue) => <li key={issue} className="list-disc">{translateCustomsMessage(issue, t)}</li>)}</ul></div> : null}

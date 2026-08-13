@@ -263,6 +263,7 @@ async function idempotentSubmission(
     .eq("ICUSS_CustomsID", declarationId)
     .eq("ICUSS_IdempotencyKey", idempotencyKey)
     .in("ICUSS_Status", [
+      "draft",
       "acknowledged",
       "submitted",
       "accepted",
@@ -316,10 +317,13 @@ async function saveProviderSuccess(
   response: ICustomsResponse,
   providerStatus: string,
   correlationId: string,
+  lifecyclePhase: "draft" | "submission" = "submission",
 ) {
   const now = new Date().toISOString();
   const providerBody = providerRecord(response.body);
-  const submissionStatus = ["released", "cleared"].includes(providerStatus)
+  const submissionStatus = lifecyclePhase === "draft"
+    ? "draft"
+    : ["released", "cleared"].includes(providerStatus)
     ? "accepted"
     : ["acknowledged", "submitted", "accepted", "rejected", "error"].includes(
         providerStatus,
@@ -369,7 +373,9 @@ async function saveProviderSuccess(
     .single();
   if (submissionError) throw new HttpError(500, submissionError.message);
 
-  const declarationStatus = providerStatus === "acknowledged"
+  const declarationStatus = lifecyclePhase === "draft"
+    ? "draft"
+    : providerStatus === "acknowledged"
     ? "draft"
     : ["submitted", "accepted", "rejected", "cleared", "released"].includes(
         providerStatus,
@@ -467,6 +473,7 @@ async function providerDraft(
       response,
       "acknowledged",
       resolvedCorrelationId,
+      "draft",
     );
     await audit(
       admin,

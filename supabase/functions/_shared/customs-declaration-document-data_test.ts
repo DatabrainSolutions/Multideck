@@ -1,8 +1,4 @@
-import {
-  assert,
-  assertEquals,
-  assertThrows,
-} from "jsr:@std/assert@1.0.14";
+import { assert, assertEquals, assertThrows } from "jsr:@std/assert@1.0.14";
 import {
   buildCustomsDeclarationDocumentDataset,
   validateCustomsDocumentProvenance,
@@ -20,7 +16,7 @@ function acceptedSources() {
     consignee: "FRCONSIGNEE",
     consigneeName: "Consignee SAS",
     declarant: "GBDECLARANT",
-    carrier: "",
+    carrier: "GB CARRIER LTD",
     exportCountry: "GB",
     destinationCountry: "FR",
     departureIdentificationType: "30",
@@ -47,7 +43,7 @@ function acceptedSources() {
     netMass: "105",
     transactionNature: "11",
     freightPaymentMethod: "A",
-    consignor: "",
+    consignor: "GB CONSIGNOR LTD",
   };
   return {
     declaration: {
@@ -56,6 +52,7 @@ function acceptedSources() {
       CUST_GenericPayloadJSON: {
         ...genericPayload,
         traderReference: "MUTATED",
+        carrier: "",
       },
     },
     submission: {
@@ -80,7 +77,11 @@ function acceptedSources() {
     },
     itemRows: [{
       CUSTI_ItemNumber: 1,
-      CUSTI_ItemPayloadJSON: { ...item, description: "MUTATED ITEM" },
+      CUSTI_ItemPayloadJSON: {
+        ...item,
+        description: "MUTATED ITEM",
+        consignor: "",
+      },
     }],
   };
 }
@@ -98,7 +99,7 @@ Deno.test("accepted dataset uses immutable snapshot and exact provider fields", 
   assertEquals(dataset.documentMode, "official");
   assertEquals(dataset.declarationCode, "EX A");
   assertEquals(dataset.reference, "JENKAR26A");
-  assertEquals(dataset.auditSpacerHeight, 271);
+  assertEquals(dataset.auditSpacerHeight, 217);
   assertEquals(dataset.movementTransport, "30 | VSL123");
   assertEquals(dataset.borderTransport, "30 | VSL123 | GB");
   assertEquals(dataset.lrn, "LRN-EXACT");
@@ -122,12 +123,18 @@ Deno.test("accepted dataset uses immutable snapshot and exact provider fields", 
     (dataset.items[0] as Record<string, unknown>).transactionNature,
     "11",
   );
-  assertEquals((dataset.parties as Record<string, unknown>).secondaryOne, "");
-  assertEquals((dataset.parties as Record<string, unknown>).secondaryTwo, "");
+  assertEquals(
+    (dataset.parties as Record<string, unknown>).secondaryOne,
+    "GB CONSIGNOR LTD",
+  );
+  assertEquals(
+    (dataset.parties as Record<string, unknown>).secondaryTwo,
+    "GB CARRIER LTD",
+  );
   assertEquals(provenance.reference[0].table, "ICUS_Submissions");
 });
 
-Deno.test("sandbox and legacy persisted data are watermarked verification copies", () => {
+Deno.test("sandbox and legacy persisted data remain non-official verification copies", () => {
   const sources = acceptedSources();
   (sources.submission as Record<string, unknown>)
     .ICUSS_DeclarationSnapshotJSON = undefined;
@@ -140,6 +147,14 @@ Deno.test("sandbox and legacy persisted data are watermarked verification copies
     );
   assertEquals(usesAcceptedSnapshot, false);
   assertEquals(dataset.documentMode, "verification");
+  assertEquals(
+    (dataset.parties as Record<string, unknown>).secondaryOne,
+    "Not supplied on declaration",
+  );
+  assertEquals(
+    (dataset.parties as Record<string, unknown>).secondaryTwo,
+    "Not supplied on declaration",
+  );
 
   (sources.submission as Record<string, unknown>)
     .ICUSS_DeclarationSnapshotJSON = acceptedSources().submission
@@ -151,6 +166,66 @@ Deno.test("sandbox and legacy persisted data are watermarked verification copies
     "sandbox",
   );
   assertEquals(sandbox.dataset.documentMode, "verification");
+});
+
+Deno.test("accepted export snapshots fail closed when carrier or consignor is missing", () => {
+  const missingCarrier = acceptedSources();
+  const carrierSnapshot = (missingCarrier.submission as Record<string, unknown>)
+    .ICUSS_DeclarationSnapshotJSON as Record<string, unknown>;
+  const carrierDeclaration = carrierSnapshot.declaration as Record<
+    string,
+    unknown
+  >;
+  (carrierDeclaration.genericPayload as Record<string, unknown>).carrier = "";
+  assertThrows(
+    () =>
+      buildCustomsDeclarationDocumentDataset(
+        missingCarrier.declaration,
+        missingCarrier.submission,
+        missingCarrier.itemRows,
+        "production",
+      ),
+    Error,
+    "carrier",
+  );
+
+  const missingConsignor = acceptedSources();
+  const consignorSnapshot =
+    (missingConsignor.submission as Record<string, unknown>)
+      .ICUSS_DeclarationSnapshotJSON as Record<string, unknown>;
+  const snapshotItems = consignorSnapshot.items as Array<
+    Record<string, unknown>
+  >;
+  (snapshotItems[0].payload as Record<string, unknown>).consignor = "";
+  assertThrows(
+    () =>
+      buildCustomsDeclarationDocumentDataset(
+        missingConsignor.declaration,
+        missingConsignor.submission,
+        missingConsignor.itemRows,
+        "production",
+      ),
+    Error,
+    "goods item 1 consignor",
+  );
+});
+
+Deno.test("import pagination reserves the reference audit position without orphaning it", () => {
+  const sources = acceptedSources();
+  const snapshot = (sources.submission as Record<string, unknown>)
+    .ICUSS_DeclarationSnapshotJSON as Record<string, unknown>;
+  const declaration = snapshot.declaration as Record<string, unknown>;
+  declaration.direction = "import";
+  const payload = declaration.genericPayload as Record<string, unknown>;
+  payload.direction = "import";
+  const result = buildCustomsDeclarationDocumentDataset(
+    sources.declaration,
+    sources.submission,
+    sources.itemRows,
+    "sandbox",
+  );
+  assertEquals(result.dataset.direction, "import");
+  assertEquals(result.dataset.auditSpacerHeight, 138);
 });
 
 Deno.test("provenance validation fails closed for an untracked display field", () => {

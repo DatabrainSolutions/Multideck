@@ -2,9 +2,9 @@ import {
   buildICustomsB1ExportXml,
   buildICustomsH1ImportXml,
   type ExportDeclarationInput,
+  ICustomsClient,
   iCustomsCommodityDetail,
   iCustomsCommoditySuggestions,
-  ICustomsClient,
   providerIssues,
   validateICustomsB1Export,
   validateICustomsH1Import,
@@ -41,6 +41,7 @@ function validDeclaration(): ExportDeclarationInput {
     consigneeCity: "Paris",
     consigneePostcode: "75001",
     consigneeCountry: "FR",
+    carrier: "GB Carrier Ltd",
     declarant: "GB123456789000",
     declarantName: "Sandbox Declarant Ltd",
     declarantAddressLine: "3 Customs Street",
@@ -80,6 +81,7 @@ function validDeclaration(): ExportDeclarationInput {
       statisticalValue: "1000",
       previousDocumentType: "MRN",
       previousDocumentReference: "25GB00000000000001",
+      consignor: "GB Consignor Ltd",
     }],
   };
 }
@@ -209,16 +211,81 @@ Deno.test("buildICustomsH1ImportXml follows the documented H1 contract", () => {
 
 Deno.test("buildICustomsB1ExportXml keeps common parties, destinations and previous documents at header level", () => {
   const xml = buildICustomsB1ExportXml(validDeclaration());
-  assert(occurrences(xml, "<Consignee>") === 1, "Expected one header-level consignee.");
-  assert(occurrences(xml, "<Destination>") === 1, "Expected one header-level destination.");
-  assert(occurrences(xml, "<PreviousDocument>") === 1, "Expected one header-level previous document.");
-  assert(xml.includes("<Agent>") && xml.includes("<AgentFunctionCode>2</AgentFunctionCode>"), "Expected export representation data.");
-  assert(xml.includes("<CategoryCode>EXRR</CategoryCode>"), "Expected the export authorisation holder.");
   assert(
-    xml.includes("<AdditionalInformation><StatementCode>RRS01</StatementCode><StatementDescription>EXPORTER</StatementDescription></AdditionalInformation>"),
+    occurrences(xml, "<Consignee>") === 1,
+    "Expected one header-level consignee.",
+  );
+  assert(
+    occurrences(xml, "<Destination>") === 1,
+    "Expected one header-level destination.",
+  );
+  assert(
+    occurrences(xml, "<PreviousDocument>") === 1,
+    "Expected one header-level previous document.",
+  );
+  assert(
+    xml.includes("<Agent>") &&
+      xml.includes("<AgentFunctionCode>2</AgentFunctionCode>"),
+    "Expected export representation data.",
+  );
+  assert(
+    xml.includes("<CategoryCode>EXRR</CategoryCode>"),
+    "Expected the export authorisation holder.",
+  );
+  assert(
+    xml.includes(
+      "<Consignment><Carrier><Name>GB Carrier Ltd</Name></Carrier></Consignment>",
+    ),
+    "Expected the saved carrier in the declaration-level iCustoms consignment.",
+  );
+  assert(
+    xml.includes("<Consignor><Name>GB Consignor Ltd</Name></Consignor>"),
+    "Expected the saved consignor on the export goods item.",
+  );
+  assert(
+    xml.includes(
+      "<AdditionalInformation><StatementCode>RRS01</StatementCode><StatementDescription>EXPORTER</StatementDescription></AdditionalInformation>",
+    ),
     "Expected declaration-level additional information.",
   );
-  assert(xml.includes("<CurrentCode>10</CurrentCode>") && xml.includes("<PreviousCode>40</PreviousCode>"), "Expected the documented export procedure split.");
+  assert(
+    xml.includes("<CurrentCode>10</CurrentCode>") &&
+      xml.includes("<PreviousCode>40</PreviousCode>"),
+    "Expected the documented export procedure split.",
+  );
+});
+
+Deno.test("multi-item B1 exports keep the consignee at item level only", () => {
+  const declaration = validDeclaration();
+  const firstItem = (declaration.items as Array<Record<string, unknown>>)[0];
+  declaration.totalAmount = "2000";
+  declaration.totalPackages = "20";
+  declaration.totalGrossMass = "200";
+  declaration.totalNetMass = "180";
+  declaration.items = [
+    { ...firstItem, consignee: declaration.consignee },
+    {
+      ...firstItem,
+      consignee: declaration.consignee,
+      consignor: "GB Consignor Two Ltd",
+      packageMarks: "MD-TEST-002",
+    },
+  ];
+
+  const xml = buildICustomsB1ExportXml(declaration);
+  const header = xml.slice(0, xml.indexOf("<GovernmentAgencyGoodsItem>"));
+  assert(
+    !header.includes("<Consignee>"),
+    "Expected no header consignee when a multi-item export supplies one on every line.",
+  );
+  assert(
+    occurrences(xml, "<Consignee>") === 2,
+    "Expected one item-level consignee per goods line.",
+  );
+  assert(
+    occurrences(xml, "<Consignor>") === 2,
+    "Expected every goods line to keep its persisted consignor.",
+  );
 });
 
 Deno.test("B1 accepts the WCO DUCR format for DCR previous documents", () => {
@@ -229,11 +296,16 @@ Deno.test("B1 accepts the WCO DUCR format for DCR previous documents", () => {
   item.previousDocumentType = "DCR";
   item.previousDocumentReference = "6GB603202734852-MD0003";
   assert(
-    !validateICustomsB1Export(declaration).some((issue) => issue.toLowerCase().includes("previous document reference") || issue.toLowerCase().includes("ducr format")),
+    !validateICustomsB1Export(declaration).some((issue) =>
+      issue.toLowerCase().includes("previous document reference") ||
+      issue.toLowerCase().includes("ducr format")
+    ),
     "Expected the WCO DUCR reference to pass validation.",
   );
   assert(
-    buildICustomsB1ExportXml(declaration).includes("<ID>6GB603202734852-MD0003</ID>"),
+    buildICustomsB1ExportXml(declaration).includes(
+      "<ID>6GB603202734852-MD0003</ID>",
+    ),
     "Expected the DUCR hyphen to be preserved in XML.",
   );
 });
@@ -288,17 +360,37 @@ Deno.test("iCustomsCommoditySuggestions normalises and deduplicates 10-digit res
       query: "hardback books",
       country: "UK",
       commodities: [
-        { "HS-Code": "4901100000", Description: "Printed books", Confidence: 28 },
+        {
+          "HS-Code": "4901100000",
+          Description: "Printed books",
+          Confidence: 28,
+        },
         { "HS-Code": "4901100000", Description: "Duplicate", Confidence: 99 },
         { "HS-Code": "invalid", Description: "Invalid", Confidence: 50 },
-        { "HS-Code": "4901990000", Description: "Other printed books", Confidence: 96 },
+        {
+          "HS-Code": "4901990000",
+          Description: "Other printed books",
+          Confidence: 96,
+        },
       ],
     }],
   });
-  assert(suggestions.length === 2, "Expected unique, valid commodity suggestions.");
-  assert(suggestions[0].code === "4901100000", "Expected provider result order to be preserved.");
-  assert(suggestions[1].confidence === 96, "Expected the bounded provider confidence value.");
-  assert(!("activityid" in suggestions[0]), "Provider activity identifiers must stay server-side.");
+  assert(
+    suggestions.length === 2,
+    "Expected unique, valid commodity suggestions.",
+  );
+  assert(
+    suggestions[0].code === "4901100000",
+    "Expected provider result order to be preserved.",
+  );
+  assert(
+    suggestions[1].confidence === 96,
+    "Expected the bounded provider confidence value.",
+  );
+  assert(
+    !("activityid" in suggestions[0]),
+    "Provider activity identifiers must stay server-side.",
+  );
 });
 
 Deno.test("iCustomsCommodityDetail returns direction-specific certificate mappings", () => {
@@ -317,30 +409,101 @@ Deno.test("iCustomsCommodityDetail returns direction-specific certificate mappin
       },
       meta: {
         duty_calculator: {
-          applicable_vat_options: { VATZ: "VAT zero rate", VAT: "Value added tax (20.0%)" },
+          applicable_vat_options: {
+            VATZ: "VAT zero rate",
+            VAT: "Value added tax (20.0%)",
+          },
         },
       },
     },
     included: [
-      { id: "summary", type: "import_trade_summary", attributes: { basic_third_country_duty: "<span>0.00</span> %" } },
-      { id: "import-measure", type: "measure", relationships: { measure_conditions: { data: [{ id: "import-waiver", type: "measure_condition" }] } } },
-      { id: "export-measure", type: "measure", relationships: { measure_conditions: { data: [{ id: "export-waiver", type: "measure_condition" }] } } },
-      { id: "import-waiver", type: "measure_condition", attributes: { document_code: "Y920", certificate_description: "Goods other than those described in the footnotes", guidance_cds: "Complete statement 'Not covered by footnote'. - No document status code is required.", action: "Import allowed" } },
-      { id: "export-waiver", type: "measure_condition", attributes: { document_code: "Y999", certificate_description: "Export licence not required", guidance_cds: "Complete statement 'CDS Waiver'. - No document status code is required.", action: "Export allowed" } },
+      {
+        id: "summary",
+        type: "import_trade_summary",
+        attributes: { basic_third_country_duty: "<span>0.00</span> %" },
+      },
+      {
+        id: "import-measure",
+        type: "measure",
+        relationships: {
+          measure_conditions: {
+            data: [{ id: "import-waiver", type: "measure_condition" }],
+          },
+        },
+      },
+      {
+        id: "export-measure",
+        type: "measure",
+        relationships: {
+          measure_conditions: {
+            data: [{ id: "export-waiver", type: "measure_condition" }],
+          },
+        },
+      },
+      {
+        id: "import-waiver",
+        type: "measure_condition",
+        attributes: {
+          document_code: "Y920",
+          certificate_description:
+            "Goods other than those described in the footnotes",
+          guidance_cds:
+            "Complete statement 'Not covered by footnote'. - No document status code is required.",
+          action: "Import allowed",
+        },
+      },
+      {
+        id: "export-waiver",
+        type: "measure_condition",
+        attributes: {
+          document_code: "Y999",
+          certificate_description: "Export licence not required",
+          guidance_cds:
+            "Complete statement 'CDS Waiver'. - No document status code is required.",
+          action: "Export allowed",
+        },
+      },
     ],
   };
 
   const importDetail = iCustomsCommodityDetail(payload, "import");
-  assert(importDetail.code === "4901100000" && importDetail.declarable, "Expected a declarable tariff record.");
+  assert(
+    importDetail.code === "4901100000" && importDetail.declarable,
+    "Expected a declarable tariff record.",
+  );
   assert(importDetail.dutyRate === "0.00 %", "Expected HTML-free duty data.");
-  assert(importDetail.vatOptions.some((option) => option.code === "VAT" && option.rate === "20.0"), "Expected VAT options.");
-  assert(importDetail.certificates.length === 1 && importDetail.certificates[0].code === "Y920", "Expected import-only certificates.");
-  assert(importDetail.certificates[0].category === "Y" && importDetail.certificates[0].type === "920", "Expected CDS category/type mapping.");
-  assert(importDetail.certificates[0].statement === "Not covered by footnote" && !importDetail.certificates[0].referenceRequired, "Expected the waiver declaration statement without a false document-reference requirement.");
+  assert(
+    importDetail.vatOptions.some((option) =>
+      option.code === "VAT" && option.rate === "20.0"
+    ),
+    "Expected VAT options.",
+  );
+  assert(
+    importDetail.certificates.length === 1 &&
+      importDetail.certificates[0].code === "Y920",
+    "Expected import-only certificates.",
+  );
+  assert(
+    importDetail.certificates[0].category === "Y" &&
+      importDetail.certificates[0].type === "920",
+    "Expected CDS category/type mapping.",
+  );
+  assert(
+    importDetail.certificates[0].statement === "Not covered by footnote" &&
+      !importDetail.certificates[0].referenceRequired,
+    "Expected the waiver declaration statement without a false document-reference requirement.",
+  );
 
   const exportDetail = iCustomsCommodityDetail(payload, "export");
-  assert(exportDetail.certificates.length === 1 && exportDetail.certificates[0].code === "Y999", "Expected export-only certificates.");
-  assert(exportDetail.dutyRate === null && exportDetail.vatOptions.length === 0, "Export detail must not present import tax data.");
+  assert(
+    exportDetail.certificates.length === 1 &&
+      exportDetail.certificates[0].code === "Y999",
+    "Expected export-only certificates.",
+  );
+  assert(
+    exportDetail.dutyRate === null && exportDetail.vatOptions.length === 0,
+    "Export detail must not present import tax data.",
+  );
 });
 
 Deno.test("H1 validation accepts a certificate waiver statement without a document ID", () => {
@@ -446,7 +609,9 @@ Deno.test("validateICustomsB1Export requires the internal reference and permits 
   declaration.traderReference = "";
   const issuesWithoutTraderReference = validateICustomsB1Export(declaration);
   assert(
-    !issuesWithoutTraderReference.some((issue) => issue.toLowerCase().includes("trader reference")),
+    !issuesWithoutTraderReference.some((issue) =>
+      issue.toLowerCase().includes("trader reference")
+    ),
     "Expected the trader reference to be optional.",
   );
 
@@ -503,7 +668,9 @@ Deno.test("buildICustomsB1ExportXml includes optional supporting documents", () 
     "Expected the complete optional document to validate.",
   );
   assert(
-    buildICustomsB1ExportXml(declaration).includes("<AdditionalDocument><CategoryCode>N</CategoryCode><ID>DOC1</ID>"),
+    buildICustomsB1ExportXml(declaration).includes(
+      "<AdditionalDocument><CategoryCode>N</CategoryCode><ID>DOC1</ID>",
+    ),
     "Expected the export document to be included in the goods item.",
   );
 });
@@ -516,34 +683,127 @@ Deno.test("buildICustomsH1ImportXml maps repeatable iCustoms item groups in ente
     additionalTaricCodes: [{ id: "taric-2", code: "A002" }],
     nationalCode: "VATZ",
     additionalNationalCodes: [{ id: "national-2", code: "VAT1" }],
-    additionalPackageDetails: [{ id: "package-2", kind: "PK", marks: "MD-IMPORT-002", count: "3" }],
+    additionalPackageDetails: [{
+      id: "package-2",
+      kind: "PK",
+      marks: "MD-IMPORT-002",
+      count: "3",
+    }],
     additionalProcedureCodes: [{ id: "procedure-2", code: "1CD" }],
-    additionalPreviousDocuments: [{ id: "previous-2", category: "Z", type: "MRN", reference: "25GB00000000000002" }],
-    additionalDocuments: [{ id: "document-2", category: "N", type: "936", reference: "DOC2", name: "Second licence", lpcoExemptionCode: "", writeOff: "Licensing Authority", validityDate: "2026-12-31" }],
-    additionalInformationStatements: [{ id: "information-1", statementCode: "00500" }, { id: "information-2", statementCode: "00501" }],
-    dutyCalculations: [{ id: "duty-1", taxType: "A00", paymentMethod: "A", baseQuantity: "100", unitCode: "KGM", declaredTax: "25" }, { id: "duty-2", taxType: "B00", paymentMethod: "A", baseQuantity: "90", unitCode: "KGM", declaredTax: "5" }],
-    valuationAdjustments: [{ id: "adjustment-1", code: "AB", currency: "GBP", amount: "12.50" }, { id: "adjustment-2", code: "CD", currency: "GBP", amount: "2.50" }],
-    itemExporters: [{ id: "exporter-1", partyId: "IE4809539S" }, { id: "exporter-2", partyId: "IE4809539T" }],
+    additionalPreviousDocuments: [{
+      id: "previous-2",
+      category: "Z",
+      type: "MRN",
+      reference: "25GB00000000000002",
+    }],
+    additionalDocuments: [{
+      id: "document-2",
+      category: "N",
+      type: "936",
+      reference: "DOC2",
+      name: "Second licence",
+      lpcoExemptionCode: "",
+      writeOff: "Licensing Authority",
+      validityDate: "2026-12-31",
+    }],
+    additionalInformationStatements: [{
+      id: "information-1",
+      statementCode: "00500",
+    }, { id: "information-2", statementCode: "00501" }],
+    dutyCalculations: [{
+      id: "duty-1",
+      taxType: "A00",
+      paymentMethod: "A",
+      baseQuantity: "100",
+      unitCode: "KGM",
+      declaredTax: "25",
+    }, {
+      id: "duty-2",
+      taxType: "B00",
+      paymentMethod: "A",
+      baseQuantity: "90",
+      unitCode: "KGM",
+      declaredTax: "5",
+    }],
+    valuationAdjustments: [{
+      id: "adjustment-1",
+      code: "AB",
+      currency: "GBP",
+      amount: "12.50",
+    }, { id: "adjustment-2", code: "CD", currency: "GBP", amount: "2.50" }],
+    itemExporters: [{ id: "exporter-1", partyId: "IE4809539S" }, {
+      id: "exporter-2",
+      partyId: "IE4809539T",
+    }],
     itemSellers: [{ id: "seller-1", partyId: "SELLER1" }],
     itemBuyers: [{ id: "buyer-1", partyId: "BUYER1" }],
-    domesticDutyTaxParties: [{ id: "fiscal-1", partyId: "GB123456789", roleCode: "FR1" }, { id: "fiscal-2", partyId: "GB987654321", roleCode: "FR3" }],
-    mutualRecognitionParties: [{ id: "mutual-1", partyId: "AEO123" }, { id: "mutual-2", partyId: "AEO456" }],
+    domesticDutyTaxParties: [{
+      id: "fiscal-1",
+      partyId: "GB123456789",
+      roleCode: "FR1",
+    }, { id: "fiscal-2", partyId: "GB987654321", roleCode: "FR3" }],
+    mutualRecognitionParties: [{ id: "mutual-1", partyId: "AEO123" }, {
+      id: "mutual-2",
+      partyId: "AEO456",
+    }],
   });
 
   const issues = validateICustomsH1Import(declaration);
-  assert(!issues.length, `Expected repeatable rows to validate: ${issues.join(" | ")}`);
+  assert(
+    !issues.length,
+    `Expected repeatable rows to validate: ${issues.join(" | ")}`,
+  );
   const xml = buildICustomsH1ImportXml(declaration);
-  assert(occurrences(xml, "<AdditionalTaricCode>") === 2, "Expected two TARIC codes.");
-  assert(occurrences(xml, "<AdditionalNationalCode>") === 2, "Expected two national codes.");
-  assert(occurrences(xml, "<Packaging>") === 2 && xml.includes("<SequenceNumeric>2</SequenceNumeric><MarksNumbersID>MD-IMPORT-002</MarksNumbersID>"), "Expected sequential package groups.");
-  assert(occurrences(xml, "<GovernmentAdditionalProcedure>") === 2, "Expected two additional procedures.");
-  assert(occurrences(xml, "<PreviousDocument>") === 2, "Expected two item previous documents.");
-  assert(occurrences(xml, "<AdditionalDocument>") === 2 && xml.includes("<EffectiveDateTime><DateTime>2026-12-31</DateTime></EffectiveDateTime>"), "Expected both supporting documents and their validity data.");
-  assert(occurrences(xml, "<AdditionalInformation>") === 2, "Expected two additional information statements.");
-  assert(occurrences(xml, "<DutyTaxFee>") === 2, "Expected two duty calculations.");
-  assert(occurrences(xml, "<ValuationAdjustment>") === 2, "Expected two additions or deductions.");
-  assert(occurrences(xml, "<DomesticDutyTaxParty>") === 2, "Expected two domestic duty tax parties.");
-  assert(occurrences(xml, "<AEOMutualRecognitionParty>") === 2, "Expected two mutual recognition parties.");
+  assert(
+    occurrences(xml, "<AdditionalTaricCode>") === 2,
+    "Expected two TARIC codes.",
+  );
+  assert(
+    occurrences(xml, "<AdditionalNationalCode>") === 2,
+    "Expected two national codes.",
+  );
+  assert(
+    occurrences(xml, "<Packaging>") === 2 &&
+      xml.includes(
+        "<SequenceNumeric>2</SequenceNumeric><MarksNumbersID>MD-IMPORT-002</MarksNumbersID>",
+      ),
+    "Expected sequential package groups.",
+  );
+  assert(
+    occurrences(xml, "<GovernmentAdditionalProcedure>") === 2,
+    "Expected two additional procedures.",
+  );
+  assert(
+    occurrences(xml, "<PreviousDocument>") === 2,
+    "Expected two item previous documents.",
+  );
+  assert(
+    occurrences(xml, "<AdditionalDocument>") === 2 &&
+      xml.includes(
+        "<EffectiveDateTime><DateTime>2026-12-31</DateTime></EffectiveDateTime>",
+      ),
+    "Expected both supporting documents and their validity data.",
+  );
+  assert(
+    occurrences(xml, "<AdditionalInformation>") === 2,
+    "Expected two additional information statements.",
+  );
+  assert(
+    occurrences(xml, "<DutyTaxFee>") === 2,
+    "Expected two duty calculations.",
+  );
+  assert(
+    occurrences(xml, "<ValuationAdjustment>") === 2,
+    "Expected two additions or deductions.",
+  );
+  assert(
+    occurrences(xml, "<DomesticDutyTaxParty>") === 2,
+    "Expected two domestic duty tax parties.",
+  );
+  assert(
+    occurrences(xml, "<AEOMutualRecognitionParty>") === 2,
+    "Expected two mutual recognition parties.",
+  );
 });
 
 Deno.test("ICustomsClient authenticates once and sends the draft with a bearer token", async () => {
@@ -655,15 +915,19 @@ Deno.test("ICustomsClient decodes the tariff service's JSON string response", as
   const transport = ((_url: string | URL | Request, _init?: RequestInit) => {
     call += 1;
     if (call === 1) {
-      return Promise.resolve(new Response(JSON.stringify({ token: "sandbox-token" }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      }));
+      return Promise.resolve(
+        new Response(JSON.stringify({ token: "sandbox-token" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
     }
-    return Promise.resolve(new Response(JSON.stringify(JSON.stringify(payload)), {
-      status: 200,
-      headers: { "content-type": "text/plain" },
-    }));
+    return Promise.resolve(
+      new Response(JSON.stringify(JSON.stringify(payload)), {
+        status: 200,
+        headers: { "content-type": "text/plain" },
+      }),
+    );
   }) as typeof fetch;
   const client = new ICustomsClient({
     baseUrl: "https://ihub-tdr.customscloud.co",
@@ -675,8 +939,14 @@ Deno.test("ICustomsClient decodes the tariff service's JSON string response", as
   const response = await client.tariffDetails("4901100000");
   const detail = iCustomsCommodityDetail(response.body, "import");
 
-  assert(detail.code === "4901100000", "Expected the double-encoded provider payload to be decoded.");
-  assert(detail.description === "In single sheets, whether or not folded", "Expected decoded tariff attributes.");
+  assert(
+    detail.code === "4901100000",
+    "Expected the double-encoded provider payload to be decoded.",
+  );
+  assert(
+    detail.description === "In single sheets, whether or not folded",
+    "Expected decoded tariff attributes.",
+  );
 });
 
 Deno.test("ICustomsClient parses tariff records larger than the former preview limit", async () => {
@@ -698,15 +968,19 @@ Deno.test("ICustomsClient parses tariff records larger than the former preview l
   const transport = ((_url: string | URL | Request, _init?: RequestInit) => {
     call += 1;
     if (call === 1) {
-      return Promise.resolve(new Response(JSON.stringify({ token: "sandbox-token" }), {
+      return Promise.resolve(
+        new Response(JSON.stringify({ token: "sandbox-token" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    }
+    return Promise.resolve(
+      new Response(JSON.stringify(payload), {
         status: 200,
         headers: { "content-type": "application/json" },
-      }));
-    }
-    return Promise.resolve(new Response(JSON.stringify(payload), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    }));
+      }),
+    );
   }) as typeof fetch;
   const client = new ICustomsClient({
     baseUrl: "https://ihub-tdr.customscloud.co",
@@ -718,8 +992,14 @@ Deno.test("ICustomsClient parses tariff records larger than the former preview l
   const response = await client.tariffDetails("4901100000");
   const detail = iCustomsCommodityDetail(response.body, "import");
 
-  assert(JSON.stringify(payload).length > 100_000, "Expected a realistic large tariff fixture.");
-  assert(detail.code === "4901100000", "Expected the full tariff response to be parsed before applying the safety cap.");
+  assert(
+    JSON.stringify(payload).length > 100_000,
+    "Expected a realistic large tariff fixture.",
+  );
+  assert(
+    detail.code === "4901100000",
+    "Expected the full tariff response to be parsed before applying the safety cap.",
+  );
 });
 
 Deno.test("ICustomsClient re-authenticates once after a 401", async () => {
@@ -786,6 +1066,7 @@ Deno.test("ICustomsClient updates the same provider draft with every edited good
     {
       commodityCode: "0901110000",
       description: "New second goods item",
+      consignor: "GB Consignor Ltd",
       packageKind: "BX",
       packageMarks: "MD-TEST-002",
       packageCount: "2",

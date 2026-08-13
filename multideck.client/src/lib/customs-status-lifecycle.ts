@@ -15,6 +15,10 @@ export function shouldPollCustomsStatus(status: string | null | undefined) {
   return PENDING_CUSTOMS_STATUSES.has(normaliseCustomsStatus(status))
 }
 
+export function shouldPollCustomsSubmission(status: string | null | undefined, submittedAt: string | null | undefined) {
+  return Boolean(submittedAt) && shouldPollCustomsStatus(status)
+}
+
 export function customsStatusPollDelay(attempt: number) {
   return CUSTOMS_STATUS_POLL_DELAYS_MS[attempt] ?? null
 }

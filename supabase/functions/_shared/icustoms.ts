@@ -98,6 +98,7 @@ export type ExportDeclarationItemInput = {
   domesticDutyTaxParties?: unknown;
   mutualRecognitionParties?: unknown;
   consignee?: unknown;
+  consignor?: unknown;
   destinationCountry?: unknown;
   ucr?: unknown;
   containerId?: unknown;
@@ -135,6 +136,7 @@ export type ExportDeclarationInput = {
   consigneeCity?: unknown;
   consigneePostcode?: unknown;
   consigneeCountry?: unknown;
+  carrier?: unknown;
   declarant?: unknown;
   declarantName?: unknown;
   declarantAddressLine?: unknown;
@@ -206,7 +208,9 @@ function upper(value: unknown, maximum = 40) {
 
 function validPreviousDocumentReference(reference: string, type: unknown) {
   if (upper(type, 3) === "DCR") {
-    return /^\d[A-Z]{2}[A-Z0-9]{12}-[A-Z0-9]{1,18}$/.test(reference.toUpperCase());
+    return /^\d[A-Z]{2}[A-Z0-9]{12}-[A-Z0-9]{1,18}$/.test(
+      reference.toUpperCase(),
+    );
   }
   return /^[A-Za-z0-9]{1,35}$/.test(reference);
 }
@@ -321,6 +325,16 @@ export function validateICustomsDeclaration(
   if (direction === "export" && !clean(input.consignee, 70)) {
     issues.push("Add the consignee name or identifier.");
   }
+  if (direction === "export" && !clean(input.carrier, 120)) {
+    issues.push("Add the carrier name or identifier.");
+  }
+  if (direction === "export") {
+    items.forEach((item, index) => {
+      if (!clean(item.consignor, 120)) {
+        issues.push(`Add the consignor for goods item ${index + 1}.`);
+      }
+    });
+  }
   const exporterContactMissing = contactMissing(input, "exporter");
   if (exporterContactMissing.length) {
     issues.push(
@@ -410,7 +424,12 @@ export function validateICustomsDeclaration(
     );
     if (!previousDocumentReference) {
       issues.push("Add the previous document reference.");
-    } else if (!validPreviousDocumentReference(previousDocumentReference, input.previousDocumentType)) {
+    } else if (
+      !validPreviousDocumentReference(
+        previousDocumentReference,
+        input.previousDocumentType,
+      )
+    ) {
       issues.push(
         upper(input.previousDocumentType, 3) === "DCR"
           ? "Use the DUCR format: year, country, 12-character EORI, hyphen and unique reference."
@@ -523,37 +542,86 @@ export function validateICustomsDeclaration(
     );
     if (!itemPreviousDocumentReference) {
       issues.push(`${line}: add a previous document reference.`);
-    } else if (!validPreviousDocumentReference(itemPreviousDocumentReference, item.previousDocumentType)) {
+    } else if (
+      !validPreviousDocumentReference(
+        itemPreviousDocumentReference,
+        item.previousDocumentType,
+      )
+    ) {
       issues.push(
-        `${line}: ${upper(item.previousDocumentType, 3) === "DCR" ? "use the DUCR format: year, country, 12-character EORI, hyphen and unique reference" : "use up to 35 letters and numbers for the previous document reference"}.`,
+        `${line}: ${
+          upper(item.previousDocumentType, 3) === "DCR"
+            ? "use the DUCR format: year, country, 12-character EORI, hyphen and unique reference"
+            : "use up to 35 letters and numbers for the previous document reference"
+        }.`,
       );
     }
     repeatableInputs(item.additionalTaricCodes).forEach((entry, entryIndex) => {
-      if (hasAnyValue(entry, ["code"]) && !/^[A-Z0-9]{1,4}$/.test(upper(entry.code, 4))) {
-        issues.push(`${line}, TARIC code ${entryIndex + 2}: use up to four letters and numbers.`);
+      if (
+        hasAnyValue(entry, ["code"]) &&
+        !/^[A-Z0-9]{1,4}$/.test(upper(entry.code, 4))
+      ) {
+        issues.push(
+          `${line}, TARIC code ${
+            entryIndex + 2
+          }: use up to four letters and numbers.`,
+        );
       }
     });
-    repeatableInputs(item.additionalNationalCodes).forEach((entry, entryIndex) => {
-      if (hasAnyValue(entry, ["code"]) && !/^[A-Z0-9]{1,4}$/.test(upper(entry.code, 4))) {
-        issues.push(`${line}, national code ${entryIndex + 2}: use up to four letters and numbers.`);
-      }
-    });
+    repeatableInputs(item.additionalNationalCodes).forEach(
+      (entry, entryIndex) => {
+        if (
+          hasAnyValue(entry, ["code"]) &&
+          !/^[A-Z0-9]{1,4}$/.test(upper(entry.code, 4))
+        ) {
+          issues.push(
+            `${line}, national code ${
+              entryIndex + 2
+            }: use up to four letters and numbers.`,
+          );
+        }
+      },
+    );
     extraPackages.forEach((entry, entryIndex) => {
       const count = positiveNumber(entry.count);
       if (!hasAnyValue(entry, ["kind", "marks", "count"])) return;
-      if (!/^[A-Z0-9]{1,2}$/.test(upper(entry.kind, 2)) || !clean(entry.marks, 42) || !count || !Number.isInteger(count)) {
-        issues.push(`${line}, package detail ${entryIndex + 2}: complete kind, marks and a whole package count.`);
+      if (
+        !/^[A-Z0-9]{1,2}$/.test(upper(entry.kind, 2)) ||
+        !clean(entry.marks, 42) || !count || !Number.isInteger(count)
+      ) {
+        issues.push(
+          `${line}, package detail ${
+            entryIndex + 2
+          }: complete kind, marks and a whole package count.`,
+        );
       }
     });
-    repeatableInputs(item.additionalProcedureCodes).forEach((entry, entryIndex) => {
-      if (hasAnyValue(entry, ["code"]) && !/^[A-Z0-9]{3}$/.test(upper(entry.code, 3))) {
-        issues.push(`${line}, additional procedure ${entryIndex + 2}: use a three-character code.`);
-      }
-    });
+    repeatableInputs(item.additionalProcedureCodes).forEach(
+      (entry, entryIndex) => {
+        if (
+          hasAnyValue(entry, ["code"]) &&
+          !/^[A-Z0-9]{3}$/.test(upper(entry.code, 3))
+        ) {
+          issues.push(
+            `${line}, additional procedure ${
+              entryIndex + 2
+            }: use a three-character code.`,
+          );
+        }
+      },
+    );
     extraPreviousDocuments.forEach((entry, entryIndex) => {
       if (!hasAnyValue(entry, ["category", "type", "reference"])) return;
-      if ((direction === "import" && !/^[XYZ]$/.test(upper(entry.category, 1))) || !/^[A-Z0-9]{1,3}$/.test(upper(entry.type, 3)) || !validPreviousDocumentReference(clean(entry.reference, 35), entry.type)) {
-        issues.push(`${line}, previous document ${entryIndex + 2}: complete a valid category, type and reference.`);
+      if (
+        (direction === "import" && !/^[XYZ]$/.test(upper(entry.category, 1))) ||
+        !/^[A-Z0-9]{1,3}$/.test(upper(entry.type, 3)) ||
+        !validPreviousDocumentReference(clean(entry.reference, 35), entry.type)
+      ) {
+        issues.push(
+          `${line}, previous document ${
+            entryIndex + 2
+          }: complete a valid category, type and reference.`,
+        );
       }
     });
     if (direction === "import") {
@@ -574,33 +642,88 @@ export function validateICustomsDeclaration(
       writeOff: item.additionalDocumentWriteOff,
       validityDate: item.additionalDocumentValidityDate,
     };
-    [primaryAdditionalDocument, ...additionalDocuments].forEach((entry, entryIndex) => {
-      if (!hasAnyValue(entry, ["category", "type", "reference", "name", "lpcoExemptionCode", "writeOff", "validityDate"])) return;
-      if (!/^[A-Z0-9]$/.test(upper(entry.category, 1)) || !/^[A-Z0-9]{1,3}$/.test(upper(entry.type, 3)) || (!clean(entry.reference, 70) && !clean(entry.name, 120))) {
-        issues.push(`${line}, additional document ${entryIndex + 1}: complete the category, type and either the ID or declaration statement.`);
-      }
-    });
+    [primaryAdditionalDocument, ...additionalDocuments].forEach(
+      (entry, entryIndex) => {
+        if (
+          !hasAnyValue(entry, [
+            "category",
+            "type",
+            "reference",
+            "name",
+            "lpcoExemptionCode",
+            "writeOff",
+            "validityDate",
+          ])
+        ) return;
+        if (
+          !/^[A-Z0-9]$/.test(upper(entry.category, 1)) ||
+          !/^[A-Z0-9]{1,3}$/.test(upper(entry.type, 3)) ||
+          (!clean(entry.reference, 70) && !clean(entry.name, 120))
+        ) {
+          issues.push(
+            `${line}, additional document ${
+              entryIndex + 1
+            }: complete the category, type and either the ID or declaration statement.`,
+          );
+        }
+      },
+    );
 
     repeatableInputs(item.dutyCalculations).forEach((entry, entryIndex) => {
-      if (!hasAnyValue(entry, ["taxType", "paymentMethod", "baseQuantity", "unitCode", "declaredTax"])) return;
-      if (!clean(entry.taxType, 3) || !clean(entry.unitCode, 4) || !positiveNumber(entry.baseQuantity)) {
-        issues.push(`${line}, duty calculation ${entryIndex + 1}: complete tax type, base quantity and unit code.`);
+      if (
+        !hasAnyValue(entry, [
+          "taxType",
+          "paymentMethod",
+          "baseQuantity",
+          "unitCode",
+          "declaredTax",
+        ])
+      ) return;
+      if (
+        !clean(entry.taxType, 3) || !clean(entry.unitCode, 4) ||
+        !positiveNumber(entry.baseQuantity)
+      ) {
+        issues.push(
+          `${line}, duty calculation ${
+            entryIndex + 1
+          }: complete tax type, base quantity and unit code.`,
+        );
       }
     });
     repeatableInputs(item.valuationAdjustments).forEach((entry, entryIndex) => {
       if (!hasAnyValue(entry, ["code", "currency", "amount"])) return;
-      if (!clean(entry.code, 4) || !/^[A-Z]{3}$/.test(upper(entry.currency, 3)) || !positiveNumber(entry.amount)) {
-        issues.push(`${line}, addition or deduction ${entryIndex + 1}: complete code, currency and amount.`);
+      if (
+        !clean(entry.code, 4) || !/^[A-Z]{3}$/.test(upper(entry.currency, 3)) ||
+        !positiveNumber(entry.amount)
+      ) {
+        issues.push(
+          `${line}, addition or deduction ${
+            entryIndex + 1
+          }: complete code, currency and amount.`,
+        );
       }
     });
-    repeatableInputs(item.domesticDutyTaxParties).forEach((entry, entryIndex) => {
-      if (!hasAnyValue(entry, ["partyId", "roleCode"])) return;
-      if (!clean(entry.partyId, 17) || !/^(?:FR[1-5]|FR7)$/.test(upper(entry.roleCode, 3))) {
-        issues.push(`${line}, domestic duty tax party ${entryIndex + 1}: complete the party ID and role code.`);
-      }
-    });
+    repeatableInputs(item.domesticDutyTaxParties).forEach(
+      (entry, entryIndex) => {
+        if (!hasAnyValue(entry, ["partyId", "roleCode"])) return;
+        if (
+          !clean(entry.partyId, 17) ||
+          !/^(?:FR[1-5]|FR7)$/.test(upper(entry.roleCode, 3))
+        ) {
+          issues.push(
+            `${line}, domestic duty tax party ${
+              entryIndex + 1
+            }: complete the party ID and role code.`,
+          );
+        }
+      },
+    );
 
-    packageSum += (packageCount ?? 0) + extraPackages.reduce((sum, entry) => sum + (positiveNumber(entry.count) ?? 0), 0);
+    packageSum += (packageCount ?? 0) +
+      extraPackages.reduce(
+        (sum, entry) => sum + (positiveNumber(entry.count) ?? 0),
+        0,
+      );
     grossMassSum += grossMass ?? 0;
     netMassSum += netMass ?? 0;
     invoiceSum += itemPrice ?? 0;
@@ -678,6 +801,8 @@ function party(
     | "Importer"
     | "Exporter"
     | "Consignee"
+    | "Consignor"
+    | "Carrier"
     | "Declarant"
     | "Agent"
     | "Seller"
@@ -750,17 +875,28 @@ export function buildICustomsDeclarationXml(
   const destinationCountry = upper(input.destinationCountry, 2);
   const isContainerised = clean(input.isContainerised, 1) === "1";
   const items = itemInputs(input.items);
+  // iCustoms expands a header consignee onto every goods line for multi-item
+  // exports, which makes CDS see the party at both levels and reject the entry
+  // with CDS12071. Use the documented item-level alternative when every line
+  // already carries a consignee; single-item declarations keep the simpler
+  // header-level shape used by the reference declaration.
+  const useItemLevelConsignees = direction === "export" && items.length > 1 &&
+    items.every((item) => clean(item.consignee, 70));
   const goodsItems = items.map((item, index) => {
     const procedureCode = upper(item.procedureCode, 4);
     const explicitItemDestination = upper(item.destinationCountry, 2);
     const itemCurrency = upper(item.currency, 3);
     const taricCodes = [
       upper(item.taricCode, 4),
-      ...repeatableInputs(item.additionalTaricCodes).map((entry) => upper(entry.code, 4)),
+      ...repeatableInputs(item.additionalTaricCodes).map((entry) =>
+        upper(entry.code, 4)
+      ),
     ].filter(Boolean);
     const nationalCodes = [
       upper(item.nationalCode, 4),
-      ...repeatableInputs(item.additionalNationalCodes).map((entry) => upper(entry.code, 4)),
+      ...repeatableInputs(item.additionalNationalCodes).map((entry) =>
+        upper(entry.code, 4)
+      ),
     ].filter(Boolean);
     const classification = [
       element("CommodityCode", upper(item.commodityCode, 10)),
@@ -769,13 +905,30 @@ export function buildICustomsDeclarationXml(
       ...nationalCodes.map((code) => element("AdditionalNationalCode", code)),
     ].join("");
     const dutyCalculations = repeatableInputs(item.dutyCalculations)
-      .filter((entry) => hasAnyValue(entry, ["taxType", "paymentMethod", "baseQuantity", "unitCode", "declaredTax"]))
-      .map((entry) => group("DutyTaxFee", [
-        element("TypeCode", upper(entry.taxType, 3)),
-        element("PaymentMethodCode", upper(entry.paymentMethod, 2)),
-        element("TaxBaseQuantity", decimal(entry.baseQuantity, 6), { unitCode: upper(entry.unitCode, 4) }),
-        element("PaymentAmount", decimal(entry.declaredTax, 2), { currencyID: itemCurrency }),
-      ].join(""))).join("");
+      .filter((entry) =>
+        hasAnyValue(entry, [
+          "taxType",
+          "paymentMethod",
+          "baseQuantity",
+          "unitCode",
+          "declaredTax",
+        ])
+      )
+      .map((entry) =>
+        group(
+          "DutyTaxFee",
+          [
+            element("TypeCode", upper(entry.taxType, 3)),
+            element("PaymentMethodCode", upper(entry.paymentMethod, 2)),
+            element("TaxBaseQuantity", decimal(entry.baseQuantity, 6), {
+              unitCode: upper(entry.unitCode, 4),
+            }),
+            element("PaymentAmount", decimal(entry.declaredTax, 2), {
+              currencyID: itemCurrency,
+            }),
+          ].join(""),
+        )
+      ).join("");
     const commodity = group(
       "Commodity",
       [
@@ -811,7 +964,8 @@ export function buildICustomsDeclarationXml(
     const explicitItemConsignee = clean(item.consignee, 70);
     const itemConsignee = direction === "export" &&
         explicitItemConsignee &&
-        explicitItemConsignee !== clean(input.consignee, 70)
+        (useItemLevelConsignees ||
+          explicitItemConsignee !== clean(input.consignee, 70))
       ? party(
         "Consignee",
         explicitItemConsignee,
@@ -827,77 +981,152 @@ export function buildICustomsDeclarationXml(
       writeOff: item.additionalDocumentWriteOff,
       validityDate: item.additionalDocumentValidityDate,
     };
-    const additionalDocuments = [primaryAdditionalDocument, ...repeatableInputs(item.additionalDocuments)]
-      .filter((entry) => hasAnyValue(entry, ["category", "type", "reference", "name", "lpcoExemptionCode", "writeOff", "validityDate"]))
-      .map((entry) => group("AdditionalDocument", [
-        element("CategoryCode", upper(entry.category, 1)),
-        group("EffectiveDateTime", element("DateTime", clean(entry.validityDate, 10))),
-        element("ID", entry.reference),
-        element("Name", entry.name),
-        group("Submitter", element("Name", entry.writeOff)),
-        element("TypeCode", upper(entry.type, 3)),
-        element("LPCOExemptionCode", upper(entry.lpcoExemptionCode, 2)),
-      ].join(""))).join("");
+    const additionalDocuments = [
+      primaryAdditionalDocument,
+      ...repeatableInputs(item.additionalDocuments),
+    ]
+      .filter((entry) =>
+        hasAnyValue(entry, [
+          "category",
+          "type",
+          "reference",
+          "name",
+          "lpcoExemptionCode",
+          "writeOff",
+          "validityDate",
+        ])
+      )
+      .map((entry) =>
+        group(
+          "AdditionalDocument",
+          [
+            element("CategoryCode", upper(entry.category, 1)),
+            group(
+              "EffectiveDateTime",
+              element("DateTime", clean(entry.validityDate, 10)),
+            ),
+            element("ID", entry.reference),
+            element("Name", entry.name),
+            group("Submitter", element("Name", entry.writeOff)),
+            element("TypeCode", upper(entry.type, 3)),
+            element("LPCOExemptionCode", upper(entry.lpcoExemptionCode, 2)),
+          ].join(""),
+        )
+      ).join("");
     const previousDocuments = [{
       category: item.previousDocumentCategory,
       type: item.previousDocumentType,
       reference: item.previousDocumentReference,
     }, ...repeatableInputs(item.additionalPreviousDocuments)]
       .filter((entry) => hasAnyValue(entry, ["category", "type", "reference"]))
-      .filter((entry) => direction !== "export" || !(
-        (upper(entry.category, 1) || upper(input.previousDocumentCategory, 1)) === upper(input.previousDocumentCategory, 1) &&
-        upper(entry.type, 3) === upper(input.previousDocumentType, 3) &&
-        clean(entry.reference, 35) === clean(input.previousDocumentReference, 35)
-      ));
-    const itemPreviousDocuments = previousDocuments.map((entry, documentIndex) => group(
-      "PreviousDocument",
-      [
-        element("CategoryCode", upper(entry.category, 1) || upper(input.previousDocumentCategory, 1)),
-        element("ID", entry.reference),
-        element("TypeCode", upper(entry.type, 3)),
-        element("LineNumeric", String(documentIndex + 1)),
-      ].join(""),
-    )).join("");
-    const additionalInformation = repeatableInputs(item.additionalInformationStatements)
+      .filter((entry) =>
+        direction !== "export" || !(
+          (upper(entry.category, 1) ||
+              upper(input.previousDocumentCategory, 1)) ===
+            upper(input.previousDocumentCategory, 1) &&
+          upper(entry.type, 3) === upper(input.previousDocumentType, 3) &&
+          clean(entry.reference, 35) ===
+            clean(input.previousDocumentReference, 35)
+        )
+      );
+    const itemPreviousDocuments = previousDocuments.map((
+      entry,
+      documentIndex,
+    ) =>
+      group(
+        "PreviousDocument",
+        [
+          element(
+            "CategoryCode",
+            upper(entry.category, 1) ||
+              upper(input.previousDocumentCategory, 1),
+          ),
+          element("ID", entry.reference),
+          element("TypeCode", upper(entry.type, 3)),
+          element("LineNumeric", String(documentIndex + 1)),
+        ].join(""),
+      )
+    ).join("");
+    const additionalInformation = repeatableInputs(
+      item.additionalInformationStatements,
+    )
       .filter((entry) => hasAnyValue(entry, ["statementCode"]))
-      .map((entry) => group("AdditionalInformation", element("StatementCode", upper(entry.statementCode, 5))))
+      .map((entry) =>
+        group(
+          "AdditionalInformation",
+          element("StatementCode", upper(entry.statementCode, 5)),
+        )
+      )
       .join("");
     const additionalProcedures = [
       upper(item.additionalProcedureCode, 3),
-      ...repeatableInputs(item.additionalProcedureCodes).map((entry) => upper(entry.code, 3)),
-    ].filter(Boolean).map((code) => group("GovernmentAdditionalProcedure", element("CurrentCode", code))).join("");
-    const packages = [{ kind: item.packageKind, marks: item.packageMarks, count: item.packageCount }, ...repeatableInputs(item.additionalPackageDetails)]
+      ...repeatableInputs(item.additionalProcedureCodes).map((entry) =>
+        upper(entry.code, 3)
+      ),
+    ].filter(Boolean).map((code) =>
+      group("GovernmentAdditionalProcedure", element("CurrentCode", code))
+    ).join("");
+    const packages = [{
+      kind: item.packageKind,
+      marks: item.packageMarks,
+      count: item.packageCount,
+    }, ...repeatableInputs(item.additionalPackageDetails)]
       .filter((entry) => hasAnyValue(entry, ["kind", "marks", "count"]))
-      .map((entry, packageIndex) => group("Packaging", [
-        element("SequenceNumeric", String(packageIndex + 1)),
-        element("MarksNumbersID", entry.marks),
-        element("QuantityQuantity", decimal(entry.count, 0)),
-        element("TypeCode", upper(entry.kind, 2)),
-      ].join(""))).join("");
+      .map((entry, packageIndex) =>
+        group(
+          "Packaging",
+          [
+            element("SequenceNumeric", String(packageIndex + 1)),
+            element("MarksNumbersID", entry.marks),
+            element("QuantityQuantity", decimal(entry.count, 0)),
+            element("TypeCode", upper(entry.kind, 2)),
+          ].join(""),
+        )
+      ).join("");
     const valuationAdjustments = repeatableInputs(item.valuationAdjustments)
       .filter((entry) => hasAnyValue(entry, ["code", "currency", "amount"]));
     const valuationAdjustmentXml = direction === "import"
       ? (valuationAdjustments.length
-        ? valuationAdjustments.map((entry) => group("ValuationAdjustment", [
-          element("AdditionCode", upper(entry.code, 4)),
-          element("Amount", decimal(entry.amount, 2), { currencyID: upper(entry.currency, 3) || itemCurrency }),
-        ].join(""))).join("")
+        ? valuationAdjustments.map((entry) =>
+          group(
+            "ValuationAdjustment",
+            [
+              element("AdditionCode", upper(entry.code, 4)),
+              element("Amount", decimal(entry.amount, 2), {
+                currencyID: upper(entry.currency, 3) || itemCurrency,
+              }),
+            ].join(""),
+          )
+        ).join("")
         : group("ValuationAdjustment", element("AdditionCode", "0000")))
       : "";
-    const partyReferences = (name: string, value: unknown) => repeatableInputs(value)
-      .filter((entry) => hasAnyValue(entry, ["partyId"]))
-      .map((entry) => group(name, element("ID", clean(entry.partyId, 35))))
-      .join("");
+    const partyReferences = (name: string, value: unknown) =>
+      repeatableInputs(value)
+        .filter((entry) => hasAnyValue(entry, ["partyId"]))
+        .map((entry) => group(name, element("ID", clean(entry.partyId, 35))))
+        .join("");
     const domesticDutyTaxParties = repeatableInputs(item.domesticDutyTaxParties)
       .filter((entry) => hasAnyValue(entry, ["partyId", "roleCode"]))
-      .map((entry, partyIndex) => group("DomesticDutyTaxParty", [
-        element("SequenceNumeric", String(partyIndex + 1)),
-        element("ID", clean(entry.partyId, 17)),
-        element("RoleCode", upper(entry.roleCode, 3)),
-      ].join(""))).join("");
-    const mutualRecognitionParties = repeatableInputs(item.mutualRecognitionParties)
+      .map((entry, partyIndex) =>
+        group(
+          "DomesticDutyTaxParty",
+          [
+            element("SequenceNumeric", String(partyIndex + 1)),
+            element("ID", clean(entry.partyId, 17)),
+            element("RoleCode", upper(entry.roleCode, 3)),
+          ].join(""),
+        )
+      ).join("");
+    const mutualRecognitionParties = repeatableInputs(
+      item.mutualRecognitionParties,
+    )
       .filter((entry) => hasAnyValue(entry, ["partyId"]))
-      .map((entry) => group("AEOMutualRecognitionParty", element("ID", clean(entry.partyId, 35))))
+      .map((entry) =>
+        group(
+          "AEOMutualRecognitionParty",
+          element("ID", clean(entry.partyId, 35)),
+        )
+      )
       .join("");
 
     return group(
@@ -927,14 +1156,19 @@ export function buildICustomsDeclarationXml(
             ),
           )
           : "",
+        direction === "export" ? party("Consignor", item.consignor) : "",
         itemConsignee,
         partyReferences("Exporter", item.itemExporters),
         partyReferences("Seller", item.itemSellers),
         partyReferences("Buyer", item.itemBuyers),
         domesticDutyTaxParties,
         mutualRecognitionParties,
-        direction === "export" && explicitItemDestination && explicitItemDestination !== destinationCountry
-          ? group("Destination", element("CountryCode", explicitItemDestination))
+        direction === "export" && explicitItemDestination &&
+          explicitItemDestination !== destinationCountry
+          ? group(
+            "Destination",
+            element("CountryCode", explicitItemDestination),
+          )
           : "",
         group(
           "GovernmentProcedure",
@@ -959,21 +1193,33 @@ export function buildICustomsDeclarationXml(
   }).join("");
 
   const importPreviousDocuments = direction === "import"
-    ? items.flatMap((item, itemIndex) => [{
-      category: item.previousDocumentCategory,
-      type: item.previousDocumentType,
-      reference: item.previousDocumentReference,
-    }, ...repeatableInputs(item.additionalPreviousDocuments)].map((entry) => ({ entry, itemIndex })))
-      .filter(({ entry }) => hasAnyValue(entry, ["category", "type", "reference"]))
-      .map(({ entry, itemIndex }) => group(
-        "PreviousDocument",
-        [
-          element("CategoryCode", upper(entry.category, 1) || upper(input.previousDocumentCategory, 1)),
-          element("ID", entry.reference),
-          element("TypeCode", upper(entry.type, 3)),
-          element("LineNumeric", String(itemIndex + 1)),
-        ].join(""),
-      )).join("")
+    ? items.flatMap((item, itemIndex) =>
+      [{
+        category: item.previousDocumentCategory,
+        type: item.previousDocumentType,
+        reference: item.previousDocumentReference,
+      }, ...repeatableInputs(item.additionalPreviousDocuments)].map((
+        entry,
+      ) => ({ entry, itemIndex }))
+    )
+      .filter(({ entry }) =>
+        hasAnyValue(entry, ["category", "type", "reference"])
+      )
+      .map(({ entry, itemIndex }) =>
+        group(
+          "PreviousDocument",
+          [
+            element(
+              "CategoryCode",
+              upper(entry.category, 1) ||
+                upper(input.previousDocumentCategory, 1),
+            ),
+            element("ID", entry.reference),
+            element("TypeCode", upper(entry.type, 3)),
+            element("LineNumeric", String(itemIndex + 1)),
+          ].join(""),
+        )
+      ).join("")
     : "";
 
   const transportEquipment = isContainerised
@@ -1116,7 +1362,8 @@ export function buildICustomsDeclarationXml(
       clean(input.representationType, 1)
         ? element("AgentFunctionCode", clean(input.representationType, 1))
         : "",
-      clean(input.authorisationIdentifier, 35) && clean(input.authorisationCategory, 4)
+      clean(input.authorisationIdentifier, 35) &&
+        clean(input.authorisationCategory, 4)
         ? group(
           "AuthorisationHolder",
           [
@@ -1126,6 +1373,9 @@ export function buildICustomsDeclarationXml(
         )
         : "",
       borderTransport,
+      direction === "export"
+        ? group("Consignment", party("Carrier", input.carrier))
+        : "",
       party(
         "Declarant",
         input.declarant,
@@ -1144,7 +1394,7 @@ export function buildICustomsDeclarationXml(
               clean(input.transactionNature, 2),
             )
             : "",
-          direction === "export"
+          direction === "export" && !useItemLevelConsignees
             ? party(
               "Consignee",
               input.consignee,
@@ -1500,7 +1750,9 @@ export function iCustomsCommodityDetail(
   ).slice(0, 10);
 
   const measureIds = providerRelationshipIds(
-    relationships[direction === "import" ? "import_measures" : "export_measures"],
+    relationships[
+      direction === "import" ? "import_measures" : "export_measures"
+    ],
   );
   const conditionIds = new Set<string>();
   for (const item of included) {

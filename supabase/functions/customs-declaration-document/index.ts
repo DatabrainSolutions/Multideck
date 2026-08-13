@@ -204,10 +204,14 @@ Deno.serve(async (request) => {
         },
       );
       if (!response.ok) {
+        const providerDetail = (await response.text()).replace(/\s+/g, " ")
+          .slice(0, 1_500);
         throw new FunctionError(
           502,
           "The declaration PDF could not be created. Try again.",
-          `Carbone returned HTTP ${response.status}`,
+          `Carbone returned HTTP ${response.status}${
+            providerDetail ? `: ${providerDetail}` : ""
+          }`,
         );
       }
       const bytes = new Uint8Array(await response.arrayBuffer());

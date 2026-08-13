@@ -27,4 +27,5 @@ comment on column public."ICUS_Submissions"."ICUSS_ProviderStatus" is
   'Exact provider lifecycle status before Multideck maps released or cleared to its accepted completion state.';
 
 -- Existing sandbox and pre-snapshot rows deliberately remain null. They can
--- create watermarked verification copies but can never be marked official.
+-- create verification copies but can never be marked official; the product UI
+-- carries that environment distinction without drawing over the PDF itself.

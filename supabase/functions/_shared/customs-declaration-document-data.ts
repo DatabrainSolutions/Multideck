@@ -51,17 +51,29 @@ function uniqueLines(values: unknown[]) {
   );
 }
 
-function party(draft: Json, prefix: string) {
+function looksLikePartyIdentifier(value: unknown) {
+  return /^[A-Z]{2}[A-Z0-9]{3,15}$/.test(text(value, 70).toUpperCase());
+}
+
+function partyContact(draft: Json, prefix: string) {
+  const identifier = looksLikePartyIdentifier(draft[prefix]);
   return uniqueLines([
-    draft[`${prefix}Name`] ?? draft[prefix],
+    draft[`${prefix}Name`] ?? (identifier ? "" : draft[prefix]),
     draft[`${prefix}AddressLine`],
     join([
       draft[`${prefix}City`],
       draft[`${prefix}Postcode`],
       draft[`${prefix}Country`],
     ], " "),
-    draft[prefix],
   ]);
+}
+
+function partyIdentifier(value: unknown) {
+  return looksLikePartyIdentifier(value) ? text(value, 70).toUpperCase() : "";
+}
+
+function standalonePartyContact(value: unknown) {
+  return looksLikePartyIdentifier(value) ? "" : text(value, 120);
 }
 
 function partyFields(prefix: string) {
@@ -331,21 +343,33 @@ export function buildCustomsDeclarationDocumentDataset(
       ]),
       commodity: itemField(
         "commodity",
-        join([item.commodityCode, item.taricCode]),
-        ["commodityCode", "taricCode"],
+        text(item.commodityCode, 10).slice(0, 8),
+        ["commodityCode"],
       ),
-      euCodes: itemField("euCodes", codeEntries(item.additionalTaricCodes), [
-        "additionalTaricCodes",
-      ]),
+      taric: itemField(
+        "taric",
+        text(item.commodityCode, 10).slice(8, 10),
+        ["commodityCode"],
+      ),
+      euCodes: itemField(
+        "euCodes",
+        join([item.taricCode, codeEntries(item.additionalTaricCodes)]),
+        ["taricCode", "additionalTaricCodes"],
+      ),
       nationalCodes: itemField(
         "nationalCodes",
         join([item.nationalCode, codeEntries(item.additionalNationalCodes)]),
         ["nationalCode", "additionalNationalCodes"],
       ),
-      dangerousAndCus: itemField(
-        "dangerousAndCus",
-        join([item.dangerousGoodsCode, item.cusCode]),
-        ["dangerousGoodsCode", "cusCode"],
+      dangerousGoods: itemField(
+        "dangerousGoods",
+        text(item.dangerousGoodsCode),
+        ["dangerousGoodsCode"],
+      ),
+      cusCode: itemField(
+        "cusCode",
+        text(item.cusCode),
+        ["cusCode"],
       ),
       procedure: itemField("procedure", text(item.procedureCode), [
         "procedureCode",
@@ -375,6 +399,30 @@ export function buildCustomsDeclarationDocumentDataset(
           ]),
         ],
       ),
+      dispatchCountry: tracked(
+        `${path}.dispatchCountry`,
+        text(draft.exportCountry),
+        draftSource("exportCountry"),
+      ),
+      destinationCountry: tracked(
+        `${path}.destinationCountry`,
+        text(item.destinationCountry ?? draft.destinationCountry),
+        [
+          ...itemSources(entry, ["destinationCountry"]),
+          ...draftSource("destinationCountry"),
+        ],
+      ),
+      originCountry: itemField(
+        "originCountry",
+        text(item.nonPreferentialOrigin),
+        ["nonPreferentialOrigin"],
+      ),
+      preferentialOrigin: itemField(
+        "preferentialOrigin",
+        text(item.preferentialOrigin),
+        ["preferentialOrigin"],
+      ),
+      reference: itemField("reference", text(item.ucr), ["ucr"]),
       previousDocuments: itemField(
         "previousDocuments",
         previousDocumentLines(item),
@@ -407,8 +455,13 @@ export function buildCustomsDeclarationDocumentDataset(
       ),
       valuationMethod: itemField(
         "valuationMethod",
-        join([item.customsValuationMethod, item.preferenceCode]),
-        ["customsValuationMethod", "preferenceCode"],
+        text(item.customsValuationMethod),
+        ["customsValuationMethod"],
+      ),
+      preference: itemField(
+        "preference",
+        text(item.preferenceCode),
+        ["preferenceCode"],
       ),
       freightPaymentMethod: tracked(
         `${path}.freightPaymentMethod`,
@@ -496,6 +549,29 @@ export function buildCustomsDeclarationDocumentDataset(
   const exportConsignorSources: ProvenanceEntry[] = persistedItemRows.flatMap((
     entry,
   ) => itemSources(entry, ["consignor"]));
+  const exportConsignorContacts = exportConsignors.map(standalonePartyContact)
+    .filter(Boolean);
+  const exportConsignorIdentifiers = exportConsignors.map(partyIdentifier)
+    .filter(Boolean);
+  const notSupplied = "Not supplied on declaration";
+  if (!isImport && hasAcceptedSnapshot) {
+    const missingConsignorItems = persistedItemRows
+      .filter((entry) => !text(entry.item.consignor))
+      .map((entry) => entry.number);
+    if (!text(draft.carrier) || missingConsignorItems.length) {
+      const missing = [
+        ...(!text(draft.carrier) ? ["carrier"] : []),
+        ...missingConsignorItems.map((number) =>
+          `goods item ${number} consignor`
+        ),
+      ];
+      throw new Error(
+        `The accepted export snapshot is missing required party data: ${
+          missing.join(", ")
+        }`,
+      );
+    }
+  }
 
   const dataset: CustomsDeclarationDocumentDataset = {
     direction: tracked("direction", direction, directionSource),
@@ -547,7 +623,15 @@ export function buildCustomsDeclarationDocumentDataset(
     ),
     auditSpacerHeight: tracked(
       "auditSpacerHeight",
-      Math.max(0, 271 - Math.max(0, items.length - 1) * 107),
+      Math.max(
+        0,
+        (isImport ? 138 : 217) -
+          Math.max(0, items.length - 1) * (isImport ? 228 : 217) -
+          (text(draft.headerAdditionalInformationCode) ||
+              text(draft.headerAdditionalInformationDescription)
+            ? 11
+            : 0),
+      ),
       persistedItemRows.length
         ? persistedItemRows.flatMap((entry) => itemSources(entry, ["id"]))
         : draftSource("items"),
@@ -569,12 +653,30 @@ export function buildCustomsDeclarationDocumentDataset(
     parties: {
       exporter: tracked(
         "parties.exporter",
-        party(draft, "exporter"),
+        partyContact(draft, "exporter"),
         draftSource(...partyFields("exporter")),
+      ),
+      exporterId: tracked(
+        "parties.exporterId",
+        partyIdentifier(draft.exporter),
+        draftSource("exporter"),
       ),
       secondaryOne: tracked(
         "parties.secondaryOne",
-        isImport ? text(draft.seller) : uniqueLines(exportConsignors),
+        isImport
+          ? standalonePartyContact(draft.seller)
+          : uniqueLines(exportConsignorContacts) || notSupplied,
+        isImport
+          ? draftSource("seller")
+          : exportConsignorSources.length
+          ? exportConsignorSources
+          : draftSource("items"),
+      ),
+      secondaryOneId: tracked(
+        "parties.secondaryOneId",
+        isImport
+          ? partyIdentifier(draft.seller)
+          : uniqueLines(exportConsignorIdentifiers),
         isImport
           ? draftSource("seller")
           : exportConsignorSources.length
@@ -583,22 +685,45 @@ export function buildCustomsDeclarationDocumentDataset(
       ),
       primaryTwo: tracked(
         "parties.primaryTwo",
-        isImport ? party(draft, "importer") : party(draft, "consignee"),
+        isImport
+          ? partyContact(draft, "importer")
+          : partyContact(draft, "consignee"),
         draftSource(...partyFields(isImport ? "importer" : "consignee")),
+      ),
+      primaryTwoId: tracked(
+        "parties.primaryTwoId",
+        partyIdentifier(isImport ? draft.importer : draft.consignee),
+        draftSource(isImport ? "importer" : "consignee"),
       ),
       secondaryTwo: tracked(
         "parties.secondaryTwo",
-        text(isImport ? draft.buyer : draft.carrier),
+        standalonePartyContact(isImport ? draft.buyer : draft.carrier) ||
+          (isImport ? "" : notSupplied),
+        draftSource(isImport ? "buyer" : "carrier"),
+      ),
+      secondaryTwoId: tracked(
+        "parties.secondaryTwoId",
+        partyIdentifier(isImport ? draft.buyer : draft.carrier),
         draftSource(isImport ? "buyer" : "carrier"),
       ),
       declarant: tracked(
         "parties.declarant",
-        party(draft, "declarant"),
+        partyContact(draft, "declarant"),
         draftSource(...partyFields("declarant")),
+      ),
+      declarantId: tracked(
+        "parties.declarantId",
+        partyIdentifier(draft.declarant),
+        draftSource("declarant"),
       ),
       representative: tracked(
         "parties.representative",
-        text(draft.representative),
+        standalonePartyContact(draft.representative),
+        draftSource("representative"),
+      ),
+      representativeId: tracked(
+        "parties.representativeId",
+        partyIdentifier(draft.representative),
         draftSource("representative"),
       ),
     },

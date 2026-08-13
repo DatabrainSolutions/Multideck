@@ -69,8 +69,7 @@ test("import and export templates keep the requested CDS structure and repeat it
   assert.match(source, /audit-block/);
   assert.match(source, /auditSpacerHeight/);
   assert.match(source, /page-break-inside: avoid/);
-  assert.match(source, /TEST MODE — NOT AN OFFICIAL CUSTOMS DOCUMENT/);
-  assert.match(source, /documentMode:ifEQ\('verification'\)/);
+  assert.doesNotMatch(source, /test-watermark|TEST MODE/);
 });
 
 test("document dataset validates provenance and exact accepted-snapshot sources", async () => {

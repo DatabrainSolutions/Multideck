@@ -7,6 +7,8 @@ export type CustomsDeclarationDocument = {
   mimeType: "application/pdf"
   fileSizeBytes: number
   mrn: string
+  isOfficial: boolean
+  environment: "sandbox" | "production"
   retainedUntil: string
   signedUrl: string
   expiresAt: string

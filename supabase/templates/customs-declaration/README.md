@@ -10,7 +10,7 @@ separate import or export template with:
 
 - the same black hairline form grid, Times typography, compact labels and
   italic values as the supplied documents;
-- an MRN barcode and human-readable MRN header;
+- a human-readable provider MRN header, with no barcode image area;
 - repeatable complete goods-item blocks using Carbone `[i]` / `[i+1]` loops;
 - import-only tax/additions sections and the conditional exchange-rate appendix;
 - an acceptance/audit block populated only from the server-owned accepted
