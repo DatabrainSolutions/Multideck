@@ -3,9 +3,9 @@ import type { LanguageCode } from "./languages"
 type PhraseDictionary = Record<string, Partial<Record<LanguageCode, string>>>
 
 export const customsDeclarationPhrases: PhraseDictionary = {
-  PDF: { de: "PDF", fr: "PDF", ar: "PDF" },
-  "Preparing PDF": { de: "PDF wird vorbereitet", fr: "Préparation du PDF", ar: "جارٍ إعداد ملف PDF" },
-  "Retry PDF": { de: "PDF erneut versuchen", fr: "Réessayer le PDF", ar: "إعادة محاولة PDF" },
+  "View declaration": { de: "Anmeldung anzeigen", fr: "Afficher la déclaration", ar: "عرض الإقرار" },
+  "Preparing declaration": { de: "Anmeldung wird vorbereitet", fr: "Préparation de la déclaration", ar: "جارٍ إعداد الإقرار" },
+  "Retry declaration": { de: "Anmeldung erneut versuchen", fr: "Réessayer la déclaration", ar: "إعادة محاولة الإقرار" },
   "Retry declaration PDF": { de: "Anmeldungs-PDF erneut versuchen", fr: "Réessayer le PDF de la déclaration", ar: "إعادة محاولة ملف PDF للإقرار" },
   "Waiting for the customs response": { de: "Warten auf die Zollantwort", fr: "En attente de la réponse douanière", ar: "في انتظار رد الجمارك" },
   "Multideck checks automatically while this declaration is open.": { de: "Multideck prüft automatisch, solange diese Anmeldung geöffnet ist.", fr: "Multideck vérifie automatiquement tant que cette déclaration est ouverte.", ar: "يتحقق Multideck تلقائياً أثناء فتح هذا الإقرار." },
@@ -16,7 +16,7 @@ export const customsDeclarationPhrases: PhraseDictionary = {
   "The declaration PDF could not be prepared automatically. Choose Retry declaration PDF to try again.": { de: "Die Anmeldungs-PDF konnte nicht automatisch vorbereitet werden. Wählen Sie Anmeldungs-PDF erneut versuchen.", fr: "Le PDF de la déclaration n’a pas pu être préparé automatiquement. Choisissez Réessayer le PDF de la déclaration.", ar: "تعذر إعداد ملف PDF للإقرار تلقائياً. اختر إعادة محاولة ملف PDF للإقرار." },
   "CDS export declaration": { de: "CDS-Ausfuhranmeldung", fr: "Déclaration d’exportation CDS", ar: "إقرار تصدير CDS" },
   "CDS import declaration": { de: "CDS-Einfuhranmeldung", fr: "Déclaration d’importation CDS", ar: "إقرار استيراد CDS" },
-  "View declaration PDF": { de: "Anmeldungs-PDF anzeigen", fr: "Afficher le PDF de la déclaration", ar: "عرض ملف PDF للإقرار" },
+  "View declaration PDF": { de: "Anmeldung anzeigen", fr: "Afficher la déclaration", ar: "عرض الإقرار" },
   "Preparing declaration PDF": { de: "Anmeldungs-PDF wird vorbereitet", fr: "Préparation du PDF de la déclaration", ar: "جارٍ إعداد ملف PDF للإقرار" },
   "PDF available after acceptance": { de: "PDF nach Annahme verfügbar", fr: "PDF disponible après acceptation", ar: "يتوفر ملف PDF بعد القبول" },
   "Declaration PDF unavailable": { de: "Anmeldungs-PDF nicht verfügbar", fr: "PDF de la déclaration indisponible", ar: "ملف PDF للإقرار غير متاح" },

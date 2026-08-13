@@ -781,7 +781,7 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2 sm:justify-end">
-          <Button type="button" variant="ghost" size="sm" className="h-9 bg-black px-3 text-white shadow-none hover:bg-black/80 hover:text-white" disabled={!declarationPdfAvailable || pdfBusy} onClick={() => void openDeclarationPdf()}><FileText className="size-3.5" />{t(pdfBusy ? "Preparing PDF" : pdfLoadError ? "Retry PDF" : "PDF")}</Button>
+          <Button type="button" variant="ghost" size="sm" className="h-9 bg-black px-3 text-white shadow-none hover:bg-black/80 hover:text-white" disabled={!declarationPdfAvailable || pdfBusy} onClick={() => void openDeclarationPdf()}><FileText className="size-3.5" />{t(pdfBusy ? "Preparing declaration" : pdfLoadError ? "Retry declaration" : "View declaration")}</Button>
           <Button type="button" variant="outline" size="sm" className="h-9" disabled={savingDraft} onClick={() => void saveDraft()}>{t(savingDraft ? "Saving draft" : "Save draft")}</Button>
           <Button type="button" size="sm" className="h-9" onClick={validate}><FileCheck2 className="size-3.5" />{t("Validate")}</Button>
         </div>
