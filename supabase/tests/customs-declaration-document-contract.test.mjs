@@ -122,8 +122,10 @@ test("the Multideck UI owns PDF availability and the download state machine", as
   assert.ok(page.indexOf("View declaration PDF") < page.indexOf("View in"));
   assert.match(
     page,
-    /pdfBusy \? "Preparing PDF" : pdfLoadError \? "Retry PDF" : "PDF"/,
+    /Boolean\(declarationId && iCustomsState\?\.declaration\.provider\?\.mrn && \["accepted", "released", "cleared"\]\.includes\(customsStatus\)\)/,
   );
+  assert.match(page, /\{pdfAvailable \? <Button[\s\S]*?"View declaration PDF"[\s\S]*?: null\}/);
+  assert.doesNotMatch(page, /PDF available after acceptance/);
   assert.match(viewer, /"idle" \| "downloading" \| "done"/);
   assert.match(viewer, /t\("Downloading"\)/);
   assert.match(viewer, /t\("Done"\)/);

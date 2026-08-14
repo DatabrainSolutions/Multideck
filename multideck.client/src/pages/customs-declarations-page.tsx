@@ -1,5 +1,5 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { ArrowLeft, CheckCircle2, ChevronDown, CircleAlert, Copy, ExternalLink, FileCheck2, FileText, Plus, RefreshCw, ScanText, Search, Send, Trash2 } from "@/components/icons/hugeicons"
+import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
+import { ArrowLeft, CheckCircle2, ChevronDown, CircleAlert, Copy, ExternalLink, Eye, FileCheck2, FileText, Plus, RefreshCw, Save, ScanText, Search, Send, Trash2 } from "@/components/icons/hugeicons"
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui"
 import { toast } from "sonner"
@@ -8,14 +8,14 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { PdfDocumentViewerDialog } from "@/components/multideck/pdf-document-viewer-dialog"
 import { RegisterFacetSelect, RegisterSearchField, RegisterViewSwitch } from "@/components/multideck/register-toolbar"
 import { Surface } from "@/components/multideck/surface"
-import { StatusPill } from "@/components/multideck/status-pill"
+import { StatusPill, toneToVar } from "@/components/multideck/status-pill"
 import { SegmentedControl, TabsRail } from "@/components/multideck/workflow-components"
 import { CustomsInvoiceImportWorkspace } from "@/pages/customs-invoice-import-workspace"
 import { useLanguage } from "@/i18n/language-provider"
@@ -44,6 +44,14 @@ type EditorTab = "declaration" | "parties" | "transport" | "documents" | "items"
 type EditorViewMode = "tabs" | "form"
 type FormTab = "general" | "items"
 type CustomsStatusLifecycle = { phase: "idle" | "waiting" | "checking" | "complete" | "timed-out" | "error"; message?: string }
+type DeclarationFieldVisibility = { dataElements: boolean; customsBoxNumbers: boolean; optionalFields: boolean }
+
+const defaultDeclarationFieldVisibility: DeclarationFieldVisibility = {
+  dataElements: true,
+  customsBoxNumbers: false,
+  optionalFields: false,
+}
+const declarationFieldVisibilityStorageKey = "multideck.customs.declaration-field-visibility"
 
 let repeatableCustomsEntrySequence = 0
 
@@ -56,6 +64,29 @@ const CustomsBoxVisibilityContext = createContext(false)
 const CustomsReferenceDataContext = createContext<{ data: CustomsReferenceData; loading: boolean; error: string | null }>({ data: createEmptyCustomsReferenceData(), loading: true, error: null })
 const CompactCustomsFormContext = createContext(false)
 const CustomsDirectionContext = createContext<DeclarationKind>("export")
+
+function readDeclarationFieldVisibility() {
+  if (typeof window === "undefined") return defaultDeclarationFieldVisibility
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(declarationFieldVisibilityStorageKey) ?? "null") as Partial<DeclarationFieldVisibility> | null
+    if (!stored) return defaultDeclarationFieldVisibility
+    return {
+      dataElements: typeof stored.dataElements === "boolean" ? stored.dataElements : defaultDeclarationFieldVisibility.dataElements,
+      customsBoxNumbers: typeof stored.customsBoxNumbers === "boolean" ? stored.customsBoxNumbers : defaultDeclarationFieldVisibility.customsBoxNumbers,
+      optionalFields: typeof stored.optionalFields === "boolean" ? stored.optionalFields : defaultDeclarationFieldVisibility.optionalFields,
+    }
+  } catch {
+    return defaultDeclarationFieldVisibility
+  }
+}
+
+function saveDeclarationFieldVisibility(value: DeclarationFieldVisibility) {
+  try {
+    window.localStorage.setItem(declarationFieldVisibilityStorageKey, JSON.stringify(value))
+  } catch {
+    // Visibility preferences remain active for this session when browser storage is unavailable.
+  }
+}
 
 export function CustomsDeclarationsPage({
   route,
@@ -494,6 +525,37 @@ function translateCustomsMessage(message: string, t: (text: string) => string) {
   return `${t("This contact is missing:")} ${contact[1].split(", ").map(t).join(", ")}.`
 }
 
+function declarationReadiness(
+  completion: ReturnType<typeof declarationCompletion>,
+  iCustomsIssues: string[],
+  iCustomsState: ICustomsWorkspaceState | null,
+) {
+  const normalise = (message: string) => message.trim().toLocaleLowerCase("en-GB")
+  const localIssueMessages = new Set(completion.issues.map((issue) => normalise(issue.message)))
+  const externalIssueMessages = new Set(
+    iCustomsIssues.map(normalise).filter((message) => message && !localIssueMessages.has(message)),
+  )
+  const provider = iCustomsState?.declaration.provider
+
+  if (provider && ["rejected", "error"].includes(provider.status)) {
+    const failedSubmissionMessages = provider.issues.length
+      ? provider.issues.map((issue) => issue.message)
+      : [provider.errorMessage ?? provider.status]
+    failedSubmissionMessages.forEach((message) => {
+      const key = normalise(message)
+      if (key && !localIssueMessages.has(key)) externalIssueMessages.add(key)
+    })
+  }
+
+  const totalChecks = completion.totalChecks + externalIssueMessages.size
+  const completeChecks = completion.completeChecks
+  return {
+    completeChecks,
+    totalChecks,
+    percent: Math.round((completeChecks / totalChecks) * 100),
+  }
+}
+
 function iCustomsDeclarationUrl(direction: DeclarationKind, correlationId: string, environment: "sandbox" | "production") {
   const providerId = correlationId.trim()
   if (!providerId) return null
@@ -531,9 +593,10 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
   const [viewMode, setViewMode] = useState<EditorViewMode>("tabs")
   const [formTab, setFormTab] = useState<FormTab>("general")
   const [activeItemId, setActiveItemId] = useState(draft.items[0].id)
-  const [showDataElements, setShowDataElements] = useState(true)
-  const [showCustomsBoxNumbers, setShowCustomsBoxNumbers] = useState(false)
-  const [showOptional, setShowOptional] = useState(false)
+  const [fieldVisibility, setFieldVisibility] = useState<DeclarationFieldVisibility>(readDeclarationFieldVisibility)
+  const showDataElements = fieldVisibility.dataElements
+  const showCustomsBoxNumbers = fieldVisibility.customsBoxNumbers
+  const showOptional = fieldVisibility.optionalFields
   const [validated, setValidated] = useState(false)
   const invoiceImportRecoveryKey = declarationId ?? "new"
   const [invoiceImportOpen, setInvoiceImportOpen] = useState(() => hasCustomsInvoiceImportRecovery(invoiceImportRecoveryKey))
@@ -544,7 +607,7 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
   const [creatingInitialDraft, setCreatingInitialDraft] = useState(!declarationId)
   const [autosaveStatus, setAutosaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle")
   const [iCustomsState, setICustomsState] = useState<ICustomsWorkspaceState | null>(null)
-  const [iCustomsBusy, setICustomsBusy] = useState<"loading" | "draft" | "submit" | "refresh" | null>(declarationId ? "loading" : null)
+  const [iCustomsBusy, setICustomsBusy] = useState<"loading" | "draft" | "validate" | "submit" | "refresh" | null>(declarationId ? "loading" : null)
   const [iCustomsIssues, setICustomsIssues] = useState<string[]>([])
   const [submitDialogOpen, setSubmitDialogOpen] = useState(false)
   const [pdfOpen, setPdfOpen] = useState(false)
@@ -559,6 +622,7 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
   const lastFocusRefreshAtRef = useRef(0)
   const pdfLoadInFlightRef = useRef<Promise<{ document: CustomsDeclarationDocument; blob: Blob }> | null>(null)
   const pdfAutoLoadAttemptedForRef = useRef<string | null>(null)
+  const activeDeclarationIdRef = useRef(declarationId)
   const initialDraftCreationRef = useRef(false)
   const initialDraftServerRef = useRef<{ id: string; reference: string } | null>(null)
   const lastSavedDraftSnapshotRef = useRef<string | null>(null)
@@ -577,8 +641,16 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
   }, [iCustomsBusy])
 
   useEffect(() => {
+    saveDeclarationFieldVisibility(fieldVisibility)
+  }, [fieldVisibility])
+
+  useEffect(() => {
     draftRef.current = draft
   }, [draft])
+
+  useEffect(() => {
+    activeDeclarationIdRef.current = declarationId
+  }, [declarationId])
 
   useEffect(() => {
     editorMountedRef.current = true
@@ -618,8 +690,18 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
         setDraft((current) => current.multideckReference === saved.reference ? current : { ...current, multideckReference: saved.reference })
         setAutosaveStatus("saved")
         setCreatingInitialDraft(false)
-        void startICustomsProviderDraft(saved.id, `start-${saved.id}`).catch((reason: unknown) => {
-          console.error("The initial iCustoms draft could not be created.", reason)
+        void startICustomsProviderDraft(saved.id, `start-${saved.id}`).then(async () => {
+          try {
+            const state = await getICustomsDeclarationState(saved.id)
+            if (editorMountedRef.current && activeDeclarationIdRef.current === saved.id) setICustomsState(state)
+          } catch (reason) {
+            console.error("The newly started iCustoms draft state could not be refreshed.", reason)
+          }
+        }, (reason: unknown) => {
+            console.error("The initial iCustoms draft could not be created.", reason)
+            toast.error(t("Draft saved, but the iCustoms draft could not be started"), {
+              description: t(reason instanceof Error ? reason.message : "Open Review and choose Save draft to retry the iCustoms draft."),
+            })
         })
         navigate(`${registerPath}/${saved.id}`)
       } catch (reason) {
@@ -677,14 +759,23 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
   useEffect(() => {
     if (!declarationId || iCustomsState?.declaration.hasCustomsDraft || iCustomsState?.declaration.provider?.status !== "queued") return
     let cancelled = false
-    const timer = window.setTimeout(() => {
-      getICustomsDeclarationState(declarationId)
-        .then((state) => { if (!cancelled) setICustomsState(state) })
-        .catch((reason: unknown) => console.error("The starting iCustoms draft could not be refreshed.", reason))
-    }, 650)
+    let timer: number | null = null
+    const refreshStartingDraft = async () => {
+      try {
+        const state = await getICustomsDeclarationState(declarationId)
+        if (cancelled) return
+        setICustomsState(state)
+        if (!state.declaration.hasCustomsDraft && state.declaration.provider?.status === "queued") {
+          timer = window.setTimeout(() => { void refreshStartingDraft() }, 650)
+        }
+      } catch (reason) {
+        console.error("The starting iCustoms draft could not be refreshed.", reason)
+      }
+    }
+    timer = window.setTimeout(() => { void refreshStartingDraft() }, 650)
     return () => {
       cancelled = true
-      window.clearTimeout(timer)
+      if (timer !== null) window.clearTimeout(timer)
     }
   }, [declarationId, iCustomsState?.declaration.hasCustomsDraft, iCustomsState?.declaration.provider?.status])
 
@@ -753,26 +844,20 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
     return () => document.removeEventListener("visibilitychange", saveBeforeBackgrounding)
   }, [declarationId, queueAutosave])
 
-  function validate() {
+  function revealReviewIssues() {
     setValidated(true)
-    const first = completion.issues[0]
-    if (first) {
-      setViewMode("tabs")
-      selectTab("review")
-      toast.warning(t("Declaration needs attention"), { description: `${completion.issues.length} ${t("checks remain")}` })
-    } else {
-      if (viewMode === "tabs") selectTab("review")
-      toast.success(t("Current form checks passed"))
-    }
+    setViewMode("tabs")
+    selectTab("review")
   }
 
-  async function saveDraft() {
+  async function saveDraft(returnToRegister = true) {
     if (savingDraft) return
     setSavingDraft(true)
     let savedLocally = false
     try {
       await autosaveQueueRef.current
-      if (declarationId && iCustomsState?.declaration.provider?.status === "rejected") {
+      const providerWasRejected = iCustomsState?.declaration.provider?.status === "rejected"
+      if (declarationId && providerWasRejected) {
         await reopenRejectedCustomsDeclaration(declarationId)
       }
       const saved = await saveStandaloneDeclarationDraft(draft, declarationId)
@@ -782,7 +867,7 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
       moveCustomsInvoiceImportRecovery(invoiceImportRecoveryKey, saved.id)
       setDraft((current) => ({ ...current, multideckReference: saved.reference }))
       const providerStatus = iCustomsState?.declaration.provider?.status
-      const hasEditableProviderDraft = Boolean(iCustomsState?.declaration.hasCustomsDraft) && !["submitted", "accepted", "rejected"].includes(providerStatus ?? "")
+      const hasEditableProviderDraft = Boolean(iCustomsState?.declaration.hasCustomsDraft) && (providerWasRejected || !["submitted", "accepted", "released", "cleared", "cancelled"].includes(providerStatus ?? ""))
       if (hasEditableProviderDraft) {
         setICustomsBusy("draft")
         const validation = await validateICustomsDeclaration(saved.id)
@@ -794,7 +879,7 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
         await saveICustomsProviderDraft(saved.id, crypto.randomUUID())
         const state = await getICustomsDeclarationState(saved.id)
         setICustomsState(state)
-        toast.success(t("Draft saved and customs test draft updated"), { description: saved.reference })
+        toast.success(t(providerWasRejected ? "Draft saved and corrected iCustoms draft created" : "Draft saved and updated in iCustoms test mode"), { description: saved.reference })
       } else if (!iCustomsState?.declaration.hasCustomsDraft) {
         setICustomsBusy("draft")
         await startICustomsProviderDraft(saved.id, `start-${saved.id}`)
@@ -804,7 +889,7 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
       } else {
         toast.success(t("Draft saved"), { description: saved.reference })
       }
-      navigate(registerPath)
+      if (returnToRegister) navigate(registerPath)
     } catch (reason) {
       console.error("The Customs draft or its provider mirror could not be saved.", reason)
       if (savedLocally) {
@@ -822,7 +907,8 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
     if (iCustomsBusy || savingDraft) return
     const hasProviderDraft = Boolean(iCustomsState?.declaration.hasCustomsDraft)
     if (hasProviderDraft && completion.issues.length) {
-      validate()
+      revealReviewIssues()
+      toast.warning(t("Declaration needs attention"), { description: `${completion.issues.length} ${t("checks remain")}` })
       return
     }
     setICustomsBusy("draft")
@@ -862,6 +948,53 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
     }
   }
 
+  async function prepareSubmitToICustoms() {
+    if (!declarationId || iCustomsBusy || savingDraft) return
+    setValidated(true)
+    if (completion.issues.length) {
+      revealReviewIssues()
+      toast.warning(t("Declaration needs attention"), { description: `${completion.issues.length} ${t("checks remain")}` })
+      return
+    }
+
+    setICustomsBusy("validate")
+    setSavingDraft(true)
+    setICustomsIssues([])
+    let savedLocally = false
+    try {
+      await autosaveQueueRef.current
+      const saved = await saveStandaloneDeclarationDraft(draft, declarationId)
+      savedLocally = true
+      const persistedDraft = { ...draft, multideckReference: saved.reference }
+      lastSavedDraftSnapshotRef.current = JSON.stringify(persistedDraft)
+      setDraft((current) => current.multideckReference === saved.reference ? current : { ...current, multideckReference: saved.reference })
+      setAutosaveStatus("saved")
+      moveCustomsInvoiceImportRecovery(invoiceImportRecoveryKey, saved.id)
+
+      const validation = await validateICustomsDeclaration(saved.id)
+      if (!validation.ready) {
+        setICustomsIssues(validation.issues)
+        revealReviewIssues()
+        toast.warning(t("Declaration needs attention"), { description: `${validation.issues.length} ${t("customs checks remain")}` })
+        return
+      }
+      setSubmitDialogOpen(true)
+    } catch (reason) {
+      if (!savedLocally) {
+        setAutosaveStatus("error")
+        toast.error(t("Draft could not be saved"), { description: t("Your changes remain on screen. Try saving again.") })
+        return
+      }
+      const error = reason instanceof ICustomsApiError ? reason : new ICustomsApiError(reason instanceof Error ? reason.message : "The declaration could not be checked.")
+      setICustomsIssues(error.issues)
+      if (error.issues.length) revealReviewIssues()
+      toast.error(t("Declaration could not be checked"), { description: t(error.message) })
+    } finally {
+      setSavingDraft(false)
+      setICustomsBusy(null)
+    }
+  }
+
   async function submitToICustoms() {
     if (!declarationId || iCustomsBusy) return
     setICustomsBusy("submit")
@@ -871,10 +1004,23 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
       const state = await getICustomsDeclarationState(declarationId)
       setICustomsState(state)
       setSubmitDialogOpen(false)
+      if (["rejected", "error"].includes(state.declaration.provider?.status ?? "")) {
+        revealReviewIssues()
+        toast.error(t("Customs submission failed"), { description: t(state.declaration.provider?.errorMessage ?? "Correct the fields below, then save a new customs draft before submitting again.") })
+        return
+      }
       toast.success(t("Declaration submitted in Test Mode"), { description: state.declaration.provider?.mrn ?? draft.multideckReference })
     } catch (reason) {
       const error = reason instanceof ICustomsApiError ? reason : new ICustomsApiError(reason instanceof Error ? reason.message : "The declaration could not be submitted.")
       setICustomsIssues(error.issues)
+      setSubmitDialogOpen(false)
+      revealReviewIssues()
+      try {
+        const state = await getICustomsDeclarationState(declarationId)
+        setICustomsState(state)
+      } catch (refreshReason) {
+        console.error("The failed iCustoms submission state could not be refreshed.", refreshReason)
+      }
       toast.error(t("Customs submission failed"), { description: t(error.message) })
     } finally {
       setICustomsBusy(null)
@@ -1000,9 +1146,14 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
     { id: "review", label: t("Review") },
   ]
   const customsStatus = iCustomsState?.declaration.provider?.status ?? iCustomsState?.declaration.status ?? "draft"
+  const iCustomsProviderReference = iCustomsState?.declaration.correlationId?.trim() || null
   const customsSubmittedAt = iCustomsState?.declaration.provider?.submittedAt
   const declarationPdfAvailable = Boolean(declarationId && iCustomsState?.declaration.provider?.mrn && ["accepted", "released", "cleared"].includes(customsStatus))
   const statusPollingNeeded = shouldPollCustomsSubmission(customsStatus, customsSubmittedAt)
+
+  useEffect(() => {
+    if (tab === "review" || iCustomsIssues.length || ["rejected", "error"].includes(customsStatus)) setValidated(true)
+  }, [customsStatus, iCustomsIssues.length, tab])
 
   useEffect(() => {
     if (!declarationId || !statusPollingNeeded) {
@@ -1089,49 +1240,49 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
     <CustomsReferenceDataContext.Provider value={referenceData}>
     <CustomsBoxVisibilityContext.Provider value={showCustomsBoxNumbers}>
     <div className="min-w-0 max-w-full space-y-4 overflow-x-clip" data-testid={`standalone-${kind}-editor`}>
-      <header>
-        <div className="flex min-w-0 flex-col justify-center">
+      <header className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-end lg:justify-between lg:gap-8">
+        <div className="flex min-w-0 flex-col items-start lg:flex-1">
           <button type="button" onClick={() => navigate(registerPath)} className="inline-flex items-center gap-2 text-[12px] font-medium text-[var(--md-text)] hover:text-[var(--md-accent)]">
             <ArrowLeft className="size-3.5 rtl:rotate-180" /> {t("Back to standalone declarations")}
           </button>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <h1 className="text-[26px] font-medium tracking-[-0.035em] text-[var(--md-ink)]">{t(declarationId ? (kind === "import" ? "Edit import declaration" : "Edit export declaration") : (kind === "import" ? "New import declaration" : "New export declaration"))}</h1>
-            <StatusPill tone="teal">{t(kind === "import" ? "Standalone import" : "Standalone export")}</StatusPill>
-            <StatusPill tone={customsStatusTone(customsStatus)}>{t(titleCase(customsStatus))}</StatusPill>
-          </div>
+          <h1 className="mt-3 text-start text-[26px] font-medium tracking-[-0.035em] text-[var(--md-ink)]">{t(declarationId ? (kind === "import" ? "Edit import declaration" : "Edit export declaration") : (kind === "import" ? "New import declaration" : "New export declaration"))}</h1>
           <p className="mt-1 text-[13px] text-[var(--md-text)]">{t(viewMode === "tabs" ? "Complete one focused section at a time. Move between sections whenever you need." : "Scan and complete the declaration in one compact form, with goods lines kept in Items.")}</p>
         </div>
-      </header>
-
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 flex-wrap items-center gap-3">
-          <SegmentedControl
-            options={["tabs", "form"] as const}
-            value={viewMode}
-            onChange={setViewMode}
-            ariaLabel={t("Declaration view")}
-            renderOption={(option) => t(option === "tabs" ? "Tab view" : "Form view")}
-          />
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <Toggle checked={showDataElements} onChange={setShowDataElements}>{t("Data Elements")}</Toggle>
-            <Toggle checked={showCustomsBoxNumbers} onChange={setShowCustomsBoxNumbers}>{t("Customs box numbers")}</Toggle>
-            <Toggle checked={showOptional} onChange={setShowOptional}>{t("Optional fields")}</Toggle>
+        <div className="flex min-w-0 max-w-full flex-col items-end gap-1.5 lg:max-w-[70%] lg:shrink-0">
+          <div className="flex min-h-4 max-w-full flex-wrap items-center justify-end gap-x-3 gap-y-1 text-end">
+            <span
+              role={autosaveStatus === "error" ? "alert" : "status"}
+              aria-live="polite"
+              className={cn("text-[11px]", autosaveStatus === "error" ? "text-[var(--md-red)]" : "text-[var(--md-subtle)]")}
+            >
+              {autosaveStatus === "saving" ? t("Saving automatically") : autosaveStatus === "error" ? t("Changes could not be saved") : null}
+            </span>
+            {autosaveStatus === "error" ? <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-[11px]" onClick={() => { if (!declarationId) { initialDraftCreationRef.current = false; setDraftLoadAttempt((attempt) => attempt + 1); return } void queueAutosave(draft) }}><RefreshCw className="size-3.5" />{t("Retry save")}</Button> : null}
+            {iCustomsProviderReference ? <p className="max-w-full text-end text-[11px] text-[var(--md-subtle)]"><span className="font-medium text-[var(--md-text)]">{t("iCustoms correlation ID")}:</span> <span dir="ltr" className="break-all">{iCustomsProviderReference}</span></p> : null}
+          </div>
+          <div className="flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2" data-customs-header-actions>
+            <span
+              role="status"
+              aria-label={`${t("Declaration status")}: ${t(titleCase(customsStatus))}`}
+              className="relative inline-flex h-9 shrink-0 items-center gap-2 px-1.5 text-[12px] font-medium text-[var(--md-ink)]"
+              style={{ borderBlockEnd: `2px solid ${toneToVar(customsStatusTone(customsStatus))}` }}
+            >
+              <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: toneToVar(customsStatusTone(customsStatus)) }} />
+              {t(titleCase(customsStatus))}
+            </span>
+            <SegmentedControl
+              options={["tabs", "form"] as const}
+              value={viewMode}
+              onChange={setViewMode}
+              ariaLabel={t("Declaration view")}
+              renderOption={(option) => t(option === "tabs" ? "Tab view" : "Form view")}
+            />
+            <DeclarationFieldVisibilityPopover value={fieldVisibility} onChange={setFieldVisibility} t={t} />
+            {declarationPdfAvailable ? <Button type="button" variant="ghost" size="sm" className="h-9 bg-black px-3 text-white shadow-none hover:bg-black/80 hover:text-white" disabled={pdfBusy} onClick={() => void openDeclarationPdf()}><FileText className="size-3.5" />{t(pdfBusy ? "Preparing declaration" : pdfLoadError ? "Retry declaration" : "View declaration")}</Button> : null}
+            <Button type="button" variant="outline" size="sm" className="h-9" disabled={savingDraft || creatingInitialDraft} onClick={() => void saveDraft()}>{t(savingDraft ? "Saving draft" : "Save draft")}</Button>
           </div>
         </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
-          <span
-            role={autosaveStatus === "error" ? "alert" : "status"}
-            aria-live="polite"
-            className={cn("text-[11px]", autosaveStatus === "error" ? "text-[var(--md-red)]" : "text-[var(--md-subtle)]")}
-          >
-            {autosaveStatus === "saving" ? t("Saving automatically") : autosaveStatus === "saved" ? t("All changes saved") : autosaveStatus === "error" ? t("Changes could not be saved") : null}
-          </span>
-          {autosaveStatus === "error" ? <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-[11px]" onClick={() => { if (!declarationId) { initialDraftCreationRef.current = false; setDraftLoadAttempt((attempt) => attempt + 1); return } void queueAutosave(draft) }}><RefreshCw className="size-3.5" />{t("Retry save")}</Button> : null}
-          <Button type="button" variant="ghost" size="sm" className="h-9 bg-black px-3 text-white shadow-none hover:bg-black/80 hover:text-white" disabled={!declarationPdfAvailable || pdfBusy} onClick={() => void openDeclarationPdf()}><FileText className="size-3.5" />{t(pdfBusy ? "Preparing declaration" : pdfLoadError ? "Retry declaration" : "View declaration")}</Button>
-          <Button type="button" variant="outline" size="sm" className="h-9" disabled={savingDraft || creatingInitialDraft} onClick={() => void saveDraft()}>{t(savingDraft ? "Saving draft" : "Save draft")}</Button>
-          <Button type="button" size="sm" className="h-9" onClick={validate}><FileCheck2 className="size-3.5" />{t("Validate")}</Button>
-        </div>
-      </div>
+      </header>
 
       {viewMode === "tabs" ? <LayoutGroup id={`customs-${kind}-sections`}>
         <nav className="relative isolate max-w-full overflow-x-auto rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-line)]" aria-label={t("Declaration sections")}>
@@ -1194,7 +1345,7 @@ function StandaloneDeclarationEditor({ navigate, kind, declarationId }: { naviga
             {tab === "transport" ? <TransportSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} t={t} /> : null}
             {tab === "documents" ? <DocumentsSection draft={draft} update={update} showDataElements={showDataElements} showOptional={showOptional} issues={issueFields} t={t} /> : null}
             {tab === "items" ? <ItemsSection items={draft.items} activeItem={activeItem} activeItemId={activeItemId} onSelectItem={setActiveItemId} onAdd={addItem} onOpenInvoiceImport={() => setInvoiceImportOpen(true)} onDuplicate={duplicateItem} onRemove={removeItem} update={updateItem} updateRow={updateItemById} showDataElements={showDataElements} showOptional={showOptional} issues={activeItemIssueFields} validated={validated} t={t} /> : null}
-            {tab === "review" ? <ReviewSection draft={draft} completion={completion} iCustomsState={iCustomsState} iCustomsBusy={iCustomsBusy} iCustomsIssues={iCustomsIssues} statusLifecycle={statusLifecycle} pdfAvailable={declarationPdfAvailable} pdfBusy={pdfBusy} pdfLoadError={pdfLoadError} update={update} updateItem={updateItemById} onOpenPdf={() => void openDeclarationPdf()} onValidate={validate} onCreateDraft={() => void createOrUpdateICustomsDraft()} onSubmit={() => setSubmitDialogOpen(true)} t={t} /> : null}
+            {tab === "review" ? <ReviewSection draft={draft} completion={completion} iCustomsState={iCustomsState} iCustomsBusy={iCustomsBusy} iCustomsIssues={iCustomsIssues} statusLifecycle={statusLifecycle} pdfAvailable={declarationPdfAvailable} pdfBusy={pdfBusy} pdfLoadError={pdfLoadError} savingDraft={savingDraft} update={update} updateItem={updateItemById} onOpenPdf={() => void openDeclarationPdf()} onCreateDraft={() => void createOrUpdateICustomsDraft()} onSaveDraft={() => void saveDraft(false)} onSubmit={() => void prepareSubmitToICustoms()} t={t} /> : null}
           </motion.div>
         </AnimatePresence>
       </div> : null}
@@ -1895,10 +2046,7 @@ function CommoditySmartSearch({ item, direction, update, triggerClassName, trigg
           <div className="grid gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-soft)] p-3 md:grid-cols-[minmax(220px,1fr)_minmax(180px,auto)_minmax(150px,auto)]">
             <div className="min-w-0">
               <span className="mb-1.5 block text-[12px] font-medium text-[var(--md-text)]">{t("Import country")}</span>
-              <Select value={importCountry} onValueChange={(value) => { setImportCountry(value); resetSearchResults() }}>
-                <SelectTrigger aria-label={t("Import country")} className="h-10 w-full border-0 bg-[var(--md-field-bg)] text-base shadow-[var(--md-shadow-line)] sm:text-[13px]"><SelectValue placeholder={t("Select country")} /></SelectTrigger>
-                <SelectContent>{countryOptions.filter(([value]) => value).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
-              </Select>
+              <CustomsReferenceCombobox label={t("Import country")} value={importCountry} onChange={(value) => { setImportCountry(value); resetSearchResults() }} options={countryOptions} placeholder={t("Select country")} />
             </div>
 
             <div>
@@ -1920,10 +2068,7 @@ function CommoditySmartSearch({ item, direction, update, triggerClassName, trigg
             <AnimatePresence initial={false}>
               {taxAndDuty ? <motion.div key="dispatched-country" initial={shouldReduceMotion ? false : { opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: -4 }} transition={reduceMotion(shouldReduceMotion, mdMotion.exit)} className="min-w-0 md:col-span-3">
                 <span className="mb-1.5 block text-[12px] font-medium text-[var(--md-text)]">{t("Dispatched country")}</span>
-                <Select value={dispatchedCountry || undefined} onValueChange={setDispatchedCountry}>
-                  <SelectTrigger aria-label={t("Dispatched country")} className="h-10 w-full border-0 bg-[var(--md-field-bg)] text-base shadow-[var(--md-shadow-line)] sm:text-[13px]"><SelectValue placeholder={t("Select country")} /></SelectTrigger>
-                  <SelectContent>{countryOptions.filter(([value]) => value).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
-                </Select>
+                <CustomsReferenceCombobox label={t("Dispatched country")} value={dispatchedCountry} onChange={setDispatchedCountry} options={countryOptions} placeholder={t("Select country")} />
               </motion.div> : null}
             </AnimatePresence>
           </div>
@@ -2186,12 +2331,203 @@ function PartyReferenceCustomsFields({ title, fieldLabel, addLabel, removeLabel,
   </RepeatableCustomsFields>
 }
 
-function ItemTableSelect({ label, value, onChange, options, invalid }: { label: string; value: string; onChange: (value: string) => void; options: ReadonlyArray<readonly [string, string]>; invalid?: boolean }) {
+type CustomsReferenceOptionTuple = readonly [string, string]
+
+function normalizedReferenceTerm(value: string) {
+  return value.trim().normalize("NFKD").toLocaleLowerCase()
+}
+
+function referenceOptionName(label: string) {
+  const separator = label.indexOf(" - ")
+  return separator >= 0 ? label.slice(separator + 3) : label
+}
+
+function exactReferenceOption(options: ReadonlyArray<CustomsReferenceOptionTuple>, query: string) {
+  const term = normalizedReferenceTerm(query)
+  if (!term) return undefined
+  return options.find(([code, label]) => {
+    return normalizedReferenceTerm(code) === term
+      || normalizedReferenceTerm(label) === term
+      || normalizedReferenceTerm(referenceOptionName(label)) === term
+  })
+}
+
+function CustomsReferenceCombobox({ label, value, onChange, options, placeholder, disabled, invalid, variant = "field" }: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  options: ReadonlyArray<CustomsReferenceOptionTuple>
+  placeholder: string
+  disabled?: boolean
+  invalid?: boolean
+  variant?: "field" | "table"
+}) {
+  const { direction, t } = useLanguage()
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState("")
+  const [highlightedIndex, setHighlightedIndex] = useState(-1)
+  const [manualEntryError, setManualEntryError] = useState(false)
+  const listId = useId()
+  const helpId = `${listId}-help`
+  const referenceOptions = useMemo(() => options.filter(([code]) => Boolean(code)), [options])
+  const selected = referenceOptions.find(([code]) => code === value)
+  const hasBlankOption = options.some(([code]) => !code)
+  const normalizedQuery = normalizedReferenceTerm(query)
+  const matches = referenceOptions.filter(([code, optionLabel]) => {
+    if (!normalizedQuery) return true
+    return normalizedReferenceTerm(`${code} ${optionLabel}`).includes(normalizedQuery)
+  })
+  const optionId = highlightedIndex >= 0 && matches[highlightedIndex] ? `${listId}-option-${highlightedIndex}` : undefined
+
+  useEffect(() => {
+    if (!optionId) return
+    document.getElementById(optionId)?.scrollIntoView({ block: "nearest" })
+  }, [optionId])
+
+  function choose(option: CustomsReferenceOptionTuple) {
+    onChange(option[0])
+    closeAndReset()
+  }
+
+  function closeAndReset() {
+    setOpen(false)
+    setQuery("")
+    setHighlightedIndex(-1)
+    setManualEntryError(false)
+  }
+
+  function handleOpenChange(nextOpen: boolean) {
+    setOpen(nextOpen)
+    setHighlightedIndex(-1)
+    setManualEntryError(false)
+    if (!nextOpen) setQuery("")
+  }
+
+  function handleSearchKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "ArrowDown") {
+      event.preventDefault()
+      setHighlightedIndex((current) => matches.length ? (current + 1) % matches.length : -1)
+      return
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault()
+      setHighlightedIndex((current) => matches.length ? (current <= 0 ? matches.length - 1 : current - 1) : -1)
+      return
+    }
+    if (event.key === "Home" && matches.length) {
+      event.preventDefault()
+      setHighlightedIndex(0)
+      return
+    }
+    if (event.key === "End" && matches.length) {
+      event.preventDefault()
+      setHighlightedIndex(matches.length - 1)
+      return
+    }
+    if (event.key === "Enter") {
+      event.preventDefault()
+      const exact = exactReferenceOption(referenceOptions, query)
+      const option = highlightedIndex >= 0 ? matches[highlightedIndex] : exact
+      if (option) choose(option)
+      else setManualEntryError(true)
+      return
+    }
+    if (event.key === "Escape") {
+      event.preventDefault()
+      closeAndReset()
+    }
+  }
+
+  return <Popover open={open} onOpenChange={handleOpenChange}>
+    <PopoverTrigger asChild>
+      <button
+        type="button"
+        role="combobox"
+        aria-label={label}
+        aria-expanded={open}
+        aria-controls={listId}
+        aria-invalid={invalid || undefined}
+        disabled={disabled}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault()
+            setOpen(true)
+          }
+        }}
+        className={cn(
+          "flex w-full min-w-0 items-center justify-between gap-2 border-0 bg-[var(--md-field-bg)] text-start shadow-[var(--md-shadow-line)] transition-[background-color,box-shadow] hover:bg-[var(--md-field-bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent)] disabled:cursor-not-allowed disabled:opacity-50",
+          variant === "table"
+            ? "h-10 rounded-[var(--md-radius-xs)] px-2 text-[11px] md:h-7 md:px-1.5 md:text-[10px]"
+            : "h-11 rounded-[var(--md-radius-md)] px-3 text-base sm:h-9 sm:text-[13px]",
+          invalid && "ring-1 ring-[var(--md-red)]",
+        )}
+      >
+        <span className={cn("min-w-0 truncate", !selected && "text-[var(--md-subtle)]")}>
+          {selected ? <><bdi dir="ltr" className="font-medium">{selected[0]}</bdi><span className="text-[var(--md-subtle)]"> - </span>{referenceOptionName(selected[1])}</> : value || placeholder}
+        </span>
+        <ChevronDown className="size-3.5 shrink-0 text-[var(--md-subtle)]" aria-hidden="true" />
+      </button>
+    </PopoverTrigger>
+    <PopoverContent align="start" sideOffset={5} dir={direction} className="w-[var(--radix-popover-trigger-width)] min-w-[min(280px,calc(100vw-1rem))] max-w-[calc(100vw-1rem)] gap-1 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-1 shadow-[var(--md-shadow-lift)]">
+      <div className="relative m-1">
+        <Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-[var(--md-subtle)]" aria-hidden="true" />
+        <Input
+          autoFocus
+          role="combobox"
+          aria-label={`${t("Search options for")} ${label}`}
+          aria-autocomplete="list"
+          aria-expanded="true"
+          aria-controls={listId}
+          aria-activedescendant={optionId}
+          aria-invalid={manualEntryError || undefined}
+          aria-describedby={manualEntryError ? helpId : undefined}
+          autoComplete="off"
+          spellCheck={false}
+          value={query}
+          onChange={(event) => {
+            setQuery(event.target.value)
+            setHighlightedIndex(-1)
+            setManualEntryError(false)
+          }}
+          onKeyDown={handleSearchKeyDown}
+          placeholder={t("Search by code or name…")}
+          className="h-11 rounded-[var(--md-radius-md)] ps-9 text-base sm:h-9 sm:text-[12px]"
+        />
+      </div>
+      <p className="sr-only" role="status" aria-live="polite">{matches.length} {t("matching options")}</p>
+      {manualEntryError ? <p id={helpId} className="mx-2 mb-1 text-[11px] leading-4 text-[var(--md-red)]">{t("Type an exact code or choose a listed option.")}</p> : null}
+      <div id={listId} role="listbox" aria-label={`${label} ${t("options")}`} className="max-h-64 overflow-y-auto p-1 md-scrollbar">
+        {matches.map((option, index) => <button
+          id={`${listId}-option-${index}`}
+          data-option-index={index}
+          key={option[0]}
+          type="button"
+          role="option"
+          tabIndex={-1}
+          aria-selected={option[0] === value}
+          onMouseMove={() => setHighlightedIndex(index)}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => choose(option)}
+          className={cn(
+            "flex min-h-11 w-full items-center gap-2 rounded-[var(--md-radius-md)] px-2.5 py-2 text-start text-[12px] hover:bg-[var(--md-hover)]",
+            option[0] === value && "bg-[var(--md-selected-bg)]",
+            index === highlightedIndex && "bg-[var(--md-hover)] ring-1 ring-inset ring-[var(--md-accent-a18)]",
+          )}
+        >
+          <bdi dir="ltr" className="shrink-0 font-medium text-[var(--md-accent)]">{option[0]}</bdi>
+          <span className="min-w-0 flex-1">{referenceOptionName(option[1])}</span>
+          {option[0] === value ? <CheckCircle2 className="ms-auto size-3.5 shrink-0 text-[var(--md-accent)]" aria-hidden="true" /> : null}
+        </button>)}
+        {!matches.length ? <p className="px-3 py-5 text-center text-[12px] text-[var(--md-subtle)]">{t("No matching reference options")}</p> : null}
+      </div>
+      {hasBlankOption && value ? <button type="button" className="mx-1 min-h-10 rounded-[var(--md-radius-md)] px-2.5 text-start text-[11px] text-[var(--md-subtle)] hover:bg-[var(--md-hover)] hover:text-[var(--md-red)]" onClick={() => { onChange(""); closeAndReset() }}>{t("Clear selection")}</button> : null}
+    </PopoverContent>
+  </Popover>
+}
+
+function ItemTableSelect({ label, value, onChange, options, invalid }: { label: string; value: string; onChange: (value: string) => void; options: ReadonlyArray<CustomsReferenceOptionTuple>; invalid?: boolean }) {
   const referenceState = useContext(CustomsReferenceDataContext)
-  return <Select value={value || undefined} onValueChange={onChange} disabled={referenceState.loading || Boolean(referenceState.error) || !options.length}>
-    <SelectTrigger aria-label={label} aria-invalid={invalid || undefined} className={cn("h-7 w-full min-w-0 overflow-hidden rounded-[var(--md-radius-xs)] border-transparent bg-[var(--md-surface-tint)] px-1.5 text-[10px] shadow-none focus:ring-1 focus:ring-[var(--md-accent)] [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:truncate", invalid && "ring-1 ring-[var(--md-red)]")}><SelectValue placeholder="—" /></SelectTrigger>
-    <SelectContent>{options.map(([optionValue, optionLabel]) => <SelectItem key={optionValue} value={optionValue}>{optionLabel}</SelectItem>)}</SelectContent>
-  </Select>
+  return <CustomsReferenceCombobox label={label} value={value} onChange={onChange} options={options} placeholder="—" disabled={referenceState.loading || Boolean(referenceState.error) || !options.length} invalid={invalid} variant="table" />
 }
 
 function mandatoryItemGaps(item: ExportDeclarationItem, declarationDirection: DeclarationKind = "export"): Array<keyof ExportDeclarationItem> {
@@ -2221,21 +2557,22 @@ function validatedItemField(issues: Set<string>, missing: Array<keyof ExportDecl
   return issues.has(field) && missing.includes(field)
 }
 
-function ReviewSection({ draft, completion, iCustomsState, iCustomsBusy, iCustomsIssues, statusLifecycle, pdfAvailable, pdfBusy, pdfLoadError, update, updateItem, onOpenPdf, onValidate, onCreateDraft, onSubmit, t }: {
+function ReviewSection({ draft, completion, iCustomsState, iCustomsBusy, iCustomsIssues, statusLifecycle, pdfAvailable, pdfBusy, pdfLoadError, savingDraft, update, updateItem, onOpenPdf, onCreateDraft, onSaveDraft, onSubmit, t }: {
   draft: StandaloneExportDraft
   completion: ReturnType<typeof declarationCompletion>
   iCustomsState: ICustomsWorkspaceState | null
-  iCustomsBusy: "loading" | "draft" | "submit" | "refresh" | null
+  iCustomsBusy: "loading" | "draft" | "validate" | "submit" | "refresh" | null
   iCustomsIssues: string[]
   statusLifecycle: CustomsStatusLifecycle
   pdfAvailable: boolean
   pdfBusy: boolean
   pdfLoadError: string | null
+  savingDraft: boolean
   update: <K extends keyof StandaloneExportDraft>(field: K, value: StandaloneExportDraft[K]) => void
   updateItem: <K extends keyof ExportDeclarationItem>(itemId: string, field: K, value: ExportDeclarationItem[K]) => void
   onOpenPdf: () => void
-  onValidate: () => void
   onCreateDraft: () => void
+  onSaveDraft: () => void
   onSubmit: () => void
   t: (text: string) => string
 }) {
@@ -2254,6 +2591,7 @@ function ReviewSection({ draft, completion, iCustomsState, iCustomsBusy, iCustom
   const providerDeclarationUrl = hasProviderDraft && providerCorrelationId
     ? iCustomsDeclarationUrl(draft.direction, providerCorrelationId, iCustomsState?.connection.environment ?? "sandbox")
     : null
+  const readiness = declarationReadiness(completion, iCustomsIssues, iCustomsState)
 
   const reviewIssues = heldIssue && !completion.issues.some((issue) => issue.id === heldIssue.id)
     ? [...completion.issues, heldIssue]
@@ -2274,7 +2612,7 @@ function ReviewSection({ draft, completion, iCustomsState, iCustomsBusy, iCustom
 
   return <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
     <Surface padding="lg" className="rounded-[var(--md-radius-xl)]">
-      <div className="flex items-center justify-between gap-4"><span><p className="text-[12px] font-medium text-[var(--md-accent)]">{t("Declaration readiness")}</p><h2 className="mt-1 text-[22px] font-medium text-[var(--md-ink)]">{completion.percent}% {t("complete")}</h2><p className="mt-1 text-[12px] text-[var(--md-text)]">{completion.completeChecks}/{completion.totalChecks} {t("configured checks complete")}</p></span><div className="relative grid size-24 place-items-center rounded-full" style={{ background: `conic-gradient(var(--md-accent) ${completion.percent}%, var(--md-line) 0)` }}><div className="grid size-[78px] place-items-center rounded-full bg-[var(--md-surface)] text-[17px] font-medium">{completion.percent}%</div></div></div>
+      <div className="flex items-center justify-between gap-4"><span><p className="text-[12px] font-medium text-[var(--md-accent)]">{t("Declaration readiness")}</p><h2 className="mt-1 text-[22px] font-medium text-[var(--md-ink)]">{readiness.percent}% {t("complete")}</h2><p className="mt-1 text-[12px] text-[var(--md-text)]">{readiness.completeChecks}/{readiness.totalChecks} {t("readiness checks passed")}</p></span><div className="relative grid size-24 place-items-center rounded-full" style={{ background: `conic-gradient(var(--md-accent) ${readiness.percent}%, var(--md-line) 0)` }}><div className="grid size-[78px] place-items-center rounded-full bg-[var(--md-surface)] text-[17px] font-medium">{readiness.percent}%</div></div></div>
       {reviewIssues.length ? <div className="mt-5 divide-y divide-[var(--md-line)] border-t border-[var(--md-line)]">{reviewIssues.slice(0, 14).map((issue) => {
         const fixKey = `form-${issue.id}`
         const expanded = openFixKey === fixKey
@@ -2305,10 +2643,10 @@ function ReviewSection({ draft, completion, iCustomsState, iCustomsBusy, iCustom
 
         {iCustomsBusy === "loading" ? <p className="mt-4 text-[12px] text-[var(--md-subtle)]">{t("Checking the customs connection")}</p> : null}
         {connectionUnavailable ? <div role="alert" className="mt-4 flex gap-2 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-amber)_10%,transparent)] p-3 text-[12px] text-[var(--md-text)]"><CircleAlert className="mt-0.5 size-4 shrink-0 text-[var(--md-amber)]" /><span>{t("The customs test connection is not configured on the server yet.")}</span></div> : null}
-        {provider ? <dl className="mt-4 divide-y divide-[var(--md-line)] border-y border-[var(--md-line)]"><Summary label={t("iCustoms draft status")} value={t(provider.status === "queued" ? "Starting" : titleCase(provider.status))} />{provider.mrn ? <Summary label="MRN" value={provider.mrn} /> : null}{provider.updatedAt ? <Summary label={t("Last customs update")} value={new Date(provider.updatedAt).toLocaleString()} /> : null}</dl> : null}
+        {provider || providerCorrelationId ? <dl className="mt-4 divide-y divide-[var(--md-line)] border-y border-[var(--md-line)]">{provider ? <Summary label={t("iCustoms draft status")} value={t(provider.status === "queued" ? "Starting" : titleCase(provider.status))} /> : null}{providerCorrelationId ? <Summary label={t("iCustoms correlation ID")} value={providerCorrelationId} valueDirection="ltr" /> : null}{provider?.mrn ? <Summary label="MRN" value={provider.mrn} /> : null}{provider?.updatedAt ? <Summary label={t("Last customs update")} value={new Date(provider.updatedAt).toLocaleString()} /> : null}</dl> : null}
         {providerAwaitingResponse ? <div role="status" aria-live="polite" className="mt-4 flex gap-2 rounded-[var(--md-radius-lg)] bg-[var(--md-accent-a10)] p-3 text-[12px] text-[var(--md-text)]"><RefreshCw className={cn("mt-0.5 size-4 shrink-0 text-[var(--md-accent)]", statusLifecycle.phase === "checking" && "animate-spin motion-reduce:animate-none")} /><span><strong className="block text-[var(--md-ink)]">{t(statusLifecycle.phase === "timed-out" ? "Customs response is taking longer than expected" : "Waiting for the customs response")}</strong>{t(statusLifecycle.phase === "timed-out" ? "Multideck will check again when you return to this declaration." : "Multideck checks automatically while this declaration is open.")}</span></div> : null}
         {statusLifecycle.phase === "error" ? <div role="alert" className="mt-4 flex gap-2 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-amber)_10%,transparent)] p-3 text-[12px] text-[var(--md-text)]"><CircleAlert className="mt-0.5 size-4 shrink-0 text-[var(--md-amber)]" /><span><strong className="block text-[var(--md-ink)]">{t("Customs status check was interrupted")}</strong>{t(statusLifecycle.message ?? "Multideck will retry automatically.")}</span></div> : null}
-        <Button type="button" variant="ghost" className="mt-4 w-full bg-black text-white shadow-none hover:bg-black/80 hover:text-white" disabled={!pdfAvailable || pdfBusy} onClick={onOpenPdf}><FileText className="size-4" />{t(pdfBusy ? "Preparing declaration PDF" : pdfLoadError ? "Retry declaration PDF" : pdfAvailable ? "View declaration PDF" : "PDF available after acceptance")}</Button>
+        {pdfAvailable ? <Button type="button" variant="ghost" className="mt-4 w-full bg-black text-white shadow-none hover:bg-black/80 hover:text-white" disabled={pdfBusy} onClick={onOpenPdf}><FileText className="size-4" />{t(pdfBusy ? "Preparing declaration PDF" : pdfLoadError ? "Retry declaration PDF" : "View declaration PDF")}</Button> : null}
         {pdfLoadError && pdfAvailable ? <p role="alert" className="mt-2 text-[11px] leading-4 text-[var(--md-red)]">{t("The declaration PDF could not be prepared automatically. Choose Retry declaration PDF to try again.")}</p> : null}
         {providerDeclarationUrl ? <Button asChild variant="outline" className="mt-2 w-full"><a href={providerDeclarationUrl} target="_blank" rel="noopener noreferrer"><span>{t("View in")}</span><img src={iCustomsLogo} alt="iCustoms" className="h-4 w-auto" /><ExternalLink className="size-3.5" /></a></Button> : null}
         {providerAccepted && providerIssues.length ? <div role="status" className="mt-4 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-amber)_8%,var(--md-surface))] p-3">
@@ -2318,8 +2656,7 @@ function ReviewSection({ draft, completion, iCustomsState, iCustomsBusy, iCustom
         {provider?.errorMessage && !providerIssues.length ? <div role="alert" className="mt-4 flex gap-2 rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red)_7%,var(--md-surface))] p-3 text-[12px] text-[var(--md-text)]"><CircleAlert className="mt-0.5 size-4 shrink-0 text-[var(--md-red)]" /><span><strong className="block text-[var(--md-ink)]">{t("Customs service needs attention")}</strong>{t(provider.errorMessage)}</span></div> : null}
         {iCustomsIssues.length ? <div role="alert" className="mt-4"><p className="text-[12px] font-medium text-[var(--md-red)]">{t("Customs checks still need attention")}</p><ul className="mt-2 space-y-1.5 ps-4 text-[11px] leading-4 text-[var(--md-text)]">{iCustomsIssues.slice(0, 8).map((issue) => <li key={issue} className="list-disc">{translateCustomsMessage(issue, t)}</li>)}</ul></div> : null}
 
-        {!hasProviderDraft ? <Button type="button" className="mt-4 w-full" disabled={Boolean(iCustomsBusy) || connectionUnavailable || provider?.status === "queued"} onClick={onCreateDraft}><RefreshCw className={cn("size-4", (iCustomsBusy === "draft" || provider?.status === "queued") && "animate-spin motion-reduce:animate-none")} />{t(provider?.status === "queued" ? "Starting iCustoms draft" : iCustomsBusy === "draft" ? "Retrying iCustoms draft" : "Retry iCustoms draft")}</Button> : providerRejected ? <Button type="button" className="mt-4 w-full" disabled={Boolean(iCustomsBusy) || connectionUnavailable || completion.issues.length > 0} onClick={onCreateDraft}><RefreshCw className="size-4" />{t(iCustomsBusy === "draft" ? "Creating corrected customs test draft" : "Create corrected customs test draft")}</Button> : providerLifecycleStarted ? null : <><Button type="button" className="mt-4 w-full" disabled={Boolean(iCustomsBusy) || connectionUnavailable} onClick={onSubmit}><Send className="size-4" />{t("Submit")}</Button><Button type="button" variant="outline" className="mt-2 w-full" disabled={Boolean(iCustomsBusy) || connectionUnavailable} onClick={onCreateDraft}><RefreshCw className="size-4" />{t(iCustomsBusy === "draft" ? "Updating customs test draft" : "Update customs test draft")}</Button></>}
-        <Button type="button" variant="ghost" className="mt-2 w-full" onClick={onValidate}>{t("Run form checks")}</Button>
+        {providerLifecycleStarted ? null : <><Button type="button" className="mt-4 w-full" disabled={Boolean(iCustomsBusy) || savingDraft || provider?.status === "queued"} onClick={onSaveDraft}><Save className="size-4" />{t(savingDraft || iCustomsBusy === "draft" ? "Saving draft" : "Save draft")}</Button>{!hasProviderDraft ? <Button type="button" variant="outline" className="mt-2 w-full" disabled={Boolean(iCustomsBusy) || connectionUnavailable || provider?.status === "queued"} onClick={onCreateDraft}><RefreshCw className={cn("size-4", (iCustomsBusy === "draft" || provider?.status === "queued") && "animate-spin motion-reduce:animate-none")} />{t(provider?.status === "queued" ? "Starting iCustoms draft" : iCustomsBusy === "draft" ? "Retrying iCustoms draft" : "Retry iCustoms draft")}</Button> : providerRejected ? null : <Button type="button" variant="outline" className="mt-2 w-full" disabled={Boolean(iCustomsBusy) || savingDraft || connectionUnavailable} onClick={onSubmit}>{iCustomsBusy === "validate" ? <RefreshCw className="size-4 animate-spin motion-reduce:animate-none" /> : <Send className="size-4" />}{t(iCustomsBusy === "validate" ? "Checking declaration" : "Submit")}</Button>}</>}
       </Surface>
     </div>
   </div>
@@ -2579,8 +2916,53 @@ function providerIssueGuidance(issue: ICustomsProviderIssue) {
   return "Review the highlighted customs field and the related declaration details before trying again."
 }
 
-function Toggle({ checked, onChange, children }: { checked: boolean; onChange: (checked: boolean) => void; children: ReactNode }) {
-  return <label className="flex h-9 items-center gap-2 rounded-[var(--md-radius-md)] bg-[var(--md-surface-tint)] px-3 text-[12px] text-[var(--md-text)] shadow-[var(--md-shadow-line)]"><Checkbox checked={checked} onCheckedChange={(value) => onChange(value === true)} />{children}</label>
+function DeclarationFieldVisibilityPopover({ value, onChange, t }: {
+  value: DeclarationFieldVisibility
+  onChange: (value: DeclarationFieldVisibility) => void
+  t: (text: string) => string
+}) {
+  const { direction } = useLanguage()
+  const titleId = useId()
+  const optionIds = {
+    dataElements: `${titleId}-data-elements`,
+    customsBoxNumbers: `${titleId}-customs-box-numbers`,
+    optionalFields: `${titleId}-optional-fields`,
+  }
+  const options: Array<{ key: keyof DeclarationFieldVisibility; label: string; id: string }> = [
+    { key: "dataElements", label: "Data elements", id: optionIds.dataElements },
+    { key: "customsBoxNumbers", label: "Customs box numbers", id: optionIds.customsBoxNumbers },
+    { key: "optionalFields", label: "Option fields", id: optionIds.optionalFields },
+  ]
+
+  return <Popover>
+    <PopoverTrigger asChild>
+      <button
+        type="button"
+        aria-label={t("Field visibility")}
+        title={t("Field visibility")}
+        className="grid size-9 shrink-0 place-items-center rounded-full bg-transparent text-[var(--md-text)] transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] active:scale-[0.96] data-[state=open]:bg-[var(--md-hover)] data-[state=open]:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a28)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--md-page)] motion-reduce:active:scale-100 motion-reduce:transition-none"
+      >
+        <Eye className="size-4" strokeWidth={1.4} aria-hidden="true" />
+      </button>
+    </PopoverTrigger>
+    <PopoverContent
+      align="start"
+      sideOffset={6}
+      dir={direction}
+      aria-labelledby={titleId}
+      className="w-56 gap-1 rounded-[var(--md-radius-lg)] bg-[var(--md-surface)] p-1.5 shadow-[var(--md-shadow-lift)] data-open:animate-none! motion-reduce:data-closed:animate-none!"
+    >
+      <p id={titleId} className="px-2 pb-1 pt-0.5 text-[11px] font-medium text-[var(--md-subtle)]">{t("Field visibility")}</p>
+      {options.map((option) => <div key={option.key} className="flex min-h-9 items-center gap-2.5 rounded-[var(--md-radius-md)] px-2 text-[12px] text-[var(--md-text)] hover:bg-[var(--md-hover)]">
+        <Checkbox
+          id={option.id}
+          checked={value[option.key]}
+          onCheckedChange={(checked) => onChange({ ...value, [option.key]: checked === true })}
+        />
+        <label htmlFor={option.id} className="min-w-0 flex-1 cursor-pointer select-none">{t(option.label)}</label>
+      </div>)}
+    </PopoverContent>
+  </Popover>
 }
 
 function SectionFrame({ title, description, children }: { title: string; description: string; children: ReactNode }) {
@@ -2618,12 +3000,11 @@ function TextAreaField({ label, value, onChange, dataElement, customsBox, requir
   return <FieldShell label={label} dataElement={dataElement} customsBox={customsBox} required={required} showDataElements={showDataElements} invalid={invalid} highlighted={highlighted} fieldKey={fieldKey} className={className}><Textarea value={value} onChange={(event) => onChange(event.target.value)} aria-invalid={invalid || undefined} className={cn("border-0 bg-[var(--md-field-bg)] shadow-[var(--md-shadow-line)]", compact ? "min-h-8 px-2 py-1.5 text-[11px]" : "min-h-9 text-[13px]")} /></FieldShell>
 }
 
-function SelectField({ label, value, onChange, options, dataElement, customsBox, required, showDataElements, invalid, highlighted, fieldKey }: { label: string; value: string; onChange: (value: string) => void; options: ReadonlyArray<readonly [string, string]>; dataElement?: string; customsBox?: string; required?: boolean; showDataElements: boolean; invalid?: boolean; highlighted?: boolean; fieldKey?: string }) {
+function SelectField({ label, value, onChange, options, dataElement, customsBox, required, showDataElements, invalid, highlighted, fieldKey }: { label: string; value: string; onChange: (value: string) => void; options: ReadonlyArray<CustomsReferenceOptionTuple>; dataElement?: string; customsBox?: string; required?: boolean; showDataElements: boolean; invalid?: boolean; highlighted?: boolean; fieldKey?: string }) {
   const referenceState = useContext(CustomsReferenceDataContext)
-  const compact = useContext(CompactCustomsFormContext)
-  return <FieldShell label={label} dataElement={dataElement} customsBox={customsBox} required={required} showDataElements={showDataElements} invalid={invalid} highlighted={highlighted} fieldKey={fieldKey}><Select value={value || undefined} onValueChange={onChange} disabled={referenceState.loading || Boolean(referenceState.error) || options.length <= 1}><SelectTrigger aria-invalid={invalid || undefined} className={cn("w-full border-0 bg-[var(--md-field-bg)] shadow-[var(--md-shadow-line)]", compact ? "h-8 px-2 text-[11px]" : "h-9 text-[13px]")}><SelectValue placeholder={options[0]?.[1]} /></SelectTrigger><SelectContent>{options.filter(([optionValue]) => optionValue).map(([optionValue, optionLabel]) => <SelectItem key={optionValue} value={optionValue}>{optionLabel}</SelectItem>)}</SelectContent></Select></FieldShell>
+  return <FieldShell label={label} dataElement={dataElement} customsBox={customsBox} required={required} showDataElements={showDataElements} invalid={invalid} highlighted={highlighted} fieldKey={fieldKey}><CustomsReferenceCombobox label={label} value={value} onChange={onChange} options={options} placeholder={options.find(([optionValue]) => !optionValue)?.[1] ?? "—"} disabled={referenceState.loading || Boolean(referenceState.error) || options.filter(([optionValue]) => optionValue).length === 0} invalid={invalid} /></FieldShell>
 }
 
-function Summary({ label, value }: { label: string; value: string }) {
-  return <div className="flex justify-between gap-4 py-2.5"><dt className="text-[11px] text-[var(--md-subtle)]">{label}</dt><dd className="m-0 text-end text-[12px] font-medium text-[var(--md-ink)]">{value}</dd></div>
+function Summary({ label, value, valueDirection }: { label: string; value: string; valueDirection?: "ltr" | "rtl" }) {
+  return <div className="flex justify-between gap-4 py-2.5"><dt className="text-[11px] text-[var(--md-subtle)]">{label}</dt><dd dir={valueDirection} className="m-0 min-w-0 break-all text-end text-[12px] font-medium text-[var(--md-ink)]">{value}</dd></div>
 }

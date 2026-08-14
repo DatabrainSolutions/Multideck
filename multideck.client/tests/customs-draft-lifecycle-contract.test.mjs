@@ -12,7 +12,26 @@ test("opening a new standalone declaration creates its owned draft immediately",
   assert.match(pageSource, /saveStandaloneDeclarationDraft\(draftRef\.current\)/u)
   assert.match(pageSource, /do \{[\s\S]*latestDraft[\s\S]*saveStandaloneDeclarationDraft\(latestDraft, saved\.id\)[\s\S]*\} while/u)
   assert.match(pageSource, /startICustomsProviderDraft\(saved\.id, `start-\$\{saved\.id\}`\)/u)
+  assert.match(pageSource, /\.then\(async \(\) => \{[\s\S]*getICustomsDeclarationState\(saved\.id\)[\s\S]*newly started iCustoms draft state could not be refreshed/u)
+  assert.match(pageSource, /activeDeclarationIdRef\.current === saved\.id/u)
   assert.match(pageSource, /navigate\(`\$\{registerPath\}\/\$\{saved\.id\}`\)/u)
+  assert.match(pageSource, /Draft saved, but the iCustoms draft could not be started/u)
+  assert.match(pageSource, /refreshStartingDraft[\s\S]*window\.setTimeout\(\(\) => \{ void refreshStartingDraft\(\) \}, 650\)/u)
+})
+
+test("Review saves the Multideck draft and its editable iCustoms mirror with truthful feedback", () => {
+  assert.match(pageSource, /onSaveDraft=\{\(\) => void saveDraft\(false\)\}/u)
+  assert.match(pageSource, /providerWasRejected \|\| !\["submitted", "accepted", "released", "cleared", "cancelled"\]\.includes/u)
+  assert.match(pageSource, /providerWasRejected \? "Draft saved and corrected iCustoms draft created" : "Draft saved and updated in iCustoms test mode"/u)
+  assert.match(pageSource, /onClick=\{onSaveDraft\}[\s\S]*?t\(savingDraft \|\| iCustomsBusy === "draft" \? "Saving draft" : "Save draft"\)/u)
+  assert.doesNotMatch(pageSource, /Update customs test draft/u)
+})
+
+test("declaration document actions stay hidden until an accepted state has an MRN", () => {
+  assert.match(pageSource, /Boolean\(declarationId && iCustomsState\?\.declaration\.provider\?\.mrn && \["accepted", "released", "cleared"\]\.includes\(customsStatus\)\)/u)
+  assert.match(pageSource, /\{declarationPdfAvailable \? <Button[\s\S]*?"View declaration"[\s\S]*?: null\}/u)
+  assert.match(pageSource, /\{pdfAvailable \? <Button[\s\S]*?"View declaration PDF"[\s\S]*?: null\}/u)
+  assert.doesNotMatch(pageSource, /PDF available after acceptance/u)
 })
 
 test("editor changes are debounced and serialised into the existing draft", () => {

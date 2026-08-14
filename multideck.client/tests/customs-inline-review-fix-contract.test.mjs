@@ -43,7 +43,8 @@ test("provider rejection fixes stay in the main review panel", () => {
 })
 
 test("the iCustoms record link appears only for a real provider draft", () => {
-  assert.match(source, /hasProviderDraft && draft\.iCustomsCorrelationId/u)
+  assert.match(source, /const providerCorrelationId = iCustomsState\?\.declaration\.correlationId \?\? draft\.iCustomsCorrelationId/u)
+  assert.match(source, /providerDeclarationUrl = hasProviderDraft && providerCorrelationId/u)
   assert.match(source, /direction === "export"[\s\S]*`\/export\/cds\/edit\/\$\{encodeURIComponent\(providerId\)\}`[\s\S]*`\/cds\/edit\/\$\{encodeURIComponent\(providerId\)\}`/u)
   assert.match(source, /providerDeclarationUrl \? <Button asChild variant="outline"/u)
   assert.match(source, /<img src=\{iCustomsLogo\} alt="iCustoms"/u)

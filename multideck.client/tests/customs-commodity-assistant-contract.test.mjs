@@ -23,7 +23,7 @@ test("the Customs item editor opens a field-native iCustoms search dialog", () =
   assert.match(pageSource, /triggerVariant === "certificates"/u)
   assert.match(pageSource, /aria-haspopup="dialog"/u)
   assert.match(pageSource, /<Dialog open=\{open\}/u)
-  assert.doesNotMatch(pageSource, /PopoverTrigger asChild/u)
+  assert.doesNotMatch(commodityAssistantSource, /PopoverTrigger asChild/u)
   assert.doesNotMatch(pageSource, /Find commodity code/u)
 })
 

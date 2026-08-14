@@ -32,6 +32,15 @@ import {
 type Json = Record<string, unknown>;
 type Actor = { User_ID: string; Company_ID: string; User_FullName?: string };
 
+class CustomsSubmissionGateError extends HttpError {
+  constructor(public issues: string[]) {
+    super(
+      422,
+      "Declaration needs attention",
+    );
+  }
+}
+
 const SANDBOX_CONNECTION_ID = "c96a43a9-866a-4d27-ace1-5a6b82085dcb";
 const COMMODITY_CACHE_TTL_MS = 15 * 60 * 1000;
 const COMMODITY_CACHE_LIMIT = 100;
@@ -831,6 +840,18 @@ async function submitDeclaration(
       "This declaration has already entered the provider submission lifecycle and cannot be submitted again.",
     );
   }
+  const direction = declaration.CUST_Direction === "import"
+    ? "import"
+    : "export";
+  const submissionIssues = validateICustomsDeclaration(
+    providerRecord(
+      declaration.CUST_GenericPayloadJSON,
+    ) as ExportDeclarationInput,
+    direction,
+  );
+  if (submissionIssues.length) {
+    throw new CustomsSubmissionGateError(submissionIssues);
+  }
   const { data: acceptedItemRows, error: acceptedItemRowsError } = await admin
     .from("Customs_Items")
     .select("CUSTI_ItemNumber, CUSTI_ItemPayloadJSON")
@@ -1137,6 +1158,13 @@ Deno.serve(async (request) => {
     }
     throw new HttpError(404, "Customs service route not found.");
   } catch (error) {
+    if (error instanceof CustomsSubmissionGateError) {
+      return json(request, {
+        detail: error.message,
+        code: "customs_submission_gate_failed",
+        issues: error.issues,
+      }, error.status);
+    }
     if (error instanceof ICustomsProviderError) {
       return json(request, {
         detail: error.message,
