@@ -22,6 +22,71 @@ ALTER SCHEMA "public" OWNER TO "pg_database_owner";
 COMMENT ON SCHEMA "public" IS 'standard public schema';
 
 
+CREATE SCHEMA IF NOT EXISTS "private";
+
+
+REVOKE ALL ON SCHEMA "private" FROM PUBLIC, "anon", "authenticated";
+GRANT USAGE ON SCHEMA "private" TO "authenticated", "service_role";
+
+
+CREATE OR REPLACE FUNCTION "private"."is_valid_sidebar_layout"("p_layout" "jsonb") RETURNS boolean
+    LANGUAGE "plpgsql" IMMUTABLE
+    SET "search_path" TO ''
+    AS $$
+declare
+  v_scope record;
+  v_list_name text;
+  v_list jsonb;
+  v_entry jsonb;
+begin
+  if p_layout is null then return true; end if;
+  if jsonb_typeof(p_layout) <> 'object' then return false; end if;
+  if (select count(*) from jsonb_object_keys(p_layout)) > 40 then return false; end if;
+  for v_scope in select key, value from jsonb_each(p_layout) loop
+    if length(v_scope.key) not between 1 and 120 or jsonb_typeof(v_scope.value) <> 'object' then return false; end if;
+    if (select count(*) from jsonb_object_keys(v_scope.value)) <> 2 then return false; end if;
+    foreach v_list_name in array array['order', 'pinned'] loop
+      v_list := v_scope.value -> v_list_name;
+      if v_list is null or jsonb_typeof(v_list) <> 'array' or jsonb_array_length(v_list) > 200 then return false; end if;
+      for v_entry in select value from jsonb_array_elements(v_list) loop
+        if jsonb_typeof(v_entry) <> 'string' or length(v_entry #>> '{}') not between 1 and 120 then return false; end if;
+      end loop;
+    end loop;
+  end loop;
+  return true;
+end
+$$;
+
+
+CREATE OR REPLACE FUNCTION "private"."is_valid_table_pinned_columns"("p_preferences" "jsonb") RETURNS boolean
+    LANGUAGE "plpgsql" IMMUTABLE
+    SET "search_path" TO ''
+    AS $$
+declare
+  v_table record;
+  v_column jsonb;
+begin
+  if p_preferences is null then return true; end if;
+  if jsonb_typeof(p_preferences) <> 'object' then return false; end if;
+  if (select count(*) from jsonb_object_keys(p_preferences)) > 100 then return false; end if;
+  for v_table in select key, value from jsonb_each(p_preferences) loop
+    if length(v_table.key) not between 1 and 120 then return false; end if;
+    if jsonb_typeof(v_table.value) <> 'array' or jsonb_array_length(v_table.value) > 100 then return false; end if;
+    for v_column in select value from jsonb_array_elements(v_table.value) loop
+      if jsonb_typeof(v_column) <> 'string' or length(v_column #>> '{}') not between 1 and 120 then return false; end if;
+    end loop;
+  end loop;
+  return true;
+end
+$$;
+
+
+REVOKE ALL ON FUNCTION "private"."is_valid_sidebar_layout"("jsonb") FROM PUBLIC, "anon";
+REVOKE ALL ON FUNCTION "private"."is_valid_table_pinned_columns"("jsonb") FROM PUBLIC, "anon";
+GRANT EXECUTE ON FUNCTION "private"."is_valid_sidebar_layout"("jsonb") TO "authenticated", "service_role";
+GRANT EXECUTE ON FUNCTION "private"."is_valid_table_pinned_columns"("jsonb") TO "authenticated", "service_role";
+
+
 
 CREATE OR REPLACE FUNCTION "public"."Audit_CurrentUserID"() RETURNS "uuid"
     LANGUAGE "plpgsql" STABLE
@@ -82714,7 +82779,7 @@ ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TAB
 
 -- Dexter personal email writing profile snapshot. Operational Vault secret
 -- creation and schedule activation remain migration-time concerns.
-+
+
 -- A compact, operator-owned style profile. Raw sent-email bodies are selected
 -- only inside the bounded generation call and are never persisted here.
 create table if not exists public."AI_DexterWritingProfiles" (
@@ -83629,6 +83694,1825 @@ comment on table public."AI_DexterWritingProfiles" is
   'Private, operator-owned email style guidance derived with explicit consent. Raw source emails are never stored here.';
 comment on function public._multideck_dexter_writing_profile_source_for(uuid, uuid, integer, timestamptz) is
   'Selects bounded, provably authored sent email for one operator. Private preferences do not emit Watching for you signals.';
+
+-- Dexter foundation supplement. The baseline is schema-only, but these
+-- registries and capability rows are executable product configuration rather
+-- than tenant business data. Keep them here so a new isolated tenant can apply
+-- later Dexter migrations without replaying the full historical migration set.
+-- Read-only, authenticated data capabilities for Agent Dexter.
+--
+-- Each tenant Supabase project owns its own registry. Product modules add a domain by
+-- shipping a reviewed query function with the standard (company_id, search, take)
+-- signature and registering that function below. Dexter never receives arbitrary SQL
+-- access and authenticated users cannot edit the registry or call the domain functions.
+
+begin;
+
+create table if not exists public."sys_AIDexterDataDomains" (
+  "AIDexterDomain_Code" text primary key,
+  "AIDexterDomain_Name" text not null,
+  "AIDexterDomain_Description" text not null,
+  "AIDexterDomain_QueryFunction" text not null,
+  "AIDexterDomain_SortOrder" integer not null default 100,
+  "AIDexterDomain_IsActive" boolean not null default true,
+  "AIDexterDomain_UpdatedAt" timestamptz not null default now(),
+  constraint "CK_sys_AIDexterDataDomains_Code"
+    check ("AIDexterDomain_Code" ~ '^[a-z][a-z0-9_]{0,39}$'),
+  constraint "CK_sys_AIDexterDataDomains_QueryFunction"
+    check ("AIDexterDomain_QueryFunction" ~ '^multideck_dexter_domain_[a-z0-9_]{1,40}$')
+);
+
+alter table public."sys_AIDexterDataDomains" enable row level security;
+revoke all on table public."sys_AIDexterDataDomains" from public, anon, authenticated;
+
+create or replace function public._multideck_dexter_context()
+returns table(user_id uuid, company_id uuid)
+language plpgsql
+stable
+security definer
+set search_path = pg_catalog, public, auth
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'Sign in again to use Agent Dexter.' using errcode = '42501';
+  end if;
+
+  return query
+  select profile."User_ID", profile."Company_ID"
+  from public."cmp_Users" profile
+  where profile."Auth_User_ID" = auth.uid()
+    and profile."Company_ID" is not null
+  limit 1;
+
+  if not found then
+    raise exception 'Your signed-in account is not linked to this Multideck workspace.'
+      using errcode = '42501';
+  end if;
+end;
+$$;
+
+create or replace function public.multideck_dexter_domain_warehouse(
+  p_company_id uuid,
+  p_search text,
+  p_take integer
+)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = pg_catalog, public
+as $$
+  with parameters as (
+    select
+      nullif(btrim(p_search), '') as search,
+      greatest(1, least(coalesce(p_take, 10), 15)) as take
+  ),
+  company_facilities as (
+    select facility.*
+    from public."WMS_Facilities" facility
+    join public."cmp_Offices" office
+      on office."Office_ID" = facility."WMSFacility_OrgOfficeID"
+     and office."Company_ID" = p_company_id
+    where not facility."WMSFacility_IsDeleted"
+  ),
+  overview as (
+    select jsonb_build_object(
+      'activeFacilities', (select count(*) from company_facilities where "WMSFacility_IsActive"),
+      'openOrders', (
+        select count(*)
+        from public."WMS_Orders" orders
+        join company_facilities facility on facility."WMSFacility_ID" = orders."WMSOrder_FacilityID"
+        join public."sys_WMSOrderStatuses" status on status."WMSOrderStatus_Code" = orders."WMSOrder_StatusCode"
+        where not orders."WMSOrder_IsDeleted" and status."WMSOrderStatus_IsOpen"
+      ),
+      'openTasks', (
+        select count(*)
+        from public."WMS_Tasks" tasks
+        join company_facilities facility on facility."WMSFacility_ID" = tasks."WMSTask_FacilityID"
+        join public."sys_WMSTaskStatuses" status on status."WMSTaskStatus_Code" = tasks."WMSTask_StatusCode"
+        where status."WMSTaskStatus_IsOpen"
+      ),
+      'openExceptions', (
+        select count(*)
+        from public."WMS_Exceptions" exception
+        join company_facilities facility on facility."WMSFacility_ID" = exception."WMSException_FacilityID"
+        where exception."WMSException_ResolvedAt" is null
+      ),
+      'heldStockQuantity', (
+        select coalesce(sum(balance."WMSBalance_HeldQuantity"), 0)
+        from public."WMS_InventoryBalances" balance
+        join company_facilities facility on facility."WMSFacility_ID" = balance."WMSBalance_FacilityID"
+      )
+    ) as value
+  ),
+  order_rows as (
+    select jsonb_build_object(
+      'recordId', orders."WMSOrder_ID",
+      'orderNumber', orders."WMSOrder_OrderNumber",
+      'type', orders."WMSOrder_TypeCode",
+      'status', orders."WMSOrder_StatusCode",
+      'priority', orders."WMSOrder_PriorityCode",
+      'facility', facility."WMSFacility_Code",
+      'customerReference', orders."WMSOrder_CustomerReference",
+      'requestedDate', orders."WMSOrder_RequestedDate",
+      'containerNumber', orders."WMSOrder_ContainerNumber",
+      'releaseGateStatus', orders."WMSOrder_ReleaseGateStatusCode"
+    ) as value
+    from public."WMS_Orders" orders
+    join company_facilities facility on facility."WMSFacility_ID" = orders."WMSOrder_FacilityID"
+    cross join parameters
+    where not orders."WMSOrder_IsDeleted"
+      and (
+        parameters.search is null
+        or orders."WMSOrder_OrderNumber" ilike '%' || parameters.search || '%'
+        or orders."WMSOrder_CustomerReference" ilike '%' || parameters.search || '%'
+        or orders."WMSOrder_ContainerNumber" ilike '%' || parameters.search || '%'
+        or facility."WMSFacility_Code" ilike '%' || parameters.search || '%'
+        or facility."WMSFacility_Name" ilike '%' || parameters.search || '%'
+      )
+    order by orders."WMSOrder_RequestedDate" nulls last, orders."WMSOrder_UpdatedAt" desc
+    limit (select take from parameters)
+  ),
+  inventory_rows as (
+    select jsonb_build_object(
+      'sku', item."WMSItem_SKU",
+      'description', item."WMSItem_Description",
+      'facility', facility."WMSFacility_Code",
+      'inventoryStatus', balance."WMSBalance_InventoryStatusCode",
+      'customsStatus', balance."WMSBalance_CustomsStatusCode",
+      'onHand', balance."WMSBalance_OnHandQuantity",
+      'available', balance."WMSBalance_AvailableQuantity",
+      'reserved', balance."WMSBalance_ReservedQuantity",
+      'held', balance."WMSBalance_HeldQuantity",
+      'uom', balance."WMSBalance_UOMCode",
+      'isBonded', balance."WMSBalance_IsBonded",
+      'lastMovementAt', balance."WMSBalance_LastMovementAt"
+    ) as value
+    from public."WMS_InventoryBalances" balance
+    join company_facilities facility on facility."WMSFacility_ID" = balance."WMSBalance_FacilityID"
+    join public."WMS_Items" item on item."WMSItem_ID" = balance."WMSBalance_ItemID"
+    cross join parameters
+    where not item."WMSItem_IsDeleted"
+      and (
+        parameters.search is null
+        or item."WMSItem_SKU" ilike '%' || parameters.search || '%'
+        or item."WMSItem_Description" ilike '%' || parameters.search || '%'
+        or facility."WMSFacility_Code" ilike '%' || parameters.search || '%'
+        or facility."WMSFacility_Name" ilike '%' || parameters.search || '%'
+      )
+    order by balance."WMSBalance_UpdatedAt" desc
+    limit (select take from parameters)
+  ),
+  exception_rows as (
+    select jsonb_build_object(
+      'title', exception."WMSException_Title",
+      'description', exception."WMSException_Description",
+      'type', exception."WMSException_TypeCode",
+      'status', exception."WMSException_StatusCode",
+      'severity', exception."WMSException_SeverityCode",
+      'facility', facility."WMSFacility_Code",
+      'orderNumber', orders."WMSOrder_OrderNumber",
+      'raisedAt', exception."WMSException_RaisedAt"
+    ) as value
+    from public."WMS_Exceptions" exception
+    join company_facilities facility on facility."WMSFacility_ID" = exception."WMSException_FacilityID"
+    left join public."WMS_Orders" orders on orders."WMSOrder_ID" = exception."WMSException_OrderID"
+    cross join parameters
+    where exception."WMSException_ResolvedAt" is null
+      and (
+        parameters.search is null
+        or exception."WMSException_Title" ilike '%' || parameters.search || '%'
+        or exception."WMSException_Description" ilike '%' || parameters.search || '%'
+        or exception."WMSException_SeverityCode" ilike '%' || parameters.search || '%'
+        or facility."WMSFacility_Code" ilike '%' || parameters.search || '%'
+        or orders."WMSOrder_OrderNumber" ilike '%' || parameters.search || '%'
+      )
+    order by exception."WMSException_RaisedAt" desc
+    limit (select take from parameters)
+  )
+  select jsonb_build_object(
+    'overview', (select value from overview),
+    'orders', coalesce((select jsonb_agg(value) from order_rows), '[]'::jsonb),
+    'inventory', coalesce((select jsonb_agg(value) from inventory_rows), '[]'::jsonb),
+    'exceptions', coalesce((select jsonb_agg(value) from exception_rows), '[]'::jsonb)
+  );
+$$;
+
+create or replace function public.multideck_dexter_domain_leads(
+  p_company_id uuid,
+  p_search text,
+  p_take integer
+)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = pg_catalog, public
+as $$
+  select coalesce(jsonb_agg(row_data order by sort_due nulls last, sort_created desc), '[]'::jsonb)
+  from (
+    select
+      jsonb_build_object(
+        'recordId', lead."CRMLead_ID",
+        'companyName', lead."CRMLead_CompanyName",
+        'contactName', lead."CRMLead_PersonName",
+        'contactEmail', lead."CRMLead_Email",
+        'status', lead."CRMLead_StatusCode",
+        'rating', lead."CRMLead_RatingCode",
+        'source', lead."CRMLead_SourceCode",
+        'owner', nullif(btrim(concat_ws(' ', owner."User_Firstname", owner."User_Lastname")), ''),
+        'mode', lead."CRMLead_ModeCode",
+        'direction', lead."CRMLead_DirectionCode",
+        'tradeLane', lead."CRMLead_TradeLane",
+        'serviceInterest', lead."CRMLead_ServiceInterest",
+        'estimatedValue', lead."CRMLead_EstimatedValueAmount",
+        'currency', lead."CRMLead_EstimatedValueCurrencyCode",
+        'urgency', lead."CRMLead_UrgencyCode",
+        'score', lead."CRMLead_Score",
+        'conversionProbability', lead."CRMLead_AIProbabilityToConvert",
+        'nextActionDueAt', lead."CRMLead_NextActionDueAt",
+        'lastInteractionAt', lead."CRMLead_LastInteractionAt"
+      ) as row_data,
+      lead."CRMLead_NextActionDueAt" as sort_due,
+      lead."CRMLead_CreatedAt" as sort_created
+    from public."CRM_Leads" lead
+    left join public."cmp_Users" owner on owner."User_ID" = lead."CRMLead_OwnerUserID"
+    left join public."cmp_Users" creator on creator."User_ID" = lead."CRMLead_CreatedBy"
+    where not lead."CRMLead_IsDeleted"
+      and (owner."Company_ID" = p_company_id or creator."Company_ID" = p_company_id)
+      and (
+        nullif(btrim(p_search), '') is null
+        or lead."CRMLead_CompanyName" ilike '%' || btrim(p_search) || '%'
+        or lead."CRMLead_PersonName" ilike '%' || btrim(p_search) || '%'
+        or lead."CRMLead_Email" ilike '%' || btrim(p_search) || '%'
+        or lead."CRMLead_TradeLane" ilike '%' || btrim(p_search) || '%'
+        or lead."CRMLead_ServiceInterest" ilike '%' || btrim(p_search) || '%'
+      )
+    order by lead."CRMLead_NextActionDueAt" nulls last, lead."CRMLead_CreatedAt" desc
+    limit greatest(1, least(coalesce(p_take, 10), 25))
+  ) rows;
+$$;
+
+create or replace function public.multideck_dexter_domain_deals(
+  p_company_id uuid,
+  p_search text,
+  p_take integer
+)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = pg_catalog, public
+as $$
+  select coalesce(jsonb_agg(row_data order by sort_close nulls last, sort_created desc), '[]'::jsonb)
+  from (
+    select
+      jsonb_build_object(
+        'recordId', deal."CRMOppty_ID",
+        'name', deal."CRMOppty_Name",
+        'pipeline', pipeline."CRMPipeline_Name",
+        'stage', stage."CRMPipelineStage_Name",
+        'status', deal."CRMOppty_StatusCode",
+        'type', deal."CRMOppty_TypeCode",
+        'mode', deal."CRMOppty_ModeCode",
+        'direction', deal."CRMOppty_DirectionCode",
+        'tradeLane', deal."CRMOppty_TradeLane",
+        'serviceInterest', deal."CRMOppty_ServiceInterest",
+        'expectedCloseDate', deal."CRMOppty_ExpectedCloseDate",
+        'probabilityPct', deal."CRMOppty_ProbabilityPct",
+        'expectedValue', deal."CRMOppty_ExpectedValueAmount",
+        'expectedMargin', deal."CRMOppty_ExpectedMarginAmount",
+        'weightedValue', deal."CRMOppty_WeightedValueAmount",
+        'currency', deal."CRMOppty_CurrencyCode",
+        'nextActionDueAt', deal."CRMOppty_NextActionDueAt",
+        'lastActivityAt', deal."CRMOppty_LastActivityAt"
+      ) as row_data,
+      deal."CRMOppty_ExpectedCloseDate" as sort_close,
+      deal."CRMOppty_CreatedAt" as sort_created
+    from public."CRM_Opportunities" deal
+    join public."CRM_Pipelines" pipeline
+      on pipeline."CRMPipeline_ID" = deal."CRMOppty_PipelineID"
+     and pipeline."Company_ID" = p_company_id
+     and not pipeline."Is_Deleted"
+    left join public."CRM_PipelineStages" stage
+      on stage."CRMPipelineStage_ID" = deal."CRMOppty_PipelineStageID"
+     and not stage."Is_Deleted"
+    where not deal."CRMOppty_IsDeleted"
+      and (
+        nullif(btrim(p_search), '') is null
+        or deal."CRMOppty_Name" ilike '%' || btrim(p_search) || '%'
+        or deal."CRMOppty_TradeLane" ilike '%' || btrim(p_search) || '%'
+        or deal."CRMOppty_ServiceInterest" ilike '%' || btrim(p_search) || '%'
+        or pipeline."CRMPipeline_Name" ilike '%' || btrim(p_search) || '%'
+        or stage."CRMPipelineStage_Name" ilike '%' || btrim(p_search) || '%'
+      )
+    order by deal."CRMOppty_ExpectedCloseDate" nulls last, deal."CRMOppty_CreatedAt" desc
+    limit greatest(1, least(coalesce(p_take, 10), 25))
+  ) rows;
+$$;
+
+create or replace function public.multideck_dexter_domain_quotes(
+  p_company_id uuid,
+  p_search text,
+  p_take integer
+)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = pg_catalog, public
+as $$
+  select coalesce(jsonb_agg(row_data order by sort_edited desc), '[]'::jsonb)
+  from (
+    select
+      jsonb_build_object(
+        'recordId', quote."CusQuoteHeader_ID",
+        'quoteNumber', quote."CusQuoteHeader_Number",
+        'type', quote."CusQuoteHeader_Type",
+        'status', quote."CusQuoteHeader_Status",
+        'deadline', quote."CusQuoteHeader_Deadline",
+        'mode', quote."CusQuoteHeader_ModeCode",
+        'shipmentType', quote."CusQuoteHeader_ShipmentTypeCode",
+        'serviceLevel', quote."CusQuoteHeader_ServiceLevel",
+        'currency', quote."CusQuoteHeader_CurrencyCode",
+        'origin', quote."CusQuoteHeader_OriginExtra",
+        'destination', quote."CusQuoteHeader_DestinationExtra",
+        'direction', quote."CusQuoteHeader_Direction",
+        'incoterm', quote."CusQuoteHeader_Incoterm",
+        'validFrom', quote."CusQuoteHeader_ValidFrom",
+        'validTo', quote."CusQuoteHeader_ValidTo",
+        'lastEditedAt', quote."CusQuoteHeader_LastEditedDate"
+      ) as row_data,
+      quote."CusQuoteHeader_LastEditedDate" as sort_edited
+    from public."CusQuote_Header" quote
+    left join public."cmp_Offices" office
+      on office."Office_ID" = coalesce(quote."CusQuoteHeader_OrgOfficeID", quote."OrgOffice_ID")
+    where not quote."CusQuoteHeader_IsDeleted"
+      and (quote."Org_ID" = p_company_id or office."Company_ID" = p_company_id)
+      and (
+        nullif(btrim(p_search), '') is null
+        or quote."CusQuoteHeader_Number"::text ilike '%' || btrim(p_search) || '%'
+        or quote."CusQuoteHeader_ModeCode" ilike '%' || btrim(p_search) || '%'
+        or quote."CusQuoteHeader_OriginExtra" ilike '%' || btrim(p_search) || '%'
+        or quote."CusQuoteHeader_DestinationExtra" ilike '%' || btrim(p_search) || '%'
+      )
+    order by quote."CusQuoteHeader_LastEditedDate" desc
+    limit greatest(1, least(coalesce(p_take, 10), 25))
+  ) rows;
+$$;
+
+revoke all on function public._multideck_dexter_context() from public, anon, authenticated;
+revoke all on function public.multideck_dexter_domain_warehouse(uuid, text, integer) from public, anon, authenticated;
+revoke all on function public.multideck_dexter_domain_leads(uuid, text, integer) from public, anon, authenticated;
+revoke all on function public.multideck_dexter_domain_deals(uuid, text, integer) from public, anon, authenticated;
+revoke all on function public.multideck_dexter_domain_quotes(uuid, text, integer) from public, anon, authenticated;
+
+insert into public."sys_AIDexterDataDomains" (
+  "AIDexterDomain_Code",
+  "AIDexterDomain_Name",
+  "AIDexterDomain_Description",
+  "AIDexterDomain_QueryFunction",
+  "AIDexterDomain_SortOrder",
+  "AIDexterDomain_IsActive",
+  "AIDexterDomain_UpdatedAt"
+) values
+  ('warehouse', 'Warehouse', 'Facilities, orders, inventory, tasks and unresolved warehouse exceptions.', 'multideck_dexter_domain_warehouse', 10, true, now()),
+  ('leads', 'Leads', 'CRM leads, qualification, value, ownership and next-action timing.', 'multideck_dexter_domain_leads', 20, true, now()),
+  ('deals', 'Deals', 'CRM opportunities, pipeline stage, probability, value and follow-up timing.', 'multideck_dexter_domain_deals', 30, true, now()),
+  ('quotes', 'Quotes', 'Customer quote status, routing, validity and commercial context.', 'multideck_dexter_domain_quotes', 40, true, now())
+on conflict ("AIDexterDomain_Code") do update
+set
+  "AIDexterDomain_Name" = excluded."AIDexterDomain_Name",
+  "AIDexterDomain_Description" = excluded."AIDexterDomain_Description",
+  "AIDexterDomain_QueryFunction" = excluded."AIDexterDomain_QueryFunction",
+  "AIDexterDomain_SortOrder" = excluded."AIDexterDomain_SortOrder",
+  "AIDexterDomain_IsActive" = excluded."AIDexterDomain_IsActive",
+  "AIDexterDomain_UpdatedAt" = excluded."AIDexterDomain_UpdatedAt";
+
+create or replace function public.multideck_dexter_list_domains()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = pg_catalog, public, auth
+as $$
+declare
+  v_context record;
+  v_result jsonb;
+begin
+  select * into v_context from public._multideck_dexter_context();
+
+  select coalesce(
+    jsonb_agg(
+      jsonb_build_object(
+        'code', domain."AIDexterDomain_Code",
+        'name', domain."AIDexterDomain_Name",
+        'description', domain."AIDexterDomain_Description"
+      )
+      order by domain."AIDexterDomain_SortOrder", domain."AIDexterDomain_Name"
+    ),
+    '[]'::jsonb
+  )
+  into v_result
+  from public."sys_AIDexterDataDomains" domain
+  where domain."AIDexterDomain_IsActive";
+
+  return v_result;
+end;
+$$;
+
+create or replace function public.multideck_dexter_query_domain(
+  p_domain text,
+  p_search text default null,
+  p_take integer default 10
+)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = pg_catalog, public, auth
+as $$
+declare
+  v_context record;
+  v_code text := lower(btrim(coalesce(p_domain, '')));
+  v_query_function text;
+  v_result jsonb;
+begin
+  select * into v_context from public._multideck_dexter_context();
+
+  select domain."AIDexterDomain_QueryFunction"
+  into v_query_function
+  from public."sys_AIDexterDataDomains" domain
+  where domain."AIDexterDomain_Code" = v_code
+    and domain."AIDexterDomain_IsActive";
+
+  if v_query_function is null then
+    raise exception 'That Dexter data domain is not available in this workspace.'
+      using errcode = '22023';
+  end if;
+
+  execute format('select public.%I($1, $2, $3)', v_query_function)
+  into v_result
+  using v_context.company_id, nullif(btrim(p_search), ''), greatest(1, least(coalesce(p_take, 10), 25));
+
+  return jsonb_build_object(
+    'domain', v_code,
+    'data', coalesce(v_result, '[]'::jsonb)
+  );
+end;
+$$;
+
+revoke all on function public.multideck_dexter_list_domains() from public, anon;
+revoke all on function public.multideck_dexter_query_domain(text, text, integer) from public, anon;
+grant execute on function public.multideck_dexter_list_domains() to authenticated;
+grant execute on function public.multideck_dexter_query_domain(text, text, integer) to authenticated;
+
+create table if not exists public."sys_AIDexterActions" (
+  "AIDexterAction_Code" text primary key,
+  "AIDexterAction_DomainCode" text not null references public."sys_AIDexterDataDomains"("AIDexterDomain_Code"),
+  "AIDexterAction_Name" text not null,
+  "AIDexterAction_Description" text not null,
+  "AIDexterAction_Function" text not null,
+  "AIDexterAction_ParametersJSON" jsonb not null,
+  "AIDexterAction_SortOrder" integer not null default 100,
+  "AIDexterAction_IsActive" boolean not null default true,
+  "AIDexterAction_UpdatedAt" timestamptz not null default now(),
+  constraint "CK_sys_AIDexterActions_Code"
+    check ("AIDexterAction_Code" ~ '^[a-z][a-z0-9_]{0,49}$'),
+  constraint "CK_sys_AIDexterActions_Function"
+    check ("AIDexterAction_Function" ~ '^multideck_dexter_action_[a-z0-9_]{1,50}$')
+);
+
+create table if not exists public."AI_DexterActionAudit" (
+  "AIDexterAudit_ID" uuid primary key default gen_random_uuid(),
+  "AIDexterAudit_CompanyID" uuid not null,
+  "AIDexterAudit_UserID" uuid not null,
+  "AIDexterAudit_ActionCode" text not null,
+  "AIDexterAudit_AccessMode" text not null check ("AIDexterAudit_AccessMode" in ('approve', 'full')),
+  "AIDexterAudit_ArgumentsJSON" jsonb not null,
+  "AIDexterAudit_ResultJSON" jsonb not null,
+  "AIDexterAudit_CreatedAt" timestamptz not null default now()
+);
+
+alter table public."sys_AIDexterActions" enable row level security;
+alter table public."AI_DexterActionAudit" enable row level security;
+revoke all on table public."sys_AIDexterActions" from public, anon, authenticated;
+revoke all on table public."AI_DexterActionAudit" from public, anon, authenticated;
+
+create or replace function public._multideck_dexter_can_manage(p_user_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = pg_catalog, public
+as $$
+  select exists (
+    select 1
+    from public."cmp_Users_Roles" user_role
+    join public."sys_UserRole_Permissions" role_permission
+      on role_permission."sys_UserRole_ID" = user_role."sys_UserRole_ID"
+    join public."sys_Permissions" permission
+      on permission."sys_Permission_ID" = role_permission."sys_Permission_ID"
+    where user_role."User_ID" = p_user_id
+      and permission."sys_Permission_Value" = 'AgentDexter.Manage'
+  );
+$$;
+
+create or replace function public.multideck_dexter_action_update_warehouse_order(
+  p_company_id uuid,
+  p_user_id uuid,
+  p_arguments jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  v_target_id uuid := (p_arguments ->> 'target_id')::uuid;
+  v_result jsonb;
+begin
+  if nullif(btrim(coalesce(p_arguments ->> 'requested_date', '')), '') is null
+     and nullif(btrim(coalesce(p_arguments ->> 'instructions', '')), '') is null then
+    raise exception 'Choose at least one warehouse order field to update.' using errcode = '22023';
+  end if;
+
+  update public."WMS_Orders" orders
+  set
+    "WMSOrder_RequestedDate" = coalesce(
+      nullif(btrim(coalesce(p_arguments ->> 'requested_date', '')), '')::date,
+      orders."WMSOrder_RequestedDate"
+    ),
+    "WMSOrder_Instructions" = coalesce(
+      nullif(btrim(coalesce(p_arguments ->> 'instructions', '')), ''),
+      orders."WMSOrder_Instructions"
+    ),
+    "WMSOrder_UpdatedAt" = now(),
+    "WMSOrder_UpdatedBy" = p_user_id
+  from public."WMS_Facilities" facility
+  join public."cmp_Offices" office on office."Office_ID" = facility."WMSFacility_OrgOfficeID"
+  where orders."WMSOrder_ID" = v_target_id
+    and orders."WMSOrder_FacilityID" = facility."WMSFacility_ID"
+    and office."Company_ID" = p_company_id
+    and not orders."WMSOrder_IsDeleted"
+  returning jsonb_build_object(
+    'orderNumber', orders."WMSOrder_OrderNumber",
+    'requestedDate', orders."WMSOrder_RequestedDate",
+    'instructions', orders."WMSOrder_Instructions"
+  ) into v_result;
+
+  if v_result is null then
+    raise exception 'That warehouse order is outside this workspace or no longer exists.' using errcode = 'P0002';
+  end if;
+  return v_result;
+end;
+$$;
+
+create or replace function public.multideck_dexter_action_update_lead(
+  p_company_id uuid,
+  p_user_id uuid,
+  p_arguments jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  v_target_id uuid := (p_arguments ->> 'target_id')::uuid;
+  v_result jsonb;
+begin
+  if nullif(btrim(coalesce(p_arguments ->> 'next_action_due_at', '')), '') is null
+     and nullif(btrim(coalesce(p_arguments ->> 'service_interest', '')), '') is null then
+    raise exception 'Choose at least one lead field to update.' using errcode = '22023';
+  end if;
+
+  update public."CRM_Leads" lead
+  set
+    "CRMLead_NextActionDueAt" = coalesce(
+      nullif(btrim(coalesce(p_arguments ->> 'next_action_due_at', '')), '')::timestamptz,
+      lead."CRMLead_NextActionDueAt"
+    ),
+    "CRMLead_ServiceInterest" = coalesce(
+      nullif(btrim(coalesce(p_arguments ->> 'service_interest', '')), ''),
+      lead."CRMLead_ServiceInterest"
+    ),
+    "CRMLead_UpdatedAt" = now(),
+    "CRMLead_UpdatedBy" = p_user_id
+  where lead."CRMLead_ID" = v_target_id
+    and not lead."CRMLead_IsDeleted"
+    and exists (
+      select 1
+      from public."cmp_Users" workspace_user
+      where workspace_user."Company_ID" = p_company_id
+        and workspace_user."User_ID" in (
+          lead."CRMLead_OwnerUserID",
+          lead."CRMLead_CreatedBy"
+        )
+    )
+  returning jsonb_build_object(
+    'companyName', lead."CRMLead_CompanyName",
+    'nextActionDueAt', lead."CRMLead_NextActionDueAt",
+    'serviceInterest', lead."CRMLead_ServiceInterest"
+  ) into v_result;
+
+  if v_result is null then
+    raise exception 'That lead is outside this workspace or no longer exists.' using errcode = 'P0002';
+  end if;
+  return v_result;
+end;
+$$;
+
+create or replace function public.multideck_dexter_action_update_deal(
+  p_company_id uuid,
+  p_user_id uuid,
+  p_arguments jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  v_target_id uuid := (p_arguments ->> 'target_id')::uuid;
+  v_probability numeric := nullif(btrim(coalesce(p_arguments ->> 'probability_pct', '')), '')::numeric;
+  v_result jsonb;
+begin
+  if v_probability is not null and (v_probability < 0 or v_probability > 100) then
+    raise exception 'Deal probability must be between 0 and 100.' using errcode = '22023';
+  end if;
+  if nullif(btrim(coalesce(p_arguments ->> 'expected_close_date', '')), '') is null
+     and v_probability is null
+     and nullif(btrim(coalesce(p_arguments ->> 'next_action_due_at', '')), '') is null
+     and nullif(btrim(coalesce(p_arguments ->> 'value_proposition', '')), '') is null then
+    raise exception 'Choose at least one deal field to update.' using errcode = '22023';
+  end if;
+
+  update public."CRM_Opportunities" deal
+  set
+    "CRMOppty_ExpectedCloseDate" = coalesce(
+      nullif(btrim(coalesce(p_arguments ->> 'expected_close_date', '')), '')::date,
+      deal."CRMOppty_ExpectedCloseDate"
+    ),
+    "CRMOppty_ProbabilityPct" = coalesce(v_probability, deal."CRMOppty_ProbabilityPct"),
+    "CRMOppty_WeightedValueAmount" = case
+      when v_probability is not null and deal."CRMOppty_ExpectedValueAmount" is not null
+      then round(deal."CRMOppty_ExpectedValueAmount" * v_probability / 100, 4)
+      else deal."CRMOppty_WeightedValueAmount"
+    end,
+    "CRMOppty_NextActionDueAt" = coalesce(
+      nullif(btrim(coalesce(p_arguments ->> 'next_action_due_at', '')), '')::timestamptz,
+      deal."CRMOppty_NextActionDueAt"
+    ),
+    "CRMOppty_ValueProposition" = coalesce(
+      nullif(btrim(coalesce(p_arguments ->> 'value_proposition', '')), ''),
+      deal."CRMOppty_ValueProposition"
+    ),
+    "CRMOppty_UpdatedAt" = now(),
+    "CRMOppty_UpdatedBy" = p_user_id
+  from public."CRM_Pipelines" pipeline
+  where deal."CRMOppty_ID" = v_target_id
+    and deal."CRMOppty_PipelineID" = pipeline."CRMPipeline_ID"
+    and pipeline."Company_ID" = p_company_id
+    and not pipeline."Is_Deleted"
+    and not deal."CRMOppty_IsDeleted"
+  returning jsonb_build_object(
+    'name', deal."CRMOppty_Name",
+    'expectedCloseDate', deal."CRMOppty_ExpectedCloseDate",
+    'probabilityPct', deal."CRMOppty_ProbabilityPct",
+    'nextActionDueAt', deal."CRMOppty_NextActionDueAt",
+    'valueProposition', deal."CRMOppty_ValueProposition"
+  ) into v_result;
+
+  if v_result is null then
+    raise exception 'That deal is outside this workspace or no longer exists.' using errcode = 'P0002';
+  end if;
+  return v_result;
+end;
+$$;
+
+create or replace function public.multideck_dexter_action_update_quote(
+  p_company_id uuid,
+  p_user_id uuid,
+  p_arguments jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  v_target_id uuid := (p_arguments ->> 'target_id')::uuid;
+  v_result jsonb;
+begin
+  if nullif(btrim(coalesce(p_arguments ->> 'deadline', '')), '') is null
+     and nullif(btrim(coalesce(p_arguments ->> 'service_level', '')), '') is null
+     and nullif(btrim(coalesce(p_arguments ->> 'internal_notes', '')), '') is null
+     and nullif(btrim(coalesce(p_arguments ->> 'valid_from', '')), '') is null
+     and nullif(btrim(coalesce(p_arguments ->> 'valid_to', '')), '') is null then
+    raise exception 'Choose at least one quote field to update.' using errcode = '22023';
+  end if;
+
+  update public."CusQuote_Header" quote
+  set
+    "CusQuoteHeader_Deadline" = coalesce(
+      nullif(btrim(coalesce(p_arguments ->> 'deadline', '')), '')::timestamp,
+      quote."CusQuoteHeader_Deadline"
+    ),
+    "CusQuoteHeader_ServiceLevel" = coalesce(
+      nullif(btrim(coalesce(p_arguments ->> 'service_level', '')), ''),
+      quote."CusQuoteHeader_ServiceLevel"
+    ),
+    "CusQuoteHeader_InternalNotes" = coalesce(
+      nullif(btrim(coalesce(p_arguments ->> 'internal_notes', '')), ''),
+      quote."CusQuoteHeader_InternalNotes"
+    ),
+    "CusQuoteHeader_ValidFrom" = coalesce(
+      nullif(btrim(coalesce(p_arguments ->> 'valid_from', '')), '')::date,
+      quote."CusQuoteHeader_ValidFrom"
+    ),
+    "CusQuoteHeader_ValidTo" = coalesce(
+      nullif(btrim(coalesce(p_arguments ->> 'valid_to', '')), '')::date,
+      quote."CusQuoteHeader_ValidTo"
+    ),
+    "CusQuoteHeader_LastEditedDate" = now(),
+    "CusQuoteHeader_LastEditedBy" = p_user_id
+  where quote."CusQuoteHeader_ID" = v_target_id
+    and (
+      quote."Org_ID" = p_company_id
+      or exists (
+        select 1
+        from public."cmp_Offices" office
+        where office."Office_ID" = coalesce(quote."CusQuoteHeader_OrgOfficeID", quote."OrgOffice_ID")
+          and office."Company_ID" = p_company_id
+      )
+    )
+    and not quote."CusQuoteHeader_IsDeleted"
+  returning jsonb_build_object(
+    'quoteNumber', quote."CusQuoteHeader_Number",
+    'deadline', quote."CusQuoteHeader_Deadline",
+    'serviceLevel', quote."CusQuoteHeader_ServiceLevel",
+    'validFrom', quote."CusQuoteHeader_ValidFrom",
+    'validTo', quote."CusQuoteHeader_ValidTo"
+  ) into v_result;
+
+  if v_result is null then
+    raise exception 'That quote is outside this workspace or no longer exists.' using errcode = 'P0002';
+  end if;
+  return v_result;
+end;
+$$;
+
+revoke all on function public._multideck_dexter_can_manage(uuid) from public, anon, authenticated;
+revoke all on function public.multideck_dexter_action_update_warehouse_order(uuid, uuid, jsonb) from public, anon, authenticated;
+revoke all on function public.multideck_dexter_action_update_lead(uuid, uuid, jsonb) from public, anon, authenticated;
+revoke all on function public.multideck_dexter_action_update_deal(uuid, uuid, jsonb) from public, anon, authenticated;
+revoke all on function public.multideck_dexter_action_update_quote(uuid, uuid, jsonb) from public, anon, authenticated;
+
+insert into public."sys_AIDexterActions" (
+  "AIDexterAction_Code",
+  "AIDexterAction_DomainCode",
+  "AIDexterAction_Name",
+  "AIDexterAction_Description",
+  "AIDexterAction_Function",
+  "AIDexterAction_ParametersJSON",
+  "AIDexterAction_SortOrder",
+  "AIDexterAction_IsActive",
+  "AIDexterAction_UpdatedAt"
+) values
+  (
+    'update_warehouse_order',
+    'warehouse',
+    'Update warehouse order',
+    'Change a warehouse order requested date or internal instructions.',
+    'multideck_dexter_action_update_warehouse_order',
+    '{"type":"object","properties":{"target_id":{"type":"string","description":"The recordId returned by the warehouse data tool."},"requested_date":{"type":["string","null"],"description":"New ISO date, or null when unchanged."},"instructions":{"type":["string","null"],"description":"New internal instructions, or null when unchanged."},"reason":{"type":"string","description":"A concise operator-facing explanation of the proposed change."}},"required":["target_id","requested_date","instructions","reason"],"additionalProperties":false}'::jsonb,
+    10, true, now()
+  ),
+  (
+    'update_lead',
+    'leads',
+    'Update lead',
+    'Change a lead next-action time or service interest.',
+    'multideck_dexter_action_update_lead',
+    '{"type":"object","properties":{"target_id":{"type":"string","description":"The recordId returned by the leads data tool."},"next_action_due_at":{"type":["string","null"],"description":"New ISO date-time, or null when unchanged."},"service_interest":{"type":["string","null"],"description":"New service interest, or null when unchanged."},"reason":{"type":"string","description":"A concise operator-facing explanation of the proposed change."}},"required":["target_id","next_action_due_at","service_interest","reason"],"additionalProperties":false}'::jsonb,
+    20, true, now()
+  ),
+  (
+    'update_deal',
+    'deals',
+    'Update deal',
+    'Change a deal close date, probability, next action or value proposition.',
+    'multideck_dexter_action_update_deal',
+    '{"type":"object","properties":{"target_id":{"type":"string","description":"The recordId returned by the deals data tool."},"expected_close_date":{"type":["string","null"],"description":"New ISO date, or null when unchanged."},"probability_pct":{"type":["number","null"],"minimum":0,"maximum":100,"description":"New probability percentage, or null when unchanged."},"next_action_due_at":{"type":["string","null"],"description":"New ISO date-time, or null when unchanged."},"value_proposition":{"type":["string","null"],"description":"New value proposition, or null when unchanged."},"reason":{"type":"string","description":"A concise operator-facing explanation of the proposed change."}},"required":["target_id","expected_close_date","probability_pct","next_action_due_at","value_proposition","reason"],"additionalProperties":false}'::jsonb,
+    30, true, now()
+  ),
+  (
+    'update_quote',
+    'quotes',
+    'Update quote',
+    'Change a quote deadline, service level, internal notes or validity dates.',
+    'multideck_dexter_action_update_quote',
+    '{"type":"object","properties":{"target_id":{"type":"string","description":"The recordId returned by the quotes data tool."},"deadline":{"type":["string","null"],"description":"New ISO date-time, or null when unchanged."},"service_level":{"type":["string","null"],"description":"New service level, or null when unchanged."},"internal_notes":{"type":["string","null"],"description":"New internal notes, or null when unchanged."},"valid_from":{"type":["string","null"],"description":"New ISO start date, or null when unchanged."},"valid_to":{"type":["string","null"],"description":"New ISO end date, or null when unchanged."},"reason":{"type":"string","description":"A concise operator-facing explanation of the proposed change."}},"required":["target_id","deadline","service_level","internal_notes","valid_from","valid_to","reason"],"additionalProperties":false}'::jsonb,
+    40, true, now()
+  )
+on conflict ("AIDexterAction_Code") do update
+set
+  "AIDexterAction_DomainCode" = excluded."AIDexterAction_DomainCode",
+  "AIDexterAction_Name" = excluded."AIDexterAction_Name",
+  "AIDexterAction_Description" = excluded."AIDexterAction_Description",
+  "AIDexterAction_Function" = excluded."AIDexterAction_Function",
+  "AIDexterAction_ParametersJSON" = excluded."AIDexterAction_ParametersJSON",
+  "AIDexterAction_SortOrder" = excluded."AIDexterAction_SortOrder",
+  "AIDexterAction_IsActive" = excluded."AIDexterAction_IsActive",
+  "AIDexterAction_UpdatedAt" = excluded."AIDexterAction_UpdatedAt";
+
+create or replace function public.multideck_dexter_list_actions()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = pg_catalog, public, auth
+as $$
+declare
+  v_context record;
+  v_result jsonb;
+begin
+  select * into v_context from public._multideck_dexter_context();
+  if not public._multideck_dexter_can_manage(v_context.user_id) then
+    return '[]'::jsonb;
+  end if;
+
+  select coalesce(
+    jsonb_agg(
+      jsonb_build_object(
+        'code', action."AIDexterAction_Code",
+        'domain', action."AIDexterAction_DomainCode",
+        'name', action."AIDexterAction_Name",
+        'description', action."AIDexterAction_Description",
+        'parameters', action."AIDexterAction_ParametersJSON"
+      )
+      order by action."AIDexterAction_SortOrder", action."AIDexterAction_Name"
+    ),
+    '[]'::jsonb
+  )
+  into v_result
+  from public."sys_AIDexterActions" action
+  join public."sys_AIDexterDataDomains" domain
+    on domain."AIDexterDomain_Code" = action."AIDexterAction_DomainCode"
+   and domain."AIDexterDomain_IsActive"
+  where action."AIDexterAction_IsActive";
+
+  return v_result;
+end;
+$$;
+
+create or replace function public.multideck_dexter_execute_action(
+  p_action text,
+  p_arguments jsonb,
+  p_access_mode text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog, public, auth
+as $$
+declare
+  v_context record;
+  v_code text := lower(btrim(coalesce(p_action, '')));
+  v_mode text := lower(btrim(coalesce(p_access_mode, '')));
+  v_action_function text;
+  v_result jsonb;
+begin
+  select * into v_context from public._multideck_dexter_context();
+  if not public._multideck_dexter_can_manage(v_context.user_id) then
+    raise exception 'You do not have permission to let Dexter change workspace data.'
+      using errcode = '42501';
+  end if;
+  if v_mode not in ('approve', 'full') then
+    raise exception 'Choose Approve or Full access before changing data.' using errcode = '22023';
+  end if;
+
+  select action."AIDexterAction_Function"
+  into v_action_function
+  from public."sys_AIDexterActions" action
+  join public."sys_AIDexterDataDomains" domain
+    on domain."AIDexterDomain_Code" = action."AIDexterAction_DomainCode"
+   and domain."AIDexterDomain_IsActive"
+  where action."AIDexterAction_Code" = v_code
+    and action."AIDexterAction_IsActive";
+
+  if v_action_function is null then
+    raise exception 'That Dexter action is not available in this workspace.' using errcode = '22023';
+  end if;
+
+  execute format('select public.%I($1, $2, $3)', v_action_function)
+  into v_result
+  using v_context.company_id, v_context.user_id, coalesce(p_arguments, '{}'::jsonb);
+
+  insert into public."AI_DexterActionAudit" (
+    "AIDexterAudit_CompanyID",
+    "AIDexterAudit_UserID",
+    "AIDexterAudit_ActionCode",
+    "AIDexterAudit_AccessMode",
+    "AIDexterAudit_ArgumentsJSON",
+    "AIDexterAudit_ResultJSON"
+  ) values (
+    v_context.company_id,
+    v_context.user_id,
+    v_code,
+    v_mode,
+    coalesce(p_arguments, '{}'::jsonb),
+    coalesce(v_result, '{}'::jsonb)
+  );
+
+  return jsonb_build_object('action', v_code, 'updated', true, 'result', v_result);
+end;
+$$;
+
+revoke all on function public.multideck_dexter_list_actions() from public, anon;
+revoke all on function public.multideck_dexter_execute_action(text, jsonb, text) from public, anon;
+grant execute on function public.multideck_dexter_list_actions() to authenticated;
+grant execute on function public.multideck_dexter_execute_action(text, jsonb, text) to authenticated;
+
+commit;
+
+-- Dexter "Watching for you": owner-private, event-driven monitors.
+-- Natural language is compiled once by the authenticated Edge Function. Runtime
+-- evaluation is deterministic in Postgres and therefore makes no idle LLM calls.
+
+create table if not exists public."sys_AIDexterWatchCapabilities" (
+  "AIDexterWatchCapability_Code" varchar(40) primary key,
+  "AIDexterWatchCapability_Name" varchar(120) not null,
+  "AIDexterWatchCapability_Description" text not null,
+  "AIDexterWatchCapability_FieldsJSON" jsonb not null default '[]'::jsonb,
+  "AIDexterWatchCapability_IsActive" boolean not null default true,
+  "AIDexterWatchCapability_SortOrder" integer not null default 100,
+  "AIDexterWatchCapability_UpdatedAt" timestamptz not null default now(),
+  constraint "CK_sys_AIDexterWatchCapabilities_fields_array"
+    check (jsonb_typeof("AIDexterWatchCapability_FieldsJSON") = 'array')
+);
+
+create table if not exists public."AI_DexterWatches" (
+  "AIDexterWatch_ID" uuid primary key default gen_random_uuid(),
+  "AIDexterWatch_CompanyID" uuid not null references public."cmp_Company"("Company_ID") on delete cascade,
+  "AIDexterWatch_OwnerUserID" uuid not null references public."cmp_Users"("User_ID") on delete cascade,
+  "AIDexterWatch_CapabilityCode" varchar(40) not null references public."sys_AIDexterWatchCapabilities"("AIDexterWatchCapability_Code"),
+  "AIDexterWatch_Title" varchar(180) not null,
+  "AIDexterWatch_Summary" text not null,
+  "AIDexterWatch_Request" text not null,
+  "AIDexterWatch_TargetID" uuid,
+  "AIDexterWatch_TargetLabel" varchar(240),
+  "AIDexterWatch_RuleJSON" jsonb not null,
+  "AIDexterWatch_ActionJSON" jsonb,
+  "AIDexterWatch_StatusCode" varchar(20) not null default 'active',
+  "AIDexterWatch_IsArmed" boolean not null default true,
+  "AIDexterWatch_LastEvaluatedAt" timestamptz,
+  "AIDexterWatch_LastTriggeredAt" timestamptz,
+  "AIDexterWatch_TriggerCount" integer not null default 0,
+  "AIDexterWatch_CreatedAt" timestamptz not null default now(),
+  "AIDexterWatch_UpdatedAt" timestamptz not null default now(),
+  constraint "CK_AI_DexterWatches_status"
+    check ("AIDexterWatch_StatusCode" in ('active', 'paused')),
+  constraint "CK_AI_DexterWatches_rule_object"
+    check (jsonb_typeof("AIDexterWatch_RuleJSON") = 'object'),
+  constraint "CK_AI_DexterWatches_action_object"
+    check ("AIDexterWatch_ActionJSON" is null or jsonb_typeof("AIDexterWatch_ActionJSON") = 'object'),
+  constraint "CK_AI_DexterWatches_title_nonempty"
+    check (btrim("AIDexterWatch_Title") <> '')
+);
+
+create table if not exists public."AI_DexterWatchSignals" (
+  "AIDexterWatchSignal_ID" uuid primary key default gen_random_uuid(),
+  "AIDexterWatchSignal_CompanyID" uuid not null references public."cmp_Company"("Company_ID") on delete cascade,
+  "AIDexterWatchSignal_CapabilityCode" varchar(40) not null references public."sys_AIDexterWatchCapabilities"("AIDexterWatchCapability_Code"),
+  "AIDexterWatchSignal_SourceTable" varchar(120) not null,
+  "AIDexterWatchSignal_SourceID" uuid not null,
+  "AIDexterWatchSignal_OldJSON" jsonb not null default '{}'::jsonb,
+  "AIDexterWatchSignal_NewJSON" jsonb not null default '{}'::jsonb,
+  "AIDexterWatchSignal_OccurredAt" timestamptz not null default now(),
+  "AIDexterWatchSignal_ProcessedAt" timestamptz,
+  constraint "CK_AI_DexterWatchSignals_old_object" check (jsonb_typeof("AIDexterWatchSignal_OldJSON") = 'object'),
+  constraint "CK_AI_DexterWatchSignals_new_object" check (jsonb_typeof("AIDexterWatchSignal_NewJSON") = 'object')
+);
+
+create table if not exists public."AI_DexterWatchEvents" (
+  "AIDexterWatchEvent_ID" uuid primary key default gen_random_uuid(),
+  "AIDexterWatchEvent_WatchID" uuid not null references public."AI_DexterWatches"("AIDexterWatch_ID") on delete cascade,
+  "AIDexterWatchEvent_SignalID" uuid references public."AI_DexterWatchSignals"("AIDexterWatchSignal_ID") on delete set null,
+  "AIDexterWatchEvent_OwnerUserID" uuid not null references public."cmp_Users"("User_ID") on delete cascade,
+  "AIDexterWatchEvent_Title" varchar(240) not null,
+  "AIDexterWatchEvent_Body" text not null,
+  "AIDexterWatchEvent_ChangedJSON" jsonb not null default '{}'::jsonb,
+  "AIDexterWatchEvent_ActionJSON" jsonb,
+  "AIDexterWatchEvent_ReadAt" timestamptz,
+  "AIDexterWatchEvent_CreatedAt" timestamptz not null default now(),
+  constraint "CK_AI_DexterWatchEvents_changed_object" check (jsonb_typeof("AIDexterWatchEvent_ChangedJSON") = 'object')
+);
+
+create table if not exists public."AI_DexterWatchStates" (
+  "AIDexterWatchState_WatchID" uuid not null references public."AI_DexterWatches"("AIDexterWatch_ID") on delete cascade,
+  "AIDexterWatchState_SourceID" uuid not null,
+  "AIDexterWatchState_LastMatched" boolean not null default false,
+  "AIDexterWatchState_LastEvaluatedAt" timestamptz not null default now(),
+  primary key ("AIDexterWatchState_WatchID", "AIDexterWatchState_SourceID")
+);
+
+create index if not exists "IX_AI_DexterWatches_owner_status_updated"
+  on public."AI_DexterWatches"("AIDexterWatch_OwnerUserID", "AIDexterWatch_StatusCode", "AIDexterWatch_UpdatedAt" desc);
+create index if not exists "IX_AI_DexterWatches_company_capability_active"
+  on public."AI_DexterWatches"("AIDexterWatch_CompanyID", "AIDexterWatch_CapabilityCode", "AIDexterWatch_TargetID")
+  where "AIDexterWatch_StatusCode" = 'active';
+create index if not exists "IX_AI_DexterWatchSignals_company_occurred"
+  on public."AI_DexterWatchSignals"("AIDexterWatchSignal_CompanyID", "AIDexterWatchSignal_OccurredAt" desc);
+create index if not exists "IX_AI_DexterWatchEvents_owner_created"
+  on public."AI_DexterWatchEvents"("AIDexterWatchEvent_OwnerUserID", "AIDexterWatchEvent_CreatedAt" desc);
+create index if not exists "IX_AI_DexterWatchEvents_watch_created"
+  on public."AI_DexterWatchEvents"("AIDexterWatchEvent_WatchID", "AIDexterWatchEvent_CreatedAt" desc);
+
+alter table public."AI_DexterWatches" enable row level security;
+alter table public."AI_DexterWatchSignals" enable row level security;
+alter table public."AI_DexterWatchEvents" enable row level security;
+alter table public."AI_DexterWatchStates" enable row level security;
+
+revoke all on table public."sys_AIDexterWatchCapabilities" from public, anon, authenticated;
+revoke all on table public."AI_DexterWatches" from public, anon, authenticated;
+revoke all on table public."AI_DexterWatchSignals" from public, anon, authenticated;
+revoke all on table public."AI_DexterWatchEvents" from public, anon, authenticated;
+revoke all on table public."AI_DexterWatchStates" from public, anon, authenticated;
+grant select on table public."AI_DexterWatches", public."AI_DexterWatchEvents" to authenticated;
+
+drop policy if exists "Dexter owners can read their watches" on public."AI_DexterWatches";
+create policy "Dexter owners can read their watches" on public."AI_DexterWatches"
+for select to authenticated using (
+  exists (
+    select 1 from public."cmp_Users" workspace_user
+    where workspace_user."User_ID" = "AIDexterWatch_OwnerUserID"
+      and workspace_user."Auth_User_ID" = (select auth.uid())
+      and workspace_user."Company_ID" = "AIDexterWatch_CompanyID"
+  )
+);
+
+drop policy if exists "Dexter owners can read their watch events" on public."AI_DexterWatchEvents";
+create policy "Dexter owners can read their watch events" on public."AI_DexterWatchEvents"
+for select to authenticated using (
+  exists (
+    select 1 from public."cmp_Users" workspace_user
+    where workspace_user."User_ID" = "AIDexterWatchEvent_OwnerUserID"
+      and workspace_user."Auth_User_ID" = (select auth.uid())
+  )
+);
+
+insert into public."sys_AIDexterWatchCapabilities" (
+  "AIDexterWatchCapability_Code", "AIDexterWatchCapability_Name",
+  "AIDexterWatchCapability_Description", "AIDexterWatchCapability_FieldsJSON",
+  "AIDexterWatchCapability_SortOrder"
+) values
+  ('warehouse', 'Warehouse', 'Warehouse orders and exceptions.', '["status","priority","releaseGateStatus","requestedDate","customerReference","containerNumber","exceptionStatus","severity","title"]', 10),
+  ('leads', 'Leads', 'CRM lead status, value, score and follow-up changes.', '["companyName","contactName","status","rating","estimatedValue","urgency","score","conversionProbability","nextActionDueAt"]', 20),
+  ('deals', 'Deals', 'Pipeline stage, probability, value and follow-up changes.', '["name","stage","status","expectedCloseDate","probabilityPct","expectedValue","expectedMargin","nextActionDueAt"]', 30),
+  ('quotes', 'Quotes', 'Quote status, deadline, validity and route changes.', '["quoteNumber","status","deadline","validFrom","validTo","origin","destination"]', 40),
+  ('email', 'Email', 'New indexed Gmail or Outlook message subjects and bodies.', '["subject","body","receivedAt"]', 50)
+on conflict ("AIDexterWatchCapability_Code") do update set
+  "AIDexterWatchCapability_Name" = excluded."AIDexterWatchCapability_Name",
+  "AIDexterWatchCapability_Description" = excluded."AIDexterWatchCapability_Description",
+  "AIDexterWatchCapability_FieldsJSON" = excluded."AIDexterWatchCapability_FieldsJSON",
+  "AIDexterWatchCapability_IsActive" = true,
+  "AIDexterWatchCapability_SortOrder" = excluded."AIDexterWatchCapability_SortOrder",
+  "AIDexterWatchCapability_UpdatedAt" = now();
+
+create or replace function public.multideck_dexter_list_watch_capabilities()
+returns jsonb language plpgsql stable security definer set search_path = pg_catalog, public, auth as $$
+declare v_context record; v_result jsonb;
+begin
+  select * into v_context from public._multideck_dexter_context();
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'code', capability."AIDexterWatchCapability_Code",
+    'name', capability."AIDexterWatchCapability_Name",
+    'description', capability."AIDexterWatchCapability_Description",
+    'fields', capability."AIDexterWatchCapability_FieldsJSON"
+  ) order by capability."AIDexterWatchCapability_SortOrder"), '[]'::jsonb)
+  into v_result
+  from public."sys_AIDexterWatchCapabilities" capability
+  where capability."AIDexterWatchCapability_IsActive"
+    and (
+      capability."AIDexterWatchCapability_Code" <> 'email'
+      or (public._multideck_dexter_has_permission(v_context.user_id, 'Email.Read')
+          and public._multideck_dexter_has_permission(v_context.user_id, 'Email.AIRead'))
+    );
+  return v_result;
+end; $$;
+
+create or replace function public.multideck_dexter_create_watch(
+  p_capability text, p_title text, p_summary text, p_request text,
+  p_target_id uuid, p_target_label text, p_rule jsonb, p_action jsonb default null
+) returns jsonb language plpgsql volatile security definer set search_path = pg_catalog, public, auth as $$
+declare v_context record; v_watch public."AI_DexterWatches"; v_fields jsonb; v_field text;
+begin
+  select * into v_context from public._multideck_dexter_context();
+  select capability."AIDexterWatchCapability_FieldsJSON" into v_fields
+  from public."sys_AIDexterWatchCapabilities" capability
+  where capability."AIDexterWatchCapability_Code" = lower(btrim(p_capability))
+    and capability."AIDexterWatchCapability_IsActive";
+  if v_fields is null then raise exception 'That source cannot be watched yet.' using errcode = '22023'; end if;
+  if lower(btrim(p_capability)) = 'email' and not (
+    public._multideck_dexter_has_permission(v_context.user_id, 'Email.Read') and
+    public._multideck_dexter_has_permission(v_context.user_id, 'Email.AIRead')
+  ) then raise exception 'You do not have permission to watch email.' using errcode = '42501'; end if;
+  if jsonb_typeof(p_rule) <> 'object' then raise exception 'The watch rule is invalid.' using errcode = '22023'; end if;
+  v_field := p_rule->>'field';
+  if v_field is null or not v_fields ? v_field then raise exception 'That field cannot be watched.' using errcode = '22023'; end if;
+  if coalesce(p_rule->>'operator', '') not in ('changed','eq','neq','contains','gt','gte','lt','lte') then
+    raise exception 'That watch condition is not supported.' using errcode = '22023';
+  end if;
+  if p_action is not null and not exists (
+    select 1 from public."sys_AIDexterActions" action
+    where action."AIDexterAction_Code"=p_action->>'action'
+      and action."AIDexterAction_DomainCode"=lower(btrim(p_capability))
+      and action."AIDexterAction_IsActive"
+  ) then
+    raise exception 'That prepared action is not available for this watch.' using errcode = '22023';
+  end if;
+  insert into public."AI_DexterWatches" (
+    "AIDexterWatch_CompanyID", "AIDexterWatch_OwnerUserID", "AIDexterWatch_CapabilityCode",
+    "AIDexterWatch_Title", "AIDexterWatch_Summary", "AIDexterWatch_Request",
+    "AIDexterWatch_TargetID", "AIDexterWatch_TargetLabel", "AIDexterWatch_RuleJSON", "AIDexterWatch_ActionJSON"
+  ) values (
+    v_context.company_id, v_context.user_id, lower(btrim(p_capability)), left(btrim(p_title),180),
+    left(btrim(p_summary),2000), left(btrim(p_request),4000), p_target_id, nullif(left(btrim(p_target_label),240),''), p_rule, p_action
+  ) returning * into v_watch;
+  return jsonb_build_object('id',v_watch."AIDexterWatch_ID",'title',v_watch."AIDexterWatch_Title",'summary',v_watch."AIDexterWatch_Summary",'capability',v_watch."AIDexterWatch_CapabilityCode",'status',v_watch."AIDexterWatch_StatusCode",'targetLabel',v_watch."AIDexterWatch_TargetLabel",'rule',v_watch."AIDexterWatch_RuleJSON",'action',v_watch."AIDexterWatch_ActionJSON",'createdAt',v_watch."AIDexterWatch_CreatedAt",'updatedAt',v_watch."AIDexterWatch_UpdatedAt",'triggerCount',v_watch."AIDexterWatch_TriggerCount");
+end; $$;
+
+create or replace function public.multideck_dexter_list_watches()
+returns jsonb language plpgsql stable security definer set search_path = pg_catalog, public, auth as $$
+declare v_context record; v_result jsonb;
+begin
+  select * into v_context from public._multideck_dexter_context();
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id',watch."AIDexterWatch_ID",'title',watch."AIDexterWatch_Title",'summary',watch."AIDexterWatch_Summary",
+    'capability',watch."AIDexterWatch_CapabilityCode",'status',watch."AIDexterWatch_StatusCode",
+    'targetLabel',watch."AIDexterWatch_TargetLabel",'rule',watch."AIDexterWatch_RuleJSON",
+    'action',watch."AIDexterWatch_ActionJSON",'createdAt',watch."AIDexterWatch_CreatedAt",
+    'updatedAt',watch."AIDexterWatch_UpdatedAt",'lastEvaluatedAt',watch."AIDexterWatch_LastEvaluatedAt",
+    'lastTriggeredAt',watch."AIDexterWatch_LastTriggeredAt",'triggerCount',watch."AIDexterWatch_TriggerCount",
+    'latestEvent', latest.event
+  ) order by watch."AIDexterWatch_UpdatedAt" desc), '[]'::jsonb) into v_result
+  from public."AI_DexterWatches" watch
+  left join lateral (
+    select jsonb_build_object('id',event."AIDexterWatchEvent_ID",'title',event."AIDexterWatchEvent_Title",'body',event."AIDexterWatchEvent_Body",'changed',event."AIDexterWatchEvent_ChangedJSON",'action',event."AIDexterWatchEvent_ActionJSON",'readAt',event."AIDexterWatchEvent_ReadAt",'createdAt',event."AIDexterWatchEvent_CreatedAt") event
+    from public."AI_DexterWatchEvents" event where event."AIDexterWatchEvent_WatchID" = watch."AIDexterWatch_ID"
+    order by event."AIDexterWatchEvent_CreatedAt" desc limit 1
+  ) latest on true
+  where watch."AIDexterWatch_OwnerUserID" = v_context.user_id and watch."AIDexterWatch_CompanyID" = v_context.company_id;
+  return v_result;
+end; $$;
+
+create or replace function public.multideck_dexter_set_watch_status(p_watch_id uuid, p_status text)
+returns void language plpgsql volatile security definer set search_path = pg_catalog, public, auth as $$
+declare v_context record;
+begin
+  select * into v_context from public._multideck_dexter_context();
+  if p_status not in ('active','paused') then raise exception 'Choose active or paused.' using errcode = '22023'; end if;
+  update public."AI_DexterWatches" set "AIDexterWatch_StatusCode"=p_status,"AIDexterWatch_IsArmed"=true,"AIDexterWatch_UpdatedAt"=now()
+  where "AIDexterWatch_ID"=p_watch_id and "AIDexterWatch_OwnerUserID"=v_context.user_id and "AIDexterWatch_CompanyID"=v_context.company_id;
+  if not found then raise exception 'Watch not found.' using errcode = 'P0002'; end if;
+end; $$;
+
+create or replace function public.multideck_dexter_delete_watch(p_watch_id uuid)
+returns void language plpgsql volatile security definer set search_path = pg_catalog, public, auth as $$
+declare v_context record;
+begin
+  select * into v_context from public._multideck_dexter_context();
+  delete from public."AI_DexterWatches" where "AIDexterWatch_ID"=p_watch_id and "AIDexterWatch_OwnerUserID"=v_context.user_id and "AIDexterWatch_CompanyID"=v_context.company_id;
+  if not found then raise exception 'Watch not found.' using errcode = 'P0002'; end if;
+end; $$;
+
+create or replace function public._multideck_dexter_watch_matches(p_rule jsonb, p_old jsonb, p_new jsonb)
+returns boolean language plpgsql immutable set search_path = pg_catalog as $$
+declare v_field text:=p_rule->>'field'; v_operator text:=p_rule->>'operator'; v_expected text:=p_rule->>'value'; v_old text; v_new text;
+begin
+  v_old:=p_old->>v_field; v_new:=p_new->>v_field;
+  return case v_operator
+    when 'changed' then v_new is distinct from v_old
+    when 'eq' then lower(coalesce(v_new,''))=lower(coalesce(v_expected,''))
+    when 'neq' then lower(coalesce(v_new,''))<>lower(coalesce(v_expected,''))
+    when 'contains' then lower(coalesce(v_new,'')) like '%'||lower(coalesce(v_expected,''))||'%'
+    when 'gt' then nullif(v_new,'')::numeric>nullif(v_expected,'')::numeric
+    when 'gte' then nullif(v_new,'')::numeric>=nullif(v_expected,'')::numeric
+    when 'lt' then nullif(v_new,'')::numeric<nullif(v_expected,'')::numeric
+    when 'lte' then nullif(v_new,'')::numeric<=nullif(v_expected,'')::numeric
+    else false end;
+exception when invalid_text_representation or numeric_value_out_of_range then return false;
+end; $$;
+
+create or replace function public._multideck_dexter_evaluate_watch_signal()
+returns trigger language plpgsql volatile security definer set search_path = pg_catalog, public as $$
+declare watch record; v_matches boolean; v_previously_matched boolean; v_field text; v_old text; v_new text; v_event_id uuid;
+begin
+  for watch in
+    select watch_row.* from public."AI_DexterWatches" watch_row
+    where watch_row."AIDexterWatch_CompanyID"=new."AIDexterWatchSignal_CompanyID"
+      and watch_row."AIDexterWatch_CapabilityCode"=new."AIDexterWatchSignal_CapabilityCode"
+      and watch_row."AIDexterWatch_StatusCode"='active'
+      and (watch_row."AIDexterWatch_TargetID" is null or watch_row."AIDexterWatch_TargetID"=new."AIDexterWatchSignal_SourceID")
+      and (
+        watch_row."AIDexterWatch_CapabilityCode" <> 'email'
+        or exists (
+          select 1
+          from public._multideck_dexter_email_mailboxes(watch_row."AIDexterWatch_OwnerUserID", watch_row."AIDexterWatch_CompanyID") permitted
+          where permitted.mailbox_id = nullif(new."AIDexterWatchSignal_NewJSON"->>'mailboxId','')::uuid
+        )
+      )
+  loop
+    v_matches:=public._multideck_dexter_watch_matches(watch."AIDexterWatch_RuleJSON",new."AIDexterWatchSignal_OldJSON",new."AIDexterWatchSignal_NewJSON");
+    select state."AIDexterWatchState_LastMatched" into v_previously_matched
+    from public."AI_DexterWatchStates" state
+    where state."AIDexterWatchState_WatchID"=watch."AIDexterWatch_ID"
+      and state."AIDexterWatchState_SourceID"=new."AIDexterWatchSignal_SourceID";
+    insert into public."AI_DexterWatchStates"("AIDexterWatchState_WatchID","AIDexterWatchState_SourceID","AIDexterWatchState_LastMatched","AIDexterWatchState_LastEvaluatedAt")
+    values(watch."AIDexterWatch_ID",new."AIDexterWatchSignal_SourceID",v_matches,now())
+    on conflict ("AIDexterWatchState_WatchID","AIDexterWatchState_SourceID") do update set
+      "AIDexterWatchState_LastMatched"=excluded."AIDexterWatchState_LastMatched",
+      "AIDexterWatchState_LastEvaluatedAt"=excluded."AIDexterWatchState_LastEvaluatedAt";
+    v_field:=watch."AIDexterWatch_RuleJSON"->>'field'; v_old:=new."AIDexterWatchSignal_OldJSON"->>v_field; v_new:=new."AIDexterWatchSignal_NewJSON"->>v_field;
+    update public."AI_DexterWatches" set "AIDexterWatch_LastEvaluatedAt"=now(),"AIDexterWatch_IsArmed"=case when v_matches then "AIDexterWatch_IsArmed" else true end,"AIDexterWatch_UpdatedAt"=now()
+    where "AIDexterWatch_ID"=watch."AIDexterWatch_ID";
+    if v_matches and not coalesce(v_previously_matched,false) then
+      insert into public."AI_DexterWatchEvents"("AIDexterWatchEvent_WatchID","AIDexterWatchEvent_SignalID","AIDexterWatchEvent_OwnerUserID","AIDexterWatchEvent_Title","AIDexterWatchEvent_Body","AIDexterWatchEvent_ChangedJSON","AIDexterWatchEvent_ActionJSON")
+      values(watch."AIDexterWatch_ID",new."AIDexterWatchSignal_ID",watch."AIDexterWatch_OwnerUserID",watch."AIDexterWatch_Title",coalesce(watch."AIDexterWatch_TargetLabel",'A watched record')||': '||v_field||' changed from '||coalesce(v_old,'not set')||' to '||coalesce(v_new,'not set')||'.',jsonb_build_object('field',v_field,'before',v_old,'after',v_new,'sourceId',new."AIDexterWatchSignal_SourceID"),watch."AIDexterWatch_ActionJSON") returning "AIDexterWatchEvent_ID" into v_event_id;
+      insert into public."Comm_Notifications"("CommNotif_UserID","CommNotif_Title","CommNotif_Body","CommNotif_TargetTable","CommNotif_TargetID","CommNotif_LinkTypeCode","CommNotif_MetadataJSON","CommNotif_CreatedBy")
+      values(watch."AIDexterWatch_OwnerUserID",watch."AIDexterWatch_Title",coalesce(watch."AIDexterWatch_TargetLabel",'A watched record')||': '||v_field||' changed from '||coalesce(v_old,'not set')||' to '||coalesce(v_new,'not set')||'.','AI_DexterWatches',watch."AIDexterWatch_ID",'dexter_watch',jsonb_build_object('event_type','dexter_watch','watch_id',watch."AIDexterWatch_ID",'watch_event_id',v_event_id,'url','/agent-dexter?watch='||watch."AIDexterWatch_ID",'action_url','/agent-dexter?watch='||watch."AIDexterWatch_ID"),watch."AIDexterWatch_OwnerUserID");
+      update public."AI_DexterWatches" set "AIDexterWatch_IsArmed"=false,"AIDexterWatch_LastTriggeredAt"=now(),"AIDexterWatch_TriggerCount"="AIDexterWatch_TriggerCount"+1,"AIDexterWatch_UpdatedAt"=now() where "AIDexterWatch_ID"=watch."AIDexterWatch_ID";
+    end if;
+  end loop;
+  update public."AI_DexterWatchSignals" set "AIDexterWatchSignal_ProcessedAt"=now() where "AIDexterWatchSignal_ID"=new."AIDexterWatchSignal_ID";
+  delete from public."AI_DexterWatchSignals" signal
+  where signal."AIDexterWatchSignal_ID"=new."AIDexterWatchSignal_ID"
+    and not exists (
+      select 1 from public."AI_DexterWatchEvents" event
+      where event."AIDexterWatchEvent_SignalID"=signal."AIDexterWatchSignal_ID"
+    );
+  return new;
+end; $$;
+
+drop trigger if exists "TR_AI_DexterWatchSignals_evaluate" on public."AI_DexterWatchSignals";
+create trigger "TR_AI_DexterWatchSignals_evaluate" after insert on public."AI_DexterWatchSignals"
+for each row execute function public._multideck_dexter_evaluate_watch_signal();
+
+create or replace function public._multideck_dexter_watch_source_change()
+returns trigger language plpgsql volatile security definer set search_path = pg_catalog, public as $$
+declare v_company_id uuid; v_capability text:=tg_argv[0]; v_source_id uuid; v_old jsonb:='{}'; v_new jsonb:='{}';
+begin
+  if v_capability='leads' then
+    v_source_id:=new."CRMLead_ID"; v_old:=case when tg_op='INSERT' then '{}' else jsonb_build_object('companyName',old."CRMLead_CompanyName",'contactName',old."CRMLead_PersonName",'status',old."CRMLead_StatusCode",'rating',old."CRMLead_RatingCode",'estimatedValue',old."CRMLead_EstimatedValueAmount",'urgency',old."CRMLead_UrgencyCode",'score',old."CRMLead_Score",'conversionProbability',old."CRMLead_AIProbabilityToConvert",'nextActionDueAt',old."CRMLead_NextActionDueAt") end; v_new:=jsonb_build_object('companyName',new."CRMLead_CompanyName",'contactName',new."CRMLead_PersonName",'status',new."CRMLead_StatusCode",'rating',new."CRMLead_RatingCode",'estimatedValue',new."CRMLead_EstimatedValueAmount",'urgency',new."CRMLead_UrgencyCode",'score',new."CRMLead_Score",'conversionProbability',new."CRMLead_AIProbabilityToConvert",'nextActionDueAt',new."CRMLead_NextActionDueAt"); select "Company_ID" into v_company_id from public."cmp_Users" where "User_ID"=coalesce(new."CRMLead_OwnerUserID",new."CRMLead_CreatedBy") limit 1;
+  elsif v_capability='deals' then
+    v_source_id:=new."CRMOppty_ID"; v_old:=case when tg_op='INSERT' then '{}' else jsonb_build_object('name',old."CRMOppty_Name",'stage',(select "CRMPipelineStage_Name" from public."CRM_PipelineStages" where "CRMPipelineStage_ID"=old."CRMOppty_PipelineStageID"),'status',old."CRMOppty_StatusCode",'expectedCloseDate',old."CRMOppty_ExpectedCloseDate",'probabilityPct',old."CRMOppty_ProbabilityPct",'expectedValue',old."CRMOppty_ExpectedValueAmount",'expectedMargin',old."CRMOppty_ExpectedMarginAmount",'nextActionDueAt',old."CRMOppty_NextActionDueAt") end; v_new:=jsonb_build_object('name',new."CRMOppty_Name",'stage',(select "CRMPipelineStage_Name" from public."CRM_PipelineStages" where "CRMPipelineStage_ID"=new."CRMOppty_PipelineStageID"),'status',new."CRMOppty_StatusCode",'expectedCloseDate',new."CRMOppty_ExpectedCloseDate",'probabilityPct',new."CRMOppty_ProbabilityPct",'expectedValue',new."CRMOppty_ExpectedValueAmount",'expectedMargin',new."CRMOppty_ExpectedMarginAmount",'nextActionDueAt',new."CRMOppty_NextActionDueAt"); select "Company_ID" into v_company_id from public."CRM_Pipelines" where "CRMPipeline_ID"=new."CRMOppty_PipelineID";
+  elsif v_capability='quotes' then
+    v_source_id:=new."CusQuoteHeader_ID"; v_old:=case when tg_op='INSERT' then '{}' else jsonb_build_object('quoteNumber',old."CusQuoteHeader_Number",'status',old."CusQuoteHeader_Status",'deadline',old."CusQuoteHeader_Deadline",'validFrom',old."CusQuoteHeader_ValidFrom",'validTo',old."CusQuoteHeader_ValidTo",'origin',old."CusQuoteHeader_OriginExtra",'destination',old."CusQuoteHeader_DestinationExtra") end; v_new:=jsonb_build_object('quoteNumber',new."CusQuoteHeader_Number",'status',new."CusQuoteHeader_Status",'deadline',new."CusQuoteHeader_Deadline",'validFrom',new."CusQuoteHeader_ValidFrom",'validTo',new."CusQuoteHeader_ValidTo",'origin',new."CusQuoteHeader_OriginExtra",'destination',new."CusQuoteHeader_DestinationExtra"); v_company_id:=new."Org_ID"; if v_company_id is null then select "Company_ID" into v_company_id from public."cmp_Offices" where "Office_ID"=coalesce(new."CusQuoteHeader_OrgOfficeID",new."OrgOffice_ID"); end if;
+  elsif v_capability='warehouse' then
+    if tg_table_name='WMS_Exceptions' then
+      v_source_id:=new."WMSException_ID"; v_old:=case when tg_op='INSERT' then '{}' else jsonb_build_object('exceptionStatus',old."WMSException_StatusCode",'severity',old."WMSException_SeverityCode",'title',old."WMSException_Title") end; v_new:=jsonb_build_object('exceptionStatus',new."WMSException_StatusCode",'severity',new."WMSException_SeverityCode",'title',new."WMSException_Title"); select office."Company_ID" into v_company_id from public."WMS_Facilities" facility join public."cmp_Offices" office on office."Office_ID"=facility."WMSFacility_OrgOfficeID" where facility."WMSFacility_ID"=new."WMSException_FacilityID";
+    else
+      v_source_id:=new."WMSOrder_ID"; v_old:=case when tg_op='INSERT' then '{}' else jsonb_build_object('status',old."WMSOrder_StatusCode",'priority',old."WMSOrder_PriorityCode",'releaseGateStatus',old."WMSOrder_ReleaseGateStatusCode",'requestedDate',old."WMSOrder_RequestedDate",'customerReference',old."WMSOrder_CustomerReference",'containerNumber',old."WMSOrder_ContainerNumber") end; v_new:=jsonb_build_object('status',new."WMSOrder_StatusCode",'priority',new."WMSOrder_PriorityCode",'releaseGateStatus',new."WMSOrder_ReleaseGateStatusCode",'requestedDate',new."WMSOrder_RequestedDate",'customerReference',new."WMSOrder_CustomerReference",'containerNumber',new."WMSOrder_ContainerNumber"); select office."Company_ID" into v_company_id from public."WMS_Facilities" facility join public."cmp_Offices" office on office."Office_ID"=facility."WMSFacility_OrgOfficeID" where facility."WMSFacility_ID"=new."WMSOrder_FacilityID";
+    end if;
+  elsif v_capability='email' then
+    v_source_id:=new."CommMessage_ID"; v_old:=case when tg_op='INSERT' then '{}' else jsonb_build_object('subject',old."CommMessage_Subject",'body',coalesce(old."CommMessage_BodyText",old."CommMessage_BodyPreview"),'receivedAt',old."CommMessage_ReceivedAt",'mailboxId',old."CommMessage_MailboxID") end; v_new:=jsonb_build_object('subject',new."CommMessage_Subject",'body',coalesce(new."CommMessage_BodyText",new."CommMessage_BodyPreview"),'receivedAt',new."CommMessage_ReceivedAt",'mailboxId',new."CommMessage_MailboxID"); select owner."Company_ID" into v_company_id from public."Comm_Mailboxes" mailbox join public."Comm_ProviderConnections" connection on connection."CommConn_ID"=mailbox."CommMailbox_ConnectionID" join public."cmp_Users" owner on owner."User_ID"=connection."CommConn_UserID" where mailbox."CommMailbox_ID"=new."CommMessage_MailboxID";
+  end if;
+  if v_company_id is not null and exists (
+    select 1 from public."AI_DexterWatches" watch
+    where watch."AIDexterWatch_CompanyID"=v_company_id
+      and watch."AIDexterWatch_CapabilityCode"=v_capability
+      and watch."AIDexterWatch_StatusCode"='active'
+      and (watch."AIDexterWatch_TargetID" is null or watch."AIDexterWatch_TargetID"=v_source_id)
+  ) then
+    insert into public."AI_DexterWatchSignals"("AIDexterWatchSignal_CompanyID","AIDexterWatchSignal_CapabilityCode","AIDexterWatchSignal_SourceTable","AIDexterWatchSignal_SourceID","AIDexterWatchSignal_OldJSON","AIDexterWatchSignal_NewJSON") values(v_company_id,v_capability,tg_table_name,v_source_id,v_old,v_new);
+  end if;
+  return new;
+end; $$;
+
+drop trigger if exists "TR_CRM_Leads_dexter_watch" on public."CRM_Leads";
+create trigger "TR_CRM_Leads_dexter_watch" after insert or update on public."CRM_Leads" for each row execute function public._multideck_dexter_watch_source_change('leads');
+drop trigger if exists "TR_CRM_Opportunities_dexter_watch" on public."CRM_Opportunities";
+create trigger "TR_CRM_Opportunities_dexter_watch" after insert or update on public."CRM_Opportunities" for each row execute function public._multideck_dexter_watch_source_change('deals');
+drop trigger if exists "TR_CusQuote_Header_dexter_watch" on public."CusQuote_Header";
+create trigger "TR_CusQuote_Header_dexter_watch" after insert or update on public."CusQuote_Header" for each row execute function public._multideck_dexter_watch_source_change('quotes');
+drop trigger if exists "TR_WMS_Orders_dexter_watch" on public."WMS_Orders";
+create trigger "TR_WMS_Orders_dexter_watch" after insert or update on public."WMS_Orders" for each row execute function public._multideck_dexter_watch_source_change('warehouse');
+drop trigger if exists "TR_WMS_Exceptions_dexter_watch" on public."WMS_Exceptions";
+create trigger "TR_WMS_Exceptions_dexter_watch" after insert or update of "WMSException_StatusCode","WMSException_SeverityCode","WMSException_Title" on public."WMS_Exceptions" for each row execute function public._multideck_dexter_watch_source_change('warehouse');
+drop trigger if exists "TR_Comm_Messages_dexter_watch" on public."Comm_Messages";
+create trigger "TR_Comm_Messages_dexter_watch" after insert or update of "CommMessage_Subject","CommMessage_BodyPreview","CommMessage_BodyText" on public."Comm_Messages" for each row execute function public._multideck_dexter_watch_source_change('email');
+
+insert into public."Comm_UserNotificationPreferences"("CommNotifPref_UserID","CommNotifPref_ChannelCode","CommNotifPref_EventType","CommNotifPref_IsEnabled","CommNotifPref_DeliveryChannelsJSON","CommNotifPref_QuietHoursJSON")
+select "User_ID",'email','dexter_watch',false,jsonb_build_object('email',false,'in_app',true),'{}'::jsonb from public."cmp_Users"
+on conflict ("CommNotifPref_UserID","CommNotifPref_ChannelCode","CommNotifPref_EventType") do nothing;
+
+revoke all on function public.multideck_dexter_list_watch_capabilities() from public, anon;
+revoke all on function public.multideck_dexter_create_watch(text,text,text,text,uuid,text,jsonb,jsonb) from public, anon;
+revoke all on function public.multideck_dexter_list_watches() from public, anon;
+revoke all on function public.multideck_dexter_set_watch_status(uuid,text) from public, anon;
+revoke all on function public.multideck_dexter_delete_watch(uuid) from public, anon;
+grant execute on function public.multideck_dexter_list_watch_capabilities() to authenticated;
+grant execute on function public.multideck_dexter_create_watch(text,text,text,text,uuid,text,jsonb,jsonb) to authenticated;
+grant execute on function public.multideck_dexter_list_watches() to authenticated;
+grant execute on function public.multideck_dexter_set_watch_status(uuid,text) to authenticated;
+grant execute on function public.multideck_dexter_delete_watch(uuid) to authenticated;
+revoke all on function public._multideck_dexter_watch_matches(jsonb,jsonb,jsonb) from public, anon, authenticated;
+revoke all on function public._multideck_dexter_evaluate_watch_signal() from public, anon, authenticated;
+revoke all on function public._multideck_dexter_watch_source_change() from public, anon, authenticated;
+
+do $$ begin
+  if exists (select 1 from pg_publication where pubname='supabase_realtime') and not exists (
+    select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='AI_DexterWatches'
+  ) then alter publication supabase_realtime add table public."AI_DexterWatches"; end if;
+  if exists (select 1 from pg_publication where pubname='supabase_realtime') and not exists (
+    select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='AI_DexterWatchEvents'
+  ) then alter publication supabase_realtime add table public."AI_DexterWatchEvents"; end if;
+  if exists (select 1 from pg_publication where pubname='supabase_realtime') and not exists (
+    select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='Comm_Notifications'
+  ) then alter publication supabase_realtime add table public."Comm_Notifications"; end if;
+end $$;
+
+-- Actionable, permission-checked Watch updates and durable customer imports.
+-- Event rows retain only source IDs. Current email and attachment metadata is
+-- joined at read time through the caller's permitted mailboxes.
+
+begin;
+
+create table if not exists public."CRM_CustomerDocuments" (
+  "CRMCustomerDocument_ID" uuid primary key default gen_random_uuid(),
+  "CRMCustomerDocument_CustomerOrgID" uuid not null references public."Org_Master"("Org_id") on delete cascade,
+  "CRMCustomerDocument_StoredObjectID" uuid references public."DOC_StoredObjects"("DOCStoredObject_ID") on delete set null,
+  "CRMCustomerDocument_SourceMessageID" uuid not null references public."Comm_Messages"("CommMessage_ID") on delete restrict,
+  "CRMCustomerDocument_SourceAttachmentID" uuid not null references public."Comm_MessageAttachments"("CommAttachment_ID") on delete restrict,
+  "CRMCustomerDocument_ActionID" uuid not null,
+  "CRMCustomerDocument_IdempotencyKey" varchar(160) not null,
+  "CRMCustomerDocument_StatusCode" varchar(32) not null default 'processing',
+  "CRMCustomerDocument_SafetyStatusCode" varchar(32) not null default 'unscanned',
+  "CRMCustomerDocument_FileName" varchar(255) not null,
+  "CRMCustomerDocument_MimeType" varchar(160) not null,
+  "CRMCustomerDocument_FileSizeBytes" bigint,
+  "CRMCustomerDocument_SHA256" varchar(64),
+  "CRMCustomerDocument_FailureMessage" text,
+  "CRMCustomerDocument_CreatedBy" uuid not null references public."cmp_Users"("User_ID") on delete restrict,
+  "CRMCustomerDocument_CreatedAt" timestamptz not null default now(),
+  "CRMCustomerDocument_UpdatedAt" timestamptz not null default now(),
+  constraint "CK_CRM_CustomerDocuments_status" check ("CRMCustomerDocument_StatusCode" in ('processing','ready','pending_review','failed')),
+  constraint "CK_CRM_CustomerDocuments_safety" check ("CRMCustomerDocument_SafetyStatusCode" in ('clean','unscanned','blocked')),
+  constraint "CK_CRM_CustomerDocuments_hash" check ("CRMCustomerDocument_SHA256" is null or "CRMCustomerDocument_SHA256" ~ '^[0-9a-f]{64}$')
+);
+
+create unique index if not exists "UX_CRM_CustomerDocuments_customer_source_attachment"
+  on public."CRM_CustomerDocuments" ("CRMCustomerDocument_CustomerOrgID", "CRMCustomerDocument_SourceAttachmentID");
+create unique index if not exists "UX_CRM_CustomerDocuments_idempotency"
+  on public."CRM_CustomerDocuments" ("CRMCustomerDocument_CreatedBy", "CRMCustomerDocument_IdempotencyKey");
+create index if not exists "IX_CRM_CustomerDocuments_customer_created"
+  on public."CRM_CustomerDocuments" ("CRMCustomerDocument_CustomerOrgID", "CRMCustomerDocument_CreatedAt" desc);
+
+alter table public."CRM_CustomerDocuments" enable row level security;
+revoke all on table public."CRM_CustomerDocuments" from public, anon, authenticated;
+grant all on table public."CRM_CustomerDocuments" to service_role;
+
+insert into storage.buckets (id, name, public, file_size_limit)
+values ('multideck-documents', 'multideck-documents', false, 26214400)
+on conflict (id) do update set public = false, file_size_limit = excluded.file_size_limit;
+
+create or replace function public.multideck_dexter_domain_customers(
+  p_company_id uuid,
+  p_search text,
+  p_take integer
+)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = pg_catalog, public, auth
+as $$
+  select coalesce(jsonb_agg(row_data order by customer_name), '[]'::jsonb)
+  from (
+    select jsonb_build_object(
+      'recordId', customer."Org_id",
+      'name', customer."Org_Name",
+      'status', customer."Org_CRMRelationshipStatusCode",
+      'isPotentialCustomer', customer."Org_CRMIsPotentialCustomer"
+    ) as row_data,
+    customer."Org_Name" as customer_name
+    from public."Org_Master" customer
+    where public._multideck_dexter_has_permission(
+      (select profile."User_ID" from public."cmp_Users" profile where profile."Auth_User_ID" = auth.uid() and profile."Company_ID" = p_company_id limit 1),
+      'Customers.Read'
+    )
+      and (
+        customer."Org_CRMIsPotentialCustomer"
+        or exists (
+          select 1 from public."Org_Master_Type" customer_type
+          join public."Org_Types" type on type."OrgType_ID" = customer_type."OrgType_ID"
+          where customer_type."Org_ID" = customer."Org_id" and type."OrgType_Name" = 'Customer'
+        )
+      )
+      and (nullif(btrim(p_search), '') is null or customer."Org_Name" ilike '%' || btrim(p_search) || '%')
+    order by customer."Org_Name"
+    limit greatest(1, least(coalesce(p_take, 10), 25))
+  ) customers;
+$$;
+
+revoke all on function public.multideck_dexter_domain_customers(uuid, text, integer) from public, anon, authenticated;
+
+insert into public."sys_AIDexterDataDomains" (
+  "AIDexterDomain_Code", "AIDexterDomain_Name", "AIDexterDomain_Description",
+  "AIDexterDomain_QueryFunction", "AIDexterDomain_SortOrder", "AIDexterDomain_IsActive", "AIDexterDomain_UpdatedAt"
+) values (
+  'customers', 'Customers', 'Customer records available to the signed-in operator.',
+  'multideck_dexter_domain_customers', 25, true, now()
+)
+on conflict ("AIDexterDomain_Code") do update set
+  "AIDexterDomain_Name" = excluded."AIDexterDomain_Name",
+  "AIDexterDomain_Description" = excluded."AIDexterDomain_Description",
+  "AIDexterDomain_QueryFunction" = excluded."AIDexterDomain_QueryFunction",
+  "AIDexterDomain_SortOrder" = excluded."AIDexterDomain_SortOrder",
+  "AIDexterDomain_IsActive" = true,
+  "AIDexterDomain_UpdatedAt" = now();
+
+-- The action remains fail-closed in Postgres. Agent Dexter always prepares an
+-- approval and the approved operation runs only inside the authenticated
+-- Supabase Edge runtime, which owns provider reads, storage and cleanup.
+create or replace function public.multideck_dexter_action_attach_email_document_to_customer(
+  p_company_id uuid,
+  p_user_id uuid,
+  p_arguments jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+begin
+  raise exception 'This action must be completed through the approved Supabase document runtime.' using errcode = '42501';
+end;
+$$;
+
+revoke all on function public.multideck_dexter_action_attach_email_document_to_customer(uuid, uuid, jsonb) from public, anon, authenticated;
+
+insert into public."sys_AIDexterActions" (
+  "AIDexterAction_Code", "AIDexterAction_DomainCode", "AIDexterAction_Name",
+  "AIDexterAction_Description", "AIDexterAction_Function", "AIDexterAction_ParametersJSON",
+  "AIDexterAction_SortOrder", "AIDexterAction_IsActive", "AIDexterAction_UpdatedAt"
+) values (
+  'attach_email_document_to_customer', 'customers', 'Save email attachment to customer',
+  'Save the exact authorised email attachment as a durable customer document. This always requires approval.',
+  'multideck_dexter_action_attach_email_document_to_customer',
+  '{"type":"object","properties":{"attachment_id":{"type":"string"},"target_id":{"type":"string"},"reason":{"type":"string"}},"required":["attachment_id","target_id","reason"],"additionalProperties":false}'::jsonb,
+  25, true, now()
+)
+on conflict ("AIDexterAction_Code") do update set
+  "AIDexterAction_DomainCode" = excluded."AIDexterAction_DomainCode",
+  "AIDexterAction_Name" = excluded."AIDexterAction_Name",
+  "AIDexterAction_Description" = excluded."AIDexterAction_Description",
+  "AIDexterAction_Function" = excluded."AIDexterAction_Function",
+  "AIDexterAction_ParametersJSON" = excluded."AIDexterAction_ParametersJSON",
+  "AIDexterAction_IsActive" = true,
+  "AIDexterAction_UpdatedAt" = now();
+
+create or replace function public.multideck_dexter_list_domains()
+returns jsonb language plpgsql stable security definer set search_path = pg_catalog, public, auth as $$
+declare v_context record; v_result jsonb;
+begin
+  select * into v_context from public._multideck_dexter_context();
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'code', domain."AIDexterDomain_Code", 'name', domain."AIDexterDomain_Name", 'description', domain."AIDexterDomain_Description"
+  ) order by domain."AIDexterDomain_SortOrder", domain."AIDexterDomain_Name"), '[]'::jsonb)
+  into v_result
+  from public."sys_AIDexterDataDomains" domain
+  where domain."AIDexterDomain_IsActive"
+    and (domain."AIDexterDomain_Code" <> 'customers' or public._multideck_dexter_has_permission(v_context.user_id, 'Customers.Read'));
+  return v_result;
+end; $$;
+
+create or replace function public.multideck_dexter_list_watches()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = pg_catalog, public, auth
+as $$
+declare v_context record; v_result jsonb;
+begin
+  select * into v_context from public._multideck_dexter_context();
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id', watch."AIDexterWatch_ID", 'title', watch."AIDexterWatch_Title", 'summary', watch."AIDexterWatch_Summary",
+    'capability', watch."AIDexterWatch_CapabilityCode", 'status', watch."AIDexterWatch_StatusCode",
+    'targetLabel', watch."AIDexterWatch_TargetLabel", 'rule', watch."AIDexterWatch_RuleJSON",
+    'action', watch."AIDexterWatch_ActionJSON", 'createdAt', watch."AIDexterWatch_CreatedAt",
+    'updatedAt', watch."AIDexterWatch_UpdatedAt", 'lastEvaluatedAt', watch."AIDexterWatch_LastEvaluatedAt",
+    'lastTriggeredAt', watch."AIDexterWatch_LastTriggeredAt", 'triggerCount', watch."AIDexterWatch_TriggerCount",
+    'healthStatus', watch."AIDexterWatch_HealthStatusCode", 'lastSourceCheckAt', watch."AIDexterWatch_LastSourceCheckAt",
+    'lastSuccessfulCheckAt', watch."AIDexterWatch_LastSuccessfulCheckAt",
+    'healthMessage', case when watch."AIDexterWatch_LastHealthError" is not null then 'Connected email is delayed. Dexter will keep retrying.' end,
+    'latestEvent', latest.event
+  ) order by watch."AIDexterWatch_UpdatedAt" desc), '[]'::jsonb)
+  into v_result
+  from public."AI_DexterWatches" watch
+  left join lateral (
+    select jsonb_build_object(
+      'id', event."AIDexterWatchEvent_ID", 'title', event."AIDexterWatchEvent_Title",
+      'body', event."AIDexterWatchEvent_Body", 'changed', event."AIDexterWatchEvent_ChangedJSON",
+      'action', event."AIDexterWatchEvent_ActionJSON", 'readAt', event."AIDexterWatchEvent_ReadAt",
+      'createdAt', event."AIDexterWatchEvent_CreatedAt",
+      'context', case when watch."AIDexterWatch_CapabilityCode" = 'email' then coalesce(email_context.value,
+        jsonb_build_object('kind','email','availability','removed','messageId',coalesce(event."AIDexterWatchEvent_ChangedJSON"->>'sourceId',''),
+          'threadId','','mailboxId',coalesce(event."AIDexterWatchEvent_ChangedJSON"->>'mailboxId',''),'provider','gmail',
+          'senderName','','senderEmail','','subject',coalesce(event."AIDexterWatchEvent_ChangedJSON"->>'subject',''),
+          'receivedAt',coalesce(event."AIDexterWatchEvent_ChangedJSON"->>'receivedAt',event."AIDexterWatchEvent_CreatedAt"::text),
+          'preview','','sourceUrl','','attachments','[]'::jsonb,'unavailableReason','The source email was removed, moved to spam or trash, or is no longer in an authorised mailbox.')) end
+    ) event
+    from public."AI_DexterWatchEvents" event
+    left join lateral (
+      select jsonb_build_object(
+        'kind','email','availability','available','messageId',message."CommMessage_ID",'threadId',message."CommMessage_ThreadID",
+        'mailboxId',message."CommMessage_MailboxID",'provider',permitted.provider,
+        'senderName',coalesce(sender.display_name,''),'senderEmail',coalesce(sender.address,''),
+        'subject',coalesce(nullif(message."CommMessage_Subject",''),'(No subject)'),
+        'receivedAt',coalesce(message."CommMessage_ReceivedAt",message."CommMessage_MessageDate",message."CommMessage_CreatedAt"),
+        'preview',left(coalesce(message."CommMessage_BodyPreview",message."CommMessage_BodyText",''),1200),
+        'sourceUrl','/inbox?provider=' || permitted.provider || '&mailbox=' || message."CommMessage_MailboxID" || '&thread=' || message."CommMessage_ThreadID",
+        'attachments',coalesce(attachments.value,'[]'::jsonb)
+      ) value
+      from public."Comm_Messages" message
+      join public._multideck_dexter_email_mailboxes(v_context.user_id, v_context.company_id) permitted
+        on permitted.mailbox_id = message."CommMessage_MailboxID"
+      left join lateral (
+        select recipient."CommRecipient_DisplayNameSnapshot" display_name, recipient."CommRecipient_Address" address
+        from public."Comm_MessageRecipients" recipient
+        where recipient."CommRecipient_MessageID" = message."CommMessage_ID" and recipient."CommRecipient_RecipientTypeCode" = 'from'
+        order by recipient."CommRecipient_CreatedAt", recipient."CommRecipient_ID" limit 1
+      ) sender on true
+      left join lateral (
+        select jsonb_agg(jsonb_build_object(
+          'id',attachment."CommAttachment_ID",'provider',permitted.provider,'mailboxId',message."CommMessage_MailboxID",
+          'threadId',message."CommMessage_ThreadID",'messageId',message."CommMessage_ID",
+          'subject',coalesce(nullif(message."CommMessage_Subject",''),'(No subject)'),
+          'fileName',attachment."CommAttachment_FileName",'mimeType',coalesce(attachment."CommAttachment_MimeType",'application/octet-stream'),
+          'sizeBytes',coalesce(attachment."CommAttachment_FileSizeBytes",0),
+          'sourceUrl','/inbox?provider=' || permitted.provider || '&mailbox=' || message."CommMessage_MailboxID" || '&thread=' || message."CommMessage_ThreadID",
+          'limitation',case
+            when lower(coalesce(attachment."CommAttachment_ScanStatus",'')) in ('blocked','infected','quarantined','malicious') then 'This attachment is blocked by the workspace security policy.'
+            when coalesce(attachment."CommAttachment_FileSizeBytes",0) > 26214400 then 'This attachment is too large for Dexter.'
+            when lower(coalesce(attachment."CommAttachment_MimeType",'')) not in ('application/pdf','text/plain','text/csv','application/csv','application/vnd.ms-excel','application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','application/vnd.openxmlformats-officedocument.presentationml.presentation','image/png','image/jpeg','image/webp') then 'This attachment type is not supported by Dexter.'
+            else null end
+        ) order by attachment."CommAttachment_CreatedAt", attachment."CommAttachment_ID") value
+        from public."Comm_MessageAttachments" attachment
+        where attachment."CommAttachment_MessageID" = message."CommMessage_ID" and not attachment."CommAttachment_IsInline"
+      ) attachments on true
+      where message."CommMessage_ID" = nullif(event."AIDexterWatchEvent_ChangedJSON"->>'sourceId','')::uuid
+        and not message."CommMessage_IsDeleted" and not message."CommMessage_IsDraft" and not message."CommMessage_IsSpam"
+        and not exists (
+          select 1 from public."Comm_MessageFolders" membership join public."Comm_MailFolders" folder on folder."CommMailFolder_ID"=membership."CommMessageFolder_FolderID"
+          where membership."CommMessageFolder_MessageID"=message."CommMessage_ID" and folder."CommMailFolder_RoleCode" in ('drafts','spam','trash')
+        )
+    ) email_context on watch."AIDexterWatch_CapabilityCode" = 'email'
+    where event."AIDexterWatchEvent_WatchID" = watch."AIDexterWatch_ID"
+    order by event."AIDexterWatchEvent_CreatedAt" desc limit 1
+  ) latest on true
+  where watch."AIDexterWatch_OwnerUserID" = v_context.user_id and watch."AIDexterWatch_CompanyID" = v_context.company_id;
+  return v_result;
+end;
+$$;
+
+revoke all on function public.multideck_dexter_list_domains() from public, anon;
+grant execute on function public.multideck_dexter_list_domains() to authenticated;
+revoke all on function public.multideck_dexter_list_watches() from public, anon;
+grant execute on function public.multideck_dexter_list_watches() to authenticated;
+
+create or replace function public.multideck_dexter_resolve_email_message(p_message_id uuid)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = pg_catalog, public, auth
+as $$
+declare v_context record; v_result jsonb;
+begin
+  select * into v_context from public._multideck_dexter_context();
+  if not public._multideck_dexter_has_permission(v_context.user_id, 'Email.Read')
+     or not public._multideck_dexter_has_permission(v_context.user_id, 'Email.AIRead') then
+    raise exception 'You do not have permission to use email with Dexter.' using errcode = '42501';
+  end if;
+
+  select jsonb_build_object(
+    'messageId', message."CommMessage_ID", 'threadId', message."CommMessage_ThreadID",
+    'mailboxId', message."CommMessage_MailboxID", 'provider', permitted.provider,
+    'subject', coalesce(nullif(message."CommMessage_Subject", ''), '(No subject)'),
+    'senderName', coalesce(sender.display_name, ''), 'senderEmail', coalesce(sender.address, ''),
+    'receivedAt', coalesce(message."CommMessage_ReceivedAt", message."CommMessage_MessageDate", message."CommMessage_CreatedAt"),
+    'preview', left(coalesce(message."CommMessage_BodyPreview", ''), 1200),
+    'bodyText', left(coalesce(message."CommMessage_BodyText", message."CommMessage_BodyPreview", ''), 20000),
+    '_citation', jsonb_build_object(
+      'title', coalesce(nullif(message."CommMessage_Subject", ''), '(No subject)'),
+      'url', '/inbox?provider=' || permitted.provider || '&mailbox=' || message."CommMessage_MailboxID" || '&thread=' || message."CommMessage_ThreadID",
+      'description', case permitted.provider when 'gmail' then 'Gmail email update' else 'Outlook email update' end
+    )
+  ) into v_result
+  from public."Comm_Messages" message
+  join public._multideck_dexter_email_mailboxes(v_context.user_id, v_context.company_id) permitted
+    on permitted.mailbox_id = message."CommMessage_MailboxID"
+  left join lateral (
+    select recipient."CommRecipient_DisplayNameSnapshot" display_name, recipient."CommRecipient_Address" address
+    from public."Comm_MessageRecipients" recipient
+    where recipient."CommRecipient_MessageID" = message."CommMessage_ID"
+      and recipient."CommRecipient_RecipientTypeCode" = 'from'
+    order by recipient."CommRecipient_CreatedAt", recipient."CommRecipient_ID" limit 1
+  ) sender on true
+  where message."CommMessage_ID" = p_message_id
+    and not message."CommMessage_IsDeleted" and not message."CommMessage_IsDraft" and not message."CommMessage_IsSpam"
+    and not exists (
+      select 1 from public."Comm_MessageFolders" membership
+      join public."Comm_MailFolders" folder on folder."CommMailFolder_ID" = membership."CommMessageFolder_FolderID"
+      where membership."CommMessageFolder_MessageID" = message."CommMessage_ID"
+        and folder."CommMailFolder_RoleCode" in ('drafts','spam','trash')
+    );
+  if v_result is null then raise exception 'This email update was not found.' using errcode = 'P0002'; end if;
+  return v_result;
+end;
+$$;
+
+revoke all on function public.multideck_dexter_resolve_email_message(uuid) from public, anon;
+grant execute on function public.multideck_dexter_resolve_email_message(uuid) to authenticated;
+
+commit;
+
+-- Private, operator-owned files uploaded directly into a Dexter conversation.
+-- Binary content stays in the existing private Multideck document bucket; this
+-- table is API-only and records the exact company/user scope used at read time.
+
+begin;
+
+create table if not exists public."AI_DexterUploads" (
+  "AIDexterUpload_ID" uuid primary key default gen_random_uuid(),
+  "AIDexterUpload_CompanyID" uuid not null,
+  "AIDexterUpload_UserID" uuid not null references public."cmp_Users"("User_ID") on delete cascade,
+  "AIDexterUpload_StoredObjectID" uuid not null references public."DOC_StoredObjects"("DOCStoredObject_ID") on delete restrict,
+  "AIDexterUpload_FileName" varchar(255) not null,
+  "AIDexterUpload_MimeType" varchar(160) not null,
+  "AIDexterUpload_FileSizeBytes" bigint not null check ("AIDexterUpload_FileSizeBytes" > 0 and "AIDexterUpload_FileSizeBytes" <= 26214400),
+  "AIDexterUpload_SHA256" varchar(64) not null check ("AIDexterUpload_SHA256" ~ '^[0-9a-f]{64}$'),
+  "AIDexterUpload_StatusCode" varchar(24) not null default 'active' check ("AIDexterUpload_StatusCode" in ('active','deleted')),
+  "AIDexterUpload_CreatedAt" timestamptz not null default now()
+);
+
+create index if not exists "IX_AI_DexterUploads_owner_created"
+  on public."AI_DexterUploads" ("AIDexterUpload_CompanyID", "AIDexterUpload_UserID", "AIDexterUpload_CreatedAt" desc);
+
+alter table public."AI_DexterUploads" enable row level security;
+revoke all on table public."AI_DexterUploads" from public, anon, authenticated;
+grant all on table public."AI_DexterUploads" to service_role;
+
+insert into storage.buckets (id, name, public, file_size_limit)
+values ('multideck-documents', 'multideck-documents', false, 26214400)
+on conflict (id) do update set public = false, file_size_limit = excluded.file_size_limit;
+
+create or replace function public.multideck_dexter_conversation_upload_context(
+  p_conversation_id uuid,
+  p_history_message_ids uuid[] default null
+)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = pg_catalog, public, auth
+as $$
+declare
+  v_context record;
+  v_uploads jsonb;
+begin
+  select * into v_context from public._multideck_dexter_context();
+  if not exists (
+    select 1 from public."AI_Conversations" conversation
+    where conversation."AICNV_ID" = p_conversation_id
+      and conversation."AICNV_CompanyID" = v_context.company_id
+      and conversation."AICNV_OwnerUserID" = v_context.user_id
+      and conversation."AICNV_EndedAt" is null
+  ) then
+    raise exception 'This conversation does not exist or is outside your workspace.' using errcode = 'P0002';
+  end if;
+
+  select coalesce(jsonb_agg(upload order by created_at desc), '[]'::jsonb)
+  into v_uploads
+  from (
+    select distinct on (attachment.value ->> 'id')
+      jsonb_build_object(
+        'id', attachment.value ->> 'id',
+        'type', 'uploaded_document',
+        'title', attachment.value ->> 'title'
+      ) as upload,
+      message."AIMSG_CreatedAt" as created_at
+    from public."AI_Messages" message
+    cross join lateral jsonb_array_elements(
+      case when jsonb_typeof(message."AIMSG_ContentJSON" -> 'attachments') = 'array'
+        then message."AIMSG_ContentJSON" -> 'attachments' else '[]'::jsonb end
+    ) attachment(value)
+    join public."AI_DexterUploads" stored_upload
+      on stored_upload."AIDexterUpload_ID"::text = attachment.value ->> 'id'
+     and stored_upload."AIDexterUpload_CompanyID" = v_context.company_id
+     and stored_upload."AIDexterUpload_UserID" = v_context.user_id
+     and stored_upload."AIDexterUpload_StatusCode" = 'active'
+    where message."AIMSG_ConversationID" = p_conversation_id
+      and message."AIMSG_Role" = 'user'
+      and attachment.value ->> 'type' = 'uploaded_document'
+      and (p_history_message_ids is null or message."AIMSG_ID" = any(p_history_message_ids))
+    order by attachment.value ->> 'id', message."AIMSG_CreatedAt" desc
+  ) branch_uploads;
+  return coalesce(v_uploads, '[]'::jsonb);
+end;
+$$;
+
+revoke all on function public.multideck_dexter_conversation_upload_context(uuid, uuid[]) from public, anon;
+grant execute on function public.multideck_dexter_conversation_upload_context(uuid, uuid[]) to authenticated;
+
+create or replace function public._multideck_dexter_conversation_json(
+  p_conversation_id uuid,
+  p_user_id uuid,
+  p_company_id uuid
+)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = pg_catalog, public
+as $$
+  select jsonb_build_object(
+    'id', conversation."AICNV_ID",
+    'title', coalesce(conversation."AICNV_Title", 'Dexter conversation'),
+    'summary', coalesce(conversation."AICNV_SummaryText", ''),
+    'updatedAt', conversation."AICNV_UpdatedAt",
+    'messages', coalesce((
+      select jsonb_agg(
+        jsonb_build_object(
+          'id', message."AIMSG_ID",
+          'role', message."AIMSG_Role",
+          'content', message."AIMSG_ContentText",
+          'createdAt', message."AIMSG_CreatedAt",
+          'specialist', nullif(message."AIMSG_ContentJSON" ->> 'specialist', ''),
+          'attachments', case
+            when jsonb_typeof(message."AIMSG_ContentJSON" -> 'attachments') = 'array'
+              then message."AIMSG_ContentJSON" -> 'attachments'
+            else '[]'::jsonb
+          end,
+          'parentResponseMessageId', nullif(message."AIMSG_ContentJSON" #>> '{metadata,parentResponseMessageId}', ''),
+          'pendingAction', case
+            when jsonb_typeof(message."AIMSG_ContentJSON" #> '{metadata,pendingAction}') = 'object'
+              then message."AIMSG_ContentJSON" #> '{metadata,pendingAction}'
+            else null
+          end,
+          'reasoningSummary', nullif(message."AIMSG_ContentJSON" #>> '{metadata,reasoningSummary}', ''),
+          'responseToUserMessageId', nullif(message."AIMSG_ContentJSON" #>> '{metadata,responseToUserMessageId}', ''),
+          'responseVersion', case
+            when coalesce(message."AIMSG_ContentJSON" #>> '{metadata,responseVersion}', '') ~ '^[1-9][0-9]*$'
+              then (message."AIMSG_ContentJSON" #>> '{metadata,responseVersion}')::integer
+            else null
+          end
+        )
+        order by message."AIMSG_CreatedAt", message."AIMSG_ID"
+      )
+      from public."AI_Messages" message
+      where message."AIMSG_ConversationID" = conversation."AICNV_ID"
+        and message."AIMSG_ContentText" is not null
+    ), '[]'::jsonb)
+  )
+  from public."AI_Conversations" conversation
+  where conversation."AICNV_ID" = p_conversation_id
+    and conversation."AICNV_CompanyID" = p_company_id
+    and conversation."AICNV_OwnerUserID" = p_user_id
+    and conversation."AICNV_Channel" = 'chat'
+    and conversation."AICNV_EndedAt" is null
+    and conversation."AICNV_DomainCode" in ('multideck', 'warehouse');
+$$;
+
+comment on table public."AI_DexterUploads" is 'Private local files uploaded by an operator for evidence-grounded Dexter conversations.';
+
+commit;
+
+create or replace function public.multideck_dexter_record_external_action(
+  p_action text, p_arguments jsonb, p_access_mode text, p_result jsonb
+)
+returns jsonb language plpgsql security definer set search_path = pg_catalog, public, auth as $$
+declare v_context record; v_code text:=lower(btrim(coalesce(p_action,''))); v_mode text:=lower(btrim(coalesce(p_access_mode,'')));
+begin
+  select * into v_context from public._multideck_dexter_context();
+  if not public._multideck_dexter_can_manage(v_context.user_id) then raise exception 'You do not have permission to let Dexter change workspace data.' using errcode='42501'; end if;
+  if v_mode not in ('approve','full') then raise exception 'Choose Approve or Full access before changing data.' using errcode='22023'; end if;
+  if not exists (select 1 from public."sys_AIDexterActions" action where action."AIDexterAction_Code"=v_code and action."AIDexterAction_IsActive") then
+    raise exception 'That Dexter action is not available in this workspace.' using errcode='22023';
+  end if;
+  insert into public."AI_DexterActionAudit" (
+    "AIDexterAudit_CompanyID","AIDexterAudit_UserID","AIDexterAudit_ActionCode","AIDexterAudit_AccessMode","AIDexterAudit_ArgumentsJSON","AIDexterAudit_ResultJSON"
+  ) values (v_context.company_id,v_context.user_id,v_code,v_mode,coalesce(p_arguments,'{}'::jsonb),coalesce(p_result,'{}'::jsonb));
+  return jsonb_build_object('action',v_code,'recorded',true);
+end;
+$$;
+revoke all on function public.multideck_dexter_record_external_action(text,jsonb,text,jsonb) from public,anon;
+grant execute on function public.multideck_dexter_record_external_action(text,jsonb,text,jsonb) to authenticated;
 
 -- Warehouse purchase orders. Kept in the baseline so newly provisioned tenant
 -- projects receive the same schema, Edge boundary, Dexter domain and watches.

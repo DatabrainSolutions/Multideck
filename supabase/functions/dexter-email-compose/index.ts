@@ -1,4 +1,6 @@
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
+import { governedModelFetch } from "../_shared/model-gateway.ts"
+import { requireActor, requirePermission, runtimeClients } from "../inbox-api/runtime.ts"
 
 type JsonObject = Record<string, unknown>
 type Db = SupabaseClient<any, "public", any, any, any>
@@ -111,6 +113,10 @@ Deno.serve(async (request) => {
     const user = userClient(authorization)
     const { data: authData, error: authError } = await user.auth.getUser()
     if (authError || !authData.user) throw new Error("authentication_required")
+    const clients = runtimeClients(authorization)
+    const actor = await requireActor(clients.user, clients.admin)
+    await requirePermission(clients.admin, actor, "Email.Read")
+    await requirePermission(clients.admin, actor, "Email.AIRead")
 
     const body = await request.json().catch(() => null)
     if (!isObject(body)) throw new Error("invalid_request")
@@ -149,11 +155,7 @@ Deno.serve(async (request) => {
 
     let payload: JsonObject
     try {
-      const upstream = await fetch("https://api.openai.com/v1/responses", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
+      const requestBody = {
           model,
           store: false,
           reasoning: { effort: "low" },
@@ -188,7 +190,14 @@ Deno.serve(async (request) => {
             },
           },
           max_output_tokens: 4_000,
-        }),
+        }
+      const upstream = await governedModelFetch({ admin: clients.admin, companyId: actor.companyId, userId: actor.userId }, {
+        provider: "openai", model, purpose: "email_compose",
+        dataCategories: ["operator_instruction", "email_content", "contact_details", ...(profileEnabled ? ["personal_style" as const] : [])],
+        recordCount: Array.isArray(verifiedContext?.messages) ? verifiedContext.messages.length : 1,
+        byteCount: JSON.stringify(requestBody.input).length, estimatedInputUnits: Math.ceil(JSON.stringify(requestBody.input).length / 4), estimatedOutputUnits: 4_000,
+        url: "https://api.openai.com/v1/responses", apiKey, body: requestBody,
+        signal: controller.signal,
       })
       const responsePayload = await upstream.json().catch(() => null)
       if (!upstream.ok || !isObject(responsePayload)) throw new Error("composer_unavailable")

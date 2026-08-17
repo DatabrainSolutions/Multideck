@@ -20,7 +20,26 @@ import {
   isDexterOcrFileName,
 } from "../_shared/dexter-document-ocr.ts"
 import { resolveDexterUploadedDocuments } from "../_shared/dexter-uploads.ts"
+import { adminClient } from "../_shared/backend.ts"
+import { beginGovernedModelFetch, governedModelFetch, settleModelEgress, type ModelGatewayContext } from "../_shared/model-gateway.ts"
 import { isClearlyOffTopicPrompt } from "./scope-guard.ts"
+import {
+  authoriseTrustedRecordRecipients,
+  bindSecurityRecords,
+  claimExternalPreparedAction,
+  completeExternalPreparedAction,
+  createSecurityContext,
+  declinePreparedAction,
+  getPreparedAction,
+  loadDexterActor,
+  operatorAuthorisesAction,
+  prepareServerAction,
+  refreshPreparedEmailAction,
+  resolveConversationAccessMode,
+  setConversationAccessMode,
+  type DexterActor,
+  type DexterSecurityContext,
+} from "./security.ts"
 
 type JsonObject = Record<string, unknown>
 type DexterSupabaseClient = SupabaseClient<any, "public", any, any, any>
@@ -35,6 +54,8 @@ type DataAction = {
   name: string
   description: string
   parameters: JsonObject
+  intentFamily?: string
+  externalEffect?: boolean
 }
 type WatchCapability = { code: string; name: string; description: string; fields: string[] }
 type TokenUsage = { inputTokens: number; outputTokens: number; totalTokens: number }
@@ -64,6 +85,9 @@ const EMAIL_STYLE_TOOL = "load_operator_email_style"
 const PREPARE_EMAIL_DRAFT_TOOL = "prepare_email_draft"
 const DEXTER_SCOPE_REDIRECT_TOOL = "redirect_off_topic_request"
 const DEXTER_DOCUMENT_OCR_TOOL = "extract_uploaded_document"
+const CREATE_EMAIL_DRAFT_ACTION = "create_email_draft"
+const SEND_EMAIL_ACTION = "send_email"
+const EMAIL_PREPARED_ACTIONS = new Set([CREATE_EMAIL_DRAFT_ACTION, SEND_EMAIL_ACTION])
 
 const MODEL_ROUTES: Record<DexterModelLane, { model: string; effort: "medium" | "high" }> = {
   fast: { model: "gpt-5.6-luna", effort: "medium" },
@@ -220,26 +244,36 @@ function actionCopy(
 ) {
   const copy = {
     "en-GB": {
+      create_email_draft: "Create email draft",
+      send_email: "Send email",
       declined: "Denied. No workspace data was changed.",
       completed: `${detail} completed. The approved change is now saved.`,
       prepared: `I have prepared this change for your review: ${detail}`,
     },
     "en-US": {
+      create_email_draft: "Create email draft",
+      send_email: "Send email",
       declined: "Denied. No workspace data was changed.",
       completed: `${detail} completed. The approved change is now saved.`,
       prepared: `I have prepared this change for your review: ${detail}`,
     },
     de: {
+      create_email_draft: "E-Mail-Entwurf erstellen",
+      send_email: "E-Mail senden",
       declined: "Abgelehnt. Es wurden keine Workspace-Daten geändert.",
       completed: `${detail} wurde abgeschlossen. Die genehmigte Änderung ist jetzt gespeichert.`,
       prepared: `Ich habe diese Änderung zur Prüfung vorbereitet: ${detail}`,
     },
     fr: {
+      create_email_draft: "Créer un brouillon d’e-mail",
+      send_email: "Envoyer l’e-mail",
       declined: "Refusé. Aucune donnée de l’espace de travail n’a été modifiée.",
       completed: `${detail} est terminé. La modification approuvée est maintenant enregistrée.`,
       prepared: `J’ai préparé cette modification pour validation : ${detail}`,
     },
     ar: {
+      create_email_draft: "إنشاء مسودة بريد",
+      send_email: "إرسال البريد",
       declined: "تم الرفض. لم يتم تغيير أي بيانات في مساحة العمل.",
       completed: `اكتمل ${detail}. تم حفظ التغيير المعتمد الآن.`,
       prepared: `أعددت هذا التغيير لمراجعتك: ${detail}`,
@@ -740,11 +774,9 @@ async function warehouseActionFetch(authorization: string, actionCode: string, a
 }
 
 async function executeWorkspaceAction(
-  userClient: DexterSupabaseClient,
   authorization: string,
   actionCode: string,
   args: JsonObject,
-  accessMode: "approve" | "full",
   executionKey: string = crypto.randomUUID(),
 ) {
   if (actionCode === CREATE_PURCHASE_ORDER_ACTION) {
@@ -811,42 +843,8 @@ async function executeWorkspaceAction(
     }
   }
 
-  if (CUSTOMS_DRAFT_ACTIONS.has(actionCode)) {
-    const normalised = customsDraftPayload(actionCode, args)
-    if (normalised.error || !normalised.data) return normalised
-    const saved = await userClient.rpc("multideck_dexter_execute_action", {
-      p_action: actionCode,
-      p_arguments: normalised.data,
-      p_access_mode: accessMode,
-    })
-    if (saved.error || actionCode !== CREATE_CUSTOMS_DECLARATION_ACTION) return saved
-    const savedRecord = isObject(saved.data) && isObject(saved.data.result) ? saved.data.result : null
-    const recordId = cleanString(savedRecord?.recordId, 80)
-    if (!isUuid(recordId)) {
-      return {
-        data: null,
-        error: {
-          code: "customs_draft_result_invalid",
-          message: "The Customs recovery record was saved, but Dexter could not start its iCustoms draft.",
-        },
-      }
-    }
-    const provider = await startCustomsProviderDraftFetch(authorization, recordId, executionKey)
-    if (provider.error) return provider
-    return { data: { ...saved.data, provider: provider.data }, error: null }
-  }
-
   if (actionCode === SAVE_CUSTOMS_PROVIDER_DRAFT_ACTION || actionCode === SUBMIT_CUSTOMS_DECLARATION_ACTION) {
-    const result = await customsProviderActionFetch(authorization, actionCode, args, executionKey)
-    if (result.error) return result
-    const { error: auditError } = await userClient.rpc("multideck_dexter_record_external_action", {
-      p_action: actionCode,
-      p_arguments: args,
-      p_access_mode: accessMode,
-      p_result: result.data,
-    })
-    if (auditError) console.error("Dexter iCustoms action audit failed", auditError.code ?? "unknown")
-    return result
+    return await customsProviderActionFetch(authorization, actionCode, args, executionKey)
   }
 
   if (actionCode === QUARANTINE_INVENTORY_ACTION) {
@@ -873,13 +871,6 @@ async function executeWorkspaceAction(
       if (!response.ok) {
         return { data: null, error: { code: `warehouse_${response.status}`, message: cleanString(payload?.detail, 300) || "The approved quarantine could not be posted." } }
       }
-      const { error: auditError } = await userClient.rpc("multideck_dexter_record_external_action", {
-        p_action: actionCode,
-        p_arguments: args,
-        p_access_mode: accessMode,
-        p_result: payload,
-      })
-      if (auditError) console.error("Dexter quarantine audit failed", auditError.code ?? "unknown")
       return { data: payload, error: null }
     } catch {
       return { data: null, error: { code: "warehouse_unavailable", message: "The Warehouse Edge Function could not be reached. Nothing was changed." } }
@@ -887,24 +878,11 @@ async function executeWorkspaceAction(
   }
 
   if (WAREHOUSE_EDGE_ACTIONS.has(actionCode)) {
-    const result = await warehouseActionFetch(authorization, actionCode, args, executionKey)
-    if (result.error) return result
-    const { error: auditError } = await userClient.rpc("multideck_dexter_record_external_action", {
-      p_action: actionCode,
-      p_arguments: args,
-      p_access_mode: accessMode,
-      p_result: result.data,
-    })
-    if (auditError) console.error("Dexter warehouse action audit failed", auditError.code ?? "unknown")
-    return result
+    return await warehouseActionFetch(authorization, actionCode, args, executionKey)
   }
 
   if (actionCode !== ATTACH_EMAIL_DOCUMENT_ACTION) {
-    return await userClient.rpc("multideck_dexter_execute_action", {
-      p_action: actionCode,
-      p_arguments: args,
-      p_access_mode: accessMode,
-    })
+    return { data: null, error: { code: "prepared_action_required", message: "That action must use Dexter's server-owned prepared-action executor." } }
   }
 
   const attachmentId = cleanString(args.attachment_id, 80)
@@ -930,6 +908,134 @@ async function executeWorkspaceAction(
       },
     }
   }
+}
+
+function isEdgeExecutedAction(actionCode: string) {
+  return actionCode === CREATE_PURCHASE_ORDER_ACTION ||
+    actionCode === SAVE_CUSTOMS_PROVIDER_DRAFT_ACTION ||
+    actionCode === SUBMIT_CUSTOMS_DECLARATION_ACTION ||
+    actionCode === QUARANTINE_INVENTORY_ACTION ||
+    actionCode === ATTACH_EMAIL_DOCUMENT_ACTION ||
+    WAREHOUSE_EDGE_ACTIONS.has(actionCode)
+}
+
+async function executePreparedActionById(input: {
+  admin: DexterSupabaseClient
+  actor: DexterActor
+  authorization: string
+  preparedActionId: string
+  conversationId: string | null
+}) {
+  const existing = await getPreparedAction(
+    input.admin,
+    input.actor,
+    input.preparedActionId,
+    input.conversationId,
+  )
+  if (!existing) {
+    return { data: null, error: { code: "prepared_action_unavailable", message: "That prepared action is no longer available." } }
+  }
+  const actionCode = cleanString(existing.AIDexterPrepared_ActionCode, 50)
+  if (existing.AIDexterPrepared_Status === "succeeded") {
+    return { data: existing.AIDexterPrepared_ResultJSON ?? {}, error: null }
+  }
+
+  if (EMAIL_PREPARED_ACTIONS.has(actionCode)) {
+    const prepared = await claimExternalPreparedAction(
+      input.admin,
+      input.actor,
+      input.preparedActionId,
+      input.conversationId,
+    )
+    if (!prepared) {
+      return { data: null, error: { code: "prepared_action_replayed", message: "That prepared email has expired or has already been used." } }
+    }
+    const argumentsJson = isObject(prepared.AIDexterPrepared_ArgumentsJSON) ? prepared.AIDexterPrepared_ArgumentsJSON : {}
+    const draft = isObject(argumentsJson.draft) ? argumentsJson.draft : null
+    if (!draft || (actionCode === SEND_EMAIL_ACTION) !== (draft.requestedAction === "send")) {
+      const error = { code: "prepared_email_invalid", message: "That prepared email no longer matches the operator-approved action." }
+      await completeExternalPreparedAction({ admin: input.admin, actor: input.actor, prepared, result: {}, error })
+      return { data: null, error }
+    }
+    try {
+      const execution = await executeFullAccessEmail(
+        input.authorization,
+        draft,
+        cleanString(prepared.AIDexterPrepared_IdempotencyKey, 80) || input.preparedActionId,
+      )
+      const result = { emailDraft: execution.draft, completed: execution.completed }
+      await completeExternalPreparedAction({ admin: input.admin, actor: input.actor, prepared, result, error: null })
+      return { data: result, error: null }
+    } catch (error) {
+      const failure = {
+        code: isObject(error) ? cleanString(error.code, 80) || "email_provider_failed" : "email_provider_failed",
+        message: error instanceof Error ? cleanString(error.message, 500) : "The connected mailbox could not complete this email action.",
+      }
+      await completeExternalPreparedAction({ admin: input.admin, actor: input.actor, prepared, result: {}, error: failure })
+      return { data: null, error: failure }
+    }
+  }
+
+  if (isEdgeExecutedAction(actionCode)) {
+    const prepared = await claimExternalPreparedAction(
+      input.admin,
+      input.actor,
+      input.preparedActionId,
+      input.conversationId,
+    )
+    if (!prepared) {
+      return { data: null, error: { code: "prepared_action_replayed", message: "That prepared action has expired or has already been used." } }
+    }
+    const execution = await executeWorkspaceAction(
+      input.authorization,
+      actionCode,
+      isObject(prepared.AIDexterPrepared_ArgumentsJSON) ? prepared.AIDexterPrepared_ArgumentsJSON : {},
+      cleanString(prepared.AIDexterPrepared_IdempotencyKey, 80) || input.preparedActionId,
+    )
+    await completeExternalPreparedAction({
+      admin: input.admin,
+      actor: input.actor,
+      prepared,
+      result: execution.data,
+      error: execution.error,
+    })
+    return execution
+  }
+
+  const { data, error } = await input.admin.rpc("multideck_dexter_execute_prepared_action", {
+    p_prepared_action_id: input.preparedActionId,
+    p_company_id: input.actor.companyId,
+    p_user_id: input.actor.userId,
+    p_conversation_id: input.conversationId,
+  })
+  if (error) return { data: null, error }
+  if (isObject(data) && data.updated === false && isObject(data.error)) {
+    return {
+      data: null,
+      error: {
+        code: cleanString(data.error.code, 100) || "dexter_action_failed",
+        message: cleanString(data.error.message, 500) || "The prepared action failed.",
+      },
+    }
+  }
+
+  if (actionCode === CREATE_CUSTOMS_DECLARATION_ACTION) {
+    const actionResult = isObject(data) && isObject(data.result) ? data.result : null
+    const recordId = cleanString(actionResult?.recordId, 80)
+    if (!isUuid(recordId)) {
+      return { data: null, error: { code: "customs_draft_result_invalid", message: "The Customs record was saved, but its provider draft could not be started." } }
+    }
+    const provider = await startCustomsProviderDraftFetch(input.authorization, recordId, input.preparedActionId)
+    if (provider.error) return provider
+    const combined = { ...(isObject(data) ? data : {}), provider: provider.data }
+    await input.admin.from("AI_DexterPreparedActions").update({ AIDexterPrepared_ResultJSON: combined })
+      .eq("AIDexterPrepared_ID", input.preparedActionId)
+    await input.admin.from("AI_DexterActionAudit").update({ AIDexterAudit_ResultJSON: combined })
+      .eq("AIDexterAudit_PreparedActionID", input.preparedActionId)
+    return { data: combined, error: null }
+  }
+
+  return { data, error: null }
 }
 
 async function saveExchange(
@@ -996,8 +1102,10 @@ function parseActions(value: unknown): DataAction[] {
     const domain = cleanString(item.domain, 40)
     const name = cleanString(item.name, 100)
     const description = cleanString(item.description, 400)
+    const intentFamily = cleanString(item.intentFamily, 80) || undefined
+    const externalEffect = item.externalEffect === true
     return code && domain && name && description
-      ? [{ code, domain, name, description, parameters: item.parameters }]
+      ? [{ code, domain, name, description, parameters: item.parameters, intentFamily, externalEffect }]
       : []
   })
 }
@@ -1348,7 +1456,7 @@ Check origin, destination, commodity description, HS classification, value and c
 Separate confirmed facts, missing evidence and professional judgement. Never infer clearance, admissibility, duty, tax, sanctions status, licence requirements or an HS code from incomplete evidence.
 Name the relevant jurisdiction when it is known. Treat legal, tax, sanctions, dangerous goods and classification guidance as operational support, not legal certainty.
 The dedicated commercial-invoice importer remains the safest route when item lines must be overlaid on the exact prepared PDF and individually reviewed before they change a customs declaration. It accepts PDF, Excel, CSV, Word, OpenDocument and image invoices through the same content-safe document normaliser used by Dexter. Dexter chat can also extract read-only evidence from those operator-uploaded formats with its listed document tool, then use only an available allowlisted workspace action. It cannot bypass declaration review or claim a destination change succeeded without a successful action result. Temporary upload, conversion and OCR states are explicitly not meaningful watch events; Watching for you follows the destination record only after an applied change emits its normal deterministic event.
-Customs declaration records and their latest recorded iCustoms submission state are connected through the customs_declarations data domain. Dexter may inspect, create and edit operator-owned UK CDS import and export drafts through its listed actions, and watch one exact declaration. Creating a declaration also creates its editable iCustoms draft; it does not submit anything to HMRC. For a create or edit action, put every known header and goods-line field into draft_json as one valid JSON object; use only source-backed values, preserve unknown fields when editing, and never invent a commodity code, customs value, party identifier, licence or previous-document reference. Dexter can validate and save an exact current declaration as an iCustoms draft. It can submit only after a separate, explicit in-chat approval, including when the operator has Full access; that approval sends the declaration once to the configured iCustoms environment. Deleting a Customs draft is intentionally not available to Dexter: direct the operator to the declaration register, where destructive inline confirmation is required. Deleting an abandoned, unsubmitted draft is not a meaningful Watching for you event. Never imply that saving an iCustoms draft, seeing a queued submission, or submitting it proves the declaration was accepted.
+Customs declaration records and their latest recorded iCustoms submission state are connected through the customs_declarations data domain. Dexter may inspect, create and edit operator-owned UK CDS import and export drafts through its listed actions, and watch one exact declaration. Creating a declaration also creates its editable iCustoms draft; it does not submit anything to HMRC. For a create or edit action, put every known header and goods-line field into draft_json as one valid JSON object; use only source-backed values, preserve unknown fields when editing, and never invent a commodity code, customs value, party identifier, licence or previous-document reference. Dexter can validate and save an exact current declaration as an iCustoms draft. In Approve mode it prepares one exact submission for review. In Full access it may submit once without another prompt only when the operator's current clean request explicitly asks to file or submit that declaration. Deleting a Customs draft is intentionally not available to Dexter: direct the operator to the declaration register, where destructive inline confirmation is required. Deleting an abandoned, unsubmitted draft is not a meaningful Watching for you event. Never imply that saving an iCustoms draft, seeing a queued submission, or submitting it proves the declaration was accepted.
 Live iCustoms commodity suggestions, tariff measures and certificate options deliberately require operator review in the goods-line Commodity assistant and are not callable from Dexter. If asked to run that lookup, say so clearly and direct the operator to Find commodity code on the exact goods line; do not guess or reproduce a stale result. The lookup itself creates no persisted business event, so Watching for you begins only after the operator applies and saves the declaration change through the normal Customs workflow.
 Structure substantial answers as current position, blocker or exposure, evidence needed, then safest next operational step.`,
   ops: `## Operations and exceptions specialist
@@ -1797,6 +1905,87 @@ async function executeFullAccessEmail(
   }
 }
 
+function emailPreparedChanges(locale: DexterLocale, draft: JsonObject) {
+  const addresses = (value: unknown) => Array.isArray(value)
+    ? value.filter(isObject).map((item) => cleanString(item.address, 320)).filter(Boolean).join(", ")
+    : ""
+  const labels = ({
+    "en-GB": ["Mailbox", "To", "Cc", "Bcc", "Subject", "Message", "Default send-capable mailbox"],
+    "en-US": ["Mailbox", "To", "Cc", "Bcc", "Subject", "Message", "Default send-capable mailbox"],
+    de: ["Postfach", "An", "Cc", "Bcc", "Betreff", "Nachricht", "Standardpostfach mit Sendeberechtigung"],
+    fr: ["Boîte", "À", "Cc", "Cci", "Objet", "Message", "Boîte d’envoi par défaut"],
+    ar: ["صندوق البريد", "إلى", "نسخة", "نسخة مخفية", "الموضوع", "الرسالة", "صندوق الإرسال الافتراضي"],
+  } satisfies Record<DexterLocale, string[]>)[locale]
+  return [
+    { field: labels[0], before: null, after: cleanString(draft.mailboxId, 80) || labels[6] },
+    { field: labels[1], before: null, after: addresses(draft.to) },
+    { field: labels[2], before: null, after: addresses(draft.cc) },
+    { field: labels[3], before: null, after: addresses(draft.bcc) },
+    { field: labels[4], before: null, after: cleanString(draft.subject, 500) },
+    { field: labels[5], before: null, after: cleanString(draft.bodyText, 50_000) },
+  ].filter((change) => change.field === labels[5] || Boolean(change.after))
+}
+
+async function securePreparedEmailAction(input: {
+  authorization: string
+  admin: DexterSupabaseClient
+  actor: DexterActor
+  userClient: DexterSupabaseClient
+  conversationId: string | null
+  accessMode: "approve" | "full"
+  security: DexterSecurityContext
+  actions: DataAction[]
+  locale: DexterLocale
+  operatorPrompt: string
+  draft: JsonObject
+}) {
+  const actionCode = input.draft.requestedAction === "send" ? SEND_EMAIL_ACTION : CREATE_EMAIL_DRAFT_ACTION
+  if (!input.security.allowedActionCodes.includes(actionCode) ||
+      (input.accessMode === "full" && !operatorAuthorisesAction(input.operatorPrompt, actionCode))) {
+    throw new Error("email_action_outside_operator_intent")
+  }
+  const action = input.actions.find((candidate) => candidate.code === actionCode)
+  if (!action) throw new Error("email_action_permission_denied")
+  const title = actionDisplayName(input.locale, actionCode, action.name)
+  const description = ({
+    "en-GB": actionCode === SEND_EMAIL_ACTION ? "Send this exact email once through the selected authorised mailbox." : "Create this exact draft once in the selected authorised mailbox.",
+    "en-US": actionCode === SEND_EMAIL_ACTION ? "Send this exact email once through the selected authorized mailbox." : "Create this exact draft once in the selected authorized mailbox.",
+    de: actionCode === SEND_EMAIL_ACTION ? "Diese E-Mail einmal über das ausgewählte autorisierte Postfach senden." : "Diesen Entwurf einmal im ausgewählten autorisierten Postfach erstellen.",
+    fr: actionCode === SEND_EMAIL_ACTION ? "Envoyer cet e-mail une seule fois via la boîte autorisée sélectionnée." : "Créer ce brouillon une seule fois dans la boîte autorisée sélectionnée.",
+    ar: actionCode === SEND_EMAIL_ACTION ? "إرسال هذا البريد مرة واحدة عبر صندوق البريد المصرح المحدد." : "إنشاء هذه المسودة مرة واحدة في صندوق البريد المصرح المحدد.",
+  } satisfies Record<DexterLocale, string>)[input.locale]
+  const changes = emailPreparedChanges(input.locale, input.draft)
+  const prepared = await prepareServerAction(input.admin, input.actor, {
+    conversationId: input.conversationId,
+    clientSessionId: input.security.clientSessionId,
+    intentPlanId: input.security.intentPlanId,
+    grantId: input.security.grantId,
+    actionCode,
+    arguments: { draft: input.draft },
+    title,
+    description,
+    changes,
+    accessMode: input.accessMode,
+  })
+  if (input.accessMode === "approve") {
+    return { draft: input.draft, completed: false, pendingAction: { id: prepared.id, title, description, changes } }
+  }
+  const execution = await executePreparedActionById({
+    admin: input.admin,
+    actor: input.actor,
+    authorization: input.authorization,
+    preparedActionId: prepared.id,
+    conversationId: input.conversationId,
+  })
+  if (execution.error) throw Object.assign(new Error(execution.error.message), { code: execution.error.code })
+  const result = isObject(execution.data) ? execution.data : {}
+  return {
+    draft: isObject(result.emailDraft) ? result.emailDraft : input.draft,
+    completed: result.completed === true,
+    pendingAction: null,
+  }
+}
+
 async function loadOperatorEmailStyle(userClient: DexterSupabaseClient) {
   const { data, error } = await userClient.rpc("multideck_dexter_get_writing_profile")
   if (error || !isObject(data)) return { enabled: false, status: "unavailable", guidance: "" }
@@ -2077,6 +2266,7 @@ function extractReasoningSummary(response: JsonObject) {
 }
 
 async function requestOpenAI(
+  gateway: ModelGatewayContext,
   apiKey: string,
   body: JsonObject,
 ): Promise<{ response?: JsonObject; status: number; requestId: string }> {
@@ -2084,13 +2274,12 @@ async function requestOpenAI(
   const timeout = setTimeout(() => controller.abort(), 45_000)
 
   try {
-    const upstream = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
+    const bodyBytes = JSON.stringify(body).length
+    const upstream = await governedModelFetch(gateway, {
+      provider: "openai", model: cleanString(body.model, 120), purpose: "dexter_chat",
+      dataCategories: ["operator_instruction", "business_record"], byteCount: bodyBytes,
+      estimatedInputUnits: Math.ceil(bodyBytes / 4), estimatedOutputUnits: Math.max(0, Number(body.max_output_tokens) || 2_400),
+      url: "https://api.openai.com/v1/responses", apiKey, body,
       signal: controller.signal,
     })
     const requestId = upstream.headers.get("x-request-id") ?? ""
@@ -2106,26 +2295,32 @@ async function requestOpenAI(
 }
 
 async function requestOpenAIStream(
+  gateway: ModelGatewayContext,
   apiKey: string,
   body: JsonObject,
   onDelta: (kind: "answer" | "reasoning", delta: string) => void,
 ): Promise<{ response?: JsonObject; status: number; requestId: string }> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 55_000)
+  const bodyBytes = JSON.stringify(body).length
+  let settled = false
+  let reservationId = ""
 
   try {
-    const upstream = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ ...body, stream: true }),
+    const started = await beginGovernedModelFetch(gateway, {
+      provider: "openai", model: cleanString(body.model, 120), purpose: "dexter_chat",
+      dataCategories: ["operator_instruction", "business_record"], byteCount: bodyBytes,
+      estimatedInputUnits: Math.ceil(bodyBytes / 4), estimatedOutputUnits: Math.max(0, Number(body.max_output_tokens) || 2_400),
+      url: "https://api.openai.com/v1/responses", apiKey, body: { ...body, stream: true },
       signal: controller.signal,
     })
+    const upstream = started.response
+    reservationId = started.reservationId
     const requestId = upstream.headers.get("x-request-id") ?? ""
     if (!upstream.ok || !upstream.body) {
       await upstream.body?.cancel()
+      await settleModelEgress(gateway, { reservationId, outcome: "failed", providerRequestId: requestId, errorCode: `provider_${upstream.status}` })
+      settled = true
       return { status: upstream.status, requestId }
     }
 
@@ -2176,7 +2371,18 @@ async function requestOpenAIStream(
     }
     if (buffer.trim()) processEvent(buffer)
 
+    const trustedUsage = completed ? readTokenUsage(completed) : { inputTokens: 0, outputTokens: 0, totalTokens: 0 }
+    await settleModelEgress(gateway, {
+      reservationId, outcome: completed ? "succeeded" : "failed", providerRequestId: requestId,
+      inputUnits: trustedUsage.inputTokens, outputUnits: trustedUsage.outputTokens,
+      errorCode: completed ? null : "stream_incomplete",
+    })
+    settled = true
     return { response: completed, status: upstream.status, requestId }
+  } catch (error) {
+    if (!settled && reservationId) await settleModelEgress(gateway, { reservationId, outcome: "failed", errorCode: error instanceof Error ? error.name : "stream_failed" })
+    settled = true
+    throw error
   } finally {
     clearTimeout(timeout)
   }
@@ -2184,6 +2390,8 @@ async function requestOpenAIStream(
 
 type StreamAgentArguments = {
   authorization: string
+  admin: DexterSupabaseClient
+  actor: DexterActor
   userClient: DexterSupabaseClient
   openAIKey: string
   route: { model: string; effort: "medium" | "high" }
@@ -2201,11 +2409,15 @@ type StreamAgentArguments = {
   emailState: DexterEmailToolState | null
   uploadedModelInputs: JsonObject[]
   operatorPrompt: string
+  conversationId: string | null
+  security: DexterSecurityContext
 }
 
 async function runStreamedAgent(
   {
     authorization,
+    admin,
+    actor,
     userClient,
     openAIKey,
     route,
@@ -2223,6 +2435,8 @@ async function runStreamedAgent(
     emailState,
     uploadedModelInputs,
     operatorPrompt,
+    conversationId,
+    security,
   }: StreamAgentArguments,
   emit: (payload: JsonObject) => void,
 ): Promise<DexterAgentResult | null> {
@@ -2234,7 +2448,7 @@ async function runStreamedAgent(
   const usage: TokenUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 }
   const reasoningSummaries: string[] = []
   const currentRecordsById = new Map<string, JsonObject>()
-  const allowedDraftAddresses = emailAddressesIn(operatorPrompt)
+  const allowedDraftAddresses = new Set(security.authorisedRecipientAddresses)
   const emailAction = requestedEmailAction(operatorPrompt)
   let emailStyleLoaded = false
   let latestDocumentExtraction: JsonObject | null = null
@@ -2245,7 +2459,7 @@ async function runStreamedAgent(
     let streamedReasoning = ""
     let openAIResult: { response?: JsonObject; status: number; requestId: string }
     try {
-      openAIResult = await requestOpenAIStream(openAIKey, {
+      openAIResult = await requestOpenAIStream({ admin, companyId: actor.companyId, userId: actor.userId, conversationId }, openAIKey, {
         model: route.model,
         reasoning: { effort: route.effort, summary: "auto" },
         instructions: buildInstructions(specialist, domains, actions, accessMode, locale, emailProviders),
@@ -2364,7 +2578,12 @@ async function runStreamedAgent(
           })
           if (!error) {
             rememberCurrentRecords(data, currentRecordsById)
-            collectEmailAddresses(data, allowedDraftAddresses)
+            if (accessMode === "full") {
+              const authorised = await authoriseTrustedRecordRecipients(admin, actor, security.intentPlanId, data)
+              authorised.forEach((address) => allowedDraftAddresses.add(address))
+            } else {
+              collectEmailAddresses(data, allowedDraftAddresses)
+            }
           }
           toolOutput = error
             ? { error: "The selected data domain could not be read.", code: error.code ?? "unknown" }
@@ -2395,17 +2614,22 @@ async function runStreamedAgent(
           if (prepared.draft) {
             let emailDraft = prepared.draft
             let completed = false
-            if (accessMode === "full") {
-              try {
-                const execution = await executeFullAccessEmail(authorization, emailDraft, `dexter-${callId}`)
-                emailDraft = execution.draft
-                completed = execution.completed
-              } catch (error) {
-                console.error("Dexter full-access email action failed", error instanceof Error ? error.message : "unknown")
-                emailDraft = { ...emailDraft, delivery: { status: "failed", updatedAt: new Date().toISOString() } }
-              }
+            let pendingAction: JsonObject | null = null
+            try {
+              const secured = await securePreparedEmailAction({
+                authorization, admin, actor, userClient, conversationId, accessMode, security, actions, locale,
+                operatorPrompt, draft: emailDraft,
+              })
+              emailDraft = secured.draft
+              completed = secured.completed
+              pendingAction = secured.pendingAction
+            } catch (error) {
+              console.error("Dexter secured email action failed", error instanceof Error ? error.message : "unknown")
+              emit({ type: "error", code: "prepared_email_unavailable", message: "Dexter could not secure that email action. Nothing was sent or created." })
+              return null
             }
             const answer = emailDraftCopy(locale, emailAction, accessMode, completed)
+            if (pendingAction) emit({ type: "pending_action", pendingAction })
             emit({ type: "delta", delta: answer })
             return {
               answer,
@@ -2419,6 +2643,7 @@ async function runStreamedAgent(
               usage,
               emailAttachments: emailState?.surfacedAttachments ?? [],
               emailDraft,
+              ...(pendingAction ? { pendingAction } : {}),
             }
           }
           toolOutput = prepared
@@ -2434,7 +2659,7 @@ async function runStreamedAgent(
         const action = actions.find((candidate) => candidate.code === call.name)
         if (!action) {
           toolOutput = { error: "That write action is not available in this workspace." }
-        } else if (accessMode === "approve" || action.code === ATTACH_EMAIL_DOCUMENT_ACTION || action.code === QUARANTINE_INVENTORY_ACTION || action.code === CREATE_PURCHASE_ORDER_ACTION || action.code === SUBMIT_CUSTOMS_DECLARATION_ACTION) {
+        } else if (accessMode === "approve") {
           const actionArguments = argumentsWithDocumentEvidence(args, latestDocumentExtraction)
           const currentRecord = currentRecordsById.get(cleanString(actionArguments.target_id, 80))
           const reason = preparedActionDescription(
@@ -2449,18 +2674,36 @@ async function runStreamedAgent(
           const answer = evidence
             ? extractedActionCopy(locale, evidence.fileName, reason)
             : actionCopy(locale, "prepared", reason)
+          const changes = actionChanges(
+            locale,
+            action.code,
+            actionArguments,
+            currentRecord,
+          )
+          let prepared: { id: string }
+          try {
+            prepared = await prepareServerAction(admin, actor, {
+              conversationId,
+              clientSessionId: security.clientSessionId,
+              intentPlanId: security.intentPlanId,
+              grantId: security.grantId,
+              actionCode: action.code,
+              arguments: actionArguments,
+              title: sanitiseAnswer(actionDisplayName(locale, action.code, action.name)),
+              description: reason,
+              changes,
+              accessMode,
+            })
+          } catch (error) {
+            console.error("Dexter prepared-action persistence failed", error instanceof Error ? error.message : "unknown")
+            emit({ type: "error", code: "prepared_action_unavailable", message: "Dexter could not secure that proposed change. Nothing was changed." })
+            return null
+          }
           const pendingAction = {
-            id: callId,
-            action: action.code,
+            id: prepared.id,
             title: sanitiseAnswer(actionDisplayName(locale, action.code, action.name)),
             description: reason,
-            arguments: actionArguments,
-            changes: actionChanges(
-              locale,
-              action.code,
-              actionArguments,
-              currentRecord,
-            ),
+            changes,
             ...(evidence ? { sourceEvidence: evidence } : {}),
           }
           emit({ type: "pending_action", pendingAction })
@@ -2479,15 +2722,51 @@ async function runStreamedAgent(
             emailAttachments: emailState?.surfacedAttachments ?? [],
           }
         } else {
+          if (!security.allowedActionCodes.includes(action.code) || !operatorAuthorisesAction(operatorPrompt, action.code)) {
+            const answer = "I need the action and record to be stated clearly before Full access can make that change. Nothing was changed."
+            emit({ type: "delta", delta: answer })
+            return {
+              answer,
+              model: lane,
+              providerModel: route.model,
+              reasoningEffort: route.effort,
+              locale,
+              promptVersion: PROMPT_VERSION,
+              availableDomains: [...domainCodes, ...emailProviders.map((provider) => `email:${provider}`)],
+              reasoningSummary: reasoningSummaries.join("\n\n"),
+              usage,
+              emailAttachments: emailState?.surfacedAttachments ?? [],
+            }
+          }
           const actionArguments = argumentsWithDocumentEvidence(args, latestDocumentExtraction)
-          const { data, error } = await executeWorkspaceAction(
-            userClient,
+          const currentRecord = currentRecordsById.get(cleanString(actionArguments.target_id, 80))
+          const changes = actionChanges(locale, action.code, actionArguments, currentRecord)
+          let prepared: { id: string }
+          try {
+            prepared = await prepareServerAction(admin, actor, {
+              conversationId,
+              clientSessionId: security.clientSessionId,
+              intentPlanId: security.intentPlanId,
+              grantId: security.grantId,
+              actionCode: action.code,
+              arguments: actionArguments,
+              title: sanitiseAnswer(actionDisplayName(locale, action.code, action.name)),
+              description: preparedActionDescription(locale, action.code, actionArguments, action.description, currentRecord, emailState),
+              changes,
+              accessMode: "full",
+            })
+          } catch (error) {
+            toolOutput = { error: "That action falls outside the operator's current Full access request.", code: error instanceof Error ? error.message : "intent_mismatch" }
+            input.push({ type: "function_call_output", call_id: callId, output: JSON.stringify(toolOutput) })
+            continue
+          }
+          const { data, error } = await executePreparedActionById({
+            admin,
+            actor,
             authorization,
-            action.code,
-            actionArguments,
-            "full",
-            callId,
-          )
+            preparedActionId: prepared.id,
+            conversationId,
+          })
           toolOutput = error
             ? { error: "The allowlisted workspace action failed.", code: error.code ?? "unknown" }
             : data
@@ -2546,6 +2825,13 @@ Deno.serve(async (request) => {
   if (authError || !authData.user) {
     return json(request, { code: "authentication_required", message: "Sign in again to use Agent Dexter." }, 401)
   }
+  const admin = adminClient()
+  let actor: DexterActor
+  try {
+    actor = await loadDexterActor(admin, authData.user.id)
+  } catch {
+    return json(request, { code: "permission_denied", message: "Your active workspace profile could not be verified." }, 403)
+  }
 
   const rawBody = await request.text()
   if (new TextEncoder().encode(rawBody).byteLength > MAX_BODY_BYTES) {
@@ -2566,6 +2852,36 @@ Deno.serve(async (request) => {
   const conversationId = conversationIdValue || null
   if (conversationId && !isUuid(conversationId)) {
     return json(request, { code: "invalid_conversation", message: "That Dexter conversation is not valid." }, 400)
+  }
+
+  if (operation === "set-access-mode") {
+    const clientSessionId = cleanString(body.clientSessionId, 80)
+    const mode = body.mode === "full" ? "full" : "approve"
+    try {
+      return json(request, {
+        access: await setConversationAccessMode(admin, actor, conversationId, clientSessionId, mode),
+      })
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "access_mode_unavailable"
+      return json(request, {
+        code,
+        message: code === "conversation_unavailable"
+          ? "This conversation is no longer available to receive Full access."
+          : "Dexter could not secure that access mode. Try again.",
+      }, code === "conversation_unavailable" ? 404 : 422)
+    }
+  }
+
+  if (operation === "refresh-prepared-email") {
+    const messageId = cleanString(body.messageId, 80)
+    const preparedActionId = cleanString(body.preparedActionId, 80)
+    if (!isUuid(messageId) || !isUuid(preparedActionId)) {
+      return json(request, { code: "invalid_prepared_email", message: "That prepared email is no longer available." }, 400)
+    }
+    const refreshed = await refreshPreparedEmailAction(admin, actor, messageId, preparedActionId)
+    return refreshed
+      ? json(request, { refreshed: true })
+      : json(request, { code: "prepared_email_unavailable", message: "That prepared email has expired or no longer matches the saved draft." }, 409)
   }
 
   if (operation === "list-conversations") {
@@ -2699,7 +3015,7 @@ Deno.serve(async (request) => {
     })).filter((owner) => isUuid(owner.id) && owner.name)
     const person = isObject(card.ContactCard_Person) ? card.ContactCard_Person : {}
 
-    const compilerResult = await requestOpenAI(openAIKey, {
+    const compilerResult = await requestOpenAI({ admin, companyId: actor.companyId, userId: actor.userId }, openAIKey, {
       model: MODEL_ROUTES.fast.model,
       reasoning: { effort: "medium" },
       instructions: [
@@ -2866,7 +3182,7 @@ Deno.serve(async (request) => {
     const capabilities = parseWatchCapabilities(capabilityData)
     const actions = parseActions(actionData)
     const fieldNames = [...new Set(capabilities.flatMap((capability) => capability.fields))]
-    const compilerResult: { response?: JsonObject; status: number; requestId: string } = await requestOpenAI(openAIKey, {
+    const compilerResult: { response?: JsonObject; status: number; requestId: string } = await requestOpenAI({ admin, companyId: actor.companyId, userId: actor.userId }, openAIKey, {
       model: MODEL_ROUTES.fast.model,
       reasoning: { effort: "medium" },
       instructions: [
@@ -2888,7 +3204,7 @@ Deno.serve(async (request) => {
         request: prompt,
         attachments,
         capabilities,
-        allowlistedActions: actions.map(({ code, domain, name, description, parameters }) => ({ code, domain, name, description, parameters })),
+        allowlistedActions: actions.filter((action) => !EMAIL_PREPARED_ACTIONS.has(action.code)).map(({ code, domain, name, description, parameters }) => ({ code, domain, name, description, parameters })),
       }),
       tools: [{
         type: "function",
@@ -3068,7 +3384,27 @@ Deno.serve(async (request) => {
   const attachments = parseAttachments(body.attachments)
   const lane = parseModelLane(body.model)
   const route = MODEL_ROUTES[lane]
-  const accessMode = body.accessMode === "full" ? "full" : "approve"
+  const clientSessionId = cleanString(body.clientSessionId, 80)
+  if (!isUuid(clientSessionId)) {
+    return json(request, {
+      code: "dexter_client_update_required",
+      message: "Refresh Multideck before continuing so Dexter can secure this conversation.",
+    }, 409)
+  }
+  if (body.approvedAction !== undefined || body.accessMode !== undefined) {
+    return json(request, {
+      code: "dexter_client_update_required",
+      message: "Refresh Multideck before continuing. Legacy Dexter action payloads are no longer accepted.",
+    }, 409)
+  }
+  const fullAccessGrantId = cleanString(body.fullAccessGrantId, 80) || null
+  const accessMode = await resolveConversationAccessMode({
+    admin,
+    actor,
+    grantId: fullAccessGrantId,
+    clientSessionId,
+    conversationId,
+  })
   const requestedEmailProviders = selectedEmailProviders(attachments)
   const directMessageIds = [...new Set(
     attachments.filter((attachment) => attachment.type === "email_update").map((attachment) => attachment.id).filter(isUuid),
@@ -3249,7 +3585,76 @@ Deno.serve(async (request) => {
     }, 503)
   }
 
+  const preparedActionId = cleanString(body.preparedActionId, 80) || null
+  if ((body.actionDecision === "approve" || body.actionDecision === "decline") && (preparedActionId === null || !isUuid(preparedActionId))) {
+    return json(request, {
+      code: "invalid_prepared_action",
+      message: "That proposed change is no longer available. Ask Dexter to prepare it again.",
+    }, 409)
+  }
+
+  const trustedRecipientAddresses = emailAddressesIn(prompt)
+  directEmailMessages.forEach((message) => collectEmailAddresses(message, trustedRecipientAddresses))
+  let security: DexterSecurityContext
+  try {
+    security = await createSecurityContext({
+      admin,
+      actor,
+      conversationId,
+      clientSessionId,
+      grantId: fullAccessGrantId,
+      prompt,
+      specialist,
+      availableActionCodes: actions.map((action) => action.code),
+      trustedTargetIds: attachments.filter((attachment) => ["booking", "customer", "lead", "deal", "declaration", "quote"].includes(attachment.type)).map((attachment) => attachment.id),
+      trustedRecipientAddresses: [...trustedRecipientAddresses],
+    })
+  } catch (error) {
+    console.error("Dexter security context failed", error instanceof Error ? error.message : "unknown")
+    return json(request, {
+      code: "dexter_security_unavailable",
+      message: "Dexter could not establish a secure action boundary for this request. Nothing was changed.",
+    }, 503)
+  }
+
+  const persistExchange = async (
+    result: DexterAgentResult,
+    retry: string | null = retryMessageId,
+    parent: string | null = parentResponseMessageId,
+  ) => {
+    const conversation = await saveExchange(
+      userClient,
+      conversationId,
+      prompt,
+      specialist,
+      lane,
+      attachments,
+      result,
+      retry,
+      parent,
+    )
+    const savedConversationId = cleanString(conversation.id, 80)
+    if (isUuid(savedConversationId)) {
+      await bindSecurityRecords({
+        admin,
+        actor,
+        conversationId: savedConversationId,
+        clientSessionId,
+        grantId: security.grantId,
+        intentPlanId: security.intentPlanId,
+        preparedActionId: isObject(result.pendingAction) ? cleanString(result.pendingAction.id, 80) : null,
+      })
+    }
+    return conversation
+  }
+
   if (body.actionDecision === "decline") {
+    if (!preparedActionId || !(await declinePreparedAction(admin, actor, preparedActionId, conversationId))) {
+      return json(request, {
+        code: "invalid_prepared_action",
+        message: "That proposed change has expired or has already been decided.",
+      }, 409)
+    }
     const result: DexterAgentResult = {
       answer: actionCopy(locale, "declined"),
       model: lane,
@@ -3261,17 +3666,7 @@ Deno.serve(async (request) => {
     }
     try {
       return json(request, {
-        conversation: await saveExchange(
-          userClient,
-          conversationId,
-          prompt,
-          specialist,
-          lane,
-          attachments,
-          result,
-          null,
-          parentResponseMessageId,
-        ),
+        conversation: await persistExchange(result, null, parentResponseMessageId),
       })
     } catch (error) {
       console.error("Dexter decision persistence failed", error instanceof Error ? error.message : "unknown")
@@ -3282,28 +3677,24 @@ Deno.serve(async (request) => {
     }
   }
 
-  if (body.actionDecision === "approve" && isObject(body.approvedAction)) {
-    const actionCode = cleanString(body.approvedAction.action, 50)
+  if (body.actionDecision === "approve" && preparedActionId) {
+    const prepared = await getPreparedAction(admin, actor, preparedActionId, conversationId)
+    const actionCode = cleanString(prepared?.AIDexterPrepared_ActionCode, 50)
     const action = actions.find((candidate) => candidate.code === actionCode)
-    const argumentsValue = isObject(body.approvedAction.arguments)
-      ? sanitiseArguments(body.approvedAction.arguments)
-      : null
-    if (!action || !argumentsValue) {
+    if (!prepared || !action) {
       return json(request, {
         code: "invalid_approved_action",
         message: "That prepared action is no longer available. Ask Dexter to prepare it again.",
       }, 409)
     }
 
-    const approvalId = cleanString(body.approvedAction.id, 160) || crypto.randomUUID()
-    const { data, error } = await executeWorkspaceAction(
-      userClient,
+    const { data, error } = await executePreparedActionById({
+      admin,
+      actor,
       authorization,
-      action.code,
-      argumentsValue,
-      "approve",
-      approvalId,
-    )
+      preparedActionId,
+      conversationId,
+    })
     if (error) {
       console.error("Dexter approved action failed", error.code ?? "unknown")
       return json(request, {
@@ -3321,20 +3712,11 @@ Deno.serve(async (request) => {
       promptVersion: PROMPT_VERSION,
       availableDomains: domains.map((domain) => domain.code),
       actionResult: data,
+      ...(isObject(data) && isObject(data.emailDraft) ? { emailDraft: data.emailDraft } : {}),
     }
     try {
       return json(request, {
-        conversation: await saveExchange(
-          userClient,
-          conversationId,
-          prompt,
-          specialist,
-          lane,
-          attachments,
-          result,
-          null,
-          parentResponseMessageId,
-        ),
+        conversation: await persistExchange(result, null, parentResponseMessageId),
       })
     } catch (error) {
       console.error("Dexter approved action persistence failed", error instanceof Error ? error.message : "unknown")
@@ -3365,17 +3747,7 @@ Deno.serve(async (request) => {
           }
           emit({ type: "delta", delta: result.answer })
           try {
-            const conversation = await saveExchange(
-              userClient,
-              conversationId,
-              prompt,
-              specialist,
-              lane,
-              attachments,
-              result,
-              retryMessageId,
-              parentResponseMessageId,
-            )
+            const conversation = await persistExchange(result)
             emit({ type: "complete", conversation })
           } catch (error) {
             console.error("Dexter hard scope redirect persistence failed", error instanceof Error ? error.message : "unknown")
@@ -3401,17 +3773,7 @@ Deno.serve(async (request) => {
 
     try {
       return json(request, {
-        conversation: await saveExchange(
-          userClient,
-          conversationId,
-          prompt,
-          specialist,
-          lane,
-          attachments,
-          result,
-          retryMessageId,
-          parentResponseMessageId,
-        ),
+        conversation: await persistExchange(result),
       })
     } catch (error) {
       console.error("Dexter hard scope redirect persistence failed", error instanceof Error ? error.message : "unknown")
@@ -3496,7 +3858,7 @@ Deno.serve(async (request) => {
         additionalProperties: false,
       },
     }]
-  const actionTools = actions.map((action) => ({
+  const actionTools = actions.filter((action) => !EMAIL_PREPARED_ACTIONS.has(action.code)).map((action) => ({
     type: "function",
     name: action.code,
     description: `${action.description} Use only after reading the target record and use its recordId as target_id.`,
@@ -3519,6 +3881,8 @@ Deno.serve(async (request) => {
         try {
           const result = await runStreamedAgent({
             authorization,
+            admin,
+            actor,
             userClient,
             openAIKey,
             route,
@@ -3536,20 +3900,12 @@ Deno.serve(async (request) => {
             emailState,
             uploadedModelInputs,
             operatorPrompt: prompt,
+            conversationId,
+            security,
           }, emit)
           if (!result) return
 
-          const conversation = await saveExchange(
-            userClient,
-            conversationId,
-            prompt,
-            specialist,
-            lane,
-            attachments,
-            result,
-            retryMessageId,
-            parentResponseMessageId,
-          )
+          const conversation = await persistExchange(result)
           emit({ type: "complete", conversation })
         } catch (error) {
           console.error("Dexter stream orchestration failed", error instanceof Error ? error.name : "unknown")
@@ -3582,7 +3938,7 @@ Deno.serve(async (request) => {
   const usage: TokenUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 }
   const reasoningSummaries: string[] = []
   const currentRecordsById = new Map<string, JsonObject>()
-  const allowedDraftAddresses = emailAddressesIn(prompt)
+  const allowedDraftAddresses = new Set(security.authorisedRecipientAddresses)
   const requestedAction = requestedEmailAction(prompt)
   let emailStyleLoaded = false
   let latestDocumentExtraction: JsonObject | null = null
@@ -3590,7 +3946,7 @@ Deno.serve(async (request) => {
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
     let openAIResult: { response?: JsonObject; status: number; requestId: string }
     try {
-      openAIResult = await requestOpenAI(openAIKey, {
+      openAIResult = await requestOpenAI({ admin, companyId: actor.companyId, userId: actor.userId, conversationId }, openAIKey, {
         model: route.model,
         reasoning: { effort: route.effort, summary: "auto" },
         instructions: buildInstructions(specialist, domains, actions, accessMode, locale, emailProviders),
@@ -3645,17 +4001,7 @@ Deno.serve(async (request) => {
       }
       try {
         return json(request, {
-          conversation: await saveExchange(
-            userClient,
-            conversationId,
-            prompt,
-            specialist,
-            lane,
-            attachments,
-            result,
-            retryMessageId,
-            parentResponseMessageId,
-          ),
+          conversation: await persistExchange(result),
         })
       } catch (error) {
         console.error("Dexter response persistence failed", error instanceof Error ? error.message : "unknown")
@@ -3701,17 +4047,7 @@ Deno.serve(async (request) => {
         )
         try {
           return json(request, {
-            conversation: await saveExchange(
-              userClient,
-              conversationId,
-              prompt,
-              specialist,
-              lane,
-              attachments,
-              result,
-              retryMessageId,
-              parentResponseMessageId,
-            ),
+            conversation: await persistExchange(result),
           })
         } catch (error) {
           console.error("Dexter scope redirect persistence failed", error instanceof Error ? error.message : "unknown")
@@ -3734,7 +4070,12 @@ Deno.serve(async (request) => {
           })
           if (!error) {
             rememberCurrentRecords(data, currentRecordsById)
-            collectEmailAddresses(data, allowedDraftAddresses)
+            if (accessMode === "full") {
+              const authorised = await authoriseTrustedRecordRecipients(admin, actor, security.intentPlanId, data)
+              authorised.forEach((address) => allowedDraftAddresses.add(address))
+            } else {
+              collectEmailAddresses(data, allowedDraftAddresses)
+            }
           }
           toolOutput = error
             ? { error: "The selected data domain could not be read.", code: error.code ?? "unknown" }
@@ -3765,15 +4106,18 @@ Deno.serve(async (request) => {
           if (prepared.draft) {
             let emailDraft = prepared.draft
             let completed = false
-            if (accessMode === "full") {
-              try {
-                const execution = await executeFullAccessEmail(authorization, emailDraft, `dexter-${callId}`)
-                emailDraft = execution.draft
-                completed = execution.completed
-              } catch (error) {
-                console.error("Dexter full-access email action failed", error instanceof Error ? error.message : "unknown")
-                emailDraft = { ...emailDraft, delivery: { status: "failed", updatedAt: new Date().toISOString() } }
-              }
+            let pendingAction: JsonObject | null = null
+            try {
+              const secured = await securePreparedEmailAction({
+                authorization, admin, actor, userClient, conversationId, accessMode, security, actions, locale,
+                operatorPrompt: prompt, draft: emailDraft,
+              })
+              emailDraft = secured.draft
+              completed = secured.completed
+              pendingAction = secured.pendingAction
+            } catch (error) {
+              console.error("Dexter secured email action failed", error instanceof Error ? error.message : "unknown")
+              return json(request, { code: "prepared_email_unavailable", message: "Dexter could not secure that email action. Nothing was sent or created." }, 503)
             }
             const result: DexterAgentResult = {
               answer: emailDraftCopy(locale, requestedAction, accessMode, completed),
@@ -3787,20 +4131,11 @@ Deno.serve(async (request) => {
               usage,
               emailAttachments: emailState?.surfacedAttachments ?? [],
               emailDraft,
+              ...(pendingAction ? { pendingAction } : {}),
             }
             try {
               return json(request, {
-                conversation: await saveExchange(
-                  userClient,
-                  conversationId,
-                  prompt,
-                  specialist,
-                  lane,
-                  attachments,
-                  result,
-                  retryMessageId,
-                  parentResponseMessageId,
-                ),
+                conversation: await persistExchange(result),
               })
             } catch (error) {
               console.error("Dexter email draft persistence failed", error instanceof Error ? error.message : "unknown")
@@ -3820,7 +4155,7 @@ Deno.serve(async (request) => {
         const action = actions.find((candidate) => candidate.code === call.name)
         if (!action) {
           toolOutput = { error: "That write action is not available in this workspace." }
-        } else if (accessMode === "approve" || action.code === ATTACH_EMAIL_DOCUMENT_ACTION || action.code === QUARANTINE_INVENTORY_ACTION || action.code === CREATE_PURCHASE_ORDER_ACTION || action.code === SUBMIT_CUSTOMS_DECLARATION_ACTION) {
+        } else if (accessMode === "approve") {
           const actionArguments = argumentsWithDocumentEvidence(args, latestDocumentExtraction)
           const currentRecord = currentRecordsById.get(cleanString(actionArguments.target_id, 80))
           const reason = preparedActionDescription(
@@ -3832,6 +4167,25 @@ Deno.serve(async (request) => {
             emailState,
           )
           const evidence = documentEvidence(latestDocumentExtraction)
+          const changes = actionChanges(locale, action.code, actionArguments, currentRecord)
+          let prepared: { id: string }
+          try {
+            prepared = await prepareServerAction(admin, actor, {
+              conversationId,
+              clientSessionId: security.clientSessionId,
+              intentPlanId: security.intentPlanId,
+              grantId: security.grantId,
+              actionCode: action.code,
+              arguments: actionArguments,
+              title: sanitiseAnswer(actionDisplayName(locale, action.code, action.name)),
+              description: reason,
+              changes,
+              accessMode,
+            })
+          } catch (error) {
+            console.error("Dexter prepared-action persistence failed", error instanceof Error ? error.message : "unknown")
+            return json(request, { code: "prepared_action_unavailable", message: "Dexter could not secure that proposed change. Nothing was changed." }, 503)
+          }
           const result: DexterAgentResult = {
             answer: evidence
               ? extractedActionCopy(locale, evidence.fileName, reason)
@@ -3846,33 +4200,16 @@ Deno.serve(async (request) => {
             usage,
             emailAttachments: emailState?.surfacedAttachments ?? [],
             pendingAction: {
-              id: callId,
-              action: action.code,
+              id: prepared.id,
               title: sanitiseAnswer(actionDisplayName(locale, action.code, action.name)),
               description: reason,
-              arguments: actionArguments,
-              changes: actionChanges(
-                locale,
-                action.code,
-                actionArguments,
-                currentRecord,
-              ),
+              changes,
               ...(evidence ? { sourceEvidence: evidence } : {}),
             },
           }
           try {
             return json(request, {
-              conversation: await saveExchange(
-                userClient,
-                conversationId,
-                prompt,
-                specialist,
-                lane,
-                attachments,
-                result,
-                retryMessageId,
-                parentResponseMessageId,
-              ),
+              conversation: await persistExchange(result),
             })
           } catch (error) {
             console.error("Dexter prepared action persistence failed", error instanceof Error ? error.message : "unknown")
@@ -3882,15 +4219,50 @@ Deno.serve(async (request) => {
             }, 503)
           }
         } else {
+          if (!security.allowedActionCodes.includes(action.code) || !operatorAuthorisesAction(prompt, action.code)) {
+            const result: DexterAgentResult = {
+              answer: "I need the action and record to be stated clearly before Full access can make that change. Nothing was changed.",
+              model: lane,
+              providerModel: route.model,
+              reasoningEffort: route.effort,
+              locale,
+              promptVersion: PROMPT_VERSION,
+              availableDomains: [...domainCodes, ...emailProviders.map((provider) => `email:${provider}`)],
+              reasoningSummary: reasoningSummaries.join("\n\n"),
+              usage,
+              emailAttachments: emailState?.surfacedAttachments ?? [],
+            }
+            return json(request, { conversation: await persistExchange(result) })
+          }
           const actionArguments = argumentsWithDocumentEvidence(args, latestDocumentExtraction)
-          const { data, error } = await executeWorkspaceAction(
-            userClient,
+          const currentRecord = currentRecordsById.get(cleanString(actionArguments.target_id, 80))
+          const changes = actionChanges(locale, action.code, actionArguments, currentRecord)
+          let prepared: { id: string }
+          try {
+            prepared = await prepareServerAction(admin, actor, {
+              conversationId,
+              clientSessionId: security.clientSessionId,
+              intentPlanId: security.intentPlanId,
+              grantId: security.grantId,
+              actionCode: action.code,
+              arguments: actionArguments,
+              title: sanitiseAnswer(actionDisplayName(locale, action.code, action.name)),
+              description: preparedActionDescription(locale, action.code, actionArguments, action.description, currentRecord, emailState),
+              changes,
+              accessMode: "full",
+            })
+          } catch (error) {
+            toolOutput = { error: "That action falls outside the operator's current Full access request.", code: error instanceof Error ? error.message : "intent_mismatch" }
+            input.push({ type: "function_call_output", call_id: callId, output: JSON.stringify(toolOutput) })
+            continue
+          }
+          const { data, error } = await executePreparedActionById({
+            admin,
+            actor,
             authorization,
-            action.code,
-            actionArguments,
-            "full",
-            callId,
-          )
+            preparedActionId: prepared.id,
+            conversationId,
+          })
           toolOutput = error
             ? { error: "The allowlisted workspace action failed.", code: error.code ?? "unknown" }
             : data

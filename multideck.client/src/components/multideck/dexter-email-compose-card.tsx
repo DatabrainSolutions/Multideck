@@ -30,6 +30,7 @@ import { useLanguage } from "@/i18n/language-provider";
 import {
   duplicateSentDexterEmailDraft,
   refineDexterEmailDraft,
+  refreshDexterPreparedEmailAction,
   recordDexterEmailDraftDelivery,
   recordDexterProviderDraftDelivery,
   updateDexterEmailDraft,
@@ -282,11 +283,19 @@ export function DexterEmailComposeCard({
   messageId,
   draft,
   preview = false,
+  preparedActionId,
+  preparedActionPending = false,
+  preparedActionError,
+  onPreparedActionDecision,
   onDraftChange,
 }: {
   messageId: string;
   draft: DexterEmailDraft;
   preview?: boolean;
+  preparedActionId?: string | null;
+  preparedActionPending?: boolean;
+  preparedActionError?: string | null;
+  onPreparedActionDecision?: () => void;
   onDraftChange?: (draft: DexterEmailDraft) => void;
 }) {
   const { direction, t } = useLanguage();
@@ -328,6 +337,8 @@ export function DexterEmailComposeCard({
   >(null);
   const requestedAction =
     draft.requestedAction === "create_draft" ? "create_draft" : "send";
+  const providerActionUnavailable = !preview && !preparedActionId &&
+    status !== "sent" && status !== "draft_created";
   const idempotencyKey = useRef(createIdempotencyKey());
   const saveTimer = useRef<number | null>(null);
   const hydratedDraftId = useRef(draft.id);
@@ -338,6 +349,16 @@ export function DexterEmailComposeCard({
   const refinementRequestId = useRef(0);
   const refinementInputRef = useRef<HTMLInputElement | null>(null);
   const bodyEditorRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    if (preparedActionError) setError(preparedActionError);
+  }, [preparedActionError]);
+
+  useEffect(() => {
+    if (providerActionUnavailable) {
+      setError(t("Ask Dexter to prepare this email again before sending or creating a provider draft."));
+    }
+  }, [providerActionUnavailable, t]);
   const liveSubject = useRef(subject);
   const liveBodyText = useRef(bodyText);
   liveSubject.current = subject;
@@ -779,6 +800,21 @@ export function DexterEmailComposeCard({
       return;
     }
 
+    if (preparedActionId && onPreparedActionDecision) {
+      setSaveState("saving");
+      try {
+        const savedDraft = await updateDexterEmailDraft(activeMessageId, currentDraft("draft"));
+        await refreshDexterPreparedEmailAction(activeMessageId, preparedActionId);
+        setSaveState("saved");
+        if (activeMessageId === messageId) onDraftChange?.(savedDraft);
+        onPreparedActionDecision();
+      } catch (approvalError) {
+        setSaveState("failed");
+        setError(approvalError instanceof Error ? approvalError.message : t("Dexter could not secure the latest email edits. Nothing was sent or created."));
+      }
+      return;
+    }
+
     setStatus(
       requestedAction === "create_draft"
         ? "creating_draft"
@@ -1092,6 +1128,8 @@ export function DexterEmailComposeCard({
             locked ||
             isCreatingCopy ||
             copyFailed ||
+            preparedActionPending ||
+            providerActionUnavailable ||
             !selectedMailbox
           }
           aria-label={t(

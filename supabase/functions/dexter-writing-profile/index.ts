@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
+import { governedModelFetch } from "../_shared/model-gateway.ts"
 
 type JsonObject = Record<string, unknown>
 type Db = SupabaseClient<any, "public", any, any, any>
@@ -190,15 +191,12 @@ function outputText(payload: JsonObject) {
   return ""
 }
 
-async function generateStructuredProfile(messages: SourceMessage[]) {
+async function generateStructuredProfile(admin: Db, operator: Operator, messages: SourceMessage[]) {
   const apiKey = Deno.env.get("OPENAI_API_KEY")?.trim() || Deno.env.get("OPEN_API_KEY")?.trim() || ""
   if (!apiKey) throw new Error("luna_not_configured")
   const model = Deno.env.get("INBOX_LUNA_MODEL")?.trim() || "gpt-5.6-luna"
   const source = messages.map((message, index) => `<sample index="${index + 1}">\n${message.bodyText}\n</sample>`).join("\n\n").slice(0, 60_000)
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
+  const requestBody = {
       model,
       store: false,
       reasoning: { effort: "medium" },
@@ -231,7 +229,11 @@ async function generateStructuredProfile(messages: SourceMessage[]) {
           },
         },
       },
-    }),
+    }
+  const response = await governedModelFetch({ admin, companyId: operator.companyId, userId: operator.userId }, {
+    provider: "openai", model, purpose: "writing_profile", dataCategories: ["email_content", "personal_style"],
+    recordCount: messages.length, byteCount: source.length, estimatedInputUnits: Math.ceil(source.length / 4), estimatedOutputUnits: 4_000,
+    url: "https://api.openai.com/v1/responses", apiKey, body: requestBody,
   })
   if (!response.ok) throw new Error("luna_unavailable")
   const payload = await response.json() as JsonObject
@@ -318,7 +320,7 @@ async function generateForOperator(admin: Db, operator: Operator, options: { all
       return { status: next.AIDexterWritingProfile_StatusCode, eligibleCount, analysedCount: 0 }
     }
 
-    const generated = await generateStructuredProfile(messages)
+    const generated = await generateStructuredProfile(admin, operator, messages)
     const generatedAt = new Date().toISOString()
     const next = await updateGenerationState(admin, operator, {
       AIDexterWritingProfile_StatusCode: "ready",

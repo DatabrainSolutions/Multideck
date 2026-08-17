@@ -1,6 +1,7 @@
 import { cleanString, InboxHttpError, safeFileName } from "../inbox-api/core.ts"
 import { requireActor, requirePermission, runtimeClients } from "../inbox-api/runtime.ts"
 import { MISTRAL_OCR_MODEL } from "./customs-invoice-ocr.ts"
+import { governedModelFetch, type ModelGatewayContext } from "./model-gateway.ts"
 import {
   INVOICE_DOCUMENT_NORMALIZER_VERSION,
   InvoiceDocumentPreparationError,
@@ -106,16 +107,10 @@ function providerError(status: number) {
   return new InboxHttpError(502, "Document extraction is temporarily unavailable. Try again.", "document_ocr_provider_failed")
 }
 
-async function requestMistralOcr(apiKey: string, signedUrl: string, ranges: Array<{ start: number; end: number }>) {
-  return await Promise.all(ranges.map(async (range) => {
-    const response = await fetch(MISTRAL_OCR_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "User-Agent": "Multideck Dexter document extraction/2",
-      },
-      body: JSON.stringify({
+async function requestMistralOcr(gateway: ModelGatewayContext, apiKey: string, signedUrl: string, ranges: Array<{ start: number; end: number }>) {
+  const payloads: JsonObject[] = []
+  for (const range of ranges) {
+    const requestBody = {
         model: MISTRAL_OCR_MODEL,
         document: { type: "document_url", document_url: signedUrl },
         ...(ranges.length > 1 ? { pages: `${range.start}-${range.end}` } : {}),
@@ -125,7 +120,11 @@ async function requestMistralOcr(apiKey: string, signedUrl: string, ranges: Arra
         include_blocks: true,
         include_image_base64: false,
         confidence_scores_granularity: "page",
-      }),
+      }
+    const response = await governedModelFetch(gateway, {
+      provider: "mistral", model: MISTRAL_OCR_MODEL, purpose: "document_ocr", dataCategories: ["document_content"],
+      recordCount: 1, estimatedInputUnits: range.end - range.start + 1,
+      url: MISTRAL_OCR_URL, apiKey, body: requestBody, userAgent: "Multideck Dexter document extraction/2",
       signal: AbortSignal.timeout(OCR_TIMEOUT_MS),
     })
     if (!response.ok) {
@@ -137,8 +136,9 @@ async function requestMistralOcr(apiKey: string, signedUrl: string, ranges: Arra
     }
     const payload = await response.json().catch(() => null)
     if (!isObject(payload)) throw new InboxHttpError(502, "Document extraction returned an unreadable result. Try again.", "document_ocr_invalid_result")
-    return payload
-  }))
+    payloads.push(payload)
+  }
+  return payloads
 }
 
 export async function extractDexterUploadedDocument(authorization: string, uploadId: string) {
@@ -154,7 +154,8 @@ export async function extractDexterUploadedDocument(authorization: string, uploa
 
   const { data, error } = await clients.admin.from("AI_DexterUploads").select("*,DOC_StoredObjects(*)")
     .eq("AIDexterUpload_ID", uploadId).eq("AIDexterUpload_CompanyID", actor.companyId)
-    .eq("AIDexterUpload_UserID", actor.userId).eq("AIDexterUpload_StatusCode", "active").maybeSingle()
+    .eq("AIDexterUpload_UserID", actor.userId).eq("AIDexterUpload_StatusCode", "active")
+    .eq("AIDexterUpload_ScanStatusCode", "clean").maybeSingle()
   if (error) throw new InboxHttpError(503, "Dexter could not open the uploaded document.", "document_ocr_lookup_failed")
   if (!isObject(data) || !isObject(data.DOC_StoredObjects)) throw new InboxHttpError(404, "That uploaded document is no longer available.", "document_ocr_upload_unavailable")
 
@@ -212,7 +213,8 @@ export async function extractDexterUploadedDocument(authorization: string, uploa
     temporaryPath = temporaryPdfPath(actor.companyId, actor.userId, uploadId)
     let signedUrl = await uploadPreparedPdf(clients.admin, temporaryPath, prepared.pdfBytes)
     let ranges = pageRanges(prepared.pageCount)
-    let payloads = await requestMistralOcr(apiKey, signedUrl, ranges)
+    const gateway = { admin: clients.admin, companyId: actor.companyId, userId: actor.userId }
+    let payloads = await requestMistralOcr(gateway, apiKey, signedUrl, ranges)
     let coverage = spreadsheetCoverage(prepared.distinctiveSourceText, payloads)
     if (!coverage.passed && prepared.conversion.strategy === "office_pdf" && prepared.conversion.sheets.length) {
       await clients.admin.storage.from(DOCUMENT_BUCKET).remove([temporaryPath])
@@ -221,7 +223,7 @@ export async function extractDexterUploadedDocument(authorization: string, uploa
       })
       signedUrl = await uploadPreparedPdf(clients.admin, temporaryPath, prepared.pdfBytes)
       ranges = pageRanges(prepared.pageCount)
-      payloads = await requestMistralOcr(apiKey, signedUrl, ranges)
+      payloads = await requestMistralOcr(gateway, apiKey, signedUrl, ranges)
       coverage = spreadsheetCoverage(prepared.distinctiveSourceText, payloads)
     }
     if (!coverage.passed) throw new InboxHttpError(422, "Dexter could not verify that every important spreadsheet value reached the prepared PDF.", "document_ocr_incomplete")

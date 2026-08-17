@@ -2017,6 +2017,26 @@ const phrases: PhraseDictionary = {
     fr: "Dexter peut exécuter les modifications autorisées sans redemander",
     ar: "يمكن لديكستر تنفيذ التغييرات المسموح بها دون طلب موافقة أخرى",
   },
+  "Full access for this conversation. Dexter can run explicitly requested allowlisted changes without asking again": {
+    de: "Vollzugriff für diese Unterhaltung. Dexter kann ausdrücklich angeforderte, freigegebene Änderungen ohne erneute Nachfrage ausführen",
+    fr: "Accès complet pour cette conversation. Dexter peut exécuter les modifications autorisées explicitement demandées sans redemander",
+    ar: "وصول كامل لهذه المحادثة. يمكن لديكستر تنفيذ التغييرات المسموح بها والمطلوبة بوضوح دون طلب موافقة أخرى",
+  },
+  "Dexter could not secure that access mode.": {
+    de: "Dexter konnte diesen Zugriffsmodus nicht sicher aktivieren.",
+    fr: "Dexter n’a pas pu sécuriser ce mode d’accès.",
+    ar: "تعذر على ديكستر تأمين وضع الوصول هذا.",
+  },
+  "Dexter could not secure the latest email edits. Nothing was sent or created.": {
+    de: "Dexter konnte die letzten E-Mail-Änderungen nicht sicher übernehmen. Es wurde nichts gesendet oder erstellt.",
+    fr: "Dexter n’a pas pu sécuriser les dernières modifications de l’e-mail. Rien n’a été envoyé ni créé.",
+    ar: "تعذر على ديكستر تأمين أحدث تعديلات البريد. لم يتم إرسال أو إنشاء أي شيء.",
+  },
+  "Ask Dexter to prepare this email again before sending or creating a provider draft.": {
+    de: "Bitten Sie Dexter, diese E-Mail erneut vorzubereiten, bevor sie gesendet oder als Provider-Entwurf erstellt wird.",
+    fr: "Demandez à Dexter de préparer à nouveau cet e-mail avant de l’envoyer ou de créer un brouillon chez le fournisseur.",
+    ar: "اطلب من ديكستر إعداد هذا البريد مرة أخرى قبل إرساله أو إنشاء مسودة لدى المزود.",
+  },
   "Dexter is checking your connected workspace data...": {
     de: "Dexter prüft die verbundenen Arbeitsbereichsdaten...",
     fr: "Dexter vérifie les données connectées de votre espace de travail...",

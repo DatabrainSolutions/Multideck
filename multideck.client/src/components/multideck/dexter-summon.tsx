@@ -166,6 +166,7 @@ export function DexterSummon({ navigate }: { navigate: (path: string) => void })
   const pickedRef = useRef<HTMLElement | null>(null)
   const frameRef = useRef(0)
   const conversationRef = useRef<string | null>(null)
+  const clientSessionRef = useRef(crypto.randomUUID())
   const requestRef = useRef(0)
   const openedRef = useRef(false)
 
@@ -309,6 +310,7 @@ export function DexterSummon({ navigate }: { navigate: (path: string) => void })
     requestRef.current += 1
     setPhase("idle")
     conversationRef.current = null
+    clientSessionRef.current = crypto.randomUUID()
     targetRef.current = null
     pickedRef.current = null
     openedRef.current = false
@@ -317,6 +319,7 @@ export function DexterSummon({ navigate }: { navigate: (path: string) => void })
   const resetSession = useCallback(() => {
     requestRef.current += 1
     conversationRef.current = null
+    clientSessionRef.current = crypto.randomUUID()
     setQuestion("")
     setAnswer("")
     setError(null)
@@ -579,12 +582,12 @@ export function DexterSummon({ navigate }: { navigate: (path: string) => void })
     void streamDexterMessage(
       {
         conversationId: conversationRef.current,
+        clientSessionId: clientSessionRef.current,
         message,
         specialist: "auto",
         // The summon is an interruption, so it always takes the quickest engine.
         model: "fast",
         locale: language,
-        accessMode: "approve",
         attachments: [],
       },
       {

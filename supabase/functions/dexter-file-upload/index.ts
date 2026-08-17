@@ -7,6 +7,9 @@ import {
   readAllowedOrigins,
 } from "../inbox-api/core.ts"
 import { uploadDexterDocument } from "../_shared/dexter-uploads.ts"
+import { requireActor, requirePermission, runtimeClients } from "../inbox-api/runtime.ts"
+
+const MAX_MULTIPART_BYTES = 27 * 1024 * 1024
 
 const allowedOrigins = readAllowedOrigins({
   EMAIL_ALLOWED_REDIRECT_ORIGINS: Deno.env.get("EMAIL_ALLOWED_REDIRECT_ORIGINS"),
@@ -33,6 +36,16 @@ Deno.serve(async (request) => {
     if (!contentType.toLowerCase().startsWith("multipart/form-data")) {
       throw new InboxHttpError(415, "Choose a document from your computer.", "upload_content_type_invalid")
     }
+    const declaredLength = Number(request.headers.get("Content-Length") ?? "0")
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_MULTIPART_BYTES) {
+      throw new InboxHttpError(413, "Choose a file smaller than 25 MB.", "upload_too_large")
+    }
+
+    // Authenticate and authorise before the multipart parser is allowed to
+    // allocate memory for attacker-controlled file content.
+    const clients = runtimeClients(authorization)
+    const actor = await requireActor(clients.user, clients.admin)
+    await requirePermission(clients.admin, actor, "AgentDexter.Manage")
     const form = await request.formData()
     const file = form.get("file")
     if (!(file instanceof File)) throw new InboxHttpError(400, "Choose a document to upload.", "upload_missing")

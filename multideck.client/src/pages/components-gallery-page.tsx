@@ -2767,14 +2767,8 @@ function ComponentPreview({ id }: { id: string }) {
           <DexterActionApproval
             action={{
               id: "preview-update-lead",
-              action: "update_lead",
               title: "Update Northwind Logistics",
               description: "Change the lead status to Qualified and assign the next follow-up to 4 August.",
-              arguments: {
-                target_id: "lead-preview",
-                status: "Qualified",
-                next_follow_up: "2026-08-04",
-              },
               changes: [
                 { field: "status", value: "Qualified", before: "New", after: "Qualified", beforeKnown: true, kind: "changed" },
                 { field: "next follow up", value: "4 August 2026", before: null, after: "4 August 2026", beforeKnown: true, kind: "added" },

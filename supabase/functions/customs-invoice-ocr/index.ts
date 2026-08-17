@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.108.2"
 import { authenticate, corsHeaders, currentInternalUser, HttpError, json, routeParts } from "../_shared/backend.ts"
+import { governedModelFetch, type ModelGatewayContext } from "../_shared/model-gateway.ts"
 import {
   COMMERCIAL_INVOICE_SCHEMA_VERSION,
   commercialInvoiceAnnotationFormat,
@@ -106,7 +107,7 @@ async function extractInvoice(request: Request, admin: SupabaseClient, actor: Ac
       CUSTIE_UpdatedAt: new Date().toISOString(),
     })
 
-    let payloads = await timings.measure("mistral", () => extractWithMistralOcr(admin, apiKey, stored!, prepared.pageCount, input.documentType))
+    let payloads = await timings.measure("mistral", () => extractWithMistralOcr(admin, actor, apiKey, stored!, prepared.pageCount, input.documentType))
     let coverage = spreadsheetCoverage(prepared.distinctiveSourceText, payloads)
     if (!coverage.passed && prepared.conversion.strategy === "office_pdf" && prepared.conversion.sheets.length) {
       await cleanupPreparedObject(admin, stored)
@@ -122,7 +123,7 @@ async function extractInvoice(request: Request, admin: SupabaseClient, actor: Ac
         CUSTIE_PreviewExpiresAt: stored.previewExpiresAt,
         CUSTIE_UpdatedAt: new Date().toISOString(),
       })
-      payloads = await timings.measure("mistral_fallback", () => extractWithMistralOcr(admin, apiKey, stored!, prepared.pageCount, input.documentType))
+      payloads = await timings.measure("mistral_fallback", () => extractWithMistralOcr(admin, actor, apiKey, stored!, prepared.pageCount, input.documentType))
       coverage = spreadsheetCoverage(prepared.distinctiveSourceText, payloads)
     }
     if (!coverage.passed) {
@@ -458,6 +459,7 @@ async function cleanupExpiredPreparedPdfs(admin: SupabaseClient) {
 
 async function extractWithMistralOcr(
   admin: SupabaseClient,
+  actor: Actor,
   apiKey: string,
   stored: PreparedObject,
   pageCount: number,
@@ -466,10 +468,14 @@ async function extractWithMistralOcr(
   const { data, error } = await admin.storage.from(documentBucket).createSignedUrl(stored.objectPath, signedUrlLifetimeSeconds)
   if (error || !data?.signedUrl) throw new HttpError(503, "The prepared invoice could not be opened securely. Try again.")
   const ranges = pageRanges(pageCount)
-  return await Promise.all(ranges.map((range) => requestMistralChunk(apiKey, data.signedUrl, documentType, range, ranges.length > 1)))
+  const payloads: Record<string, unknown>[] = []
+  const gateway = { admin, companyId: actor.companyId, userId: actor.userId }
+  for (const range of ranges) payloads.push(await requestMistralChunk(gateway, apiKey, data.signedUrl, documentType, range, ranges.length > 1))
+  return payloads
 }
 
 async function requestMistralChunk(
+  gateway: ModelGatewayContext,
   apiKey: string,
   signedUrl: string,
   documentType: DocumentType,
@@ -477,10 +483,7 @@ async function requestMistralChunk(
   includeRange: boolean,
 ) {
   const purchaseOrder = documentType === "purchase_order"
-  const response = await fetch(mistralOcrUrl, {
-    method: "POST",
-    headers: mistralHeaders(apiKey),
-    body: JSON.stringify({
+  const requestBody = {
       model: MISTRAL_OCR_MODEL,
       document: { type: "document_url", document_url: signedUrl },
       ...(includeRange ? { pages: `${range.start}-${range.end}` } : {}),
@@ -497,7 +500,11 @@ async function requestMistralChunk(
         "Ignore logos, product photography, signatures, stamps and other decorative images.",
         purchaseOrder ? "Do not return totals, tax, freight or discounts as item rows." : "Do not return totals, tax, freight, discounts, addresses or payment terms as item rows.",
       ].join(" "),
-    }),
+    }
+  const response = await governedModelFetch(gateway, {
+    provider: "mistral", model: MISTRAL_OCR_MODEL, purpose: "invoice_ocr", dataCategories: ["document_content", "business_record"],
+    recordCount: 1, estimatedInputUnits: range.end - range.start + 1,
+    url: mistralOcrUrl, apiKey, body: requestBody, userAgent: "Multideck Customs invoice extraction/1",
     signal: AbortSignal.timeout(120_000),
   })
   return providerJson(response)
@@ -688,7 +695,7 @@ function failureCode(error: unknown) {
 }
 
 async function sha256Hex(bytes: Uint8Array) {
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", Uint8Array.from(bytes).buffer))
   return [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("")
 }
 

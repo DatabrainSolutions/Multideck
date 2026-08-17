@@ -80,6 +80,7 @@ import {
   deleteDexterWatch,
   getDexterConversation,
   listDexterWatches,
+  setDexterAccessMode,
   setDexterWatchStatus,
   sendDexterMessage,
   streamDexterMessage,
@@ -1291,12 +1292,18 @@ function ConversationStream({
               <DexterEmailComposeCard
                 messageId={dexterMessageServerId(message)}
                 draft={message.emailDraft}
+                preparedActionId={message.pendingAction?.id ?? null}
+                preparedActionPending={pendingActionDecision?.actionId === message.pendingAction?.id}
+                preparedActionError={actionDecisionError?.actionId === message.pendingAction?.id ? actionDecisionError?.message ?? null : null}
+                onPreparedActionDecision={message.pendingAction
+                  ? () => onActionDecision(message.pendingAction!, "approve")
+                  : undefined}
                 onDraftChange={(draft) => onEmailDraftChange(message.id, draft)}
               />
             </div>
           ) : null}
           <AnimatePresence initial={false} mode="popLayout">
-            {message.pendingAction && message.id === latestMessageId ? (
+            {message.pendingAction && !message.emailDraft && message.id === latestMessageId ? (
               <DexterActionApproval
                 key={message.pendingAction.id}
                 action={message.pendingAction}
@@ -1639,6 +1646,8 @@ export function AgentDexterPage({
   const [selectedSpecialistId, setSelectedSpecialistId] = useState<DexterSpecialistId>("auto")
   const [selectedModelId, setSelectedModelId] = useState<DexterModelId>(defaultDexterModelId)
   const [accessMode, setAccessMode] = useState<DexterAccessMode>("approve")
+  const [fullAccessGrantId, setFullAccessGrantId] = useState<string | null>(null)
+  const [isAccessModeChanging, setIsAccessModeChanging] = useState(false)
   const [showAttachments, setShowAttachments] = useState(false)
   const [attachmentQuery, setAttachmentQuery] = useState("")
   const [selectedAttachmentIds, setSelectedAttachmentIds] = useState<Set<string>>(new Set())
@@ -1663,6 +1672,9 @@ export function AgentDexterPage({
   const jumpScrollTimeoutRef = useRef<number | null>(null)
   const liveReasoningRef = useRef("")
   const actionDecisionInFlightRef = useRef<string | null>(null)
+  const dexterClientSessionIdRef = useRef(crypto.randomUUID())
+  const accessModeRequestVersionRef = useRef(0)
+  const accessModeRequestInFlightRef = useRef(false)
   const promptSubmissionInFlightRef = useRef(false)
   const activePromptAbortControllerRef = useRef<AbortController | null>(null)
   const conversationIntentRef = useRef({
@@ -1761,7 +1773,7 @@ export function AgentDexterPage({
     () => estimateContextTokens(branchMessages, composerValue, attachedContextItems),
     [attachedContextItems, branchMessages, composerValue],
   )
-  const isWorking = isSending || isLoadingConversation
+  const isWorking = isSending || isLoadingConversation || isAccessModeChanging
   // The watcher rail is not modal — it sits over the thread and stays usable
   // alongside it — so opening a watcher must not dim what is behind it.
   const hasFocusOverlay = showAttachments
@@ -2344,7 +2356,8 @@ export function AgentDexterPage({
           specialist: specialistId,
           model: selectedModelId,
           locale: language,
-          accessMode,
+          clientSessionId: dexterClientSessionIdRef.current,
+          fullAccessGrantId,
           attachments: messageAttachments,
         }
 
@@ -2565,7 +2578,8 @@ export function AgentDexterPage({
         specialist: specialistId,
         model: selectedModelId,
         locale: language,
-        accessMode,
+        clientSessionId: dexterClientSessionIdRef.current,
+        fullAccessGrantId,
         attachments: userMessage.attachments ?? [],
       }, {
         onAnswerDelta: (delta) => {
@@ -2713,10 +2727,9 @@ export function AgentDexterPage({
         specialist: selectedSpecialistId,
         model: selectedModelId,
         locale: language,
-        accessMode,
-        approvedAction: decision === "approve"
-          ? { id: action.id, action: action.action, arguments: action.arguments }
-          : null,
+        clientSessionId: dexterClientSessionIdRef.current,
+        fullAccessGrantId,
+        preparedActionId: action.id,
         actionDecision: decision,
         attachments: [],
       })
@@ -2740,12 +2753,54 @@ export function AgentDexterPage({
     }
   }
 
+  async function handleAccessModeChange(mode: DexterAccessMode) {
+    if (mode === accessMode || isWorking || accessModeRequestInFlightRef.current) return
+    const requestVersion = accessModeRequestVersionRef.current + 1
+    accessModeRequestVersionRef.current = requestVersion
+    accessModeRequestInFlightRef.current = true
+    const conversationVersion = conversationIntentRef.current.version
+    setError(null)
+    setIsAccessModeChanging(true)
+    try {
+      const access = await setDexterAccessMode({
+        conversationId: activeConversation?.id || null,
+        clientSessionId: dexterClientSessionIdRef.current,
+        mode,
+      })
+      if (
+        accessModeRequestVersionRef.current !== requestVersion ||
+        conversationIntentRef.current.version !== conversationVersion
+      ) return
+      setAccessMode(access.mode)
+      setFullAccessGrantId(access.grantId)
+    } catch (requestError) {
+      if (
+        accessModeRequestVersionRef.current !== requestVersion ||
+        conversationIntentRef.current.version !== conversationVersion
+      ) return
+      setAccessMode("approve")
+      setFullAccessGrantId(null)
+      setError(requestError instanceof Error ? requestError.message : t("Dexter could not secure that access mode."))
+    } finally {
+      if (accessModeRequestVersionRef.current === requestVersion) {
+        accessModeRequestInFlightRef.current = false
+        setIsAccessModeChanging(false)
+      }
+    }
+  }
+
   async function handleHistorySelect(id: string) {
     activePromptAbortControllerRef.current?.abort()
     activePromptAbortControllerRef.current = null
     promptSubmissionInFlightRef.current = false
     const intent = { id, version: conversationIntentRef.current.version + 1 }
     conversationIntentRef.current = intent
+    accessModeRequestVersionRef.current += 1
+    accessModeRequestInFlightRef.current = false
+    dexterClientSessionIdRef.current = crypto.randomUUID()
+    setIsAccessModeChanging(false)
+    setAccessMode("approve")
+    setFullAccessGrantId(null)
     setStage("conversation")
     rememberOpenDexterConversation(id)
     setConversationRenderKey(`dexter-conversation-${id}`)
@@ -2786,6 +2841,12 @@ export function AgentDexterPage({
       id: null,
       version: conversationIntentRef.current.version + 1,
     }
+    accessModeRequestVersionRef.current += 1
+    accessModeRequestInFlightRef.current = false
+    dexterClientSessionIdRef.current = crypto.randomUUID()
+    setIsAccessModeChanging(false)
+    setAccessMode("approve")
+    setFullAccessGrantId(null)
     setStage("landing")
     rememberOpenDexterConversation(null)
     setActiveConversation(null)
@@ -2962,7 +3023,8 @@ export function AgentDexterPage({
                   attachmentActionLabel={dexterMode === "chat" ? "Upload files" : "Attach context"}
                   onSelectSpecialist={setSelectedSpecialistId}
                   onSelectModel={setSelectedModelId}
-                  onAccessModeChange={setAccessMode}
+                  onAccessModeChange={(mode) => void handleAccessModeChange(mode)}
+                  isAccessModeChanging={isAccessModeChanging}
                   onCommand={handleSlashCommand}
                   onRemoveAttachment={(id) => {
                     if (composerUploadedDocuments.some((document) => document.id === id)) {
@@ -2978,7 +3040,7 @@ export function AgentDexterPage({
                     } else toggleAttachment(id)
                   }}
                   onSend={(prompt) => void submitPrompt(prompt)}
-                  isSending={isSending}
+                  isSending={isWorking}
                 />
               </motion.div>
 
@@ -3240,7 +3302,8 @@ export function AgentDexterPage({
                         attachmentActionLabel={dexterMode === "chat" ? "Upload files" : "Attach context"}
                         onSelectSpecialist={setSelectedSpecialistId}
                         onSelectModel={setSelectedModelId}
-                        onAccessModeChange={setAccessMode}
+                        onAccessModeChange={(mode) => void handleAccessModeChange(mode)}
+                        isAccessModeChanging={isAccessModeChanging}
                         onCommand={handleSlashCommand}
                         onRemoveAttachment={(id) => {
                           if (composerUploadedDocuments.some((document) => document.id === id)) {
@@ -3256,7 +3319,7 @@ export function AgentDexterPage({
                           } else toggleAttachment(id)
                         }}
                         onSend={(prompt) => void submitPrompt(prompt)}
-                        isSending={isSending}
+                        isSending={isWorking}
                         className="shadow-[0_0_0_1px_var(--md-accent-a42),0_16px_38px_rgba(42,52,50,0.16)]"
                       />
                     </motion.div>

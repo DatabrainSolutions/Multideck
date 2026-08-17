@@ -2,6 +2,8 @@ import {
   createClient,
   type SupabaseClient,
 } from "npm:@supabase/supabase-js@2.108.2";
+import { governedModelFetch, type ModelGatewayContext } from "../_shared/model-gateway.ts";
+import { requireActor, requirePermission, runtimeClients } from "../inbox-api/runtime.ts";
 
 type JsonObject = Record<string, unknown>;
 type Db = SupabaseClient<any, "public", any, any, any>;
@@ -107,6 +109,7 @@ async function requestRefinement(
   instruction: string,
   draft: JsonObject,
   selection: ReturnType<typeof selectionFrom>,
+  gateway: ModelGatewayContext,
 ) {
   const apiKey =
     Deno.env.get("OPEN_API_KEY")?.trim() ||
@@ -123,14 +126,7 @@ async function requestRefinement(
   const timeout = setTimeout(() => controller.abort(), 45_000);
 
   try {
-    const upstream = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      signal: controller.signal,
-      body: JSON.stringify({
+    const requestBody = {
         model,
         store: false,
         reasoning: { effort: "medium" },
@@ -150,11 +146,7 @@ async function requestRefinement(
           subject,
           bodyText,
           selection: selection
-            ? {
-                start: selection.start,
-                end: selection.end,
-                text: selection.selectedText,
-              }
+            ? { start: selection.start, end: selection.end, text: selection.selectedText }
             : null,
         }),
         text: {
@@ -166,16 +158,20 @@ async function requestRefinement(
               type: "object",
               additionalProperties: false,
               properties: {
-                subject: { type: "string" },
-                bodyText: { type: "string" },
-                replacementText: { type: "string" },
+                subject: { type: "string" }, bodyText: { type: "string" }, replacementText: { type: "string" },
               },
               required: ["subject", "bodyText", "replacementText"],
             },
           },
         },
         max_output_tokens: 12_000,
-      }),
+      };
+    const upstream = await governedModelFetch(gateway, {
+      provider: "openai", model, purpose: "email_refine",
+      dataCategories: ["operator_instruction", "email_content"], recordCount: 1,
+      byteCount: requestBody.input.length, estimatedInputUnits: Math.ceil(requestBody.input.length / 4), estimatedOutputUnits: 12_000,
+      url: "https://api.openai.com/v1/responses", apiKey, body: requestBody,
+      signal: controller.signal,
     });
     const payload = await upstream.json().catch(() => null);
     if (!upstream.ok || !isObject(payload))
@@ -239,6 +235,10 @@ Deno.serve(async (request) => {
     const user = userClient(authorization);
     const { data: authData, error: authError } = await user.auth.getUser();
     if (authError || !authData.user) throw new Error("authentication_required");
+    const clients = runtimeClients(authorization);
+    const actor = await requireActor(clients.user, clients.admin);
+    await requirePermission(clients.admin, actor, "Email.Read");
+    await requirePermission(clients.admin, actor, "Email.AIRead");
 
     const body = await request.json().catch(() => null);
     if (!isObject(body)) throw new Error("invalid_request");
@@ -278,6 +278,7 @@ Deno.serve(async (request) => {
       instruction,
       savedDraft,
       selection,
+      { admin: clients.admin, companyId: actor.companyId, userId: actor.userId },
     );
 
     return json(request, {

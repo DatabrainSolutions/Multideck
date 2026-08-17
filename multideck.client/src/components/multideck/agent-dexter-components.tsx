@@ -489,10 +489,12 @@ export function DexterModelMenu({
 function DexterAccessModeToggle({
   mode,
   onChange,
+  disabled = false,
   className,
 }: {
   mode: DexterAccessMode
   onChange: (mode: DexterAccessMode) => void
+  disabled?: boolean
   className?: string
 }) {
   const { t } = useLanguage()
@@ -502,7 +504,7 @@ function DexterAccessModeToggle({
   const fullAccessLabel = t("Full access")
   const label = isFullAccess ? fullAccessLabel : approveLabel
   const description = isFullAccess
-    ? t("Dexter can run allowlisted changes without asking again")
+    ? t("Full access for this conversation. Dexter can run explicitly requested allowlisted changes without asking again")
     : t("Dexter asks before every workspace change")
   const approveLabelRef = useRef<HTMLSpanElement>(null)
   const fullAccessLabelRef = useRef<HTMLSpanElement>(null)
@@ -519,15 +521,19 @@ function DexterAccessModeToggle({
 
   useLayoutEffect(() => {
     const measureLabels = () => {
-      const measuredApproveWidth = approveLabelRef.current?.getBoundingClientRect().width
-      const measuredFullAccessWidth = fullAccessLabelRef.current?.getBoundingClientRect().width
+      const measuredApproveWidth = approveLabelRef.current
+        ? Math.max(approveLabelRef.current.getBoundingClientRect().width, approveLabelRef.current.scrollWidth)
+        : 0
+      const measuredFullAccessWidth = fullAccessLabelRef.current
+        ? Math.max(fullAccessLabelRef.current.getBoundingClientRect().width, fullAccessLabelRef.current.scrollWidth)
+        : 0
       if (!measuredApproveWidth || !measuredFullAccessWidth) return
 
       // Fractional glyph bounds can be rounded down when Motion animates the
       // width. A small optical allowance keeps the final character and its
       // antialiasing inside the mask in every locale.
-      const approveWidth = Math.ceil(measuredApproveWidth) + 3
-      const fullAccessWidth = Math.ceil(measuredFullAccessWidth) + 3
+      const approveWidth = Math.ceil(measuredApproveWidth) + 6
+      const fullAccessWidth = Math.ceil(measuredFullAccessWidth) + 6
 
       setLabelWidths((current) => (
         current?.approve === approveWidth && current.full === fullAccessWidth
@@ -550,10 +556,12 @@ function DexterAccessModeToggle({
       type="button"
       role="switch"
       aria-checked={isFullAccess}
+      aria-busy={disabled}
       aria-label={`${label}. ${description}`}
       title={description}
+      disabled={disabled}
       className={cn(
-        "md-composer-chip inline-flex h-9 shrink-0 items-center gap-2 overflow-hidden rounded-full px-2.5 text-[12.5px] font-medium transition-[background-color,color,box-shadow] duration-200",
+        "md-composer-chip inline-flex h-9 shrink-0 items-center gap-2 overflow-visible rounded-full px-2.5 text-[12.5px] font-medium transition-[background-color,color,box-shadow,opacity] duration-200 disabled:cursor-wait disabled:opacity-60",
         isFullAccess
           ? "bg-[rgba(209,78,78,0.11)] text-[var(--md-red)] shadow-[inset_0_0_0_1px_rgba(209,78,78,0.22)]"
           : "text-[var(--md-ink)]",
@@ -1297,6 +1305,7 @@ export function DexterPromptComposer({
   onSelectSpecialist,
   onSelectModel,
   onAccessModeChange,
+  isAccessModeChanging = false,
   onCommand,
   onRemoveAttachment,
   onSend,
@@ -1327,6 +1336,7 @@ export function DexterPromptComposer({
   onSelectSpecialist: (id: DexterSpecialistId) => void
   onSelectModel: (id: DexterModelId) => void
   onAccessModeChange: (mode: DexterAccessMode) => void
+  isAccessModeChanging?: boolean
   onCommand?: (command: DexterSlashCommand) => void
   onRemoveAttachment?: (id: string) => void
   onSend: (value?: string) => void
@@ -1469,7 +1479,11 @@ export function DexterPromptComposer({
               animate={{ scale: canSend ? 1 : 0.94, opacity: canSend ? 1 : 0.55 }}
               transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.spring)}
             >
-              <DexterAccessModeToggle mode={accessMode} onChange={onAccessModeChange} />
+              <DexterAccessModeToggle
+                mode={accessMode}
+                onChange={onAccessModeChange}
+                disabled={isSending || isAccessModeChanging}
+              />
               <span
                 aria-hidden="true"
                 title={`${sendShortcutModifier} + Enter`}

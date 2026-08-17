@@ -88,12 +88,16 @@ export type DexterEmailAttachment = {
 
 export type DexterAccessMode = "approve" | "full"
 
+export type DexterFullAccessGrant = {
+  mode: DexterAccessMode
+  grantId: string | null
+  expiresAt: string | null
+}
+
 export type DexterPendingAction = {
   id: string
-  action: string
   title: string
   description: string
-  arguments: Record<string, unknown>
   changes: DexterActionChange[]
 }
 
@@ -255,12 +259,9 @@ export type SendDexterMessageInput = {
   specialist: string
   model: DexterModelId
   locale: string
-  accessMode: DexterAccessMode
-  approvedAction?: {
-    id?: string
-    action: string
-    arguments: Record<string, unknown>
-  } | null
+  clientSessionId: string
+  fullAccessGrantId?: string | null
+  preparedActionId?: string | null
   actionDecision?: "approve" | "decline" | null
   attachments: DexterMessageAttachment[]
 }
@@ -394,6 +395,18 @@ export async function deleteDexterConversation(conversationId: string) {
   )
 }
 
+export async function setDexterAccessMode(input: {
+  conversationId: string | null
+  clientSessionId: string
+  mode: DexterAccessMode
+}) {
+  const result = await invokeDexter<{ access: DexterFullAccessGrant }>(
+    { operation: "set-access-mode", ...input },
+    "Dexter could not secure that access mode.",
+  )
+  return result.access
+}
+
 export async function recordDexterEmailDraftDelivery(messageId: string, sendRequestId: string) {
   if (!supabase) throw new DexterApiError("Agent Dexter is not connected to this workspace.")
   const { data, error } = await supabase.rpc("multideck_dexter_record_email_draft_delivery", {
@@ -489,6 +502,13 @@ export async function updateDexterEmailDraft(messageId: string, draft: DexterEma
     throw new DexterApiError("Dexter could not save the email draft. Keep this conversation open and try again.")
   }
   return data as DexterEmailDraft
+}
+
+export async function refreshDexterPreparedEmailAction(messageId: string, preparedActionId: string) {
+  await invokeDexter<{ refreshed: true }>(
+    { operation: "refresh-prepared-email", messageId, preparedActionId },
+    "Dexter could not secure the latest email edits. Nothing was sent or created.",
+  )
 }
 
 export async function listDexterWatches() {
