@@ -117,7 +117,10 @@ function cleanString(value: unknown, maximum: number) {
 function isExplicitEmailWritingRequest(prompt: string, hasSelectedEmail: boolean) {
   const text = prompt.toLowerCase()
   const writingVerb = /\b(draft|write|compose|prepare|reply|respond|answer|rewrite|reword|polish|edit|forward|send)\b/.test(text)
-  const emailObject = /\b(e-?mail|message|reply|response)\b/.test(text)
+  // "Reply" and "response" are writing verbs, not proof that the operator
+  // wants an email. Keeping them out of the object match prevents response
+  // formatting such as "reply only with ready" from opening the email flow.
+  const emailObject = /\b(e-?mail|message)\b/.test(text)
   const addressedWriting = emailAddressesIn(prompt).size > 0 && writingVerb
   const directWriteTo = /\b(?:draft|write|compose)\b[^\n.!?]{0,50}\bto\s+[\w"'@]/i.test(prompt)
   const selectedEmailFollowUp = hasSelectedEmail && (
@@ -3338,7 +3341,10 @@ Deno.serve(async (request) => {
   }
 
   if (operation !== "message") {
-    return json(request, { code: "invalid_operation", message: "That Dexter operation is not recognised." }, 400)
+    return json(request, {
+      code: "dexter_client_update_required",
+      message: "Refresh Multideck before continuing so Dexter can securely finish this request.",
+    }, 409)
   }
 
   const openAIKey = Deno.env.get("OPEN_API_KEY")?.trim() || Deno.env.get("OPENAI_API_KEY")?.trim() || ""

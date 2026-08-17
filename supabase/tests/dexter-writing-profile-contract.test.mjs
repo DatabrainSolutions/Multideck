@@ -87,6 +87,8 @@ test("Dexter injects style tooling only for explicit email writing and treats it
   assert.match(dexter, /function isExplicitEmailWritingRequest/)
   assert.doesNotMatch(dexter, /const writingVerb = \/\\b\([^\n/]*\|email\|[^\n/]*\)/)
   assert.match(dexter, /const writingVerb = \/\\b\(draft\|write\|compose[^\n/]*\|forward\|send\)/)
+  assert.match(dexter, /const emailObject = \/\\b\(e-\?mail\|message\)\\b\/\.test\(text\)/)
+  assert.doesNotMatch(dexter, /const emailObject = \/[^\n/]*(?:reply|response)/)
   assert.match(dexter, /const writingTools = emailWriting \? emailWritingTools\(\) : \[\]/)
   assert.match(dexter, /const emailWritingInstruction = emailWriting\s+\?/)
   assert.match(dexter, /tool_choice: emailWriting \? "required" : tools\.length > 0 \? "auto" : "none"/)

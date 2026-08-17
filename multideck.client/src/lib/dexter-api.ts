@@ -326,10 +326,12 @@ type DexterFunctionErrorBody = {
 
 async function dexterFunctionError(error: unknown, fallback: string) {
   let message = fallback
+  let code = ""
 
   if (error && typeof error === "object" && "context" in error && error.context instanceof Response) {
     try {
       const body = await error.context.clone().json() as DexterFunctionErrorBody
+      if (typeof body.code === "string") code = body.code.trim().toLowerCase()
       if (typeof body.message === "string" && body.message.trim()) message = body.message
     } catch {
       // Keep the safe product-facing fallback when the function response is not JSON.
@@ -340,6 +342,9 @@ async function dexterFunctionError(error: unknown, fallback: string) {
 
   if (/failed to fetch|fetch failed|failed to send a request|networkerror|network request failed/i.test(message)) {
     message = "Dexter could not reach the workspace service. Check your connection and retry."
+  }
+  if (code === "invalid_operation") {
+    message = "Refresh Multideck before continuing so Dexter can securely finish this request."
   }
 
   return new DexterApiError(message)

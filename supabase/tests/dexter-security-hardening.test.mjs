@@ -29,6 +29,14 @@ test("Full access is server issued, conversation scoped and expires", () => {
   assert.match(edge, /body\.approvedAction !== undefined \|\| body\.accessMode !== undefined/)
 })
 
+test("rolling Dexter deployments never expose the raw unknown-operation error", () => {
+  assert.doesNotMatch(edge, /That Dexter operation is not recognised/)
+  assert.match(edge, /code: "dexter_client_update_required"/)
+  assert.match(edge, /Refresh Multideck before continuing so Dexter can securely finish this request\./)
+  assert.match(client, /code === "invalid_operation"/)
+  assert.match(client, /Refresh Multideck before continuing so Dexter can securely finish this request\./)
+})
+
 test("untrusted evidence cannot expand the clean operator intent", () => {
   assert.match(security, /AIDexterIntent_PromptSHA256/)
   assert.match(security, /allowedActionsForPrompt\(input\.prompt/)
@@ -43,6 +51,8 @@ test("untrusted evidence cannot expand the clean operator intent", () => {
 })
 
 test("prepared actions are opaque, permission rechecked and single use", () => {
+  assert.match(migration, /to_regprocedure\('public\.multideck_dexter_execute_action\(text,jsonb,text\)'\)/)
+  assert.match(migration, /to_regprocedure\('public\.multideck_dexter_record_external_action\(text,jsonb,text,jsonb\)'\)/)
   assert.match(migration, /multideck_dexter_execute_prepared_action\([\s\S]{0,160}p_conversation_id uuid/)
   assert.match(migration, /for update/)
   assert.match(migration, /AIDexterPrepared_Status"<>'prepared'/)

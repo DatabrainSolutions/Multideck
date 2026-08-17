@@ -634,8 +634,18 @@ revoke all on function public.multideck_dexter_create_watch(text,text,text,text,
 grant execute on function public.multideck_dexter_create_watch(text,text,text,text,uuid,text,jsonb,jsonb) to authenticated;
 
 -- The legacy argument-taking execution functions are no longer browser APIs.
-revoke execute on function public.multideck_dexter_execute_action(text,jsonb,text) from authenticated;
-revoke execute on function public.multideck_dexter_record_external_action(text,jsonb,text,jsonb) from authenticated;
+-- Older tenant projects may never have received one or both legacy functions.
+-- Keep the hardening migration portable without widening the rollout to unrelated
+-- historical migrations.
+do $$
+begin
+  if to_regprocedure('public.multideck_dexter_execute_action(text,jsonb,text)') is not null then
+    execute 'revoke execute on function public.multideck_dexter_execute_action(text,jsonb,text) from authenticated';
+  end if;
+  if to_regprocedure('public.multideck_dexter_record_external_action(text,jsonb,text,jsonb)') is not null then
+    execute 'revoke execute on function public.multideck_dexter_record_external_action(text,jsonb,text,jsonb) from authenticated';
+  end if;
+end $$;
 
 create or replace function public._multideck_dexter_deny_prepared_action(
   p_prepared_action_id uuid,p_company_id uuid,p_user_id uuid,p_code text,p_message text,p_event_kind text
