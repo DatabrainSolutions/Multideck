@@ -488,80 +488,44 @@ export function DexterModelMenu({
 
 function DexterAccessModeToggle({
   mode,
+  pendingMode = null,
   onChange,
   disabled = false,
   className,
 }: {
   mode: DexterAccessMode
+  pendingMode?: DexterAccessMode | null
   onChange: (mode: DexterAccessMode) => void
   disabled?: boolean
   className?: string
 }) {
   const { t } = useLanguage()
   const shouldReduceMotion = useReducedMotion()
-  const isFullAccess = mode === "full"
+  const displayMode = pendingMode ?? mode
+  const isFullAccess = displayMode === "full"
   const approveLabel = t("Approve")
   const fullAccessLabel = t("Full access")
   const label = isFullAccess ? fullAccessLabel : approveLabel
   const description = isFullAccess
     ? t("Full access for this conversation. Dexter can run explicitly requested allowlisted changes without asking again")
     : t("Dexter asks before every workspace change")
-  const approveLabelRef = useRef<HTMLSpanElement>(null)
-  const fullAccessLabelRef = useRef<HTMLSpanElement>(null)
-  const [labelWidths, setLabelWidths] = useState<Record<DexterAccessMode, number> | null>(null)
   const transition = shouldReduceMotion
     ? { duration: 0 }
     : { duration: 0.18, ease: [0.22, 1, 0.36, 1] as const }
-  const labelFadeOutTransition = shouldReduceMotion
-    ? { duration: 0 }
-    : { duration: 0.06, ease: [0.22, 1, 0.36, 1] as const }
-  const labelFadeInTransition = shouldReduceMotion
-    ? { duration: 0 }
-    : { duration: 0.09, delay: 0.19, ease: [0.22, 1, 0.36, 1] as const }
-
-  useLayoutEffect(() => {
-    const measureLabels = () => {
-      const measuredApproveWidth = approveLabelRef.current
-        ? Math.max(approveLabelRef.current.getBoundingClientRect().width, approveLabelRef.current.scrollWidth)
-        : 0
-      const measuredFullAccessWidth = fullAccessLabelRef.current
-        ? Math.max(fullAccessLabelRef.current.getBoundingClientRect().width, fullAccessLabelRef.current.scrollWidth)
-        : 0
-      if (!measuredApproveWidth || !measuredFullAccessWidth) return
-
-      // Fractional glyph bounds can be rounded down when Motion animates the
-      // width. A small optical allowance keeps the final character and its
-      // antialiasing inside the mask in every locale.
-      const approveWidth = Math.ceil(measuredApproveWidth) + 6
-      const fullAccessWidth = Math.ceil(measuredFullAccessWidth) + 6
-
-      setLabelWidths((current) => (
-        current?.approve === approveWidth && current.full === fullAccessWidth
-          ? current
-          : { approve: approveWidth, full: fullAccessWidth }
-      ))
-    }
-
-    measureLabels()
-    if (typeof ResizeObserver === "undefined") return
-
-    const observer = new ResizeObserver(measureLabels)
-    if (approveLabelRef.current) observer.observe(approveLabelRef.current)
-    if (fullAccessLabelRef.current) observer.observe(fullAccessLabelRef.current)
-    return () => observer.disconnect()
-  }, [approveLabel, fullAccessLabel])
 
   return (
-    <button
+    <motion.button
       type="button"
       role="switch"
       aria-checked={isFullAccess}
-      aria-busy={disabled}
+      aria-busy={Boolean(pendingMode)}
       aria-label={`${label}. ${description}`}
       title={description}
       disabled={disabled}
+      layout="size"
+      transition={transition}
       className={cn(
-        "md-composer-chip inline-flex h-9 shrink-0 items-center gap-2 overflow-visible rounded-full px-2.5 text-[12.5px] font-medium transition-[background-color,color,box-shadow,opacity] duration-200 disabled:cursor-wait disabled:opacity-60",
+        "md-composer-chip inline-flex h-9 w-fit shrink-0 items-center gap-2 rounded-full px-2.5 text-[12.5px] font-medium transition-[background-color,color,box-shadow] duration-200 disabled:cursor-progress",
         isFullAccess
           ? "bg-[rgba(209,78,78,0.11)] text-[var(--md-red)] shadow-[inset_0_0_0_1px_rgba(209,78,78,0.22)]"
           : "text-[var(--md-ink)]",
@@ -591,51 +555,10 @@ function DexterAccessModeToggle({
           <TriangleAlert className="size-4" strokeWidth={1.45} />
         </motion.span>
       </span>
-      <span
-        className="relative inline-grid h-5 min-w-0 shrink-0 overflow-hidden text-start leading-5 transition-[width] delay-[50ms] duration-[180ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none motion-reduce:delay-0"
-        aria-hidden="true"
-        style={labelWidths ? { width: labelWidths[mode] } : undefined}
-      >
-        <span
-          className={cn(
-            "invisible whitespace-nowrap",
-            labelWidths ? "absolute inset-y-0 start-0" : "col-start-1 row-start-1",
-          )}
-        >
-          {label}
-        </span>
-        <span ref={approveLabelRef} className="pointer-events-none absolute invisible whitespace-nowrap">
-          {approveLabel}
-        </span>
-        <span ref={fullAccessLabelRef} className="pointer-events-none absolute invisible whitespace-nowrap">
-          {fullAccessLabel}
-        </span>
-        {shouldReduceMotion ? (
-          <span className="absolute inset-y-0 start-0 inline-flex items-center whitespace-nowrap">
-            {label}
-          </span>
-        ) : (
-          <>
-            <motion.span
-              className="absolute inset-y-0 start-0 inline-flex items-center whitespace-nowrap"
-              initial={false}
-              animate={{ opacity: isFullAccess ? 0 : 1 }}
-              transition={isFullAccess ? labelFadeOutTransition : labelFadeInTransition}
-            >
-              {approveLabel}
-            </motion.span>
-            <motion.span
-              className="absolute inset-y-0 start-0 inline-flex items-center whitespace-nowrap"
-              initial={false}
-              animate={{ opacity: isFullAccess ? 1 : 0 }}
-              transition={isFullAccess ? labelFadeInTransition : labelFadeOutTransition}
-            >
-              {fullAccessLabel}
-            </motion.span>
-          </>
-        )}
+      <span className="shrink-0 whitespace-nowrap leading-5" aria-hidden="true">
+        {label}
       </span>
-    </button>
+    </motion.button>
   )
 }
 
@@ -1290,6 +1213,7 @@ export function DexterPromptComposer({
   models = dexterModels,
   selectedModelId,
   accessMode,
+  pendingAccessMode = null,
   contextUsedTokens = 0,
   contextMaxTokens = 128_000,
   attachments = [],
@@ -1321,6 +1245,7 @@ export function DexterPromptComposer({
   models?: DexterModel[]
   selectedModelId: DexterModelId
   accessMode: DexterAccessMode
+  pendingAccessMode?: DexterAccessMode | null
   contextUsedTokens?: number
   contextMaxTokens?: number
   attachments?: DexterAttachment[]
@@ -1474,44 +1399,47 @@ export function DexterPromptComposer({
                 <ContextContentHeader />
               </ContextContent>
             </Context>
-            <motion.div
-              className="ms-auto flex shrink-0 items-center gap-2"
-              animate={{ scale: canSend ? 1 : 0.94, opacity: canSend ? 1 : 0.55 }}
-              transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.spring)}
-            >
+            <div className="ms-auto flex shrink-0 items-center gap-2">
               <DexterAccessModeToggle
                 mode={accessMode}
+                pendingMode={pendingAccessMode}
                 onChange={onAccessModeChange}
                 disabled={isSending || isAccessModeChanging}
               />
-              <span
-                aria-hidden="true"
-                title={`${sendShortcutModifier} + Enter`}
-                className="hidden h-10 items-center rounded-[var(--md-radius-lg)] px-1.5 sm:inline-flex"
+              <motion.div
+                className="flex shrink-0 items-center gap-2"
+                animate={{ scale: canSend ? 1 : 0.94, opacity: canSend ? 1 : 0.55 }}
+                transition={reduceMotion(Boolean(shouldReduceMotion), mdMotion.spring)}
               >
-                <KbdGroup dir="ltr" data-i18n-skip>
-                  <Kbd>{sendShortcutModifier}</Kbd>
-                  <Kbd>↵</Kbd>
-                </KbdGroup>
-              </span>
-              <DexterActionPill
-                type="button"
-                iconElement={
-                  <HugeiconsIcon
-                    aria-hidden="true"
-                    className="relative z-10 size-3.5 shrink-0"
-                    icon={SendHorizontalIcon}
-                    strokeWidth={1.25}
-                  />
-                }
-                iconOnly
-                label={`${t("Send prompt")} (${sendShortcutModifier} + Enter)`}
-                aria-keyshortcuts="Meta+Enter Control+Enter"
-                className="size-10 min-w-0 rounded-full p-0"
-                onClick={() => onSend()}
-                disabled={!canSend || isSending}
-              />
-            </motion.div>
+                <span
+                  aria-hidden="true"
+                  title={`${sendShortcutModifier} + Enter`}
+                  className="hidden h-10 items-center rounded-[var(--md-radius-lg)] px-1.5 sm:inline-flex"
+                >
+                  <KbdGroup dir="ltr" data-i18n-skip>
+                    <Kbd>{sendShortcutModifier}</Kbd>
+                    <Kbd>↵</Kbd>
+                  </KbdGroup>
+                </span>
+                <DexterActionPill
+                  type="button"
+                  iconElement={
+                    <HugeiconsIcon
+                      aria-hidden="true"
+                      className="relative z-10 size-3.5 shrink-0"
+                      icon={SendHorizontalIcon}
+                      strokeWidth={1.25}
+                    />
+                  }
+                  iconOnly
+                  label={`${t("Send prompt")} (${sendShortcutModifier} + Enter)`}
+                  aria-keyshortcuts="Meta+Enter Control+Enter"
+                  className="size-10 min-w-0 rounded-full p-0"
+                  onClick={() => onSend()}
+                  disabled={!canSend || isSending}
+                />
+              </motion.div>
+            </div>
           </div>
         </div>
       </div>

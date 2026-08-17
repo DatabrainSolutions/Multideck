@@ -1646,6 +1646,7 @@ export function AgentDexterPage({
   const [selectedSpecialistId, setSelectedSpecialistId] = useState<DexterSpecialistId>("auto")
   const [selectedModelId, setSelectedModelId] = useState<DexterModelId>(defaultDexterModelId)
   const [accessMode, setAccessMode] = useState<DexterAccessMode>("approve")
+  const [pendingAccessMode, setPendingAccessMode] = useState<DexterAccessMode | null>(null)
   const [fullAccessGrantId, setFullAccessGrantId] = useState<string | null>(null)
   const [isAccessModeChanging, setIsAccessModeChanging] = useState(false)
   const [showAttachments, setShowAttachments] = useState(false)
@@ -2755,11 +2756,14 @@ export function AgentDexterPage({
 
   async function handleAccessModeChange(mode: DexterAccessMode) {
     if (mode === accessMode || isWorking || accessModeRequestInFlightRef.current) return
+    const previousMode = accessMode
+    const previousGrantId = fullAccessGrantId
     const requestVersion = accessModeRequestVersionRef.current + 1
     accessModeRequestVersionRef.current = requestVersion
     accessModeRequestInFlightRef.current = true
     const conversationVersion = conversationIntentRef.current.version
     setError(null)
+    setPendingAccessMode(mode)
     setIsAccessModeChanging(true)
     try {
       const access = await setDexterAccessMode({
@@ -2778,12 +2782,13 @@ export function AgentDexterPage({
         accessModeRequestVersionRef.current !== requestVersion ||
         conversationIntentRef.current.version !== conversationVersion
       ) return
-      setAccessMode("approve")
-      setFullAccessGrantId(null)
+      setAccessMode(previousMode)
+      setFullAccessGrantId(previousGrantId)
       setError(requestError instanceof Error ? requestError.message : t("Dexter could not secure that access mode."))
     } finally {
       if (accessModeRequestVersionRef.current === requestVersion) {
         accessModeRequestInFlightRef.current = false
+        setPendingAccessMode(null)
         setIsAccessModeChanging(false)
       }
     }
@@ -2798,6 +2803,7 @@ export function AgentDexterPage({
     accessModeRequestVersionRef.current += 1
     accessModeRequestInFlightRef.current = false
     dexterClientSessionIdRef.current = crypto.randomUUID()
+    setPendingAccessMode(null)
     setIsAccessModeChanging(false)
     setAccessMode("approve")
     setFullAccessGrantId(null)
@@ -2844,6 +2850,7 @@ export function AgentDexterPage({
     accessModeRequestVersionRef.current += 1
     accessModeRequestInFlightRef.current = false
     dexterClientSessionIdRef.current = crypto.randomUUID()
+    setPendingAccessMode(null)
     setIsAccessModeChanging(false)
     setAccessMode("approve")
     setFullAccessGrantId(null)
@@ -3006,6 +3013,7 @@ export function AgentDexterPage({
                   selectedSpecialistId={selectedSpecialistId}
                   selectedModelId={selectedModelId}
                   accessMode={accessMode}
+                  pendingAccessMode={pendingAccessMode}
                   mode={dexterMode}
                   contextUsedTokens={contextUsedTokens}
                   contextMaxTokens={DEXTER_CONTEXT_WINDOW_TOKENS}
@@ -3286,6 +3294,7 @@ export function AgentDexterPage({
                         selectedSpecialistId={selectedSpecialistId}
                         selectedModelId={selectedModelId}
                         accessMode={accessMode}
+                        pendingAccessMode={pendingAccessMode}
                         mode={dexterMode}
                         contextUsedTokens={contextUsedTokens}
                         contextMaxTokens={DEXTER_CONTEXT_WINDOW_TOKENS}
