@@ -234,7 +234,9 @@ export function getAppBreadcrumbTrail(route: string, leafLabel?: string | null):
     return [
       { label: "Home", route: "/" },
       { label: "Quotes", route: "/quotes" },
-      leafLabel?.trim()
+      quoteMatch[1] === "new"
+        ? { label: "New quote" }
+        : leafLabel?.trim()
         ? { label: leafLabel.trim(), localize: false }
         : { label: friendlyIdentifierLabel(quoteMatch[1], "Quote"), preserveDirection: !opaqueReferencePattern.test(quoteMatch[1]) },
     ]

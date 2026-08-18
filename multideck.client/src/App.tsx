@@ -38,7 +38,7 @@ const CustomsDeclarationsPage = lazy(() => import("@/pages/customs-declarations-
 const ReportsPage = lazy(() => import("@/pages/reports-page").then((module) => ({ default: module.ReportsPage })))
 const PaperTrayPage = lazy(() => import("@/pages/paper-tray-page").then((module) => ({ default: module.PaperTrayPage })))
 const NavigationLabPage = lazy(() => import("@/pages/navigation-lab-page").then((module) => ({ default: module.NavigationLabPage })))
-const QuoteDetailPage = lazy(() => import("@/pages/quotes-page").then((module) => ({ default: module.QuoteDetailPage })))
+const QuoteWorkflowPage = lazy(() => import("@/pages/quote-workflow-page").then((module) => ({ default: module.QuoteWorkflowPage })))
 const QuotesRegisterPage = lazy(() => import("@/pages/quotes-register-page").then((module) => ({ default: module.QuotesRegisterPage })))
 const RatesPage = lazy(() => import("@/pages/rates-page").then((module) => ({ default: module.RatesPage })))
 const ReportTemplateBuilderPage = lazy(() => import("@/pages/report-template-builder-page").then((module) => ({ default: module.ReportTemplateBuilderPage })))
@@ -633,7 +633,7 @@ export default function App() {
                   {route === "/paper-tray" ? <PaperTrayPage /> : null}
                   {route === "/playground/navigation" ? <NavigationLabPage /> : null}
                   {route === "/quotes" ? <QuotesRegisterPage navigate={navigate} /> : null}
-                  {isQuoteDetailRoute(route) ? <QuoteDetailPage key={route} variant="cargowise" quoteId={route.split("/").at(-1)} /> : null}
+                  {isQuoteDetailRoute(route) ? <QuoteWorkflowPage key={route} navigate={navigate} quoteReference={route.split("/").at(-1)} /> : null}
                   {route.startsWith("/rates") ? <RatesPage route={route as "/rates" | "/rates/contracts" | "/rates/tariffs" | "/rates/imports" | "/rates/results"} navigate={navigate} /> : null}
                   {route === "/reports" || route === "/reports/scheduled"
                     ? <ReportsPage route={route} />

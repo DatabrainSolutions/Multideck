@@ -4,6 +4,7 @@ import { purchaseOrderPhrases } from "./purchase-order-phrases"
 import { ratesPhrases } from "./rates-phrases"
 import { reportingPhrases } from "./reporting-phrases"
 import { broadcastSettingsPhrases } from "./broadcast-settings-phrases"
+import { quoteWorkflowPhrases } from "./quote-workflow-phrases"
 
 type WordDictionary = Record<string, string>
 type PhraseDictionary = Record<string, Partial<Record<LanguageCode, string>>>
@@ -786,6 +787,7 @@ const userManagementPhrases: PhraseDictionary = {
 
 const phrases: PhraseDictionary = {
   ...broadcastSettingsPhrases,
+  ...quoteWorkflowPhrases,
   ...tablePerfectionPhrases,
   ...documentBuilderPhrases,
   ...bookingWorkspacePhrases,

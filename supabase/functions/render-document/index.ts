@@ -13,15 +13,17 @@ import {
 } from "../_shared/document-functions.ts"
 
 type OutputFormat = "pdf" | "docx"
-type ContentSection = "job" | "customer" | "shipper" | "consignee" | "cargo" | "routing"
+type ContentSection = "job" | "customer" | "shipper" | "consignee" | "cargo" | "routing" | "quote" | "movement" | "charges" | "terms"
 
-const allowedContentSections: ContentSection[] = ["job", "customer", "shipper", "consignee", "cargo", "routing"]
+const jobContentSections: ContentSection[] = ["job", "customer", "shipper", "consignee", "cargo", "routing"]
+const quoteContentSections: ContentSection[] = ["quote", "customer", "movement", "charges", "terms"]
 const maximumStudioTemplateBytes = 15 * 1024 * 1024
 
 type RenderRequest = {
   templateCode?: string
   targetType?: string
   jobNumber?: string
+  targetReference?: string
   outputFormat?: string
   contentSections?: unknown
   reason?: string
@@ -125,7 +127,8 @@ function renderTimeout() {
   return Number.isFinite(configured) ? Math.min(Math.max(configured, 5000), 120000) : 90000
 }
 
-function parseContentSections(value: unknown): ContentSection[] {
+function parseContentSections(value: unknown, targetType: string): ContentSection[] {
+  const allowedContentSections = targetType === "CusQuote_Header" ? quoteContentSections : jobContentSections
   if (value === undefined) return [...allowedContentSections]
   if (!Array.isArray(value) || value.length === 0 || value.length > allowedContentSections.length) {
     throw new FunctionError(400, "Choose the information to include.", "Content section selection was not a valid array")
@@ -135,8 +138,9 @@ function parseContentSections(value: unknown): ContentSection[] {
   if (unique.length !== value.length || unique.some((section) => typeof section !== "string" || !allowedContentSections.includes(section as ContentSection))) {
     throw new FunctionError(400, "Choose valid document information.", "Content section selection contained duplicates or unsupported values")
   }
-  if (!unique.includes("job")) {
-    throw new FunctionError(400, "Job details must be included.", "Required job content section was omitted")
+  const requiredSection = targetType === "CusQuote_Header" ? "quote" : "job"
+  if (!unique.includes(requiredSection)) {
+    throw new FunctionError(400, targetType === "CusQuote_Header" ? "Quote details must be included." : "Job details must be included.", "Required document content section was omitted")
   }
   return unique as ContentSection[]
 }
@@ -155,42 +159,52 @@ Deno.serve(async (request) => {
     const payload = await request.json() as RenderRequest
     const templateCode = payload.templateCode?.trim().toUpperCase() ?? ""
     const outputFormat = payload.outputFormat?.trim().toLowerCase() ?? ""
-    const contentSections = parseContentSections(payload.contentSections)
-    const jobNumber = parseJobNumber(payload.jobNumber)
+    const targetType = payload.targetType ?? ""
+    const contentSections = parseContentSections(payload.contentSections, targetType)
+    const targetReference = parseJobNumber(targetType === "CusQuote_Header" ? payload.targetReference : payload.jobNumber)
 
     if (!/^[A-Z0-9][A-Z0-9_-]{1,99}$/.test(templateCode)) {
       throw new FunctionError(400, "Choose a valid document template.", "Template code validation failed")
     }
-    if (payload.targetType !== "Job_Header") {
-      throw new FunctionError(400, "Choose a valid job.", "Only Job_Header targets are accepted")
+    if (targetType !== "Job_Header" && targetType !== "CusQuote_Header") {
+      throw new FunctionError(400, "Choose a valid document target.", "Document target type is unsupported")
     }
     if (outputFormat !== "pdf" && outputFormat !== "docx") {
       throw new FunctionError(400, "Choose PDF or DOCX.", "Output format validation failed")
     }
 
-    const { data, error } = await context.admin
-      .schema("document_api")
-      .rpc("prepare_job_render", {
+    const preparation = targetType === "CusQuote_Header"
+      ? await context.admin.schema("document_api").rpc("prepare_quote_render", {
         caller_auth_user_id: context.userId,
         requested_template_code: templateCode,
-        requested_job_number: jobNumber,
+        requested_quote_reference: targetReference,
         requested_output_format: outputFormat,
         requested_reason: payload.reason?.trim().slice(0, 500) || null,
       })
+      : await context.admin.schema("document_api").rpc("prepare_job_render", {
+        caller_auth_user_id: context.userId,
+        requested_template_code: templateCode,
+        requested_job_number: targetReference,
+        requested_output_format: outputFormat,
+        requested_reason: payload.reason?.trim().slice(0, 500) || null,
+      })
+    const { data, error } = preparation
     if (error || !data) throw error ?? new Error("Render preparation returned no data")
     prepared = data as PreparedRender
 
-    const { data: selectedDataset, error: selectionError } = await context.admin
-      .schema("document_api")
-      .rpc("apply_job_render_content_selection", {
-        caller_auth_user_id: context.userId,
-        requested_render_job_id: prepared.renderJobId,
-        requested_content_sections: contentSections,
-      })
-    if (selectionError || !selectedDataset) {
-      throw selectionError ?? new Error("Document content selection returned no data")
+    if (targetType === "Job_Header") {
+      const { data: selectedDataset, error: selectionError } = await context.admin
+        .schema("document_api")
+        .rpc("apply_job_render_content_selection", {
+          caller_auth_user_id: context.userId,
+          requested_render_job_id: prepared.renderJobId,
+          requested_content_sections: contentSections,
+        })
+      if (selectionError || !selectedDataset) {
+        throw selectionError ?? new Error("Document content selection returned no data")
+      }
+      prepared = { ...prepared, dataset: selectedDataset as Record<string, unknown> }
     }
-    prepared = { ...prepared, dataset: selectedDataset as Record<string, unknown> }
     const studioTemplateBytes = decodeStudioTemplate(payload.studioTemplateBase64)
 
     if (studioTemplateBytes) {
@@ -260,7 +274,7 @@ Deno.serve(async (request) => {
       environment,
       prepared.companyId,
       "generated",
-      "job",
+      targetType === "CusQuote_Header" ? "quote" : "job",
       prepared.jobId,
       String(createdAt.getUTCFullYear()),
       String(createdAt.getUTCMonth() + 1).padStart(2, "0"),
@@ -277,9 +291,9 @@ Deno.serve(async (request) => {
       throw new FunctionError(502, "The generated file could not be stored.", "Supabase Storage upload failed")
     }
 
-    const { data: completion, error: completionError } = await context.admin
+    const completionResult = await context.admin
       .schema("document_api")
-      .rpc("complete_job_render", {
+      .rpc(targetType === "CusQuote_Header" ? "complete_quote_render" : "complete_job_render", {
         caller_auth_user_id: context.userId,
         requested_render_job_id: prepared.renderJobId,
         generated_document_id: generatedDocumentId,
@@ -290,6 +304,7 @@ Deno.serve(async (request) => {
         file_size_bytes: bytes.byteLength,
         sha256: digest,
       })
+    const { data: completion, error: completionError } = completionResult
     if (completionError || !completion) {
       await context.admin.storage.from(generatedDocumentsBucket).remove([uploadedPath])
       uploadedPath = null
@@ -318,7 +333,7 @@ Deno.serve(async (request) => {
     const functionError = toFunctionError(error)
     if (context && prepared && !catalogued) {
       if (uploadedPath) await context.admin.storage.from(generatedDocumentsBucket).remove([uploadedPath])
-      await context.admin.schema("document_api").rpc("fail_job_render", {
+      await context.admin.schema("document_api").rpc(prepared.dataset?.quote ? "fail_quote_render" : "fail_job_render", {
         caller_auth_user_id: context.userId,
         requested_render_job_id: prepared.renderJobId,
         safe_error_message: safeFailureMessage(error),

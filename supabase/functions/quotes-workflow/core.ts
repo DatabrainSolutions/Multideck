@@ -1,0 +1,67 @@
+export type QuoteWorkflowAction = "sources" | "workspace" | "save" | "transition" | "convert" | "download"
+
+export const quoteLifecycleActions = ["calculated", "sent", "revised", "accepted", "declined", "ghosted"] as const
+export type QuoteLifecycleAction = (typeof quoteLifecycleActions)[number]
+
+export class QuoteWorkflowError extends Error {
+  constructor(public readonly status: number, public readonly clientMessage: string, public readonly auditMessage = clientMessage) {
+    super(auditMessage)
+  }
+}
+
+export function requiredText(value: unknown, label: string, maximum = 500) {
+  if (typeof value !== "string" || !value.trim()) throw new QuoteWorkflowError(400, `${label} is required.`)
+  return value.trim().slice(0, maximum)
+}
+
+export function optionalText(value: unknown, maximum = 2000) {
+  return typeof value === "string" && value.trim() ? value.trim().slice(0, maximum) : null
+}
+
+export function parseReference(value: unknown) {
+  const reference = requiredText(value, "Quote reference", 24).toUpperCase()
+  if (!/^Q-[0-9]+$/.test(reference)) throw new QuoteWorkflowError(400, "Choose a valid quote reference.")
+  return reference
+}
+
+export function parseUuid(value: unknown, label: string) {
+  const uuid = requiredText(value, label, 36)
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid)) {
+    throw new QuoteWorkflowError(400, `${label} is invalid.`)
+  }
+  return uuid
+}
+
+export function parseAction(value: unknown): QuoteWorkflowAction {
+  if (["sources", "workspace", "save", "transition", "convert", "download"].includes(String(value))) {
+    return value as QuoteWorkflowAction
+  }
+  throw new QuoteWorkflowError(400, "Choose a supported quote action.")
+}
+
+export function parseLifecycleAction(value: unknown): QuoteLifecycleAction {
+  if (quoteLifecycleActions.includes(value as QuoteLifecycleAction)) return value as QuoteLifecycleAction
+  throw new QuoteWorkflowError(400, "Choose a supported quote lifecycle action.")
+}
+
+export function validateSavePayload(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new QuoteWorkflowError(400, "Quote details are required.")
+  const payload = value as Record<string, unknown>
+  if (payload.sourceType !== "lead" && payload.sourceType !== "account") {
+    throw new QuoteWorkflowError(400, "Choose a lead or account.")
+  }
+  parseUuid(payload.sourceId, "Lead or account")
+  if (payload.charges !== undefined && !Array.isArray(payload.charges)) throw new QuoteWorkflowError(400, "Quote charges are invalid.")
+  if (Array.isArray(payload.charges) && payload.charges.length > 200) throw new QuoteWorkflowError(400, "A quote can contain up to 200 charge lines.")
+  return payload
+}
+
+export function toClientError(error: unknown) {
+  if (error instanceof QuoteWorkflowError) return error
+  const message = typeof error === "object" && error && "message" in error ? String(error.message) : ""
+  const code = typeof error === "object" && error && "code" in error ? String(error.code) : ""
+  if (code === "42501") return new QuoteWorkflowError(403, "You are not authorised to use this quote.", message)
+  if (code === "22023" && message) return new QuoteWorkflowError(400, message, message)
+  if (code === "P0002" && message) return new QuoteWorkflowError(404, message, message)
+  return new QuoteWorkflowError(500, "The quote workflow could not complete the request.", message || "Unexpected quote workflow failure")
+}

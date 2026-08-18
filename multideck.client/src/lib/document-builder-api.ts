@@ -5,6 +5,7 @@ export type DocumentOutputFormat = "pdf" | "docx"
 export type DocumentTemplateStatus = "draft" | "published" | "retired"
 export type DocumentRenderStatus = "queued" | "rendering" | "ready" | "failed"
 export type DocumentContentSectionCode = "job" | "customer" | "shipper" | "consignee" | "cargo" | "routing"
+export type QuoteDocumentContentSectionCode = "quote" | "customer" | "movement" | "charges" | "terms"
 
 export type DocumentContentSection = {
   code: DocumentContentSectionCode
@@ -58,15 +59,17 @@ export type DocumentBuilderWorkspace = {
   }
 }
 
-export type RenderDocumentRequest = {
+type BaseRenderDocumentRequest = {
   templateCode: string
-  targetType: "Job_Header"
-  jobNumber: string
   outputFormat: DocumentOutputFormat
-  contentSections: DocumentContentSectionCode[]
   reason?: string
   studioTemplateBase64?: string
 }
+
+export type RenderDocumentRequest = BaseRenderDocumentRequest & (
+  | { targetType: "Job_Header"; jobNumber: string; contentSections: DocumentContentSectionCode[] }
+  | { targetType: "CusQuote_Header"; targetReference: string; contentSections: QuoteDocumentContentSectionCode[] }
+)
 
 export type DocumentStudioSession = {
   templateBase64: string

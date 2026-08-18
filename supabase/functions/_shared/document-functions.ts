@@ -127,6 +127,9 @@ export function toFunctionError(error: unknown) {
   if (code === "MD409") {
     return new FunctionError(409, "More than one authorised job uses that number.", "Job number resolution was ambiguous")
   }
+  if (code === "MDQ01") {
+    return new FunctionError(409, "Publish the Customer quote template before generating this document.", "Published CUSTOMER_QUOTE template is unavailable")
+  }
   return new FunctionError(500, "The secure document service could not complete the request.", "Unexpected document function failure")
 }
 

@@ -388,6 +388,9 @@ verify_jwt = true
 [functions.document-builder-workspace]
 verify_jwt = true
 
+[functions.quotes-workflow]
+verify_jwt = true
+
 [functions.render-document]
 verify_jwt = true
 
