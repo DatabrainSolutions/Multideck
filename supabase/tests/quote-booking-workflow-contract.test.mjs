@@ -15,6 +15,7 @@ const rollback = await read("supabase/rollbacks/20260819100028_quote_workspace_v
 const workflowEdge = await read("supabase/functions/quotes-workflow/index.ts")
 const workflowCore = await read("supabase/functions/quotes-workflow/core.ts")
 const quotePage = await read("multideck.client/src/pages/quotes-page.tsx")
+const quoteWorkflowPage = await read("multideck.client/src/pages/quote-workflow-page.tsx")
 
 test("quotes extend the canonical records with versions and audit events", () => {
   assert.match(migration, /"CusQuoteHeader_LifecycleCode" varchar\(40\) not null default 'draft'/)
@@ -59,6 +60,7 @@ test("the migration excludes booking conversion and document-builder ownership",
   assert.doesNotMatch(migration, /insert into public\."Job_Header"/)
   assert.doesNotMatch(migration, /prepare_quote_render/)
   assert.doesNotMatch(migration, /DOCB_DocumentTemplates/)
+  assert.doesNotMatch(quoteWorkflowPage, /renderDocument\(/)
 })
 
 test("Dexter quote parity is permission guarded and existing watches stay event driven", () => {

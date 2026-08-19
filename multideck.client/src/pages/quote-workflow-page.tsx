@@ -27,7 +27,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { useLanguage } from "@/i18n/language-provider"
-import { renderDocument } from "@/lib/document-builder-api"
 import {
   convertQuoteWorkflow,
   downloadQuoteDocument,
@@ -355,28 +354,6 @@ export function QuoteWorkflowPage({ quoteReference, navigate }: { quoteReference
     }
   }
 
-  async function generateDocument() {
-    if (!record.id || dirty) return
-    setRunningAction("generate")
-    try {
-      const result = await renderDocument({
-        templateCode: "CUSTOMER_QUOTE",
-        targetType: "CusQuote_Header",
-        targetReference: record.reference,
-        outputFormat: "pdf",
-        contentSections: ["quote", "customer", "movement", "charges", "terms"],
-        reason: "Customer quote issue",
-      })
-      toast.success(t("Quote document generated"), { description: result.fileName })
-      window.open(result.signedUrl, "_blank", "noopener,noreferrer")
-      await load()
-    } catch (caught) {
-      toast.error(t("Quote document could not be generated"), { description: caught instanceof Error ? caught.message : undefined })
-    } finally {
-      setRunningAction(null)
-    }
-  }
-
   async function downloadDocument(generatedDocumentId: string) {
     try {
       const result = await downloadQuoteDocument(generatedDocumentId)
@@ -447,7 +424,6 @@ export function QuoteWorkflowPage({ quoteReference, navigate }: { quoteReference
             <DexterActionPill onClick={() => setDexterOpen(true)} />
             {!readOnly ? <Button type="button" variant="ghost" disabled={!dirty || saving} onClick={() => void save()} className="shadow-[var(--md-shadow-line)]"><Save data-icon="inline-start" className="size-4" />{t(saving ? "Saving…" : "Save")}</Button> : null}
             {!isNew && record.lifecycle === "draft" ? <Button type="button" disabled={dirty || runningAction !== null} onClick={() => void transition("calculated")}><CheckCircle2 data-icon="inline-start" className="size-4" />{t("Calculate")}</Button> : null}
-            {!isNew && ["calculated", "revised"].includes(record.lifecycle) ? <Button type="button" disabled={dirty || runningAction !== null} onClick={() => void generateDocument()}><FileText data-icon="inline-start" className="size-4" />{t(runningAction === "generate" ? "Generating…" : "Generate quote")}</Button> : null}
             {!isNew && ["generated", "revised"].includes(record.lifecycle) ? <Button type="button" disabled={runningAction !== null} onClick={() => setSendOpen(true)}><Send data-icon="inline-start" className="size-4" />{t("Send and follow up")}</Button> : null}
             {!isNew && record.lifecycle === "sent" ? <Button type="button" disabled={runningAction !== null} onClick={() => setOutcomeOpen("accepted")}><CheckCircle2 data-icon="inline-start" className="size-4" />{t("Record outcome")}</Button> : null}
             {!isNew && ["generated", "sent", "declined", "ghosted"].includes(record.lifecycle) ? <Button type="button" variant="ghost" disabled={runningAction !== null} onClick={() => void transition("revised")} className="shadow-[var(--md-shadow-line)]">{t("Revise")}</Button> : null}
@@ -580,7 +556,6 @@ export function QuoteWorkflowPage({ quoteReference, navigate }: { quoteReference
             <Surface padding="none" className="rounded-[var(--md-radius-xl)] p-4 sm:p-5">
               <div className="flex items-start justify-between gap-3">
                 <div><h2 className="text-[16px] font-medium text-[var(--md-ink)]">{t("Issued quote versions")}</h2><p className="mt-1 text-[12px] text-[var(--md-subtle)]">{t("Each generated customer document keeps the exact calculation and route snapshot used at issue.")}</p></div>
-                {!isNew && ["calculated", "revised"].includes(record.lifecycle) ? <Button type="button" disabled={dirty || runningAction !== null} onClick={() => void generateDocument()}><FileText data-icon="inline-start" className="size-4" />{t("Generate")}</Button> : null}
               </div>
               <div className="mt-4 divide-y divide-[color-mix(in_srgb,var(--md-ink)_7%,transparent)]">
                 {workspace?.versions.length ? workspace.versions.map((version) => (
