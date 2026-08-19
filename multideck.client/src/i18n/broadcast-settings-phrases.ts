@@ -60,6 +60,7 @@ export const broadcastSettingsPhrases: Record<string, Partial<Record<LanguageCod
   "Subject": { de: "Betreff", fr: "Objet", ar: "الموضوع" },
   "Add a clear subject": { de: "Klaren Betreff hinzufügen", fr: "Ajoutez un objet clair", ar: "أضف موضوعًا واضحًا" },
   "Write the message workspace users should receive": { de: "Schreibe die Nachricht für Workspace-Benutzer", fr: "Rédigez le message destiné aux utilisateurs de l’espace", ar: "اكتب الرسالة التي سيتلقاها مستخدمو مساحة العمل" },
+  "Formatting: ## subheading, ### small heading, - bullet, 1. numbered step, **bold**.": { de: "Formatierung: ## Zwischenüberschrift, ### kleine Überschrift, - Aufzählung, 1. nummerierter Schritt, **fett**.", fr: "Mise en forme : ## sous-titre, ### petit titre, - puce, 1. étape numérotée, **gras**.", ar: "التنسيق: ## عنوان فرعي، ### عنوان صغير، - نقطة، 1. خطوة مرقمة، **عريض**." },
   "AI drafting instruction": { de: "Anweisung für den KI-Entwurf", fr: "Instruction de rédaction pour l’IA", ar: "تعليمات صياغة الذكاء الاصطناعي" },
   "Ask Luna to draft this email": { de: "Luna bitten, diese E-Mail zu entwerfen", fr: "Demander à Luna de rédiger cet e-mail", ar: "اطلب من Luna صياغة هذا البريد" },
   "How should this email be written?": { de: "Wie soll diese E-Mail formuliert werden?", fr: "Comment cet e-mail doit-il être rédigé ?", ar: "كيف ينبغي صياغة هذا البريد؟" },

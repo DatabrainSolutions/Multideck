@@ -400,7 +400,7 @@ function ComposeStep({ subject, message, direction, busy, onSubject, onMessage, 
 
   return <>
     <label className="grid gap-2 text-[13px] font-medium text-[var(--md-ink)]">{t("Subject")}<SettingsInput value={subject} onChange={(event) => onSubject(event.target.value)} maxLength={200} placeholder={t("Add a clear subject")} /></label>
-    <label className="grid gap-2 text-[13px] font-medium text-[var(--md-ink)]">{t("Message")}<SettingsTextarea value={message} onChange={(event) => onMessage(event.target.value)} maxLength={20000} className="min-h-[220px]" placeholder={t("Write the message workspace users should receive")} /></label>
+    <label className="grid gap-2 text-[13px] font-medium text-[var(--md-ink)]">{t("Message")}<SettingsTextarea value={message} onChange={(event) => onMessage(event.target.value)} maxLength={20000} className="min-h-[220px]" placeholder={t("Write the message workspace users should receive")} /><span className="text-[11px] font-normal leading-5 text-[var(--md-subtle)]">{t("Formatting: ## subheading, ### small heading, - bullet, 1. numbered step, **bold**.")}</span></label>
     <div className="flex min-w-0 justify-end">
       <motion.div
         initial={false}

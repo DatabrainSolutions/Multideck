@@ -1,3 +1,5 @@
+import { renderEmailMarkdown } from "./email-markdown.ts"
+
 export type EmailLocale = "en" | "de" | "fr" | "ar"
 
 type BrandedEmailOptions = {
@@ -5,6 +7,7 @@ type BrandedEmailOptions = {
   preview: string
   title: string
   body: string[]
+  bodyFormat?: "paragraphs" | "markdown"
   locale?: EmailLocale
   buttonLabel?: string
   buttonUrl?: string
@@ -53,7 +56,10 @@ export function safeMultideckUrl(value: unknown, fallback = defaults.appUrl) {
 export function renderBrandedEmail(options: BrandedEmailOptions) {
   const direction = options.locale === "ar" ? "rtl" : "ltr"
   const align = options.locale === "ar" ? "right" : "left"
-  const bodyHtml = options.body
+  const structuredBody = options.bodyFormat === "markdown"
+    ? renderEmailMarkdown(options.body.join("\n\n"), direction)
+    : null
+  const bodyHtml = structuredBody?.html ?? options.body
     .map((paragraph) => `<p style="margin:0 0 16px;color:#5D5D5D;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:15px;line-height:24px;text-align:${align};">${escapeHtml(paragraph)}</p>`)
     .join("")
   const actionUrl = options.buttonUrl ? safeMultideckUrl(options.buttonUrl) : null
@@ -101,7 +107,7 @@ export function renderBrandedEmail(options: BrandedEmailOptions) {
   const text = [
     options.title,
     "",
-    ...options.body,
+    structuredBody?.text ?? options.body.join("\n\n"),
     options.code ? `\n${options.code}` : "",
     actionUrl && options.buttonLabel ? `\n${options.buttonLabel}: ${actionUrl}` : "",
     options.footer ? `\n${options.footer}` : "",
