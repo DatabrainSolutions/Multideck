@@ -361,10 +361,10 @@ export function QuoteWorkflowPage({ quoteReference, navigate }: { quoteReference
     try {
       const result = await renderDocument({
         templateCode: "CUSTOMER_QUOTE",
-        targetType: "CusQuote_Header",
-        targetReference: record.reference,
+        targetType: "Job_Header",
+        jobNumber: record.reference,
         outputFormat: "pdf",
-        contentSections: ["quote", "customer", "movement", "charges", "terms"],
+        contentSections: ["job", "customer", "routing", "cargo"],
         reason: "Customer quote issue",
       })
       toast.success(t("Quote document generated"), { description: result.fileName })
