@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { AiEditing, ArrowUp, Building2, LoaderCircle, Megaphone, Plus, RefreshCw, UserRound, UsersRound, X } from "@/components/icons/hugeicons"
+import { AiEditing, ArrowUp, Building2, List, ListOrdered, LoaderCircle, Megaphone, Plus, RefreshCw, Type, UserRound, UsersRound, X } from "@/components/icons/hugeicons"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { DataTable, type DataTableColumn } from "@/components/multideck/data-table"
 import { StatusPill } from "@/components/multideck/status-pill"
-import { SettingsInput, SettingsPageHeader, SettingsPanel, SettingsTextarea } from "@/components/multideck/settings-components"
+import { SettingsInput, SettingsPageHeader, SettingsPanel } from "@/components/multideck/settings-components"
 import { WizardDialog, WizardSaveNowButton, type WizardStep } from "@/components/multideck/wizard-dialog"
 import { useLanguage } from "@/i18n/language-provider"
+import { emailEditorElementToMarkdown, emailMarkdownToEditorHtml } from "@/lib/email-markdown-editor"
 import { supabase } from "@/lib/supabase"
 import { cn } from "@/lib/utils"
 import {
@@ -117,6 +118,69 @@ function BroadcastHistory({ state, busy, loadingMore, openWizard, onLoadMore, t 
 }
 
 type BroadcastSettingsBusy = "load" | "preview" | "ai" | "draft" | "send" | null
+
+function BroadcastMessageEditor({ value, onChange, minHeight = 220, t }: { value: string; onChange: (value: string) => void; minHeight?: number; t: (text: string) => string }) {
+  const editorRef = useRef<HTMLDivElement>(null)
+  const latestValue = useRef(value)
+  const initialised = useRef(false)
+
+  useLayoutEffect(() => {
+    const editor = editorRef.current
+    if (!editor || (initialised.current && value === latestValue.current)) return
+    editor.innerHTML = emailMarkdownToEditorHtml(value)
+    latestValue.current = value
+    initialised.current = true
+  }, [value])
+
+  function emitChange() {
+    const editor = editorRef.current
+    if (!editor) return
+    const next = emailEditorElementToMarkdown(editor)
+    if (next.length > 20_000) {
+      editor.innerHTML = emailMarkdownToEditorHtml(latestValue.current)
+      return
+    }
+    latestValue.current = next
+    onChange(next)
+  }
+
+  function format(command: "formatBlock" | "bold" | "insertUnorderedList" | "insertOrderedList", argument?: string) {
+    editorRef.current?.focus()
+    document.execCommand(command, false, argument)
+    emitChange()
+  }
+
+  const toolbarButton = "grid size-8 place-items-center rounded-[var(--md-radius-sm)] text-[12px] font-medium text-[var(--md-text)] transition-[background-color,color,scale] hover:bg-[var(--md-hover)] hover:text-[var(--md-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--md-accent-a20)] active:scale-[0.96] motion-reduce:transition-none motion-reduce:active:scale-100"
+  return <div className="overflow-hidden rounded-[var(--md-radius-lg)] bg-[var(--md-field-bg)] shadow-[var(--md-shadow-line)] focus-within:ring-2 focus-within:ring-[var(--md-accent-a20)]">
+    <div className="flex min-h-10 flex-wrap items-center gap-0.5 border-b border-[var(--md-line)] px-2 py-1" role="toolbar" aria-label={t("Format email message")}>
+      <button type="button" className={toolbarButton} title={t("Normal text")} aria-label={t("Normal text")} onMouseDown={(event) => event.preventDefault()} onClick={() => format("formatBlock", "p")}><Type className="size-3.5" strokeWidth={1.5} /></button>
+      <button type="button" className={toolbarButton} title={t("Heading 2")} aria-label={t("Heading 2")} onMouseDown={(event) => event.preventDefault()} onClick={() => format("formatBlock", "h2")}>H2</button>
+      <button type="button" className={toolbarButton} title={t("Heading 3")} aria-label={t("Heading 3")} onMouseDown={(event) => event.preventDefault()} onClick={() => format("formatBlock", "h3")}>H3</button>
+      <span className="mx-1 h-5 w-px bg-[var(--md-line)]" aria-hidden="true" />
+      <button type="button" className={toolbarButton} title={t("Bullet list")} aria-label={t("Bullet list")} onMouseDown={(event) => event.preventDefault()} onClick={() => format("insertUnorderedList")}><List className="size-3.5" strokeWidth={1.5} /></button>
+      <button type="button" className={toolbarButton} title={t("Numbered list")} aria-label={t("Numbered list")} onMouseDown={(event) => event.preventDefault()} onClick={() => format("insertOrderedList")}><ListOrdered className="size-3.5" strokeWidth={1.5} /></button>
+      <button type="button" className={cn(toolbarButton, "font-semibold")} title={t("Bold")} aria-label={t("Bold")} onMouseDown={(event) => event.preventDefault()} onClick={() => format("bold")}>B</button>
+    </div>
+    <div
+      ref={editorRef}
+      role="textbox"
+      aria-multiline="true"
+      aria-label={t("Message")}
+      contentEditable
+      suppressContentEditableWarning
+      dir="auto"
+      data-placeholder={t("Write the message workspace users should receive")}
+      className="overflow-y-auto px-4 py-3 text-[14px] leading-6 text-[var(--md-ink)] outline-none empty:before:pointer-events-none empty:before:text-[var(--md-subtle)] empty:before:content-[attr(data-placeholder)] [&_h2]:mb-2 [&_h2]:mt-5 [&_h2]:text-[18px] [&_h2]:font-semibold [&_h2]:leading-7 [&_h3]:mb-2 [&_h3]:mt-4 [&_h3]:text-[15px] [&_h3]:font-semibold [&_h3]:leading-6 [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:space-y-1 [&_ol]:ps-6 [&_p]:my-3 [&_strong]:font-semibold [&_ul]:my-3 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:ps-6"
+      style={{ minHeight }}
+      onInput={emitChange}
+      onBlur={emitChange}
+      onPaste={(event) => {
+        event.preventDefault()
+        document.execCommand("insertText", false, event.clipboardData.getData("text/plain"))
+      }}
+    />
+  </div>
+}
 
 function ServerEmailPreview({ preview, loading, t }: { preview: BroadcastPreview | null; loading: boolean; t: (text: string) => string }) {
   if (loading) return <div className="grid min-h-[430px] place-items-center rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] shadow-[var(--md-shadow-line)]"><span className="flex items-center gap-2 text-[13px] text-[var(--md-text)]"><LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" />{t("Preparing branded preview…")}</span></div>
@@ -306,7 +370,7 @@ export function BroadcastSettings() {
         {error ? <div className="rounded-[var(--md-radius-lg)] bg-[color-mix(in_srgb,var(--md-red)_8%,var(--md-surface))] px-4 py-3" role="alert"><p className="text-[12px] leading-5 text-[var(--md-red)]">{error}</p></div> : null}
         {step === "audience" ? <AudienceStep state={state} audience={audience} preview={preview} busy={busy === "preview"} users={broadcastUsers} userQuery={broadcastUserQuery} usersHaveMore={broadcastUsersHaveMore} usersLoading={loadingBroadcastUsers} usersError={broadcastUsersError} onUserQuery={setBroadcastUserQuery} onLoadMoreUsers={() => void loadBroadcastUserPage(broadcastUserQuery, broadcastUsers.length, true)} onModeChange={changeAudience} onDepartmentToggle={toggleDepartment} onUserToggle={toggleUser} t={t} /> : null}
         {step === "compose" ? <ComposeStep subject={subject} message={message} direction={aiDirection} busy={busy === "ai"} onSubject={setSubject} onMessage={setMessage} onDirection={setAiDirection} onAI={() => void prepareWithAI()} t={t} /> : null}
-        {step === "preview" ? <div className="grid gap-5"><div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-4 py-3 shadow-[var(--md-shadow-line)]"><div><p className="text-[13px] font-medium text-[var(--md-ink)]">{t(audienceLabel(audience.mode))} · <span className="tabular-nums">{recipientCount}</span> {t("recipients")}</p><p className="mt-1 text-[12px] text-[var(--md-text)]">{excludedCount} {t("excluded automatically")}</p></div><Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-md)] active:scale-[0.96] motion-reduce:active:scale-100" onClick={() => setStep("audience")}>{t("Edit audience")}</Button></div><div className="grid gap-4 sm:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)]"><div className="grid content-start gap-4"><label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Subject")}<SettingsInput value={subject} onChange={(event) => setSubject(event.target.value)} maxLength={200} /></label><label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Message")}<SettingsTextarea value={message} onChange={(event) => setMessage(event.target.value)} maxLength={20000} className="min-h-[300px]" /></label><p className="text-[12px] leading-5 text-[var(--md-text)]">{t("Changes update the server-rendered branded preview. Nothing is sent from this step.")}</p></div><ServerEmailPreview preview={preview} loading={busy === "preview"} t={t} /></div></div> : null}
+        {step === "preview" ? <div className="grid gap-5"><div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--md-radius-lg)] bg-[var(--md-surface-tint)] px-4 py-3 shadow-[var(--md-shadow-line)]"><div><p className="text-[13px] font-medium text-[var(--md-ink)]">{t(audienceLabel(audience.mode))} · <span className="tabular-nums">{recipientCount}</span> {t("recipients")}</p><p className="mt-1 text-[12px] text-[var(--md-text)]">{excludedCount} {t("excluded automatically")}</p></div><Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-md)] active:scale-[0.96] motion-reduce:active:scale-100" onClick={() => setStep("audience")}>{t("Edit audience")}</Button></div><div className="grid gap-4 sm:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)]"><div className="grid content-start gap-4"><label className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]">{t("Subject")}<SettingsInput value={subject} onChange={(event) => setSubject(event.target.value)} maxLength={200} /></label><div className="grid gap-2 text-[12px] font-medium text-[var(--md-ink)]"><span>{t("Message")}</span><BroadcastMessageEditor value={message} onChange={setMessage} minHeight={300} t={t} /></div><p className="text-[12px] leading-5 text-[var(--md-text)]">{t("Changes update the server-rendered branded preview. Nothing is sent from this step.")}</p></div><ServerEmailPreview preview={preview} loading={busy === "preview"} t={t} /></div></div> : null}
         {step === "confirm" ? <div className="grid gap-5"><div className="grid gap-3 rounded-[var(--md-radius-xl)] bg-[var(--md-surface-tint)] p-4 shadow-[var(--md-shadow-line)] sm:grid-cols-3">{countLabel(recipientCount, t("Recipients"))}{countLabel(excludedCount, t("Excluded"))}<div><p className="text-[13px] font-medium text-[var(--md-ink)]">{t(audienceLabel(audience.mode))}</p><p className="mt-1 text-[12px] text-[var(--md-text)]">{t("Saved on confirmation")}</p></div></div><ServerEmailPreview preview={preview} loading={busy === "preview"} t={t} /><div className="flex flex-wrap items-center justify-between gap-3"><p className="max-w-[58ch] text-pretty text-[12px] leading-5 text-[var(--md-text)]">{t("Confirming sends this exact audience and message through the approved Multideck sender.")}</p><div className="flex gap-2"><Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-md)] active:scale-[0.96] motion-reduce:active:scale-100" onClick={() => setStep("audience")}>{t("Edit audience")}</Button><Button type="button" variant="ghost" className="h-9 rounded-[var(--md-radius-md)] active:scale-[0.96] motion-reduce:active:scale-100" onClick={() => setStep("preview")}>{t("Edit message")}</Button></div></div></div> : null}
       </WizardDialog>
     </>
@@ -400,7 +464,7 @@ function ComposeStep({ subject, message, direction, busy, onSubject, onMessage, 
 
   return <>
     <label className="grid gap-2 text-[13px] font-medium text-[var(--md-ink)]">{t("Subject")}<SettingsInput value={subject} onChange={(event) => onSubject(event.target.value)} maxLength={200} placeholder={t("Add a clear subject")} /></label>
-    <label className="grid gap-2 text-[13px] font-medium text-[var(--md-ink)]">{t("Message")}<SettingsTextarea value={message} onChange={(event) => onMessage(event.target.value)} maxLength={20000} className="min-h-[220px]" placeholder={t("Write the message workspace users should receive")} /><span className="text-[11px] font-normal leading-5 text-[var(--md-subtle)]">{t("Formatting: ## subheading, ### small heading, - bullet, 1. numbered step, **bold**.")}</span></label>
+    <div className="grid gap-2 text-[13px] font-medium text-[var(--md-ink)]"><span>{t("Message")}</span><BroadcastMessageEditor value={message} onChange={onMessage} t={t} /><span className="text-[11px] font-normal leading-5 text-[var(--md-subtle)]">{t("Formatting is shown as it will appear in the email.")}</span></div>
     <div className="flex min-w-0 justify-end">
       <motion.div
         initial={false}
