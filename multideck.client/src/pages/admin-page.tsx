@@ -4,10 +4,12 @@ import { getDateKey, MultideckDateRangePicker, type MultideckDateRange } from "@
 import { SettingsPageHeader } from "@/components/multideck/settings-components"
 import { StatusPill } from "@/components/multideck/status-pill"
 import { Avatar, AvatarBadge, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useLanguage } from "@/i18n/language-provider"
 import { getAdminAudit, type AdminActiveUser, type AdminAuditResponse, type AdminAuditRow, type AdminAuditView } from "@/lib/admin-audit-api"
+import { getQuoteReferenceSettings, saveQuoteReferenceSettings } from "@/lib/quote-workflow-api"
 import type { AuthUserSummary } from "@/lib/auth-user"
 
 const AdminUsersContent = lazy(() => import("@/pages/settings-page").then((module) => ({ default: module.AdminUsersContent })))
@@ -15,7 +17,7 @@ const AdminAiUsageContent = lazy(() => import("@/pages/settings-page").then((mod
 const AdminBillingContent = lazy(() => import("@/pages/settings-page").then((module) => ({ default: module.AdminBillingContent })))
 const AdminBroadcastContent = lazy(() => import("@/components/multideck/broadcast-settings").then((module) => ({ default: module.BroadcastSettings })))
 
-export type AdminRoute = "/admin/users" | "/admin/ai-usage" | "/admin/broadcast" | "/admin/billing" | "/admin/activity" | "/admin/detailed-log"
+export type AdminRoute = "/admin/users" | "/admin/ai-usage" | "/admin/broadcast" | "/admin/billing" | "/admin/system-preferences" | "/admin/activity" | "/admin/detailed-log"
 type AuditCategory = "all" | "authentication" | "application"
 const auditRefreshIntervalMs = 60_000
 
@@ -24,6 +26,7 @@ const adminRouteTitles: Record<AdminRoute, string> = {
   "/admin/ai-usage": "AI usage",
   "/admin/broadcast": "Broadcast",
   "/admin/billing": "Billing",
+  "/admin/system-preferences": "System Preferences",
   "/admin/activity": "Active log",
   "/admin/detailed-log": "Detailed log",
 }
@@ -237,6 +240,44 @@ function AuditLog({ view, currentUser }: { view: AdminAuditView; currentUser: Au
   )
 }
 
+function SystemPreferencesContent() {
+  const { t } = useLanguage()
+  const [quotePrefix, setQuotePrefix] = useState("")
+  const [bookingPrefix, setBookingPrefix] = useState("")
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [feedback, setFeedback] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    void getQuoteReferenceSettings().then((settings) => {
+      setQuotePrefix(settings.quotePrefix)
+      setBookingPrefix(settings.bookingPrefix)
+    }).catch((loadError) => setError(loadError instanceof Error ? loadError.message : "System preferences could not be loaded.")).finally(() => setLoading(false))
+  }, [])
+
+  async function save() {
+    setSaving(true)
+    setFeedback(null)
+    setError(null)
+    try {
+      const settings = await saveQuoteReferenceSettings({ quotePrefix, bookingPrefix })
+      setQuotePrefix(settings.quotePrefix)
+      setBookingPrefix(settings.bookingPrefix)
+      setFeedback("System preferences saved.")
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "System preferences could not be saved.")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const header = <SettingsPageHeader title={t("System Preferences")} description={t("Control the prefixes used when new quote and booking references are created.")} descriptionPlacement="under-title" />
+  if (loading) return <div className="px-[var(--md-page-pad)] py-[var(--md-page-pad)]"><div className="mx-auto max-w-[760px]">{header}<p className="mt-8 text-[13px] text-[var(--md-text)]" role="status">{t("Loading system preferences…")}</p></div></div>
+
+  return <div className="min-w-0 px-[var(--md-page-pad)] py-[var(--md-page-pad)]"><div className="mx-auto max-w-[760px] space-y-5 pb-[var(--md-page-bottom-pad)]">{header}<section className="rounded-[var(--md-radius-xl)] bg-[var(--md-surface)] p-5 shadow-[var(--md-shadow-soft)]"><div className="grid gap-4 sm:grid-cols-2"><label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]"><span>{t("Quote reference prefix")}</span><Input value={quotePrefix} maxLength={12} onChange={(event) => setQuotePrefix(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} placeholder="Q" aria-label={t("Quote reference prefix")} /><span className="text-[11px] font-normal text-[var(--md-subtle)]">{t("Example: Q-1001")}</span></label><label className="grid gap-1.5 text-[12px] font-medium text-[var(--md-text)]"><span>{t("Booking reference prefix")}</span><Input value={bookingPrefix} maxLength={12} onChange={(event) => setBookingPrefix(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} placeholder="B" aria-label={t("Booking reference prefix")} /><span className="text-[11px] font-normal text-[var(--md-subtle)]">{t("Example: B-1001")}</span></label></div>{error ? <p className="mt-4 text-[12px] text-[var(--md-red)]" role="alert">{error}</p> : null}{feedback ? <p className="mt-4 text-[12px] text-[var(--md-green)]" role="status">{t(feedback)}</p> : null}<div className="mt-5 flex justify-end"><Button type="button" disabled={saving || !quotePrefix || !bookingPrefix} onClick={() => void save()}>{t(saving ? "Saving…" : "Save preferences")}</Button></div></section></div></div>
+}
+
 export function AdminPage({ route, currentUser }: { route: AdminRoute; currentUser: AuthUserSummary | null }) {
   useEffect(() => {
     document.title = `${adminRouteTitles[route]} · Admin · Multideck`
@@ -248,9 +289,11 @@ export function AdminPage({ route, currentUser }: { route: AdminRoute; currentUs
       ? <AdminAiUsageContent />
       : route === "/admin/broadcast"
         ? <AdminBroadcastContent />
-        : route === "/admin/billing"
-          ? <AdminBillingContent />
-          : null
+      : route === "/admin/billing"
+        ? <AdminBillingContent />
+        : route === "/admin/system-preferences"
+          ? <SystemPreferencesContent />
+        : null
 
   if (content) {
     return <div className="px-[var(--md-page-pad)] py-[var(--md-page-pad)]"><div className="mx-auto max-w-[1180px] pb-[var(--md-page-bottom-pad)]">{content}</div></div>

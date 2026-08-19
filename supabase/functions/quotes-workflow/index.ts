@@ -22,6 +22,21 @@ async function operatorContext(admin: Awaited<ReturnType<typeof authenticateRequ
   return { userId: String(data.User_ID), companyId: String(data.Company_ID) }
 }
 
+async function requireAdministrator(admin: Awaited<ReturnType<typeof authenticateRequest>>["admin"], authUserId: string) {
+  const operator = await operatorContext(admin, authUserId)
+  const { data: links, error: linkError } = await admin.from("cmp_Users_Roles").select("sys_UserRole_ID").eq("User_ID", operator.userId)
+  if (linkError) throw linkError
+  const roleIds = (links ?? []).map((row) => row.sys_UserRole_ID)
+  const { data: roles, error: roleError } = roleIds.length
+    ? await admin.from("sys_UserRoles").select("sys_UserRole_Name").in("sys_UserRole_ID", roleIds)
+    : { data: [], error: null }
+  if (roleError) throw roleError
+  if (!(roles ?? []).some((role) => ["administrator", "company admin"].includes(String(role.sys_UserRole_Name ?? "").trim().toLowerCase()))) {
+    throw new QuoteWorkflowError(403, "Only tenant administrators can change system preferences.")
+  }
+  return operator
+}
+
 async function sourceOptions(admin: Awaited<ReturnType<typeof authenticateRequest>>["admin"], authUserId: string) {
   const operator = await operatorContext(admin, authUserId)
   const [{ data: offices, error: officeError }, { data: users, error: userError }] = await Promise.all([
@@ -150,8 +165,13 @@ async function sourceOptions(admin: Awaited<ReturnType<typeof authenticateReques
 async function quoteWorkspace(admin: Awaited<ReturnType<typeof authenticateRequest>>["admin"], authUserId: string, referenceValue: unknown) {
   const operator = await operatorContext(admin, authUserId)
   const reference = parseReference(referenceValue)
-  const number = Number(reference.slice(2))
-  const { data: quote, error: quoteError } = await admin.from("CusQuote_Header").select("*").eq("CusQuoteHeader_Number", number).eq("CusQuoteHeader_IsDeleted", false).maybeSingle()
+  const number = Number(reference.match(/([0-9]+)$/)?.[1] ?? "")
+  let { data: quote, error: quoteError } = await admin.from("CusQuote_Header").select("*").eq("CusQuoteHeader_CustomerReference", reference).eq("CusQuoteHeader_IsDeleted", false).maybeSingle()
+  if (!quote && Number.isInteger(number)) {
+    const fallback = await admin.from("CusQuote_Header").select("*").eq("CusQuoteHeader_Number", number).eq("CusQuoteHeader_IsDeleted", false).maybeSingle()
+    quote = fallback.data
+    quoteError = fallback.error
+  }
   if (quoteError || !quote) throw quoteError ?? new QuoteWorkflowError(404, "That quote could not be found.")
   const officeId = String(quote.CusQuoteHeader_OrgOfficeID || quote.OrgOffice_ID || "")
   const { data: office, error: officeError } = await admin.from("cmp_Offices").select("Company_ID").eq("Office_ID", officeId).maybeSingle()
@@ -223,6 +243,23 @@ Deno.serve(async (request) => {
     const body = await request.json() as Record<string, unknown>
     const action = parseAction(body.action)
     if (action === "sources") return jsonResponse(request, await sourceOptions(admin, userId))
+    if (action === "open") {
+      const { data, error } = await admin.rpc("quote_workflow_open_quote", { caller_auth_user_id: userId })
+      if (error || !data) throw error ?? new Error("Quote opening returned no result")
+      return jsonResponse(request, data)
+    }
+    if (action === "reference-settings") {
+      await requireAdministrator(admin, userId)
+      const { data, error } = await admin.rpc("quote_workflow_get_reference_settings", { caller_auth_user_id: userId })
+      if (error || !data) throw error ?? new Error("Reference settings returned no result")
+      return jsonResponse(request, data)
+    }
+    if (action === "save-reference-settings") {
+      await requireAdministrator(admin, userId)
+      const { data, error } = await admin.rpc("quote_workflow_save_reference_settings", { caller_auth_user_id: userId, quote_prefix: body.quotePrefix, booking_prefix: body.bookingPrefix })
+      if (error || !data) throw error ?? new Error("Reference settings save returned no result")
+      return jsonResponse(request, data)
+    }
     if (action === "workspace") return jsonResponse(request, await quoteWorkspace(admin, userId, body.reference))
     if (action === "save") {
       const payload = validateSavePayload(body.quote)

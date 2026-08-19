@@ -69,6 +69,7 @@ import { quoteRegisterRecords, type QuoteRegisterRecord } from "@/data/quote-reg
 import {
   getQuoteSources,
   getQuoteWorkflow,
+  openQuoteWorkflow,
   saveQuoteWorkflow,
   transitionQuoteWorkflow,
   type QuoteSavePayload,
@@ -2625,7 +2626,7 @@ function QuoteCargoWiseDetailsPanel({
           <div className="grid content-start gap-1.5">
             <h4 className="text-[10.5px] font-medium text-[var(--md-subtle)]">{t("Quote control")}</h4>
             <div className="grid gap-1 md:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-              <CargoWiseLookupField label="Customer ref" value={quote.localRef ?? ""} action="more" compact editable={editable} onChange={(value) => onQuoteChange("localRef", value)} />
+              <CargoWiseLookupField label="Customer ref" value={quote.localRef ?? ""} compact editable={false} />
               <CargoWiseSelectField label="Status" value={quote.workflowStatus ?? ""} options={["DRF - Draft/WIP", "RTG - Rating", "REV - Review", "SNT - Sent", "FLW - Followed-up", "WRK - Working"]} compact editable={editable} onChange={(value) => onQuoteChange("workflowStatus", value)} />
               <CargoWiseLookupField label="Valid from" value={quote.startDate ?? ""} action="date" compact editable={editable} onChange={(value) => onQuoteChange("startDate", value)} />
               <CargoWiseLookupField label="Valid to" value={quote.endDate ?? ""} action="date" compact editable={editable} onChange={(value) => onQuoteChange("endDate", value)} />
@@ -3514,7 +3515,21 @@ export function QuoteDetailPage({
         const sourcesPromise = getQuoteSources()
         if (isNewQuote) {
           const sources = await sourcesPromise
-          if (!cancelled) setLookups(sources)
+          const openedQuote = await openQuoteWorkflow()
+          const openedWorkspace = await getQuoteWorkflow(openedQuote.reference)
+          if (!cancelled) {
+            const openedQuoteRecord = quoteRecordFromWorkspace(openedWorkspace, sources)
+            const openedCharges = quoteChargesFromWorkspace(openedWorkspace)
+            setLookups(sources)
+            setWorkspace(openedWorkspace)
+            setCurrentQuoteId(openedWorkspace.quote.id)
+            setSavedQuote(openedQuoteRecord)
+            setDraftQuote(openedQuoteRecord)
+            setSavedCharges(openedCharges)
+            setDraftCharges(openedCharges)
+            setActiveTab("details")
+            navigate?.(`/quotes/${openedQuote.reference}`)
+          }
           return
         }
         const reference = quoteId?.toUpperCase() ?? ""

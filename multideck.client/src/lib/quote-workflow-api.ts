@@ -144,6 +144,11 @@ export type QuoteWorkflowSources = {
   commodities: Array<QuoteCodeOption & { id: string }>
 }
 
+export type QuoteReferenceSettings = {
+  quotePrefix: string
+  bookingPrefix: string
+}
+
 function requireClient() {
   if (!supabase) throw new Error("Quotes are unavailable until this workspace is connected.")
   return supabase
@@ -171,6 +176,18 @@ async function invoke<T>(body: Record<string, unknown>, fallback: string) {
 
 export function getQuoteSources() {
   return invoke<QuoteWorkflowSources>({ action: "sources" }, "Quote sources could not be loaded.")
+}
+
+export function openQuoteWorkflow() {
+  return invoke<{ quoteId: string; reference: string; lifecycle: string }>({ action: "open" }, "The new quote could not be opened.")
+}
+
+export function getQuoteReferenceSettings() {
+  return invoke<QuoteReferenceSettings>({ action: "reference-settings" }, "Quote reference settings could not be loaded.")
+}
+
+export function saveQuoteReferenceSettings(settings: QuoteReferenceSettings) {
+  return invoke<QuoteReferenceSettings>({ action: "save-reference-settings", ...settings }, "Quote reference settings could not be saved.")
 }
 
 export function getQuoteWorkflow(reference: string) {

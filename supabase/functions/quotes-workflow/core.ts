@@ -1,4 +1,4 @@
-export type QuoteWorkflowAction = "sources" | "workspace" | "save" | "transition"
+export type QuoteWorkflowAction = "sources" | "workspace" | "save" | "transition" | "open" | "reference-settings" | "save-reference-settings"
 
 export const quoteLifecycleActions = ["calculated", "sent", "revised", "accepted", "declined", "ghosted"] as const
 export type QuoteLifecycleAction = (typeof quoteLifecycleActions)[number]
@@ -20,7 +20,7 @@ export function optionalText(value: unknown, maximum = 2000) {
 
 export function parseReference(value: unknown) {
   const reference = requiredText(value, "Quote reference", 24).toUpperCase()
-  if (!/^Q-[0-9]+$/.test(reference)) throw new QuoteWorkflowError(400, "Choose a valid quote reference.")
+  if (!/^[A-Z][A-Z0-9_-]{0,19}-[0-9]+$/.test(reference)) throw new QuoteWorkflowError(400, "Choose a valid quote reference.")
   return reference
 }
 
@@ -33,7 +33,7 @@ export function parseUuid(value: unknown, label: string) {
 }
 
 export function parseAction(value: unknown): QuoteWorkflowAction {
-  if (["sources", "workspace", "save", "transition"].includes(String(value))) {
+  if (["sources", "workspace", "save", "transition", "open", "reference-settings", "save-reference-settings"].includes(String(value))) {
     return value as QuoteWorkflowAction
   }
   throw new QuoteWorkflowError(400, "Choose a supported quote action.")

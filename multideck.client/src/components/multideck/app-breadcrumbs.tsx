@@ -23,6 +23,7 @@ const staticLeafLabels: Record<string, string> = {
   "/admin/ai-usage": "AI usage",
   "/admin/broadcast": "Broadcast",
   "/admin/billing": "Billing",
+  "/admin/system-preferences": "System Preferences",
   "/admin/activity": "Active log",
   "/admin/detailed-log": "Detailed log",
   "/bookings": "Bookings",
